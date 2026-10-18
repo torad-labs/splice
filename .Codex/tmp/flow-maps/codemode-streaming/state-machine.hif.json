@@ -1,0 +1,717 @@
+{
+  "network-type": "directed",
+  "metadata": {
+    "skill": "code-flow-mapper",
+    "map": "state-machine",
+    "generated_at": "2026-10-18T01:54:57Z",
+    "seed_event": "Claude Code streaming turn routed to GPT/Codex with code mode enabled",
+    "bug_ids": [
+      "CODEMODE-STREAM-PAUSES",
+      "CODEMODE-RECURRING-FAILURES"
+    ],
+    "scope_paths": [
+      "integrations/providers/codex",
+      "integrations/dialects/openai-responses",
+      "integrations/codemode",
+      "features/turns",
+      "integrations/upstream",
+      "core"
+    ],
+    "worktree": "/home/marcos/Documents/dev/projects/splice/repo",
+    "evidence": "Source inspection only; no source edits or runtime tests; independent state-machine trace"
+  },
+  "nodes": [
+    {
+      "node": "Round posted",
+      "attrs": {
+        "kind": "state",
+        "terminal": false,
+        "path": "integrations/providers/codex/src/main/kotlin/splice/provider/codex/stream/CodeModeUpstreamPost.kt",
+        "line_range": "126-146",
+        "note": "The interceptor posts initial or canonicalized Responses history through the ordinary transport."
+      }
+    },
+    {
+      "node": "Streaming visible output",
+      "attrs": {
+        "kind": "state",
+        "terminal": false,
+        "path": "integrations/dialects/openai-responses/src/main/kotlin/splice/dialect/responses/stream/ResponsesItemFold.kt",
+        "line_range": "148-164",
+        "note": "Text deltas write directly to the current sink; reasoning has its own live fold. Fold-eligible turns may wrap text in BufferingWireSink."
+      }
+    },
+    {
+      "node": "Exec admitted; source and worker streaming",
+      "attrs": {
+        "kind": "state",
+        "terminal": false,
+        "path": "integrations/providers/codex/src/main/kotlin/splice/provider/codex/stream/CodeModeSourceCapture.kt",
+        "line_range": "63-85",
+        "note": "Started admits a durable record; deltas extend immutable source prefix. The JavaScript source is intentionally absent from client UI."
+      }
+    },
+    {
+      "node": "Executable callback ready",
+      "attrs": {
+        "kind": "state",
+        "terminal": false,
+        "path": "integrations/codemode/src/main/kotlin/splice/codemode/StreamingWorkerSession.kt",
+        "line_range": "41-82",
+        "note": "A certified statement with ready dependencies executes; the runtime reports Calls independently of source completion."
+      }
+    },
+    {
+      "node": "Item complete; certification pending",
+      "attrs": {
+        "kind": "state",
+        "terminal": false,
+        "path": "integrations/providers/codex/src/main/kotlin/splice/provider/codex/stream/CodeModeSourceBuffer.kt",
+        "line_range": "57-68",
+        "note": "Item-done seals unread source and blocks publishing a callback until the response outcome certifies the full source."
+      }
+    },
+    {
+      "node": "Client callbacks emitted; source parked",
+      "attrs": {
+        "kind": "state",
+        "terminal": false,
+        "path": "integrations/providers/codex/src/main/kotlin/splice/provider/codex/CodexCodeModeMachine.kt",
+        "line_range": "109-155",
+        "note": "Call identities and arguments persist before ordinary client tool_use blocks are written; the source reader can remain live and detached."
+      }
+    },
+    {
+      "node": "Client results accepted; worker resumed",
+      "attrs": {
+        "kind": "state",
+        "terminal": false,
+        "path": "integrations/providers/codex/src/main/kotlin/splice/provider/codex/CodexCodeModeResume.kt",
+        "line_range": "98-171",
+        "note": "Only matching visible call results are accepted; results translate back to runtime ids and resume the retained cell."
+      }
+    },
+    {
+      "node": "Script completed; canonical history ready",
+      "attrs": {
+        "kind": "state",
+        "terminal": false,
+        "path": "integrations/providers/codex/src/main/kotlin/splice/provider/codex/CodexCodeModeDriver.kt",
+        "line_range": "102-126",
+        "note": "The outer exec output and source continuity are inserted into canonical upstream history, then a hidden next round posts."
+      }
+    },
+    {
+      "node": "Honest client terminal",
+      "attrs": {
+        "kind": "state",
+        "terminal": true,
+        "path": "features/turns/src/main/kotlin/splice/head/pipeline/StreamFinish.kt",
+        "line_range": "1-170",
+        "note": "The outer turn pipeline emits one success or honest error/abandonment; code-mode source reader has no terminal authority."
+      }
+    },
+    {
+      "node": "Execution lost or interrupted",
+      "attrs": {
+        "kind": "state",
+        "terminal": false,
+        "path": "integrations/providers/codex/src/main/kotlin/splice/provider/codex/CodexCodeModeResume.kt",
+        "line_range": "78-95",
+        "note": "A lost cell is not rerun. Accepted results and unresolved calls become an interruption output that the model can continue from."
+      }
+    },
+    {
+      "node": "Retryable startup before dispatch",
+      "attrs": {
+        "kind": "state",
+        "terminal": false,
+        "path": "integrations/providers/codex/src/main/kotlin/splice/provider/codex/stream/CodeModeRuntimeStarter.kt",
+        "line_range": "81-115",
+        "note": "Only CodeModeStartException proves no executable source was dispatched; source is retained for exact retry."
+      }
+    },
+    {
+      "node": "Response terminal parsed; transport draining",
+      "attrs": {
+        "kind": "state",
+        "terminal": false,
+        "path": "integrations/dialects/openai-responses/src/main/kotlin/splice/dialect/responses/stream/ResponsesStreamTranslator.kt",
+        "line_range": "113-170",
+        "note": "Terminal state is latched but collect continues until upstream Flow completes. SSE EOF is currently required to publish the round outcome."
+      }
+    },
+    {
+      "node": "Round outcome available immediately at terminal",
+      "attrs": {
+        "kind": "expected-state",
+        "path": "integrations/dialects/openai-responses/src/main/kotlin/splice/dialect/responses/stream/ResponsesStreamTranslator.kt",
+        "line_range": "113-170"
+      }
+    },
+    {
+      "node": "response.completed event",
+      "attrs": {
+        "kind": "event",
+        "path": "integrations/dialects/openai-responses/src/main/kotlin/splice/dialect/responses/stream/ResponsesEventReducer.kt",
+        "line_range": "65-85"
+      }
+    },
+    {
+      "node": "ResponsesStreamTranslator.reduceRound",
+      "attrs": {
+        "kind": "fun",
+        "path": "integrations/dialects/openai-responses/src/main/kotlin/splice/dialect/responses/stream/ResponsesStreamTranslator.kt",
+        "line_range": "113-170"
+      }
+    },
+    {
+      "node": "CODEMODE-STREAM-PAUSES",
+      "attrs": {
+        "kind": "bug",
+        "note": "Reported pause/burst symptom; conditional terminal-to-EOF latency mechanism confirmed in source, traffic prevalence unmeasured"
+      }
+    },
+    {
+      "node": "Rejected argument leaves sequence unchanged",
+      "attrs": {
+        "kind": "expected-state",
+        "path": "integrations/codemode/src/main/kotlin/splice/codemode/CodeModeWorker.kt",
+        "line_range": "183-200"
+      }
+    },
+    {
+      "node": "Object serializes to null; script catches rejection",
+      "attrs": {
+        "kind": "event",
+        "path": "integrations/codemode/src/main/kotlin/splice/codemode/CodeModeWorker.kt",
+        "line_range": "192-200"
+      }
+    },
+    {
+      "node": "CodeModeWorker.LAUNCHER.call",
+      "attrs": {
+        "kind": "fun",
+        "path": "integrations/codemode/src/main/kotlin/splice/codemode/CodeModeWorker.kt",
+        "line_range": "183-200"
+      }
+    },
+    {
+      "node": "CODEMODE-RECURRING-FAILURES",
+      "attrs": {
+        "kind": "bug",
+        "note": "Reported recurring code-mode failures; a concrete argument-rejection recovery failure is visible in source"
+      }
+    }
+  ],
+  "edges": [
+    {
+      "edge": "t_stream_1",
+      "attrs": {
+        "kind": "transition",
+        "trigger": "ResponsesItemFold.onTextDelta / ResponsesReasoningFold",
+        "cond": "Upstream text/reasoning arrives; visible blocks are written to attached sink"
+      }
+    },
+    {
+      "edge": "t_stream_2",
+      "attrs": {
+        "kind": "transition",
+        "trigger": "ResponsesExecProgress.added -> CodeModeSourceCapture.begin",
+        "cond": "custom_tool_call name=exec starts; record admitted and runtime startup begins"
+      }
+    },
+    {
+      "edge": "t_stream_3",
+      "attrs": {
+        "kind": "transition",
+        "trigger": "ResponsesExecProgress.added",
+        "cond": "Commentary/reasoning is followed by an exec item"
+      }
+    },
+    {
+      "edge": "t_stream_4",
+      "attrs": {
+        "kind": "transition",
+        "trigger": "ResponsesExecProgress.delta -> SourceBuffer.publish -> StreamingWorkerSession.append",
+        "cond": "More source bytes arrive but there is no certified executable boundary, or dependency/hoisting/intrinsic checks defer it"
+      }
+    },
+    {
+      "edge": "t_stream_5",
+      "attrs": {
+        "kind": "transition",
+        "trigger": "CodeModeStatementParser.certifiedPrefix -> StreamingWorkerSession.run -> WorkerSession.reply",
+        "cond": "Complete statement and dependency-safe operation call a permitted nested tool"
+      }
+    },
+    {
+      "edge": "t_stream_6",
+      "attrs": {
+        "kind": "transition",
+        "trigger": "CodeModeStreamingCell.advance -> CodexCodeModeCallIssuer.accept -> machine.emit",
+        "cond": "Source is not sealed, or terminal certification has completed; pending ids persist before emission"
+      }
+    },
+    {
+      "edge": "t_stream_7",
+      "attrs": {
+        "kind": "transition",
+        "trigger": "CodeModeSourceCapture.observe(Completed) -> SourceBuffer.seal",
+        "cond": "output_item.done supplies matching full exec source; no response outcome yet"
+      }
+    },
+    {
+      "edge": "t_stream_8",
+      "attrs": {
+        "kind": "transition",
+        "trigger": "CodeModeStreamingCell.advance -> SourceBuffer.awaitCertification",
+        "cond": "Item-done raced ahead of the selected statement; callback waits rather than escaping an uncertified source"
+      }
+    },
+    {
+      "edge": "t_stream_9",
+      "attrs": {
+        "kind": "transition",
+        "trigger": "ResponsesEventReducer.onTerminal",
+        "cond": "response.completed/done/incomplete sets finalResponse but does not finish the SSE Flow"
+      }
+    },
+    {
+      "edge": "t_stream_10",
+      "attrs": {
+        "kind": "transition",
+        "trigger": "ResponsesEventReducer.onTerminal",
+        "cond": "Terminal arrives after plain commentary/final text"
+      }
+    },
+    {
+      "edge": "t_stream_11",
+      "attrs": {
+        "kind": "transition",
+        "trigger": "Flow completion -> CodeModeLiveRound.finish -> CodeModeSourceCapture.finish -> source.complete",
+        "cond": "Successful complete response certifies exactly one matching exec source; pending source/callback waiter wakes"
+      }
+    },
+    {
+      "edge": "t_stream_12",
+      "attrs": {
+        "kind": "transition",
+        "trigger": "Flow completion -> ResponsesStreamTranslator.finishRound -> outer pipeline",
+        "cond": "No remaining exec callback or hidden continuation; final output finishes"
+      }
+    },
+    {
+      "edge": "t_stream_13",
+      "attrs": {
+        "kind": "transition",
+        "trigger": "CodexCodeModeResume.fresh -> registry.acceptResults -> machine.advance",
+        "cond": "Next Claude Code request carries valid visible tool_result ids"
+      }
+    },
+    {
+      "edge": "t_stream_14",
+      "attrs": {
+        "kind": "transition",
+        "trigger": "CodeModeSinkWrites.deliver / drain",
+        "cond": "Source reader continues after detach; detached commentary writes are byte-bounded and replay on the next attachment",
+        "intentional_buffer": true
+      }
+    },
+    {
+      "edge": "t_stream_15",
+      "attrs": {
+        "kind": "transition",
+        "trigger": "JvmCodeModeCell.receiveAfter -> StreamingWorkerSession.drain",
+        "cond": "Returned result makes a dependent callback ready; unresolved siblings remain pending"
+      }
+    },
+    {
+      "edge": "t_stream_16",
+      "attrs": {
+        "kind": "transition",
+        "trigger": "CodeModeStep.Completed -> CodexCodeModeMachine.complete",
+        "cond": "No pending callbacks remain and source is complete"
+      }
+    },
+    {
+      "edge": "t_stream_17",
+      "attrs": {
+        "kind": "transition",
+        "trigger": "CodexCodeModeDriver.finishGenerated -> canonicalize -> post",
+        "cond": "Canonical custom_tool_call + custom_tool_call_output history drives the next hidden model round"
+      }
+    },
+    {
+      "edge": "t_stream_18",
+      "attrs": {
+        "kind": "transition",
+        "trigger": "CodeModeRuntimeStarter.failed",
+        "cond": "Only typed CodeModeStartException proves runtime boot failed before dispatch"
+      }
+    },
+    {
+      "edge": "t_stream_19",
+      "attrs": {
+        "kind": "transition",
+        "trigger": "CodexCodeModeDriver.retryStart",
+        "cond": "Exact retried request and retained whole/live source are available"
+      }
+    },
+    {
+      "edge": "t_stream_20",
+      "attrs": {
+        "kind": "transition",
+        "trigger": "CodeModeLiveRound.finish / failed / ended / died",
+        "cond": "Source tears, fails, is refused, changes identity/prefix, has incomplete terminal, or reader dies"
+      }
+    },
+    {
+      "edge": "t_stream_21",
+      "attrs": {
+        "kind": "transition",
+        "trigger": "CodexCodeModeResume.interrupts / machine.poison / workerRecovery.lost",
+        "cond": "Operator steering, unanswered-system interruption, missing tool catalog, runtime fault, or explicit bound ends the cell"
+      }
+    },
+    {
+      "edge": "t_stream_22",
+      "attrs": {
+        "kind": "transition",
+        "trigger": "CodexCodeModeResume.lost -> machine.interrupt",
+        "cond": "Accepted evidence and unresolved calls are preserved as interrupted exec output; source is not rerun"
+      }
+    },
+    {
+      "edge": "t_stream_23",
+      "attrs": {
+        "kind": "transition",
+        "trigger": "CodeModeLiveRound.outcome / permanentEnding / machine.poison",
+        "cond": "Current request ends with original refusal/transport or deterministic protocol cause; no fabricated clean stop"
+      }
+    },
+    {
+      "edge": "h_gap_terminal_eof",
+      "attrs": {
+        "kind": "gap",
+        "bug_id": "CODEMODE-STREAM-PAUSES",
+        "gap_number": 1,
+        "severity": "contributing",
+        "note": "response.completed is reduced into finalResponse but collect continues to transport EOF. During any terminal-to-EOF gap the code-mode source remains uncertified, delaying last callbacks, output completion and hidden next round. The WebSocket Flow ends on terminal; SSE currently does not. Source-grounded conditional mechanism; no live timing measurement."
+      }
+    },
+    {
+      "edge": "h_gap_rejected_argument_sequence",
+      "attrs": {
+        "kind": "gap",
+        "bug_id": "CODEMODE-RECURRING-FAILURES",
+        "gap_number": 1,
+        "severity": "root-cause",
+        "note": "call reserves ++sequence and pending[id] before host.call accepts the serialized object. An argument object with toJSON returning null passes the object/string checks but WorkerBridge.parseCall rejects JsonNull. If the script catches that error and calls a valid tool, its first emitted id is 2 while CodeModeFrames.parseCalls requires 1, poisoning the cell. Validate decoded object before reservation and make reservation atomic with acceptance.",
+        "scenario": "try { await tools.Read({toJSON(){return null;}}); } catch {} text(await tools.Read({path:'good'}));"
+      }
+    }
+  ],
+  "incidences": [
+    {
+      "edge": "t_stream_1",
+      "node": "Round posted",
+      "direction": "tail"
+    },
+    {
+      "edge": "t_stream_1",
+      "node": "Streaming visible output",
+      "direction": "head"
+    },
+    {
+      "edge": "t_stream_2",
+      "node": "Round posted",
+      "direction": "tail"
+    },
+    {
+      "edge": "t_stream_2",
+      "node": "Exec admitted; source and worker streaming",
+      "direction": "head"
+    },
+    {
+      "edge": "t_stream_3",
+      "node": "Streaming visible output",
+      "direction": "tail"
+    },
+    {
+      "edge": "t_stream_3",
+      "node": "Exec admitted; source and worker streaming",
+      "direction": "head"
+    },
+    {
+      "edge": "t_stream_4",
+      "node": "Exec admitted; source and worker streaming",
+      "direction": "tail"
+    },
+    {
+      "edge": "t_stream_4",
+      "node": "Exec admitted; source and worker streaming",
+      "direction": "head"
+    },
+    {
+      "edge": "t_stream_5",
+      "node": "Exec admitted; source and worker streaming",
+      "direction": "tail"
+    },
+    {
+      "edge": "t_stream_5",
+      "node": "Executable callback ready",
+      "direction": "head"
+    },
+    {
+      "edge": "t_stream_6",
+      "node": "Executable callback ready",
+      "direction": "tail"
+    },
+    {
+      "edge": "t_stream_6",
+      "node": "Client callbacks emitted; source parked",
+      "direction": "head"
+    },
+    {
+      "edge": "t_stream_7",
+      "node": "Exec admitted; source and worker streaming",
+      "direction": "tail"
+    },
+    {
+      "edge": "t_stream_7",
+      "node": "Item complete; certification pending",
+      "direction": "head"
+    },
+    {
+      "edge": "t_stream_8",
+      "node": "Executable callback ready",
+      "direction": "tail"
+    },
+    {
+      "edge": "t_stream_8",
+      "node": "Item complete; certification pending",
+      "direction": "head"
+    },
+    {
+      "edge": "t_stream_9",
+      "node": "Item complete; certification pending",
+      "direction": "tail"
+    },
+    {
+      "edge": "t_stream_9",
+      "node": "Response terminal parsed; transport draining",
+      "direction": "head"
+    },
+    {
+      "edge": "t_stream_10",
+      "node": "Streaming visible output",
+      "direction": "tail"
+    },
+    {
+      "edge": "t_stream_10",
+      "node": "Response terminal parsed; transport draining",
+      "direction": "head"
+    },
+    {
+      "edge": "t_stream_11",
+      "node": "Response terminal parsed; transport draining",
+      "direction": "tail"
+    },
+    {
+      "edge": "t_stream_11",
+      "node": "Executable callback ready",
+      "direction": "head"
+    },
+    {
+      "edge": "t_stream_12",
+      "node": "Response terminal parsed; transport draining",
+      "direction": "tail"
+    },
+    {
+      "edge": "t_stream_12",
+      "node": "Honest client terminal",
+      "direction": "head"
+    },
+    {
+      "edge": "t_stream_13",
+      "node": "Client callbacks emitted; source parked",
+      "direction": "tail"
+    },
+    {
+      "edge": "t_stream_13",
+      "node": "Client results accepted; worker resumed",
+      "direction": "head"
+    },
+    {
+      "edge": "t_stream_14",
+      "node": "Client callbacks emitted; source parked",
+      "direction": "tail"
+    },
+    {
+      "edge": "t_stream_14",
+      "node": "Client callbacks emitted; source parked",
+      "direction": "head"
+    },
+    {
+      "edge": "t_stream_15",
+      "node": "Client results accepted; worker resumed",
+      "direction": "tail"
+    },
+    {
+      "edge": "t_stream_15",
+      "node": "Executable callback ready",
+      "direction": "head"
+    },
+    {
+      "edge": "t_stream_16",
+      "node": "Client results accepted; worker resumed",
+      "direction": "tail"
+    },
+    {
+      "edge": "t_stream_16",
+      "node": "Script completed; canonical history ready",
+      "direction": "head"
+    },
+    {
+      "edge": "t_stream_17",
+      "node": "Script completed; canonical history ready",
+      "direction": "tail"
+    },
+    {
+      "edge": "t_stream_17",
+      "node": "Round posted",
+      "direction": "head"
+    },
+    {
+      "edge": "t_stream_18",
+      "node": "Exec admitted; source and worker streaming",
+      "direction": "tail"
+    },
+    {
+      "edge": "t_stream_18",
+      "node": "Retryable startup before dispatch",
+      "direction": "head"
+    },
+    {
+      "edge": "t_stream_19",
+      "node": "Retryable startup before dispatch",
+      "direction": "tail"
+    },
+    {
+      "edge": "t_stream_19",
+      "node": "Exec admitted; source and worker streaming",
+      "direction": "head"
+    },
+    {
+      "edge": "t_stream_20",
+      "node": "Exec admitted; source and worker streaming",
+      "direction": "tail"
+    },
+    {
+      "edge": "t_stream_20",
+      "node": "Execution lost or interrupted",
+      "direction": "head"
+    },
+    {
+      "edge": "t_stream_21",
+      "node": "Client results accepted; worker resumed",
+      "direction": "tail"
+    },
+    {
+      "edge": "t_stream_21",
+      "node": "Execution lost or interrupted",
+      "direction": "head"
+    },
+    {
+      "edge": "t_stream_22",
+      "node": "Execution lost or interrupted",
+      "direction": "tail"
+    },
+    {
+      "edge": "t_stream_22",
+      "node": "Script completed; canonical history ready",
+      "direction": "head"
+    },
+    {
+      "edge": "t_stream_23",
+      "node": "Execution lost or interrupted",
+      "direction": "tail"
+    },
+    {
+      "edge": "t_stream_23",
+      "node": "Honest client terminal",
+      "direction": "head"
+    },
+    {
+      "edge": "h_gap_terminal_eof",
+      "node": "Response terminal parsed; transport draining",
+      "attrs": {
+        "role": "state_when_gap_observed"
+      }
+    },
+    {
+      "edge": "h_gap_terminal_eof",
+      "node": "Round outcome available immediately at terminal",
+      "attrs": {
+        "role": "expected_state"
+      }
+    },
+    {
+      "edge": "h_gap_terminal_eof",
+      "node": "response.completed event",
+      "attrs": {
+        "role": "triggering_event"
+      }
+    },
+    {
+      "edge": "h_gap_terminal_eof",
+      "node": "ResponsesStreamTranslator.reduceRound",
+      "attrs": {
+        "role": "responsible_handler"
+      }
+    },
+    {
+      "edge": "h_gap_terminal_eof",
+      "node": "CODEMODE-STREAM-PAUSES",
+      "attrs": {
+        "role": "bug"
+      }
+    },
+    {
+      "edge": "h_gap_rejected_argument_sequence",
+      "node": "Executable callback ready",
+      "attrs": {
+        "role": "state_when_gap_observed"
+      }
+    },
+    {
+      "edge": "h_gap_rejected_argument_sequence",
+      "node": "Rejected argument leaves sequence unchanged",
+      "attrs": {
+        "role": "expected_state"
+      }
+    },
+    {
+      "edge": "h_gap_rejected_argument_sequence",
+      "node": "Object serializes to null; script catches rejection",
+      "attrs": {
+        "role": "triggering_event"
+      }
+    },
+    {
+      "edge": "h_gap_rejected_argument_sequence",
+      "node": "CodeModeWorker.LAUNCHER.call",
+      "attrs": {
+        "role": "responsible_handler"
+      }
+    },
+    {
+      "edge": "h_gap_rejected_argument_sequence",
+      "node": "CODEMODE-RECURRING-FAILURES",
+      "attrs": {
+        "role": "bug"
+      }
+    }
+  ]
+}

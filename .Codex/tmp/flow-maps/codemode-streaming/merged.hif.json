@@ -1,0 +1,3987 @@
+{
+  "network-type": "directed",
+  "metadata": {
+    "skill": "code-flow-mapper",
+    "map": "merged",
+    "source_files": [
+      "/home/marcos/Documents/dev/projects/splice/repo/.Codex/tmp/flow-maps/codemode-streaming/dep-graph.hif.json",
+      "/home/marcos/Documents/dev/projects/splice/repo/.Codex/tmp/flow-maps/codemode-streaming/energy.hif.json",
+      "/home/marcos/Documents/dev/projects/splice/repo/.Codex/tmp/flow-maps/codemode-streaming/state-machine.hif.json"
+    ],
+    "sub_metadata": [
+      {
+        "skill": "code-flow-mapper",
+        "map": "dep-graph",
+        "generated_at": "2026-10-18T01:52:39Z",
+        "seed_event": "Claude Code sends a streaming GPT/Codex turn with code mode enabled through splice; model emits commentary and splice_exec input, client executes callbacks, and the same script continues.",
+        "scope_paths": [
+          "integrations/providers/codex",
+          "integrations/dialects/openai-responses",
+          "features/turns",
+          "integrations/upstream",
+          "core",
+          "integrations/codemode"
+        ],
+        "worktree": "/home/marcos/Documents/dev/projects/splice/repo",
+        "investigation": "Recurring code-mode bugs and visible stop-and-burst output; no ticket IDs provided. Read-only source review, tests not run.",
+        "node_limit": 25
+      },
+      {
+        "skill": "code-flow-mapper",
+        "map": "energy",
+        "generated_at": "2026-10-18T01:50:55Z",
+        "seed_event": "Streaming GPT/Codex request through splice with code mode: commentary/custom-tool input, splice_exec callbacks, tool results and continuation",
+        "bug_ids": [
+          "recurring-codemode-errors",
+          "stop-and-burst"
+        ],
+        "scope_paths": [
+          "integrations/providers/codex",
+          "integrations/dialects/openai-responses",
+          "integrations/codemode",
+          "features/turns",
+          "integrations/upstream",
+          "core"
+        ],
+        "worktree": "/home/marcos/Documents/dev/projects/splice/repo",
+        "investigation": "Read-only source/test inspection; no tests executed. One minor confirmed lifecycle gap; burst mechanisms established, current runtime settings unverified.",
+        "node_count_limit": 25
+      },
+      {
+        "skill": "code-flow-mapper",
+        "map": "state-machine",
+        "generated_at": "2026-10-18T01:54:57Z",
+        "seed_event": "Claude Code streaming turn routed to GPT/Codex with code mode enabled",
+        "bug_ids": [
+          "CODEMODE-STREAM-PAUSES",
+          "CODEMODE-RECURRING-FAILURES"
+        ],
+        "scope_paths": [
+          "integrations/providers/codex",
+          "integrations/dialects/openai-responses",
+          "integrations/codemode",
+          "features/turns",
+          "integrations/upstream",
+          "core"
+        ],
+        "worktree": "/home/marcos/Documents/dev/projects/splice/repo",
+        "evidence": "Source inspection only; no source edits or runtime tests; independent state-machine trace"
+      }
+    ]
+  },
+  "nodes": [
+    {
+      "node": "CodexCodeModeTurnBuilder",
+      "attrs": {
+        "kind": "class",
+        "path": "integrations/providers/codex/src/main/kotlin/splice/provider/codex/CodexCodeModeTurnBuilder.kt",
+        "line_range": "29-180",
+        "scope": "",
+        "module": "integrations/providers/codex",
+        "_by_source": {
+          "/home/marcos/Documents/dev/projects/splice/repo/.Codex/tmp/flow-maps/codemode-streaming/dep-graph.hif.json": {
+            "kind": "class",
+            "path": "integrations/providers/codex/src/main/kotlin/splice/provider/codex/CodexCodeModeTurnBuilder.kt",
+            "line_range": "29-180",
+            "scope": "",
+            "module": "integrations/providers/codex"
+          }
+        }
+      }
+    },
+    {
+      "node": "RoundStrategy",
+      "attrs": {
+        "kind": "class",
+        "path": "features/turns/src/main/kotlin/splice/head/round/RoundStrategy.kt",
+        "line_range": "38-122",
+        "scope": "per-turn",
+        "module": "features/turns",
+        "_by_source": {
+          "/home/marcos/Documents/dev/projects/splice/repo/.Codex/tmp/flow-maps/codemode-streaming/dep-graph.hif.json": {
+            "kind": "class",
+            "path": "features/turns/src/main/kotlin/splice/head/round/RoundStrategy.kt",
+            "line_range": "38-122",
+            "scope": "per-turn",
+            "module": "features/turns"
+          }
+        }
+      }
+    },
+    {
+      "node": "FoldRunner",
+      "attrs": {
+        "kind": "class",
+        "path": "features/turns/src/main/kotlin/splice/head/round/FoldRunner.kt",
+        "line_range": "24-115",
+        "scope": "",
+        "module": "features/turns",
+        "_by_source": {
+          "/home/marcos/Documents/dev/projects/splice/repo/.Codex/tmp/flow-maps/codemode-streaming/dep-graph.hif.json": {
+            "kind": "class",
+            "path": "features/turns/src/main/kotlin/splice/head/round/FoldRunner.kt",
+            "line_range": "24-115",
+            "scope": "",
+            "module": "features/turns"
+          }
+        }
+      }
+    },
+    {
+      "node": "BufferingWireSink",
+      "attrs": {
+        "kind": "class",
+        "path": "features/turns/src/main/kotlin/splice/head/wire/BufferingWireSink.kt",
+        "line_range": "14-69",
+        "scope": "",
+        "module": "features/turns",
+        "_by_source": {
+          "/home/marcos/Documents/dev/projects/splice/repo/.Codex/tmp/flow-maps/codemode-streaming/dep-graph.hif.json": {
+            "kind": "class",
+            "path": "features/turns/src/main/kotlin/splice/head/wire/BufferingWireSink.kt",
+            "line_range": "14-69",
+            "scope": "",
+            "module": "features/turns"
+          }
+        }
+      }
+    },
+    {
+      "node": "SseRoundDriver",
+      "attrs": {
+        "kind": "class",
+        "path": "features/turns/src/main/kotlin/splice/head/transport/SseRoundDriver.kt",
+        "line_range": "24-154",
+        "scope": "",
+        "module": "features/turns",
+        "_by_source": {
+          "/home/marcos/Documents/dev/projects/splice/repo/.Codex/tmp/flow-maps/codemode-streaming/dep-graph.hif.json": {
+            "kind": "class",
+            "path": "features/turns/src/main/kotlin/splice/head/transport/SseRoundDriver.kt",
+            "line_range": "24-154",
+            "scope": "",
+            "module": "features/turns"
+          }
+        }
+      }
+    },
+    {
+      "node": "SseRoundConsume",
+      "attrs": {
+        "kind": "class",
+        "path": "features/turns/src/main/kotlin/splice/head/transport/SseRoundConsume.kt",
+        "line_range": "22-144",
+        "scope": "",
+        "module": "features/turns",
+        "_by_source": {
+          "/home/marcos/Documents/dev/projects/splice/repo/.Codex/tmp/flow-maps/codemode-streaming/dep-graph.hif.json": {
+            "kind": "class",
+            "path": "features/turns/src/main/kotlin/splice/head/transport/SseRoundConsume.kt",
+            "line_range": "22-144",
+            "scope": "",
+            "module": "features/turns"
+          }
+        }
+      }
+    },
+    {
+      "node": "SseReader",
+      "attrs": {
+        "kind": "class",
+        "path": "integrations/upstream/src/main/kotlin/splice/upstream/sse/SseReader.kt",
+        "line_range": "34-35",
+        "scope": "",
+        "module": "integrations/upstream",
+        "_by_source": {
+          "/home/marcos/Documents/dev/projects/splice/repo/.Codex/tmp/flow-maps/codemode-streaming/dep-graph.hif.json": {
+            "kind": "class",
+            "path": "integrations/upstream/src/main/kotlin/splice/upstream/sse/SseReader.kt",
+            "line_range": "34-35",
+            "scope": "",
+            "module": "integrations/upstream"
+          }
+        }
+      }
+    },
+    {
+      "node": "ResponsesStreamTranslator",
+      "attrs": {
+        "kind": "class",
+        "path": "integrations/dialects/openai-responses/src/main/kotlin/splice/dialect/responses/stream/ResponsesStreamTranslator.kt",
+        "line_range": "56-61",
+        "scope": "per-turn",
+        "module": "integrations/dialects/openai-responses",
+        "_by_source": {
+          "/home/marcos/Documents/dev/projects/splice/repo/.Codex/tmp/flow-maps/codemode-streaming/dep-graph.hif.json": {
+            "kind": "class",
+            "path": "integrations/dialects/openai-responses/src/main/kotlin/splice/dialect/responses/stream/ResponsesStreamTranslator.kt",
+            "line_range": "56-61",
+            "scope": "per-turn",
+            "module": "integrations/dialects/openai-responses"
+          }
+        }
+      }
+    },
+    {
+      "node": "ResponsesEventReducer",
+      "attrs": {
+        "kind": "class",
+        "path": "integrations/dialects/openai-responses/src/main/kotlin/splice/dialect/responses/stream/ResponsesEventReducer.kt",
+        "line_range": "24-156",
+        "scope": "",
+        "module": "integrations/dialects/openai-responses",
+        "_by_source": {
+          "/home/marcos/Documents/dev/projects/splice/repo/.Codex/tmp/flow-maps/codemode-streaming/dep-graph.hif.json": {
+            "kind": "class",
+            "path": "integrations/dialects/openai-responses/src/main/kotlin/splice/dialect/responses/stream/ResponsesEventReducer.kt",
+            "line_range": "24-156",
+            "scope": "",
+            "module": "integrations/dialects/openai-responses"
+          }
+        }
+      }
+    },
+    {
+      "node": "ResponsesExecProgress",
+      "attrs": {
+        "kind": "class",
+        "path": "integrations/dialects/openai-responses/src/main/kotlin/splice/dialect/responses/stream/ResponsesExecProgress.kt",
+        "line_range": "20-57",
+        "scope": "",
+        "module": "integrations/dialects/openai-responses",
+        "_by_source": {
+          "/home/marcos/Documents/dev/projects/splice/repo/.Codex/tmp/flow-maps/codemode-streaming/dep-graph.hif.json": {
+            "kind": "class",
+            "path": "integrations/dialects/openai-responses/src/main/kotlin/splice/dialect/responses/stream/ResponsesExecProgress.kt",
+            "line_range": "20-57",
+            "scope": "",
+            "module": "integrations/dialects/openai-responses"
+          }
+        }
+      }
+    },
+    {
+      "node": "CodeModeRoundInterceptor",
+      "attrs": {
+        "kind": "class",
+        "path": "integrations/providers/codex/src/main/kotlin/splice/provider/codex/stream/CodeModeUpstreamPost.kt",
+        "line_range": "28-65",
+        "scope": "",
+        "module": "integrations/providers/codex",
+        "_by_source": {
+          "/home/marcos/Documents/dev/projects/splice/repo/.Codex/tmp/flow-maps/codemode-streaming/dep-graph.hif.json": {
+            "kind": "class",
+            "path": "integrations/providers/codex/src/main/kotlin/splice/provider/codex/stream/CodeModeUpstreamPost.kt",
+            "line_range": "28-65",
+            "scope": "",
+            "module": "integrations/providers/codex"
+          }
+        }
+      }
+    },
+    {
+      "node": "CodexCodeModeDriver",
+      "attrs": {
+        "kind": "class",
+        "path": "integrations/providers/codex/src/main/kotlin/splice/provider/codex/CodexCodeModeDriver.kt",
+        "line_range": "33-314",
+        "scope": "",
+        "module": "integrations/providers/codex",
+        "_by_source": {
+          "/home/marcos/Documents/dev/projects/splice/repo/.Codex/tmp/flow-maps/codemode-streaming/dep-graph.hif.json": {
+            "kind": "class",
+            "path": "integrations/providers/codex/src/main/kotlin/splice/provider/codex/CodexCodeModeDriver.kt",
+            "line_range": "33-314",
+            "scope": "",
+            "module": "integrations/providers/codex"
+          }
+        }
+      }
+    },
+    {
+      "node": "CodeModeStreams",
+      "attrs": {
+        "kind": "class",
+        "path": "integrations/providers/codex/src/main/kotlin/splice/provider/codex/stream/CodeModeStreams.kt",
+        "line_range": "84-219",
+        "scope": "",
+        "module": "integrations/providers/codex",
+        "_by_source": {
+          "/home/marcos/Documents/dev/projects/splice/repo/.Codex/tmp/flow-maps/codemode-streaming/dep-graph.hif.json": {
+            "kind": "class",
+            "path": "integrations/providers/codex/src/main/kotlin/splice/provider/codex/stream/CodeModeStreams.kt",
+            "line_range": "84-219",
+            "scope": "",
+            "module": "integrations/providers/codex"
+          }
+        }
+      }
+    },
+    {
+      "node": "CodeModeLiveRound",
+      "attrs": {
+        "kind": "class",
+        "path": "integrations/providers/codex/src/main/kotlin/splice/provider/codex/stream/CodeModeLiveRound.kt",
+        "line_range": "31-327",
+        "scope": "",
+        "module": "integrations/providers/codex",
+        "_by_source": {
+          "/home/marcos/Documents/dev/projects/splice/repo/.Codex/tmp/flow-maps/codemode-streaming/dep-graph.hif.json": {
+            "kind": "class",
+            "path": "integrations/providers/codex/src/main/kotlin/splice/provider/codex/stream/CodeModeLiveRound.kt",
+            "line_range": "31-327",
+            "scope": "",
+            "module": "integrations/providers/codex"
+          }
+        }
+      }
+    },
+    {
+      "node": "CodeModeSourceCapture",
+      "attrs": {
+        "kind": "class",
+        "path": "integrations/providers/codex/src/main/kotlin/splice/provider/codex/stream/CodeModeSourceCapture.kt",
+        "line_range": "14-147",
+        "scope": "",
+        "module": "integrations/providers/codex",
+        "_by_source": {
+          "/home/marcos/Documents/dev/projects/splice/repo/.Codex/tmp/flow-maps/codemode-streaming/dep-graph.hif.json": {
+            "kind": "class",
+            "path": "integrations/providers/codex/src/main/kotlin/splice/provider/codex/stream/CodeModeSourceCapture.kt",
+            "line_range": "14-147",
+            "scope": "",
+            "module": "integrations/providers/codex"
+          }
+        }
+      }
+    },
+    {
+      "node": "CodeModeSourceBuffer",
+      "attrs": {
+        "kind": "state-container",
+        "path": "integrations/providers/codex/src/main/kotlin/splice/provider/codex/stream/CodeModeSourceBuffer.kt",
+        "line_range": "21-162",
+        "scope": "CodeModeLiveRound source",
+        "module": "integrations/providers/codex",
+        "_by_source": {
+          "/home/marcos/Documents/dev/projects/splice/repo/.Codex/tmp/flow-maps/codemode-streaming/dep-graph.hif.json": {
+            "kind": "class",
+            "path": "integrations/providers/codex/src/main/kotlin/splice/provider/codex/stream/CodeModeSourceBuffer.kt",
+            "line_range": "38-39",
+            "scope": "",
+            "module": "integrations/providers/codex"
+          },
+          "/home/marcos/Documents/dev/projects/splice/repo/.Codex/tmp/flow-maps/codemode-streaming/energy.hif.json": {
+            "kind": "state-container",
+            "path": "integrations/providers/codex/src/main/kotlin/splice/provider/codex/stream/CodeModeSourceBuffer.kt",
+            "line_range": "21-162",
+            "scope": "CodeModeLiveRound source",
+            "lifetime": "request",
+            "persistence": "memory",
+            "owner": "CodeModeSourceBuffer",
+            "fields": "SourceSnapshot.text/terminal/itemComplete; per-view cursor position",
+            "clearer": "CodeModeSourceBuffer.complete/fail; round lease disposal",
+            "clearer_evidence": "integrations/providers/codex/src/main/kotlin/splice/provider/codex/stream/CodeModeSourceBuffer.kt:54-85",
+            "note": "complete/fail releases blocked cursors; no incremental text clearing; entire prefix retained until round becomes unreachable"
+          }
+        },
+        "lifetime": "request",
+        "persistence": "memory",
+        "owner": "CodeModeSourceBuffer",
+        "fields": "SourceSnapshot.text/terminal/itemComplete; per-view cursor position",
+        "clearer": "CodeModeSourceBuffer.complete/fail; round lease disposal",
+        "clearer_evidence": "integrations/providers/codex/src/main/kotlin/splice/provider/codex/stream/CodeModeSourceBuffer.kt:54-85",
+        "note": "complete/fail releases blocked cursors; no incremental text clearing; entire prefix retained until round becomes unreachable"
+      }
+    },
+    {
+      "node": "CodeModeStreamingCell",
+      "attrs": {
+        "kind": "class",
+        "path": "integrations/providers/codex/src/main/kotlin/splice/provider/codex/stream/CodeModeStreamingCell.kt",
+        "line_range": "15-69",
+        "scope": "",
+        "module": "integrations/providers/codex",
+        "_by_source": {
+          "/home/marcos/Documents/dev/projects/splice/repo/.Codex/tmp/flow-maps/codemode-streaming/dep-graph.hif.json": {
+            "kind": "class",
+            "path": "integrations/providers/codex/src/main/kotlin/splice/provider/codex/stream/CodeModeStreamingCell.kt",
+            "line_range": "15-69",
+            "scope": "",
+            "module": "integrations/providers/codex"
+          }
+        }
+      }
+    },
+    {
+      "node": "CodexCodeModeMachine",
+      "attrs": {
+        "kind": "class",
+        "path": "integrations/providers/codex/src/main/kotlin/splice/provider/codex/CodexCodeModeMachine.kt",
+        "line_range": "48-284",
+        "scope": "",
+        "module": "integrations/providers/codex",
+        "_by_source": {
+          "/home/marcos/Documents/dev/projects/splice/repo/.Codex/tmp/flow-maps/codemode-streaming/dep-graph.hif.json": {
+            "kind": "class",
+            "path": "integrations/providers/codex/src/main/kotlin/splice/provider/codex/CodexCodeModeMachine.kt",
+            "line_range": "48-284",
+            "scope": "",
+            "module": "integrations/providers/codex"
+          }
+        }
+      }
+    },
+    {
+      "node": "CodexCodeModeResume",
+      "attrs": {
+        "kind": "class",
+        "path": "integrations/providers/codex/src/main/kotlin/splice/provider/codex/CodexCodeModeResume.kt",
+        "line_range": "23-257",
+        "scope": "",
+        "module": "integrations/providers/codex",
+        "_by_source": {
+          "/home/marcos/Documents/dev/projects/splice/repo/.Codex/tmp/flow-maps/codemode-streaming/dep-graph.hif.json": {
+            "kind": "class",
+            "path": "integrations/providers/codex/src/main/kotlin/splice/provider/codex/CodexCodeModeResume.kt",
+            "line_range": "23-257",
+            "scope": "",
+            "module": "integrations/providers/codex"
+          }
+        }
+      }
+    },
+    {
+      "node": "CodeModeSwitchingSink",
+      "attrs": {
+        "kind": "class",
+        "path": "integrations/providers/codex/src/main/kotlin/splice/provider/codex/stream/CodeModeSwitchingSink.kt",
+        "line_range": "27-48",
+        "scope": "",
+        "module": "integrations/providers/codex",
+        "_by_source": {
+          "/home/marcos/Documents/dev/projects/splice/repo/.Codex/tmp/flow-maps/codemode-streaming/dep-graph.hif.json": {
+            "kind": "class",
+            "path": "integrations/providers/codex/src/main/kotlin/splice/provider/codex/stream/CodeModeSwitchingSink.kt",
+            "line_range": "27-48",
+            "scope": "",
+            "module": "integrations/providers/codex"
+          }
+        }
+      }
+    },
+    {
+      "node": "JvmCodeModeRuntime",
+      "attrs": {
+        "kind": "class",
+        "path": "integrations/codemode/src/main/kotlin/splice/codemode/JvmCodeModeRuntime.kt",
+        "line_range": "61-185",
+        "scope": "",
+        "module": "integrations/codemode",
+        "_by_source": {
+          "/home/marcos/Documents/dev/projects/splice/repo/.Codex/tmp/flow-maps/codemode-streaming/dep-graph.hif.json": {
+            "kind": "class",
+            "path": "integrations/codemode/src/main/kotlin/splice/codemode/JvmCodeModeRuntime.kt",
+            "line_range": "61-185",
+            "scope": "",
+            "module": "integrations/codemode"
+          }
+        }
+      }
+    },
+    {
+      "node": "SseEmitter",
+      "attrs": {
+        "kind": "class",
+        "path": "features/turns/src/main/kotlin/splice/head/wire/SseEmitter.kt",
+        "line_range": "53-305",
+        "scope": "per-turn",
+        "module": "features/turns",
+        "_by_source": {
+          "/home/marcos/Documents/dev/projects/splice/repo/.Codex/tmp/flow-maps/codemode-streaming/dep-graph.hif.json": {
+            "kind": "class",
+            "path": "features/turns/src/main/kotlin/splice/head/wire/SseEmitter.kt",
+            "line_range": "53-305",
+            "scope": "per-turn",
+            "module": "features/turns"
+          }
+        }
+      }
+    },
+    {
+      "node": "ClientChannel",
+      "attrs": {
+        "kind": "class",
+        "path": "features/turns/src/main/kotlin/splice/head/wire/ClientChannel.kt",
+        "line_range": "105-383",
+        "scope": "per-turn",
+        "module": "features/turns",
+        "_by_source": {
+          "/home/marcos/Documents/dev/projects/splice/repo/.Codex/tmp/flow-maps/codemode-streaming/dep-graph.hif.json": {
+            "kind": "class",
+            "path": "features/turns/src/main/kotlin/splice/head/wire/ClientChannel.kt",
+            "line_range": "105-383",
+            "scope": "per-turn",
+            "module": "features/turns"
+          }
+        }
+      }
+    },
+    {
+      "node": "DeltaPacer",
+      "attrs": {
+        "kind": "state-container",
+        "path": "features/turns/src/main/kotlin/splice/head/wire/DeltaPacer.kt",
+        "line_range": "51-142",
+        "scope": "one streaming client turn",
+        "module": "features/turns",
+        "_by_source": {
+          "/home/marcos/Documents/dev/projects/splice/repo/.Codex/tmp/flow-maps/codemode-streaming/dep-graph.hif.json": {
+            "kind": "class",
+            "path": "features/turns/src/main/kotlin/splice/head/wire/DeltaPacer.kt",
+            "line_range": "50-161",
+            "scope": "per-turn",
+            "module": "features/turns"
+          },
+          "/home/marcos/Documents/dev/projects/splice/repo/.Codex/tmp/flow-maps/codemode-streaming/energy.hif.json": {
+            "kind": "state-container",
+            "path": "features/turns/src/main/kotlin/splice/head/wire/DeltaPacer.kt",
+            "line_range": "51-142",
+            "scope": "one streaming client turn",
+            "lifetime": "request",
+            "persistence": "memory",
+            "owner": "DeltaPacer",
+            "fields": "Held frames; visibleHeld; lastVisibleMs; wake signal; active/finishing",
+            "clearer": "due/takeAll/finishPacing",
+            "clearer_evidence": "features/turns/src/main/kotlin/splice/head/wire/ClientChannel.kt:249-271",
+            "note": "16 ms ticks release whole frames; target held-window 1000 ms; terminal stays behind queued frames; finishing drains or immediate fallback takes all; no splitting of large delta payloads"
+          }
+        },
+        "lifetime": "request",
+        "persistence": "memory",
+        "owner": "DeltaPacer",
+        "fields": "Held frames; visibleHeld; lastVisibleMs; wake signal; active/finishing",
+        "clearer": "due/takeAll/finishPacing",
+        "clearer_evidence": "features/turns/src/main/kotlin/splice/head/wire/ClientChannel.kt:249-271",
+        "note": "16 ms ticks release whole frames; target held-window 1000 ms; terminal stays behind queued frames; finishing drains or immediate fallback takes all; no splitting of large delta payloads"
+      }
+    },
+    {
+      "node": "WsRoundStream",
+      "attrs": {
+        "kind": "class",
+        "path": "integrations/dialects/openai-responses/src/main/kotlin/splice/dialect/responses/websocket/WsRoundStream.kt",
+        "line_range": "19-74",
+        "scope": "",
+        "module": "integrations/dialects/openai-responses",
+        "_by_source": {
+          "/home/marcos/Documents/dev/projects/splice/repo/.Codex/tmp/flow-maps/codemode-streaming/dep-graph.hif.json": {
+            "kind": "class",
+            "path": "integrations/dialects/openai-responses/src/main/kotlin/splice/dialect/responses/websocket/WsRoundStream.kt",
+            "line_range": "19-74",
+            "scope": "",
+            "module": "integrations/dialects/openai-responses"
+          }
+        }
+      }
+    },
+    {
+      "node": "ResponsesTurnState",
+      "attrs": {
+        "kind": "state-container",
+        "path": "integrations/dialects/openai-responses/src/main/kotlin/splice/dialect/responses/ResponsesTurnState.kt",
+        "line_range": "21-124",
+        "scope": "one upstream response round",
+        "lifetime": "request",
+        "persistence": "memory",
+        "owner": "ResponsesTurnState",
+        "fields": "blocks; args; textBuf; thinkingBuf; finalResponse; customCalls",
+        "clearer": "ResponsesStreamTranslator.driveRound/reduceRound",
+        "clearer_evidence": "integrations/dialects/openai-responses/src/main/kotlin/splice/dialect/responses/stream/ResponsesStreamTranslator.kt:91-110",
+        "note": "new ledger each driveRound; block entries removed at item/args completion; whole state falls out of scope when translator returns",
+        "_by_source": {
+          "/home/marcos/Documents/dev/projects/splice/repo/.Codex/tmp/flow-maps/codemode-streaming/energy.hif.json": {
+            "kind": "state-container",
+            "path": "integrations/dialects/openai-responses/src/main/kotlin/splice/dialect/responses/ResponsesTurnState.kt",
+            "line_range": "21-124",
+            "scope": "one upstream response round",
+            "lifetime": "request",
+            "persistence": "memory",
+            "owner": "ResponsesTurnState",
+            "fields": "blocks; args; textBuf; thinkingBuf; finalResponse; customCalls",
+            "clearer": "ResponsesStreamTranslator.driveRound/reduceRound",
+            "clearer_evidence": "integrations/dialects/openai-responses/src/main/kotlin/splice/dialect/responses/stream/ResponsesStreamTranslator.kt:91-110",
+            "note": "new ledger each driveRound; block entries removed at item/args completion; whole state falls out of scope when translator returns"
+          }
+        }
+      }
+    },
+    {
+      "node": "energy_key_1",
+      "attrs": {
+        "kind": "state-key",
+        "label": "blocks; args; textBuf; thinkingBuf; finalResponse; customCalls",
+        "_by_source": {
+          "/home/marcos/Documents/dev/projects/splice/repo/.Codex/tmp/flow-maps/codemode-streaming/energy.hif.json": {
+            "kind": "state-key",
+            "label": "blocks; args; textBuf; thinkingBuf; finalResponse; customCalls"
+          }
+        }
+      }
+    },
+    {
+      "node": "energy_key_2",
+      "attrs": {
+        "kind": "state-key",
+        "label": "SourceSnapshot.text/terminal/itemComplete; per-view cursor position",
+        "_by_source": {
+          "/home/marcos/Documents/dev/projects/splice/repo/.Codex/tmp/flow-maps/codemode-streaming/energy.hif.json": {
+            "kind": "state-key",
+            "label": "SourceSnapshot.text/terminal/itemComplete; per-view cursor position"
+          }
+        }
+      }
+    },
+    {
+      "node": "CodeModeSinkCore",
+      "attrs": {
+        "kind": "state-container",
+        "path": "integrations/providers/codex/src/main/kotlin/splice/provider/codex/stream/CodeModeSwitchingSink.kt",
+        "line_range": "59-136",
+        "scope": "one source round across client attachments",
+        "lifetime": "request",
+        "persistence": "memory",
+        "owner": "CodeModeSinkCore",
+        "fields": "target; pending closure queue; upstream-to-client blocks; text/native delivery witness; cumulative budget",
+        "clearer": "attach/detach/discard; CodeModeSinkWrites.drain",
+        "clearer_evidence": "integrations/providers/codex/src/main/kotlin/splice/provider/codex/stream/CodeModeSwitchingSink.kt:72-89",
+        "note": "attach drains held writes under attachment mutex; detach closes mapped client blocks and clears current witness but preserves upstream identities; discard clears queued draft and mappings",
+        "_by_source": {
+          "/home/marcos/Documents/dev/projects/splice/repo/.Codex/tmp/flow-maps/codemode-streaming/energy.hif.json": {
+            "kind": "state-container",
+            "path": "integrations/providers/codex/src/main/kotlin/splice/provider/codex/stream/CodeModeSwitchingSink.kt",
+            "line_range": "59-136",
+            "scope": "one source round across client attachments",
+            "lifetime": "request",
+            "persistence": "memory",
+            "owner": "CodeModeSinkCore",
+            "fields": "target; pending closure queue; upstream-to-client blocks; text/native delivery witness; cumulative budget",
+            "clearer": "attach/detach/discard; CodeModeSinkWrites.drain",
+            "clearer_evidence": "integrations/providers/codex/src/main/kotlin/splice/provider/codex/stream/CodeModeSwitchingSink.kt:72-89",
+            "note": "attach drains held writes under attachment mutex; detach closes mapped client blocks and clears current witness but preserves upstream identities; discard clears queued draft and mappings"
+          }
+        }
+      }
+    },
+    {
+      "node": "energy_key_3",
+      "attrs": {
+        "kind": "state-key",
+        "label": "target; pending closure queue; upstream-to-client blocks; text/native delivery witness; cumulative budget",
+        "_by_source": {
+          "/home/marcos/Documents/dev/projects/splice/repo/.Codex/tmp/flow-maps/codemode-streaming/energy.hif.json": {
+            "kind": "state-key",
+            "label": "target; pending closure queue; upstream-to-client blocks; text/native delivery witness; cumulative budget"
+          }
+        }
+      }
+    },
+    {
+      "node": "JvmCodeModeCell",
+      "attrs": {
+        "kind": "state-container",
+        "path": "integrations/codemode/src/main/kotlin/splice/codemode/JvmCodeModeCell.kt",
+        "line_range": "31-201",
+        "scope": "one code-mode cell",
+        "lifetime": "user-session",
+        "persistence": "memory",
+        "owner": "JvmCodeModeCell",
+        "fields": "cachedReply; pendingCalls; nextId; sourceEnded; advanceLock; lost/end",
+        "clearer": "advance/receiveAfter/toStep; close/stop",
+        "clearer_evidence": "integrations/codemode/src/main/kotlin/splice/codemode/JvmCodeModeCell.kt:49-79",
+        "note": "initial reply consumed once; results remove callback ids; Completed closes context; failed advance closes; source cursor stays owned while callback results are outstanding",
+        "_by_source": {
+          "/home/marcos/Documents/dev/projects/splice/repo/.Codex/tmp/flow-maps/codemode-streaming/energy.hif.json": {
+            "kind": "state-container",
+            "path": "integrations/codemode/src/main/kotlin/splice/codemode/JvmCodeModeCell.kt",
+            "line_range": "31-201",
+            "scope": "one code-mode cell",
+            "lifetime": "user-session",
+            "persistence": "memory",
+            "owner": "JvmCodeModeCell",
+            "fields": "cachedReply; pendingCalls; nextId; sourceEnded; advanceLock; lost/end",
+            "clearer": "advance/receiveAfter/toStep; close/stop",
+            "clearer_evidence": "integrations/codemode/src/main/kotlin/splice/codemode/JvmCodeModeCell.kt:49-79",
+            "note": "initial reply consumed once; results remove callback ids; Completed closes context; failed advance closes; source cursor stays owned while callback results are outstanding"
+          }
+        }
+      }
+    },
+    {
+      "node": "energy_key_4",
+      "attrs": {
+        "kind": "state-key",
+        "label": "cachedReply; pendingCalls; nextId; sourceEnded; advanceLock; lost/end",
+        "_by_source": {
+          "/home/marcos/Documents/dev/projects/splice/repo/.Codex/tmp/flow-maps/codemode-streaming/energy.hif.json": {
+            "kind": "state-key",
+            "label": "cachedReply; pendingCalls; nextId; sourceEnded; advanceLock; lost/end"
+          }
+        }
+      }
+    },
+    {
+      "node": "CodeModeStatementParser",
+      "attrs": {
+        "kind": "state-container",
+        "path": "integrations/codemode/src/main/kotlin/splice/codemode/CodeModeStatementParser.kt",
+        "line_range": "50-119",
+        "scope": "one guest cell context",
+        "lifetime": "user-session",
+        "persistence": "memory",
+        "owner": "CodeModeStatementParser",
+        "fields": "pending source; original full source; deferredLength; complete/failure",
+        "clearer": "next/finalInput consume pending; WorkerSession.close disposes full context",
+        "clearer_evidence": "integrations/codemode/src/main/kotlin/splice/codemode/CodeModeStatementParser.kt:84-119",
+        "note": "pending prefixes deleted when grammar-certified; complete/error clears pending; original is deliberately retained for whole-program syntax validation until context close",
+        "_by_source": {
+          "/home/marcos/Documents/dev/projects/splice/repo/.Codex/tmp/flow-maps/codemode-streaming/energy.hif.json": {
+            "kind": "state-container",
+            "path": "integrations/codemode/src/main/kotlin/splice/codemode/CodeModeStatementParser.kt",
+            "line_range": "50-119",
+            "scope": "one guest cell context",
+            "lifetime": "user-session",
+            "persistence": "memory",
+            "owner": "CodeModeStatementParser",
+            "fields": "pending source; original full source; deferredLength; complete/failure",
+            "clearer": "next/finalInput consume pending; WorkerSession.close disposes full context",
+            "clearer_evidence": "integrations/codemode/src/main/kotlin/splice/codemode/CodeModeStatementParser.kt:84-119",
+            "note": "pending prefixes deleted when grammar-certified; complete/error clears pending; original is deliberately retained for whole-program syntax validation until context close"
+          }
+        }
+      }
+    },
+    {
+      "node": "energy_key_5",
+      "attrs": {
+        "kind": "state-key",
+        "label": "pending source; original full source; deferredLength; complete/failure",
+        "_by_source": {
+          "/home/marcos/Documents/dev/projects/splice/repo/.Codex/tmp/flow-maps/codemode-streaming/energy.hif.json": {
+            "kind": "state-key",
+            "label": "pending source; original full source; deferredLength; complete/failure"
+          }
+        }
+      }
+    },
+    {
+      "node": "SharedWorkerChannel",
+      "attrs": {
+        "kind": "state-container",
+        "path": "integrations/codemode/src/main/kotlin/splice/codemode/SharedWorkerChannel.kt",
+        "line_range": "35-241",
+        "scope": "one shared host process generation",
+        "lifetime": "process",
+        "persistence": "memory",
+        "owner": "SharedWorkerChannel",
+        "fields": "pending request->answer; cells and closing/exited deferreds; write mutex",
+        "clearer": "deliver/send finally/fail; closeCell",
+        "clearer_evidence": "integrations/codemode/src/main/kotlin/splice/codemode/SharedWorkerChannel.kt:161-164",
+        "note": "reply routing removes request; send finally cancels/removes abandoned answer; cell close releases closing then removes after ack; host failure clears all answers/cells",
+        "_by_source": {
+          "/home/marcos/Documents/dev/projects/splice/repo/.Codex/tmp/flow-maps/codemode-streaming/energy.hif.json": {
+            "kind": "state-container",
+            "path": "integrations/codemode/src/main/kotlin/splice/codemode/SharedWorkerChannel.kt",
+            "line_range": "35-241",
+            "scope": "one shared host process generation",
+            "lifetime": "process",
+            "persistence": "memory",
+            "owner": "SharedWorkerChannel",
+            "fields": "pending request->answer; cells and closing/exited deferreds; write mutex",
+            "clearer": "deliver/send finally/fail; closeCell",
+            "clearer_evidence": "integrations/codemode/src/main/kotlin/splice/codemode/SharedWorkerChannel.kt:161-164",
+            "note": "reply routing removes request; send finally cancels/removes abandoned answer; cell close releases closing then removes after ack; host failure clears all answers/cells"
+          }
+        }
+      }
+    },
+    {
+      "node": "energy_key_6",
+      "attrs": {
+        "kind": "state-key",
+        "label": "pending request->answer; cells and closing/exited deferreds; write mutex",
+        "_by_source": {
+          "/home/marcos/Documents/dev/projects/splice/repo/.Codex/tmp/flow-maps/codemode-streaming/energy.hif.json": {
+            "kind": "state-key",
+            "label": "pending request->answer; cells and closing/exited deferreds; write mutex"
+          }
+        }
+      }
+    },
+    {
+      "node": "CodexCodeModeRegistry",
+      "attrs": {
+        "kind": "state-container",
+        "path": "integrations/providers/codex/src/main/kotlin/splice/provider/codex/CodexCodeModeRegistry.kt",
+        "line_range": "54-108",
+        "scope": "one reusable provider/head bridge",
+        "lifetime": "process",
+        "persistence": "memory",
+        "owner": "CodexCodeModeRegistry",
+        "fields": "records; live cells; startup admissions; history; conversation key locks",
+        "clearer": "CodeModeRecordChanges.complete/lose/onHeadStop; CodeModeCellRetention.park; CodexCodeModeSweeper.expireRecords",
+        "clearer_evidence": "integrations/providers/codex/src/main/kotlin/splice/provider/codex/state/CodeModeCellRetention.kt:153-163",
+        "note": "completion/loss removes live cell; unknown/dead idle cells park after 5 minutes; TTL removes records by conversation; head stop loses active cells; key locks removed when final user releases",
+        "_by_source": {
+          "/home/marcos/Documents/dev/projects/splice/repo/.Codex/tmp/flow-maps/codemode-streaming/energy.hif.json": {
+            "kind": "state-container",
+            "path": "integrations/providers/codex/src/main/kotlin/splice/provider/codex/CodexCodeModeRegistry.kt",
+            "line_range": "54-108",
+            "scope": "one reusable provider/head bridge",
+            "lifetime": "process",
+            "persistence": "memory",
+            "owner": "CodexCodeModeRegistry",
+            "fields": "records; live cells; startup admissions; history; conversation key locks",
+            "clearer": "CodeModeRecordChanges.complete/lose/onHeadStop; CodeModeCellRetention.park; CodexCodeModeSweeper.expireRecords",
+            "clearer_evidence": "integrations/providers/codex/src/main/kotlin/splice/provider/codex/state/CodeModeCellRetention.kt:153-163",
+            "note": "completion/loss removes live cell; unknown/dead idle cells park after 5 minutes; TTL removes records by conversation; head stop loses active cells; key locks removed when final user releases"
+          }
+        }
+      }
+    },
+    {
+      "node": "energy_key_7",
+      "attrs": {
+        "kind": "state-key",
+        "label": "records; live cells; startup admissions; history; conversation key locks",
+        "_by_source": {
+          "/home/marcos/Documents/dev/projects/splice/repo/.Codex/tmp/flow-maps/codemode-streaming/energy.hif.json": {
+            "kind": "state-key",
+            "label": "records; live cells; startup admissions; history; conversation key locks"
+          }
+        }
+      }
+    },
+    {
+      "node": "CodexCodeModeStore",
+      "attrs": {
+        "kind": "state-container",
+        "path": "integrations/providers/codex/src/main/kotlin/splice/provider/codex/CodexCodeModeStore.kt",
+        "line_range": "73-115",
+        "scope": "per-conversation retained snapshots and state directory",
+        "lifetime": "app-install",
+        "persistence": "disk",
+        "owner": "CodexCodeModeStore",
+        "fields": "kept snapshots; failed/uncertain keys; checkpoint and JSONL cell deltas",
+        "clearer": "remove/published/release; save retries unsettled keys",
+        "clearer_evidence": "integrations/providers/codex/src/main/kotlin/splice/provider/codex/CodexCodeModeStore.kt:296-308",
+        "note": "empty conversation deletes durable files and kept snapshot; successful checkpoint replaces journal; failed keys retry until disk agrees; provider terminal disposal clears hot snapshots only when settled",
+        "_by_source": {
+          "/home/marcos/Documents/dev/projects/splice/repo/.Codex/tmp/flow-maps/codemode-streaming/energy.hif.json": {
+            "kind": "state-container",
+            "path": "integrations/providers/codex/src/main/kotlin/splice/provider/codex/CodexCodeModeStore.kt",
+            "line_range": "73-115",
+            "scope": "per-conversation retained snapshots and state directory",
+            "lifetime": "app-install",
+            "persistence": "disk",
+            "owner": "CodexCodeModeStore",
+            "fields": "kept snapshots; failed/uncertain keys; checkpoint and JSONL cell deltas",
+            "clearer": "remove/published/release; save retries unsettled keys",
+            "clearer_evidence": "integrations/providers/codex/src/main/kotlin/splice/provider/codex/CodexCodeModeStore.kt:296-308",
+            "note": "empty conversation deletes durable files and kept snapshot; successful checkpoint replaces journal; failed keys retry until disk agrees; provider terminal disposal clears hot snapshots only when settled"
+          }
+        }
+      }
+    },
+    {
+      "node": "energy_key_8",
+      "attrs": {
+        "kind": "state-key",
+        "label": "kept snapshots; failed/uncertain keys; checkpoint and JSONL cell deltas",
+        "_by_source": {
+          "/home/marcos/Documents/dev/projects/splice/repo/.Codex/tmp/flow-maps/codemode-streaming/energy.hif.json": {
+            "kind": "state-key",
+            "label": "kept snapshots; failed/uncertain keys; checkpoint and JSONL cell deltas"
+          }
+        }
+      }
+    },
+    {
+      "node": "energy_key_9",
+      "attrs": {
+        "kind": "state-key",
+        "label": "Held frames; visibleHeld; lastVisibleMs; wake signal; active/finishing",
+        "_by_source": {
+          "/home/marcos/Documents/dev/projects/splice/repo/.Codex/tmp/flow-maps/codemode-streaming/energy.hif.json": {
+            "kind": "state-key",
+            "label": "Held frames; visibleHeld; lastVisibleMs; wake signal; active/finishing"
+          }
+        }
+      }
+    },
+    {
+      "node": "CodexCodeModeMachine.started",
+      "attrs": {
+        "kind": "state-container",
+        "path": "integrations/providers/codex/src/main/kotlin/splice/provider/codex/CodexCodeModeMachine.kt",
+        "line_range": "53-79",
+        "scope": "one reusable bridge machine",
+        "lifetime": "process",
+        "persistence": "memory",
+        "owner": "CodexCodeModeMachine",
+        "fields": "record-id -> first-advance wall-clock timestamp",
+        "clearer": "machine completion/poison/cancel/source IO arms only",
+        "clearer_evidence": "integrations/providers/codex/src/main/kotlin/splice/provider/codex/CodexCodeModeMachine.kt:173-179",
+        "note": "no cleanup is wired to autonomous park/TTL/head-stop; those paths may remove record/cell while retaining this timestamp",
+        "_by_source": {
+          "/home/marcos/Documents/dev/projects/splice/repo/.Codex/tmp/flow-maps/codemode-streaming/energy.hif.json": {
+            "kind": "state-container",
+            "path": "integrations/providers/codex/src/main/kotlin/splice/provider/codex/CodexCodeModeMachine.kt",
+            "line_range": "53-79",
+            "scope": "one reusable bridge machine",
+            "lifetime": "process",
+            "persistence": "memory",
+            "owner": "CodexCodeModeMachine",
+            "fields": "record-id -> first-advance wall-clock timestamp",
+            "clearer": "machine completion/poison/cancel/source IO arms only",
+            "clearer_evidence": "integrations/providers/codex/src/main/kotlin/splice/provider/codex/CodexCodeModeMachine.kt:173-179",
+            "note": "no cleanup is wired to autonomous park/TTL/head-stop; those paths may remove record/cell while retaining this timestamp"
+          }
+        }
+      }
+    },
+    {
+      "node": "energy_key_10",
+      "attrs": {
+        "kind": "state-key",
+        "label": "record-id -> first-advance wall-clock timestamp",
+        "_by_source": {
+          "/home/marcos/Documents/dev/projects/splice/repo/.Codex/tmp/flow-maps/codemode-streaming/energy.hif.json": {
+            "kind": "state-key",
+            "label": "record-id -> first-advance wall-clock timestamp"
+          }
+        }
+      }
+    },
+    {
+      "node": "SourceResponseLifetime",
+      "attrs": {
+        "path": "integrations/providers/codex/src/main/kotlin/splice/provider/codex/stream/CodeModeSourceCapture.kt",
+        "line_range": "120-145",
+        "kind": "trigger",
+        "label": "upstream response completed / failed / cancelled; round lease ends",
+        "_by_source": {
+          "/home/marcos/Documents/dev/projects/splice/repo/.Codex/tmp/flow-maps/codemode-streaming/energy.hif.json": {
+            "path": "integrations/providers/codex/src/main/kotlin/splice/provider/codex/stream/CodeModeSourceCapture.kt",
+            "line_range": "120-145",
+            "kind": "trigger",
+            "label": "upstream response completed / failed / cancelled; round lease ends"
+          }
+        }
+      }
+    },
+    {
+      "node": "ClientAttachment",
+      "attrs": {
+        "path": "integrations/providers/codex/src/main/kotlin/splice/provider/codex/stream/CodeModeSwitchingSink.kt",
+        "line_range": "72-107",
+        "kind": "trigger",
+        "label": "client callback boundary detaches; next result request attaches; transport fallback discards draft",
+        "_by_source": {
+          "/home/marcos/Documents/dev/projects/splice/repo/.Codex/tmp/flow-maps/codemode-streaming/energy.hif.json": {
+            "path": "integrations/providers/codex/src/main/kotlin/splice/provider/codex/stream/CodeModeSwitchingSink.kt",
+            "line_range": "72-107",
+            "kind": "trigger",
+            "label": "client callback boundary detaches; next result request attaches; transport fallback discards draft"
+          }
+        }
+      }
+    },
+    {
+      "node": "RuntimeCellLifecycle",
+      "attrs": {
+        "path": "integrations/codemode/src/main/kotlin/splice/codemode/JvmCodeModeCell.kt",
+        "line_range": "49-79",
+        "kind": "trigger",
+        "label": "result advance; source completion; context close; host transport close",
+        "_by_source": {
+          "/home/marcos/Documents/dev/projects/splice/repo/.Codex/tmp/flow-maps/codemode-streaming/energy.hif.json": {
+            "path": "integrations/codemode/src/main/kotlin/splice/codemode/JvmCodeModeCell.kt",
+            "line_range": "49-79",
+            "kind": "trigger",
+            "label": "result advance; source completion; context close; host transport close"
+          }
+        }
+      }
+    },
+    {
+      "node": "RegistryRetention",
+      "attrs": {
+        "path": "integrations/providers/codex/src/main/kotlin/splice/provider/codex/state/CodeModeCellRetention.kt",
+        "line_range": "51-88",
+        "kind": "trigger",
+        "label": "complete/lost; supersession; dead/unknown-session lease; conversation TTL; head/provider stop",
+        "_by_source": {
+          "/home/marcos/Documents/dev/projects/splice/repo/.Codex/tmp/flow-maps/codemode-streaming/energy.hif.json": {
+            "path": "integrations/providers/codex/src/main/kotlin/splice/provider/codex/state/CodeModeCellRetention.kt",
+            "line_range": "51-88",
+            "kind": "trigger",
+            "label": "complete/lost; supersession; dead/unknown-session lease; conversation TTL; head/provider stop"
+          }
+        }
+      }
+    },
+    {
+      "node": "SocketPacing",
+      "attrs": {
+        "path": "features/turns/src/main/kotlin/splice/head/wire/ClientChannel.kt",
+        "line_range": "205-271",
+        "kind": "trigger",
+        "label": "16ms release tick; last emitted frame; pacer cancellation/fallback",
+        "_by_source": {
+          "/home/marcos/Documents/dev/projects/splice/repo/.Codex/tmp/flow-maps/codemode-streaming/energy.hif.json": {
+            "path": "features/turns/src/main/kotlin/splice/head/wire/ClientChannel.kt",
+            "line_range": "205-271",
+            "kind": "trigger",
+            "label": "16ms release tick; last emitted frame; pacer cancellation/fallback"
+          }
+        }
+      }
+    },
+    {
+      "node": "Round posted",
+      "attrs": {
+        "kind": "state",
+        "terminal": false,
+        "path": "integrations/providers/codex/src/main/kotlin/splice/provider/codex/stream/CodeModeUpstreamPost.kt",
+        "line_range": "126-146",
+        "note": "The interceptor posts initial or canonicalized Responses history through the ordinary transport.",
+        "_by_source": {
+          "/home/marcos/Documents/dev/projects/splice/repo/.Codex/tmp/flow-maps/codemode-streaming/state-machine.hif.json": {
+            "kind": "state",
+            "terminal": false,
+            "path": "integrations/providers/codex/src/main/kotlin/splice/provider/codex/stream/CodeModeUpstreamPost.kt",
+            "line_range": "126-146",
+            "note": "The interceptor posts initial or canonicalized Responses history through the ordinary transport."
+          }
+        }
+      }
+    },
+    {
+      "node": "Streaming visible output",
+      "attrs": {
+        "kind": "state",
+        "terminal": false,
+        "path": "integrations/dialects/openai-responses/src/main/kotlin/splice/dialect/responses/stream/ResponsesItemFold.kt",
+        "line_range": "148-164",
+        "note": "Text deltas write directly to the current sink; reasoning has its own live fold. Fold-eligible turns may wrap text in BufferingWireSink.",
+        "_by_source": {
+          "/home/marcos/Documents/dev/projects/splice/repo/.Codex/tmp/flow-maps/codemode-streaming/state-machine.hif.json": {
+            "kind": "state",
+            "terminal": false,
+            "path": "integrations/dialects/openai-responses/src/main/kotlin/splice/dialect/responses/stream/ResponsesItemFold.kt",
+            "line_range": "148-164",
+            "note": "Text deltas write directly to the current sink; reasoning has its own live fold. Fold-eligible turns may wrap text in BufferingWireSink."
+          }
+        }
+      }
+    },
+    {
+      "node": "Exec admitted; source and worker streaming",
+      "attrs": {
+        "kind": "state",
+        "terminal": false,
+        "path": "integrations/providers/codex/src/main/kotlin/splice/provider/codex/stream/CodeModeSourceCapture.kt",
+        "line_range": "63-85",
+        "note": "Started admits a durable record; deltas extend immutable source prefix. The JavaScript source is intentionally absent from client UI.",
+        "_by_source": {
+          "/home/marcos/Documents/dev/projects/splice/repo/.Codex/tmp/flow-maps/codemode-streaming/state-machine.hif.json": {
+            "kind": "state",
+            "terminal": false,
+            "path": "integrations/providers/codex/src/main/kotlin/splice/provider/codex/stream/CodeModeSourceCapture.kt",
+            "line_range": "63-85",
+            "note": "Started admits a durable record; deltas extend immutable source prefix. The JavaScript source is intentionally absent from client UI."
+          }
+        }
+      }
+    },
+    {
+      "node": "Executable callback ready",
+      "attrs": {
+        "kind": "state",
+        "terminal": false,
+        "path": "integrations/codemode/src/main/kotlin/splice/codemode/StreamingWorkerSession.kt",
+        "line_range": "41-82",
+        "note": "A certified statement with ready dependencies executes; the runtime reports Calls independently of source completion.",
+        "_by_source": {
+          "/home/marcos/Documents/dev/projects/splice/repo/.Codex/tmp/flow-maps/codemode-streaming/state-machine.hif.json": {
+            "kind": "state",
+            "terminal": false,
+            "path": "integrations/codemode/src/main/kotlin/splice/codemode/StreamingWorkerSession.kt",
+            "line_range": "41-82",
+            "note": "A certified statement with ready dependencies executes; the runtime reports Calls independently of source completion."
+          }
+        }
+      }
+    },
+    {
+      "node": "Item complete; certification pending",
+      "attrs": {
+        "kind": "state",
+        "terminal": false,
+        "path": "integrations/providers/codex/src/main/kotlin/splice/provider/codex/stream/CodeModeSourceBuffer.kt",
+        "line_range": "57-68",
+        "note": "Item-done seals unread source and blocks publishing a callback until the response outcome certifies the full source.",
+        "_by_source": {
+          "/home/marcos/Documents/dev/projects/splice/repo/.Codex/tmp/flow-maps/codemode-streaming/state-machine.hif.json": {
+            "kind": "state",
+            "terminal": false,
+            "path": "integrations/providers/codex/src/main/kotlin/splice/provider/codex/stream/CodeModeSourceBuffer.kt",
+            "line_range": "57-68",
+            "note": "Item-done seals unread source and blocks publishing a callback until the response outcome certifies the full source."
+          }
+        }
+      }
+    },
+    {
+      "node": "Client callbacks emitted; source parked",
+      "attrs": {
+        "kind": "state",
+        "terminal": false,
+        "path": "integrations/providers/codex/src/main/kotlin/splice/provider/codex/CodexCodeModeMachine.kt",
+        "line_range": "109-155",
+        "note": "Call identities and arguments persist before ordinary client tool_use blocks are written; the source reader can remain live and detached.",
+        "_by_source": {
+          "/home/marcos/Documents/dev/projects/splice/repo/.Codex/tmp/flow-maps/codemode-streaming/state-machine.hif.json": {
+            "kind": "state",
+            "terminal": false,
+            "path": "integrations/providers/codex/src/main/kotlin/splice/provider/codex/CodexCodeModeMachine.kt",
+            "line_range": "109-155",
+            "note": "Call identities and arguments persist before ordinary client tool_use blocks are written; the source reader can remain live and detached."
+          }
+        }
+      }
+    },
+    {
+      "node": "Client results accepted; worker resumed",
+      "attrs": {
+        "kind": "state",
+        "terminal": false,
+        "path": "integrations/providers/codex/src/main/kotlin/splice/provider/codex/CodexCodeModeResume.kt",
+        "line_range": "98-171",
+        "note": "Only matching visible call results are accepted; results translate back to runtime ids and resume the retained cell.",
+        "_by_source": {
+          "/home/marcos/Documents/dev/projects/splice/repo/.Codex/tmp/flow-maps/codemode-streaming/state-machine.hif.json": {
+            "kind": "state",
+            "terminal": false,
+            "path": "integrations/providers/codex/src/main/kotlin/splice/provider/codex/CodexCodeModeResume.kt",
+            "line_range": "98-171",
+            "note": "Only matching visible call results are accepted; results translate back to runtime ids and resume the retained cell."
+          }
+        }
+      }
+    },
+    {
+      "node": "Script completed; canonical history ready",
+      "attrs": {
+        "kind": "state",
+        "terminal": false,
+        "path": "integrations/providers/codex/src/main/kotlin/splice/provider/codex/CodexCodeModeDriver.kt",
+        "line_range": "102-126",
+        "note": "The outer exec output and source continuity are inserted into canonical upstream history, then a hidden next round posts.",
+        "_by_source": {
+          "/home/marcos/Documents/dev/projects/splice/repo/.Codex/tmp/flow-maps/codemode-streaming/state-machine.hif.json": {
+            "kind": "state",
+            "terminal": false,
+            "path": "integrations/providers/codex/src/main/kotlin/splice/provider/codex/CodexCodeModeDriver.kt",
+            "line_range": "102-126",
+            "note": "The outer exec output and source continuity are inserted into canonical upstream history, then a hidden next round posts."
+          }
+        }
+      }
+    },
+    {
+      "node": "Honest client terminal",
+      "attrs": {
+        "kind": "state",
+        "terminal": true,
+        "path": "features/turns/src/main/kotlin/splice/head/pipeline/StreamFinish.kt",
+        "line_range": "1-170",
+        "note": "The outer turn pipeline emits one success or honest error/abandonment; code-mode source reader has no terminal authority.",
+        "_by_source": {
+          "/home/marcos/Documents/dev/projects/splice/repo/.Codex/tmp/flow-maps/codemode-streaming/state-machine.hif.json": {
+            "kind": "state",
+            "terminal": true,
+            "path": "features/turns/src/main/kotlin/splice/head/pipeline/StreamFinish.kt",
+            "line_range": "1-170",
+            "note": "The outer turn pipeline emits one success or honest error/abandonment; code-mode source reader has no terminal authority."
+          }
+        }
+      }
+    },
+    {
+      "node": "Execution lost or interrupted",
+      "attrs": {
+        "kind": "state",
+        "terminal": false,
+        "path": "integrations/providers/codex/src/main/kotlin/splice/provider/codex/CodexCodeModeResume.kt",
+        "line_range": "78-95",
+        "note": "A lost cell is not rerun. Accepted results and unresolved calls become an interruption output that the model can continue from.",
+        "_by_source": {
+          "/home/marcos/Documents/dev/projects/splice/repo/.Codex/tmp/flow-maps/codemode-streaming/state-machine.hif.json": {
+            "kind": "state",
+            "terminal": false,
+            "path": "integrations/providers/codex/src/main/kotlin/splice/provider/codex/CodexCodeModeResume.kt",
+            "line_range": "78-95",
+            "note": "A lost cell is not rerun. Accepted results and unresolved calls become an interruption output that the model can continue from."
+          }
+        }
+      }
+    },
+    {
+      "node": "Retryable startup before dispatch",
+      "attrs": {
+        "kind": "state",
+        "terminal": false,
+        "path": "integrations/providers/codex/src/main/kotlin/splice/provider/codex/stream/CodeModeRuntimeStarter.kt",
+        "line_range": "81-115",
+        "note": "Only CodeModeStartException proves no executable source was dispatched; source is retained for exact retry.",
+        "_by_source": {
+          "/home/marcos/Documents/dev/projects/splice/repo/.Codex/tmp/flow-maps/codemode-streaming/state-machine.hif.json": {
+            "kind": "state",
+            "terminal": false,
+            "path": "integrations/providers/codex/src/main/kotlin/splice/provider/codex/stream/CodeModeRuntimeStarter.kt",
+            "line_range": "81-115",
+            "note": "Only CodeModeStartException proves no executable source was dispatched; source is retained for exact retry."
+          }
+        }
+      }
+    },
+    {
+      "node": "Response terminal parsed; transport draining",
+      "attrs": {
+        "kind": "state",
+        "terminal": false,
+        "path": "integrations/dialects/openai-responses/src/main/kotlin/splice/dialect/responses/stream/ResponsesStreamTranslator.kt",
+        "line_range": "113-170",
+        "note": "Terminal state is latched but collect continues until upstream Flow completes. SSE EOF is currently required to publish the round outcome.",
+        "_by_source": {
+          "/home/marcos/Documents/dev/projects/splice/repo/.Codex/tmp/flow-maps/codemode-streaming/state-machine.hif.json": {
+            "kind": "state",
+            "terminal": false,
+            "path": "integrations/dialects/openai-responses/src/main/kotlin/splice/dialect/responses/stream/ResponsesStreamTranslator.kt",
+            "line_range": "113-170",
+            "note": "Terminal state is latched but collect continues until upstream Flow completes. SSE EOF is currently required to publish the round outcome."
+          }
+        }
+      }
+    },
+    {
+      "node": "Round outcome available immediately at terminal",
+      "attrs": {
+        "kind": "expected-state",
+        "path": "integrations/dialects/openai-responses/src/main/kotlin/splice/dialect/responses/stream/ResponsesStreamTranslator.kt",
+        "line_range": "113-170",
+        "_by_source": {
+          "/home/marcos/Documents/dev/projects/splice/repo/.Codex/tmp/flow-maps/codemode-streaming/state-machine.hif.json": {
+            "kind": "expected-state",
+            "path": "integrations/dialects/openai-responses/src/main/kotlin/splice/dialect/responses/stream/ResponsesStreamTranslator.kt",
+            "line_range": "113-170"
+          }
+        }
+      }
+    },
+    {
+      "node": "response.completed event",
+      "attrs": {
+        "kind": "event",
+        "path": "integrations/dialects/openai-responses/src/main/kotlin/splice/dialect/responses/stream/ResponsesEventReducer.kt",
+        "line_range": "65-85",
+        "_by_source": {
+          "/home/marcos/Documents/dev/projects/splice/repo/.Codex/tmp/flow-maps/codemode-streaming/state-machine.hif.json": {
+            "kind": "event",
+            "path": "integrations/dialects/openai-responses/src/main/kotlin/splice/dialect/responses/stream/ResponsesEventReducer.kt",
+            "line_range": "65-85"
+          }
+        }
+      }
+    },
+    {
+      "node": "ResponsesStreamTranslator.reduceRound",
+      "attrs": {
+        "kind": "fun",
+        "path": "integrations/dialects/openai-responses/src/main/kotlin/splice/dialect/responses/stream/ResponsesStreamTranslator.kt",
+        "line_range": "113-170",
+        "_by_source": {
+          "/home/marcos/Documents/dev/projects/splice/repo/.Codex/tmp/flow-maps/codemode-streaming/state-machine.hif.json": {
+            "kind": "fun",
+            "path": "integrations/dialects/openai-responses/src/main/kotlin/splice/dialect/responses/stream/ResponsesStreamTranslator.kt",
+            "line_range": "113-170"
+          }
+        }
+      }
+    },
+    {
+      "node": "CODEMODE-STREAM-PAUSES",
+      "attrs": {
+        "kind": "bug",
+        "note": "Reported pause/burst symptom; conditional terminal-to-EOF latency mechanism confirmed in source, traffic prevalence unmeasured",
+        "_by_source": {
+          "/home/marcos/Documents/dev/projects/splice/repo/.Codex/tmp/flow-maps/codemode-streaming/state-machine.hif.json": {
+            "kind": "bug",
+            "note": "Reported pause/burst symptom; conditional terminal-to-EOF latency mechanism confirmed in source, traffic prevalence unmeasured"
+          }
+        }
+      }
+    },
+    {
+      "node": "Rejected argument leaves sequence unchanged",
+      "attrs": {
+        "kind": "expected-state",
+        "path": "integrations/codemode/src/main/kotlin/splice/codemode/CodeModeWorker.kt",
+        "line_range": "183-200",
+        "_by_source": {
+          "/home/marcos/Documents/dev/projects/splice/repo/.Codex/tmp/flow-maps/codemode-streaming/state-machine.hif.json": {
+            "kind": "expected-state",
+            "path": "integrations/codemode/src/main/kotlin/splice/codemode/CodeModeWorker.kt",
+            "line_range": "183-200"
+          }
+        }
+      }
+    },
+    {
+      "node": "Object serializes to null; script catches rejection",
+      "attrs": {
+        "kind": "event",
+        "path": "integrations/codemode/src/main/kotlin/splice/codemode/CodeModeWorker.kt",
+        "line_range": "192-200",
+        "_by_source": {
+          "/home/marcos/Documents/dev/projects/splice/repo/.Codex/tmp/flow-maps/codemode-streaming/state-machine.hif.json": {
+            "kind": "event",
+            "path": "integrations/codemode/src/main/kotlin/splice/codemode/CodeModeWorker.kt",
+            "line_range": "192-200"
+          }
+        }
+      }
+    },
+    {
+      "node": "CodeModeWorker.LAUNCHER.call",
+      "attrs": {
+        "kind": "fun",
+        "path": "integrations/codemode/src/main/kotlin/splice/codemode/CodeModeWorker.kt",
+        "line_range": "183-200",
+        "_by_source": {
+          "/home/marcos/Documents/dev/projects/splice/repo/.Codex/tmp/flow-maps/codemode-streaming/state-machine.hif.json": {
+            "kind": "fun",
+            "path": "integrations/codemode/src/main/kotlin/splice/codemode/CodeModeWorker.kt",
+            "line_range": "183-200"
+          }
+        }
+      }
+    },
+    {
+      "node": "CODEMODE-RECURRING-FAILURES",
+      "attrs": {
+        "kind": "bug",
+        "note": "Reported recurring code-mode failures; a concrete argument-rejection recovery failure is visible in source",
+        "_by_source": {
+          "/home/marcos/Documents/dev/projects/splice/repo/.Codex/tmp/flow-maps/codemode-streaming/state-machine.hif.json": {
+            "kind": "bug",
+            "note": "Reported recurring code-mode failures; a concrete argument-rejection recovery failure is visible in source"
+          }
+        }
+      }
+    }
+  ],
+  "edges": [
+    {
+      "edge": "dep_turn_bridge",
+      "attrs": {
+        "relation": "calls",
+        "note": "prepare installs the interceptor with current tool results and disableParallel, CodexCodeModeTurnBuilder.kt:50-64.",
+        "_by_source": {
+          "/home/marcos/Documents/dev/projects/splice/repo/.Codex/tmp/flow-maps/codemode-streaming/dep-graph.hif.json": {
+            "relation": "calls",
+            "note": "prepare installs the interceptor with current tool results and disableParallel, CodexCodeModeTurnBuilder.kt:50-64."
+          }
+        }
+      }
+    },
+    {
+      "edge": "dep_interception",
+      "attrs": {
+        "relation": "calls",
+        "note": "RoundStrategy.kt:98-104 invokes a RoundBodyInterceptor when available; controller serializes conversation before CodexCodeModeDriver.",
+        "_by_source": {
+          "/home/marcos/Documents/dev/projects/splice/repo/.Codex/tmp/flow-maps/codemode-streaming/dep-graph.hif.json": {
+            "relation": "calls",
+            "note": "RoundStrategy.kt:98-104 invokes a RoundBodyInterceptor when available; controller serializes conversation before CodexCodeModeDriver."
+          }
+        }
+      }
+    },
+    {
+      "edge": "dep_interceptor_driver",
+      "attrs": {
+        "relation": "calls",
+        "note": "Via CodexCodeModeTurn.run/ordinary, CodexCodeModeTurn.kt:83-123,135-159.",
+        "_by_source": {
+          "/home/marcos/Documents/dev/projects/splice/repo/.Codex/tmp/flow-maps/codemode-streaming/dep-graph.hif.json": {
+            "relation": "calls",
+            "note": "Via CodexCodeModeTurn.run/ordinary, CodexCodeModeTurn.kt:83-123,135-159."
+          }
+        }
+      }
+    },
+    {
+      "edge": "dep_start_source",
+      "attrs": {
+        "relation": "calls",
+        "note": "CodexCodeModeDriver.kt:46-63 begins a source with independent lifetime and awaits admission.",
+        "_by_source": {
+          "/home/marcos/Documents/dev/projects/splice/repo/.Codex/tmp/flow-maps/codemode-streaming/dep-graph.hif.json": {
+            "relation": "calls",
+            "note": "CodexCodeModeDriver.kt:46-63 begins a source with independent lifetime and awaits admission."
+          }
+        }
+      }
+    },
+    {
+      "edge": "dep_own_source",
+      "attrs": {
+        "relation": "calls",
+        "note": "CodeModeStreams.kt:93-110 starts an independently scoped redirectable upstream source.",
+        "_by_source": {
+          "/home/marcos/Documents/dev/projects/splice/repo/.Codex/tmp/flow-maps/codemode-streaming/dep-graph.hif.json": {
+            "relation": "calls",
+            "note": "CodeModeStreams.kt:93-110 starts an independently scoped redirectable upstream source."
+          }
+        }
+      }
+    },
+    {
+      "edge": "dep_live_round_sink",
+      "attrs": {
+        "relation": "calls",
+        "note": "CodeModeLiveRound.kt:48,108-132 redirects translated output to an attachable client step.",
+        "_by_source": {
+          "/home/marcos/Documents/dev/projects/splice/repo/.Codex/tmp/flow-maps/codemode-streaming/dep-graph.hif.json": {
+            "relation": "calls",
+            "note": "CodeModeLiveRound.kt:48,108-132 redirects translated output to an attachable client step."
+          }
+        }
+      }
+    },
+    {
+      "edge": "dep_source_post",
+      "attrs": {
+        "relation": "calls",
+        "note": "Via CodeModeRedirectablePost/ObservedRoundPost; SseRoundDriver.kt:59-67 attempts WebSocket, then SSE.",
+        "_by_source": {
+          "/home/marcos/Documents/dev/projects/splice/repo/.Codex/tmp/flow-maps/codemode-streaming/dep-graph.hif.json": {
+            "relation": "calls",
+            "note": "Via CodeModeRedirectablePost/ObservedRoundPost; SseRoundDriver.kt:59-67 attempts WebSocket, then SSE."
+          }
+        }
+      }
+    },
+    {
+      "edge": "dep_sse_transport",
+      "attrs": {
+        "relation": "calls",
+        "note": "Successful HTTP response is consumed in SseRoundConsume; SseRoundDriver.kt:66-67 via SseRoundPost.",
+        "_by_source": {
+          "/home/marcos/Documents/dev/projects/splice/repo/.Codex/tmp/flow-maps/codemode-streaming/dep-graph.hif.json": {
+            "relation": "calls",
+            "note": "Successful HTTP response is consumed in SseRoundConsume; SseRoundDriver.kt:66-67 via SseRoundPost."
+          }
+        }
+      }
+    },
+    {
+      "edge": "dep_translator_events",
+      "attrs": {
+        "relation": "calls",
+        "note": "SseRoundConsume.kt:120-124 obtains provider translator and drives the reader-backed event Flow.",
+        "_by_source": {
+          "/home/marcos/Documents/dev/projects/splice/repo/.Codex/tmp/flow-maps/codemode-streaming/dep-graph.hif.json": {
+            "relation": "calls",
+            "note": "SseRoundConsume.kt:120-124 obtains provider translator and drives the reader-backed event Flow."
+          }
+        }
+      }
+    },
+    {
+      "edge": "dep_event_fold",
+      "attrs": {
+        "relation": "calls",
+        "note": "ResponsesStreamTranslator.kt:107-110,133 reduces each event into buffers and sink operations.",
+        "_by_source": {
+          "/home/marcos/Documents/dev/projects/splice/repo/.Codex/tmp/flow-maps/codemode-streaming/dep-graph.hif.json": {
+            "relation": "calls",
+            "note": "ResponsesStreamTranslator.kt:107-110,133 reduces each event into buffers and sink operations."
+          }
+        }
+      }
+    },
+    {
+      "edge": "dep_source_reducer",
+      "attrs": {
+        "relation": "calls",
+        "note": "ResponsesEventReducer.kt:42-43,52 routes item added/done and custom_tool_call_input.delta to progress.",
+        "_by_source": {
+          "/home/marcos/Documents/dev/projects/splice/repo/.Codex/tmp/flow-maps/codemode-streaming/dep-graph.hif.json": {
+            "relation": "calls",
+            "note": "ResponsesEventReducer.kt:42-43,52 routes item added/done and custom_tool_call_input.delta to progress."
+          }
+        }
+      }
+    },
+    {
+      "edge": "dep_runtime",
+      "attrs": {
+        "relation": "calls",
+        "note": "Through CodeModeRuntimeStarter.start/open; JvmCodeModeRuntime.kt:111-136 reads the source and creates streaming or complete worker.",
+        "_by_source": {
+          "/home/marcos/Documents/dev/projects/splice/repo/.Codex/tmp/flow-maps/codemode-streaming/dep-graph.hif.json": {
+            "relation": "calls",
+            "note": "Through CodeModeRuntimeStarter.start/open; JvmCodeModeRuntime.kt:111-136 reads the source and creates streaming or complete worker."
+          }
+        }
+      }
+    },
+    {
+      "edge": "dep_first_advance",
+      "attrs": {
+        "relation": "calls",
+        "note": "CodexCodeModeDriver.kt:93-99 and startRuntime route to machine.advance after worker placement.",
+        "_by_source": {
+          "/home/marcos/Documents/dev/projects/splice/repo/.Codex/tmp/flow-maps/codemode-streaming/dep-graph.hif.json": {
+            "relation": "calls",
+            "note": "CodexCodeModeDriver.kt:93-99 and startRuntime route to machine.advance after worker placement."
+          }
+        }
+      }
+    },
+    {
+      "edge": "dep_machine_cell",
+      "attrs": {
+        "relation": "calls",
+        "note": "CodexCodeModeMachine.kt:193-195 advances the retained wrapped worker cell; dispatchStep.kt:247 handles callbacks.",
+        "_by_source": {
+          "/home/marcos/Documents/dev/projects/splice/repo/.Codex/tmp/flow-maps/codemode-streaming/dep-graph.hif.json": {
+            "relation": "calls",
+            "note": "CodexCodeModeMachine.kt:193-195 advances the retained wrapped worker cell; dispatchStep.kt:247 handles callbacks."
+          }
+        }
+      }
+    },
+    {
+      "edge": "dep_result_resume",
+      "attrs": {
+        "relation": "calls",
+        "note": "CodexCodeModeResume.kt:145-170 forwards newly accepted tool results into the same retained cell.",
+        "_by_source": {
+          "/home/marcos/Documents/dev/projects/splice/repo/.Codex/tmp/flow-maps/codemode-streaming/dep-graph.hif.json": {
+            "relation": "calls",
+            "note": "CodexCodeModeResume.kt:145-170 forwards newly accepted tool results into the same retained cell."
+          }
+        }
+      }
+    },
+    {
+      "edge": "dep_continue",
+      "attrs": {
+        "relation": "calls",
+        "note": "After record completion, CodexCodeModeResume.kt:125 sends canonical script output upstream through finishGenerated.",
+        "_by_source": {
+          "/home/marcos/Documents/dev/projects/splice/repo/.Codex/tmp/flow-maps/codemode-streaming/dep-graph.hif.json": {
+            "relation": "calls",
+            "note": "After record completion, CodexCodeModeResume.kt:125 sends canonical script output upstream through finishGenerated."
+          }
+        }
+      }
+    },
+    {
+      "edge": "dep_prose_output",
+      "attrs": {
+        "relation": "calls",
+        "note": "CodeModeSinkContent forwards attached output, or CodeModeSinkWrites buffers it while detached.",
+        "_by_source": {
+          "/home/marcos/Documents/dev/projects/splice/repo/.Codex/tmp/flow-maps/codemode-streaming/dep-graph.hif.json": {
+            "relation": "calls",
+            "note": "CodeModeSinkContent forwards attached output, or CodeModeSinkWrites buffers it while detached."
+          }
+        }
+      }
+    },
+    {
+      "edge": "dep_tool_output",
+      "attrs": {
+        "relation": "calls",
+        "note": "CodexCodeModeMachine.replay:143-156 opens and closes real client tool calls, returning hasToolUse.",
+        "_by_source": {
+          "/home/marcos/Documents/dev/projects/splice/repo/.Codex/tmp/flow-maps/codemode-streaming/dep-graph.hif.json": {
+            "relation": "calls",
+            "note": "CodexCodeModeMachine.replay:143-156 opens and closes real client tool calls, returning hasToolUse."
+          }
+        }
+      }
+    },
+    {
+      "edge": "dep_channel",
+      "attrs": {
+        "relation": "calls",
+        "note": "SseFrameWriter/FrameWrite connection; frames travel through mutex-protected timedClientWrite.",
+        "_by_source": {
+          "/home/marcos/Documents/dev/projects/splice/repo/.Codex/tmp/flow-maps/codemode-streaming/dep-graph.hif.json": {
+            "relation": "calls",
+            "note": "SseFrameWriter/FrameWrite connection; frames travel through mutex-protected timedClientWrite."
+          }
+        }
+      }
+    },
+    {
+      "edge": "dep_pacing",
+      "attrs": {
+        "relation": "calls",
+        "note": "ClientChannel.kt:157-168 holds visible bursts, preserving all subsequent frame ordering.",
+        "_by_source": {
+          "/home/marcos/Documents/dev/projects/splice/repo/.Codex/tmp/flow-maps/codemode-streaming/dep-graph.hif.json": {
+            "relation": "calls",
+            "note": "ClientChannel.kt:157-168 holds visible bursts, preserving all subsequent frame ordering."
+          }
+        }
+      }
+    },
+    {
+      "edge": "dep_h_source_stream",
+      "attrs": {
+        "kind": "stream-source-observation",
+        "note": "Script input is intentionally hidden from client; Started/Delta/Completed observations reach source capture. ResponsesExecProgress.kt:24-47; CodeModeSourceCapture.kt:45-85.",
+        "_by_source": {
+          "/home/marcos/Documents/dev/projects/splice/repo/.Codex/tmp/flow-maps/codemode-streaming/dep-graph.hif.json": {
+            "kind": "stream-source-observation",
+            "note": "Script input is intentionally hidden from client; Started/Delta/Completed observations reach source capture. ResponsesExecProgress.kt:24-47; CodeModeSourceCapture.kt:45-85."
+          }
+        }
+      }
+    },
+    {
+      "edge": "dep_h_source_certification",
+      "attrs": {
+        "kind": "completion-boundary",
+        "note": "Item done seals unread source. The completed success outcome certifies it. A callback already issued before item done can return early; a step meeting the seal must await certification. CodeModeSourceCapture.kt:49-57,120-145; CodeModeStreamingCell.kt:24-31.",
+        "_by_source": {
+          "/home/marcos/Documents/dev/projects/splice/repo/.Codex/tmp/flow-maps/codemode-streaming/dep-graph.hif.json": {
+            "kind": "completion-boundary",
+            "note": "Item done seals unread source. The completed success outcome certifies it. A callback already issued before item done can return early; a step meeting the seal must await certification. CodeModeSourceCapture.kt:49-57,120-145; CodeModeStreamingCell.kt:24-31."
+          }
+        }
+      }
+    },
+    {
+      "edge": "dep_h_attachment",
+      "attrs": {
+        "kind": "client-step-ownership",
+        "note": "CodeModeStreamingCell.kt:31 detaches before tool callback publication. CodeModeStreams.kt:121-124 reattaches and drains held model output for the returning result step.",
+        "_by_source": {
+          "/home/marcos/Documents/dev/projects/splice/repo/.Codex/tmp/flow-maps/codemode-streaming/dep-graph.hif.json": {
+            "kind": "client-step-ownership",
+            "note": "CodeModeStreamingCell.kt:31 detaches before tool callback publication. CodeModeStreams.kt:121-124 reattaches and drains held model output for the returning result step."
+          }
+        }
+      }
+    },
+    {
+      "edge": "dep_h_fold",
+      "attrs": {
+        "kind": "feature-flag-fork",
+        "condition": "foldPolicy non-null: configured non-compact model; defaults gpt-5.6-luna,gpt-5.6-terra,gpt-5.5",
+        "note": "All final text/tool operations wait for whole successful round, while thinking goes live. BufferingWireSink.kt:18-39; FoldRounds.kt:74-76; ResponsesTurnSeams.kt:109-116; core/.../config/Knob.kt:139-142.",
+        "_by_source": {
+          "/home/marcos/Documents/dev/projects/splice/repo/.Codex/tmp/flow-maps/codemode-streaming/dep-graph.hif.json": {
+            "kind": "feature-flag-fork",
+            "condition": "foldPolicy non-null: configured non-compact model; defaults gpt-5.6-luna,gpt-5.6-terra,gpt-5.5",
+            "note": "All final text/tool operations wait for whole successful round, while thinking goes live. BufferingWireSink.kt:18-39; FoldRounds.kt:74-76; ResponsesTurnSeams.kt:109-116; core/.../config/Knob.kt:139-142."
+          }
+        }
+      }
+    },
+    {
+      "edge": "dep_h_transport_split",
+      "attrs": {
+        "kind": "transport-terminal-scope",
+        "note": "SSE reads body EOF, while WS breaks after terminal event. SseReader.kt:58-75; WsRoundStream.kt:34-45. SSE [DONE] is skipped, not a terminating signal (SseDecode.kt:123-132).",
+        "_by_source": {
+          "/home/marcos/Documents/dev/projects/splice/repo/.Codex/tmp/flow-maps/codemode-streaming/dep-graph.hif.json": {
+            "kind": "transport-terminal-scope",
+            "note": "SSE reads body EOF, while WS breaks after terminal event. SseReader.kt:58-75; WsRoundStream.kt:34-45. SSE [DONE] is skipped, not a terminating signal (SseDecode.kt:123-132)."
+          }
+        }
+      }
+    },
+    {
+      "edge": "dep_gap_sse_terminal_eof",
+      "attrs": {
+        "kind": "gap",
+        "severity": "contributing",
+        "status": "established-code-path; live-incident-impact-unmeasured",
+        "note": "When SSE terminal is valid but body EOF is delayed, translator still collects. CustomToolSource.Terminal is emitted only in collector finally; finishRound and source.complete wait too. This delays final message stop or callbacks that meet source seal, including SSE fallback. ResponsesStreamTranslator.kt:114-133,157-169; ResponsesEventReducer.kt:67-84; CodeModeSourceBuffer.kt:57-68. Existing ResponsesTerminalDecision.kt:27-30 explicitly documents EOF suspension after response.completed. WebSocket path is unaffected because its Flow ends at terminal.",
+        "_by_source": {
+          "/home/marcos/Documents/dev/projects/splice/repo/.Codex/tmp/flow-maps/codemode-streaming/dep-graph.hif.json": {
+            "kind": "gap",
+            "severity": "contributing",
+            "status": "established-code-path; live-incident-impact-unmeasured",
+            "note": "When SSE terminal is valid but body EOF is delayed, translator still collects. CustomToolSource.Terminal is emitted only in collector finally; finishRound and source.complete wait too. This delays final message stop or callbacks that meet source seal, including SSE fallback. ResponsesStreamTranslator.kt:114-133,157-169; ResponsesEventReducer.kt:67-84; CodeModeSourceBuffer.kt:57-68. Existing ResponsesTerminalDecision.kt:27-30 explicitly documents EOF suspension after response.completed. WebSocket path is unaffected because its Flow ends at terminal."
+          }
+        }
+      }
+    },
+    {
+      "edge": "dep_h_client_flush",
+      "attrs": {
+        "kind": "output-release",
+        "note": "ImmediateSseWriter.kt:52-54 flushes every written frame. Pacer holds at most a one-second window and counts delta frames, so one large upstream delta remains one atomic display (DeltaPacer.kt:85-98,136-148). Program generation visibility is intentionally absent (ResponsesExecProgress.kt:1-7).",
+        "_by_source": {
+          "/home/marcos/Documents/dev/projects/splice/repo/.Codex/tmp/flow-maps/codemode-streaming/dep-graph.hif.json": {
+            "kind": "output-release",
+            "note": "ImmediateSseWriter.kt:52-54 flushes every written frame. Pacer holds at most a one-second window and counts delta frames, so one large upstream delta remains one atomic display (DeltaPacer.kt:85-98,136-148). Program generation visibility is intentionally absent (ResponsesExecProgress.kt:1-7)."
+          }
+        }
+      }
+    },
+    {
+      "edge": "energy_clr_1",
+      "attrs": {
+        "kind": "clearance-relation",
+        "complete": true,
+        "note": "new ledger each driveRound; block entries removed at item/args completion; whole state falls out of scope when translator returns",
+        "clearer": "ResponsesStreamTranslator.driveRound/reduceRound",
+        "clearer_evidence": "integrations/dialects/openai-responses/src/main/kotlin/splice/dialect/responses/stream/ResponsesStreamTranslator.kt:91-110",
+        "_by_source": {
+          "/home/marcos/Documents/dev/projects/splice/repo/.Codex/tmp/flow-maps/codemode-streaming/energy.hif.json": {
+            "kind": "clearance-relation",
+            "complete": true,
+            "note": "new ledger each driveRound; block entries removed at item/args completion; whole state falls out of scope when translator returns",
+            "clearer": "ResponsesStreamTranslator.driveRound/reduceRound",
+            "clearer_evidence": "integrations/dialects/openai-responses/src/main/kotlin/splice/dialect/responses/stream/ResponsesStreamTranslator.kt:91-110"
+          }
+        }
+      }
+    },
+    {
+      "edge": "energy_clr_2",
+      "attrs": {
+        "kind": "clearance-relation",
+        "complete": true,
+        "note": "complete/fail releases blocked cursors; no incremental text clearing; entire prefix retained until round becomes unreachable",
+        "clearer": "CodeModeSourceBuffer.complete/fail; round lease disposal",
+        "clearer_evidence": "integrations/providers/codex/src/main/kotlin/splice/provider/codex/stream/CodeModeSourceBuffer.kt:54-85",
+        "_by_source": {
+          "/home/marcos/Documents/dev/projects/splice/repo/.Codex/tmp/flow-maps/codemode-streaming/energy.hif.json": {
+            "kind": "clearance-relation",
+            "complete": true,
+            "note": "complete/fail releases blocked cursors; no incremental text clearing; entire prefix retained until round becomes unreachable",
+            "clearer": "CodeModeSourceBuffer.complete/fail; round lease disposal",
+            "clearer_evidence": "integrations/providers/codex/src/main/kotlin/splice/provider/codex/stream/CodeModeSourceBuffer.kt:54-85"
+          }
+        }
+      }
+    },
+    {
+      "edge": "energy_clr_3",
+      "attrs": {
+        "kind": "clearance-relation",
+        "complete": true,
+        "note": "attach drains held writes under attachment mutex; detach closes mapped client blocks and clears current witness but preserves upstream identities; discard clears queued draft and mappings",
+        "clearer": "attach/detach/discard; CodeModeSinkWrites.drain",
+        "clearer_evidence": "integrations/providers/codex/src/main/kotlin/splice/provider/codex/stream/CodeModeSwitchingSink.kt:72-89",
+        "_by_source": {
+          "/home/marcos/Documents/dev/projects/splice/repo/.Codex/tmp/flow-maps/codemode-streaming/energy.hif.json": {
+            "kind": "clearance-relation",
+            "complete": true,
+            "note": "attach drains held writes under attachment mutex; detach closes mapped client blocks and clears current witness but preserves upstream identities; discard clears queued draft and mappings",
+            "clearer": "attach/detach/discard; CodeModeSinkWrites.drain",
+            "clearer_evidence": "integrations/providers/codex/src/main/kotlin/splice/provider/codex/stream/CodeModeSwitchingSink.kt:72-89"
+          }
+        }
+      }
+    },
+    {
+      "edge": "energy_clr_4",
+      "attrs": {
+        "kind": "clearance-relation",
+        "complete": true,
+        "note": "initial reply consumed once; results remove callback ids; Completed closes context; failed advance closes; source cursor stays owned while callback results are outstanding",
+        "clearer": "advance/receiveAfter/toStep; close/stop",
+        "clearer_evidence": "integrations/codemode/src/main/kotlin/splice/codemode/JvmCodeModeCell.kt:49-79",
+        "_by_source": {
+          "/home/marcos/Documents/dev/projects/splice/repo/.Codex/tmp/flow-maps/codemode-streaming/energy.hif.json": {
+            "kind": "clearance-relation",
+            "complete": true,
+            "note": "initial reply consumed once; results remove callback ids; Completed closes context; failed advance closes; source cursor stays owned while callback results are outstanding",
+            "clearer": "advance/receiveAfter/toStep; close/stop",
+            "clearer_evidence": "integrations/codemode/src/main/kotlin/splice/codemode/JvmCodeModeCell.kt:49-79"
+          }
+        }
+      }
+    },
+    {
+      "edge": "energy_clr_5",
+      "attrs": {
+        "kind": "clearance-relation",
+        "complete": true,
+        "note": "pending prefixes deleted when grammar-certified; complete/error clears pending; original is deliberately retained for whole-program syntax validation until context close",
+        "clearer": "next/finalInput consume pending; WorkerSession.close disposes full context",
+        "clearer_evidence": "integrations/codemode/src/main/kotlin/splice/codemode/CodeModeStatementParser.kt:84-119",
+        "_by_source": {
+          "/home/marcos/Documents/dev/projects/splice/repo/.Codex/tmp/flow-maps/codemode-streaming/energy.hif.json": {
+            "kind": "clearance-relation",
+            "complete": true,
+            "note": "pending prefixes deleted when grammar-certified; complete/error clears pending; original is deliberately retained for whole-program syntax validation until context close",
+            "clearer": "next/finalInput consume pending; WorkerSession.close disposes full context",
+            "clearer_evidence": "integrations/codemode/src/main/kotlin/splice/codemode/CodeModeStatementParser.kt:84-119"
+          }
+        }
+      }
+    },
+    {
+      "edge": "energy_clr_6",
+      "attrs": {
+        "kind": "clearance-relation",
+        "complete": true,
+        "note": "reply routing removes request; send finally cancels/removes abandoned answer; cell close releases closing then removes after ack; host failure clears all answers/cells",
+        "clearer": "deliver/send finally/fail; closeCell",
+        "clearer_evidence": "integrations/codemode/src/main/kotlin/splice/codemode/SharedWorkerChannel.kt:161-164",
+        "_by_source": {
+          "/home/marcos/Documents/dev/projects/splice/repo/.Codex/tmp/flow-maps/codemode-streaming/energy.hif.json": {
+            "kind": "clearance-relation",
+            "complete": true,
+            "note": "reply routing removes request; send finally cancels/removes abandoned answer; cell close releases closing then removes after ack; host failure clears all answers/cells",
+            "clearer": "deliver/send finally/fail; closeCell",
+            "clearer_evidence": "integrations/codemode/src/main/kotlin/splice/codemode/SharedWorkerChannel.kt:161-164"
+          }
+        }
+      }
+    },
+    {
+      "edge": "energy_clr_7",
+      "attrs": {
+        "kind": "clearance-relation",
+        "complete": true,
+        "note": "completion/loss removes live cell; unknown/dead idle cells park after 5 minutes; TTL removes records by conversation; head stop loses active cells; key locks removed when final user releases",
+        "clearer": "CodeModeRecordChanges.complete/lose/onHeadStop; CodeModeCellRetention.park; CodexCodeModeSweeper.expireRecords",
+        "clearer_evidence": "integrations/providers/codex/src/main/kotlin/splice/provider/codex/state/CodeModeCellRetention.kt:153-163",
+        "_by_source": {
+          "/home/marcos/Documents/dev/projects/splice/repo/.Codex/tmp/flow-maps/codemode-streaming/energy.hif.json": {
+            "kind": "clearance-relation",
+            "complete": true,
+            "note": "completion/loss removes live cell; unknown/dead idle cells park after 5 minutes; TTL removes records by conversation; head stop loses active cells; key locks removed when final user releases",
+            "clearer": "CodeModeRecordChanges.complete/lose/onHeadStop; CodeModeCellRetention.park; CodexCodeModeSweeper.expireRecords",
+            "clearer_evidence": "integrations/providers/codex/src/main/kotlin/splice/provider/codex/state/CodeModeCellRetention.kt:153-163"
+          }
+        }
+      }
+    },
+    {
+      "edge": "energy_clr_8",
+      "attrs": {
+        "kind": "clearance-relation",
+        "complete": true,
+        "note": "empty conversation deletes durable files and kept snapshot; successful checkpoint replaces journal; failed keys retry until disk agrees; provider terminal disposal clears hot snapshots only when settled",
+        "clearer": "remove/published/release; save retries unsettled keys",
+        "clearer_evidence": "integrations/providers/codex/src/main/kotlin/splice/provider/codex/CodexCodeModeStore.kt:296-308",
+        "_by_source": {
+          "/home/marcos/Documents/dev/projects/splice/repo/.Codex/tmp/flow-maps/codemode-streaming/energy.hif.json": {
+            "kind": "clearance-relation",
+            "complete": true,
+            "note": "empty conversation deletes durable files and kept snapshot; successful checkpoint replaces journal; failed keys retry until disk agrees; provider terminal disposal clears hot snapshots only when settled",
+            "clearer": "remove/published/release; save retries unsettled keys",
+            "clearer_evidence": "integrations/providers/codex/src/main/kotlin/splice/provider/codex/CodexCodeModeStore.kt:296-308"
+          }
+        }
+      }
+    },
+    {
+      "edge": "energy_clr_9",
+      "attrs": {
+        "kind": "clearance-relation",
+        "complete": true,
+        "note": "16 ms ticks release whole frames; target held-window 1000 ms; terminal stays behind queued frames; finishing drains or immediate fallback takes all; no splitting of large delta payloads",
+        "clearer": "due/takeAll/finishPacing",
+        "clearer_evidence": "features/turns/src/main/kotlin/splice/head/wire/ClientChannel.kt:249-271",
+        "_by_source": {
+          "/home/marcos/Documents/dev/projects/splice/repo/.Codex/tmp/flow-maps/codemode-streaming/energy.hif.json": {
+            "kind": "clearance-relation",
+            "complete": true,
+            "note": "16 ms ticks release whole frames; target held-window 1000 ms; terminal stays behind queued frames; finishing drains or immediate fallback takes all; no splitting of large delta payloads",
+            "clearer": "due/takeAll/finishPacing",
+            "clearer_evidence": "features/turns/src/main/kotlin/splice/head/wire/ClientChannel.kt:249-271"
+          }
+        }
+      }
+    },
+    {
+      "edge": "energy_clr_10",
+      "attrs": {
+        "kind": "clearance-relation",
+        "complete": false,
+        "note": "no cleanup is wired to autonomous park/TTL/head-stop; those paths may remove record/cell while retaining this timestamp",
+        "clearer": "machine completion/poison/cancel/source IO arms only",
+        "clearer_evidence": "integrations/providers/codex/src/main/kotlin/splice/provider/codex/CodexCodeModeMachine.kt:173-179",
+        "_by_source": {
+          "/home/marcos/Documents/dev/projects/splice/repo/.Codex/tmp/flow-maps/codemode-streaming/energy.hif.json": {
+            "kind": "clearance-relation",
+            "complete": false,
+            "note": "no cleanup is wired to autonomous park/TTL/head-stop; those paths may remove record/cell while retaining this timestamp",
+            "clearer": "machine completion/poison/cancel/source IO arms only",
+            "clearer_evidence": "integrations/providers/codex/src/main/kotlin/splice/provider/codex/CodexCodeModeMachine.kt:173-179"
+          }
+        }
+      }
+    },
+    {
+      "edge": "energy_silent_source",
+      "attrs": {
+        "kind": "buffering-mechanism",
+        "status": "established-behavior",
+        "note": "Exec input is intentionally hidden; grammar-certified statements may dispatch during generation, but function-dependent/final/unsafe statements wait for certified source EOF. No new defect established.",
+        "evidence": [
+          "integrations/dialects/openai-responses/src/main/kotlin/splice/dialect/responses/stream/ResponsesExecProgress.kt:39-47",
+          "integrations/codemode/src/main/kotlin/splice/codemode/CodeModeStatementParser.kt:84-119",
+          "integrations/codemode/src/main/kotlin/splice/codemode/StreamingWorkerSession.kt:69-81",
+          "integrations/codemode/src/main/kotlin/splice/codemode/StreamingCodeModeLauncher.kt:97-110"
+        ],
+        "_by_source": {
+          "/home/marcos/Documents/dev/projects/splice/repo/.Codex/tmp/flow-maps/codemode-streaming/energy.hif.json": {
+            "kind": "buffering-mechanism",
+            "status": "established-behavior",
+            "note": "Exec input is intentionally hidden; grammar-certified statements may dispatch during generation, but function-dependent/final/unsafe statements wait for certified source EOF. No new defect established.",
+            "evidence": [
+              "integrations/dialects/openai-responses/src/main/kotlin/splice/dialect/responses/stream/ResponsesExecProgress.kt:39-47",
+              "integrations/codemode/src/main/kotlin/splice/codemode/CodeModeStatementParser.kt:84-119",
+              "integrations/codemode/src/main/kotlin/splice/codemode/StreamingWorkerSession.kt:69-81",
+              "integrations/codemode/src/main/kotlin/splice/codemode/StreamingCodeModeLauncher.kt:97-110"
+            ]
+          }
+        }
+      }
+    },
+    {
+      "edge": "energy_atomic_summary_burst",
+      "attrs": {
+        "kind": "buffering-mechanism",
+        "status": "established-behavior-setting-unverified",
+        "note": "Cutoff summary done emits entire text as one delta; pacer operates on frame count and lets first visible frame after quiet through immediately, so one large summary delta remains an instant burst.",
+        "evidence": [
+          "integrations/dialects/openai-responses/src/main/kotlin/splice/dialect/responses/reasoning/ResponsesReasoningFold.kt:90-118",
+          "features/turns/src/main/kotlin/splice/head/wire/DeltaPacer.kt:68-77",
+          "features/turns/src/main/kotlin/splice/head/wire/DeltaPacer.kt:138-142"
+        ],
+        "_by_source": {
+          "/home/marcos/Documents/dev/projects/splice/repo/.Codex/tmp/flow-maps/codemode-streaming/energy.hif.json": {
+            "kind": "buffering-mechanism",
+            "status": "established-behavior-setting-unverified",
+            "note": "Cutoff summary done emits entire text as one delta; pacer operates on frame count and lets first visible frame after quiet through immediately, so one large summary delta remains an instant burst.",
+            "evidence": [
+              "integrations/dialects/openai-responses/src/main/kotlin/splice/dialect/responses/reasoning/ResponsesReasoningFold.kt:90-118",
+              "features/turns/src/main/kotlin/splice/head/wire/DeltaPacer.kt:68-77",
+              "features/turns/src/main/kotlin/splice/head/wire/DeltaPacer.kt:138-142"
+            ]
+          }
+        }
+      }
+    },
+    {
+      "edge": "energy_durable_callback_boundary",
+      "attrs": {
+        "kind": "serialization-boundary",
+        "status": "established-behavior-latency-unmeasured",
+        "note": "Source admission and callback issuance are saved before callback wire emission; fsync/forced-append latency therefore delays visible tool chips. Head-wide registry lock is released for I/O, conversation-key lock stays held.",
+        "evidence": [
+          "integrations/providers/codex/src/main/kotlin/splice/provider/codex/CodexCodeModeDriver.kt:54-56",
+          "integrations/providers/codex/src/main/kotlin/splice/provider/codex/CodexCodeModeMachine.kt:122-139",
+          "integrations/providers/codex/src/main/kotlin/splice/provider/codex/CodexCodeModeStore.kt:158-172",
+          "integrations/providers/codex/src/main/kotlin/splice/provider/codex/state/CodeModeStateJournal.kt:50-75"
+        ],
+        "_by_source": {
+          "/home/marcos/Documents/dev/projects/splice/repo/.Codex/tmp/flow-maps/codemode-streaming/energy.hif.json": {
+            "kind": "serialization-boundary",
+            "status": "established-behavior-latency-unmeasured",
+            "note": "Source admission and callback issuance are saved before callback wire emission; fsync/forced-append latency therefore delays visible tool chips. Head-wide registry lock is released for I/O, conversation-key lock stays held.",
+            "evidence": [
+              "integrations/providers/codex/src/main/kotlin/splice/provider/codex/CodexCodeModeDriver.kt:54-56",
+              "integrations/providers/codex/src/main/kotlin/splice/provider/codex/CodexCodeModeMachine.kt:122-139",
+              "integrations/providers/codex/src/main/kotlin/splice/provider/codex/CodexCodeModeStore.kt:158-172",
+              "integrations/providers/codex/src/main/kotlin/splice/provider/codex/state/CodeModeStateJournal.kt:50-75"
+            ]
+          }
+        }
+      }
+    },
+    {
+      "edge": "t_stream_1",
+      "attrs": {
+        "kind": "transition",
+        "trigger": "ResponsesItemFold.onTextDelta / ResponsesReasoningFold",
+        "cond": "Upstream text/reasoning arrives; visible blocks are written to attached sink",
+        "_by_source": {
+          "/home/marcos/Documents/dev/projects/splice/repo/.Codex/tmp/flow-maps/codemode-streaming/state-machine.hif.json": {
+            "kind": "transition",
+            "trigger": "ResponsesItemFold.onTextDelta / ResponsesReasoningFold",
+            "cond": "Upstream text/reasoning arrives; visible blocks are written to attached sink"
+          }
+        }
+      }
+    },
+    {
+      "edge": "t_stream_2",
+      "attrs": {
+        "kind": "transition",
+        "trigger": "ResponsesExecProgress.added -> CodeModeSourceCapture.begin",
+        "cond": "custom_tool_call name=exec starts; record admitted and runtime startup begins",
+        "_by_source": {
+          "/home/marcos/Documents/dev/projects/splice/repo/.Codex/tmp/flow-maps/codemode-streaming/state-machine.hif.json": {
+            "kind": "transition",
+            "trigger": "ResponsesExecProgress.added -> CodeModeSourceCapture.begin",
+            "cond": "custom_tool_call name=exec starts; record admitted and runtime startup begins"
+          }
+        }
+      }
+    },
+    {
+      "edge": "t_stream_3",
+      "attrs": {
+        "kind": "transition",
+        "trigger": "ResponsesExecProgress.added",
+        "cond": "Commentary/reasoning is followed by an exec item",
+        "_by_source": {
+          "/home/marcos/Documents/dev/projects/splice/repo/.Codex/tmp/flow-maps/codemode-streaming/state-machine.hif.json": {
+            "kind": "transition",
+            "trigger": "ResponsesExecProgress.added",
+            "cond": "Commentary/reasoning is followed by an exec item"
+          }
+        }
+      }
+    },
+    {
+      "edge": "t_stream_4",
+      "attrs": {
+        "kind": "transition",
+        "trigger": "ResponsesExecProgress.delta -> SourceBuffer.publish -> StreamingWorkerSession.append",
+        "cond": "More source bytes arrive but there is no certified executable boundary, or dependency/hoisting/intrinsic checks defer it",
+        "_by_source": {
+          "/home/marcos/Documents/dev/projects/splice/repo/.Codex/tmp/flow-maps/codemode-streaming/state-machine.hif.json": {
+            "kind": "transition",
+            "trigger": "ResponsesExecProgress.delta -> SourceBuffer.publish -> StreamingWorkerSession.append",
+            "cond": "More source bytes arrive but there is no certified executable boundary, or dependency/hoisting/intrinsic checks defer it"
+          }
+        }
+      }
+    },
+    {
+      "edge": "t_stream_5",
+      "attrs": {
+        "kind": "transition",
+        "trigger": "CodeModeStatementParser.certifiedPrefix -> StreamingWorkerSession.run -> WorkerSession.reply",
+        "cond": "Complete statement and dependency-safe operation call a permitted nested tool",
+        "_by_source": {
+          "/home/marcos/Documents/dev/projects/splice/repo/.Codex/tmp/flow-maps/codemode-streaming/state-machine.hif.json": {
+            "kind": "transition",
+            "trigger": "CodeModeStatementParser.certifiedPrefix -> StreamingWorkerSession.run -> WorkerSession.reply",
+            "cond": "Complete statement and dependency-safe operation call a permitted nested tool"
+          }
+        }
+      }
+    },
+    {
+      "edge": "t_stream_6",
+      "attrs": {
+        "kind": "transition",
+        "trigger": "CodeModeStreamingCell.advance -> CodexCodeModeCallIssuer.accept -> machine.emit",
+        "cond": "Source is not sealed, or terminal certification has completed; pending ids persist before emission",
+        "_by_source": {
+          "/home/marcos/Documents/dev/projects/splice/repo/.Codex/tmp/flow-maps/codemode-streaming/state-machine.hif.json": {
+            "kind": "transition",
+            "trigger": "CodeModeStreamingCell.advance -> CodexCodeModeCallIssuer.accept -> machine.emit",
+            "cond": "Source is not sealed, or terminal certification has completed; pending ids persist before emission"
+          }
+        }
+      }
+    },
+    {
+      "edge": "t_stream_7",
+      "attrs": {
+        "kind": "transition",
+        "trigger": "CodeModeSourceCapture.observe(Completed) -> SourceBuffer.seal",
+        "cond": "output_item.done supplies matching full exec source; no response outcome yet",
+        "_by_source": {
+          "/home/marcos/Documents/dev/projects/splice/repo/.Codex/tmp/flow-maps/codemode-streaming/state-machine.hif.json": {
+            "kind": "transition",
+            "trigger": "CodeModeSourceCapture.observe(Completed) -> SourceBuffer.seal",
+            "cond": "output_item.done supplies matching full exec source; no response outcome yet"
+          }
+        }
+      }
+    },
+    {
+      "edge": "t_stream_8",
+      "attrs": {
+        "kind": "transition",
+        "trigger": "CodeModeStreamingCell.advance -> SourceBuffer.awaitCertification",
+        "cond": "Item-done raced ahead of the selected statement; callback waits rather than escaping an uncertified source",
+        "_by_source": {
+          "/home/marcos/Documents/dev/projects/splice/repo/.Codex/tmp/flow-maps/codemode-streaming/state-machine.hif.json": {
+            "kind": "transition",
+            "trigger": "CodeModeStreamingCell.advance -> SourceBuffer.awaitCertification",
+            "cond": "Item-done raced ahead of the selected statement; callback waits rather than escaping an uncertified source"
+          }
+        }
+      }
+    },
+    {
+      "edge": "t_stream_9",
+      "attrs": {
+        "kind": "transition",
+        "trigger": "ResponsesEventReducer.onTerminal",
+        "cond": "response.completed/done/incomplete sets finalResponse but does not finish the SSE Flow",
+        "_by_source": {
+          "/home/marcos/Documents/dev/projects/splice/repo/.Codex/tmp/flow-maps/codemode-streaming/state-machine.hif.json": {
+            "kind": "transition",
+            "trigger": "ResponsesEventReducer.onTerminal",
+            "cond": "response.completed/done/incomplete sets finalResponse but does not finish the SSE Flow"
+          }
+        }
+      }
+    },
+    {
+      "edge": "t_stream_10",
+      "attrs": {
+        "kind": "transition",
+        "trigger": "ResponsesEventReducer.onTerminal",
+        "cond": "Terminal arrives after plain commentary/final text",
+        "_by_source": {
+          "/home/marcos/Documents/dev/projects/splice/repo/.Codex/tmp/flow-maps/codemode-streaming/state-machine.hif.json": {
+            "kind": "transition",
+            "trigger": "ResponsesEventReducer.onTerminal",
+            "cond": "Terminal arrives after plain commentary/final text"
+          }
+        }
+      }
+    },
+    {
+      "edge": "t_stream_11",
+      "attrs": {
+        "kind": "transition",
+        "trigger": "Flow completion -> CodeModeLiveRound.finish -> CodeModeSourceCapture.finish -> source.complete",
+        "cond": "Successful complete response certifies exactly one matching exec source; pending source/callback waiter wakes",
+        "_by_source": {
+          "/home/marcos/Documents/dev/projects/splice/repo/.Codex/tmp/flow-maps/codemode-streaming/state-machine.hif.json": {
+            "kind": "transition",
+            "trigger": "Flow completion -> CodeModeLiveRound.finish -> CodeModeSourceCapture.finish -> source.complete",
+            "cond": "Successful complete response certifies exactly one matching exec source; pending source/callback waiter wakes"
+          }
+        }
+      }
+    },
+    {
+      "edge": "t_stream_12",
+      "attrs": {
+        "kind": "transition",
+        "trigger": "Flow completion -> ResponsesStreamTranslator.finishRound -> outer pipeline",
+        "cond": "No remaining exec callback or hidden continuation; final output finishes",
+        "_by_source": {
+          "/home/marcos/Documents/dev/projects/splice/repo/.Codex/tmp/flow-maps/codemode-streaming/state-machine.hif.json": {
+            "kind": "transition",
+            "trigger": "Flow completion -> ResponsesStreamTranslator.finishRound -> outer pipeline",
+            "cond": "No remaining exec callback or hidden continuation; final output finishes"
+          }
+        }
+      }
+    },
+    {
+      "edge": "t_stream_13",
+      "attrs": {
+        "kind": "transition",
+        "trigger": "CodexCodeModeResume.fresh -> registry.acceptResults -> machine.advance",
+        "cond": "Next Claude Code request carries valid visible tool_result ids",
+        "_by_source": {
+          "/home/marcos/Documents/dev/projects/splice/repo/.Codex/tmp/flow-maps/codemode-streaming/state-machine.hif.json": {
+            "kind": "transition",
+            "trigger": "CodexCodeModeResume.fresh -> registry.acceptResults -> machine.advance",
+            "cond": "Next Claude Code request carries valid visible tool_result ids"
+          }
+        }
+      }
+    },
+    {
+      "edge": "t_stream_14",
+      "attrs": {
+        "kind": "transition",
+        "trigger": "CodeModeSinkWrites.deliver / drain",
+        "cond": "Source reader continues after detach; detached commentary writes are byte-bounded and replay on the next attachment",
+        "intentional_buffer": true,
+        "_by_source": {
+          "/home/marcos/Documents/dev/projects/splice/repo/.Codex/tmp/flow-maps/codemode-streaming/state-machine.hif.json": {
+            "kind": "transition",
+            "trigger": "CodeModeSinkWrites.deliver / drain",
+            "cond": "Source reader continues after detach; detached commentary writes are byte-bounded and replay on the next attachment",
+            "intentional_buffer": true
+          }
+        }
+      }
+    },
+    {
+      "edge": "t_stream_15",
+      "attrs": {
+        "kind": "transition",
+        "trigger": "JvmCodeModeCell.receiveAfter -> StreamingWorkerSession.drain",
+        "cond": "Returned result makes a dependent callback ready; unresolved siblings remain pending",
+        "_by_source": {
+          "/home/marcos/Documents/dev/projects/splice/repo/.Codex/tmp/flow-maps/codemode-streaming/state-machine.hif.json": {
+            "kind": "transition",
+            "trigger": "JvmCodeModeCell.receiveAfter -> StreamingWorkerSession.drain",
+            "cond": "Returned result makes a dependent callback ready; unresolved siblings remain pending"
+          }
+        }
+      }
+    },
+    {
+      "edge": "t_stream_16",
+      "attrs": {
+        "kind": "transition",
+        "trigger": "CodeModeStep.Completed -> CodexCodeModeMachine.complete",
+        "cond": "No pending callbacks remain and source is complete",
+        "_by_source": {
+          "/home/marcos/Documents/dev/projects/splice/repo/.Codex/tmp/flow-maps/codemode-streaming/state-machine.hif.json": {
+            "kind": "transition",
+            "trigger": "CodeModeStep.Completed -> CodexCodeModeMachine.complete",
+            "cond": "No pending callbacks remain and source is complete"
+          }
+        }
+      }
+    },
+    {
+      "edge": "t_stream_17",
+      "attrs": {
+        "kind": "transition",
+        "trigger": "CodexCodeModeDriver.finishGenerated -> canonicalize -> post",
+        "cond": "Canonical custom_tool_call + custom_tool_call_output history drives the next hidden model round",
+        "_by_source": {
+          "/home/marcos/Documents/dev/projects/splice/repo/.Codex/tmp/flow-maps/codemode-streaming/state-machine.hif.json": {
+            "kind": "transition",
+            "trigger": "CodexCodeModeDriver.finishGenerated -> canonicalize -> post",
+            "cond": "Canonical custom_tool_call + custom_tool_call_output history drives the next hidden model round"
+          }
+        }
+      }
+    },
+    {
+      "edge": "t_stream_18",
+      "attrs": {
+        "kind": "transition",
+        "trigger": "CodeModeRuntimeStarter.failed",
+        "cond": "Only typed CodeModeStartException proves runtime boot failed before dispatch",
+        "_by_source": {
+          "/home/marcos/Documents/dev/projects/splice/repo/.Codex/tmp/flow-maps/codemode-streaming/state-machine.hif.json": {
+            "kind": "transition",
+            "trigger": "CodeModeRuntimeStarter.failed",
+            "cond": "Only typed CodeModeStartException proves runtime boot failed before dispatch"
+          }
+        }
+      }
+    },
+    {
+      "edge": "t_stream_19",
+      "attrs": {
+        "kind": "transition",
+        "trigger": "CodexCodeModeDriver.retryStart",
+        "cond": "Exact retried request and retained whole/live source are available",
+        "_by_source": {
+          "/home/marcos/Documents/dev/projects/splice/repo/.Codex/tmp/flow-maps/codemode-streaming/state-machine.hif.json": {
+            "kind": "transition",
+            "trigger": "CodexCodeModeDriver.retryStart",
+            "cond": "Exact retried request and retained whole/live source are available"
+          }
+        }
+      }
+    },
+    {
+      "edge": "t_stream_20",
+      "attrs": {
+        "kind": "transition",
+        "trigger": "CodeModeLiveRound.finish / failed / ended / died",
+        "cond": "Source tears, fails, is refused, changes identity/prefix, has incomplete terminal, or reader dies",
+        "_by_source": {
+          "/home/marcos/Documents/dev/projects/splice/repo/.Codex/tmp/flow-maps/codemode-streaming/state-machine.hif.json": {
+            "kind": "transition",
+            "trigger": "CodeModeLiveRound.finish / failed / ended / died",
+            "cond": "Source tears, fails, is refused, changes identity/prefix, has incomplete terminal, or reader dies"
+          }
+        }
+      }
+    },
+    {
+      "edge": "t_stream_21",
+      "attrs": {
+        "kind": "transition",
+        "trigger": "CodexCodeModeResume.interrupts / machine.poison / workerRecovery.lost",
+        "cond": "Operator steering, unanswered-system interruption, missing tool catalog, runtime fault, or explicit bound ends the cell",
+        "_by_source": {
+          "/home/marcos/Documents/dev/projects/splice/repo/.Codex/tmp/flow-maps/codemode-streaming/state-machine.hif.json": {
+            "kind": "transition",
+            "trigger": "CodexCodeModeResume.interrupts / machine.poison / workerRecovery.lost",
+            "cond": "Operator steering, unanswered-system interruption, missing tool catalog, runtime fault, or explicit bound ends the cell"
+          }
+        }
+      }
+    },
+    {
+      "edge": "t_stream_22",
+      "attrs": {
+        "kind": "transition",
+        "trigger": "CodexCodeModeResume.lost -> machine.interrupt",
+        "cond": "Accepted evidence and unresolved calls are preserved as interrupted exec output; source is not rerun",
+        "_by_source": {
+          "/home/marcos/Documents/dev/projects/splice/repo/.Codex/tmp/flow-maps/codemode-streaming/state-machine.hif.json": {
+            "kind": "transition",
+            "trigger": "CodexCodeModeResume.lost -> machine.interrupt",
+            "cond": "Accepted evidence and unresolved calls are preserved as interrupted exec output; source is not rerun"
+          }
+        }
+      }
+    },
+    {
+      "edge": "t_stream_23",
+      "attrs": {
+        "kind": "transition",
+        "trigger": "CodeModeLiveRound.outcome / permanentEnding / machine.poison",
+        "cond": "Current request ends with original refusal/transport or deterministic protocol cause; no fabricated clean stop",
+        "_by_source": {
+          "/home/marcos/Documents/dev/projects/splice/repo/.Codex/tmp/flow-maps/codemode-streaming/state-machine.hif.json": {
+            "kind": "transition",
+            "trigger": "CodeModeLiveRound.outcome / permanentEnding / machine.poison",
+            "cond": "Current request ends with original refusal/transport or deterministic protocol cause; no fabricated clean stop"
+          }
+        }
+      }
+    },
+    {
+      "edge": "h_gap_terminal_eof",
+      "attrs": {
+        "kind": "gap",
+        "bug_id": "CODEMODE-STREAM-PAUSES",
+        "gap_number": 1,
+        "severity": "contributing",
+        "note": "response.completed is reduced into finalResponse but collect continues to transport EOF. During any terminal-to-EOF gap the code-mode source remains uncertified, delaying last callbacks, output completion and hidden next round. The WebSocket Flow ends on terminal; SSE currently does not. Source-grounded conditional mechanism; no live timing measurement.",
+        "_by_source": {
+          "/home/marcos/Documents/dev/projects/splice/repo/.Codex/tmp/flow-maps/codemode-streaming/state-machine.hif.json": {
+            "kind": "gap",
+            "bug_id": "CODEMODE-STREAM-PAUSES",
+            "gap_number": 1,
+            "severity": "contributing",
+            "note": "response.completed is reduced into finalResponse but collect continues to transport EOF. During any terminal-to-EOF gap the code-mode source remains uncertified, delaying last callbacks, output completion and hidden next round. The WebSocket Flow ends on terminal; SSE currently does not. Source-grounded conditional mechanism; no live timing measurement."
+          }
+        }
+      }
+    },
+    {
+      "edge": "h_gap_rejected_argument_sequence",
+      "attrs": {
+        "kind": "gap",
+        "bug_id": "CODEMODE-RECURRING-FAILURES",
+        "gap_number": 1,
+        "severity": "root-cause",
+        "note": "call reserves ++sequence and pending[id] before host.call accepts the serialized object. An argument object with toJSON returning null passes the object/string checks but WorkerBridge.parseCall rejects JsonNull. If the script catches that error and calls a valid tool, its first emitted id is 2 while CodeModeFrames.parseCalls requires 1, poisoning the cell. Validate decoded object before reservation and make reservation atomic with acceptance.",
+        "scenario": "try { await tools.Read({toJSON(){return null;}}); } catch {} text(await tools.Read({path:'good'}));",
+        "_by_source": {
+          "/home/marcos/Documents/dev/projects/splice/repo/.Codex/tmp/flow-maps/codemode-streaming/state-machine.hif.json": {
+            "kind": "gap",
+            "bug_id": "CODEMODE-RECURRING-FAILURES",
+            "gap_number": 1,
+            "severity": "root-cause",
+            "note": "call reserves ++sequence and pending[id] before host.call accepts the serialized object. An argument object with toJSON returning null passes the object/string checks but WorkerBridge.parseCall rejects JsonNull. If the script catches that error and calls a valid tool, its first emitted id is 2 while CodeModeFrames.parseCalls requires 1, poisoning the cell. Validate decoded object before reservation and make reservation atomic with acceptance.",
+            "scenario": "try { await tools.Read({toJSON(){return null;}}); } catch {} text(await tools.Read({path:'good'}));"
+          }
+        }
+      }
+    }
+  ],
+  "incidences": [
+    {
+      "edge": "dep_turn_bridge",
+      "node": "CodexCodeModeTurnBuilder",
+      "direction": "tail",
+      "attrs": {
+        "role": "caller",
+        "_source": "/home/marcos/Documents/dev/projects/splice/repo/.Codex/tmp/flow-maps/codemode-streaming/dep-graph.hif.json"
+      }
+    },
+    {
+      "edge": "dep_turn_bridge",
+      "node": "CodeModeRoundInterceptor",
+      "direction": "head",
+      "attrs": {
+        "role": "callee",
+        "_source": "/home/marcos/Documents/dev/projects/splice/repo/.Codex/tmp/flow-maps/codemode-streaming/dep-graph.hif.json"
+      }
+    },
+    {
+      "edge": "dep_interception",
+      "node": "RoundStrategy",
+      "direction": "tail",
+      "attrs": {
+        "role": "caller",
+        "_source": "/home/marcos/Documents/dev/projects/splice/repo/.Codex/tmp/flow-maps/codemode-streaming/dep-graph.hif.json"
+      }
+    },
+    {
+      "edge": "dep_interception",
+      "node": "CodeModeRoundInterceptor",
+      "direction": "head",
+      "attrs": {
+        "role": "callee",
+        "_source": "/home/marcos/Documents/dev/projects/splice/repo/.Codex/tmp/flow-maps/codemode-streaming/dep-graph.hif.json"
+      }
+    },
+    {
+      "edge": "dep_interceptor_driver",
+      "node": "CodeModeRoundInterceptor",
+      "direction": "tail",
+      "attrs": {
+        "role": "caller",
+        "_source": "/home/marcos/Documents/dev/projects/splice/repo/.Codex/tmp/flow-maps/codemode-streaming/dep-graph.hif.json"
+      }
+    },
+    {
+      "edge": "dep_interceptor_driver",
+      "node": "CodexCodeModeDriver",
+      "direction": "head",
+      "attrs": {
+        "role": "callee",
+        "_source": "/home/marcos/Documents/dev/projects/splice/repo/.Codex/tmp/flow-maps/codemode-streaming/dep-graph.hif.json"
+      }
+    },
+    {
+      "edge": "dep_start_source",
+      "node": "CodexCodeModeDriver",
+      "direction": "tail",
+      "attrs": {
+        "role": "caller",
+        "_source": "/home/marcos/Documents/dev/projects/splice/repo/.Codex/tmp/flow-maps/codemode-streaming/dep-graph.hif.json"
+      }
+    },
+    {
+      "edge": "dep_start_source",
+      "node": "CodeModeStreams",
+      "direction": "head",
+      "attrs": {
+        "role": "callee",
+        "_source": "/home/marcos/Documents/dev/projects/splice/repo/.Codex/tmp/flow-maps/codemode-streaming/dep-graph.hif.json"
+      }
+    },
+    {
+      "edge": "dep_own_source",
+      "node": "CodeModeStreams",
+      "direction": "tail",
+      "attrs": {
+        "role": "caller",
+        "_source": "/home/marcos/Documents/dev/projects/splice/repo/.Codex/tmp/flow-maps/codemode-streaming/dep-graph.hif.json"
+      }
+    },
+    {
+      "edge": "dep_own_source",
+      "node": "CodeModeLiveRound",
+      "direction": "head",
+      "attrs": {
+        "role": "callee",
+        "_source": "/home/marcos/Documents/dev/projects/splice/repo/.Codex/tmp/flow-maps/codemode-streaming/dep-graph.hif.json"
+      }
+    },
+    {
+      "edge": "dep_live_round_sink",
+      "node": "CodeModeLiveRound",
+      "direction": "tail",
+      "attrs": {
+        "role": "caller",
+        "_source": "/home/marcos/Documents/dev/projects/splice/repo/.Codex/tmp/flow-maps/codemode-streaming/dep-graph.hif.json"
+      }
+    },
+    {
+      "edge": "dep_live_round_sink",
+      "node": "CodeModeSwitchingSink",
+      "direction": "head",
+      "attrs": {
+        "role": "callee",
+        "_source": "/home/marcos/Documents/dev/projects/splice/repo/.Codex/tmp/flow-maps/codemode-streaming/dep-graph.hif.json"
+      }
+    },
+    {
+      "edge": "dep_source_post",
+      "node": "CodeModeLiveRound",
+      "direction": "tail",
+      "attrs": {
+        "role": "caller",
+        "_source": "/home/marcos/Documents/dev/projects/splice/repo/.Codex/tmp/flow-maps/codemode-streaming/dep-graph.hif.json"
+      }
+    },
+    {
+      "edge": "dep_source_post",
+      "node": "SseRoundDriver",
+      "direction": "head",
+      "attrs": {
+        "role": "callee",
+        "_source": "/home/marcos/Documents/dev/projects/splice/repo/.Codex/tmp/flow-maps/codemode-streaming/dep-graph.hif.json"
+      }
+    },
+    {
+      "edge": "dep_sse_transport",
+      "node": "SseRoundDriver",
+      "direction": "tail",
+      "attrs": {
+        "role": "caller",
+        "_source": "/home/marcos/Documents/dev/projects/splice/repo/.Codex/tmp/flow-maps/codemode-streaming/dep-graph.hif.json"
+      }
+    },
+    {
+      "edge": "dep_sse_transport",
+      "node": "SseRoundConsume",
+      "direction": "head",
+      "attrs": {
+        "role": "callee",
+        "_source": "/home/marcos/Documents/dev/projects/splice/repo/.Codex/tmp/flow-maps/codemode-streaming/dep-graph.hif.json"
+      }
+    },
+    {
+      "edge": "dep_translator_events",
+      "node": "SseRoundConsume",
+      "direction": "tail",
+      "attrs": {
+        "role": "caller",
+        "_source": "/home/marcos/Documents/dev/projects/splice/repo/.Codex/tmp/flow-maps/codemode-streaming/dep-graph.hif.json"
+      }
+    },
+    {
+      "edge": "dep_translator_events",
+      "node": "ResponsesStreamTranslator",
+      "direction": "head",
+      "attrs": {
+        "role": "callee",
+        "_source": "/home/marcos/Documents/dev/projects/splice/repo/.Codex/tmp/flow-maps/codemode-streaming/dep-graph.hif.json"
+      }
+    },
+    {
+      "edge": "dep_event_fold",
+      "node": "ResponsesStreamTranslator",
+      "direction": "tail",
+      "attrs": {
+        "role": "caller",
+        "_source": "/home/marcos/Documents/dev/projects/splice/repo/.Codex/tmp/flow-maps/codemode-streaming/dep-graph.hif.json"
+      }
+    },
+    {
+      "edge": "dep_event_fold",
+      "node": "ResponsesEventReducer",
+      "direction": "head",
+      "attrs": {
+        "role": "callee",
+        "_source": "/home/marcos/Documents/dev/projects/splice/repo/.Codex/tmp/flow-maps/codemode-streaming/dep-graph.hif.json"
+      }
+    },
+    {
+      "edge": "dep_source_reducer",
+      "node": "ResponsesEventReducer",
+      "direction": "tail",
+      "attrs": {
+        "role": "caller",
+        "_source": "/home/marcos/Documents/dev/projects/splice/repo/.Codex/tmp/flow-maps/codemode-streaming/dep-graph.hif.json"
+      }
+    },
+    {
+      "edge": "dep_source_reducer",
+      "node": "ResponsesExecProgress",
+      "direction": "head",
+      "attrs": {
+        "role": "callee",
+        "_source": "/home/marcos/Documents/dev/projects/splice/repo/.Codex/tmp/flow-maps/codemode-streaming/dep-graph.hif.json"
+      }
+    },
+    {
+      "edge": "dep_runtime",
+      "node": "CodeModeSourceBuffer",
+      "direction": "tail",
+      "attrs": {
+        "role": "caller",
+        "_source": "/home/marcos/Documents/dev/projects/splice/repo/.Codex/tmp/flow-maps/codemode-streaming/dep-graph.hif.json"
+      }
+    },
+    {
+      "edge": "dep_runtime",
+      "node": "JvmCodeModeRuntime",
+      "direction": "head",
+      "attrs": {
+        "role": "callee",
+        "_source": "/home/marcos/Documents/dev/projects/splice/repo/.Codex/tmp/flow-maps/codemode-streaming/dep-graph.hif.json"
+      }
+    },
+    {
+      "edge": "dep_first_advance",
+      "node": "CodexCodeModeDriver",
+      "direction": "tail",
+      "attrs": {
+        "role": "caller",
+        "_source": "/home/marcos/Documents/dev/projects/splice/repo/.Codex/tmp/flow-maps/codemode-streaming/dep-graph.hif.json"
+      }
+    },
+    {
+      "edge": "dep_first_advance",
+      "node": "CodexCodeModeMachine",
+      "direction": "head",
+      "attrs": {
+        "role": "callee",
+        "_source": "/home/marcos/Documents/dev/projects/splice/repo/.Codex/tmp/flow-maps/codemode-streaming/dep-graph.hif.json"
+      }
+    },
+    {
+      "edge": "dep_machine_cell",
+      "node": "CodexCodeModeMachine",
+      "direction": "tail",
+      "attrs": {
+        "role": "caller",
+        "_source": "/home/marcos/Documents/dev/projects/splice/repo/.Codex/tmp/flow-maps/codemode-streaming/dep-graph.hif.json"
+      }
+    },
+    {
+      "edge": "dep_machine_cell",
+      "node": "CodeModeStreamingCell",
+      "direction": "head",
+      "attrs": {
+        "role": "callee",
+        "_source": "/home/marcos/Documents/dev/projects/splice/repo/.Codex/tmp/flow-maps/codemode-streaming/dep-graph.hif.json"
+      }
+    },
+    {
+      "edge": "dep_result_resume",
+      "node": "CodexCodeModeResume",
+      "direction": "tail",
+      "attrs": {
+        "role": "caller",
+        "_source": "/home/marcos/Documents/dev/projects/splice/repo/.Codex/tmp/flow-maps/codemode-streaming/dep-graph.hif.json"
+      }
+    },
+    {
+      "edge": "dep_result_resume",
+      "node": "CodexCodeModeMachine",
+      "direction": "head",
+      "attrs": {
+        "role": "callee",
+        "_source": "/home/marcos/Documents/dev/projects/splice/repo/.Codex/tmp/flow-maps/codemode-streaming/dep-graph.hif.json"
+      }
+    },
+    {
+      "edge": "dep_continue",
+      "node": "CodexCodeModeResume",
+      "direction": "tail",
+      "attrs": {
+        "role": "caller",
+        "_source": "/home/marcos/Documents/dev/projects/splice/repo/.Codex/tmp/flow-maps/codemode-streaming/dep-graph.hif.json"
+      }
+    },
+    {
+      "edge": "dep_continue",
+      "node": "CodexCodeModeDriver",
+      "direction": "head",
+      "attrs": {
+        "role": "callee",
+        "_source": "/home/marcos/Documents/dev/projects/splice/repo/.Codex/tmp/flow-maps/codemode-streaming/dep-graph.hif.json"
+      }
+    },
+    {
+      "edge": "dep_prose_output",
+      "node": "CodeModeSwitchingSink",
+      "direction": "tail",
+      "attrs": {
+        "role": "caller",
+        "_source": "/home/marcos/Documents/dev/projects/splice/repo/.Codex/tmp/flow-maps/codemode-streaming/dep-graph.hif.json"
+      }
+    },
+    {
+      "edge": "dep_prose_output",
+      "node": "SseEmitter",
+      "direction": "head",
+      "attrs": {
+        "role": "callee",
+        "_source": "/home/marcos/Documents/dev/projects/splice/repo/.Codex/tmp/flow-maps/codemode-streaming/dep-graph.hif.json"
+      }
+    },
+    {
+      "edge": "dep_tool_output",
+      "node": "CodexCodeModeMachine",
+      "direction": "tail",
+      "attrs": {
+        "role": "caller",
+        "_source": "/home/marcos/Documents/dev/projects/splice/repo/.Codex/tmp/flow-maps/codemode-streaming/dep-graph.hif.json"
+      }
+    },
+    {
+      "edge": "dep_tool_output",
+      "node": "SseEmitter",
+      "direction": "head",
+      "attrs": {
+        "role": "callee",
+        "_source": "/home/marcos/Documents/dev/projects/splice/repo/.Codex/tmp/flow-maps/codemode-streaming/dep-graph.hif.json"
+      }
+    },
+    {
+      "edge": "dep_channel",
+      "node": "SseEmitter",
+      "direction": "tail",
+      "attrs": {
+        "role": "caller",
+        "_source": "/home/marcos/Documents/dev/projects/splice/repo/.Codex/tmp/flow-maps/codemode-streaming/dep-graph.hif.json"
+      }
+    },
+    {
+      "edge": "dep_channel",
+      "node": "ClientChannel",
+      "direction": "head",
+      "attrs": {
+        "role": "callee",
+        "_source": "/home/marcos/Documents/dev/projects/splice/repo/.Codex/tmp/flow-maps/codemode-streaming/dep-graph.hif.json"
+      }
+    },
+    {
+      "edge": "dep_pacing",
+      "node": "ClientChannel",
+      "direction": "tail",
+      "attrs": {
+        "role": "caller",
+        "_source": "/home/marcos/Documents/dev/projects/splice/repo/.Codex/tmp/flow-maps/codemode-streaming/dep-graph.hif.json"
+      }
+    },
+    {
+      "edge": "dep_pacing",
+      "node": "DeltaPacer",
+      "direction": "head",
+      "attrs": {
+        "role": "callee",
+        "_source": "/home/marcos/Documents/dev/projects/splice/repo/.Codex/tmp/flow-maps/codemode-streaming/dep-graph.hif.json"
+      }
+    },
+    {
+      "edge": "dep_h_source_stream",
+      "node": "ResponsesEventReducer",
+      "attrs": {
+        "role": "upstream-event-dispatch",
+        "_source": "/home/marcos/Documents/dev/projects/splice/repo/.Codex/tmp/flow-maps/codemode-streaming/dep-graph.hif.json"
+      }
+    },
+    {
+      "edge": "dep_h_source_stream",
+      "node": "ResponsesExecProgress",
+      "attrs": {
+        "role": "source-only-projection",
+        "_source": "/home/marcos/Documents/dev/projects/splice/repo/.Codex/tmp/flow-maps/codemode-streaming/dep-graph.hif.json"
+      }
+    },
+    {
+      "edge": "dep_h_source_stream",
+      "node": "CodeModeLiveRound",
+      "attrs": {
+        "role": "independent-source-owner",
+        "_source": "/home/marcos/Documents/dev/projects/splice/repo/.Codex/tmp/flow-maps/codemode-streaming/dep-graph.hif.json"
+      }
+    },
+    {
+      "edge": "dep_h_source_stream",
+      "node": "CodeModeSourceCapture",
+      "attrs": {
+        "role": "identity-and-size-checks",
+        "_source": "/home/marcos/Documents/dev/projects/splice/repo/.Codex/tmp/flow-maps/codemode-streaming/dep-graph.hif.json"
+      }
+    },
+    {
+      "edge": "dep_h_source_stream",
+      "node": "CodeModeSourceBuffer",
+      "attrs": {
+        "role": "incremental-source",
+        "_source": "/home/marcos/Documents/dev/projects/splice/repo/.Codex/tmp/flow-maps/codemode-streaming/dep-graph.hif.json"
+      }
+    },
+    {
+      "edge": "dep_h_source_certification",
+      "node": "ResponsesStreamTranslator",
+      "attrs": {
+        "role": "collector-and-outcome-owner",
+        "_source": "/home/marcos/Documents/dev/projects/splice/repo/.Codex/tmp/flow-maps/codemode-streaming/dep-graph.hif.json"
+      }
+    },
+    {
+      "edge": "dep_h_source_certification",
+      "node": "ResponsesEventReducer",
+      "attrs": {
+        "role": "terminal-latch",
+        "_source": "/home/marcos/Documents/dev/projects/splice/repo/.Codex/tmp/flow-maps/codemode-streaming/dep-graph.hif.json"
+      }
+    },
+    {
+      "edge": "dep_h_source_certification",
+      "node": "CodeModeLiveRound",
+      "attrs": {
+        "role": "certifies-outcome",
+        "_source": "/home/marcos/Documents/dev/projects/splice/repo/.Codex/tmp/flow-maps/codemode-streaming/dep-graph.hif.json"
+      }
+    },
+    {
+      "edge": "dep_h_source_certification",
+      "node": "CodeModeSourceCapture",
+      "attrs": {
+        "role": "freezes-on-item-done",
+        "_source": "/home/marcos/Documents/dev/projects/splice/repo/.Codex/tmp/flow-maps/codemode-streaming/dep-graph.hif.json"
+      }
+    },
+    {
+      "edge": "dep_h_source_certification",
+      "node": "CodeModeSourceBuffer",
+      "attrs": {
+        "role": "awaits-terminal-certification",
+        "_source": "/home/marcos/Documents/dev/projects/splice/repo/.Codex/tmp/flow-maps/codemode-streaming/dep-graph.hif.json"
+      }
+    },
+    {
+      "edge": "dep_h_source_certification",
+      "node": "CodeModeStreamingCell",
+      "attrs": {
+        "role": "gates-callback-or-completion",
+        "_source": "/home/marcos/Documents/dev/projects/splice/repo/.Codex/tmp/flow-maps/codemode-streaming/dep-graph.hif.json"
+      }
+    },
+    {
+      "edge": "dep_h_attachment",
+      "node": "CodeModeStreams",
+      "attrs": {
+        "role": "attachment-lifecycle",
+        "_source": "/home/marcos/Documents/dev/projects/splice/repo/.Codex/tmp/flow-maps/codemode-streaming/dep-graph.hif.json"
+      }
+    },
+    {
+      "edge": "dep_h_attachment",
+      "node": "CodeModeSwitchingSink",
+      "attrs": {
+        "role": "serializes-output",
+        "_source": "/home/marcos/Documents/dev/projects/splice/repo/.Codex/tmp/flow-maps/codemode-streaming/dep-graph.hif.json"
+      }
+    },
+    {
+      "edge": "dep_h_attachment",
+      "node": "CodeModeStreamingCell",
+      "attrs": {
+        "role": "detaches-on-callback",
+        "_source": "/home/marcos/Documents/dev/projects/splice/repo/.Codex/tmp/flow-maps/codemode-streaming/dep-graph.hif.json"
+      }
+    },
+    {
+      "edge": "dep_h_attachment",
+      "node": "CodexCodeModeMachine",
+      "attrs": {
+        "role": "publishes-callback",
+        "_source": "/home/marcos/Documents/dev/projects/splice/repo/.Codex/tmp/flow-maps/codemode-streaming/dep-graph.hif.json"
+      }
+    },
+    {
+      "edge": "dep_h_attachment",
+      "node": "CodexCodeModeResume",
+      "attrs": {
+        "role": "reattaches-after-result",
+        "_source": "/home/marcos/Documents/dev/projects/splice/repo/.Codex/tmp/flow-maps/codemode-streaming/dep-graph.hif.json"
+      }
+    },
+    {
+      "edge": "dep_h_fold",
+      "node": "RoundStrategy",
+      "attrs": {
+        "role": "caller",
+        "_source": "/home/marcos/Documents/dev/projects/splice/repo/.Codex/tmp/flow-maps/codemode-streaming/dep-graph.hif.json"
+      }
+    },
+    {
+      "edge": "dep_h_fold",
+      "node": "FoldRunner",
+      "attrs": {
+        "role": "fold-enabled-target",
+        "_source": "/home/marcos/Documents/dev/projects/splice/repo/.Codex/tmp/flow-maps/codemode-streaming/dep-graph.hif.json"
+      }
+    },
+    {
+      "edge": "dep_h_fold",
+      "node": "BufferingWireSink",
+      "attrs": {
+        "role": "tentative-final-buffer",
+        "_source": "/home/marcos/Documents/dev/projects/splice/repo/.Codex/tmp/flow-maps/codemode-streaming/dep-graph.hif.json"
+      }
+    },
+    {
+      "edge": "dep_h_fold",
+      "node": "SseEmitter",
+      "attrs": {
+        "role": "unbuffered-target",
+        "_source": "/home/marcos/Documents/dev/projects/splice/repo/.Codex/tmp/flow-maps/codemode-streaming/dep-graph.hif.json"
+      }
+    },
+    {
+      "edge": "dep_h_transport_split",
+      "node": "SseRoundDriver",
+      "attrs": {
+        "role": "transport-selection",
+        "_source": "/home/marcos/Documents/dev/projects/splice/repo/.Codex/tmp/flow-maps/codemode-streaming/dep-graph.hif.json"
+      }
+    },
+    {
+      "edge": "dep_h_transport_split",
+      "node": "SseRoundConsume",
+      "attrs": {
+        "role": "http-body-consumer",
+        "_source": "/home/marcos/Documents/dev/projects/splice/repo/.Codex/tmp/flow-maps/codemode-streaming/dep-graph.hif.json"
+      }
+    },
+    {
+      "edge": "dep_h_transport_split",
+      "node": "SseReader",
+      "attrs": {
+        "role": "reads-to-body-eof",
+        "_source": "/home/marcos/Documents/dev/projects/splice/repo/.Codex/tmp/flow-maps/codemode-streaming/dep-graph.hif.json"
+      }
+    },
+    {
+      "edge": "dep_h_transport_split",
+      "node": "ResponsesStreamTranslator",
+      "attrs": {
+        "role": "collects-flow-to-completion",
+        "_source": "/home/marcos/Documents/dev/projects/splice/repo/.Codex/tmp/flow-maps/codemode-streaming/dep-graph.hif.json"
+      }
+    },
+    {
+      "edge": "dep_h_transport_split",
+      "node": "WsRoundStream",
+      "attrs": {
+        "role": "ends-flow-on-protocol-terminal",
+        "_source": "/home/marcos/Documents/dev/projects/splice/repo/.Codex/tmp/flow-maps/codemode-streaming/dep-graph.hif.json"
+      }
+    },
+    {
+      "edge": "dep_gap_sse_terminal_eof",
+      "node": "ResponsesEventReducer",
+      "attrs": {
+        "role": "terminal-already-parsed",
+        "_source": "/home/marcos/Documents/dev/projects/splice/repo/.Codex/tmp/flow-maps/codemode-streaming/dep-graph.hif.json"
+      }
+    },
+    {
+      "edge": "dep_gap_sse_terminal_eof",
+      "node": "ResponsesStreamTranslator",
+      "attrs": {
+        "role": "waiting-collector",
+        "_source": "/home/marcos/Documents/dev/projects/splice/repo/.Codex/tmp/flow-maps/codemode-streaming/dep-graph.hif.json"
+      }
+    },
+    {
+      "edge": "dep_gap_sse_terminal_eof",
+      "node": "SseReader",
+      "attrs": {
+        "role": "waiting-http-body-eof",
+        "_source": "/home/marcos/Documents/dev/projects/splice/repo/.Codex/tmp/flow-maps/codemode-streaming/dep-graph.hif.json"
+      }
+    },
+    {
+      "edge": "dep_gap_sse_terminal_eof",
+      "node": "CodeModeSourceBuffer",
+      "attrs": {
+        "role": "sealed-source-awaiting-certification",
+        "_source": "/home/marcos/Documents/dev/projects/splice/repo/.Codex/tmp/flow-maps/codemode-streaming/dep-graph.hif.json"
+      }
+    },
+    {
+      "edge": "dep_gap_sse_terminal_eof",
+      "node": "CodeModeStreamingCell",
+      "attrs": {
+        "role": "blocked-client-step",
+        "_source": "/home/marcos/Documents/dev/projects/splice/repo/.Codex/tmp/flow-maps/codemode-streaming/dep-graph.hif.json"
+      }
+    },
+    {
+      "edge": "dep_h_client_flush",
+      "node": "SseEmitter",
+      "attrs": {
+        "role": "complete-frame-owner",
+        "_source": "/home/marcos/Documents/dev/projects/splice/repo/.Codex/tmp/flow-maps/codemode-streaming/dep-graph.hif.json"
+      }
+    },
+    {
+      "edge": "dep_h_client_flush",
+      "node": "ClientChannel",
+      "attrs": {
+        "role": "ordered-socket-writer",
+        "_source": "/home/marcos/Documents/dev/projects/splice/repo/.Codex/tmp/flow-maps/codemode-streaming/dep-graph.hif.json"
+      }
+    },
+    {
+      "edge": "dep_h_client_flush",
+      "node": "DeltaPacer",
+      "attrs": {
+        "role": "frame-count-pacing",
+        "_source": "/home/marcos/Documents/dev/projects/splice/repo/.Codex/tmp/flow-maps/codemode-streaming/dep-graph.hif.json"
+      }
+    },
+    {
+      "edge": "energy_clr_1",
+      "node": "ResponsesTurnState",
+      "attrs": {
+        "role": "container",
+        "_source": "/home/marcos/Documents/dev/projects/splice/repo/.Codex/tmp/flow-maps/codemode-streaming/energy.hif.json"
+      }
+    },
+    {
+      "edge": "energy_clr_1",
+      "node": "energy_key_1",
+      "attrs": {
+        "role": "key",
+        "_source": "/home/marcos/Documents/dev/projects/splice/repo/.Codex/tmp/flow-maps/codemode-streaming/energy.hif.json"
+      }
+    },
+    {
+      "edge": "energy_clr_1",
+      "node": "ResponsesTurnState",
+      "attrs": {
+        "role": "owner",
+        "class": "ResponsesTurnState",
+        "_source": "/home/marcos/Documents/dev/projects/splice/repo/.Codex/tmp/flow-maps/codemode-streaming/energy.hif.json"
+      }
+    },
+    {
+      "edge": "energy_clr_1",
+      "node": "SourceResponseLifetime",
+      "attrs": {
+        "role": "trigger",
+        "condition": "new ledger each driveRound; block entries removed at item/args completion; whole state falls out of scope when translator returns",
+        "_source": "/home/marcos/Documents/dev/projects/splice/repo/.Codex/tmp/flow-maps/codemode-streaming/energy.hif.json"
+      }
+    },
+    {
+      "edge": "energy_clr_1",
+      "node": "SourceResponseLifetime",
+      "attrs": {
+        "role": "clearer",
+        "function": "ResponsesStreamTranslator.driveRound/reduceRound",
+        "evidence": "integrations/dialects/openai-responses/src/main/kotlin/splice/dialect/responses/stream/ResponsesStreamTranslator.kt:91-110",
+        "_source": "/home/marcos/Documents/dev/projects/splice/repo/.Codex/tmp/flow-maps/codemode-streaming/energy.hif.json"
+      }
+    },
+    {
+      "edge": "energy_clr_2",
+      "node": "CodeModeSourceBuffer",
+      "attrs": {
+        "role": "container",
+        "_source": "/home/marcos/Documents/dev/projects/splice/repo/.Codex/tmp/flow-maps/codemode-streaming/energy.hif.json"
+      }
+    },
+    {
+      "edge": "energy_clr_2",
+      "node": "energy_key_2",
+      "attrs": {
+        "role": "key",
+        "_source": "/home/marcos/Documents/dev/projects/splice/repo/.Codex/tmp/flow-maps/codemode-streaming/energy.hif.json"
+      }
+    },
+    {
+      "edge": "energy_clr_2",
+      "node": "CodeModeSourceBuffer",
+      "attrs": {
+        "role": "owner",
+        "class": "CodeModeSourceBuffer",
+        "_source": "/home/marcos/Documents/dev/projects/splice/repo/.Codex/tmp/flow-maps/codemode-streaming/energy.hif.json"
+      }
+    },
+    {
+      "edge": "energy_clr_2",
+      "node": "SourceResponseLifetime",
+      "attrs": {
+        "role": "trigger",
+        "condition": "complete/fail releases blocked cursors; no incremental text clearing; entire prefix retained until round becomes unreachable",
+        "_source": "/home/marcos/Documents/dev/projects/splice/repo/.Codex/tmp/flow-maps/codemode-streaming/energy.hif.json"
+      }
+    },
+    {
+      "edge": "energy_clr_2",
+      "node": "SourceResponseLifetime",
+      "attrs": {
+        "role": "clearer",
+        "function": "CodeModeSourceBuffer.complete/fail; round lease disposal",
+        "evidence": "integrations/providers/codex/src/main/kotlin/splice/provider/codex/stream/CodeModeSourceBuffer.kt:54-85",
+        "_source": "/home/marcos/Documents/dev/projects/splice/repo/.Codex/tmp/flow-maps/codemode-streaming/energy.hif.json"
+      }
+    },
+    {
+      "edge": "energy_clr_3",
+      "node": "CodeModeSinkCore",
+      "attrs": {
+        "role": "container",
+        "_source": "/home/marcos/Documents/dev/projects/splice/repo/.Codex/tmp/flow-maps/codemode-streaming/energy.hif.json"
+      }
+    },
+    {
+      "edge": "energy_clr_3",
+      "node": "energy_key_3",
+      "attrs": {
+        "role": "key",
+        "_source": "/home/marcos/Documents/dev/projects/splice/repo/.Codex/tmp/flow-maps/codemode-streaming/energy.hif.json"
+      }
+    },
+    {
+      "edge": "energy_clr_3",
+      "node": "CodeModeSinkCore",
+      "attrs": {
+        "role": "owner",
+        "class": "CodeModeSinkCore",
+        "_source": "/home/marcos/Documents/dev/projects/splice/repo/.Codex/tmp/flow-maps/codemode-streaming/energy.hif.json"
+      }
+    },
+    {
+      "edge": "energy_clr_3",
+      "node": "ClientAttachment",
+      "attrs": {
+        "role": "trigger",
+        "condition": "attach drains held writes under attachment mutex; detach closes mapped client blocks and clears current witness but preserves upstream identities; discard clears queued draft and mappings",
+        "_source": "/home/marcos/Documents/dev/projects/splice/repo/.Codex/tmp/flow-maps/codemode-streaming/energy.hif.json"
+      }
+    },
+    {
+      "edge": "energy_clr_3",
+      "node": "ClientAttachment",
+      "attrs": {
+        "role": "clearer",
+        "function": "attach/detach/discard; CodeModeSinkWrites.drain",
+        "evidence": "integrations/providers/codex/src/main/kotlin/splice/provider/codex/stream/CodeModeSwitchingSink.kt:72-89",
+        "_source": "/home/marcos/Documents/dev/projects/splice/repo/.Codex/tmp/flow-maps/codemode-streaming/energy.hif.json"
+      }
+    },
+    {
+      "edge": "energy_clr_4",
+      "node": "JvmCodeModeCell",
+      "attrs": {
+        "role": "container",
+        "_source": "/home/marcos/Documents/dev/projects/splice/repo/.Codex/tmp/flow-maps/codemode-streaming/energy.hif.json"
+      }
+    },
+    {
+      "edge": "energy_clr_4",
+      "node": "energy_key_4",
+      "attrs": {
+        "role": "key",
+        "_source": "/home/marcos/Documents/dev/projects/splice/repo/.Codex/tmp/flow-maps/codemode-streaming/energy.hif.json"
+      }
+    },
+    {
+      "edge": "energy_clr_4",
+      "node": "JvmCodeModeCell",
+      "attrs": {
+        "role": "owner",
+        "class": "JvmCodeModeCell",
+        "_source": "/home/marcos/Documents/dev/projects/splice/repo/.Codex/tmp/flow-maps/codemode-streaming/energy.hif.json"
+      }
+    },
+    {
+      "edge": "energy_clr_4",
+      "node": "RuntimeCellLifecycle",
+      "attrs": {
+        "role": "trigger",
+        "condition": "initial reply consumed once; results remove callback ids; Completed closes context; failed advance closes; source cursor stays owned while callback results are outstanding",
+        "_source": "/home/marcos/Documents/dev/projects/splice/repo/.Codex/tmp/flow-maps/codemode-streaming/energy.hif.json"
+      }
+    },
+    {
+      "edge": "energy_clr_4",
+      "node": "RuntimeCellLifecycle",
+      "attrs": {
+        "role": "clearer",
+        "function": "advance/receiveAfter/toStep; close/stop",
+        "evidence": "integrations/codemode/src/main/kotlin/splice/codemode/JvmCodeModeCell.kt:49-79",
+        "_source": "/home/marcos/Documents/dev/projects/splice/repo/.Codex/tmp/flow-maps/codemode-streaming/energy.hif.json"
+      }
+    },
+    {
+      "edge": "energy_clr_5",
+      "node": "CodeModeStatementParser",
+      "attrs": {
+        "role": "container",
+        "_source": "/home/marcos/Documents/dev/projects/splice/repo/.Codex/tmp/flow-maps/codemode-streaming/energy.hif.json"
+      }
+    },
+    {
+      "edge": "energy_clr_5",
+      "node": "energy_key_5",
+      "attrs": {
+        "role": "key",
+        "_source": "/home/marcos/Documents/dev/projects/splice/repo/.Codex/tmp/flow-maps/codemode-streaming/energy.hif.json"
+      }
+    },
+    {
+      "edge": "energy_clr_5",
+      "node": "CodeModeStatementParser",
+      "attrs": {
+        "role": "owner",
+        "class": "CodeModeStatementParser",
+        "_source": "/home/marcos/Documents/dev/projects/splice/repo/.Codex/tmp/flow-maps/codemode-streaming/energy.hif.json"
+      }
+    },
+    {
+      "edge": "energy_clr_5",
+      "node": "RuntimeCellLifecycle",
+      "attrs": {
+        "role": "trigger",
+        "condition": "pending prefixes deleted when grammar-certified; complete/error clears pending; original is deliberately retained for whole-program syntax validation until context close",
+        "_source": "/home/marcos/Documents/dev/projects/splice/repo/.Codex/tmp/flow-maps/codemode-streaming/energy.hif.json"
+      }
+    },
+    {
+      "edge": "energy_clr_5",
+      "node": "RuntimeCellLifecycle",
+      "attrs": {
+        "role": "clearer",
+        "function": "next/finalInput consume pending; WorkerSession.close disposes full context",
+        "evidence": "integrations/codemode/src/main/kotlin/splice/codemode/CodeModeStatementParser.kt:84-119",
+        "_source": "/home/marcos/Documents/dev/projects/splice/repo/.Codex/tmp/flow-maps/codemode-streaming/energy.hif.json"
+      }
+    },
+    {
+      "edge": "energy_clr_6",
+      "node": "SharedWorkerChannel",
+      "attrs": {
+        "role": "container",
+        "_source": "/home/marcos/Documents/dev/projects/splice/repo/.Codex/tmp/flow-maps/codemode-streaming/energy.hif.json"
+      }
+    },
+    {
+      "edge": "energy_clr_6",
+      "node": "energy_key_6",
+      "attrs": {
+        "role": "key",
+        "_source": "/home/marcos/Documents/dev/projects/splice/repo/.Codex/tmp/flow-maps/codemode-streaming/energy.hif.json"
+      }
+    },
+    {
+      "edge": "energy_clr_6",
+      "node": "SharedWorkerChannel",
+      "attrs": {
+        "role": "owner",
+        "class": "SharedWorkerChannel",
+        "_source": "/home/marcos/Documents/dev/projects/splice/repo/.Codex/tmp/flow-maps/codemode-streaming/energy.hif.json"
+      }
+    },
+    {
+      "edge": "energy_clr_6",
+      "node": "RuntimeCellLifecycle",
+      "attrs": {
+        "role": "trigger",
+        "condition": "reply routing removes request; send finally cancels/removes abandoned answer; cell close releases closing then removes after ack; host failure clears all answers/cells",
+        "_source": "/home/marcos/Documents/dev/projects/splice/repo/.Codex/tmp/flow-maps/codemode-streaming/energy.hif.json"
+      }
+    },
+    {
+      "edge": "energy_clr_6",
+      "node": "RuntimeCellLifecycle",
+      "attrs": {
+        "role": "clearer",
+        "function": "deliver/send finally/fail; closeCell",
+        "evidence": "integrations/codemode/src/main/kotlin/splice/codemode/SharedWorkerChannel.kt:161-164",
+        "_source": "/home/marcos/Documents/dev/projects/splice/repo/.Codex/tmp/flow-maps/codemode-streaming/energy.hif.json"
+      }
+    },
+    {
+      "edge": "energy_clr_7",
+      "node": "CodexCodeModeRegistry",
+      "attrs": {
+        "role": "container",
+        "_source": "/home/marcos/Documents/dev/projects/splice/repo/.Codex/tmp/flow-maps/codemode-streaming/energy.hif.json"
+      }
+    },
+    {
+      "edge": "energy_clr_7",
+      "node": "energy_key_7",
+      "attrs": {
+        "role": "key",
+        "_source": "/home/marcos/Documents/dev/projects/splice/repo/.Codex/tmp/flow-maps/codemode-streaming/energy.hif.json"
+      }
+    },
+    {
+      "edge": "energy_clr_7",
+      "node": "CodexCodeModeRegistry",
+      "attrs": {
+        "role": "owner",
+        "class": "CodexCodeModeRegistry",
+        "_source": "/home/marcos/Documents/dev/projects/splice/repo/.Codex/tmp/flow-maps/codemode-streaming/energy.hif.json"
+      }
+    },
+    {
+      "edge": "energy_clr_7",
+      "node": "RegistryRetention",
+      "attrs": {
+        "role": "trigger",
+        "condition": "completion/loss removes live cell; unknown/dead idle cells park after 5 minutes; TTL removes records by conversation; head stop loses active cells; key locks removed when final user releases",
+        "_source": "/home/marcos/Documents/dev/projects/splice/repo/.Codex/tmp/flow-maps/codemode-streaming/energy.hif.json"
+      }
+    },
+    {
+      "edge": "energy_clr_7",
+      "node": "RegistryRetention",
+      "attrs": {
+        "role": "clearer",
+        "function": "CodeModeRecordChanges.complete/lose/onHeadStop; CodeModeCellRetention.park; CodexCodeModeSweeper.expireRecords",
+        "evidence": "integrations/providers/codex/src/main/kotlin/splice/provider/codex/state/CodeModeCellRetention.kt:153-163",
+        "_source": "/home/marcos/Documents/dev/projects/splice/repo/.Codex/tmp/flow-maps/codemode-streaming/energy.hif.json"
+      }
+    },
+    {
+      "edge": "energy_clr_8",
+      "node": "CodexCodeModeStore",
+      "attrs": {
+        "role": "container",
+        "_source": "/home/marcos/Documents/dev/projects/splice/repo/.Codex/tmp/flow-maps/codemode-streaming/energy.hif.json"
+      }
+    },
+    {
+      "edge": "energy_clr_8",
+      "node": "energy_key_8",
+      "attrs": {
+        "role": "key",
+        "_source": "/home/marcos/Documents/dev/projects/splice/repo/.Codex/tmp/flow-maps/codemode-streaming/energy.hif.json"
+      }
+    },
+    {
+      "edge": "energy_clr_8",
+      "node": "CodexCodeModeStore",
+      "attrs": {
+        "role": "owner",
+        "class": "CodexCodeModeStore",
+        "_source": "/home/marcos/Documents/dev/projects/splice/repo/.Codex/tmp/flow-maps/codemode-streaming/energy.hif.json"
+      }
+    },
+    {
+      "edge": "energy_clr_8",
+      "node": "RegistryRetention",
+      "attrs": {
+        "role": "trigger",
+        "condition": "empty conversation deletes durable files and kept snapshot; successful checkpoint replaces journal; failed keys retry until disk agrees; provider terminal disposal clears hot snapshots only when settled",
+        "_source": "/home/marcos/Documents/dev/projects/splice/repo/.Codex/tmp/flow-maps/codemode-streaming/energy.hif.json"
+      }
+    },
+    {
+      "edge": "energy_clr_8",
+      "node": "RegistryRetention",
+      "attrs": {
+        "role": "clearer",
+        "function": "remove/published/release; save retries unsettled keys",
+        "evidence": "integrations/providers/codex/src/main/kotlin/splice/provider/codex/CodexCodeModeStore.kt:296-308",
+        "_source": "/home/marcos/Documents/dev/projects/splice/repo/.Codex/tmp/flow-maps/codemode-streaming/energy.hif.json"
+      }
+    },
+    {
+      "edge": "energy_clr_9",
+      "node": "DeltaPacer",
+      "attrs": {
+        "role": "container",
+        "_source": "/home/marcos/Documents/dev/projects/splice/repo/.Codex/tmp/flow-maps/codemode-streaming/energy.hif.json"
+      }
+    },
+    {
+      "edge": "energy_clr_9",
+      "node": "energy_key_9",
+      "attrs": {
+        "role": "key",
+        "_source": "/home/marcos/Documents/dev/projects/splice/repo/.Codex/tmp/flow-maps/codemode-streaming/energy.hif.json"
+      }
+    },
+    {
+      "edge": "energy_clr_9",
+      "node": "DeltaPacer",
+      "attrs": {
+        "role": "owner",
+        "class": "DeltaPacer",
+        "_source": "/home/marcos/Documents/dev/projects/splice/repo/.Codex/tmp/flow-maps/codemode-streaming/energy.hif.json"
+      }
+    },
+    {
+      "edge": "energy_clr_9",
+      "node": "SocketPacing",
+      "attrs": {
+        "role": "trigger",
+        "condition": "16 ms ticks release whole frames; target held-window 1000 ms; terminal stays behind queued frames; finishing drains or immediate fallback takes all; no splitting of large delta payloads",
+        "_source": "/home/marcos/Documents/dev/projects/splice/repo/.Codex/tmp/flow-maps/codemode-streaming/energy.hif.json"
+      }
+    },
+    {
+      "edge": "energy_clr_9",
+      "node": "SocketPacing",
+      "attrs": {
+        "role": "clearer",
+        "function": "due/takeAll/finishPacing",
+        "evidence": "features/turns/src/main/kotlin/splice/head/wire/ClientChannel.kt:249-271",
+        "_source": "/home/marcos/Documents/dev/projects/splice/repo/.Codex/tmp/flow-maps/codemode-streaming/energy.hif.json"
+      }
+    },
+    {
+      "edge": "energy_clr_10",
+      "node": "CodexCodeModeMachine.started",
+      "attrs": {
+        "role": "container",
+        "_source": "/home/marcos/Documents/dev/projects/splice/repo/.Codex/tmp/flow-maps/codemode-streaming/energy.hif.json"
+      }
+    },
+    {
+      "edge": "energy_clr_10",
+      "node": "energy_key_10",
+      "attrs": {
+        "role": "key",
+        "_source": "/home/marcos/Documents/dev/projects/splice/repo/.Codex/tmp/flow-maps/codemode-streaming/energy.hif.json"
+      }
+    },
+    {
+      "edge": "energy_clr_10",
+      "node": "CodexCodeModeMachine.started",
+      "attrs": {
+        "role": "owner",
+        "class": "CodexCodeModeMachine",
+        "_source": "/home/marcos/Documents/dev/projects/splice/repo/.Codex/tmp/flow-maps/codemode-streaming/energy.hif.json"
+      }
+    },
+    {
+      "edge": "energy_clr_10",
+      "node": "RegistryRetention",
+      "attrs": {
+        "role": "trigger",
+        "condition": "no cleanup is wired to autonomous park/TTL/head-stop; those paths may remove record/cell while retaining this timestamp",
+        "_source": "/home/marcos/Documents/dev/projects/splice/repo/.Codex/tmp/flow-maps/codemode-streaming/energy.hif.json"
+      }
+    },
+    {
+      "edge": "energy_silent_source",
+      "node": "CodeModeSourceBuffer",
+      "attrs": {
+        "role": "source",
+        "_source": "/home/marcos/Documents/dev/projects/splice/repo/.Codex/tmp/flow-maps/codemode-streaming/energy.hif.json"
+      }
+    },
+    {
+      "edge": "energy_silent_source",
+      "node": "CodeModeStatementParser",
+      "attrs": {
+        "role": "statement-gate",
+        "_source": "/home/marcos/Documents/dev/projects/splice/repo/.Codex/tmp/flow-maps/codemode-streaming/energy.hif.json"
+      }
+    },
+    {
+      "edge": "energy_silent_source",
+      "node": "JvmCodeModeCell",
+      "attrs": {
+        "role": "callback-publisher",
+        "_source": "/home/marcos/Documents/dev/projects/splice/repo/.Codex/tmp/flow-maps/codemode-streaming/energy.hif.json"
+      }
+    },
+    {
+      "edge": "energy_atomic_summary_burst",
+      "node": "ResponsesTurnState",
+      "attrs": {
+        "role": "summary-state",
+        "_source": "/home/marcos/Documents/dev/projects/splice/repo/.Codex/tmp/flow-maps/codemode-streaming/energy.hif.json"
+      }
+    },
+    {
+      "edge": "energy_atomic_summary_burst",
+      "node": "CodeModeSinkCore",
+      "attrs": {
+        "role": "forwarding",
+        "_source": "/home/marcos/Documents/dev/projects/splice/repo/.Codex/tmp/flow-maps/codemode-streaming/energy.hif.json"
+      }
+    },
+    {
+      "edge": "energy_atomic_summary_burst",
+      "node": "DeltaPacer",
+      "attrs": {
+        "role": "whole-frame-release",
+        "_source": "/home/marcos/Documents/dev/projects/splice/repo/.Codex/tmp/flow-maps/codemode-streaming/energy.hif.json"
+      }
+    },
+    {
+      "edge": "energy_durable_callback_boundary",
+      "node": "CodexCodeModeRegistry",
+      "attrs": {
+        "role": "transition-owner",
+        "_source": "/home/marcos/Documents/dev/projects/splice/repo/.Codex/tmp/flow-maps/codemode-streaming/energy.hif.json"
+      }
+    },
+    {
+      "edge": "energy_durable_callback_boundary",
+      "node": "CodexCodeModeStore",
+      "attrs": {
+        "role": "durable-save",
+        "_source": "/home/marcos/Documents/dev/projects/splice/repo/.Codex/tmp/flow-maps/codemode-streaming/energy.hif.json"
+      }
+    },
+    {
+      "edge": "energy_durable_callback_boundary",
+      "node": "CodeModeSinkCore",
+      "attrs": {
+        "role": "visible-callback-boundary",
+        "_source": "/home/marcos/Documents/dev/projects/splice/repo/.Codex/tmp/flow-maps/codemode-streaming/energy.hif.json"
+      }
+    },
+    {
+      "edge": "t_stream_1",
+      "node": "Round posted",
+      "direction": "tail",
+      "attrs": {
+        "_source": "/home/marcos/Documents/dev/projects/splice/repo/.Codex/tmp/flow-maps/codemode-streaming/state-machine.hif.json"
+      }
+    },
+    {
+      "edge": "t_stream_1",
+      "node": "Streaming visible output",
+      "direction": "head",
+      "attrs": {
+        "_source": "/home/marcos/Documents/dev/projects/splice/repo/.Codex/tmp/flow-maps/codemode-streaming/state-machine.hif.json"
+      }
+    },
+    {
+      "edge": "t_stream_2",
+      "node": "Round posted",
+      "direction": "tail",
+      "attrs": {
+        "_source": "/home/marcos/Documents/dev/projects/splice/repo/.Codex/tmp/flow-maps/codemode-streaming/state-machine.hif.json"
+      }
+    },
+    {
+      "edge": "t_stream_2",
+      "node": "Exec admitted; source and worker streaming",
+      "direction": "head",
+      "attrs": {
+        "_source": "/home/marcos/Documents/dev/projects/splice/repo/.Codex/tmp/flow-maps/codemode-streaming/state-machine.hif.json"
+      }
+    },
+    {
+      "edge": "t_stream_3",
+      "node": "Streaming visible output",
+      "direction": "tail",
+      "attrs": {
+        "_source": "/home/marcos/Documents/dev/projects/splice/repo/.Codex/tmp/flow-maps/codemode-streaming/state-machine.hif.json"
+      }
+    },
+    {
+      "edge": "t_stream_3",
+      "node": "Exec admitted; source and worker streaming",
+      "direction": "head",
+      "attrs": {
+        "_source": "/home/marcos/Documents/dev/projects/splice/repo/.Codex/tmp/flow-maps/codemode-streaming/state-machine.hif.json"
+      }
+    },
+    {
+      "edge": "t_stream_4",
+      "node": "Exec admitted; source and worker streaming",
+      "direction": "tail",
+      "attrs": {
+        "_source": "/home/marcos/Documents/dev/projects/splice/repo/.Codex/tmp/flow-maps/codemode-streaming/state-machine.hif.json"
+      }
+    },
+    {
+      "edge": "t_stream_4",
+      "node": "Exec admitted; source and worker streaming",
+      "direction": "head",
+      "attrs": {
+        "_source": "/home/marcos/Documents/dev/projects/splice/repo/.Codex/tmp/flow-maps/codemode-streaming/state-machine.hif.json"
+      }
+    },
+    {
+      "edge": "t_stream_5",
+      "node": "Exec admitted; source and worker streaming",
+      "direction": "tail",
+      "attrs": {
+        "_source": "/home/marcos/Documents/dev/projects/splice/repo/.Codex/tmp/flow-maps/codemode-streaming/state-machine.hif.json"
+      }
+    },
+    {
+      "edge": "t_stream_5",
+      "node": "Executable callback ready",
+      "direction": "head",
+      "attrs": {
+        "_source": "/home/marcos/Documents/dev/projects/splice/repo/.Codex/tmp/flow-maps/codemode-streaming/state-machine.hif.json"
+      }
+    },
+    {
+      "edge": "t_stream_6",
+      "node": "Executable callback ready",
+      "direction": "tail",
+      "attrs": {
+        "_source": "/home/marcos/Documents/dev/projects/splice/repo/.Codex/tmp/flow-maps/codemode-streaming/state-machine.hif.json"
+      }
+    },
+    {
+      "edge": "t_stream_6",
+      "node": "Client callbacks emitted; source parked",
+      "direction": "head",
+      "attrs": {
+        "_source": "/home/marcos/Documents/dev/projects/splice/repo/.Codex/tmp/flow-maps/codemode-streaming/state-machine.hif.json"
+      }
+    },
+    {
+      "edge": "t_stream_7",
+      "node": "Exec admitted; source and worker streaming",
+      "direction": "tail",
+      "attrs": {
+        "_source": "/home/marcos/Documents/dev/projects/splice/repo/.Codex/tmp/flow-maps/codemode-streaming/state-machine.hif.json"
+      }
+    },
+    {
+      "edge": "t_stream_7",
+      "node": "Item complete; certification pending",
+      "direction": "head",
+      "attrs": {
+        "_source": "/home/marcos/Documents/dev/projects/splice/repo/.Codex/tmp/flow-maps/codemode-streaming/state-machine.hif.json"
+      }
+    },
+    {
+      "edge": "t_stream_8",
+      "node": "Executable callback ready",
+      "direction": "tail",
+      "attrs": {
+        "_source": "/home/marcos/Documents/dev/projects/splice/repo/.Codex/tmp/flow-maps/codemode-streaming/state-machine.hif.json"
+      }
+    },
+    {
+      "edge": "t_stream_8",
+      "node": "Item complete; certification pending",
+      "direction": "head",
+      "attrs": {
+        "_source": "/home/marcos/Documents/dev/projects/splice/repo/.Codex/tmp/flow-maps/codemode-streaming/state-machine.hif.json"
+      }
+    },
+    {
+      "edge": "t_stream_9",
+      "node": "Item complete; certification pending",
+      "direction": "tail",
+      "attrs": {
+        "_source": "/home/marcos/Documents/dev/projects/splice/repo/.Codex/tmp/flow-maps/codemode-streaming/state-machine.hif.json"
+      }
+    },
+    {
+      "edge": "t_stream_9",
+      "node": "Response terminal parsed; transport draining",
+      "direction": "head",
+      "attrs": {
+        "_source": "/home/marcos/Documents/dev/projects/splice/repo/.Codex/tmp/flow-maps/codemode-streaming/state-machine.hif.json"
+      }
+    },
+    {
+      "edge": "t_stream_10",
+      "node": "Streaming visible output",
+      "direction": "tail",
+      "attrs": {
+        "_source": "/home/marcos/Documents/dev/projects/splice/repo/.Codex/tmp/flow-maps/codemode-streaming/state-machine.hif.json"
+      }
+    },
+    {
+      "edge": "t_stream_10",
+      "node": "Response terminal parsed; transport draining",
+      "direction": "head",
+      "attrs": {
+        "_source": "/home/marcos/Documents/dev/projects/splice/repo/.Codex/tmp/flow-maps/codemode-streaming/state-machine.hif.json"
+      }
+    },
+    {
+      "edge": "t_stream_11",
+      "node": "Response terminal parsed; transport draining",
+      "direction": "tail",
+      "attrs": {
+        "_source": "/home/marcos/Documents/dev/projects/splice/repo/.Codex/tmp/flow-maps/codemode-streaming/state-machine.hif.json"
+      }
+    },
+    {
+      "edge": "t_stream_11",
+      "node": "Executable callback ready",
+      "direction": "head",
+      "attrs": {
+        "_source": "/home/marcos/Documents/dev/projects/splice/repo/.Codex/tmp/flow-maps/codemode-streaming/state-machine.hif.json"
+      }
+    },
+    {
+      "edge": "t_stream_12",
+      "node": "Response terminal parsed; transport draining",
+      "direction": "tail",
+      "attrs": {
+        "_source": "/home/marcos/Documents/dev/projects/splice/repo/.Codex/tmp/flow-maps/codemode-streaming/state-machine.hif.json"
+      }
+    },
+    {
+      "edge": "t_stream_12",
+      "node": "Honest client terminal",
+      "direction": "head",
+      "attrs": {
+        "_source": "/home/marcos/Documents/dev/projects/splice/repo/.Codex/tmp/flow-maps/codemode-streaming/state-machine.hif.json"
+      }
+    },
+    {
+      "edge": "t_stream_13",
+      "node": "Client callbacks emitted; source parked",
+      "direction": "tail",
+      "attrs": {
+        "_source": "/home/marcos/Documents/dev/projects/splice/repo/.Codex/tmp/flow-maps/codemode-streaming/state-machine.hif.json"
+      }
+    },
+    {
+      "edge": "t_stream_13",
+      "node": "Client results accepted; worker resumed",
+      "direction": "head",
+      "attrs": {
+        "_source": "/home/marcos/Documents/dev/projects/splice/repo/.Codex/tmp/flow-maps/codemode-streaming/state-machine.hif.json"
+      }
+    },
+    {
+      "edge": "t_stream_14",
+      "node": "Client callbacks emitted; source parked",
+      "direction": "tail",
+      "attrs": {
+        "_source": "/home/marcos/Documents/dev/projects/splice/repo/.Codex/tmp/flow-maps/codemode-streaming/state-machine.hif.json"
+      }
+    },
+    {
+      "edge": "t_stream_14",
+      "node": "Client callbacks emitted; source parked",
+      "direction": "head",
+      "attrs": {
+        "_source": "/home/marcos/Documents/dev/projects/splice/repo/.Codex/tmp/flow-maps/codemode-streaming/state-machine.hif.json"
+      }
+    },
+    {
+      "edge": "t_stream_15",
+      "node": "Client results accepted; worker resumed",
+      "direction": "tail",
+      "attrs": {
+        "_source": "/home/marcos/Documents/dev/projects/splice/repo/.Codex/tmp/flow-maps/codemode-streaming/state-machine.hif.json"
+      }
+    },
+    {
+      "edge": "t_stream_15",
+      "node": "Executable callback ready",
+      "direction": "head",
+      "attrs": {
+        "_source": "/home/marcos/Documents/dev/projects/splice/repo/.Codex/tmp/flow-maps/codemode-streaming/state-machine.hif.json"
+      }
+    },
+    {
+      "edge": "t_stream_16",
+      "node": "Client results accepted; worker resumed",
+      "direction": "tail",
+      "attrs": {
+        "_source": "/home/marcos/Documents/dev/projects/splice/repo/.Codex/tmp/flow-maps/codemode-streaming/state-machine.hif.json"
+      }
+    },
+    {
+      "edge": "t_stream_16",
+      "node": "Script completed; canonical history ready",
+      "direction": "head",
+      "attrs": {
+        "_source": "/home/marcos/Documents/dev/projects/splice/repo/.Codex/tmp/flow-maps/codemode-streaming/state-machine.hif.json"
+      }
+    },
+    {
+      "edge": "t_stream_17",
+      "node": "Script completed; canonical history ready",
+      "direction": "tail",
+      "attrs": {
+        "_source": "/home/marcos/Documents/dev/projects/splice/repo/.Codex/tmp/flow-maps/codemode-streaming/state-machine.hif.json"
+      }
+    },
+    {
+      "edge": "t_stream_17",
+      "node": "Round posted",
+      "direction": "head",
+      "attrs": {
+        "_source": "/home/marcos/Documents/dev/projects/splice/repo/.Codex/tmp/flow-maps/codemode-streaming/state-machine.hif.json"
+      }
+    },
+    {
+      "edge": "t_stream_18",
+      "node": "Exec admitted; source and worker streaming",
+      "direction": "tail",
+      "attrs": {
+        "_source": "/home/marcos/Documents/dev/projects/splice/repo/.Codex/tmp/flow-maps/codemode-streaming/state-machine.hif.json"
+      }
+    },
+    {
+      "edge": "t_stream_18",
+      "node": "Retryable startup before dispatch",
+      "direction": "head",
+      "attrs": {
+        "_source": "/home/marcos/Documents/dev/projects/splice/repo/.Codex/tmp/flow-maps/codemode-streaming/state-machine.hif.json"
+      }
+    },
+    {
+      "edge": "t_stream_19",
+      "node": "Retryable startup before dispatch",
+      "direction": "tail",
+      "attrs": {
+        "_source": "/home/marcos/Documents/dev/projects/splice/repo/.Codex/tmp/flow-maps/codemode-streaming/state-machine.hif.json"
+      }
+    },
+    {
+      "edge": "t_stream_19",
+      "node": "Exec admitted; source and worker streaming",
+      "direction": "head",
+      "attrs": {
+        "_source": "/home/marcos/Documents/dev/projects/splice/repo/.Codex/tmp/flow-maps/codemode-streaming/state-machine.hif.json"
+      }
+    },
+    {
+      "edge": "t_stream_20",
+      "node": "Exec admitted; source and worker streaming",
+      "direction": "tail",
+      "attrs": {
+        "_source": "/home/marcos/Documents/dev/projects/splice/repo/.Codex/tmp/flow-maps/codemode-streaming/state-machine.hif.json"
+      }
+    },
+    {
+      "edge": "t_stream_20",
+      "node": "Execution lost or interrupted",
+      "direction": "head",
+      "attrs": {
+        "_source": "/home/marcos/Documents/dev/projects/splice/repo/.Codex/tmp/flow-maps/codemode-streaming/state-machine.hif.json"
+      }
+    },
+    {
+      "edge": "t_stream_21",
+      "node": "Client results accepted; worker resumed",
+      "direction": "tail",
+      "attrs": {
+        "_source": "/home/marcos/Documents/dev/projects/splice/repo/.Codex/tmp/flow-maps/codemode-streaming/state-machine.hif.json"
+      }
+    },
+    {
+      "edge": "t_stream_21",
+      "node": "Execution lost or interrupted",
+      "direction": "head",
+      "attrs": {
+        "_source": "/home/marcos/Documents/dev/projects/splice/repo/.Codex/tmp/flow-maps/codemode-streaming/state-machine.hif.json"
+      }
+    },
+    {
+      "edge": "t_stream_22",
+      "node": "Execution lost or interrupted",
+      "direction": "tail",
+      "attrs": {
+        "_source": "/home/marcos/Documents/dev/projects/splice/repo/.Codex/tmp/flow-maps/codemode-streaming/state-machine.hif.json"
+      }
+    },
+    {
+      "edge": "t_stream_22",
+      "node": "Script completed; canonical history ready",
+      "direction": "head",
+      "attrs": {
+        "_source": "/home/marcos/Documents/dev/projects/splice/repo/.Codex/tmp/flow-maps/codemode-streaming/state-machine.hif.json"
+      }
+    },
+    {
+      "edge": "t_stream_23",
+      "node": "Execution lost or interrupted",
+      "direction": "tail",
+      "attrs": {
+        "_source": "/home/marcos/Documents/dev/projects/splice/repo/.Codex/tmp/flow-maps/codemode-streaming/state-machine.hif.json"
+      }
+    },
+    {
+      "edge": "t_stream_23",
+      "node": "Honest client terminal",
+      "direction": "head",
+      "attrs": {
+        "_source": "/home/marcos/Documents/dev/projects/splice/repo/.Codex/tmp/flow-maps/codemode-streaming/state-machine.hif.json"
+      }
+    },
+    {
+      "edge": "h_gap_terminal_eof",
+      "node": "Response terminal parsed; transport draining",
+      "attrs": {
+        "role": "state_when_gap_observed",
+        "_source": "/home/marcos/Documents/dev/projects/splice/repo/.Codex/tmp/flow-maps/codemode-streaming/state-machine.hif.json"
+      }
+    },
+    {
+      "edge": "h_gap_terminal_eof",
+      "node": "Round outcome available immediately at terminal",
+      "attrs": {
+        "role": "expected_state",
+        "_source": "/home/marcos/Documents/dev/projects/splice/repo/.Codex/tmp/flow-maps/codemode-streaming/state-machine.hif.json"
+      }
+    },
+    {
+      "edge": "h_gap_terminal_eof",
+      "node": "response.completed event",
+      "attrs": {
+        "role": "triggering_event",
+        "_source": "/home/marcos/Documents/dev/projects/splice/repo/.Codex/tmp/flow-maps/codemode-streaming/state-machine.hif.json"
+      }
+    },
+    {
+      "edge": "h_gap_terminal_eof",
+      "node": "ResponsesStreamTranslator.reduceRound",
+      "attrs": {
+        "role": "responsible_handler",
+        "_source": "/home/marcos/Documents/dev/projects/splice/repo/.Codex/tmp/flow-maps/codemode-streaming/state-machine.hif.json"
+      }
+    },
+    {
+      "edge": "h_gap_terminal_eof",
+      "node": "CODEMODE-STREAM-PAUSES",
+      "attrs": {
+        "role": "bug",
+        "_source": "/home/marcos/Documents/dev/projects/splice/repo/.Codex/tmp/flow-maps/codemode-streaming/state-machine.hif.json"
+      }
+    },
+    {
+      "edge": "h_gap_rejected_argument_sequence",
+      "node": "Executable callback ready",
+      "attrs": {
+        "role": "state_when_gap_observed",
+        "_source": "/home/marcos/Documents/dev/projects/splice/repo/.Codex/tmp/flow-maps/codemode-streaming/state-machine.hif.json"
+      }
+    },
+    {
+      "edge": "h_gap_rejected_argument_sequence",
+      "node": "Rejected argument leaves sequence unchanged",
+      "attrs": {
+        "role": "expected_state",
+        "_source": "/home/marcos/Documents/dev/projects/splice/repo/.Codex/tmp/flow-maps/codemode-streaming/state-machine.hif.json"
+      }
+    },
+    {
+      "edge": "h_gap_rejected_argument_sequence",
+      "node": "Object serializes to null; script catches rejection",
+      "attrs": {
+        "role": "triggering_event",
+        "_source": "/home/marcos/Documents/dev/projects/splice/repo/.Codex/tmp/flow-maps/codemode-streaming/state-machine.hif.json"
+      }
+    },
+    {
+      "edge": "h_gap_rejected_argument_sequence",
+      "node": "CodeModeWorker.LAUNCHER.call",
+      "attrs": {
+        "role": "responsible_handler",
+        "_source": "/home/marcos/Documents/dev/projects/splice/repo/.Codex/tmp/flow-maps/codemode-streaming/state-machine.hif.json"
+      }
+    },
+    {
+      "edge": "h_gap_rejected_argument_sequence",
+      "node": "CODEMODE-RECURRING-FAILURES",
+      "attrs": {
+        "role": "bug",
+        "_source": "/home/marcos/Documents/dev/projects/splice/repo/.Codex/tmp/flow-maps/codemode-streaming/state-machine.hif.json"
+      }
+    }
+  ]
+}

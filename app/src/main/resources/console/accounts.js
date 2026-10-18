@@ -923,14 +923,19 @@ function render({ flip = false } = {}) {
     + L.cols.map((ids, i) => `<div class="col">${ids.map((id) => providerHtml(findProv(id))).join("")}`
     + `${addable && i === L.addAt ? addProviderHtml() : ""}</div>`).join("");
   drawing = false;
+  const animateBars = !window.matchMedia("(prefers-reduced-motion: reduce)").matches;
   for (const b of board.querySelectorAll(".bar > b")) {
     const host = b.closest("[data-a], [data-meter]"), v = b.dataset.v;
     const id = host && (host.dataset.a || host.dataset.meter);
-    const growing = ui.grow && id && (ui.grow === "all" || ui.grow.has(id));
+    const growing = animateBars && ui.grow && id && (ui.grow === "all" || ui.grow.has(id));
+    b.style.width = `${v}%`;
     // the last figure stays while the track says it is being read again
-    if (ui.probing) { b.style.width = `${v}%`; b.parentElement.classList.add("reading"); }
-    else if (growing) { b.style.width = "0%"; b.parentElement.classList.add("grow"); requestAnimationFrame(() => requestAnimationFrame(() => (b.style.width = `${v}%`))); }
-    else b.style.width = `${v}%`;
+    if (ui.probing) b.parentElement.classList.add("reading");
+    else if (growing) {
+      b.style.transform = "scaleX(0)";
+      b.parentElement.classList.add("grow");
+      requestAnimationFrame(() => requestAnimationFrame(() => (b.style.transform = "scaleX(1)")));
+    }
   }
   for (const box of board.querySelectorAll(".capbox")) {
     const { c } = findCmd(box.closest("[data-meter]").dataset.meter);

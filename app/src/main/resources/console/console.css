@@ -265,7 +265,7 @@ a.chip { text-decoration: none; }  /* a chip that opens something (a session it 
 .bar { position: relative; height: 1.1rem; border-radius: .3rem; background: var(--track); box-shadow: inset 0 0 0 .1rem var(--track-line); overflow: hidden; }
 .bar.sub { height: .62rem; }
 .bar > b { position: absolute; inset: 0 auto 0 0; width: 0; background: var(--c); border-right: .12rem solid var(--ink); border-radius: .3rem 0 0 .3rem; }
-.bar.grow > b { transition: width var(--t-snap) var(--e-out); }
+.bar.grow > b { transform-origin: left; transition: transform var(--t-snap) var(--e-out); }
 .bar.full > b { background: var(--limit); border-right: 0; border-radius: .3rem; }
 .bar.stale > b { background: transparent; box-shadow: inset 0 0 0 .12rem var(--c); border-right: 0; }
 /* a window whose reset has gone by (hitstop, Oct 10): no fill AND no track. A solid empty track is the same

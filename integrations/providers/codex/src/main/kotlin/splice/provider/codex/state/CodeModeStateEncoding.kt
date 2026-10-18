@@ -37,7 +37,7 @@ internal class CodeModeStateEncoding(private val json: Json) {
             append((prepared[record.id] ?: CodeModeCellEncoding(record, record, json)).full())
         }
         append("],\"expired\":")
-        append(json.encodeToString(state.expired))
+        append(JsonWire.string(json.encodeToJsonElement(state.expired)))
         append('}')
     }
 }

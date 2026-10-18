@@ -189,13 +189,23 @@ private const val LAUNCHER: String = """
       reject(new Error("Tool arguments must be a serializable object"));
       return;
     }
+    let pendingId = null;
     try {
       const encoded = JSON.stringify(args);
       if (typeof encoded !== "string") throw new Error("Tool arguments must be a serializable object");
-      const id = String(++sequence);
+      const decoded = JSON.parse(encoded);
+      if (decoded === null || Array.isArray(decoded) || typeof decoded !== "object") {
+        throw new Error("Tool arguments must be a serializable object");
+      }
+      const id = String(sequence + 1);
+      const frame = JSON.stringify({id, name, arguments: decoded});
+      // Host rejection must leave both the accepted-call sequence and pending promises unchanged.
+      pendingId = id;
       pending.set(id, {resolve, reject});
-      host.call(JSON.stringify({id, name, arguments: JSON.parse(encoded)}));
+      host.call(frame);
+      sequence += 1;
     } catch (error) {
+      if (pendingId !== null) pending.delete(pendingId);
       reject(error);
     }
   });

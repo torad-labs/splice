@@ -81,7 +81,7 @@ class CodeModePreAdvanceTearTest : CodeModeStatementStreamSupport() {
             assertFalse(next.callback.isCompleted)
             assertEquals(1, runtime.starts)
             assertEquals(1, post.posts)
-            if (window == "before-cell") assertStampRemoved(manager, record)
+            if (window == "before-cell") assertStampRemoved(record)
             assertLostRetry(manager, runtime, post, first, record)
         } finally {
             manager.onHeadStop()
@@ -127,7 +127,7 @@ class CodeModePreAdvanceTearTest : CodeModeStatementStreamSupport() {
             assertEquals(1, runtime.starts)
             assertTrue(runtime.delivered.isEmpty(), "the disappeared cell must never advance")
             assertEquals(1, post.posts)
-            assertStampRemoved(manager, checkNotNull(attached))
+            assertStampRemoved(checkNotNull(attached))
         } finally {
             manager.onHeadStop()
         }
@@ -181,12 +181,12 @@ class CodeModePreAdvanceTearTest : CodeModeStatementStreamSupport() {
         assertTrue(post.continuation.contains("source was not rerun"))
         assertEquals(1, runtime.starts, "the partially executed script must not restart")
         assertEquals(2, post.posts, "only the ordinary model continuation may post again")
-        assertStampRemoved(manager, record)
+        assertStampRemoved(record)
     }
 
-    private fun assertStampRemoved(manager: CodexCodeModeBridge, record: CodeModeRecord) {
+    private fun assertStampRemoved(record: CodeModeRecord) {
         assertFalse(
-            manager.machine.started.containsKey(record.id),
+            record.cellStartedAt != null,
             "a torn missing cell must release its wall-time stamp",
         )
     }

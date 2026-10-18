@@ -25,8 +25,8 @@ internal class ResponsesTerminalDecision(
 ) {
 
     // Ordering enforced by the shared spi.terminalPrecedence: a COMPLETED response wins over a
-    // late watchdog fire (the watchdog polls the whole enclosing coroutine, which stays suspended
-    // on the socket-EOF read AFTER response.completed was already parsed — discarding that turn
+    // late watchdog fire (the watchdog polls the whole enclosing coroutine, including cleanup
+    // after response.completed was already parsed — discarding that turn
     // would retry a successful compaction, the exact quota waste the watchdog exists to prevent).
     fun terminalOutcome(
         state: ResponsesTurnState,

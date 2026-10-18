@@ -154,6 +154,7 @@ internal class CodeModeCellRetention(
         check(!running(record)) { "an executing code-mode cell cannot be reclaimed" }
         admissions.remove(record.id)
         record.phase = CodeModePhase.LOST
+        record.cellStartedAt = null
         CodeModeRecordErrors.replace(record, "$message; source was not rerun")
         CodeModeSourceEnds.defer(record.sourceEnd)
         record.sourceEnd = null

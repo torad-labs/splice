@@ -253,15 +253,18 @@ class IndependentSourceRoundTest {
                         ).jsonObject,
                     )
                     release.await()
-                    emit(
-                        Json.parseToJsonElement(
-                            """{"type":"response.completed","response":{"status":"completed",""" +
-                                """"usage":{"input_tokens":100,"output_tokens":7},"output":[{""" +
-                                """"type":"custom_tool_call","id":"source-item","call_id":"source-call",""" +
-                                """"name":"exec","input":"await tools.Read({});"}]}}""",
-                        ).jsonObject,
-                    )
-                    if (ending == SourceEnding.CANCEL_AFTER_TERMINAL) currentCoroutineContext().cancel()
+                    try {
+                        emit(
+                            Json.parseToJsonElement(
+                                """{"type":"response.completed","response":{"status":"completed",""" +
+                                    """"usage":{"input_tokens":100,"output_tokens":7},"output":[{""" +
+                                    """"type":"custom_tool_call","id":"source-item","call_id":"source-call",""" +
+                                    """"name":"exec","input":"await tools.Read({});"}]}}""",
+                            ).jsonObject,
+                        )
+                    } finally {
+                        if (ending == SourceEnding.CANCEL_AFTER_TERMINAL) currentCoroutineContext().cancel()
+                    }
                 },
                 WsRoundAbort {
                     aborts++

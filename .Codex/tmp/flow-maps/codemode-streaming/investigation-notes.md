@@ -1,6 +1,6 @@
 # Supplementary observations from the parent investigation
 
-This is a source review and passive inspection of existing telemetry. No runtime reproducer, unit test, benchmark, configuration change, installation, or restart was performed. The source review began at splice commit `ebd66db6a`. No tracked source files were edited.
+These observations describe the original source review and passive inspection of existing telemetry at splice commit `ebd66db6a`. At that stage no runtime reproducer, unit test, benchmark, configuration change, installation, or restart was performed, and no tracked source files were edited. See [implementation.md](implementation.md) for the subsequent fixes and executed validation.
 
 The installed topology explicitly sets `websocket = true` under `[providers.codex.quirks]` at `/home/marcos/.config/splice/splice.toml:95`. This installation therefore tries WebSockets first; eligible failures can fall back to SSE (`features/turns/src/main/kotlin/splice/head/transport/SseRoundDriver.kt:59`). The example topology still ships WebSockets off (`app/src/main/resources/splice.example.toml:97`). The SSE completion defect is a fallback-path finding here and does not explain the sampled WebSocket pauses.
 

@@ -22,6 +22,7 @@ import kotlinx.coroutines.async
 import kotlinx.coroutines.cancelAndJoin
 import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.toList
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.test.runCurrent
@@ -674,6 +675,20 @@ class WsUpstreamTest {
         )
         assertFalse(fx.logged("connected"), "an anomalous handshake must not register or announce a dead socket")
         assertTrue(fx.logged("unexpected binary frame"))
+    }
+}
+
+/** The terminal consumer can stop collection while a completed connection stays reusable. */
+class WsRoundStreamTerminalTest {
+    @Test
+    fun `a collector stopping on the terminal leaves a clean connection available for the next round`() = runTest {
+        val fx = Fixture().apply { reply = replyWith(CREATED, DONE) }.start()
+        val flow = checkNotNull(fx.go())
+        val connection = fx.handed.single()
+        assertEquals("response.completed", flow.first(TERMINAL).type())
+        assertFalse(connection.dead.get(), "consuming the terminal must not turn a completed round into a tear")
+        assertEquals(listOf("response.created", "response.completed"), fx.types())
+        assertEquals(1, fx.connects, "the next round reuses the completed connection")
     }
 }
 

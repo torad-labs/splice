@@ -9,9 +9,9 @@
 // is splice's pacing, on the one path every head writes through.
 //
 // THE POLICY, which is pure and holds no clock, coroutine or socket (ClientChannel drives it):
-//   - Only a visible model delta (text or thinking) ever starts a wait, and only when it arrives
-//     within one tick of the last visible delta written. A lone delta after a quiet stretch is written
-//     at once, and so is every token of a stream slower than one delta per tick.
+//   - Only a visible model delta (text or thinking) ever starts a wait: when it arrives within one tick
+//     of the last visible delta, or carries a large update that needs subdivision. Ordinary token deltas
+//     after a quiet stretch leave at once. Large updates release slices over successive ticks.
 //   - Once anything is held, EVERY frame queues behind it, so the wire order is the emitter's order:
 //     a content_block_stop, a tool call or message_stop never passes a held delta.
 //   - Each tick releases enough visible deltas to finish what is held within [windowMs] of the oldest
@@ -55,7 +55,18 @@ internal class DeltaPacer(
     /** A frame waiting its turn, with the perf ledger its socket write is counted in. */
     internal data class Held(val frame: String, val perf: TurnPerf, val visible: Boolean, val atMs: Long)
 
-    private val queue = ArrayDeque<Held>()
+    private class Queued(val held: Held, private val slices: VisibleDeltaSlices?) {
+        private var delivered = false
+        val done: Boolean get() = slices?.let { it.remaining == 0 } ?: delivered
+        val weight: Int get() = if (!held.visible || done) 0 else slices?.remaining ?: 1
+
+        fun next(): Held = slices?.let { held.copy(frame = it.next()) }
+            ?: held.also { delivered = true }
+
+        fun remainder(): Held = slices?.let { held.copy(frame = it.remainder()) } ?: held
+    }
+
+    private val queue = ArrayDeque<Queued>()
     private var visibleHeld = 0
     private var lastVisibleMs: Long? = null
     private val wake = Channel<Unit>(Channel.CONFLATED)
@@ -70,13 +81,15 @@ internal class DeltaPacer(
      *  frame ([modelOutput]) can be a visible delta: the pinger's status line never starts a wait. */
     fun hold(frame: String, perf: TurnPerf, modelOutput: Boolean, nowMs: Long): Boolean {
         val visible = modelOutput && isVisibleDelta(frame)
-        if (!mustWait(visible, nowMs)) {
+        val slices = if (active && visible) VisibleDeltaSplitter.split(frame) else null
+        if (slices == null && !mustWait(visible, nowMs)) {
             if (visible) lastVisibleMs = nowMs
             return false
         }
         if (queue.isEmpty()) signal()
-        queue.addLast(Held(frame, perf, visible, nowMs))
-        if (visible) visibleHeld += 1
+        val queued = Queued(Held(frame, perf, visible, nowMs), slices)
+        queue.addLast(queued)
+        visibleHeld += queued.weight
         return true
     }
 
@@ -86,11 +99,14 @@ internal class DeltaPacer(
         val budget = budget(nowMs)
         val out = ArrayList<Held>()
         var spent = 0
-        while (queue.isNotEmpty() && leaves(queue.first(), spent, budget)) {
-            val next = released(queue.removeFirst(), nowMs)
+        while (queue.isNotEmpty() && leaves(queue.first().held, spent, budget)) {
+            val queued = queue.first()
+            val before = queued.weight
+            val next = released(queued.next(), nowMs)
+            if (queued.done) queue.removeFirst()
             if (next.visible) {
                 spent += 1
-                visibleHeld -= 1
+                visibleHeld -= before - queued.weight
                 lastVisibleMs = nowMs
             }
             out += next
@@ -100,7 +116,7 @@ internal class DeltaPacer(
 
     /** Everything held, in order, for a write that cannot wait for the loop (it stopped, or the turn
      *  is ending without it). */
-    fun takeAll(nowMs: Long): List<Held> = queue.map { released(it, nowMs) }.also {
+    fun takeAll(nowMs: Long): List<Held> = queue.map { released(it.remainder(), nowMs) }.also {
         queue.clear()
         visibleHeld = 0
     }
@@ -142,7 +158,7 @@ internal class DeltaPacer(
     private fun tooSoon(nowMs: Long): Boolean = lastVisibleMs?.let { nowMs - it < tickMs } ?: false
 
     private fun budget(nowMs: Long): Int {
-        val oldest = queue.firstOrNull { it.visible } ?: return 0
+        val oldest = queue.firstOrNull { it.held.visible }?.held ?: return 0
         val left = (windowMs - (nowMs - oldest.atMs)).coerceAtLeast(tickMs)
         val spread = ((visibleHeld * tickMs + left - 1) / left).toInt()
         return maxOf(floorPerTick, spread)

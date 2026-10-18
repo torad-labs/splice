@@ -7,7 +7,7 @@
 //   - outside sequential_cutoff, *_text.done / *_part.done are IGNORED (fire per part); cutoff
 //     renders reasoning_summary_text.done atomically and ignores its deltas;
 //   - tool args stream as input_json_delta on the SAME wire block index;
-//   - failure events are captured and the loop CONTINUES (the terminal decision happens after);
+//   - response completion ends the read immediately; failure events remain captured while reading;
 //   - replay (gated) emits redacted_thinking IN POSITION right after its item closes;
 //   - harvest fallback merges the terminal object's text/thinking when deltas were sparse
 //     (weak-text preference rules);
@@ -28,6 +28,7 @@ package splice.dialect.responses.stream
 
 import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.firstOrNull
 import kotlinx.coroutines.flow.takeWhile
 import kotlinx.coroutines.withContext
 import kotlinx.serialization.json.JsonObject
@@ -130,7 +131,11 @@ internal class ResponsesStreamTranslator(
                     if (!withinCapacity) runawayGuard = RUNAWAY_GUARD_MESSAGE
                     withinCapacity
                 }
-                .collect { evt -> reducer.onEvent(evt, sink) }
+                .firstOrNull { evt ->
+                    reducer.onEvent(evt, sink)
+                    // Protocol completion releases callbacks and usage without awaiting transport EOF.
+                    state.finalResponse != null
+                }
         } catch (e: CancellationException) {
             if (cancellationMustEscape(state)) throw e
         } catch (torn: IOException) {

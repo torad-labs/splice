@@ -31,7 +31,6 @@ import splice.upstream.failure.CodeModeTimeoutException
 import splice.upstream.failure.CodeModeWorkerLostException
 import splice.upstream.sse.WireSink
 import java.io.IOException
-import java.util.concurrent.ConcurrentHashMap
 
 /** One step of a running script: the results its calls returned, where the step writes, and the live round and
  *  recovery it came from, when it came from one. */
@@ -50,9 +49,6 @@ internal class CodexCodeModeMachine(
     private val registry: CodexCodeModeRegistry,
     private val validation: CodexCodeModeValidation,
 ) {
-    /** When each running script first advanced, for codex's "Wall time" line. In memory only: a restored
-     *  ACTIVE record comes back LOST, so a script completes in the daemon that started it or not at all. */
-    internal val started: MutableMap<String, Long> = ConcurrentHashMap()
     private val workerRecovery = CodeModeWorkerRecovery(registry)
 
     private val oversized = CodeModeOversizedCalls(config, validation)
@@ -76,7 +72,8 @@ internal class CodexCodeModeMachine(
     suspend fun advance(request: CodeModeAdvanceRequest): TurnOutcome {
         val record = request.record
         val source = request.source
-        started.putIfAbsent(record.id, config.clock.millis())
+        val now = config.clock.millis()
+        registry.changes.edit(record) { it.stampCellStart(now) }
         return when {
             config.bounds.maxRounds?.let { record.progress.rounds >= it } == true ->
                 poison(record, "code-mode round limit exceeded")
@@ -89,7 +86,7 @@ internal class CodexCodeModeMachine(
             }
                 ?: when {
                     source?.sourceInterrupted == true -> {
-                        started.remove(record.id)
+                        record.cellStartedAt = null
                         source.outcome()
                     }
                     // The round closed this live cell and removed it before the step could take it.
@@ -172,11 +169,13 @@ internal class CodexCodeModeMachine(
     /** The script's wall time so far; its stamp goes with it, since the record is terminal after this. */
     private fun wallMillis(record: CodeModeRecord): Long {
         val now = config.clock.millis()
-        return now - (started.remove(record.id) ?: now)
+        val began = record.cellStartedAt ?: now
+        record.cellStartedAt = null
+        return now - began
     }
 
     fun poison(record: CodeModeRecord, message: String): TurnOutcome.Failure {
-        started.remove(record.id)
+        record.cellStartedAt = null
         registry.lose(record, message)
         return TurnOutcome.Failure(
             message,
@@ -194,7 +193,7 @@ internal class CodexCodeModeMachine(
         registry.changes.edit(request.record) { it.progress.rounds++ }
         dispatchStep(request, cell, cell.advance(request.results))
     } catch (error: CancellationException) {
-        started.remove(request.record.id)
+        request.record.cellStartedAt = null
         registry.lose(request.record, "code-mode cell cancelled: ${lostMessage(request.record)}", error)
         throw error
     } catch (error: CodeModePersistenceException) {
@@ -222,7 +221,7 @@ internal class CodexCodeModeMachine(
 
     private fun ioFailure(record: CodeModeRecord, error: IOException): TurnOutcome.Failure = when (error) {
         is CodeModeSourceInterruptedException -> {
-            started.remove(record.id)
+            record.cellStartedAt = null
             val message = "upstream code-mode source interrupted; ${lostMessage(record)}"
             registry.lose(record, message)
             error.verdict ?: TurnOutcome.Failure(
@@ -232,7 +231,7 @@ internal class CodexCodeModeMachine(
             )
         }
         is CodeModeWorkerLostException -> {
-            started.remove(record.id)
+            record.cellStartedAt = null
             workerRecovery.lost(record)
         }
         else -> poison(record, runtimeFailure(error, record))

@@ -3,10 +3,13 @@
 // on `e is IOException`), and a connection is pooled only when clean AND drained.
 package splice.dialect.responses.websocket
 
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.ExperimentalCoroutinesApi
+import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.flow.onCompletion
+import kotlinx.coroutines.isActive
 import kotlinx.serialization.json.JsonObject
 import splice.core.util.LogSink
 import java.io.IOException
@@ -43,20 +46,25 @@ internal class WsRoundStream(
                 if (completed) conn.terminalSeen.set(true)
                 emit(evt)
             }
-        }.onCompletion { cause -> finishRound(conn, key, cause, completed) }
+        }.onCompletion { cause ->
+            // first/firstOrNull stop their upstream with cancellation while their owning job stays active.
+            // A consumed terminal is complete in that case; actual turn cancellation still poisons reuse.
+            val clean = cause == null || cause is CancellationException && currentCoroutineContext().isActive
+            finishRound(conn, key, completed && clean)
+        }
     }
 
     /** Pool the connection only when the round ended CLEANLY and left nothing behind; otherwise
      *  poison it. Split out of [roundFlow] to stay under the complexity ceiling. */
     @OptIn(ExperimentalCoroutinesApi::class)
-    private fun finishRound(conn: WsConnection, key: String, cause: Throwable?, completed: Boolean) {
+    private fun finishRound(conn: WsConnection, key: String, cleanTerminal: Boolean) {
         // The inbox MUST be empty to pool the connection (adversarial review of WS-3): a frame
         // the server emits AFTER the round-ending one would otherwise sit in the inbox and be
         // handed to the NEXT round as its first event — a silent cross-round frame leak, and
         // the reason this class kills rather than drains. Killing costs one reconnect (a full
         // send, i.e. today's behaviour); serving a stale frame corrupts the next turn.
         val drained = conn.inbox.isEmpty
-        val poolable = cause == null && completed
+        val poolable = cleanTerminal
         if (poolable && drained) {
             pool.release(key, conn)
         } else {

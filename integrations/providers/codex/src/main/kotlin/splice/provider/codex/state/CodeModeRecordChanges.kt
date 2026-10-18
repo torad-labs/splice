@@ -46,6 +46,7 @@ internal class CodeModeRecordChanges(
         record.progress.output = output
         record.progress.completionError = null
         record.phase = CodeModePhase.COMPLETED
+        record.cellStartedAt = null
         record.progress.updatedAt = config.clock.millis()
         cells.remove(record.id)?.close()
         store.save(records, history.entries, dirtyKeys = setOf(record.key), changedRecord = record)
@@ -55,6 +56,7 @@ internal class CodeModeRecordChanges(
         access.withKey(record.key) {
             startup.entries.remove(record.id)
             record.phase = CodeModePhase.LOST
+            record.cellStartedAt = null
             CodeModeRecordErrors.replace(record, message)
             record.progress.updatedAt = config.clock.millis()
             cleanup.rejected(cells.remove(record.id))
@@ -126,6 +128,7 @@ internal class CodeModeRecordChanges(
                     .filter { it.phase != CodeModePhase.STARTING }.forEach { record ->
                         cells.remove(record.id)?.close()
                         record.phase = CodeModePhase.LOST
+                        record.cellStartedAt = null
                         CodeModeRecordErrors.replace(
                             record,
                             "completed client call ids=${record.results.keys}; source was not rerun",

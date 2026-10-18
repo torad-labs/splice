@@ -51,6 +51,9 @@ internal data class CodeModeRecord(
     var cellBorrowers: Int = 0
     var cellLastAliveAt: Long? = null
 
+    /** First runtime advance for the wall-time line; owned by this record and never persisted. */
+    @Volatile var cellStartedAt: Long? = null
+
     @Volatile var retainedBytes: Long? = null
     var heapLease: HeapLease? = null
 
@@ -59,6 +62,10 @@ internal data class CodeModeRecord(
      *  goes. */
     var heapBudget: HeapReservations? = null
     val heapSnapshots: MutableList<WeakReference<CodeModeRecordSnapshot>> = mutableListOf()
+
+    fun stampCellStart(now: Long) {
+        if (cellStartedAt == null) cellStartedAt = now
+    }
 
     fun visiblePending(): List<CodeModePending> = progress.pending.filter { pending ->
         pending.exposed && !accepted.holds(pending.clientId)

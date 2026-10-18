@@ -3,10 +3,12 @@ package splice.dialect.responses.stream
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.CoroutineStart
+import kotlinx.coroutines.awaitCancellation
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.flow.flow
+import kotlinx.coroutines.flow.onCompletion
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.test.runTest
 import kotlinx.serialization.json.Json
@@ -34,12 +36,27 @@ private val TERMINAL_WITH_USAGE = Json.parseToJsonElement(
 
 class ResponsesTerminalCancellationTest {
     @Test
+    fun `a completed response returns its content and usage while the upstream body stays open`() = runTest {
+        val events = flow {
+            emit(CONTENT_START)
+            emit(CONTENT_DELTA)
+            emit(TERMINAL_WITH_USAGE)
+            awaitCancellation()
+        }
+        val outcome = ResponsesStreamTranslator(ctx()).driveTurn(events, RecordingSink()) as TurnOutcome.Success
+        assertEquals("synthetic content", outcome.text.bodyText)
+        assertEquals(100L, outcome.usage.inputTokens)
+        assertEquals(7L, outcome.usage.outputTokens)
+    }
+
+    @Test
     fun `cancellation after a parsed response terminal cannot discard its reported usage`() = runTest {
         val cancellation = CancellationException("synthetic post-terminal cancellation")
         val events = flow {
             emit(CONTENT_START)
             emit(CONTENT_DELTA)
             emit(TERMINAL_WITH_USAGE)
+        }.onCompletion {
             throw cancellation
         }
         val outcome = ResponsesStreamTranslator(ctx()).driveTurn(events, RecordingSink()) as TurnOutcome.Success
@@ -62,10 +79,13 @@ class ResponsesTerminalCancellationTest {
         }
         val reader = backgroundScope.launch(start = CoroutineStart.UNDISPATCHED) {
             val events = flow {
-                emit(CONTENT_START)
-                emit(CONTENT_DELTA)
-                emit(TERMINAL_WITH_USAGE)
-                currentCoroutineContext().cancel()
+                try {
+                    emit(CONTENT_START)
+                    emit(CONTENT_DELTA)
+                    emit(TERMINAL_WITH_USAGE)
+                } finally {
+                    currentCoroutineContext().cancel()
+                }
             }
             known.complete(ResponsesStreamTranslator(ctx()).driveTurn(events, sink))
         }
@@ -89,6 +109,7 @@ class ResponsesTerminalCancellationTest {
         for (terminal in terminals) {
             val events = flow {
                 emit(Json.parseToJsonElement(terminal).jsonObject)
+            }.onCompletion {
                 throw CancellationException("synthetic failed-terminal cancellation")
             }
             val outcome = ResponsesStreamTranslator(ctx()).driveTurn(events, RecordingSink()) as TurnOutcome.Failure

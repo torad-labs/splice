@@ -282,13 +282,17 @@
 
 # Synthesis
 
+This map records the original review at `ebd66db6a`. The four requested fixes are now implemented;
+see [implementation.md](implementation.md) for the changes, regression coverage, and verification status.
+The evidence and proposals below describe the code before those fixes.
+
 ## Working hypothesis
 
 The review identifies two distinct protocol defects: rejected callback arguments can corrupt the accepted-call sequence, and Responses SSE completion waits for transport EOF after receiving the response terminal. Neither alone explains all reported pauses. Passive telemetry shows substantial quiet periods on current GPT WebSocket traffic before client pacing; hidden code generation and whole-frame delivery can further shape their visible stop-and-burst pattern.
 
 This installation explicitly enables WebSockets in [splice.toml:95](/home/marcos/.config/splice/splice.toml:95). It tries WebSockets first and can fall back to SSE on eligible failures. The SSE defect concerns that fallback path here; it is not the explanation for the sampled WebSocket pauses. The shipped example configuration leaves WebSockets off.
 
-This synthesis combines the merged source maps with the separately sourced Codex comparison and passive measurements in [investigation-notes.md](investigation-notes.md). Source scenarios were not executed; no tests, source changes, configuration changes, or restarts were performed.
+This synthesis combines the merged source maps with the separately sourced Codex comparison and passive measurements in [investigation-notes.md](investigation-notes.md). During the original investigation, source scenarios were not executed; no tests, source changes, configuration changes, or restarts were performed. Subsequent implementation and verification are recorded separately above.
 
 ## Evidence
 

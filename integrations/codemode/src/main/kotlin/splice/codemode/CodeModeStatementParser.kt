@@ -185,7 +185,7 @@ internal class CodeModeStatementParser(private val syntax: CodeModeStatementSynt
         val compiled = try {
             CodeModeStatementCompiler(text, body).compile()
         } catch (failure: StackOverflowError) {
-            // The compiler walks the parsed tree recursively, so a long member or call chain overflows it.
+            // Keep the nesting diagnostic if a parser dependency still exhausts the stack during compilation.
             overflow = failure
             return StatementInput.Failed("SyntaxError: $NESTING_TOO_DEEP")
         }

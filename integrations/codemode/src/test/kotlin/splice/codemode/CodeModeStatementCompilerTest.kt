@@ -5,24 +5,22 @@ import com.oracle.js.parser.Parser
 import com.oracle.js.parser.ScriptEnvironment
 import com.oracle.js.parser.Source
 import org.junit.jupiter.api.Assertions.assertEquals
+import org.junit.jupiter.api.Assertions.assertInstanceOf
+import org.junit.jupiter.api.Assertions.assertNull
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 
-// why: GraalJS parses a member chain in a loop and the compiler walks it recursively, so on the stack below this chain
-// leaves the compiler about five bytes a level, which no JVM frame fits; the overflow is always the compiler's.
-private const val COMPILER_OVERFLOW_CHAIN = 50_000
+// why: this chain previously exhausted the compiler's JVM stack even though GraalJS parses it iteratively.
+private const val DEEP_MEMBER_CHAIN = 50_000
 
 // why: a quarter of the JVM's default 1 MB thread stack; the boundary parse of one statement needs a few kilobytes.
 private const val SMALL_STACK_BYTES = 256L * 1024
 
 class CodeModeStatementCompilerTest {
-    /** CI run 37234377673: on a worker whose stack and JIT state let an 8,000 member chain compile, the end-to-end
-     *  test met the engine's RangeError instead. On a thread with a fixed small stack the compiler overflows every
-     *  time, so this pins the compile catch: the overflow is the program's SyntaxError, recorded for the worker's
-     *  retirement, and never escapes the parser. */
+    /** Deep valid source must not depend on JVM stack-overflow recovery to finish compilation. */
     @Test
-    fun `a member chain that overflows the compiler ends as the program's syntax error`() {
-        val source = "const v = " + "a.".repeat(COMPILER_OVERFLOW_CHAIN) + "a;"
+    fun `a deep member chain compiles without exhausting a small JVM stack`() {
+        val source = "const v = " + "a.".repeat(DEEP_MEMBER_CHAIN) + "a;"
         val parser = CodeModeStatementParser(CodeModeStatementSyntax { true })
         parser.append(source, finished = true, error = null)
         var parsed: Result<Any?>? = null
@@ -44,11 +42,13 @@ class CodeModeStatementCompilerTest {
         )
         reader.start()
         reader.join()
-        assertTrue(checkNotNull(parsed).getOrNull() != null, "the parse fits this stack, so only the compile overflows")
+        assertTrue(checkNotNull(parsed).getOrNull() != null, "the parse fits this stack")
+        val program = assertInstanceOf(StatementInput.Program::class.java, checkNotNull(read).getOrThrow())
+        assertEquals(listOf("a"), program.compiled.reads)
         assertEquals(
-            StatementInput.Failed("SyntaxError: program nesting too deep to parse"),
-            checkNotNull(read).getOrThrow(),
+            "const v = ${program.compiled.scopeName}.values[\"a\"]" + ".a".repeat(DEEP_MEMBER_CHAIN) + ";",
+            program.compiled.source,
         )
-        assertTrue(parser.overflow != null, "the overflow is recorded for the worker's retirement")
+        assertNull(parser.overflow, "compilation must not exhaust or retire the worker")
     }
 }

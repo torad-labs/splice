@@ -7,12 +7,13 @@ import com.oracle.js.parser.ir.CallNode
 import com.oracle.js.parser.ir.FunctionNode
 import com.oracle.js.parser.ir.IdentNode
 import com.oracle.js.parser.ir.LexicalContext
+import com.oracle.js.parser.ir.Node
 import com.oracle.js.parser.ir.PropertyNode
 import com.oracle.js.parser.ir.Scope
 import com.oracle.js.parser.ir.UnaryNode
 import com.oracle.js.parser.ir.VarNode
-import com.oracle.js.parser.ir.visitor.NodeVisitor
 import kotlinx.serialization.json.JsonPrimitive
+import splice.codemode.ast.CodeModeTreeWalk
 
 internal data class CompiledStatement(
     val source: String,
@@ -41,7 +42,7 @@ internal class CodeModeStatementCompiler(
     private val bindingTargets = mutableSetOf<Int>()
 
     fun compile(): CompiledStatement {
-        body.accept(References())
+        CodeModeTreeWalk.walk(body, References())
         val rewritten = StringBuilder(source)
         val order = compareByDescending<StatementReplacement> { it.start }.thenByDescending { it.finish }
         edits.distinct().sortedWith(order).forEach { edit ->
@@ -57,20 +58,31 @@ internal class CodeModeStatementCompiler(
         )
     }
 
-    private inner class References : NodeVisitor<LexicalContext>(LexicalContext()) {
-        override fun enterVarNode(node: VarNode): Boolean {
+    private inner class References : CodeModeTreeWalk.Visitor {
+        override val context = LexicalContext()
+
+        override fun enter(node: Node): Boolean = when (node) {
+            is VarNode -> enterVarNode(node)
+            is CallNode -> enterCallNode(node)
+            is PropertyNode -> enterPropertyNode(node)
+            is UnaryNode -> enterUnaryNode(node)
+            is IdentNode -> enterIdentNode(node)
+            else -> true
+        }
+
+        private fun enterVarNode(node: VarNode): Boolean {
             bindingTargets += node.name.start
             return true
         }
 
-        override fun enterCallNode(node: CallNode): Boolean {
+        private fun enterCallNode(node: CallNode): Boolean {
             val target = node.function as? IdentNode ?: return true
-            if (intrinsics.call(node, lc.currentScope)) intrinsicTargets += target.start
-            if (node.isEval && bindingScope(target.name, lc.currentScope) == null) {
+            if (intrinsics.call(node, context.currentScope)) intrinsicTargets += target.start
+            if (node.isEval && bindingScope(target.name, context.currentScope) == null) {
                 directEvalTargets += target.start
                 remember(target)
                 node.args.firstOrNull()?.let { argument ->
-                    val locals = generateSequence(lc.currentScope) { it.parent }
+                    val locals = generateSequence(context.currentScope) { it.parent }
                         .takeWhile { it !== body.body.scope }.flatMap { it.symbols.asSequence() }
                         .map { it.name }.toSet()
                     val names = kotlinx.serialization.json.JsonArray(locals.map(::JsonPrimitive))
@@ -84,7 +96,7 @@ internal class CodeModeStatementCompiler(
             return true
         }
 
-        override fun enterPropertyNode(node: PropertyNode): Boolean {
+        private fun enterPropertyNode(node: PropertyNode): Boolean {
             val key = node.key as? IdentNode
             val value = node.value as? IdentNode
             if (value == null) return true
@@ -93,7 +105,7 @@ internal class CodeModeStatementCompiler(
             return true
         }
 
-        override fun enterUnaryNode(node: UnaryNode): Boolean {
+        private fun enterUnaryNode(node: UnaryNode): Boolean {
             val identifier = node.expression as? IdentNode ?: return true
             if (Token.descType(node.token) != TokenType.TYPEOF || !project(identifier)) return true
             remember(identifier)
@@ -102,7 +114,7 @@ internal class CodeModeStatementCompiler(
             return false
         }
 
-        override fun enterIdentNode(node: IdentNode): Boolean {
+        private fun enterIdentNode(node: IdentNode): Boolean {
             if (project(node)) {
                 remember(node)
                 val property = "$scopeName.values[${JsonPrimitive(node.name)}]"
@@ -123,7 +135,7 @@ internal class CodeModeStatementCompiler(
             node.isPropertyName -> false
             node.isInternal -> false
             node.isThis || node.isSuper -> false
-            else -> bindingScope(node.name, lc.currentScope) in listOf(null, body.body.scope)
+            else -> bindingScope(node.name, context.currentScope) in listOf(null, body.body.scope)
         }
 
         private fun nativeIdentifier(node: IdentNode): Boolean =
@@ -131,7 +143,7 @@ internal class CodeModeStatementCompiler(
                 node.start in directEvalTargets || node.start in bindingTargets
 
         private fun remember(node: IdentNode) {
-            readiness.remember(node, lc)
+            readiness.remember(node, context)
             intrinsics.reference(node.name, node.start in intrinsicTargets, node.start)
         }
     }

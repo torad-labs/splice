@@ -12,12 +12,13 @@ import com.oracle.js.parser.ir.IdentNode
 import com.oracle.js.parser.ir.JoinPredecessorExpression
 import com.oracle.js.parser.ir.LexicalContext
 import com.oracle.js.parser.ir.LiteralNode
+import com.oracle.js.parser.ir.Node
 import com.oracle.js.parser.ir.Scope
 import com.oracle.js.parser.ir.UnaryNode
 import com.oracle.js.parser.ir.VarNode
-import com.oracle.js.parser.ir.visitor.NodeVisitor
+import splice.codemode.ast.CodeModeTreeWalk
 
-internal class CodeModeIntrinsicReads(body: FunctionNode) {
+internal class CodeModeIntrinsicReads(private val body: FunctionNode) {
     private val primitives = mutableSetOf<Pair<Scope, String>>()
     private val writes = mutableListOf<Pair<Pair<Scope, String>, Expression>>()
     private val admitted = mutableSetOf<String>()
@@ -33,51 +34,65 @@ internal class CodeModeIntrinsicReads(body: FunctionNode) {
         private set
 
     init {
-        body.accept(object : NodeVisitor<LexicalContext>(LexicalContext()) {
-            override fun enterFunctionNode(node: FunctionNode): Boolean {
-                if (node !== body && node.isAsync) requiresCompleteSource = true
-                return true
-            }
+        CodeModeTreeWalk.walk(
+            body,
+            object : CodeModeTreeWalk.Visitor {
+                override val context = LexicalContext()
 
-            override fun enterUnaryNode(node: UnaryNode): Boolean {
-                if (Token.descType(node.token) == TokenType.AWAIT) {
-                    (node.expression as? CallNode)?.let { certifyBatch(it, lc.currentScope) }
+                override fun enter(node: Node): Boolean = when (node) {
+                    is FunctionNode -> enterFunctionNode(node)
+                    is UnaryNode -> enterUnaryNode(node, context)
+                    is CallNode -> enterCallNode(node)
+                    is VarNode -> enterVarNode(node, context)
+                    is BinaryNode -> enterBinaryNode(node, context)
+                    else -> true
                 }
-                return true
-            }
-
-            override fun enterCallNode(node: CallNode): Boolean {
-                val property = (node.function as? AccessNode)?.property
-                if (property in setOf("then", "catch", "finally")) requiresCompleteSource = true
-                if (node.start !in awaitedBatches && !knownCall(node.function)) requiresCompleteSource = true
-                return true
-            }
-
-            override fun enterVarNode(node: VarNode): Boolean {
-                val target = key(node.name.name, lc.currentScope)
-                if (target != null) {
-                    if (literal(node.init)) primitives += target
-                    node.init?.let { writes += target to it }
-                }
-                return true
-            }
-
-            override fun enterBinaryNode(node: BinaryNode): Boolean {
-                if (node.isAssignment) {
-                    val target = node.assignmentDest as? IdentNode
-                    if (target != null) {
-                        key(target.name, lc.currentScope)?.let { writes += it to node.assignmentSource }
-                    }
-                }
-                return true
-            }
-        })
+            },
+        )
         do {
             val before = primitives.size
             writes.forEach { (target, expression) ->
                 if (!primitive(expression, target.first)) primitives -= target
             }
         } while (primitives.size != before)
+    }
+
+    private fun enterFunctionNode(node: FunctionNode): Boolean {
+        if (node !== body && node.isAsync) requiresCompleteSource = true
+        return true
+    }
+
+    private fun enterUnaryNode(node: UnaryNode, context: LexicalContext): Boolean {
+        if (Token.descType(node.token) == TokenType.AWAIT) {
+            (node.expression as? CallNode)?.let { certifyBatch(it, context.currentScope) }
+        }
+        return true
+    }
+
+    private fun enterCallNode(node: CallNode): Boolean {
+        val property = (node.function as? AccessNode)?.property
+        if (property in setOf("then", "catch", "finally")) requiresCompleteSource = true
+        if (node.start !in awaitedBatches && !knownCall(node.function)) requiresCompleteSource = true
+        return true
+    }
+
+    private fun enterVarNode(node: VarNode, context: LexicalContext): Boolean {
+        val target = key(node.name.name, context.currentScope)
+        if (target != null) {
+            if (literal(node.init)) primitives += target
+            node.init?.let { writes += target to it }
+        }
+        return true
+    }
+
+    private fun enterBinaryNode(node: BinaryNode, context: LexicalContext): Boolean {
+        if (node.isAssignment) {
+            val target = node.assignmentDest as? IdentNode
+            if (target != null) {
+                key(target.name, context.currentScope)?.let { writes += it to node.assignmentSource }
+            }
+        }
+        return true
     }
 
     fun call(node: CallNode, scope: Scope?): Boolean {
@@ -121,11 +136,14 @@ internal class CodeModeIntrinsicReads(body: FunctionNode) {
         else -> false
     }
 
-    private fun primitive(expression: Expression, scope: Scope?): Boolean = when (expression) {
-        is LiteralNode<*> -> literal(expression)
-        is IdentNode -> key(expression.name, scope) in primitives
-        is JoinPredecessorExpression -> primitive(expression.expression, scope)
-        else -> false
+    private fun primitive(expression: Expression, scope: Scope?): Boolean {
+        var candidate = expression
+        while (candidate is JoinPredecessorExpression) candidate = candidate.expression
+        return when (candidate) {
+            is LiteralNode<*> -> literal(candidate)
+            is IdentNode -> key(candidate.name, scope) in primitives
+            else -> false
+        }
     }
 
     private fun literal(expression: Expression?): Boolean {

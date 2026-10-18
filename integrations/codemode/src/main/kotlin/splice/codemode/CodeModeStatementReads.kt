@@ -12,7 +12,7 @@ import com.oracle.js.parser.ir.LexicalContext
 import com.oracle.js.parser.ir.LiteralNode
 import com.oracle.js.parser.ir.Node
 import com.oracle.js.parser.ir.VarNode
-import com.oracle.js.parser.ir.visitor.NodeVisitor
+import splice.codemode.ast.CodeModeTreeWalk
 
 internal class CodeModeStatementReads(private val body: FunctionNode) {
     private val owners = mutableMapOf<FunctionNode, String>()
@@ -24,32 +24,44 @@ internal class CodeModeStatementReads(private val body: FunctionNode) {
     val dependencies: Map<String, List<String>> get() = closures.mapValues { it.value.toList() }
 
     init {
-        body.accept(object : NodeVisitor<LexicalContext>(LexicalContext()) {
-            override fun enterVarNode(node: VarNode): Boolean {
-                if (lc.currentFunction === body && body.body.scope.hasSymbol(node.name.name)) {
-                    (node.init as? FunctionNode)?.let { owners[it] = node.name.name }
-                }
-                return true
-            }
+        CodeModeTreeWalk.walk(
+            body,
+            object : CodeModeTreeWalk.Visitor {
+                override val context = LexicalContext()
 
-            override fun enterBinaryNode(node: BinaryNode): Boolean {
-                // Graal wraps both logical operands to join control-flow predecessors.
-                val left = (node.lhs as? JoinPredecessorExpression)?.expression ?: node.lhs
-                val value = (left as? LiteralNode<*>)?.value
-                val operator = Token.descType(node.token)
-                if (operator == TokenType.AND && value == false) exclude(node.rhs)
-                if (operator == TokenType.OR && value == true) exclude(node.rhs)
-                return true
-            }
-
-            override fun enterIfNode(node: IfNode): Boolean {
-                when ((node.test as? LiteralNode<*>)?.value) {
-                    false -> exclude(node.pass)
-                    true -> node.fail?.let(::exclude)
+                override fun enter(node: Node): Boolean = when (node) {
+                    is VarNode -> enterVarNode(node, context)
+                    is BinaryNode -> enterBinaryNode(node)
+                    is IfNode -> enterIfNode(node)
+                    else -> true
                 }
-                return true
-            }
-        })
+            },
+        )
+    }
+
+    private fun enterVarNode(node: VarNode, context: LexicalContext): Boolean {
+        if (context.currentFunction === body && body.body.scope.hasSymbol(node.name.name)) {
+            (node.init as? FunctionNode)?.let { owners[it] = node.name.name }
+        }
+        return true
+    }
+
+    private fun enterBinaryNode(node: BinaryNode): Boolean {
+        // Graal wraps both logical operands to join control-flow predecessors.
+        val left = (node.lhs as? JoinPredecessorExpression)?.expression ?: node.lhs
+        val value = (left as? LiteralNode<*>)?.value
+        val operator = Token.descType(node.token)
+        if (operator == TokenType.AND && value == false) exclude(node.rhs)
+        if (operator == TokenType.OR && value == true) exclude(node.rhs)
+        return true
+    }
+
+    private fun enterIfNode(node: IfNode): Boolean {
+        when ((node.test as? LiteralNode<*>)?.value) {
+            false -> exclude(node.pass)
+            true -> node.fail?.let(::exclude)
+        }
+        return true
     }
 
     fun remember(node: IdentNode, context: LexicalContext) {

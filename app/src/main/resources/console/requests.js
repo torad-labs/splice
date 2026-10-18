@@ -15,7 +15,8 @@
 //                                           filters are, so a menu never lists only what the current filter left
 //   GET /api/heads/{head}/trace/search?q=   the turns whose sent or returned body holds the words, newest first, with
 //                                           how far back the search read and why it stopped
-//   GET /api/heads/{head}/trace?turn=ID     one request's own records, as its trace kept them
+//   GET /api/heads/{head}/trace?turn=ID&view=outline   headers and timing, with every document body deferred
+//   GET /api/heads/{head}/trace/document              one expanded branch or text page of a selected body
 //   GET /api/sessions                       the session each request belongs to, by its name, and the project it ran in
 //   GET /api/keys                           a key account's variable and the day splice first saw it
 //   GET /api/config (knobs.js)              how long prompts and answers are kept, which is how far back a search can
@@ -35,7 +36,7 @@ const FAMILY = PROVIDER_FAMILY; // kit.js: the provider /api/models names, as th
 
 // the open request is reqview.js, shared with Compare models, and so are its clock and count words
 const { clockS, dayOf, n0, secs, GLYPH } = REQVIEW;
-const RV = REQVIEW.view(() => ui);
+const RV = REQVIEW.view(() => ui, { API, document, IntersectionObserver, render });
 const RV_KEPT = REQVIEW.kept; // whether a state has records to draw, as the shared view decides it
 
 // ---------- what an outcome tag says: fin's words, none of splice's sentences ----------
@@ -178,7 +179,7 @@ const SEARCH_MIN = 2; // the shortest text the search route reads (TraceSearch.k
 
 let state = {
   loading: true, compareN: 0, error: null, groups: [], titles: {}, tileCounts: null, heads: [], providerOf: {}, modelLabel: {}, sessions: {}, keySeen: {}, keysOfHead: {},
-  rows: [], matched: 0, capped: false, facets: { models: [], accounts: [], sessions: [] }, headErrors: [], sessionsError: null, traceDays: null, capture: {}, config: null,
+  rows: [], matched: 0, capped: false, facets: { models: [], accounts: [], sessions: [] }, headErrors: [], sessionsError: null, sessionsPending: true, traceDays: null, capture: {}, config: null,
   // what Start saving answered, per command: { word, failed }, the word that stands beside "Not saved" once pressed
   saving: {},
   // what the search answered: how far back it read, why it stopped, and the turns it could not reach
@@ -207,6 +208,7 @@ const sessTitle = (sid) => {
 // Saturday row read "Session 0296ce46" where history names it qgre-builder)
 const pastNames = new Map(); // session id -> its name from history, null when history has none, undefined while asked
 function pastName(sid) {
+  if (state.sessionsPending) return undefined;
   const id = String(sid);
   if (pastNames.has(id)) return pastNames.get(id);
   pastNames.set(id, undefined);
@@ -252,8 +254,9 @@ const inPick = (r) => !ui.project || rowKey(r) === ui.project;
 // ---------- reading splice ----------
 /** The commands, their providers, the models' labels, the sessions requests belong to, and a key's first day. */
 async function readStanding() {
-  const [heads, models, sessions, keys, topology, retired] = await Promise.all([
-    API.get("/api/heads"), API.get("/api/models"), API.get("/api/sessions"), API.get("/api/keys"), API.get("/api/topology"),
+  const sessionsRead = API.get("/api/sessions");
+  const [heads, models, keys, topology, retired] = await Promise.all([
+    API.get("/api/heads"), API.get("/api/models"), API.get("/api/keys"), API.get("/api/topology"),
     API.get("/api/heads/retired"),
   ]);
   state.error = heads.ok ? null : LIST_NOT_READ;
@@ -269,23 +272,25 @@ async function readStanding() {
     state.providerOf[row.head] = FAMILY[row.provider] ?? (local(row.provider) ? "local" : row.provider);
     learnModels(state.modelLabel, row);
   }
-  // A session's name is its own page's to read. When that read refuses, the rows still list by the id splice recorded
-  // and the refusal is said, because every row reading "Session 8cb8a71d" is not a day without names.
-  state.sessionsError = sessions.ok ? null : LIST_NOT_READ;
-  if (!sessions.ok) console.warn(`session names: ${refusalOf(sessions, "no answer")}`);
-  state.sessions = {};
-  for (const s of sessions.body?.sessions || []) {
-    if (!s.session_id) continue;
-    state.sessions[s.session_id] = s;
-    state.sessions[String(s.session_id).slice(0, 8)] = s; // a perf row names its session by its first eight characters
-  }
-  // the projects in Sessions' order, ranked by the same reading of the same live turns (kit rowLook)
   const running = state.heads.filter((h) => !h.retired); // a removed command runs nothing and keeps no capture setting
-  const lives = await Promise.all(running.map((h) => API.get(`/api/heads/${encodeURIComponent(h.key)}/turns/live`)));
-  const turns = {};
-  running.forEach((h, i) => { for (const t of lives[i].body?.turns || []) if (t.session && !t.stopped) turns[t.session] = { head: h.key, ...t }; });
-  state.groups = projectGroups(sessions.body?.sessions || [], turns, state.heads);
-  ui.project = reconcilePick(ui.project, state.groups);
+  // A cold session listing only delays its names and project lamps, never the request list itself.
+  Promise.all([sessionsRead, Promise.all(running.map((h) => API.get(`/api/heads/${encodeURIComponent(h.key)}/turns/live`)))]).then(([sessions, lives]) => {
+    state.sessionsPending = false;
+    state.sessionsError = sessions.ok ? null : LIST_NOT_READ;
+    if (!sessions.ok) console.warn(`session names: ${refusalOf(sessions, "no answer")}`);
+    state.sessions = {};
+    for (const s of sessions.body?.sessions || []) {
+      if (!s.session_id) continue;
+      state.sessions[s.session_id] = s;
+      state.sessions[String(s.session_id).slice(0, 8)] = s;
+    }
+    const turns = {};
+    running.forEach((h, i) => { for (const t of lives[i].body?.turns || []) if (t.session && !t.stopped) turns[t.session] = { head: h.key, ...t }; });
+    state.groups = projectGroups(sessions.body?.sessions || [], turns, state.heads);
+    const before = ui.project;
+    ui.project = reconcilePick(ui.project, state.groups);
+    if (before !== ui.project) reload({ reading: true }); else render();
+  });
   // Each key splice has seen under a variable, by the account label a request row carries: the one in use now and
   // every one it replaced (/api/keys serves both, KeyReaders.kt). A fingerprint this daemon has never seen leaves
   // the row with its variable alone, which is what the row itself proves.
@@ -303,14 +308,15 @@ async function readStanding() {
   // Whether each command is saving prompts and answers NOW, and for how long it keeps them: the setting's own figure,
   // per command, never a cut this page made up. The files outlive the knob, so a command switched off still has the
   // days it recorded, and this says which state a request with no records is in.
-  const caps = await Promise.all(running.map((h) => API.get(`/api/heads/${encodeURIComponent(h.key)}/capture`)));
+  const [caps, cfg] = await Promise.all([
+    Promise.all(running.map((h) => API.get(`/api/heads/${encodeURIComponent(h.key)}/capture`))), API.get("/api/config"),
+  ]);
   running.forEach((h, i) => {
     const body = caps[i].ok ? caps[i].body : null;
     if (body) state.capture[h.key] = { on: body.enabled === true, days: body.retention_days ?? null };
   });
   const days = uniq(running.map((h) => state.capture[h.key]?.days).filter((d) => d != null));
   state.traceDays = days.length === 1 ? days[0] : null; // one figure to say only when every command agrees on it
-  const cfg = await API.get("/api/config");
   state.config = cfg.ok ? cfg.body : null;
 }
 
@@ -879,6 +885,12 @@ const anyFilter = () => Boolean(ui.cmd || ui.sid || ui.model || ui.account || ui
 //              cause, because saving was on (Marlin, Oct 10).
 // The command's capture switch NOW is never read as the cause: a request older than a toggle ran under the old setting.
 const traces = new Map(); // one read per request, held while the page is open
+let traceOwner = null, traceAbort = null;
+function closeTrace() {
+  traceAbort?.abort();
+  traceOwner = null; traceAbort = null;
+  RV.resetDocuments(); traces.clear();
+}
 function traceState(r) {
   const held = traces.get(r.id);
   if (held?.state) return held.state;
@@ -890,9 +902,12 @@ const traceOf = (r) => traces.get(r.id)?.tr ?? null;
 
 /** Reads one request's records, then draws it again. A refusal becomes the state the view draws, in its own words. */
 async function readTrace(r) {
+  if (traceOwner !== r.id) { closeTrace(); traceOwner = r.id; traceAbort = new AbortController(); }
   if (!r.turn || traces.has(r.id)) return;
+  const signal = traceAbort.signal;
   traces.set(r.id, { state: "reading", tr: null });
-  const res = await API.get(`/api/heads/${encodeURIComponent(r.head)}/trace?turn=${encodeURIComponent(r.turn)}`);
+  const res = await API.scoped(signal).get(`/api/heads/${encodeURIComponent(r.head)}/trace?turn=${encodeURIComponent(r.turn)}&view=outline`);
+  if (signal.aborted) return;
   const records = res.ok ? res.body?.records || [] : [];
   if (res.ok && records.length) {
     const tr = traceFrom(records, r);
@@ -955,22 +970,26 @@ async function startSaving(head) {
 function traceFrom(records, r) {
   const turn = records.find((x) => x.kind === "turn");
   const started = +r.ts - r.total;
+  const bodyOf = (part, record, section, key = "body") => part?.body_deferred
+    ? RV.documentBody(`/api/heads/${encodeURIComponent(r.head)}/trace/document?${new URLSearchParams({ turn: r.turn, record, section })}`)
+    : jsonOf(part?.[key]);
   let cut = Boolean(turn?.client?.truncated || turn?.answer?.truncated);
-  const attempts = records.filter((x) => x.kind === "attempt").map((a) => {
+  const attempts = records.filter((x) => x.kind === "attempt").map((a, i) => {
     if (a.request?.truncated || a.response?.truncated) cut = true;
     const text = a.response?.text ?? "";
-    const parsed = framesOf(text, a.transport);
+    const parsed = a.response?.body_deferred ? { raw: bodyOf(a.response, `attempt:${i}`, "response", "text") } : framesOf(text, a.transport);
     return {
       url: a.url ?? null, transport: a.transport ?? "http",
       start: Math.max(0, (a.ts ?? started) - (a.durationMs ?? 0) - started), ms: a.durationMs ?? 0,
-      status: a.response?.status ?? null, headers: a.request?.headers ?? {}, body: jsonOf(a.request?.body),
+      status: a.response?.status ?? null, headers: a.request?.headers ?? {}, body: bodyOf(a.request, `attempt:${i}`, "request"),
       resHeaders: a.response?.headers ?? null, ...parsed,
       failure: a.failure ?? null, lock: a.response?.status === 429,
     };
   });
   const answer = turn?.answer;
-  const back = answer?.stream ? framesOf(answer.body ?? "", "sse") : { body: jsonOf(answer?.body) };
-  return { cut, sent: { headers: turn?.client?.headers ?? {}, body: jsonOf(turn?.client?.body) }, attempts,
+  const back = answer?.body_deferred ? { body: bodyOf(answer, "turn", "answer") }
+    : answer?.stream ? framesOf(answer.body ?? "", "sse") : { body: jsonOf(answer?.body) };
+  return { cut, sent: { headers: turn?.client?.headers ?? {}, body: bodyOf(turn?.client, "turn", "client") }, attempts,
     returned: { status: answer?.status ?? null, ...back } };
 }
 
@@ -1006,7 +1025,13 @@ function framesOf(text, transport) {
 // provider ticket needs is the exact JSON, not the drawn view. Only once it is read; before that there is nothing to give.
 const recordActs = (r) => (traces.get(r.id)?.body
   ? `<button class="act" data-act="copyrec">Copy JSON</button><button class="act" data-act="saverec">Download</button>` : "");
-const recordJson = () => { const r = state.rows.find((x) => x.id === ui.open); return r ? JSON.stringify(traces.get(r.id)?.body ?? null, null, 2) : null; };
+const recordJson = async () => {
+  const r = state.rows.find((x) => x.id === ui.open);
+  if (!r) return null;
+  // Export is the explicit request for the complete record. Browsing never takes this path.
+  const answer = await API.get(`/api/heads/${encodeURIComponent(r.head)}/trace?turn=${encodeURIComponent(r.turn)}`);
+  return answer.ok ? JSON.stringify(answer.body, null, 2) : null;
+};
 
 // The command and the login a request names open their own pages: the command on Models (models.js reads ?cmd=), the
 // login on Accounts at that command's card (accounts.js reads ?head=). Plain words where the page is not served.
@@ -1086,6 +1111,7 @@ function render({ keep = true } = {}) {
   // second column, 2,660 px of nothing beside the list at 3,828. One answer decides both, so they cannot disagree.
   const pane = paneHtml();
   if (!pane) ui.open = null;
+  if (!ui.open && traceOwner != null) closeTrace();
   root.className = `requests${pane ? " open" : ""}`;
   // the picker and its doors on their own line above the filters, with no group headers: the log keeps time order
   const tc = state.tileCounts;
@@ -1100,6 +1126,7 @@ function render({ keep = true } = {}) {
   if (more) scrolledMore.observe(more);
   const nsc = root.querySelector(".rqpane .scroll");
   if (nsc) nsc.scrollTop = top;
+  RV.observeDocuments();
   const m = document.querySelector(".fmenu");
   if (m) m.querySelector("[aria-checked=true]")?.focus({ preventScroll: true });
 }
@@ -1153,7 +1180,7 @@ document.addEventListener("keydown", (e) => {
   if (e.key === "Escape" && ui.menu) { ui.menu = null; render(); }
   if (e.key === "Enter" && e.target.id === "goto") goTo(e.target.value);
 });
-document.addEventListener("click", (e) => {
+document.addEventListener("click", async (e) => {
   const el = e.target.closest("[data-act], [data-open]");
   // A click outside an open menu only closes it. It never also opens the request under it: a pick in the browser's own
   // calendar landed on the row beneath and opened a request he never chose (Marlin, p225 step 14).
@@ -1183,11 +1210,20 @@ document.addEventListener("click", (e) => {
     case "goto": goTo(document.getElementById("goto")?.value); break;
     case "upto": upTo(v ? +v : null); scrollTo(0, 0); break;
     case "more": ui.n += 200; render(); break;
-    case "copyrec": { const j = recordJson(); if (j) navigator.clipboard?.writeText(j).then(() => { el.textContent = "Copied"; setTimeout(() => { el.textContent = "Copy JSON"; }, 1600); }, () => {}); break; }
+    case "copyrec": {
+      el.disabled = true; el.textContent = "Reading…";
+      const j = await recordJson(); el.disabled = false;
+      if (j) navigator.clipboard?.writeText(j).then(() => { el.textContent = "Copied"; setTimeout(() => { el.textContent = "Copy JSON"; }, 1600); }, () => { el.textContent = "Could not copy"; });
+      else el.textContent = "Could not read · Retry";
+      break;
+    }
     case "saverec": {
-      const j = recordJson(); if (!j) break;
+      const id = ui.open;
+      el.disabled = true; el.textContent = "Reading…";
+      const j = await recordJson(); el.disabled = false; el.textContent = j ? "Download" : "Could not read · Retry";
+      if (!j) break;
       const a = document.createElement("a"), url = URL.createObjectURL(new Blob([j], { type: "application/json" }));
-      a.href = url; a.download = `splice-request-${ui.open}.json`; a.click(); setTimeout(() => URL.revokeObjectURL(url), 0);
+      a.href = url; a.download = `splice-request-${id}.json`; a.click(); setTimeout(() => URL.revokeObjectURL(url), 0);
       break;
     }
     case "close": {
@@ -1196,7 +1232,7 @@ document.addEventListener("click", (e) => {
       if (at) { const list = root.querySelector(".list"); if (list) list.scrollTop = at.list; scrollTo(0, at.y); }
       break;
     }
-    case "tab": case "node": case "frames": RV.click(el); render({ keep: true }); break; // the open request's own controls (reqview.js)
+    case "tab": case "node": case "frames": case "document": RV.click(el); render({ keep: true }); break;
   }
 });
 /** Lists the requests up to [value] (the menu's day and time), in the narrowest window that reaches back to it. */

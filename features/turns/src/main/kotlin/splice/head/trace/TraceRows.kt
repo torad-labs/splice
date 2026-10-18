@@ -118,6 +118,10 @@ internal class TraceRows(
     internal fun turns(traceDir: Path, head: String, ask: TraceAsk, share: HeapReservations): List<TracedTurn> =
         selected(traceDir, head, ask, TraceBodySelection.RECORDS, share)
 
+    /** No body pack opens until the reader asks for a document node. */
+    internal fun references(traceDir: Path, head: String, ask: TraceAsk, share: HeapReservations): List<TracedTurn> =
+        selected(traceDir, head, ask, TraceBodySelection.REFERENCES, share)
+
     private fun selected(
         traceDir: Path,
         head: String,

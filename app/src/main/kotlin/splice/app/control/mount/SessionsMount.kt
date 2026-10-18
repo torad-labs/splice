@@ -69,12 +69,16 @@ internal class SessionsMount(
 
     /** v0.4.0 /api/sessions and V4-130's three session reads beside it. */
     private fun sessionRoutes(route: Route, routes: SessionsRoutes) {
-        route.get("/api/sessions") { guard.guarded(call) { ControlReplies.respond(call, routes.sessionsJson()) } }
+        route.get("/api/sessions") {
+            guard.guarded(call) { ControlReplies.respond(call, withContext(fileIo) { routes.sessionsJson() }) }
+        }
         historyRoutes?.let { history ->
             route.get("/api/sessions/history") {
                 guard.guarded(call) {
                     val query = call.request.queryParameters
-                    history.page(query["query"], query["cursor"], query["limit"]?.toIntOrNull()).send(call)
+                    withContext(fileIo) {
+                        history.page(query["query"], query["cursor"], query["limit"]?.toIntOrNull())
+                    }.send(call)
                 }
             }
         }
@@ -100,7 +104,9 @@ internal class SessionsMount(
             guard.guarded(call) {
                 val id = call.parameters["id"].orEmpty()
                 val query = call.request.queryParameters
-                routes.transcript(id, query["cursor"], query["limit"]?.toIntOrNull(), query["before"]).send(call)
+                withContext(fileIo) {
+                    routes.transcript(id, query["cursor"], query["limit"]?.toIntOrNull(), query["before"])
+                }.send(call)
             }
         }
     }

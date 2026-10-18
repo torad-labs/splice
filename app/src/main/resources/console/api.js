@@ -60,7 +60,7 @@ const API = (() => {
     del: (p) => call("DELETE", p, undefined, undefined, signal),
     // a last word as the tab hides or closes: the browser still delivers it after the page is gone (pilot.js)
     parting: (p) => call("POST", p, {}, undefined, undefined, true),
-    scoped: (nextSignal) => client(nextSignal),
+    scoped: (nextSignal) => client(signal ? AbortSignal.any([signal, nextSignal]) : nextSignal),
   });
   return client();
 })();

@@ -20,6 +20,10 @@ mark { background: var(--key-light); color: #241d14; border-radius: .2rem; paddi
 .rqpane > header .meta { margin-top: .4rem; }
 .rqpane .acts a.act { text-decoration: none; }
 .rqpane .scroll { flex: 1; overflow-y: auto; padding: 1.3rem 1.6rem 1.8rem; display: flex; flex-direction: column; gap: 1.3rem; }
+.doc-node { display: block; min-width: 0; }
+.doc-reading { display: inline-block; min-width: 8rem; padding: .4rem 0; }
+.doc-text { margin: .5rem 0; white-space: pre-wrap; overflow-wrap: anywhere; font: inherit; }
+.doc-more { margin: .55rem 0; }
 
 /* the sends on one time rail: each send a bar from its start to its end, the waits the bare rail between them */
 .trail { padding-top: 1.7rem; }

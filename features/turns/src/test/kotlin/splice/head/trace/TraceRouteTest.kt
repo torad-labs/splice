@@ -8,11 +8,14 @@ import io.ktor.http.HttpStatusCode
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.runBlocking
 import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
+import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.jsonArray
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
+import kotlinx.serialization.json.put
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertFalse
 import org.junit.jupiter.api.Assertions.assertTrue
@@ -26,6 +29,7 @@ import splice.core.turn.TurnReasoning
 import splice.core.turn.TurnRoute
 import splice.core.turn.TurnScope
 import splice.core.util.AsyncFileIo
+import splice.core.util.JsonWire
 import splice.core.util.WallClock
 import splice.head.TurnsHead
 import splice.head.TurnsHeadLookup
@@ -119,6 +123,87 @@ class TraceRouteTest {
     private fun JsonReply.json(): JsonObject = Json.parseToJsonElement(body).jsonObject
 
     private fun JsonObject.str(name: String): String = getValue(name).jsonPrimitive.content
+
+    private fun documentTrace(dir: Path, body: String) {
+        val store = splice.head.syntheticTraceStore(
+            ActivityDays(dir, HEAD, 7, WallClock { DAY_ONE }, true),
+            HEAD,
+            maxBodyChars = 1 shl 20,
+            now = WallClock { DAY_ONE },
+            ids = TurnIdMint { "document-turn" },
+        )
+        val trace = store.begin(meta("alpha-session"), ClientInbound("POST", "/v1/messages", emptyMap(), body))
+        trace.attempted(attempt(1))
+        trace.finish("ok", PerfSnapshot(mapOf("total" to 120L), emptyMap()))
+        assertTrue(AsyncFileIo.drain())
+    }
+
+    private fun document(dir: Path, path: String = "", offset: String? = null): JsonReply = runBlocking {
+        route(dir).read(
+            HEAD,
+            "document-turn",
+            document = TraceDocumentQuery("document-turn", "turn", "client", path, offset),
+        )
+    }
+
+    @Test
+    fun `outline defers every body while full export preserves the original records`(@TempDir dir: Path) {
+        val body = JsonWire.string(buildJsonObject { put("document", "private-body-marker".repeat(10_000)) })
+        documentTrace(dir, body)
+        val outline = runBlocking { route(dir).read(HEAD, "document-turn", outline = true) }
+
+        assertEquals(HttpStatusCode.OK, outline.status)
+        assertTrue(outline.body.contains("body_deferred"))
+        assertFalse(outline.body.contains("private-body-marker"))
+        assertFalse(outline.body.contains(TRACE_SOURCE_DAY))
+        assertTrue(outline.body.length < 4_000)
+        val records = read(dir, "document-turn").json().getValue("records").jsonArray
+        assertEquals(body, records.last().jsonObject.getValue("client").jsonObject.str("body"))
+    }
+
+    @Test
+    fun `document objects and arrays return bounded pages without nested content`(@TempDir dir: Path) {
+        val messages = JsonArray((0 until 70).map { index -> buildJsonObject { put("content", "message-$index") } })
+        documentTrace(dir, JsonWire.string(buildJsonObject { put("messages", messages) }))
+
+        val root = document(dir).json()
+        assertEquals("object", root.str("type"))
+        assertFalse(root.toString().contains("message-69"))
+        val first = document(dir, "/messages").json()
+        assertEquals(25, first.getValue("children").jsonArray.size)
+        assertEquals("25", first.str("next"))
+        assertFalse(first.toString().contains("message-0"))
+        val last = document(dir, "/messages", "50").json()
+        assertEquals(20, last.getValue("children").jsonArray.size)
+        assertEquals("50", last.getValue("children").jsonArray.first().jsonObject.str("key"))
+        assertEquals(kotlinx.serialization.json.JsonNull, last["next"])
+        assertEquals("message-69", document(dir, "/messages/69/content").json().str("value"))
+    }
+
+    @Test
+    fun `large text pages preserve Unicode escapes and pointer keys exactly`(@TempDir dir: Path) {
+        val text = "a".repeat(16_383) + "🦊" + "\n\"\\" + "z".repeat(20_000)
+        documentTrace(dir, JsonWire.string(buildJsonObject { put("a/b~c", text) }))
+        val rebuilt = StringBuilder()
+        var cursor: String? = null
+        do {
+            val reply = document(dir, "/a~1b~0c", cursor)
+            assertEquals(HttpStatusCode.OK, reply.status, reply.body)
+            val page = reply.json()
+            assertTrue(page.str("value").length <= 16_385)
+            rebuilt.append(page.str("value"))
+            cursor = page["next"]?.takeUnless { it == kotlinx.serialization.json.JsonNull }?.jsonPrimitive?.content
+        } while (cursor != null)
+        assertEquals(text, rebuilt.toString())
+    }
+
+    @Test
+    fun `invalid document cursors and pointers are refused instead of returning empty content`(@TempDir dir: Path) {
+        documentTrace(dir, """{"messages":[]}""")
+        assertEquals(HttpStatusCode.BadRequest, document(dir, offset = "-1").status)
+        assertEquals(HttpStatusCode.BadRequest, document(dir, "/bad~9path").status)
+        assertEquals(HttpStatusCode.BadRequest, document(dir, offset = "not-a-cursor").status)
+    }
 
     @Test
     fun `one turn carries its records as written - bodies whole, headers as redacted`(@TempDir dir: Path) {

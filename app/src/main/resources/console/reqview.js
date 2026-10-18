@@ -35,8 +35,125 @@ const REQVIEW = (() => {
   };
 
   // view(state): the drawing, over the page's own state, read each time: { tab, nodes (the folds he opened or closed), q }
-  function view(state) {
+  const documentJobs = [];
+  let documentReads = 0;
+  function readDocuments() {
+    while (documentReads < 2 && documentJobs.length) {
+      const job = documentJobs.shift();
+      documentReads++;
+      job().finally(() => { documentReads--; readDocuments(); });
+    }
+  }
+  class DeferredBody {
+    constructor(id, url, api, notify) {
+      Object.assign(this, { id, url, api, notify, active: true, generation: 0, nodes: new Map(), abort: new AbortController() });
+    }
+    activate() {
+      this.active = true;
+      if (this.abort.signal.aborted) this.abort = new AbortController();
+    }
+    deactivate() {
+      if (!this.active) return;
+      this.active = false; this.generation++; this.abort.abort();
+      for (const node of this.nodes.values()) node.loading = false;
+    }
+    load(path, offset = 0, before = false) {
+      if (!this.active) return;
+      let node = this.nodes.get(path);
+      if (!node) {
+        node = { pages: [], history: new Map(), loading: false, error: null };
+        this.nodes.set(path, node);
+      }
+      if (node.loading) return;
+      node.loading = true; node.error = null;
+      const generation = this.generation, signal = this.abort.signal;
+      documentJobs.push(async () => {
+        if (!this.active || generation !== this.generation) return;
+        const url = new URL(this.url, location.href);
+        url.searchParams.set("path", path); url.searchParams.set("offset", offset);
+        const answer = await this.api.scoped(signal).get(url.pathname + url.search);
+        if (signal.aborted || generation !== this.generation) return;
+        node.loading = false;
+        if (!answer.ok) {
+          node.error = { offset, before };
+          console.warn("request document:", answer.body?.error || answer.status);
+        } else {
+          const page = { offset, body: answer.body };
+          if (before) node.pages.unshift(page);
+          else {
+            const previous = node.pages.at(-1)?.offset;
+            if (previous != null) node.history.set(offset, previous);
+            node.pages.push(page);
+          }
+          // Both the rendered document and retained page data stay bounded during a long scroll.
+          if (node.pages.length > 4) before ? node.pages.pop() : node.pages.shift();
+        }
+        this.notify();
+      });
+      readDocuments();
+    }
+  }
+
+  function view(state, options = {}) {
     const s = () => state();
+    const documents = new Map();
+    let documentSerial = 0, documentObserver;
+    function documentBody(url) {
+      const id = String(++documentSerial), body = new DeferredBody(id, url, options.API, options.render);
+      documents.set(id, body);
+      return body;
+    }
+    function moreButton(body, path, offset, label, { auto = false, before = false } = {}) {
+      return `<button class="act quiet small doc-more" data-act="document" data-doc="${body.id}" data-path="${esc(path)}" data-offset="${offset}"${before ? ' data-before="1"' : ""}${auto ? ' data-doc-load="1"' : ""}>${label}</button>`;
+    }
+    function documentHtml(body, path = "", depth = 0, preview = null) {
+      const key = `doc:${body.id}:${path}`, open = depth === 0 || s().nodes.has(key);
+      if (preview?.complete) return prim(preview.value);
+      const toggle = `<button class="node" data-act="node" data-p="${esc(key)}" aria-expanded="${open}">${ICON.caret}</button>`;
+      if (!open) return toggle + (preview?.type === "string" ? `${prim(preview.value)}<span class="pv"> …</span>` : `<span class="pv">${preview?.type === "array" ? "[…]" : "{…}"}</span>`);
+      const node = body.nodes.get(path);
+      let content;
+      if (!node?.pages.length) {
+        content = node?.error ? moreButton(body, path, 0, "Could not load · Retry")
+          : `<span class="doc-reading" data-doc-load="1" data-doc="${body.id}" data-path="${esc(path)}">${GHOST.bar(12)}</span>`;
+      } else {
+        const first = node.pages[0], last = node.pages.at(-1), kind = first.body.type;
+        const earlier = first.offset > 0 ? moreButton(body, path, node.history.get(first.offset) ?? 0, "Load earlier", { before: true }) : "";
+        if (kind === "object" || kind === "array") {
+          const children = node.pages.flatMap((page) => page.body.children || []);
+          content = `<ul class="tree${depth === 0 ? " root" : ""}">${children.map((child) => {
+            const part = String(child.key).replace(/~/g, "~0").replace(/\//g, "~1");
+            return `<li>${kind === "array" ? `<span class="idx">${esc(child.key)}</span>` : `<span class="key">${esc(child.key)}</span>: `}${documentHtml(body, `${path}/${part}`, depth + 1, child)}</li>`;
+          }).join("")}</ul>`;
+        } else if (kind === "string" || kind === "text") {
+          content = `<pre class="doc-text">${node.pages.map((page) => markIn(page.body.value ?? "")).join("")}</pre>`;
+        } else content = prim(first.body.value);
+        const later = last.body.next != null ? moreButton(body, path, last.body.next, "Load more", { auto: node.pages.length < 4 }) : "";
+        const retry = node.error ? moreButton(body, path, node.error.offset, "Could not load · Retry", node.error) : "";
+        content = earlier + content + (node.loading ? GHOST.bar(8) : retry || later);
+      }
+      return `<span class="doc-node" data-doc="${body.id}" aria-busy="${Boolean(node?.loading)}">${depth ? toggle : ""}${content}</span>`;
+    }
+    function observeDocuments() {
+      if (!options.document || !options.IntersectionObserver) return;
+      documentObserver?.disconnect();
+      const shown = new Set([...options.document.querySelectorAll(".rqpane [data-doc]")].map((el) => el.dataset.doc));
+      for (const [id, body] of documents) shown.has(id) ? body.activate() : body.deactivate();
+      documentObserver = new options.IntersectionObserver((entries) => {
+        for (const entry of entries) if (entry.isIntersecting) {
+          documentObserver.unobserve(entry.target);
+          const { doc, path, offset } = entry.target.dataset;
+          documents.get(doc)?.load(path, Number(offset) || 0);
+        }
+      }, { rootMargin: "160px" });
+      options.document.querySelectorAll(".rqpane [data-doc-load]").forEach((el) => documentObserver.observe(el));
+    }
+    function resetDocuments() {
+      documentObserver?.disconnect();
+      for (const body of documents.values()) body.deactivate();
+      documents.clear();
+      for (const key of s().nodes) if (key.startsWith("doc:") || key.startsWith("-doc:")) s().nodes.delete(key);
+    }
     // ---------- a body as a tree: an object or an array folds to a one-line preview, and opens where he clicks ----------
     function markIn(t) {
       const e = esc(t);
@@ -63,6 +180,7 @@ const REQVIEW = (() => {
     }
     const contains = (v) => s().q && JSON.stringify(v).toLowerCase().includes(s().q.toLowerCase());
     function tree(v, path, depth, openBy) {
+      if (v instanceof DeferredBody) return documentHtml(v);
       const isObj = v && typeof v === "object";
       if (!isObj) return prim(v);
       const entries = Array.isArray(v) ? v.map((x, i) => [i, x]) : Object.entries(v);
@@ -85,7 +203,7 @@ const REQVIEW = (() => {
     function bodyTree(body, path) {
       const unsaved = unsavedHtml(body);
       if (unsaved) return unsaved;
-      const n = body.messages ? body.messages.length - 1 : -1;
+      const n = Array.isArray(body?.messages) ? body.messages.length - 1 : -1;
       const openBy = (p, d) => d === 0 || p === `${path}.messages` || p === `${path}.messages.${n}` || p === `${path}.messages.${n}.content` || p.startsWith(`${path}.messages.${n}.content.`) && d <= 4;
       return `<div class="json">${tree(body, path, 0, openBy)}</div>`;
     }
@@ -232,10 +350,15 @@ const REQVIEW = (() => {
         case "tab": st.tab = el.dataset.v; return true;
         case "node": { const p = el.dataset.p, isOpen = el.getAttribute("aria-expanded") === "true"; st.nodes.delete(p); st.nodes.delete(`-${p}`); st.nodes.add(isOpen ? `-${p}` : p); return true; }
         case "frames": { const k = `${el.dataset.k}:frames`; st.nodes.has(k) ? st.nodes.delete(k) : st.nodes.add(k); return true; }
+        case "document": {
+          const { doc, path, offset, before } = el.dataset;
+          documents.get(doc)?.load(path, Number(offset) || 0, before === "1");
+          return true;
+        }
         default: return false;
       }
     }
-    return { markIn, paneHtml, click };
+    return { markIn, paneHtml, click, documentBody, observeDocuments, resetDocuments };
   }
   return { view, kept, GLYPH, pad, clockS, dayOf, n0, secs };
 })();

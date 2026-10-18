@@ -66,7 +66,10 @@ internal class RequestProjectTags(
         override fun tagsOf(id: String): Set<String> = tagsByProject[id].orEmpty()
 
         // Read when a row asks, never for the whole registry: a title is a file read the first time.
-        override fun titleOf(tag: String): String? =
-            titles.getOrPut(tag) { unnamed[tag]?.let { titleOf(it) } }
+        override fun titleOf(tag: String): String? {
+            // A missing title is a completed lookup too; getOrPut would reread its transcript for every row.
+            if (tag !in titles) titles[tag] = unnamed[tag]?.let { titleOf(it) }
+            return titles[tag]
+        }
     }
 }

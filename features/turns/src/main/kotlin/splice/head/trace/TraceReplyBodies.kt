@@ -2,6 +2,7 @@
 package splice.head.trace
 
 import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.add
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
@@ -12,8 +13,10 @@ import splice.core.memory.HeapReservations
 import splice.core.memory.HeapWeights
 import splice.core.model.TurnPrice
 import splice.core.perf.PerfKeys
+import splice.core.util.JsonScalars
 import splice.core.util.JsonWire
 import splice.head.TurnsHead
+import splice.head.trace.body.traceBodyFields
 import splice.upstream.memory.JvmHeap
 
 // why: growing encoder capacity, UTF-16 response text and HTTP byte conversion coexist.
@@ -67,4 +70,25 @@ internal class TraceReplyBodies(private val heap: HeapReservations = JvmHeap.bud
             turn.turn?.let { add(it) }
         }
     }.let(::encode)
+
+    /** Headers and timing remain available while each body is deferred independently. */
+    fun outline(turn: TracedTurn): String = buildJsonObject {
+        putJsonArray("records") {
+            turn.attempts.forEach { add(outlineRecord(it)) }
+            turn.turn?.let { add(outlineRecord(it)) }
+        }
+    }.let(::encode)
+
+    private fun outlineRecord(record: JsonObject): JsonObject {
+        val fields = record.toMutableMap().also { it.remove(TRACE_SOURCE_DAY) }
+        traceBodyFields.forEach { (section, key) ->
+            val part = record[section] as? JsonObject ?: return@forEach
+            val body = part[key] ?: return@forEach
+            val unavailable = (body as? JsonObject)?.let { JsonScalars.str(it, "unavailable") } == "true"
+            if (!unavailable) {
+                fields[section] = JsonObject((part - key) + ("body_deferred" to JsonPrimitive(true)))
+            }
+        }
+        return JsonObject(fields)
+    }
 }

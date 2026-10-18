@@ -48,6 +48,7 @@ internal class TraceBodyResolution(
         val reader = readers.of(format.pack(day), format)
         when (selection) {
             TraceBodySelection.RECORDS -> reader.literal(parts)
+            TraceBodySelection.REFERENCES -> error("trace references must be selected without hydrating bodies")
             TraceBodySelection.SUMMARY -> {
                 reader.validate(parts, decoder, validation)
                 JsonNull

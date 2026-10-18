@@ -30,7 +30,8 @@ import java.nio.file.LinkOption.NOFOLLOW_LINKS
 import java.nio.file.Path
 
 private const val UNAVAILABLE_TAG = "unavailable"
-private val BODY_FIELDS = mapOf("request" to "body", "response" to "text", "client" to "body", "answer" to "body")
+internal val traceBodyFields =
+    mapOf("request" to "body", "response" to "text", "client" to "body", "answer" to "body")
 
 // why: a part's 64 hex hash chars, 19 offset digits, five length digits, JSON syntax and separator use at most 119 bytes.
 private const val TRACE_PART_LINE_BYTES = 128L
@@ -165,11 +166,11 @@ internal class TraceBodies(
                 }
             },
         ).let { selected ->
-            if (selection == TraceBodySelection.SUMMARY) JsonObject(selected - BODY_FIELDS.keys) else selected
+            if (selection == TraceBodySelection.SUMMARY) JsonObject(selected - traceBodyFields.keys) else selected
         }
 
     private fun withAvailability(record: JsonObject): JsonObject {
-        val unavailable = BODY_FIELDS.any { (section, field) ->
+        val unavailable = traceBodyFields.any { (section, field) ->
             val body = (record[section] as? JsonObject)?.get(field) as? JsonObject
             body != null && JsonScalars.str(body, UNAVAILABLE_TAG) == "true"
         }
@@ -199,7 +200,7 @@ internal class TraceBodies(
 
     private inline fun replace(record: JsonObject, body: (JsonElement) -> JsonElement): JsonObject {
         val fields = record.toMutableMap()
-        BODY_FIELDS.forEach { (section, field) ->
+        traceBodyFields.forEach { (section, field) ->
             val content = record[section] as? JsonObject
             val value = content?.get(field)
             if (content != null && value != null) {

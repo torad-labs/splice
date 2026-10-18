@@ -9,6 +9,7 @@ package splice.head.trace
 
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.jsonObject
 import splice.core.memory.HeapCapacityException
 import splice.core.memory.HeapJson
@@ -30,6 +31,9 @@ import splice.upstream.memory.JvmHeap
 // record is stamped when it is built and the file lane writes in order, so the gap is the lane's queue:
 // seconds at worst, and a read past the turns it holds costs this much of the store, about a minute of lines
 private const val LATE_WRITE_SLACK_MS = 60_000L
+
+// Internal provenance for deferred reads, removed before metadata leaves the server.
+internal const val TRACE_SOURCE_DAY = "_splice_source_day"
 
 /** One read from the newest line back: the turns taken so far, newest first, each held until it is whole. */
 internal class TraceTail(
@@ -84,6 +88,12 @@ internal class TraceTail(
         return line.bytes().use { input ->
             HeapText.Reader.read(input, line.byteSize, heap).use { staged ->
                 val record = json.parseToJsonElement(staged.text).jsonObject
+                if (selection == TraceBodySelection.REFERENCES) {
+                    val source = TRACE_SOURCE_DAY to JsonPrimitive(line.file.fileName.toString())
+                    val reference = JsonObject(record + source)
+                    staged.retain(reference, HeapJson.bytes(reference))
+                    return@use reference
+                }
                 bodies.selected(record, line.file, readers, selection).also { selected ->
                     // Full records own hydrated strings separately. Summaries retain only their projected graph.
                     val retained = if (selection == TraceBodySelection.SUMMARY) selected else record

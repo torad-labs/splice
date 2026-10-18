@@ -14,6 +14,7 @@ import splice.app.head.RetiredTurnsHeads
 import splice.core.config.ConfigService
 import splice.core.retired.RetiredHeads
 import splice.head.trace.TraceDirPort
+import splice.head.trace.TraceDocumentQuery
 import splice.head.trace.TraceRoute
 import splice.head.trace.TraceSearchQuery
 import splice.head.wire.TraceDeleteRoutes
@@ -44,7 +45,22 @@ internal class TraceMount(
         // V4-239: the verbs' reads, the trace's files and the wire tap's ring, under the same key.
         route.get("/api/heads/{head}/trace") {
             guard.guarded(call) {
-                traceRoute.read(call.parameters["head"].orEmpty(), call.request.queryParameters["turn"]).send(call)
+                val query = call.request.queryParameters
+                val head = call.parameters["head"].orEmpty()
+                traceRoute.read(head, query["turn"], outline = query["view"] == "outline").send(call)
+            }
+        }
+        route.get("/api/heads/{head}/trace/document") {
+            guard.guarded(call) {
+                val query = call.request.queryParameters
+                val asked = TraceDocumentQuery(
+                    query["turn"],
+                    query["record"],
+                    query["section"],
+                    query["path"],
+                    query["offset"],
+                )
+                traceRoute.read(call.parameters["head"].orEmpty(), asked.turn, document = asked).send(call)
             }
         }
         route.get("/api/heads/{head}/trace/search") {

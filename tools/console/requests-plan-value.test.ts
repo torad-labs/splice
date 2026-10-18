@@ -53,7 +53,8 @@ afterAll(async () => {
 });
 
 test("a plan request reads On your plan with its API-price worth under it; a key request keeps its cost alone", async () => {
-  const page = await browser.newPage({ viewport: { width: 1440, height: 900 } });
+  // This walk closes its overlay; side-by-side panes intentionally hide that control.
+  const page = await browser.newPage({ viewport: { width: 1100, height: 900 } });
   try {
     await page.goto(`http://127.0.0.1:${server.port}/requests.html`);
     const card = (turn: string) => page.locator(`article[data-open="codex:${turn}"]`);

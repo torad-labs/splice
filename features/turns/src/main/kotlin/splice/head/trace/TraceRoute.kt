@@ -20,6 +20,7 @@ import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
 import splice.core.memory.HeapBudget
 import splice.core.memory.HeapCapacityException
+import splice.core.memory.HeapReservations
 import splice.core.storage.DayFiles
 import splice.core.util.Cancellables
 import splice.core.util.JsonWire
@@ -88,7 +89,12 @@ public class TraceRoute(
         }
 
     /** GET /api/heads/{head}/trace?turn=ID: that turn's records, read on [io] from the newest line until whole. */
-    public suspend fun read(head: String, turn: String?): JsonReply {
+    public suspend fun read(
+        head: String,
+        turn: String?,
+        outline: Boolean = false,
+        document: TraceDocumentQuery? = null,
+    ): JsonReply {
         val found = heads.byName(head).firstOrNull()
         val asked = turn?.takeIf { it.isNotBlank() }
         val traceDir = dir()
@@ -96,13 +102,26 @@ public class TraceRoute(
             found == null -> refuse(HttpStatusCode.BadRequest, "unknown head: $head")
             asked == null -> refuse(HttpStatusCode.BadRequest, TRACE_NO_TURN)
             traceDir == null -> refuse(HttpStatusCode.ServiceUnavailable, TRACE_UNWIRED)
-            else -> one(found.key, traceDir, asked)
+            else -> one(found.key, traceDir, asked, outline, document)
         }
     }
 
-    private suspend fun one(key: String, traceDir: Path, turn: String): JsonReply = rows.withRead { share ->
+    private suspend fun one(
+        key: String,
+        traceDir: Path,
+        turn: String,
+        outline: Boolean,
+        document: TraceDocumentQuery?,
+    ): JsonReply = rows.withRead { share ->
         val turns = withContext(io) {
-            Cancellables.runCatchingCancellable { rows.turns(traceDir, key, TraceAsk(1, turn = turn), share) }
+            Cancellables.runCatchingCancellable {
+                val ask = TraceAsk(1, turn = turn)
+                if (outline || document != null) {
+                    rows.references(traceDir, key, ask, share)
+                } else {
+                    rows.turns(traceDir, key, ask, share)
+                }
+            }
         }.getOrElse { return unreadable(key, traceDir, it) }
         if (turns.isEmpty()) {
             val reason = when {
@@ -110,8 +129,26 @@ public class TraceRoute(
                 else -> "no turn $turn in $key's trace"
             }
             refuse(HttpStatusCode.BadRequest, reason)
+        } else if (document != null) {
+            document(turns.single(), traceDir, document, share)
         } else {
-            JsonReply(HttpStatusCode.OK, TraceReplyBodies(share).turn(turns.single()))
+            val bodies = TraceReplyBodies(share)
+            JsonReply(HttpStatusCode.OK, if (outline) bodies.outline(turns.single()) else bodies.turn(turns.single()))
+        }
+    }
+
+    private suspend fun document(
+        turn: TracedTurn,
+        dir: Path,
+        query: TraceDocumentQuery,
+        share: HeapReservations,
+    ): JsonReply = withContext(io) {
+        try {
+            JsonReply(HttpStatusCode.OK, TraceDocumentRead(share).read(turn, dir, query))
+        } catch (failure: IllegalArgumentException) {
+            refuse(HttpStatusCode.BadRequest, SafeFailureText.render(failure))
+        } catch (failure: java.io.IOException) {
+            refuse(HttpStatusCode.InternalServerError, SafeFailureText.render(failure))
         }
     }
 

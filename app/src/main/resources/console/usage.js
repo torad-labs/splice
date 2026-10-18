@@ -45,7 +45,7 @@ const ui = { win: "7d", measure: "tokens", hover: null, by: "account", f: {}, mo
 const root = document.getElementById("usage");
 
 // ---------- what splice has told this page ----------
-const S = { heads: [], providerOf: {}, labels: {}, sessions: {}, keys: [], accounts: [], registry: [], groups: [], error: null };
+const S = { heads: [], providerOf: {}, labels: {}, sessions: {}, sessionsPending: true, keys: [], accounts: [], registry: [], groups: [], error: null };
 // one window's reads: the totals the daemon folded, and the newest rows. [all] is the window with the project pick alone
 // (the plan and key cards), [scoped] the same under the filters opened below the cards.
 const D = { loading: true, pending: false, every: null, all: null, scoped: null, rows: [], held: new Set(), errors: [], gen: 0 };
@@ -59,8 +59,9 @@ const sessTitle = (tag, fallback) => {
 const hasFilter = () => Object.keys(ui.f).length > 0;
 
 async function readStanding() {
-  const [heads, models, sessions, keys, accounts, status, topology] = await Promise.all(
-    ["/api/heads", "/api/models", "/api/sessions", "/api/keys", "/api/accounts", "/api/status", "/api/topology"].map((p) => API.get(p)));
+  const sessionsRead = API.get("/api/sessions");
+  const [heads, models, keys, accounts, status, topology] = await Promise.all(
+    ["/api/heads", "/api/models", "/api/keys", "/api/accounts", "/api/status", "/api/topology"].map((p) => API.get(p)));
   if (!heads.ok) { S.error = NOT_READ; console.warn(`commands: ${heads.status}`); return; }
   S.error = null;
   S.heads = (heads.body?.heads || []).map((h) => ({ key: h.key, command: h.label || h.key }));
@@ -70,17 +71,20 @@ async function readStanding() {
     S.providerOf[row.head] = FAMILY[row.provider] ?? (local(row.provider) ? "local" : row.provider);
     learnModels(S.labels, row);
   }
-  S.sessions = {};
-  const rowsOfSessions = sessions.body?.sessions || [];
-  for (const s of rowsOfSessions) if (s.session_id) { S.sessions[s.session_id] = s; S.sessions[String(s.session_id).slice(0, 8)] = s; }
   S.keys = keys.body?.keys || [];
   S.accounts = accounts.body?.accounts || [];
   S.registry = status.body?.registry || [];
-  const lives = await Promise.all(S.heads.map((h) => API.get(`/api/heads/${encodeURIComponent(h.key)}/turns/live`)));
-  const turns = {};
-  S.heads.forEach((h, i) => { for (const t of lives[i].body?.turns || []) if (t.session && !t.stopped) turns[t.session] = { head: h.key, ...t }; });
-  S.groups = projectGroups(rowsOfSessions, turns, S.heads);
-  ui.project = reconcilePick(ui.project, S.groups);
+  // Names and project lamps enrich the figures; a cold transcript listing must not hold the window's reads.
+  Promise.all([sessionsRead, Promise.all(S.heads.map((h) => API.get(`/api/heads/${encodeURIComponent(h.key)}/turns/live`)))]).then(([sessions, lives]) => {
+    const rows = sessions.body?.sessions || [], turns = {};
+    for (const s of rows) if (s.session_id) { S.sessions[s.session_id] = s; S.sessions[String(s.session_id).slice(0, 8)] = s; }
+    S.heads.forEach((h, i) => { for (const t of lives[i].body?.turns || []) if (t.session && !t.stopped) turns[t.session] = { head: h.key, ...t }; });
+    S.sessionsPending = false;
+    S.groups = projectGroups(rows, turns, S.heads);
+    const before = ui.project;
+    ui.project = reconcilePick(ui.project, S.groups);
+    if (before !== ui.project) again(); else render();
+  });
 }
 
 // ---------- the daemon's questions, one per command ----------
@@ -160,8 +164,8 @@ async function readWindow() {
   const scopes = [...(hasFilter() ? [ui.f, {}] : [{}]), ...(ui.project ? [wide] : [])];
   const asks = scopes.flatMap((f) => headsFor(f).flatMap((h) => labelsOf(f).map((label) => ({ f, h, held: 1, label }))));
   const rowAsks = headsFor(ui.f).flatMap((h) => labelsOf(ui.f).map((label) => ({ f: ui.f, h, held: MAX_HELD, label })));
-  const [totals, rows] = await Promise.all([
-    Promise.all(asks.map((a) => API.getReady(turnsUrl(a.h, a.held, a.f, a.label)))), Promise.all(rowAsks.map((a) => API.getReady(turnsUrl(a.h, a.held, a.f, a.label))))]);
+  // Count first. The multi-megabyte trails fill in after the totals and chart are already usable.
+  const totals = await Promise.all(asks.map((a) => API.getReady(turnsUrl(a.h, a.held, a.f, a.label))));
   if (gen !== D.gen) return;
   const split = (scope) => { const idx = asks.map((a, i) => (a.f === scope ? i : -1)).filter((i) => i >= 0); return foldWindow(idx.map((i) => totals[i]), idx.map((i) => asks[i].h)); };
   D.scoped = split(scopes[0]);
@@ -170,6 +174,10 @@ async function readWindow() {
   D.rows = []; D.held = new Set(); D.errors = [...D.scoped.errors];
   let pending = D.scoped.pending || D.all.pending || D.every.pending;
   const reading = new Set([...D.scoped.reading, ...D.all.reading, ...D.every.reading]);
+  D.pending = pending; D.reading = reading; D.loading = false;
+  render();
+  const rows = await Promise.all(rowAsks.map((a) => API.getReady(turnsUrl(a.h, a.held, a.f, a.label))));
+  if (gen !== D.gen) return;
   rowAsks.forEach((a, i) => {
     const answer = (rows[i].body?.heads || []).find((x) => x.key === a.h.key);
     if (!rows[i].ok || !answer || answer.error) { console.warn(`${a.h.command}: ${answer?.error ?? rows[i].status}`); if (!D.errors.includes(a.h.command)) D.errors.push(a.h.command); return; }
@@ -424,6 +432,7 @@ function filterChips() {
   }).join("");
 }
 function byHtml() {
+  if ((ui.by === "project" || ui.by === "agent") && S.sessionsPending) return GHOST.card([10, 18, 14, 16, 11], 0, "by");
   const list = groupsOf(ui.by).sort((a, b) => measureOf(b.s) - measureOf(a.s) || b.s.requests - a.s.requests);
   const max = Math.max(...list.map((e) => tokensOf(e.s)), 1), shown = ui.more ? list : list.slice(0, 12);
   const row = (e) => {
@@ -508,7 +517,7 @@ function flagHtml(head, f) {
 /** What each project tile and the picker carry on this page: the window's tokens, written as Breakdown writes them. */
 function projectFigures() {
   const w = D.every;
-  if (!w || reading()) return { of: () => null, all: null, unit: "token", show: tokWord };
+  if (!w || reading() || S.sessionsPending) return { of: () => null, all: null, unit: "token", show: tokWord };
   const byRow = rowProjects(), m = new Map();
   for (const e of w.sessions.values()) { const k = projectOfSid(e.sid, byRow).key; m.set(k, (m.get(k) ?? 0) + tokensOf(e)); }
   return { of: (k) => m.get(k) ?? 0, all: tokensOf(w.total), unit: "token", show: tokWord };

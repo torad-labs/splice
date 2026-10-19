@@ -308,7 +308,7 @@ button.count:hover { color: var(--text); }
 /* three figures side by side: what splice did this week when a model went quiet */
 .tally h3 { margin-bottom: .9rem; }
 .figs3 { display: flex; flex-wrap: wrap; gap: 1.05rem; }
-/* a group's figures keep their own size beside the next group (Silent models); a section's own figures, with no group
+/* a group's figures keep their own size beside the next group (Stalled answers); a section's own figures, with no group
    beside them, take the width between them so a wide pane is not two tiles and an empty row (Marcos, Oct 11) */
 #st .tally > .figs3 { display: grid; grid-template-columns: repeat(auto-fit, minmax(18rem, 1fr)); gap: 1.05rem; }
 /* four figures where only three columns fit read as a row and a stray: at 1440 MCP servers drew three tiles and left
@@ -343,7 +343,7 @@ button.count:hover { color: var(--text); }
 /* a group takes the share of the row its figure count earns (--f, set in groupHtml), and its figures split that share,
    so every figure in the section comes out one width and the row ends where the pane ends. 24rem per figure is what a
    figure's door needs to stay on one line; where the groups cannot both have it, each takes a row of its own rather
-   than squeezing a door into "Longest / silence" and "Open / it" (Silent models at 1440). */
+   than squeezing a door into "Longest / silence" and "Open / it" (Stalled answers at 1440). */
 .fgroup { display: flex; flex-direction: column; gap: .7rem; flex: var(--f, 1) 1 0; min-width: calc(var(--f, 1) * 24rem); }
 .fgroup > .figs3 > .fig3 { flex: 1 1 0; min-width: 24rem; }  /* the width its door needs whole: below it the groups take a row each */
 /* where the groups took a row each, a group of one figure stretched its tile across the pane and left the right two

@@ -30,7 +30,7 @@ const DAY = 864e5;
 // order, and a job none of whose settings is live is not on the rail until one is. The names are the
 // mock's, with no description line under them (fin).
 const TOPICS = [
-  { id: "silent", name: "Silent models", also: "stall stuck wedged hang quiet resume timeout" },
+  { id: "silent", name: "Stalled answers", also: "stall stuck wedged hang quiet resume timeout" },
   { id: "busy", name: "Many agents at once", keys: ["maxInflight", "maxQueued"], also: "overloaded busy queue waiting 429 failed errors retry" },
   { id: "reasoning", name: "Reasoning", also: "thinking summary show hide progress line replay" },
   { id: "plan", name: "Plan limits", also: "quota usage warning budget spend limit" },
@@ -51,8 +51,8 @@ const liveKnobs = () => (KNOBS.others(), Object.values(KNOB))
 // reading plan limits is off; the resume wait while no command has a stall gate; "Run at most" while the hub serves,
 // which stops servers when idle and leaves their memory to the host's MCP slice (v0.4.0 section 8, as built under the hub).
 const inertWhy = (key) => key === "quotaPollIntervalMs" && val("quotaPoll") === "off" ? "Reading plan limits is off, so nothing is polled"
-  : key === "stallReanchorMs" && !KNOB.stallReanchorMs.only.length ? "No command has a stall gate, so no answer is resumed"
-  : key === "mcpMaxServers" && ui.hubOn ? "The MCP hub runs these servers, and it has no count ceiling" : null;
+  : key === "stallReanchorMs" && !KNOB.stallReanchorMs.only.length ? "No command resumes stalled answers"
+  : key === "mcpMaxServers" && ui.hubOn ? "The MCP hub runs these servers, with no limit on how many" : null;
 /** The jobs on the rail: Your data always, the others once one of their settings is live. */
 const jobs = () => TOPICS.filter((x) => x.id === "data" || x.id === "version" || liveKnobs().some((k) => topicOf(k.key) === x.id));
 /** A job's live settings, in the order knobs.js lists them (the first two of Many agents at once are its own section). */
@@ -245,14 +245,14 @@ const DATA_ROWS = [
   { id: "trace", g: "text", name: "Prompts and answers", unit: "requests", yours: true, door: ["requests.html", "Requests"] },
   // the stores a person's prompts sit in that no feature runs without: counted and cleared by /api/kept/stores, each naming the
   // feature that needs it in place of a switch, with the lifetime splice gives it (the history window, or its own)
-  { id: "originals", g: "text", name: "Transcript copies", unit: "files", yours: true, store: "transcript_copies", knob: "keepTranscriptCopies", off: "When off, Continue on is one-way" },
+  { id: "originals", g: "text", name: "Transcript copies", unit: "files", yours: true, store: "transcript_copies", knob: "keepTranscriptCopies", off: "When off, a session moved with Continue on cannot move back" },
   { id: "recordings", g: "text", name: "Compaction summaries", unit: "files", yours: true, store: "compaction_summaries", knob: "keepCompactionSummaries", off: "When off, retried compactions cost again", life: "2 hours" },
   { id: "journals", g: "text", name: "Code mode work", unit: "files", store: "code_mode", yours: true, knob: "keepCodeModeWork", off: "When off, a restart ends running scripts", life: "1 day unused" },
   { id: "reasoning", g: "text", name: "Reasoning between requests", own: true, door: ["sessions.html", "Sessions"] },
   { id: "hist", g: "records", name: "Usage and request history", unit: "requests", door: ["usage.html", "Usage"] },
   // its own days and its own switch, both live (ConsoleWiring.activityStores reads them per sweep and per write); it never
   // followed the history window, which this row used to claim (v0.4.0 section 9: every knob drawn with its value)
-  { id: "edges", g: "records", name: "Who messaged whom", unit: "messages", door: ["teams.html", "Teams"], knob: "messageEdges", off: "When off, new messages between agents are not saved" },
+  { id: "edges", g: "records", name: "Messages between agents", unit: "messages", door: ["teams.html", "Teams"], knob: "messageEdges", off: "When off, new messages between agents are not saved" },
   { id: "labels", g: "records", name: "What each agent is doing", unit: "lines", door: ["teams.html", "Teams"] },
 ];
 const EP = { trace: null, hist: "/api/kept/turns", edges: "/api/kept/edges", labels: "/api/kept/labels" };
@@ -341,7 +341,7 @@ function histBar(h) {
   const total = h.held.bytes || 1, at = (h.cut.bytes / total) * 100, w = h.cut.cutoff_epoch_ms;
   const days = h.days.map((d) => `<i style="--mb:${d.bytes}"></i>`).join("");
   const tick = `<span class="hcut" style="--at:${at}%">${h.window.nothing ? "" : `<em>${atWord(w)}</em>`}</span>`;
-  return `<div class="hbar"><span class="hend">${atWord(h.held.oldest_epoch_ms)}</span><div class="hdays" role="img" aria-label="${mbWord(h.cut.bytes)} goes; kept from ${h.window.nothing ? "today" : atWord(w)}">`
+  return `<div class="hbar"><span class="hend">${atWord(h.held.oldest_epoch_ms)}</span><div class="hdays" role="img" aria-label="${mbWord(h.cut.bytes)} will be deleted; kept from ${h.window.nothing ? "today" : atWord(w)}">`
     + `${days}<span class="hgone" style="--w:${at}%"></span><b class="hfreed" style="--w:${at}%"><span>${mbWord(h.cut.bytes)}</span></b>${tick}</div><span class="hend">Today</span></div>`;
 }
 // The window the daemon keeps: the saved setting, else the one it falls back to with none saved, the wider of the records
@@ -388,8 +388,8 @@ function traceStopped() {
   const at = Math.min(...stops.map(({ b }) => b.saving_stopped_at_epoch_ms));
   const why = String(stops.find(({ b }) => b.saving_stopped_at_epoch_ms === at).b.saving_stopped_reason || "");
   const words = /free-space floor/.test(why) ? "the disk is down to the 64 GB splice always leaves free; free up space and saving starts again on the next request"
-    : /index budget/.test(why) ? "the 16 GB kept for request records is full of today's"
-    : /body budget|evicted/.test(why) ? "the 32 GB kept for prompts and answers is full of today's" : why;
+    : /index budget/.test(why) ? "the 16 GB kept for request records is full with today's records"
+    : /body budget|evicted/.test(why) ? "the 32 GB kept for prompts and answers is full with today's" : why;
   const today = new Date(at).toDateString() === new Date().toDateString();
   const when = today ? new Date(at).toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit" }) : atWord(at);
   const who = stops.length < ui.heads.filter(traceOn).length ? ` for ${stops.map(({ h }) => h).join(", ")}` : "";
@@ -509,7 +509,7 @@ const rowId = (head, row) => `${head}:${row.turn || row.turn_id || row.ts}`;
 function askWeek(head, why, from) {
   const ask = why === "failed" ? { outcome: "failed" } : { ...WHY_ASKS[why] }, tier = idleTierOf(ks.cfg, head.key);
   if (ROW_TEST[why]) ask.test = ROW_TEST[why];
-  if (why === "waited") { if (!Number.isFinite(tier)) return { head, why, err: "no silence setting answered" }; ask.silence_ms = String(Math.round(tier)); }
+  if (why === "waited") { if (!Number.isFinite(tier)) return { head, why, err: "no stall setting answered" }; ask.silence_ms = String(Math.round(tier)); }
   return { head, why, query: new URLSearchParams({ n: "1", from: String(from), local: "0", usage: "0", ...ask }).toString() };
 }
 /** The figure one question's answer makes, or why it makes none. */
@@ -603,7 +603,7 @@ const latestDoor = (shares) => {
 };
 const longestDoor = (shares) => {
   const best = shares.filter((p) => p.longest).sort((a, b) => b.silence - a.silence)[0];
-  return best ? doorTo(`requests.html?win=7d#${encodeURIComponent(rowId(best.head.key, best.longest))}`, "Longest silence", `<b>${msLong(best.silence)}</b>`, best.head.key) : "";
+  return best ? doorTo(`requests.html?win=7d#${encodeURIComponent(rowId(best.head.key, best.longest))}`, "Longest stall", `<b>${msLong(best.silence)}</b>`, best.head.key) : "";
 };
 // --f is how many figures the group holds, so two groups share the row in proportion to what is in them and every
 // figure comes out the same width: one group of one beside a group of three left most of the row empty at 1440 and 3828
@@ -623,8 +623,8 @@ const silentHtml = () => tallyHtml("This week", [
   ].sort((a, b) => (weekTotal(b.why) ?? 0) - (weekTotal(a.why) ?? 0))),
   groupHtml("Kept going", [
     { why: "waited", what: WHY.waited.word, door: longestDoor },
-    { why: "silentresume", what: WHY.silentresume.word.replace(" after a silence", "") },
-    { why: "silentover", what: WHY.silentover.word.replace(" after a silence", "") },
+    { why: "silentresume", what: WHY.silentresume.word.replace(" after no progress", "") },
+    { why: "silentover", what: WHY.silentover.word.replace(" after no progress", "") },
   ]),
 ]) + `<section class="sub">${blocks(keysOf("silent"))}</section>`;
 const limitOf = (head) => Number(ks.cfg?.layers?.perHead?.[head]?.maxInflight ?? val("maxInflight")) || 0;
@@ -749,7 +749,7 @@ const MCP_STATE = {
   location_flag: { word: "Per project", line: "A different place in each project" },
   roots: { word: "Per project", line: "Asks which project it's in" },
   directory: { word: "Per project", line: "One project's folder" },
-  stateful: { word: "Keeps state", line: "Holds one session's own work" },
+  stateful: { word: "Keeps state", line: "Keeps one session's work" },
   per_session_choice: { word: "Per session", line: "Sharing is off" },
   no_command: { word: "No command" },
   unreadable: { word: "Unreadable" },
@@ -1131,7 +1131,7 @@ function runHtml(run, back) {
  *  the same as one that hung. */
 function restartAct(going) {
   if (ui.armed === "restart" && !ui.restarting) {
-    const then = ui.drainMs ? `<span class="said then">· ${KNOBS.dur(ui.drainMs)} to finish, then cut</span>` : "";
+    const then = ui.drainMs ? `<span class="said then">· ${KNOBS.dur(ui.drainMs)} to finish, then stopped</span>` : "";
     return armedAsk("Mid-request", ui.cut || [], '<button class="act danger" data-act="restart-now">Restart splice</button>',
       '<button class="act quiet" data-act="disarm">Keep running</button>', then);
   }
@@ -1202,7 +1202,7 @@ async function restartSplice() {
   if (!r.ok) {
     ui.restarting = false;
     // 503 is the daemon saying nothing would bring it back, unwired or unsupervised: both mean the same to him here
-    ui.restartSaid = r.status === 409 ? "Already restarting" : r.status === 503 ? "Nothing would bring it back" : "Not restarted";
+    ui.restartSaid = r.status === 409 ? "Already restarting" : r.status === 503 ? "Nothing is set to start it again" : "Not restarted";
     if (r.body?.error) console.warn(`restart: ${r.body.error}`);
     render();
     return;

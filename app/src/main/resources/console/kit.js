@@ -103,12 +103,12 @@ const OUTCOME_WORD = { client_abort: "Stopped in Claude Code", "error:stopped": 
 // A turn splice gave up on after no progress from the model for the limit reads "Given up". splice writes the tag
 // as of V4-444 (CancellationSeal's TotalCap arm, OutcomeTag.TURN_CAP): before that it landed as a plain
 // error:cancelled and a quiet model was indistinguishable from a provider under load.
-// Both give-up forms read "Given up after a silence" on a row (fin, Marlin, Oct 12): error:turn-cap here, and an overload
+// Both give-up forms read "Given up after no progress" on a row (fin, Marlin, Oct 12): error:turn-cap here, and an overload
 // stalled past its re-anchors through Requests' outcomeOf, which reads this entry. A silence is what the two share, and
 // it is the console's word for the event: resumed, started over or given up. Not "No output": a turn can stream for
 // minutes, then go quiet. No figure: the limit ignores pings (Watchdog.kt:148-150) and up_gap_max_ms counts them.
 // WHY.gaveup.word stays "Given up" for the filter and Settings' tile.
-OUTCOME_WORD["error:turn-cap"] = "Given up after a silence";
+OUTCOME_WORD["error:turn-cap"] = "Given up after no progress";
 // THE `failure:` FAMILY CLOSES IN CODE: splice writes `failure:` plus one of seven ErrorType names
 // (TurnOutcome.kt:138-146, OutcomeTags.failure), so all seven are worded here and the reader below rarely fires.
 // Rate limited is the SAME FACT as error:rate-limited and takes the same word, and api_error the same fact as
@@ -157,8 +157,8 @@ const WHY = {
   waited: { word: "Waited out", has: (r) => !!r.silent },
   resumed: { word: "Resumed", has: (r) => !!r.resumed && !r.resumedFresh },
   startedover: { word: "Started over", has: (r) => !!r.resumedFresh },
-  silentover: { word: "Started over after a silence", has: (r) => !!r.resumedFresh && !!r.stallMs },
-  silentresume: { word: "Resumed after a silence", has: (r) => !!r.resumed && !!r.stallMs },
+  silentover: { word: "Started over after no progress", has: (r) => !!r.resumedFresh && !!r.stallMs },
+  silentresume: { word: "Resumed after no progress", has: (r) => !!r.resumed && !!r.stallMs },
   restarted: { word: "splice restarted", has: (r) => r.outcome === "error:restarted" },
 };
 

@@ -30,7 +30,7 @@
   const EFFORTS = [["low", "Low"], ["medium", "Medium"], ["high", "High"], ["xhigh", "Extra high"], ["max", "Max"]];
   const MAC = /Mac|iPhone|iPad/.test(navigator.platform || navigator.userAgent || "");
   const KEYS = MAC ? "⌘K" : "Ctrl+K";
-  const WORD = { working: "Working", waiting: "Waiting on you", idle: "Ready" };
+  const WORD = { working: "Working", waiting: "Needs you", idle: "Ready" };
   const X = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18"/></svg>`;
   const CARET = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" aria-hidden="true"><path d="M6 15l6-6 6 6"/></svg>`;
 
@@ -299,7 +299,7 @@
     if (st.m?.state === "live") {
       if (ctx && ctx.window > 0) {
         parts.push(meter("Context", ctx.percent, `${unit(ctx.used)} / ${unit(ctx.window)} · ${ctx.percent}%`,
-          "What the manager's conversation holds, of what its model can hold. It compacts itself near the top; Compact does it now."));
+          "How full the manager's conversation is, out of its model's limit. It compacts near the limit; Compact does it now."));
         parts.push(`<button type="button" class="act quiet small" data-act="compact"${canSteer() && ctx.used > 0 ? "" : " disabled"}
           title="Summarise the conversation so far to make room. It stays the same conversation.">Compact</button>`);
         if (ctx.cache != null) parts.push(`<span class="cmp-meter" title="How much of what the manager reads each turn the cache served."><span class="cmp-mname">Cache</span><span class="cmp-mnum">${ctx.cache}%</span></span>`);
@@ -560,7 +560,7 @@
       case "launch_failed": plain(`The manager did not start on ${label}${why ? `: ${why}` : ""}.`, [other, again]); return;
       case "folder_missing": plain(`splice could not open its settings folder${st.m?.folder ? ` ${home(st.m.folder)}` : ""}${why ? `: ${why}` : ""}.`); return;
       default:
-        if (res.status === 503) plain("splice has no terminal to run the manager in. It runs sessions in tmux.");
+        if (res.status === 503) plain("splice runs the manager in tmux, and no tmux terminal is available.");
         else if (res.status === 404) plain("This splice has no manager yet. It comes with a newer splice.", []);
         else if (res.status === 0) plain("splice is not answering. Nothing was started.");
         else plain(`The manager did not start${why ? `: ${why}` : `. splice answered ${res.status}`}.`);
@@ -589,7 +589,7 @@
     switch (res.body?.reason) {
       case "waiting": plain("The manager is waiting on an answer. Answer it, then move it."); return;
       case "same_head": plain(`The manager already runs on ${labelOf(key)}.`); return;
-      case "draft": plain("The manager's prompt holds words that were not sent. Send or clear them, then move it."); return;
+      case "draft": plain("The manager's prompt has unsent text. Send or clear it, then move the manager."); return;
       case "not_installed":
         say({ tone: "refused", wrap: true, text: `${labelOf(key)} is not installed as a command.`, title: why,
           html: `${h(labelOf(key))} is not installed as a command. Run <code>splice install --all</code> in a terminal, then try again.` });
@@ -685,7 +685,7 @@
     const look = { word: "Open on Sessions", run: go };
     switch (res.body?.reason) {
       case "draft":
-        say({ tone: "held", text: "The manager's prompt already holds", held: oneLine(res.body.draft),
+        say({ tone: "held", text: "The manager's prompt already has unsent text", held: oneLine(res.body.draft),
           acts: [{ word: "Cancel", run: () => { say(null); field.focus(); } }, { word: "Clear and send", primary: true, run: () => submit(true) }] });
         return;
       case "closed":
@@ -711,7 +711,7 @@
     const res = await API.post(route(st.sid, "answer"), { choice, label });
     st.answering = null;
     if (res.ok) st.ask = null;
-    else if (res.body?.reason === "screen_moved") { say({ tone: "refused", text: "The menu changed before your press landed. Nothing was pressed." }); await readScreen(); }
+    else if (res.body?.reason === "screen_moved") { say({ tone: "refused", text: "The menu changed before your click reached it. Nothing was pressed." }); await readScreen(); }
     else say({ tone: "refused", text: res.status === 0 ? "splice is not answering. Nothing was pressed." : `Not pressed: ${res.body?.error || `splice answered ${res.status}`}.`, acts: [{ word: "Open on Sessions", run: go }] });
     draw();
     setTimeout(tick, 600);

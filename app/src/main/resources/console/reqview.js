@@ -255,7 +255,7 @@ const REQVIEW = (() => {
         else groups.push({ event: f.event, piece: pc?.key, n: 1, data: f.data });
       }
       const open = s().nodes.has(`${key}:frames`);
-      const list = open ? `<ol class="frames">${groups.map((g) => `<li><span class="ev">${esc(g.event)}</span>${g.n > 1 ? `<span class="times">× ${g.n}</span>` : ""}${g.n === 1 ? `<span class="fd">${typeof g.data === "object" ? prev(g.data) : prim(g.data)}</span>` : ""}</li>`).join("")}</ol>` : "";
+      const list = open ? `<ol class="frames">${groups.map((g) => `<li><span class="ev">${esc(g.event)}</span>${g.n > 1 ? `<span class="times">${g.n} times</span>` : ""}${g.n === 1 ? `<span class="fd">${typeof g.data === "object" ? prev(g.data) : prim(g.data)}</span>` : ""}</li>`).join("")}</ol>` : "";
       return `<button class="framefold" data-act="frames" data-k="${key}" aria-expanded="${open}">${ICON.caret}${n0(fr.length)} ${fr.length === 1 ? "frame" : "frames"}</button>${list}`;
     }
     function blockHtml(title, inner, extra = "") { return `<section class="block"><h3>${title}${extra}</h3>${inner}</section>`; }
@@ -303,7 +303,7 @@ const REQVIEW = (() => {
       const mark = (ms, label, cls) => (ms == null ? "" : `<span class="mk ${cls}${ms / total > .6 ? " late" : ""}" style="left:${pct(ms)}"><span>${label} ${secs(ms)}</span></span>`);
       // a silence splice waited out, as the stretch it was, and a resume where the stream broke and splice re-sent: from the
       // partial answer, or the round over from scratch
-      const quiet = r.silent ? `<span class="quiet${r.silentFrom / total > .6 ? " late" : ""}" style="left:${pct(r.silentFrom)};width:${pct(r.silent)}"><span>Waited out ${secs(r.silent)}</span></span>` : "";
+      const quiet = r.silent ? `<span class="quiet${r.silentFrom / total > .6 ? " late" : ""}" style="left:${pct(r.silentFrom)};width:${pct(r.silent)}"><span>No output for ${secs(r.silent)}</span></span>` : "";
       // the time the gate held it behind a full limit, before splice sent it (admit_held_ms)
       const line = r.queued ? `<span class="quiet" style="left:0;width:${pct(r.queued)}"><span>Waited in line ${secs(r.queued)}</span></span>` : "";
       // a resume ends the silence before it, so both labels would stand at one place: the resume's goes a line higher

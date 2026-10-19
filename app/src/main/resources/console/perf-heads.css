@@ -1,4 +1,4 @@
-/* Usage › How each command answered (perf-heads.js), beside the Breakdown where the Commands cards stood: one row per
+/* Usage › Results by command (perf-heads.js), beside the Breakdown where the Commands cards stood: one row per
    command, in the Breakdown's row language (.brow), a grid of figures under one header row, rows split by the track
    line, numbers in the data face. The table sizes to its own column (container perf), so where that column is too narrow
    for every figure, the header row goes and each figure carries its own label instead, and nothing is cut. Class names

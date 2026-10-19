@@ -272,7 +272,7 @@ function headActsHtml(c) {
 function headAskHtml(c) {
   const h = ui.headAct;
   if (h?.key !== c.key || !h.cut) return "";
-  const said = h.cut.length ? "Mid-request" : h.act === "stop" ? "Serves nothing until restarted" : "";
+  const said = h.cut.length ? "Mid-request" : h.act === "stop" ? "Stopped until restarted" : "";
   return armedAsk(said, h.cut, `<button class="act danger small" data-act="hact-now">${HEAD_ACT[h.act][0]} ${esc(c.cmd)}</button>`,
     '<button class="act quiet small" data-act="hact-keep">Keep running</button>');
 }
@@ -636,7 +636,7 @@ function ownState(c, d) {
 const bad = (ok, word) => (ok ? "" : `<span class="said limit">${word}</span>`);
 function whereHtml(c, d, s) {
   return `<span class="lbl">Port</span><div class="ctl"><input class="field num${dirt(d.port !== fieldsOf(c).port)}" id="h-port" value="${esc(d.port)}" inputmode="numeric" spellcheck="false" autocomplete="off" aria-label="Port">${bad(s.port, "Not a port")}<span class="note">Where Claude Code reaches this command on this computer; each command needs its own</span></div>`
-    + `<span class="lbl">Model prefix</span><div class="ctl"><input class="field mono prefix${dirt(d.prefix !== fieldsOf(c).prefix)}" id="h-prefix" value="${esc(d.prefix)}" spellcheck="false" autocomplete="off" aria-label="Model prefix">${bad(s.prefix, "Needs a prefix")}<span class="note">Goes before each model's name in Claude Code's model picker, so this command's models never clash with another's</span></div>`;
+    + `<span class="lbl">Model prefix</span><div class="ctl"><input class="field mono prefix${dirt(d.prefix !== fieldsOf(c).prefix)}" id="h-prefix" value="${esc(d.prefix)}" spellcheck="false" autocomplete="off" aria-label="Model prefix">${bad(s.prefix, "Needs a prefix")}<span class="note">Shown before each model name in Claude Code's model picker, so models from two commands never share a name</span></div>`;
 }
 // the names of what a command can share with your own Claude Code, by the item splice.toml spells (claude.share, isolate)
 const SHARE_NAME = { settings: "Settings", mcps: "MCP servers", skills: "Skills", hooks: "Hooks", agents: "Agents", commands: "Commands",
@@ -1006,7 +1006,7 @@ function compTable(t, cx) {
 // what stops a save before it is sent: an empty text or file, or a table that holds a rule twice, which splice would
 // write and then keep its old rules over ("[compaction] unchanged", splice-turns)
 function compRefusal(table) {
-  if (Object.values(ui.comp.rows).some((st) => st.mode === "text" && !st.text.trim())) return "Write the text, or pick Claude Code's";
+  if (Object.values(ui.comp.rows).some((st) => st.mode === "text" && !st.text.trim())) return "Write the text, or choose Claude Code's own";
   if (Object.values(ui.comp.rows).some((st) => st.mode === "file" && !st.file.trim())) return "Name the file";
   const twice = (keys) => keys.some((k, i) => keys.indexOf(k) !== i);
   if (twice(table.model.map((x) => x.model)) || twice(table.project.map((x) => `${x.path}\n${x.model ?? ""}`))) return "splice.toml holds one rule twice; fix it there first";
@@ -1176,7 +1176,7 @@ function addPaneHtml() {
   // saved: splice restarts to start the command, and the pane says so until the restarted daemon lists it and its own
   // pane opens (marlin's desk A look, Oct 12: "Adding" sat still through the restart, and only a reload showed the pane)
   const foot = a.stalled
-    ? `<div class="foot">${restartBtn()}<span class="said limit">Saved; splice did not come back with it</span></div>`
+    ? `<div class="foot">${restartBtn()}<span class="said limit">Saved, but splice did not restart</span></div>`
     : a.saved
     ? `<div class="foot"><span class="waitbox" role="status">${ICON.wait}<span class="sr">Restarting</span></span><span class="said">Saved. Restarting splice to start ${esc(a.savedCmd || "it")}</span></div>`
     : `<div class="foot"><button class="act primary" data-act="add"${ready && !a.busy ? "" : " disabled"}>${a.busy ? "Adding" : "Add"}</button><button class="act quiet" data-act="cancel-add">Cancel</button>${said}</div>`;

@@ -476,7 +476,7 @@ function tokensHtml() {
       + [...w.accounts.values()].filter((a) => a.head === h && a.cold > 0).sort((a, b) => b.cold - a.cold)
         .map((a) => `<div class="trow tacct"><span class="an">${acctLabel(h, a.label, a.name)}</span>${"<span></span>".repeat(4)}${coldCell(a)}</div>`).join("");
   };
-  const head = `<div class="trow thead"><span>Command</span><span class="num">Input</span><span class="num">Cached</span><span class="num">Written to cache</span><span class="num">Output</span><span class="num">Cold after a switch</span></div>`;
+  const head = `<div class="trow thead"><span>Command</span><span class="num">Input</span><span class="num">Cached</span><span class="num">Written to cache</span><span class="num">Output</span><span class="num">Uncached after a switch</span></div>`;
   return `<section class="tokens"><header><h2>Tokens</h2><span class="tsub">As each provider counted them</span></header><div class="card">${list.length ? head + list.map(row).join("") : `<p class="empty">No requests</p>`}</div></section>`;
 }
 

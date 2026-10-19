@@ -705,7 +705,7 @@ function baysHtml(tm, groups) {
     `<span class="bcount">${slots.length} ${slots.length === 1 ? "member" : "members"}</span></h3>` +
     `${slots.map((s) => memberHtml(tm, s)).join("")}</section>`).join("");
 }
-const handoffsHtml = (body) => `<section class="handoffs"><h3>Hand-offs<span class="dname">${dayName(ui.day)}</span></h3>${body}</section>`;
+const handoffsHtml = (body) => `<section class="handoffs"><h3>Messages between members<span class="dname">${dayName(ui.day)}</span></h3>${body}</section>`;
 
 function byCommandHtml(tm) {
   const heads = [...new Set(tm.slots.map((s) => s.head))];
@@ -876,7 +876,7 @@ function slotRowHtml(c, s, i) {
     `${head}${model}${account}<button class="leadtog" data-act="lead" data-i="${i}" aria-pressed="${s.lead}">Lead</button>` +
     `<button class="act quiet small" data-act="instr" data-i="${i}" aria-expanded="${s.open}">Instructions</button>` +
     `<button class="act quiet small" data-act="rm" data-i="${i}"${c.slots.length < 2 ? " disabled" : ""}>Remove</button>${pickHtml(c, i)}</div>` +
-    `<div class="rulerow"><button class="leadtog" data-act="rule" data-i="${i}" aria-pressed="${Boolean(s.bind_by_rule)}">Joins on its own</button>` +
+    `<div class="rulerow"><button class="leadtog" data-act="rule" data-i="${i}" aria-pressed="${Boolean(s.bind_by_rule)}">Join by rule</button>` +
     `${s.bind_by_rule ? `<p class="rulehint">${esc(ruleLine(c.repo, s.head))}</p>` : ""}</div>` +
     (s.open ? `<textarea class="field instr" data-i="${i}" rows="4" aria-label="Instructions">${esc(s.instructions || "")}</textarea>` : "") +
     `</article>`;
@@ -896,7 +896,7 @@ function composerHtml() {
     `<h3>Members</h3><div class="rows">${c.slots.map((s, i) => slotRowHtml(c, s, i)).join("")}` +
     `<button class="add" data-act="add-slot"><span class="plus" aria-hidden="true">+</span>Add member</button></div>` +
     `<datalist id="roles"><option value="builder"><option value="reviewer"><option value="researcher"></datalist>` +
-    `<footer><p class="foothint">Save keeps the team. Start team also starts a session for every member that has none.</p>` +
+    `<footer><p class="foothint">Save stores the team. Start team also starts a session for every member that has none.</p>` +
     (c.error ? `<span class="state limit" role="status">${esc(c.error)}</span>` : "") +
     `<button class="act quiet" data-act="cancel">Cancel</button>` +
     `<button class="act quiet" data-act="save"${ok ? "" : " disabled"}>Save</button>` +

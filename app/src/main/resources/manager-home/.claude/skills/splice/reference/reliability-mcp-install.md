@@ -69,7 +69,7 @@ Source: `RetryPolicy.kt` 207-239, 290; `integrations/upstream/.../retry/RateLimi
 
 How the probe works: a round past a tier is asked whether its socket still answers. A path that answers is held and polled on. Only a path that has gone quiet too is reaped, and
 the re-anchor machinery then resumes it. A turn ended by the wall reads `splice progress timeout expired after
-Nms without upstream progress; retry`, and the console says "Given up after a silence".
+Nms without upstream progress; retry`, and the console says "Given up after no progress".
 Do not lower `streamIdleMs` to cure a slow model. It buys only how long the person waits before splice starts
 healing. A head that needs a longer wait names it in its own overrides, with a reason.
 
@@ -85,7 +85,7 @@ provider's raw JSON. The Requests page words (the "Requests word" column) come f
 
 | situation | wire type | Requests word | what happens next |
 |---|---|---|---|
-| provider overloaded, 5xx, reset, stall before content | `overloaded_error` | Overloaded, Network error, Given up after a silence | splice retries (1.2), then Claude Code re-sends |
+| provider overloaded, 5xx, reset, stall before content | `overloaded_error` | Overloaded, Network error, Given up after no progress | splice retries (1.2), then Claude Code re-sends |
 | stream cut after content began | `overloaded_error` | Cut off | splice re-anchors (1.2). If a tool call had started the turn ends: the person re-sends |
 | plan window spent | `rate_limit_error` | no word (the window shows its lock and reset time) | text: `Rate limit exceeded: the upstream reports this plan's <window> window is used up until <time>. The session waits and resumes after the reset.` Claude Code waits and resumes. Sessions page: At limit |
 | burst 429 | `rate_limit_error` | Rate limited | 1.3. Persistent Claude Code sleeps until the reset |

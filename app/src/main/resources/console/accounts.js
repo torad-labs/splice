@@ -428,7 +428,7 @@ function windowsHtml(a, next = null) {
   if (a.staleAt != null) rows += `<span class="stale-at">${GLYPH.eye}Read ${at(a.staleAt)}</span>`;
   if (next) { // a held next is the one serving at its reset: its lock and that reset, on the windows' own columns
     const w = held(next) && next.windows.filter(atLimit).sort((x, y) => y.left - x.left)[0];
-    rows += `<span class="next"><span class="label">Next</span><span class="who">${esc(next.name)}</span>${w ? `${locked(false, "")}${resets(w)}<span class="nextwhy">Limit reached; it serves again from ${at(w.resetMs)}</span>` : ""}</span>`;
+    rows += `<span class="next"><span class="label">Next</span><span class="who">${esc(next.name)}</span>${w ? `${locked(false, "")}${resets(w)}<span class="nextwhy">Limit reached; usable again from ${at(w.resetMs)}</span>` : ""}</span>`;
   }
   return `<div class="windows">${rows}</div>`;
 }
@@ -527,7 +527,7 @@ const unpriced = (c, lead = "") => ((c.unpriced || c.failed) && !c.local && !c.u
 // Only the tile with no budget draws it: a budgeted head reads its day from the budget's own exact figure, which has
 // no half-hour it cannot place, so `opening` is null there by construction (see where the command rows are built).
 const openingRow = (c) => (c.opening && !c.local ? `<span class="unpriced opening">${openingNote(c.opening)}</span>` : "");
-const openingNote = (o) => `${o.usd ? money(o.usd) : `${o.unpriced.toLocaleString("en-US")} ${o.unpriced === 1 ? "request" : "requests"}`} in the hour holding midnight, not counted`;
+const openingNote = (o) => `${o.usd ? money(o.usd) : `${o.unpriced.toLocaleString("en-US")} ${o.unpriced === 1 ? "request" : "requests"}`} in the hour that includes midnight, not counted`;
 function editorHtml(c, tag) {
   const ed = ui.editor;
   const presets = [5, 10, 25, 50, 100].map((v) => `<button data-act="preset" data-v="${v}" aria-pressed="${ed.cap === v}">$${v}</button>`).join("");
@@ -661,7 +661,7 @@ function slotHtml(p, c, a, serves) {
   const use = (cls) => `<button class="act ${cls}" data-act="use" data-p="${p.id}" data-c="${c.cmd}" data-a="${a.id}">Use now</button>`;
   const mv = ui.moving;
   if (p.kind === "plan" && mv && mv.a === a.id && mv.c === c.cmd) {
-    return chips + armedAsk("Moves at its next request", mv.cut, use("danger"), '<button class="act quiet" data-act="keep-use">Cancel</button>');
+    return chips + armedAsk("Switches at its next request", mv.cut, use("danger"), '<button class="act quiet" data-act="keep-use">Cancel</button>');
   }
   if (p.kind === "plan") return `${chips}${use("quiet")}`;
   return "";
@@ -678,7 +678,7 @@ function menuHtml(p, a, spot) {
   const armed = ui.armed === spot, refused = ui.removeErr && ui.removeErr.spot === spot;
   return `<div class="menu${refused ? " failed" : ""}" role="menu">${menuItems(p, a).map(([act, label]) => {
     const on = a.sessions?.length || 0; // sessions on it sign in again or move to another login once it is gone
-    const text = act === "remove" && armed ? `Remove ${p.kind === "key" ? "API key" : a.name}${on ? ` · ${on === 1 ? "1 session" : `${on} sessions`} on it` : ""}` : label;
+    const text = act === "remove" && armed ? `Remove ${p.kind === "key" ? "API key" : a.name}${on ? ` · ${on === 1 ? "1 session" : `${on} sessions`} use it` : ""}` : label;
     return `<button role="menuitem" class="${act === "remove" ? `danger${armed ? " armed" : ""}` : ""}" data-act="${act}" data-p="${p.id}" data-a="${a.id}" data-s="${spot}"${act === "remove" && ui.removing === spot ? " disabled" : ""}>${act === "remove" && ui.removing === spot ? "Removing…" : esc(text)}</button>`;
   }).join("")}${refused ? `<span class="state limit menu-state" role="status">${esc(ui.removeErr.word)}</span>` : ""}</div>`;
 }
@@ -701,7 +701,7 @@ const loginOf = (head, label) => LOGIN_NAME.get(`${head}|${label}`) ?? label;
 // a session's own last switch and splice's reason, and whether it is pinned to this login alone (spec section 11); its
 // pane on Sessions carries Use and Unpin for it
 function sessWhy(x) {
-  const own = x.account_pin && x.account_pin !== x.account_pin_head ? "Pinned to this login. " : "";
+  const own = x.account_pin && x.account_pin !== x.account_pin_head ? "Pinned to this account. " : "";
   const sw = x.account_switch;
   return own + (sw ? `Moved from ${loginOf(x.head, sw.from)} to ${loginOf(x.head, sw.to)} at ${new Date(sw.at_epoch_millis).toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit" })}: ${sw.reason}` : "");
 }
@@ -809,9 +809,9 @@ const laneOf = (p) => p.cmds.find((c) => c.cmd === ui.lane[p.id]) || p.cmds[0];
 // The last time splice moved a command from one login to another, and why (spec 11h, AccountPoolJson last_switch). The
 // reason is the daemon's own phrase (AccountSwitchReason.kt), said here in his words; one it does not know reads as sent.
 const MOVED_WHY = { "operator pinned this account": "You pinned it", "operator account order": "Your order",
-  "primary account reset": "Main login reset", "quota resets sooner": "Resets sooner", "provider rate limit reached": "Rate limited",
+  "primary account reset": "Main account reset", "quota resets sooner": "Resets sooner", "provider rate limit reached": "Rate limited",
   "rate limit exceeds turn wait budget": "Rate limited too long to wait", "5-hour quota exhausted": "5-hour limit used up",
-  "7-day quota exhausted": "Weekly limit used up", "quota usage reading full": "Reading was full", "account unavailable": "Login unavailable",
+  "7-day quota exhausted": "Weekly limit used up", "quota usage reading full": "Usage at its limit", "account unavailable": "Account unavailable",
   "previous login needs sign-in": "Needs sign-in" };
 const movedWhy = (r) => MOVED_WHY[r] ?? (r ? r[0].toUpperCase() + r.slice(1) : "");
 // A command whose pool is down to one usable login says the next plan limit has nothing to move to, and until when: the
@@ -832,7 +832,7 @@ function movedHtml(p) {
     const m = c.moved, left = c.lastLeft;
     const bits = m ? [`Moved from ${esc(nameOn(c, m.from))} to ${esc(nameOn(c, m.to))}`, m.at_epoch_millis ? backWord(new Date(m.at_epoch_millis)) : "", esc(movedWhy(m.reason))] : [];
     const moved = bits.length ? `<p class="moved">${chip}${bits.filter(Boolean).join(" · ")}</p>` : "";
-    const last = left ? `<p class="moved">${chip}One login left; the next plan limit has no fallback${left.untilMs ? ` until ${at(left.untilMs)}` : ""}</p>` : "";
+    const last = left ? `<p class="moved">${chip}One account left; no other account takes over at the next plan limit${left.untilMs ? ` until ${at(left.untilMs)}` : ""}</p>` : "";
     return moved + last;
   }).join("");
 }

@@ -52,7 +52,7 @@ test("a busy command's week shows the daemon's real count above 2,000, and its l
   const page = await browser.newPage({ viewport: { width: 1440, height: 900 } });
   try {
     await page.goto(`http://127.0.0.1:${server.port}/settings.html`);
-    await page.getByText("Silent models").first().click();
+    await page.getByText("Stalled answers").first().click();
     const waited = page.locator(".fig3", { hasText: "Waited out" });
     await expect(waited.locator(".lead .big")).toHaveText("4,321", { timeout: 15_000 });
     await expect(waited).toContainText("1 min 30 s");

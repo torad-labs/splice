@@ -50,7 +50,7 @@ for (const page of ["requests", "teams", "usage"] as const) {
 }
 
 test("settings draws its own cards while it reads, each line's bar where its figure will land", () => reading("settings", async (p) => {
-  expect(await p.locator(".card.job .jname").allInnerTexts()).toContain("Silent models");
+  expect(await p.locator(".card.job .jname").allInnerTexts()).toContain("Stalled answers");
   const lines = await p.locator(".card.job").evaluateAll((cards) => cards.flatMap((c) => {
     const bar = c.querySelector(".meta .ghost"), name = c.querySelector(".jname");
     return bar && name ? [Math.round(bar.getBoundingClientRect().x - name.getBoundingClientRect().x)] : [];

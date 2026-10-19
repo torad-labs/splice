@@ -1,6 +1,6 @@
 // NEW: Oct 11, 2026 — what a request's own fields say about HOW it ended or WHAT it sat through, applied by the daemon
 // over every row of the window. Settings counts these figures ("Given up", "Overloaded", "Cut off", "Waited out",
-// "Resumed after a silence"); a count made in the browser over the newest 2,000 rows of a busy command is the cap and
+// "Resumed after no progress"); a count made in the browser over the newest 2,000 rows of a busy command is the cap and
 // not the count, so the test runs here, in the one read of the window, and the page shows what the daemon counted.
 package splice.usage.perf
 

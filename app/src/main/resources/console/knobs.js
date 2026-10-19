@@ -37,11 +37,11 @@ const createKnobs = (scope) => {
     // silence, never a turn's length (Watchdog.kt:6-7, :148-155, :390-398). The three tiers under it ask whether the
     // provider is alive and never end a turn on their own (Knob.kt:237-300)
     K("upstreamTimeoutMs", "Give up after no progress for", { k: "dur", opts: [10 * MIN, 15 * MIN, 20 * MIN, 30 * MIN, HR, 2 * HR], unit: "min" }, 15 * MIN, { cmd: true, home: "silent", also: "timeout limit cut off long turn wedged stuck" }),
-    K("firstByteTimeoutMs", "Check the connection after no first word for", { k: "dur", opts: [30 * SEC, 60 * SEC, 90 * SEC, 2 * MIN, 5 * MIN], unit: "s" }, 90 * SEC,
+    K("firstByteTimeoutMs", "Check the connection if no output arrives for", { k: "dur", opts: [30 * SEC, 60 * SEC, 90 * SEC, 2 * MIN, 5 * MIN], unit: "s" }, 90 * SEC,
       { cmd: true, home: "silent", also: "ask if a silent start is alive after first word first byte" }),
-    K("streamIdleMs", "Ask if a silent answer is alive after", { k: "dur", opts: [30 * SEC, 60 * SEC, 90 * SEC, 2 * MIN, 5 * MIN], unit: "s" }, 90 * SEC, { cmd: true, home: "silent", also: "silence idle hang" }),
+    K("streamIdleMs", "Check a stalled answer is alive after", { k: "dur", opts: [30 * SEC, 60 * SEC, 90 * SEC, 2 * MIN, 5 * MIN], unit: "s" }, 90 * SEC, { cmd: true, home: "silent", also: "silence idle hang" }),
     // arms only on a provider measured to resume from a prefill (HeadBuildInputs.kt:168-171)
-    K("stallReanchorMs", "Resume a silent answer after", { k: "dur", opts: [10 * SEC, 20 * SEC, 30 * SEC, 60 * SEC], unit: "s" }, 20 * SEC,
+    K("stallReanchorMs", "Resume a stalled answer after", { k: "dur", opts: [10 * SEC, 20 * SEC, 30 * SEC, 60 * SEC], unit: "s" }, 20 * SEC,
       { cmd: true, home: "silent", also: "resume", only: [] }),
     // admission per command (Knob.kt:186-194); attempts, the first included
     K("maxInflight", "Requests at once", { k: "count", opts: [4, 8, 12, 16, 24, 32, 100, 0], none: "Unlimited" }, 12, { cmd: true, also: "concurrent parallel per command" }),
@@ -61,7 +61,7 @@ const createKnobs = (scope) => {
     // approves. The old names stay in `also` so a search for "summaries" still lands on the row that was renamed.
     K("summary", "Reasoning you see", { k: "pick", names: { detailed: "Full", concise: "Short", auto: "Model decides", none: "None" } }, "detailed",
       { home: "reasoning", also: "reasoning summaries thinking summary detailed concise auto" }),
-    K("showReasoning", "Where reasoning shows", { k: "pick", names: { text: "In the reply", thinking: "In the thinking block", off: "Nowhere" } }, "text",
+    K("showReasoning", "Where reasoning shows", { k: "pick", names: { text: "In the reply", thinking: "In the thinking block", off: "Hidden" } }, "text",
       { home: "reasoning", also: "show reasoning in claude code display thinking as text" }),
     // OFF THE PAGE, NOT OFF THE DAEMON (Marlin, Oct 12): its only measured effect is thinner fresh reasoning
     // (Knob.kt:106-109, ~4x), it is off by default, and it is meant as an environment opt-in, so it serves no job he
@@ -95,7 +95,7 @@ const createKnobs = (scope) => {
     K("historyRetentionDays", "Keep usage and request history for", { k: "count", opts: [0, 7, 14, 35, 90, 365, "forever"], unit: "days", none: "Forever", zero: "Today only", min: 1 }, 35,
       { home: "data", ask: true, also: "history retention disk space forever usage requests records month year" }),
     K("activityRetentionDays", "Keep what each agent was doing for", { k: "count", opts: [7, 30, 90, 180, 365], unit: "days", min: 1 }, 90, { home: "data", also: "activity labels teams agents file names commands" }),
-    K("messageEdges", "Save who messaged whom", { k: "flag" }, true, { home: "data" }),
+    K("messageEdges", "Save messages between agents", { k: "flag" }, true, { home: "data" }),
     K("transcriptView", "Read your Claude Code conversations", { k: "flag" }, true, { home: "data" }),
     K("keepTranscriptCopies", "Keep a copy before moving a conversation to another model", { k: "flag" }, true, { home: "data", also: "transcript copies originals continue on another model resume" }),
     K("transcriptCopyDays", "Keep transcript copies for", { k: "count", opts: [7, 14, 30, 90, 365], unit: "days", min: 1 }, 30, { home: "data", also: "transcript copies originals retention days" }),

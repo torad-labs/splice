@@ -178,7 +178,7 @@ const createPerfHeads = (scope, helpers) => {
     if (!st.body && !st.error && !st.reading) read();
     const sw = `<div class="switch" role="group" aria-label="Window">${Object.entries(WINDOWS).map(([k, v]) => `<button data-act="perfwin" data-v="${k}" aria-pressed="${st.win === k}">${v}</button>`).join("")}</div>`;
     const scoped = ui.project != null || hasFilter() ? `<span class="hn">All requests</span>` : "";
-    const header = `<header><h2>How each command answered</h2>${scoped}${sw}</header>`;
+    const header = `<header><h2>Results by command</h2>${scoped}${sw}</header>`;
     if (st.error) return `<section class="perf-heads">${header}<p class="empty">${st.error}</p></section>`;
     if (!st.body) return `<section class="perf-heads" aria-busy="true">${header}${GHOST.card([12, 30, 26, 22])}</section>`;
     const heads = st.body.heads || [];

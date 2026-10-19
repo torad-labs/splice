@@ -633,7 +633,7 @@ function paneHtml() {
   if (!s) return ui.missing ? missingHtml(ui.missing) : "";
   const L = movingLook(s) || look(s);
   const stop = stopHtml(s, "act", ICON.stop);
-  const cont = movable(s) ? (ui.moving.has(s.id) ? `<button class="act stopping" disabled>${ICON.wait}Moving</button>`
+  const cont = movable(s) ? (ui.moving.has(s.id) ? `<button class="act stopping" disabled>${ICON.wait}Continuing on</button>`
     : `<button class="act" data-act="menu" data-s="${esc(s.id)}" aria-haspopup="menu" aria-expanded="${ui.menu === s.id}">Continue on</button>${ui.menu === s.id ? choicesHtml(s) : heldHtml(s)}`) : "";
   const close = `<button class="icon close" data-act="close" aria-label="Close">${ICON.close}</button>`;
   const wt = s.wt ? `<span class="wt">${ICON.branch}${esc(s.wt)}</span>` : "";
@@ -1001,7 +1001,7 @@ async function continueOn(s, head, model, label, clear = false) {
   if (res.ok) { ui.focusSay = true; if (res.body?.session_id && ui.open === s.id) ui.open = res.body.session_id; }
   // a move that did not come back went on where it was (MoveArrival): its card says so, with Try again
   else if (res.body?.moved === false) ui.failed.set(s.id, { ...res.body, unmoved: true, to: head, model, label: label || head, was: s.head, wasModel: s.model });
-  else ui.failed.set(s.id, refusedAs(res, "Not moved", `move ${s.id}`));
+  else ui.failed.set(s.id, refusedAs(res, "Not continued", `move ${s.id}`));
   await reload();
 }
 /** Copy his words, then clear and move. The clear waits on the clipboard: a button that says Copy never clears words

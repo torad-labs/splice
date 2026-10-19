@@ -125,13 +125,13 @@ request", "New command". "Save N changes" writes `splice.toml` (comments kept, b
 "Applies on restart"; "Restart splice" asks first if a session would be cut. "Your claude command" has "Through splice" and
 "Straight to Anthropic". An unpublished window reads "Not reported", never 0.
 
-**Settings.** Rail: Silent models, Many agents at once, Reasoning, Plan limits, MCP servers, Projects, Your data, Version. Each knob
+**Settings.** Rail: Stalled answers, Many agents at once, Reasoning, Plan limits, MCP servers, Projects, Your data, Version. Each knob
 shows "Live" or "Applies on restart"; "Set for one command" writes `[heads.<key>.overrides]`. Your data holds keep-for windows and
 "Delete now" with a confirm. Version has "Check", "Restart splice", "Upgrade to X", "Go back to X". Reasoning effort, trace retention
 days and trace body size have no control (TOML only, by decision).
 
 **Requests.** Filters: window, command, session, model, account, outcome ("All", "Failed", "Stopped"), "Started over", "Compactions".
-A failed row names the cause in plain words: Overloaded, Network error, Given up after a silence, Cut off, Rate limited, No quota,
+A failed row names the cause in plain words: Overloaded, Network error, Given up after no progress, Cut off, Rate limited, No quota,
 Signed out, Credentials refused, No access, Invalid request, Over budget, Too many at once, splice restarted, Provider error, Internal
 error. What each means and what happens next is in reliability-mcp-install.md 1.5.
 Search needs two characters and covers bodies. The open request offers "Open session", "Copy JSON", "Download".
@@ -323,7 +323,7 @@ Grouped by Project (or Command, Team); six idle cards per group, the rest folded
 | "Use <login>", "Unpin" | Pins this session to an account | a head with a pool |
 
 Refusals in plain words: "In the prompt" (unsent text in the terminal; "Cancel", "Clear and send"), "Not sent", "Not ended · Started elsewhere"
-(`not_ours`: splice never types into a session it did not open), "Not moved", "Not switched". Sessions splice opens run in **tmux** panes. A
+(`not_ours`: splice never types into a session it did not open), "Not continued", "Not switched". Sessions splice opens run in **tmux** panes. A
 session started from the person's own shell can be read and sent a note, not typed into, ended or moved from here.
 
 Source: `sessions.js:222-247,285-321,378-427,637,677-697,802-813,880-917,973-1097`, `app/.../control/mount/SessionsMount.kt:72-127`.
@@ -358,7 +358,7 @@ Teams live in `teams.json` in the state folder (not `splice.toml`). Archive sets
 `teams.json.bak`; a file that does not parse refuses all writes until it does.
 
 Views per team: "Board", "By command", "By role", "Timeline", beside "Chat" (read from transcripts on demand), "Activity" (a sample every 30 s)
-and "Hand-offs". A card reads "Needs you", "Working", "Idle", "Gone", "Ended", "No session", "Starting", "Not started"; "Lead" marks the lead.
+and "Messages between members". A card reads "Needs you", "Working", "Idle", "Gone", "Ended", "No session", "Starting", "Not started"; "Lead" marks the lead.
 Per member and team the page shows requests, tokens, dollars at API rates, "Since <date>" from each member's own join, and plan use
 ("Last 5 hours", "Last 7 days"). History reaches back only as far as the perf files rotate.
 
@@ -375,7 +375,7 @@ A session already on another active team is refused.
    start puts the binding back and closes the terminal.
 4. **A start never resumes.** Each start is a fresh session. To continue earlier work the person uses "Add existing" (binds a running session)
    or Sessions' Continue on.
-5. "Joins on its own" (`bind_by_rule`): a session started on the slot's command in a folder at or under the team's repo joins a slot with no
+5. "Join by rule" (`bind_by_rule`): a session started on the slot's command in a folder at or under the team's repo joins a slot with no
    running session. The first free rule slot wins. It needs a repo.
 6. "Stop" stops the member's turn; "End" sends `/exit` to one member; "End all" ends every started member and keeps the team, listing losses
    first; "Archive" and "Restore" never delete.
@@ -388,7 +388,7 @@ tmux command line is quoted from `walks/console-shell/MANAGER-BRIEF.md` (unverif
 | Figure | What it is |
 |---|---|
 | Tokens | Input plus output per request. Cached and cache-written tokens sit INSIDE input and are not added again |
-| Input, Cached, Written to cache, Output | The Usage "Tokens" table, "as each provider counted them". "Cold after a switch" counts cold-cache turns after an account switch |
+| Input, Cached, Written to cache, Output | The Usage "Tokens" table, "as each provider counted them". "Uncached after a switch" counts cold-cache turns after an account switch |
 | Cost | Sum of each request's `cost_usd`: an **estimate at API rates**, shown "≈$". `$0` means nothing was charged |
 | On your plan | Requests a subscription covered, valued "at API prices". Never money spent, never added to Cost |
 | No price | The model has no rate card. Rates come from the row's `rates = { input, cache_read, output }`, else the vendor's published price |
@@ -399,7 +399,7 @@ tmux command line is quoted from `walks/console-shell/MANAGER-BRIEF.md` (unverif
   plan reading with `⚠` at `usageWarnPct` (default 80; 0 turns the early mark off; 98% or more is always marked); it never blocks a request.
 - "No project" holds requests whose session folder is in no project. Compare sends sit in their own group "Compare models", never under "No project".
 - Usage: "Plans" and "Keys" cards, a chart of "Tokens" or "Cost" over "5 hours" or "7 days" (default 7 days), a "Breakdown" by Accounts, Projects,
-  Agents or Models, and "How each command answered" (Requests, Failed, Waited in line, Time before first byte, Time streaming, Retries,
+  Agents or Models, and "Results by command" (Requests, Failed, Waited in line, Time before first byte, Time streaming, Retries,
   Cache hit, Cold cache, Most at once). The last is the data of `splice perf --window 1h|24h|7d`.
 - Cache: the prompt cache is per account and provider. A switched session pays one cold read. A compaction keeps the session's model and
   effort. Editing a Teams slot's instructions costs that session one cold turn (`slot_prompt_changed=1` on its perf row).

@@ -473,7 +473,7 @@ const sizeWord = (b) => (b >= 1e6 ? `${+(b / 1e6).toFixed(b >= 1e7 ? 0 : 1)} MB`
 function countsOf(row) {
   const c = [], n = (k) => row[k] ?? 0, tools = n("tools_eager") + n("tools_deferred");
   if (n("backoff_ms") > 0) c.push(["Waited between sends", secs(n("backoff_ms"))]);
-  if (n("post_send_retries") > 0) c.push(["Sent again after the body went", n0(n("post_send_retries"))]);
+  if (n("post_send_retries") > 0) c.push(["Retried after the body was sent", n0(n("post_send_retries"))]);
   if (n("refreshes") > 0) c.push(["Sign-ins renewed", n0(n("refreshes"))]);
   if (n("search_rounds") > 0) c.push(["Tool search rounds", n0(n("search_rounds")), tools ? `${n0(n("tools_deferred"))} of ${n0(tools)} tools deferred` : ""]);
   if (!isClean(row.outcome) && !STOPPED.has(row.outcome)) {
@@ -728,7 +728,7 @@ function menuHtml(key) {
     return `<div class="menu fmenu sessions-menu" role="menu">${item("", "Every session", !ui.sid)}`
       + rows.map(([sid, { head, last }]) => item(sid, `<span class="sname">${esc(sessTitle(sid))}</span><span class="swhen">${last ? `${dayOf(new Date(last))}${clock(new Date(last))}` : ""}</span>`, ui.sid === sid,
         `<span class="blots"><i class="blot" style="--c:${colorOf(state.providerOf[head.key])}"></i></span>`)).join("")
-      + (rest ? `<p class="mfoot">${n0(rows.length)} of ${n0(all.length)}, the ones worked in most recently</p>` : "") + `</div>`;
+      + (rest ? `<p class="mfoot">${n0(rows.length)} of ${n0(all.length)}, most recently active</p>` : "") + `</div>`;
   }
   return "";
 }

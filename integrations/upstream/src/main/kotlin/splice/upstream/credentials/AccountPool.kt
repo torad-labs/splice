@@ -421,8 +421,9 @@ public class AccountPool(
         pinLabel: String?,
     ): String {
         val previous = current.byLabel[previousLabel] ?: return AccountSwitchReason.ACCOUNT_UNAVAILABLE_REASON
-        // What stopped the previous login is named before any order: a limit that moved the session read as the
-        // operator's order when the next login was in it (Oct 19 journal: 47 such moves in one day).
+        // What stopped the previous login is named before any order, a full reading included. The 47 moves the Oct 19
+        // journal read as the operator's order left a login with room: token refreshes read as a new caller login
+        // ([CallerLogin.movedBy] names a real one now).
         return when {
             chosen.label == pinLabel -> AccountSwitchReason.PINNED
             !AccountAvailability.available(previous, at) -> AccountAvailability.limitReason(previous, at)

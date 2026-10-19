@@ -59,10 +59,12 @@ internal class StreamPromote(
                 )
                 PromoteVerdict(OutcomeTag.EMPTY_COMPACT.wire)
             }
-            outcome.shape.messageClosed -> {
+            finishedEmpty(outcome, meta) -> {
                 // The model closed a message with nothing in it: a finished answer, not a failure
                 // (codex ends the turn here). Ending clean is what stops the client retrying the
                 // same request a dozen times; the line keeps the shape so the class stays greppable.
+                // The same ending covers a round that used all of the client's max_tokens before a block
+                // opened (see finishedEmpty); its stop_reason=max_tokens reaches the client as the upstream said it.
                 log("[gateway] empty-message turn compact=false ${outcome.shape.outputShape}; ending clean\n")
                 PromoteVerdict(null, cleanTag = OutcomeTag.EMPTY_MESSAGE.wire)
             }
@@ -88,6 +90,17 @@ internal class StreamPromote(
             }
             else -> PromoteVerdict(null)
         }
+    }
+
+    /** A finished answer that holds nothing: the model closed an empty message, or the upstream stopped on max_tokens
+     *  having produced as many tokens as the client allowed. The second is the answer to a request whose cap left room
+     *  for nothing, such as Claude Code's one-token model check behind `/model <full id>`, which got a 529 here and
+     *  kept the old model (the-temple, 2026-10-19). Re-sending the same body spends the same cap. A max_tokens stop with
+     *  tokens to spare stays the empty error. */
+    private fun finishedEmpty(outcome: TurnOutcome.Success, meta: TurnMeta): Boolean {
+        val cap = meta.route.clientMaxTokens
+        val spentCap = cap != null && outcome.incomplete && outcome.usage.outputTokens >= cap
+        return outcome.shape.messageClosed || spentCap
     }
 
     /** The compact rows for every shape the promote guard skips: text present (model_text) or —

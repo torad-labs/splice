@@ -3,12 +3,15 @@
 // four values the console and /health read once the host is built. ControlPlane holds one and asks it at start.
 package splice.app
 
+import splice.app.control.McpServiceRefresh
 import splice.app.control.api.McpHubVerdict
+import splice.app.mcp.TempleMcpStartup
 import splice.app.sources.mcp.McpAttached
 import splice.client.mcp.McpHubLive
 import splice.client.mcp.McpInventory
 import splice.client.mcp.McpRootsVerdicts
 import splice.client.mcp.McpSharing
+import splice.client.mcp.TempleMcpEntry
 import splice.control.mcp.APP_MCP_SLICE
 import splice.control.mcp.McpHandshakeBudget
 import splice.control.mcp.McpHost
@@ -66,7 +69,7 @@ internal class ControlMcpWiring(
      *  ControlPlane.start to keep that budget; the census only WIDENS what `/api/mcp` can report, it never
      *  changes what [sharing] rewrites (see McpHostingWiring.kt's header). */
     fun host(home: Path, sharing: McpSharing, launchSpecs: List<LaunchSpec>): McpHost {
-        val globalRead = McpGlobalRead(home, log)
+        val globalRead = McpGlobalRead(home, log, TempleMcpEntry(home, paths = statePaths))
         val inventory = McpInventoryWiring(home, sharing, globalRead, launchSpecs).inventory
         this.inventory = inventory
         this.sharing = sharing
@@ -82,7 +85,19 @@ internal class ControlMcpWiring(
         )
         this.hub = McpHubVerdict(wiring.offReason)
         attached = McpAttached { hub.attached() }
-        return McpHost(sharing, globalRead, config = config, log = log, inventory = inventory, hub = hub)
+        return McpHost(
+            sharing,
+            globalRead,
+            config = config,
+            log = log,
+            inventory = inventory,
+            hub = hub,
+        )
+    }
+
+    fun services(host: McpHost, home: Path): McpServiceRefresh = McpServiceRefresh {
+        val frontPort = MCP_HUB_FRONT_PORT.takeIf { hubLive.live() }
+        TempleMcpStartup(statePaths, log).refresh(host, home, frontPort)
     }
 
     /** V4-110: the shared MCP host's four lifecycle values, each a READER over the knob layer (daemon-global)

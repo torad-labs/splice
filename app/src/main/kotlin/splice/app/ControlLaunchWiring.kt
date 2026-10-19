@@ -90,6 +90,7 @@ internal class ControlLaunchWiring(
      *  the guard refuses to every other head. */
     fun service(home: Path, sharing: McpSharing, controlPort: Int, hub: McpHubLive): LaunchService {
         val materializer = materializer(home, sharing, controlPort)
+        val temple = splice.client.mcp.TempleMcpEntry(home, paths = statePaths)
         val copying = CopyingOriginals { config.getConfig().keepTranscriptCopies }
         val window = OriginalsCutoff {
             System.currentTimeMillis() - config.getConfig().transcriptCopyDays.days.inWholeMilliseconds
@@ -113,13 +114,13 @@ internal class ControlLaunchWiring(
         return LaunchService(materializer, resumeAcrossHeads = ResumeAcrossHeads(rewriter), wrap = wrap).also {
             it.loginGuard = owner
             it.hubLaunch = McpHubLaunch(
-                McpLaunchPlanner(home),
+                McpLaunchPlanner(home, temple = temple),
                 sharing,
                 daemon.mcpAccess,
                 McpHubFront(MCP_HUB_FRONT_PORT, statePaths.stateDir.resolve("mcp-hub"), hub = hub),
                 log,
                 PluginFlagGate(TESTED_CLAUDE_CODE, pluginFlags),
-                overlay = HostedMcpOverlay(home, sharing, statePaths.stateDir, log),
+                overlay = HostedMcpOverlay(home, sharing, statePaths.stateDir, log, temple),
             )
         }
     }

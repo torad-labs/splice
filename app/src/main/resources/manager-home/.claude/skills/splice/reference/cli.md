@@ -56,6 +56,7 @@ You: `free` (run it), `ask` (person's yes first), `person` (the person runs it i
 | `add-model` | Picks OpenRouter catalog rows through a prompt and writes them | none | no | no | person |
 | `setup` | Guided first-run flow; writes TOML, installs commands, may restart | none | no | yes | person, never you |
 | `init` | Writes the starter `splice.toml` if absent, and the MCP hub env file on Linux | none | no | no | ask |
+| `mcp install temple` | Persists Temple's local MCP service and refreshes Claude/native Codex entries | `--script FILE`, `--url URL`, `--command COMMAND`, `--codex-home DIR` | optional | optional | ask |
 | `install` | Links head wrapper commands into `~/.local/bin` | `[<head>\|--all]` | no | no | ask |
 | `uninstall` | Removes head wrapper links (never the jar, never config) | `[<head>\|--all]` | no | no | ask |
 | `daemon` | Runs the daemon in the foreground (default with no verb) | none | is the daemon | no | never |
@@ -401,6 +402,27 @@ place, row and state).
 
 Source: `app/.../cli/status/ConsolePilotCommand.kt` (the words), `app/.../control/ConsolePilot.kt` (the relay),
 `app/src/main/resources/console/pilot.js` (what each action does on the page).
+
+### mcp install temple
+
+```sh
+splice mcp install temple --script /absolute/temple/slices/screen/bin/tools-server.ts --url http://127.0.0.1:7741
+```
+
+Temple normally runs this during its own provisioning. It persists the resolved local MCP entry so Splice
+can start it after reboot before Temple's app opens. `--command` selects the Bun executable and
+`--codex-home` selects the native Codex home. An omitted native home retains a previously registered one,
+then follows `TEMPLE_CODEX_HOME` or `CODEX_HOME`. No head's permissions change.
+
+A running daemon refreshes the service and native client entry immediately. With the daemon stopped,
+registration succeeds and takes effect at its next boot. A failed live refresh is reported separately from
+the durable registration. Retry the same install; never read the registry or an access key yourself.
+
+The current Temple MCP exports `act`, `get_screen`, `help`, `read_card`, `say`, and `state`. Dispatch is an
+operation through `act`. The app's root URL answering 503 does not establish whether its MCP tools work.
+
+Ask before using this command yourself. It changes a service registration and the native Codex MCP entry.
+Source: `app/.../cli/mcp/McpServiceCommand.kt`, `app/.../mcp/TempleMcpStartup.kt`.
 
 ### init
 

@@ -40,6 +40,7 @@ private const val TURNED_OFF_HERE = "turned off for this folder in /mcp"
 public class McpLaunchPlanner(
     private val home: Path,
     private val managedSettings: Path = Path.of(PLAN_MANAGED_SETTINGS),
+    private val temple: TempleMcpEntry = TempleMcpEntry(home),
 ) {
     private val json = SourceJson()
     private val realPath = RealPathOrSelf()
@@ -56,7 +57,7 @@ public class McpLaunchPlanner(
         val settings = settings(configDir, here, trusted(state, here, project))
         val approval = McpRepoApproval(settings + record)
         val (approved, waiting) = repoServers(here).partition { approval.verdict(it.name) == RepoVerdict.APPROVED }
-        val user = servers(McpPlanScope.USER, stateFile, state)
+        val user = servers(McpPlanScope.USER, stateFile, state) + listOfNotNull(temple.server())
         val scoped = (user + approved + servers(McpPlanScope.LOCAL, stateFile, record)).associateBy { it.name }
         val plugins = McpPluginServers(configDir.resolve(PLUGINS_DIR), json)
             .servers(enabledPlugins(settings), project, here)

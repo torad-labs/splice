@@ -96,10 +96,27 @@ public class McpHubLaunch(
     public fun args(launch: HubLaunchFor): HubLaunchArgs {
         val hub = hubArgs(launch)
         if (hub.args.isNotEmpty()) return hub
-        val fallback = launch.overlayHead?.let { overlay?.args(it) }.orEmpty()
+        val fallback = fallback(launch)
         // the overlay still sends his hosted user-scope servers to splice, so the line says only what is true of them
         val warning = hub.warning?.let { if (fallback.isEmpty()) it else HUB_UNREACHED_OVERLAY }
         return HubLaunchArgs(fallback, warning)
+    }
+
+    private fun fallback(launch: HubLaunchFor): List<String> {
+        val head = launch.overlayHead
+        if (launch.folder == null) {
+            return (
+                head?.let { overlay?.args(it) }
+                    ?: overlay?.managedArgs(launch.configDir.fileName.toString())
+                ).orEmpty()
+        }
+        val selected = planner.plan(launch.configDir, launch.folder).servers
+            .firstOrNull { it.name == TEMPLE_MCP_NAME }?.entry
+        return if (head == null) {
+            overlay?.managedArgs(launch.configDir.fileName.toString(), selected).orEmpty()
+        } else {
+            overlay?.args(head, selected).orEmpty()
+        }
     }
 
     private fun hubArgs(launch: HubLaunchFor): HubLaunchArgs {
@@ -118,10 +135,17 @@ public class McpHubLaunch(
         val held = runs - ownPlugin.toSet()
         val frontRan = front.hub.live() && Files.exists(dir.resolve(HUB_FRONT_STATE))
         if (held.isEmpty() || !frontRan) return HubLaunchArgs(emptyList())
-        val file = (if (frontAnswers()) write(id, held) else null)
+        val file = (if (frontAnswers()) write(id, held, ownTemple(plan, classes)) else null)
             ?: return HubLaunchArgs(emptyList(), HUB_UNREACHED)
         val flags = plugins.values.sorted().flatMap { listOf(HUB_PLUGIN_FLAG, it) }
         return HubLaunchArgs(listOf("--mcp-config", file.toString()) + flags)
+    }
+
+    private fun ownTemple(plan: McpLaunchPlan, classes: McpPlan): JsonObject {
+        val own = plan.servers.firstOrNull {
+            it.name == TEMPLE_MCP_NAME && classes.classOf(it.name) == McpShareClass.OWN
+        }
+        return JsonObject(own?.let { mapOf(it.name to it.entry) }.orEmpty())
     }
 
     /** Each plugin whose every declared server, loaded or left out, the hub runs: its install folder, by itself. */
@@ -155,7 +179,7 @@ public class McpHubLaunch(
 
     /** The launch's file, owner-only because each entry carries the MCP bearer; the files of launches whose
      *  process is gone are removed first. */
-    private fun write(id: String, held: Set<String>): Path? {
+    private fun write(id: String, held: Set<String>, own: JsonObject): Path? {
         // An access key that cannot be read leaves the launch on its own servers: the hub-unreached answer.
         val key = try {
             bearer()
@@ -174,6 +198,7 @@ public class McpHubLaunch(
                         }
                     }
                 }
+                own.forEach { (name, entry) -> put(name, entry) }
             }
         }
         val file = dir.resolve("$HUB_LAUNCH_FILE_PREFIX$id$HUB_LAUNCH_FILE_SUFFIX")

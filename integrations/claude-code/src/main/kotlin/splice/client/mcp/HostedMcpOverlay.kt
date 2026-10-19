@@ -28,19 +28,34 @@ public class HostedMcpOverlay(
     private val sharing: McpSharing,
     private val dir: Path,
     private val log: LogSink,
+    private val temple: TempleMcpEntry = TempleMcpEntry(home),
 ) {
     /** The launch's `--mcp-config <file>`, or nothing when [file] is null. */
-    public fun args(headKey: String): List<String> =
-        file(headKey)?.let { listOf("--mcp-config", it.toString()) }.orEmpty()
+    public fun args(headKey: String, templeEntry: JsonObject? = selectedTemple()): List<String> =
+        file(headKey, templeEntry)?.let { listOf("--mcp-config", it.toString()) }.orEmpty()
 
     /** The file for a launch of [headKey], or null when nothing is hosted or his file cannot be read: the launch then
      *  runs over his own servers as before. Rewritten per launch, so it follows his file and the bearer. */
-    public fun file(headKey: String): Path? {
-        val plan = sharing.plan(servers() ?: return null, headKey.ifBlank { null })
-        if (plan.hosted.isEmpty()) return null
+    public fun file(headKey: String, templeEntry: JsonObject? = selectedTemple()): Path? =
+        write(JsonObject(servers().orEmpty() - TEMPLE_MCP_NAME + templeEntries(templeEntry)), headKey)
+
+    /** A head that isolates the person's other MCP servers still receives the registered Temple service. */
+    public fun managedArgs(headKey: String, templeEntry: JsonObject? = selectedTemple()): List<String> =
+        write(templeEntries(templeEntry), headKey)?.let { listOf("--mcp-config", it.toString()) }.orEmpty()
+
+    private fun selectedTemple(): JsonObject? =
+        temple.server()?.entry ?: (servers()?.get(TEMPLE_MCP_NAME) as? JsonObject)
+
+    private fun templeEntries(entry: JsonObject?): JsonObject =
+        JsonObject(entry?.let { mapOf(TEMPLE_MCP_NAME to it) }.orEmpty())
+
+    private fun write(servers: JsonObject, headKey: String): Path? {
+        val plan = sharing.plan(servers, headKey.ifBlank { null })
+        val names = plan.hosted.keys + listOf(TEMPLE_MCP_NAME).filter { it in servers }
+        if (names.isEmpty()) return null
         val body = buildJsonObject {
             putJsonObject(Keys.MCP_SERVERS) {
-                plan.hosted.keys.forEach { name -> plan.rewritten[name]?.let { put(name, it) } }
+                names.forEach { name -> plan.rewritten[name]?.let { put(name, it) } }
             }
         }
         val file = dir.resolve("wrapped-mcp-${headKey.ifBlank { "claude" }}.json")

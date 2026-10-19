@@ -37,6 +37,7 @@
 - **New heads and modes:** `claude-muse` (a Meta Muse Code subscription); Claude head mode (wrap
   the default `claude` command); per-head system prompts, including a `strip` mode; custom
   compaction instructions; shared MCP hosting.
+- **Temple MCP starts with Splice.** A durable Temple registration supplies Claude sessions and native Codex with the same named server. Its local tool definitions remain available before the Temple app starts. Native Codex receives only MCP-scoped access, without changing its permissions.
 - **The MCP hub on Linux.** Every session splice launches gets its MCP servers from one hub that outlives the daemon,
   shared between sessions by default, so an upgrade or a crash of splice drops no session's tools ([Added](#added)).
 - **Restarts wait for compactions.** Unless you choose `--now`, `splice restart`, `splice upgrade`

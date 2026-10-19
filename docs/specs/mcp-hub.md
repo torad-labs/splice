@@ -101,8 +101,30 @@ Holders and servers run in hostshield's MCP slice (V4-147), so the box's memory 
 
 ## What changes in Marcos's files
 
-Nothing. The plan reads his files and writes only splice's own state folder. The one stored
+For Claude Code, the plan reads his files and writes only splice's own state folder. The one stored
 choice, sharing yes or no, lives in splice.toml as the answer `splice setup` saved.
+
+### Registered Temple service
+
+Marcos, through the-temple, October 18: "Could we make it so the MCP is installed on Codex and Claude
+via Splice, and that it starts together with Splice please."
+
+Temple provisions its already-resolved local entry with `splice mcp install temple --script FILE --url URL`.
+The optional `--command` names its Bun executable and `--codex-home` selects the native Codex home. Splice
+keeps the registration under its canonical state directory, independently of Temple's process or temporary
+files. Reinstalling keeps an existing native home when none is supplied and backs up a changed registration.
+The CLI refreshes a running daemon; otherwise the next daemon boot starts the registered service.
+
+Every Claude launch plan includes this service under `temple`, with its tools still named `mcp__temple__*`.
+The current Temple contract is its six fixed tools; dispatch remains available through `act`, not a legacy
+`dispatch_send` alias. Definitions come from Temple's local stdio process, never the app's root URL.
+A missing app therefore fails an app-dependent tool call, not initialization or tool discovery.
+
+Native Codex is a separate client, not the Claude Code head backed by the Codex Responses API. Splice
+updates only its user-scoped `mcp_servers.temple` entry through Codex's versioned configuration API, preserving
+other settings and server restrictions. This is the exception to the original no-client-file-write design.
+The entry carries MCP-scoped access only. Config backups and any file containing that access are owner-only.
+An existing shared app-server reloads MCP configuration without being stopped or restarted.
 
 ## Build order
 

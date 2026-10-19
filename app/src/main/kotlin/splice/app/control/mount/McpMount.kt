@@ -3,6 +3,7 @@
 // also carries `plans`, the servers Claude Code would load for each folder a running session started in.
 package splice.app.control.mount
 
+import io.ktor.server.response.respondText
 import io.ktor.server.routing.Route
 import io.ktor.server.routing.delete
 import io.ktor.server.routing.get
@@ -22,6 +23,7 @@ internal class McpMount(
     private val host: McpHost,
     private val guard: ControlGuard,
     private val plans: McpLaunchFolders,
+    private val services: splice.app.control.McpServiceRefresh? = null,
 ) : ControlMount, BoundResource {
     private val routes = McpRoutes(host)
     private val hub = host.hub?.let(::McpHubRoutes)
@@ -31,6 +33,17 @@ internal class McpMount(
         route.get("/api/mcp") { guard.guarded(call) { ControlReplies.respond(call, status()) } }
         route.post("/api/mcp/access-key/rotate") { guard.guarded(call) { access.rotate(call) } }
         route.post("/api/mcp/access-key/headers") { guard.guarded(call) { access.headers(call) } }
+        route.post("/api/mcp/services/refresh") {
+            guard.guarded(call) {
+                val reply = services?.refresh()
+                    ?: splice.control.mcp.McpReply(splice.core.wire.HttpStatus.OK, "{\"ok\":true,\"registered\":false}")
+                call.respondText(
+                    reply.body.orEmpty(),
+                    io.ktor.http.ContentType.Application.Json,
+                    io.ktor.http.HttpStatusCode.fromValue(reply.status),
+                )
+            }
+        }
         route.post("/api/mcp/{name}/test") {
             guard.guarded(call) {
                 ControlReplies.respond(call, host.probe.test(call.parameters["name"].orEmpty()).json())

@@ -48,6 +48,10 @@ public sealed class Command {
         override suspend fun run(): Int = success { println("splice $GATEWAY_VERSION") }
     }
 
+    public data class Mcp(val args: List<String>) : Command() {
+        override suspend fun run(): Int = splice.app.cli.mcp.McpServiceCommand().run(args)
+    }
+
     /** The boot findings pass of this build against the person's splice.toml (ConfigPreflight). */
     public data object CheckConfig : Command() {
         override suspend fun run(): Int = ConfigPreflight(EnvReader(System::getenv)).check()

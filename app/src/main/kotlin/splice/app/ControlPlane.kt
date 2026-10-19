@@ -185,6 +185,7 @@ internal class ControlPlane(
         val home = statePaths.rootDir.parent ?: statePaths.rootDir
         val sharing = mcp.planner(controlPort)
         val mcpHost = mcp.host(home, sharing, heads.values.mapNotNull { it.launchSpec })
+        val mcpServices = mcp.services(mcpHost, home)
         // One session source serves the sessions routes and the heads route's client pids.
         val sessions = sessionWiring.source(home, heads, console, foregroundTools)
         val signals = health.signals(heads, sessions, probes)
@@ -201,12 +202,13 @@ internal class ControlPlane(
                 shutdownDaemon = shutdownDaemon,
                 sessions = sessions,
                 mcpHost = mcpHost,
+                mcpServices = mcpServices,
                 clientVersions = clientVersions,
             ),
         )
         wireConsolePorts(srv)
         parts.wireRestartSuccessor(srv, controlPort)
-        return if (ownership.bind(srv, controlPort)) srv else null
+        return if (ownership.bind(srv, controlPort)) srv.also { mcpServices.refresh() } else null
     }
 
     /** Every port [srv] takes after construction, extracted out of [start] (LongMethod — the same

@@ -52,7 +52,13 @@ internal class McpHubWiring(
 ) {
     private val owners = LaunchOwners(stateDir)
     private val environment = ProcessEnvironment(procRoot, owners)
-    private val planner = McpLaunchPlanner(UserHome.dir())
+    private val planner = McpLaunchPlanner(
+        UserHome.dir(),
+        temple = splice.client.mcp.TempleMcpEntry(
+            UserHome.dir(),
+            paths = splice.core.config.StatePaths(baseOverride = stateDir),
+        ),
+    )
     private val darwin = DarwinPs()
 
     /** Why [hub] left the hub off, in the words its routes' 503 gives, or null once it is on; /health reports it. */

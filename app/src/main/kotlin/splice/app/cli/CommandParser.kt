@@ -144,6 +144,10 @@ private val verbs: Map<String, CommandRegistration> = mapOf(
     ),
     "status" to CommandRegistration("", CommandFactory.Alone(Command.Status)),
     "console" to CommandRegistration(CONSOLE_PILOT_USAGE, CommandFactory { a -> Command.Console(a.drop(1)) }),
+    "mcp" to CommandRegistration(
+        splice.app.cli.mcp.MCP_SERVICE_USAGE,
+        CommandFactory { a -> Command.Mcp(a.drop(1)) },
+    ),
     "restart" to CommandRegistration(
         "[--now]",
         CommandFactory { a ->

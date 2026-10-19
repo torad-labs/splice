@@ -4,6 +4,7 @@
 package splice.app.control
 
 import splice.control.mcp.McpHost
+import splice.control.mcp.McpReply
 import splice.core.version.ClientVersionTracker
 import splice.launch.recipe.LaunchService
 import splice.lifecycle.restart.ShutdownDaemon
@@ -16,4 +17,10 @@ public data class ControlRuntime(
     /** v0.4.0 shared MCP hosting; null keeps the control plane exactly as before. */
     val mcpHost: McpHost? = null,
     val clientVersions: ClientVersionTracker = ClientVersionTracker(),
+    val mcpServices: McpServiceRefresh? = null,
 )
+
+/** App-owned service installation, separate from the transport host's process and session lifecycle. */
+public fun interface McpServiceRefresh {
+    public suspend fun refresh(): McpReply
+}

@@ -48,12 +48,15 @@ internal data class McpHostingSettings(
 internal class McpGlobalRead(
     private val home: Path,
     private val log: LogSink = LogSink(System.err::print),
+    private val temple: splice.client.mcp.TempleMcpEntry = splice.client.mcp.TempleMcpEntry(home),
 ) : GlobalMcpServers {
     private val json = Json { ignoreUnknownKeys = true }
     private var lastFailure: String? = null
 
     @Synchronized
-    override fun invoke(): JsonObject {
+    override fun invoke(): JsonObject = JsonObject(declared() + temple.entries())
+
+    private fun declared(): JsonObject {
         val file = home.resolve(".claude.json")
         val text = try {
             Files.readString(file)

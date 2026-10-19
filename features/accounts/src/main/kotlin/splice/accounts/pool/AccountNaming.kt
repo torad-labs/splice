@@ -66,11 +66,14 @@ internal class AccountNaming(private val store: AccountNameStore? = null) {
             ?: fallback(facts.plan, ref)
     }
 
-    private fun emailName(email: String?, ref: String?): AccountName? {
+    private fun emailName(email: String?, ref: String?): AccountName? =
+        email(email)?.let { AccountName(it, ref, isDefault = true) }
+
+    /** The provider-proved [email] as a row may show it, or null when it is blank, too long or not an address. */
+    fun email(email: String?): String? {
         val trimmed = email?.trim() ?: return null
         if (trimmed.isEmpty() || trimmed.length > MAX_ACCOUNT_EMAIL_CHARS) return null
         return trimmed.takeIf { '@' in it && it.none(Char::isISOControl) }
-            ?.let { AccountName(it, ref, isDefault = true) }
     }
 
     /** A stored label a person chose, or null for a blank one or one splice made up. */

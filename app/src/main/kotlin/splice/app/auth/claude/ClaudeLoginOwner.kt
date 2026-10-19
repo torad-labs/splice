@@ -143,7 +143,7 @@ internal class ClaudeLoginOwner(
         return try {
             val store = logins.getValue(place)
             if (label == null) {
-                edits.remove(location, store, sessions.read(location))
+                edits.remove(location, store)
             } else {
                 edits.relabel(location, store, label)
             }

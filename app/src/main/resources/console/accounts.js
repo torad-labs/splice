@@ -217,7 +217,7 @@ async function load({ asks = true } = {}) {
         // own label, and a single login with none is the primary
         const namesOn = (head) => { const n = [row.account_labels?.[head], row.selector_key, row.label].filter(Boolean); return n.length ? n : ["primary"]; };
         const sessionsOn = () => (liveSessions ? liveSessions.filter((x) => (row.heads || []).includes(x.head) && namesOn(x.head).includes(x.account)) : null);
-        p.accounts.push({ id: acctId(row), row, name: row.display_name, plan: plainPlan(row.plan), windows, sessions: sessionsOn(), sessionsOn,
+        p.accounts.push({ id: acctId(row), row, name: row.display_name, email: row.email || null, plan: plainPlan(row.plan), windows, sessions: sessionsOn(), sessionsOn,
           // one observation time behind every bar, so the read line shows as soon as ANY bar drawn here is stale
           staleAt: [...windows, ...models].some((w) => w.stale) && row.observed_at_epoch_seconds ? row.observed_at_epoch_seconds * 1000 : null,
           // an expired token its own command renews on its next run is not a sign-out: the card keeps its readings
@@ -677,7 +677,8 @@ function menuItems(p, a) {
 function menuHtml(p, a, spot) {
   const armed = ui.armed === spot, refused = ui.removeErr && ui.removeErr.spot === spot;
   return `<div class="menu${refused ? " failed" : ""}" role="menu">${menuItems(p, a).map(([act, label]) => {
-    const text = act === "remove" && armed ? `Remove ${p.kind === "key" ? "API key" : a.name}` : label;
+    const on = a.sessions?.length || 0; // sessions on it sign in again or move to another login once it is gone
+    const text = act === "remove" && armed ? `Remove ${p.kind === "key" ? "API key" : a.name}${on ? ` · ${on === 1 ? "1 session" : `${on} sessions`} on it` : ""}` : label;
     return `<button role="menuitem" class="${act === "remove" ? `danger${armed ? " armed" : ""}` : ""}" data-act="${act}" data-p="${p.id}" data-a="${a.id}" data-s="${spot}"${act === "remove" && ui.removing === spot ? " disabled" : ""}>${act === "remove" && ui.removing === spot ? "Removing…" : esc(text)}</button>`;
   }).join("")}${refused ? `<span class="state limit menu-state" role="status">${esc(ui.removeErr.word)}</span>` : ""}</div>`;
 }
@@ -727,6 +728,9 @@ function cardHtml(p, c, a, i, serves) {
   // labels only (Oct 12): a login splice named itself offers its one naming here, beside the name, and never blocks
   const nameIt = a.row?.label_default && a.row?.can_rename && ui.rename !== spot
     ? `<button class="act quiet small name-it" data-act="rename" data-s="${spot}">Name it</button>` : "";
+  // the address the provider proved for this login, under its name; a login named by its email already shows it
+  const mail = a.email && ui.rename !== spot && a.name !== a.email && !String(a.name ?? "").startsWith(`${a.email} (`)
+    ? `<span class="email" title="${esc(a.email)}">${esc(a.email)}</span>` : "";
   const more = menuItems(p, a).length
     ? `<button class="icon more" data-act="menu" data-p="${p.id}" data-a="${a.id}" data-s="${spot}" aria-label="More" aria-haspopup="menu" aria-expanded="${ui.menu === spot}">${GLYPH.more}</button>` : "";
   const mine = (t) => ui.signin[t] && (ui.signin[t].spot == null || ui.signin[t].spot === spot);
@@ -765,7 +769,7 @@ function cardHtml(p, c, a, i, serves) {
   const socket = p.kind === "plan" ? `<span class="socket">${i + 1}</span>` : "";
   return `<article class="${cls}" data-key="card:${spot}" data-p="${p.id}" data-a="${a.id}">${socket}<div class="top">${grip}`
     + `${nameHtml(p, a, spot)}${nameIt}${sub}<div class="slot">${slotHtml(p, c, a, serves)}</div>${more}</div>`
-    + `${ui.rename === spot && ui.renameErr ? `<span class="state limit rename-err" id="rename-err">${ui.renameErr}</span>` : ""}${ui.menu === spot ? menuHtml(p, a, spot) : ""}${body}${sessionsHtml(a)}</article>`;
+    + `${mail}${ui.rename === spot && ui.renameErr ? `<span class="state limit rename-err" id="rename-err">${ui.renameErr}</span>` : ""}${ui.menu === spot ? menuHtml(p, a, spot) : ""}${body}${sessionsHtml(a)}</article>`;
 }
 
 // ---------- the tiles that end a rail, and the one that ends the page ----------

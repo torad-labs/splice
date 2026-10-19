@@ -23,7 +23,6 @@ import splice.accounts.signin.LoginState
 import splice.client.ClaudeHead
 import splice.client.ClaudeLoginTarget
 import splice.client.ClaudeLogins
-import splice.client.HeadSessions
 import splice.client.wrap.ClaudeToRun
 import splice.client.wrap.WrapStateRead
 import splice.core.auth.CredentialKey
@@ -113,7 +112,7 @@ class ClaudeLoginOwnerTest {
         Files.writeString(pool, "synthetic-pool")
         val bytes = Files.readString(native.credentials)
 
-        assertEquals(AccountMutation.Ok, edits.remove(native, logins, HeadSessions.Read(emptyList())))
+        assertEquals(AccountMutation.Ok, edits.remove(native, logins))
 
         assertFalse(Files.exists(native.credentials))
         assertFalse(Files.exists(native.storeDir.resolve("work.credentials.json")))
@@ -126,19 +125,6 @@ class ClaudeLoginOwnerTest {
             "rw-------",
             java.nio.file.attribute.PosixFilePermissions.toString(Files.getPosixFilePermissions(backup)),
         )
-    }
-
-    @Test
-    fun `unknown or active native sessions refuse removal before any credential file changes`() {
-        val native = location()
-        val (edits, logins) = editable(native, "synthetic-native")
-        val bytes = Files.readString(native.credentials)
-        for (sessions in listOf(HeadSessions.Unreadable("synthetic"), HeadSessions.Read(listOf("synthetic active")))) {
-            assertTrue(edits.remove(native, logins, sessions) is AccountMutation.Refused)
-            assertEquals(bytes, Files.readString(native.credentials))
-            assertTrue(Files.exists(native.storeDir.resolve("work.credentials.json")))
-            assertFalse(Files.exists(native.storeDir.resolve("removed")))
-        }
     }
 
     @Test

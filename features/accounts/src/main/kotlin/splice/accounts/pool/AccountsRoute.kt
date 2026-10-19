@@ -215,6 +215,7 @@ public class AccountsRoute(
         val edit = management.edit(row.label, row.primary, first)
             .let { if (row.authExclusion.ref != null) it.copy(canRename = true) else it }
         management.write(into, name(row, first, naming), row.authExclusion.ref != null, edit)
+        into.put("email", naming.email(row.authExclusion.email))
         writeQuota(into, row, nowSeconds)
         // A credential two heads share is read once per head: the newest failure is the one the page names. A head's
         // primary login is polled under "primary" when its OAuth pool lists it, though the page shows it as the head's

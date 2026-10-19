@@ -234,6 +234,7 @@ a.act { text-decoration: none; }  /* an act that happens to be a link still look
 .card .top:has(.name .var) { flex-wrap: wrap; row-gap: .55rem; }  /* a key's name stays whole; its commands wrap under it */
 .card .name:has(.var) { flex: none; }
 .card .plan { font: 400 .95rem/1 var(--font-name); color: var(--text-mute); white-space: nowrap; }
+.card > .email { display: block; margin: .1rem 0 .2rem 1.5rem; font: 400 .9rem/1.2 var(--font-data); color: var(--text-mute); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }  /* the login's proved address, under its name */
 .card .slot { margin-left: auto; display: flex; align-items: center; gap: .6rem; flex: none; }  /* its buttons keep their words on one line; a rename field gives first */
 
 /* the command that this account serves: it rides the account, and moves when the account is held */

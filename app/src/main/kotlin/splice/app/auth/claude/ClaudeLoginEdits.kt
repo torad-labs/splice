@@ -4,7 +4,6 @@ package splice.app.auth.claude
 import splice.accounts.signin.AccountMutation
 import splice.client.ClaudeLoginResult
 import splice.client.ClaudeLogins
-import splice.client.HeadSessions
 import splice.core.util.Cancellables
 import splice.core.util.SecureFile
 import java.nio.file.Files
@@ -15,16 +14,10 @@ internal class ClaudeLoginEdits(private val reads: ClaudeLoginRead) {
     fun name(location: ClaudeLoginLocation, logins: ClaudeLogins): String? =
         reads.credentialKey(location)?.let(logins::labelForCredential)
 
-    fun remove(location: ClaudeLoginLocation, logins: ClaudeLogins, sessions: HeadSessions): AccountMutation {
-        if (sessions is HeadSessions.Unreadable) {
-            return AccountMutation.Refused("this login's active sessions are unknown")
-        }
-        if (sessions is HeadSessions.Read && sessions.live.isNotEmpty()) {
-            return AccountMutation.Refused(
-                "this login is in use by active Claude sessions; stop them before removing it",
-            )
-        }
-        return Cancellables.runCatchingCancellable {
+    /** Removes the login even while sessions run on it (Marcos, Oct 19): a session on it signs in again or moves to
+     *  another login, and the credential is kept under removed/ first. */
+    fun remove(location: ClaudeLoginLocation, logins: ClaudeLogins): AccountMutation =
+        Cancellables.runCatchingCancellable {
             if (!Files.exists(location.credentials)) {
                 return@runCatchingCancellable AccountMutation.Refused("no live login")
             }
@@ -35,7 +28,6 @@ internal class ClaudeLoginEdits(private val reads: ClaudeLoginRead) {
             if (label != null) logins.remove(label)
             AccountMutation.Ok
         }.getOrElse { AccountMutation.Refused("this native login could not be removed (${it::class.simpleName})") }
-    }
 
     fun relabel(location: ClaudeLoginLocation, logins: ClaudeLogins, label: String): AccountMutation {
         val old = name(location, logins)

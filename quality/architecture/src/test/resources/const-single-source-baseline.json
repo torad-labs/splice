@@ -460,7 +460,7 @@
       "integrations/providers/kimi/src/main/kotlin/splice/provider/kimi/KimiRefreshedTokens.kt"
     ],
     "COPY REMEMBERED_SESSIONS": [
-      "app/src/main/kotlin/splice/app/ConsoleWiring.kt",
+      "app/src/main/kotlin/splice/app/ConsoleEventPublisher.kt",
       "features/sessions/src/main/kotlin/splice/sessions/prompt/SlotInstructions.kt"
     ],
     "COPY RESET": [

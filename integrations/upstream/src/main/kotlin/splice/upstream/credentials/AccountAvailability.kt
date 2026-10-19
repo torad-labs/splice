@@ -7,6 +7,11 @@ import java.util.concurrent.TimeUnit
 // why: a quota window reports usedPercent on a 0-100 scale, so 100.0 is an exhausted window.
 private const val FULLY_USED = 100.0
 
+/** The longest a warm session waits out rate limits on its own login before it moves (Marcos, Oct 19: "switching mid
+ *  session when the cache is hot can cost a lot"). A move rebuilds the conversation's whole cache on the next login,
+ *  which costs far more than two minutes of waiting. A plan limit or a needed sign-in moves it at once. */
+public const val WARM_LOGIN_WAIT_MS: Long = 120_000L
+
 /** Pure per-account availability/quota math — every function here takes the [PoolAccount] (and
  *  [at]) it needs and touches no [AccountPool] state, so V4-132 split it out rather than push
  *  [AccountPool] past detekt's 15-function class ceiling (TooManyFunctions) with its new
@@ -102,6 +107,28 @@ internal object AccountAvailability {
         if (window == null || window.usedPercent < FULLY_USED) return false
         val reset = window.resetsAt ?: return false
         return TimeUnit.SECONDS.toMillis(reset) > at
+    }
+
+    /** Whether a session stays on its login rather than move: it was served there within [CACHE_MS], and the login
+     *  only needs a short wait before it serves again. */
+    object Warm {
+        /** Claude Code's subscriber requests ask for a one-hour prompt cache, so a session served within the hour may
+         *  still hold one there; past it, a move costs no cache. */
+        private const val CACHE_MS = 3_600_000L
+
+        fun recent(servedAt: Long?, at: Long): Boolean = servedAt != null && at - servedAt in 0 until CACHE_MS
+
+        /** [account] when the session keeps it: served within the hour, no pin or changed caller login elsewhere in
+         *  [preference], and the login serves again once a short wait ends (signed in, plan room, and its rate-limit
+         *  hold over within [WARM_LOGIN_WAIT_MS]). The reset a 429 body names is left out: it is often the window's
+         *  reset stamped on a burst limit that clears in seconds (RateLimitCooldown, V4-61). */
+        fun stays(account: PoolAccount, servedAt: Long?, preference: List<PoolAccount>, at: Long): PoolAccount? {
+            val cooldown = account.cooldown
+            val signedIn = account.credentialStatus(at).selectable && cooldown.unavailableForMs() <= 0L
+            val short = planRoom(account, at) && cooldown.remainingMs() <= WARM_LOGIN_WAIT_MS
+            val chosen = preference.all { it.label == account.label }
+            return account.takeIf { recent(servedAt, at) && chosen && signedIn && short }
+        }
     }
 
     fun earliestReset(accounts: List<PoolAccount>, at: Long): Long? =

@@ -19,6 +19,10 @@ public fun interface AccountCredentialIdentitySource {
     /** Conservative evidence when no revision was observable. Existing implementations remain unknown. */
     public fun credentialPresence(): CredentialPresence = CredentialPresence.UNKNOWN
 
+    /** The provider account the credential names now, steady across token refreshes, read without refresh, writes
+     *  or provider requests; null where none is proved. A new sign-in in the same place changes it. */
+    public fun credentialAccount(): String? = null
+
     /** One typed observation for account reconciliation. File-backed providers override this directly. */
     public fun credentialEvidence(): CredentialEvidence {
         val identity = credentialIdentity()

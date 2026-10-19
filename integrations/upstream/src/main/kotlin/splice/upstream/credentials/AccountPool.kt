@@ -480,22 +480,24 @@ public class AccountPool(
      *  session carries its history into the choice, and which login the session remembers afterwards. A call without
      *  a session has no history to carry and nothing to remember it by. */
     private class CallerLogin(key: String?, val session: String?, accounts: List<PoolAccount>) {
-        private val label: String? = key?.let { presented ->
-            accounts.singleOrNull { it.auth.observedCredentialKey() == presented }?.label
+        private val mark: CallerMark? = key?.let { presented ->
+            accounts.singleOrNull { it.auth.observedCredentialKey() == presented }?.let {
+                CallerMark(it.label, (it.auth as? AccountCredentialIdentitySource)?.credentialAccount())
+            }
         }
 
         /** The account this login names, unless the session already acted on this same login: a changed login takes
-         *  precedence over automatic stickiness, an unchanged one has had its turn. Logins are compared by the account
-         *  they name, never by token: every token refresh changed the key, and pulled a warm session back to its own
-         *  sign-in as if the person had signed in again (Oct 19). */
+         *  precedence over automatic stickiness, an unchanged one has had its turn. Logins are compared by account,
+         *  never by token: every token refresh changed the key, and pulled a warm session back to its own sign-in as
+         *  if the person had signed in again (Oct 19). */
         fun preferred(previous: SessionAccount?): String? =
-            label.takeIf { session == null || it != previous?.callerLabel }
+            mark?.takeIf { session == null || it.differs(previous?.caller) }?.label
 
         /** The label the choice starts from: the session's last account, never a stateless call's. */
         fun continuesFrom(previous: SessionAccount?): String? = previous?.label.takeIf { session != null }
 
         /** The login the session records: this one when it names an account, else the one it already had. */
-        fun remembered(previous: SessionAccount?): String? = label ?: previous?.callerLabel
+        fun remembered(previous: SessionAccount?): CallerMark? = mark?.keeping(previous?.caller) ?: previous?.caller
 
         /** The login a warm session keeps through a short rate limit, or null: no session, a cold one, a pin or a
          *  changed caller login elsewhere ([preference]), or a login that needs more than a short wait. */
@@ -504,16 +506,13 @@ public class AccountPool(
             byLabel: Map<String, PoolAccount>,
             preference: List<PoolAccount>,
             at: Long,
-        ): PoolAccount? {
-            val warm = previous?.takeIf { session != null && WarmSession.warm(it.servedAt, at) }
-            val account = warm?.label?.let(byLabel::get)
-            return account?.takeIf { preference.all { p -> p.label == it.label } && WarmSession.outwaits(it, at) }
-        }
+        ): PoolAccount? = previous?.label?.takeIf { session != null }?.let(byLabel::get)
+            ?.let { AccountAvailability.Warm.stays(it, previous?.servedAt, preference, at) }
 
         /** Whether this turn stays where the session's prompt cache may be warm: a session that did not move, last
-         *  served within [WARM_CACHE_MS]. */
+         *  served within the hour. */
         fun keepsCache(previous: SessionAccount?, moved: AccountSwitch?, at: Long): Boolean =
-            session != null && moved == null && WarmSession.warm(previous?.servedAt, at)
+            session != null && moved == null && AccountAvailability.Warm.recent(previous?.servedAt, at)
 
         /** Why a move went to the caller's own login: the person signed in to another account. Null for any other
          *  move, and for a pin, which names itself. */
@@ -521,11 +520,24 @@ public class AccountPool(
             AccountSwitchReason.CALLER_LOGIN.takeIf { chosen.label != pinLabel && chosen.label == preferred(previous) }
     }
 
+    /** A caller's login: the pool account its token matches, and the provider account behind it where one is proved.
+     *  A token refresh keeps the account; a new sign-in in the same place changes it (ClaudeNativeLoginResumeTest). */
+    private data class CallerMark(val label: String, val account: String?) {
+        fun differs(prior: CallerMark?): Boolean {
+            if (prior == null || prior.label != label) return true
+            val proved = account != null && prior.account != null
+            return proved && account != prior.account
+        }
+
+        /** A token whose account is not proved yet (a refresh not yet read) keeps the account the login had. */
+        fun keeping(prior: CallerMark?): CallerMark = prior?.takeIf { account == null && it.label == label } ?: this
+    }
+
     /** [servedAt] is when the session was last given this login, which says whether its prompt cache may be warm. */
     private data class SessionAccount(
         val label: String,
         val lastSwitch: AccountSwitch?,
-        val callerLabel: String? = null,
+        val caller: CallerMark? = null,
         val servedAt: Long? = null,
     )
 }

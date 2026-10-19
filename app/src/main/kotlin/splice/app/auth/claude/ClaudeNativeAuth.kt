@@ -62,6 +62,9 @@ internal class ClaudeNativeAuth(
 
     override fun observedCredentialKey(): String? = credentialKey
 
+    /** The account profile read for this token, so a refreshed token reads as the same login (Oct 19). */
+    override fun credentialAccount(): String? = credentialKey?.let(profiles::read)?.uuid
+
     override suspend fun credentials(): Credentials? {
         val observed = observe()
         return observed?.takeIf(::usable)?.accessToken?.let(Credentials::Bearer)

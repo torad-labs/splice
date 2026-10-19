@@ -1014,6 +1014,14 @@ command = "claude-splice"
 #                           depth: NO_COLOR at any value, the empty string included, turns colour
 #                           off (no-color.org); a dumb or empty TERM is no colour; a 256color TERM
 #                           or any COLORTERM is the extended palette
+#   Temple MCP discovery: a saved registration wins, then a declared Claude MCP entry, then environment discovery.
+#   TEMPLE_TOOLS_SERVER  environment-discovery script path; wins over the path derived from TEMPLE_ROOT
+#   TEMPLE_ROOT          fallback root when TEMPLE_TOOLS_SERVER is unset; appends slices/screen/bin/tools-server.ts
+#   TEMPLE_URL           optional URL forwarded to the server; environment discovery uses it when nonblank,
+#                        and `splice mcp install temple --url` persists its explicit value
+#   Native Codex home: --codex-home wins, then saved codex_home, then TEMPLE_CODEX_HOME, then CODEX_HOME.
+#   TEMPLE_CODEX_HOME    preferred environment fallback Codex home; takes precedence over CODEX_HOME
+#   CODEX_HOME           last environment fallback; the selected home is passed to the native Codex process
 #   CODEX_OAUTH_AUTHORIZE_URL / CODEX_OAUTH_TOKEN_URL / CODEX_OAUTH_CLIENT_ID / CODEX_OAUTH_ISSUER /
 #   CODEX_OAUTH_ORIGINATOR  override the Codex login endpoints and the originator header
 #   GROK_OAUTH_AUTHORIZE_URL / GROK_OAUTH_TOKEN_URL / GROK_OAUTH_CLIENT_ID / GROK_OAUTH_ISSUER

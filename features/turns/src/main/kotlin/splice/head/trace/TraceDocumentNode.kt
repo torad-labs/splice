@@ -9,9 +9,16 @@ import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
 import java.io.IOException
 
+// why: caps direct children in one response page while the offset cursor exposes later children.
 private const val DOCUMENT_PAGE_ENTRIES = 25
+
+// why: bounds each streamed text page so larger documents continue through the next cursor.
 private const val DOCUMENT_TEXT_CHARS = 16_384
+
+// why: limits each child string preview without materializing its full contents.
 private const val DOCUMENT_PREVIEW_CHARS = 160
+
+// why: bounds retained object keys and rejects keys that exceed the parse limit.
 private const val DOCUMENT_KEY_CHARS = 4_096
 
 /** A page contains direct-child previews or decoded text, never a complete nested subtree. */

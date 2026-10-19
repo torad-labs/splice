@@ -5,9 +5,16 @@ import java.io.IOException
 import java.io.Reader
 import kotlin.coroutines.CoroutineContext
 
+// why: bounds parser refill storage and the scalar builder that uses the same limit.
 private const val DOCUMENT_BUFFER_CHARS = 8_192
+
+// why: caps the stack used to skip nested JSON containers.
 private const val DOCUMENT_MAX_DEPTH = 256
+
+// why: JSON Unicode escapes contain exactly four hexadecimal digits in the JSON escape sequence `\\u`.
 private const val DOCUMENT_UNICODE_DIGITS = 4
+
+// why: decodes those four escape digits using hexadecimal notation.
 private const val DOCUMENT_HEX_BASE = 16
 private val DOCUMENT_ESCAPES = mapOf(
     '"' to '"',

@@ -25,7 +25,11 @@ import java.util.HexFormat
 
 internal const val MCP_SERVICE_USAGE =
     "install temple --script FILE --url URL [--command COMMAND] [--codex-home DIR]"
+
+// why: the SHA-256 prefix gives each prior registration a compact, content-derived backup name.
 private const val BACKUP_HASH_CHARS = 12
+
+// why: the refresh call is bounded after the Temple registration has already been persisted.
 private const val SERVICE_REFRESH_MS = 90_000
 
 /** Persists the already-resolved Temple entry, rather than teaching Splice a machine-specific checkout path.

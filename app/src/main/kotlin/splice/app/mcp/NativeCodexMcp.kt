@@ -6,8 +6,13 @@ import splice.core.config.StatePaths
 import splice.core.util.LogSink
 import java.nio.file.Path
 
+// why: bounds proxy mode before installation falls back to an owned stdio connection.
 private const val NATIVE_CODEX_PROXY_TIMEOUT_MS = 1_000L
+
+// why: bounds the owned stdio config connection when neither shared proxy path is available.
 private const val NATIVE_CODEX_DIALOG_TIMEOUT_MS = 15_000L
+
+// why: bounds the first attempt through Temple's bridge to the existing Codex control socket.
 private const val NATIVE_CODEX_SOCKET_TIMEOUT_MS = 4_000L
 private const val NATIVE_CODEX_UNAVAILABLE_REASON = "Codex app-server config API is unavailable."
 

@@ -16,7 +16,11 @@ import java.nio.file.Path
 
 // Bounded keys/previews, parser scratch and escaped HTTP text coexist within this reservation.
 private const val DOCUMENT_PAGE_HEAP_BYTES = 2L shl 20
+
+// why: caps JSON-pointer components so a lookup cannot request unbounded nesting.
 private const val DOCUMENT_PATH_DEPTH = 64
+
+// why: bounds the input scanned and split before the pointer becomes path components.
 private const val DOCUMENT_PATH_CHARS = 4_096
 
 public data class TraceDocumentQuery(

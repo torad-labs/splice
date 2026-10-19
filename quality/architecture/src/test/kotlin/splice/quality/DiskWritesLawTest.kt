@@ -106,6 +106,11 @@ internal object DiskWrites {
                 "a hosted MCP server's stdin: the process's output stream, not a file",
             ),
             NotAFile(
+                "app/src/main/kotlin/splice/app/mcp/NativeCodexMcpRpcSession.kt",
+                ".bufferedWriter(",
+                "the Codex app-server process stdin: Process.outputStream, not a file",
+            ),
+            NotAFile(
                 "integrations/mcp/src/main/kotlin/splice/control/mcp/McpContainment.kt",
                 "Files.writeString(",
                 "/proc/<pid>/oom_score_adj of a hosted MCP child: a kernel attribute that ends with the process",
@@ -292,7 +297,10 @@ private val SHIPPED_SITES: Map<String, Map<String, Int>> = mapOf(
     "app/src/main/kotlin/splice/app/daemon/DaemonLock.kt" to mapOf("FileChannel.open(" to 1),
     // The MCP hub front's environment file, in the mcp-front.env README row.
     "app/src/main/kotlin/splice/app/McpFrontEnv.kt" to mapOf("writeAtomic0600(" to 1),
+    "app/src/main/kotlin/splice/app/cli/mcp/McpServiceCommand.kt" to mapOf("writeAtomic0600(" to 2),
     "app/src/main/kotlin/splice/app/head/HeadTraceStores.kt" to mapOf("ActivityDays(" to 1),
+    "app/src/main/kotlin/splice/app/mcp/NativeCodexMcpFiles.kt" to mapOf("writeAtomic0600(" to 2),
+    "app/src/main/kotlin/splice/app/mcp/NativeCodexSocketProxy.kt" to mapOf("writeAtomic0600(" to 1),
     "app/src/main/kotlin/splice/app/auth/claude/ClaudeAccountFolders.kt" to mapOf("writeAtomic0600(" to 4),
     "app/src/main/kotlin/splice/app/auth/claude/ClaudeCredentialProfiles.kt" to mapOf("writeAtomic0600(" to 1),
     "app/src/main/kotlin/splice/app/auth/claude/ClaudeLoginEdits.kt" to mapOf("writeAtomic0600(" to 1),

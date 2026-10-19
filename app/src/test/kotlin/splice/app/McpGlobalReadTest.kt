@@ -33,7 +33,7 @@ class McpGlobalReadTest {
     @Test
     fun `malformed config reports a bounded safe diagnostic and recovers`(@TempDir home: Path) {
         val logs = StringBuilder()
-        val reader = McpGlobalRead(home) { logs.append(it) }
+        val reader = McpGlobalRead(home, log = { logs.append(it) })
         assertTrue(reader().isEmpty())
         assertEquals("", logs.toString(), "genuine absence is quiet")
         val file = home.resolve(".claude.json")
@@ -52,7 +52,7 @@ class McpGlobalReadTest {
     fun `unreadable global file is diagnosed rather than treated as first run`(@TempDir home: Path) {
         java.nio.file.Files.createDirectory(home.resolve(".claude.json"))
         val logs = StringBuilder()
-        assertTrue(McpGlobalRead(home) { logs.append(it) }().isEmpty())
+        assertTrue(McpGlobalRead(home, log = { logs.append(it) })().isEmpty())
         assertTrue(logs.contains("unreadable"), logs.toString())
     }
 }

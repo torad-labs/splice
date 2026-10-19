@@ -298,7 +298,7 @@ class AccountPoolReadTest {
         assertEquals(1, AccountHealthChecks.checks(read, mapOf("synthetic" to earlier)).size)
     }
 
-    private fun refusalContext(auth: DoctorCheck, run: DoctorRun): String =
+    private fun refusalContext(auth: DoctorCheck, run: splice.diagnostics.doctor.report.DoctorRun): String =
         "the auth line doctor wrote for claude-kimi: ${auth.detail}; " +
             "daemon and accounts: ${run.sections.filter { it.first in setOf("daemon", "accounts") }}"
 

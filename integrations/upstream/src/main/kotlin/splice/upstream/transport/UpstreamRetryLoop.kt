@@ -5,8 +5,12 @@ package splice.upstream.transport
 import splice.core.auth.CredentialKey
 import splice.core.auth.Credentials
 import splice.core.util.ElapsedClock
+import splice.core.wire.HttpStatus
 import splice.upstream.retry.CredentialCooldowns
+import splice.upstream.retry.RETRY_AFTER_GIVE_UP_MS
 import splice.upstream.retry.RateLimitCooldown
+import splice.upstream.retry.RetryDecision
+import splice.upstream.retry.RetryPlan
 import splice.upstream.retry.RetryRules
 import splice.upstream.sse.AttemptRecorder
 
@@ -49,6 +53,16 @@ internal class RetryState(var cooldown: RateLimitCooldown, val t0: Long, val max
     /** What is left of a warm session's wait on its login; 0 for a cold session. */
     fun warmWaitLeftMs(ctx: PostContext): Long =
         ctx.limits.warmLoginWaitMs?.let { (it - warmWaitedMs).coerceAtLeast(0L) } ?: 0L
+
+    /** The longest one 429's pushback is waited out on this login: the 15s ceiling, or a warm session's wait left. */
+    fun sameLoginWaitMs(ctx: PostContext): Long = maxOf(warmWaitLeftMs(ctx), RETRY_AFTER_GIVE_UP_MS)
+
+    /** A 429 backoff spends the warm session's wait on its login. */
+    fun countWait(failed: RetryOutcome.Failed, plan: RetryPlan) {
+        if (failed.status == HttpStatus.TOO_MANY_REQUESTS && plan.decision == RetryDecision.BACKOFF) {
+            warmWaitedMs += plan.minDelayMs
+        }
+    }
 
     var attempt: Int = 0
     var refreshedOnce: Boolean = false

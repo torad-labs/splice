@@ -109,14 +109,14 @@ internal object AccountAvailability {
         return TimeUnit.SECONDS.toMillis(reset) > at
     }
 
-    /** Whether a session stays on its login rather than move: it was served there within [CACHE_MS], and the login
+    /** Whether a session stays on its login rather than move: it was served there within [WARM_CACHE_MS], and the login
      *  only needs a short wait before it serves again. */
     object Warm {
         /** Claude Code's subscriber requests ask for a one-hour prompt cache, so a session served within the hour may
          *  still hold one there; past it, a move costs no cache. */
-        private const val CACHE_MS = 3_600_000L
+        private const val WARM_CACHE_MS = 3_600_000L
 
-        fun recent(servedAt: Long?, at: Long): Boolean = servedAt != null && at - servedAt in 0 until CACHE_MS
+        fun recent(servedAt: Long?, at: Long): Boolean = servedAt != null && at - servedAt in 0 until WARM_CACHE_MS
 
         /** [account] when the session keeps it: served within the hour, no pin or changed caller login elsewhere in
          *  [preference], and the login serves again once a short wait ends (signed in, plan room, and its rate-limit

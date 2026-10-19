@@ -220,7 +220,7 @@ public class AccountPool(
         val pinLabel = pins.forSession(caller.session)
         val moved = prior.takeIf { it.label != chosen.account.label }?.let {
             val reason = caller.movedBy(previous, chosen.account, pinLabel)
-                ?: switchReason(it.label, chosen.account, at, current, pinLabel)
+                ?: AccountSwitchReason.of(current.byLabel[it.label], chosen.account, at, pinLabel, orderedLabels.get())
             AccountSwitch(it.label, chosen.account.label, reason, at)
         }
         // The head switched only when the login it serves new or moved sessions on changed: once per change, never
@@ -228,7 +228,8 @@ public class AccountPool(
         // Oct 12). A session staying on its login, and the first login served after a start, are no switch of the head.
         val headFrom = if (previous == null || moved != null) headServing.getAndSet(chosen.account.label) else null
         val headSwitch = headFrom?.takeIf { it != chosen.account.label }?.let {
-            AccountSwitch(it, chosen.account.label, switchReason(it, chosen.account, at, current, pinLabel), at)
+            val reason = AccountSwitchReason.of(current.byLabel[it], chosen.account, at, pinLabel, orderedLabels.get())
+            AccountSwitch(it, chosen.account.label, reason, at)
         }
         headSwitch?.let(headLastSwitch::set)
         val warm = caller.keepsCache(previous, moved, at)
@@ -409,31 +410,6 @@ public class AccountPool(
         }
     }
 
-    // V4-132 added the pin branch as a fifth case in the SAME `when` (rather than a fourth early
-    // `return`) to stay under ReturnCount's limit of 3 — one `return when`, whatever its arm count.
-    // Which limit stopped the previous account is [AccountAvailability.limitReason], so this stays under the
-    // complexity ceiling as limits are added (the plan hold was the latest).
-    private fun switchReason(
-        previousLabel: String,
-        chosen: PoolAccount,
-        at: Long,
-        current: AccountMembership,
-        pinLabel: String?,
-    ): String {
-        val previous = current.byLabel[previousLabel] ?: return AccountSwitchReason.ACCOUNT_UNAVAILABLE_REASON
-        // What stopped the previous login is named before any order, a full reading included. The 47 moves the Oct 19
-        // journal read as the operator's order left a login with room: token refreshes read as a new caller login
-        // ([CallerLogin.movedBy] names a real one now).
-        return when {
-            chosen.label == pinLabel -> AccountSwitchReason.PINNED
-            !AccountAvailability.available(previous, at) -> AccountAvailability.limitReason(previous, at)
-            AccountAvailability.fullReading(previous, at) -> AccountSwitchReason.USAGE_READING_FULL
-            chosen.label in orderedLabels.get() -> AccountSwitchReason.ORDERED
-            chosen.primary -> AccountSwitchReason.PRIMARY_RESET
-            else -> AccountSwitchReason.RESET_SOONER
-        }
-    }
-
     private fun accountView(account: PoolAccount, selected: String?, at: Long): AccountView {
         val snapshot = account.quotaSnapshot
         val credential = account.credentialStatus(at)
@@ -507,7 +483,7 @@ public class AccountPool(
             preference: List<PoolAccount>,
             at: Long,
         ): PoolAccount? = previous?.label?.takeIf { session != null }?.let(byLabel::get)
-            ?.let { AccountAvailability.Warm.stays(it, previous?.servedAt, preference, at) }
+            ?.let { AccountAvailability.Warm.stays(it, previous.servedAt, preference, at) }
 
         /** Whether this turn stays where the session's prompt cache may be warm: a session that did not move, last
          *  served within the hour. */

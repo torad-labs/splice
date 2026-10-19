@@ -43,6 +43,28 @@ public object AccountSwitchReason {
 
     internal fun planLimit(windowWords: String): String = "$windowWords plan limit reached"
 
+    /** Why a login moved from [previous] to [chosen]. What stopped the previous login is named before any order, a
+     *  full reading included. The 47 moves the Oct 19 journal read as the operator's [ordered] list left a login with
+     *  room: token refreshes read as a new caller login (AccountPool's CallerLogin names a real one now). Which limit
+     *  stopped it is [AccountAvailability.limitReason], so this stays under the complexity ceiling as limits are
+     *  added. */
+    internal fun of(
+        previous: PoolAccount?,
+        chosen: PoolAccount,
+        at: Long,
+        pinLabel: String?,
+        ordered: List<String>,
+    ): String =
+        when {
+            previous == null -> ACCOUNT_UNAVAILABLE_REASON
+            chosen.label == pinLabel -> PINNED
+            !AccountAvailability.available(previous, at) -> AccountAvailability.limitReason(previous, at)
+            AccountAvailability.fullReading(previous, at) -> USAGE_READING_FULL
+            chosen.label in ordered -> ORDERED
+            chosen.primary -> PRIMARY_RESET
+            else -> RESET_SOONER
+        }
+
     /** Foreign prose and terminal controls never become printable switch reasons. */
     public fun isSafe(reason: String): Boolean = reason in reasons || planWindow.matches(reason)
 }

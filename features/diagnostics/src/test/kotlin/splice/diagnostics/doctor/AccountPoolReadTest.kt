@@ -234,7 +234,7 @@ class AccountPoolReadTest {
         plantRefusalTopology(credential)
         val run = DoctorTestPorts.doctor().collect(environment)
         val auth = run.sections.toMap().getValue("auth").single { it.name == "claude-kimi" }
-        assertEquals(CheckStatus.WARN, auth.status, "the auth line doctor wrote for claude-kimi: ${auth.detail}")
+        assertEquals(CheckStatus.WARN, auth.status, refusalContext(auth, run))
         assertTrue(auth.detail.contains("HTTP 403"), auth.detail)
         assertTrue(
             !auth.detail.contains("newest upstream request"),
@@ -297,6 +297,10 @@ class AccountPoolReadTest {
         val earlier = ProviderAnswer(403, answer.observedAtEpochMs - 1L)
         assertEquals(1, AccountHealthChecks.checks(read, mapOf("synthetic" to earlier)).size)
     }
+
+    private fun refusalContext(auth: DoctorCheck, run: DoctorRun): String =
+        "the auth line doctor wrote for claude-kimi: ${auth.detail}; " +
+            "daemon and accounts: ${run.sections.filter { it.first in setOf("daemon", "accounts") }}"
 
     private fun plantRefusalTopology(credential: Path) {
         val config = Files.createDirectories(tmp.resolve("config/splice"))

@@ -18,7 +18,11 @@ public object AccountSwitchReason {
     /** An expired token its own command renews: the switch is right, and nobody needs to sign in. */
     internal const val TOKEN_EXPIRED = "previous login's token expired"
 
+    /** The session's own client signed in to another account, and the session follows it. */
+    internal const val CALLER_LOGIN = "session signed in to this account"
+
     private val reasons = setOf(
+        CALLER_LOGIN,
         PINNED,
         ORDERED,
         PRIMARY_RESET,

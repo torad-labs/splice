@@ -38,6 +38,7 @@ import io.ktor.client.HttpClient
 import splice.core.usage.PlanLimit
 import splice.core.util.ERR_SNIPPET
 import splice.core.util.ElapsedClock
+import splice.core.wire.HttpStatus
 import splice.upstream.RetryBackoff
 import splice.upstream.RoundBody
 import splice.upstream.StreamRead
@@ -46,6 +47,7 @@ import splice.upstream.codemode.ProcessElapsedNow
 import splice.upstream.retry.CredentialCooldowns
 import splice.upstream.retry.MAX_STREAM_REISSUES
 import splice.upstream.retry.ProviderHoldStore
+import splice.upstream.retry.RETRY_AFTER_GIVE_UP_MS
 import splice.upstream.retry.RateLimitCooldown
 import splice.upstream.retry.RateLimitTurn
 import splice.upstream.retry.ReissueRules
@@ -192,7 +194,7 @@ public class UpstreamClient(
         return if (auth == null) {
             LoopStep.Done(UpstreamPost.Ended(UpstreamAuthMissing()))
         } else {
-            state.held(ctx) ?: attempt(ctx, body, state, block, auth)
+            state.held(ctx, pacing) ?: attempt(ctx, body, state, block, auth)
         }
     }
 
@@ -262,7 +264,8 @@ public class UpstreamClient(
     ): LoopStep<Nothing> {
         state.lastErr = failed
         val nativeRefusal = ctx.nativePool && failed.rateLimitReply != null
-        return if (nativeRefusal && failed.waitCannotHelp) {
+        val ceilingMs = maxOf(state.warmWaitLeftMs(ctx), RETRY_AFTER_GIVE_UP_MS)
+        return if (nativeRefusal && failed.waitCannotHelp(ceilingMs)) {
             val failure = state.rules.rateLimitFailure(failed, state.cooldown, state.sent, ctx.onRetry)
             LoopStep.Done(UpstreamPost.Refused(failure))
         } else {
@@ -385,9 +388,13 @@ public class UpstreamClient(
             RateLimitTurn(
                 cooldown = state.cooldown,
                 pooledAccount = ctx.limits.rateLimitCooldown != null,
+                sameLoginWaitMs = maxOf(state.warmWaitLeftMs(ctx), RETRY_AFTER_GIVE_UP_MS),
             ),
         )
         state.refreshedOnce = plan.refreshedOnce
+        if (outcome.status == HttpStatus.TOO_MANY_REQUESTS && plan.decision == RetryDecision.BACKOFF) {
+            state.warmWaitedMs += plan.minDelayMs
+        }
         return when (plan.decision) {
             RetryDecision.RETRY -> LoopStep.Continue // refresh succeeded — no attempt spent
             RetryDecision.BACKOFF -> applyBackoff(ctx, plan, state, t0)

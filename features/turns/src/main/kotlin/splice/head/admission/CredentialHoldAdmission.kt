@@ -20,6 +20,7 @@ import splice.upstream.Provider
 import splice.upstream.credentials.AccountResetText
 import splice.upstream.credentials.AccountSelection
 import splice.upstream.credentials.Selection
+import splice.upstream.credentials.WARM_LOGIN_WAIT_MS
 import splice.upstream.retry.RateLimitCooldown
 
 /** The longest a turn waits at admission for a gateway hold to clear before the client is told to retry. */
@@ -76,8 +77,10 @@ internal class CredentialHoldAdmission(
                 account?.releaseCredentialProbe()
                 return Outcome.Allowed(next)
             }
-            // A short gateway hold is waited out here, so the client never sees a 429 for seconds.
-            if (!waitable(cooldown, waitedMs + remainingMs)) return null
+            // A short gateway hold is waited out here, so the client never sees a 429 for seconds. A warm session
+            // waits longer: moving it rebuilds its whole cache on another login (Marcos, Oct 19).
+            val budgetMs = if (account?.warm == true) WARM_LOGIN_WAIT_MS else MAX_HOLD_WAIT_MS
+            if (!waitable(cooldown, waitedMs + remainingMs, budgetMs)) return null
             deps.seams.waiter.wait(remainingMs)
             waitedMs += remainingMs
         }
@@ -85,15 +88,16 @@ internal class CredentialHoldAdmission(
 
     /** A spent plan window is refused with its reset, and a wait past the bound is the client's to retry. A relayed
      *  vendor reply waits like any other short hold. */
-    private fun waitable(cooldown: RateLimitCooldown, totalMs: Long): Boolean =
-        cooldown.planHold.live() == null && totalMs <= MAX_HOLD_WAIT_MS
+    private fun waitable(cooldown: RateLimitCooldown, totalMs: Long, budgetMs: Long): Boolean =
+        cooldown.planHold.live() == null && totalMs <= budgetMs
 
     private fun freeAccount(
         prepared: Preparation.Ready,
         account: AccountSelection?,
         cooldown: RateLimitCooldown,
     ): AccountSelection? {
-        if (account == null) return null
+        // A warm session stays on its login through the hold; only a cold one jumps to a free login.
+        if (account == null || account.warm) return null
         val pool = deps.quotaBundle.activePool
             ?.takeIf { provider.relayRateLimitReplies && cooldown.rateLimitReply != null } ?: return null
         return when (val next = pool.select(prepared.built.meta.scope.sessionId, setOf(account.account.label))) {

@@ -219,7 +219,8 @@ public class AccountPool(
         val prior = previous ?: SessionAccount(current.primary.label, null)
         val pinLabel = pins.forSession(caller.session)
         val moved = prior.takeIf { it.label != chosen.account.label }?.let {
-            val reason = switchReason(it.label, chosen.account, at, current, pinLabel)
+            val reason = caller.movedBy(previous, chosen.account, pinLabel)
+                ?: switchReason(it.label, chosen.account, at, current, pinLabel)
             AccountSwitch(it.label, chosen.account.label, reason, at)
         }
         // The head switched only when the login it serves new or moved sessions on changed: once per change, never
@@ -230,11 +231,13 @@ public class AccountPool(
             AccountSwitch(it, chosen.account.label, switchReason(it, chosen.account, at, current, pinLabel), at)
         }
         headSwitch?.let(headLastSwitch::set)
-        val selection = Selection.Chosen(AccountSelection(chosen.account, moved, chosen.lease, headSwitch))
+        val warm = caller.keepsCache(previous, moved, at)
+        val selection = Selection.Chosen(AccountSelection(chosen.account, moved, chosen.lease, headSwitch, warm))
         val session = SessionAccount(
             chosen.account.label,
             moved ?: previous?.lastSwitch,
             caller.remembered(previous),
+            at,
         )
         return selection to session
     }
@@ -386,9 +389,12 @@ public class AccountPool(
         val order = (preference + candidates(caller.continuesFrom(previous), current, pinLabel))
             .distinctBy(PoolAccount::label)
             .filter { it.label !in excluded }
+        // A warm session keeps its login through a short rate limit, which admission waits out: a move rebuilds its
+        // whole cache on the next login (Marcos, Oct 19). A pin or a changed caller login elsewhere still wins.
+        val stay = caller.stays(previous, current.byLabel, preference, at)?.takeIf { it.label !in excluded }
         val free = AccountAvailability.preferredFree(order, at)
         val held = AccountAvailability.nearestHeld(order, at)
-        val eligible = when {
+        val eligible = listOfNotNull(stay) + when {
             excluded.isNotEmpty() -> free
             current.accounts.count { it.credentialStatus(at).selectable } <= 1 -> free.ifEmpty { held }
             // A login with plan room waits out its short hold at admission and serves; a login held on its plan is
@@ -398,7 +404,7 @@ public class AccountPool(
                     .ifEmpty { held.filter { it.cooldown.remainingMs() <= 0L } }
             }
         }
-        return eligible.firstNotNullOfOrNull { account ->
+        return eligible.distinctBy(PoolAccount::label).firstNotNullOfOrNull { account ->
             account.acquireCredential(at, now)?.let { lease -> ChosenAccount(account, lease) }
         }
     }
@@ -415,12 +421,13 @@ public class AccountPool(
         pinLabel: String?,
     ): String {
         val previous = current.byLabel[previousLabel] ?: return AccountSwitchReason.ACCOUNT_UNAVAILABLE_REASON
+        // What stopped the previous login is named before any order: a limit that moved the session read as the
+        // operator's order when the next login was in it (Oct 19 journal: 47 such moves in one day).
         return when {
             chosen.label == pinLabel -> AccountSwitchReason.PINNED
-            chosen.label in orderedLabels.get() && AccountAvailability.available(previous, at) ->
-                AccountSwitchReason.ORDERED
             !AccountAvailability.available(previous, at) -> AccountAvailability.limitReason(previous, at)
             AccountAvailability.fullReading(previous, at) -> AccountSwitchReason.USAGE_READING_FULL
+            chosen.label in orderedLabels.get() -> AccountSwitchReason.ORDERED
             chosen.primary -> AccountSwitchReason.PRIMARY_RESET
             else -> AccountSwitchReason.RESET_SOONER
         }
@@ -471,22 +478,53 @@ public class AccountPool(
     /** The login the caller presented, and what it decides for one selection: which account it asks for, whether the
      *  session carries its history into the choice, and which login the session remembers afterwards. A call without
      *  a session has no history to carry and nothing to remember it by. */
-    private class CallerLogin(private val key: String?, val session: String?, accounts: List<PoolAccount>) {
+    private class CallerLogin(key: String?, val session: String?, accounts: List<PoolAccount>) {
         private val label: String? = key?.let { presented ->
             accounts.singleOrNull { it.auth.observedCredentialKey() == presented }?.label
         }
 
         /** The account this login names, unless the session already acted on this same login: a changed login takes
-         *  precedence over automatic stickiness, an unchanged one has had its turn. */
+         *  precedence over automatic stickiness, an unchanged one has had its turn. Logins are compared by the account
+         *  they name, never by token: every token refresh changed the key, and pulled a warm session back to its own
+         *  sign-in as if the person had signed in again (Oct 19). */
         fun preferred(previous: SessionAccount?): String? =
-            label.takeIf { session == null || key != previous?.callerKey }
+            label.takeIf { session == null || it != previous?.callerLabel }
 
         /** The label the choice starts from: the session's last account, never a stateless call's. */
         fun continuesFrom(previous: SessionAccount?): String? = previous?.label.takeIf { session != null }
 
-        /** The login the session records: this one when presented, else the one it already had. */
-        fun remembered(previous: SessionAccount?): String? = key ?: previous?.callerKey
+        /** The login the session records: this one when it names an account, else the one it already had. */
+        fun remembered(previous: SessionAccount?): String? = label ?: previous?.callerLabel
+
+        /** The login a warm session keeps through a short rate limit, or null: no session, a cold one, a pin or a
+         *  changed caller login elsewhere ([preference]), or a login that needs more than a short wait. */
+        fun stays(
+            previous: SessionAccount?,
+            byLabel: Map<String, PoolAccount>,
+            preference: List<PoolAccount>,
+            at: Long,
+        ): PoolAccount? {
+            val warm = previous?.takeIf { session != null && WarmSession.warm(it.servedAt, at) }
+            val account = warm?.label?.let(byLabel::get)
+            return account?.takeIf { preference.all { p -> p.label == it.label } && WarmSession.outwaits(it, at) }
+        }
+
+        /** Whether this turn stays where the session's prompt cache may be warm: a session that did not move, last
+         *  served within [WARM_CACHE_MS]. */
+        fun keepsCache(previous: SessionAccount?, moved: AccountSwitch?, at: Long): Boolean =
+            session != null && moved == null && WarmSession.warm(previous?.servedAt, at)
+
+        /** Why a move went to the caller's own login: the person signed in to another account. Null for any other
+         *  move, and for a pin, which names itself. */
+        fun movedBy(previous: SessionAccount?, chosen: PoolAccount, pinLabel: String?): String? =
+            AccountSwitchReason.CALLER_LOGIN.takeIf { chosen.label != pinLabel && chosen.label == preferred(previous) }
     }
 
-    private data class SessionAccount(val label: String, val lastSwitch: AccountSwitch?, val callerKey: String? = null)
+    /** [servedAt] is when the session was last given this login, which says whether its prompt cache may be warm. */
+    private data class SessionAccount(
+        val label: String,
+        val lastSwitch: AccountSwitch?,
+        val callerLabel: String? = null,
+        val servedAt: Long? = null,
+    )
 }

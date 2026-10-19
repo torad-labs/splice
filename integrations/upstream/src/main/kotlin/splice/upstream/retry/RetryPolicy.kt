@@ -43,6 +43,8 @@ internal data class RateLimitTurn(
      *  resets_in_seconds) and a fail-fast turn never reaches upstream, so arm time is the only point
      *  where that fact and the cooldown are both in scope. */
     val body: String? = null,
+    /** The longest pushback this turn waits out on its login: the 15s ceiling, or a warm session's wait left. */
+    val sameLoginWaitMs: Long = RETRY_AFTER_GIVE_UP_MS,
 )
 
 internal class RetryRules(private val maxRetries: Int) {

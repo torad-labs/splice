@@ -317,10 +317,10 @@ public class RateLimitCooldown public constructor(
         // retried — a healthy backup beats three more attempts on a spent account, and the client's
         // own retry lands on that backup at once. Everything else with budget left backs off and
         // retries HERE, in splice, whatever the header said.
-        val providerWaitExceeded = pushbackMs != null && pushbackMs > RETRY_AFTER_GIVE_UP_MS
+        val providerWaitExceeded = pushbackMs != null && pushbackMs > turn.sameLoginWaitMs
         val evictInstead = turn.pooledAccount && providerWaitExceeded
         if (!canRetry || evictInstead) return giveUpAndArm(pushbackMs, turn, nextRefreshed, onRetry)
-        return backoffPlan(pushbackMs, nextRefreshed, onRetry)
+        return backoffPlan(pushbackMs?.coerceAtMost(turn.sameLoginWaitMs), pushbackMs, nextRefreshed, onRetry)
     }
 
     // V4-61: EVERY 429 WITH BUDGET LEFT BACKS OFF AND RETRIES IN SPLICE. V4-48 restored this for a
@@ -347,8 +347,15 @@ public class RateLimitCooldown public constructor(
     // OTHER turn on the head for the whole interval this one is waiting out — clamped to 120s on
     // an 88-minute header — while this turn may well succeed at 15s. The horizon is armed once,
     // on exhaustion, by giveUpAndArm.
-    private fun backoffPlan(pushbackMs: Long?, nextRefreshed: Boolean, onRetry: RetryNotice): RetryPlan {
-        val floor = pushbackMs?.coerceAtMost(RETRY_AFTER_GIVE_UP_MS) ?: RETRY_AFTER_GIVE_UP_MS
+    // A warm session waits a pushback out up to its own wait left ([RateLimitTurn.sameLoginWaitMs]); an absent header
+    // still waits the 15s ceiling, never the warm session's whole wait.
+    private fun backoffPlan(
+        waitMs: Long?,
+        pushbackMs: Long?,
+        nextRefreshed: Boolean,
+        onRetry: RetryNotice,
+    ): RetryPlan {
+        val floor = waitMs ?: RETRY_AFTER_GIVE_UP_MS
         val header = pushbackMs?.let { "${it}ms" } ?: "ABSENT"
         onRetry("429 rate limit: Retry-After header $header; budget remaining, retrying in ${floor}ms")
         return RetryPlan(RetryDecision.BACKOFF, nextRefreshed, minDelayMs = floor)

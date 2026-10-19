@@ -24,16 +24,31 @@ internal class RetryState(var cooldown: RateLimitCooldown, val t0: Long, val max
      *  before any byte reaches the client (§11's Oct deviation), for a translated pool as for the native one. */
     fun gaveUp(ctx: PostContext, rules: RetryRules): LoopStep<Nothing> {
         val failure = rules.giveUp(lastErr, cooldown, attempt, ctx.onRetry, refreshedOnce)
-        val refused = ctx.pooled && lastErr?.waitCannotHelp == true
+        val refused = ctx.pooled && lastErr?.waitCannotHelp() == true
         return LoopStep.Done(if (refused) UpstreamPost.Refused(failure) else UpstreamPost.Ended(failure))
     }
 
     /** An armed hold ends the attempt before any request: a pooled login's hold is handed back to switch
-     *  credentials, every other hold ends the call. Null when no hold is armed. */
-    fun held(ctx: PostContext): LoopStep<Nothing>? {
+     *  credentials, every other hold ends the call. A warm session first waits a short hold out on its login, so
+     *  another session's rate limit does not move it (Marcos, Oct 19). Null when no hold is armed. */
+    suspend fun held(ctx: PostContext, pacing: RetryPacing): LoopStep<Nothing>? {
+        val holdMs = cooldown.remainingMs()
+        val turnLeftMs = ctx.limits.remainingTurnWait?.invoke() ?: Long.MAX_VALUE
+        if (cooldown.planHold.live() == null && holdMs in 1..minOf(warmWaitLeftMs(ctx), turnLeftMs - 1)) {
+            ctx.onRetry("warm session: waiting ${holdMs}ms for this login's rate-limit hold rather than move")
+            ctx.timedBackoff { pacing.pause(0, holdMs) }
+            warmWaitedMs += holdMs
+        }
         val held = cooldown.heldFailure(ctx.onRetry) ?: return null
         return LoopStep.Done(if (ctx.pooled) UpstreamPost.Refused(held) else UpstreamPost.Ended(held))
     }
+
+    /** How long this post has waited rate limits out on its login for a warm session. */
+    var warmWaitedMs: Long = 0L
+
+    /** What is left of a warm session's wait on its login; 0 for a cold session. */
+    fun warmWaitLeftMs(ctx: PostContext): Long =
+        ctx.limits.warmLoginWaitMs?.let { (it - warmWaitedMs).coerceAtLeast(0L) } ?: 0L
 
     var attempt: Int = 0
     var refreshedOnce: Boolean = false

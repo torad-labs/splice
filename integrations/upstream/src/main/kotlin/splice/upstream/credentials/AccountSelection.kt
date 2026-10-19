@@ -135,6 +135,10 @@ public class AccountSelection internal constructor(
     lease: AccountCredentialEligibility.Lease,
     /** The head's own switch this choice made, once per change of the login it serves; [switch] is this session's. */
     public val headSwitch: AccountSwitch? = null,
+    /** The session stays on the login it was served on within [WARM_CACHE_MS], so its prompt cache may be warm there:
+     *  admission and the retry loop wait a short rate limit out on this login, up to [WARM_LOGIN_WAIT_MS], rather
+     *  than move the turn and rebuild the cache elsewhere. */
+    public val warm: Boolean = false,
 ) {
     private val credentialLease = AtomicReference(lease)
 

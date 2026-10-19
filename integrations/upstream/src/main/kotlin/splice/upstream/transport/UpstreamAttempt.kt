@@ -124,6 +124,9 @@ public data class PostLimits(
     val rateLimitCooldown: RateLimitCooldown? = null,
     /** Null preserves the legacy per-post deadline for callers without an outer turn budget. */
     val remainingTurnWait: RemainingTurnWait? = null,
+    /** A warm session's total wait for rate limits on its own login before the turn moves (Marcos, Oct 19); null
+     *  for a cold session, which waits at most [RETRY_AFTER_GIVE_UP_MS] per 429 as before. */
+    val warmLoginWaitMs: Long? = null,
 )
 
 /** What listens to a post without changing it: the turn's timing row, the wire recorder and the refresh observer. */
@@ -161,9 +164,9 @@ internal sealed class RetryOutcome<out T> {
         /** The vendor module named this status a dead credential (VendorRefusals.isAuthFailure); a 401 needs no name. */
         val vendorAuth: Boolean = false,
     ) : RetryOutcome<Nothing>() {
-        /** A 429 the same login cannot outwait: a named plan window, or a pushback past the 15s ceiling (V4-61). */
-        val waitCannotHelp: Boolean
-            get() = status == HttpStatus.TOO_MANY_REQUESTS &&
-                (planLimit != null || (retryAfterMs ?: 0L) > RETRY_AFTER_GIVE_UP_MS)
+        /** A 429 the same login cannot outwait: a named plan window, or a pushback past [ceilingMs], the 15s ceiling
+         *  unless a warm session has more of its wait left (V4-61). */
+        fun waitCannotHelp(ceilingMs: Long = RETRY_AFTER_GIVE_UP_MS): Boolean =
+            status == HttpStatus.TOO_MANY_REQUESTS && (planLimit != null || (retryAfterMs ?: 0L) > ceilingMs)
     }
 }

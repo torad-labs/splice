@@ -134,6 +134,7 @@ internal class TurnPreparation(
         val inbound = deps.stores.captures.trace?.takeIf { it.recording.on }?.let { inbound(call, body.text) }
         refusalOf(parsed, sessionId)?.let { return it }
         messageEdges.observe(sessionId, parsed.typed)
+        messageEdges.answered(sessionId, parsed.typed)
         val action = activityLabel.labelFor(parsed.typed)
         if (action == null) nearMissLabelQuery(parsed.typed, sessionId)
         return if (action != null) {

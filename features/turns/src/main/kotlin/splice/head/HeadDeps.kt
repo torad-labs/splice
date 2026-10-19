@@ -280,6 +280,14 @@ public interface HeadEvents {
      *  upstream as an ordinary turn (ActivityLabel.looksLikeSideQuery). Counted so an empty label
      *  history can name a client mismatch instead of reading as an idle session. */
     public fun labelQueryUpstream(session: String?)
+
+    /** [session]'s turn ended clean on the tool calls [toolUseIds], so the client now runs them, for as long as
+     *  they take, and answers on its next request. Fired after [turnEnded] for the same turn, and only when the
+     *  client was shown a whole answer: a turn it never finished receiving opens nothing. */
+    public fun toolsOpened(session: String, toolUseIds: List<String>)
+
+    /** A request from [session] carries the results of [toolUseIds]: the client finished those tools. */
+    public fun toolsClosed(session: String, toolUseIds: List<String>)
 }
 
 /** The head that reports to nobody: a head built without a console (tests, tools). Production heads
@@ -294,4 +302,8 @@ public object NoHeadEvents : HeadEvents {
     override fun activityLabel(session: String?, action: ActivityAction): Unit = Unit
 
     override fun labelQueryUpstream(session: String?): Unit = Unit
+
+    override fun toolsOpened(session: String, toolUseIds: List<String>): Unit = Unit
+
+    override fun toolsClosed(session: String, toolUseIds: List<String>): Unit = Unit
 }

@@ -239,10 +239,13 @@ origin.
   line, its output as a quiet system line, and the reminders Claude Code adds for the model are not shown at all.
 - **One dollar form on every page.** Nothing charged reads `$0`, a charge under a hundredth of a cent reads `<$0.0001`,
   and a team's figures say why there is no dollar amount, on your plan or with no price, the bigger count first.
-- **Foreground tools keep their session live between model calls.** Claude Code's tool-start and
-  tool-end hooks tell splice when the session is still active, so a long tool does not make it
-  stale just because no request reached the model. Completion, session end or process exit ends
-  that activity; a missing completion expires after 12 hours.
+- **Foreground tools keep their session live between model calls.** splice sees a tool start when
+  a turn ends on tool calls and sees it finish when the client's next request carries the result,
+  so a long tool does not make the session stale just because no request reached the model. No
+  client hook is installed for it: a head's settings lose the foreground hook an earlier launch
+  wrote the next time the head launches, and the two shell, perl and curl runs it cost on every tool
+  call are gone. The result's request, session end or process exit ends that activity; a result
+  that never comes expires after 12 hours.
 - **`splice setup` can hand an NVIDIA card to rig.** On Linux x86_64 with a card nvidia-smi can
   name, an interactive setup asks (default no) whether to run a local model through
   [rig](https://github.com/torad-labs/rig): rig installs into `~/.local/share/rig`, downloads

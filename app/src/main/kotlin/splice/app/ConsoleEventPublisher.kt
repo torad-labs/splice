@@ -11,6 +11,7 @@ import splice.sessions.activity.MessageEdge
 import splice.sessions.activity.NameHolders
 import splice.sessions.activity.RecipientResolution
 import splice.sessions.prompt.SlotInstructions
+import splice.sessions.registry.ForegroundTools
 import splice.sessions.registry.HeadOfSession
 import splice.sessions.registry.SessionsHeard
 import splice.usage.budgets.BudgetEnforcement
@@ -32,6 +33,10 @@ internal class ConsoleEventPublisher(
     /** V4-252: who holds a SendMessage name as its edge is stored, so the edge keeps the session that
      *  held it then. Null (tests, tools) stores every name with none. */
     internal val names: NameHolders? = null,
+    /** 2026-10-19: the tools a session is inside, from the wire: a turn that ends clean on tool calls opens them
+     *  and the next request answers them, so a session inside one long tool stays heard without any client hook.
+     *  Null (tests, tools) tracks none. */
+    private val foreground: ForegroundTools? = null,
 ) {
     /** V4-239: every head's wire tap, registered by HeadServerFactory as it builds the head and read by
      *  GET /api/heads/{head}/wire. Here for the reason [slots] is: this is the one console object every
@@ -100,6 +105,14 @@ internal class ConsoleEventPublisher(
 
         override fun labelQueryUpstream(session: String?) {
             if (session != null) stores?.activity?.upstream(session, head, clock())
+        }
+
+        override fun toolsOpened(session: String, toolUseIds: List<String>) {
+            foreground?.opened(session, toolUseIds)
+        }
+
+        override fun toolsClosed(session: String, toolUseIds: List<String>) {
+            foreground?.answered(session, toolUseIds)
         }
 
         /** Records [session]'s turn on this head, now. */

@@ -142,19 +142,6 @@ internal object HookScriptFiles {
         }
     }
 
-    /** Exec-form arguments stay literal even when the generated script path contains shell characters. */
-    fun asyncHookEntry(script: Path, phase: String): JsonObject = buildJsonObject {
-        putJsonArray("hooks") {
-            addJsonObject {
-                put("type", COMMAND)
-                put(COMMAND, script.toString())
-                putJsonArray("args") { add(kotlinx.serialization.json.JsonPrimitive(phase)) }
-                put("async", true)
-                put("timeout", 2)
-            }
-        }
-    }
-
     /** [matcher] narrows the event (SessionStart matches its `source`: startup, resume, clear, compact);
      *  null registers for every occurrence, as the login hooks do. */
     fun hookEntry(script: Path, timeoutSeconds: Int, matcher: String? = null): JsonObject = buildJsonObject {

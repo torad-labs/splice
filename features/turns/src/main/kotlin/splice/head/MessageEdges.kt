@@ -14,10 +14,15 @@
 //
 // NO TEXT, ever: `to` and the tool_use id are all that leave this class. The `message` field stays in
 // the transcript.
+//
+// The same request side tells the console when a session's tools are done (2026-10-19): the client answers
+// every tool call of an assistant turn in the next user message, so the ids on its tool_result blocks are the
+// calls that finished, however long they ran. Only ids leave, here as well.
 package splice.head
 
 import kotlinx.serialization.json.JsonPrimitive
 import splice.core.wire.AnthropicRequest
+import splice.core.wire.ContentBlock.ToolResultBlock
 import splice.core.wire.ContentBlock.ToolUseBlock
 
 /** How many tool_use ids are remembered. A call is re-sent only while it is the last assistant
@@ -25,6 +30,7 @@ import splice.core.wire.ContentBlock.ToolUseBlock
 private const val REMEMBERED_CALLS = 4096
 private const val SEND_MESSAGE = "SendMessage"
 private const val ROLE_ASSISTANT = "assistant"
+private const val ROLE_USER = "user"
 
 internal class MessageEdges(private val events: HeadEvents) {
     private val seen = LinkedHashSet<String>()
@@ -40,6 +46,17 @@ internal class MessageEdges(private val events: HeadEvents) {
             val to = (call.input["to"] as? JsonPrimitive)?.takeIf { it.isString }?.content?.takeIf { it.isNotBlank() }
             if (to != null && firstSight(call.id)) events.messageSent(session, to, call.id)
         }
+    }
+
+    /** Reports the tool calls the request's last user message answers. A request without a session header reports
+     *  nothing: the console files tools under a session. */
+    fun answered(sessionId: String?, request: AnthropicRequest) {
+        val session = sessionId ?: return
+        val ids = request.messages.lastOrNull { it.role == ROLE_USER }?.content.orEmpty()
+            .filterIsInstance<ToolResultBlock>()
+            .map { it.toolUseId }
+            .filter { it.isNotEmpty() }
+        if (ids.isNotEmpty()) events.toolsClosed(session, ids)
     }
 
     private fun firstSight(id: String): Boolean = synchronized(seen) {

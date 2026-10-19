@@ -15,7 +15,14 @@ private const val MAX_FOREGROUND_SESSIONS = 1024
 // why: cap concurrent calls and completion tombstones independently of how many sessions share the daemon.
 private const val MAX_FOREGROUND_CALLS = 4096
 
-/** An active opaque tool keeps its session heard until completion, expiry, session end or process exit. */
+// why: the daemon sees tools on its own wire; an owner no launch can hold (launch owners are 36 characters wide).
+private const val DAEMON_OWNER = "daemon"
+
+/** An active opaque tool keeps its session heard until completion, expiry, session end or process exit.
+ *
+ *  Two sources feed it. The daemon's own wire is the one that stays: a turn the client received whole, ending on tool
+ *  calls, opens them ([opened]), and the client's next request answers them ([answered]). The launch hooks' callbacks
+ *  ([record]) are what sessions started before the wire source existed still send, until those sessions end. */
 public class ForegroundTools(
     private val clock: WallClock = WallClock { System.currentTimeMillis() },
     private val expiresAfterMs: Long = FOREGROUND_EXPIRY_MS,
@@ -41,9 +48,35 @@ public class ForegroundTools(
             }
             ForegroundToolPhase.SESSION_END -> ended(call, at)
             ForegroundToolPhase.START, ForegroundToolPhase.END -> {
-                call.toolUseId?.let { tool(call, it, at) }
+                val start = call.phase == ForegroundToolPhase.START
+                call.toolUseId?.let { tool(ToolKey(call.sessionId, it), call.owner, start, at) }
             }
         }
+        bound()
+    }
+
+    /** A turn of [sessionId] ended clean on these tool calls: the session is inside them until a request answers. */
+    @Synchronized
+    public fun opened(sessionId: String, toolUseIds: List<String>) {
+        wire(sessionId, toolUseIds, start = true)
+    }
+
+    /** A request of [sessionId] carried these tools' results. A result that arrives before the end of its own turn is
+     *  recorded as a completed id, so that end, running a moment later, cannot open it again. */
+    @Synchronized
+    public fun answered(sessionId: String, toolUseIds: List<String>) {
+        wire(sessionId, toolUseIds, start = false)
+    }
+
+    private fun wire(sessionId: String, toolUseIds: List<String>, start: Boolean) {
+        val at = clock()
+        expire(at)
+        // A client that sends a request or receives a whole answer is running now, so a session this daemon had closed
+        // (its process gone, then the same id resumed in another) is open again.
+        if (sessions[sessionId]?.closed == true) {
+            sessions[sessionId] = Session(DAEMON_OWNER, at, closed = false, touched = at)
+        }
+        toolUseIds.forEach { tool(ToolKey(sessionId, it), null, start, at) }
         bound()
     }
 
@@ -56,19 +89,21 @@ public class ForegroundTools(
         }
     }
 
-    private fun tool(call: ForegroundToolCall, toolUseId: String, at: Long) {
-        val sessionId = call.sessionId
-        val phase = call.phase
-        val session = sessions.getOrPut(sessionId) { Session(call.owner, null, closed = false, touched = at) }
-        if (session.closed || session.owner != call.owner) return
-        val key = ToolKey(sessionId, toolUseId)
+    /** [owner] is the launch a hook callback came from; null is the daemon's own wire, which any session answers to. */
+    private fun tool(key: ToolKey, owner: String?, start: Boolean, at: Long) {
+        val sessionId = key.sessionId
+        val held = owner ?: DAEMON_OWNER
+        val session = sessions.getOrPut(sessionId) { Session(held, null, closed = false, touched = at) }
+        if (session.closed) return
+        if (owner != null && session.owner != owner) return
         val previous = calls[key]
         // Duplicate starts do not renew a missing-end lease. Completed ids are tombstones for
-        // an END that arrives before START, because command hooks execute asynchronously.
+        // an END that arrives before START, because command hooks execute asynchronously, and for
+        // a request that answers a call before its own turn's end has been recorded.
         previous?.let {
-            if (phase == ForegroundToolPhase.START || !it.active) return
+            if (start || !it.active) return
         }
-        calls[key] = Call(at, active = phase == ForegroundToolPhase.START)
+        calls[key] = Call(at, active = start)
         session.heard = at
         session.touched = at
         sessions.remove(sessionId)

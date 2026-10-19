@@ -84,7 +84,7 @@ internal object ResumeHook {
             val authHeader = target.authHeader.current()
             val body = script(target.controlPort, authHeader, headKey)
             val script = HookScriptFiles.writeHookScript(configDir, RESUME_HOOK_SH, body, chmod)
-            ForegroundHook.install(configDir, target.controlPort, authHeader, headKey, chmod) + mapOf(
+            mapOf(
                 HookScriptFiles.SESSION_START to listOf(
                     HookScriptFiles.hookEntry(script, HookScriptFiles.HOOK_TIMEOUT_SECONDS, matcher = RESUME_SOURCE),
                     HookScriptFiles.hookEntry(script, HookScriptFiles.HOOK_TIMEOUT_SECONDS, matcher = STARTUP_SOURCE),

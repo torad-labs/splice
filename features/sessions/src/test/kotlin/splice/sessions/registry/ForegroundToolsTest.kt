@@ -174,4 +174,43 @@ class ForegroundToolsTest {
         record(SESSION, "late-tool", ForegroundToolPhase.START)
         assertEquals(SessionAvailability.STALE, availability(registry))
     }
+
+    @Test
+    fun `a session inside a wire tool stays live past the stale window until a request answers every call`(
+        @TempDir dir: Path,
+    ) {
+        val registry = registry(dir)
+        tools.opened(SESSION, listOf("tool-a", "tool-b"))
+        now += 45 * MINUTE_MS
+        assertEquals(SessionAvailability.LIVE, availability(registry))
+        tools.answered(SESSION, listOf("tool-a"))
+        now += 31 * MINUTE_MS
+        assertEquals(SessionAvailability.LIVE, availability(registry), "one of the two parallel calls still runs")
+        tools.answered(SESSION, listOf("tool-b"))
+        now += 31 * MINUTE_MS
+        assertEquals(SessionAvailability.STALE, availability(registry))
+    }
+
+    @Test
+    fun `a request that answers a call before its own turn's end is recorded cannot be reopened by that end`(
+        @TempDir dir: Path,
+    ) {
+        val registry = registry(dir)
+        tools.answered(SESSION, listOf("tool-a"))
+        now += 45 * MINUTE_MS
+        tools.opened(SESSION, listOf("tool-a"))
+        assertEquals(SessionAvailability.STALE, availability(registry))
+    }
+
+    @Test
+    fun `a session closed when its process went away is open again when the same id runs a tool`(@TempDir dir: Path) {
+        val registry = registry(dir)
+        tools.opened(SESSION, listOf("tool-a"))
+        alive = false
+        assertEquals(SessionAvailability.GONE, availability(registry))
+        alive = true
+        tools.opened(SESSION, listOf("tool-b"))
+        now += 45 * MINUTE_MS
+        assertEquals(SessionAvailability.LIVE, availability(registry))
+    }
 }

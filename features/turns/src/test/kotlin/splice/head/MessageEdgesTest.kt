@@ -26,6 +26,10 @@ private class Edges : HeadEvents {
     override fun activityLabel(session: String?, action: ActivityAction): Unit = Unit
 
     override fun labelQueryUpstream(session: String?): Unit = Unit
+
+    override fun toolsOpened(session: String, toolUseIds: List<String>): Unit = Unit
+
+    override fun toolsClosed(session: String, toolUseIds: List<String>): Unit = Unit
 }
 
 class MessageEdgesTest {

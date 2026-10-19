@@ -127,7 +127,7 @@ internal class WireBlockOpens(
         )
 
     override suspend fun openTool(id: String, name: String): WireBlockIndex {
-        facts?.noteTool()
+        facts?.noteTool(id)
         return openBlock(
             buildJsonObject {
                 put(TYPE, "tool_use")

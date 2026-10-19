@@ -73,6 +73,9 @@ private const val POLL_MS = 20L
 private class RecordingEvents : HeadEvents {
     val calls = CopyOnWriteArrayList<String>()
 
+    /** The tool opens and answers a head reported, apart from [calls] so the turn lines stay the turn's own. */
+    val tools = CopyOnWriteArrayList<String>()
+
     override fun turnStarted(session: String?) {
         calls.add("start $session")
     }
@@ -91,6 +94,14 @@ private class RecordingEvents : HeadEvents {
 
     override fun labelQueryUpstream(session: String?) {
         calls.add("upstream $session")
+    }
+
+    override fun toolsOpened(session: String, toolUseIds: List<String>) {
+        tools.add("open $session $toolUseIds")
+    }
+
+    override fun toolsClosed(session: String, toolUseIds: List<String>) {
+        tools.add("closed $session $toolUseIds")
     }
 
     fun turnCalls(): List<String> = calls.toList()

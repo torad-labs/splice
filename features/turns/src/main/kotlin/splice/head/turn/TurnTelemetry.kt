@@ -176,7 +176,16 @@ internal class TurnTelemetry(
         // V4-134: the turn's end goes to the console only once its row exists, carrying that row's
         // key, so the stream never names a row /api/perf/turns has not been handed.
         events.turnEnded(rowTs.toString(), outcomeTag, drive.meta.scope.sessionId)
+        toolsOpened(drive)
         spend.spend(rowTs, drive.upstreamModel, snap.counters, accountLabel, outcomeTag)
+    }
+
+    /** A whole answer that ends on tool calls leaves its session inside them until the client's next request carries
+     *  their results, however long they run: the console holds the session heard until then. */
+    private fun toolsOpened(drive: TurnDrive) {
+        val tools = drive.perf.wire.toolUseIds
+        val session = drive.meta.scope.sessionId ?: return
+        if (tools.isNotEmpty() && drive.emitter.endedCleanly) events.toolsOpened(session, tools)
     }
 
     private fun billingSnapshot(drive: TurnDrive): PerfSnapshot {

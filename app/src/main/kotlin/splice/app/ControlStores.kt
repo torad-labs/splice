@@ -45,5 +45,7 @@ internal class ControlStores(
         budgets = ConsoleWiring.budgetEnforcement(perfRows, budgets, alerts, probeScope, daemon.log),
         // V4-252: a SendMessage name is stored with the session holding it then (ConsoleActivityPublishTest).
         names = ConsoleWiring.nameHolders(daemon.statePaths),
+        // 2026-10-19: the tools a session is inside, read from the wire, feed the registry's heard-from time.
+        foreground = foregroundTools,
     )
 }

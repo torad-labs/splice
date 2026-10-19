@@ -1,4 +1,4 @@
-// NEW: generated foreground hooks coexist with user hooks and never control tool execution.
+// NEW: user hooks keep their order through a head's settings, and the retired foreground hook's entries are stripped.
 package splice.client.resume
 
 import kotlinx.serialization.json.Json
@@ -10,8 +10,6 @@ import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
 import kotlinx.serialization.json.put
 import org.junit.jupiter.api.Assertions.assertEquals
-import org.junit.jupiter.api.Assertions.assertFalse
-import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.io.TempDir
 import splice.client.ClaudeConfigMaterializer
@@ -21,124 +19,8 @@ import splice.client.MaterializeSignIn
 import splice.client.MaterializeSpec
 import java.nio.file.Files
 import java.nio.file.Path
-import java.nio.file.attribute.PosixFilePermissions
-import java.util.concurrent.TimeUnit
 
 class ForegroundHookTest {
-    @Test
-    fun `each tool phase and session end register as a bounded async command`(@TempDir dir: Path) {
-        val additions = ResumeHook.install(dir, ResumeHookTarget(3096) { dir.resolve("synthetic-header") }, "synthetic")
-        for (event in listOf("PreToolUse", "PostToolUse", "PostToolUseFailure", "SessionEnd")) {
-            val entries = additions[event]
-            assertTrue(!entries.isNullOrEmpty(), "missing $event callback")
-            val hook = entries.orEmpty().single()["hooks"]!!.jsonArray.single().jsonObject
-            assertEquals("command", hook["type"]!!.jsonPrimitive.content)
-            assertEquals("true", hook["async"]!!.jsonPrimitive.content)
-            assertEquals("2", hook["timeout"]!!.jsonPrimitive.content)
-            assertEquals(1, hook["args"]!!.jsonArray.size)
-        }
-    }
-
-    private fun runHook(dir: Path, input: String, phase: String = "start"): JsonObject? {
-        Files.createDirectories(dir)
-        val bin = Files.createDirectories(dir.resolve("bin"))
-        val body = dir.resolve("body")
-        val argv = dir.resolve("argv")
-        val curl = bin.resolve("curl")
-        Files.writeString(
-            curl,
-            "#!/usr/bin/env bash\ncat > \"${'$'}FOREGROUND_BODY\"\n" +
-                "printf '%s\\n' \"${'$'}@\" > \"${'$'}FOREGROUND_ARGV\"\nexit 23\n",
-        )
-        Files.setPosixFilePermissions(curl, PosixFilePermissions.fromString("rwx------"))
-        val header = dir.resolve("synthetic 'header")
-        Files.writeString(header, "Authorization: Bearer synthetic\n")
-        val script = dir.resolve(ForegroundHook.SCRIPT)
-        Files.writeString(script, ForegroundHook.script(3096, header, "synthetic"))
-        val process = ProcessBuilder("bash", script.toString(), phase).apply {
-            environment()["PATH"] = "$bin:${System.getenv("PATH")}"
-            environment()["SPLICE_FOREGROUND_OWNER"] = "11111111-0000-4000-8000-000000000001"
-            environment()["FOREGROUND_BODY"] = body.toString()
-            environment()["FOREGROUND_ARGV"] = argv.toString()
-        }.start()
-        process.outputStream.use { it.write(input.toByteArray()) }
-        assertTrue(process.waitFor(5, TimeUnit.SECONDS), "hook terminates within its own deadlines")
-        assertEquals(0, process.exitValue(), "even a failed curl cannot block a tool")
-        assertEquals("", process.inputStream.bufferedReader().readText())
-        assertEquals("", process.errorStream.bufferedReader().readText())
-        if (!Files.exists(body)) return null
-        val args = Files.readString(argv)
-        assertTrue(args.contains("@$header"), "the existing header-file auth is retained")
-        assertFalse(args.contains("Bearer"), "no credential enters argv")
-        return Json.parseToJsonElement(Files.readString(body)).jsonObject
-    }
-
-    @Test
-    fun `the executed script sends only opaque top-level ids and phase even for large tool contents`(
-        @TempDir dir: Path,
-    ) {
-        val input = buildJsonObject {
-            put("tool_name", "synthetic-private-tool")
-            put(
-                "tool_input",
-                buildJsonObject {
-                    put("session_id", "nested-spoof")
-                    put("command", "x".repeat(4 * 1024 * 1024))
-                },
-            )
-            put("prompt", "synthetic-private-prompt")
-            put("tool_response", "synthetic-private-result")
-            put("tool_use_id", "tool-123")
-            put("session_id", "synthetic-session")
-        }.toString()
-        assertEquals(
-            Json.parseToJsonElement("""{"session_id":"synthetic-session","tool_use_id":"tool-123","phase":"start"}"""),
-            runHook(dir, input),
-        )
-    }
-
-    @Test
-    fun `malformed nested numeric and missing identities never send a callback`(@TempDir dir: Path) {
-        val cases = listOf(
-            """{"session_id":"synthetic-session","tool_use_id":"tool-1" """,
-            """[{"session_id":"synthetic-session","tool_use_id":"tool-1"}]""",
-            """{"tool_input":{"session_id":"nested","tool_use_id":"nested"}}""",
-            """{"session_id":123,"tool_use_id":"tool-1"}""",
-            """{"session_id":"synthetic-session","tool_use_id":123}""",
-            """{"session_id":"synthetic-session","tool_use_id":""}""",
-            """{"session_id":"synthetic-session","tool_use_id":null}""",
-            """{"session_id":"synthetic-session","tool_use_id":"tool-1"} trailing""",
-        )
-        cases.forEachIndexed { index, input -> assertEquals(null, runHook(dir.resolve("case-$index"), input)) }
-    }
-
-    @Test
-    fun `opaque ids never become shell words even when they contain punctuation`(@TempDir dir: Path) {
-        val tool = "tool:'\"/;${'$'}(printf synthetic)"
-        val input = buildJsonObject {
-            put("session_id", "synthetic-session")
-            put("tool_use_id", tool)
-        }
-        val expected = buildJsonObject {
-            put("session_id", "synthetic-session")
-            put("tool_use_id", tool)
-            put("phase", "start")
-        }
-        assertEquals(expected, runHook(dir, input.toString()))
-    }
-
-    @Test
-    fun `quoted numeric ids unicode escapes and session-end omission stay typed`(@TempDir dir: Path) {
-        assertEquals(
-            Json.parseToJsonElement("""{"session_id":"123456789012","tool_use_id":"tool-1","phase":"end"}"""),
-            runHook(dir.resolve("end"), """{"session_id":"123456789012","tool_use_id":"tool-1"}""", "end"),
-        )
-        assertEquals(
-            Json.parseToJsonElement("""{"session_id":"synthetic-session","tool_use_id":null,"phase":"session_end"}"""),
-            runHook(dir.resolve("closed"), """{"session_id":"synthetic-session"}""", "session_end"),
-        )
-    }
-
     @Test
     fun `an interrupted settings swap chooses the matching hook origins`() {
         val before = Json.parseToJsonElement("""{"PreToolUse":["local","old"]}""")
@@ -325,18 +207,20 @@ class ForegroundHookTest {
     }
 
     @Test
-    fun `materialization preserves both global and local user hook order without accumulating generated hooks`(
+    fun `materialization keeps user hooks in order and strips the retired foreground hook an earlier install wrote`(
         @TempDir home: Path,
     ) {
         val global = Files.createDirectories(home.resolve(".claude"))
         val head = Files.createDirectories(home.resolve(".claude-synthetic"))
+        val retired = head.resolve(ForegroundHook.SCRIPT)
         val globalHooks = """{"hooks":{"PreToolUse":[{"matcher":"Read","hooks":[""" +
             """{"type":"command","command":"user-global-one"},""" +
             """{"type":"command","command":"user-global-two"}]}]}}"""
         val localHooks = """{"hooks":{"PreToolUse":[{"matcher":"Write","hooks":[""" +
             """{"type":"command","command":"user-local-one"},""" +
             """{"type":"command","command":"user-local-two"}]}],""" +
-            """"PostToolUse":[{"hooks":[{"type":"command","command":"splice-foreground-hook.sh.user"}]}]}}"""
+            """"PostToolUse":[{"hooks":[{"type":"command","command":"splice-foreground-hook.sh.user"}]},""" +
+            """{"hooks":[{"type":"command","command":"$retired","async":true,"timeout":2}]}]}}"""
         Files.writeString(global.resolve("settings.json"), globalHooks)
         Files.writeString(head.resolve("settings.json"), localHooks)
         val materializer =
@@ -362,11 +246,13 @@ class ForegroundHookTest {
         val globalPre = Json.parseToJsonElement(
             globalHooks,
         ).jsonObject["hooks"]!!.jsonObject["PreToolUse"]!!.jsonArray.single()
-        assertEquals(listOf(localPre, globalPre), first["PreToolUse"]!!.jsonArray.dropLast(1))
+        assertEquals(listOf(localPre, globalPre), first["PreToolUse"]!!.jsonArray.toList())
         assertEquals(
-            Json.parseToJsonElement(localHooks).jsonObject["hooks"]!!.jsonObject["PostToolUse"]!!.jsonArray.single(),
-            first["PostToolUse"]!!.jsonArray.first(),
+            Json.parseToJsonElement(localHooks).jsonObject["hooks"]!!.jsonObject["PostToolUse"]!!.jsonArray.first(),
+            first["PostToolUse"]!!.jsonArray.single(),
+            "the user's own PostToolUse hook stays and the retired foreground entry is gone",
         )
+        assertEquals(null, first["SessionEnd"], "no head registers a foreground callback on session end")
         materializer.materialize(spec)
         val second = Json.parseToJsonElement(Files.readString(head.resolve("settings.json"))).jsonObject["hooks"]
         assertEquals(first, second, "generated callbacks are replaced in place, never duplicated")

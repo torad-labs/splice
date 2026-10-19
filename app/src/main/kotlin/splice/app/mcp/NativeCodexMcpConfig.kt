@@ -5,6 +5,7 @@ import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonNull
 import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
 import splice.core.config.StatePaths
@@ -126,7 +127,7 @@ internal class NativeCodexMcpConfig(paths: StatePaths) {
             is JsonObject ->
                 hasBearerHeaderKey(element) || element.values.any { value -> containsBearerHeaders(value) }
             is JsonArray -> element.any { value -> containsBearerHeaders(value) }
-            else -> false
+            is JsonPrimitive -> false
         }
 
     private fun hasBearerHeaderKey(objectValue: JsonObject): Boolean =

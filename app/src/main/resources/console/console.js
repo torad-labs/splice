@@ -2,7 +2,7 @@
 "use strict";
 
 const CONSOLE = (() => {
-  const sections = new Map(), scripts = new Map(), templates = new Map();
+  const sections = new Map(), scripts = new Map(), templates = new Map(), sheets = new Map();
   let mounted = null, generation = 0;
   const fileOf = (url) => PAGES.find(([file]) => url.pathname.endsWith(`/${file}`))?.[0];
 
@@ -101,6 +101,8 @@ const CONSOLE = (() => {
     scope.KNOBS = createKnobs(scope);
     return {
       scope,
+      // Leaving a page cancels its requests at the click, so the next page never queues behind them.
+      leave() { abort.abort(); },
       dispose() {
         active = false; abort.abort();
         for (const id of timers) window.clearTimeout(id);
@@ -116,7 +118,7 @@ const CONSOLE = (() => {
 
   function template(doc) {
     const main = doc.querySelector("main.page");
-    if (!main) throw new Error("This section has no content");
+    if (!main) throw new Error("This page has no content");
     return {
       title: doc.title, main: main.cloneNode(true),
       extras: [...doc.body.children].filter((el) => !el.matches(".app,script")).map((el) => el.cloneNode(true)),
@@ -134,28 +136,26 @@ const CONSOLE = (() => {
         const script = document.createElement("script");
         script.src = file.replace(/\.html$/, ".js");
         script.onload = () => resolve();
-        script.onerror = () => { scripts.delete(file); script.remove(); reject(new Error("Section could not load")); };
+        script.onerror = () => { scripts.delete(file); script.remove(); reject(new Error("Page could not load")); };
         document.body.append(script);
       }));
       await scripts.get(file);
     }
-    if (!sections.has(file)) throw new Error("Section did not initialize");
+    if (!sections.has(file)) throw new Error("Page did not start");
     return templates.get(file);
   }
-  async function styles(css) {
-    const links = css.map((href) => {
+  // Each page stylesheet loads once and stays in the head, switched on only while its page is shown.
+  function sheet(href) {
+    if (!sheets.has(href)) sheets.set(href, new Promise((resolve, reject) => {
       const link = document.createElement("link");
-      link.rel = "stylesheet"; link.href = href; link.media = "not all";
-      return link;
-    });
-    try {
-      await Promise.all(links.map((link) => new Promise((resolve, reject) => {
-        link.onload = resolve; link.onerror = () => reject(new Error("Section styles could not load"));
-        document.head.append(link);
-      })));
-      return links;
-    } catch (error) { links.forEach((link) => link.remove()); throw error; }
+      link.rel = "stylesheet"; link.href = href; link.media = "not all"; link.dataset.consoleSection = "";
+      link.onload = () => resolve(link);
+      link.onerror = () => { sheets.delete(href); link.remove(); reject(new Error("Page styles could not load")); };
+      document.head.append(link);
+    }));
+    return sheets.get(href);
   }
+  const styles = (css) => Promise.all(css.map(sheet));
   function select(file, title) {
     document.title = title;
     for (const link of document.querySelectorAll(".side .nav a")) {
@@ -173,31 +173,29 @@ const CONSOLE = (() => {
     if (url.origin !== location.origin || !file) { location.href = url.href; return; }
     if (url.href === location.href && mounted?.file === file && !options.restore) return;
     const ticket = ++generation;
-    let links = [];
+    mounted?.leave();
     try {
       const next = await load(file);
       if (ticket !== generation) return;
-      links = await styles(next.css);
-      if (ticket !== generation) { links.forEach((link) => link.remove()); return; }
+      const links = await styles(next.css);
+      if (ticket !== generation) return;
       const previous = mounted, main = next.main.cloneNode(true), extras = next.extras.map((node) => node.cloneNode(true));
       previous.dispose();
       previous.main.replaceWith(main);
       document.body.append(...extras);
-      for (const link of document.querySelectorAll("link[data-console-section]")) link.remove();
-      for (const link of links) { link.media = "all"; link.dataset.consoleSection = ""; }
+      for (const link of document.querySelectorAll("link[data-console-section]")) link.media = links.includes(link) ? "all" : "not all";
       if (!options.restore) history.pushState(null, "", url.href);
       select(file, next.title);
       window.scrollTo(0, 0);
       mount(file, main, extras);
       if (options.focus !== false) { main.tabIndex = -1; main.focus({ preventScroll: true }); }
     } catch (error) {
-      links.filter((link) => link.media === "not all").forEach((link) => link.remove());
       if (ticket !== generation) return;
       const main = document.querySelector("main.page");
       main.querySelector(".route-error")?.remove();
       const note = document.createElement("p");
       note.className = "route-error empty"; note.setAttribute("role", "alert");
-      note.textContent = `Could not open ${PAGES.find(([f]) => f === file)?.[1] || "section"}: ${error.message}. Try the link again.`;
+      note.textContent = `Could not open ${PAGES.find(([f]) => f === file)?.[1] || "page"}: ${error.message}. Try the link again.`;
       main.prepend(note);
     }
   }
@@ -216,7 +214,9 @@ const CONSOLE = (() => {
     const file = fileOf(new URL(location.href)) || "accounts.html";
     templates.set(file, template(document));
     for (const link of document.querySelectorAll('link[rel="stylesheet"]')) {
-      if (link.getAttribute("href") !== "console.css") link.dataset.consoleSection = "";
+      if (link.getAttribute("href") === "console.css") continue;
+      link.dataset.consoleSection = "";
+      sheets.set(link.getAttribute("href"), Promise.resolve(link));
     }
     const extras = [...document.body.children].filter((el) => !el.matches(".app,script"));
     mount(file, document.querySelector("main.page"), extras);

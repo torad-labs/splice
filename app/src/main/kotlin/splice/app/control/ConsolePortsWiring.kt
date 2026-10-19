@@ -1,9 +1,11 @@
 // Console route ports and their app-side adapters, assembled after the control server is constructed.
-package splice.app
+package splice.app.control
 
+import splice.app.AddWiring
+import splice.app.DoctorWiring
+import splice.app.LifecycleWiring
 import splice.app.auth.ConsoleAccountsImpl
 import splice.app.console.DrainingRestartAdapter
-import splice.app.control.ControlServer
 import splice.app.daemon.BootedTopology
 import splice.core.config.KeyStore
 import splice.core.config.KeyStorePath

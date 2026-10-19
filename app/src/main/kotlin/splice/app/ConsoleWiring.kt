@@ -2,6 +2,7 @@
 package splice.app
 
 import kotlinx.coroutines.CoroutineScope
+import splice.app.control.ConsolePortsWiring
 import splice.app.control.ControlServer
 import splice.app.daemon.BootedTopology
 import splice.app.sources.mcp.McpSessionsByPid

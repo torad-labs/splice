@@ -163,7 +163,7 @@ private const val SAMPLE_INTERVAL_MS = 30_000L
 /** How many sessions' last sample a head remembers; a session past it is sampled again at once. Its
  *  own name: the 4096-session caps in ConsoleWiring and SlotInstructions bound other maps (V4-88). */
 private const val ACTIVITY_SESSIONS_REMEMBERED = 512
-private const val ROLE_USER = "user"
+internal const val ROLE_USER = "user"
 private const val ROLE_ASSISTANT = "assistant"
 private const val MCP_PREFIX = "mcp__"
 private const val MAX_ARG_CHARS = 32

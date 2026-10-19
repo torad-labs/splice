@@ -30,7 +30,6 @@ import splice.core.wire.ContentBlock.ToolUseBlock
 private const val REMEMBERED_CALLS = 4096
 private const val SEND_MESSAGE = "SendMessage"
 private const val ROLE_ASSISTANT = "assistant"
-private const val ROLE_USER = "user"
 
 internal class MessageEdges(private val events: HeadEvents) {
     private val seen = LinkedHashSet<String>()

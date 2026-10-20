@@ -5,6 +5,7 @@
 package splice.sessions.peer.webhook
 
 import kotlinx.coroutines.future.await
+import kotlinx.coroutines.withTimeoutOrNull
 import splice.core.GATEWAY_VERSION
 import splice.core.util.Cancellables
 import splice.core.util.SafeFailureText
@@ -27,7 +28,9 @@ import java.util.concurrent.TimeUnit
 private const val PEER_WEBHOOK_TIMEOUT_SECONDS = 10L
 
 // why: the answer is read to 1 KiB at most, which holds the 300 characters kept as the detail.
-private const val PEER_WEBHOOK_BODY_BYTES = 1024L
+private const val PEER_WEBHOOK_BODY_BYTES = 1024
+
+private const val PEER_WEBHOOK_TIMED_OUT = "the receiver did not answer in time"
 
 // why: spec 4.4, the first 300 characters of the receiver's answer are kept as the detail of a failed push.
 private const val PEER_WEBHOOK_DETAIL_CHARS = 300
@@ -99,12 +102,19 @@ internal class WebhookSender(
             .followRedirects(HttpClient.Redirect.NEVER)
             .connectTimeout(Duration.ofSeconds(PEER_WEBHOOK_TIMEOUT_SECONDS))
             .build()
-        val handler = HttpResponse.BodyHandlers.limiting(HttpResponse.BodyHandlers.ofString(), PEER_WEBHOOK_BODY_BYTES)
+        val handler = BoundedBody(PEER_WEBHOOK_BODY_BYTES)
+        val patience = TimeUnit.SECONDS.toMillis(PEER_WEBHOOK_TIMEOUT_SECONDS)
         return client.use { open ->
-            Cancellables.runCatchingCancellable { reply(open.sendAsync(plan.request, handler).await(), plan.hidden) }
-                .getOrElse { failure -> WebhookPusher.Attempt.Failed(null, describe(failure), true) }
+            Cancellables.runCatchingCancellable {
+                withTimeoutOrNull(patience) { open.sendAsync(plan.request, handler).await() }
+            }.fold(
+                onSuccess = { answer -> answer?.let { reply(it, plan.hidden) } ?: timedOut() },
+                onFailure = { failure -> WebhookPusher.Attempt.Failed(null, describe(failure), true) },
+            )
         }
     }
+
+    private fun timedOut(): WebhookPusher.Attempt = WebhookPusher.Attempt.Failed(null, PEER_WEBHOOK_TIMED_OUT, true)
 
     private fun reply(response: HttpResponse<String>, hidden: List<String>): WebhookPusher.Attempt {
         val status = response.statusCode()
@@ -119,7 +129,7 @@ internal class WebhookSender(
         status in transientStatuses || status >= HttpStatus.INTERNAL_SERVER_ERROR
 
     private fun describe(failure: Throwable): String = when (failure) {
-        is HttpTimeoutException -> "the receiver did not answer in time"
+        is HttpTimeoutException -> PEER_WEBHOOK_TIMED_OUT
         is ConnectException -> "could not connect to the receiver"
         else -> SafeFailureText.render(failure)
     }

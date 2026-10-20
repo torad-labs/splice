@@ -117,7 +117,7 @@ public class McpLaunchPlanner(
 
     /** Every `.mcp.json` from the filesystem root down to [folder], the nearer file winning a name. */
     private fun repoServers(folder: Path): List<McpPlannedServer> =
-        generateSequence(folder) { it.parent }.takeWhile { it.parent != null }.toList().asReversed()
+        generateSequence(folder) { it.parent }.toList().asReversed()
             .flatMap { dir -> dir.resolve(MCP_JSON_FILE).let { servers(McpPlanScope.PROJECT, it, json.topLevel(it)) } }
             .associateBy { it.name }.values.toList()
 

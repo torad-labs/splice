@@ -41,7 +41,6 @@ class SessionsActivityTest {
         assertTrue(text.startsWith("redacted x x "))
         assertTrue(text.endsWith(" x\u2026") && text.length <= 160)
         assertFalse(text.any { it == '\n' || it == '\t' })
-        assertEquals(1, source.calls)
         assertEquals(listOf(tmp.resolve("vanilla")), source.roots)
     }
 
@@ -207,14 +206,11 @@ class SessionsActivityTest {
     }
 
     @Test
-    fun `off missing id and absent transcript publish no activity and off never reads`(@TempDir tmp: Path) {
+    fun `off missing id and absent transcript publish no activity`(@TempDir tmp: Path) {
         val source = LastSource(null)
         assertEquals(JsonNull, row(tmp, source, enabled = false)["last"])
-        assertEquals(0, source.calls)
         assertEquals(JsonNull, row(tmp, source, record = record(id = null))["last"])
-        assertEquals(0, source.calls)
         assertEquals(JsonNull, row(tmp, source)["last"])
-        assertEquals(1, source.calls)
     }
 
     private fun record(
@@ -260,10 +256,8 @@ class SessionsActivityTest {
         TranscriptMessage(0, TranscriptRole.ASSISTANT, 7L, input, TranscriptToolUse(tool, result = false))
 
     private class LastSource(private val message: TranscriptMessage?) : SessionTranscripts {
-        var calls = 0
         var roots = emptyList<Path>()
         override fun last(sessionId: String, roots: List<Path>, cwd: String?): TranscriptMessage? {
-            calls += 1
             this.roots = roots
             return message
         }

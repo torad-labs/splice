@@ -198,6 +198,6 @@ internal object PeerWire {
             (block as? JsonObject)?.takeIf { JsonScalars.str(it, "type") == "text" }
                 ?.let { JsonScalars.str(it, "text") }
         }.takeIf { it.isNotEmpty() }?.joinToString("")
-        else -> null
+        is JsonObject, null -> null
     }
 }

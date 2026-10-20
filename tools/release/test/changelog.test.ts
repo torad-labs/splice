@@ -72,6 +72,6 @@ describe("release notes from the CHANGELOG", () => {
     expect(markers).not.toBeInstanceOf(Error);
     const version = (markers as { gateway: string }).gateway;
     const section = releaseNotes(readFileSync(join(repoRoot, "CHANGELOG.md"), "utf8"), version);
-    expect(section, `CHANGELOG.md needs a "## splice v${version}" section: cut it in the bump PR`).not.toBeInstanceOf(Error);
+    expect(section, `CHANGELOG.md needs a "## splice v${version}" section whose notes fit a GitHub release body: cut it in the bump PR`).not.toBeInstanceOf(Error);
   });
 });

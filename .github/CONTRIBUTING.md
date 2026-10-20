@@ -110,7 +110,9 @@ action** — GitHub does the rest, no local command involved:
    `GATEWAY_VERSION`, `app/src/main/dist/bin/splice-launch` `SPLICE_GATEWAY_VERSION`, `package.json`), with
    the `CHANGELOG.md` cut for the release: a `## splice vX.Y.Z: theme - date` section. The gate
    fails a bump without one (`tools/release/test/changelog.test.ts`), and that section is the body
-   of the GitHub release (`bun tools/release notes`).
+   of the GitHub release (`bun tools/release notes`). GitHub refuses a body over 125,000 characters, so a section
+   too long to fit with room for the generated PR list is cut at its `### Added` heading and ends with a link to the
+   full section; the tool, and so the gate, fails when even the cut does not fit.
 2. Open the promotion PR, base `prod`, head `main` — in the UI, or `npm run promote` which
    opens the same PR after a courtesy version preflight. `promotion-check` fails the PR before
    merge if the promoted version is already tagged (a promotion that would release nothing).

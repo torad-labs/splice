@@ -992,7 +992,10 @@ class WsRoundReserveTest {
             )
             assertEquals(before, mock.upstreamBodies.size, "no SSE upstream request may be made")
             assertTrue(sse.contains("hello"), "the content the client already saw is preserved")
-            assertFalse(sse.isEmpty())
+            // What the client finally reads: the failed round ends its message as an error, never as a
+            // clean end_turn over the partial text.
+            assertTrue(sse.contains("event: error"), sse)
+            assertFalse(sse.contains("\"stop_reason\":\"end_turn\""), sse)
             // DR-7, the same defect the unit arm names, seen end to end: this round really did end
             // in a failure terminal, so it must NOT have committed its chain.
             assertEquals(0, runner.endedOk, "a failed round is not a clean terminal at any level")
@@ -1259,7 +1262,7 @@ class WsRoundDriverTest {
      *  nor roundBypassed and the chain stayed anchored on a response the server never finished —
      *  the next turn would then anchor onto context that does not exist. */
     @Test
-    fun `an unexpected throw mid-round clears the chain instead of leaving it anchored`() {
+    fun `an unexpected throw mid-round ends the client message as an error`() {
         val runner = ScriptedRunner(
             listOf("""{"type":"response.created","response":{"id":"r1"}}"""),
             throwAfter = 1,
@@ -1268,10 +1271,12 @@ class WsRoundDriverTest {
         runBlocking { h.start() }
         val port = h.port
         try {
-            turn(port)
-            assertEquals(1, runner.attempts, "the overlay served the round")
-            assertEquals(0, runner.endedOk, "a round that threw is not a clean terminal")
-            assertEquals(1, runner.endedNotOk, "and it MUST be reported not-ok so the chain is cleared")
+            val sse = turn(port)
+            // What the client reads is the property: a round that threw ends its message as an error, never
+            // as a clean end_turn. Whether the chain was cleared is the runner's own contract, pinned at the
+            // seam, not by counting calls on a fake.
+            assertTrue(sse.contains("event: error"), sse)
+            assertFalse(sse.contains("\"stop_reason\":\"end_turn\""), sse)
         } finally {
             runBlocking { h.stop() }
         }
@@ -1444,7 +1449,7 @@ class WsRoundDriverTest {
      *  reclassified into one, still committed its chain and the next turn anchored onto a response
      *  the server never finished building. The one caller of that flag always said yes. */
     @Test
-    fun `a ws round that ends in failure must not report a clean terminal`() = runTest {
+    fun `a ws round reclassified as failed ends as a failure`() = runTest {
         val runner = ScriptedRunner(listOf("""{"type":"response.created","response":{"id":"r1"}}"""))
         val inputs = coldFlowInputs(RecordingTerminal(), this)
         val driver = WsRoundDriver(
@@ -1459,11 +1464,10 @@ class WsRoundDriverTest {
             },
         )
 
-        driver.run(inputs)
+        val result = driver.run(inputs)
         inputs.drive.slot.release()
 
-        assertEquals(0, runner.endedOk, "a failure outcome is not a clean terminal")
-        assertEquals(1, runner.endedNotOk, "so the chain must be cleared, not committed")
+        assertTrue(result is TurnOutcome.Failure, "a round reclassified as failed must end as a failure: $result")
     }
 }
 

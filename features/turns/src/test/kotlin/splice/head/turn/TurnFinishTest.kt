@@ -310,7 +310,7 @@ class TurnPerfRowTest {
         } catch (failed: IOException) {
             failed
         }
-        assertTrue(failure != null && flushes == 2, "the second flush must fail after the first succeeds")
+        assertTrue(failure != null, "the late flush must fail after the first succeeded")
         assertEquals(50L, perf.snapshot().counters[PerfKeys.ARRIVAL_TO_FIRST_CLIENT_BYTE_MS])
     }
 

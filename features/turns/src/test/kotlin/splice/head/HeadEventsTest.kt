@@ -105,6 +105,8 @@ private class RecordingEvents : HeadEvents {
     }
 
     fun turnCalls(): List<String> = calls.toList()
+
+    fun turnsEnded(): Int = calls.count { it.startsWith("end ") }
 }
 
 class HeadEventsTest(@param:TempDir private val root: Path) {
@@ -172,6 +174,12 @@ class HeadEventsTest(@param:TempDir private val root: Path) {
                     rig.events.turnCalls(),
                     "each call reported once; the exact query answered locally with no turn; the near miss " +
                         "served AND counted; one turn sample in the interval",
+                )
+                assertEquals(
+                    List(4) { "closed $SESSION [toolu_a, toolu_b]" },
+                    rig.events.tools.filter { it.startsWith("closed ") },
+                    "every request that carries the two results tells the console those calls are done, " +
+                        "the retry and the locally answered query included",
                 )
             } finally {
                 rig.close()
@@ -245,12 +253,14 @@ private class Rig(root: Path) {
         pool.members.forEach { it.cooldown.markUnavailable(60_000L) }
     }
 
-    /** The perf rows of TURNS the head wrote, as (ts, outcome), once [count] of them have landed. The head's own
-     *  answer to the activity side query leaves a row too, marked a local step, and is no turn. The append is
-     *  asynchronous, so this waits for the file rather than reading it once. */
+    /** The perf rows of TURNS the head wrote, as (ts, outcome), once [count] of them have landed and been
+     *  announced. The head's own answer to the activity side query leaves a row too, marked a local step, and is
+     *  no turn. The append is asynchronous, so this waits for the file rather than reading it once, and turn.end
+     *  fires only after that append returns, so it waits for the announcement too: a caller reading the recorder
+     *  right after must not find the file complete and the end line missing. */
     suspend fun perfRows(count: Int): List<Pair<String, String>> = withTimeout(WAIT_MS) {
         var rows = turnRows()
-        while (rows.size < count) {
+        while (rows.size < count || events.turnsEnded() < count) {
             delay(POLL_MS)
             rows = turnRows()
         }

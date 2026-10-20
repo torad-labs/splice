@@ -16,6 +16,8 @@ Where each value in the kit came from. Sources are the existing Splice files on 
 | Terminal cards, the rail with sockets, labels on objects, row of five sessions | Frames from the video, 0:13 to 0:53 |
 | Copy lines | `/workspace/marketing/splice-v0.4.0-drafts.md` and the video's end card |
 | Logo animation timing | Kit motion rules above, applied to the logo. Drop, cable draw and plug light follow the order in `motion/splice-mark-sting.mp4` |
+| Night-side console roles: Card High `#241A12`, Socket `#120D09`, track and track-line alphas, the JSON string green `#A9CF8E`, the six chart hues | `console.css` and `settings.css` and `reqview.css` as they stood on October 19, 2026, before the console took the kit tokens (`--obj-high`, `--socket`, `--track`, `--track-line`, `--store-1` to `--store-6`, `.json .str`) |
+| Light-mode additions: the day provider colours, Paper Low, Paper High, the day chart hues, the day track-line alpha, the day on-fill text | Derived on October 19, 2026 for Marcos’s light-mode requirement. Provider and chart day values keep the night hue and lose lightness until they hold 4.5:1 on Paper Low (Router moves to a quiet brown because its hue merges with Claude’s at that lightness). Paper Low and High are tints of Paper chosen so Day Mute, Key on Paper and Day Limit hold 4.5:1 on them. Every pair is measured in `tokens/splice.contrast.json` |
 
 Fonts were downloaded from the google/fonts repository (Source Serif 4) and the system's Google Fonts copies (Fraunces, IBM Plex Mono). All three use the SIL OFL 1.1; licence files are in `fonts/`.
 

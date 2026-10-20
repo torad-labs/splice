@@ -17,7 +17,7 @@
 .prow .pf > em { display: none; }
 .prow .cmd { align-self: center; }
 .prow .tkey { display: block; margin-top: .25rem; font: 500 .85rem/1.25 var(--font-name); color: var(--text-mute); }
-.prow .tkey i, .prow .two i { display: block; font-style: normal; color: var(--text-mute); opacity: .8; }
+.prow .tkey i, .prow .two i { display: block; font-style: normal; color: var(--text-mute); }
 .prow .two i { font-size: .88rem; margin-top: .2rem; }
 .prow a.open { display: inline-flex; align-items: center; gap: .35rem; color: inherit; text-decoration: none; border-radius: .3rem; }
 .prow a.open .go { width: .95rem; height: .95rem; color: var(--text-mute); }

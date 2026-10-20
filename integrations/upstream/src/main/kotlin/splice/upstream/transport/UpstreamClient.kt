@@ -23,7 +23,7 @@
 // RateLimitCooldown.kt; request assembly and the execute round-trip → UpstreamRequest.kt; one
 // attempt's inputs, outcome, and the perf/auth marks → UpstreamAttempt.kt; the role declarations
 // → UpstreamPorts.kt; the thrown vocabulary → UpstreamErrors.kt; the clock adapter →
-// ProcessRuntime.kt.
+// ProcessRuntime.kt; the transport-error half of an attempt → TransportSteps.kt; what post answers → UpstreamPost.kt.
 //
 // Transport lessons from Grok Build / Codex CLI that still bind this file:
 //   - encrypted_content decrypt 400s are NOT retried (Grok Build)
@@ -36,7 +36,6 @@ package splice.upstream.transport
 
 import io.ktor.client.HttpClient
 import splice.core.usage.PlanLimit
-import splice.core.util.ERR_SNIPPET
 import splice.core.util.ElapsedClock
 import splice.upstream.RetryBackoff
 import splice.upstream.RoundBody
@@ -44,11 +43,9 @@ import splice.upstream.StreamRead
 import splice.upstream.UpstreamHandler
 import splice.upstream.codemode.ProcessElapsedNow
 import splice.upstream.retry.CredentialCooldowns
-import splice.upstream.retry.MAX_STREAM_REISSUES
 import splice.upstream.retry.ProviderHoldStore
 import splice.upstream.retry.RateLimitCooldown
 import splice.upstream.retry.RateLimitTurn
-import splice.upstream.retry.ReissueRules
 import splice.upstream.retry.RetryDecision
 import splice.upstream.retry.RetryPlan
 
@@ -92,7 +89,7 @@ public class UpstreamClient(
     public fun credentialCooldown(headers: Map<String, String>, declaredCarrier: String? = null): RateLimitCooldown? =
         credentialCooldowns.forHeaders(headers, declaredCarrier)
     private val budget = RetryBudget(totalTimeoutMs, clock)
-    private val reissueRules = ReissueRules()
+    private val steps = TransportSteps(transportFailures, budget, pacing, totalTimeoutMs)
 
     /** NF-01: head restart is a real escape hatch — HeadServer.startLocked() clears the armed
      *  horizon alongside driver.resetHealth(), instead of the cooldown outliving the restart. */
@@ -233,7 +230,7 @@ public class UpstreamClient(
         }
         // Exhaustively dispatch the attempt's delivered value, HTTP failure, or transport error.
         return when (outcome) {
-            null -> onTransportError(checkNotNull(transportError), ctx, streamHandedOff, state, t0)
+            null -> steps.failed(checkNotNull(transportError), ctx, streamHandedOff, state, t0)
             is RetryOutcome.Done -> readStep(outcome.read, ctx, state, t0)
             is RetryOutcome.Failed -> failedStep(ctx, outcome, body, state, t0)
         }
@@ -243,7 +240,7 @@ public class UpstreamClient(
     private suspend fun <T> readStep(read: StreamRead<T>, ctx: PostContext, state: RetryState, t0: Long): LoopStep<T> =
         when (read) {
             is StreamRead.Read -> LoopStep.Done(UpstreamPost.Delivered(read.value))
-            is StreamRead.Torn -> reissueStep(read.cause, ctx, true, state, t0)
+            is StreamRead.Torn -> steps.reissue(read.cause, ctx, true, state, t0)
                 ?: LoopStep.Done(UpstreamPost.Ended(StreamTornBeforeClient(read.cause)))
             is StreamRead.Oversized -> LoopStep.Done(UpstreamPost.Ended(read.ending))
         }
@@ -270,74 +267,6 @@ public class UpstreamClient(
         }
     }
 
-    /** The transport-error half of one attempt, for a failure the JDK or the engine raised. A tear before the client
-     *  saw a frame has its own reissue budget ([reissueStep]); otherwise the two give-up gates retain the existing
-     *  pre-handoff transport retry policy, and a failure past them is rethrown as the raw transport error it is. */
-    private suspend fun onTransportError(
-        e: Throwable,
-        ctx: PostContext,
-        streamHandedOff: Boolean,
-        state: RetryState,
-        t0: Long,
-    ): LoopStep<Nothing> {
-        reissueStep(e, ctx, streamHandedOff, state, t0)?.let { return it }
-        val phase = transportFailures.rethrowUnlessRetryableTransport(
-            e,
-            deadlineHit = streamHandedOff || budget.deadlineExceeded(ctx, t0),
-            lastAttempt = state.attempt == state.maxRetries - 1,
-        )
-        val label = if (phase == TransportFailurePhase.POST_SEND) "transport-possible-duplicate" else "transport"
-        ctx.onRetry(
-            // V4-167: named like the ending names it — a refused connect's own message is empty.
-            "$label ${e::class.simpleName} attempt ${state.attempt + 1}/${state.maxRetries}: " +
-                TransportFailureReason.of(e, ctx.url).take(ERR_SNIPPET),
-        )
-        if (!applyTransportBackoff(e, ctx, state.attempt, t0)) throw e
-        state.pendingRetry = if (phase == TransportFailurePhase.POST_SEND) RetryKind.POST_SEND else RetryKind.ORDINARY
-        state.attempt += 1
-        return LoopStep.Continue
-    }
-
-    /** G5: re-issue a stream torn before the client saw a byte, on its own budget. Null means the tear cannot be
-     *  re-issued (no budget, not retryable, past the deadline, or no time for the wait), and the caller ends it. */
-    private suspend fun reissueStep(
-        e: Throwable,
-        ctx: PostContext,
-        streamHandedOff: Boolean,
-        state: RetryState,
-        t0: Long,
-    ): LoopStep<Nothing>? {
-        if (!reissuePermitted(e, ctx, streamHandedOff, state, t0)) return null
-        state.streamReissues += 1
-        ctx.onRetry(
-            "stream torn before first client frame, reissue ${state.streamReissues}/$MAX_STREAM_REISSUES: " +
-                "${e::class.simpleName} ${TransportFailureReason.of(e, ctx.url).take(ERR_SNIPPET)}",
-        )
-        if (!applyTransportBackoff(e, ctx, state.attempt, t0)) return null
-        state.pendingRetry = RetryKind.ORDINARY
-        return LoopStep.Continue // does NOT increment `attempt` — this budget is separate
-    }
-
-    private fun reissuePermitted(
-        e: Throwable,
-        ctx: PostContext,
-        streamHandedOff: Boolean,
-        state: RetryState,
-        t0: Long,
-    ): Boolean {
-        if (!reissueRules.canReissueStream(streamHandedOff, e, ctx.recovery.clientFrameEmitted, state.streamReissues)) {
-            return false
-        }
-        // G4d: same re-check the sibling BACKOFF path (applyBackoff) does before its sleep — a
-        // budget that expired mid-turn must not pay for one more real delay it can't use.
-        if (!budget.deadlineExceeded(ctx, t0)) return true
-        ctx.onRetry(
-            "upstream retry deadline exceeded (${totalTimeoutMs}ms budget) before stream " +
-                "reissue ${state.streamReissues + 1}/$MAX_STREAM_REISSUES",
-        )
-        return false
-    }
-
     /** The BACKOFF half of the retry decision: re-checks the deadline (G4d) before the sleep so a
      *  budget that expired mid-curve doesn't pay for one more real delay it can't use. */
     private suspend fun applyBackoff(
@@ -359,15 +288,6 @@ public class UpstreamClient(
         state.pendingRetry = RetryKind.ORDINARY
         state.attempt += 1
         return LoopStep.Continue
-    }
-
-    /** Both transport paths budget the curve before sleeping; false means it does not fit and nothing slept. */
-    private suspend fun applyTransportBackoff(e: Throwable, ctx: PostContext, attempt: Int, t0: Long): Boolean {
-        val dns = transportFailures.isDnsFailureTransport(e)
-        val plannedDelayMs = pacing.transportDelayMs(attempt, dns)
-        if (!budget.backoffFits(ctx, t0, plannedDelayMs)) return false
-        ctx.timedBackoff { pacing.pauseAfterTransportError(attempt, dns) }
-        return true
     }
 
     /** RC-4 companion move (function-budget): the retry-plan tail of a failed attempt. */
@@ -396,32 +316,4 @@ public class UpstreamClient(
             RetryDecision.GIVE_UP -> state.gaveUp(ctx, state.rules)
         }
     }
-}
-
-/**
- * What [UpstreamClient.post] answers: the handler's value, or the one refusal the loop DECIDES.
- *
- * V4-114 (kt-no-exception-as-outcome): the exhausted turn-wait budget used to arrive as a thrown
- * `UpstreamTurnWaitExhausted`, which every `catch (e: Exception)` and `runCatching` on the turn
- * path saw as indistinguishable from a broken invariant, and which no signature announced. It is a
- * VALUE the one caller (SseRoundPost) hands to the translator, so the compiler now checks that the
- * caller handled it. Every other ending is a VALUE too since 2026-10-09: [Ended] carries the sealed
- * [UpstreamEnding] (the host's HTTP refusal after retries, a missing local credential, a torn transport, an
- * oversized frame), so no ending of [UpstreamClient.post] is thrown. Raw transport errors from the engine stay
- * exceptions: they are not splice's vocabulary.
- */
-public sealed class UpstreamPost<out T> {
-    /** Native pooled refusal before stream handoff. The caller may switch credentials, never resend this login. */
-    public data class Refused(public val failure: UpstreamFailed) : UpstreamPost<Nothing>()
-
-    /** The upstream answered and [value] is what the caller's handler made of it. */
-    public data class Delivered<T>(public val value: T) : UpstreamPost<T>()
-
-    /** The call ended without a round: a failure after retries, a hold, missing credentials, a tear that could not be
-     *  re-issued, or an oversized frame. The caller ends the turn on [ending], whatever it is. */
-    public data class Ended(public val ending: UpstreamEnding) : UpstreamPost<Nothing>()
-
-    /** The whole-turn wait budget expired BEFORE a request went out, so there is no HTTP response
-     *  to classify and nothing was sent. The caller owns the terminal. */
-    public data object TurnWaitExhausted : UpstreamPost<Nothing>()
 }

@@ -15,7 +15,7 @@ private const val FULLY_USED = 100.0
  *  It IS the ceiling every rate-limit hold is clamped to ([MAX_RATE_LIMIT_COOLDOWN_MS]), by reference and not by an
  *  equal number: a warm session can wait out any such hold, so a hold alone never disqualifies a stay. Lowering this
  *  below that ceiling would make a long hold move the session, and [Warm.stays] would then need that check back. */
-public const val WARM_LOGIN_WAIT_MS: Long = MAX_RATE_LIMIT_COOLDOWN_MS
+internal const val WARM_LOGIN_WAIT_MS: Long = MAX_RATE_LIMIT_COOLDOWN_MS
 
 /** Pure per-account availability/quota math — every function here takes the [PoolAccount] (and
  *  [at]) it needs and touches no [AccountPool] state, so V4-132 split it out rather than push

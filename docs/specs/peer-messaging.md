@@ -531,8 +531,10 @@ wiring are D's, and B and C hand D their constructors.
 
 1. **D pushes `PeerContracts.kt` first,** within 20 minutes, verbatim from section 6. A, B and C code
    against the contracts from the start, and pull once it lands.
-2. **A, B, C and D then build in parallel.** Each tests its own seam with fakes of the others: B with a
-   fake `InboxHandler`, C with a fake `PeerOutbox`, D with fakes of the supervisor and outbox.
+2. **A, B, C and D then build in parallel,** each against the interfaces in section 6 and not against
+   another seat's code. The project laws limit tests: a new test may only check what a route returns or
+   what a user sees, such as D's route answers and A's frame bytes against the fixture. No test asserts
+   code usage, and the walk in section 9 is the proof.
 3. **D wires the real parts** once A, B and C have pushed. That means the boot lines, the mount and the
    supervisor.
 4. **splice-lead installs the build and runs the walk** in section 9. The walk needs a daemon restart,

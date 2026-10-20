@@ -140,6 +140,24 @@ internal object TracePackBytes {
      *  decoding them and hashing the raw chunk again. Zero is kept for "not yet taken" (TracePackIndex). */
     fun checksum(stored: ByteArray): Int = CRC32C().apply { update(stored) }.value.toInt()
 
+    /** The same CRC32C, of the [length] stored bytes at [offset], read through [scratch]. A reused entry is checked on
+     *  every chunk of every traced body, and reading each payload into its own array was a fifth of the daemon's
+     *  allocation on Oct 20 (JFR, 60 s); streamed, the check allocates nothing. */
+    fun checksum(channel: FileChannel, offset: Long, length: Int, scratch: ByteBuffer): Int {
+        val crc = CRC32C()
+        val end = offset + length
+        var at = offset
+        while (at < end) {
+            scratch.clear().limit(minOf(scratch.capacity().toLong(), end - at).toInt())
+            val count = channel.read(scratch, at)
+            if (count < 0) throw IOException("trace body chunk is missing at byte $at")
+            scratch.flip()
+            crc.update(scratch)
+            at += count
+        }
+        return crc.value.toInt()
+    }
+
     fun hashOf(bytes: ByteArray): String =
         HEX.formatHex(MessageDigest.getInstance("SHA-256").digest(bytes))
 

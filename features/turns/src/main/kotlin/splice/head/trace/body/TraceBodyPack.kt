@@ -17,6 +17,7 @@ import splice.core.util.Cancellables
 import splice.core.util.JsonScalars
 import splice.core.util.LogSink
 import java.io.IOException
+import java.nio.ByteBuffer
 import java.nio.channels.FileChannel
 import java.nio.channels.FileLock
 import java.nio.channels.OverlappingFileLockException
@@ -35,6 +36,9 @@ private const val TRACE_PACK_LOCK_WAIT_MS = 1_000L
 
 // why: a ten-millisecond poll bounds lock acquisition overhead on the single file lane.
 private const val TRACE_PACK_LOCK_POLL_MS = 10L
+
+// why: one read of a reused entry's stored bytes; a chunk larger than this is checked in several reads.
+private const val TRACE_PACK_SCRATCH_BYTES = 16_384
 private val HEX = HexFormat.of()
 
 /** Capacity is a stored omission marker, not an I/O failure or a successful partial literal. */
@@ -72,6 +76,9 @@ internal class TraceBodyPack(
     )
     private var held: FileLock? = null
 
+    // The read buffer for checking a reused entry's stored bytes; the file lock makes this pack one writer's.
+    private val scratch = ByteBuffer.allocate(TRACE_PACK_SCRATCH_BYTES)
+
     init {
         var ready = false
         Cancellables.withCleanup({ if (!ready) close() }) {
@@ -98,10 +105,10 @@ internal class TraceBodyPack(
         val hash = checkNotNull(JsonScalars.str(part["hash"]))
         val entry = TracePackBytes.entry(channel, FORMAT, offset, part.getValue("bytes").jsonPrimitive.int, hash)
             ?: return false
+        val known = index.check(hash, offset)
+        if (known != 0) return TracePackBytes.checksum(channel, offset, entry.stored, scratch) == known
         val stored = TracePackBytes.read(channel, offset, entry.stored)
         val check = TracePackBytes.checksum(stored)
-        val known = index.check(hash, offset)
-        if (known != 0) return check == known
         val intact = FORMAT.decode(stored, entry.raw)?.let(TracePackBytes::hashOf) == hash
         if (intact) index.verified(hash, offset, check)
         return intact

@@ -303,15 +303,25 @@ KEY_FILE=$STATE_DIR/mgmt-key
 # Safe by default: the daemon never adds --dangerously-skip-permissions unless explicitly told to.
 if [ "${CLAUDEX_DANGEROUSLY_SKIP_PERMISSIONS-}" = 1 ]; then DANGEROUS=true; else DANGEROUS=false; fi
 
+# The GC log: the live set after every collection stays on record in the logs folder (the profiler reads it), five files
+# of 20 MB with the time and uptime on each line. Printed empty when the folder cannot hold it, because a JVM handed an
+# -Xlog file it cannot open refuses to start: an unwritable home, or a ':' or '%' in the path, which -Xlog reads as syntax.
+gc_log_flag() {
+  case $LOGS_DIR in *:* | *%*) return 0 ;; esac
+  mkdir -p "$LOGS_DIR" 2>/dev/null && [ -w "$LOGS_DIR" ] || return 0
+  printf '%s' "-Xlog:gc:file=$LOGS_DIR/gc.log:time,uptime:filecount=5,filesize=20m"
+}
+
 # Required daemon diagnostics follow the caller's options, so a custom heap does not disable them. The resolved dump
-# path is one argv item, never split with the caller's whitespace-delimited options. Runs in a function: it
-# rebuilds the positional parameters, and the caller's are not its own.
+# and GC log paths are one argv item each, never split with the caller's whitespace-delimited options. Runs in a
+# function: it rebuilds the positional parameters, and the caller's are not its own.
 exec_cli() {
   if [ "${1-}" = daemon ]; then
+    ec_gc=$(gc_log_flag)
     set -f
     # shellcheck disable=SC2086
     set -- -Djdk.console=java.base "-Duser.home=$SHIM_HOME" $SPLICE_JVM_OPTS -XX:+ExitOnOutOfMemoryError \
-      -XX:+HeapDumpOnOutOfMemoryError "-XX:HeapDumpPath=$STATE_DIR/splice-oom.hprof" -jar "$JAR" "$@"
+      -XX:+HeapDumpOnOutOfMemoryError "-XX:HeapDumpPath=$STATE_DIR/splice-oom.hprof" ${ec_gc:+"$ec_gc"} -jar "$JAR" "$@"
     set +f
   else
     set -- -Djdk.console=java.base "-Duser.home=$SHIM_HOME" -jar "$JAR" "$@"
@@ -555,10 +565,11 @@ cold_start() {
 cold_start_java() {
   csj_log=$1
   csj_flag=$2
+  csj_gc=$(gc_log_flag)
   set -f
   # shellcheck disable=SC2086
   set -- "-Duser.home=$SHIM_HOME" $SPLICE_JVM_OPTS -XX:+ExitOnOutOfMemoryError -XX:+HeapDumpOnOutOfMemoryError \
-    "-XX:HeapDumpPath=$STATE_DIR/splice-oom.hprof" -jar "$JAR" daemon ${csj_flag:+"$csj_flag"}
+    "-XX:HeapDumpPath=$STATE_DIR/splice-oom.hprof" ${csj_gc:+"$csj_gc"} -jar "$JAR" daemon ${csj_flag:+"$csj_flag"}
   set +f
   if command -v setsid >/dev/null 2>&1; then
     setsid nohup java "$@" >>"$csj_log" 2>&1 </dev/null &

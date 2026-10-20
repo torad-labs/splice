@@ -112,7 +112,8 @@ public class ScreenChoices {
     /** What [screen] is offering. A screen splice cannot read a choice on offers nothing. */
     public fun on(screen: String): ScreenOffer {
         val lines = screen.lines()
-        val block = lastBlock(lines) ?: return pointerMenu(lines) ?: ScreenOffer("", emptyList(), draft = draft(lines))
+        val block = lastBlock(lines)?.takeUnless { inputBoxFollows(lines, it) }
+            ?: return pointerMenu(lines) ?: ScreenOffer("", emptyList(), draft = draft(lines))
         val choices = block.mapNotNull { at -> CHOICE_LINE.matchEntire(lines[at])?.let { drawn(it) } }
             .distinctBy { it.key }
             .sortedBy { it.key.ordinal }
@@ -136,6 +137,15 @@ public class ScreenChoices {
         while (first > 0 && CHOICE_LINE.matches(lines[first - 1])) first -= 1
         return first..last
     }
+
+    /**
+     * Whether the client's input box sits below [block]. A permission menu REPLACES the input box while it is up,
+     * so a numbered run with the box under it is a list in Claude's last reply, not a menu: offering it would
+     * refuse the person's send and draw buttons that type a digit into an idle prompt. The box's mark sits at the
+     * margin and a choice's pointer inside the block does not count, because only the lines below it are read.
+     */
+    private fun inputBoxFollows(lines: List<String>, block: IntRange): Boolean =
+        lines.drop(block.last + 1).any { PROMPT_LINE.matches(it) }
 
     /** A menu drawn without numbers: the indented pointer's line and the lines beside it whose words start in the same
      *  column, keyed 1, 2, 3 in the order a person reads them. Null when no line carries an indented pointer. */

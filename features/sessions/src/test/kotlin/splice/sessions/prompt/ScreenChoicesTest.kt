@@ -248,6 +248,26 @@ class ScreenChoicesTest {
         assertTrue(offer.choices.none { it.label == "option 10" }, "the tenth is left for the terminal")
     }
 
+    /** A reply that ends in a numbered list, above an idle input box, is a list the person reads, not a menu. */
+    @Test
+    fun `a numbered list in the last reply above the input box is not a menu`() {
+        val idle = """
+            ⏺ Two ways to go:
+
+              1. Fix the parser
+              2. Add a test
+
+            ────────────────────────────────────────────────────────────────
+            ❯
+            ────────────────────────────────────────────────────────────────
+        """.trimIndent()
+
+        val offer = choices.on(idle)
+
+        assertFalse(offer.offering, "the console must send what the person types, not draw buttons for a reply's list")
+        assertEquals(emptyList<ScreenChoice>(), offer.choices)
+    }
+
     @Test
     fun `a choice written with a bracket is a choice`() {
         val offer = choices.on("Pick one\n 1) Keep going\n 2) Stop here")

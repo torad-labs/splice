@@ -115,6 +115,13 @@ internal class PerfReadFiles(
         return PerfSourceStamp(marks, live, reader)
     }
 
+    /** Whether a read from [later] takes in every archive of [stamp] that a read from [earlier] took in: an archive leaves
+     *  the read only once all its rows are older than the edge (the reader's own test). */
+    fun readsSame(stamp: PerfSourceStamp, earlier: Long, later: Long): Boolean = stamp.marks.none { mark ->
+        val rotated = archiveName.rotatedAt(mark.path.fileName.toString()) ?: return@none false
+        !archiveName.endsBefore(rotated, earlier) && archiveName.endsBefore(rotated, later)
+    }
+
     /** Whether the files are the ones [stamp] was taken of, none added or gone, only the live one grown by appends. */
     fun unchanged(stamp: PerfSourceStamp): Boolean = stamp.covers(list().orEmpty()) && stamp.holds()
 
@@ -161,8 +168,13 @@ internal class PerfRefusal(private val files: PerfReadFiles, private val saved: 
         saved?.let(::load)
     }
 
-    /** Whether the refusal noted earlier still holds for a read from [from]: that read covers no less, and no file changed. */
-    fun stands(from: Long): Boolean = stamp?.let { from <= since && files.unchanged(it) } == true
+    /** Whether the refusal noted earlier still holds for a read from [from]: no file changed, and the read still takes in
+     *  every file the refused one did. The edge is an hour and moves forward every hour; a later edge that drops no
+     *  archive reads the same torn files, so it is refused too. Requiring the edge itself to stay put let the refusal
+     *  lapse at every hour, and the next keep-warm pass decoded every archived generation again: about 3.9 GB of
+     *  allocation in 50 s on the live daemon at 02:04 CT, Oct 20. */
+    fun stands(from: Long): Boolean =
+        stamp?.let { files.unchanged(it) && (from <= since || files.readsSame(it, since, from)) } == true
 
     /** Notes a read begun when the files were as [before]: a refusal for a torn row ([tore]) stands, any other answer clears it. */
     fun note(before: PerfSourceStamp?, from: Long, tore: Boolean) {

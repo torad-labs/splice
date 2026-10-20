@@ -7,6 +7,7 @@ import kotlinx.serialization.json.Json
 import splice.core.perf.PerfArchiveName
 import splice.core.util.Cancellables
 import splice.core.util.SafeFailureText
+import splice.core.util.SecureFile
 import java.io.IOException
 import java.nio.ByteBuffer
 import java.nio.channels.FileChannel
@@ -14,7 +15,6 @@ import java.nio.file.Files
 import java.nio.file.LinkOption
 import java.nio.file.NoSuchFileException
 import java.nio.file.Path
-import java.nio.file.StandardCopyOption
 import java.nio.file.StandardOpenOption
 import java.util.zip.CRC32
 
@@ -195,9 +195,8 @@ internal class PerfRefusal(private val files: PerfReadFiles, private val saved: 
                 return
             }
             val marks = held.marks.map { SavedPerfMark(it.path.toString(), it.fileKey, it.size, it.checksum) }
-            val temp = path.resolveSibling("${path.fileName}.tmp")
-            Files.writeString(temp, json.encodeToString(SavedPerfRefusal.serializer(), SavedPerfRefusal(since, marks)))
-            Files.move(temp, path, StandardCopyOption.REPLACE_EXISTING, StandardCopyOption.ATOMIC_MOVE)
+            val text = json.encodeToString(SavedPerfRefusal.serializer(), SavedPerfRefusal(since, marks))
+            SecureFile.writeAtomic0600(path, text)
         } catch (_: IOException) {
             // The refusal still stands in memory for this run.
         }

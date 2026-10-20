@@ -124,7 +124,9 @@ public class EconomicsStore(
      * count at one moment and said yes to it, so the hours go at that moment rather than at whatever
      * the window works out to later. The same boundary as [trimUnderLock] for the same reason, an
      * hour starts on a UTC hour and a day can begin inside one, and the persist is immediate
-     * because a page that reads straight after the yes must not be served the old file.
+     * because a page that reads straight after the yes must not be served the old file. A write that
+     * fails throws what failed, so the save names this store instead of reporting a cut whose old
+     * hours are still on disk.
      */
     public fun trimBefore(momentMs: Long): Int {
         val dropped = synchronized(lock) {
@@ -135,7 +137,10 @@ public class EconomicsStore(
         // patch and this save has already dropped the expired hours from memory, so this call can
         // drop none of them while every one of them is still on disk: persist whenever memory is
         // ahead of the file, not when this call happened to be the one that moved it.
-        if (synchronized(lock) { version > persistedVersion }) flushNow()
+        if (synchronized(lock) { version > persistedVersion }) {
+            flushNow()
+            synchronized(writeLock) { lastWriteFailure }?.let { throw it }
+        }
         return dropped
     }
 
@@ -218,9 +223,9 @@ public class EconomicsStore(
     private var persistedVersion = -1L
     private val writeScheduled = AtomicBoolean(false)
 
-    /** Guarded by [writeLock]: the last write failed. The flush retries itself, so only the first failure
-     *  of a streak is logged, and a write that lands ends the streak. */
-    private var failing = false
+    /** Guarded by [writeLock]: why the last write failed, or null when it landed. The flush retries itself,
+     *  so only the first failure of a streak is logged, and a write that lands ends the streak. */
+    private var lastWriteFailure: Throwable? = null
 
     private fun loadUnderLock() {
         if (loaded) return
@@ -302,17 +307,17 @@ public class EconomicsStore(
             Cancellables.runCatchingCancellable { SecureFile.writeAtomic0600(file, encoded) }.fold(
                 onSuccess = {
                     persistedVersion = v
-                    failing = false
+                    lastWriteFailure = null
                 },
                 onFailure = { failure ->
-                    if (!failing) {
+                    if (lastWriteFailure == null) {
                         log(
                             "[economics] $file could not be written (${SafeFailureText.render(failure)}); the " +
                                 "hours stay in memory and the next flush tries again, so a restart before one " +
                                 "lands loses them\n",
                         )
                     }
-                    failing = true
+                    lastWriteFailure = failure
                 },
             )
         }

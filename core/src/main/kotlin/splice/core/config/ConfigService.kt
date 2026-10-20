@@ -46,7 +46,9 @@ public class ConfigService(
     // headKey -> knob map, from [heads.<key>.overrides]. Applied only by getConfig(headKey), so a
     // head can hold its own maxInflight/timeouts without the value leaking onto its siblings.
     perHeadOverrides: Map<String, Map<String, String>> = emptyMap(),
-    private val envReader: EnvReader = EnvReader(System::getenv),
+    // Null is the process environment, which a JVM cannot change once it runs, so it is read once (below); a reader
+    // passed here (tests) is asked on every read, as before.
+    envReader: EnvReader? = null,
     /** Daemon log sink (Main.persistentLogger): writes BOTH stderr and daemon.log, which is what
      *  /mgmt/logs tails. A bare System.err.println reaches stderr ONLY, so its line never appears in
      *  the log endpoint — the failure you most want to read is the one you cannot (wall
@@ -56,9 +58,15 @@ public class ConfigService(
 ) {
     private val json = Json { ignoreUnknownKeys = true }
 
+    private val envReader: EnvReader = envReader ?: EnvReader(System::getenv)
+
+    // why: every getConfig rebuilt the knob environment map from System.getenv, once per ingress request and per body
+    // chunk (697 of 13,317 allocation samples on the live daemon, Oct 20, 2026).
+    private val environmentFixed = envReader == null
+
     // The dissolved companion's coercion/normalization half (Kotlin style law, 2026-08-16).
     // Stateless apart from the injected [envReader], so one instance per service is enough.
-    private val coercion = ConfigCoercion(envReader)
+    private val coercion = ConfigCoercion(this.envReader)
 
     private val headOverrides = Collections.unmodifiableMap(LinkedHashMap(headOverrides))
     private val defaults: Map<String, Any?> =
@@ -67,6 +75,7 @@ public class ConfigService(
         coerceAll(this.headOverrides).accepted.filterKeys { it !in headOnlyKnobKeys },
     )
     private val snapshots = ConfigSnapshotCache()
+    private val processEnvironment: Map<String, String> by lazy { snapshots.environment(this.envReader) }
 
     // PATCH publishes one immutable batch. Readers never retain a map another thread can mutate.
     private val runtimeLock = Any()
@@ -157,7 +166,7 @@ public class ConfigService(
     public fun snapshot(headKey: String? = null): ConfigSnapshot {
         val ticket = snapshots.begin()
         val file = fileLayer()
-        val environment = snapshots.environment(envReader)
+        val environment = if (environmentFixed) processEnvironment else snapshots.environment(envReader)
         val inputs = synchronized(runtimeLock) {
             ConfigSnapshotCache.Inputs(
                 file,

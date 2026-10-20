@@ -2,8 +2,8 @@
 
 From splice-peer-spec, Oct 19 2026, for splice-lead. Eli ruled that Splice owns peer registration, receive
 and webhooks, and that seatd consumes them. seatd keeps seat names, dispatch, claims, and its two reserved
-verbs, send-message and delivery-status. This file is the contract the four builder seats code against. A
-line marked **PROBE** waits on splice-peer-probe's 2.1.304 result and is corrected in this file when it lands.
+verbs, send-message and delivery-status. This file is the contract the four builder seats code against. The wire
+facts for 2.1.299 to 2.1.304 come from splice-peer-probe, Oct 19, under tools/probes/claude-code-peer-note.ts.
 
 ## What a user can do
 
@@ -39,8 +39,21 @@ These were read on this machine on Oct 19. They are not guesses.
 - **What grokbot leaves open, which Splice closes.** grokbot never checks the inbound auth token, has no
   size cap, no rate limit and no signature on its webhook, and trusts the frame's `from` for the sender's
   identity.
-- **Splice today.** `PeerNoteSocket` refuses every Claude Code version outside a fixed set of 2.1.282 to
-  2.1.296, sends no auth line and no `from` (`features/sessions/.../note/PeerNoteFrame.kt:13-17`,
+- **What 2.1.299 to 2.1.304 do with a frame** (splice-peer-probe, Oct 19):
+  - The model sees only the attributes inside the envelope, `from` and `from-name`. The frame-level `from`
+    is never shown, so the envelope's `from="uds:…"` is the only address a model can reply to.
+  - The auth line is optional on Linux. The client requires it only on Windows, and sending it is harmless.
+  - There is no ack on the sender's connection, and no receipt for an ordinary delivery. The client opens a
+    new connection to the frame's `from` and sends `peer_message_status` only for `held`, `expired` or
+    `dropped` (with a `drop_reason`, such as `duplicate`), and only when `from` is a `uds:` socket in the
+    client's own sockets folder.
+  - A recipient in default permission mode holds, and never delivers, an envelope that says
+    `from-mode="bypass"`. With no `from-mode`, the message is delivered.
+  - Per sender, the client drops the same body sent again within 30 s, rate-limits with a bucket of 30
+    refilling at 0.5 per second, and queues at most 50 per session.
+  - The registry record has the same 18 keys as on 2.1.296, plus `tmux` and `formerNames` when they apply.
+- **Splice today.** `PeerNoteSocket` refuses every Claude Code version outside a fixed set, now 2.1.282 to
+  2.1.304 (85da822f4), sends no auth line and no `from` (`features/sessions/.../note/PeerNoteFrame.kt:13-17`,
   `:42-56`). `SessionRegistry` reads one directory, `~/.claude/sessions` (`app/.../ControlSessions.kt:32`).
   `ControlGuard` has three doors, MANAGEMENT, MCP and SESSION, and the management key opens every door
   (`app/.../control/mount/ControlGuard.kt:33`, `:99-103`).
@@ -56,8 +69,10 @@ Here is what Splice does guarantee:
 - **A sender name cannot be forged through Splice.** Every frame Splice writes carries the name of the
   peer whose key authenticated the request, and nothing taken from the request.
 - **A peer key opens only its own peer's routes.**
-- **No socket accepts a frame without the right token.** Splice's sockets refuse any frame that does not
-  follow an auth line carrying that socket's own `peerToken`, and any connection from another uid.
+- **No socket accepts a wrong token or another uid.** Splice's sockets refuse any connection from another
+  uid, and any frame that follows an auth line with a token other than the socket's own `peerToken`. A
+  frame with no auth line is accepted, as Claude Code itself accepts one on Linux, and is journaled with
+  `"auth":"none"`.
 - **Every inbound sender is labeled by how it was checked.** The journal marks it `registered` when its
   `from` address names a live registry record, or `unregistered` when it does not. Neither label proves who
   wrote the bytes, and the docs say so.
@@ -75,9 +90,13 @@ output is shut down and the connection closed.
 ```
 
 - **The auth line.** It is sent when the target's key file exists in the registry directory the target's
-  record was read from. When there is no key file, the frame goes alone, as it does for a pre-2.1.297
-  client. **PROBE:** confirm that 2.1.304 accepts the frame with the auth line, and refuses it with a
-  missing or wrong token.
+  record was read from. When there is no key file, the frame goes alone. Both shapes are accepted on
+  Linux.
+- **No `from-mode`, ever.** Splice never writes a `from-mode` attribute, because a recipient in default
+  mode holds a `bypass` one forever.
+- **The helper socket stays in the client's sockets folder,** `$XDG_RUNTIME_DIR/cc-socks/`. Claude Code
+  sends receipts only to a `from` in that folder, so a helper whose path overflows to
+  `/tmp/cc-socks-<uid>` gets none, and the helper logs that once.
 - **`from` and `from-name`.** For a peer send, `from` is `uds:` plus the sending peer's helper socket, and
   `from-name` is the peer's registered name. Both come from `PeerStore` and the running helper, never from
   the HTTP body. A console note keeps today's shape: no `from`, and `from-name="the splice console"`.
@@ -101,21 +120,25 @@ output is shut down and the connection closed.
 {"msgV":1,"msg_id":"<uuid v4>","type":"control","action":"peer_message_status","status":"<status>","orig_msg_id":"<the message's msg_id>","from":"uds:<sender socket path>"}
 ```
 
-The frame may also carry `"status_detail":"<at most 200 chars>"`. The status is one of `held`, `denied`,
+The frame may also carry `"status_detail":"<at most 200 chars>"`. Claude Code writes `"drop_reason"` on a
+`dropped` receipt, and Splice reads either field as the detail. The status is one of `held`, `denied`,
 `expired`, `delivered`, `refused` or `dropped`. Splice sends `delivered`, `refused`, `denied` and `dropped`
-(see 4.3), and records whichever of the six it receives.
+(see 4.3), and records whichever of the six it receives. From a Claude Code recipient, no receipt is
+the normal case: it sends one only for `held`, `expired` or `dropped`. A peer send therefore reads as
+`submitted, no problem reported` until one of those arrives, and never claims `delivered` on its own.
 
 ### 1.3 Inbound (what a helper socket accepts)
 
 - **Who may connect.** A connection whose `SO_PEERCRED` user is not this user is closed with nothing read.
 - **Line cap.** A line is at most 65,536 bytes. A longer line closes the connection, and the event is
   counted in the helper log with no content.
-- **Auth.** The first line must be `{"type":"auth","token":T}`, with T equal, in constant time, to this
-  helper's current `peerToken`. If it is not, every frame on that connection is refused. A `user` frame
-  that has a `from` gets a `denied` receipt with detail `"bad or missing peer token"`, sent with no auth
-  line, because the sender's token is not known to us then. Nothing is journaled. **PROBE:** if 2.1.304
-  turns out to send no auth line, this rule becomes "the auth line is checked when present", and the
-  `SO_PEERCRED` check alone gates the rest.
+- **Auth.** When the first line is `{"type":"auth","token":T}`, T must equal this helper's current
+  `peerToken`, compared in constant time. If it does not, every frame on that connection is refused, and
+  a `user` frame that has a `from` gets a `denied` receipt with detail `"bad peer token"`, sent with no
+  auth line. Nothing is journaled. When there is no auth line, frames are accepted and journaled with
+  `"auth":"none"`, and a good token journals `"auth":"token"`. Claude Code requires no token on Linux, so
+  requiring one here could refuse every message a session sends. The walk records whether 2.1.304 sends
+  one. If it always does, a follow-up can make the token required.
 - **`type:"user"` frames.** The text is the envelope body if the content matches
   `^<cross-session-message\b([^>]*)>\n([\s\S]*)\n</cross-session-message>$`, and otherwise the whole
   content. The claimed address is the frame's `from`, or else the envelope's `from` attribute. The claimed
@@ -227,7 +250,7 @@ There is one JSON object per line, appended and flushed with `force(true)` befor
 
 ```json
 {"v":1,"seq":17,"at":1792459759719,"kind":"message","id":"<inbound msg_id, or a uuid when absent>",
- "from":{"name":"dispatch","sessionId":"…","address":"uds:/run/user/1000/cc-socks/1490302.sock","claimedName":"dispatch","check":"registered"},
+ "from":{"name":"dispatch","sessionId":"…","address":"uds:/run/user/1000/cc-socks/1490302.sock","claimedName":"dispatch","check":"registered"}, "auth":"token",
  "text":"…","bytes":1234,"receipt":"delivered"}
 {"v":1,"seq":18,"at":…,"kind":"receipt","origMsgId":"<our sent msg_id>","status":"delivered","detail":null,
  "from":{"address":"uds:…","name":"walk-a","check":"registered"}}
@@ -358,7 +381,7 @@ C's `InboxHandler`. Connections are handled on a bounded pool of 4. A connection
 | Over the inbound rate | nothing | `refused`, "rate limit" | none |
 | Text over the cap | nothing | `refused`, "too large" | none |
 | Journal write failed | nothing | `dropped`, "journal write failed" | none |
-| Bad or missing token | nothing | `denied`, without an auth line | none |
+| Bad token (no auth line is accepted, see 1.3) | nothing | `denied`, without an auth line | none |
 | Frame has no `from` | as above | none | as above |
 
 - **A receipt is sent with A's `PeerOutbox.receipt`,** using the target's token when its key file is
@@ -410,7 +433,7 @@ The helper entry is a separate main class (4.1), not a verb.
 | `splice peer webhook test <name>` | the outcome and the HTTP status |
 | `splice peer send --as <name> <to> <text \| ->` | the msg id. `-` reads the text from stdin. |
 | `splice peer inbox --as <name> [--after N] [--limit N] [--ack] [--json] [--follow]` | one block per record. `--follow` polls every 2 s. |
-| `splice peer status --as <name> <msgId>` | the outcome, then the receipt status and its time, or `no receipt yet` |
+| `splice peer status --as <name> <msgId>` | the outcome, then the receipt status and its time, or `no problem reported` |
 
 - **`--as <name>`** reads `<settings dir>/peers/<name>/peer.key`. Setting `SPLICE_PEER_KEY_FILE=<path>`
   replaces `--as` for scripts. The key is sent as `Authorization: Bearer`, and never printed or put in argv.
@@ -560,7 +583,7 @@ one-liner on 127.0.0.1 that writes each request's headers and body to `/tmp/peer
 5. **Peer to session, and a reply.** `splice peer send --as walk-bot walk-a "reply with the word PONG"`.
    `walk-a`'s transcript shows `<cross-session-message from="uds:…" from-name="walk-bot">`, and `walk-a`
    replies with SendMessage to `walk-bot`. PONG appears in the inbox and on the webhook.
-   `splice peer status --as walk-bot <msgId>` shows the receipt, or `no receipt yet` if 2.1.304 sends none.
+   `splice peer status --as walk-bot <msgId>` shows `no problem reported`, because 2.1.304 sends receipts only for held, expired and dropped.
    Record which one.
 6. **Scope.** `splice peer revoke walk-bot`, then `splice peer register walk-bot --send-to walk-a`.
    `send --as walk-bot walk-b …` exits 1 with 403, and `send --as walk-bot walk-a …` exits 0.
@@ -600,7 +623,7 @@ one-liner on 127.0.0.1 that writes each request's headers and body to `/tmp/peer
       and never on the raw query. A peer cannot read another peer's journal, because the routes take no
       name, and the principal decides.
 - [ ] **The inbound gate.** Peer credentials are checked before any read. The token comparison runs in
-      constant time. Frames without auth are refused and not journaled. The line cap, the per-address
+      constant time. A wrong token is refused and not journaled. A frame with no auth line is journaled as `"auth":"none"`. The line cap, the per-address
       rate and the text cap all hold, so the buffer is never unbounded.
 - [ ] **`peerToken`.** It is fresh at each helper start, sits in the key file at 0600, and is never logged.
 - [ ] **The registry record** carries no secret, and is removed on revoke and on clean exit.
@@ -622,10 +645,10 @@ one-liner on 127.0.0.1 that writes each request's headers and body to `/tmp/peer
 
 ## Open items
 
-- **PROBE (auth line).** Does 2.1.304 accept the frame with the auth line, and refuse it with a wrong or
-  missing token? This decides the auth rule in 1.1 and 1.3.
-- **PROBE (receipts).** Does 2.1.304 send `peer_message_status` back to a `from`? Step 5 of the walk
-  records the answer either way. The contract does not depend on it.
+- **Does a 2.1.304 sender write the auth line?** Step 4 of the walk reads the helper log, which counts
+  `auth: token` and `auth: none`. If every Claude Code sender writes one, the token can become required.
+- **Reply addressing.** A session replies to the envelope's `from="uds:…"` or to the peer's name from
+  ListAgents. The probe did not test a reply end to end, so step 5 of the walk is the first test of it.
 - **Heads under their own config directory.** Today `SessionSource` reads only `~/.claude/sessions`. If a
   head's sessions register elsewhere, the peer is visible to them only once `SessionSource` reads there
   too. That is out of scope for 0.4.0, and the registry-directory list is already the seam for it.

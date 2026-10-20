@@ -50,7 +50,7 @@ internal object UsageSingleAliasReader {
         Regex("""fun\s+(\w+)\s*\([^)]*vararg\s+\w+\s*:\s*String[^)]*\)\s*:\s*(?:Long|Double|Int|Number)\??""")
 
     /** The one chain, by the name every call site spells. */
-    private val DELEGATES = Regex("""\bfirstLong\s*\(""")
+    private val DELEGATES = Regex("""\bJsonScalars\s*\.\s*firstLong\s*\(""")
 
     /** The declaration's own body: up to the next blank line, or the end of the file. */
     private fun bodyOf(text: String, from: Int): String {
@@ -62,7 +62,7 @@ internal object UsageSingleAliasReader {
     private fun anchorProblem(chain: String?, chainRel: String): String? = when {
         chain == null ->
             "$chainRel: missing — the one alias chain anchors this law, and a law that cannot see it must not pass"
-        !MULTI_KEY_READER.containsMatchIn(chain) || !DELEGATES.containsMatchIn(chain) ->
+        MULTI_KEY_READER.findAll(chain).none { it.groupValues[1] == "firstLong" } ->
             "$chainRel: does not declare the firstLong multi-key chain — the shape this law recognises no longer " +
                 "describes the chain it anchors, so a private copy elsewhere could not be recognised; re-derive " +
                 "the pattern before trusting this law"
@@ -72,7 +72,7 @@ internal object UsageSingleAliasReader {
     /** Every non-delegating multi-key reader declared in one file. */
     private fun copiesIn(rel: String, text: String): List<String> =
         MULTI_KEY_READER.findAll(text)
-            .filterNot { DELEGATES.containsMatchIn(bodyOf(text, it.range.first)) }
+            .filterNot { DELEGATES.containsMatchIn(bodyOf(text, it.range.last + 1)) }
             .map { match ->
                 "SECOND ALIAS READER: $rel declares `${match.groupValues[1]}`, a multi-key numeric reader that " +
                     "does not call firstLong — splice.core.util.JsonScalars.firstLong is the ONE usage alias " +
@@ -83,12 +83,13 @@ internal object UsageSingleAliasReader {
     /** Audit over repository-relative path -> COMMENT-STRIPPED source. Pure, so every refusal is
      *  provable against synthetic input. */
     fun audit(sources: Map<String, String>, chainRel: String): List<String> {
-        val chain = sources[chainRel]
+        val code = sources.mapValues { KotlinText.blankCommentsAndStrings(it.value) }
+        val chain = code[chainRel]
         val anchor = listOfNotNull(anchorProblem(chain, chainRel))
         // A missing anchor stops the sweep: with no chain to delegate to, every reader in the tree
         // would be reported, which buries the one problem that has to be fixed first.
         if (chain == null) return anchor
-        return anchor + sources.toSortedMap().filterKeys { it != chainRel }
+        return anchor + code.toSortedMap().filterKeys { it != chainRel }
             .flatMap { (rel, text) -> copiesIn(rel, text) }
     }
 }
@@ -99,7 +100,7 @@ class UsageSingleAliasReaderLawTest {
     @Test
     fun `JsonScalars firstLong is the one multi-key usage alias reader - CX-18`() {
         val sources = KotlinText.kotlinFiles(map).associate { file ->
-            KotlinText.rel(map, file) to KotlinText.stripComments(file.readText())
+            KotlinText.rel(map, file) to file.readText()
         }
         val chainFile = File(map.mainSources(":core"), UsageSingleAliasReader.CHAIN_IN_CORE)
         val chainRel = KotlinText.rel(map, chainFile)
@@ -137,6 +138,11 @@ class UsageSingleAliasReaderLawTest {
             UsageSingleAliasReader.audit(delegating, CHAIN),
             "a thin wrapper that calls firstLong is GREEN — the local name is not the defect",
         )
+
+        val shadowed = COMPLIANT + (HUD to SHADOWED_CHAIN_NAME)
+        assertHit(UsageSingleAliasReader.audit(shadowed, CHAIN), "firstLong", HUD) {
+            "a declaration named firstLong is not a call to the canonical chain"
+        }
 
         // A file delegating SOMEWHERE ELSE does not launder a re-deriving reader beside it: the
         // delegation must be in the reader's own body.
@@ -203,6 +209,10 @@ class UsageSingleAliasReaderLawTest {
         // UsageJson.firstNum as it actually ships: a local name over the single definition.
         const val DELEGATING_READER = """
             private fun firstNum(obj: JsonObject, vararg keys: String): Long? = JsonScalars.firstLong(obj, *keys)
+        """
+
+        const val SHADOWED_CHAIN_NAME = """
+            internal fun firstLong(obj: JsonObject, vararg keys: String): Long = 7L
         """
 
         const val COMMENTED_READER = """

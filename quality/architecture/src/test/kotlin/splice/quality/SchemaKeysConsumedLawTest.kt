@@ -408,12 +408,13 @@ internal object SchemaKeysConsumed {
     /** The shared state one grading run carries: the tree, the two exclusion lists derived from the
      *  policy, and the verdict as it accumulates. */
     private class Grader(val files: Map<String, String>, policy: Policy) {
+        val codeFiles: Map<String, String> = files.mapValues { KotlinText.blankCommentsAndStrings(it.value) }
         val excluded: Set<String> = policy.nonConsumption.map { it.first }.toSet()
         private val allowlisted: Set<String> = policy.allowlist.map { it.first }.toSet()
-        val declaredBy: Map<String, Set<String>> = declaredByIndex(files)
+        val declaredBy: Map<String, Set<String>> = declaredByIndex(codeFiles)
         val facade: String = policy.nonConsumption.map { it.first }
             .firstOrNull { it.endsWith("SpliceConfig.kt") && files.containsKey(it) } ?: ""
-        val accessors: Map<String, Set<String>> = knobAccessors(files[facade] ?: "")
+        val accessors: Map<String, Set<String>> = knobAccessors(codeFiles[facade] ?: "")
         val red = mutableListOf<Pair<Key, String>>()
         val consumed = mutableSetOf<String>()
 
@@ -429,7 +430,7 @@ internal object SchemaKeysConsumed {
          *  matches [pattern]. */
         fun readsOutside(knobFile: String, pattern: Regex): Boolean {
             val skipped = excluded + knobFile + facade
-            return files.any { (rel, text) -> rel !in skipped && pattern.containsMatchIn(text) }
+            return codeFiles.any { (rel, text) -> rel !in skipped && pattern.containsMatchIn(text) }
         }
     }
 
@@ -448,13 +449,13 @@ internal object SchemaKeysConsumed {
         // named-argument WRITE) is not a read: putting the value back into a constructor call is
         // not acting on it.
         val read = Regex("$NOT_IDENTIFIER${Regex.escape(key.prop)}\\b(?!\\s*=(?!=))")
-        if (read.containsMatchIn(removeDeclaration(grader.files.getValue(key.declaredIn), key.prop))) return null
+        if (read.containsMatchIn(removeDeclaration(grader.codeFiles.getValue(key.declaredIn), key.prop))) return null
         // (B) IN ANOTHER production main file, receiver-qualified when the name is ambiguous.
         val ambiguous = grader.declaredBy[key.prop].orEmpty().any { it != key.declaredIn }
         val pattern = readPattern(key.owner, key.prop, shapes, ambiguous)
         val skipped = grader.excluded + key.declaredIn
-        if (grader.files.any { (rel, text) -> rel !in skipped && pattern.containsMatchIn(text) }) return null
-        val echo = grader.excluded.sorted().filter { pattern.containsMatchIn(grader.files[it] ?: "") }
+        if (grader.codeFiles.any { (rel, text) -> rel !in skipped && pattern.containsMatchIn(text) }) return null
+        val echo = grader.excluded.sorted().filter { pattern.containsMatchIn(grader.codeFiles[it] ?: "") }
         return deadSchemaKey(key, echo)
     }
 
@@ -605,9 +606,12 @@ class SchemaKeysConsumedLawTest {
             val quirks = if (rename) "QuirksRenamed" else "QuirksConfig"
             val dead = if (deadKey) DEAD_KEY_LINE else ""
             val orphaned = if (orphan) ORPHAN_LINE else ""
-            put("Schema.kt", SCHEMA.replace("%quirks%", quirks).replace("%extra%", dead + orphaned))
+            put(
+                "Schema.kt",
+                SCHEMA.replace("%quirks%", quirks).replace("%extra%", dead + orphaned) + PROSE_ONLY_KEY_REFERENCE,
+            )
             put("Catalog.kt", CATALOG)
-            put("Wiring.kt", WIRING.replace("%quirks%", quirks))
+            put("Wiring.kt", WIRING.replace("%quirks%", quirks) + PROSE_ONLY_KEY_REFERENCE)
             put("Doctor.kt", DOCTOR.replace("%echo%", if (deadKey) DEAD_ECHO_LINE else ""))
             put("Paths.kt", PATHS)
             put("Knob.kt", KNOB.replace("%dead%", if (deadKnob) DEAD_KNOB_LINE else ""))
@@ -710,6 +714,10 @@ class SchemaKeysConsumedLawTest {
         const val DEAD_KEY_LINE = "    @SerialName(\"zz_dead_dir\") val zzDeadDir: String? = null,\n"
         const val ORPHAN_LINE = "    @SerialName(\"zz_orphan\")\n"
         const val DEAD_ECHO_LINE = "        \"zz_dead_dir\" to t.daemon.zzDeadDir,\n"
+        const val PROSE_ONLY_KEY_REFERENCE = """
+            // daemon.zzDeadDir is mentioned here, but not read.
+            private val note = "daemon.zzDeadDir"
+        """
         const val DEAD_KNOB_LINE = "    ZZ_DEAD_KNOB(\"zzDeadKnob\", false),\n"
         const val DEAD_ACCESSOR_LINE =
             "    public val zzDeadKnob: Boolean get() = m[Knob.ZZ_DEAD_KNOB.key] == true\n"

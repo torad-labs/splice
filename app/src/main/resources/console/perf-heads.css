@@ -1,18 +1,14 @@
 /* Usage › Results by command (perf-heads.js), beside the Breakdown where the Commands cards stood: one row per
-   command, in the Breakdown's row language (.brow), under one header row, rows split by the track line, numbers in the
-   data face. A row leads with the four figures that matter, in columns: requests, failed (the count, its share and a bar
-   of it) and the whole request's typical time and slowest 5%, each on one line. Everything else a command has is a chip
-   that names itself, under them where the card is narrow and beside them where it is wide: the stages and the cache, then
-   the failure kinds, the compactions and the status labels with their counts. The table sizes to its own column
-   (container perf); where that column is too narrow for the four, each figure carries its own label instead and
-   nothing is cut. Class names are prefixed (.prow, .pf, .pst, .pthead): Usage also loads sessions.css, whose .phead and
-   .pc would land on plain ones. */
+   command, in the Breakdown's row language (.brow), a grid of figures under one header row, rows split by the track
+   line, numbers in the data face. The table sizes to its own column (container perf), so where that column is too narrow
+   for every figure, the header row goes and each figure carries its own label instead, and nothing is cut. Class names
+   are prefixed (.prow, .pf, .pthead): Usage also loads sessions.css, whose .phead and .pc would land on plain ones. */
 
 .perf-heads { container: perf / inline-size; min-width: 0; display: flex; flex-direction: column; gap: 1.1rem; }  /* as .breakdown, so the two cards start level */
 .perf-heads > header .switch { margin-left: auto; }
 .perf-heads .ptable { padding: .4rem 1.15rem .6rem; }
 .prow {
-  display: grid; grid-template-columns: minmax(7.5rem, 1fr) 5rem 9rem 5.8rem 5.8rem; align-items: baseline; gap: .5rem .8rem;
+  display: grid; grid-template-columns: minmax(8rem, 1.3fr) repeat(var(--n), minmax(0, 1fr)); align-items: baseline; gap: .4rem .9rem;
   padding: .75rem 0; border-top: .12rem solid var(--track); font: 500 .95rem/1.25 var(--font-data); font-variant-numeric: tabular-nums; color: var(--text-body);
 }
 .prow:first-child, .prow.pthead + .prow { border-top: 0; }
@@ -20,63 +16,38 @@
 .prow .pf { min-width: 0; overflow-wrap: anywhere; }
 .prow .pf > em { display: none; }
 .prow .cmd { align-self: center; }
-.prow .num { text-align: right; }
-.prow .tm { white-space: nowrap; }
-.prow .pst-h { display: none; }
+.prow .tkey { display: block; margin-top: .25rem; font: 500 .85rem/1.25 var(--font-name); color: var(--text-mute); }
+.prow .tkey i, .prow .two i { display: block; font-style: normal; color: var(--text-mute); }
+.prow .two i { font-size: .88rem; margin-top: .2rem; }
 .prow a.open { display: inline-flex; align-items: center; gap: .35rem; color: inherit; text-decoration: none; border-radius: .3rem; }
 .prow a.open .go { width: .95rem; height: .95rem; color: var(--text-mute); }
 .prow a.open:hover { color: var(--text); text-decoration: underline; }
 .prow a.open.bad { color: var(--limit); font-weight: 600; }
 .prow .sh { margin-left: .5rem; color: var(--text-mute); font-size: .88rem; white-space: nowrap; }  /* "under 1%" never splits across two lines */
 .prow .nr { font: 500 .88rem/1.2 var(--font-name); font-style: normal; color: var(--text-mute); }
-.prow .pass { color: var(--text-mute); }  /* nothing failed: a quiet 0 */
-
-/* the failed share as a bar under its count: the limit colour over a faint track, so a command that fails reads at a glance */
-.prow .fbar { display: block; height: .34rem; margin-top: .4rem; border-radius: .2rem; background: color-mix(in oklab, var(--text) 14%, transparent); overflow: hidden; }
-.prow .fbar b { display: block; height: 100%; border-radius: .2rem; background: var(--limit); }
-
-/* a chip that names itself: its label, then its figure; a failure kind is the limit colour, and every chip that opens
-   requests is still a chip, never an underlined link */
-.prow .pstats, .prow .below { grid-column: 1 / -1; display: flex; flex-wrap: wrap; align-items: center; gap: .4rem .5rem; margin: 0; min-width: 0; }
-.prow .below { margin-top: -.1rem; font: 500 .88rem/1.3 var(--font-name); color: var(--text-mute); }
-.prow .pst {
-  display: inline-flex; align-items: baseline; gap: .4rem; padding: .24rem .55rem; border-radius: var(--r-in);
-  background: color-mix(in oklab, var(--text) 5%, transparent); box-shadow: inset 0 0 0 .1rem color-mix(in oklab, var(--text) 14%, transparent);
-  color: var(--text-body); font: 500 .85rem/1.25 var(--font-name); white-space: nowrap; text-decoration: none;
-}
-.prow .pst em, .prow .pgrp > em { font-style: normal; color: var(--text-mute); }
-.prow .pst b { font: 600 .88rem/1.25 var(--font-data); color: var(--text); }
-.prow .pst b.z { font-weight: 500; color: var(--text-mute); }
-.prow .pst i, .prow .pst > span { font-style: normal; font: 500 .85rem/1.25 var(--font-data); color: var(--text-mute); }
-.prow .pst.bad, .prow .pst.bad em, .prow .pst.bad b { color: var(--limit); }
-.prow a.pst:hover { background: var(--obj-high); }
-.prow .pgrp { display: inline-flex; flex-wrap: wrap; align-items: center; gap: .4rem .5rem; }
+.prow .held { display: block; margin-top: .2rem; font: 500 .85rem/1.25 var(--font-name); color: var(--text-mute); }  /* how many of the command's requests the gate held */
+.prow .below { grid-column: 2 / -1; display: flex; flex-wrap: wrap; align-items: baseline; gap: .35rem .9rem; margin: .3rem 0 0; font: 500 .88rem/1.3 var(--font-name); color: var(--text-mute); }
+.prow .below .k { color: var(--limit); text-decoration: none; }
+.prow .below .k:hover, .prow .below a.m:hover { text-decoration: underline; }
+.prow .below a.m { color: inherit; text-decoration: none; }
+.prow .below b { font: 600 .88rem/1 var(--font-data); }
 .prow .below .flag { margin: 0; display: inline-flex; gap: .3rem .9rem; }
 .prow .below .flag a { font-size: .9rem; }
 .prow .below .flag .vs, .prow .below .flag .vs b { font-size: .88rem; }
 
-/* a command's models, two or more, as sub-rows under it in the same columns: no rule between them and their command,
+/* a command's models, three or more, as sub-rows under it in its own columns: no rule between them and their command,
    the model's name indented in the name face, so they read as the command's parts (marlin, Oct 13) */
 .prow.msub { border-top: 0; padding: .3rem 0; font-size: .9rem; }
 .prow.msub .cmd { align-self: baseline; padding-left: .75rem; font: 500 .88rem/1.25 var(--font-name); color: var(--text-mute); }
 .prow.msub .bad { color: var(--limit); font-weight: 600; }
-.prow.msub .fbar { margin-top: .3rem; }
 .prow.msub.more { padding-bottom: .8rem; }
-.prow.msub.more .cmd { grid-column: 1 / -1; }
-.prow.msub.more .act { white-space: nowrap; }  /* "4 more models" never breaks into two lines */
+.prow.msub.more .act { white-space: nowrap; }  /* "4 more models" broke into two lines in the narrow model column at 1440 */
 
-/* wide: the chips sit beside the four figures, in the row's own line */
-@container perf (min-width: 62rem) {
-  .prow { grid-template-columns: minmax(8rem, 11rem) 6rem 10rem 6rem 6rem minmax(0, 1fr); gap: .5rem 1rem; }
-  .prow.pthead .pst-h { display: block; }
-  .prow .pstats { grid-column: 6; grid-row: 1; }
-}
-
-/* too narrow for the four: each figure says its own label, the command's chip leads its row */
-@container perf (max-width: 34rem) {
+/* too narrow for every column: each figure says its own label, the command's chip leads its row */
+@container perf (max-width: 46rem) {
   .prow.pthead { display: none; }
   .prow { display: flex; flex-wrap: wrap; align-items: flex-start; gap: .8rem 1.35rem; padding: .9rem 0; }
-  .prow .cmd, .prow .pstats, .prow .below { flex-basis: 100%; }
-  .prow .num { text-align: left; }
+  .prow .cmd { flex-basis: 100%; }
   .prow .pf > em { display: block; margin-bottom: .3rem; font: 500 .9rem/1.2 var(--font-name); font-style: normal; color: var(--text-mute); }
+  .prow .below { flex-basis: 100%; }
 }

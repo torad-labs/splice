@@ -384,9 +384,19 @@ const PRE_PUSH_GRADLE_OPTIONS = ["--parallel", "--build-cache", "--continue", "-
 /** How often the branch is looked at while gradle runs: a push whose branch moved is refused at the end, so its run stops. */
 const MOVED_POLL_MS = 20_000;
 
-/** The gradle task name of the per-module lint aggregate. A pre-push that batches ktlint excludes it by name: Gradle also drops
- *  the lint tasks only it reaches, and keeps any another task needs. */
-const KTLINT_TASK = "ktlintCheck";
+/** The ktlint tasks a module's `check` runs, by name. The plugin wires `check` to one task per source set and to the script task,
+ *  never to the `ktlintCheck` aggregate (the dry run of the pre-push task list shows no aggregate in the graph), so excluding the
+ *  aggregate alone excluded nothing. Gradle's `--exclude-task` also drops the tasks only an excluded one reaches
+ *  (runKtlintCheckOver..., loadKtlintReporters) and keeps any another task needs. A source set missing from this list keeps its
+ *  gradle lint, so the list can fall behind without losing coverage; it cannot lint less than it did. */
+const KTLINT_TASKS = [
+  "ktlintCheck",
+  "ktlintMainSourceSetCheck",
+  "ktlintTestSourceSetCheck",
+  "ktlintTestFixturesSourceSetCheck",
+  "ktlintLawFixturesSourceSetCheck",
+  "ktlintKotlinScriptCheck",
+];
 /** The batched ktlint, as a failed leg is named in the verdict. */
 const KTLINT_LEG: Leg = { task: "ktlint", command: ["ktlint"] };
 
@@ -706,7 +716,7 @@ async function judgeIn(
       stopGradle("the branch moved");
     }, deps.movedPollMs ?? MOVED_POLL_MS);
     try {
-      const runner = deps.gate ?? slotRunner(judgeLay, "pre-push", true, batchKtlint ? [`--exclude-task=${KTLINT_TASK}`] : []);
+      const runner = deps.gate ?? slotRunner(judgeLay, "pre-push", true, batchKtlint ? KTLINT_TASKS.map((task) => `--exclude-task=${task}`) : []);
       judged = await judgedRun(runner, root, modules, scope.gradle, deps.rivalLive, stopper.signal);
     } finally {
       clearInterval(watch);

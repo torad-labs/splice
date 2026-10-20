@@ -74,6 +74,14 @@ public class WebhookPusher(
 
     private data class Delivery(val last: Attempt, val attempts: Int)
 
+    private data class CompletedOutcome(
+        val seq: Long,
+        val entry: JournalRecords.WebhookEntry,
+        val journaled: Boolean = false,
+    )
+
+    private var completedOutcome: CompletedOutcome? = null
+
     private val peer: String = config.name
     private val enabled: Boolean = config.webhook?.enabled == true
     private val sender: WebhookSender? = config.webhook?.let { WebhookSender(it, config.name, peerDir, wallClock) }
@@ -105,6 +113,7 @@ public class WebhookPusher(
     }
 
     private suspend fun drain(live: WebhookSender) {
+        saveCompletedOutcome()
         val after = journal.cursors.webhook() ?: startCursor()
         val page = journal.read(after, PEER_WEBHOOK_BATCH, setOf(PEER_KIND_MESSAGE))
         if (page.items.isEmpty()) journal.awaitMessage() else page.items.forEach { push(live, it) }
@@ -119,11 +128,19 @@ public class WebhookPusher(
     private suspend fun push(live: WebhookSender, record: JsonObject) {
         val seq = JournalLines.seqOf(record) ?: return
         val delivery = deliver(live, seq, WebhookBody.of(peer, record, false))
-        val entry = entryOf(seq, delivery)
-        Cancellables.runCatchingCancellable { journal.appendWebhook(entry) }.onFailure {
-            note("seq $seq: no webhook record was journaled (${LogSafe.str(SafeFailureText.render(it))})")
+        completedOutcome = CompletedOutcome(seq, entryOf(seq, delivery))
+        saveCompletedOutcome()
+    }
+
+    /** A write failure retries persistence after the outer backoff, never the completed external delivery. */
+    private fun saveCompletedOutcome() {
+        val pending = completedOutcome ?: return
+        if (!pending.journaled) {
+            journal.appendWebhook(pending.entry)
+            completedOutcome = pending.copy(journaled = true)
         }
-        journal.cursors.advanceWebhook(seq)
+        journal.cursors.advanceWebhook(pending.seq)
+        completedOutcome = null
     }
 
     private suspend fun deliver(live: WebhookSender, seq: Long, body: ByteArray): Delivery {

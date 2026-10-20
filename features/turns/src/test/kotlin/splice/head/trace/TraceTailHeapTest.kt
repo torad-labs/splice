@@ -35,6 +35,7 @@ import splice.core.util.WallClock
 import splice.head.trace.body.TraceBodyPack
 import splice.head.trace.body.TracePackIndex
 import splice.head.wire.ClientInbound
+import splice.head.wire.TraceStore
 import splice.head.wire.TurnIdMint
 import splice.upstream.sse.WireAttempt
 import splice.upstream.sse.WireRequest
@@ -77,15 +78,18 @@ class TraceTailHeapTest {
     /** Writes [ids] as the daemon would, one attempt and one turn record each, on the day [at] falls in. */
     private fun write(traceDir: Path, at: Long, ids: List<String>, bodyChars: Int = BODY_CHARS) {
         val queue = ArrayDeque(ids)
-        val store = splice.head.syntheticTraceStore(
-            ActivityDays(traceDir, HEAD, 30, WallClock { at }, true),
+        val clock = WallClock { at }
+        // Built here, not by the fixture, for the one thing it does not take: a ledger no write can fill. Its
+        // leases return when the collector frees each turn's text, so a sized one made this setup depend on how far
+        // behind the collector was under suite load.
+        val store = TraceStore(
+            ActivityDays(traceDir, HEAD, 30, clock, true),
             HEAD,
-            maxBodyChars = 2 * bodyChars,
-            now = WallClock { at },
-            ids = TurnIdMint { queue.removeFirst() },
-            // A ledger no write can fill: its leases return when the collector frees each turn's text, so a sized one
-            // made this setup depend on how far behind the collector was under suite load.
-            heap = HeapBudget(heapLimitBytes = 1L shl 40),
+            2 * bodyChars,
+            clock,
+            TurnIdMint { queue.removeFirst() },
+            HeapBudget(heapLimitBytes = 1L shl 40),
+            bodyBudget = DayBodyBudget(minFreeBytes = 0, clock = clock),
         )
         ids.forEach { id ->
             val body = id.padEnd(bodyChars, 'x')

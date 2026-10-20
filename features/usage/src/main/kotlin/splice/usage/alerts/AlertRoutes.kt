@@ -99,11 +99,13 @@ public class AlertRoutes(
         }
         return sent.fold(
             onSuccess = { response ->
+                val accepted = response.status.isSuccess()
                 JsonReply(
-                    HttpStatusCode.OK,
+                    if (accepted) HttpStatusCode.OK else HttpStatusCode.BadGateway,
                     buildJsonObject {
-                        put("ok", true)
+                        put("ok", accepted)
                         put("status", response.status.value)
+                        if (!accepted) put("error", "Webhook rejected the test")
                     }.toString(),
                 )
             },

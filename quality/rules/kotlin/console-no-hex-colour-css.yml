@@ -1,0 +1,20 @@
+# THE LAW (Marcos approved the Splice brand kit on Oct 19, 2026). Every colour the console draws comes from
+# app/src/main/resources/console/tokens.css, which is the kit's .design/brandkit/tokens/splice.css. A hex colour anywhere else
+# in the console's CSS, JS or HTML is a second palette, and it is how a console ended up with its own cream, its own red and a
+# review panel in magenta. Use a token (var(--splice-...)) or one of the console's aliases of one (var(--wall), var(--claude)).
+# A colour the kit has no token for is added to the kit's tokens first, with its contrast measured, then copied to tokens.css.
+#
+# This file sits in quality/rules/kotlin because sgconfig.yml names that one rule directory; it scopes itself to the console by
+# files:. console-no-hex-colour-js.yml and console-no-hex-colour-html.yml are the same law for the other two languages.
+# rgb() and rgba() literals are not covered.
+id: console-no-hex-colour-css
+language: css
+severity: error
+message: A hex colour in the console CSS outside tokens.css is a second palette.
+note: Use var(--splice-...) from tokens.css, or the console alias of it (var(--wall), var(--text), var(--claude)). A new colour goes into the kit's tokens first.
+files:
+  - app/src/main/resources/console/*.css
+ignores:
+  - app/src/main/resources/console/tokens.css
+rule:
+  kind: color_value

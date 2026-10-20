@@ -179,7 +179,7 @@ sibling, which is then renamed over the target.
   <name>/peer.key                           the peer's control-plane key, the one copy of it (D writes)
   <name>/webhook.secret                     the webhook HMAC secret, minted at webhook set (D writes; C reads)
   <name>/webhook.bearer                     optional bearer for the receiver, copied from --bearer-file (D writes; C reads)
-<state dir>/peers/<name>/                  the state dir StatePaths resolves (default ~/.splice/state)
+<state folder>/peers/<name>/               the state folder StatePaths resolves (~/.claude-codex/state on this machine)
   journal.jsonl                             inbound messages and receipts (C's journal; written only by the helper)
   outbox.jsonl                              sends made as this peer (C's log; written only by the daemon)
   read.cursor                               last seq the reader acknowledged (daemon writes)
@@ -306,7 +306,8 @@ suspend fun peerGuarded(call: ApplicationCall, block: suspend (PeerPrincipal) ->
   hash from the door map. The journal stays unless `purge=true`.
 - **Rotate** writes a new `peer.key` and replaces the hash. The old key fails from that moment. The
   helper, its socket, its `peerToken` and its `sessionId` do not change.
-- **Webhook set** mints a new `webhook.secret`, 32 random bytes as hex, and copies `bearerFile` into
+- **Webhook set** mints a new `webhook.secret`: 32 random bytes written as 64 lowercase hex characters and a
+  newline. It copies `bearerFile` into
   `webhook.bearer` when one is given. The two are kept apart, so the HMAC secret never travels in a header. It sends the helper SIGHUP, and the helper re-reads `peer.json` and the secret.
 
 ### 3.3 Routes with the peer's own key (Door.PEER)
@@ -325,6 +326,8 @@ suspend fun peerGuarded(call: ApplicationCall, block: suspend (PeerPrincipal) ->
   4. Call A's send, append the outbox record, and answer.
 - **The target** comes from the registry and never from the body. The rules are `SessionNoteRoute.target`'s:
   one running record, alone on its socket.
+- **Unknown fields** in the send body are ignored, not refused. A `from`, a `name` or any field but `to` and
+  `text` changes nothing that is sent.
 
 ### 3.4 Limits
 
@@ -343,7 +346,10 @@ All of these are named constants, each with a `// why:` line, as the silent-cons
 ### 4.1 Lifecycle (B)
 
 - **One helper per peer.** The registry is keyed by pid, so two peers can never share one process. The
-  helper is the splice jar run as `java -Xmx48m -XX:+UseSerialGC -cp <splice.jar> splice.app.peer.PeerHelperMain <name>`.
+  helper is the splice jar run as
+  `java -Xmx48m -XX:+UseSerialGC -cp <splice.jar> splice.app.MainKt peer-helper <name> --settings … --state …`,
+  with `--registry`, `--runtime` and `--build` after them. It enters through `Main.kt`, because the architecture
+  law allows one `main` in `:app`, and `peer-helper` hands it to `PeerHelperRun`.
   `java` is the daemon's own binary, from `ProcessHandle.current().info().command()`. The helper is started
   detached in its own session, so a daemon restart, which happens many times a day, never takes a peer
   offline. `helper.json` records the helper's `version`. At adoption, the supervisor restarts a helper whose
@@ -398,13 +404,16 @@ C's `InboxHandler`. Connections are handled on a bounded pool of 4. A connection
   - `X-Splice-Peer: <name>`
   - `X-Splice-Delivery: <journal seq>`
   - `X-Splice-Timestamp: <unix seconds>`
-  - `X-Splice-Signature: v1=<lowercase hex HMAC-SHA256(secret, "<timestamp>.<raw body bytes>")>`
+  - `X-Splice-Signature: v1=<lowercase hex HMAC-SHA256(secret, "<timestamp>.<raw body bytes>")>`, where the
+    HMAC key is the secret file's text with its newline trimmed: the 64 hex characters as UTF-8 bytes, not the
+    32 bytes they spell.
 - **Verifying.** A receiver checks the signature against the exact body bytes, and refuses a timestamp
   more than 300 s from its own clock. The optional bearer exists so a grokbot-style receiver, which checks
   only a bearer, works unchanged.
 - **The body:**
   `{"v":1,"peer":"gary","seq":17,"id":"<msg_id>","at":<ms>,"from":{"name","sessionId","address","claimedName","check"},"auth":"token"|"none","text":"…"}`.
-  The test push sends the same shape with `"test":true`, a seq of 0, the text `"splice webhook test"`, and no `auth`.
+  The test push sends the same shape with `"test":true`, a seq of 0, the id `"webhook-test"`, the text
+  `"splice webhook test"`, a `from` naming the peer itself with `check:"unregistered"`, and no `auth`.
   `auth` is the journal's own (1.3 and 2.3): `token` when the sender presented the socket's `peerToken`, `none`
   when it sent no auth line. The body carries it because `from` and `check` alone cannot tell a receiver which
   of the two it got: a frame with no auth line that names a live session's address reaches the webhook as that
@@ -528,8 +537,8 @@ wiring are D's, and B and C hand D their constructors.
 ### B. Helper process, registry registration, process identity
 
 - **Owns:** new `features/sessions/.../peer/helper/` (`PeerHelper.kt`, `PeerInboxServer.kt`,
-  `PeerRegistryRecord.kt`, `PeerSockets.kt`), `app/.../peer/PeerHelperMain.kt`, and
-  `app/.../peer/PeerSupervisor.kt`.
+  `PeerRegistryRecord.kt`, `PeerRegistryShapes.kt`, `PeerSockets.kt`), and `app/.../peer/` (`PeerHelperRun.kt`,
+  `HelperLoops.kt`, `HelperLaunch.kt`, `PeerSupervisor.kt`), with one dispatch line in `Main.kt`.
 - **Builds:** 2.2 and 4.1 to 4.2. It reuses `PidIdentity` and `ProcPidIdentity` for `procStart` and the
   pid domain, and `PeerNoteSocket`'s vetting for the inbox folder.
 - **Hands others:** `PeerSupervisor(start, stop, reload, status)` for D, and the helper's socket path
@@ -581,15 +590,15 @@ one-liner on 127.0.0.1 that writes each request's headers and body to `/tmp/peer
 204.
 
 1. **Dormancy.** Before any register, there is no `~/.config/splice/peers` and no `splice-peer` record.
-   `ss -xl` shows no Splice socket, and `pgrep -f PeerHelperMain` finds nothing.
+   `ss -xl` shows no Splice socket, and `pgrep -f 'MainKt peer-helper'` finds nothing.
 2. **Register.** `splice peer register walk-bot`. The key file is mode 0600 and its contents are not
    printed. `walk-a`'s ListAgents shows `walk-bot`.
 3. **Webhook.** `splice peer webhook set walk-bot http://127.0.0.1:<port>/hook`, then
    `splice peer webhook test walk-bot`. The receiver logs a body with `"test":true`, and the signature
-   verifies against the secret file.
+   verifies with the secret file's trimmed hex text as the key.
 4. **Session to peer.** In `walk-a`, SendMessage to `walk-bot`. The message appears in
    `splice peer inbox --as walk-bot` with `check: registered` and name `walk-a`. The webhook log shows it
-   with a valid signature, and `walk-a` sees a `delivered` receipt.
+   with a valid signature, and `walk-a` shows 2.1.304's notice that the message was approved and released.
 5. **Peer to session, and a reply.** `splice peer send --as walk-bot walk-a "reply with the word PONG"`.
    `walk-a`'s transcript shows `<cross-session-message from="uds:…" from-name="walk-bot">`, and `walk-a`
    replies with SendMessage to `walk-bot`. PONG appears in the inbox and on the webhook.
@@ -608,7 +617,8 @@ one-liner on 127.0.0.1 that writes each request's headers and body to `/tmp/peer
    After `rotate`, the old key gets 401 and the new key sends.
 10. **Restart.** `splice restart --now`. The helper pid does not change, and step 4 works again with no
     re-register.
-11. **Revoke.** `splice peer revoke walk-bot`. The record, key file, socket and process are gone, and
+11. **Revoke.** `splice peer revoke walk-bot`. The record, key file and socket are gone, and so is the process:
+    `pgrep -f 'MainKt peer-helper walk-bot'` finds nothing. This holds after a SIGKILL of the helper too, and
     ListAgents no longer shows `walk-bot`. A SendMessage from `walk-a` to `walk-bot` fails, the old key
     gets 401, and the journal remains until `--purge`.
 12. **Secrets.** `grep -r` for the peer key, the webhook secret, the `peerToken` and the walk texts finds

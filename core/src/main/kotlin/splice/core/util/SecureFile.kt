@@ -12,10 +12,12 @@ import java.nio.ByteBuffer
 import java.nio.channels.Channels
 import java.nio.channels.FileChannel
 import java.nio.file.FileSystemException
+import java.nio.file.FileSystems
 import java.nio.file.Files
 import java.nio.file.Path
 import java.nio.file.StandardCopyOption
 import java.nio.file.StandardOpenOption
+import java.nio.file.attribute.FileAttribute
 import java.nio.file.attribute.PosixFilePermission
 import java.nio.file.attribute.PosixFilePermissions
 
@@ -39,6 +41,25 @@ public object SecureFile {
     private val OWNER_ONLY = PosixFilePermissions.fromString(OWNER_ONLY_MODE)
     private val OWNER_ONLY_DIR = PosixFilePermissions.fromString("rwx------")
     private val OPEN_TO_OTHERS = PosixFilePermissions.fromString("---rwxrwx")
+
+    /** The attribute that makes a file 0600 at its creation, for a channel opened with CREATE (a lock file); null
+     *  where the default filesystem keeps no POSIX modes, since it would refuse the attribute. */
+    public val CREATE_0600: FileAttribute<*>? =
+        if ("posix" in FileSystems.getDefault().supportedFileAttributeViews()) {
+            PosixFilePermissions.asFileAttribute(OWNER_ONLY)
+        } else {
+            null
+        }
+
+    /** Sets [file] to exactly 0600, for a file made by a call that takes no attribute (a bound socket); why it could
+     *  not, or null. Unlike [ownerOnlyFile], the owner's execute bit goes too. */
+    public fun set0600(file: Path): String? = try {
+        Cancellables.runCatchingCancellable { Files.setPosixFilePermissions(file, OWNER_ONLY) }
+            .exceptionOrNull()?.let { SafeFailureText.render(it) }
+    } catch (_: UnsupportedOperationException) {
+        // Passed through by runCatchingCancellable, so caught here by name (see ownerOnlyDirectory).
+        "its filesystem keeps no POSIX modes"
+    }
 
     /**
      * V4-174: the DIRECTORY form of the same law, for a store whose every file carries private

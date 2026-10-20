@@ -5,6 +5,7 @@
 // file, the socket, helper.json. A helper is alive only while its helper.json pid runs with the procStart it recorded, so
 // a reused pid is never taken for it. One helper per peer holds helper.lock, so a second start for the same peer stops
 // at once instead of registering the peer twice. helper.log carries counts and errors, never text, tokens or keys.
+// helper.lock and helper.log are made 0600, as the spec's on-disk layout (2) has every file but the registry record.
 package splice.sessions.peer.helper
 
 import kotlinx.coroutines.CoroutineDispatcher
@@ -29,6 +30,7 @@ import java.nio.channels.FileChannel
 import java.nio.channels.FileLock
 import java.nio.channels.OverlappingFileLockException
 import java.nio.channels.ServerSocketChannel
+import java.nio.file.FileAlreadyExistsException
 import java.nio.file.Files
 import java.nio.file.Path
 import java.nio.file.StandardOpenOption
@@ -138,9 +140,23 @@ public class HelperLog(private val file: Path, private val clock: WallClock) {
 
     private fun append(line: String) {
         Cancellables.discard(
-            Cancellables.runCatchingCancellable { JsonlSink.appendLine(file, line, HELPER_LOG_MAX_BYTES) },
+            Cancellables.runCatchingCancellable {
+                fresh()
+                JsonlSink.appendLine(file, line, HELPER_LOG_MAX_BYTES)
+            },
             "helper.log is diagnostics; a line it could not take must not stop the inbox",
         )
+    }
+
+    /** Makes helper.log owner-only before JsonlSink appends, which would make it, and remake it after each roll, at the
+     *  umask's mode. */
+    private fun fresh() {
+        if (Files.exists(file)) return
+        try {
+            SecureFile.createNew0600(file, ByteArray(0))
+        } catch (_: FileAlreadyExistsException) {
+            // Made by another append between the check and the create: it is the file wanted.
+        }
     }
 }
 
@@ -236,10 +252,12 @@ public class PeerHelper(
 
     private fun lock(files: PeerStateFiles): LockTry = Cancellables.runCatchingCancellable {
         val open = SecureFile.ownerOnlyDirectory(files.dir)
-        if (open != null) {
-            LockTry.Refused("the peer's state folder stays open: $open")
+        val mode = SecureFile.CREATE_0600
+        if (open != null || mode == null) {
+            LockTry.Refused("the peer's state folder stays open: ${open ?: "its filesystem keeps no POSIX modes"}")
         } else {
-            val channel = FileChannel.open(files.lock, StandardOpenOption.CREATE, StandardOpenOption.WRITE)
+            val options = setOf(StandardOpenOption.CREATE, StandardOpenOption.WRITE)
+            val channel = FileChannel.open(files.lock, options, mode)
             val held = try {
                 channel.tryLock()
             } catch (_: OverlappingFileLockException) {

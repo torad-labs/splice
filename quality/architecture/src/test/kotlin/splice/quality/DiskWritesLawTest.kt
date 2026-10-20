@@ -402,6 +402,7 @@ private val SHIPPED_SITES: Map<String, Map<String, Int>> = mapOf(
     "features/sessions/src/main/kotlin/splice/sessions/peer/helper/PeerHelper.kt" to mapOf(
         "FileChannel.open(" to 1,
         "JsonlSink.appendLine(" to 1,
+        "createNew0600(" to 1,
         "writeAtomic0600(" to 1,
     ),
     // A peer helper's registry key file and record under ~/.claude/sessions, in the README's two rows for them.

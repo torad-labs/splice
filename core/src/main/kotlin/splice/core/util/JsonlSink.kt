@@ -55,6 +55,9 @@ public object JsonlSink {
     public val NO_ARCHIVE: RotationArchive = RotationArchive { }
     private val OS_FORCE = JsonlForce { _, channel -> channel.force(true) }
 
+    // The `.lock` sibling is made 0600: it holds no byte, and a lock others may open is a lock others may hold.
+    private val LOCK_OPTIONS = setOf(StandardOpenOption.CREATE, StandardOpenOption.WRITE)
+
     /** Telemetry is allowed to lose its last page-cache writes on host loss, never on daemon restart. */
     public val PAGE_CACHE_FORCE: JsonlForce = JsonlForce { _, _ -> }
 
@@ -114,7 +117,13 @@ public object JsonlSink {
         val normalized = file.toAbsolutePath().normalize()
         synchronized(locks.computeIfAbsent(normalized) { Any() }) {
             val lockPath = normalized.resolveSibling("${normalized.fileName}.lock")
-            FileChannel.open(lockPath, StandardOpenOption.CREATE, StandardOpenOption.WRITE).use { channel ->
+            val mode = SecureFile.CREATE_0600
+            val opened = if (mode == null) {
+                FileChannel.open(lockPath, LOCK_OPTIONS)
+            } else {
+                FileChannel.open(lockPath, LOCK_OPTIONS, mode)
+            }
+            opened.use { channel ->
                 val lock = acquireBounded(channel)
                 try {
                     append(file, line, RotatePolicy(maxBytes, rotate = lock != null, archive, force))

@@ -7,7 +7,9 @@
 // it runs in its own `systemd-run --user --scope`, because a process left in splice.service's cgroup is killed with the
 // unit (KillMode=mixed); elsewhere it runs under setsid. Every standard stream is discarded. A helper is signalled only
 // while its helper.json pid runs with the procStart it recorded, so a reused pid is never hit, and a leftover registry
-// record is removed only when it is this peer's.
+// record, key file and socket are removed only when the record is this peer's or gone. Revoke deletes the peer's folder
+// before it stops the helper, so the supervisor keeps each peer's session id from the last time it saw peer.json; a
+// dead helper's leftovers are cleared before its restart, so a later revoke never meets a socket no helper.json names.
 package splice.app.peer
 
 import kotlinx.coroutines.CoroutineDispatcher
@@ -80,6 +82,9 @@ internal class PeerSupervisor(
     private val build = PeerBuild()
     private val restarts = ConcurrentHashMap<String, Restarts>()
 
+    /** Each peer's session id as last read from peer.json, for the leftovers of a peer whose folder is gone. */
+    private val sessions = ConcurrentHashMap<String, String>()
+
     /** Peers being revoked: never restarted until they are registered again. */
     private val held: MutableSet<String> = ConcurrentHashMap.newKeySet()
 
@@ -93,6 +98,7 @@ internal class PeerSupervisor(
      *  is still starting. A peer registered again is no longer held. */
     override suspend fun start(name: String): Long? {
         held.remove(name)
+        store.get(name)?.let { sessions[name] = it.sessionId }
         if (running(name) == null) launch(name, failures = 0)
         val deadline = clock() + REGISTER_WAIT_MS
         var helper = running(name)
@@ -109,12 +115,14 @@ internal class PeerSupervisor(
         held.add(name)
         restarts.remove(name)
         val files = PeerStateFiles(places.stateDir, name)
+        val sessionId = store.get(name)?.sessionId ?: sessions[name]
+        sessions.remove(name)
         val helper = helpers.read(files) ?: return
         if (helpers.alive(helper)) terminate(helper.pid)
         if (helpers.alive(helper)) {
             say("$name: helper ${helper.pid} did not exit")
         } else {
-            leftovers(name, helper, files)
+            leftovers(name, helper, files, sessionId)
         }
     }
 
@@ -138,13 +146,17 @@ internal class PeerSupervisor(
     private suspend fun adopt() {
         val current = build.current()
         for (peer in store.list()) {
-            val helper = helpers.read(PeerStateFiles(places.stateDir, peer.name))
+            sessions[peer.name] = peer.sessionId
+            val files = PeerStateFiles(places.stateDir, peer.name)
+            val helper = helpers.read(files)
             val alive = helper != null && helpers.alive(helper)
             val sameBuild = helper?.version == current
             if (alive && !sameBuild) {
                 stop(peer.name)
                 held.remove(peer.name)
+                sessions[peer.name] = peer.sessionId
             }
+            if (helper != null && !alive) leftovers(peer.name, helper, files, peer.sessionId)
             if (!alive || !sameBuild) launch(peer.name, failures = 0)
         }
     }
@@ -152,12 +164,14 @@ internal class PeerSupervisor(
     private fun reconcile() {
         held.retainAll { store.get(it) != null }
         for (peer in store.list()) {
-            if (peer.name !in held) reconcile(peer.name)
+            sessions[peer.name] = peer.sessionId
+            if (peer.name !in held) reconcile(peer.name, peer.sessionId)
         }
     }
 
-    private fun reconcile(name: String) {
-        val helper = helpers.read(PeerStateFiles(places.stateDir, name))
+    private fun reconcile(name: String, sessionId: String) {
+        val files = PeerStateFiles(places.stateDir, name)
+        val helper = helpers.read(files)
         val now = clock()
         if (helper != null && helpers.alive(helper)) {
             if (now - helper.startedAt > STABLE_MS) restarts.remove(name)
@@ -165,6 +179,7 @@ internal class PeerSupervisor(
         }
         val last = restarts[name]
         if (last != null && now - last.lastStart < HELPER_START_GRACE_MS + backoff(last.failures)) return
+        helper?.let { leftovers(name, it, files, sessionId) }
         launch(name, failures = (last?.failures ?: 0) + 1)
     }
 
@@ -198,15 +213,15 @@ internal class PeerSupervisor(
         }
     }
 
-    /** The record, key file, socket and helper.json a helper that did not exit cleanly left behind. */
-    private fun leftovers(name: String, helper: HelperFile, files: PeerStateFiles) {
-        val sessionId = store.get(name)?.sessionId
+    /** The record, key file, socket and helper.json a dead helper left behind; [sessionId] tells its record. */
+    private fun leftovers(name: String, helper: HelperFile, files: PeerStateFiles, sessionId: String?) {
         val cleaned = Cancellables.runCatchingCancellable {
             val ours = sessionId != null &&
                 PeerRegistryFiles(places.registryDirs).withdraw(helper.pid, Path.of(helper.socket), sessionId)
             // A socket path is the pid's; when another process holds that pid's record, the socket is its too.
             if (ours) Files.deleteIfExists(Path.of(helper.socket))
-            Files.deleteIfExists(files.helperJson)
+            // A helper started since this one was read has written its own helper.json, which stays.
+            if (helpers.read(files)?.pid == helper.pid) Files.deleteIfExists(files.helperJson)
         }
         cleaned.exceptionOrNull()?.let { say("$name: leftovers stay (${SafeFailureText.render(it)})") }
     }

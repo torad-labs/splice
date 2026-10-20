@@ -2,11 +2,11 @@
 // lives and how it is bound. The socket goes in Claude Code's own sockets folder, $XDG_RUNTIME_DIR/cc-socks, because a
 // client sends receipts only to a `from` in that folder; a path past 103 bytes moves to /tmp/cc-socks-<uid>, as the
 // client's own does, and gets no receipts. The folder is vetted the way PeerNoteSocket vets a target's (this user's,
-// closed to group and others, no link), created owner-only when absent, and the socket is closed to others once bound.
+// closed to group and others, no link), created owner-only when absent, and the socket is set to 0600 once bound, the
+// mode Claude Code gives its own.
 package splice.sessions.peer.helper
 
 import splice.core.util.Cancellables
-import splice.core.util.FileTightening
 import splice.core.util.SafeFailureText
 import splice.core.util.SecureFile
 import java.net.StandardProtocolFamily
@@ -56,7 +56,7 @@ public class PeerSockets(runtimeDir: Path?, private val uid: Long?, private val 
     /** Whether Claude Code will send receipts to [socket]: only to one in its own sockets folder. */
     public fun inClientFolder(socket: Path): Boolean = clientFolder != null && socket.parent == clientFolder
 
-    /** Vets or creates the folder, unlinks a stale socket at [socket], binds, and closes the socket to others. */
+    /** Vets or creates the folder, unlinks a stale socket at [socket], binds, and sets the socket to 0600. */
     public fun bind(socket: Path): SocketBind {
         val dir = socket.parent ?: return SocketBind.Refused("the socket path names no directory")
         val refusal = folder(dir) ?: unlinkStale(socket)
@@ -73,7 +73,7 @@ public class PeerSockets(runtimeDir: Path?, private val uid: Long?, private val 
         val server = opened.getOrElse { return SocketBind.Refused("no socket opens: ${SafeFailureText.render(it)}") }
         val bound = Cancellables.runCatchingCancellable { server.bind(UnixDomainSocketAddress.of(socket)) }
         val refusal = bound.exceptionOrNull()?.let { "the socket cannot be bound: ${SafeFailureText.render(it)}" }
-            ?: (SecureFile.ownerOnlyFile(socket) as? FileTightening.Open)?.let { "the socket stays open: ${it.why}" }
+            ?: SecureFile.set0600(socket)?.let { "the socket's mode cannot be set to 0600: $it" }
         if (refusal == null) return SocketBind.Bound(server, socket)
         Cancellables.discard(Cancellables.runCatchingCancellable { server.close() }, "the refusal is the answer")
         return SocketBind.Refused(refusal)

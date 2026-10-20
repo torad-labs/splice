@@ -12,7 +12,6 @@ dependencies {
     implementation(libs.kotlinx.coroutines.core)
     testImplementation(libs.ktor.client.cio)
     testImplementation(libs.kotlinx.coroutines.test)
-    testImplementation(libs.kotlinx.coroutines.test)
 }
 
 // The journal's streaming test loads a journal larger than a child JVM's whole heap; the child runs

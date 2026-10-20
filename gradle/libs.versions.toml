@@ -13,6 +13,7 @@ ktlint = "1.8.0"
 ktlint-gradle = "14.2.0"
 kover = "0.9.11"
 cyclonedx = "3.4.1"
+shadow = "9.6.1"
 junit = "6.1.3"
 # Self-contained code-mode feasibility probe; community artifacts, no Codex/Node installation.
 graaljs = "25.4.4.1.1"
@@ -86,3 +87,4 @@ detekt = { id = "io.gitlab.arturbosch.detekt", version.ref = "detekt" }
 ktlint = { id = "org.jlleitschuh.gradle.ktlint", version.ref = "ktlint-gradle" }
 kover = { id = "org.jetbrains.kotlinx.kover", version.ref = "kover" }
 cyclonedx = { id = "org.cyclonedx.bom", version.ref = "cyclonedx" }
+shadow = { id = "com.gradleup.shadow", version.ref = "shadow" }

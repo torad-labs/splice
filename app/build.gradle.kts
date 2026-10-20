@@ -31,7 +31,7 @@ plugins {
     id("splice.law-suite")
     id("splice.module-law")
     application
-    id("com.gradleup.shadow") version "9.6.1"
+    alias(libs.plugins.shadow)
     alias(libs.plugins.cyclonedx)
 }
 

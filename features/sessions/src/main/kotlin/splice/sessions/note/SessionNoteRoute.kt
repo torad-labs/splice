@@ -27,7 +27,7 @@ private const val BAD_BODY = "body must be {\"text\": \"<the note>\"}"
 private const val NO_SESSION = "no session has that id"
 private const val NOT_RUNNING = "the session is not running"
 private const val SEVERAL_WITH_ID = "more than one running session has that id"
-private const val NO_SOCKET = "the session has no messaging socket"
+internal const val NO_SOCKET = "the session has no messaging socket"
 private const val SHARED_SOCKET = "more than one running session answers on that socket"
 
 /** What sending one note came to. Only [Submitted] put bytes on the socket. */

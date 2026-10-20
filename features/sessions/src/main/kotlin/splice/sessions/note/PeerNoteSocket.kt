@@ -55,8 +55,6 @@ private const val MAX_TOKEN_CHARS = 256
 // why: the scheme Claude Code writes before a socket path in every `from` address.
 private const val ADDRESS_SCHEME = "uds:"
 
-private const val NO_SOCKET = "the session has no messaging socket"
-
 private val OTHERS = setOf(
     PosixFilePermission.GROUP_READ,
     PosixFilePermission.GROUP_WRITE,

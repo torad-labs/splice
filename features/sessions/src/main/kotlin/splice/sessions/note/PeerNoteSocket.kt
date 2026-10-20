@@ -106,8 +106,9 @@ public class PeerNoteSocket(
         }
     }
 
-    /** A receipt goes once and is never retried. A `denied` one goes with no auth line, as the spec has it (1.3): the
-     *  connection it answers presented a token this side would not take, so this side presents none either. */
+    /** A receipt goes once and is never retried, and only to a socket in [sender]'s own sockets folder, as Claude Code
+     *  sends its own (spec Facts). A `denied` one goes with no auth line, as the spec has it (1.3): the connection it
+     *  answers presented a token this side would not take, so this side presents none either. */
     override suspend fun receipt(
         toAddress: String,
         origMsgId: String,
@@ -116,12 +117,22 @@ public class PeerNoteSocket(
         sender: PeerSender,
     ): Boolean {
         val raw = toAddress.takeIf { it.startsWith(ADDRESS_SCHEME) }?.removePrefix(ADDRESS_SCHEME)
-        val socket = raw?.let(PathProbe::spelled)?.takeIf { it.isAbsolute }
+        val socket = raw?.let(PathProbe::spelled)?.takeIf { inOwnFolder(it, sender) }
         if (socket == null || unwritable(sender) != null) return false
         val token = raw.takeUnless { status == DeliveryStatus.DENIED }?.let(keys::tokenByAddress)
         val frame = token?.let(PeerWire::encodeAuth).orEmpty() +
             PeerWire.encodeReceipt(newId.next(), origMsgId, status, detail, sender)
         return write(socket, frame) == NoteOutcome.Submitted
+    }
+
+    /** True when [socket] sits directly in the folder of [sender]'s own helper socket, spelled absolute with no `.` or
+     *  `..`, and reached through no link anywhere on its path. A `from` names where a receipt goes, and it is the
+     *  frame's claim: any other folder, however it is spelled, is refused. */
+    private fun inOwnFolder(socket: Path, sender: PeerSender): Boolean {
+        val folder = PathProbe.spelled(sender.socket)?.parent ?: return false
+        val plain = socket.isAbsolute && socket.normalize() == socket
+        if (!plain || socket.parent != folder) return false
+        return PathProbe.resolved(socket) == socket
     }
 
     /** Why a peer's message may not go to [target] on [socket], or null when it may. */

@@ -206,20 +206,44 @@ class PeerNoteSocketTest {
         val delivered = inbox(root.resolve("a").also { Files.createDirectory(it) })
         keyFile(registry, 999, delivered.socket, "feedfacefeedfacefeedfacefeedface")
         val socket = PeerNoteSocket(Dispatchers.IO, newId = { "r-1" }, registryDirs = listOf(registry))
+        val self = PeerSender(delivered.dir.resolve("42.sock").toString(), "gary")
         val address = "uds:${delivered.socket}"
-        assertTrue(runBlocking { socket.receipt(address, "m-1", DeliveryStatus.DELIVERED, null, gary) })
+        assertTrue(runBlocking { socket.receipt(address, "m-1", DeliveryStatus.DELIVERED, null, self) })
         assertEquals(
             PeerWire.encodeAuth("feedfacefeedfacefeedfacefeedface") +
-                PeerWire.encodeReceipt("r-1", "m-1", DeliveryStatus.DELIVERED, null, gary),
+                PeerWire.encodeReceipt("r-1", "m-1", DeliveryStatus.DELIVERED, null, self),
             delivered.received.get(5, TimeUnit.SECONDS),
         )
         val denied = inbox(root.resolve("b").also { Files.createDirectory(it) })
         keyFile(registry, 998, denied.socket, "feedfacefeedfacefeedfacefeedface")
+        val deniedSelf = PeerSender(denied.dir.resolve("42.sock").toString(), "gary")
         val deniedAddress = "uds:${denied.socket}"
-        assertTrue(runBlocking { socket.receipt(deniedAddress, "m-2", DeliveryStatus.DENIED, "bad peer token", gary) })
+        assertTrue(
+            runBlocking { socket.receipt(deniedAddress, "m-2", DeliveryStatus.DENIED, "bad peer token", deniedSelf) },
+        )
         assertEquals(
-            PeerWire.encodeReceipt("r-1", "m-2", DeliveryStatus.DENIED, "bad peer token", gary),
+            PeerWire.encodeReceipt("r-1", "m-2", DeliveryStatus.DENIED, "bad peer token", deniedSelf),
             denied.received.get(5, TimeUnit.SECONDS),
         )
+    }
+
+    @Test
+    fun `a receipt goes nowhere outside the sender's own sockets folder, by another folder, a dot-dot or a link`(
+        @TempDir root: Path,
+    ) {
+        val forge = inbox(root.resolve("forge").also { Files.createDirectory(it) })
+        val own = Files.createDirectories(root.resolve("own/cc"))
+        val self = PeerSender(own.resolve("42.sock").toString(), "gary")
+        val link = Files.createSymbolicLink(own.resolve("1.sock"), forge.socket)
+        val socket = PeerNoteSocket(Dispatchers.IO, newId = { "r-1" })
+        val addresses = listOf(
+            "uds:${forge.socket}",
+            "uds:$own/../../forge/cc/1.sock",
+            "uds:$link",
+        )
+        for (address in addresses) {
+            assertFalse(runBlocking { socket.receipt(address, "m-1", DeliveryStatus.DELIVERED, null, self) }, address)
+        }
+        assertFalse(forge.received.isDone)
     }
 }

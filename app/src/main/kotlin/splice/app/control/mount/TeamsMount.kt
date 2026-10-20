@@ -55,7 +55,8 @@ internal class TeamsMount(
         commands = HeadStartCommands(heads),
         pins = PoolAccountPins(heads),
         arrival = RegistryArrival(sessions, ProcessWaiter()),
-        registry = sessions,
+        // the recorded listing, so a member that registered and ended is an ended row, not one that never registered
+        registry = wiring.listed,
         home = UserHome.dir(),
     )
 

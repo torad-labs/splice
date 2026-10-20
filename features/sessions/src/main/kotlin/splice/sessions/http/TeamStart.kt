@@ -70,6 +70,9 @@ public class TeamStart(
     private val commands: StartCommands,
     private val pins: AccountPins,
     private val arrival: SessionArrival,
+    /** The listing that keeps the sessions Claude Code forgot (RecordedSessions), not the raw registry: Claude Code
+     *  deletes its registration on a clean exit, and only a recorded session tells a member that came up and ended
+     *  from one that never registered. */
     private val registry: SessionSource?,
     private val home: Path,
 ) {
@@ -114,11 +117,16 @@ public class TeamStart(
     }
 
     private fun locate(store: TeamStore, teamId: String, slotId: String): Located {
+        // a teams.json that does not parse is no "no such team": the sentence says which file to fix
+        val unreadable = store.unreadable()
         val team = store.team(teamId)
-            ?: return Located.Missing(Refusals.reply(HttpStatusCode.NotFound, "$NO_SUCH_TEAM$teamId"))
-        val slot = team.slots.firstOrNull { it.id == slotId }
-            ?: return Located.Missing(Refusals.reply(HttpStatusCode.NotFound, "no such slot in $teamId: $slotId"))
-        return Located.Member(team, slot)
+        val slot = team?.slots?.firstOrNull { it.id == slotId }
+        return when {
+            unreadable != null -> Located.Missing(Refusals.reply(HttpStatusCode.InternalServerError, unreadable))
+            team == null -> Located.Missing(Refusals.reply(HttpStatusCode.NotFound, "$NO_SUCH_TEAM$teamId"))
+            slot == null -> Located.Missing(Refusals.reply(HttpStatusCode.NotFound, "no such slot in $teamId: $slotId"))
+            else -> Located.Member(team, slot)
+        }
     }
 
     /** Why this slot cannot be started now, or null when it can. */
@@ -165,8 +173,9 @@ public class TeamStart(
     }
 
     /** A slot whose start stopped on a question: its session never registered (a member that came up and later ended
-     *  starts afresh) and the pane splice opened for it is still remembered. Asked again, the start waits on that pane; a pane his answer closed gives the slot back. Null
-     *  for every other slot, which then starts or is refused as before. */
+     *  starts afresh, and the recorded listing still names it as ended) and the pane splice opened for it is still
+     *  remembered. Asked again, the start waits on that pane; a pane his answer closed gives the slot back. Null for
+     *  every other slot, which then starts or is refused as before. */
     private suspend fun pending(store: TeamStore, member: Located.Member): JsonReply? {
         val driving = drive.driver() ?: return null
         val (session, pane) = member.slot.session?.takeIf { s -> registry?.read().orEmpty().none { it.sessionId == s } }

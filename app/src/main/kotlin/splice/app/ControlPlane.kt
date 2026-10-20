@@ -22,6 +22,7 @@ import splice.app.control.FailedHeads
 import splice.app.control.ManagedHead
 import splice.app.daemon.BootedTopology
 import splice.app.head.HeadProbeReadings
+import splice.app.peer.PeersWiring
 import splice.app.provider.ClaudeAccountWiring
 import splice.app.provider.HeadBuildInputs
 import splice.app.provider.ModelRosters

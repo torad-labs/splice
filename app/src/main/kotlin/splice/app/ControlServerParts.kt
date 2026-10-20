@@ -8,6 +8,7 @@ import splice.app.control.ControlServer
 import splice.app.control.api.ControlAudit
 import splice.app.control.mount.ControlGuard
 import splice.app.daemon.BootedTopology
+import splice.app.peer.PeersWiring
 import splice.core.config.UserHome
 import splice.head.admission.AdmissionErrorBody
 import splice.http.ingress.HeapIngress

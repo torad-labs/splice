@@ -1,7 +1,7 @@
 // NEW: Oct 19, 2026 (docs/specs/peer-messaging.md 3.3 and 7, package D): the /api/peers routes' PeerMail over package
 // C's journal, outbox log and webhook client. The daemon only reads a peer's journal; the helper writes it. The daemon
 // writes the outbox, because the send route is where a send happens.
-package splice.app
+package splice.app.peer
 
 import kotlinx.serialization.json.JsonNull
 import kotlinx.serialization.json.JsonObject

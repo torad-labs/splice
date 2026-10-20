@@ -32,7 +32,6 @@ import io.ktor.server.routing.get
 import io.ktor.server.routing.getAllRoutes
 import io.ktor.server.routing.routing
 import kotlinx.coroutines.CancellationException
-import splice.app.PeersWiring
 import splice.app.control.api.ControlAudit
 import splice.app.control.api.ControlHealthReport
 import splice.app.control.api.HeadResolver
@@ -64,6 +63,7 @@ import splice.app.control.peer.PeerServices
 import splice.app.control.peer.PeersMount
 import splice.app.control.usage.UsageMount
 import splice.app.head.HeadRemovalAssembly
+import splice.app.peer.PeersWiring
 import splice.core.config.ConfigService
 import splice.core.util.LogSink
 import splice.core.version.ClientVersionTracker

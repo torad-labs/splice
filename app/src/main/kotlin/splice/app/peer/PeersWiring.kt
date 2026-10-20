@@ -1,7 +1,7 @@
 // NEW: Oct 19, 2026 (docs/specs/peer-messaging.md 7, package D): where the daemon builds peer messaging. The store is
 // read once at boot from `<settings dir>/peers/`, which is absent until the first `splice peer register`, so a user who
 // never registers one gets no file, no socket and no process: only the routes, which answer an empty list.
-package splice.app
+package splice.app.peer
 
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.launch
@@ -10,8 +10,6 @@ import splice.app.control.peer.PeerParts
 import splice.app.control.peer.PeerServiceSource
 import splice.app.control.peer.PeerServices
 import splice.app.control.peer.PeersMount
-import splice.app.peer.PeerPlaces
-import splice.app.peer.PeerSupervisor
 import splice.core.config.UserHome
 import splice.core.util.EnvReader
 import splice.core.util.LogSink

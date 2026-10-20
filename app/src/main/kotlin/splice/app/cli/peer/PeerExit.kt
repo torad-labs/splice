@@ -15,7 +15,8 @@ internal object PeerExit {
     // why: 2 is the CLI's usage error, as every other splice verb answers a bad argv.
     const val BAD_USAGE: Int = 2
 
-    // why: spec 5, 3 says no daemon answered at all, so a caller can start one and retry.
+    // why: spec 5, 3 is an unreachable daemon: none answered, or it stopped mid-call, and then the printed line says
+    // the request may have run, so a send retried after it can arrive twice.
     const val UNREACHABLE: Int = 3
 
     // why: spec 5, 4 is the send rate's 429, so a caller backs off rather than giving up.

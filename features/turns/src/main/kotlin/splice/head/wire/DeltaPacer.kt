@@ -23,8 +23,9 @@
 package splice.head.wire
 
 import kotlinx.coroutines.channels.Channel
+import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.Json
-import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.JsonElement
 import splice.core.perf.PerfKeys
 import splice.core.perf.TurnPerf
 import splice.core.util.JsonScalars
@@ -171,20 +172,41 @@ internal class DeltaPacer(
     /** A visible delta that carries characters: the client has nothing new to read from an empty one. */
     fun isArrivingDelta(frame: String): Boolean {
         val delta = DeltaFields.visible(frame) ?: return false
-        val field = if (JsonScalars.str(delta, "type") == TEXT_DELTA) "text" else "thinking"
-        return !JsonScalars.str(delta, field).isNullOrEmpty()
+        val field = if (JsonScalars.str(delta.type) == TEXT_DELTA) delta.text else delta.thinking
+        return !JsonScalars.str(field).isNullOrEmpty()
     }
 }
 
+/** The three fields of a frame's `delta` the pacer reads. Decoded straight from the frame's text, every other key
+ *  skipped, so a streamed delta builds no JsonObject: parsing each one into a tree was 345 of 632 MB/s sampled on the
+ *  live daemon (Oct 20, 01:28 CT), its HashMap tables alone 333. Elements, read by JsonScalars.str as the tree was,
+ *  so a number or null in any of them answers as before. */
+@Serializable
+private data class DeltaRead(
+    val type: JsonElement? = null,
+    val text: JsonElement? = null,
+    val thinking: JsonElement? = null,
+)
+
+@Serializable
+private data class DeltaFrame(val delta: DeltaRead? = null)
+
+private val DELTA_JSON = Json { ignoreUnknownKeys = true }
+
 /** Reads a frame's `delta` object. */
 private object DeltaFields {
-    /** The frame's `delta` object when it is a text or thinking delta, read from the object itself. */
-    fun visible(frame: String): JsonObject? {
+    /** The frame's `delta` when it is a text or thinking delta, read from the object itself. */
+    fun visible(frame: String): DeltaRead? {
         val data = if (frame.startsWith(DELTA_EVENT)) frame.substringAfter("data:", "") else ""
         if (data.isBlank()) return null
-        return parsed(data)?.takeIf { JsonScalars.str(it, "type") in VISIBLE_TYPES }
+        return parsed(data)?.takeIf { JsonScalars.str(it.type) in VISIBLE_TYPES }
     }
 
-    // A frame whose data is not JSON is not a delta; pacing never fails a turn over what it cannot read.
-    private fun parsed(data: String): JsonObject? = JsonScalars.objectOrNull(Json, data)?.get("delta") as? JsonObject
+    // A frame whose data is not JSON, or whose delta is not an object, is not a delta; pacing never fails a turn
+    // over what it cannot read.
+    private fun parsed(data: String): DeltaRead? = try {
+        DELTA_JSON.decodeFromString(DeltaFrame.serializer(), data).delta
+    } catch (_: IllegalArgumentException) {
+        null
+    }
 }

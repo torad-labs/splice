@@ -419,7 +419,7 @@ function windowsHtml(a, next = null) {
     if (w.label === "Week" && a.models) {
       // A model's figure is a slice of the account week above it, read in the same observation, so once that week has
       // ended its slices have too — whether or not the model itself reported a reset (hitstop, Oct 10).
-      for (const m of a.models) rows += `<span class="label sub">${m.name}</span>`
+      for (const m of a.models) rows += `<span class="label sub">${esc(m.name)}</span>`
         + (ended(m) || ended(w) ? closed(ended(m) ? m : w)
           : `${bar(m.used, `sub ${m.used >= 100 ? "full" : ""} ${m.stale ? "stale" : ""}`)}`
             + `<span class="pct">${m.used}%<span class="used">used</span></span>` + resets(m));

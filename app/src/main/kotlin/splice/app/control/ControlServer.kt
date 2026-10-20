@@ -54,6 +54,7 @@ import splice.app.control.mount.LifecycleMount
 import splice.app.control.mount.ManagerMount
 import splice.app.control.mount.McpMount
 import splice.app.control.mount.ModelsMount
+import splice.app.control.mount.PeerServices
 import splice.app.control.mount.PeersMount
 import splice.app.control.mount.ProjectsMount
 import splice.app.control.mount.SessionsMount
@@ -172,8 +173,13 @@ internal class ControlServer(
 
     // Oct 19, 2026: named peers (docs/specs/peer-messaging.md 3), over the store the guard admits peer keys from.
     private val peers: PeersMount? = sessions?.let { source ->
-        guard.peers?.let { store -> PeersWiring().mount(store, source, guard, log) }
+        guard.peers?.let { store -> PeersWiring().mount(store, source, guard, log) { peerServices } }
     }
+
+    /** The helper supervisor and the journal behind the peer routes, which ControlPlane sets once it has started them;
+     *  read at each request, and empty (503) until then. */
+    @Volatile
+    internal var peerServices: PeerServices = PeerServices()
 
     // Oct 16, 2026: what `splice console <action>` hands the open console to do, and the page's answer (ConsolePilot).
     private val consolePilot = ConsolePilotMount(guard)

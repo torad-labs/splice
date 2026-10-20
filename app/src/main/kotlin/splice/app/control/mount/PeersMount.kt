@@ -40,15 +40,18 @@ internal const val NO_PEER = "no peer has that name"
 internal const val UNWIRED = "peer messaging is not available in this build"
 internal const val NOT_RUNNING = "this peer's helper is not running"
 
-/** The parts the routes act through. [outbox], [helpers] and [mail] are null until packages A, B and C are wired. */
+/** The parts the routes act through. [helpers] and [mail] are read from [services] at each request, so the daemon can
+ *  wire them after the server is built; a route that needs one that is absent answers 503. */
 internal data class PeerParts(
     val store: PeerStore,
     val registry: SessionSource,
     val outbox: PeerOutbox?,
-    val helpers: PeerHelpers?,
-    val mail: PeerMail?,
+    val services: PeerServiceSource,
     val log: LogSink,
-)
+) {
+    val helpers: PeerHelpers? get() = services.services().helpers
+    val mail: PeerMail? get() = services.services().mail
+}
 
 internal class PeersMount(parts: PeerParts, private val guard: ControlGuard) {
     private val rate = PeerSendRate()

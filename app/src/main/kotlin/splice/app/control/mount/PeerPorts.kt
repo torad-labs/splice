@@ -66,8 +66,16 @@ internal interface PeerMail {
 
     /** Deletes `<state dir>/peers/<name>/`: the journal, the outbox and the cursors. */
     fun purge(name: String)
+
+    /** A webhook was set or cleared: the next pusher starts at the journal's end, not at an older cursor. */
+    fun webhookChanged(name: String)
 }
 
 /** What packages B and C plug into the routes: the helper supervisor and the journal. Either may be absent, and the
  *  routes that need it answer 503. */
 internal data class PeerServices(val helpers: PeerHelpers? = null, val mail: PeerMail? = null)
+
+/** Where the routes read [PeerServices] at each request: the daemon sets them after the server is built. */
+internal fun interface PeerServiceSource {
+    fun services(): PeerServices
+}

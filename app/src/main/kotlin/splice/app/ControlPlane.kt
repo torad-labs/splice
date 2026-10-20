@@ -207,6 +207,8 @@ internal class ControlPlane(
             ),
         )
         wireConsolePorts(srv)
+        // Oct 19, 2026: the peer helpers and their journals, over the same store the guard admits peer keys from.
+        srv.peerServices = PeersWiring().services(guard.peers, statePaths.stateDir, probeScope, log)
         parts.wireRestartSuccessor(srv, controlPort)
         return if (ownership.bind(srv, controlPort)) srv.also { mcpServices.refresh() } else null
     }

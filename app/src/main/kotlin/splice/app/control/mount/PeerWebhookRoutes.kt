@@ -42,7 +42,10 @@ internal class PeerWebhookRoutes(private val parts: PeerParts) {
     suspend fun clear(call: ApplicationCall) {
         val name = call.parameters[NAME_PARAM].orEmpty()
         val cleared = store.wellFormed(name) && store.clearWebhook(name)
-        if (cleared) parts.helpers?.reload(name)
+        if (cleared) {
+            parts.mail?.webhookChanged(name)
+            parts.helpers?.reload(name)
+        }
         val answer = if (cleared) {
             PeerReplies.ok(HttpStatusCode.OK, JsonObject(emptyMap()))
         } else {
@@ -66,6 +69,7 @@ internal class PeerWebhookRoutes(private val parts: PeerParts) {
         if (url == null || refusal != null) return PeerReplies.refuse(HttpStatusCode.BadRequest, refusal.orEmpty())
         val files = if (store.wellFormed(name)) store.setWebhook(name, url, bearer.bearer) else null
         if (files == null) return PeerReplies.refuse(HttpStatusCode.NotFound, NO_PEER)
+        mail.webhookChanged(name)
         parts.helpers?.reload(name)
         parts.log("[peers] set the webhook of ${LogSafe.str(name)}\n")
         return PeerReplies.ok(

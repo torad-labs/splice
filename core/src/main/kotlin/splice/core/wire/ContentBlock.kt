@@ -69,5 +69,8 @@ public sealed class ContentBlock {
 
 private const val TOOL_REFERENCE_TYPE = "tool_reference"
 private const val TOOL_NAME_FIELD = "tool_name"
+
+// why: Anthropic's Messages API accepts tool names of 1 to 64 letters, digits, `_` and `-`
+// (`^[a-zA-Z0-9_-]{1,64}$`), so a longer name is not one the client could have loaded.
 private const val TOOL_NAME_MAX_LENGTH = 64
 private const val TOOL_NAME_CHARS = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789_-"

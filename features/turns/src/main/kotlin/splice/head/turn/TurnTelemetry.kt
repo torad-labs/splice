@@ -18,9 +18,11 @@ import splice.core.turn.Usage
 import splice.core.turn.UsageRequest
 import splice.core.turn.noRequestUsage
 import splice.core.util.AsyncFileIo
+import splice.core.util.Cancellables
 import splice.core.util.ElapsedClock
 import splice.core.util.FileIoTask
 import splice.core.util.LogSink
+import splice.core.util.SafeFailureText
 import splice.head.HeadEvents
 import splice.head.NoHeadEvents
 import splice.head.admission.LocalRefusal
@@ -205,11 +207,19 @@ internal class TurnTelemetry(
 
     /** V4-404: the one place a turn's trace is closed, from both endings (a drive's perf row and a local
      *  refusal). The outcome's sentence is recorded beside its tag unless the ending's own surface already
-     *  spoke, so no failed turn's record closes without words (only TurnConnEnd used to speak). */
+     *  spoke, so no failed turn's record closes without words (only TurnConnEnd used to speak).
+     *
+     *  Best effort, and logged: the trace is a diagnostic and the perf row, the turn.end event and the spend entry
+     *  are the ledger. A trace that cannot be written (the heap budget is full and TraceStore refuses) must not
+     *  cost a turn the upstream already billed its row, so the failure stops here. */
     private fun closeTrace(trace: TurnTrace?, outcomeTag: String, snap: PerfSnapshot) {
         if (trace == null) return
-        OutcomeSentences.of(outcomeTag)?.let(trace::failureSentenceUnlessSpoken)
-        trace.finish(outcomeTag, snap)
+        Cancellables.runCatchingBestEffort {
+            OutcomeSentences.of(outcomeTag)?.let(trace::failureSentenceUnlessSpoken)
+            trace.finish(outcomeTag, snap)
+        }.onFailure { failure ->
+            log("[$headKey] trace of a $outcomeTag turn not closed (${SafeFailureText.render(failure)})\n")
+        }
     }
 
     /** V4-99 item 4: ONE entry for every turn refused LOCALLY — after parsing, before any upstream

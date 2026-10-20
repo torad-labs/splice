@@ -218,6 +218,10 @@ public class EconomicsStore(
     private var persistedVersion = -1L
     private val writeScheduled = AtomicBoolean(false)
 
+    /** Guarded by [writeLock]: the last write failed. The flush retries itself, so only the first failure
+     *  of a streak is logged, and a write that lands ends the streak. */
+    private var failing = false
+
     private fun loadUnderLock() {
         if (loaded) return
         loaded = true
@@ -294,45 +298,53 @@ public class EconomicsStore(
     private fun persist(snapshot: List<EconomicsBucket>, v: Long) {
         synchronized(writeLock) {
             if (v <= persistedVersion) return
-            val encoded = JsonWire.string(
-                buildJsonArray {
-                    snapshot.forEach { b ->
-                        add(
-                            buildJsonObject {
-                                put("hour", b.hour)
-                                put("turns", b.turns)
-                                put("local_steps", b.localSteps)
-                                put("unreported_usage_turns", b.counts.unreportedUsageTurns)
-                                put("in_tokens", b.inTokens)
-                                put("cached_tokens", b.cachedTokens)
-                                put("cache_write_tokens", b.cacheWriteTokens)
-                                put("out_tokens", b.outTokens)
-                                put("req_bytes", b.reqBytes)
-                                put("upstream_req_bytes", b.upstreamBytes)
-                                put("tools_eager", b.toolsEager)
-                                put("tools_deferred", b.toolsDeferred)
-                                put("deferral_turns", b.deferralTurns)
-                                put("rate_limited", b.rateLimited)
-                                put("cost_usd", b.costUsd) // null writes JSON null: "not priced then"
-                                put("unpriced_turns", b.unpricedTurns)
-                                put("failed_turns", b.cost.failedTurns) // null writes JSON null: not counted then
-                                put("plan_turns", b.cost.planTurns) // null writes JSON null: never split
-                                put("plan_value_usd", b.cost.planValueUsd)
-                                put("plan_unpriced_turns", b.cost.planUnpricedTurns)
-                            },
+            val encoded = JsonWire.string(buildJsonArray { snapshot.forEach { add(hours.encode(it)) } }) + "\n"
+            Cancellables.runCatchingCancellable { SecureFile.writeAtomic0600(file, encoded) }.fold(
+                onSuccess = {
+                    persistedVersion = v
+                    failing = false
+                },
+                onFailure = { failure ->
+                    if (!failing) {
+                        log(
+                            "[economics] $file could not be written (${SafeFailureText.render(failure)}); the " +
+                                "hours stay in memory and the next flush tries again, so a restart before one " +
+                                "lands loses them\n",
                         )
                     }
+                    failing = true
                 },
-            ) + "\n"
-            if (Cancellables.runCatchingCancellable { SecureFile.writeAtomic0600(file, encoded) }.isSuccess) {
-                persistedVersion = v
-            }
+            )
         }
     }
 
-    /** The file's shape, read. Its own class so the store keeps room under detekt's per-class
+    /** The file's shape, read and written. Its own class so the store keeps room under detekt's per-class
      *  function ceiling for the behaviour that is the store's, rather than for three field reads. */
     private class HourReader {
+        /** One hour as the file holds it: the writing side of [bucketFrom]. */
+        fun encode(b: EconomicsBucket): JsonObject = buildJsonObject {
+            put("hour", b.hour)
+            put("turns", b.turns)
+            put("local_steps", b.localSteps)
+            put("unreported_usage_turns", b.counts.unreportedUsageTurns)
+            put("in_tokens", b.inTokens)
+            put("cached_tokens", b.cachedTokens)
+            put("cache_write_tokens", b.cacheWriteTokens)
+            put("out_tokens", b.outTokens)
+            put("req_bytes", b.reqBytes)
+            put("upstream_req_bytes", b.upstreamBytes)
+            put("tools_eager", b.toolsEager)
+            put("tools_deferred", b.toolsDeferred)
+            put("deferral_turns", b.deferralTurns)
+            put("rate_limited", b.rateLimited)
+            put("cost_usd", b.costUsd) // null writes JSON null: "not priced then"
+            put("unpriced_turns", b.unpricedTurns)
+            put("failed_turns", b.cost.failedTurns) // null writes JSON null: not counted then
+            put("plan_turns", b.cost.planTurns) // null writes JSON null: never split
+            put("plan_value_usd", b.cost.planValueUsd)
+            put("plan_unpriced_turns", b.cost.planUnpricedTurns)
+        }
+
         /** One numeric field, or null when absent or unparseable. A MEMBER taking the object as its
          *  first parameter rather than the extension the original wrote: the receiver is kotlinx's,
          *  so the compliant spelling puts it in the signature (kt-no-extension-functions). */

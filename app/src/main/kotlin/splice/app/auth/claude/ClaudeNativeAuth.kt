@@ -125,19 +125,19 @@ internal class ClaudeNativeAuth(
     // why: read() runs on every observation (several per turn, and on each membership refresh), so a file that stays
     // unreadable is named when its failure class changes, not on every read.
     @Volatile
-    private var lastFailure: String? = null
+    private var lastClass: String? = null
 
     private fun read(): NativeAccessToken? = Cancellables.runCatchingCancellable {
         Json.decodeFromString<NativeAccessDocument>(Files.readString(directory.resolve(CREDENTIALS_JSON))).claudeAiOauth
     }.fold(
         onSuccess = {
-            lastFailure = null
+            lastClass = null
             it
         },
         onFailure = {
-            val failure = if (it is java.nio.file.NoSuchFileException) null else it::class.simpleName
-            if (failure != null && failure != lastFailure) log("[native-login] credential unreadable ($failure)\n")
-            lastFailure = failure
+            val kind = if (it is java.nio.file.NoSuchFileException) null else it::class.simpleName
+            if (kind != null && kind != lastClass) log("[native-login] credential unreadable ($kind)\n")
+            lastClass = kind
             null
         },
     )

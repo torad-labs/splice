@@ -256,7 +256,11 @@ public class UpstreamTransport {
             return null
         }
         val host = parsed.host ?: return null
-        val port = if (parsed.port > 0) parsed.port else DEFAULT_HTTPS_PORT
+        val port = when {
+            parsed.port > 0 -> parsed.port
+            parsed.scheme.equals("http", ignoreCase = true) -> DEFAULT_HTTP_PORT
+            else -> DEFAULT_HTTPS_PORT
+        }
         return InetSocketAddress(host, port)
     }
 
@@ -311,6 +315,10 @@ private const val REACHABILITY_PROBE_TIMEOUT_MS = 3_000L
 // The port a provider URL without an explicit one means. Tencent/Anthropic-style upstreams are all
 // https, and the probe is a TCP connect, so the scheme only decides this number.
 private const val DEFAULT_HTTPS_PORT = 443
+
+// The same, for an http:// upstream with no port (a gateway on the LAN): dialing 443 there is refused, which the
+// probe reads as a dead path and ends a model that is thinking in silence on a live one.
+private const val DEFAULT_HTTP_PORT = 80
 
 // V4-100: these five numbers are the single source, which is the point rather than a widening.
 // UpstreamClient next door re-typed them as its own private consts, because it budgets a curve

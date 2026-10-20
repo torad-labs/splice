@@ -68,7 +68,7 @@ internal class IngressHandler(
         if (entry.refusal == null) {
             reading = entry
             if (msg is LastHttpContent) entry.arrived = true
-            entry.small = HttpUtil.getContentLength(msg, -1L) in 0L..SMALL_BODY_BYTES
+            entry.small = declaredLength(msg) in 0L..SMALL_BODY_BYTES
             ownership.register(msg, entry)
             if (entry.lease != null && isUndeclared(msg)) growing = ChunkedBody(entry, admittedCap)
             ctx.fireChannelRead(msg)
@@ -125,14 +125,27 @@ internal class IngressHandler(
         }
     }
 
+    /**
+     * The Content-Length a request declares, or -1 when it declares none. Netty's own reader is a bare parse that throws
+     * out of this handler on "abc", before the request is registered or forwarded, so nothing would ever answer it. A
+     * request whose head failed to decode carries a header nobody can trust: it counts as an empty body and goes on to
+     * Ktor, which answers the failed decode with its 400.
+     */
+    private fun declaredLength(request: HttpRequest): Long =
+        if (request.decoderResult().isFailure) {
+            0L
+        } else {
+            request.headers().get(HttpHeaderNames.CONTENT_LENGTH)?.toLongOrNull() ?: -1L
+        }
+
     private fun bodyBytes(request: HttpRequest, capBytes: Long): Long {
-        val declared = HttpUtil.getContentLength(request, -1L)
+        val declared = declaredLength(request)
         if (declared >= 0L) return declared
         return if (HttpUtil.isTransferEncodingChunked(request)) minOf(CHUNKED_FLOOR_BYTES, capBytes) else 0L
     }
 
     private fun isUndeclared(request: HttpRequest): Boolean =
-        HttpUtil.getContentLength(request, -1L) < 0L && HttpUtil.isTransferEncodingChunked(request)
+        declaredLength(request) < 0L && HttpUtil.isTransferEncodingChunked(request)
 
     private fun refuse(ctx: ChannelHandlerContext, request: HttpRequest, entry: IngressRequest) {
         ownership.halted.set(true)

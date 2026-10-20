@@ -20,6 +20,7 @@ import splice.core.head.Head
 import splice.core.util.Cancellables
 import splice.core.util.LogSink
 import splice.upstream.codemode.ProcessDispatchers
+import java.util.concurrent.TimeUnit
 
 // The whole head-stop phase's deadline (see [HeadShutdown.stopHeads]). Kept below Main's
 // STOP_DEADLINE_MS so the graceful stop + control shutdown finish before Main's hard halt
@@ -34,8 +35,6 @@ internal const val HEAD_STOP_BUDGET_MS = 50_000L
 // while keeping the whole phase inside Main's STOP_DEADLINE_MS (55s) above the drain's 50s. This budget cannot cut a
 // blocking engine stop short: the coroutines it cancels are inside one, so the engines' own bounds are what hold.
 internal const val CLOSE_BUDGET_MS = 5_000L
-
-private const val NANOS_PER_MS = 1_000_000L
 
 internal class HeadShutdown(
     // HD-19: where the N blocking HeadServer.stop() engine stops run. Was a hardcoded
@@ -56,7 +55,7 @@ internal class HeadShutdown(
             log("[daemon] head stop failed uncaught: ${e::class.simpleName}: ${e.message}\n")
         }
         val began = System.nanoTime()
-        val elapsedMs = { (System.nanoTime() - began) / NANOS_PER_MS }
+        val elapsedMs = { TimeUnit.NANOSECONDS.toMillis(System.nanoTime() - began) }
         withContext(stopDispatcher) {
             // PHASE 1, every head at once: refuse new turns and let the running ones finish, with every
             // port STILL LISTENING. Closing each head's listener the moment its own drain converged was

@@ -47,7 +47,9 @@ class UpgradeProcessTest {
         val release = Files.createDirectories(home.resolve("release"))
         val assets = mapOf(
             "splice.jar" to "new-jar".toByteArray(),
-            "splice-launch" to "#!/bin/sh\necho new\n".toByteArray(),
+            // A cold start runs the daemon through the launcher beside the live jar (DaemonLaunch), which execs java on
+            // the jar it is handed, as splice-launch does.
+            "splice-launch" to "#!/bin/sh\nexec java -jar \"\$SPLICE_JAR\" \"\$@\"\n".toByteArray(),
         )
         assets.forEach { (name, bytes) -> Files.write(release.resolve(name), bytes) }
         Files.writeString(

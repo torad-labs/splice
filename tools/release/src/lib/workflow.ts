@@ -23,9 +23,15 @@ export interface Workflow {
 
 /** The publish step's action, pinned by SHA in the workflow; matched by prefix as the script did. */
 export const RELEASE_ACTION = "softprops/action-gh-release@";
-/** DR-19: the promotion path must run the stage task under the resolved version as the tag. */
+/**
+ * DR-19: the promotion path must run the stage task under the resolved version as the tag. The two -x flags skip
+ * linking the MCP hub: the runner stages the qualified pair `release hub place` put there, because a pair linked on
+ * the runner can never hash to its pins.
+ */
 export const GATED_STAGE_RUN =
-  'SPLICE_RELEASE_TAG="v$RESOLVED_VERSION" ./gradlew :app:stageRelease --no-daemon --no-parallel';
+  'SPLICE_RELEASE_TAG="v$RESOLVED_VERSION" ./gradlew :app:stageRelease --no-daemon --no-parallel' +
+  " -x :integrations-mcp-hub:linkHolderReleaseExecutableLinuxX64" +
+  " -x :integrations-mcp-hub:linkFrontReleaseExecutableLinuxX64";
 /** What makes a step "the stage step", independently of how it is spelled. */
 export const STAGE_TASK = ":app:stageRelease";
 export const RESOLVED_VERSION = "${{ steps.version.outputs.version }}";

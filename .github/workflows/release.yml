@@ -122,13 +122,21 @@ jobs:
       - name: build exact release jar and compliance reports
         run: ./gradlew :app:shadowJar --no-daemon --no-parallel --stacktrace
 
+      - name: place the qualified hub pair
+        # Kotlin/Native writes each source file's absolute path into a binary, so a hub built on this runner can never
+        # hash to tools/release/mcp-hub.sha256. The bytes hostshield-lead qualified are committed in
+        # tools/release/mcp-hub/ beside their pins; this puts them where :app:stageRelease reads the hub binaries and
+        # stops the release here if either one does not hash to its pin.
+        run: bun tools/release hub place
+
       - name: stage exact release bundle
         # DR-19: thread the resolved version in as the tag so the SemVer + tag/version equality
         # block runs on the PROMOTION path too (a real pushed tag still wins inside the task via
         # GITHUB_REF_TYPE). Without this, the gate was skipped exactly where releases are cut.
+        # The two -x flags skip linking the hub: the placed, qualified pair above is what ships, not a build of it.
         env:
           RESOLVED_VERSION: ${{ steps.version.outputs.version }}
-        run: SPLICE_RELEASE_TAG="v$RESOLVED_VERSION" ./gradlew :app:stageRelease --no-daemon --no-parallel
+        run: SPLICE_RELEASE_TAG="v$RESOLVED_VERSION" ./gradlew :app:stageRelease --no-daemon --no-parallel -x :integrations-mcp-hub:linkHolderReleaseExecutableLinuxX64 -x :integrations-mcp-hub:linkFrontReleaseExecutableLinuxX64
 
       - name: accept exact release bundle
         env:
@@ -136,9 +144,10 @@ jobs:
         run: SPLICE_EXPECTED_VERSION="$RESOLVED_VERSION" bun tools/release accept
 
       - name: hub pair matches the qualified hashes
-        # The MCP hub's two binaries ship only as the bytes hostshield-ctl qualified: each must hash to its line in
-        # tools/release/mcp-hub.sha256, as lead-install.sh checks on this machine. Without that file the release
-        # stops here, before anything is uploaded, so the check is never skipped.
+        # The MCP hub's two binaries ship only as the bytes hostshield-ctl qualified: each staged one must hash to its
+        # line in tools/release/mcp-hub.sha256, as lead-install.sh checks on this machine. The step before staging
+        # checks the committed pair; this checks what the stage put in dist/. Without that file the release stops
+        # here, before anything is uploaded, so the check is never skipped.
         run: |
           pins=tools/release/mcp-hub.sha256
           if [ ! -f "$pins" ]; then

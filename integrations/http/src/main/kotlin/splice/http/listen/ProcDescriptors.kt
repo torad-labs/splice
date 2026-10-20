@@ -62,13 +62,21 @@ internal class ProcDescriptors(private val proc: Path = Path.of("/proc")) : Desc
         return if (address == null) null else port?.let { DescriptorFacts(address, it, listening) }
     }
 
-    /** The row /proc/net/tcp holds for [inode], or null when this process's socket table has none. */
-    private fun rowFor(inode: String): List<String>? =
-        Files.readAllLines(proc.resolve("net/tcp"))
+    /** The row /proc/net/tcp holds for [inode], or null when this process's socket table has none or cannot be read. */
+    private fun rowFor(inode: String): List<String>? {
+        val table = try {
+            Files.readAllLines(proc.resolve("net/tcp"))
+        } catch (_: IOException) {
+            // A restricted /proc: the socket cannot be inspected, so the caller lists it as not an inspectable IPv4 TCP
+            // socket with every other defect, instead of the raw exception ending the boot report at the first one.
+            return null
+        }
+        return table
             .asSequence()
             .drop(1)
             .map { it.trim().split(COLUMNS) }
             .firstOrNull { it.size > INODE_COLUMN && it[INODE_COLUMN] == inode }
+    }
 
     /** The socket inode descriptor [fd] points at, or null when it points at something that is not a socket. */
     private fun inodeOf(fd: Int): String? {

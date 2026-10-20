@@ -1,5 +1,7 @@
 // NEW: Oct 19, 2026 (docs/specs/peer-messaging.md 4.4): the JSON a webhook receives for one journaled message, as the
-// bytes the signature covers. A test push carries the same shape with "test":true, a seq of 0 and a fixed text.
+// bytes the signature covers. It carries the journal's own "auth" (token or none) beside "from", so a receiver sees how
+// the frame was authenticated as well as how its sender was checked. A test push carries the same shape with
+// "test":true, a seq of 0 and a fixed text, and no "auth".
 package splice.sessions.peer.webhook
 
 import kotlinx.serialization.json.JsonObject
@@ -14,7 +16,7 @@ private const val PEER_WEBHOOK_TEST_ID = "webhook-test"
 private const val PEER_WEBHOOK_TEST_TEXT = "splice webhook test"
 
 internal object WebhookBody {
-    private val carried: List<String> = listOf("seq", "id", "at", "from", "text")
+    private val carried: List<String> = listOf("seq", "id", "at", "from", "auth", "text")
 
     /** The body for journal [record] from [peer], as compact UTF-8 JSON; [test] marks a test push. */
     fun of(peer: String, record: JsonObject, test: Boolean): ByteArray {

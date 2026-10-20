@@ -403,10 +403,20 @@ C's `InboxHandler`. Connections are handled on a bounded pool of 4. A connection
   more than 300 s from its own clock. The optional bearer exists so a grokbot-style receiver, which checks
   only a bearer, works unchanged.
 - **The body:**
-  `{"v":1,"peer":"gary","seq":17,"id":"<msg_id>","at":<ms>,"from":{"name","sessionId","address","claimedName","check"},"text":"…"}`.
-  The test push sends the same shape with `"test":true`, a seq of 0, and the text `"splice webhook test"`.
+  `{"v":1,"peer":"gary","seq":17,"id":"<msg_id>","at":<ms>,"from":{"name","sessionId","address","claimedName","check"},"auth":"token"|"none","text":"…"}`.
+  The test push sends the same shape with `"test":true`, a seq of 0, the text `"splice webhook test"`, and no `auth`.
+  `auth` is the journal's own (1.3 and 2.3): `token` when the sender presented the socket's `peerToken`, `none`
+  when it sent no auth line. The body carries it because `from` and `check` alone cannot tell a receiver which
+  of the two it got: a frame with no auth line that names a live session's address reaches the webhook as that
+  session's name with `check: registered`. The signature vouches that Splice sent the body, never who wrote the
+  frame. Even `token` proves only that the sender could read the peer's registry record, which any process of this
+  user can (Trust boundary), so a receiver that acts on a message requires `auth:"token"` and still does not take
+  `from` as proof.
 - **The URL.** It must be `https://` to any host, or `http://` only to `127.0.0.1`, `[::1]` or
-  `localhost`. Any other URL is refused at set time with 400. That is grokbot's rule.
+  `localhost`. It carries no user name, password, query or fragment, because `set` prints the URL, `peer.json`
+  keeps it in clear and the lists show it: a credential goes in the bearer file. Any other URL is refused at set
+  time with 400, and again before each push (a push of a stored URL that no longer passes fails without being
+  sent). That is grokbot's rule, plus the credential rule.
 - **Order.** Messages are pushed in seq order, one in flight. `webhook.cursor` advances when a push
   finishes as pushed or failed.
 - **Retries.** A connection error, a timeout, 408, 425, 429 or any 5xx is retried after 5 s, 30 s, 2 min,
@@ -629,7 +639,9 @@ one-liner on 127.0.0.1 that writes each request's headers and body to `/tmp/peer
 - [ ] **The registry record** carries no secret, and is removed on revoke and on clean exit.
 - [ ] **Socket vetting** on send (owner, mode, symlinks, `SO_PEERCRED`) is unchanged from `PeerNoteSocket`.
 - [ ] **The webhook.**
-  - The URL is https, or http to loopback only, and redirects are off.
+  - The URL is https, or http to loopback only, carries no user name, password, query or fragment, and
+    redirects are off.
+  - The body carries the journal's `auth`, so a receiver can tell `none` from `token`.
   - The HMAC covers the timestamp and the exact body.
   - The secret file is 0600.
   - The URL path, the secret, the bearer and the body never reach a log. The HMAC secret is never sent.

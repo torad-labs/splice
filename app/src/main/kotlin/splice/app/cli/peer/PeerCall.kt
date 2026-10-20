@@ -15,6 +15,7 @@ import splice.daemonclient.MgmtKeyRead
 import splice.daemonclient.PostReading
 import java.io.IOException
 import java.nio.file.Files
+import java.nio.file.NoSuchFileException
 import java.nio.file.Path
 
 // why: register waits up to 10 s for the helper's record (spec 3.2), and revoke up to 5 s before SIGKILL; a webhook
@@ -43,11 +44,20 @@ internal class PeerCall(
 
     /** The peer key: `SPLICE_PEER_KEY_FILE` when set, else `<settings dir>/peers/<as>/peer.key`. Null once printed. */
     fun peerKey(asName: String?): String? {
-        val path = env(PEER_KEY_FILE_ENV)?.let { Path.of(it) }
+        val named = env(PEER_KEY_FILE_ENV)?.let { Path.of(it) }
+        val path = named
             ?: asName?.let { settingsDir().resolve("peers").resolve(it).resolve("peer.key") }
             ?: return fail("--as <name> or $PEER_KEY_FILE_ENV names the peer to act as")
         return try {
             Files.readString(path).trim().takeIf { it.isNotEmpty() } ?: fail("the peer key file $path is empty")
+        } catch (_: NoSuchFileException) {
+            fail(
+                if (named == null) {
+                    "$asName is not a registered peer: there is no key file at $path (splice peer list shows them)"
+                } else {
+                    "no registered peer has the key file $path: it was never registered, or it was revoked"
+                },
+            )
         } catch (unreadable: IOException) {
             fail("cannot read the peer key file $path: ${SafeFailureText.render(unreadable)}")
         }

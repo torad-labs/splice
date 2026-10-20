@@ -73,8 +73,10 @@ splice peer webhook test gary
 splice peer webhook clear gary
 ```
 
-The URL is `https://` to any host, or `http://` only to `127.0.0.1`, `[::1]` or `localhost`. `set` prints the URL
-and the path of the secret file. It never prints the secret or the bearer.
+The URL is `https://` to any host, or `http://` only to `127.0.0.1`, `[::1]` or `localhost`. It carries no user
+name, password, query or fragment, and `set` refuses one: it prints the URL and keeps it in clear, so a credential
+goes in the bearer file. `set` prints the URL and the path of the secret file. It never prints the secret or the
+bearer.
 
 Each push is `POST <url>` with these headers:
 
@@ -91,8 +93,13 @@ The body is:
 ```json
 {"v":1,"peer":"gary","seq":17,"id":"<msg_id>","at":1792459759719,
  "from":{"name":"walk-a","sessionId":"…","address":"uds:…","claimedName":"walk-a","check":"registered"},
- "text":"…"}
+ "auth":"token","text":"…"}
 ```
+
+`auth` is `token` when the sender presented the peer's token and `none` when it sent no auth line. A frame with no
+auth line that names a live session's address arrives with that session's name and `check: registered`, so `from`
+alone cannot tell it from the real sender. Require `"auth":"token"` before you act on a message, and know that even
+that proves only that the sender could read the peer's registry record, which any process of your user can.
 
 To verify a push, compute the HMAC over the exact body bytes with the secret in
 `<settings dir>/peers/<name>/webhook.secret`, compare it to the signature in constant time, and refuse a

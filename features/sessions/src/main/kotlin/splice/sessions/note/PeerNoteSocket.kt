@@ -142,8 +142,8 @@ public class PeerNoteSocket(
     }
 
     /** Why this socket may not be written to, or null when it may: a real socket, this user's, in a directory only this user enters,
-     *  reached by no link. The helper vets its own inbox folder with it too. */
-    public fun unsafe(socket: Path): String? {
+     *  reached by no link. */
+    private fun unsafe(socket: Path): String? {
         val dir = socket.parent ?: return "the socket path names no directory"
         val checked = Cancellables.runCatchingCancellable {
             when {

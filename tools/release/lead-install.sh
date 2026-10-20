@@ -1,17 +1,20 @@
 #!/usr/bin/env bash
 # splice-lead: install a judged sha on this machine and restart splice (repo/CLAUDE.md, steps 1-7).
-# Usage: tools/release/lead-install.sh <sha> milestone "<what shipped>"
+# Usage: tools/release/lead-install.sh <sha> beta "<the beta, and what shipped>"
+#        tools/release/lead-install.sh <sha> milestone "<what shipped>"
 #        tools/release/lead-install.sh <sha> live-fix "<what is broken on the running daemon>"
 #
-#
-# WHEN (Marcos, 2026-10-10): splice is installed and restarted only at a major milestone,
-#   because every restart resets his sessions.  The one exception is a fix for something that is
-#   broken on the running daemon right now.  Without one of the two reasons the script refuses
-#   before it builds anything.  This replaces the hourly cadence and "install every verified sha".
+# WHEN: this machine follows the beta channel (Marcos, 2026-10-13, repo/CLAUDE.md "This machine follows the beta
+#   channel with auto-update"), which replaced the milestone-only rule of 2026-10-10.  Until the daemon installs betas
+#   itself, splice-lead installs each beta by this script: <sha> beta "<version and what shipped>".  A reason is
+#   still required so that no install is made without a named cause, but "beta" is one: restarts cut turns the retry
+#   layers bring back, and the install is reversible because the backup is taken first.  "milestone" and "live-fix"
+#   are the two reasons the 2026-10-10 rule allowed and remain accepted.  Without one of the three the script refuses
+#   before it builds anything.
 set -euo pipefail
 sha=$1; why=${2:-}; what=${3:-}
-case "$why" in milestone|live-fix) [ -n "$what" ] || { echo "REFUSED: say what the $why is"; exit 10; } ;;
-  *) echo "REFUSED $sha: splice installs only at a major milestone or for a live fix (Marcos, 2026-10-10)"; exit 10 ;; esac
+case "$why" in beta|milestone|live-fix) [ -n "$what" ] || { echo "REFUSED: say what the $why is"; exit 10; } ;;
+  *) echo "REFUSED $sha: say why with beta, milestone or live-fix (repo/CLAUDE.md: this machine follows the beta channel, Marcos 2026-10-13)"; exit 10 ;; esac
 # R is the checkout this script sits in, not a path: the project moved from projects/mythos to projects/splice and a
 # spelled-out path went dead with it. The kept hub pairs sit beside the checkout, as tools/release hub and beta keep them.
 R=$(cd "$(dirname "$0")/../.." && pwd); T=/tmp/splice-build-$sha-lead; D=~/.local/share/splice

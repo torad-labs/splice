@@ -1,7 +1,7 @@
 // NEW: Oct 19, 2026 (docs/specs/peer-messaging.md 3 and 7): the parts the /api/peers routes take from packages B and
 // C, named by the role each plays for a route. PeersWiring adapts B's supervisor and C's journal, outbox log and webhook
 // pusher to these, so the routes read the same whichever file a part lives in.
-package splice.app.control.mount
+package splice.app.control.peer
 
 import kotlinx.serialization.json.JsonObject
 import splice.sessions.peer.SendOutcome

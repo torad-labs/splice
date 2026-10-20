@@ -32,18 +32,21 @@ private const val SEND_TO_ENTRY_PATTERN = "^[A-Za-z0-9-]{1,64}$"
 private const val MAX_PEERS = 16
 
 // why: 32 random bytes for the peer key (2.1), base64url without padding, which is 43 characters.
-private const val KEY_BYTES = 32
+private const val PEER_KEY_BYTES = 32
 
 // why: 32 random bytes as hex for the webhook HMAC secret (3.2).
 private const val SECRET_BYTES = 32
 
 private const val KEY_PREFIX = "splp_"
 private const val ANY_TARGET = "*"
+
+// why: peer.json's layout version (spec 2.1); a reader meeting a later one knows the file is not its shape.
 private const val PEER_FILE_VERSION = 1
+
 private const val PEERS_DIR = "peers"
-private const val PEER_JSON = "peer.json"
+internal const val PEER_JSON = "peer.json"
 private const val PEER_KEY = "peer.key"
-private const val WEBHOOK_SECRET = "webhook.secret"
+internal const val WEBHOOK_SECRET = "webhook.secret"
 private const val WEBHOOK_BEARER = "webhook.bearer"
 private const val FIRST_KEY_ID = "k1"
 
@@ -331,7 +334,7 @@ internal class PeerFolder(val root: Path) {
 
 /** Peer keys and webhook secrets: minted from [random], and a key known to the daemon only by its sha256. */
 internal class PeerKeys(private val random: SecureRandom) {
-    fun mint(): String = KEY_PREFIX + Base64.getUrlEncoder().withoutPadding().encodeToString(bytes(KEY_BYTES))
+    fun mint(): String = KEY_PREFIX + Base64.getUrlEncoder().withoutPadding().encodeToString(bytes(PEER_KEY_BYTES))
 
     fun secret(): String = HexFormat.of().formatHex(bytes(SECRET_BYTES))
 

@@ -1,7 +1,8 @@
-package splice.app.control.mount
+package splice.app.control.peer
 
 import splice.core.util.WallClock
 import java.util.concurrent.ConcurrentHashMap
+import java.util.concurrent.TimeUnit
 
 // why: spec 3.4. A peer is a script or a bot, and 20 a minute is far past any conversation while still small enough
 // that a looping script cannot flood a session's 50-message queue.
@@ -9,9 +10,6 @@ private const val SENDS_PER_MINUTE = 20.0
 
 // why: spec 3.4. Five lets a script answer a burst of messages at once without waiting on the refill.
 private const val SEND_BURST = 5.0
-
-private const val MS_PER_MINUTE = 60_000.0
-private const val MS_PER_SECOND = 1_000.0
 
 /** A peer's token bucket, in tokens and the time it was last topped up. */
 private data class Bucket(val tokens: Double, val at: Long)
@@ -26,7 +24,7 @@ internal sealed class SendAllowance {
 /** The send rate per peer (spec 3.4): a token bucket of [SEND_BURST], refilled at [SENDS_PER_MINUTE]. */
 internal class PeerSendRate(private val clock: WallClock = WallClock { System.currentTimeMillis() }) {
     private val buckets = ConcurrentHashMap<String, Bucket>()
-    private val refillPerMs = SENDS_PER_MINUTE / MS_PER_MINUTE
+    private val refillPerMs = SENDS_PER_MINUTE / TimeUnit.MINUTES.toMillis(1)
 
     fun take(peer: String): SendAllowance {
         var allowance: SendAllowance = SendAllowance.Go
@@ -38,8 +36,8 @@ internal class PeerSendRate(private val clock: WallClock = WallClock { System.cu
                 allowance = SendAllowance.Go
                 Bucket(tokens - 1.0, now)
             } else {
-                val waitMs = (1.0 - tokens) / refillPerMs
-                allowance = SendAllowance.Wait(kotlin.math.ceil(waitMs / MS_PER_SECOND).toLong().coerceAtLeast(1))
+                val waitSeconds = (1.0 - tokens) / refillPerMs / TimeUnit.SECONDS.toMillis(1)
+                allowance = SendAllowance.Wait(kotlin.math.ceil(waitSeconds).toLong().coerceAtLeast(1))
                 Bucket(tokens, now)
             }
         }

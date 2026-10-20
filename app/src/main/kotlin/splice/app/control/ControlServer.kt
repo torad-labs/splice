@@ -54,14 +54,14 @@ import splice.app.control.mount.LifecycleMount
 import splice.app.control.mount.ManagerMount
 import splice.app.control.mount.McpMount
 import splice.app.control.mount.ModelsMount
-import splice.app.control.mount.PeerServices
-import splice.app.control.mount.PeersMount
 import splice.app.control.mount.ProjectsMount
 import splice.app.control.mount.SessionsMount
 import splice.app.control.mount.SessionsWiring
 import splice.app.control.mount.TeamsMount
 import splice.app.control.mount.TraceMount
 import splice.app.control.mount.TurnsMount
+import splice.app.control.peer.PeerServices
+import splice.app.control.peer.PeersMount
 import splice.app.control.usage.UsageMount
 import splice.app.head.HeadRemovalAssembly
 import splice.core.config.ConfigService

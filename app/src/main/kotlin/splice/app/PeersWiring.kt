@@ -6,10 +6,10 @@ package splice.app
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.launch
 import splice.app.control.mount.ControlGuard
-import splice.app.control.mount.PeerParts
-import splice.app.control.mount.PeerServiceSource
-import splice.app.control.mount.PeerServices
-import splice.app.control.mount.PeersMount
+import splice.app.control.peer.PeerParts
+import splice.app.control.peer.PeerServiceSource
+import splice.app.control.peer.PeerServices
+import splice.app.control.peer.PeersMount
 import splice.app.peer.PeerPlaces
 import splice.app.peer.PeerSupervisor
 import splice.core.config.UserHome

@@ -1,6 +1,6 @@
 // NEW: Oct 19, 2026, moved verbatim out of PeersMount.kt by concern (ConcentrationLawTest): the peer-key routes of
 // docs/specs/peer-messaging.md 3.3, which send as one peer and read its journal.
-package splice.app.control.mount
+package splice.app.control.peer
 
 import io.ktor.http.HttpStatusCode
 import io.ktor.server.application.ApplicationCall
@@ -21,10 +21,12 @@ import splice.sessions.peer.SendOutcome
 import splice.sessions.registry.SessionRecord
 
 // why: spec 1.1 and 3.4, the text cap after defusing; the route refuses a longer raw text with 413 before it is built.
-private const val MAX_TEXT_BYTES = 32_768
+private const val SEND_TEXT_MAX_BYTES = 32_768
 
 // why: spec 3.3, a page of the inbox: 50 by default, at most 200, so one read stays a few hundred KB at most.
 private const val DEFAULT_INBOX_LIMIT = 50
+
+// why: spec 3.3, 200 records of at most 32 KiB text each is the most one inbox read may return.
 private const val MAX_INBOX_LIMIT = 200
 
 private val INBOX_KINDS = setOf("message", "receipt", "webhook")
@@ -52,7 +54,7 @@ internal class PeerSelfRoutes(private val parts: PeerParts, private val rate: Pe
                 HttpStatusCode.BadRequest,
                 "after is a seq, limit 1 to $MAX_INBOX_LIMIT, and kinds of message, receipt and webhook",
             )
-            mail == null -> PeerReplies.refuse(HttpStatusCode.ServiceUnavailable, UNWIRED)
+            mail == null -> PeerReplies.refuse(HttpStatusCode.ServiceUnavailable, PEER_MAIL_UNWIRED)
             else -> {
                 val page = mail.inbox(principal.name, query.after, query.limit, query.kinds)
                 PeerReplies.ok(
@@ -74,7 +76,7 @@ internal class PeerSelfRoutes(private val parts: PeerParts, private val rate: Pe
         val mail = parts.mail
         val answer = when {
             through == null -> PeerReplies.refuse(HttpStatusCode.BadRequest, "body must be {\"through\": <seq>}")
-            mail == null -> PeerReplies.refuse(HttpStatusCode.ServiceUnavailable, UNWIRED)
+            mail == null -> PeerReplies.refuse(HttpStatusCode.ServiceUnavailable, PEER_MAIL_UNWIRED)
             else -> {
                 val read = mail.ack(principal.name, through)
                 PeerReplies.ok(HttpStatusCode.OK, buildJsonObject { put("read", read) })
@@ -89,7 +91,7 @@ internal class PeerSelfRoutes(private val parts: PeerParts, private val rate: Pe
         val mail = parts.mail
         val record = mail?.sent(principal.name, msgId)
         val answer = when {
-            mail == null -> PeerReplies.refuse(HttpStatusCode.ServiceUnavailable, UNWIRED)
+            mail == null -> PeerReplies.refuse(HttpStatusCode.ServiceUnavailable, PEER_MAIL_UNWIRED)
             record == null -> PeerReplies.refuse(HttpStatusCode.NotFound, "this peer sent no message with that id")
             else -> PeerReplies.ok(HttpStatusCode.OK, record)
         }
@@ -118,8 +120,8 @@ internal class PeerSelfRoutes(private val parts: PeerParts, private val rate: Pe
 
     private fun textRefusal(text: String): PeerAnswer? = when {
         text.isBlank() -> PeerReplies.refuse(HttpStatusCode.BadRequest, "the text is empty")
-        text.toByteArray(Charsets.UTF_8).size > MAX_TEXT_BYTES ->
-            PeerReplies.refuse(HttpStatusCode.PayloadTooLarge, "a text is at most $MAX_TEXT_BYTES bytes")
+        text.toByteArray(Charsets.UTF_8).size > SEND_TEXT_MAX_BYTES ->
+            PeerReplies.refuse(HttpStatusCode.PayloadTooLarge, "a text is at most $SEND_TEXT_MAX_BYTES bytes")
         else -> null
     }
 
@@ -140,7 +142,7 @@ internal class PeerSelfRoutes(private val parts: PeerParts, private val rate: Pe
         val helper = parts.helpers?.running(config.name)
         val outbox = parts.outbox
         return if (helper == null || outbox == null) {
-            PeerReplies.refuse(HttpStatusCode.ServiceUnavailable, NOT_RUNNING)
+            PeerReplies.refuse(HttpStatusCode.ServiceUnavailable, HELPER_NOT_RUNNING)
         } else {
             submit(config, target, text, PeerSender(socket = helper.socket, name = config.name), outbox)
         }

@@ -32,7 +32,7 @@ internal class PeerCommand(
             else -> null
         }
         if (code == null) err.line("usage: splice peer $PEER_USAGE")
-        return code ?: PeerExit.USAGE
+        return code ?: PeerExit.BAD_USAGE
     }
 
     /** The verbs that present the management key. */

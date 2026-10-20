@@ -8,11 +8,11 @@ import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
 import kotlinx.serialization.json.putJsonObject
-import splice.app.control.mount.InboxCounts
-import splice.app.control.mount.InboxPage
-import splice.app.control.mount.PeerMail
-import splice.app.control.mount.SentRecord
-import splice.app.control.mount.WebhookTestResult
+import splice.app.control.peer.InboxCounts
+import splice.app.control.peer.InboxPage
+import splice.app.control.peer.PeerMail
+import splice.app.control.peer.SentRecord
+import splice.app.control.peer.WebhookTestResult
 import splice.core.util.LogSink
 import splice.core.util.WallClock
 import splice.sessions.peer.SendOutcome

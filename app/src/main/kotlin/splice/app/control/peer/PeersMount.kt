@@ -2,7 +2,7 @@
 // revoke and rotate peers and set their webhooks, behind the management key. The /api/peers/self routes act as one
 // peer, behind that peer's own key (Door.PEER): they send under its name, and read and acknowledge its journal.
 // Nothing a request carries names the sender: it is the principal the key opened, and the socket its helper runs on.
-package splice.app.control.mount
+package splice.app.control.peer
 
 import io.ktor.http.HttpHeaders
 import io.ktor.http.HttpStatusCode
@@ -21,6 +21,7 @@ import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
 import kotlinx.serialization.json.putJsonArray
 import kotlinx.serialization.json.putJsonObject
+import splice.app.control.mount.ControlGuard
 import splice.core.config.UserHome
 import splice.core.util.LogSafe
 import splice.core.util.LogSink
@@ -35,10 +36,10 @@ import splice.sessions.peer.store.PeerStore
 import splice.sessions.registry.SessionAvailability
 import splice.sessions.registry.SessionSource
 
-internal const val NAME_PARAM = "name"
+internal const val PEER_NAME_PARAM = "name"
 internal const val NO_PEER = "no peer has that name"
-internal const val UNWIRED = "peer messaging is not available in this build"
-internal const val NOT_RUNNING = "this peer's helper is not running"
+internal const val PEER_MAIL_UNWIRED = "peer messaging is not available in this build"
+internal const val HELPER_NOT_RUNNING = "this peer's helper is not running"
 
 /** The parts the routes act through. [helpers] and [mail] are read from [services] at each request, so the daemon can
  *  wire them after the server is built; a route that needs one that is absent answers 503. */
@@ -111,14 +112,14 @@ internal class PeerManagementRoutes(private val parts: PeerParts, private val ra
 
     /** DELETE /api/peers/{name}: drops the key first, then stops the helper; the journal stays unless purge=true. */
     suspend fun revoke(call: ApplicationCall) {
-        val name = call.parameters[NAME_PARAM].orEmpty()
+        val name = call.parameters[PEER_NAME_PARAM].orEmpty()
         val purge = call.request.queryParameters["purge"] == "true"
         revoked(name, purge).send(call)
     }
 
     /** POST /api/peers/{name}/rotate: a new peer.key; the old key fails at once. */
     suspend fun rotate(call: ApplicationCall) {
-        val name = call.parameters[NAME_PARAM].orEmpty()
+        val name = call.parameters[PEER_NAME_PARAM].orEmpty()
         val keyFile = if (store.wellFormed(name)) store.rotate(name) else null
         val answer = if (keyFile == null) {
             PeerReplies.refuse(HttpStatusCode.NotFound, NO_PEER)

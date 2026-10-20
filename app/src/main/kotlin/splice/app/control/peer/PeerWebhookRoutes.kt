@@ -1,6 +1,6 @@
 // NEW: Oct 19, 2026, moved verbatim out of PeersMount.kt by concern (ConcentrationLawTest): the management-key
 // webhook routes of docs/specs/peer-messaging.md 3.2 and 4.4.
-package splice.app.control.mount
+package splice.app.control.peer
 
 import io.ktor.http.HttpStatusCode
 import io.ktor.server.application.ApplicationCall
@@ -27,11 +27,11 @@ internal class PeerWebhookRoutes(private val parts: PeerParts) {
 
     /** PUT /api/peers/{name}/webhook: a new secret, the bearer copied when given, and the helper told. */
     suspend fun set(call: ApplicationCall) {
-        val name = call.parameters[NAME_PARAM].orEmpty()
+        val name = call.parameters[PEER_NAME_PARAM].orEmpty()
         val body = jsonBody.parse(call)
         val mail = parts.mail
         val answer = if (mail == null) {
-            PeerReplies.refuse(HttpStatusCode.ServiceUnavailable, UNWIRED)
+            PeerReplies.refuse(HttpStatusCode.ServiceUnavailable, PEER_MAIL_UNWIRED)
         } else {
             set(name, body, mail)
         }
@@ -40,7 +40,7 @@ internal class PeerWebhookRoutes(private val parts: PeerParts) {
 
     /** DELETE /api/peers/{name}/webhook. */
     suspend fun clear(call: ApplicationCall) {
-        val name = call.parameters[NAME_PARAM].orEmpty()
+        val name = call.parameters[PEER_NAME_PARAM].orEmpty()
         val cleared = store.wellFormed(name) && store.clearWebhook(name)
         if (cleared) {
             parts.mail?.webhookChanged(name)
@@ -56,7 +56,7 @@ internal class PeerWebhookRoutes(private val parts: PeerParts) {
 
     /** POST /api/peers/{name}/webhook/test: the test body, pushed now. */
     suspend fun test(call: ApplicationCall) {
-        tested(call.parameters[NAME_PARAM].orEmpty()).send(call)
+        tested(call.parameters[PEER_NAME_PARAM].orEmpty()).send(call)
     }
 
     private suspend fun set(name: String, body: JsonObject?, mail: PeerMail): PeerAnswer {
@@ -88,7 +88,7 @@ internal class PeerWebhookRoutes(private val parts: PeerParts) {
         return when {
             config == null -> PeerReplies.refuse(HttpStatusCode.NotFound, NO_PEER)
             config.webhook == null -> PeerReplies.refuse(HttpStatusCode.Conflict, "this peer has no webhook")
-            mail == null -> PeerReplies.refuse(HttpStatusCode.ServiceUnavailable, UNWIRED)
+            mail == null -> PeerReplies.refuse(HttpStatusCode.ServiceUnavailable, PEER_MAIL_UNWIRED)
             else -> pushed(mail.testWebhook(name))
         }
     }

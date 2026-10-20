@@ -11,11 +11,13 @@ import splice.core.memory.HeapReservations
 import splice.core.util.FileIdentity
 import java.nio.file.Path
 
-// why: The 4,096-entry cap bounds retained transcript facts without limiting scan results.
-private const val MAX_TRANSCRIPT_FACTS = 4_096
+// why: every pass walks every transcript, so a cap below the transcripts on disk evicts what the next pass needs and
+// every pass reads them all again: 4,096 under 11,449 transcripts reread about 7,000 heads and tails (128 KiB each) per
+// project-tags request, the daemon top allocator on Oct 19, 2026. 65,536 holds every machine seen, still bounded.
+private const val MAX_TRANSCRIPT_FACTS = 65_536
 
-// why: 4 MiB caps retained fact estimates when paths and names are large.
-private const val MAX_TRANSCRIPT_FACT_BYTES = 4L shl 20
+// why: 32 MiB holds 65,536 facts at their typical 500 bytes; one entry is about 500 bytes, so 4 MiB thrashed at ~8,000.
+private const val MAX_TRANSCRIPT_FACT_BYTES = 32L shl 20
 
 // why: Estimate 160 bytes for fixed fact-cache entry overhead; string characters are counted separately.
 private const val TRANSCRIPT_FACT_BYTES = 160L

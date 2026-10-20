@@ -24,11 +24,12 @@ import java.util.concurrent.ExecutionException
 // why: searches typed into one visit reuse the source scan, while new sessions appear soon after.
 private const val CACHE_MS = 10_000L
 
-// why: The 4,096-session cap bounds retained snapshots; larger scans still return every session.
-private const val MAX_SCAN_ENTRIES = 4_096
+// why: a scan over this cap is not kept, so every reader inside CACHE_MS walks the whole tree again; 65,536 sessions
+// keeps the snapshot on a machine with 11,449 transcripts (Oct 19, 2026), where 4,096 kept none.
+private const val MAX_SCAN_ENTRIES = 65_536
 
-// why: 4 MiB caps retained scan entry and error estimates; oversized scans are returned uncached.
-private const val MAX_HISTORY_SCAN_BYTES = 4L shl 20
+// why: 32 MiB holds 65,536 joined entries at their typical 500 bytes; oversized scans are returned uncached.
+private const val MAX_HISTORY_SCAN_BYTES = 32L shl 20
 
 // why: Estimate 160 bytes for fixed joined-entry overhead; strings are counted separately.
 private const val SCAN_ENTRY_BYTES = 160L

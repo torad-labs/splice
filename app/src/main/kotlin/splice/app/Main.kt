@@ -6,6 +6,7 @@ package splice.app
 import kotlinx.coroutines.CompletableDeferred
 import splice.app.daemon.DaemonLock
 import splice.app.daemon.DaemonLockWait
+import splice.app.daemon.HeapFlags
 import splice.app.daemon.LockOutcome
 import splice.app.manager.ManagerHome
 import splice.app.peer.PEER_HELPER_COMMAND
@@ -100,6 +101,8 @@ internal class DaemonProcess(
         // ResponsesProvider) default to this sink, so their diagnostics reach daemon.log and therefore
         // /mgmt/logs. Injection still wins where a caller passes its own (wall kt-no-println).
         DaemonLog.install(log)
+        // The launcher's heap flags, set here too, so a daemon started without splice-launch returns its heap the same way.
+        HeapFlags(log).apply()
         start.ownerOnlyLines.forEach { log(it) }
         // Oct 15: the splice manager's folder, refreshed from this release, because auto-update never reruns init. Best
         // effort: a failure is logged and never refuses boot.

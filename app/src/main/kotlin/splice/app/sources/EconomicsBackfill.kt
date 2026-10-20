@@ -45,7 +45,7 @@ internal class EconomicsBackfill(
     plans: AccountOnPlan = NoPlans,
 ) {
     private val rows = EconomicsFromRows(price, plans)
-    private val refusal = PerfRefusal(perf.files)
+    private val refusal = PerfRefusal(perf.files, perf.files.refusalFile("backfill"))
 
     /** The earliest cutoff a pass has already covered, or null when none has. A moment and not a
      *  flag: a pass closes the gap down to the window's edge AS IT STOOD, and widening the window

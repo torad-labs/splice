@@ -1,6 +1,9 @@
 // NEW: what a perf source's files held at one moment, so a later look can tell appended files from replaced or rewritten ones.
 package splice.app.sources
 
+import kotlinx.serialization.Serializable
+import kotlinx.serialization.SerializationException
+import kotlinx.serialization.json.Json
 import splice.core.perf.PerfArchiveName
 import splice.core.util.Cancellables
 import splice.core.util.SafeFailureText
@@ -11,6 +14,7 @@ import java.nio.file.Files
 import java.nio.file.LinkOption
 import java.nio.file.NoSuchFileException
 import java.nio.file.Path
+import java.nio.file.StandardCopyOption
 import java.nio.file.StandardOpenOption
 import java.util.zip.CRC32
 
@@ -52,7 +56,7 @@ internal class PerfFileMarks {
 
 /** The files of one perf source (both live generations and every archive) at one moment, and which of them may grow. */
 internal class PerfSourceStamp(
-    private val marks: List<PerfFileMark>,
+    internal val marks: List<PerfFileMark>,
     private val growing: Path,
     private val reader: PerfFileMarks = PerfFileMarks(),
 ) {
@@ -98,6 +102,13 @@ internal class PerfReadFiles(
         return archives + generations.filter { Files.isRegularFile(it, LinkOption.NOFOLLOW_LINKS) }
     }
 
+    /** A stamp taken earlier, from its [marks], judged against this source's live file. */
+    fun stampOf(marks: List<PerfFileMark>): PerfSourceStamp = PerfSourceStamp(marks, live, reader)
+
+    /** Where a refusal named [purpose] is kept across restarts: beside the live file, under a name no archive matches. */
+    fun refusalFile(purpose: String): Path =
+        live.resolveSibling("${live.fileName.toString().removeSuffix(".jsonl")}-$purpose-refusal.json")
+
     /** The files as they are now; null when one cannot be marked, so nothing may be reused. */
     fun stamp(): PerfSourceStamp? {
         val marks = (list() ?: return null).map { reader.of(it) ?: return null }
@@ -128,11 +139,27 @@ internal class PerfReadFiles(
     }
 }
 
+/** One file mark as a refusal keeps it on disk. */
+@Serializable
+internal data class SavedPerfMark(val path: String, val fileKey: String? = null, val size: Long, val checksum: Long)
+
+/** A refusal as it is kept on disk: the earliest hour its read covered and the files it read. */
+@Serializable
+internal data class SavedPerfRefusal(val since: Long, val marks: List<SavedPerfMark>)
+
 /** A read the request log refused for a row it could not parse, and the earliest hour that read covered. A torn row is
- *  not mended by what is appended after it, so while the files are only appended to the refusal stands. */
-internal class PerfRefusal(private val files: PerfReadFiles) {
+ *  not mended by what is appended after it, so while the files are only appended to the refusal stands. With a
+ *  [saved] file it also stands across a restart: a torn row in an archive refused the economics backfill on every boot,
+ *  and each boot decoded every archived generation of every head again to find it (about 30 GB of allocation in the
+ *  first 40 s of the Oct 19, 2026 boot), so the daemon grew its heap to tens of GB before its first minute. */
+internal class PerfRefusal(private val files: PerfReadFiles, private val saved: Path? = null) {
     private var stamp: PerfSourceStamp? = null
     private var since = 0L
+    private val json = Json { ignoreUnknownKeys = true }
+
+    init {
+        saved?.let(::load)
+    }
 
     /** Whether the refusal noted earlier still holds for a read from [from]: that read covers no less, and no file changed. */
     fun stands(from: Long): Boolean = stamp?.let { from <= since && files.unchanged(it) } == true
@@ -141,5 +168,38 @@ internal class PerfRefusal(private val files: PerfReadFiles) {
     fun note(before: PerfSourceStamp?, from: Long, tore: Boolean) {
         stamp = before.takeIf { tore }
         since = from
+        saved?.let(::save)
+    }
+
+    /** A refusal a previous run kept; an unreadable or missing file is no refusal, so the next read decides again. */
+    private fun load(path: Path) {
+        val kept = try {
+            json.decodeFromString(SavedPerfRefusal.serializer(), Files.readString(path))
+        } catch (_: IOException) {
+            return
+        } catch (_: SerializationException) {
+            return
+        } catch (_: IllegalArgumentException) {
+            return
+        }
+        stamp = files.stampOf(kept.marks.map { PerfFileMark(Path.of(it.path), it.fileKey, it.size, it.checksum) })
+        since = kept.since
+    }
+
+    /** Best effort: a refusal that cannot be kept is decided again after the next restart, as before. */
+    private fun save(path: Path) {
+        try {
+            val held = stamp
+            if (held == null) {
+                Files.deleteIfExists(path)
+                return
+            }
+            val marks = held.marks.map { SavedPerfMark(it.path.toString(), it.fileKey, it.size, it.checksum) }
+            val temp = path.resolveSibling("${path.fileName}.tmp")
+            Files.writeString(temp, json.encodeToString(SavedPerfRefusal.serializer(), SavedPerfRefusal(since, marks)))
+            Files.move(temp, path, StandardCopyOption.REPLACE_EXISTING, StandardCopyOption.ATOMIC_MOVE)
+        } catch (_: IOException) {
+            // The refusal still stands in memory for this run.
+        }
     }
 }

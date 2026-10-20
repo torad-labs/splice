@@ -53,7 +53,12 @@ internal class UpstreamRequest(
 
     /** The prepared POST, up to but NOT including `execute` — [execute] owns the block because
      *  the response body channel only lives inside it. */
-    suspend fun prepare(url: String, wire: AttemptWire, timingToken: String? = null): HttpStatement {
+    suspend fun prepare(
+        url: String,
+        wire: AttemptWire,
+        timingToken: String? = null,
+        bodyToken: String? = null,
+    ): HttpStatement {
         val allHeaders = wire.headers()
         return client.preparePost(url) {
             contentType(ContentType.Application.Json)
@@ -63,6 +68,10 @@ internal class UpstreamRequest(
                 if (timingToken != null) {
                     remove(UPSTREAM_TIMING_HEADER)
                     append(UPSTREAM_TIMING_HEADER, timingToken)
+                }
+                if (bodyToken != null) {
+                    remove(UPSTREAM_BODY_HEADER)
+                    append(UPSTREAM_BODY_HEADER, bodyToken)
                 }
             }
             setBody(wire.content())
@@ -82,8 +91,10 @@ internal class UpstreamRequest(
         val timing = ctx.observers.perf?.let(::UpstreamAttemptTiming)
         val bridge = client.attributes.getOrNull(upstreamTimingBridgeKey)
         val token = timing?.let { bridge?.register(it) }
+        val bodies = client.attributes.getOrNull(upstreamBodyBridgeKey)
+        val bodyToken = bodies?.register(wire.bodyBytes)
         try {
-            val statement = prepare(ctx.url, wire, token)
+            val statement = prepare(ctx.url, wire, token, bodyToken)
             val handler = UpstreamHandler<T> { response ->
                 block(response.also { it.postedAtMs = postedAtMs })
             }
@@ -98,6 +109,7 @@ internal class UpstreamRequest(
             }
         } finally {
             token?.let { bridge?.release(it) }
+            bodyToken?.let { bodies?.release(it) }
         }
     }
 

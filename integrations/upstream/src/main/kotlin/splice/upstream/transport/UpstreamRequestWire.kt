@@ -122,7 +122,7 @@ public object UpstreamHeaders {
 internal class AttemptWire(
     private val creds: Credentials,
     private val extra: Map<String, String>,
-    private val bodyBytes: ByteArray,
+    internal val bodyBytes: ByteArray,
     val recorder: AttemptRecorder? = null,
 ) {
     /** V4-174: the recorder sees the SAME map the wire gets, after the dedupe — redacted on the way in

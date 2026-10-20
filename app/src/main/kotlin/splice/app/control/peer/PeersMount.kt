@@ -168,7 +168,7 @@ internal class PeerManagementRoutes(private val parts: PeerParts, private val ra
         parts.helpers?.stop(name)
         val mail = parts.mail
         val purged = purge && mail != null
-        if (purged) mail?.purge(name)
+        if (purged) mail.purge(name)
         parts.log("[peers] revoked ${LogSafe.str(name)}\n")
         return PeerReplies.ok(
             HttpStatusCode.OK,

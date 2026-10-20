@@ -70,6 +70,10 @@ class SessionContinueTest {
                 }
 
                 override fun failed(session: String): String? = leaving?.fromModel.also { leaving = null }
+
+                override fun dropped(session: String) {
+                    leaving = null
+                }
             },
         )
     }

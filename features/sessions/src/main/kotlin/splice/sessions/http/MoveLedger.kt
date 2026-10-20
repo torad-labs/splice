@@ -214,4 +214,11 @@ public interface MoveLedger {
     /** [session] did not come back: the move read at [leaving] is dropped, and the model it left is answered, so it
      *  goes on where it was on that model (null when its row named none). */
     public fun failed(session: String): String?
+
+    /** [session]'s route answered: whatever [leaving] opened and no arrival or failure closed is closed now. A move
+     *  refused before its client was ended (a draft in the prompt, a closed terminal, an exit that did not come) never
+     *  reached a new client, so it keeps no mark and records no unmoved one, and the trust it carried does not outlive
+     *  it.
+     *  After [arrived] or [failed] there is nothing left to close. */
+    public fun dropped(session: String)
 }

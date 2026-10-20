@@ -87,7 +87,12 @@ public class SessionContinue(
     public suspend fun move(session: String, head: String, model: String?, clear: Boolean = false): JsonReply =
         when (val plan = plan(session, head, model)) {
             is Plan.Refused -> plan.reply
-            is Plan.Go -> go(plan.move, clear)
+            is Plan.Go -> try {
+                go(plan.move, clear)
+            } finally {
+                // a reply that did not come from the arrival left the grant and the pending mark open
+                ledger?.dropped(session)
+            }
         }
 
     /** A move ready to make, or the reply that refuses it. */

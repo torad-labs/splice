@@ -55,4 +55,9 @@ internal class ContinueLedger(
             move.command?.let { moves.unmoved(session, it, move.movedAt) }
         }?.fromModel
     }
+
+    override fun dropped(session: String) {
+        moving.done(session)
+        pending.remove(session)
+    }
 }

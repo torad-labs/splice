@@ -1,53 +1,198 @@
-/* Usage › Results by command (perf-heads.js), beside the Breakdown where the Commands cards stood: one row per
-   command, in the Breakdown's row language (.brow), a grid of figures under one header row, rows split by the track
-   line, numbers in the data face. The table sizes to its own column (container perf), so where that column is too narrow
-   for every figure, the header row goes and each figure carries its own label instead, and nothing is cut. Class names
-   are prefixed (.prow, .pf, .pthead): Usage also loads sessions.css, whose .phead and .pc would land on plain ones. */
+/* Usage › Results by command (perf-heads.js), beside the Breakdown where the Commands cards stood. One question: which
+   command is healthy and which one is hurting. A row is five columns on one line (the command, its requests, its failure
+   rate, the whole request's typical time and slowest 5%), numbers right-aligned in the data face, with generous height
+   so the table reads at a glance. Colour means one thing: the provider's colour is on the command's dot alone, and the
+   limit red and the Key Light are only for a problem; everything else is neutral ink on the plate. A row opens under
+   itself into a panel of shapes (the failure rate over one bar of every request, the cache and load as a ring and glyphs,
+   the stages as ticks on one axis, the compactions as a flow, the models as small multiples), collapsed by default. The
+   table sizes to its own column (container perf); where that column is too narrow for five, each figure carries its own
+   label instead and nothing is cut. Class names are prefixed (.prow, .pf, .pthead, .pd-): Usage also loads sessions.css,
+   whose .phead and .pc would land on plain ones. */
 
-.perf-heads { container: perf / inline-size; min-width: 0; display: flex; flex-direction: column; gap: 1.1rem; }  /* as .breakdown, so the two cards start level */
+.perf-heads { container: perf / inline-size; min-width: 0; max-width: 56rem; display: flex; flex-direction: column; gap: 1.1rem; }  /* capped, so on a wide screen the bars and columns keep the proportions they have at 1440 */  /* as .breakdown, so the two cards start level */
 .perf-heads > header .switch { margin-left: auto; }
-.perf-heads .ptable { padding: .4rem 1.15rem .6rem; }
-.prow {
-  display: grid; grid-template-columns: minmax(8rem, 1.3fr) repeat(var(--n), minmax(0, 1fr)); align-items: baseline; gap: .4rem .9rem;
-  padding: .75rem 0; border-top: .12rem solid var(--track); font: 500 .95rem/1.25 var(--font-data); font-variant-numeric: tabular-nums; color: var(--text-body);
-}
-.prow:first-child, .prow.pthead + .prow { border-top: 0; }
-.prow.pthead { align-items: end; padding: .8rem 0 .9rem; border-bottom: .12rem solid var(--track); font: 500 .88rem/1.2 var(--font-name); color: var(--text-mute); }
-.prow .pf { min-width: 0; overflow-wrap: anywhere; }
-.prow .pf > em { display: none; }
-.prow .cmd { align-self: center; }
-.prow .tkey { display: block; margin-top: .25rem; font: 500 .85rem/1.25 var(--font-name); color: var(--text-mute); }
-.prow .tkey i, .prow .two i { display: block; font-style: normal; color: var(--text-mute); }
-.prow .two i { font-size: .88rem; margin-top: .2rem; }
-.prow a.open { display: inline-flex; align-items: center; gap: .35rem; color: inherit; text-decoration: none; border-radius: .3rem; }
-.prow a.open .go { width: .95rem; height: .95rem; color: var(--text-mute); }
-.prow a.open:hover { color: var(--text); text-decoration: underline; }
-.prow a.open.bad { color: var(--limit); font-weight: 600; }
-.prow .sh { margin-left: .5rem; color: var(--text-mute); font-size: .88rem; white-space: nowrap; }  /* "under 1%" never splits across two lines */
-.prow .nr { font: 500 .88rem/1.2 var(--font-name); font-style: normal; color: var(--text-mute); }
-.prow .held { display: block; margin-top: .2rem; font: 500 .85rem/1.25 var(--font-name); color: var(--text-mute); }  /* how many of the command's requests the gate held */
-.prow .below { grid-column: 2 / -1; display: flex; flex-wrap: wrap; align-items: baseline; gap: .35rem .9rem; margin: .3rem 0 0; font: 500 .88rem/1.3 var(--font-name); color: var(--text-mute); }
-.prow .below .k { color: var(--limit); text-decoration: none; }
-.prow .below .k:hover, .prow .below a.m:hover { text-decoration: underline; }
-.prow .below a.m { color: inherit; text-decoration: none; }
-.prow .below b { font: 600 .88rem/1 var(--font-data); }
-.prow .below .flag { margin: 0; display: inline-flex; gap: .3rem .9rem; }
-.prow .below .flag a { font-size: .9rem; }
-.prow .below .flag .vs, .prow .below .flag .vs b { font-size: .88rem; }
+.perf-heads .ptable { padding: .35rem 1rem .5rem; }
 
-/* a command's models, three or more, as sub-rows under it in its own columns: no rule between them and their command,
-   the model's name indented in the name face, so they read as the command's parts (marlin, Oct 13) */
-.prow.msub { border-top: 0; padding: .3rem 0; font-size: .9rem; }
-.prow.msub .cmd { align-self: baseline; padding-left: .75rem; font: 500 .88rem/1.25 var(--font-name); color: var(--text-mute); }
-.prow.msub .bad { color: var(--limit); font-weight: 600; }
-.prow.msub.more { padding-bottom: .8rem; }
-.prow.msub.more .act { white-space: nowrap; }  /* "4 more models" broke into two lines in the narrow model column at 1440 */
+/* the five columns, shared by the header and every row */
+.pcols { display: grid; grid-template-columns: minmax(0, 1fr) 9rem 8rem 4.8rem 6rem; column-gap: 1rem; align-items: center; margin: 0 -.6rem; padding-inline: .6rem; }
+.pthead { padding-block: .9rem .8rem; border-bottom: .12rem solid var(--track); font: 500 .85rem/1.2 var(--font-name); color: var(--text-mute); }
+.pthead .pf:nth-child(2), .pthead .pf:nth-child(3) { text-align: right; }
+.pitem + .pitem { border-top: .12rem solid var(--track); }
+.prow { min-height: 3.7rem; padding-block: .6rem; border-radius: var(--r-in); cursor: pointer; font: 500 .95rem/1.2 var(--font-data); font-variant-numeric: tabular-nums; color: var(--text-body); }
+.prow:hover { background: color-mix(in oklab, var(--text) 4%, transparent); }
+.pf { min-width: 0; }
+.pf > em { display: none; }
+.pf.num, .pthead .pf.num { text-align: right; white-space: nowrap; }
+.pf .nr { font-style: normal; color: var(--text-mute); }
+.pf.tm.slow { color: var(--key-ink); font-weight: 600; }  /* slow today: the one colour a time ever takes */
 
-/* too narrow for every column: each figure says its own label, the command's chip leads its row */
-@container perf (max-width: 46rem) {
-  .prow.pthead { display: none; }
-  .prow { display: flex; flex-wrap: wrap; align-items: flex-start; gap: .8rem 1.35rem; padding: .9rem 0; }
-  .prow .cmd { flex-basis: 100%; }
-  .prow .pf > em { display: block; margin-bottom: .3rem; font: 500 .9rem/1.2 var(--font-name); font-style: normal; color: var(--text-mute); }
-  .prow .below { flex-basis: 100%; }
+/* the command: a disclosure, the provider's dot, its name */
+.plbl { display: inline-flex; align-items: center; gap: .65rem; min-width: 0; max-width: 100%; padding: 0; border: 0; background: none; color: inherit; font: inherit; text-align: left; cursor: pointer; }
+.plbl:focus-visible { outline: .14rem solid var(--key-ink); outline-offset: .25rem; border-radius: .3rem; }
+.plbl .chev { flex: none; width: .8rem; height: .8rem; fill: none; stroke: var(--text-mute); stroke-width: 1.5; stroke-linecap: round; stroke-linejoin: round; transition: transform var(--t-snap) var(--e-out); }
+.pitem.open .chev { transform: rotate(90deg); }
+.plbl .dot { flex: none; width: .7rem; height: .7rem; border-radius: 50%; background: var(--c); }
+.plbl .nm { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font: 600 .95rem/1.2 var(--font-data); color: var(--text); }
+
+/* a bar beside its number: neutral ink; the failure bar takes a colour only when the rate is bad */
+.pf.req, .pf.fail { display: flex; align-items: center; gap: .7rem; }
+.vbar { flex: 1 1 auto; min-width: 1.5rem; height: .4rem; border-radius: .2rem; overflow: hidden; background: color-mix(in oklab, var(--text) 10%, transparent); }
+.vbar b { display: block; height: 100%; border-radius: .2rem; background: color-mix(in oklab, var(--text) 38%, transparent); }
+.pf .v { flex: none; text-align: right; font-weight: 500; }
+.pf.req .v { min-width: 4.3rem; }
+.pf.fail .v { min-width: 2.9rem; font-size: 1.05rem; font-weight: 600; color: var(--text); }  /* the one strong number of the row */
+.pf.fail.lv-watch .vbar b { background: var(--key-ink); }
+.pf.fail.lv-watch .v { color: var(--key-ink); }
+.pf.fail.lv-bad .vbar b { background: var(--limit); }
+.pf.fail.lv-bad .v { color: var(--limit); }
+
+/* the commands with no request in the window: one muted line of plain text */
+.pquiet { margin: 0; font: 500 .95rem/1.4 var(--font-name); color: var(--text-mute); }
+.pbasis { margin-top: -.55rem; font-size: .85rem; }
+.pquiet span { font-family: var(--font-data); font-size: .9rem; }
+
+/* the panel a row opens: one plate, read top to bottom as sections. One spacing scale, 8 / 16 / 32 / 48 px (--u is 8 px):
+   16 inside a section (heading to content, one part to the next), 32 each side of the hairline between sections, 32 round
+   the plate. Every heading is the same small label at the same left edge, every section has one focal number and the rest
+   is quieter, and every number is the data face, tabular, in a right-aligned column. */
+.pdetail { --u: .667rem; --bh: 1.4rem; --hair: color-mix(in oklab, var(--text) 12%, transparent); display: flex; flex-direction: column; margin: .1rem 0 1rem 1.45rem; padding: calc(4 * var(--u)); border-radius: var(--r-in); background: color-mix(in oklab, var(--text) 4%, transparent); font: 500 .9rem/1.25 var(--font-name); color: var(--text-body); }
+.pnote { display: flex; flex-wrap: wrap; align-items: baseline; gap: .3rem 1.1rem; margin: 0 0 calc(4 * var(--u)); color: var(--text-mute); }
+.pnote .flag { margin: 0; display: inline-flex; flex-wrap: wrap; gap: .3rem .9rem; }
+.pnote .flag a { font-size: .95rem; }
+.pnote .flag .vs, .pnote .flag .vs b { font-size: .88rem; }
+.psec { min-width: 0; display: flex; flex-direction: column; gap: calc(2 * var(--u)); }
+.pdetail > .psec + .psec { margin-top: calc(4 * var(--u)); padding-top: calc(4 * var(--u)); border-top: .08rem solid var(--hair); }
+.pd-h { display: flex; align-items: baseline; flex-wrap: wrap; gap: .3rem calc(2 * var(--u)); }
+.pd-h h3 { margin: 0; font: 600 .8rem/1.2 var(--font-name); letter-spacing: .09em; text-transform: uppercase; color: var(--text-mute); }
+.pd-h .pd-n { font: 500 .8rem/1.2 var(--font-name); color: var(--text-mute); }
+.pd-sub { display: flex; align-items: baseline; gap: .55rem; margin: 0; font: 500 .85rem/1.2 var(--font-name); color: var(--text-mute); }
+.pd-sub b { font: 600 1.7rem/1 var(--font-data); font-variant-numeric: tabular-nums; letter-spacing: -.01em; color: var(--text); }
+.pd-count { display: inline-flex; align-items: center; gap: .3rem; font: 500 .8rem/1.2 var(--font-name); color: var(--text-mute); text-decoration: none; }
+.pd-count b { font: 500 .8rem/1.2 var(--font-data); font-variant-numeric: tabular-nums; color: var(--text-body); }
+.pd-count .go { width: .8rem; height: .8rem; color: var(--text-mute); }
+a.pd-count:hover { color: var(--text); text-decoration: underline; }
+.pd-n { text-align: right; white-space: nowrap; font: 500 .92rem/1.2 var(--font-data); font-variant-numeric: tabular-nums; color: var(--text); }
+.pd-grid { display: grid; grid-template-columns: minmax(0, 8.5rem) minmax(0, 1fr) 4.2rem 4.6rem; column-gap: calc(2 * var(--u)); align-items: center; }
+
+/* outcomes: the rate is the focal number; its total is quiet; one bar of every request; one row for what is too thin to
+   say its own name, then the quiet outcomes on a row of their own */
+.pd-hero { --bh: 1.9rem; }
+.pd-top { display: flex; flex-wrap: wrap; align-items: baseline; gap: .3rem calc(2 * var(--u)); }
+.pd-rate { font: 600 2.9rem/1 var(--font-data); font-variant-numeric: tabular-nums; letter-spacing: -.02em; color: var(--text); }
+.pd-rate.lv-watch { color: var(--key-ink); }
+.pd-rate.lv-bad { color: var(--limit); }
+.pd-failed { display: inline-flex; align-items: baseline; gap: .4rem; color: var(--text-mute); text-decoration: none; font: 500 .88rem/1.2 var(--font-name); }
+.pd-failed b { font: 500 .88rem/1.2 var(--font-data); font-variant-numeric: tabular-nums; color: var(--text-body); }
+.pd-failed .go { align-self: center; width: .85rem; height: .85rem; color: var(--text-mute); }
+a.pd-failed:hover { color: var(--text); text-decoration: underline; }
+.pd-pop { display: flex; flex-direction: column; gap: calc(2 * var(--u)); }
+.pd-bar { display: flex; height: var(--bh); border-radius: .3rem; overflow: hidden; }
+.pd-seg { flex: none; box-sizing: border-box; display: flex; align-items: center; min-width: 0; padding: 0; overflow: hidden; white-space: nowrap; font: 600 .8rem/1 var(--font-name); color: var(--obj); text-decoration: none; }
+.pd-seg > span { padding-inline: .6rem; }
+.pd-seg b { font: 600 .8rem/1 var(--font-data); font-variant-numeric: tabular-nums; }
+.pd-seg.ok, .pd-sw.ok { background: color-mix(in oklab, var(--text) 66%, transparent); }
+.pd-seg.nt, .pd-sw.nt { background: color-mix(in oklab, var(--text) 52%, transparent); }
+.pd-seg.f0, .pd-sw.f0 { background: var(--limit); }
+.pd-seg.f1, .pd-sw.f1 { background: color-mix(in oklab, var(--limit) 80%, transparent); }
+.pd-seg.f2, .pd-sw.f2 { background: color-mix(in oklab, var(--limit) 72%, transparent); }
+a.pd-seg:hover { box-shadow: inset 0 0 0 999px color-mix(in oklab, var(--text) 12%, transparent); }
+.pd-legend { display: flex; flex-wrap: wrap; align-items: center; justify-content: flex-start; margin-top: calc(-1 * var(--u)); gap: var(--u) calc(3 * var(--u)); }
+/* the quiet outcomes: a row of their own, the grey swatch hanging at the left, the outcomes it holds after the colon */
+.pd-lgrp { flex: 1 1 100%; padding-left: 1.05rem; text-indent: -1.05rem; line-height: 1.6; }
+.pd-lgrp .pd-lb { display: inline; }
+.pd-lgrp .pd-sw { display: inline-block; margin-right: .4rem; vertical-align: -.03rem; text-indent: 0; }
+.pd-lb { display: inline-flex; align-items: center; gap: .4rem; color: var(--text-body); text-decoration: none; font: 500 .84rem/1.2 var(--font-name); }
+a.pd-lb:hover { color: var(--text); text-decoration: underline; }
+.pd-lb b, .pd-neither b { font: 500 .84rem/1.2 var(--font-data); font-variant-numeric: tabular-nums; color: var(--text); }
+.pd-neither { font: 500 .84rem/1.2 var(--font-name); color: var(--text-mute); }
+.pd-sw { flex: none; width: .65rem; height: .65rem; border-radius: .15rem; }
+
+/* cache and activity: the cache ring is the focal number, the counts beside it are quieter */
+.pd-stats { display: flex; flex-wrap: wrap; align-items: center; gap: calc(2 * var(--u)) calc(4 * var(--u)); }
+.pd-stat { display: inline-flex; align-items: center; gap: .75rem; }
+.pd-stat > svg { flex: none; width: 2.2rem; height: 2.2rem; }
+.pd-stat.focal > svg { width: 3.3rem; height: 3.3rem; }
+.pd-stat > svg:not(.pd-ring) { box-sizing: border-box; padding: .46rem; border-radius: 50%; background: color-mix(in oklab, var(--text) 8%, transparent); fill: none; stroke: var(--text-body); stroke-width: 1.4; stroke-linecap: round; stroke-linejoin: round; }
+.pd-ring circle { fill: none; stroke-width: 5; }
+.pd-ring .rt { stroke: color-mix(in oklab, var(--text) 16%, transparent); }
+.pd-ring .rv { stroke: var(--text); stroke-linecap: butt; }
+.pd-stat > span { display: flex; flex-direction: column; gap: .2rem; }
+.pd-stat b { font: 500 .98rem/1.1 var(--font-data); font-variant-numeric: tabular-nums; color: var(--text); }
+.pd-stat.focal b { font: 600 1.7rem/1 var(--font-data); letter-spacing: -.01em; }
+.pd-stat small { font: 500 .8rem/1.2 var(--font-name); color: var(--text-mute); }
+
+/* the time marks, the same everywhere: a solid bar to the typical time, a thin line on to the slowest 5%, whose end is the tick */
+.pd-leg { display: inline-flex; align-items: center; gap: .45rem; font: 500 .8rem/1.2 var(--font-name); color: var(--text-mute); }
+.pd-leg i { flex: none; width: 1.3rem; border-radius: .14rem; }
+.pd-lt { height: .6rem; background: color-mix(in oklab, var(--text) 70%, transparent); }
+.pd-ls { position: relative; margin-left: .6rem; height: .2rem; background: color-mix(in oklab, var(--text) 62%, transparent); }
+.pd-ls::after, .pd-trk .hi::after { content: ""; position: absolute; right: 0; top: 50%; width: .17rem; height: 1.05rem; transform: translateY(-50%); border-radius: .08rem; background: var(--text); }
+.pd-trk { position: relative; display: block; height: 1.1rem; border-radius: .2rem; background: color-mix(in oklab, var(--text) 8%, transparent); }
+.pd-trk i { position: absolute; left: 0; }
+.pd-trk .hi { top: 50%; height: .2rem; margin-top: -.1rem; min-width: .2rem; background: color-mix(in oklab, var(--text) 62%, transparent); }
+.pd-trk .mid { top: 0; bottom: 0; min-width: .2rem; border-radius: .2rem; background: color-mix(in oklab, var(--text) 70%, transparent); }
+
+/* stages: rows with room, on one labelled log axis, held to a width where a label and its numbers stay close; the stage
+   that takes longest carries the one big number */
+.pd-stages > * { max-width: 40rem; }
+.pd-st { padding-block: calc(.5 * var(--u)); }
+.pd-sl { min-width: 0; font: 500 .92rem/1.25 var(--font-name); color: var(--text-body); }
+.pd-sl small { display: block; margin-top: .15rem; font: 500 .8rem/1.2 var(--font-name); color: var(--text-mute); }
+.pd-st .pd-n.t { font-size: .98rem; font-weight: 600; }
+.pd-st .pd-n.s { font-size: .86rem; color: var(--text-mute); }
+.pd-st.pd-focus .pd-n.t { font-size: 1.45rem; letter-spacing: -.01em; }
+.pd-axis { margin-top: -.2rem; align-items: start; }
+.pd-ax { position: relative; display: block; height: 1.6rem; border-top: .08rem solid color-mix(in oklab, var(--text) 58%, transparent); }
+.pd-axis .pd-sl { padding-top: .4rem; }
+.pd-axis .pd-sl small { margin: 0; font-size: .74rem; }
+.pd-tk { position: absolute; top: .45rem; transform: translateX(-50%); white-space: nowrap; font: 400 .74rem/1.2 var(--font-data); font-variant-numeric: tabular-nums; color: var(--text-mute); }
+.pd-tk::before { content: ""; position: absolute; left: 50%; top: -.45rem; height: .3rem; border-left: .08rem solid color-mix(in oklab, var(--text) 58%, transparent); }
+.pd-tk.pd-t-first { transform: none; }
+.pd-tk.pd-t-first::before { left: 0; }
+.pd-tk.pd-t-last { transform: translateX(-100%); }
+.pd-tk.pd-t-last::before { left: 100%; }
+
+/* the models: a card each, the name, the two figures, then the time; only the worst model is outlined and its rate is
+   the section's one big number */
+.pd-cards { display: grid; grid-template-columns: repeat(auto-fill, minmax(13rem, 1fr)); gap: calc(2 * var(--u)); }
+.pd-card { min-width: 0; display: flex; flex-direction: column; gap: calc(2 * var(--u)); padding: calc(2 * var(--u)); border-radius: var(--r-in); background: color-mix(in oklab, var(--text) 2.5%, transparent); box-shadow: inset 0 0 0 .08rem var(--hair); }
+.pd-card.loud.lv-watch { box-shadow: inset 0 0 0 .13rem color-mix(in oklab, var(--key-ink) 75%, transparent); }
+.pd-card.loud.lv-bad { background: color-mix(in oklab, var(--limit) 6%, transparent); box-shadow: inset 0 0 0 .15rem var(--limit); }
+.pd-card.loud .k, .pd-card.loud small { color: var(--text-body); }
+.pd-cn { min-width: 0; overflow-wrap: anywhere; font: 600 .95rem/1.2 var(--font-name); color: var(--text); }
+.pd-pair { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); column-gap: calc(2 * var(--u)); align-items: start; }
+.pd-q { min-width: 0; display: flex; flex-direction: column; gap: .35rem; }
+.pd-q .k { font: 500 .8rem/1.2 var(--font-name); color: var(--text-mute); }
+.pd-q > b { display: flex; align-items: flex-end; height: 1.75rem; font: 500 .98rem/1.1 var(--font-data); font-variant-numeric: tabular-nums; color: var(--text); }
+.pd-q > b.lv-watch { color: var(--key-ink); font-weight: 600; }
+.pd-q > b.lv-bad { color: var(--limit); font-weight: 600; }
+.pd-card.loud .pd-q > b.lv-bad, .pd-card.loud .pd-q > b.lv-watch { font-size: 1.7rem; font-weight: 600; letter-spacing: -.01em; line-height: 1; }
+.pd-mini { min-width: 1.5rem; height: .5rem; border-radius: .25rem; overflow: hidden; background: color-mix(in oklab, var(--text) 12%, transparent); }
+.pd-mini i { display: block; height: 100%; border-radius: .25rem; background: color-mix(in oklab, var(--text) 60%, transparent); }
+.pd-mini.fail.lv-watch i { background: var(--key-ink); }
+.pd-mini.fail.lv-bad i { background: var(--limit); }
+.pd-time { display: flex; flex-direction: column; gap: .6rem; }
+.pd-ends { display: flex; justify-content: space-between; gap: .6rem; }
+.pd-ends > span { display: flex; flex-direction: column; gap: .15rem; }
+.pd-ends > span:last-child { align-items: flex-end; }
+.pd-ends small { font: 500 .8rem/1.2 var(--font-name); color: var(--text-mute); }
+.pd-ends b { font: 500 .92rem/1.2 var(--font-data); font-variant-numeric: tabular-nums; color: var(--text); }
+
+/* the "N more" toggle under a list of models */
+.plink { align-self: flex-start; padding: 0; border: 0; background: none; color: var(--text-mute); font: 500 .88rem/1.2 var(--font-name); cursor: pointer; }
+.plink:hover { color: var(--text); text-decoration: underline; }
+.plink:focus-visible { outline: .14rem solid var(--key-ink); outline-offset: .2rem; border-radius: .2rem; }
+
+/* too narrow for five: each figure says its own label, the command leads its row */
+@container perf (max-width: 34rem) {
+  .pthead { display: none; }
+  .pcols { grid-template-columns: 1fr 1fr; row-gap: .7rem; }
+  .pcols .cmd { grid-column: 1 / -1; }
+  .pf.num { text-align: left; }
+  .pf > em { display: block; font: 500 .8rem/1.2 var(--font-name); font-style: normal; color: var(--text-mute); }
+  .pf.req, .pf.fail { flex-wrap: wrap; }
+  .pdetail { margin-left: 0; padding: calc(2 * var(--u)); }
+  .pd-grid { grid-template-columns: minmax(0, 6.4rem) minmax(0, 1fr) 3.8rem 4.4rem; column-gap: .7rem; }
+  .pd-cards { grid-template-columns: minmax(0, 1fr); }
+  .pd-rate { font-size: 2.4rem; }
 }

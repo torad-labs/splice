@@ -17,8 +17,8 @@ import java.nio.file.StandardOpenOption.WRITE
 
 /** Retags rows of session [from] as session [to]. */
 internal class SessionIdRetag(from: String, to: String) {
-    private val old = "\"sessionId\":\"$from\""
-    private val new = "\"sessionId\":\"$to\""
+    private val old = "\"sessionId\":\"$from\"".toByteArray(Charsets.UTF_8)
+    private val new = "\"sessionId\":\"$to\"".toByteArray(Charsets.UTF_8)
 
     /** [source]'s rows written to the new file [target], each naming [to] where it named the original. */
     fun copy(source: Path, target: Path) {
@@ -28,12 +28,17 @@ internal class SessionIdRetag(from: String, to: String) {
             val _ = TranscriptLines.read(source) { row ->
                 if (!first) out.write('\n'.code)
                 first = false
-                val text = row.text()
-                if (old in text) {
-                    out.write(text.replace(old, new).toByteArray(Charsets.UTF_8))
-                } else {
-                    out.write(row.bytes, 0, row.length)
+                // Replaced in the row's bytes, never decoded: the field is ASCII, so this is the text replace it was,
+                // without a String of every row of the transcript (a resume launch's largest allocation, Oct 20).
+                var start = 0
+                var at = row.indexOf(old)
+                while (at >= 0) {
+                    out.write(row.bytes, start, at - start)
+                    out.write(new)
+                    start = at + old.size
+                    at = row.indexOf(old, start)
                 }
+                out.write(row.bytes, start, row.length - start)
             }
         }
     }

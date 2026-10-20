@@ -190,7 +190,7 @@ public class TranscriptModelRewrite(
         val survey = Survey(path, readable(path) { path.toRealPath() })
         survey.digest = readable(survey.file) {
             TranscriptLines.read(survey.file) { row ->
-                val shape = rows.read(row.text())
+                val shape = if (rows.mayMove(row)) rows.read(row.text()) else LineShape.NotAssistant
                 if (shape is LineShape.Assistant) {
                     val model = JsonScalars.str(shape.message, Keys.MODEL)
                     if (NativeClaude.isModel(model)) survey.newestClaude = model
@@ -239,7 +239,7 @@ public class TranscriptModelRewrite(
         return TranscriptLines.read(file) { row ->
             if (!first) out.write('\n'.code)
             first = false
-            val moved = rows.rewritten(row.text(), policy)
+            val moved = if (rows.mayMove(row)) rows.rewritten(row.text(), policy) else null
             if (moved == null) out.write(row.bytes, 0, row.length) else out.write(moved.toByteArray(Charsets.UTF_8))
         }
     }

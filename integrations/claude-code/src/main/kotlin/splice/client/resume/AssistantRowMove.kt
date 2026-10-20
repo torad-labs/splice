@@ -14,6 +14,7 @@ import splice.client.Keys
 import splice.client.transcript.ASSISTANT_TYPE
 import splice.client.transcript.CONTENT
 import splice.client.transcript.THINKING_STAND_IN
+import splice.client.transcript.TranscriptRow
 import splice.core.util.Cancellables
 import splice.core.util.JsonScalars
 
@@ -23,6 +24,10 @@ private const val TRANSCRIPT_MESSAGE = "message"
 /** The model Claude Code files on a reply it wrote itself ("No response requested." on resuming an unanswered turn).
  *  It names no model a head serves, so it never moves: the transcript reader hides such rows by this mark (p176). */
 private const val SYNTHETIC_MODEL = "<synthetic>"
+
+// A row's "type" can read "assistant" only by these bytes or by a \u escape of one of its letters.
+private val ASSISTANT_BYTES = "assistant".toByteArray(Charsets.UTF_8)
+private val UNICODE_ESCAPE = "\\u".toByteArray(Charsets.UTF_8)
 
 /** Whether a row on this model stays where it is. */
 internal fun interface KeptModel {
@@ -67,6 +72,11 @@ internal class AssistantRowMove {
      *  xmr() in 2.1.282 and wwr() in 2.1.283, byte for byte. */
     private val thinkingRemoved =
         json.parseToJsonElement("""{"type":"text","text":"$THINKING_STAND_IN","citations":[]}""")
+
+    /** Whether [row] can be an assistant row at all. One that cannot is history, kept as it is, so a pass need not
+     *  decode or parse it: on a resume launch that was every row, tool output included, four passes over the transcript
+     *  (about 2.8 GB in 9 s for five launches on the live daemon, 02:03 CT, Oct 20). */
+    fun mayMove(row: TranscriptRow): Boolean = row.indexOf(ASSISTANT_BYTES) >= 0 || row.indexOf(UNICODE_ESCAPE) >= 0
 
     /** The line as the move reads it. */
     fun read(line: String): LineShape =

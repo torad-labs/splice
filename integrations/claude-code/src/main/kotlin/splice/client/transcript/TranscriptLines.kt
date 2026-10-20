@@ -44,6 +44,22 @@ internal class TranscriptRow {
     fun clear() {
         length = 0
     }
+
+    /** Where [pattern]'s bytes first occur in the row at or after [from], or -1. A match on bytes is a match on text
+     *  for an ASCII pattern: UTF-8 never puts an ASCII byte inside a multi-byte character. */
+    fun indexOf(pattern: ByteArray, from: Int = 0): Int {
+        for (at in from..length - pattern.size) {
+            if (matchesAt(pattern, at)) return at
+        }
+        return -1
+    }
+
+    private fun matchesAt(pattern: ByteArray, at: Int): Boolean {
+        for (k in pattern.indices) {
+            if (bytes[at + k] != pattern[k]) return false
+        }
+        return true
+    }
 }
 
 /** Where a pass over a transcript hands each row, in order. The row is valid only inside the call. No index comes

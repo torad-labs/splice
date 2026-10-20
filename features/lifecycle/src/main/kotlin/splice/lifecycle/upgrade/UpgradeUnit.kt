@@ -8,13 +8,15 @@ import java.nio.file.Path
  *  is there), asked through systemctl. */
 internal class UpgradeUnit(private val userUnit: String, private val process: UpgradeProcess) {
 
-    /** The unit supervises this install when its ExecStart names [liveJar] AND it is active, so the daemon
-     *  on the port is its process: a loaded but inactive unit means a daemon started by hand, and an
+    /** The unit supervises this install when its ExecStart names [liveJar], or the splice-launch installed beside it
+     *  (a unit that starts `splice-launch daemon` runs the launcher's JVM options, Oct 19, 2026), AND it is active,
+     *  so the daemon on the port is its process: a loaded but inactive unit means a daemon started by hand, and an
      *  install under another share dir (a second copy, a test home) never restarts someone else's unit. */
     fun supervises(liveJar: Path): Boolean {
         val unit = process(listOf("systemctl", "--user", "show", "-p", "ExecStart", "--value", userUnit), false)
         val active = process(listOf("systemctl", "--user", "is-active", userUnit), false)
-        return unit.code == 0 && unit.stdout.contains(liveJar.toString()) && active.stdout.trim() == "active"
+        val names = listOf(liveJar, liveJar.resolveSibling("splice-launch")).any { unit.stdout.contains(it.toString()) }
+        return unit.code == 0 && names && active.stdout.trim() == "active"
     }
 
     /** Restarts the unit; its stop is the daemon's own drain. */

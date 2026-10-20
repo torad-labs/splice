@@ -962,6 +962,13 @@ origin.
   command sits on the card of the key it sends with, and the keys a key replaced fold into one quiet line.
 
 ### Changed
+- **The daemon's memory follows its live data, with no fixed ceiling.** The 2 GB heap, which ran out of memory 20
+  times on Oct 2, is gone: the heap may grow to 75% of RAM, and G1 now gives memory back so that what it holds stays
+  within about 1.7 times the live data. It used to hold up to 3.3 times (10.5 GiB for 3 GiB live, measured Oct 19) and
+  grew to 24 to 28 GiB during each start. The JVM options live in one place, `SPLICE_JVM_OPTS` in `splice-launch`,
+  and every daemon start uses them: `splice restart` and `splice dashboard` now start the daemon through the launcher
+  installed beside the jar, so that start also exits on running out of memory and leaves a heap dump. A user unit
+  that runs `splice-launch daemon` counts as supervising the install for `splice upgrade`.
 - **One model can fill several tiers.** `model_slots = { opus = "gpt-6.1-sol", sonnet = "gpt-6.1-sol" }` now loads and launches with both tiers set, and the picker still lists the model once. A `models` list still names each model once.
 - **splice works with the systemd unit that runs it.** `splice start`, `splice restart` and `splice console` go
   through `splice.service` whenever a unit serves this shell, even while it is down, instead of starting a second daemon

@@ -3,8 +3,8 @@
 // lives in SupervisedStart.kt. In features/lifecycle since LAYOUT-01: [DaemonColdStart] is the one
 // public entry, shared by `splice dashboard` and `splice restart` (the only verbs that cold-start;
 // status and doctor only probe). daemon-boot.log is named HERE so JW-01 stays anchored on this
-// file, and DEFAULT_JVM_OPTS moved here from AdminSupport with the argv that is its one reader —
-// the launch shim carries the same flag set and the two must agree.
+// file. The daemon's JVM options are
+// splice-launch's alone (SPLICE_JVM_OPTS there): this cold start runs the daemon through it.
 package splice.lifecycle.start
 
 import splice.core.GATEWAY_VERSION
@@ -24,29 +24,33 @@ internal class DaemonLaunch(
     /** The cold-start command as argv. The jar and logs dir ride as positional $1/$2 DATA, never
      *  interpolated into the script text: an apostrophe in the install path ("/home/o'brien")
      *  broke out of the old single-quoted literal and the cold start died on a shell parse error
-     *  (review #94, F149). SPLICE_JVM_OPTS stays a shell expansion by design (see spawnDaemon). */
-    internal fun daemonLaunchArgv(jar: Path, logsDir: Path): List<String> {
-        val opts = DEFAULT_JVM_OPTS
-        return listOf(
+     *  (review #94, F149). The daemon starts through the splice-launch installed beside the jar, as
+     *  `splice daemon`, so its JVM options are the launcher's: one set for the unit, the shell's cold start
+     *  and this one (Oct 19, 2026; this file carried a third copy, still at the 2 GB heap that threw
+     *  OutOfMemoryError on Oct 2, and none of the OutOfMemoryError exit and dump flags). A jar with no
+     *  launcher beside it (a build tree) starts on plain `java` with `${SPLICE_JVM_OPTS}`. */
+    internal fun daemonLaunchArgv(jar: Path, logsDir: Path): List<String> =
+        listOf(
             "sh",
             "-c",
             // JW-01: the spawned JVM's output lands in daemon-boot.log (rolled at 1MB, one
             // generation), never /dev/null; an unwritable logs dir degrades the redirect
-            // instead of breaking the launch. Mirrors app/src/main/dist/bin/splice-launch byte-for-byte in
-            // behaviour — the two cold-start paths must not drift. V4-258: [BOOT_LOG_FLAG] tells the
-            // daemon its stderr is that file, so daemon.log's lines are not copied into it.
+            // instead of breaking the launch. V4-258: [BOOT_LOG_FLAG] tells the daemon its stderr
+            // is that file, so daemon.log's lines are not copied into it.
             "L=\"\$2\"; " +
                 "B=\"\$L/daemon-boot.log\"; mkdir -p \"\$L\" 2>/dev/null; " +
                 "[ -f \"\$B\" ] && [ \"\$(wc -c <\"\$B\" 2>/dev/null || echo 0)\" -gt 1048576 ] " +
                 "&& mv -f \"\$B\" \"\$B.1\" 2>/dev/null; " +
+                "S=\"\$(dirname -- \"\$1\")/splice-launch\"; " +
+                "if [ -x \"\$S\" ]; then set -- env SPLICE_HEAD=splice SPLICE_JAR=\"\$1\" \"\$S\" daemon; " +
+                "else set -- java \$SPLICE_JVM_OPTS -jar \"\$1\" daemon; fi; " +
                 "if ( : >>\"\$B\" ) 2>/dev/null; then " +
-                "nohup java \${SPLICE_JVM_OPTS:-$opts} -jar \"\$1\" daemon $BOOT_LOG_FLAG >>\"\$B\" 2>&1 & " +
-                "else nohup java \${SPLICE_JVM_OPTS:-$opts} -jar \"\$1\" daemon >/dev/null 2>&1 & fi",
+                "nohup \"\$@\" $BOOT_LOG_FLAG >>\"\$B\" 2>&1 & " +
+                "else nohup \"\$@\" >/dev/null 2>&1 & fi",
             "sh",
             jar.toString(),
             logsDir.toString(),
         )
-    }
 
     /** JW-01: shown when the daemon never answers after a cold start. Reads only the filesystem. */
     internal fun printBootLogTail() = spawn.printBootLogTail()
@@ -158,9 +162,3 @@ private const val POLL_INTERVAL_MS = 250L
 /** V4-258: the daemon argument both cold-start launchers pass (this argv and splice-launch) to say the
  *  daemon's stderr is daemon-boot.log, so the daemon keeps daemon.log's lines out of it. */
 public const val BOOT_LOG_FLAG: String = "--stderr-is-boot-log"
-
-// Bounded heap + string-dedup: safe for hundreds of concurrent streams, small for a laptop.
-// The shell `${SPLICE_JVM_OPTS:-...}` lets an operator override without touching code.
-// G1PeriodicGCInterval: idle heap uncommit — a daemon that goes quiet still returns freed
-// pages to the OS instead of holding them until the next GC is triggered by allocation.
-internal const val DEFAULT_JVM_OPTS = "-Xmx2048m -XX:+UseStringDeduplication -XX:G1PeriodicGCInterval=60000"

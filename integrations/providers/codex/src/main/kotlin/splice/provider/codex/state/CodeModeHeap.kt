@@ -51,8 +51,9 @@ private const val OBJECT_ALIGNMENT = 8L
 private const val LATIN1_MAX = 0xFF
 
 /** How the running JVM stores text. Compact strings keep Latin-1 text at one byte a character, and G1 stores an array
- *  of half a region or more in whole regions of its own. The daemon runs G1 at -Xmx2048m (DaemonLaunch's
- *  DEFAULT_JVM_OPTS), so its regions are 1 MiB and any string of 512 KiB or more takes whole ones. The options are read
+ *  of half a region or more in whole regions of its own. The daemon runs G1 with no fixed -Xmx (splice-launch's
+ *  SPLICE_JVM_OPTS), so the region size follows the machine's RAM (32 MiB on a 120 GiB host, where a string of 16 MiB
+ *  or more takes whole regions). The options are read
  *  from the HotSpot diagnostic bean by its object name, the string form a class literal would otherwise name. A JVM
  *  without that bean is weighed at two bytes a character with no regions. */
 private object CodeModeTextLayout {

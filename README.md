@@ -896,7 +896,7 @@ Reasons to walk away:
 
 - **One tested Claude Code version per release.** The launch handshake checks the daemon's version. Doctor and the status line report when Claude Code is newer than the version tested with that release.
 - **Single-user by design.** There is no multi-user story, remote access, or TLS. A team wanting a shared model gateway should run one built for that job (LiteLLM, for example).
-- **A JVM daemon.** Java 21 is a hard dependency, and the daemon holds a bounded 2 GB heap while serving.
+- **A JVM daemon.** Java 21 is a hard dependency. The daemon has no fixed heap ceiling: its heap may grow to 75% of RAM, and G1 is tuned to keep committed memory close to the live data. The JVM options live in one place, `SPLICE_JVM_OPTS` in the `splice-launch` launcher, which every daemon start runs through; set that variable to override them.
 - **A one-person project.** The release gates are strict: every release is checksummed, provenance-attested, and installed hermetically in CI before it ships. One person maintains the project.
 
 ## Compatibility

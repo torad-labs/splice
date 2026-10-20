@@ -8,6 +8,7 @@ import org.gradle.api.artifacts.result.ResolvedComponentResult
 import org.gradle.api.artifacts.result.ResolvedDependencyResult
 import org.gradle.api.tasks.ClasspathNormalizer
 import org.gradle.api.tasks.PathSensitivity
+import splice.release.IsolatePlatforms
 import java.nio.file.Files
 import java.nio.file.StandardCopyOption
 import java.nio.file.attribute.PosixFilePermissions
@@ -605,6 +606,15 @@ tasks.register("stageRelease") {
 
         val jar = releaseJar.get().asFile
         check(jar.isFile) { "release stage: expected fat jar missing at $jar" }
+        // A release carries every code-mode isolate: an install on any of those hosts starts code mode's isolate
+        // from this jar, and a jar built without them (the default for a developer's own build) cannot.
+        val missingIsolates = ZipFile(jar).use { zip ->
+            IsolatePlatforms.every.filter { zip.getEntry(IsolatePlatforms.marker(it)) == null }
+        }
+        check(missingIsolates.isEmpty()) {
+            "release stage: the fat jar holds no code-mode isolate for ${missingIsolates.joinToString()}; " +
+                "build it with -Psplice.allPlatforms=true (tools/release gives it to every build it makes)"
+        }
         listOf(bom, licenses).forEach { report ->
             val file = report.get().asFile
             check(file.isFile) { "release stage: compliance report missing at $file" }

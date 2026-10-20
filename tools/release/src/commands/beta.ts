@@ -21,6 +21,7 @@
 import { copyFileSync, existsSync, mkdirSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { releaseNotes } from "../lib/changelog.ts";
+import { ALL_PLATFORMS } from "../lib/dist.ts";
 
 export const usage =
   "beta <X.Y.Z-beta.N>                  cut a local, unattested beta from origin/main: build in /tmp, accept, gh release create --prerelease";
@@ -144,7 +145,7 @@ export async function beta(argv: string[], repoRoot: string): Promise<number> {
     }
 
     const env = { ...Bun.env, SPLICE_RELEASE_TAG: tag, SPLICE_EXPECTED_VERSION: version };
-    run(["bun", "tools/gate", "slot", `beta-${version}`, "--", ":app:shadowJar", ":app:stageRelease",
+    run(["bun", "tools/gate", "slot", `beta-${version}`, "--", ":app:shadowJar", ":app:stageRelease", ALL_PLATFORMS,
       "-x", ":integrations-mcp-hub:linkHolderReleaseExecutableLinuxX64",
       "-x", ":integrations-mcp-hub:linkFrontReleaseExecutableLinuxX64"], tree, env, false);
     run(["bun", "tools/release", "accept"], tree, env, false);

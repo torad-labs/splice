@@ -22,7 +22,7 @@
 import { copyFileSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { SUMS, enumerationProblem, readManifest } from "../lib/dist.ts";
+import { ALL_PLATFORMS, SUMS, enumerationProblem, readManifest } from "../lib/dist.ts";
 import { launcherRehearsal } from "../lib/launcher.ts";
 import { shimPath } from "../lib/shim.ts";
 import { commentDecoy, parseWorkflow, prereleaseProblem, releaseFilesProblem, stageStepProblem, tagMutantEnv } from "../lib/workflow.ts";
@@ -58,9 +58,11 @@ function run(repoRoot: string, argv: readonly string[], env: Record<string, stri
   return { ok: proc.exitCode === 0, output: `${proc.stdout.toString()}${proc.stderr.toString()}` };
 }
 
-/** gradle, always through the slot: two gradles in one project dir hand each other false reds. */
+/** gradle, always through the slot: two gradles in one project dir hand each other false reds. Every build here rehearses
+ *  a release, so each is given what a release is given: staging refuses a jar without the isolates of all four platforms. */
 function gradle(repoRoot: string, args: readonly string[], env: Record<string, string> = {}): Ran {
-  return run(repoRoot, [process.execPath, join(repoRoot, "tools", "gate", "index.ts"), "slot", SLOT_LABEL, "--", ...args], env);
+  const slot = [process.execPath, join(repoRoot, "tools", "gate", "index.ts"), "slot", SLOT_LABEL, "--"];
+  return run(repoRoot, [...slot, ALL_PLATFORMS, ...args], env);
 }
 
 function acceptCli(repoRoot: string, distDir: string, version: string): Ran {

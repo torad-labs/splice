@@ -1,4 +1,5 @@
 import org.jetbrains.kotlin.gradle.tasks.KotlinCompile
+import splice.release.IsolatePlatforms
 
 plugins {
     id("splice.kotlin-common")
@@ -14,21 +15,21 @@ dependencies {
     implementation(libs.kotlinx.coroutines.core)
     implementation(libs.graaljs.polyglot)
     // The published aggregator declares platform POMs as runtime artifacts. Shadow consumes ZIPs,
-    // so use its native JAR dependencies directly. Each isolate library is 140-150 MB, so a local build ships only the
-    // host's (the one a local run can load); CI and the release build ship every published platform, and
-    // -Psplice.allPlatforms=true asks for them locally.
-    val everyPlatform = listOf("linux-amd64", "linux-aarch64", "darwin-aarch64", "windows-amd64")
-    val hostOs = providers.systemProperty("os.name").get().lowercase()
-    val hostArch = providers.systemProperty("os.arch").get().lowercase()
-    val hostPlatform = when {
-        hostOs.startsWith("windows") -> "windows-amd64"
-        hostOs.startsWith("mac") -> "darwin-aarch64"
-        hostArch == "aarch64" || hostArch == "arm64" -> "linux-aarch64"
-        else -> "linux-amd64"
-    }
-    val shipEvery = providers.environmentVariable("CI").isPresent ||
-        providers.gradleProperty("splice.allPlatforms").orNull == "true"
-    for (platform in if (shipEvery) everyPlatform else listOf(hostPlatform)) {
+    // so use its native JAR dependencies directly.
+    //
+    // WHICH PLATFORMS A BUILD SHIPS IS A CHOICE THE BUILD IS TOLD, in the property splice.allPlatforms. Each isolate
+    // library is 140-150 MB, so a developer's own build leaves it unset and ships only the host's, the one a local run
+    // can load. A RELEASE SHIPS ALL FOUR: -Psplice.allPlatforms=true, which tools/release gives every build it makes
+    // (release beta, release verify) and which a hand-made release build must give too. With the property unset, a
+    // hosted run (CI set) ships all four; -Psplice.allPlatforms=false forces the host's alone even there.
+    // :app:stageRelease refuses a jar that lacks any of them, so a release cannot go out with fewer by forgetting this.
+    val shipped = IsolatePlatforms.shipped(
+        allPlatforms = providers.gradleProperty("splice.allPlatforms").orNull?.toBooleanStrictOrNull(),
+        hosted = providers.environmentVariable("CI").isPresent,
+        os = providers.systemProperty("os.name").get(),
+        arch = providers.systemProperty("os.arch").get(),
+    )
+    for (platform in shipped) {
         runtimeOnly("org.graalvm.js:js-isolate-$platform-community:${libs.versions.graaljs.get()}")
     }
     implementation(libs.graaljs.community)

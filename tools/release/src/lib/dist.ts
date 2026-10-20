@@ -16,6 +16,13 @@ import { join } from "node:path";
 /** The manifest file itself: staged beside the assets, and published as an asset in its own right. */
 export const SUMS = "sha256sums.txt";
 
+/**
+ * What every build that makes a release is given. The fat jar then carries the code-mode isolate library of all four
+ * platforms (integrations/codemode/build.gradle.kts), where a developer's own build carries only the host's, and
+ * `:app:stageRelease` refuses a jar that lacks any. A release built by hand passes it too.
+ */
+export const ALL_PLATFORMS = "-Psplice.allPlatforms=true";
+
 export interface StagedManifest {
   /** the published assets, in the order `:app:stageRelease` wrote them */
   readonly assets: readonly string[];

@@ -23,6 +23,9 @@ public class TurnPrice(private val catalog: ModelCatalog?, private val cost: Tok
     /** Whether [model] has a rate card, so that a request on it with token counts gets a price. */
     public fun declares(model: String?): Boolean = model?.let(::ratesFor) != null
 
+    /** The card [model] is priced at now, or null when it has none: what a price kept across a restart is keyed on. */
+    public fun cardOf(model: String): ModelRates? = ratesFor(model)
+
     /** A row's own card, else the card the vendor publishes for the model id itself.
      *
      *  A Claude head's catalog accepts any model the client asks for (ClientModelPolicy.open,

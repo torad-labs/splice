@@ -41,9 +41,21 @@ internal class EconomicsReprice(
 
     // An hour no more rows can land in is answered once: its answer is its own cost fields, or none when its rows are
     // not its turns. Asking again at every poll would regroup the whole window for the hours that can never match.
-    private val settled = HashMap<Long, Settled>()
+    private val settled = HashMap<Long, RepriceSettled>()
 
-    private data class Settled(val recorded: List<Long>, val cost: BucketCost?)
+    // The settled hours outlive a restart while the build, the cards and the plan answers they were priced under are
+    // the ones in force (RepriceKept says why), with the models and accounts those hours ran on for the key.
+    private val kept = RepriceKept(perf.files, RepriceCards(price, plans))
+    private val models = HashSet<String>()
+    private val accounts = HashSet<String?>()
+
+    init {
+        kept.load()?.let { saved ->
+            settled.putAll(saved.settled)
+            models.addAll(saved.models)
+            accounts.addAll(saved.accounts)
+        }
+    }
 
     /** [buckets] with every re-derivable hour priced again: an hour with an unpriced turn, and an hour recorded before
      *  the plan split, whose plan and key requests the rows tell apart by account. [buckets] unchanged where the rows
@@ -83,16 +95,23 @@ internal class EconomicsReprice(
         val byHour = selection.billed(evidence.work.rows).filterNot { it in probes }
             .groupBy { it.ts / REPRICE_BUCKET_MS * REPRICE_BUCKET_MS }
         val newest = evidence.work.rows.maxOfOrNull { it.ts } ?: return emptyMap()
-        return wanted.associate { bucket ->
+        val was = HashMap(settled)
+        val answers = wanted.associate { bucket ->
             val cost = repriced(bucket, byHour[bucket.hour].orEmpty())
             // Only an hour the log has moved well past is final; the hour still being written is asked again.
             if (bucket.hour + REPRICE_SETTLED_MS <= newest) {
-                settled[bucket.hour] = Settled(recorded(bucket), cost)
+                settled[bucket.hour] = RepriceSettled(recorded(bucket), cost)
+                byHour[bucket.hour].orEmpty().forEach { row ->
+                    row.facts.model?.let(models::add)
+                    accounts += row.facts.account
+                }
             } else {
                 settled.remove(bucket.hour)
             }
             bucket.hour to cost
         }
+        if (settled != was) kept.save(RepriceKeptHours(settled, models, accounts))
+        return answers
     }
 
     /** The evidence from [from] when the log reads whole. A log refused for a torn row stays refused while its files are

@@ -23,9 +23,9 @@ private const val COMPACTION_SUMMARIES = "compaction_summaries"
 
 internal class KeptHistoryStores(private val paths: StatePaths) {
 
-    /** Clears what the cut reaches, or names the first store that could not be cleared. */
+    /** Clears what the cut reaches, every store whatever an earlier one did, and names the first that could not be. */
     fun trimBefore(momentMs: Long): String? =
-        summariesCleared(momentMs) ?: filedCleared(momentMs)
+        listOfNotNull(summariesCleared(momentMs), filedCleared(momentMs)).firstOrNull()
 
     private fun summariesCleared(momentMs: Long): String? =
         Cancellables.runCatchingCancellable { summaries().forEach { it.deleteBefore(momentMs) } }
@@ -34,13 +34,13 @@ internal class KeptHistoryStores(private val paths: StatePaths) {
     private fun filedCleared(momentMs: Long): String? {
         val listed = Cancellables.runCatchingCancellable { filed() }
             .getOrElse { return "the kept stores: ${SafeFailureText.render(it)}" }
-        return listed.firstNotNullOfOrNull { (key, dirs) ->
-            dirs.firstNotNullOfOrNull { dir ->
+        return listed.flatMap { (key, dirs) ->
+            dirs.mapNotNull { dir ->
                 Cancellables.runCatchingCancellable { dir.deleteBefore(momentMs) }.exceptionOrNull()?.let {
                     "$key: ${SafeFailureText.render(it)}"
                 }
             }
-        }
+        }.firstOrNull()
     }
 
     /** Each head's parked compaction summaries (`compactions/<head>`), including a head that has left splice.toml. */

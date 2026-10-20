@@ -62,11 +62,11 @@ internal class HistoryWiring(
         written.rejected.values.firstOrNull() ?: written.notPersisted
     }
 
-    // Everything else the window covers, cut at the same moment as the records, and the FIRST store
-    // that could not be is named: a save that did not do all of what it said has to say so rather
-    // than report a clean "Applied".
+    // Everything else the window covers, cut at the same moment as the records. EVERY store is tried, whatever an
+    // earlier one did, and the FIRST that could not be cut is named: a save that did not do all of what it said has
+    // to say so rather than report a clean "Applied", and one store's failure leaves no later store untrimmed.
     private val stores = HistoryStores { momentMs ->
-        hours(momentMs) ?: sessions(momentMs) ?: edges(momentMs) ?: kept()?.trimBefore(momentMs)
+        listOfNotNull(hours(momentMs), sessions(momentMs), edges(momentMs), kept()?.trimBefore(momentMs)).firstOrNull()
     }
 
     /** Each head's session totals, read from the live map so a head that joined after mount is counted. */
@@ -79,12 +79,12 @@ internal class HistoryWiring(
     private fun economics(): List<EconomicsStore> =
         heads.values.mapNotNull { (it.sources.economics as? EconomicsStoreSource)?.store }
 
-    /** Every head's hourly spending totals, or the first one that could not be trimmed. */
-    private fun hours(momentMs: Long): String? = economics().firstNotNullOfOrNull { store ->
+    /** Every head's hourly spending totals trimmed, naming the first one that could not be. */
+    private fun hours(momentMs: Long): String? = economics().mapNotNull { store ->
         Cancellables.runCatchingCancellable { store.trimBefore(momentMs) }.exceptionOrNull()?.let {
             "the spending totals: ${SafeFailureText.render(it)}"
         }
-    }
+    }.firstOrNull()
 
     /** What each finished session cost. Marlin, Oct 10, 2026: a session whose last activity is
      *  before the cut loses its total, and one working inside the window keeps it, because that is
@@ -92,11 +92,11 @@ internal class HistoryWiring(
      *  transcript exists, so that exception would keep months of spend after "Today only". */
     private fun sessions(momentMs: Long): String? = heads.values
         .mapNotNull { (it.sources.perf as? PerfStatsSource)?.sessionTotals }
-        .firstNotNullOfOrNull { store ->
+        .mapNotNull { store ->
             Cancellables.runCatchingCancellable { store.trimBefore(momentMs) }.exceptionOrNull()?.let {
                 "what each session cost: ${SafeFailureText.render(it)}"
             }
-        }
+        }.firstOrNull()
 
     /** The message edges, which are the record of who a person messaged, minus the ones an active
      *  team still needs (Marlin, Oct 10, 2026). An install with no activity stores has none. */

@@ -12,19 +12,19 @@
 // argv inside gateOfRecord's dependency closure, so a row the plugin dropped or a dependsOn somebody
 // removed is a red leg, not a silently narrower gate.
 //
-// NEVER UP-TO-DATE, ON PURPOSE (a stated deviation from P10), except a leg that reads the fat jar. A leg's output is a
-// verdict, not an artifact: the gate of record runs `clean` with `--no-build-cache` because Kotlin's compile avoidance
-// once handed it a mixture of two source states, and an up-to-date verdict is the same hole one layer up. Fingerprinting
-// the tree every checker reads (all of it, plus git) would also cost more than most legs. So a leg with no jar dependency
-// declares no inputs and refuses up-to-date. A leg that depends on `:app:shadowJar` declares what its verdict reads: the
-// jar's own output (a rebuilt jar re-runs it) and the e2e files its row names (an edit re-runs it). A stamp records each
-// run, so the leg has an output for gradle to judge.
+// A LEG IS UP-TO-DATE WHEN WHAT ITS ROW NAMES IS UNCHANGED. Every row except a `fresh` one must name `inputs`
+// globs: the files its verdict reads, expanded by git. A leg whose task depends on `:app:shadowJar` also reads
+// the fat jar, so a rebuilt jar re-runs it. A stamp records each run, so the leg has an output for gradle to
+// judge. A `fresh: true` row (a verdict that is not a function of the files, such as commit history or a live
+// advisory feed) opts out and runs every time. The gate of record still recomputes every verdict: `bun tools/gate
+// run` passes `clean` and `--no-build-cache`, because Kotlin's compile avoidance once handed it a mixture of two
+// source states and an up-to-date verdict is the same hole one layer up. An incremental run is where a leg can be
+// up-to-date.
 //
 // WHAT IS NOT HERE: the release rehearsal (`bun tools/release verify`). It builds and stages a
 // release through the slot, and the slot is held by the gate for the whole of this graph — a
 // nested run would wait on its own lock. `bun tools/gate run` runs it AFTER the graph, with the
 // slot released. The Kotlin modules' `check` tasks carry detekt, the unit suites and the module laws.
-import org.gradle.api.tasks.testing.Test
 import splice.ladder.LadderLeg
 import splice.ladder.LadderTable
 
@@ -40,9 +40,6 @@ val ladderPath = "tools/gate/config/ladder.json"
 val legs: List<LadderLeg> = LadderTable.readAll(layout.projectDirectory.file(ladderPath).asFile)
 require(legs.isNotEmpty()) { "$ladderPath names no legs: a gate with no legs is not a gate" }
 
-/** Every Test task of every subproject, resolved when the graph is built, after every project is configured. */
-val everyTestTask = provider { subprojects.flatMap { it.tasks.withType<Test>() } }
-
 val repository = layout.projectDirectory
 val repositoryRoot = rootDir
 val appProject = provider { project(":app") }
@@ -51,7 +48,6 @@ val legTasks = legs.map { leg ->
     // Locals, not the script's own fields: a lambda that names a script field holds the script, and the configuration cache refuses it.
     val root = repositoryRoot
     val app = appProject
-    val tests = everyTestTask
     val name = leg.task
     val dependsOnTasks = leg.dependsOn
     val stamp = layout.buildDirectory.file("gate/$name.stamp")
@@ -61,7 +57,6 @@ val legTasks = legs.map { leg ->
         workingDir = root
         commandLine(leg.command)
         dependsOnTasks.forEach { dependsOn(it) }
-        if (leg.afterAllTests) dependsOn(tests)
         if (leg.fresh) {
             outputs.upToDateWhen { false }
         } else {

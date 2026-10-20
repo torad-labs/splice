@@ -11,7 +11,6 @@ class LadderLeg(
     val command: List<String>,
     val why: String,
     val dependsOn: List<String>,
-    val afterAllTests: Boolean,
     val fresh: Boolean,
     val files: LegFiles,
 ) {

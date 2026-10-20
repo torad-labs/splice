@@ -24,7 +24,6 @@ object LadderTable {
             command = texts(row, "command", task) ?: error("$task: no command"),
             why = text(row, "why", task),
             dependsOn = texts(row, "dependsOn", task).orEmpty(),
-            afterAllTests = row["afterAllTests"] == true,
             fresh = row["fresh"] == true,
             files = LegFiles(
                 inputs = texts(row, "inputs", task).orEmpty(),

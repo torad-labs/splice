@@ -202,12 +202,35 @@ tasks.withType<Test>().configureEach {
     // the instrument this wall was written against — so the detekt config is an input too, or
     // deleting the rule would come back UP-TO-DATE-green on the one law that exists because of it.
     inputs.files(repoRoot.file("quality/detekt/detekt.yml")).withPropertyName("scannedPremiseConfig")
+}
+
+// THE LAWS THE WHOLE TREE DECIDES, a task of their own (2026-10-19, the pre-push gate speed-up). Three laws grade files no module owns:
+// ConventionalTypeLawTest reads the contents of every tracked file, ReleaseReadinessLawTest grades the installer, the health files,
+// the workflows, the packaging metadata and the fork record (and walks every source set of every module, lawFixtures and the
+// native source sets included), and DiskWritesLawTest grades README.md. Their inputs are the whole tree, so declared on the one `test`
+// task they made every edit to any tracked file, a gate script or a CI yaml included, rerun all of the laws (about 100 s) while
+// the other laws, which read the module sources and the few files declared above, had nothing new to say. The three run here, over
+// every tracked file; `test` runs the rest over the inputs it declares above and depends on this task, so `lawSuites`, `check`
+// and `test` itself still run every law.
+val treeLaws: List<String> = listOf(
+    "splice.quality.ConventionalTypeLawTest",
+    "splice.quality.ReleaseReadinessLawTest",
+    "splice.quality.DiskWritesLawTest",
+)
+
+val treeLawTest = tasks.register<Test>("treeLawTest") {
+    description = "The laws whose verdict any tracked file can change: ${treeLaws.joinToString { it.substringAfterLast('.') }}."
+    group = "verification"
+    testClassesDirs = sourceSets.test.get().output.classesDirs
+    classpath = sourceSets.test.get().runtimeClasspath
+    filter { treeLaws.forEach { includeTestsMatching(it) } }
     // PR 6 review (F3): the OPERATOR SURFACES. ReleaseReadinessLawTest grades the installer, the
     // health files, the workflows, the packaging metadata and the fork record; ConventionalTypeLawTest
     // grades the one list of conventional commit types. None of it is Kotlin and none of it was
     // fingerprinted, so `printf 'curl x || true\n' >> install.sh` left this task UP-TO-DATE and the law written to
     // catch exactly that never ran. The gate of record is immune (clean, --no-build-cache); every
     // incremental and local run was not — the same hole the example config's input closed above.
+    // (Every tracked file is an input below, which these named surfaces are among; the names stay as the record of why.)
     inputs.files(
         repoRoot.file("install.sh"),
         repoRoot.file("README.md"),
@@ -230,13 +253,19 @@ tasks.withType<Test>().configureEach {
     inputs.property("trackedPaths", trackedPathsDigest)
 }
 
-// THE CONVENTIONAL-TYPE LAW'S CONTENT INPUTS. ConventionalTypeLawTest reads the contents of every tracked file, and the path digest above only
+tasks.named<Test>("test") {
+    filter { treeLaws.forEach { excludeTestsMatching(it) } }
+    dependsOn(treeLawTest)
+}
+
+// THE TREE LAWS' CONTENT INPUTS. ConventionalTypeLawTest reads the contents of every tracked file, and the path digest above only
 // answers WHICH paths are tracked, so a content-only edit to a file it reads was served from up-to-date. The build fingerprints
 // every tracked file as an input and hands the same list to the test JVM, where the law reads only through it (LawReadSet). No
-// file is exempt: the law reads a binary lossily, like any other text.
+// file is exempt: the law reads a binary lossily, like any other text. The same inputs cover what ReleaseReadinessLawTest walks
+// that no group above names.
 splice.lawsuite.ReadSet.declareFiles(
     project,
-    tasks.named<Test>("test"),
+    treeLawTest,
     splice.lawsuite.ReadSet.trackedProvider(project),
     "conventional-candidates",
     "splice.conventionalCandidatesFile",

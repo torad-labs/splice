@@ -147,7 +147,7 @@ public class PeerInboxServer(
             when (auth) {
                 ConnectionAuth.TOKEN -> inbox.forConnection(tokenPresented = true)
                 ConnectionAuth.BAD -> null
-                else -> inbox.forConnection(tokenPresented = false)
+                ConnectionAuth.NONE, null -> inbox.forConnection(tokenPresented = false)
             }
         }
     }

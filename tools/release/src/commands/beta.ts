@@ -60,19 +60,18 @@ function sha256(path: string): string {
 }
 
 /** Parse the native build's checksum format once for selection and final staged-byte verification. */
-function hubPins(repoRoot: string): Map<string, string> {
+function parseHubPins(text: string): Map<string, string> {
   return new Map(
-    readFileSync(join(repoRoot, PINS), "utf8").split("\n").filter(Boolean).map((line) => {
+    text.split("\n").filter(Boolean).map((line) => {
       const [hash, name] = line.split(/\s+/);
-            if (!hash || !name) throw new Refusal(`release beta: malformed native checksum line in ${PINS}`);
+      if (!hash || !name) throw new Refusal(`release beta: malformed native checksum line in ${PINS}`);
       return [name, hash] as const;
     }),
   );
 }
 
 /** The kept hub folder whose two binaries hash to their pins, as lead-install.sh selects it. */
-function qualifiedHub(repoRoot: string): string {
-  const pins = hubPins(repoRoot);
+function qualifiedHub(repoRoot: string, pins: ReadonlyMap<string, string>): string {
   const kept = join(repoRoot, HUB_KEPT);
   const folder = (existsSync(kept) ? readdirSync(kept) : []).map((name) => join(kept, name)).find((dir) =>
     HUB.every((b) => {
@@ -134,7 +133,8 @@ export async function beta(argv: string[], repoRoot: string): Promise<number> {
     }
     const notes = notesFor(run(["git", "show", `${sha}:CHANGELOG.md`], repoRoot), version, short);
 
-    const hub = qualifiedHub(repoRoot);
+    const pinned = parseHubPins(run(["git", "show", `${sha}:${PINS}`], repoRoot));
+    const hub = qualifiedHub(repoRoot, pinned);
     if (existsSync(tree)) run(["git", "worktree", "remove", "--force", tree], repoRoot);
     run(["git", "worktree", "add", "--detach", tree, sha], repoRoot);
     writeFileSync(join(tree, "docs/PROVENANCE.md"), readFileSync(join(tree, "docs/PROVENANCE.md"), "utf8") + provenanceSection(short, version));
@@ -149,7 +149,6 @@ export async function beta(argv: string[], repoRoot: string): Promise<number> {
       "-x", ":integrations-mcp-hub:linkHolderReleaseExecutableLinuxX64",
       "-x", ":integrations-mcp-hub:linkFrontReleaseExecutableLinuxX64"], tree, env, false);
     run(["bun", "tools/release", "accept"], tree, env, false);
-    const pinned = hubPins(repoRoot);
     for (const b of HUB) {
       const got = sha256(join(tree, "dist", `splice-mcp-${b}`));
       if (pinned.get(`splice-mcp-${b}`) !== got) throw new Refusal(`release beta: dist/splice-mcp-${b} is ${got}, not its pin in ${PINS}`);

@@ -30,6 +30,10 @@ private const val NO_SYSTEM_BROWSER = "splice.noSystemBrowser"
  *  parse failure is routed into, since the URL itself carries the PKCE challenge and never gets printed. */
 private const val UNKNOWN_HOST = "unknown"
 
+// why: the only schemes a login link may carry to the operating system's opener. A verification link can come from a
+// provider's JSON, and a file:, smb: or custom scheme there would reach whatever handler the desktop has for it.
+private val WEB_SCHEMES = setOf("http", "https")
+
 /** Opens a login URL; tests record the request without starting an operating-system process. */
 public fun interface BrowserOpener {
     public fun open(url: String): Boolean
@@ -82,7 +86,14 @@ public class SystemBrowserOpener(private val output: TerminalOutput) : BrowserOp
         Cancellables.runCatchingCancellable { java.net.URI.create(url).host }
             .fold(onSuccess = { it ?: UNKNOWN_HOST }, onFailure = { UNKNOWN_HOST })
 
+    /** True for an http or https link that names a host; a link that does not parse is not one. */
+    private fun webLink(url: String): Boolean = Cancellables.runCatchingCancellable { java.net.URI.create(url) }
+        .fold(onSuccess = { it.host != null && it.scheme?.lowercase() in WEB_SCHEMES }, onFailure = { false })
+
     private fun launch(url: String): Boolean = Cancellables.runCatchingCancellable {
+        // The URL may come straight from a provider's JSON (a device flow's verification link), so only a web link
+        // reaches the operating system's handler; a file:, smb: or custom scheme from a hostile endpoint never does.
+        if (!webLink(url)) return false
         val os = System.getProperty("os.name").lowercase()
         val cmd = when {
             os.contains("mac") -> listOf("open", url)
@@ -248,6 +259,14 @@ internal class LoginIo(
     }.orEmpty()
 
     internal fun sanitize(s: String): String = s.filter { !it.isISOControl() }.take(ERR_BODY_CAP)
+
+    /** What a refused provider call says on the terminal: the HTTP status and the OAuth error code, never the body,
+     *  which can carry a token or an email the person never asked to see in a log (OAuthLoginFlow states the same rule
+     *  for its token exchange). Every device flow words its refusals through here. */
+    internal fun refusal(what: String, status: Int, body: String): String {
+        val code = errorCode(body)
+        return "splice: $what (HTTP $status)" + if (code.isEmpty()) "" else ": ${sanitize(code)}"
+    }
 }
 
 // V4-122: ONE error-body truncation width for the login flow, read by both files that render one

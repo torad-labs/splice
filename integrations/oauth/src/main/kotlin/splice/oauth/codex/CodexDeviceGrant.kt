@@ -66,20 +66,13 @@ internal class CodexDeviceGrant(
                 val body = resp.bodyAsText()
                 if (resp.status.isSuccess()) return grantFrom(body)
                 if (resp.status.value != HttpStatus.FORBIDDEN && resp.status.value != HttpStatus.NOT_FOUND) {
-                    output.line(failure("login failed", resp.status.value, body))
+                    output.line(loginIo.refusal("login failed", resp.status.value, body))
                     return null
                 }
             }
         }
         output.line("splice: the code expired after 15 minutes; try again.")
         return null
-    }
-
-    /** What a refusal says: the HTTP status and the OAuth error code, never the body, which can carry a token or an
-     *  email the person never asked to see in a log. */
-    private fun failure(what: String, status: Int, body: String): String {
-        val oauthError = loginIo.errorCode(body)
-        return "splice: $what (HTTP $status)" + if (oauthError.isEmpty()) "" else ": ${loginIo.sanitize(oauthError)}"
     }
 
     private fun grantFrom(body: String): Grant? {
@@ -100,7 +93,7 @@ internal class CodexDeviceGrant(
         }
         val body = resp.bodyAsText()
         if (!resp.status.isSuccess()) {
-            output.line(failure("token exchange failed", resp.status.value, body))
+            output.line(loginIo.refusal("token exchange failed", resp.status.value, body))
             return null
         }
         return body

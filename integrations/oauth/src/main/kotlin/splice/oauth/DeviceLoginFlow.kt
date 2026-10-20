@@ -128,7 +128,7 @@ public class DeviceLoginFlow(
         }
         val body = resp.bodyAsText()
         if (!resp.status.isSuccess()) {
-            output.line("splice: could not start device login (HTTP ${resp.status.value}): ${loginIo.sanitize(body)}")
+            output.line(loginIo.refusal("could not start device login", resp.status.value, body))
             return null
         }
         return spec.deviceAuth.parse(body)
@@ -187,10 +187,10 @@ public class DeviceLoginFlow(
         val body = resp.bodyAsText()
         if (resp.status.isSuccess()) return persistPollSuccess(spec, body, loginIo)
         if (resp.status.value >= HttpStatus.INTERNAL_SERVER_ERROR) {
-            output.line("splice: login failed (HTTP ${resp.status.value}): ${loginIo.sanitize(body)}")
+            output.line(loginIo.refusal("login failed", resp.status.value, body))
             return PollStep.Stop(Outcome.ABORT)
         }
-        return classifyPollError(body, intervalS, loginIo)
+        return classifyPollError(resp.status.value, body, intervalS, loginIo)
     }
 
     private suspend fun persistPollSuccess(spec: DeviceLoginSpec, body: String, loginIo: LoginIo): PollStep {
@@ -201,7 +201,7 @@ public class DeviceLoginFlow(
         return PollStep.Stop(if (signedIn) Outcome.SUCCESS else Outcome.ABORT)
     }
 
-    private fun classifyPollError(body: String, intervalS: Long, loginIo: LoginIo): PollStep =
+    private fun classifyPollError(status: Int, body: String, intervalS: Long, loginIo: LoginIo): PollStep =
         when (loginIo.errorCode(body)) {
             "authorization_pending" -> PollStep.Wait(intervalS)
             "slow_down" -> PollStep.Wait(intervalS + SLOW_DOWN_INCREMENT_S)
@@ -211,7 +211,7 @@ public class DeviceLoginFlow(
                 PollStep.Stop(Outcome.ABORT)
             }
             else -> {
-                output.line("splice: login failed: ${loginIo.sanitize(body)}")
+                output.line(loginIo.refusal("login failed", status, body))
                 PollStep.Stop(Outcome.ABORT)
             }
         }

@@ -110,7 +110,7 @@ public class CodexDeviceLogin(
         if (status == HttpStatus.NOT_FOUND) {
             "splice: device-code login is not enabled for this ChatGPT server; use the terminal login."
         } else {
-            "splice: could not start device login (HTTP $status): ${loginIo.sanitize(body)}"
+            loginIo.refusal("could not start device login", status, body)
         }
 
     private fun announce(spec: CodexDeviceSpec, code: UserCode, observer: LoginObserver?) {

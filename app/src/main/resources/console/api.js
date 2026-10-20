@@ -55,7 +55,7 @@ const API = (() => {
     // a read that answers at once with what is ready, marking what splice is still reading, rather than waiting on it
     getReady: (p) => call("GET", p, undefined, { "x-splice-read-pending": "1" }, signal),
     post: (p, b) => call("POST", p, b ?? {}, undefined, signal),
-    put: (p, b) => call("PUT", p, b, undefined, signal),
+    put: (p, b, extra) => call("PUT", p, b, extra, signal),
     patch: (p, b) => call("PATCH", p, b, undefined, signal),
     del: (p) => call("DELETE", p, undefined, undefined, signal),
     // a last word as the tab hides or closes: the browser still delivers it after the page is gone (pilot.js)

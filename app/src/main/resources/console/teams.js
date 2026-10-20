@@ -982,23 +982,9 @@ async function save(startAfter) {
   }
 }
 
-/** A create needs an Idempotency-Key, so a retried create cannot make a second team, and api.js sends no custom
- *  header: this one call is made here, with the form's one key [once]. */
-async function createTeam(body, once) {
-  const mgmt = localStorage.getItem("splice-console-key") || "";
-  try {
-    const res = await fetch("/api/teams", {
-      method: "PUT",
-      headers: { Authorization: `Bearer ${mgmt}`, "Content-Type": "application/json", "Idempotency-Key": once },
-      body: JSON.stringify(body),
-    });
-    const text = await res.text();
-    let parsed = null;
-    try { parsed = text ? JSON.parse(text) : null; } catch { parsed = null; }
-    return { ok: res.ok, status: res.status, body: parsed };
-  } catch {
-    return { ok: false, status: 0, body: null };
-  }
+/** A create needs an Idempotency-Key, so a retried create cannot make a second team. */
+function createTeam(body, once) {
+  return API.put("/api/teams", body, { "Idempotency-Key": once });
 }
 
 /** Starting a member opens a Claude Code session on its command, bound to the slot. A start that stops on a question

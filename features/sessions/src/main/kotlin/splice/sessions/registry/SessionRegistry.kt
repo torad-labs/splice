@@ -53,12 +53,16 @@ public data class SessionProcess(
     val startedAt: Long?,
     val updatedAt: Long?,
     val messagingSocketPath: String?,
+    /** The registry directory this registration was read from: where its key file sits beside it (peer messaging, spec 1.1). */
+    val registryDir: String? = null,
 )
 
 /** Which Claude Code client the session runs: its kind and version, and how it was started. */
 public data class SessionClient(
     val kind: String?,
     val version: String?,
+    /** The cross-session wire the client says it speaks (`peerProtocol`); a send needs 1 (peer messaging, spec 1.4). */
+    val peerProtocol: Int? = null,
 )
 
 public data class SessionRecord(
@@ -212,10 +216,12 @@ public class SessionRegistry(
                 startedAt = JsonScalars.long(obj, "startedAt"),
                 updatedAt = updatedAt,
                 messagingSocketPath = JsonScalars.str(obj, "messagingSocketPath"),
+                registryDir = sessionsDir.toString(),
             ),
             client = SessionClient(
                 kind = JsonScalars.str(obj, "kind"),
                 version = JsonScalars.str(obj, "version"),
+                peerProtocol = JsonScalars.int(obj, "peerProtocol"),
             ),
         )
     }

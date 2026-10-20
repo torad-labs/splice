@@ -51,7 +51,7 @@
 }
 /* the socket is dark in both themes, so what is lit in it keeps night's ink in day: day's dark green and greys sank into
    it (Working's trace near-invisible, walk ea3eeff67). The open seat in Teams is a light socket and keeps day's. */
-[data-theme="day"] .lamp:not(.open) { --live: #5bb59c; --limit: #f06a4c; --text-body: #cbbd9d; --text-mute: #9c8f70; --track-line: rgba(239, 226, 198, .22); }
+[data-theme="day"] .lamp:not(.open) { --live: var(--splice-live-on-night); --limit: var(--splice-limit-on-night); --text-body: var(--splice-cream-body); --text-mute: var(--splice-cream-mute); --track-line: var(--splice-track-line-on-night); }
 .lamp svg { width: 1.2rem; height: 1.2rem; fill: none; stroke: currentColor; stroke-width: 2.4; stroke-linecap: round; stroke-linejoin: round; }
 .lamp i { width: .62rem; height: .62rem; border-radius: 50%; background: currentColor; }
 /* Working: a trace that runs, small and slow, because it repeats on every working card */
@@ -90,7 +90,7 @@
 .meta .word.stalled, .meta .word.limit { color: var(--limit); }
 .meta .word.needs { color: var(--key-light); }
 .meta .detail.retried { color: var(--key-ink); }
-[data-theme="day"] .meta .word.needs { color: #8a5a12; }
+[data-theme="day"] .meta .word.needs { color: var(--key-ink); }
 .meta .detail { font: 500 .95rem/1 var(--font-data); color: var(--limit); display: inline-flex; align-items: center; gap: .35rem; }
 .meta .detail svg { width: 1rem; height: 1rem; }
 .meta .detail.resumes { color: var(--live); }  /* splice has it: the working colour, not the stalled one (fin) */
@@ -125,9 +125,9 @@
 .ask .cmd, .unmoved .cmd { white-space: pre-wrap; margin: 0; font: 500 .95rem/1.4 var(--font-data); color: var(--text); background: var(--obj-sunk); border: .12rem solid var(--ink); border-radius: var(--r-in); padding: .55rem .75rem; overflow-wrap: anywhere; }
 .ask .why { margin: .45rem 0 0; font: 400 .95rem/1.4 var(--font-name); color: var(--text-body); }
 .answers { display: flex; flex-wrap: wrap; gap: .6rem; margin-top: .8rem; }
-.answers .act[aria-pressed="true"] { background: var(--limit); color: #fff7ea; }
+.answers .act[aria-pressed="true"] { background: var(--limit); color: var(--on-limit); }
 .scope { font: 500 .88rem/1 var(--font-data); color: var(--text-body); background: var(--obj-sunk); border-radius: .3rem; padding: .3rem .45rem; }
-.act.primary .scope { background: rgba(36, 29, 20, .14); color: #241d14; }
+.act.primary .scope { background: rgba(36, 29, 20, .14); color: var(--splice-ink-day); }
 
 /* ---------- ended: folded at the bottom ---------- */
 .fold { align-self: flex-start; display: inline-flex; align-items: center; gap: .45rem; font: 500 .95rem/1 var(--font-name); }
@@ -299,9 +299,9 @@ div.ended { display: flex; flex-direction: column; gap: .7rem; }
 /* the Message field at the open session's foot; scoped to the pane, since the page's own composer is another element */
 .pane .composer { display: flex; align-items: center; gap: .7rem; padding: .75rem 1.2rem .95rem; border-top: var(--ink-w) solid var(--ink); background: var(--obj-high); }
 .pane .composer .field { font: 400 1.05rem/1.3 var(--font-name); padding: .7rem .85rem; }
-.send { width: 2.5rem; height: 2.5rem; padding: 0; flex: none; display: grid; place-items: center; cursor: pointer; border-radius: var(--r-obj); background: var(--key-light); color: #241d14; border: var(--ink-w) solid var(--ink); box-shadow: .2rem .2rem 0 var(--ink); }
+.send { width: 2.5rem; height: 2.5rem; padding: 0; flex: none; display: grid; place-items: center; cursor: pointer; border-radius: var(--r-obj); background: var(--key-light); color: var(--splice-ink-day); border: var(--ink-w) solid var(--ink); box-shadow: .2rem .2rem 0 var(--ink); }
 .send svg { width: 1.15rem; height: 1.15rem; }
-.pane .composer .act.deny { background: var(--limit); color: #fff7ea; padding: .7rem 1rem; flex: none; }  /* while a permission waits, sending denies it */
+.pane .composer .act.deny { background: var(--limit); color: var(--on-limit); padding: .7rem 1rem; flex: none; }  /* while a permission waits, sending denies it */
 .nomatch { display: flex; align-items: center; gap: .8rem; min-height: 3.4rem; padding: .75rem 1.1rem; border: var(--ink-w) dashed var(--track-line); border-radius: var(--r-obj); }
 .list:has(> .nomatch)::before { content: none; }  /* nothing to dock: no rail beside an empty search */
 .send:active { transform: translate(.18rem, .18rem); box-shadow: .04rem .04rem 0 var(--ink); }
@@ -417,7 +417,7 @@ div.ended { display: flex; flex-direction: column; gap: .7rem; }
 .pane .armed.end .said { display: inline-flex; align-items: center; gap: .4rem; font: 500 .95rem/1 var(--font-name); color: var(--text-body); }
 .pane .armed.end .said svg { width: 1rem; height: 1rem; }
 .pane .armed.end .unsent { font: 400 .95rem/1.4 var(--font-data); color: var(--text-mute); overflow-wrap: anywhere; flex: 1 1 18rem; min-width: 0; }
-.pane .act.danger { background: var(--limit); color: var(--on-limit, #fff7ea); }
+.pane .act.danger { background: var(--limit); color: var(--on-limit); }
 /* the empty list says why a claude -p run is not here, quietly beside No sessions (spec §4) */
 .nomatch .why { font-size: .95rem; color: var(--text-mute); }
 /* under the cards, the same word: headless runs never register, so the list says so rather than count them (spec §4) */

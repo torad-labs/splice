@@ -99,7 +99,7 @@
 /* ---------- the views: Board, By command, By role, Timeline (web-console §4.13; marlin, Oct 13) ---------- */
 .views { display: flex; flex-wrap: wrap; gap: .6rem; margin: -.6rem 0 1.21rem; }
 .views .view { font: 600 .95rem/1 var(--font-data); padding: .6rem .95rem; border-radius: var(--r-in); cursor: pointer; background: transparent; color: var(--text-mute); border: .12rem solid var(--track-line); }
-.views .view[aria-pressed="true"] { background: var(--key-light); color: #241d14; border-color: var(--ink); }
+.views .view[aria-pressed="true"] { background: var(--key-light); color: var(--splice-ink-day); border-color: var(--ink); }
 /* a view other than Board holds its members and their hand-offs in one column, the grid's members area */
 .mcol { grid-area: members; display: flex; flex-direction: column; gap: 1.32rem; min-width: 0; }
 .members.bays { gap: 1.1rem; }
@@ -150,7 +150,7 @@
 .card.m.vacant { background: var(--obj); border-style: dashed; border-color: var(--track-line); box-shadow: none; }
 .card.m .top { display: flex; align-items: center; gap: .8rem; min-height: 2rem; }
 .role { font: 500 1.1rem/1.1 var(--font-name); color: var(--text); min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.lead { flex: none; font: 600 .85rem/1 var(--font-data); letter-spacing: .03em; color: #241d14; background: var(--key-light); border: .12rem solid var(--ink); border-radius: .35rem; padding: .3rem .45rem; }
+.lead { flex: none; font: 600 .85rem/1 var(--font-data); letter-spacing: .03em; color: var(--splice-ink-day); background: var(--key-light); border: .12rem solid var(--ink); border-radius: .35rem; padding: .3rem .45rem; }
 .card.m .top .chip { margin-left: auto; }
 .lamp.open { background: var(--obj-sunk); box-shadow: 0 0 0 var(--ink-w) var(--ink), inset 0 0 0 .16rem var(--track-line); }
 .meta .word.starting { display: inline-flex; align-items: center; gap: .45rem; }
@@ -278,7 +278,7 @@ html:has(#sheet .scrim) { overflow: hidden; }
 .role-in { min-width: 0; font: 500 .95rem/1 var(--font-name); }
 .blot { width: .8rem; height: .8rem; border-radius: 50%; background: var(--c); box-shadow: 0 0 0 .1rem var(--ink); display: inline-block; flex: none; }
 .leadtog { font: 600 .9rem/1 var(--font-data); padding: .55rem .7rem; border-radius: var(--r-in); cursor: pointer; background: transparent; color: var(--text-mute); border: .12rem dashed var(--track-line); }
-.leadtog[aria-pressed="true"] { background: var(--key-light); color: #241d14; border: .12rem solid var(--ink); }
+.leadtog[aria-pressed="true"] { background: var(--key-light); color: var(--splice-ink-day); border: .12rem solid var(--ink); }
 /* what a member that joins by rule takes, under its row in the composer and on its card */
 .rulehint { margin: .8rem 0 0; font: 400 1rem/1.4 var(--font-name); color: var(--text-mute); }
 .rulerow { display: flex; align-items: center; gap: .9rem; margin-top: .8rem; }
@@ -319,7 +319,7 @@ html:has(#sheet .scrim) { overflow: hidden; }
 .armed.end .word.working { display: inline-flex; align-items: center; gap: .4rem; }
 .armed.end .chip i { width: .55rem; height: .55rem; border-radius: 50%; background: var(--track-line); }
 .armed.end .chip.live i { background: var(--live); }
-.act.danger { background: var(--limit); color: var(--on-limit, #fff7ea); }
+.act.danger { background: var(--limit); color: var(--on-limit); }
 /* an empty page says what a team is before it offers one (splice-usage's walk, Oct 13) */
 .no-teams .say { display: flex; flex-direction: column; gap: .5rem; }
 .no-teams .say .what { font: 400 .95rem/1.45 var(--font-name); color: var(--text-mute); }

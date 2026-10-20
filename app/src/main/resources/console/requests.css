@@ -139,7 +139,7 @@
 .hour:first-child { margin-top: 0; }
 .hour .act { margin-left: auto; }  /* the day before, at the right end of the new day's heading */
 .hour span {
-  font: 600 .88rem/1 var(--font-data); color: #efe2c6; background: var(--socket); padding: .4rem .55rem; border-radius: .35rem;  /* the socket is dark in both themes */
+  font: 600 .88rem/1 var(--font-data); color: var(--splice-cream); background: var(--socket); padding: .4rem .55rem; border-radius: .35rem;  /* the socket is dark in both themes */
   box-shadow: 0 0 0 var(--ink-w) var(--ink), inset 0 0 0 .14rem var(--rail);
 }
 .list .more { display: flex; align-items: center; gap: .9rem; margin-top: .75rem; }

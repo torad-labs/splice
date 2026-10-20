@@ -13,10 +13,11 @@
 @font-face { font-family: "IBM Plex Mono"; font-weight: 600; src: url(fonts/ibm-plex-mono-600.woff2) format("woff2"); }
 
 :root {
-  /* the film's model colours (torad-tokens.css --cel-*); a provider keeps its colour on every page */
-  --claude: #ee8f58; --gpt: #00c5be; --grok: #6eadfe; --kimi: #e3b341; --muse: #b896f3;
-  --router: #f3b27a; --local: #7bc47f; --deepseek: #ec93c3;
-  --key-light: #ffd79a;               /* the warm key: what is serving now is lit by it */
+  /* the film's model colours (tokens.css --splice-cable-*, the kit's provider colours); a provider keeps its colour on every
+     page. They are too pale to read on Paper, so the day block takes each one's darker day value. */
+  --claude: var(--splice-cable-claude); --gpt: var(--splice-cable-gpt); --grok: var(--splice-cable-grok); --kimi: var(--splice-cable-kimi); --muse: var(--splice-cable-muse);
+  --router: var(--splice-cable-router); --local: var(--splice-cable-local); --deepseek: var(--splice-cable-deepseek);
+  --key-light: var(--splice-key);     /* the warm key: what is serving now is lit by it */
 
   --font-lead: "Fraunces", serif;
   --font-name: "Source Serif 4", serif;
@@ -38,37 +39,42 @@
   --bar-h: 3.4rem;                    /* the nav bar across the top; a sticky pane clears it */
 
   --t-snap: 240ms; --t-move: 420ms;
-  --e-out: cubic-bezier(.22, 1, .36, 1); --e-io: cubic-bezier(.65, 0, .35, 1);
+  --e-out: var(--splice-e-out); --e-io: var(--splice-e-io);
 }
 
+/* The colours below are aliases of tokens.css: the console keeps its own names, the kit owns the values. */
 /* dark: the night wall of the film and the page */
 :root, [data-theme="night"] {
-  --wall: #1d2140; --wall-low: #141731;
-  --obj: #1c1610; --obj-high: #241a12; --obj-sunk: #120d09;
-  --ink: #07050a;                     /* outline on the night */
-  --rail: #3a2f27; --socket: #120d09; --socket-ink: #9c8f70;  /* the socket is dark in both themes, so its number keeps night's muted ink */
-  --text: #efe2c6; --text-body: #cbbd9d; --text-mute: #9c8f70;
-  --track: rgba(239, 226, 198, .12); --track-line: rgba(239, 226, 198, .22);
-  --limit: #f06a4c; --live: #5bb59c;
-  --key-ink: var(--key-light);        /* the key as ink on a card: words and marks it lights */
-  --shaft: rgba(174, 182, 200, .055);
+  --wall: var(--splice-ground); --wall-low: var(--splice-ground-low);
+  --obj: var(--splice-card); --obj-high: var(--splice-card-high); --obj-sunk: var(--splice-card-sunk);
+  --ink: var(--splice-ink);           /* outline on the night */
+  --rail: var(--splice-plate); --socket: var(--splice-socket); --socket-ink: var(--splice-cream-mute);  /* the socket is dark in both themes, so its number keeps night's muted ink */
+  --text: var(--splice-text); --text-body: var(--splice-text-body); --text-mute: var(--splice-text-mute);
+  --track: var(--splice-track); --track-line: var(--splice-track-line);
+  --limit: var(--splice-status-limit); --live: var(--splice-status-live);
+  --on-fill: var(--splice-on-fill); --on-limit: var(--on-fill); --on-cable: var(--on-fill);  /* the words on a solid fill: a limit, a provider colour */
+  --key-ink: var(--splice-key-ink);   /* the key as ink on a card: words and marks it lights */
+  --shaft: var(--splice-shaft);
   color-scheme: dark;
 }
 [data-theme="day"] {
-  --wall: #e9dcc0; --wall-low: #cdbd9d;
-  --obj: #fbf3df; --obj-high: #efe6d2; --obj-sunk: #e0d4b8;
-  --ink: #241d14;
-  --rail: #3a2f27; --socket: #120d09; --socket-ink: #9c8f70;  /* the socket is dark in both themes, so its number keeps night's muted ink */
-  --text: #241d14; --text-body: #4e4434; --text-mute: #6b604b;
-  --track: rgba(36, 29, 20, .09); --track-line: rgba(36, 29, 20, .3);
-  --limit: #bb301a; --live: #2c6555;
-  --key-ink: #8a5a12;                 /* day's key ink: the pale key washed out on cream (walk ea3eeff67), Needs you's colour */
-  --shaft: rgba(255, 246, 220, .35);
+  --claude: var(--splice-cable-claude-day); --gpt: var(--splice-cable-gpt-day); --grok: var(--splice-cable-grok-day); --kimi: var(--splice-cable-kimi-day); --muse: var(--splice-cable-muse-day);
+  --router: var(--splice-cable-router-day); --local: var(--splice-cable-local-day); --deepseek: var(--splice-cable-deepseek-day);
+  --wall: var(--splice-ground); --wall-low: var(--splice-ground-low);
+  --obj: var(--splice-card); --obj-high: var(--splice-card-high); --obj-sunk: var(--splice-card-sunk);
+  --ink: var(--splice-ink);
+  --rail: var(--splice-plate); --socket: var(--splice-socket); --socket-ink: var(--splice-cream-mute);  /* the socket is dark in both themes, so its number keeps night's muted ink */
+  --text: var(--splice-text); --text-body: var(--splice-text-body); --text-mute: var(--splice-text-mute);
+  --track: var(--splice-track); --track-line: var(--splice-track-line);
+  --limit: var(--splice-status-limit); --live: var(--splice-status-live);
+  --on-fill: var(--splice-on-fill); --on-limit: var(--on-fill); --on-cable: var(--on-fill);
+  --key-ink: var(--splice-key-ink);   /* day's key ink: the pale key washed out on cream (walk ea3eeff67), Needs you's colour */
+  --shaft: var(--splice-shaft);
   color-scheme: light;
 }
 /* the lamp's socket is a dark disc in both themes, so a glyph in it takes the night's text colours: the day's own are dark
    on dark and the icons vanished (console walk, 4d85f22) */
-[data-theme="day"] .lamp { --text-mute: #9c8f70; --text-body: #cbbd9d; }
+[data-theme="day"] .lamp { --text-mute: var(--splice-cream-mute); --text-body: var(--splice-cream-body); }
 
 * { box-sizing: border-box; }
 html, body { margin: 0; }
@@ -104,7 +110,13 @@ html { scroll-padding-top: calc(var(--bar-h) + 1rem); }
   display: flex; align-items: center; gap: 2rem;
   background: var(--wall); border-bottom: .1rem solid var(--ink);
 }
-.mark { flex: none; font: 400 1.5rem/1 var(--font-lead); letter-spacing: -.01em; }
+/* the mark: the kit's horizontal lockup from brand/, the night file on the night and the day file on the day. It is the kit's
+   outlined paths, never retyped, and 2.5rem tall is 30 px at 1440 (the kit's lockup minimum is 28 px; the root is 12 px or more). */
+.mark { flex: none; display: flex; align-items: center; }
+.mark .lockup { display: block; height: 2.5rem; width: auto; }
+.mark .lockup.day { display: none; }
+[data-theme="day"] .mark .lockup.night { display: none; }
+[data-theme="day"] .mark .lockup.day { display: block; }
 .nav { flex: none; display: flex; align-self: stretch; gap: .15rem; }
 .nav a {
   display: flex; align-items: center; padding: 0 .75rem; position: relative; white-space: nowrap;
@@ -153,7 +165,7 @@ html { scroll-padding-top: calc(var(--bar-h) + 1rem); }
 a.act { text-decoration: none; }  /* an act that happens to be a link still looks like an act, never an underlined word */
 .act:hover { transform: translate(-.08rem, -.08rem); box-shadow: .3rem .3rem 0 var(--ink); }  /* it lifts toward the light */
 .act:active { transform: translate(.18rem, .18rem); box-shadow: .04rem .04rem 0 var(--ink); transition-duration: 60ms; }
-.act.primary { background: var(--key-light); color: #241d14; }
+.act.primary { background: var(--key-light); color: var(--splice-ink-day); }
 .act.quiet { background: transparent; box-shadow: none; border-color: var(--track-line); }
 .pane > header .act, .answers .act, .slot-acts .act, .card .fix .act, .pg-addbtn {  /* the one medium button */
   display: inline-flex; align-items: center; gap: .45rem; padding: .5rem .85rem; font-size: .92rem;
@@ -200,7 +212,7 @@ a.act { text-decoration: none; }  /* an act that happens to be a link still look
   display: grid; place-items: center; font: 600 .88rem/1 var(--font-data); color: var(--socket-ink);
   background: var(--socket); box-shadow: 0 0 0 var(--ink-w) var(--ink), inset 0 0 0 .15rem var(--rail);
 }
-.card.serving .socket { color: #241d14; background: var(--key-light); box-shadow: 0 0 0 var(--ink-w) var(--ink), 0 0 1.2rem .15rem rgba(255, 215, 154, .45); }
+.card.serving .socket { color: var(--splice-ink-day); background: var(--key-light); box-shadow: 0 0 0 var(--ink-w) var(--ink), 0 0 1.2rem .15rem rgba(255, 215, 154, .45); }
 
 /* ---------- the account: a cel object with its model's colour as the back edge ---------- */
 .card {
@@ -361,7 +373,7 @@ input.field, .pickbtn { min-height: var(--ctl-h); }
   font: 500 .95rem/1 var(--font-name); color: var(--text); transition: transform 140ms var(--e-out);
 }
 .pick:hover { transform: translate(-.08rem, -.08rem); }
-.pick .blot { width: 1.9rem; height: 1.9rem; border-radius: 50%; background: var(--c); box-shadow: 0 0 0 .14rem var(--ink); display: grid; place-items: center; font: 600 .95rem/1 var(--font-data); color: #241d14; }
+.pick .blot { width: 1.9rem; height: 1.9rem; border-radius: 50%; background: var(--c); box-shadow: 0 0 0 .14rem var(--ink); display: grid; place-items: center; font: 600 .95rem/1 var(--font-data); color: var(--on-cable); }
 
 /* ---------- the budget editor, inside the card ---------- */
 .editor { display: flex; flex-wrap: wrap; align-items: center; gap: .7rem; margin-top: .9rem; }
@@ -455,7 +467,7 @@ input.field, .pickbtn { min-height: var(--ctl-h); }
 }
 .menu button:hover, .menu button:focus-visible { background: var(--track); outline: none; }
 .menu .danger { color: var(--limit); margin-top: .3rem; box-shadow: 0 -.1rem 0 var(--track-line); border-radius: 0 0 .35rem .35rem; }
-.menu .danger.armed, .menu .danger.armed:hover { background: var(--limit); color: #fff7ea; box-shadow: none; border-radius: .35rem; }
+.menu .danger.armed, .menu .danger.armed:hover { background: var(--limit); color: var(--on-limit); box-shadow: none; border-radius: .35rem; }
 .menu .menu-state { display: block; max-width: 19rem; white-space: normal; line-height: 1.35; padding: .6rem .75rem; margin-top: .3rem; box-shadow: 0 -.1rem 0 var(--track-line); }
 .menu button:disabled { cursor: wait; opacity: .6; }
 .field.rename { flex: 0 1 14rem; min-width: 7rem; font: 500 1.1rem/1.15 var(--font-name); padding: .3rem .5rem; }
@@ -469,14 +481,6 @@ input.field, .pickbtn { min-height: var(--ctl-h); }
 .card.pulse-once { animation: pulseOnce 900ms var(--e-out) 1; }
 @keyframes pulseOnce { 0%, 100% { outline: .22rem solid transparent; outline-offset: .5rem; } 25% { outline: .22rem solid var(--key-light); outline-offset: .3rem; } }
 .card.leaving { opacity: 0; transform: scale(.97); transition: opacity 160ms var(--e-out), transform 160ms var(--e-out); }
-
-/* ---------- the review's own panel: not part of the console ---------- */
-.mock {
-  position: fixed; left: 1.2rem; bottom: 5.6rem; width: 12.6rem; z-index: 50; display: flex; flex-direction: column; gap: .6rem; align-items: stretch;  /* at the lower left, over the page: the review's alone */
-  padding: .7rem .8rem; border: .12rem dashed #d14d9b; border-radius: .5rem; background: rgba(10, 8, 14, .86);
-  font: 500 .9rem/1 var(--font-data); color: #f5c7e3;
-}
-.mock button { font: 500 .9rem/1 var(--font-data); color: #f5c7e3; background: none; border: .1rem solid #d14d9b; border-radius: .35rem; padding: .45rem .6rem; cursor: pointer; text-align: left; }
 
 @media (max-width: 825px) {  /* 1100 px times --scale: a media query can't read the root size */
   /* a narrow screen: the wordmark and the toggle on the first line, every page on the second, which scrolls sideways
@@ -558,7 +562,7 @@ input.field, .pickbtn { min-height: var(--ctl-h); }
 /* a card's lamp, standing in the line: the socket, its ink ring and its glyph in the state's colour (sessions.css .lamp) */
 .tlamp { flex: none; width: 2rem; height: 2rem; border-radius: 50%; display: grid; place-items: center; color: var(--socket-ink);
   background: var(--socket); box-shadow: 0 0 0 var(--ink-w) var(--ink), inset 0 0 0 .15rem var(--rail); }
-[data-theme="day"] .tlamp { --live: #5bb59c; --limit: #f06a4c; }  /* the socket is dark in both themes, so it keeps night's ink */
+[data-theme="day"] .tlamp { --live: var(--splice-live-on-night); --limit: var(--splice-limit-on-night); }  /* the socket is dark in both themes, so it keeps night's ink */
 .tlamp svg { width: 1.2rem; height: 1.2rem; fill: none; stroke: currentColor; stroke-width: 2.4; stroke-linecap: round; stroke-linejoin: round; }
 .tlamp svg.wave { width: 1.5rem; height: 1.5rem; stroke-width: 3.6; }
 .tlamp.working { color: var(--live); }
@@ -612,7 +616,7 @@ body.locked main.page > :not(.head):not(.lockedby), body.locked main.page > .hea
 /* the lamp Sessions draws (sessions.css .lamp), which this page does not load: a dark socket with an ink ring, idle a dot
    in the muted ink, working the live trace (marlin, Oct 12) */
 .card .onlogin .sdoor .lamp { position: static; flex: none; width: 1.4rem; height: 1.4rem; border-radius: 50%; display: grid; place-items: center; color: var(--text-mute); background: var(--socket); box-shadow: 0 0 0 var(--ink-w) var(--ink), inset 0 0 0 .12rem var(--rail); }
-[data-theme="day"] .card .onlogin .sdoor .lamp { --live: #5bb59c; --text-mute: #9c8f70; }
+[data-theme="day"] .card .onlogin .sdoor .lamp { --live: var(--splice-live-on-night); --text-mute: var(--splice-cream-mute); }
 .card .onlogin .sdoor .lamp i { width: .45rem; height: .45rem; border-radius: 50%; background: currentColor; }
 .card .onlogin .sdoor .lamp svg { width: .88rem; height: .88rem; fill: none; stroke: currentColor; stroke-width: 2.4; stroke-linecap: round; stroke-linejoin: round; }
 .card .onlogin .sdoor .lamp.working { color: var(--live); }

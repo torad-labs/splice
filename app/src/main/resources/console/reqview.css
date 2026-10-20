@@ -4,7 +4,7 @@
 .detail { font: 500 .92rem/1 var(--font-data); color: var(--limit); display: inline-flex; align-items: center; gap: .35rem; white-space: nowrap; }
 .detail svg { width: 1rem; height: 1rem; }
 .detail.mend { color: var(--key-ink); }  /* a broken stream splice resumed or started over: the timeline tick's colour, on the row */
-mark { background: var(--key-light); color: #241d14; border-radius: .2rem; padding: 0 .12rem; }
+mark { background: var(--key-light); color: var(--splice-ink-day); border-radius: .2rem; padding: 0 .12rem; }
 /* the outcome as an element: clean a still dot, a failure in the limit's colour with what stopped it, stopped a square,
    a compaction its own mark, and a step splice answered itself an outline */
 .lamp.clean i { width: .6rem; height: .6rem; background: var(--text-mute); }
@@ -80,13 +80,10 @@ mark { background: var(--key-light); color: #241d14; border-radius: .2rem; paddi
 .tree li { white-space: pre-wrap; overflow-wrap: anywhere; }
 .json .key { color: var(--text); }
 .json .idx { color: var(--text-mute); margin-right: .6rem; }
-.json .str { color: #a9cf8e; }
+.json .str { color: var(--splice-code-str); }
 .json .num { color: var(--kimi); }
 .json .bool { color: var(--grok); }
 .json .pv { color: var(--text-mute); }
-[data-theme="day"] .json .str { color: #2c6555; }
-[data-theme="day"] .json .num { color: #8a5a12; }
-[data-theme="day"] .json .bool { color: #2c5aa0; }
 .node { width: 1.05rem; height: 1.05rem; padding: 0; margin-right: .25rem; display: inline-grid; place-items: center; vertical-align: -.2rem; border: 0; background: none; color: var(--text-mute); cursor: pointer; border-radius: .25rem; }
 .node:hover { background: var(--track); color: var(--text); }
 .node svg { width: .8rem; height: .8rem; transition: transform var(--t-snap) var(--e-out); }
@@ -129,7 +126,7 @@ mark { background: var(--key-light); color: #241d14; border-radius: .2rem; paddi
 .attempt { padding: .9rem .95rem 1rem; border: .12rem solid var(--ink); border-radius: var(--r-obj); background: var(--obj-high); }
 .attempt.fail { box-shadow: inset .3rem 0 0 var(--limit); }
 .attempt > h3 { display: flex; align-items: center; gap: .8rem; margin-bottom: .7rem; }
-.attempt .an { width: 1.7rem; height: 1.7rem; border-radius: 50%; display: grid; place-items: center; flex: none; font: 600 .88rem/1 var(--font-data); color: #efe2c6; background: var(--socket); box-shadow: 0 0 0 .12rem var(--ink), inset 0 0 0 .14rem var(--rail); }  /* the socket is dark in both themes: day's --text sank into it, so the number keeps night's ink */
+.attempt .an { width: 1.7rem; height: 1.7rem; border-radius: 50%; display: grid; place-items: center; flex: none; font: 600 .88rem/1 var(--font-data); color: var(--splice-cream); background: var(--socket); box-shadow: 0 0 0 .12rem var(--ink), inset 0 0 0 .14rem var(--rail); }  /* the socket is dark in both themes: day's --text sank into it, so the number keeps night's ink */
 .attempt .url { font: 500 .92rem/1.2 var(--font-data); color: var(--text); overflow-wrap: anywhere; min-width: 0; }
 .attempt .status { font-size: .95rem; margin-left: auto; }
 .attempt .ams { font: 500 .92rem/1 var(--font-data); color: var(--text-body); }

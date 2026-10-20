@@ -22,8 +22,9 @@ private const val FIRST_PAGE = "accounts.html"
 
 internal class ConsoleMount(private val env: EnvReader = EnvReader(System::getenv)) {
 
-    /** A page, a stylesheet, a script or a font, by a plain name: nothing else is served, and no name climbs out. */
-    private val asset = Regex("""(fonts/)?[a-z0-9][a-z0-9-]*\.(html|css|js|woff2)""")
+    /** A page, a stylesheet, a script, a font or a brand image (the mark, the favicon, the app icon), by a plain name:
+     *  nothing else is served, and no name climbs out. */
+    private val asset = Regex("""((fonts|brand)/)?[a-z0-9][a-z0-9-]*\.(html|css|js|woff2|svg|png)""")
 
     fun register(route: Route) {
         route.get("/") { call.respondRedirect("/$FIRST_PAGE") }
@@ -49,6 +50,8 @@ internal class ConsoleMount(private val env: EnvReader = EnvReader(System::geten
             "css" -> ContentType.Text.CSS
             "js" -> ContentType.Text.JavaScript
             "woff2" -> ContentType("font", "woff2")
+            "svg" -> ContentType.Image.SVG
+            "png" -> ContentType.Image.PNG
             else -> null
         }
     }

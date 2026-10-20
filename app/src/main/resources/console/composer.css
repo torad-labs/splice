@@ -57,7 +57,7 @@ main.page::after { content: ""; display: block; height: 3.5rem; }
   color: var(--text-mute); background: var(--socket); box-shadow: 0 0 0 .1rem var(--ink), inset 0 0 0 .1rem var(--rail);
 }
 /* the socket is dark in both themes, so what is lit in it keeps night's ink in day (sessions.css .lamp) */
-[data-theme="day"] .cmp-lamp { --live: #5bb59c; --limit: #f06a4c; --text-mute: #9c8f70; --key-ink: var(--key-light); }
+[data-theme="day"] .cmp-lamp { --live: var(--splice-live-on-night); --limit: var(--splice-limit-on-night); --text-mute: var(--splice-cream-mute); --key-ink: var(--key-light); }
 .cmp-lamp i { width: .5rem; height: .5rem; border-radius: 50%; background: currentColor; }
 .cmp-lamp.idle { color: var(--live); }
 .cmp-lamp.idle i { opacity: .7; }

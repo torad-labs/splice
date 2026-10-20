@@ -445,6 +445,12 @@ const PAGES = [
 // A page with nothing saved keeps the night its HTML opens in.
 const THEME_KEY = "splice-console-theme";
 try { const saved = localStorage.getItem(THEME_KEY); if (saved === "day" || saved === "night") document.documentElement.dataset.theme = saved; } catch { /* storage off: the page keeps its own theme */ }
+// THE FAVICON FOLLOWS THE THEME: the kit’s tile in the night inks, or the same tile in the day inks (brand/favicon-day.svg).
+function setFavicon() {
+  const link = document.querySelector('link[rel="icon"][type="image/svg+xml"]');
+  if (link) link.href = document.documentElement.dataset.theme === "day" ? "brand/favicon-day.svg" : "brand/favicon.svg";
+}
+setFavicon();
 // A PRESS THAT CUTS OR MOVES SOMEONE ASKS ONCE (Marlin, Oct 13, from Settings' Restart splice, Oct 12): the first press
 // reads which sessions have a request in flight on the commands it touches, off each command's live turns the way
 // Sessions reads them. None, and the press acts at once; some, and it arms with their names, each a chip that opens its
@@ -467,6 +473,7 @@ function toggleTheme() {
   const h = document.documentElement;
   h.dataset.theme = h.dataset.theme === "day" ? "night" : "day";
   try { localStorage.setItem(THEME_KEY, h.dataset.theme); } catch { /* storage off: this page still switches */ }
+  setFavicon();
 }
 // WITH ONE PAGE THE NAV DRAWS NOTHING (hitstop, Oct 10): a lone link repeats the page's own title, and a single
 // selected box reads as a strip with its other tabs torn off. The top bar keeps its height, its wordmark and its

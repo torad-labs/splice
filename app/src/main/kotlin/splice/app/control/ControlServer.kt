@@ -212,6 +212,10 @@ internal class ControlServer(
     @Volatile
     private var boundPort: Int? = null
 
+    /** Whether the listener is up, from the moment the bound engine is published until the stop. A start that failed
+     *  while this is true failed after the bind, and a port conflict is a failure while it is false. */
+    internal val bound: Boolean get() = boundPort != null
+
     /** The port this control plane listens on: the one its connector BOUND while running — the
      *  OS-assigned one when it was constructed with port 0 — and the configured [ControlListen.port] otherwise.
      *  A caller that wants a free port passes 0 and reads this after [start]: leasing a number with

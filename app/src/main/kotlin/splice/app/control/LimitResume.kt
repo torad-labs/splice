@@ -78,7 +78,10 @@ internal class LimitResume(
         val id = requireNotNull(record.sessionId)
         val ending = stoppedAt(head, record, id) ?: return
         if (released.put(id, ending) == ending) return
-        held(record)?.let {
+        // a transcript that could not be read sent nothing, so its ending is not spent: the next login tries it again
+        val holder = Cancellables.runCatchingCancellable { held(record) }
+            .onFailure { released.remove(id, ending) }.getOrThrow()
+        holder?.let {
             log("[limit-resume] left ${LogSafe.str(id)} to ${LogSafe.str(it)} on ${LogSafe.str(head)}")
             return
         }

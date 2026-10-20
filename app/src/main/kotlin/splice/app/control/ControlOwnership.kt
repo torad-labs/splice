@@ -9,7 +9,6 @@ import splice.app.DaemonBoundary
 import splice.core.util.LogSafe
 import splice.core.util.LogSink
 import splice.lifecycle.restart.ShutdownDaemon
-import java.net.BindException
 
 internal class ControlOwnership(
     private val boundary: DaemonBoundary,
@@ -26,9 +25,10 @@ internal class ControlOwnership(
         adopt(server)
         val bound = boundary.runCatchingDaemonBoundary { server.start() }
             .onFailure {
-                // "another owns it" is said only for a port that is taken: start() also mints the key and starts what
-                // rides on the listener, and a failure there has no second process to look for
-                val taken = generateSequence(it, Throwable::cause).any { cause -> cause is BindException }
+                // "another owns it" is said only while the port is not ours: start() also starts what rides on the
+                // listener after the bind, and a failure there has no second process to look for. The listener is the
+                // witness, not the exception's class: Netty's native transport words a taken port as its own error.
+                val taken = !server.bound
                 val said = if (taken) "could not bind" else "failed to start on"
                 val then = if (taken) "another owns it, exiting" else "exiting"
                 log(

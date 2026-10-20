@@ -22,6 +22,9 @@ import java.nio.file.Path
 
 private const val STALE_AFTER_MS = 30L * 60L * 1000L
 
+/** Claude Code's word, in a registration's status, for a session at rest. */
+private const val IDLE_STATUS = "idle"
+
 /** A registration is a few hundred bytes; the directory is shared by every head, so a runaway or
  *  foreign file there is skipped rather than read whole on every poll. */
 private const val MAX_RECORD_BYTES = 64L shl 10
@@ -178,12 +181,15 @@ public class SessionRegistry(
         val pid = JsonScalars.long(obj, "pid")
         val sessionId = JsonScalars.str(obj, "sessionId")
         val updatedAt = JsonScalars.long(obj, "updatedAt")
+        // A session its own registration calls idle is inside no tool: an interrupt leaves the wire's open call
+        // unanswered until the next request, so the foreground time counts only while the client says it works.
+        val toolHeard = sessionId?.takeUnless { JsonScalars.str(obj, "status") == IDLE_STATUS }
         val availability = availability(
             pid,
             listOfNotNull(
                 updatedAt,
                 sessionId?.let(heardAt::get),
-                sessionId?.let { foreground?.heardAt(it) },
+                toolHeard?.let { foreground?.heardAt(it) },
             ).maxOrNull(),
             JsonScalars.long(obj, "startedAt"),
             JsonScalars.str(obj, "pidDomain"),

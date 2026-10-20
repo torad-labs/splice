@@ -51,6 +51,7 @@ class SessionRegistryTest {
         alive: Set<Long>,
         identity: PidIdentity = fakeIdentity(dir.resolve("host")),
         heard: Map<String, Long> = emptyMap(),
+        foreground: ForegroundTools? = null,
     ): SessionRegistry {
         return SessionRegistry(
             sessionsDir = dir,
@@ -59,6 +60,7 @@ class SessionRegistryTest {
             clock = { now },
             identity = identity,
             heard = { heard },
+            foreground = foreground,
         )
     }
 
@@ -221,5 +223,20 @@ class SessionRegistryTest {
         val rows = registry(dir, alive = setOf(11L, 12L)).read().associateBy { it.process.pid }
         assertEquals("input needed", rows.getValue(11L).status.waitingFor)
         assertNull(rows.getValue(12L).status.waitingFor)
+    }
+
+    /** An interrupt leaves the wire's tool call unanswered until the next request; idle in the file is the proof. */
+    @Test
+    fun `an open tool keeps a session live unless its own registration says it is idle`(@TempDir dir: Path) {
+        val old = now - 12 * hourMs
+        write(dir, 11, """{"pid":11,"sessionId":"s-11","status":"busy","updatedAt":$old}""")
+        write(dir, 12, """{"pid":12,"sessionId":"s-12","status":"idle","updatedAt":$old}""")
+        write(dir, 13, """{"pid":13,"sessionId":"s-13","updatedAt":$old}""")
+        val tools = ForegroundTools(clock = { now })
+        for (id in listOf("s-11", "s-12", "s-13")) tools.opened(id, listOf("tool-$id"))
+        val rows = registry(dir, alive = setOf(11L, 12L, 13L), foreground = tools).read().associateBy { it.process.pid }
+        assertEquals(SessionAvailability.LIVE, rows.getValue(11L).availability, "busy inside a tool")
+        assertEquals(SessionAvailability.STALE, rows.getValue(12L).availability, "idle after an interrupt")
+        assertEquals(SessionAvailability.LIVE, rows.getValue(13L).availability, "a registration with no status")
     }
 }

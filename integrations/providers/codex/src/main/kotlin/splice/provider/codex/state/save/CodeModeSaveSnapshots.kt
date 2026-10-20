@@ -9,6 +9,7 @@ import splice.provider.codex.CodeModeRecordSnapshot
 import splice.provider.codex.state.CodeModeKeptState
 import splice.provider.codex.state.CodeModeNativeChain
 import splice.provider.codex.state.CodeModeStateJournal
+import splice.provider.codex.state.collection.CodeModeRecordKeys
 
 /** A failed purge forces the complete current conversation, including when its changed record detached. */
 internal class CodeModeSaveSnapshots(
@@ -70,7 +71,7 @@ internal class CodeModeSaveSnapshots(
         peak: HeapLease,
     ): Prepared? {
         val prior = indexed?.snapshot()
-        val live = records.filter { it.key == key }
+        val live = CodeModeRecordKeys.of(records, key)
         val retained = live.map { it.id }.toSet()
         val snapshots = live.map { record ->
             record.saveGeneration++

@@ -16,6 +16,7 @@ import splice.provider.codex.CodeModeRecordSnapshot
 import splice.provider.codex.state.CodeModeHeap
 import splice.provider.codex.state.CodeModeJournalEncoding
 import splice.provider.codex.state.CodeModeKeptState
+import splice.provider.codex.state.collection.CodeModeRecordKeys
 import java.util.IdentityHashMap
 
 // why: mutable snapshot collections coexist with their immutable copies before durable publication.
@@ -79,7 +80,11 @@ internal class CodeModeSaveHeap(private val heap: HeapReservations) {
         indexed: CodeModeKeptState?,
     ): HeapLease {
         var bytes = SAVE_METADATA_BYTES
-        records.forEach { if (it.key == key) bytes = HeapJson.add(bytes, snapshotBytes(it, records)) }
+        // One conversation's records from the registry's index, and their ids as a set: scanning every record of
+        // every conversation once per record held a head stop's save at full CPU past the halt (Oct 19, 11:36 PM CT).
+        val own = CodeModeRecordKeys.of(records, key)
+        val retained = own.mapTo(HashSet(own.size)) { it.id }
+        own.forEach { bytes = HeapJson.add(bytes, snapshotBytes(it, retained)) }
         expired.forEach { if (it.key == key) bytes = HeapJson.add(bytes, CodeModeHeap.bytes(it)) }
         bytes = HeapJson.add(bytes, indexed?.records?.size?.toLong()?.times(SAVE_REFERENCE_BYTES) ?: 0L)
         return reserve(bytes, SNAPSHOT_PEAK_FACTOR)
@@ -87,10 +92,10 @@ internal class CodeModeSaveHeap(private val heap: HeapReservations) {
 
     /** A surviving child materializes inherited native payload when its parent leaves this checkpoint. Its peak is
      *  returned for the reservation, and the live child is charged what the inherited payload occupies. */
-    private fun snapshotBytes(record: CodeModeRecord, retained: List<CodeModeRecord>): Long {
+    private fun snapshotBytes(record: CodeModeRecord, retained: Set<String>): Long {
         val bytes = CodeModeHeap.bytes(record)
         val parent = record.nativeParent ?: return bytes
-        if (retained.any { it.key == record.key && it.id == parent.id }) return bytes
+        if (parent.id in retained) return bytes
         val inherited = mutableListOf<CodeModeNativeSegment>()
         var ancestor: CodeModeRecord? = parent
         while (ancestor != null) {

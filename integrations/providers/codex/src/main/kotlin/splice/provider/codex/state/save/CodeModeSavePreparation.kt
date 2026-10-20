@@ -6,6 +6,7 @@ import splice.provider.codex.CodeModeRecord
 import splice.provider.codex.state.CodeModeKeptState
 import splice.provider.codex.state.CodeModeKeyLocks
 import splice.provider.codex.state.CodeModeNativeChain
+import splice.provider.codex.state.collection.CodeModeRecordKeys
 import java.util.concurrent.locks.ReentrantLock
 
 /** Forces a prepared conversation outside the registry-wide lock, while its key stays owned. */
@@ -73,7 +74,7 @@ internal class CodeModeSavePreparation(
         if (changedRecord != null) {
             changedRecord.retainedBytes = sizes[changedRecord.id]?.retainedBytes
         } else {
-            records.filter { it.key == key }.forEach { record ->
+            CodeModeRecordKeys.of(records, key).forEach { record ->
                 record.retainedBytes = sizes[record.id]?.retainedBytes
             }
         }

@@ -9,6 +9,7 @@ import splice.provider.codex.CodeModePersistenceException
 import splice.provider.codex.CodeModePhase
 import splice.provider.codex.CodeModeRecord
 import splice.provider.codex.CodexCodeModeStore
+import splice.provider.codex.state.collection.CodeModeRecordKeys
 import splice.provider.codex.state.diagnostics.CodeModeNativeBranch
 import splice.upstream.codemode.CodeModeCell
 import kotlin.concurrent.withLock
@@ -124,7 +125,7 @@ internal class CodeModeRecordChanges(
         }
         keys.forEach { key ->
             access.withKey(key) {
-                records.filter { it.key == key && !it.terminal() }
+                CodeModeRecordKeys.of(records, key).filter { !it.terminal() }
                     .filter { it.phase != CodeModePhase.STARTING }.forEach { record ->
                         cells.remove(record.id)?.close()
                         record.phase = CodeModePhase.LOST

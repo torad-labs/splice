@@ -8,6 +8,7 @@ import io.ktor.server.routing.Route
 import io.ktor.server.routing.get
 import io.ktor.server.routing.post
 import io.ktor.server.routing.put
+import kotlinx.coroutines.withContext
 import kotlinx.serialization.json.Json
 import splice.app.control.ConsolePorts
 import splice.app.control.ManagedHead
@@ -25,6 +26,7 @@ import splice.sessions.http.TeamSource
 import splice.sessions.http.TeamStart
 import splice.sessions.http.TeamsRoutes
 import splice.sessions.registry.SessionSource
+import splice.upstream.codemode.ProcessDispatchers
 import splice.upstream.codemode.ProcessWaiter
 
 /** Registered only when a session registry is wired, as the team routes always were. [ports] is read at CALL
@@ -36,6 +38,8 @@ internal class TeamsMount(
     ports: ConsolePorts,
     private val guard: ControlGuard,
 ) {
+    private val blockingIo = ProcessDispatchers().io()
+
     private val teams = wiring.routes?.let { routes ->
         TeamsRoutes(
             TeamSource { ports.teams },
@@ -96,10 +100,34 @@ internal class TeamsMount(
         }
         route.post("/api/teams/{id}/archive") { guard.guarded(call) { teams.archive(id(call)).send(call) } }
         route.post("/api/teams/{id}/restore") { guard.guarded(call) { teams.restore(id(call)).send(call) } }
-        // The three writes that drive a member: start it, stop its turn, answer what it is waiting on. The terminal
-        // behind all three is SessionTerminal's contract, read per call.
+        registerMembers(route)
+        // V4-249: ?from=&to= is the caller's own day (the console's local one), beside ?day=, a UTC date.
+        route.get("/api/teams/{id}/chat") {
+            guard.guarded(call) {
+                val query = call.request.queryParameters
+                teams.reads.chat(id(call), query["day"], query["from"], query["to"]).send(call)
+            }
+        }
+        route.get("/api/teams/{id}/activity") {
+            guard.guarded(call) {
+                val query = call.request.queryParameters
+                teams.reads.activity(id(call), query["day"], query["from"], query["to"]).send(call)
+            }
+        }
+        route.get("/api/teams/{id}/economics") { guard.guarded(call) { teams.economics(id(call)).send(call) } }
+    }
+
+    /** The three writes that drive a member: start it, stop its turn, answer what it is waiting on, and the read of
+     *  what it is asking. The terminal behind all four is SessionTerminal's contract, read per call. */
+    private fun registerMembers(route: Route) {
         route.post("/api/teams/{id}/slots/{slot}/start") {
-            guard.guarded(call) { starts.start(id(call), slot(call)).send(call) }
+            // the start waits on tmux, polls the pane and, when the member never comes up, waits up to ten seconds on
+            // its exit: all blocking, so none of it holds the call's own thread
+            guard.guarded(call) {
+                val team = id(call)
+                val member = slot(call)
+                withContext(blockingIo) { starts.start(team, member) }.send(call)
+            }
         }
         route.post("/api/teams/{id}/slots/{slot}/stop") {
             guard.guarded(call) { starts.stop(id(call), slot(call)).send(call) }
@@ -117,20 +145,6 @@ internal class TeamsMount(
         route.get("/api/teams/{id}/slots/{slot}/screen") {
             guard.guarded(call) { screen.offer(id(call), slot(call)).send(call) }
         }
-        // V4-249: ?from=&to= is the caller's own day (the console's local one), beside ?day=, a UTC date.
-        route.get("/api/teams/{id}/chat") {
-            guard.guarded(call) {
-                val query = call.request.queryParameters
-                teams.reads.chat(id(call), query["day"], query["from"], query["to"]).send(call)
-            }
-        }
-        route.get("/api/teams/{id}/activity") {
-            guard.guarded(call) {
-                val query = call.request.queryParameters
-                teams.reads.activity(id(call), query["day"], query["from"], query["to"]).send(call)
-            }
-        }
-        route.get("/api/teams/{id}/economics") { guard.guarded(call) { teams.economics(id(call)).send(call) } }
     }
 
     private fun id(call: ApplicationCall): String = call.parameters["id"].orEmpty()

@@ -7,6 +7,7 @@ import io.ktor.server.request.receiveText
 import io.ktor.server.routing.Route
 import io.ktor.server.routing.get
 import io.ktor.server.routing.post
+import kotlinx.coroutines.withContext
 import splice.app.control.ManagedHead
 import splice.app.control.api.HeadResolver
 import splice.app.manager.ManagerHome
@@ -23,6 +24,7 @@ import splice.sessions.manager.ManagerSession
 import splice.sessions.manager.ManagerTranscripts
 import splice.sessions.registry.SessionSource
 import splice.topology.TopologyLoader
+import splice.upstream.codemode.ProcessDispatchers
 import splice.upstream.codemode.ProcessWaiter
 
 internal class ManagerMount(
@@ -34,6 +36,7 @@ internal class ManagerMount(
     private val guard: ControlGuard,
     lines: SessionLines,
 ) {
+    private val blockingIo = ProcessDispatchers().io()
     private val commands = HeadStartCommands(heads)
 
     private val manager = ManagerSession(
@@ -66,7 +69,19 @@ internal class ManagerMount(
 
     fun register(route: Route) {
         route.get("/api/manager") { guard.guarded(call) { manager.state().send(call) } }
-        route.post("/api/manager/start") { guard.guarded(call) { manager.startJson(call.receiveText()).send(call) } }
-        route.post("/api/manager/head") { guard.guarded(call) { manager.headJson(call.receiveText()).send(call) } }
+        route.post("/api/manager/start") {
+            // the start waits on tmux and closes a terminal that did not come up: blocking
+            guard.guarded(call) {
+                val body = call.receiveText()
+                withContext(blockingIo) { manager.startJson(body) }.send(call)
+            }
+        }
+        route.post("/api/manager/head") {
+            // a move of the running manager is Continue on's: it waits on tmux and the old client's exit
+            guard.guarded(call) {
+                val body = call.receiveText()
+                withContext(blockingIo) { manager.headJson(body) }.send(call)
+            }
+        }
     }
 }

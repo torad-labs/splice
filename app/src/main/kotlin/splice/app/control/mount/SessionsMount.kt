@@ -131,7 +131,12 @@ internal class SessionsMount(
             guard.guarded(call) { ends.endJson(call.parameters["id"].orEmpty(), call.receiveText()).send(call) }
         }
         route.post("/api/sessions/{id}/continue") {
-            guard.guarded(call) { continueOn.moveJson(call.parameters["id"].orEmpty(), call.receiveText()).send(call) }
+            // a move waits on tmux and on the old client's exit, and closes a terminal that did not come back: blocking
+            guard.guarded(call) {
+                val session = call.parameters["id"].orEmpty()
+                val body = call.receiveText()
+                withContext(fileIo) { continueOn.moveJson(session, body) }.send(call)
+            }
         }
     }
 }

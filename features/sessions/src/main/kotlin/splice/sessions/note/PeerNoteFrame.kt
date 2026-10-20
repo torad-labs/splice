@@ -10,17 +10,8 @@ import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
 
-/** What the console note is: its sender name, and the Claude Code versions the probe proved take its frame. */
+/** What the console note is: its wire version and its sender name. Which sessions it goes to is PeerVersions.refusal. */
 internal object PeerNoteAbi {
-    /** The versions tools/probes/claude-code-peer-note.ts proved take the frame in the PeerNoteFrameTest fixture on their
-     *  real inbox socket. The console lists them beside its sessions; the sender itself follows the rule in
-     *  PeerWire.versionRefusal, so a session on a later version that says `peerProtocol: 1` is sent to as well. */
-    val AUDITED_VERSIONS: Set<String> =
-        setOf(
-            "2.1.282", "2.1.283", "2.1.284", "2.1.285", "2.1.286", "2.1.287", "2.1.289", "2.1.296",
-            "2.1.299", "2.1.300", "2.1.301", "2.1.302", "2.1.303", "2.1.304",
-        )
-
     // why: the `msgV` the client's own sender writes beside every message id in the audited version.
     internal const val FRAME_VERSION = 1
 

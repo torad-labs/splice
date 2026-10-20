@@ -47,7 +47,21 @@ class SessionsRoutesTest {
     }
 
     @Test
-    fun `sessions json names the Claude Code versions a note is sent to`(@TempDir dir: Path) {
+    fun `sessions json names the listed versions a note is sent to, by peerProtocol 1 and 2-1-282 or later`(
+        @TempDir dir: Path,
+    ) {
+        val registrations = listOf(
+            """"version":"2.1.305","peerProtocol":1""",
+            """"version":"2.1.281","peerProtocol":1""",
+            """"version":"2.1.304"""",
+            """"version":"grokbot-mailbox/0.1.0","peerProtocol":1""",
+        )
+        registrations.forEachIndexed { index, fields ->
+            Files.writeString(
+                dir.resolve("${index + 1}.json"),
+                """{"pid":${index + 1},"sessionId":"v-$index","updatedAt":$now,$fields}""",
+            )
+        }
         val registry = SessionRegistry(
             sessionsDir = dir,
             routeOf = { SessionRoute.Unknown },
@@ -57,7 +71,7 @@ class SessionsRoutesTest {
         fun listed(routes: SessionsRoutes) = Json.parseToJsonElement(routes.sessionsJson())
             .jsonObject["note_versions"]!!.jsonArray.map { it.jsonPrimitive.content }
         assertEquals(
-            listOf("2.1.282", "2.1.283", "2.1.284", "2.1.285", "2.1.286", "2.1.287", "2.1.289", "2.1.296"),
+            listOf("2.1.305", "grokbot-mailbox/0.1.0"),
             listed(SessionsRoutes(registry, TestTranscripts())),
         )
     }

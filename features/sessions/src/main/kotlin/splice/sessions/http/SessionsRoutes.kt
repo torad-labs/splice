@@ -33,7 +33,7 @@ import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
 import splice.core.util.JsonScalars
 import splice.http.JsonReply
-import splice.sessions.note.PeerNoteAbi
+import splice.sessions.note.PeerVersions
 import splice.sessions.projects.SessionProjects
 import splice.sessions.registry.RepoResolver
 import splice.sessions.registry.RepoRoot
@@ -156,7 +156,9 @@ public class SessionsRoutes(
         val rowFacts = facts.forRecords(listing.sessions)
         // whether splice reads the conversations: off, the console shows no question a session waits on (Marlin, p180)
         put("reading", viewEnabled())
-        val noteVersions = PeerNoteAbi.AUDITED_VERSIONS.sorted()
+        // The versions among these sessions a note is sent to, by the peer wire rule (peer messaging 1.4), not a fixed list.
+        val noteVersions = listing.sessions.filter { PeerVersions.refusal(it.client) == null }
+            .mapNotNull { it.client.version }.distinct().sorted()
         put("note_versions", buildJsonArray { noteVersions.forEach { add(JsonPrimitive(it)) } })
         // An unreadable directory is not an empty one: the error rides beside the (empty) list.
         listing.error?.let { put("error", it) }

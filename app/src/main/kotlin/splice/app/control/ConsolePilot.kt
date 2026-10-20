@@ -47,12 +47,14 @@ internal class ConsolePilot {
     }
 
     /** One open console tab: the orders waiting for its next ask, and the ask the daemon is holding open for it. */
-    private class Tab {
+    private class Tab(asking: Long) {
         val queue = ArrayDeque<Order>()
         var waiter: CompletableDeferred<Order?>? = null
 
+        /** When it last asked. A tab is born at its first ask, never at 0, so an order picking between its creation and
+         *  its stamp cannot read it as long gone. */
         @Volatile
-        var askedAt = 0L
+        var askedAt = asking
 
         @Volatile
         var focusedAt = 0L
@@ -124,7 +126,7 @@ internal class ConsolePilot {
             return refused(HttpStatusCode.BadRequest, "a tab asks under its own name")
         }
         val now = System.currentTimeMillis()
-        val tab = tabs.computeIfAbsent(tabName) { Tab() }
+        val tab = tabs.computeIfAbsent(tabName) { Tab(now) }
         tab.askedAt = now
         tab.owes = false
         if (focused) tab.focusedAt = now

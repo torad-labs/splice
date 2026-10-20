@@ -9,6 +9,7 @@ import splice.app.DaemonBoundary
 import splice.core.util.LogSafe
 import splice.core.util.LogSink
 import splice.lifecycle.restart.ShutdownDaemon
+import java.net.BindException
 
 internal class ControlOwnership(
     private val boundary: DaemonBoundary,
@@ -25,9 +26,14 @@ internal class ControlOwnership(
         adopt(server)
         val bound = boundary.runCatchingDaemonBoundary { server.start() }
             .onFailure {
+                // "another owns it" is said only for a port that is taken: start() also mints the key and starts what
+                // rides on the listener, and a failure there has no second process to look for
+                val taken = generateSequence(it, Throwable::cause).any { cause -> cause is BindException }
+                val said = if (taken) "could not bind" else "failed to start on"
+                val then = if (taken) "another owns it, exiting" else "exiting"
                 log(
-                    "[daemon] control plane could not bind :${LogSafe.str(controlPort.toString())} " +
-                        "(${LogSafe.str(it.message.orEmpty())}); another owns it, exiting\n",
+                    "[daemon] control plane " + said + " :${LogSafe.str(controlPort.toString())} " +
+                        "(${LogSafe.str(it.message.orEmpty())}); " + then + "\n",
                 )
                 shutdownDaemon()
             }

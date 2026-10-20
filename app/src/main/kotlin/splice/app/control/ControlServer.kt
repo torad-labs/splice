@@ -236,7 +236,12 @@ internal class ControlServer(
         // returns (read from the 3.5.2 bytecode), so this never actually waits.
         val port = engine.engine.resolvedConnectors().single().port
         publish(engine, port)
-        resources.forEach { it.start() }
+        // under the monitor [stop] takes: a stop that ran between the publish and here already stopped resources that
+        // had not started, so starting them now would leave them running in a daemon that is stopping
+        synchronized(this) {
+            if (stopRequested) throw CancellationException("the control server was stopped before its resources ran")
+            resources.forEach { it.start() }
+        }
     }
 
     private fun refuseWhenStopped() {

@@ -62,7 +62,15 @@ internal class LimitResume(
     fun joined(head: String) {
         scope.launch {
             val live = sessions.read().filter { it.availability != SessionAvailability.GONE && it.sessionId != null }
-            live.forEach { record -> release(head, record) }
+            // one session whose transcript cannot be read is said, and the sessions after it are still woken
+            live.forEach { record ->
+                Cancellables.runCatchingCancellable { release(head, record) }.onFailure {
+                    log(
+                        "[limit-resume] ${LogSafe.str(record.sessionId.orEmpty())} not released on " +
+                            "${LogSafe.str(head)}: ${LogSafe.str(SafeFailureText.render(it))}",
+                    )
+                }
+            }
         }
     }
 

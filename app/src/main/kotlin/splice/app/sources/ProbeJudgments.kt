@@ -27,15 +27,21 @@ internal data class ProbeJudged(val signature: List<Long>, val probes: Economics
 /** The answers a previous run kept, and the files they were judged from (null when that run could not mark them). */
 internal data class KeptJudgments(val judged: Map<Long, ProbeJudged>, val stamp: PerfSourceStamp?)
 
+/** An hour's probe token sums as they are kept on disk. */
+@Serializable
+internal data class SavedProbeTokens(
+    val inTokens: Long,
+    val cachedTokens: Long,
+    val cacheWriteTokens: Long,
+    val outTokens: Long,
+)
+
 /** An hour's probes as they are kept on disk: every sum [ProbeEconomics] counts a probe into. */
 @Serializable
 internal data class SavedProbeSums(
     val turns: Long,
     val localSteps: Long,
-    val inTokens: Long,
-    val cachedTokens: Long,
-    val cacheWriteTokens: Long,
-    val outTokens: Long,
+    val tokens: SavedProbeTokens,
     val reqBytes: Long,
     val upstreamBytes: Long,
     val toolsEager: Long,
@@ -48,7 +54,7 @@ internal data class SavedProbeSums(
     fun bucket(hour: Long): EconomicsBucket = EconomicsBucket(
         hour = hour,
         counts = EconomicsTurnCounts(turns = turns, localSteps = localSteps),
-        tokens = BucketTokens(inTokens, cachedTokens, cacheWriteTokens, outTokens),
+        tokens = BucketTokens(tokens.inTokens, tokens.cachedTokens, tokens.cacheWriteTokens, tokens.outTokens),
         bytes = BucketBytes(reqBytes, upstreamBytes),
         tools = BucketTools(toolsEager, toolsDeferred, deferralTurns),
         cost = BucketCost(unpricedTurns = unpricedTurns, failedTurns = failedTurns),
@@ -116,10 +122,7 @@ internal class ProbeJudgments(private val files: PerfReadFiles) {
     private fun sums(bucket: EconomicsBucket): SavedProbeSums = SavedProbeSums(
         turns = bucket.turns,
         localSteps = bucket.localSteps,
-        inTokens = bucket.inTokens,
-        cachedTokens = bucket.cachedTokens,
-        cacheWriteTokens = bucket.cacheWriteTokens,
-        outTokens = bucket.outTokens,
+        tokens = SavedProbeTokens(bucket.inTokens, bucket.cachedTokens, bucket.cacheWriteTokens, bucket.outTokens),
         reqBytes = bucket.reqBytes,
         upstreamBytes = bucket.upstreamBytes,
         toolsEager = bucket.toolsEager,

@@ -1196,6 +1196,11 @@ origin.
 - **`splice login` names a Claude login by its label, never its email,** in every sentence it prints.
 
 ### Fixed
+- **A malformed `Content-Length` no longer drops every MCP stream or leaves a request unanswered.** The MCP hub's
+  front exited on `Content-Length: -1` before it checked the key, so any local process could end every session's MCP
+  streams; it now closes that connection and nothing else. It also answers a request with no key `401` before reading its
+  body, closes a connection that sends no request for two minutes, and holds at most 256. On the daemon's own port, a
+  `Content-Length` that is not a number is now answered `400`; it was never answered.
 - **A Claude account label the pool cannot take is refused at sign-in.** The sign-in accepted capital letters and
   labels up to 64 characters, but the pool takes lowercase letters, digits, `.`, `-` and `_`, up to 48. A login
   filed as `Work` landed a folder the pool then threw on, and every request on that head failed until the folder

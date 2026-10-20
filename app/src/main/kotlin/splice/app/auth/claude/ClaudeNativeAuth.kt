@@ -27,6 +27,7 @@ import splice.upstream.credentials.AccountCredentialIdentitySource
 import splice.upstream.credentials.AccountCredentialIdentitySource.CredentialEvidence
 import splice.upstream.credentials.AccountCredentialIdentitySource.CredentialFileEvidenceReader
 import splice.upstream.credentials.AccountCredentialIdentitySource.CredentialPresence
+import java.io.IOException
 import java.nio.file.Files
 import java.nio.file.Path
 
@@ -120,15 +121,42 @@ internal class ClaudeNativeAuth(
     private fun usable(token: NativeAccessToken): Boolean =
         !token.accessToken.isNullOrBlank() && token.expiresAt?.let { it > clock() } == true
 
-    private fun observe(): NativeAccessToken? = read()
+    private val file = NativeCredentialFile(directory.resolve(CREDENTIALS_JSON), log)
 
+    private fun observe(): NativeAccessToken? = file.read()
+}
+
+/** The native login's credential file, parsed again only when the file moved. */
+private class NativeCredentialFile(private val path: Path, private val log: LogSink) {
     // why: read() runs on every observation (several per turn, and on each membership refresh), so a file that stays
     // unreadable is named when its failure class changes, not on every read.
     @Volatile
     private var lastClass: String? = null
 
-    private fun read(): NativeAccessToken? = Cancellables.runCatchingCancellable {
-        Json.decodeFromString<NativeAccessDocument>(Files.readString(directory.resolve(CREDENTIALS_JSON))).claudeAiOauth
+    // why: the same observation runs for every pool pick, quota snapshot and evidence refresh, so the file is parsed again
+    // only when its identity, size or modification time moved (JFR Oct 20, 2026: 456 of 13,317 allocation samples here).
+    @Volatile
+    private var held: Pair<List<Any?>, NativeAccessToken?>? = null
+
+    fun read(): NativeAccessToken? {
+        val stamp = stampOf()
+        held?.takeIf { stamp != null && it.first == stamp }?.let { return it.second }
+        val token = parse()
+        held = if (stamp != null && lastClass == null) stamp to token else null
+        return token
+    }
+
+    /** The file's identity, size and modification time, or null when it cannot be read, so nothing is reused. */
+    private fun stampOf(): List<Any?>? = try {
+        val attributes = Files.readAttributes(path, "fileKey,size,lastModifiedTime")
+        listOf(attributes["fileKey"], attributes["size"], attributes["lastModifiedTime"])
+    } catch (_: IOException) {
+        // The parse that follows names the failure; an unstamped file is simply read again.
+        null
+    }
+
+    private fun parse(): NativeAccessToken? = Cancellables.runCatchingCancellable {
+        Json.decodeFromString<NativeAccessDocument>(Files.readString(path)).claudeAiOauth
     }.fold(
         onSuccess = {
             lastClass = null

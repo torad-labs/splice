@@ -82,7 +82,10 @@ class PeerNoteSocketTest {
     @Test
     fun `a session on any version the probe proved is sent the note`(@TempDir root: Path) {
         // Installed builds that tools/probes/claude-code-peer-note.ts proved accept the frame and refuse its mutant.
-        val audited = listOf("2.1.282", "2.1.283", "2.1.284", "2.1.285", "2.1.286", "2.1.287", "2.1.289", "2.1.296")
+        val audited = listOf(
+            "2.1.282", "2.1.283", "2.1.284", "2.1.285", "2.1.286", "2.1.287", "2.1.289", "2.1.296",
+            "2.1.299", "2.1.300", "2.1.301", "2.1.302", "2.1.303", "2.1.304",
+        )
         for (version in audited) {
             val inbox = inbox(root.resolve(version).also { Files.createDirectory(it) })
             assertEquals(NoteOutcome.Submitted, send(record(inbox.socket, version)))
@@ -93,7 +96,7 @@ class PeerNoteSocketTest {
     @Test
     fun `a session on a version nobody checked is refused, and so is one that reports none`(@TempDir root: Path) {
         val inbox = inbox(root)
-        for (version in listOf("2.1.300", null)) {
+        for (version in listOf("2.1.305", null)) {
             assertEquals(HttpStatusCode.UnprocessableEntity, refusal(record(inbox.socket, version)).status)
         }
         assertFalse(inbox.received.isDone)

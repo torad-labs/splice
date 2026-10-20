@@ -14,7 +14,10 @@ import kotlinx.serialization.json.put
  *  version is refused, not guessed at. */
 internal object PeerNoteAbi {
     val AUDITED_VERSIONS: Set<String> =
-        setOf("2.1.282", "2.1.283", "2.1.284", "2.1.285", "2.1.286", "2.1.287", "2.1.289", "2.1.296")
+        setOf(
+            "2.1.282", "2.1.283", "2.1.284", "2.1.285", "2.1.286", "2.1.287", "2.1.289", "2.1.296",
+            "2.1.299", "2.1.300", "2.1.301", "2.1.302", "2.1.303", "2.1.304",
+        )
 
     internal const val TAG = "cross-session-message"
 

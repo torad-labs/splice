@@ -26,6 +26,11 @@
 // (prepush-scope.ts, selector.ts): the ladder rows whose inputs the diff touches run, and gradle runs the changed modules
 // and their dependents, in parallel, through the slot. The full ladder is a push to main's.
 //
+// A PUSH THAT CANNOT PASS STOPS ITS GRADLE RUN. A direct leg that fails, or a branch that moved (looked at every 20 s while
+// gradle runs), fails the push however gradle ends, so the gate stops gradle at once and reports. A gradle red is never
+// stopped: --continue lists every failure at once. Each judged push appends one line to ~/.local/state/splice-gate/
+// timings.jsonl (prepush-timing.ts): sha, scope, gradle seconds, configuration seconds, the ten slowest tasks, verdict.
+//
 // NOTHING HERE IS SKIPPABLE. There is no environment switch and no flag. `--no-verify` is the only bypass, and
 // it is forbidden to seats.
 import { spawnSync } from "node:child_process";
@@ -39,6 +44,9 @@ import { acquireRunSentinel, describeOpenRun } from "../lib/sentinel.ts";
 import { parseModuleGraph } from "../lib/selector.ts";
 import { type LintVerdict, lintable, type StagedLint, stagedLinters } from "../lib/lint-staged.ts";
 import { preparePrePushTree, type PrePushTree } from "../lib/prepush-tree.ts";
+import { appendPushTiming, type PushTiming, readProfile } from "../lib/prepush-timing.ts";
+import { isoSeconds } from "../lib/slot.ts";
+import { exitStatusOf } from "../lib/status.ts";
 import { narrowBunTest } from "../lib/test-select.ts";
 import { commitLegs, type Leg, legsWithoutInputs, prePushScope } from "../lib/prepush-scope.ts";
 import { cancelledBySignal, RUN_ALREADY_OPEN_EXIT } from "./run.ts";
@@ -92,11 +100,16 @@ export interface GateRun {
 }
 
 /** Runs gradle tasks and returns their exit and output. The default runs them through the gate's slot. */
-/** Runs gradle tasks. [root] is the tree they run in; a runner built for one tree may ignore it. */
-export type GateRunner = (tasks: readonly string[], root?: string) => Promise<GateRun>;
+/** Runs gradle tasks. [root] is the tree they run in; a runner built for one tree may ignore it. [cancel] ends the run at
+ *  once: the runner stops gradle and returns the exit of a run ended by a signal (128+signum). */
+export type GateRunner = (tasks: readonly string[], root?: string, cancel?: AbortSignal) => Promise<GateRun>;
 
 export interface HookDeps {
   readonly gate?: GateRunner;
+  /** Where each judged push's timing line goes. The CLI passes the real file; a judgement given no sink records nothing. */
+  readonly timings?: (entry: PushTiming) => void;
+  /** How often the branch is looked at while gradle runs, to stop a run for a push that can no longer succeed. */
+  readonly movedPollMs?: number;
   readonly openRun?: (head: string, tree: string) => ReturnType<typeof acquireRunSentinel>;
   /** The ladder rows pre-push scopes by. Read from the checkout when absent. */
   readonly legs?: readonly Leg[];
@@ -286,23 +299,24 @@ export function isCollision(
 
 /** Runs the tasks; a collision reruns the ones that failed or were never reached, once. A red after the rerun is the
  *  answer. A run ended by a signal is cancelled, not a collision, and is not rerun (run.ts ends a cancelled gate the
- *  same way). */
+ *  same way); neither is a run whose [cancel] was raised, whatever it printed. */
 export async function judgedRun(
   run: GateRunner,
   root: string,
   modules: readonly GradleModule[],
   tasks: readonly string[],
   rivalLive: () => boolean = liveGradleElsewhere,
+  cancel?: AbortSignal,
 ): Promise<Judged> {
-  const first = await run(tasks, root);
-  if (first.status === 0 || cancelledBySignal(first.status) || !isCollision(first.output, root, modules, rivalLive)) {
+  const first = await run(tasks, root, cancel);
+  if (first.status === 0 || cancelledBySignal(first.status) || cancel?.aborted || !isCollision(first.output, root, modules, rivalLive)) {
     return { ...first, reran: false, collidedAgain: false };
   }
   const again = rerunTasks(tasks, first.output);
   // Every requested task printed its result, so the collision kept none of them from judging: there is nothing to rerun.
   if (again.length === 0) return { ...first, reran: false, collidedAgain: false };
   console.error(`  ! collision: another gradle run in this checkout held a shared file; rerunning ${again.length} task(s) once`);
-  const second = await run(again, root);
+  const second = await run(again, root, cancel);
   const collidedAgain = second.status !== 0 && !cancelledBySignal(second.status) && isCollision(second.output, root, modules, rivalLive);
   return { ...second, reran: true, collidedAgain };
 }
@@ -361,13 +375,17 @@ function spawnEnv(extra: Record<string, string>): Record<string, string> {
 }
 
 /** The pre-push run's own options. --continue runs every module's suites past a failure, so a red push names every
- *  failure at once instead of one per 15 to 45 minute run (splice-lead, Oct 12); the push still fails on any of them. */
-const PRE_PUSH_GRADLE_OPTIONS = ["--parallel", "--build-cache", "--continue"];
+ *  failure at once instead of one per 15 to 45 minute run (splice-lead, Oct 12); the push still fails on any of them.
+ *  --profile writes build/reports/profile/: configuration time and each task's time, which the timing line of the push reads. */
+const PRE_PUSH_GRADLE_OPTIONS = ["--parallel", "--build-cache", "--continue", "--profile"];
+/** How often the branch is looked at while gradle runs: a push whose branch moved is refused at the end, so its run stops. */
+const MOVED_POLL_MS = 20_000;
 
 /** Gradle tasks through the gradle slot (one gradle per tree). The slot is the gate's own verb, so the lock is the
- *  gate's lock. Output is echoed to stderr as it arrives when [echo] is set. */
+ *  gate's lock. Output is echoed to stderr as it arrives when [echo] is set. A raised [cancel] sends the slot SIGTERM: it
+ *  forwards the signal to gradle's process group and holds the slot until the group is gone (runUnderSlot). */
 export function slotRunner(lay: Layout, label: string, echo: boolean): GateRunner {
-  return async (tasks) => {
+  return async (tasks, _root, cancel) => {
     const jdk = resolveJdk21();
     if ("error" in jdk) throw new Error(jdk.error);
     const proc = Bun.spawn(
@@ -384,6 +402,9 @@ export function slotRunner(lay: Layout, label: string, echo: boolean): GateRunne
         stderr: "pipe",
       },
     );
+    const stop = () => proc.kill("SIGTERM");
+    if (cancel?.aborted) stop();
+    else cancel?.addEventListener("abort", stop, { once: true });
     let output = "";
     const pump = async (stream: ReadableStream<Uint8Array>): Promise<void> => {
       const decoder = new TextDecoder();
@@ -394,7 +415,10 @@ export function slotRunner(lay: Layout, label: string, echo: boolean): GateRunne
       }
     };
     await Promise.all([pump(proc.stdout), pump(proc.stderr)]);
-    return { status: await proc.exited, output };
+    await proc.exited;
+    cancel?.removeEventListener("abort", stop);
+    // A slot killed before its handlers were on dies of the signal and has no exit code: read it as a shell does (143).
+    return { status: exitStatusOf(proc), output };
   };
 }
 
@@ -610,39 +634,90 @@ async function judgeIn(
     return RUN_ALREADY_OPEN_EXIT;
   }
 
+  // A push that cannot pass stops its gradle run. A red direct leg fails the push whatever gradle says, and a branch that moved
+  // fails it however gradle ends, so the run's remaining minutes would compute a verdict nobody reads. A gradle red is not
+  // such a verdict: --continue lists every failure at once, so a red gradle runs to the end.
+  const stopper = new AbortController();
+  let gradleRunning = scope.gradle.length > 0;
+  let stoppedFor: string | undefined;
+  const stopGradle = (reason: string): void => {
+    if (stoppedFor !== undefined || !gradleRunning) return;
+    stoppedFor = reason;
+    console.error(`  ! ${reason}: stopping gradle, because this push cannot pass`);
+    stopper.abort();
+  };
+
   // The direct legs run alongside gradle, so a leg never waits for the slot. The verdict reads both.
   if (scope.direct.length > 0) console.error("── direct legs (no gradle) ──");
   // A test leg that is one `bun test <dir>` run keeps only the test files the diff can affect.
   const directLegs = scope.direct.flatMap((leg) => narrowBunTest(root, leg, changed) ?? []);
-  const direct = runDirectLegs(root, directLegs);
+  const direct = runDirectLegs(root, directLegs, (leg) => stopGradle(`${leg.task} failed`));
   let judged: Judged | undefined;
+  let movedWhile: string[] = [];
+  let gradleSeconds: number | null = null;
+  const gradleStartedAt = Date.now();
   if (scope.gradle.length > 0) {
     console.error("── gate tier (gradle, scoped to the push) ──");
     const gradleStarted = performance.now();
-    judged = await judgedRun(deps.gate ?? slotRunner(judgeLay, "pre-push", true), root, modules, scope.gradle, deps.rivalLive);
+    const watch = setInterval(() => {
+      const moved = movedRefs(lay.repoRoot, pushed);
+      if (moved.length === 0) return;
+      movedWhile = moved;
+      stopGradle("the branch moved");
+    }, deps.movedPollMs ?? MOVED_POLL_MS);
+    try {
+      judged = await judgedRun(deps.gate ?? slotRunner(judgeLay, "pre-push", true), root, modules, scope.gradle, deps.rivalLive, stopper.signal);
+    } finally {
+      clearInterval(watch);
+      gradleRunning = false;
+    }
+    gradleSeconds = (performance.now() - gradleStarted) / 1000;
     const waited = /admitted after (\d+)s/.exec(judged.output)?.[1];
     console.error(`pre-push timing: gradle ${seconds(gradleStarted)}${waited === undefined ? "" : `, of which ${waited} s waiting for the build lock`}`);
   }
   const failedLegs = await direct;
   const elapsed = seconds(started);
-  const gradleRed = judged !== undefined && judged.status !== 0;
-  const moved = gradleRed || failedLegs.length > 0 ? [] : movedRefs(lay.repoRoot, pushed);
-  if (moved.length > 0) {
+  // Gradle ended by OUR stop is cancelled, not red: only a run that ended by itself, or by a signal that is not ours, is judged.
+  const gradleCancelled = stoppedFor !== undefined && judged !== undefined && cancelledBySignal(judged.status);
+  const gradleRed = judged !== undefined && judged.status !== 0 && !gradleCancelled;
+  const red = [...failedLegs.map((leg) => leg.task), ...(gradleRed ? ["gradle"] : [])];
+  const moved = movedWhile.length > 0 ? movedWhile : red.length > 0 ? [] : movedRefs(lay.repoRoot, pushed);
+  const stoppedNote = gradleCancelled ? ` (gradle stopped after ${(gradleSeconds ?? 0).toFixed(1)} s: ${stoppedFor})` : "";
+  const record = (verdict: string): void => {
+    if (deps.timings === undefined) return;
+    const profile = judged === undefined ? { configS: null, tasks: [] } : readProfile(root, gradleStartedAt);
+    deps.timings({
+      at: isoSeconds(new Date()),
+      sha: head,
+      scope: scope.summary,
+      gradleS: gradleSeconds === null ? null : Math.round(gradleSeconds * 10) / 10,
+      ...profile,
+      cancelled: gradleCancelled ? (stoppedFor ?? null) : null,
+      verdict,
+    });
+  };
+  if (red.length === 0 && moved.length > 0) {
+    record("fail:moved");
     console.log(`PRE-PUSH: FAIL — judged ${judgedWhat}${scopeClause}`);
-    console.error(`pre-push: ✗ the branch moved while the gate judged: ${moved.join("; ")}`);
+    console.error(`pre-push: ✗ the branch moved while the gate judged: ${moved.join("; ")}${stoppedNote}`);
     console.error(`pre-push: name the sha and git sends exactly what the gate judged: ${explicitPush(remoteName, pushed)}`);
     return 1;
   }
-  if (!gradleRed && failedLegs.length === 0) {
+  if (red.length === 0) {
+    record("pass");
     const rerun = judged?.reran ? "; passed on the rerun after a collision" : "";
     console.log(`PRE-PUSH: PASS — judged ${judgedWhat}${rerun}${scopeClause}`);
     console.error(`pre-push: ✓ ${directLegs.length} direct leg(s)${judged ? " and gradle" : ", no gradle"} — ${elapsed}`);
     return 0;
   }
+  record(`fail:${[...red, ...(moved.length > 0 ? ["moved"] : [])].join(",")}`);
   console.log(`PRE-PUSH: FAIL — judged ${judgedWhat}${scopeClause}`);
   if (judged !== undefined && gradleRed) for (const line of failureLines(root, judged.output)) console.error(line);
-  const red = [...failedLegs.map((leg) => leg.task), ...(gradleRed ? ["gradle"] : [])];
-  console.error(`pre-push: ✗ ${red.join(", ")}${judged && gradleRed ? redNote(judged) : ""} — ${elapsed}`);
+  console.error(`pre-push: ✗ ${red.join(", ")}${judged && gradleRed ? redNote(judged) : ""}${stoppedNote} — ${elapsed}`);
+  if (moved.length > 0) {
+    console.error(`pre-push: the branch also moved while the gate judged: ${moved.join("; ")}`);
+    console.error(`pre-push: name the sha and git sends exactly what the gate judged: ${explicitPush(remoteName, pushed)}`);
+  }
   return 1;
 }
 
@@ -778,28 +853,35 @@ function legArgv(command: readonly string[]): string[] {
 }
 
 /** Runs each direct leg from the repository root, all at once. A leg that exits nonzero, or cannot start, fails; its
- *  output tail is shown only then. Returns the failed legs. */
-export async function runDirectLegs(root: string, legs: readonly Leg[]): Promise<Leg[]> {
+ *  output tail is shown only then. [onRed] hears each failing leg the moment it ends, while the others still run. Returns
+ *  the failed legs. */
+export async function runDirectLegs(root: string, legs: readonly Leg[], onRed?: (leg: Leg) => void): Promise<Leg[]> {
   const runs = await Promise.all(
     legs.map(async (leg) => {
       const started = performance.now();
+      let status: number;
+      let output: string;
       try {
         const proc = Bun.spawn(legArgv(leg.command), { cwd: root, env: spawnEnv({}), stdout: "pipe", stderr: "pipe" });
-        const [stdout, stderr, status] = await Promise.all([
+        const [stdout, stderr, code] = await Promise.all([
           new Response(proc.stdout).text(),
           new Response(proc.stderr).text(),
           proc.exited,
         ]);
-        return { leg, status, output: stdout + stderr, started };
+        status = code;
+        output = stdout + stderr;
       } catch (error) {
-        return { leg, status: 127, output: errorText(error), started };
+        status = 127;
+        output = errorText(error);
       }
+      if (status !== 0) onRed?.(leg);
+      return { leg, status, output, took: seconds(started) };
     }),
   );
   const failed: Leg[] = [];
   for (const run of runs) {
     if (run.status === 0) {
-      console.error(`  ✓ ${run.leg.task} — ${seconds(run.started)}`);
+      console.error(`  ✓ ${run.leg.task} — ${run.took}`);
       continue;
     }
     failed.push(run.leg);
@@ -848,7 +930,7 @@ export async function hook(argv: readonly string[]): Promise<number> {
   try {
     // git passes the hook its own arguments (pre-push gets the remote's name and URL); neither is read.
     if (verb === "pre-commit") return await commitGate(lay);
-    if (verb === "pre-push") return await prePush(lay, await Bun.stdin.text(), {}, rest[0] ?? "origin");
+    if (verb === "pre-push") return await prePush(lay, await Bun.stdin.text(), { timings: appendPushTiming }, rest[0] ?? "origin");
     if (verb === "install" && rest.length === 0) {
       const hooksDir = resolve(lay.repoRoot, gitText(lay.repoRoot, ["rev-parse", "--git-path", "hooks"]));
       for (const path of installShims(hooksDir, process.execPath, join(lay.repoRoot, "tools", "gate", "index.ts"))) {

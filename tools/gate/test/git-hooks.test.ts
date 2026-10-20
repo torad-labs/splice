@@ -32,6 +32,7 @@ import {
 } from "../src/commands/hook.ts";
 import { resolveJdk21 } from "../src/lib/jdk.ts";
 import type { Leg } from "../src/lib/prepush-scope.ts";
+import { parseProfile, type PushTiming } from "../src/lib/prepush-timing.ts";
 import { type Layout, layout } from "../src/lib/repo.ts";
 
 const { repoRoot } = layout();
@@ -541,6 +542,89 @@ describe("the moved-tip refusal", () => {
     const { result, text } = await captured(() => prePush(lay(root), stdin, { gate: compiler(root), openRun: () => null, legs: NO_LEGS }));
     expect(text).not.toContain("moved");
     expect(result).toBe(0);
+  });
+});
+
+describe("pre-push stops a gradle run whose push cannot pass, and records how long each push took", () => {
+  /** A gradle that runs until it is stopped, then ends as a run killed by SIGTERM does. */
+  const untilStopped: GateRunner = (_tasks, _at, cancel) =>
+    new Promise((resolve) => {
+      const stopped = () => resolve({ status: 143, output: "" });
+      if (cancel?.aborted) stopped();
+      else cancel?.addEventListener("abort", stopped, { once: true });
+    });
+  const oneModule = (): string => {
+    const root = wallsRepo();
+    writeFile(root, TARGET, CLEAN);
+    git(root, ["add", TARGET]);
+    commit(root, "chore(test): one module");
+    return root;
+  };
+
+  test("RED: a direct leg that fails stops the gradle run at once, and the verdict says so", async () => {
+    const root = oneModule();
+    const red: Leg[] = [{ task: "redLeg", command: ["bun", "-e", "process.exit(3)"], inputs: ["**"] }];
+    const lines: PushTiming[] = [];
+    const { result, text } = await captured(() =>
+      prePush(lay(root), pushOf(root, head(root)), { gate: untilStopped, openRun: () => null, legs: red, timings: (line) => void lines.push(line) }),
+    );
+    expect(result).toBe(1);
+    expect(text).toContain("redLeg failed: stopping gradle");
+    expect(text).toContain("pre-push: ✗ redLeg (gradle stopped after");
+    expect(text).not.toContain("failing task(s)");
+    expect(lines.map((line) => [line.verdict, line.cancelled, line.sha])).toEqual([["fail:redLeg", "redLeg failed", head(root)]]);
+  });
+
+  test("RED: a branch that moves while gradle runs stops it, and the push is refused as moved", async () => {
+    const root = oneModule();
+    const judged = head(root);
+    const gate: GateRunner = (...args) => {
+      writeFile(root, TARGET, CLEAN.replace("Probe", "Peer"));
+      git(root, ["add", TARGET]);
+      commit(root, "chore(test): a peer's commit while gradle runs");
+      return untilStopped(...args);
+    };
+    const lines: PushTiming[] = [];
+    const { result, text } = await captured(() =>
+      prePush(lay(root), pushOf(root, judged), { gate, openRun: () => null, legs: NO_LEGS, movedPollMs: 25, timings: (line) => void lines.push(line) }),
+    );
+    expect(result).toBe(1);
+    expect(text).toContain("the branch moved: stopping gradle");
+    expect(text).toContain("the branch moved while the gate judged");
+    expect(text).toContain(`git push origin ${judged}:refs/heads/feat/x`);
+    expect(lines.map((line) => [line.verdict, line.cancelled])).toEqual([["fail:moved", "the branch moved"]]);
+  });
+
+  test("GREEN: a passing push leaves one line with its sha, scope, gradle seconds and verdict", async () => {
+    const root = oneModule();
+    const lines: PushTiming[] = [];
+    const { result } = await captured(() =>
+      prePush(lay(root), pushOf(root, head(root)), { gate: compiler(root), openRun: () => null, legs: NO_LEGS, timings: (line) => void lines.push(line) }),
+    );
+    expect(result).toBe(0);
+    expect(lines.length).toBe(1);
+    expect(lines[0]).toMatchObject({ sha: head(root), verdict: "pass", cancelled: null, scope: expect.stringContaining(":core") });
+    expect(typeof lines[0]?.gradleS).toBe("number");
+  });
+
+  test("the profile report's configuration time and slowest tasks are read from gradle's markup", () => {
+    const row = (task: string, time: string): string => `<tr>\n<td class="indentPath">${task}</td>\n<td class="numeric">${time}</td>\n<td></td>\n</tr>\n`;
+    const html = [
+      '<tr>\n<td>Configuring Projects</td>\n<td class="numeric">15.841s</td>\n</tr>\n',
+      "<h2>Task Execution</h2>\n<table>\n",
+      '<tr>\n<td>:app</td>\n<td class="numeric">6m0.01s</td>\n<td>(total)</td>\n</tr>\n',
+      row(":app:compileKotlin", "6.765s"),
+      row(":app:test", "3m26.70s"),
+      row(":core:detekt", "0.4s"),
+    ].join("");
+    const profile = parseProfile(html);
+    expect(profile.configS).toBe(15.841);
+    expect(profile.tasks).toEqual([
+      { task: ":app:test", s: 206.7 },
+      { task: ":app:compileKotlin", s: 6.8 },
+      { task: ":core:detekt", s: 0.4 },
+    ]);
+    expect(parseProfile("<html></html>")).toEqual({ configS: null, tasks: [] });
   });
 });
 

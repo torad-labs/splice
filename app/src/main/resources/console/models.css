@@ -25,14 +25,14 @@
   .cmds .pane, .cmds.open .pane { display: flex; flex: 1 1 0; max-width: 150rem; position: sticky; top: calc(var(--bar-h) + 1rem); height: calc(100vh - 12rem - var(--bar-h)); }
   .pane .close { display: none; }
 }
-.cmds .add[aria-pressed="true"] { border-color: var(--key-light); color: var(--text); }
+.cmds .add[aria-pressed="true"] { border-color: var(--key-ink); color: var(--text); }
 .lamp.ready { color: var(--live); }
 .lamp.ready i { background: var(--live); box-shadow: 0 0 .6rem var(--live); }
 .lamp .wait { width: 1.3rem; height: 1.3rem; }
 .lamp .wait circle { stroke: var(--live); }
 .card.h { cursor: pointer; }
 .card.h:hover { background: var(--obj-high); }
-.card.h[aria-current="true"] { border-color: var(--key-light); }
+.card.h[aria-current="true"] { border-color: var(--key-ink); }
 .card.h .top { display: flex; align-items: center; gap: .9rem; min-height: 2rem; }
 .prov { font: 400 .88rem/1 var(--font-name); color: var(--text-body); white-space: nowrap; }
 .card.h .fix { margin-top: .95rem; }
@@ -164,12 +164,12 @@ code.launch { font: 500 .95rem/1 var(--font-data); color: var(--text); padding: 
   font: 500 .95rem/1 var(--font-data); color: var(--text); background: var(--obj-high); border: .12rem solid var(--ink); border-radius: var(--r-in);
 }
 .ftile svg { width: 1.05rem; height: 1.05rem; color: var(--text-body); }
-.ftile[aria-expanded="true"] { border-color: var(--key-light); }
+.ftile[aria-expanded="true"] { border-color: var(--key-ink); }
 .ftext { margin: 0; padding: .85rem 1rem; background: var(--obj-sunk); border-radius: var(--r-in); font: 500 .92rem/1.5 var(--font-data); color: var(--text-body); white-space: pre-wrap; max-width: 66rem; }
 .none { margin: 0; font: 500 .95rem/1 var(--font-name); color: var(--text-mute); }
 .cmdpick { display: flex; flex-wrap: wrap; gap: .7rem; margin-bottom: 1.1rem; }
 .cmdpick .chip { cursor: pointer; box-shadow: none; border-color: var(--track-line); color: var(--text-body); }
-.cmdpick .chip.on { border-color: var(--ink); color: var(--text); box-shadow: .2rem .2rem 0 var(--c); outline: .14rem solid var(--key-light); outline-offset: .14rem; }
+.cmdpick .chip.on { border-color: var(--ink); color: var(--text); box-shadow: .2rem .2rem 0 var(--c); outline: .14rem solid var(--key-ink); outline-offset: .14rem; }
 .twin { display: grid; grid-template-columns: minmax(0, 1fr); gap: 1.35rem; }
 @container (min-width: 92rem) { .twin { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); } }
 .stack { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: .7rem; }

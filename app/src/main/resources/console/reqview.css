@@ -40,7 +40,7 @@ mark { background: var(--key-light); color: var(--splice-ink-day); border-radius
 .rail-t .mk.ft > span { top: calc(100% + 1.75rem); }
 .rail-t .mk.late > span { left: auto; right: -.09rem; padding: 0 .55rem 0 0; border-left: 0; border-right: .12rem solid var(--text); }
 /* a silence splice waited out: the stretch it lasted, outlined in the key light, named above the rail */
-.rail-t .quiet { position: absolute; top: -.45rem; bottom: -.45rem; min-width: .5rem; border: .14rem dashed var(--key-light); border-radius: .35rem; background: color-mix(in oklab, var(--key-light) 14%, transparent); }
+.rail-t .quiet { position: absolute; top: -.45rem; bottom: -.45rem; min-width: .5rem; border: .14rem dashed var(--key-ink); border-radius: .35rem; background: color-mix(in oklab, var(--key-light) 14%, transparent); }
 .rail-t .quiet > span, .rail-t .resume > span { position: absolute; bottom: calc(100% + .5rem); left: 0; white-space: nowrap; font: 500 .88rem/1 var(--font-name); color: var(--key-ink); }
 .rail-t .quiet.late > span, .rail-t .resume.late > span { left: auto; right: 0; }
 .rail-t .resume.stack > span { bottom: calc(100% + 1.8rem); }

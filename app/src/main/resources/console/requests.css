@@ -22,7 +22,7 @@
 }
 .fbtn:hover { color: var(--text); border-color: var(--text-mute); }
 .fbtn .down { width: .95rem; height: .95rem; color: var(--text-mute); }
-.fbtn.on { color: var(--text); border-color: var(--key-light); padding-right: 2.4rem; }
+.fbtn.on { color: var(--text); border-color: var(--key-ink); padding-right: 2.4rem; }
 .fbtn.on .down { display: none; }
 .fclear {
   position: absolute; right: .3rem; top: 50%; transform: translateY(-50%); width: 1.7rem; height: 1.7rem; display: grid; place-items: center;
@@ -67,7 +67,7 @@
 .ftog svg { width: 1.1rem; height: 1.1rem; flex: none; fill: none; stroke: var(--key-ink); stroke-width: 2.4; stroke-linecap: round; stroke-linejoin: round; }  /* the rows' own marks, drawn as the lamp draws them */
 .ftog i.tick { width: .22rem; height: 1.1rem; margin: 0 .3rem; border-radius: .1rem; background: var(--key-ink); flex: none; }
 .ftog:hover { color: var(--text); }
-.ftog[aria-pressed="true"] { color: var(--text); border-style: solid; border-color: var(--key-light); }
+.ftog[aria-pressed="true"] { color: var(--text); border-style: solid; border-color: var(--key-ink); }
 
 /* ---------- the list and the open request, side by side when both fit ---------- */
 .requests { display: block; }
@@ -103,7 +103,7 @@
 /* ---------- a request: one slip ---------- */
 .rq { cursor: pointer; padding: .6rem .95rem .65rem; box-shadow: .3rem .3rem 0 var(--c), .3rem .3rem 0 var(--ink-w) var(--ink); }
 .rq:hover { background: var(--obj-high); }
-.rq[aria-current="true"] { border-color: var(--key-light); }
+.rq[aria-current="true"] { border-color: var(--key-ink); }
 .rq .lamp { top: .45rem; left: -2.65rem; width: 2rem; height: 2rem; }
 .rq .top { gap: .8rem; min-height: 1.7rem; }
 .rq time { font: 500 .95rem/1 var(--font-data); color: var(--text-mute); font-variant-numeric: tabular-nums; width: 6.8rem; flex: none; }
@@ -163,7 +163,7 @@ a.acct { color: inherit; text-decoration: none; }  /* the login opens its Accoun
 a.acct:hover { text-decoration: underline; }
 /* a request that answered after a retry, or slower than all but 5% of its model on its command here: the key light,
    apart from a failure's red and a clean answer's plain (requests.js, slowLines) */
-.word.marked { color: var(--key-light); }
+.word.marked { color: var(--key-ink); }
 .lamp.retried { color: var(--key-light); }
 .lamp.retried svg { width: 1.1rem; height: 1.1rem; }
-.rq .dur.slow { color: var(--key-light); }
+.rq .dur.slow { color: var(--key-ink); }

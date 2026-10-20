@@ -82,7 +82,7 @@
 .fchips { display: flex; flex-wrap: wrap; gap: .7rem; }
 .fchips:empty { display: none; }
 .fwrap { position: relative; display: inline-flex; }
-.fbtn { display: inline-flex; align-items: center; gap: .6rem; font: 500 .95rem/1 var(--font-name); color: var(--text); white-space: nowrap; background: var(--obj-sunk); border: .12rem solid var(--key-light); border-radius: var(--r-in); padding: .6rem 2.5rem .6rem .8rem; }
+.fbtn { display: inline-flex; align-items: center; gap: .6rem; font: 500 .95rem/1 var(--font-name); color: var(--text); white-space: nowrap; background: var(--obj-sunk); border: .12rem solid var(--key-ink); border-radius: var(--r-in); padding: .6rem 2.5rem .6rem .8rem; }
 .fbtn em { font-style: normal; color: var(--text-mute); }
 .fbtn .var { font: 500 .9rem/1 var(--font-data); }
 .fclear { position: absolute; right: .35rem; top: 50%; transform: translateY(-50%); width: 1.8rem; height: 1.8rem; display: grid; place-items: center; border: 0; background: none; color: var(--text-body); border-radius: .3rem; cursor: pointer; }
@@ -107,7 +107,7 @@
 .brow a.open { display: inline-flex; align-items: center; justify-content: flex-end; gap: .45rem; color: var(--text); text-decoration: none; border-radius: .3rem; padding: .35rem .4rem; margin: -.35rem -.4rem; }
 .brow a.open .go { color: var(--text-mute); }
 .brow a.open:hover { background: var(--track); }
-.brow a.open:hover .go { color: var(--key-light); }
+.brow a.open:hover .go { color: var(--key-ink); }
 .brow .cost { text-align: right; }
 .brow .cost .money { font: 500 .95rem/1 var(--font-data); color: var(--text); }
 .brow .cost .gap { font: 500 .92rem/1 var(--font-name); color: var(--text-mute); }
@@ -144,7 +144,7 @@
 /* where a plan or key card goes when clicked: the breakdown's word and an arrow down, at the foot's right */
 .pcard .drill, .kcard .drill { margin-left: auto; display: inline-flex; align-items: center; gap: .4rem; font: 500 .95rem/1 var(--font-name); color: var(--text-body); white-space: nowrap; }
 .pcard .drill .go, .kcard .drill .go { color: var(--text-mute); }
-.pcard:hover .drill, .kcard:hover .drill, .pcard:hover .drill .go, .kcard:hover .drill .go { color: var(--key-light); }
+.pcard:hover .drill, .kcard:hover .drill, .pcard:hover .drill .go, .kcard:hover .drill .go { color: var(--key-ink); }
 /* a plan card's foot is full with its three figures, so where it goes takes the line under them, at the right */
 .pcard > footer { flex-wrap: wrap; row-gap: .8rem; }
 .pcard .drill { flex-basis: 100%; justify-content: flex-end; }

@@ -21,7 +21,7 @@
 .tab.needs::before { content: ""; width: .7rem; height: .7rem; border-radius: 50%; background: var(--key-ink); box-shadow: 0 0 .7rem .1rem rgba(255, 215, 154, .55); }
 .tabs .new { display: inline-flex; align-items: center; gap: .6rem; }
 .tabs .new .plus { margin-block: -.23rem; }
-.tabs .new[aria-pressed="true"] { border-color: var(--key-light); color: var(--text); }
+.tabs .new[aria-pressed="true"] { border-color: var(--key-ink); color: var(--text); }
 .plus { width: 1.2rem; height: 1.2rem; border-radius: 50%; border: .14rem solid currentColor; display: grid; place-items: center; font: 500 .95rem/1 var(--font-data); }
 .tabs .rule { width: .16rem; height: 1.49rem; background: var(--track-line); border-radius: .1rem; margin: 0 .3rem; }
 .tabs .fold { margin-left: auto; }
@@ -166,7 +166,7 @@
 .card.m.go:hover { background: var(--obj-high); }
 /* a waiting card keeps its glow under the pointer: the hover rule above is more specific than .needs, so say it again */
 .card.m.needs.go:hover { background: color-mix(in oklab, var(--obj) 86%, var(--key-light)); }
-.card.m.go:focus-visible { outline: .22rem solid var(--key-light); outline-offset: .2rem; }
+.card.m.go:focus-visible { outline: .22rem solid var(--key-ink); outline-offset: .2rem; }
 .card.m .now { margin: .8rem 0 0; display: flex; align-items: center; gap: .5rem; min-width: 0; font: 500 1rem/1 var(--font-data); color: var(--text-body); }
 .card.m .now svg, .what svg { width: 1.1rem; height: 1.1rem; flex: none; }
 .obj { color: var(--text); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }

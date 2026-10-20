@@ -450,7 +450,7 @@ input.field, .pickbtn { min-height: var(--ctl-h); }
 
 /* ---------- acts on an account: the pin that undoes itself, and one menu for the rest ---------- */
 .act.pin { flex: none; }  /* the small button, named for what it does; the pin keeps the warm key */
-.act.pin svg { color: var(--key-light); }
+.act.pin svg { color: var(--key-ink); }
 .act.pin svg path:first-child { fill: currentColor; }
 .card .top .icon.more { width: 2rem; height: 2rem; margin-right: -.45rem; flex: none; }
 .card .top .icon.more svg { width: 1.05rem; height: 1.05rem; }
@@ -479,7 +479,7 @@ input.field, .pickbtn { min-height: var(--ctl-h); }
 .field[aria-invalid="true"] { border-color: var(--limit); }
 /* the account a sign-in landed on is already here: its card pulses once so he sees which */
 .card.pulse-once { animation: pulseOnce 900ms var(--e-out) 1; }
-@keyframes pulseOnce { 0%, 100% { outline: .22rem solid transparent; outline-offset: .5rem; } 25% { outline: .22rem solid var(--key-light); outline-offset: .3rem; } }
+@keyframes pulseOnce { 0%, 100% { outline: .22rem solid transparent; outline-offset: .5rem; } 25% { outline: .22rem solid var(--key-ink); outline-offset: .3rem; } }
 .card.leaving { opacity: 0; transform: scale(.97); transition: opacity 160ms var(--e-out), transform 160ms var(--e-out); }
 
 @media (max-width: 825px) {  /* 1100 px times --scale: a media query can't read the root size */

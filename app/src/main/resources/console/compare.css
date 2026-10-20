@@ -55,7 +55,7 @@
 .pg-chip .icon svg { width: .95rem; height: .95rem; }
 .pg-add { display: inline-flex; align-self: stretch; }  /* Add model stands as tall as the chips beside it */
 .pg-addbtn svg { width: .95rem; height: .95rem; }
-.pg-addbtn[aria-expanded="true"] { color: var(--text); border-color: var(--key-light); background: var(--track); }
+.pg-addbtn[aria-expanded="true"] { color: var(--text); border-color: var(--key-ink); background: var(--track); }
 /* the Add model popover: every head as a group, over the answers below the row; its groups wrap in columns */
 .pg-menu {
   position: absolute; left: .9rem; right: .9rem; top: calc(100% + .5rem); z-index: 20;
@@ -134,7 +134,7 @@
 .pg-wait .detail svg { width: 1rem; height: 1rem; }
 .pgp > footer { display: flex; align-items: center; flex-wrap: wrap; gap: 1.35rem; min-height: 3.2rem; box-sizing: border-box; padding: .85rem 1.2rem;  /* one height, with or without Request */ border-top: .12rem solid var(--track); font: 500 .9rem/1 var(--font-data); color: var(--text); font-variant-numeric: tabular-nums; }
 .pgp > footer em { font-style: normal; color: var(--text-mute); margin-right: .5rem; }
-.pgp > footer .act[aria-pressed="true"] { border-color: var(--key-light); color: var(--text); }
+.pgp > footer .act[aria-pressed="true"] { border-color: var(--key-ink); color: var(--text); }
 
 /* ---------- the request: Requests' own open request (reqview.css), in the grid under the pane it belongs to ---------- */
 .panes > .rqpane { display: flex; grid-column: 1 / -1; height: auto; overflow: visible; }

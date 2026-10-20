@@ -45,9 +45,6 @@ private const val PEER_TOKEN_BYTES = 16
 // why: helper.log holds counts and errors only; a megabyte is months of them, and one rolled generation is kept.
 private const val HELPER_LOG_MAX_BYTES = 1L shl 20
 
-private const val PEER_JSON = "peer.json"
-private const val WEBHOOK_SECRET = "webhook.secret"
-
 /** The files of one peer under `<state dir>/peers/<name>/`. */
 public class PeerStateFiles(stateDir: Path, name: String) {
     public val dir: Path = stateDir.resolve("peers").resolve(name)
@@ -255,7 +252,7 @@ public class PeerHelper(
 }
 
 /** The lock that makes a helper the only one for its peer, held for the helper's whole life. */
-public class HelperLock internal constructor(private val channel: FileChannel, private val lock: FileLock) {
+internal class HelperLock(private val channel: FileChannel, private val lock: FileLock) {
     public fun release() {
         Cancellables.discard(
             Cancellables.runCatchingCancellable {
@@ -292,7 +289,7 @@ public class RunningHelper internal constructor(
         private set
 
     @Volatile
-    private var seen: String? = fingerprint()
+    private var seen: String = fingerprint(config)
 
     /** The accept loop over this helper's socket, handing frames to [inbox]. */
     public fun server(
@@ -308,14 +305,12 @@ public class RunningHelper internal constructor(
         parts.log.flush()
     }
 
-    /** Whether peer.json or the webhook secret changed or went since the last look; a change re-reads [config]. */
+    /** Whether peer.json or the webhook secret changed or went since the last look; a change re-reads [config]. A
+     *  read that fails keeps the last answer, so a passing read error is never taken for a revoke. */
     public fun look(): PeerFileState {
-        val now = fingerprint() ?: return PeerFileState.GONE
-        if (now == seen) return PeerFileState.SAME
-        seen = now
-        val reread = PeerStore(setup.settingsDir).get(setup.name)
-        reread?.let { config = it }
-        return if (reread == null) PeerFileState.GONE else PeerFileState.CHANGED
+        val reread = Cancellables.runCatchingCancellable { PeerStore(setup.settingsDir).get(setup.name) }
+        reread.exceptionOrNull()?.let { parts.log.error("peer.json", it) }
+        return reread.fold(onSuccess = ::changeTo, onFailure = { PeerFileState.SAME })
     }
 
     /** Stops accepting, then removes the record, the key file, the socket and helper.json, and releases the lock. */
@@ -332,16 +327,19 @@ public class RunningHelper internal constructor(
         lock.release()
     }
 
-    /** peer.json's bytes and the webhook secret's modification time, or null once peer.json is gone. A look that
-     *  fails keeps the last answer, so a passing read error is never taken for a revoke. */
-    private fun fingerprint(): String? = Cancellables.runCatchingCancellable {
-        val peer = peerDir.resolve(PEER_JSON)
-        val secret = peerDir.resolve(WEBHOOK_SECRET)
-        if (!Files.isRegularFile(peer)) {
-            null
-        } else {
-            val secretAt = if (Files.isRegularFile(secret)) Files.getLastModifiedTime(secret).toMillis() else 0L
-            Files.readString(peer) + "\n" + secretAt
-        }
-    }.fold(onSuccess = { it }, onFailure = { seen })
+    private fun changeTo(reread: PeerConfig?): PeerFileState {
+        if (reread == null) return PeerFileState.GONE
+        val now = fingerprint(reread)
+        if (now == seen) return PeerFileState.SAME
+        seen = now
+        config = reread
+        return PeerFileState.CHANGED
+    }
+
+    /** The peer as peer.json says it, and the webhook secret's modification time, since a new secret keeps the name. */
+    private fun fingerprint(peer: PeerConfig): String {
+        val secret = peer.webhook?.secretFile?.let(peerDir::resolve)?.takeIf { Files.isRegularFile(it) }
+        val secretAt = Cancellables.runCatchingCancellable { secret?.let { Files.getLastModifiedTime(it).toMillis() } }
+        return "$peer\n" + secretAt.fold(onSuccess = { it ?: 0L }, onFailure = { 0L })
+    }
 }

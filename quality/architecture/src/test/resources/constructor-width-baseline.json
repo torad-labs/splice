@@ -27,6 +27,11 @@
       "params": 13,
       "subsystems": 0
     },
+    "features/sessions/src/main/kotlin/splice/sessions/peer/helper/PeerRegistryShapes.kt RegistryRecordFile": {
+      "params": 18,
+      "subsystems": 0,
+      "reason": "peer messaging package B, 2026-10-19: @Serializable mirror of Claude Code's ~/.claude/sessions/<pid>.json registry record, field by field (spec 2.2), the outside-format exception Marcos set for LongParameterList on 2026-10-09"
+    },
     "core/src/main/kotlin/splice/core/turn/Turn.kt TurnMeta": {
       "params": 19,
       "subsystems": 0

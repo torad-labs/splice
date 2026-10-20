@@ -13,8 +13,11 @@ import java.io.File
 import java.nio.file.Files
 import java.nio.file.Path
 
-/** The main class a helper runs as (spec 4.1). */
-internal const val HELPER_MAIN_CLASS = "splice.app.peer.PeerHelperMain"
+/** The jar's one process entry, Main.kt: LayerMapLawTest allows no second `main` in :app, so a helper starts there. */
+internal const val HELPER_MAIN_CLASS = "splice.app.MainKt"
+
+/** The command Main.kt hands to PeerHelperRun; a name no user command takes. */
+internal const val PEER_HELPER_COMMAND = "peer-helper"
 
 /** Where the daemon keeps peers: the settings and state folders, the registry folders, and the runtime folder. */
 internal data class PeerPlaces(
@@ -62,9 +65,10 @@ internal class HelperLaunch(
         val java = ProcessHandle.current().info().command().orElse("java")
         val registries = places.registryDirs.flatMap { listOf("--registry", it.toString()) }
         val runtime = places.runtimeDir?.let { listOf("--runtime", it.toString()) }.orEmpty()
-        return listOf(java, "-Xmx48m", "-XX:+UseSerialGC", "-cp", build.classPath(), HELPER_MAIN_CLASS, name) +
-            listOf("--settings", places.settingsDir.toString(), "--state", places.stateDir.toString()) +
-            registries + runtime + listOf("--build", build.current())
+        return listOf(java, "-Xmx48m", "-XX:+UseSerialGC", "-cp", build.classPath(), HELPER_MAIN_CLASS) +
+            listOf(PEER_HELPER_COMMAND, name) +
+            listOf(PEER_SETTINGS_FLAG, places.settingsDir.toString(), PEER_STATE_FLAG, places.stateDir.toString()) +
+            registries + runtime + listOf(PEER_BUILD_FLAG, build.current())
     }
 
     /** Its own systemd scope under a unit, so the unit's restart never reaches it; its own session elsewhere. */

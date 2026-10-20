@@ -12,8 +12,8 @@ package splice.app.peer
 
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.runInterruptible
-import splice.app.control.mount.PeerHelpers
-import splice.app.control.mount.RunningHelper
+import splice.app.control.peer.PeerHelpers
+import splice.app.control.peer.RunningHelper
 import splice.core.util.Cancellables
 import splice.core.util.EnvReader
 import splice.core.util.LogSafe
@@ -45,7 +45,7 @@ private const val MAX_BACKOFF_MS = 60_000L
 private const val MAX_SHIFT = 6
 
 // why: a JVM takes a few seconds to bind and write helper.json; a start younger than this is still starting, not dead.
-private const val START_GRACE_MS = 15_000L
+private const val HELPER_START_GRACE_MS = 15_000L
 
 // why: a helper alive this long after its start is healthy, and its next death counts from one again.
 private const val STABLE_MS = 60_000L
@@ -164,7 +164,7 @@ internal class PeerSupervisor(
             return
         }
         val last = restarts[name]
-        if (last != null && now - last.lastStart < START_GRACE_MS + backoff(last.failures)) return
+        if (last != null && now - last.lastStart < HELPER_START_GRACE_MS + backoff(last.failures)) return
         launch(name, failures = (last?.failures ?: 0) + 1)
     }
 

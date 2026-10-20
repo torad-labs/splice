@@ -40,7 +40,7 @@ private const val IDLE_CLOSE_MS = 10_000L
 private const val READ_CHUNK_BYTES = 8_192
 
 /** The byte that ends a frame: one JSON object per line. */
-private const val NEWLINE: Byte = 0x0A
+private const val FRAME_END: Byte = 0x0A
 
 /** How a connection's first line vouched for it. */
 private enum class ConnectionAuth { TOKEN, NONE, BAD }
@@ -121,7 +121,7 @@ public class PeerInboxServer(
         private suspend fun split(chunk: ByteBuffer): Boolean {
             while (chunk.hasRemaining()) {
                 val byte = chunk.get()
-                if (byte == NEWLINE) {
+                if (byte == FRAME_END) {
                     line(pending.toString(Charsets.UTF_8))
                     pending.reset()
                 } else {

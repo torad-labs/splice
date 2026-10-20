@@ -8,6 +8,8 @@ import splice.app.daemon.DaemonLock
 import splice.app.daemon.DaemonLockWait
 import splice.app.daemon.LockOutcome
 import splice.app.manager.ManagerHome
+import splice.app.peer.PEER_HELPER_COMMAND
+import splice.app.peer.PeerHelperRun
 import splice.app.provider.LocalRowBootFindings
 import splice.client.wrap.WrapGuard
 import splice.client.wrap.WrappedHead
@@ -59,6 +61,7 @@ public suspend fun main(args: Array<String>) {
     // ControlServer's, which is why this is a process-wide line and not a per-engine flag.
     when (args.firstOrNull()) {
         null, "daemon" -> DaemonProcess(args.toList()).runDaemon()
+        PEER_HELPER_COMMAND -> exitProcess(PeerHelperRun(args.drop(1)).run())
         "start" -> LifecycleWiring.startThroughUnit()?.let(::exitProcess) ?: DaemonProcess(args.toList()).runDaemon()
         else -> exitProcess(splice.app.cli.Cli().runCli(args))
     }

@@ -61,20 +61,4 @@ internal class TurnAccountHandoff(
         drive.quota = quota
         return true
     }
-
-    @Synchronized
-    fun move(drive: TurnDrive): Boolean {
-        if (committed) return false
-        val previous = drive.account ?: return false
-        refused += previous.account.label
-        return when (val next = pool.select(drive.meta.scope.sessionId, refused)) {
-            is Selection.Chosen -> {
-                previous.releaseCredentialProbe()
-                drive.account = next.account
-                drive.quota = quotas.forSession(drive.meta.scope.sessionId, next.account)
-                true
-            }
-            is Selection.Exhausted -> false
-        }
-    }
 }

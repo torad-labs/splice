@@ -200,7 +200,7 @@ class TurnEndingAccountingTest {
         try {
             fixture.hold(0)
             fixture.route.commit()
-            assertFalse(fixture.route.move(drive))
+            assertFalse(fixture.route.moveAwaitingEvidence(drive))
             assertSame(fixture.initial, drive.account)
         } finally {
             drive.account?.releaseCredentialProbe()
@@ -214,12 +214,15 @@ class TurnEndingAccountingTest {
         val drive = EndingRig("visited").drive(clientGone = false).also { it.account = fixture.initial }
         try {
             fixture.hold(0)
-            assertTrue(fixture.route.move(drive))
+            assertTrue(fixture.route.moveAwaitingEvidence(drive))
             assertEquals("two", drive.account?.account?.label)
             assertSame(fixture.quotas.getValue("two"), drive.quota)
             fixture.accounts[0].cooldown.acceptance()()
             fixture.hold(1)
-            assertFalse(fixture.route.move(drive), "the now-free first login was already refused in this request")
+            assertFalse(
+                fixture.route.moveAwaitingEvidence(drive),
+                "the now-free first login was already refused in this request",
+            )
         } finally {
             drive.account?.releaseCredentialProbe()
             drive.slot.release()

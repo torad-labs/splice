@@ -6,7 +6,6 @@
 // as Claude Code writes its own; the key file is 0600.
 package splice.sessions.peer.helper
 
-import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.Json
 import splice.core.GATEWAY_VERSION
 import splice.core.util.Cancellables
@@ -20,46 +19,8 @@ import java.nio.file.attribute.PosixFilePermissions
 import java.security.MessageDigest
 import java.util.HexFormat
 
-/** The peer feature Splice's helpers announce. */
-private const val PEER_FEATURE = "splice-peer-v1"
-
-/** What a helper's record says it is, in `kind` and `entrypoint`. */
-internal const val PEER_KIND = "splice-peer"
-
 /** The registry record, readable by every process of this user as Claude Code's own are. */
 private const val RECORD_MODE = "rw-r--r--"
-
-/** Who a helper is, as a registry record spells it. */
-public data class HelperIdentity(val pid: Long, val procStart: String?, val pidDomain: String?, val startedAt: Long)
-
-/** What a record names the peer as: its registered name, session id and working directory. */
-public data class RecordPeer(val name: String, val sessionId: String, val cwd: String)
-
-/** The registry record, Claude Code's registry file field by field. */
-@Serializable
-internal data class RegistryRecordFile(
-    val pid: Long,
-    val sessionId: String,
-    val cwd: String,
-    val startedAt: Long,
-    val procStart: String? = null,
-    val version: String,
-    val peerProtocol: Int = 1,
-    val peerFeatures: List<String> = listOf(PEER_FEATURE),
-    val kind: String = PEER_KIND,
-    val entrypoint: String = PEER_KIND,
-    val pidDomain: String? = null,
-    val messagingSocketPath: String,
-    val name: String,
-    val nameSource: String = "user",
-    val nameSince: Long,
-    val status: String = "idle",
-    val updatedAt: Long,
-    val statusUpdatedAt: Long,
-)
-
-@Serializable
-internal data class RegistryKeyFile(val peerToken: String, val procStart: String? = null, val pidDomain: String? = null)
 
 /** The record and key file names in each registry directory, and whether a record there is a given peer's. */
 public class PeerRegistryFiles(internal val directories: List<Path>) {

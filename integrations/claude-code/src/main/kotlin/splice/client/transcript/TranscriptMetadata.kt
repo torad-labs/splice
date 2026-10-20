@@ -27,8 +27,9 @@ internal object TranscriptMetadata {
 
     // A history scan reads every transcript's two windows on a cold start (27,422 files on Oct 20). Each read decoded
     // both windows to text and parsed every line in them to a JSON tree, about a quarter of the 08:32 CT boot's
-    // allocation. The windows now go into one buffer per thread, and the lines are walked from the end, so only the last
-    // line that can name a title and the last that can name a cwd are decoded and parsed: the answer the forward walk kept.
+    // allocation. The windows now go into one buffer per thread, and the lines are walked from the end, so only the
+    // last line that can name a title and the last that can name a cwd are decoded and parsed: the answer the forward
+    // walk kept.
     private val scratch = ThreadLocal.withInitial { ByteArray(2 * META_BYTES) }
     private val cwdKey = "\"cwd\"".toByteArray(StandardCharsets.UTF_8)
     private val titleType = "custom-title".toByteArray(StandardCharsets.UTF_8)

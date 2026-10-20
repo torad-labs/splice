@@ -20,7 +20,24 @@ internal class ClaudeNativeAccountWiring(
     private val places: ClaudeLoginPlacesSource,
     private val log: LogSink,
 ) {
-    private data class Entry(val key: String?, val auth: ClaudeNativeAuth, val account: WiredAccount)
+    private data class Entry(
+        val key: String?,
+        /** The account the place's credential proved when this entry was built; null when none was proved yet. */
+        val proved: String?,
+        val auth: ClaudeNativeAuth,
+        val account: WiredAccount,
+    ) {
+        /** Whether this entry still serves [view]: the credential it was built for is still the place's, or a token
+         *  refresh left the place on the same account (or on one not proved yet, which a refresh is for a moment).
+         *  Keeping the entry keeps the rate-limit hold the account is under, which a rebuilt entry starts without. A
+         *  place proved to be ANOTHER account gets a new entry, so a hold never carries onto a different login. */
+        fun serves(view: ClaudeLoginPlaceView): Boolean {
+            val now = view.identity.account?.uuid
+            val sameAccount = proved != null && (now == null || now == proved)
+            return key == auth.credentialKey || sameAccount
+        }
+    }
+
     private val held = ConcurrentHashMap<String, Entry>()
 
     fun accounts(head: String): List<WiredAccount> {
@@ -30,7 +47,7 @@ internal class ClaudeNativeAccountWiring(
         return views.map { view ->
             val entry = requireNotNull(
                 held.compute("$head:${view.id.wire}") { _, previous ->
-                    previous?.takeIf { it.key == it.auth.credentialKey } ?: account(view)
+                    previous?.takeIf { it.serves(view) } ?: account(view)
                 },
             )
             entry.account.copy(
@@ -71,6 +88,6 @@ internal class ClaudeNativeAccountWiring(
             credential = WiredAccountCredential(present = view.credential.present, refusal = view.credential.refusal),
             nativePlace = view.id,
         )
-        return Entry(auth.credentialKey, auth, wired)
+        return Entry(auth.credentialKey, view.identity.account?.uuid, auth, wired)
     }
 }

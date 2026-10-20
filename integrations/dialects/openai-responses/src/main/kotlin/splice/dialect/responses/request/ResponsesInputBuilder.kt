@@ -98,7 +98,7 @@ internal class ResponsesInputBuilder(
     /** A block kind splice does not enumerate (search results, server tool results from a session that began on
      *  another head) cannot ride this wire; it leaves an honest marker, so the model knows content was omitted. */
     private fun appendUnknown(sink: JsonArrayBuilder, block: UnknownBlock) {
-        sink.add(parts.roleText("user", block.omissionMarker(quirks.providerTag)))
+        sink.add(parts.roleText("user", tools.omission(block)))
     }
 
     private fun appendDocument(sink: JsonArrayBuilder, block: DocumentBlock) {

@@ -19,6 +19,7 @@ import splice.dialect.responses.ResponsesLiteQuirks
 import splice.dialect.responses.ResponsesQuirks
 import splice.dialect.responses.reasoning.InjectPriorReasoning
 import splice.dialect.responses.reasoning.RequestEncryptedReasoning
+import splice.dialect.responses.tools.ToolDeferralPolicy
 
 class ResponsesUnknownBlockTest {
 
@@ -54,6 +55,31 @@ class ResponsesUnknownBlockTest {
             .single { it["type"]?.jsonPrimitive?.content == "function_call_output" }["output"]?.jsonPrimitive?.content
         assertTrue(output.orEmpty().contains("web_search_result block omitted by claudex proxy")) { output.orEmpty() }
         assertFalse(output.orEmpty().contains("SECRET-RESULT-TITLE"))
+    }
+
+    @Test
+    fun `a tool_reference says its tool is loaded where the client's tool list is the model's`() {
+        val output = functionOutput(ResponsesQuirks(providerTag = "claudex", lite = ResponsesLiteQuirks()))
+        assertEquals("[tool loaded: SendMessage. It can be called directly.]", output)
+    }
+
+    @Test
+    fun `a head with a tool surface keeps the omission text for a tool_reference`() {
+        val quirks = ResponsesQuirks(providerTag = "claudex", lite = ResponsesLiteQuirks())
+            .withToolSurfaceToml(ToolDeferralPolicy())
+        assertTrue(functionOutput(quirks).contains("tool_reference block omitted by claudex proxy"))
+    }
+
+    private fun functionOutput(quirks: ResponsesQuirks): String {
+        val body = """{"model":"m","max_tokens":1,"messages":[
+            {"role":"assistant","content":[{"type":"tool_use","id":"t1","name":"ToolSearch","input":{}}]},
+            {"role":"user","content":[{"type":"tool_result","tool_use_id":"t1","content":[
+                {"type":"tool_reference","tool_name":"SendMessage"}]}]}]}"""
+        val parsed = AnthropicParse.parseAnthropicBody(body)
+        val built = ResponsesRequestBuilder(quirks).build(parsed.typed, parsed.raw, options()).req
+        return built.getValue("input").jsonArray.map { it.jsonObject }
+            .single { it["type"]?.jsonPrimitive?.content == "function_call_output" }["output"]?.jsonPrimitive?.content
+            .orEmpty()
     }
 
     private fun options() = BuildOptions(

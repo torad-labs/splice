@@ -1188,6 +1188,13 @@ origin.
 - **`splice login` names a Claude login by its label, never its email,** in every sentence it prints.
 
 ### Fixed
+- **A tool the client just loaded no longer reads as a failed load.** When Claude Code defers tools and the model asks
+  for one, the answer holds a `tool_reference` block. The chat dialect and the Responses heads without a tool surface
+  sent the model "tool_reference block omitted ... unsupported on this backend" in its place, and a model that read it
+  as a failure stopped calling any tool but Bash. They now send "[tool loaded: SendMessage. It can be called directly.]",
+  naming the tool from the block's own `tool_name` and only when that is a plain tool name. Heads with a tool surface
+  (Codex, Meta) keep the old text, and any other unknown block keeps its omission text. A resumed session that holds a
+  `tool_reference` pays one cold prompt cache on its next turn, because the bytes of that old history changed once.
 - **The Codex quota file says whose quota it is.** `codex-quota.json` held whichever account the head's sign-in named
   at its last reading, with nothing naming it, so a tool reading it could not tell one ChatGPT account from another.
   Each reading now carries `"account": {"ref": ..., "label": ...}`, with the same ref the Accounts page shows, and each

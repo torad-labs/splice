@@ -94,8 +94,15 @@ internal class ResponsesInputTools(
         )
     }
 
+    /** What an unknown block says in its place. A tool_reference says its tool is loaded, which is true only where
+     *  the client's tool list is the model's tool list. A head with a tool surface (codex, meta) holds some tools out
+     *  of the request and hands them over through its own tool_search, so a loaded tool is not always one the model
+     *  can call directly: that head's bytes stay as they were. */
+    internal fun omission(block: UnknownBlock): String =
+        block.omissionMarker(quirks.providerTag, toolsCallable = quirks.tools.toolSurface == null)
+
     internal fun appendToolResult(sink: JsonArrayBuilder, block: ToolResultBlock) {
-        val omitted = block.content.filterIsInstance<UnknownBlock>().map { it.omissionMarker(quirks.providerTag) }
+        val omitted = block.content.filterIsInstance<UnknownBlock>().map { omission(it) }
         val text = (listOf(block.content.filterIsInstance<TextBlock>().joinToString("") { it.text }) + omitted)
             .filter { it.isNotEmpty() }.joinToString("\n")
         sink.add(

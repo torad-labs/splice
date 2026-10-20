@@ -47,8 +47,27 @@ public sealed class ContentBlock {
     public data class UnknownBlock(val raw: JsonObject) : ContentBlock() {
         public val type: String get() = raw["type"]?.let { (it as? JsonPrimitive)?.content } ?: ""
 
-        /** What a dialect that cannot carry this block says in its place, so the model knows content was omitted. */
-        public fun omissionMarker(providerTag: String): String =
-            "[${type.ifEmpty { "unknown" }} block omitted by $providerTag proxy: unsupported on this backend]"
+        /** The tool a `tool_reference` block says is now loaded. The name comes only from the block's own
+         *  `tool_name`, and only when it is a plain tool-name token (letters, digits, `_`, `-`, 1 to
+         *  [TOOL_NAME_MAX_LENGTH] of them), so a result cannot put a sentence of its own into the marker.
+         *  Null for every other block, and for a reference whose name is missing or anything else. */
+        public val loadedTool: String?
+            get() = (raw[TOOL_NAME_FIELD] as? JsonPrimitive)
+                ?.takeIf { type == TOOL_REFERENCE_TYPE && it.isString }?.content
+                ?.takeIf { name -> name.length in 1..TOOL_NAME_MAX_LENGTH && name.all { it in TOOL_NAME_CHARS } }
+
+        /** What a dialect that cannot carry this block says in its place, so the model knows content was omitted.
+         *  A `tool_reference` is the exception when [toolsCallable] says the dialect forwards the client's tool list
+         *  as the model's own: the client meant "this tool's schema is now loaded", and the sentence says that, so
+         *  the model does not read a loaded tool as a failed load. Any other block, a reference with no usable
+         *  name, and a dialect that cannot promise the tool is in the list keep the omission text. */
+        public fun omissionMarker(providerTag: String, toolsCallable: Boolean = false): String =
+            loadedTool?.takeIf { toolsCallable }?.let { "[tool loaded: $it. It can be called directly.]" }
+                ?: "[${type.ifEmpty { "unknown" }} block omitted by $providerTag proxy: unsupported on this backend]"
     }
 }
+
+private const val TOOL_REFERENCE_TYPE = "tool_reference"
+private const val TOOL_NAME_FIELD = "tool_name"
+private const val TOOL_NAME_MAX_LENGTH = 64
+private const val TOOL_NAME_CHARS = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789_-"

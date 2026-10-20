@@ -55,9 +55,12 @@ internal class ChatWireMapper(private val quirks: ChatQuirks) {
         alternation.messages().forEach { add(it) }
     }
 
-    /** A block kind splice does not enumerate cannot ride this wire; it leaves a marker, never a silent drop. */
+    /** A block kind splice does not enumerate cannot ride this wire; it leaves a marker, never a silent drop.
+     *  A tool_reference says its tool is loaded: this wire sends the client's whole tool list whenever the head
+     *  takes tools at all, so there the sentence is true. */
     private fun unknownBlockMarkers(content: List<splice.core.wire.ContentBlock>): List<String> =
-        content.filterIsInstance<UnknownBlock>().map { it.omissionMarker(quirks.providerTag) }
+        content.filterIsInstance<UnknownBlock>()
+            .map { it.omissionMarker(quirks.providerTag, toolsCallable = quirks.capabilities.supportsTools) }
 
     // the content-block split is the mapping contract
     fun appendMessage(

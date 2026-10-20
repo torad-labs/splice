@@ -219,7 +219,8 @@ val treeLaws: List<String> = listOf(
 )
 
 val treeLawTest = tasks.register<Test>("treeLawTest") {
-    description = "The laws whose verdict any tracked file can change: ${treeLaws.joinToString { it.substringAfterLast('.') }}."
+    val lawNames = treeLaws.joinToString { it.substringAfterLast('.') }
+    description = "The laws whose verdict any tracked file can change: $lawNames."
     group = "verification"
     testClassesDirs = sourceSets.test.get().output.classesDirs
     classpath = sourceSets.test.get().runtimeClasspath

@@ -1195,6 +1195,19 @@ origin.
 - **`splice login` names a Claude login by its label, never its email,** in every sentence it prints.
 
 ### Fixed
+- **A Claude account label the pool cannot take is refused at sign-in.** The sign-in accepted capital letters and
+  labels up to 64 characters, but the pool takes lowercase letters, digits, `.`, `-` and `_`, up to 48. A login
+  filed as `Work` landed a folder the pool then threw on, and every request on that head failed until the folder
+  was removed by hand. The sign-in now refuses the label with the rule in words. A folder like that already on disk
+  is ignored, and named once in the daemon log.
+- **Removing or renaming an OAuth account checks the label it is given.** `DELETE` and `PATCH` on
+  `/api/auth/<head>/accounts/<label>` refuse a label that is not a valid account label. A label such as `../x` could
+  reach a `.json` file outside the head's account pool.
+- **An `http://` upstream with no port is checked on port 80.** The silent-stream check dialed 443, was refused, and
+  ended a model that was still thinking on a live connection.
+- **The device sign-in shows the provider's error code, not its reply.** A refused start, a server error or a
+  declined code prints the HTTP status and the OAuth error code, as the browser sign-in already did. A sign-in link
+  opens in the browser only when it is an `http` or `https` link.
 - **A restart no longer wipes the session totals of a head that was idle.** The status line's per-session figures are
   kept in a file that is written at every stop. A head that had served no turn since it started wrote that file empty,
   so each restart, an auto-update's included, erased the saved totals of every idle head. The file is now read before

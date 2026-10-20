@@ -190,6 +190,11 @@ class Sys {
 
     fun accept(listener: Int): Int = accept(listener, null, null).let { if (it < 0) it else nonblocking(it) }
 
+    /** Gives back a descriptor that was accepted and is not wanted. */
+    fun release(fd: Int) {
+        close(fd)
+    }
+
     /** A nonblocking connect to 127.0.0.1:[port]; the loop learns the outcome when it is writable. */
     fun connectTcp(port: Int): Int = memScoped {
         val fd = nonblocking(socket(AF_INET, SOCK_STREAM, 0))

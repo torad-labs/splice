@@ -8,10 +8,21 @@ import splice.hub.io.Bytes
 data class Request(val method: String, val path: String, val headers: Map<String, String>, val body: String)
 
 /** A session's connection. One request at a time: the next is read only once this one is answered, or once it has
- *  become a stream, which then holds the connection until it closes. */
-class HttpConn(fd: Int, private val sys: Sys, private val onRequest: (HttpConn, Request) -> Unit) : Watched(fd) {
+ *  become a stream, which then holds the connection until it closes. A request whose head does not pass [admits] is
+ *  answered 401 and the connection closed before its body is read, so only a caller holding the bearer can make the
+ *  front buffer a body. A request not whole within [REQUEST_TIMEOUT_MS] of the connection waiting for it is closed. */
+class HttpConn(
+    fd: Int,
+    private val sys: Sys,
+    private val clock: Clock,
+    private val admits: (Map<String, String>) -> Boolean,
+    private val onRequest: (HttpConn, Request) -> Unit,
+) : Watched(fd) {
     val inbox = Bytes()
     private val outbox = Bytes()
+
+    /** The monotonic time by which the request this connection is waiting for must have arrived whole. */
+    private var requestBy = clock.now() + REQUEST_TIMEOUT_MS
     var busy = false
         private set
     var streaming = false
@@ -41,6 +52,10 @@ class HttpConn(fd: Int, private val sys: Sys, private val onRequest: (HttpConn, 
 
     override fun events(): Int = (if (busy || draining) 0 else IN) or (if (outbox.size > 0) OUT else 0)
 
+    override fun deadline(): Long? = if (idle) requestBy else null
+
+    override fun due() = close()
+
     override fun ready(revents: Int) {
         if (revents and OUT != 0) {
             if (!sys.flush(fd, outbox)) return close()
@@ -61,11 +76,11 @@ class HttpConn(fd: Int, private val sys: Sys, private val onRequest: (HttpConn, 
 
     private fun doneStopping(): Boolean = closing && quiet() && !streaming
 
-    private fun idle(): Boolean = !busy && !draining && !streaming
+    private val idle: Boolean get() = !busy && !draining && !streaming
 
     /** Reads the next request once its head and body are in; a head too large or malformed closes the connection. */
     fun parse() {
-        val end = if (idle()) inbox.indexOf(CRLF2) else return
+        val end = if (idle) inbox.indexOf(CRLF2) else return
         if (end < 0) {
             if (inbox.size > MAX_HEADERS) close()
             return
@@ -75,6 +90,12 @@ class HttpConn(fd: Int, private val sys: Sys, private val onRequest: (HttpConn, 
         val start = end + CRLF2.size
         when {
             !head.valid() || length > MAX_BODY -> close()
+            !admits(head.headers) -> {
+                // no bearer: 401 and close, the body unread, so it never reaches the buffer
+                closing = true
+                inbox.drop(inbox.size)
+                reply(UNAUTHORIZED)
+            }
             inbox.size >= start + length -> {
                 val body = inbox.text(start, start + length)
                 inbox.drop(start + length)
@@ -91,6 +112,7 @@ class HttpConn(fd: Int, private val sys: Sys, private val onRequest: (HttpConn, 
         outbox.append(head(status, bytes.size, extra))
         outbox.append(bytes)
         busy = false
+        requestBy = clock.now() + REQUEST_TIMEOUT_MS
         when {
             !sys.flush(fd, outbox) -> close()
             closing && outbox.size == 0 -> close()
@@ -130,7 +152,8 @@ class HttpConn(fd: Int, private val sys: Sys, private val onRequest: (HttpConn, 
     }
 }
 
-/** A request's head: the request line, then headers with their names lower-cased. */
+/** A request's head: the request line, then headers with their names lower-cased. A Content-Length that is not a plain
+ *  non-negative number makes the head invalid: the connection closes rather than guess where the body ends. */
 class Head(text: String) {
     private val lines = text.split("\r\n")
     private val parts = lines.first().split(" ")
@@ -139,24 +162,30 @@ class Head(text: String) {
         if (colon <= 0) null else line.substring(0, colon).trim().lowercase() to line.substring(colon + 1).trim()
     }.toMap()
 
-    fun valid(): Boolean = parts.size >= 2
+    /** What Content-Length declares: 0 when absent, -1 when present and not a non-negative number that fits an Int. */
+    private val declared: Int = headers["content-length"]?.let { it.toIntOrNull()?.takeIf { n -> n >= 0 } ?: -1 } ?: 0
+
+    fun valid(): Boolean = parts.size >= 2 && declared >= 0
 
     fun method(): String = parts[0]
 
     fun path(): String = parts[1].substringBefore('?')
 
-    fun length(): Int = headers["content-length"]?.toIntOrNull() ?: 0
+    fun length(): Int = declared.coerceAtLeast(0)
 }
 
-/** A listening socket: each connection it accepts becomes an [HttpConn]. */
+/** A listening socket: each connection it accepts becomes an [HttpConn], up to [MAX_CONNECTIONS] at once; one more is
+ *  accepted and dropped at once, so a flood of idle connections cannot grow without bound. */
 class HttpListener(
     fd: Int,
     private val sys: Sys,
     private val loop: Loop,
+    private val clock: Clock,
+    private val admits: (Map<String, String>) -> Boolean,
     private val handler: (HttpConn, Request) -> Unit,
 ) :
     Watched(fd) {
-    fun adopt(conn: Int): HttpConn = HttpConn(conn, sys, handler).also(loop::add)
+    fun adopt(conn: Int): HttpConn = HttpConn(conn, sys, clock, admits, handler).also(loop::add)
 
     var accepting = true
 
@@ -166,7 +195,7 @@ class HttpListener(
         while (true) {
             val conn = sys.accept(fd)
             if (conn < 0) return
-            loop.add(HttpConn(conn, sys, handler))
+            if (loop.all().count { it is HttpConn } >= MAX_CONNECTIONS) sys.release(conn) else adopt(conn)
         }
     }
 }
@@ -286,6 +315,14 @@ private val CRLF2 = "\r\n\r\n".encodeToByteArray()
 private val NL = "\n".encodeToByteArray()
 private const val MAX_HEADERS = 64 * 1024
 private const val MAX_BODY = 64 * 1024 * 1024
+
+// Far above what the sessions on one machine hold open (a connection per session, and one more for a stream), so it
+// stops only a flood of idle connections from growing without bound.
+private const val MAX_CONNECTIONS = 256
+
+// Two minutes: far past the few seconds a client keeps an idle connection for, so a client is always the first to close
+// one it is done with and never meets a connection this front closed under its next request.
+private const val REQUEST_TIMEOUT_MS = 120_000L
 private const val HEX = 16
 const val OK = 200
 const val ACCEPTED = 202

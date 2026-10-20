@@ -87,7 +87,9 @@ class Front(
         val hub = Hub(files, daemon, Links(sys, loop), timers, clock)
         hub.restore()
         val upgrade = Upgrade(sys, files, args)
-        val listen = { fd: Int -> HttpListener(sys.nonblocking(fd), sys, loop, hub::handle).also(loop::add) }
+        val listen = { fd: Int ->
+            HttpListener(sys.nonblocking(fd), sys, loop, clock, files::admits, hub::handle).also(loop::add)
+        }
         val listener = resume?.let { upgrade.resume(it, listen, hub) } ?: fresh(sys, files, listen) ?: return NO_SOCKET
         hub.keepAlive()
         loop.run(Lifecycle(clock, loop, files, hub, upgrade, listener)::done)
@@ -257,6 +259,10 @@ class HubFiles(private val dir: String) {
     private val access = McpAccessRead(dir)
 
     fun accessKey(): String? = access.key()
+
+    /** Whether a request head carries the bearer sessions present: asked before a body is read, and again with it. */
+    fun admits(headers: Map<String, String>): Boolean =
+        accessKey()?.let { headers["authorization"] == "Bearer $it" } == true
 
     fun mgmtKey(): String = read("${dir.substringBeforeLast('/')}/mgmt-key")?.trim().orEmpty()
 

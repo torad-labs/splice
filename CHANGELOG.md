@@ -57,6 +57,7 @@
 - **Every usage-cost dollar figure is an API-rate estimate.** The status line shows the bare figure, `$0.85`, with no label, a
   budget's warning says "an estimated $2.50 in API cost", and a subscription head bills no token at
   all.
+- **The console wears the Splice brand.** The bar shows the new splice mark, the tab shows a favicon that follows the theme, every colour comes from one tokens file, and the light theme now holds 4.5:1 text contrast on its Paper wall, with darker provider colours.
 
 ### Upgrading from 0.3.x
 0.3.x has no `splice upgrade`. Re-run the installer pinned to this release:

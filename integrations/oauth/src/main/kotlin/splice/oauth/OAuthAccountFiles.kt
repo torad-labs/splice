@@ -251,6 +251,9 @@ public class OAuthAccountFiles(private val json: Json = Json { ignoreUnknownKeys
      *  labeled file under [poolDir], there is nothing here to delete for it. */
     public fun remove(kind: AuthKind.OAuth, primaryFile: Path, label: String): Boolean {
         if (label == PRIMARY) refuse("the primary account cannot be removed; delete its credential file directly")
+        // The label comes from a URL path: it names a file under the pool and nothing else, so it passes the one
+        // label rule before it reaches the filesystem (a label such as ../../x once resolved outside the pool).
+        validation.requireLabel(label)
         val dir = poolDir(kind, primaryFile)
         val existed = Files.deleteIfExists(dir.resolve("$label$JSON_SUFFIX"))
         Files.deleteIfExists(dir.resolve("$label-quota$JSON_SUFFIX"))
@@ -264,6 +267,9 @@ public class OAuthAccountFiles(private val json: Json = Json { ignoreUnknownKeys
      *  [writes]) for that re-embedding and its label-syntax check, rather than re-deriving them. */
     public fun relabel(kind: AuthKind.OAuth, primaryFile: Path, label: String, newLabel: String): Path {
         if (label == PRIMARY) refuse("the primary account cannot be relabeled")
+        // Both names come from a request and name files under the pool, so both pass the one label rule first.
+        validation.requireLabel(label)
+        validation.requireLabel(newLabel)
         val dir = poolDir(kind, primaryFile)
         val credential = dir.resolve("$label$JSON_SUFFIX")
         if (!Files.isRegularFile(credential, LinkOption.NOFOLLOW_LINKS)) {

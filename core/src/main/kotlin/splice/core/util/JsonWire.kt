@@ -23,6 +23,9 @@ internal const val UTF8_BMP_WIDTH = 3
 // why: a supplementary code point occupies four UTF-8 bytes rather than two UTF-16 code units.
 internal const val UTF8_SUPPLEMENTARY_WIDTH = 4
 
+// why: one SSE frame or a small object fits in 256 characters; a longer text grows the scratch toward one chunk.
+private const val STRING_WIRE_FIRST = 256
+
 // The pinned library owns escaping. Borrow its exact ASCII escape spellings, never a second escape algorithm.
 private val WIRE_ESCAPES = Array(UTF8_ASCII_CEILING) { code ->
     val character = code.toChar().toString()
@@ -239,15 +242,19 @@ public object JsonWire {
     /** Borrow large spans; the JDK join allocates the final string with its exact size and character width. */
     private class StringWire : WireText {
         private val parts = StringJoiner("")
+        private var joined = false
 
-        // Match the streaming scratch bound while batching punctuation and small scalar spans.
-        private val chunk = StringBuilder(WIRE_BUFFER_BYTES)
+        // Batches punctuation and small scalar spans up to the streaming scratch bound. It starts small and grows: most
+        // calls are one SSE frame of a few hundred bytes, and a full-size start cost every frame 8 KiB (68 of 638 MB/s
+        // sampled on the live daemon, Oct 20).
+        private val chunk = StringBuilder(STRING_WIRE_FIRST)
 
         override fun raw(text: String, start: Int, end: Int) {
             val length = end - start
             if (length >= WIRE_BUFFER_BYTES) {
                 flush()
                 parts.add(text.substring(start, end))
+                joined = true
             } else {
                 if (chunk.length + length > WIRE_BUFFER_BYTES) flush()
                 chunk.append(text, start, end)
@@ -259,7 +266,9 @@ public object JsonWire {
             chunk.append(character)
         }
 
+        /** A text that never filled the scratch is the scratch itself, with no join. */
         fun finish(): String {
+            if (!joined) return chunk.toString()
             flush()
             return parts.toString()
         }
@@ -267,6 +276,7 @@ public object JsonWire {
         private fun flush() {
             if (chunk.isNotEmpty()) {
                 parts.add(chunk.toString())
+                joined = true
                 chunk.setLength(0)
             }
         }

@@ -16,7 +16,6 @@ import splice.upstream.Provider
 import splice.upstream.RetryNotice
 import splice.upstream.RoundResult
 import splice.upstream.TurnSignals
-import splice.upstream.credentials.WARM_LOGIN_WAIT_MS
 import splice.upstream.retry.WatchdogFired
 import splice.upstream.transport.AuthRefreshObserver
 import splice.upstream.transport.PostContext
@@ -110,8 +109,9 @@ internal class SseRoundPost(
                 limits = PostLimits(
                     rateLimitCooldown = account?.cooldown,
                     remainingTurnWait = drive.remainingTurnWait,
-                    // A warm session waits a rate limit out on its login rather than rebuild its cache elsewhere.
-                    warmLoginWaitMs = WARM_LOGIN_WAIT_MS.takeIf { selection?.warm == true },
+                    // A warm session waits a rate limit out on its login rather than rebuild its cache elsewhere, in
+                    // one budget the turn shares with admission and its other posts.
+                    warmWait = selection?.warmWait,
                 ),
             ).also { context ->
                 context.providerAnswerObserver = answers

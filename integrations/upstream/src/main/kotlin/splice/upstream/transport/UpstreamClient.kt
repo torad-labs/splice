@@ -389,7 +389,7 @@ public class UpstreamClient(
             ),
         )
         state.refreshedOnce = plan.refreshedOnce
-        state.countWait(outcome, plan)
+        state.countWait(ctx, outcome, plan)
         return when (plan.decision) {
             RetryDecision.RETRY -> LoopStep.Continue // refresh succeeded — no attempt spent
             RetryDecision.BACKOFF -> applyBackoff(ctx, plan, state, t0)

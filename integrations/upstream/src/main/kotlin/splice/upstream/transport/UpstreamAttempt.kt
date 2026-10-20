@@ -29,6 +29,7 @@ import splice.upstream.StreamRead
 import splice.upstream.failure.VendorRefusal
 import splice.upstream.retry.RETRY_AFTER_GIVE_UP_MS
 import splice.upstream.retry.RateLimitCooldown
+import splice.upstream.retry.WarmLoginWait
 import splice.upstream.sse.WireObserver
 
 /** Remaining whole-turn wait budget at the instant retry policy asks. */
@@ -124,9 +125,10 @@ public data class PostLimits(
     val rateLimitCooldown: RateLimitCooldown? = null,
     /** Null preserves the legacy per-post deadline for callers without an outer turn budget. */
     val remainingTurnWait: RemainingTurnWait? = null,
-    /** A warm session's total wait for rate limits on its own login before the turn moves (Marcos, Oct 19); null
-     *  for a cold session, which waits at most [RETRY_AFTER_GIVE_UP_MS] per 429 as before. */
-    val warmLoginWaitMs: Long? = null,
+    /** A warm turn's total wait for rate limits on its own login before it moves (Marcos, Oct 19), one budget shared
+     *  with admission and with every other post of the turn; null for a cold turn, which waits at most
+     *  [RETRY_AFTER_GIVE_UP_MS] per 429 as before. */
+    val warmWait: WarmLoginWait? = null,
 )
 
 /** What listens to a post without changing it: the turn's timing row, the wire recorder and the refresh observer. */

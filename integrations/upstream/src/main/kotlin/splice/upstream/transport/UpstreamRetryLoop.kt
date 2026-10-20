@@ -41,26 +41,23 @@ internal class RetryState(var cooldown: RateLimitCooldown, val t0: Long, val max
         if (cooldown.planHold.live() == null && holdMs in 1..minOf(warmWaitLeftMs(ctx), turnLeftMs - 1)) {
             ctx.onRetry("warm session: waiting ${holdMs}ms for this login's rate-limit hold rather than move")
             ctx.timedBackoff { pacing.pause(0, holdMs) }
-            warmWaitedMs += holdMs
+            ctx.limits.warmWait?.spend(holdMs)
         }
         val held = cooldown.heldFailure(ctx.onRetry) ?: return null
         return LoopStep.Done(if (ctx.pooled) UpstreamPost.Refused(held) else UpstreamPost.Ended(held))
     }
 
-    /** How long this post has waited rate limits out on its login for a warm session. */
-    var warmWaitedMs: Long = 0L
-
-    /** What is left of a warm session's wait on its login; 0 for a cold session. */
-    fun warmWaitLeftMs(ctx: PostContext): Long =
-        ctx.limits.warmLoginWaitMs?.let { (it - warmWaitedMs).coerceAtLeast(0L) } ?: 0L
+    /** What is left of the turn's one wait on a warm session's login, whatever admission and the turn's earlier posts
+     *  already spent of it; 0 for a cold session. */
+    fun warmWaitLeftMs(ctx: PostContext): Long = ctx.limits.warmWait?.leftMs() ?: 0L
 
     /** The longest one 429's pushback is waited out on this login: the 15s ceiling, or a warm session's wait left. */
     fun sameLoginWaitMs(ctx: PostContext): Long = maxOf(warmWaitLeftMs(ctx), RETRY_AFTER_GIVE_UP_MS)
 
     /** A 429 backoff spends the warm session's wait on its login. */
-    fun countWait(failed: RetryOutcome.Failed, plan: RetryPlan) {
+    fun countWait(ctx: PostContext, failed: RetryOutcome.Failed, plan: RetryPlan) {
         if (failed.status == HttpStatus.TOO_MANY_REQUESTS && plan.decision == RetryDecision.BACKOFF) {
-            warmWaitedMs += plan.minDelayMs
+            ctx.limits.warmWait?.spend(plan.minDelayMs)
         }
     }
 

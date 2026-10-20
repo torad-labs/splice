@@ -233,14 +233,17 @@ public class AccountPool(
         }
         headSwitch?.let(headLastSwitch::set)
         val warm = caller.keepsCache(previous, moved, at)
-        val selection = Selection.Chosen(AccountSelection(chosen.account, moved, chosen.lease, headSwitch, warm))
+        // The clock follows the login: a session that stays keeps its stamp, one that moves starts with none, and a
+        // turn stamps it only by ending cleanly (AccountSelection.markTurnSucceeded), never by being selected.
+        val served = caller.stampFor(previous, moved, now)
+        val selection = AccountSelection(chosen.account, moved, chosen.lease, headSwitch, warm, served)
         val session = SessionAccount(
             chosen.account.label,
             moved ?: previous?.lastSwitch,
             caller.remembered(previous),
-            at,
+            served,
         )
-        return selection to session
+        return Selection.Chosen(selection) to session
     }
 
     /** Safe state for operator surfaces; null names head-wide state, never another session's choice. */
@@ -250,6 +253,8 @@ public class AccountPool(
         val current = liveMembership
         val accounts = current.accounts
         accounts.forEach { it.refreshCredentialEvidence() }
+        val pinLabel = pins.forSession(sessionId)
+        val stay = CallerLogin(null, sessionId, accounts).previewStay(session, current.byLabel, pinLabel, at)
         return AccountPoolView(
             selectedLabel = session?.label?.takeIf(current.byLabel::containsKey),
             accounts = accounts.map { account -> accountView(account, session?.label, at) },
@@ -260,8 +265,9 @@ public class AccountPool(
             // Where the command moves when the account it would use next runs out: the same pick over the order
             // [nextTargetLabel] walks, with that account left out. Here, not a function: the class is at the ceiling.
             followingLabel = AccountAvailability.upNext(
-                candidates(session?.label, current, pins.forSession(sessionId)),
+                candidates(session?.label, current, pinLabel),
                 at,
+                stay,
             ).getOrNull(1)?.label,
         )
     }
@@ -325,11 +331,15 @@ public class AccountPool(
      *  target by the real selector order"). Walks the exact same [candidates] order [choose] does,
      *  testing only [available]: [acquireIfAvailable] takes a probe lease, which this must not. */
     public fun nextTargetLabel(sessionId: String? = null): String? {
-        val previousLabel = synchronized(sessions) { sessionId?.let { sessions[it]?.label } }
+        val previous = synchronized(sessions) { sessionId?.let { sessions[it] } }
         val current = liveMembership
         current.accounts.forEach { it.refreshCredentialEvidence() }
-        val order = candidates(previousLabel, current, pins.forSession(sessionId))
-        return AccountAvailability.upNext(order, now()).firstOrNull()?.label
+        val pinLabel = pins.forSession(sessionId)
+        val at = now()
+        // A warm session keeps its login through a short hold, so the preview names it first, as [choose] does.
+        val stay = CallerLogin(null, sessionId, current.accounts).previewStay(previous, current.byLabel, pinLabel, at)
+        val order = candidates(previous?.label, current, pinLabel)
+        return AccountAvailability.upNext(order, at, stay).firstOrNull()?.label
     }
 
     /** Session listings read every listed session through ONE membership read. A property, not a function: the class
@@ -483,12 +493,31 @@ public class AccountPool(
             preference: List<PoolAccount>,
             at: Long,
         ): PoolAccount? = previous?.label?.takeIf { session != null }?.let(byLabel::get)
-            ?.let { AccountAvailability.Warm.stays(it, previous.servedAt, preference, at) }
+            ?.let { AccountAvailability.Warm.stays(it, stampOf(previous)?.at, preference, at) }
+
+        /** [stays] as an operator surface previews it: no caller login is presented there, so only a pin can pull the
+         *  session elsewhere. */
+        fun previewStay(
+            previous: SessionAccount?,
+            byLabel: Map<String, PoolAccount>,
+            pinLabel: String?,
+            at: Long,
+        ): PoolAccount? = stays(previous, byLabel, listOfNotNull(pinLabel?.let(byLabel::get)), at)
 
         /** Whether this turn stays where the session's prompt cache may be warm: a session that did not move, last
-         *  served within the hour. */
+         *  served within the hour on the account it is on. */
         fun keepsCache(previous: SessionAccount?, moved: AccountSwitch?, at: Long): Boolean =
-            session != null && moved == null && AccountAvailability.Warm.recent(previous?.servedAt, at)
+            session != null && moved == null && AccountAvailability.Warm.recent(stampOf(previous)?.at, at)
+
+        /** The stamp this selection carries: the session's own while it stays on the same login and account, a new
+         *  one, which nothing has served yet, once it moves. */
+        fun stampFor(previous: SessionAccount?, moved: AccountSwitch?, now: WallClock): ServedStamp =
+            stampOf(previous)?.takeIf { moved == null } ?: ServedStamp(now)
+
+        /** The session's served stamp, or null once a different provider account has signed in at that place: the
+         *  prompt cache lived with the account that is gone, so neither its hour nor its stamp carry over. */
+        private fun stampOf(previous: SessionAccount?): ServedStamp? =
+            previous?.served?.takeUnless { mark?.replaces(previous.caller) == true }
 
         /** Why a move went to the caller's own login: the person signed in to another account. Null for any other
          *  move, and for a pin, which names itself. */
@@ -499,21 +528,23 @@ public class AccountPool(
     /** A caller's login: the pool account its token matches, and the provider account behind it where one is proved.
      *  A token refresh keeps the account; a new sign-in in the same place changes it (ClaudeNativeLoginResumeTest). */
     private data class CallerMark(val label: String, val account: String?) {
-        fun differs(prior: CallerMark?): Boolean {
-            if (prior == null || prior.label != label) return true
-            val proved = account != null && prior.account != null
-            return proved && account != prior.account
-        }
+        fun differs(prior: CallerMark?): Boolean = prior == null || prior.label != label || replaces(prior)
+
+        /** A different provider account now signs in at the place [prior] named: the same pool account, both
+         *  accounts proved, and they are not the same. */
+        fun replaces(prior: CallerMark?): Boolean =
+            prior != null && prior.label == label && account != null && prior.account != null &&
+                account != prior.account
 
         /** A token whose account is not proved yet (a refresh not yet read) keeps the account the login had. */
         fun keeping(prior: CallerMark?): CallerMark = prior?.takeIf { account == null && it.label == label } ?: this
     }
 
-    /** [servedAt] is when the session was last given this login, which says whether its prompt cache may be warm. */
+    /** [served] says when this login last served the session cleanly, so whether its prompt cache may be warm. */
     private data class SessionAccount(
         val label: String,
         val lastSwitch: AccountSwitch?,
         val caller: CallerMark? = null,
-        val servedAt: Long? = null,
+        val served: ServedStamp? = null,
     )
 }

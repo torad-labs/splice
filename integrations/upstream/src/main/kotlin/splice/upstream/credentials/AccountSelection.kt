@@ -10,6 +10,7 @@ import splice.core.util.LocalTimeText
 import splice.core.util.WallClock
 import splice.upstream.CredentialHeaders
 import splice.upstream.retry.RateLimitCooldown
+import splice.upstream.retry.WarmLoginWait
 import java.time.Instant
 import java.util.concurrent.atomic.AtomicReference
 
@@ -135,12 +136,18 @@ public class AccountSelection internal constructor(
     lease: AccountCredentialEligibility.Lease,
     /** The head's own switch this choice made, once per change of the login it serves; [switch] is this session's. */
     public val headSwitch: AccountSwitch? = null,
-    /** The session stays on the login it was served on within the hour, so its prompt cache may be warm there:
-     *  admission and the retry loop wait a short rate limit out on this login, up to [WARM_LOGIN_WAIT_MS], rather
-     *  than move the turn and rebuild the cache elsewhere. */
+    /** The session stays on the login it was last served on within the hour, so its prompt cache may be warm there:
+     *  admission and the retry loop wait a short rate limit out on this login, up to [WARM_LOGIN_WAIT_MS] in all
+     *  ([warmWait]), rather than move the turn and rebuild the cache elsewhere. */
     public val warm: Boolean = false,
+    /** The session's served clock on this login, stamped when a turn ends cleanly on it ([markTurnSucceeded]). */
+    private val served: ServedStamp? = null,
 ) {
     private val credentialLease = AtomicReference(lease)
+
+    /** This turn's one wait for rate limits on its own login, spent by admission and by every post of the turn;
+     *  null for a cold turn, which moves to a free login instead of waiting. */
+    public val warmWait: WarmLoginWait? = if (warm) WarmLoginWait(WARM_LOGIN_WAIT_MS) else null
 
     public val cacheCold: Boolean get() = switch != null
 
@@ -159,9 +166,11 @@ public class AccountSelection internal constructor(
         account.releaseCredentialProbe(credentialLease.get())
     }
 
-    /** A clean terminal proves this credential usable and resets its recovery series. */
+    /** A clean terminal proves this credential usable, resets its recovery series, and renews the session's warm hour:
+     *  this turn served the session on this login, which refreshed its prompt cache there. */
     public fun markTurnSucceeded() {
         credentialLease.set(account.markTurnSucceeded(credentialLease.get()))
+        served?.stamp()
     }
 
     /** A persisted reactive refresh updates this turn's credential revision and resets recovery. */

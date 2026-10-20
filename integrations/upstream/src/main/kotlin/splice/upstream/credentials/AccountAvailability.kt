@@ -2,15 +2,20 @@
 package splice.upstream.credentials
 
 import splice.core.usage.QuotaWindow
+import splice.upstream.retry.MAX_RATE_LIMIT_COOLDOWN_MS
 import java.util.concurrent.TimeUnit
 
 // why: a quota window reports usedPercent on a 0-100 scale, so 100.0 is an exhausted window.
 private const val FULLY_USED = 100.0
 
-/** The longest a warm session waits out rate limits on its own login before it moves (Marcos, Oct 19: "switching mid
- *  session when the cache is hot can cost a lot"). A move rebuilds the conversation's whole cache on the next login,
- *  which costs far more than two minutes of waiting. A plan limit or a needed sign-in moves it at once. */
-public const val WARM_LOGIN_WAIT_MS: Long = 120_000L
+/** The longest a warm session waits, in all, out rate limits on its own login before it moves (Marcos, Oct 19:
+ *  "switching mid session when the cache is hot can cost a lot"). A move rebuilds the conversation's whole cache on the
+ *  next login, which costs far more than two minutes of waiting. A plan limit or a needed sign-in moves it at once.
+ *
+ *  It IS the ceiling every rate-limit hold is clamped to ([MAX_RATE_LIMIT_COOLDOWN_MS]), by reference and not by an
+ *  equal number: a warm session can wait out any such hold, so a hold alone never disqualifies a stay. Lowering this
+ *  below that ceiling would make a long hold move the session, and [Warm.stays] would then need that check back. */
+public const val WARM_LOGIN_WAIT_MS: Long = MAX_RATE_LIMIT_COOLDOWN_MS
 
 /** Pure per-account availability/quota math — every function here takes the [PoolAccount] (and
  *  [at]) it needs and touches no [AccountPool] state, so V4-132 split it out rather than push
@@ -44,12 +49,13 @@ internal object AccountAvailability {
         account.credentialStatus(at).selectable && account.cooldown.unavailableForMs() <= 0L
 
     /** The login a turn takes from [order], then the one it moves to when that one runs out: the first free login, or
-     *  when every one is held, the one whose hold ends soonest. At most two; empty when none could serve. */
-    fun upNext(order: List<PoolAccount>, at: Long): List<PoolAccount> {
+     *  when every one is held, the one whose hold ends soonest. At most two; empty when none could serve. A warm
+     *  session's [stay] comes first, as it does when the turn is selected ([Warm.stays]). */
+    fun upNext(order: List<PoolAccount>, at: Long, stay: PoolAccount? = null): List<PoolAccount> {
         val pick = { from: List<PoolAccount> ->
             preferredFree(from, at).firstOrNull() ?: nearestHeld(from, at).firstOrNull()
         }
-        val next = pick(order) ?: return emptyList()
+        val next = stay ?: pick(order) ?: return emptyList()
         return listOfNotNull(next, pick(order.filterNot { it.label == next.label }))
     }
 
@@ -119,15 +125,14 @@ internal object AccountAvailability {
         fun recent(servedAt: Long?, at: Long): Boolean = servedAt != null && at - servedAt in 0 until WARM_CACHE_MS
 
         /** [account] when the session keeps it: served within the hour, no pin or changed caller login elsewhere in
-         *  [preference], and the login serves again once a short wait ends (signed in, plan room, and its rate-limit
-         *  hold over within [WARM_LOGIN_WAIT_MS]). The reset a 429 body names is left out: it is often the window's
-         *  reset stamped on a burst limit that clears in seconds (RateLimitCooldown, V4-61). */
+         *  [preference], and the login serves again once a short wait ends (signed in and with plan room). A rate-limit
+         *  hold needs no check of its own: it is clamped to [WARM_LOGIN_WAIT_MS] by construction, so the wait always
+         *  fits. The reset a 429 body names is left out: it is often the window's reset stamped on a burst limit that
+         *  clears in seconds (RateLimitCooldown, V4-61). */
         fun stays(account: PoolAccount, servedAt: Long?, preference: List<PoolAccount>, at: Long): PoolAccount? {
-            val cooldown = account.cooldown
-            val signedIn = account.credentialStatus(at).selectable && cooldown.unavailableForMs() <= 0L
-            val short = planRoom(account, at) && cooldown.remainingMs() <= WARM_LOGIN_WAIT_MS
+            val signedIn = account.credentialStatus(at).selectable && account.cooldown.unavailableForMs() <= 0L
             val chosen = preference.all { it.label == account.label }
-            return account.takeIf { recent(servedAt, at) && chosen && signedIn && short }
+            return account.takeIf { recent(servedAt, at) && chosen && signedIn && planRoom(account, at) }
         }
     }
 

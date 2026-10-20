@@ -20,8 +20,8 @@ import splice.upstream.Provider
 import splice.upstream.credentials.AccountResetText
 import splice.upstream.credentials.AccountSelection
 import splice.upstream.credentials.Selection
-import splice.upstream.credentials.WARM_LOGIN_WAIT_MS
 import splice.upstream.retry.RateLimitCooldown
+import splice.upstream.retry.WarmLoginWait
 
 /** The longest a turn waits at admission for a gateway hold to clear before the client is told to retry. */
 internal const val MAX_HOLD_WAIT_MS = 30_000L
@@ -70,34 +70,45 @@ internal class CredentialHoldAdmission(
         cooldown: RateLimitCooldown,
     ): Outcome.Allowed? {
         var waitedMs = 0L
+        // A warm session spends the one wait its turn shares with every post of it; a cold one a fixed budget here.
+        val warm = account?.warmWait
         while (true) {
             val remainingMs = cooldown.remainingMs()
             if (remainingMs <= 0L) return Outcome.Allowed(account)
-            freeAccount(prepared, account, cooldown)?.let { next ->
-                account?.releaseCredentialProbe()
-                return Outcome.Allowed(next)
-            }
             // A short gateway hold is waited out here, so the client never sees a 429 for seconds. A warm session
             // waits longer: moving it rebuilds its whole cache on another login (Marcos, Oct 19).
-            val budgetMs = if (account?.warm == true) WARM_LOGIN_WAIT_MS else MAX_HOLD_WAIT_MS
-            if (!waitable(cooldown, waitedMs + remainingMs, budgetMs)) return null
+            val canWait = waitable(cooldown, warm, waitedMs, remainingMs)
+            // A cold session jumps to a free login at once. A warm one stays through the hold, and moves only when it
+            // cannot wait it out (a spent plan window, or the turn's wait is used up), as it would anywhere else.
+            if (warm == null || !canWait) {
+                freeAccount(prepared, account, cooldown)?.let { next ->
+                    account?.releaseCredentialProbe()
+                    return Outcome.Allowed(next)
+                }
+            }
+            if (!canWait) return null
             deps.seams.waiter.wait(remainingMs)
             waitedMs += remainingMs
+            warm?.spend(remainingMs)
         }
     }
 
     /** A spent plan window is refused with its reset, and a wait past the bound is the client's to retry. A relayed
-     *  vendor reply waits like any other short hold. */
-    private fun waitable(cooldown: RateLimitCooldown, totalMs: Long, budgetMs: Long): Boolean =
-        cooldown.planHold.live() == null && totalMs <= budgetMs
+     *  vendor reply waits like any other short hold. A warm turn's bound is what is left of its one wait. */
+    private fun waitable(
+        cooldown: RateLimitCooldown,
+        warm: WarmLoginWait?,
+        waitedMs: Long,
+        remainingMs: Long,
+    ): Boolean = cooldown.planHold.live() == null &&
+        (if (warm != null) remainingMs <= warm.leftMs() else waitedMs + remainingMs <= MAX_HOLD_WAIT_MS)
 
     private fun freeAccount(
         prepared: Preparation.Ready,
         account: AccountSelection?,
         cooldown: RateLimitCooldown,
     ): AccountSelection? {
-        // A warm session stays on its login through the hold; only a cold one jumps to a free login.
-        if (account == null || account.warm) return null
+        if (account == null) return null
         val pool = deps.quotaBundle.activePool
             ?.takeIf { provider.relayRateLimitReplies && cooldown.rateLimitReply != null } ?: return null
         return when (val next = pool.select(prepared.built.meta.scope.sessionId, setOf(account.account.label))) {

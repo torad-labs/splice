@@ -20,10 +20,14 @@
 //
 //   hub pin <sha>  once hostshield-lead's desk has run the kept pair: copies its two binaries into tools/release/mcp-hub/
 //                  and writes their hashes into tools/release/mcp-hub.sha256 in one move, so the committed bytes and
-//                  their pins are one commit and cannot disagree. A runner checks out exactly the pair the pins name.
+//                  their pins are one commit and cannot disagree. It also records the git tree id of integrations/mcp-hub
+//                  at <sha> in tools/release/mcp-hub.tree. A runner checks out exactly the pair the pins name.
 //   hub place      checks the committed pair against the pins and puts it where :app:stageRelease reads the hub
 //                  binaries, for a stage that excludes the two link tasks (release.yml; beta.ts and the 5B runbook step
-//                  do the same by hand from the kept pair).
+//                  do the same by hand from the kept pair). It then compares integrations/mcp-hub at HEAD with the
+//                  recorded tree id and prints one warning line when they differ. That is a warning and never a
+//                  refusal: a hub change after the pin ships the older hub until someone builds, qualifies and pins
+//                  a new pair, and this is how the release says so (splice-lead, Oct 20).
 //
 // `hub <sha>` qualifies nothing and starts nothing. The qualification is hostshield-lead's: only after its desk has run
 // the kept pair is `hub pin` run, and only then does lead-install.sh install the pair and reload a front that is
@@ -33,8 +37,8 @@ import { join } from "node:path";
 
 export const usage = [
   "hub <sha>                            build the MCP hub pair at <sha> and keep it under ../artifacts/mcp-hub/<sha>",
-  "hub pin <sha>                        after hostshield-lead's qualification: commit the kept pair beside its pins",
-  "hub place                            check the committed hub pair against the pins and put it where stageRelease reads it",
+  "hub pin <sha>                        after hostshield-lead's qualification: commit the kept pair beside its pins and source tree id",
+  "hub place                            check the committed hub pair against the pins, put it where stageRelease reads it, warn if the hub sources moved",
 ].join("\n  ");
 
 const TREE = "/tmp/splice-hub-build";
@@ -42,6 +46,8 @@ const HUB_KEPT = "../artifacts/mcp-hub";
 const HUB_BUILT = "integrations/mcp-hub/build/bin/linuxX64";
 const PINS = "tools/release/mcp-hub.sha256";
 const PAIR = "tools/release/mcp-hub";
+const SOURCES = "integrations/mcp-hub";
+const SOURCE_TREE = "tools/release/mcp-hub.tree";
 const HUB = ["holder", "front"] as const;
 
 class Refusal extends Error {}
@@ -111,6 +117,8 @@ function pin(ref: string, repoRoot: string): number {
     const from = join(kept, `splice-mcp-${b}`);
     if (!existsSync(from)) throw new Refusal(`release hub pin: ${from} is not kept; \`bun tools/release hub ${short}\` builds it`);
   }
+  // Read before anything is written, so a sha without the hub folder leaves nothing half pinned.
+  const tree = run(["git", "rev-parse", `${short}:${SOURCES}`], repoRoot);
   mkdirSync(join(repoRoot, PAIR), { recursive: true });
   const lines = HUB.map((b) => {
     const to = join(repoRoot, PAIR, `splice-mcp-${b}`);
@@ -119,9 +127,30 @@ function pin(ref: string, repoRoot: string): number {
     return `${sha256(to)}  splice-mcp-${b}`;
   });
   writeFileSync(join(repoRoot, PINS), `${lines.join("\n")}\n`);
-  console.log(`pinned ${short}: commit ${PAIR}/ and ${PINS} together`);
+  writeFileSync(join(repoRoot, SOURCE_TREE), `${tree}  ${SOURCES}  # built at ${short}\n`);
+  console.log(`pinned ${short}: commit ${PAIR}/, ${PINS} and ${SOURCE_TREE} together`);
   for (const line of lines) console.log(line);
   return 0;
+}
+
+/**
+ * One line when [SOURCES] at HEAD is not the tree the committed pair was built from, else null. A missing record or an
+ * unreadable HEAD is also one line: either way the pair cannot be compared with the hub sources.
+ */
+function drift(repoRoot: string): string | null {
+  const file = join(repoRoot, SOURCE_TREE);
+  const recorded = existsSync(file) ? readFileSync(file, "utf8").trim().split(/\s+/)[0] : undefined;
+  if (!recorded) return `${SOURCE_TREE} is missing, so nothing says which hub sources the pair was built from`;
+  let now: string;
+  try {
+    now = run(["git", "rev-parse", `HEAD:${SOURCES}`], repoRoot);
+  } catch (error) {
+    if (error instanceof Refusal) return `${SOURCES} cannot be read at HEAD, so the pair cannot be compared with the hub sources`;
+    throw error;
+  }
+  if (now === recorded) return null;
+  return `${SOURCES} is not the tree the pair was built from (${recorded.slice(0, 9)} recorded, ${now.slice(0, 9)} at HEAD): ` +
+    "the hub that ships is the older one; build, qualify and pin a new pair if the change matters";
 }
 
 function place(repoRoot: string): number {
@@ -142,6 +171,9 @@ function place(repoRoot: string): number {
     copyFileSync(file, join(dir, `splice-mcp-${b}.kexe`));
   }
   console.log(`placed the qualified hub pair under ${HUB_BUILT}`);
+  const moved = drift(repoRoot);
+  // A warning, never a refusal; on a runner it becomes an annotation on the run.
+  if (moved) console.error(`${process.env.GITHUB_ACTIONS === "true" ? "::warning::" : ""}release hub place: warning: ${moved}`);
   return 0;
 }
 

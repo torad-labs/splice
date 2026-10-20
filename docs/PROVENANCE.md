@@ -107,6 +107,20 @@ launder or extinguish the inherited upstream material: code descended from
 author's copyright, and the repo LICENSE cannot grant rights over what it did not
 originate. Original work and inherited work coexist; both notices apply.
 
+## The MCP hub binaries in a release
+
+The release assets `splice-mcp-holder` and `splice-mcp-front` are the committed qualified bytes, not runner-built.
+Kotlin/Native writes each source file's absolute path into a binary, so no two builds hash alike, and the hub is
+shipped only as the exact pair that was qualified on a maintainer's machine. That pair is committed in
+`tools/release/mcp-hub/` beside its SHA-256 pins (`tools/release/mcp-hub.sha256`) and the git tree id of
+`integrations/mcp-hub` it was built from (`tools/release/mcp-hub.tree`). The release workflow checks the committed pair
+against the pins, stages it without linking the hub, and checks the staged files against the pins again. A build
+provenance attestation over `sha256sums.txt` therefore says these two files were in the released commit and shipped by
+that workflow; it does not say the runner compiled them from source. They carry the build machine's source paths, and
+a rebuild of the recorded sources is a different artifact that would need its own qualification. When
+`integrations/mcp-hub` at the released commit is not the recorded tree, the workflow prints a warning and ships the
+older hub.
+
 ## PORT-OF Kotlin inventory (SELF-inheritance @ pre-public-port-baseline)
 
 51 Kotlin files carry `PORT-OF` headers citing this repo's own `server/src`

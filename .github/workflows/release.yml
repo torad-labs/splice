@@ -126,7 +126,8 @@ jobs:
         # Kotlin/Native writes each source file's absolute path into a binary, so a hub built on this runner can never
         # hash to tools/release/mcp-hub.sha256. The bytes hostshield-lead qualified are committed in
         # tools/release/mcp-hub/ beside their pins; this puts them where :app:stageRelease reads the hub binaries and
-        # stops the release here if either one does not hash to its pin.
+        # stops the release here if either one does not hash to its pin. It also warns, without stopping, when
+        # integrations/mcp-hub is no longer the tree the pair was built from (tools/release/mcp-hub.tree).
         run: bun tools/release hub place
 
       - name: stage exact release bundle

@@ -92,6 +92,8 @@ public class TeamsRoutes(
     }
 
     public fun list(): JsonReply = withStore { store ->
+        // a teams.json that does not parse is said, never listed as no teams
+        store.unreadable()?.let { return refuse(HttpStatusCode.InternalServerError, it) }
         JsonReply(HttpStatusCode.OK, teamsJson(store.teams()))
     }
 
@@ -131,6 +133,7 @@ public class TeamsRoutes(
     public fun restore(id: String): JsonReply = write { store -> store.archive(id, archived = false) }
 
     public fun economics(id: String): JsonReply = withStore { store ->
+        store.unreadable()?.let { return refuse(HttpStatusCode.InternalServerError, it) }
         val team = store.team(id) ?: return refuse(HttpStatusCode.NotFound, "no such team: $id")
         JsonReply(HttpStatusCode.OK, TeamEconomics(team, heads, clock()).json().toString())
     }

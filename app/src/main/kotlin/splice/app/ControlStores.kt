@@ -17,7 +17,7 @@ internal class ControlStores(
     probeScope: LifecycleScope,
 ) {
     /** V4-131: the daemon's ONE team store: the routes edit it and every head's slot resolver reads it. */
-    val teams = ConsoleWiring.teamStore(daemon.statePaths)
+    val teams = ConsoleWiring.teamStore(daemon.statePaths, daemon.log)
 
     /** V4-133 (FEATURES.md §5/§6): the daemon's ONE budget and alert-settings stores. */
     val budgets = ConsoleWiring.budgetStore(daemon.statePaths)

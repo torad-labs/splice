@@ -43,7 +43,10 @@ import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.Json
 import splice.core.util.Cancellables
+import splice.core.util.LogSafe
+import splice.core.util.LogSink
 import splice.core.util.PathProbe
+import splice.core.util.SafeFailureText
 import splice.core.util.SecureFile
 import splice.core.util.WallClock
 import java.nio.file.Files
@@ -140,6 +143,8 @@ public class TeamStore(
     private val file: Path,
     private val clock: WallClock = WallClock(System::currentTimeMillis),
     private val repoProbe: RepoProbe = realRepoProbe,
+    /** Where a file that does not parse is said, once for each time the file changed. */
+    private val log: LogSink = LogSink { },
 ) {
     private val json = Json {
         ignoreUnknownKeys = true
@@ -148,11 +153,19 @@ public class TeamStore(
     }
     private var cached: List<Team> = emptyList()
     private var cachedStamp: Long? = null
+
+    /** The modification time of the unparseable file last said, so one typo is one log line and not one per read. */
+    private var saidStamp: Long? = null
     private val rules = TeamRules()
 
-    /** Every team, archived included, in the order they were created. */
+    /** Every team, archived included, in the order they were created. A file that does not parse reads as no teams
+     *  here, and says so in the log; [unreadable] is what a route asks to tell that from a store with none. */
     @Synchronized
     public fun teams(): List<Team> = load().getOrElse { emptyList() }
+
+    /** Why the teams cannot be read, in the sentence a write refuses with, or null when the file parses or is absent */
+    @Synchronized
+    public fun unreadable(): String? = load().exceptionOrNull()?.let { unparseable }
 
     public fun team(id: String): Team? = teams().firstOrNull { it.id == id }
 
@@ -259,8 +272,10 @@ public class TeamStore(
     }
 
     /** The current teams, or a refusal when the file exists and does not parse (see the header). */
-    private fun writable(): List<Team> =
-        load().getOrElse { throw TeamRefusal("$file does not parse; fix or move it first") }
+    private fun writable(): List<Team> = load().getOrElse { throw TeamRefusal(unparseable) }
+
+    /** The sentence every refusal and every reader says for a file that does not parse. */
+    private val unparseable: String get() = "$file does not parse; fix or move it first"
 
     private fun write(teams: List<Team>) {
         if (Files.exists(file)) {
@@ -268,11 +283,11 @@ public class TeamStore(
         }
         SecureFile.writeAtomic0600(file, json.encodeToString(TeamsDocument.serializer(), TeamsDocument(teams)))
         cached = teams
-        cachedStamp = stamp()
+        cachedStamp = stamp
     }
 
     private fun load(): Result<List<Team>> {
-        val now = stamp()
+        val now = stamp
         if (now == null) return Result.success(emptyList())
         if (now == cachedStamp) return Result.success(cached)
         return Cancellables.runCatchingCancellable {
@@ -280,10 +295,17 @@ public class TeamStore(
         }.onSuccess {
             cached = it
             cachedStamp = now
+        }.onFailure {
+            if (saidStamp != now) {
+                saidStamp = now
+                log(
+                    "[teams] ${LogSafe.str(unparseable)} (${LogSafe.str(SafeFailureText.render(it))}); " +
+                        "until then no team is listed\n",
+                )
+            }
         }
     }
 
-    private fun stamp(): Long? =
-        // No file yet is the empty store, not a failure.
-        PathProbe.modified(file)?.toMillis()
+    /** The file's modification time now. No file yet is the empty store, not a failure. */
+    private val stamp: Long? get() = PathProbe.modified(file)?.toMillis()
 }

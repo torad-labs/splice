@@ -95,7 +95,8 @@ internal object ConsoleWiring {
     }
 
     /** V4-131: the daemon's ONE team store, `teams.json` under the state dir. */
-    internal fun teamStore(statePaths: StatePaths): TeamStore = TeamStore(statePaths.stateDir.resolve(TEAMS_FILE))
+    internal fun teamStore(statePaths: StatePaths, log: LogSink = LogSink { }): TeamStore =
+        TeamStore(statePaths.stateDir.resolve(TEAMS_FILE), log = log)
 
     /** V4-133: the daemon's ONE budget store, `budgets.json` under the state dir. */
     internal fun budgetStore(statePaths: StatePaths): BudgetStore =

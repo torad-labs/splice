@@ -118,7 +118,7 @@ public class PeerNoteSocket(
         val raw = toAddress.takeIf { it.startsWith(ADDRESS_SCHEME) }?.removePrefix(ADDRESS_SCHEME)
         val socket = raw?.let(PathProbe::spelled)?.takeIf { it.isAbsolute }
         if (socket == null || unwritable(sender) != null) return false
-        val token = raw?.takeUnless { status == DeliveryStatus.DENIED }?.let(keys::tokenByAddress)
+        val token = raw.takeUnless { status == DeliveryStatus.DENIED }?.let(keys::tokenByAddress)
         val frame = token?.let(PeerWire::encodeAuth).orEmpty() +
             PeerWire.encodeReceipt(newId.next(), origMsgId, status, detail, sender)
         return write(socket, frame) == NoteOutcome.Submitted

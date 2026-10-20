@@ -109,7 +109,7 @@ internal class UpstreamRequest(
             }
         } finally {
             token?.let { bridge?.release(it) }
-            bodyToken?.let { bodies?.release(it) }
+            bodyToken?.let { bodies.release(it) }
         }
     }
 

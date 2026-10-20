@@ -1,7 +1,7 @@
 // NEW: Oct 19, 2026 — the heap discipline splice-launch passes as flags, applied by the daemon itself, so a daemon
 // started any other way (a plain `java -jar splice.jar daemon`, a user's own unit, SPLICE_JVM_OPTS, which replaces the
-// launcher's defaults) still hands back the heap it stops using (Marcos: "a user of splice should not be required to
-// have or use hostshield to be able to not have splice exploding on their machine, the fix needs to exist in Splice").
+// launcher's defaults) still hands back the heap it stops using: splice keeps its own memory in check on any host,
+// with no host tool required (Marcos, Oct 19, 2026: the fix needs to exist in Splice).
 package splice.app.daemon
 
 import splice.core.util.LogSink

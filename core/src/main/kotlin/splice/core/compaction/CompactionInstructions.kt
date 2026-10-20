@@ -188,20 +188,21 @@ public class CompactionInstructions(
         val file = rule.file ?: return rule.text
         // An unreadable mtime only misses the cache; the read below logs its own failure.
         val modified = PathProbe.modified(file)
-        synchronized(files) {
-            val cached = files[file]
-            if (cached != null && cached.modified == modified) return cached.text
-            val text = Cancellables.runCatchingCancellable { readFile(file) }
-                .onFailure { failure ->
-                    log(
-                        "[compaction] $file unreadable (${SafeFailureText.render(failure)}); " +
-                            "custom instructions disabled for ${rule.source}\n",
-                    )
-                }
-                .getOrNull()
-            files[file] = FileText(modified, text)
-            return text
-        }
+        val readable = Files.isReadable(file)
+        val cached = synchronized(files) { files[file] }
+        val cachedText = cached?.takeIf { it.modified == modified }?.text
+        if (cachedText != null && readable) return cachedText
+
+        val text = Cancellables.runCatchingCancellable { readFile(file) }
+            .onFailure { failure ->
+                log(
+                    "[compaction] $file unreadable (${SafeFailureText.render(failure)}); " +
+                        "custom instructions disabled for ${rule.source}\n",
+                )
+            }
+            .getOrNull()
+        synchronized(files) { files[file] = FileText(modified, text) }
+        return text
     }
 
     /** The physical path when it exists (Claude Code records `getcwd`, which resolves symlinks), else

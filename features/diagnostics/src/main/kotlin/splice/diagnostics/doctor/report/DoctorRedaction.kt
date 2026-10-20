@@ -16,17 +16,19 @@ import splice.core.util.Cancellables
 import splice.core.util.SafeFailureText
 import splice.diagnostics.doctor.doctorLinks
 import java.net.URI
+import java.nio.file.InvalidPathException
 import java.nio.file.Path
 
 /** Paths the report may name: splice's own config, install and cache dirs (its state and log dirs
  *  arrive from StatePaths, never as a literal), Claude Code's, the local runtimes', the system's
  *  binaries and config, and the daemon's own URL routes. Everything else (a session cwd, a project
  *  checkout, a scratch directory, a private file) is masked whole. */
-private val ALLOWED_PATH_PREFIXES = listOf(
+private val ALLOWED_FILESYSTEM_PREFIXES = listOf(
     "~/.config/splice", "~/.local/share/splice", "~/.local/bin", "~/.cache/splice",
     "~/${UserHome.CLAUDE_DIR}", "~/.lmstudio", "~/.ollama",
-    "/usr", "/etc", "/api", "/health", "/v1", "/launch", "/statusline",
+    "/usr", "/etc",
 )
+private val ALLOWED_ROUTE_PREFIXES = listOf("/api", "/health", "/v1", "/launch", "/statusline")
 
 /** What [DoctorRedaction.host] reports for a URL that does not parse — the outcome the parse
  *  failure is classified into, since the URL itself is never echoed. */
@@ -34,11 +36,16 @@ private const val UNPARSABLE_HOST = "<unparsable>"
 
 internal class DoctorRedaction(private val home: Path, spliceDirs: List<Path> = emptyList()) {
 
-    private val allowedPrefixes = ALLOWED_PATH_PREFIXES + spliceDirs.map { it.toString().replace(home.toString(), "~") }
+    private val allowedPathPrefixes: List<Path> =
+        ALLOWED_FILESYSTEM_PREFIXES.map { Path.of(it).normalize() } +
+            spliceDirs.map {
+                Path.of(it.toString().replace(home.toString(), "~")).normalize()
+            }
 
     // The public pages doctor's own fixes link to, as the path pass sees them: everything after the
     // scheme's colon. Only these exact links pass; any other URL keeps its host-and-path mask.
     private val links = doctorLinks.map { it.substringAfter(':') }.toSet()
+    private val allowedExactPaths = links + setOf("/", "~")
 
     private val jwt = Regex("eyJ[A-Za-z0-9_-]{5,}\\.[A-Za-z0-9_-]{5,}\\.[A-Za-z0-9_-]{5,}")
     private val bearer = Regex("(?i)\\bbearer\\s+\\S+")
@@ -74,9 +81,16 @@ internal class DoctorRedaction(private val home: Path, spliceDirs: List<Path> = 
         .replace(opaque, "<redacted:token>")
         .replace(pathToken) { m -> if (allowedPath(m.groupValues[1])) m.value else "<redacted:path>" }
 
-    private fun allowedPath(path: String): Boolean =
-        path == "/" || path == "~" || allowedPrefixes.any { path == it || path.startsWith("$it/") } ||
-            path in links
+    private fun allowedPath(path: String): Boolean = when {
+        path in allowedExactPaths -> true
+        ALLOWED_ROUTE_PREFIXES.any { path == it || path.startsWith("$it/") } -> true
+        else -> try {
+            val normalized = Path.of(path).normalize()
+            allowedPathPrefixes.any { normalized.startsWith(it) }
+        } catch (_: InvalidPathException) {
+            false
+        }
+    }
 
     /** A rendered failure (SafeFailureText already drops messages that quote bytes; the path a
      *  FileSystemException names still goes through the path allowlist here). */

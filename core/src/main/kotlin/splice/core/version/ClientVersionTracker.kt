@@ -8,6 +8,7 @@ import splice.core.client.ClientVersion
 import splice.core.client.ClientVersionParser
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.ConcurrentLinkedQueue
+import java.util.concurrent.atomic.AtomicReference
 
 /** Sessions remembered at once; a daemon that lives for months sees far more session ids than this,
  *  and the oldest are the ones whose warning was long since shown or moot (review 2026-09-14). */
@@ -18,17 +19,15 @@ public class ClientVersionTracker(
     testedVersion: String = TESTED_CLAUDE_CODE,
     private val parser: ClientVersionParser = ClientVersionParser(),
 ) {
+    private data class SeenClient(val version: ClientVersion, val userAgent: String?)
+
     private val tested = requireNotNull(parser.parse(testedVersion)) {
         "tested Claude Code version must be dotted numeric: $testedVersion"
     }
     private val observed = ConcurrentHashMap<String, ClientVersion>()
+    private val newest = AtomicReference<SeenClient?>()
 
-    // why: the whole User-Agent of the newest Claude Code seen, kept because Anthropic's usage endpoint buckets
-    // its rate limit by User-Agent and answers a caller that sends none with a 429 that does not recover
-    // (anthropics/claude-code#30930). The probe sends what splice SAW, never a string it assembled, so a head
-    // that has seen no client sends none.
-    @Volatile
-    private var newestUserAgent: String? = null
+    // The whole observed User-Agent is retained because Anthropic's usage endpoint buckets its rate limit by it.
     private val statuslineWarned: MutableSet<String> = ConcurrentHashMap.newKeySet()
     private val arrival = ConcurrentLinkedQueue<String>()
 
@@ -47,16 +46,17 @@ public class ClientVersionTracker(
         }
     }
 
-    /** Keeps [userAgent] when its Claude Code is at least as new as every version seen so far, so a straggler on
-     *  an older client never takes the identity back from the newest one. */
+    /** Publishes the full agent with its version, independently of bounded session retention. */
     private fun remember(version: ClientVersion, userAgent: String?) {
-        if (version >= (observed.values.maxOrNull() ?: version)) newestUserAgent = userAgent
+        newest.updateAndGet { current ->
+            if (current == null || version >= current.version) SeenClient(version, userAgent) else current
+        }
     }
 
     /** The whole User-Agent of the newest Claude Code this daemon has seen send a turn, or null before any has.
      *  Only a User-Agent whose Claude Code version parsed is ever remembered, so no other tool's identity can
      *  become the one splice presents. */
-    public fun newestClaudeCodeUserAgent(): String? = newestUserAgent
+    public fun newestClaudeCodeUserAgent(): String? = newest.get()?.userAgent
 
     /** How many sessions are remembered right now (bounded by [MAX_SESSIONS]). */
     public fun remembered(): Int = observed.size

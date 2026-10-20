@@ -16,7 +16,7 @@ import java.nio.file.Files
 import java.nio.file.Path
 import java.security.MessageDigest
 
-private const val NEWLINE: Byte = '\n'.code.toByte()
+internal const val TRANSCRIPT_NEWLINE: Byte = '\n'.code.toByte()
 
 // why: bytes read per call, 64 KiB: a transcript of any size streams through one buffer this big, never whole
 private const val ROW_SCAN_BLOCK_BYTES = 1 shl 16
@@ -81,7 +81,7 @@ internal object TranscriptLines {
                 digest.update(chunk, 0, count)
                 var start = 0
                 for (at in 0 until count) {
-                    if (chunk[at] == NEWLINE) {
+                    if (chunk[at] == TRANSCRIPT_NEWLINE) {
                         row.append(chunk, start, at - start)
                         onRow(row)
                         row.clear()

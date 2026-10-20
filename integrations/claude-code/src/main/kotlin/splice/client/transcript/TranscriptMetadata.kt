@@ -18,8 +18,6 @@ private const val META_BYTES = 64 * 1024
 // why: one session title stays legible in a row and never dumps a pasted prompt.
 private const val TITLE_CHARS = 120
 
-private const val NEWLINE = '\n'.code.toByte()
-
 /** Only a bounded beginning and tail are inspected for a title and cwd, never the full transcript. */
 internal object TranscriptMetadata {
     private val json = Json
@@ -53,7 +51,7 @@ internal object TranscriptMetadata {
         val first = readWindow(file, 0L, minOf(size, META_BYTES.toLong()).toInt(), bytes, 0)
         if (size <= META_BYTES) return lines(bytes, 0, first, keepLast = true)
         val tail = readWindow(file, size - META_BYTES, META_BYTES, bytes, META_BYTES)
-        val tailStart = (META_BYTES until META_BYTES + tail).firstOrNull { bytes[it] == NEWLINE }?.plus(1)
+        val tailStart = (META_BYTES until META_BYTES + tail).firstOrNull { bytes[it] == TRANSCRIPT_NEWLINE }?.plus(1)
         return lines(bytes, 0, first, keepLast = false) +
             (tailStart?.let { lines(bytes, it, META_BYTES + tail - it, keepLast = true) } ?: emptyList())
     }
@@ -63,7 +61,7 @@ internal object TranscriptMetadata {
         val found = ArrayList<LineRange>()
         var start = from
         for (at in from until from + length) {
-            if (bytes[at] == NEWLINE) {
+            if (bytes[at] == TRANSCRIPT_NEWLINE) {
                 found += LineRange(start, at)
                 start = at + 1
             }

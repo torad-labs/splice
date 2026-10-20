@@ -1,6 +1,6 @@
 <div align="center">
 
-# splice
+<h1><picture><source media="(prefers-color-scheme: dark)" srcset="docs/assets/splice-horizontal-night.svg"><img src="docs/assets/splice-horizontal-day.svg" alt="splice" height="72"></picture></h1>
 
 **Use [Claude Code](https://docs.anthropic.com/en/docs/claude-code) with the models and subscriptions you already use.**
 

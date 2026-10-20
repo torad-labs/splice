@@ -42,7 +42,7 @@ import { resolveJdk21 } from "../lib/jdk.ts";
 import { type Layout, layout } from "../lib/repo.ts";
 import { acquireRunSentinel, describeOpenRun } from "../lib/sentinel.ts";
 import { parseModuleGraph } from "../lib/selector.ts";
-import { type LintVerdict, lintable, type StagedLint, stagedLinters } from "../lib/lint-staged.ts";
+import { ktlintOver, type LintVerdict, lintable, type StagedLint, stagedLinters } from "../lib/lint-staged.ts";
 import { preparePrePushTree, type PrePushTree } from "../lib/prepush-tree.ts";
 import { appendPushTiming, type PushTiming, readProfile } from "../lib/prepush-timing.ts";
 import { isoSeconds } from "../lib/slot.ts";
@@ -110,6 +110,9 @@ export interface HookDeps {
   readonly timings?: (entry: PushTiming) => void;
   /** How often the branch is looked at while gradle runs, to stop a run for a push that can no longer succeed. */
   readonly movedPollMs?: number;
+  /** ktlint over the files a push changes, in one run. Given, the push lints those files here and gradle skips its per-module
+   *  ktlintCheck; absent, gradle lints every module in scope, as it did before the batch. */
+  readonly ktlint?: (root: string, files: readonly string[]) => Promise<LintVerdict>;
   readonly openRun?: (head: string, tree: string) => ReturnType<typeof acquireRunSentinel>;
   /** The ladder rows pre-push scopes by. Read from the checkout when absent. */
   readonly legs?: readonly Leg[];
@@ -381,15 +384,41 @@ const PRE_PUSH_GRADLE_OPTIONS = ["--parallel", "--build-cache", "--continue", "-
 /** How often the branch is looked at while gradle runs: a push whose branch moved is refused at the end, so its run stops. */
 const MOVED_POLL_MS = 20_000;
 
+/** The gradle task name of the per-module lint aggregate. A pre-push that batches ktlint excludes it by name: Gradle also drops
+ *  the lint tasks only it reaches, and keeps any another task needs. */
+const KTLINT_TASK = "ktlintCheck";
+/** The batched ktlint, as a failed leg is named in the verdict. */
+const KTLINT_LEG: Leg = { task: "ktlint", command: ["ktlint"] };
+
+/** Why a push cannot take the batched ktlint, or undefined when it can. ktlint's verdict on a file is a function of the file's
+ *  bytes, the rule file and ktlint's version, so a file the push did not change keeps the verdict it had when it last passed,
+ *  unless one of those moved: any .editorconfig, the catalog that names ktlint's version, or build-logic, which configures the
+ *  plugin. Then gradle lints every module in scope, as it always did. */
+export function ktlintFullRunReason(changed: readonly string[]): string | undefined {
+  if (changed.some((path) => path === ".editorconfig" || path.endsWith("/.editorconfig"))) return ".editorconfig changed";
+  if (changed.includes("gradle/libs.versions.toml")) return "the version catalog changed";
+  if (changed.some((path) => path.startsWith("build-logic/"))) return "build-logic changed";
+  return undefined;
+}
+
 /** Gradle tasks through the gradle slot (one gradle per tree). The slot is the gate's own verb, so the lock is the
- *  gate's lock. Output is echoed to stderr as it arrives when [echo] is set. A raised [cancel] sends the slot SIGTERM: it
- *  forwards the signal to gradle's process group and holds the slot until the group is gone (runUnderSlot). */
-export function slotRunner(lay: Layout, label: string, echo: boolean): GateRunner {
+ *  gate's lock. Output is echoed to stderr as it arrives when [echo] is set. [extraOptions] go beside the pre-push options on
+ *  every run, a collision's rerun included. A raised [cancel] sends the slot SIGTERM: it forwards the signal to gradle's
+ *  process group and holds the slot until the group is gone (runUnderSlot). */
+export function slotRunner(lay: Layout, label: string, echo: boolean, extraOptions: readonly string[] = []): GateRunner {
   return async (tasks, _root, cancel) => {
     const jdk = resolveJdk21();
     if ("error" in jdk) throw new Error(jdk.error);
     const proc = Bun.spawn(
-      [process.execPath, join(lay.repoRoot, "tools", "gate", "index.ts"), "slot", label, "--", ...(label === "pre-push" ? PRE_PUSH_GRADLE_OPTIONS : []), ...tasks],
+      [
+        process.execPath,
+        join(lay.repoRoot, "tools", "gate", "index.ts"),
+        "slot",
+        label,
+        "--",
+        ...(label === "pre-push" ? [...PRE_PUSH_GRADLE_OPTIONS, ...extraOptions] : []),
+        ...tasks,
+      ],
       {
         cwd: lay.repoRoot,
         env: spawnEnv({
@@ -625,6 +654,15 @@ async function judgeIn(
   const scopeClause = `; scope: ${scope.summary}`;
   console.error(`── scope: ${scope.summary} ──`);
 
+  // ktlint is not run per module on every push (the plugin's lint step is never cached, so each of up to 31 modules in scope re-linted
+  // every source it has, however little the push touched). It runs once over the Kotlin the push changes, in the modules gradle would
+  // have linted, unless something that moves ktlint's verdict on an untouched file changed too.
+  const fullKtlint = deps.ktlint === undefined ? undefined : ktlintFullRunReason(changed);
+  const batchKtlint = deps.ktlint !== undefined && fullKtlint === undefined;
+  const ktlintFiles = batchKtlint ? changed.filter((path) => KOTLIN.test(path) && moduleOf(modules, path) !== undefined && existsSync(join(root, path))) : [];
+  if (batchKtlint) console.error(`── ktlint: ${ktlintFiles.length} changed Kotlin file(s) in one run; gradle skips its per-module ktlintCheck ──`);
+  else if (fullKtlint !== undefined) console.error(`── ktlint: gradle lints every module in scope (${fullKtlint}) ──`);
+
   const sha = head.slice(0, 7);
   const judgedWhat = `the pushed sha ${sha}, checked out clean in the pre-push build tree`;
 
@@ -652,6 +690,8 @@ async function judgeIn(
   // A test leg that is one `bun test <dir>` run keeps only the test files the diff can affect.
   const directLegs = scope.direct.flatMap((leg) => narrowBunTest(root, leg, changed) ?? []);
   const direct = runDirectLegs(root, directLegs, (leg) => stopGradle(`${leg.task} failed`));
+  const linted =
+    deps.ktlint === undefined || ktlintFiles.length === 0 ? Promise.resolve(false) : ktlintLeg(deps.ktlint, root, ktlintFiles, () => stopGradle("ktlint failed"));
   let judged: Judged | undefined;
   let movedWhile: string[] = [];
   let gradleSeconds: number | null = null;
@@ -666,7 +706,8 @@ async function judgeIn(
       stopGradle("the branch moved");
     }, deps.movedPollMs ?? MOVED_POLL_MS);
     try {
-      judged = await judgedRun(deps.gate ?? slotRunner(judgeLay, "pre-push", true), root, modules, scope.gradle, deps.rivalLive, stopper.signal);
+      const runner = deps.gate ?? slotRunner(judgeLay, "pre-push", true, batchKtlint ? [`--exclude-task=${KTLINT_TASK}`] : []);
+      judged = await judgedRun(runner, root, modules, scope.gradle, deps.rivalLive, stopper.signal);
     } finally {
       clearInterval(watch);
       gradleRunning = false;
@@ -675,7 +716,7 @@ async function judgeIn(
     const waited = /admitted after (\d+)s/.exec(judged.output)?.[1];
     console.error(`pre-push timing: gradle ${seconds(gradleStarted)}${waited === undefined ? "" : `, of which ${waited} s waiting for the build lock`}`);
   }
-  const failedLegs = await direct;
+  const failedLegs = [...(await direct), ...((await linted) ? [KTLINT_LEG] : [])];
   const elapsed = seconds(started);
   // Gradle ended by OUR stop is cancelled, not red: only a run that ended by itself, or by a signal that is not ours, is judged.
   const gradleCancelled = stoppedFor !== undefined && judged !== undefined && cancelledBySignal(judged.status);
@@ -719,6 +760,26 @@ async function judgeIn(
     console.error(`pre-push: name the sha and git sends exactly what the gate judged: ${explicitPush(remoteName, pushed)}`);
   }
   return 1;
+}
+
+/** The batched ktlint over [files], printed like a direct leg. True when it found something or could not judge; [onRed] hears that
+ *  at once, while gradle still runs. */
+async function ktlintLeg(lint: NonNullable<HookDeps["ktlint"]>, root: string, files: readonly string[], onRed: () => void): Promise<boolean> {
+  const started = performance.now();
+  const verdict = await lint(root, files);
+  if ("error" in verdict) {
+    onRed();
+    console.error(`  ✗ ktlint could not judge: ${verdict.error}`);
+    return true;
+  }
+  if (verdict.findings.length > 0) {
+    onRed();
+    console.error(`  ✗ ktlint (${verdict.findings.length} finding(s) in the ${files.length} changed Kotlin file(s))`);
+    for (const finding of verdict.findings) console.error(`    ${finding.line}`);
+    return true;
+  }
+  console.error(`  ✓ ktlint (${files.length} changed Kotlin file(s)) — ${seconds(started)}`);
+  return false;
 }
 
 /** One ref a push moves: the LOCAL ref git read the tip from (a ref name, `HEAD`, or a raw sha when the refspec named
@@ -930,7 +991,7 @@ export async function hook(argv: readonly string[]): Promise<number> {
   try {
     // git passes the hook its own arguments (pre-push gets the remote's name and URL); neither is read.
     if (verb === "pre-commit") return await commitGate(lay);
-    if (verb === "pre-push") return await prePush(lay, await Bun.stdin.text(), { timings: appendPushTiming }, rest[0] ?? "origin");
+    if (verb === "pre-push") return await prePush(lay, await Bun.stdin.text(), { timings: appendPushTiming, ktlint: ktlintOver }, rest[0] ?? "origin");
     if (verb === "install" && rest.length === 0) {
       const hooksDir = resolve(lay.repoRoot, gitText(lay.repoRoot, ["rev-parse", "--git-path", "hooks"]));
       for (const path of installShims(hooksDir, process.execPath, join(lay.repoRoot, "tools", "gate", "index.ts"))) {

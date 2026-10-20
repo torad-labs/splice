@@ -118,6 +118,29 @@ export function findingLines(tool: "ktlint" | "detekt", output: string, dir: str
     .map((line) => ({ tool, line: line.slice(prefix.length) }));
 }
 
+/** Standalone ktlint, at the version [root]'s catalog names, over [files] (repo-relative) of the tree [root], whose own
+ *  .editorconfig it reads. This is the pre-push's batched lint: the same pinned jar and rule file the Gradle plugin and the
+ *  pre-commit run, over the files a push changes. ktlint exits 1 on findings; any other nonzero exit, or a 1 that prints no
+ *  finding, is a linter that did not judge. */
+export async function ktlintOver(root: string, files: readonly string[]): Promise<LintVerdict> {
+  try {
+    const version = catalogVersion(readFileSync(join(root, "gradle", "libs.versions.toml"), "utf8"), "ktlint");
+    if (version === undefined) return { error: "gradle/libs.versions.toml names no ktlint version" };
+    const jdk = resolveJdk21();
+    if ("error" in jdk) return { error: jdk.error };
+    const ran = await run(join(jdk.javaHome, "bin", "java"), ["-jar", await toolFile("ktlint", version), ...files], root, {
+      ...(Bun.env as Record<string, string>),
+      JAVA_HOME: jdk.javaHome,
+    });
+    const findings = findingLines("ktlint", ran.output, root);
+    if (ran.status === 0) return { findings };
+    if (ran.status === 1 && findings.length > 0) return { findings };
+    return { error: `ktlint exited ${ran.status}: ${ran.output.trim()}` };
+  } catch (error) {
+    return { error: error instanceof Error ? error.message : String(error) };
+  }
+}
+
 /** The real linters, at the versions [root]'s catalog names. */
 export function stagedLinters(root: string): StagedLint {
   return async (dir, files) => {

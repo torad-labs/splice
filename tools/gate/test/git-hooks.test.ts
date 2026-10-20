@@ -31,6 +31,7 @@ import {
   shimText,
 } from "../src/commands/hook.ts";
 import { resolveJdk21 } from "../src/lib/jdk.ts";
+import type { LintVerdict } from "../src/lib/lint-staged.ts";
 import type { Leg } from "../src/lib/prepush-scope.ts";
 import { parseProfile, type PushTiming } from "../src/lib/prepush-timing.ts";
 import { type Layout, layout } from "../src/lib/repo.ts";
@@ -605,6 +606,62 @@ describe("pre-push stops a gradle run whose push cannot pass, and records how lo
     expect(lines.length).toBe(1);
     expect(lines[0]).toMatchObject({ sha: head(root), verdict: "pass", cancelled: null, scope: expect.stringContaining(":core") });
     expect(typeof lines[0]?.gradleS).toBe("number");
+  });
+
+  const clean = async (): Promise<LintVerdict> => ({ findings: [] });
+  const curlySpacing: LintVerdict = { findings: [{ tool: "ktlint", line: `${TARGET}:3:10: Missing spacing before "{" (standard:curly-spacing)` }] };
+
+  test("GREEN: ktlint runs once over the Kotlin the push changes in a module, and gradle is told to skip its own", async () => {
+    const root = oneModule();
+    writeFile(root, "docs/NOTES.md", "notes\n");
+    writeFile(root, "elsewhere/Loose.kt", "class Loose\n");
+    git(root, ["add", "docs/NOTES.md", "elsewhere/Loose.kt"]);
+    commit(root, "docs(test): a note and a Kotlin file outside every module");
+    const { result, text } = await captured(() =>
+      prePush(lay(root), pushOf(root, head(root)), { gate: compiler(root), openRun: () => null, legs: NO_LEGS, ktlint: clean }),
+    );
+    expect(result).toBe(0);
+    expect(text).toContain("ktlint: 1 changed Kotlin file(s) in one run; gradle skips its per-module ktlintCheck");
+    expect(text).toContain("✓ ktlint (1 changed Kotlin file(s))");
+  });
+
+  test("RED: a ktlint finding in the push fails it, names the finding, and stops the gradle run", async () => {
+    const root = oneModule();
+    const { result, text } = await captured(() =>
+      prePush(lay(root), pushOf(root, head(root)), { gate: untilStopped, openRun: () => null, legs: NO_LEGS, ktlint: async () => curlySpacing }),
+    );
+    expect(result).toBe(1);
+    expect(text).toContain("ktlint failed: stopping gradle");
+    expect(text).toContain(`${TARGET}:3:10: Missing spacing before "{" (standard:curly-spacing)`);
+    expect(text).toContain("pre-push: ✗ ktlint (gradle stopped after");
+  });
+
+  test("RED: a ktlint that could not judge fails the push and says why", async () => {
+    const root = oneModule();
+    const { result, text } = await captured(() =>
+      prePush(lay(root), pushOf(root, head(root)), { gate: untilStopped, openRun: () => null, legs: NO_LEGS, ktlint: async () => ({ error: "ktlint exited 2: boom" }) }),
+    );
+    expect(result).toBe(1);
+    expect(text).toContain("ktlint could not judge: ktlint exited 2: boom");
+  });
+
+  test("a change to .editorconfig, the version catalog or build-logic leaves ktlint to gradle, in every module in scope", async () => {
+    for (const [path, reason] of [
+      [".editorconfig", ".editorconfig changed"],
+      ["gradle/libs.versions.toml", "the version catalog changed"],
+      ["build-logic/src/main/kotlin/Rule.kt", "build-logic changed"],
+    ] as const) {
+      const root = oneModule();
+      writeFile(root, path, "x\n");
+      git(root, ["add", "-f", path]);
+      commit(root, "chore(test): a change that moves what ktlint says");
+      const { result, text } = await captured(() =>
+        prePush(lay(root), pushOf(root, head(root)), { gate: compiler(root), openRun: () => null, legs: NO_LEGS, ktlint: clean }),
+      );
+      expect(result, path).toBe(0);
+      expect(text, path).toContain(`ktlint: gradle lints every module in scope (${reason})`);
+      expect(text, path).not.toContain("✓ ktlint");
+    }
   });
 
   test("the profile report's configuration time and slowest tasks are read from gradle's markup", () => {

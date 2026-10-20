@@ -1204,6 +1204,18 @@ origin.
 - **`splice login` names a Claude login by its label, never its email,** in every sentence it prints.
 
 ### Fixed
+- **A numbered list in Claude's last reply is no longer taken for a permission menu.** The console read any run of
+  numbered lines on the captured screen as a live menu, refused to send what you typed, and drew buttons that typed a
+  digit into an idle prompt. A numbered run with the input box below it is now a list you read, and the composer sends.
+- **A `teams.json` that does not parse is said, not shown as no teams.** The team list and a member's Start answered
+  as if no team existed. They now name the file and say to fix or move it, and the daemon log says so once for each
+  change to the file.
+- **Start on a team member that exited cleanly starts a fresh session.** The first press after a clean exit answered
+  "did not start" and unbound the slot, and a second press was needed. It now starts the member at once.
+- **Two sessions starting together in one folder no longer lose each other's entry in the head's ownership index,**
+  so a later bare `-c` on that head cannot resume another member's session.
+- **A Continue that is refused before the old client ends leaves nothing behind.** Its folder-trust grant and pending
+  mark are closed, and with `state_dir` set they are kept under the daemon's own state folder.
 - **A malformed `Content-Length` no longer drops every MCP stream or leaves a request unanswered.** The MCP hub's
   front exited on `Content-Length: -1` before it checked the key, so any local process could end every session's MCP
   streams; it now closes that connection and nothing else. It also answers a request with no key `401` before reading its

@@ -40,11 +40,21 @@ internal sealed class ProbeDeduction {
  *  cannot be placed in an hour makes every hour unavailable. New probes cannot dispatch, so a settled hour stays judged
  *  while the log is only appended to and the rollup for that hour is as it was. */
 internal class ProbeEconomics(private val perf: PerfRowsFileSource) {
-    /** The answer for one hour, and the rollup it was an answer for. */
-    private data class Judged(val signature: List<Long>, val probes: EconomicsBucket?, val gap: ProbeGap?)
+    /** The answers kept across restarts, so a start does not judge every hour again (ProbeJudgments says why). */
+    private val kept = ProbeJudgments(perf.files)
 
-    private val judged = HashMap<Long, Judged>()
+    /** The answer for each hour judged, with the rollup it was an answer for. */
+    private val judged = HashMap<Long, ProbeJudged>()
     private var judgedStamp: PerfSourceStamp? = null
+
+    init {
+        // A kept hour is held as an hour this run judged: the same rules then keep it, drop it when the files are
+        // rewritten and it was not read, or judge it again when its rollup is no longer the one it answered.
+        kept.load()?.let { saved ->
+            judged.putAll(saved.judged)
+            judgedStamp = saved.stamp
+        }
+    }
 
     // The one answer to "which rows is this hour made of", shared with the backfill that writes
     // hours this reconciliation then grades. EconomicsRows says why it cannot be two answers.
@@ -69,22 +79,24 @@ internal class ProbeEconomics(private val perf: PerfRowsFileSource) {
     }
 
     /** An answer for every hour of [buckets], or null when the log cannot be read or holds a line with no place. */
-    private fun judge(buckets: List<EconomicsBucket>): Map<Long, Judged>? {
+    private fun judge(buckets: List<EconomicsBucket>): Map<Long, ProbeJudged>? {
         val before = perf.files.stamp()
+        val was = HashMap(judged)
         // A settled hour that was read stays read, whatever happens to the files: its probes are retired and its rows were
         // judged. An hour that was not read is judged again once the files are rewritten, which may have mended it.
         if (judgedStamp?.let { !perf.files.unchanged(it) } == true) judged.values.removeIf { it.gap != null }
         val signatures = buckets.associate { it.hour to signature(listOf(it)) }
         val fresh = buckets.filter { judged[it.hour]?.signature != signatures[it.hour] }
-        val now = if (fresh.isEmpty()) emptyMap() else judgeFresh(fresh, signatures, before) ?: return null
-        return buckets.associate { it.hour to (now[it.hour] ?: judged.getValue(it.hour)) }
+        val now = if (fresh.isEmpty()) emptyMap() else judgeFresh(fresh, signatures, before)
+        if (judged != was) kept.save(judged, judgedStamp)
+        return now?.let { answers -> buckets.associate { it.hour to (answers[it.hour] ?: judged.getValue(it.hour)) } }
     }
 
     private fun judgeFresh(
         fresh: List<EconomicsBucket>,
         signatures: Map<Long, List<Long>>,
         before: PerfSourceStamp?,
-    ): Map<Long, Judged>? {
+    ): Map<Long, ProbeJudged>? {
         val since = fresh.minOf { it.hour }
         if (refusal.stands(since)) return null
         val read = perf.economicsEvidenceSince(since)
@@ -92,11 +104,11 @@ internal class ProbeEconomics(private val perf: PerfRowsFileSource) {
         refusal.note(before, since, unplaced)
         if (read.work.readError != null || unplaced) return null
         val log = LogHours(read)
-        val now = HashMap<Long, Judged>()
+        val now = HashMap<Long, ProbeJudged>()
         for (bucket in fresh) {
             val gap = log.gap(bucket)
             val probes = log.probes[bucket.hour].takeIf { gap == null }
-            now[bucket.hour] = Judged(signatures.getValue(bucket.hour), probes, gap)
+            now[bucket.hour] = ProbeJudged(signatures.getValue(bucket.hour), probes, gap)
             // an hour the log still grows into is judged again at the next look; one settled stays judged
             if (log.settled(bucket.hour)) {
                 judged[bucket.hour] = now.getValue(bucket.hour)

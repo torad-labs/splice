@@ -106,8 +106,11 @@ internal class PerfReadFiles(
     fun stampOf(marks: List<PerfFileMark>): PerfSourceStamp = PerfSourceStamp(marks, live, reader)
 
     /** Where a refusal named [purpose] is kept across restarts: beside the live file, under a name no archive matches. */
-    fun refusalFile(purpose: String): Path =
-        live.resolveSibling("${live.fileName.toString().removeSuffix(".jsonl")}-$purpose-refusal.json")
+    fun refusalFile(purpose: String): Path = stateFile("$purpose-refusal")
+
+    /** Where state named [name] is kept across restarts: beside the live file, under a name no archive matches. */
+    fun stateFile(name: String): Path =
+        live.resolveSibling("${live.fileName.toString().removeSuffix(".jsonl")}-$name.json")
 
     /** The files as they are now; null when one cannot be marked, so nothing may be reused. */
     fun stamp(): PerfSourceStamp? {

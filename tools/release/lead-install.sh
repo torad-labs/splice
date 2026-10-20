@@ -12,7 +12,9 @@ set -euo pipefail
 sha=$1; why=${2:-}; what=${3:-}
 case "$why" in milestone|live-fix) [ -n "$what" ] || { echo "REFUSED: say what the $why is"; exit 10; } ;;
   *) echo "REFUSED $sha: splice installs only at a major milestone or for a live fix (Marcos, 2026-10-10)"; exit 10 ;; esac
-R=/home/marcos/Documents/dev/projects/mythos/repo; T=/tmp/splice-build-$sha-lead; D=~/.local/share/splice
+# R is the checkout this script sits in, not a path: the project moved from projects/mythos to projects/splice and a
+# spelled-out path went dead with it. The kept hub pairs sit beside the checkout, as tools/release hub and beta keep them.
+R=$(cd "$(dirname "$0")/../.." && pwd); T=/tmp/splice-build-$sha-lead; D=~/.local/share/splice
 M=~/.local/state/splice-lead/last-restart-epoch
 ct(){ TZ=America/Chicago date '+%-I:%M %p CT'; }
 echo "start $(ct) — $why: $what"
@@ -31,7 +33,7 @@ test -x tools/gate/bin/gradlew || { echo "no gradlew in tree"; exit 2; }
 # skips the pair; =1 refuses the whole install when no qualified pair is kept; unset, a missing pair is said and the
 # jar installs without it.
 hub_mode=${SPLICE_INSTALL_HUB:-auto}
-hub=; [ "$hub_mode" != 0 ] && [ -d $T/integrations/mcp-hub ] && hub=/home/marcos/Documents/dev/projects/mythos/artifacts/mcp-hub
+hub=; [ "$hub_mode" != 0 ] && [ -d $T/integrations/mcp-hub ] && hub=$R/../artifacts/mcp-hub
 bun tools/gate slot install-$sha -- :app:shadowJar
 echo "slot exit 0 at $(ct)"
 # The hub pair installs only as the bytes hostshield-ctl qualified (Oct 13): the kept folder whose two binaries each

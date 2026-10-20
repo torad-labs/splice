@@ -87,7 +87,6 @@ class HeadServerHeartbeatTest {
                 upstream = UpstreamClient(totalTimeoutMs = 900_000, maxRetries = 2),
                 gate = gate,
                 log = { lines += it },
-                policy = HeadDeps.HeadPolicy(progressLine = ProgressLineOn { statusLineOn }),
                 // 15 silent ticks = one heartbeat. The TEST supplies the ticks (V4-139): the pinger is
                 // the ticker's only consumer (ClientChannel.launchClientPinger), so each tick sent is
                 // one cadence step, with no wall-clock pacing at all.
@@ -97,7 +96,7 @@ class HeadServerHeartbeatTest {
                         true
                     },
                 ),
-            ),
+            ).copy(policy = HeadDeps.HeadPolicy(progressLine = ProgressLineOn { statusLineOn })),
         )
         head.start()
         awaitListening(port)

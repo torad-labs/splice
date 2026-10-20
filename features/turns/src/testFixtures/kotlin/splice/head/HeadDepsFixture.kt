@@ -89,7 +89,6 @@ public fun headDeps(
     log: LogSink = { },
     gate: InflightGate = InflightGate({ 0 }),
     seams: HeadDeps.HeadSeams = HeadDeps.HeadSeams(),
-    policy: HeadDeps.HeadPolicy = HeadDeps.HeadPolicy(),
 ): HeadDeps = HeadDeps(
     traffic = HeadDeps.HeadTraffic(
         upstream = upstream,
@@ -102,6 +101,6 @@ public fun headDeps(
     log = log,
     stores = headStores(tmp),
     quotaBundle = noQuota(),
-    policy = policy,
+    policy = HeadDeps.HeadPolicy(),
     seams = seams,
 )

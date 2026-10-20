@@ -170,11 +170,10 @@ class HeadServerStopDrainTest {
                 upstream = UpstreamClient(totalTimeoutMs = 900_000, maxRetries = 1),
                 gate = gate,
                 seams = HeadDeps.HeadSeams(waiter = waiter),
-                policy = HeadDeps.HeadPolicy(stopDrainMs = stopDrainMs),
                 log = { line ->
                     if (line.contains("draining timed out")) cutAt.compareAndSet(0L, System.nanoTime())
                 },
-            ),
+            ).copy(policy = HeadDeps.HeadPolicy(stopDrainMs = stopDrainMs)),
         )
 
         suspend fun start() {

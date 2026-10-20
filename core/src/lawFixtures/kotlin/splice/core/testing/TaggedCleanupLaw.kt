@@ -14,12 +14,12 @@ class TaggedCleanupLaw {
         LawReadSet(Path.of("/nonexistent-root"), Path.of(System.getProperty("splice.lawReadGuardFixtureList")))
 
     @Test
-    fun `passes`() {
+    fun passes() {
         set.files()
     }
 
     @AfterAll
-    fun `reads undeclared in cleanup and swallows the refusal`() {
+    fun readsUndeclaredInCleanupAndSwallowsTheRefusal() {
         val refusal = runCatching {
             set.readText(
                 Path.of("/nonexistent-root/tools/cleanup-undeclared.sh"),

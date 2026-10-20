@@ -6,6 +6,9 @@ import kotlinx.coroutines.withTimeout
 import org.junit.jupiter.api.Assertions.assertFalse
 import java.util.concurrent.CompletableFuture
 
+/** How long a closed host has to exit, and its worker to be seen exiting, before the fixture fails. */
+private const val REAP_TIMEOUT_MS = 5_000L
+
 class CodeModeWorkerReclamation : WorkerSpawn {
     private val worker = CompletableFuture<Process>()
 
@@ -13,8 +16,8 @@ class CodeModeWorkerReclamation : WorkerSpawn {
 
     suspend fun assertReclaimed(runtime: JvmCodeModeRuntime) {
         runtime.close()
-        val process = withTimeout(5_000) { worker.await() }
-        withTimeout(5_000) { process.onExit().await() }
+        val process = withTimeout(REAP_TIMEOUT_MS) { worker.await() }
+        withTimeout(REAP_TIMEOUT_MS) { process.onExit().await() }
         assertFalse(process.isAlive, "the closed host must be reaped")
     }
 }

@@ -14,9 +14,13 @@ detekt {
 
 ktlint {
     version.set(libs.versions.ktlint.asProvider())
-    // generated sources (kotlin-dsl accessors) live under build/ and are not ours to format
+    // Generated sources (kotlin-dsl accessors) live under build/ and are not ours to format. They are told apart
+    // by this build's own build directory, not the text "/build/": a checkout under a directory named build
+    // would match every source, lint nothing and report green. A local, so the lambda holds the directory and
+    // not the script.
     filter {
-        exclude { it.file.path.contains("/build/") }
+        val generated = layout.buildDirectory.get().asFile
+        exclude { it.file.startsWith(generated) }
     }
 }
 

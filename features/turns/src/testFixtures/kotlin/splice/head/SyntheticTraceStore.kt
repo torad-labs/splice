@@ -19,14 +19,12 @@ public fun syntheticTraceStore(
     head: String,
     maxBodyChars: Int,
     now: WallClock = WallClock(System::currentTimeMillis),
-    ids: TurnIdMint = TurnIdMint { UUID.randomUUID().toString() },
-    heap: HeapBudget = syntheticHeapBudget(),
 ): TraceStore = TraceStore(
     days,
     head,
     maxBodyChars,
     now,
-    ids,
-    heap,
+    TurnIdMint { UUID.randomUUID().toString() },
+    syntheticHeapBudget(),
     bodyBudget = DayBodyBudget(minFreeBytes = 0, clock = now),
 )

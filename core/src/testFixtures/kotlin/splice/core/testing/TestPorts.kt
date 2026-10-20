@@ -80,9 +80,7 @@ object TestPorts {
     @Synchronized
     fun reserveRunFrom(firsts: Iterator<Int>, count: Int): Int {
         for (first in firsts) {
-            if ((first until first + count).all { port -> port !in held && lock(port) && bindable(port) }) {
-                return first
-            }
+            if ((first until first + count).all { port -> reservable(port) }) return first
         }
         error("no run of $count free test ports among the candidates")
     }
@@ -92,10 +90,13 @@ object TestPorts {
     @Synchronized
     fun reserveFrom(candidates: Iterator<Int>): Int {
         for (port in candidates) {
-            if (port !in held && lock(port) && bindable(port)) return port
+            if (reservable(port)) return port
         }
         error("no free test port among the candidates")
     }
+
+    /** Whether this JVM does not hold [port], no other JVM holds it, and it binds. */
+    private fun reservable(port: Int): Boolean = port !in held && lock(port) && bindable(port)
 
     /** Take [port]'s lock file, or report that another JVM holds it. A port that is locked here but
      *  found bound stays locked: it is in use, and holding it keeps the next draw from re-probing it. */

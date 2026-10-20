@@ -37,6 +37,12 @@ tasks.withType<org.jetbrains.kotlin.gradle.tasks.KotlinCompile>().configureEach 
 detekt {
     config.setFrom(rootProject.layout.projectDirectory.file("quality/detekt/detekt.yml"))
     buildUponDefaultConfig = true
+    // EVERY SOURCE SET WE WRITE, shared fixtures included. The plugin's own default is src/main and src/test only,
+    // so the fixtures other modules compile against (testFixtures everywhere, core's lawFixtures) went unread while
+    // detekt.yml says it has no test exemption. A source set a module lacks is simply absent from the list.
+    source.setFrom(
+        files("src/main/kotlin", "src/test/kotlin", "src/testFixtures/kotlin", "src/lawFixtures/kotlin"),
+    )
     // Each module's files are parsed in parallel; the rules still run in order, so the findings are the same. Measured on
     // :app, :features-turns, :integrations-providers-codex and :core, Oct 9: 68.9 s of detekt one file at a time, 13.9 s
     // in parallel, with the same eight findings reported by both.
@@ -59,9 +65,13 @@ private val catalog =
 // runs the current ktlint on the same sources in the same `check`, with the rule list pinned in the root .editorconfig.
 ktlint {
     version.set(catalog.version("ktlint"))
-    // generated sources live under build/ and are not ours to format
+    // Generated sources live under build/ and are not ours to format. They are told apart by THIS project's own build
+    // directory, not the text "/build/": a checkout under any directory named build (a Nix or Docker build dir) would
+    // otherwise match every source, lint zero files and report green. The directory is a local, not a script field: a
+    // lambda that names a script field holds the script, and the configuration cache refuses it.
     filter {
-        exclude { it.file.path.contains("/build/") }
+        val generated = layout.buildDirectory.get().asFile
+        exclude { it.file.startsWith(generated) }
     }
 }
 

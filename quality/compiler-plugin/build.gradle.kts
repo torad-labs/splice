@@ -2,11 +2,13 @@
 // COMPILE ERROR (MustConsumeDiscardChecker), wired into every other module via -Xplugin in the
 // root gateway/build.gradle.kts.
 //
-// It applies `org.jetbrains.kotlin.jvm` DIRECTLY, not `splice.kotlin-common`: the root build wires
-// -Xplugin=<this module's jar> into every kotlin.jvm module, and this module must be the ONE that
-// does not consume its own not-yet-built jar (self-application deadlock). It still carries detekt
-// (maxIssues:0 like everywhere else) and `splice.module-law` (its emptySet()/nonLibrary entries are
-// config-time-checked). Test configs are exempt from the module law, so testImplementation(:core) is legal.
+// It applies `org.jetbrains.kotlin.jvm` DIRECTLY, not `splice.kotlin-common`. The root build no longer needs that to
+// keep this module from consuming its own not-yet-built jar (it exempts the module by path, in the -Xplugin wiring), so
+// self-application is not the reason now. The convention also makes every warning an error and the unused-return-value
+// checker an error, and this module has not been built under either: adopting it wants a build to show the module
+// compiles. Until then the module carries its own detekt (maxIssues:0 like everywhere else) and ktlint, and
+// `splice.module-law` (its emptySet()/nonLibrary entries are config-time-checked). Test configs are exempt from the
+// module law, so testImplementation(:core) is legal.
 plugins {
     alias(libs.plugins.kotlin.jvm)
     // BY ID, NO VERSION: the root project applies `splice.gate-ladder` from build-logic, which puts
@@ -30,9 +32,12 @@ kotlin {
 
 ktlint {
     version.set(libs.versions.ktlint.asProvider())
-    // generated sources (kotlin-dsl accessors) live under build/ and are not ours to format
+    // Generated sources live under build/ and are not ours to format. They are told apart by this module's own build
+    // directory, not the text "/build/": a checkout under a directory named build would match every source, lint
+    // nothing and report green. A local, so the lambda holds the directory and not the script.
     filter {
-        exclude { it.file.path.contains("/build/") }
+        val generated = layout.buildDirectory.get().asFile
+        exclude { it.file.startsWith(generated) }
     }
 }
 
@@ -55,7 +60,7 @@ dependencies {
     // the fixtures compiled by the test reference splice.core.annotation.MustConsume; the test JVM's
     // own classpath (java.class.path) carries :core, so -cp resolves the annotation.
     testImplementation(project(":core"))
-    testImplementation(platform("org.junit:junit-bom:6.1.3"))
+    testImplementation(platform("org.junit:junit-bom:${libs.versions.junit.get()}"))
     testImplementation("org.junit.jupiter:junit-jupiter")
     testRuntimeOnly("org.junit.platform:junit-platform-launcher")
 }

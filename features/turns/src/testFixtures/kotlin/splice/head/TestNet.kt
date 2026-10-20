@@ -11,6 +11,9 @@ package splice.head
 
 import java.net.Socket
 
+/** How often [awaitListening] retries a port that nothing accepts on yet. */
+private const val LISTEN_POLL_MS = 50L
+
 /** Block until something accepts on every port (loopback), or fail loudly after the timeout. */
 fun awaitListening(vararg ports: Int, timeoutMs: Long = 10_000) {
     for (p in ports) awaitOne(p, timeoutMs)
@@ -20,6 +23,6 @@ private fun awaitOne(port: Int, timeoutMs: Long) {
     val deadline = System.currentTimeMillis() + timeoutMs
     while (runCatching { Socket("127.0.0.1", port).use { } }.isFailure) {
         check(System.currentTimeMillis() < deadline) { "nothing listening on :$port within ${timeoutMs}ms" }
-        Thread.sleep(50)
+        Thread.sleep(LISTEN_POLL_MS)
     }
 }

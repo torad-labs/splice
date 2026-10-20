@@ -3,6 +3,7 @@ package splice.core.testing
 
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertTrue
+import org.junit.jupiter.api.DisplayName
 import org.junit.jupiter.api.Test
 import java.nio.file.Path
 
@@ -13,13 +14,15 @@ class FixtureLaws {
 
     /** A law that catches the refusal and then passes every assertion it makes. */
     @Test
-    fun `swallows the refusal and passes`() {
+    @DisplayName("swallows the refusal and passes")
+    fun swallowsTheRefusalAndPasses() {
         val read = runCatching { set.readText(Path.of("/nonexistent-root/tools/undeclared.sh")) }.getOrNull()
         assertEquals(null, read)
     }
 
     @Test
-    fun `reads nothing and passes`() {
+    @DisplayName("reads nothing and passes")
+    fun readsNothingAndPasses() {
         assertTrue(set.files().isEmpty())
     }
 }

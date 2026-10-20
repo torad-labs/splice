@@ -287,6 +287,11 @@ internal class ControlServer(
             // An inherited socket brings its own channel and parent handler (AdoptedBootstrap); the event loops are
             // the ones this engine builds for itself either way.
             listen.adopted?.let { adopted -> configureBootstrap = { adopted.applyTo(this) } }
+            // Ktor disposes the application after the event loops and waits for its calls under this timeout, not the one
+            // [stop] passes. Unset it is 5s, and a session's GET /mcp/{name} event stream never ends on its own, so every
+            // stop waited all 5s here, after the heads' own 5s, past the daemon's 57s halt floor (Oct 19, status 70).
+            shutdownGracePeriod = STOP_GRACE_MS
+            shutdownTimeout = STOP_TIMEOUT_MS
             channelPipelineConfig = { pipeline -> guard.admit(pipeline) }
         }
 

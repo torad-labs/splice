@@ -1212,6 +1212,11 @@ origin.
 - **A daemon that runs out of memory exits** and leaves a heap dump, `splice-oom.hprof` in the state folder, instead
   of running on half alive.
 - **A stop that the halt watchdog had to cut exits with status 70,** not 0, so systemd can tell it from a clean stop.
+- **A planned restart that waits out the 45 s drain now finishes as a clean stop.** Every planned restart on Oct 19
+  ended in status 70 at 57 s: after the drain, each head's server and then the control server waited up to 5 s more
+  for their open requests, a wait that ignored the stop's own limits. Those waits now take the stop's limits, 2 s for
+  a head and 0.5 s for the control server, and the log says when the heads drained, closed and the control server
+  closed.
 - **A stop during startup stays a stop.** A stop signal ends the startup at once, where 0.3.x ran the start to the end
   first. A head that had not started stays stopped, and a stop before the control port binds cancels the start.
 - **`splice doctor` no longer creates a missing state or logs folder;** on a fresh home it says the folder is not

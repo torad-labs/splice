@@ -29,9 +29,13 @@ import splice.upstream.codemode.ProcessDispatchers
 internal const val HEAD_STOP_BUDGET_MS = 50_000L
 
 // The close phase that follows the drain: engine stops and the stores' final flushes, no waiting on turns.
-// Netty's own stop is bounded at 2.5s per head (HeadEngine) and the flushes are local writes, so 5s covers
-// every head in parallel while keeping the whole phase inside Main's STOP_DEADLINE_MS (55s) above the drain's 50s.
+// Each engine stop is bounded by HeadEngine's 0.5s grace and 2s timeout, its application's disposal included (Ktor
+// waited its default 5s there until Oct 19), and the flushes are local writes, so 5s covers every head in parallel
+// while keeping the whole phase inside Main's STOP_DEADLINE_MS (55s) above the drain's 50s. This budget cannot cut a
+// blocking engine stop short: the coroutines it cancels are inside one, so the engines' own bounds are what hold.
 internal const val CLOSE_BUDGET_MS = 5_000L
+
+private const val NANOS_PER_MS = 1_000_000L
 
 internal class HeadShutdown(
     // HD-19: where the N blocking HeadServer.stop() engine stops run. Was a hardcoded
@@ -51,6 +55,8 @@ internal class HeadShutdown(
         val stopFailureHandler = CoroutineExceptionHandler { _, e ->
             log("[daemon] head stop failed uncaught: ${e::class.simpleName}: ${e.message}\n")
         }
+        val began = System.nanoTime()
+        val elapsedMs = { (System.nanoTime() - began) / NANOS_PER_MS }
         withContext(stopDispatcher) {
             // PHASE 1, every head at once: refuse new turns and let the running ones finish, with every
             // port STILL LISTENING. Closing each head's listener the moment its own drain converged was
@@ -62,11 +68,16 @@ internal class HeadShutdown(
             }
             // PHASE 2: now that no head can still be serving, close the ports and settle the books. The
             // drain above is already spent, so this converges without waiting out a second budget.
+            val drainedMs = elapsedMs()
             withTimeoutOrNull(CLOSE_BUDGET_MS) {
                 eachHead(heads, stopFailureHandler, "stop", HeadStopStep { it.stop() })
             }
+            // Where a stop spent its time, so an overrun names its phase in the journal (Oct 19: the halt cut every
+            // planned restart at 57s, and no line said which phase held it).
+            log("[daemon] stop: heads drained at ${drainedMs}ms, closed at ${elapsedMs()}ms\n")
         }
         stopControl()
+        log("[daemon] stop: control closed at ${elapsedMs()}ms\n")
     }
 
     private suspend fun eachHead(

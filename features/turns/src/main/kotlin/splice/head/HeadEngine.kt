@@ -132,6 +132,12 @@ internal class HeadEngine(
             // on the listener the socket manager holds instead of binding the connector above, on the event loops it
             // builds for itself either way.
             listen.adopted?.let { adopted -> configureBootstrap = { adopted.applyTo(this) } }
+            // The stop's own bound, for the part of Ktor's stop that does not take the arguments [stop] passes: after the
+            // event loops, EmbeddedServer.stop disposes the application and waits for its calls under THIS timeout,
+            // Ktor's default 5s when unset. Every planned restart on Oct 19 drained 45s, then spent the default 5s here
+            // per head and 5s more on the control server's, and the halt watchdog cut the stop at 57s (status 70).
+            shutdownGracePeriod = STOP_GRACE_MS
+            shutdownTimeout = STOP_TIMEOUT_MS
             runningLimit = RUNNING_LIMIT
             callThreads?.let { callGroupSize = it }
             // Default 10s killed stream TAILS during 1000-way completion bursts (load test:

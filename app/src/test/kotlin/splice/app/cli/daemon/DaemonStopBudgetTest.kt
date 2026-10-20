@@ -35,8 +35,9 @@ class DaemonStopBudgetTest {
      *  HeadServerStopDrainTest, which asserts its value directly where it is declared. */
     private val drainMs = 45_000L
 
-    /** systemd's default TimeoutStopSec: the outer bound nothing in this process may reach. */
-    private val systemdBoundMs = 90_000L
+    /** The host unit's TimeoutStopSec (75s, under systemd's 90s default): the outer bound nothing in this
+     *  process may reach. */
+    private val systemdBoundMs = 75_000L
 
     private val haltFloorMs = STOP_DEADLINE_MS + TEARDOWN_TAIL_GRACE_MS
 
@@ -74,7 +75,7 @@ class DaemonStopBudgetTest {
         )
         assertTrue(
             gracefulRungMs < systemdBoundMs,
-            "the CLI rung ($gracefulRungMs) must stay inside systemd's default TimeoutStopSec " +
+            "the CLI rung ($gracefulRungMs) must stay inside the unit's TimeoutStopSec " +
                 "($systemdBoundMs), which is the only bound this process cannot raise",
         )
     }

@@ -281,7 +281,7 @@ internal data class StartState(
 // V4-74 — THE WHOLE LADDER, innermost first, because raising one link alone is DEAD CODE:
 //   drain 45s (HeadServer) < head budget 50s (HeadShutdown) < this cap 55s
 //   < halt floor 57s (this + TEARDOWN_TAIL_GRACE_MS) < CLI rung 60s (DaemonStop)
-//   < systemd TimeoutStopSec 90s (the external bound).
+//   < systemd TimeoutStopSec (the external bound: 75s in the host unit, 90s by systemd's default).
 // The reason the drain had to grow is a measured turn length: a restart used to cancel every
 // in-flight turn at 8s, and a deepseek turn runs 7 to 16s. DaemonStopBudgetTest pins the ordering
 // so the next person who raises one link gets a red instead of a silently ineffective constant.

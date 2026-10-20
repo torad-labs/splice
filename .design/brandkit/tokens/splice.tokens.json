@@ -1,0 +1,448 @@
+{
+  "$schema": "https://design-tokens.github.io/community-group/format/",
+  "meta": {
+    "brand": "Splice",
+    "version": "1.0-draft",
+    "date": "2026-10-19",
+    "status": "Draft for Marcos's review. Not adopted by the Splice app or repo."
+  },
+  "color": {
+    "core": {
+      "night": {
+        "$type": "color",
+        "$value": "#1D2140",
+        "rgb": [
+          29,
+          33,
+          64
+        ],
+        "$description": "Night: Default background for every dark surface. About 70% of a frame.",
+        "source": "console.css --wall; video frames sample #252B47"
+      },
+      "night-low": {
+        "$type": "color",
+        "$value": "#141731",
+        "rgb": [
+          20,
+          23,
+          49
+        ],
+        "$description": "Night Low: Second background: side navigation, footers, table headers.",
+        "source": "console.css --wall-low"
+      },
+      "plate": {
+        "$type": "color",
+        "$value": "#382E25",
+        "rgb": [
+          56,
+          46,
+          37
+        ],
+        "$description": "Plate: Logo plate and the rail in diagrams. Large dark objects.",
+        "source": "video title plate, sampled #382E25"
+      },
+      "shell": {
+        "$type": "color",
+        "$value": "#1C1610",
+        "rgb": [
+          28,
+          22,
+          16
+        ],
+        "$description": "Shell: Terminal screens, stat boxes, dark cards.",
+        "source": "console.css --obj; video terminals sample #1C1713"
+      },
+      "ink": {
+        "$type": "color",
+        "$value": "#07050A",
+        "rgb": [
+          7,
+          5,
+          10
+        ],
+        "$description": "Ink: 3 px outlines and the 6 px offset shadow on every object.",
+        "source": "console.css --ink (night)"
+      },
+      "paper": {
+        "$type": "color",
+        "$value": "#FBF1DF",
+        "rgb": [
+          251,
+          241,
+          223
+        ],
+        "$description": "Paper: Light cards, tooltips and end cards. Light-mode background.",
+        "source": "video end card, sampled #FBF1DF"
+      },
+      "cream": {
+        "$type": "color",
+        "$value": "#EFE2C6",
+        "rgb": [
+          239,
+          226,
+          198
+        ],
+        "$description": "Cream: Body text and the wordmark on Night.",
+        "source": "console.css --text (night)"
+      },
+      "key": {
+        "$type": "color",
+        "$value": "#FFD79A",
+        "rgb": [
+          255,
+          215,
+          154
+        ],
+        "$description": "Key Light: Accent. Primary button, focus ring, the active session. One use per view.",
+        "source": "console.css --key-light"
+      },
+      "dusk": {
+        "$type": "color",
+        "$value": "#724C5E",
+        "rgb": [
+          114,
+          76,
+          94
+        ],
+        "$description": "Dusk: Alternate background for end cards and the GitHub preview only.",
+        "source": "video end-card background, sampled #724C5E"
+      }
+    },
+    "ink": {
+      "cream-body": {
+        "$type": "color",
+        "$value": "#CBBD9D",
+        "rgb": [
+          203,
+          189,
+          157
+        ],
+        "$description": "Cream Body: Secondary text on Night.",
+        "source": "console.css --text-body"
+      },
+      "cream-mute": {
+        "$type": "color",
+        "$value": "#9C8F70",
+        "rgb": [
+          156,
+          143,
+          112
+        ],
+        "$description": "Cream Mute: Captions and metadata on Night.",
+        "source": "console.css --text-mute"
+      },
+      "ink-day": {
+        "$type": "color",
+        "$value": "#241D14",
+        "rgb": [
+          36,
+          29,
+          20
+        ],
+        "$description": "Day Ink: Body text and the wordmark on Paper.",
+        "source": "console.css day --text"
+      },
+      "ink-day-body": {
+        "$type": "color",
+        "$value": "#4E4434",
+        "rgb": [
+          78,
+          68,
+          52
+        ],
+        "$description": "Day Body: Secondary text on Paper.",
+        "source": "console.css day --text-body"
+      },
+      "ink-day-mute": {
+        "$type": "color",
+        "$value": "#6B604B",
+        "rgb": [
+          107,
+          96,
+          75
+        ],
+        "$description": "Day Mute: Captions and metadata on Paper.",
+        "source": "console.css day --text-mute"
+      },
+      "key-day": {
+        "$type": "color",
+        "$value": "#8A5A12",
+        "rgb": [
+          138,
+          90,
+          18
+        ],
+        "$description": "Key on Paper: Accent text on Paper. Key Light itself is too pale to read on Paper.",
+        "source": "console.css day --key-ink"
+      }
+    },
+    "cable": {
+      "claude": {
+        "$type": "color",
+        "$value": "#EE8F58",
+        "rgb": [
+          238,
+          143,
+          88
+        ],
+        "$description": "Claude provider colour. Identifies the provider; not a brand colour.",
+        "source": "Splice console console.css model colours"
+      },
+      "gpt": {
+        "$type": "color",
+        "$value": "#00C5BE",
+        "rgb": [
+          0,
+          197,
+          190
+        ],
+        "$description": "GPT provider colour. Identifies the provider; not a brand colour.",
+        "source": "Splice console console.css model colours"
+      },
+      "grok": {
+        "$type": "color",
+        "$value": "#6EADFE",
+        "rgb": [
+          110,
+          173,
+          254
+        ],
+        "$description": "Grok provider colour. Identifies the provider; not a brand colour.",
+        "source": "Splice console console.css model colours"
+      },
+      "kimi": {
+        "$type": "color",
+        "$value": "#E3B341",
+        "rgb": [
+          227,
+          179,
+          65
+        ],
+        "$description": "Kimi provider colour. Identifies the provider; not a brand colour.",
+        "source": "Splice console console.css model colours"
+      },
+      "muse": {
+        "$type": "color",
+        "$value": "#B896F3",
+        "rgb": [
+          184,
+          150,
+          243
+        ],
+        "$description": "Muse provider colour. Identifies the provider; not a brand colour.",
+        "source": "Splice console console.css model colours"
+      },
+      "router": {
+        "$type": "color",
+        "$value": "#F3B27A",
+        "rgb": [
+          243,
+          178,
+          122
+        ],
+        "$description": "Router provider colour. Identifies the provider; not a brand colour.",
+        "source": "Splice console console.css model colours"
+      },
+      "local": {
+        "$type": "color",
+        "$value": "#7BC47F",
+        "rgb": [
+          123,
+          196,
+          127
+        ],
+        "$description": "Local provider colour. Identifies the provider; not a brand colour.",
+        "source": "Splice console console.css model colours"
+      },
+      "deepseek": {
+        "$type": "color",
+        "$value": "#EC93C3",
+        "rgb": [
+          236,
+          147,
+          195
+        ],
+        "$description": "DeepSeek provider colour. Identifies the provider; not a brand colour.",
+        "source": "Splice console console.css model colours"
+      }
+    },
+    "status": {
+      "live": {
+        "night": {
+          "$type": "color",
+          "$value": "#5BB59C",
+          "rgb": [
+            91,
+            181,
+            156
+          ],
+          "$description": "Connected, request succeeded, tests passed."
+        },
+        "day": {
+          "$type": "color",
+          "$value": "#2C6555",
+          "rgb": [
+            44,
+            101,
+            85
+          ],
+          "$description": "Connected, request succeeded, tests passed."
+        }
+      },
+      "limit": {
+        "night": {
+          "$type": "color",
+          "$value": "#F06A4C",
+          "rgb": [
+            240,
+            106,
+            76
+          ],
+          "$description": "Rate limited, failed, stopped."
+        },
+        "day": {
+          "$type": "color",
+          "$value": "#BB301A",
+          "rgb": [
+            187,
+            48,
+            26
+          ],
+          "$description": "Rate limited, failed, stopped."
+        }
+      },
+      "needs-you": {
+        "night": {
+          "$type": "color",
+          "$value": "#FFD79A",
+          "rgb": [
+            255,
+            215,
+            154
+          ],
+          "$description": "Waiting for the user to decide something."
+        },
+        "day": {
+          "$type": "color",
+          "$value": "#8A5A12",
+          "rgb": [
+            138,
+            90,
+            18
+          ],
+          "$description": "Waiting for the user to decide something."
+        }
+      }
+    }
+  },
+  "font": {
+    "lead": {
+      "$type": "fontFamily",
+      "$value": [
+        "Fraunces",
+        "Georgia",
+        "serif"
+      ],
+      "axes": {
+        "opsz": "auto",
+        "SOFT": 0,
+        "WONK": 0
+      },
+      "wordmarkAxes": {
+        "opsz": 144,
+        "wght": 480
+      }
+    },
+    "name": {
+      "$type": "fontFamily",
+      "$value": [
+        "Source Serif 4",
+        "Georgia",
+        "serif"
+      ]
+    },
+    "data": {
+      "$type": "fontFamily",
+      "$value": [
+        "IBM Plex Mono",
+        "ui-monospace",
+        "monospace"
+      ]
+    }
+  },
+  "type": {
+    "display": {
+      "family": "lead",
+      "weight": 560,
+      "size": "56-120px",
+      "lineHeight": 0.95,
+      "tracking": "-0.02em"
+    },
+    "heading": {
+      "family": "lead",
+      "weight": 580,
+      "size": "32-44px",
+      "lineHeight": 1.05,
+      "tracking": "-0.015em"
+    },
+    "title": {
+      "family": "name",
+      "weight": 600,
+      "size": "20px",
+      "lineHeight": 1.3
+    },
+    "body": {
+      "family": "name",
+      "weight": 400,
+      "size": "17px",
+      "lineHeight": 1.5,
+      "measure": "60-72ch"
+    },
+    "ui": {
+      "family": "name",
+      "weight": 500,
+      "size": "14px",
+      "lineHeight": "20px"
+    },
+    "data": {
+      "family": "data",
+      "weight": 500,
+      "size": "13-15px",
+      "lineHeight": 1.45,
+      "features": "tnum"
+    },
+    "kicker": {
+      "family": "data",
+      "weight": 500,
+      "size": "11-12px",
+      "tracking": "0.14em",
+      "case": "upper"
+    }
+  },
+  "material": {
+    "inkWidth": "3px",
+    "cast": "6px",
+    "radiusObject": "9px",
+    "radiusInner": "7px"
+  },
+  "motion": {
+    "hit": "90ms",
+    "snap": "240ms",
+    "move": "420ms",
+    "easeOut": "cubic-bezier(.22,1,.36,1)",
+    "easeInOut": "cubic-bezier(.65,0,.35,1)",
+    "drawingsPerSecond": 12,
+    "fps": 24
+  },
+  "space": {
+    "4": "4px",
+    "8": "8px",
+    "12": "12px",
+    "16": "16px",
+    "24": "24px",
+    "32": "32px",
+    "48": "48px",
+    "64": "64px",
+    "96": "96px"
+  }
+}

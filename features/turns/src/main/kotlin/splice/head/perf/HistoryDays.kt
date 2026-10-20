@@ -83,17 +83,22 @@ internal class HistoryHeld(
 
 /** Reads the request records one install holds: by day for the bar, by minute for the cut. */
 public class HistoryDays(private val zone: ZoneId = ZoneId.systemDefault()) {
+    // Guarded by [scanLock]: one instance serves every console request on the IO pool.
     private val cached = HashMap<String, MinuteTally>()
     private val record = RecordLine()
 
+    // why: a cold scan takes seconds, so a second request arriving meanwhile waits for the first
+    // one's tally instead of mutating the cache beside it or scanning the same files again.
+    private val scanLock = Any()
+
     /** Everything held under [stateDir] and its [archiveDir]. */
-    internal fun held(stateDir: Path, archiveDir: Path): HistoryHeld {
+    internal fun held(stateDir: Path, archiveDir: Path): HistoryHeld = synchronized(scanLock) {
         val failures = ArrayList<String>()
         val files = records(stateDir, failures) + records(archiveDir, failures)
         val merged = MinuteBuilder()
         files.forEach { file -> tally(file, failures).into(merged) }
         val minutes = merged.build()
-        return HistoryHeld(
+        HistoryHeld(
             days = minutes.days(zone),
             turns = minutes.turns + minutes.unknownTurns,
             bytes = minutes.bytes + minutes.unknownBytes,

@@ -94,7 +94,8 @@ public class SessionTotals(
     private var loaded = false
     private var version = 0L
 
-    /** Set by [flushNow] (a head stop): the file is clean, and the next [add] must say it is not. */
+    /** The file on disk says clean: a head stop wrote it ([flushNow]) or boot just loaded one that way.
+     *  The next [add] must say it is not, so it writes through instead of waiting out the debounce. */
     private var closed = false
 
     /** A delete suppresses even a head-stop flush until a new priced turn is added. Guarded by [lock]. */
@@ -138,9 +139,14 @@ public class SessionTotals(
         }
     }
 
-    /** The totals to stable storage, marked clean: called at head stop, after its turns drained. */
+    /** The totals to stable storage, marked clean: called at head stop, after its turns drained. A head
+     *  that counted nothing since boot has not read its file yet, so the read comes first: writing the
+     *  empty in-memory state would replace the saved totals at every restart. */
     public fun flushNow() {
-        synchronized(lock) { closed = true }
+        synchronized(lock) {
+            loadUnderLock()
+            closed = true
+        }
         persist(clean = true)
     }
 
@@ -222,6 +228,9 @@ public class SessionTotals(
         loaded = true
         val disk = readFromDisk()
         since = disk?.since ?: bornAt
+        // readFromDisk hands back only a file a head stop closed, so the mark on disk is clean until the
+        // first row after boot takes it away.
+        closed = disk != null
         disk?.sessions?.sortedBy { (_, kept) -> kept.lastMs }?.forEach { (tag, kept) -> sessions[tag] = kept }
     }
 

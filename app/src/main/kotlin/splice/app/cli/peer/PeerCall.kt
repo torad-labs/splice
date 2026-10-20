@@ -17,23 +17,6 @@ import java.io.IOException
 import java.nio.file.Files
 import java.nio.file.Path
 
-/** The exit codes of `splice peer` (docs/specs/peer-messaging.md 5); 0, 1 and 2 keep their meaning across the CLI. */
-internal object PeerExit {
-    const val DONE: Int = 0
-    const val REFUSED: Int = 1
-    const val USAGE: Int = 2
-    const val UNREACHABLE: Int = 3
-    const val RATE_LIMITED: Int = 4
-    const val TRANSPORT: Int = 5
-}
-
-/** What a call came to: the daemon's 2xx body, or the exit code with the reason already printed. */
-internal sealed class PeerAnswer {
-    data class Ok(val body: JsonObject) : PeerAnswer()
-
-    data class Exit(val code: Int) : PeerAnswer()
-}
-
 // why: register waits up to 10 s for the helper's record (spec 3.2), and revoke up to 5 s before SIGKILL; a webhook
 // test waits on the receiver's 10 s timeout. 20 s covers each with room for a loaded machine.
 private const val CALL_TIMEOUT_MS = 20_000

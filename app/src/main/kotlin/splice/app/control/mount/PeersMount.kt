@@ -22,46 +22,23 @@ import kotlinx.serialization.json.put
 import kotlinx.serialization.json.putJsonArray
 import kotlinx.serialization.json.putJsonObject
 import splice.core.config.UserHome
-import splice.core.util.JsonScalars
 import splice.core.util.LogSafe
 import splice.core.util.LogSink
-import splice.core.util.SafeFailureText
 import splice.http.JsonBody
 import splice.http.JsonReply
-import splice.sessions.note.PeerTarget
-import splice.sessions.note.PeerTargets
 import splice.sessions.peer.PeerConfig
 import splice.sessions.peer.PeerOutbox
-import splice.sessions.peer.PeerPrincipal
-import splice.sessions.peer.PeerSender
-import splice.sessions.peer.SendOutcome
 import splice.sessions.peer.store.PeerRefusal
 import splice.sessions.peer.store.PeerRegistration
 import splice.sessions.peer.store.PeerRequest
 import splice.sessions.peer.store.PeerStore
 import splice.sessions.registry.SessionAvailability
-import splice.sessions.registry.SessionRecord
 import splice.sessions.registry.SessionSource
-import java.io.IOException
-import java.nio.file.Files
-import java.nio.file.Path
 
-// why: spec 1.1 and 3.4, the text cap after defusing; the route refuses a longer raw text with 413 before it is built.
-private const val MAX_TEXT_BYTES = 32_768
-
-// why: spec 3.3, a page of the inbox: 50 by default, at most 200, so one read stays a few hundred KB at most.
-private const val DEFAULT_INBOX_LIMIT = 50
-private const val MAX_INBOX_LIMIT = 200
-
-// why: a webhook bearer is one token; a file longer than this is not a bearer file.
-private const val MAX_BEARER_BYTES = 4_096
-
-private val INBOX_KINDS = setOf("message", "receipt", "webhook")
-
-private const val NAME_PARAM = "name"
-private const val NO_PEER = "no peer has that name"
-private const val UNWIRED = "peer messaging is not available in this build"
-private const val NOT_RUNNING = "this peer's helper is not running"
+internal const val NAME_PARAM = "name"
+internal const val NO_PEER = "no peer has that name"
+internal const val UNWIRED = "peer messaging is not available in this build"
+internal const val NOT_RUNNING = "this peer's helper is not running"
 
 /** The parts the routes act through. [outbox], [helpers] and [mail] are null until packages A, B and C are wired. */
 internal data class PeerParts(
@@ -95,7 +72,7 @@ internal class PeersMount(parts: PeerParts, private val guard: ControlGuard) {
 }
 
 /** One route's answer: its status, its JSON body, and the `Retry-After` seconds a 429 carries. */
-private data class PeerAnswer(val status: HttpStatusCode, val body: JsonObject, val retryAfter: Long? = null) {
+internal data class PeerAnswer(val status: HttpStatusCode, val body: JsonObject, val retryAfter: Long? = null) {
     suspend fun send(call: ApplicationCall) {
         retryAfter?.let { call.response.header(HttpHeaders.RetryAfter, it.toString()) }
         JsonReply(status, body.toString()).send(call)
@@ -103,7 +80,7 @@ private data class PeerAnswer(val status: HttpStatusCode, val body: JsonObject, 
 }
 
 /** The answers both route families share. */
-private object PeerReplies {
+internal object PeerReplies {
     fun refuse(status: HttpStatusCode, reason: String, retryAfter: Long? = null): PeerAnswer =
         PeerAnswer(status, buildJsonObject { put("error", reason) }, retryAfter)
 
@@ -114,7 +91,7 @@ private object PeerReplies {
 }
 
 /** The management-key routes that make, list, revoke and rotate peers (spec 3.2). */
-private class PeerManagementRoutes(private val parts: PeerParts, private val rate: PeerSendRate) {
+internal class PeerManagementRoutes(private val parts: PeerParts, private val rate: PeerSendRate) {
     private val store = parts.store
     private val jsonBody = JsonBody()
 
@@ -231,257 +208,4 @@ private class PeerManagementRoutes(private val parts: PeerParts, private val rat
         val items = (raw as? JsonArray)?.map { (it as? JsonPrimitive)?.takeIf { p -> p.isString }?.content }
         return items?.takeIf { list -> list.none { it == null } }?.filterNotNull()
     }
-}
-
-/** A webhook bearer read from its file: the value (null when none was asked for), or why it cannot be used. */
-private data class BearerRead(val bearer: String?, val refusal: String?)
-
-/** The management-key webhook routes (spec 3.2 and 4.4). */
-private class PeerWebhookRoutes(private val parts: PeerParts) {
-    private val store = parts.store
-    private val jsonBody = JsonBody()
-
-    /** PUT /api/peers/{name}/webhook: a new secret, the bearer copied when given, and the helper told. */
-    suspend fun set(call: ApplicationCall) {
-        val name = call.parameters[NAME_PARAM].orEmpty()
-        val body = jsonBody.parse(call)
-        val mail = parts.mail
-        val answer = if (mail == null) {
-            PeerReplies.refuse(HttpStatusCode.ServiceUnavailable, UNWIRED)
-        } else {
-            set(name, body, mail)
-        }
-        answer.send(call)
-    }
-
-    /** DELETE /api/peers/{name}/webhook. */
-    suspend fun clear(call: ApplicationCall) {
-        val name = call.parameters[NAME_PARAM].orEmpty()
-        val cleared = store.wellFormed(name) && store.clearWebhook(name)
-        if (cleared) parts.helpers?.reload(name)
-        val answer = if (cleared) {
-            PeerReplies.ok(HttpStatusCode.OK, JsonObject(emptyMap()))
-        } else {
-            PeerReplies.refuse(HttpStatusCode.NotFound, NO_PEER)
-        }
-        answer.send(call)
-    }
-
-    /** POST /api/peers/{name}/webhook/test: the test body, pushed now. */
-    suspend fun test(call: ApplicationCall) {
-        tested(call.parameters[NAME_PARAM].orEmpty()).send(call)
-    }
-
-    private suspend fun set(name: String, body: JsonObject?, mail: PeerMail): PeerAnswer {
-        val url = PeerReplies.string(body, "url")
-        val bearer = bearer(body)
-        val refusal = when {
-            url == null -> "body must be {\"url\": \"https://…\"}"
-            else -> mail.webhookUrlRefusal(url) ?: bearer.refusal
-        }
-        if (url == null || refusal != null) return PeerReplies.refuse(HttpStatusCode.BadRequest, refusal.orEmpty())
-        val files = if (store.wellFormed(name)) store.setWebhook(name, url, bearer.bearer) else null
-        if (files == null) return PeerReplies.refuse(HttpStatusCode.NotFound, NO_PEER)
-        parts.helpers?.reload(name)
-        parts.log("[peers] set the webhook of ${LogSafe.str(name)}\n")
-        return PeerReplies.ok(
-            HttpStatusCode.OK,
-            buildJsonObject {
-                put("url", url)
-                put("secretFile", files.secretFile.toString())
-                put("bearer", files.bearer)
-            },
-        )
-    }
-
-    private suspend fun tested(name: String): PeerAnswer {
-        val config = store.get(name)
-        val mail = parts.mail
-        return when {
-            config == null -> PeerReplies.refuse(HttpStatusCode.NotFound, NO_PEER)
-            config.webhook == null -> PeerReplies.refuse(HttpStatusCode.Conflict, "this peer has no webhook")
-            mail == null -> PeerReplies.refuse(HttpStatusCode.ServiceUnavailable, UNWIRED)
-            else -> pushed(mail.testWebhook(name))
-        }
-    }
-
-    private fun pushed(result: WebhookTestResult): PeerAnswer = PeerReplies.ok(
-        HttpStatusCode.OK,
-        buildJsonObject {
-            put("outcome", if (result.pushed) "pushed" else "failed")
-            put("httpStatus", result.httpStatus)
-            if (!result.pushed) put("detail", result.detail)
-        },
-    )
-
-    /** The bearer file's contents when `bearerFile` is given: an absolute path to a readable, non-empty file. */
-    private fun bearer(body: JsonObject?): BearerRead {
-        if (body?.containsKey("bearerFile") != true) return BearerRead(null, null)
-        val path = PeerReplies.string(body, "bearerFile")?.let { Path.of(it) }?.takeIf { it.isAbsolute }
-            ?: return BearerRead(null, "bearerFile must be an absolute path")
-        return try {
-            val text = if (Files.size(path) > MAX_BEARER_BYTES) "" else Files.readString(path).trim()
-            if (text.isEmpty()) BearerRead(null, "the bearer file is empty or too large") else BearerRead(text, null)
-        } catch (unreadable: IOException) {
-            BearerRead(null, "cannot read the bearer file: ${SafeFailureText.render(unreadable)}")
-        }
-    }
-}
-
-/** A valid inbox query (spec 3.3). */
-private data class InboxQuery(val after: Long, val limit: Int, val kinds: Set<String>)
-
-/** The peer-key routes (spec 3.3). The principal decides whose journal and whose name; no route takes a peer name. */
-private class PeerSelfRoutes(private val parts: PeerParts, private val rate: PeerSendRate) {
-    private val store = parts.store
-    private val targets = PeerTargets(parts.registry)
-    private val jsonBody = JsonBody()
-
-    /** POST /api/peers/self/send: resolve the target, check scope and rate, build the sender, send, record, answer. */
-    suspend fun send(call: ApplicationCall, principal: PeerPrincipal) {
-        sendAnswer(principal, jsonBody.parse(call)).send(call)
-    }
-
-    /** GET /api/peers/self/inbox?after&limit&kinds. */
-    suspend fun inbox(call: ApplicationCall, principal: PeerPrincipal) {
-        val query = inboxQuery(call)
-        val mail = parts.mail
-        val answer = when {
-            query == null -> PeerReplies.refuse(
-                HttpStatusCode.BadRequest,
-                "after is a seq, limit 1 to $MAX_INBOX_LIMIT, and kinds of message, receipt and webhook",
-            )
-            mail == null -> PeerReplies.refuse(HttpStatusCode.ServiceUnavailable, UNWIRED)
-            else -> {
-                val page = mail.inbox(principal.name, query.after, query.limit, query.kinds)
-                PeerReplies.ok(
-                    HttpStatusCode.OK,
-                    buildJsonObject {
-                        put("items", JsonArray(page.items))
-                        put("next", page.next)
-                        put("unread", page.unread)
-                    },
-                )
-            }
-        }
-        answer.send(call)
-    }
-
-    /** POST /api/peers/self/inbox/ack {"through": seq}. */
-    suspend fun ack(call: ApplicationCall, principal: PeerPrincipal) {
-        val through = JsonScalars.long(jsonBody.parse(call), "through")?.takeIf { it >= 0 }
-        val mail = parts.mail
-        val answer = when {
-            through == null -> PeerReplies.refuse(HttpStatusCode.BadRequest, "body must be {\"through\": <seq>}")
-            mail == null -> PeerReplies.refuse(HttpStatusCode.ServiceUnavailable, UNWIRED)
-            else -> {
-                val read = mail.ack(principal.name, through)
-                PeerReplies.ok(HttpStatusCode.OK, buildJsonObject { put("read", read) })
-            }
-        }
-        answer.send(call)
-    }
-
-    /** GET /api/peers/self/sent/{msgId}: the send's outcome and the receipt that came back for it, if one did. */
-    suspend fun sent(call: ApplicationCall, principal: PeerPrincipal) {
-        val msgId = call.parameters["msgId"].orEmpty()
-        val mail = parts.mail
-        val record = mail?.sent(principal.name, msgId)
-        val answer = when {
-            mail == null -> PeerReplies.refuse(HttpStatusCode.ServiceUnavailable, UNWIRED)
-            record == null -> PeerReplies.refuse(HttpStatusCode.NotFound, "this peer sent no message with that id")
-            else -> PeerReplies.ok(HttpStatusCode.OK, record)
-        }
-        answer.send(call)
-    }
-
-    private suspend fun sendAnswer(principal: PeerPrincipal, body: JsonObject?): PeerAnswer {
-        val config = store.get(principal.name) ?: return PeerReplies.refuse(HttpStatusCode.NotFound, NO_PEER)
-        val to = PeerReplies.string(body, "to")?.trim()?.takeIf { it.isNotEmpty() }
-        val text = PeerReplies.string(body, "text")
-        if (to == null || text == null) {
-            return PeerReplies.refuse(HttpStatusCode.BadRequest, "body must be {\"to\": …, \"text\": …}")
-        }
-        return textRefusal(text) ?: resolved(config, targets.resolve(to), text)
-    }
-
-    /** A target that is not one running session alone on its socket is refused with the resolver's reason. */
-    private suspend fun resolved(config: PeerConfig, target: PeerTarget, text: String): PeerAnswer = when (target) {
-        is PeerTarget.One -> deliver(config, target.record, text)
-        is PeerTarget.None -> PeerReplies.refuse(HttpStatusCode.NotFound, target.reason)
-        is PeerTarget.Ambiguous -> PeerReplies.refuse(HttpStatusCode.Conflict, target.reason)
-        is PeerTarget.NotRunning -> PeerReplies.refuse(HttpStatusCode.Conflict, target.reason)
-        is PeerTarget.NoSocket -> PeerReplies.refuse(HttpStatusCode.Conflict, target.reason)
-        is PeerTarget.SharedSocket -> PeerReplies.refuse(HttpStatusCode.Conflict, target.reason)
-    }
-
-    private fun textRefusal(text: String): PeerAnswer? = when {
-        text.isBlank() -> PeerReplies.refuse(HttpStatusCode.BadRequest, "the text is empty")
-        text.toByteArray(Charsets.UTF_8).size > MAX_TEXT_BYTES ->
-            PeerReplies.refuse(HttpStatusCode.PayloadTooLarge, "a text is at most $MAX_TEXT_BYTES bytes")
-        else -> null
-    }
-
-    /** Scope, then rate, then the helper: the order spec 3.3 gives, after the target resolved. */
-    private suspend fun deliver(config: PeerConfig, target: SessionRecord, text: String): PeerAnswer {
-        val refusal = when {
-            target.sessionId == config.sessionId ->
-                PeerReplies.refuse(HttpStatusCode.Conflict, "the target is this peer itself")
-            !store.mayReach(config, target.name, target.sessionId) ->
-                PeerReplies.refuse(HttpStatusCode.Forbidden, "the target is outside this peer's sendTo")
-            else -> null
-        }
-        if (refusal != null) return refusal
-        val wait = rate.take(config.name)
-        if (wait is SendAllowance.Wait) {
-            return PeerReplies.refuse(HttpStatusCode.TooManyRequests, "over the send rate", wait.seconds)
-        }
-        val helper = parts.helpers?.running(config.name)
-        val outbox = parts.outbox
-        return if (helper == null || outbox == null) {
-            PeerReplies.refuse(HttpStatusCode.ServiceUnavailable, NOT_RUNNING)
-        } else {
-            submit(config, target, text, PeerSender(socket = helper.socket, name = config.name), outbox)
-        }
-    }
-
-    /** The sender is the principal's registration and its running helper, never anything from the request. */
-    private suspend fun submit(
-        config: PeerConfig,
-        target: SessionRecord,
-        text: String,
-        sender: PeerSender,
-        outbox: PeerOutbox,
-    ): PeerAnswer {
-        val outcome = outbox.send(target, text, sender)
-        val msgId = (outcome as? SendOutcome.Submitted)?.msgId
-        parts.mail?.recordSend(config.name, SentRecord(msgId, target, text.toByteArray(Charsets.UTF_8).size, outcome))
-        return when (outcome) {
-            is SendOutcome.Submitted -> PeerReplies.ok(
-                HttpStatusCode.Accepted,
-                buildJsonObject {
-                    put("msgId", outcome.msgId)
-                    putJsonObject("to") {
-                        put("name", target.name)
-                        put("sessionId", target.sessionId)
-                    }
-                },
-            )
-            is SendOutcome.Refused -> PeerReplies.refuse(HttpStatusCode.fromValue(outcome.httpStatus), outcome.reason)
-            is SendOutcome.Failed -> PeerReplies.refuse(HttpStatusCode.BadGateway, outcome.reason)
-        }
-    }
-
-    private fun inboxQuery(call: ApplicationCall): InboxQuery? {
-        val query = call.request.queryParameters
-        val after = bounded(query["after"], 0L, 0L..Long.MAX_VALUE)
-        val limit = bounded(query["limit"], DEFAULT_INBOX_LIMIT.toLong(), 1L..MAX_INBOX_LIMIT.toLong())
-        val kinds = query["kinds"]?.split(",")?.map { it.trim() }?.filter { it.isNotEmpty() }?.toSet() ?: INBOX_KINDS
-        val known = kinds.isNotEmpty() && INBOX_KINDS.containsAll(kinds)
-        return if (after == null || limit == null) null else InboxQuery(after, limit.toInt(), kinds).takeIf { known }
-    }
-
-    /** [absent] when the parameter is missing; null when it is there but not a whole number in [range]. */
-    private fun bounded(text: String?, absent: Long, range: LongRange): Long? =
-        if (text == null) absent else text.toLongOrNull()?.takeIf { it in range }
 }

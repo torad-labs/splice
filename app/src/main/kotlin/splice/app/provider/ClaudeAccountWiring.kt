@@ -25,7 +25,7 @@ import splice.core.util.LogSink
 internal class ClaudeAccountWiring(
     private val statePaths: StatePaths,
     private val log: LogSink,
-    private val folders: ClaudeAccountFolders = ClaudeAccountFolders(statePaths.stateDir),
+    private val folders: ClaudeAccountFolders = ClaudeAccountFolders(statePaths.stateDir, log = log),
     private val refresh: ClaudeTokenRefresh = ClaudeTokenRefresh(ClaudeOAuthRefresh(log)::rotate),
     private val identities: splice.app.auth.claude.ClaudeIdentityRefresh? = null,
     nativePlaces: ClaudeLoginPlacesSource = ClaudeLoginPlacesSource { null },

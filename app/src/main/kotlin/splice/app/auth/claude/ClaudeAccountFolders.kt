@@ -19,19 +19,24 @@ package splice.app.auth.claude
 
 import splice.accounts.claude.ClaudeAccountIdentity
 import splice.core.util.Cancellables
+import splice.core.util.LogSafe
+import splice.core.util.LogSink
 import splice.core.util.SecureFile
 import splice.core.util.WallClock
+import splice.upstream.credentials.AccountLabelPolicy
 import java.nio.file.Files
 import java.nio.file.NoSuchFileException
 import java.nio.file.Path
+import java.util.concurrent.ConcurrentHashMap
 
 // why: splice's own record beside the two Claude Code files — when this account was added, which is the pool's
 // default order. Claude Code neither writes nor reads it, and a re-sign-in keeps the original time.
 private const val RECORD_FILE = ".splice-account.json"
 
-// why: the label names a directory, so it must carry no separator and no leading dot; the same shape the stored
-// Claude Code logins already use (CLAUDE_LOGIN_LABEL_PATTERN), so one rule reads every Claude login label.
-private val ACCOUNT_LABEL = Regex("[A-Za-z0-9][A-Za-z0-9_-]{0,63}")
+// why: a head key and a display name each name a path segment or a file entry, so they must carry no separator and no
+// leading dot. This is NOT the account-label rule: a label is the pool's, [AccountLabelPolicy.isSafe], so a folder
+// that lands is always a member the pool can build (a capital letter here once landed a folder the pool threw on).
+private val HEAD_OR_DISPLAY_NAME = Regex("[A-Za-z0-9][A-Za-z0-9_-]{0,63}")
 
 // why: splice's own root for these folders, one subdirectory per head, so a head reads only its own accounts.
 private const val ACCOUNTS_DIR = "claude-accounts"
@@ -40,11 +45,15 @@ private const val ACCOUNTS_DIR = "claude-accounts"
 // real folder is written only after the account is proven.
 private const val PENDING_DIR = "claude-accounts-pending"
 
-/** Where an added account's files live, and what a head or a label may be called. One place, because every read and
- *  every write below goes through it: a name that does not pass [names] never reaches the filesystem. */
+/** Where an added account's files live, and what a head, a label or a display name may be called. One place, because
+ *  every read and every write below goes through it: a name that does not pass [names] or [label] never reaches the
+ *  filesystem. */
 internal class ClaudeAccountPaths(private val stateDir: Path) {
-    /** True when [name] can be a head or a label: letters, digits, `-` or `_`, no separator and no leading dot. */
-    fun names(name: String): Boolean = ACCOUNT_LABEL.matches(name)
+    /** True when [name] can be a head or a display name: letters, digits, `-` or `_`, no separator, no leading dot. */
+    fun names(name: String): Boolean = HEAD_OR_DISPLAY_NAME.matches(name)
+
+    /** True when [label] can name an account folder: the pool's own rule, nothing of its own. */
+    fun label(label: String): Boolean = AccountLabelPolicy.isSafe(label)
 
     /** [head]'s own accounts root. Every label it holds is a directory directly under this. */
     fun accounts(head: String): Path = stateDir.resolve(ACCOUNTS_DIR).resolve(head)
@@ -118,12 +127,16 @@ internal class ClaudeAccountFolders(
     private val now: WallClock = WallClock(System::currentTimeMillis),
     private val profileRefresh: ClaudeIdentityRefresh? = null,
     private val changes: ClaudePoolChanges? = null,
+    private val log: LogSink = LogSink { },
 ) {
     private val facts = ClaudeLoginFactsReader(
-        ClaudeCredentialProfiles(stateDir, splice.core.util.LogSink { }),
+        ClaudeCredentialProfiles(stateDir, LogSink { }),
         profileRefresh,
     )
     private val paths = ClaudeAccountPaths(stateDir)
+
+    // why: [read] runs on every membership refresh, so a folder the pool cannot take is named once, not every time.
+    private val skippedLabels = ConcurrentHashMap.newKeySet<String>()
 
     /** Every account of [head], oldest first: the order they were added, which is the pool's default. A label whose
      *  folder splice cannot read is here too, carrying its own refusal and no identity, and sorts last. */
@@ -143,12 +156,15 @@ internal class ClaudeAccountFolders(
 
     /** [label]'s current access token, read at send or probe time, or null when nothing is filed under it. */
     fun token(head: String, label: String): String? =
-        if (paths.names(label) && paths.names(head)) facts.token(paths.account(head, label)) else null
+        if (paths.label(label) && paths.names(head)) facts.token(paths.account(head, label)) else null
 
     /** Where Claude Code should write a sign-in for [label] on [head]. The caller creates it; this reads nothing of
      *  the existing folder, so a sign-in in flight cannot damage an account already added. */
     fun pending(head: String, label: String): ClaudePendingAccount {
-        require(paths.names(label)) { "'$label' is not a valid account label (letters, digits, - or _)" }
+        require(paths.label(label)) {
+            "'$label' is not a valid account label (lowercase letters, digits, '.', '-' or '_', up to 48, " +
+                "starting with a letter or digit)"
+        }
         require(label != OWN_SIGN_IN_LABEL) { "'$label' names your own Claude Code sign-in; choose another label" }
         require(paths.names(head)) { "'$head' is not a valid command name" }
         return ClaudePendingAccount(head, label, paths.pending(head, label))
@@ -176,7 +192,7 @@ internal class ClaudeAccountFolders(
      *  person's real Claude Code login and splice has never held it. */
     fun remove(head: String, label: String): ClaudeAccountRemoval {
         if (label == OWN_SIGN_IN_LABEL) return ClaudeAccountRemoval.OwnSignIn
-        val owned = paths.names(label) && paths.names(head)
+        val owned = paths.label(label) && paths.names(head)
         val directory = if (owned) paths.account(head, label) else null
         if (directory == null || !Files.isDirectory(directory)) return ClaudeAccountRemoval.NotFound
         changes?.withdraw(head, label)
@@ -189,8 +205,9 @@ internal class ClaudeAccountFolders(
     fun relabel(head: String, id: String, name: String): splice.accounts.signin.AccountMutation {
         val added = accounts(head)
         val account = added.singleOrNull { it.label == id }
+        val valid = paths.names(head) && paths.label(id) && paths.names(name)
         return when {
-            !listOf(head, id, name).all(paths::names) ->
+            !valid ->
                 splice.accounts.signin.AccountMutation.Refused("that is not a valid stored login name")
             account == null ->
                 splice.accounts.signin.AccountMutation.Refused("this command has no stored login with that id")
@@ -256,7 +273,11 @@ internal class ClaudeAccountFolders(
         } catch (_: NoSuchFileException) {
             return emptyList() // No directory yet is no account added yet.
         }
-        return labels.filter(paths::names).sorted().map { label -> label to account(label, directory) }
+        val (taken, skipped) = labels.partition(paths::label)
+        skipped.filter(skippedLabels::add).forEach { name ->
+            log("[claude-accounts] ignoring folder ${LogSafe.str(name)} on $head: not a label the pool accepts\n")
+        }
+        return taken.sorted().map { label -> label to account(label, directory) }
     }
 
     private fun account(label: String, under: Path): ClaudeAccount? {

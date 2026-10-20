@@ -2,9 +2,9 @@
   "$schema": "https://design-tokens.github.io/community-group/format/",
   "meta": {
     "brand": "Splice",
-    "version": "1.0-draft",
+    "version": "1.0",
     "date": "2026-10-19",
-    "status": "Draft for Marcos's review. Not adopted by the Splice app or repo."
+    "status": "Approved by Marcos on October 19, 2026 and adopted by the console. The groups cable-day, paper-surface, socket and role were added the same day for light mode and the console; the generator in the full kit does not write them yet."
   },
   "color": {
     "core": {
@@ -331,6 +331,471 @@
             18
           ],
           "$description": "Waiting for the user to decide something."
+        }
+      }
+    },
+    "cable-day": {
+      "claude": {
+        "$type": "color",
+        "$value": "#A54711",
+        "rgb": [
+          165,
+          71,
+          17
+        ],
+        "$description": "Claude on Paper. Keeps the night colour's hue; 4.5:1 or more on Paper Low and darker. Use on light surfaces only."
+      },
+      "gpt": {
+        "$type": "color",
+        "$value": "#006F6B",
+        "rgb": [
+          0,
+          111,
+          107
+        ],
+        "$description": "Gpt on Paper. Keeps the night colour's hue; 4.5:1 or more on Paper Low and darker. Use on light surfaces only."
+      },
+      "grok": {
+        "$type": "color",
+        "$value": "#015DD3",
+        "rgb": [
+          1,
+          93,
+          211
+        ],
+        "$description": "Grok on Paper. Keeps the night colour's hue; 4.5:1 or more on Paper Low and darker. Use on light surfaces only."
+      },
+      "kimi": {
+        "$type": "color",
+        "$value": "#7E5E13",
+        "rgb": [
+          126,
+          94,
+          19
+        ],
+        "$description": "Kimi on Paper. Keeps the night colour's hue; 4.5:1 or more on Paper Low and darker. Use on light surfaces only."
+      },
+      "muse": {
+        "$type": "color",
+        "$value": "#7837E8",
+        "rgb": [
+          120,
+          55,
+          232
+        ],
+        "$description": "Muse on Paper. Keeps the night colour's hue; 4.5:1 or more on Paper Low and darker. Use on light surfaces only."
+      },
+      "router": {
+        "$type": "color",
+        "$value": "#7E5B44",
+        "rgb": [
+          126,
+          91,
+          68
+        ],
+        "$description": "Router on Paper. Keeps the night colour's hue; 4.5:1 or more on Paper Low and darker. Use on light surfaces only."
+      },
+      "local": {
+        "$type": "color",
+        "$value": "#327035",
+        "rgb": [
+          50,
+          112,
+          53
+        ],
+        "$description": "Local on Paper. Keeps the night colour's hue; 4.5:1 or more on Paper Low and darker. Use on light surfaces only."
+      },
+      "deepseek": {
+        "$type": "color",
+        "$value": "#B82072",
+        "rgb": [
+          184,
+          32,
+          114
+        ],
+        "$description": "Deepseek on Paper. Keeps the night colour's hue; 4.5:1 or more on Paper Low and darker. Use on light surfaces only."
+      }
+    },
+    "paper-surface": {
+      "paper-low": {
+        "$type": "color",
+        "$value": "#EBE1CA",
+        "rgb": [
+          235,
+          225,
+          202
+        ],
+        "$description": "Paper Low: Second background in light mode: table headers, sunk fields, code blocks."
+      },
+      "paper-high": {
+        "$type": "color",
+        "$value": "#F6EDDB",
+        "rgb": [
+          246,
+          237,
+          219
+        ],
+        "$description": "Paper High: Raised surfaces in light mode: menus."
+      }
+    },
+    "socket": {
+      "socket": {
+        "$type": "color",
+        "$value": "#120D09",
+        "rgb": [
+          18,
+          13,
+          9
+        ],
+        "$description": "Socket: Sunk dark discs and fields. Darker than Shell."
+      },
+      "live-on-night": {
+        "$type": "color",
+        "$value": "#5BB59C",
+        "rgb": [
+          91,
+          181,
+          156
+        ],
+        "$description": "Live on a dark socket in either theme."
+      },
+      "limit-on-night": {
+        "$type": "color",
+        "$value": "#F06A4C",
+        "rgb": [
+          240,
+          106,
+          76
+        ],
+        "$description": "Limit on a dark socket in either theme."
+      },
+      "track-line-on-night": {
+        "$type": "color",
+        "$value": "rgba(239, 226, 198, .22)",
+        "$description": "The socket's rim."
+      }
+    },
+    "role": {
+      "ground-low": {
+        "night": {
+          "$type": "color",
+          "$value": "#141731",
+          "rgb": [
+            20,
+            23,
+            49
+          ],
+          "$description": "Second background."
+        },
+        "day": {
+          "$type": "color",
+          "$value": "#EBE1CA",
+          "rgb": [
+            235,
+            225,
+            202
+          ],
+          "$description": "Second background."
+        }
+      },
+      "card": {
+        "night": {
+          "$type": "color",
+          "$value": "#1C1610",
+          "rgb": [
+            28,
+            22,
+            16
+          ],
+          "$description": "An object's face."
+        },
+        "day": {
+          "$type": "color",
+          "$value": "#FBF1DF",
+          "rgb": [
+            251,
+            241,
+            223
+          ],
+          "$description": "An object's face."
+        }
+      },
+      "card-high": {
+        "night": {
+          "$type": "color",
+          "$value": "#241A12",
+          "rgb": [
+            36,
+            26,
+            18
+          ],
+          "$description": "A raised face: a menu, a hovered row."
+        },
+        "day": {
+          "$type": "color",
+          "$value": "#F6EDDB",
+          "rgb": [
+            246,
+            237,
+            219
+          ],
+          "$description": "A raised face: a menu, a hovered row."
+        }
+      },
+      "card-sunk": {
+        "night": {
+          "$type": "color",
+          "$value": "#120D09",
+          "rgb": [
+            18,
+            13,
+            9
+          ],
+          "$description": "A sunk field, a code block, a loading bar."
+        },
+        "day": {
+          "$type": "color",
+          "$value": "#EBE1CA",
+          "rgb": [
+            235,
+            225,
+            202
+          ],
+          "$description": "A sunk field, a code block, a loading bar."
+        }
+      },
+      "key-ink": {
+        "night": {
+          "$type": "color",
+          "$value": "#FFD79A",
+          "rgb": [
+            255,
+            215,
+            154
+          ],
+          "$description": "The key as text or a mark on a card: the focus ring, the active page."
+        },
+        "day": {
+          "$type": "color",
+          "$value": "#8A5A12",
+          "rgb": [
+            138,
+            90,
+            18
+          ],
+          "$description": "The key as text or a mark on a card: the focus ring, the active page."
+        }
+      },
+      "on-fill": {
+        "night": {
+          "$type": "color",
+          "$value": "#241D14",
+          "rgb": [
+            36,
+            29,
+            20
+          ],
+          "$description": "Text on a solid fill: Limit, a provider colour, a status chip. Day Ink on the night fills, Paper on the day fills; 5.3:1 or more on each."
+        },
+        "day": {
+          "$type": "color",
+          "$value": "#FBF1DF",
+          "rgb": [
+            251,
+            241,
+            223
+          ],
+          "$description": "Text on a solid fill: Limit, a provider colour, a status chip. Day Ink on the night fills, Paper on the day fills; 5.3:1 or more on each."
+        }
+      },
+      "track": {
+        "night": {
+          "$type": "color",
+          "$value": "rgba(239, 226, 198, .12)",
+          "$description": "A hover fill or a rule inside an object."
+        },
+        "day": {
+          "$type": "color",
+          "$value": "rgba(36, 29, 20, .06)",
+          "$description": "A hover fill or a rule inside an object."
+        }
+      },
+      "track-line": {
+        "night": {
+          "$type": "color",
+          "$value": "rgba(239, 226, 198, .22)",
+          "$description": "A field's rim, a dashed rule. Day holds 3.1:1 or more on Paper, Paper Low and Paper High."
+        },
+        "day": {
+          "$type": "color",
+          "$value": "rgba(36, 29, 20, .52)",
+          "$description": "A field's rim, a dashed rule. Day holds 3.1:1 or more on Paper, Paper Low and Paper High."
+        }
+      },
+      "shaft": {
+        "night": {
+          "$type": "color",
+          "$value": "rgba(174, 182, 200, .055)",
+          "$description": "Diagonal light band on backgrounds."
+        },
+        "day": {
+          "$type": "color",
+          "$value": "rgba(255, 246, 220, .35)",
+          "$description": "Diagonal light band on backgrounds."
+        }
+      },
+      "chart-1": {
+        "night": {
+          "$type": "color",
+          "$value": "#E8B26A",
+          "rgb": [
+            232,
+            178,
+            106
+          ],
+          "$description": "Split-bar hue; never a provider colour. Day holds 4.6:1 or more on Paper Low."
+        },
+        "day": {
+          "$type": "color",
+          "$value": "#885920",
+          "rgb": [
+            136,
+            89,
+            32
+          ],
+          "$description": "Split-bar hue; never a provider colour. Day holds 4.6:1 or more on Paper Low."
+        }
+      },
+      "chart-2": {
+        "night": {
+          "$type": "color",
+          "$value": "#7FB0D8",
+          "rgb": [
+            127,
+            176,
+            216
+          ],
+          "$description": "Split-bar hue; never a provider colour. Day holds 4.6:1 or more on Paper Low."
+        },
+        "day": {
+          "$type": "color",
+          "$value": "#366792",
+          "rgb": [
+            54,
+            103,
+            146
+          ],
+          "$description": "Split-bar hue; never a provider colour. Day holds 4.6:1 or more on Paper Low."
+        }
+      },
+      "chart-3": {
+        "night": {
+          "$type": "color",
+          "$value": "#8CC08A",
+          "rgb": [
+            140,
+            192,
+            138
+          ],
+          "$description": "Split-bar hue; never a provider colour. Day holds 4.6:1 or more on Paper Low."
+        },
+        "day": {
+          "$type": "color",
+          "$value": "#386E3F",
+          "rgb": [
+            56,
+            110,
+            63
+          ],
+          "$description": "Split-bar hue; never a provider colour. Day holds 4.6:1 or more on Paper Low."
+        }
+      },
+      "chart-4": {
+        "night": {
+          "$type": "color",
+          "$value": "#D394B8",
+          "rgb": [
+            211,
+            148,
+            184
+          ],
+          "$description": "Split-bar hue; never a provider colour. Day holds 4.6:1 or more on Paper Low."
+        },
+        "day": {
+          "$type": "color",
+          "$value": "#984871",
+          "rgb": [
+            152,
+            72,
+            113
+          ],
+          "$description": "Split-bar hue; never a provider colour. Day holds 4.6:1 or more on Paper Low."
+        }
+      },
+      "chart-5": {
+        "night": {
+          "$type": "color",
+          "$value": "#9F9BDC",
+          "rgb": [
+            159,
+            155,
+            220
+          ],
+          "$description": "Split-bar hue; never a provider colour. Day holds 4.6:1 or more on Paper Low."
+        },
+        "day": {
+          "$type": "color",
+          "$value": "#5A52A0",
+          "rgb": [
+            90,
+            82,
+            160
+          ],
+          "$description": "Split-bar hue; never a provider colour. Day holds 4.6:1 or more on Paper Low."
+        }
+      },
+      "chart-6": {
+        "night": {
+          "$type": "color",
+          "$value": "#D8C38A",
+          "rgb": [
+            216,
+            195,
+            138
+          ],
+          "$description": "Split-bar hue; never a provider colour. Day holds 4.6:1 or more on Paper Low."
+        },
+        "day": {
+          "$type": "color",
+          "$value": "#756029",
+          "rgb": [
+            117,
+            96,
+            41
+          ],
+          "$description": "Split-bar hue; never a provider colour. Day holds 4.6:1 or more on Paper Low."
+        }
+      },
+      "code-str": {
+        "night": {
+          "$type": "color",
+          "$value": "#A9CF8E",
+          "rgb": [
+            169,
+            207,
+            142
+          ],
+          "$description": "A string in a JSON tree."
+        },
+        "day": {
+          "$type": "color",
+          "$value": "#2C6555",
+          "rgb": [
+            44,
+            101,
+            85
+          ],
+          "$description": "A string in a JSON tree."
         }
       }
     }

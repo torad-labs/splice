@@ -29,8 +29,8 @@ Product lines from the 0.4.0 announcement video:
 | `GUIDELINES.md` | Rules in text |
 | `SOURCE-EVIDENCE.md` | Source file or video frame for each value in the kit |
 | `logos/` | Mark (night, day, flat night, flat day, one-colour cream, one-colour ink), wordmark (cream, ink), horizontal and stacked lockups (night, day). SVG with outlined paths, plus PNG |
-| `icons/` | `favicon.svg` with 16, 32 and 48 px PNG; `splice-app.svg` with 256, 512 and 1024 px PNG |
-| `tokens/` | `splice.css` (CSS custom properties), `splice.tokens.json` (DTCG format), `splice.contrast.json` (measured contrast ratios) |
+| `icons/` | `favicon.svg` with 16, 32 and 48 px PNG; `favicon-day.svg`, the same tile in the day inks (added October 19, 2026); `splice-app.svg` with 256, 512 and 1024 px PNG |
+| `tokens/` | `splice.css` (CSS custom properties), `splice.tokens.json` (DTCG format), `splice.contrast.json` (measured contrast ratios). Light mode additions of October 19, 2026: day provider colours, Paper Low and Paper High, the socket, the roles the console draws, chart hues and the contrast rows for them. The generator in the full kit does not write them yet |
 | `fonts/` | Fraunces, Source Serif 4, IBM Plex Mono (TTF), `splice-fonts.css`, SIL OFL 1.1 licence files |
 | `social/` | X avatar 400×400, X header 1500×500, GitHub social preview 1280×640 |
 | `templates/` | Release card 1200×630 with sample copy from the 0.4.0 drafts |

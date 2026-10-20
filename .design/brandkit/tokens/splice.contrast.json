@@ -208,5 +208,581 @@
   "fgHex": "#EC93C3",
   "bgHex": "#1C1610",
   "ratio": 8.13
+ },
+ {
+  "fg": "status-live-day",
+  "bg": "paper",
+  "fgHex": "#2C6555",
+  "bgHex": "#FBF1DF",
+  "ratio": 6.05
+ },
+ {
+  "fg": "status-limit-day",
+  "bg": "paper",
+  "fgHex": "#BB301A",
+  "bgHex": "#FBF1DF",
+  "ratio": 5.28
+ },
+ {
+  "fg": "claude-day",
+  "bg": "paper",
+  "fgHex": "#A54711",
+  "bgHex": "#FBF1DF",
+  "ratio": 5.34
+ },
+ {
+  "fg": "gpt-day",
+  "bg": "paper",
+  "fgHex": "#006F6B",
+  "bgHex": "#FBF1DF",
+  "ratio": 5.38
+ },
+ {
+  "fg": "grok-day",
+  "bg": "paper",
+  "fgHex": "#015DD3",
+  "bgHex": "#FBF1DF",
+  "ratio": 5.35
+ },
+ {
+  "fg": "kimi-day",
+  "bg": "paper",
+  "fgHex": "#7E5E13",
+  "bgHex": "#FBF1DF",
+  "ratio": 5.36
+ },
+ {
+  "fg": "muse-day",
+  "bg": "paper",
+  "fgHex": "#7837E8",
+  "bgHex": "#FBF1DF",
+  "ratio": 5.34
+ },
+ {
+  "fg": "router-day",
+  "bg": "paper",
+  "fgHex": "#7E5B44",
+  "bgHex": "#FBF1DF",
+  "ratio": 5.41
+ },
+ {
+  "fg": "local-day",
+  "bg": "paper",
+  "fgHex": "#327035",
+  "bgHex": "#FBF1DF",
+  "ratio": 5.35
+ },
+ {
+  "fg": "deepseek-day",
+  "bg": "paper",
+  "fgHex": "#B82072",
+  "bgHex": "#FBF1DF",
+  "ratio": 5.38
+ },
+ {
+  "fg": "chart-1-day",
+  "bg": "paper",
+  "fgHex": "#885920",
+  "bgHex": "#FBF1DF",
+  "ratio": 5.36,
+  "kind": "chart"
+ },
+ {
+  "fg": "chart-2-day",
+  "bg": "paper",
+  "fgHex": "#366792",
+  "bgHex": "#FBF1DF",
+  "ratio": 5.34,
+  "kind": "chart"
+ },
+ {
+  "fg": "chart-3-day",
+  "bg": "paper",
+  "fgHex": "#386E3F",
+  "bgHex": "#FBF1DF",
+  "ratio": 5.4,
+  "kind": "chart"
+ },
+ {
+  "fg": "chart-4-day",
+  "bg": "paper",
+  "fgHex": "#984871",
+  "bgHex": "#FBF1DF",
+  "ratio": 5.36,
+  "kind": "chart"
+ },
+ {
+  "fg": "chart-5-day",
+  "bg": "paper",
+  "fgHex": "#5A52A0",
+  "bgHex": "#FBF1DF",
+  "ratio": 5.95,
+  "kind": "chart"
+ },
+ {
+  "fg": "chart-6-day",
+  "bg": "paper",
+  "fgHex": "#756029",
+  "bgHex": "#FBF1DF",
+  "ratio": 5.42,
+  "kind": "chart"
+ },
+ {
+  "fg": "track-line-day",
+  "bg": "paper",
+  "fgHex": "#8B8375",
+  "bgHex": "#FBF1DF",
+  "ratio": 3.35,
+  "kind": "non-text, 3:1"
+ },
+ {
+  "fg": "ink-day",
+  "bg": "paper-low",
+  "fgHex": "#241D14",
+  "bgHex": "#EBE1CA",
+  "ratio": 12.81
+ },
+ {
+  "fg": "ink-day-body",
+  "bg": "paper-low",
+  "fgHex": "#4E4434",
+  "bgHex": "#EBE1CA",
+  "ratio": 7.34
+ },
+ {
+  "fg": "ink-day-mute",
+  "bg": "paper-low",
+  "fgHex": "#6B604B",
+  "bgHex": "#EBE1CA",
+  "ratio": 4.75
+ },
+ {
+  "fg": "key-day",
+  "bg": "paper-low",
+  "fgHex": "#8A5A12",
+  "bgHex": "#EBE1CA",
+  "ratio": 4.55
+ },
+ {
+  "fg": "status-live-day",
+  "bg": "paper-low",
+  "fgHex": "#2C6555",
+  "bgHex": "#EBE1CA",
+  "ratio": 5.21
+ },
+ {
+  "fg": "status-limit-day",
+  "bg": "paper-low",
+  "fgHex": "#BB301A",
+  "bgHex": "#EBE1CA",
+  "ratio": 4.55
+ },
+ {
+  "fg": "claude-day",
+  "bg": "paper-low",
+  "fgHex": "#A54711",
+  "bgHex": "#EBE1CA",
+  "ratio": 4.6
+ },
+ {
+  "fg": "gpt-day",
+  "bg": "paper-low",
+  "fgHex": "#006F6B",
+  "bgHex": "#EBE1CA",
+  "ratio": 4.63
+ },
+ {
+  "fg": "grok-day",
+  "bg": "paper-low",
+  "fgHex": "#015DD3",
+  "bgHex": "#EBE1CA",
+  "ratio": 4.61
+ },
+ {
+  "fg": "kimi-day",
+  "bg": "paper-low",
+  "fgHex": "#7E5E13",
+  "bgHex": "#EBE1CA",
+  "ratio": 4.62
+ },
+ {
+  "fg": "muse-day",
+  "bg": "paper-low",
+  "fgHex": "#7837E8",
+  "bgHex": "#EBE1CA",
+  "ratio": 4.6
+ },
+ {
+  "fg": "router-day",
+  "bg": "paper-low",
+  "fgHex": "#7E5B44",
+  "bgHex": "#EBE1CA",
+  "ratio": 4.66
+ },
+ {
+  "fg": "local-day",
+  "bg": "paper-low",
+  "fgHex": "#327035",
+  "bgHex": "#EBE1CA",
+  "ratio": 4.61
+ },
+ {
+  "fg": "deepseek-day",
+  "bg": "paper-low",
+  "fgHex": "#B82072",
+  "bgHex": "#EBE1CA",
+  "ratio": 4.63
+ },
+ {
+  "fg": "chart-1-day",
+  "bg": "paper-low",
+  "fgHex": "#885920",
+  "bgHex": "#EBE1CA",
+  "ratio": 4.62,
+  "kind": "chart"
+ },
+ {
+  "fg": "chart-2-day",
+  "bg": "paper-low",
+  "fgHex": "#366792",
+  "bgHex": "#EBE1CA",
+  "ratio": 4.6,
+  "kind": "chart"
+ },
+ {
+  "fg": "chart-3-day",
+  "bg": "paper-low",
+  "fgHex": "#386E3F",
+  "bgHex": "#EBE1CA",
+  "ratio": 4.66,
+  "kind": "chart"
+ },
+ {
+  "fg": "chart-4-day",
+  "bg": "paper-low",
+  "fgHex": "#984871",
+  "bgHex": "#EBE1CA",
+  "ratio": 4.62,
+  "kind": "chart"
+ },
+ {
+  "fg": "chart-5-day",
+  "bg": "paper-low",
+  "fgHex": "#5A52A0",
+  "bgHex": "#EBE1CA",
+  "ratio": 5.13,
+  "kind": "chart"
+ },
+ {
+  "fg": "chart-6-day",
+  "bg": "paper-low",
+  "fgHex": "#756029",
+  "bgHex": "#EBE1CA",
+  "ratio": 4.67,
+  "kind": "chart"
+ },
+ {
+  "fg": "track-line-day",
+  "bg": "paper-low",
+  "fgHex": "#847B6B",
+  "bgHex": "#EBE1CA",
+  "ratio": 3.21,
+  "kind": "non-text, 3:1"
+ },
+ {
+  "fg": "ink-day",
+  "bg": "paper-high",
+  "fgHex": "#241D14",
+  "bgHex": "#F6EDDB",
+  "ratio": 14.32
+ },
+ {
+  "fg": "ink-day-body",
+  "bg": "paper-high",
+  "fgHex": "#4E4434",
+  "bgHex": "#F6EDDB",
+  "ratio": 8.21
+ },
+ {
+  "fg": "ink-day-mute",
+  "bg": "paper-high",
+  "fgHex": "#6B604B",
+  "bgHex": "#F6EDDB",
+  "ratio": 5.31
+ },
+ {
+  "fg": "key-day",
+  "bg": "paper-high",
+  "fgHex": "#8A5A12",
+  "bgHex": "#F6EDDB",
+  "ratio": 5.08
+ },
+ {
+  "fg": "status-live-day",
+  "bg": "paper-high",
+  "fgHex": "#2C6555",
+  "bgHex": "#F6EDDB",
+  "ratio": 5.82
+ },
+ {
+  "fg": "status-limit-day",
+  "bg": "paper-high",
+  "fgHex": "#BB301A",
+  "bgHex": "#F6EDDB",
+  "ratio": 5.09
+ },
+ {
+  "fg": "claude-day",
+  "bg": "paper-high",
+  "fgHex": "#A54711",
+  "bgHex": "#F6EDDB",
+  "ratio": 5.15
+ },
+ {
+  "fg": "gpt-day",
+  "bg": "paper-high",
+  "fgHex": "#006F6B",
+  "bgHex": "#F6EDDB",
+  "ratio": 5.18
+ },
+ {
+  "fg": "grok-day",
+  "bg": "paper-high",
+  "fgHex": "#015DD3",
+  "bgHex": "#F6EDDB",
+  "ratio": 5.15
+ },
+ {
+  "fg": "kimi-day",
+  "bg": "paper-high",
+  "fgHex": "#7E5E13",
+  "bgHex": "#F6EDDB",
+  "ratio": 5.16
+ },
+ {
+  "fg": "muse-day",
+  "bg": "paper-high",
+  "fgHex": "#7837E8",
+  "bgHex": "#F6EDDB",
+  "ratio": 5.14
+ },
+ {
+  "fg": "router-day",
+  "bg": "paper-high",
+  "fgHex": "#7E5B44",
+  "bgHex": "#F6EDDB",
+  "ratio": 5.21
+ },
+ {
+  "fg": "local-day",
+  "bg": "paper-high",
+  "fgHex": "#327035",
+  "bgHex": "#F6EDDB",
+  "ratio": 5.15
+ },
+ {
+  "fg": "deepseek-day",
+  "bg": "paper-high",
+  "fgHex": "#B82072",
+  "bgHex": "#F6EDDB",
+  "ratio": 5.18
+ },
+ {
+  "fg": "chart-1-day",
+  "bg": "paper-high",
+  "fgHex": "#885920",
+  "bgHex": "#F6EDDB",
+  "ratio": 5.16,
+  "kind": "chart"
+ },
+ {
+  "fg": "chart-2-day",
+  "bg": "paper-high",
+  "fgHex": "#366792",
+  "bgHex": "#F6EDDB",
+  "ratio": 5.14,
+  "kind": "chart"
+ },
+ {
+  "fg": "chart-3-day",
+  "bg": "paper-high",
+  "fgHex": "#386E3F",
+  "bgHex": "#F6EDDB",
+  "ratio": 5.2,
+  "kind": "chart"
+ },
+ {
+  "fg": "chart-4-day",
+  "bg": "paper-high",
+  "fgHex": "#984871",
+  "bgHex": "#F6EDDB",
+  "ratio": 5.16,
+  "kind": "chart"
+ },
+ {
+  "fg": "chart-5-day",
+  "bg": "paper-high",
+  "fgHex": "#5A52A0",
+  "bgHex": "#F6EDDB",
+  "ratio": 5.73,
+  "kind": "chart"
+ },
+ {
+  "fg": "chart-6-day",
+  "bg": "paper-high",
+  "fgHex": "#756029",
+  "bgHex": "#F6EDDB",
+  "ratio": 5.22,
+  "kind": "chart"
+ },
+ {
+  "fg": "track-line-day",
+  "bg": "paper-high",
+  "fgHex": "#898174",
+  "bgHex": "#F6EDDB",
+  "ratio": 3.31,
+  "kind": "non-text, 3:1"
+ },
+ {
+  "fg": "ink-day",
+  "bg": "status-limit-night",
+  "fgHex": "#241D14",
+  "bgHex": "#F06A4C",
+  "ratio": 5.45
+ },
+ {
+  "fg": "paper",
+  "bg": "status-limit-day",
+  "fgHex": "#FBF1DF",
+  "bgHex": "#BB301A",
+  "ratio": 5.28
+ },
+ {
+  "fg": "ink-day",
+  "bg": "claude-night-fill",
+  "fgHex": "#241D14",
+  "bgHex": "#EE8F58",
+  "ratio": 6.9,
+  "kind": "text on fill"
+ },
+ {
+  "fg": "ink-day",
+  "bg": "gpt-night-fill",
+  "fgHex": "#241D14",
+  "bgHex": "#00C5BE",
+  "ratio": 7.72,
+  "kind": "text on fill"
+ },
+ {
+  "fg": "ink-day",
+  "bg": "grok-night-fill",
+  "fgHex": "#241D14",
+  "bgHex": "#6EADFE",
+  "ratio": 7.19,
+  "kind": "text on fill"
+ },
+ {
+  "fg": "ink-day",
+  "bg": "kimi-night-fill",
+  "fgHex": "#241D14",
+  "bgHex": "#E3B341",
+  "ratio": 8.56,
+  "kind": "text on fill"
+ },
+ {
+  "fg": "ink-day",
+  "bg": "muse-night-fill",
+  "fgHex": "#241D14",
+  "bgHex": "#B896F3",
+  "ratio": 6.9,
+  "kind": "text on fill"
+ },
+ {
+  "fg": "ink-day",
+  "bg": "router-night-fill",
+  "fgHex": "#241D14",
+  "bgHex": "#F3B27A",
+  "ratio": 9.09,
+  "kind": "text on fill"
+ },
+ {
+  "fg": "ink-day",
+  "bg": "local-night-fill",
+  "fgHex": "#241D14",
+  "bgHex": "#7BC47F",
+  "ratio": 7.97,
+  "kind": "text on fill"
+ },
+ {
+  "fg": "ink-day",
+  "bg": "deepseek-night-fill",
+  "fgHex": "#241D14",
+  "bgHex": "#EC93C3",
+  "ratio": 7.56,
+  "kind": "text on fill"
+ },
+ {
+  "fg": "paper",
+  "bg": "claude-day-fill",
+  "fgHex": "#FBF1DF",
+  "bgHex": "#A54711",
+  "ratio": 5.34,
+  "kind": "text on fill"
+ },
+ {
+  "fg": "paper",
+  "bg": "gpt-day-fill",
+  "fgHex": "#FBF1DF",
+  "bgHex": "#006F6B",
+  "ratio": 5.38,
+  "kind": "text on fill"
+ },
+ {
+  "fg": "paper",
+  "bg": "grok-day-fill",
+  "fgHex": "#FBF1DF",
+  "bgHex": "#015DD3",
+  "ratio": 5.35,
+  "kind": "text on fill"
+ },
+ {
+  "fg": "paper",
+  "bg": "kimi-day-fill",
+  "fgHex": "#FBF1DF",
+  "bgHex": "#7E5E13",
+  "ratio": 5.36,
+  "kind": "text on fill"
+ },
+ {
+  "fg": "paper",
+  "bg": "muse-day-fill",
+  "fgHex": "#FBF1DF",
+  "bgHex": "#7837E8",
+  "ratio": 5.34,
+  "kind": "text on fill"
+ },
+ {
+  "fg": "paper",
+  "bg": "router-day-fill",
+  "fgHex": "#FBF1DF",
+  "bgHex": "#7E5B44",
+  "ratio": 5.41,
+  "kind": "text on fill"
+ },
+ {
+  "fg": "paper",
+  "bg": "local-day-fill",
+  "fgHex": "#FBF1DF",
+  "bgHex": "#327035",
+  "ratio": 5.35,
+  "kind": "text on fill"
+ },
+ {
+  "fg": "paper",
+  "bg": "deepseek-day-fill",
+  "fgHex": "#FBF1DF",
+  "bgHex": "#B82072",
+  "ratio": 5.38,
+  "kind": "text on fill"
  }
 ]

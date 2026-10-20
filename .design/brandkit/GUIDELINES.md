@@ -63,6 +63,8 @@ Keep the spacing between mark and wordmark as supplied in the lockup files.
 | Paper | `#FBF1DF` | Light cards, tooltips and end cards. Light-mode background |
 | Cream | `#EFE2C6` | Body text and the wordmark on Night |
 | Key Light | `#FFD79A` | Accent. Primary button, focus ring, the active session. One use per view |
+| Paper Low | `#EBE1CA` | Second background in light mode: table headers, sunk fields, code blocks. Added October 19, 2026 |
+| Paper High | `#F6EDDB` | Raised surfaces in light mode: menus. Added October 19, 2026 |
 | Dusk | `#724C5E` | Alternate background for end cards and the GitHub preview only |
 
 Text colours:
@@ -84,6 +86,19 @@ Text colours:
 
 Do not use provider colours as backgrounds, as status colours or as Splice brand colours.
 
+**Provider colours on Paper.** The values above are 1.6 to 2.2:1 on Paper. On Paper, Paper Low and Paper High use the day values, which keep the hue and hold 4.5:1 or more on Paper Low and darker (5.3:1 or more on Paper). Router has no hue of its own left at that lightness, so its day value is a quiet brown. Text on a solid provider fill is Day Ink on the night values and Paper on the day values (`--splice-on-fill`).
+
+| Provider | Day hex | Token |
+| --- | --- | --- |
+| Claude | `#A54711` | `--splice-cable-claude-day` |
+| GPT | `#006F6B` | `--splice-cable-gpt-day` |
+| Grok | `#015DD3` | `--splice-cable-grok-day` |
+| Kimi | `#7E5E13` | `--splice-cable-kimi-day` |
+| Muse | `#7837E8` | `--splice-cable-muse-day` |
+| Router | `#7E5B44` | `--splice-cable-router-day` |
+| Local | `#327035` | `--splice-cable-local-day` |
+| DeepSeek | `#B82072` | `--splice-cable-deepseek-day` |
+
 **Status colours.** Always show a text label with them.
 | Status | On Night | On Paper | Meaning |
 | --- | --- | --- | --- |
@@ -101,7 +116,9 @@ Do not use provider colours as backgrounds, as status colours or as Splice brand
 | Key on Paper | 5.3:1 |
 | Lowest provider colour on Night | 6.5:1 |
 
-Body text needs at least 4.5:1. Text 24 px and larger needs at least 3:1.
+Body text needs at least 4.5:1. Text 24 px and larger needs at least 3:1. Borders and other marks that identify a control need at least 3:1.
+
+In light mode every day text colour, every day status colour, every day provider colour and every chart hue holds 4.5:1 on Paper, Paper Low and Paper High, and the field rim (`--splice-track-line`) holds 3:1 on all three. `tokens/splice.contrast.json` lists each pair.
 
 ## 5. Typography
 All three families use the SIL Open Font License 1.1 and are in `fonts/`. Load them with `fonts/splice-fonts.css`.

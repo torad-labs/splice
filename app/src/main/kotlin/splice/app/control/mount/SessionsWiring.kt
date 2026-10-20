@@ -92,11 +92,14 @@ internal class SessionsWiring(
         LimitResume(it, perfFacts.endingOf(), PeerNoteSocket(io), LifecycleScope(io), log, ended)
     }
 
-    /** Where each session's moves are kept: the transcript route serves them and Continue on completes them. */
-    private val moves = ModelMoves(StatePaths().modelMovesDir)
+    /** Where each session's moves are kept: the transcript route serves them and Continue on completes them. The
+     *  daemon's own state root, never the process default: the launch's rewrite records them under the configured
+     *  one. */
+    private val moves = ModelMoves(config.statePaths.modelMovesDir)
 
-    /** Which moves are in flight, and the folder each carries his trust for while it is (MovingTrust). */
-    private val moving = MovingTrust(StatePaths().movingTrustDir)
+    /** Which moves are in flight, and the folder each carries his trust for while it is (MovingTrust). The daemon's
+     *  own state root too, the one the boot sweep clears and the launch reads. */
+    private val moving = MovingTrust(config.statePaths.movingTrustDir)
 
     /** The listing Sessions and Requests read: the registry, with the sessions Claude Code already forgot kept as
      *  ended under the one history window (SeenSessions). */

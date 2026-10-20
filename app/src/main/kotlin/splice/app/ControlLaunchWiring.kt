@@ -22,6 +22,7 @@ import splice.client.mcp.McpSharing
 import splice.client.mcp.PluginFlagGate
 import splice.client.mcp.PluginFlagHolds
 import splice.client.resume.AuthHeaderFile
+import splice.client.resume.MovingTrust
 import splice.client.resume.ResumeAcrossHeads
 import splice.client.resume.ResumeHookTarget
 import splice.client.resume.TranscriptModelRewrite
@@ -111,7 +112,15 @@ internal class ControlLaunchWiring(
         login.slot.owner = owner
         login.slot.accounts = arm.accounts
         owner.places().map { it.head }.distinct().forEach(login.poolChanges::publish)
-        return LaunchService(materializer, resumeAcrossHeads = ResumeAcrossHeads(rewriter), wrap = wrap).also {
+        // the moves in flight under the daemon's own state root, where Continue on writes them and the boot sweep clears
+        val moving = MovingTrust(statePaths.movingTrustDir)
+        val launch = LaunchService(
+            materializer,
+            resumeAcrossHeads = ResumeAcrossHeads(rewriter),
+            wrap = wrap,
+            moving = moving,
+        )
+        return launch.also {
             it.loginGuard = owner
             it.hubLaunch = McpHubLaunch(
                 McpLaunchPlanner(home, temple = temple),

@@ -52,6 +52,7 @@ import java.nio.file.Files
 import java.nio.file.InvalidPathException
 import java.nio.file.LinkOption.NOFOLLOW_LINKS
 import java.nio.file.Path
+import java.util.concurrent.ConcurrentHashMap
 
 /** The same shape ResumeAcrossHeads admits as a session id: a path component and a log word. */
 private val SESSION_ID_SHAPE = Regex("[A-Za-z0-9_-]{1,128}")
@@ -67,6 +68,10 @@ public class ResumeHookRoute(
     private val starts: SessionStarts? = null,
 ) {
     private val json = Json { ignoreUnknownKeys = true }
+
+    /** The monitors of the heads' ownership files: a hook builds its own SessionOwnership, so the route holds the lock
+     *  every one of them writes under, and two members starting in one repo never drop each other's entry. */
+    private val ownershipLocks = ConcurrentHashMap<Path, Any>()
 
     public suspend fun resume(call: ApplicationCall) {
         val key = call.parameters["head"].orEmpty()
@@ -133,7 +138,7 @@ public class ResumeHookRoute(
         // V4-183: ownership first, on both sources — a resume that then fails to rewrite is still
         // this head's session. A hook without a cwd records nothing (a launch resolves -c by cwd).
         if (hook.cwd.isNotBlank()) {
-            SessionOwnership(configDir, log = log).record(hook.sessionId, hook.cwd, transcript)
+            SessionOwnership(configDir, log = log, locks = ownershipLocks).record(hook.sessionId, hook.cwd, transcript)
         }
         return if (hook.source == RESUME_SOURCE) rewrite(managed, transcript, spec, hook.sessionId) else null
     }

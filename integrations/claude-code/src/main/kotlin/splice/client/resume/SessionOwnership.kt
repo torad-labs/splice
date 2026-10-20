@@ -38,6 +38,7 @@ import java.nio.file.Path
 import java.nio.file.StandardCopyOption.ATOMIC_MOVE
 import java.nio.file.StandardCopyOption.REPLACE_EXISTING
 import java.time.Clock
+import java.util.concurrent.ConcurrentHashMap
 
 /** The index file's name inside a head's config dir — one declaration, read by the tests too. */
 internal const val SESSION_OWNERSHIP_FILE: String = "splice-sessions.json"
@@ -60,6 +61,9 @@ public class SessionOwnership(
     private val configDir: Path,
     private val clock: Clock = Clock.systemUTC(),
     private val log: LogSink = LogSink(DaemonLog::write),
+    /** One monitor per config folder, shared by every instance that writes it: the hook route builds an instance per
+     *  hook, so a lock of the instance's own would let two hooks read the same file and each save without the other. */
+    private val locks: ConcurrentHashMap<Path, Any> = ConcurrentHashMap(),
 ) {
     private val json = Json { ignoreUnknownKeys = true }
     private val file: Path get() = configDir.resolve(SESSION_OWNERSHIP_FILE)
@@ -75,8 +79,11 @@ public class SessionOwnership(
         val entry = OwnedSession(id, canonical(cwd), transcript.toString(), clock.millis())
         // Newest first, and the entry just recorded first among equals: the sort is stable, so two
         // records in one millisecond (a test, a burst of launches) still resolve to the latest.
-        val kept = listOf(entry) + load().filter { it.id != id }
-        save(kept.sortedByDescending(OwnedSession::at).take(MAX_OWNED_SESSIONS))
+        // read, prepend and save are one step: the atomic move keeps the file whole, only this keeps every entry in it
+        synchronized(locks.computeIfAbsent(configDir.toAbsolutePath().normalize()) { Any() }) {
+            val kept = listOf(entry) + load().filter { it.id != id }
+            save(kept.sortedByDescending(OwnedSession::at).take(MAX_OWNED_SESSIONS))
+        }
     }
 
     /** The newest session this head owns in [cwd] whose transcript can be resumed, or null. */

@@ -155,6 +155,14 @@ origin.
   the header names that plan. An Anthropic Console API-key login is billed through that API.
 
 ### Added
+- **Named peers any Claude Code session can message.** `splice peer register <name>` creates a peer that every
+  session on the machine sees in ListAgents and can SendMessage to, with no session behind it. A small helper
+  process per peer journals each message with a delivery receipt, labels each sender `registered` or
+  `unregistered` by whether its address names a live session, and can push each message to a webhook signed with
+  HMAC-SHA256. `splice peer send --as <name>` sends under the peer's own name, which Splice writes itself, so a
+  recipient can reply; `inbox` and `status` read what came back. Each peer has its own key, which opens only its
+  own routes, and the management key cannot send as a peer. A user who never registers one gets no process, socket
+  or file. Guide: `docs/peers.md`.
 - **The splice manager can drive the console.** `splice console <action>` works on the console page the person has
   open, the way their own hands would: `snapshot` lists the page and every control with a ref, `read` prints its words,
   `tap`, `fill`, `select`, `press`, `hover` and `scroll` act, `goto` moves between pages, and `highlight` draws a ring,

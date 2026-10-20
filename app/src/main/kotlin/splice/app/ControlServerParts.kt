@@ -37,6 +37,8 @@ internal class ControlServerParts(
             readIdleMs = { config.getConfig().ingressReadIdleMs },
         ),
         daemon.mcpAccess,
+        // Oct 19, 2026: the peers whose own keys open Door.PEER (docs/specs/peer-messaging.md 3.1).
+        PeersWiring().store(log),
     )
 
     /** Pin the environment override to the live state directory, not its parent: the wrong parent

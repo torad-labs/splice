@@ -19,7 +19,7 @@ public class Cli {
         val command = parser.parse(args) ?: run {
             System.err.println(
                 "usage: splice [setup|add <profile>|add-model|models [provider]|upgrade|status|sessions|perf|" +
-                    "wire <head> [--last N] [--json]|" +
+                    "wire <head> [--last N] [--json]|peer <verb>|" +
                     "trace <head> [--last N] [--session S] [--turn ID] [--json] [--purge]|" +
                     "restart [--now]|console [<action>]|mcp install temple [options]|" +
                     "login <head> [--label <name> [--discard]]|key <set|list|unset>|" +

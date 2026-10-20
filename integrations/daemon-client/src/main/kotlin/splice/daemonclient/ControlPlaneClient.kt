@@ -92,11 +92,15 @@ public object ControlPlaneClient {
      *  happened, because an act's caller must not read a cut connection as "the daemon is down": once the body went
      *  up, the act may have run. The body streams at a fixed length, which also keeps the JDK from quietly sending the
      *  POST a second time when the connection drops (its `sun.net.http.retryPost` default). */
-    public fun post(url: String, bearer: String, json: String, readTimeoutMs: Int): PostReading {
+    public fun post(url: String, bearer: String, json: String, readTimeoutMs: Int): PostReading =
+        withBody(url, "POST", bearer, json, readTimeoutMs)
+
+    /** [post] with any [method] that carries a JSON body, such as PUT (`splice peer webhook set`, Oct 19, 2026). */
+    public fun withBody(url: String, method: String, bearer: String, json: String, readTimeoutMs: Int): PostReading {
         val body = json.encodeToByteArray()
         val connection = URI(url).toURL().openConnection() as HttpURLConnection
         try {
-            connection.requestMethod = "POST"
+            connection.requestMethod = method
             connection.setRequestProperty("Authorization", "Bearer $bearer")
             connection.setRequestProperty("Content-Type", "application/json")
             connection.connectTimeout = PROBE_TIMEOUT_MS

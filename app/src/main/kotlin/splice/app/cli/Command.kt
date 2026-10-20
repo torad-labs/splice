@@ -52,6 +52,11 @@ public sealed class Command {
         override suspend fun run(): Int = splice.app.cli.mcp.McpServiceCommand().run(args)
     }
 
+    /** `splice peer <verb>`: named peers every Claude Code session can message (docs/peers.md). */
+    public data class Peer(val args: List<String>) : Command() {
+        override suspend fun run(): Int = splice.app.cli.peer.PeerCommand().run(args)
+    }
+
     /** The boot findings pass of this build against the person's splice.toml (ConfigPreflight). */
     public data object CheckConfig : Command() {
         override suspend fun run(): Int = ConfigPreflight(EnvReader(System::getenv)).check()

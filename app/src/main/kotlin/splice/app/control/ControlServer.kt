@@ -32,6 +32,7 @@ import io.ktor.server.routing.get
 import io.ktor.server.routing.getAllRoutes
 import io.ktor.server.routing.routing
 import kotlinx.coroutines.CancellationException
+import splice.app.PeersWiring
 import splice.app.control.api.ControlAudit
 import splice.app.control.api.ControlHealthReport
 import splice.app.control.api.HeadResolver
@@ -53,6 +54,7 @@ import splice.app.control.mount.LifecycleMount
 import splice.app.control.mount.ManagerMount
 import splice.app.control.mount.McpMount
 import splice.app.control.mount.ModelsMount
+import splice.app.control.mount.PeersMount
 import splice.app.control.mount.ProjectsMount
 import splice.app.control.mount.SessionsMount
 import splice.app.control.mount.SessionsWiring
@@ -168,6 +170,11 @@ internal class ControlServer(
     // Oct 10, 2026: the console's pages at /, open rows that carry no data (ConsoleMount).
     private val console = ConsoleMount()
 
+    // Oct 19, 2026: named peers (docs/specs/peer-messaging.md 3), over the store the guard admits peer keys from.
+    private val peers: PeersMount? = sessions?.let { source ->
+        guard.peers?.let { store -> PeersWiring().mount(store, source, guard, log) }
+    }
+
     // Oct 16, 2026: what `splice console <action>` hands the open console to do, and the page's answer (ConsolePilot).
     private val consolePilot = ConsolePilotMount(guard)
 
@@ -199,7 +206,7 @@ internal class ControlServer(
         ControlMount(launch::register),
         ControlMount(consolePilot::register),
         ControlMount(console::register),
-    ) + listOfNotNull(mcp)
+    ) + listOfNotNull(peers?.let { ControlMount(it::register) }, mcp)
     private val resources: List<BoundResource> = listOfNotNull(mcp)
 
     @Volatile

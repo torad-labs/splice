@@ -176,6 +176,8 @@ private val verbs: Map<String, CommandRegistration> = mapOf(
         "<head> [--last N] [--session S] [--turn ID] [--json] [--purge]",
         CommandFactory { a -> Command.Trace(a.drop(1)) },
     ),
+    // Oct 19, 2026: named peers (docs/specs/peer-messaging.md 5); the verb's own words are PeerCommand's to parse.
+    "peer" to CommandRegistration(splice.app.cli.peer.PEER_USAGE, CommandFactory { a -> Command.Peer(a.drop(1)) }),
 )
 
 /** argv -> Command. Was `Command.parse` on the type's own static block — the shape the same

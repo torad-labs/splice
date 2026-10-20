@@ -57,6 +57,7 @@ You: `free` (run it), `ask` (person's yes first), `person` (the person runs it i
 | `setup` | Guided first-run flow; writes TOML, installs commands, may restart | none | no | yes | person, never you |
 | `init` | Writes the starter `splice.toml` if absent, and the MCP hub env file on Linux | none | no | no | ask |
 | `mcp install temple` | Persists Temple's local MCP service and refreshes Claude/native Codex entries | `--script FILE`, `--url URL`, `--command COMMAND`, `--codex-home DIR` | optional | optional | ask |
+| `peer` | Named peers every Claude Code session can message: register, list, revoke, rotate, webhooks, send and read as one | `register <name>`, `list`, `revoke <name>`, `rotate <name>`, `webhook set\|clear\|test`, `send --as`, `inbox --as`, `status --as` | yes | yes (`--as` verbs use the peer's own key file) | `list`: free. Every other verb: ask |
 | `install` | Links head wrapper commands into `~/.local/bin` | `[<head>\|--all]` | no | no | ask |
 | `uninstall` | Removes head wrapper links (never the jar, never config) | `[<head>\|--all]` | no | no | ask |
 | `daemon` | Runs the daemon in the foreground (default with no verb) | none | is the daemon | no | never |
@@ -79,7 +80,9 @@ daemon use is the restart and probe it offers at the end (`AddCommand.kt`). `sta
 | 0 | The verb succeeded. `--help` also exits 0 |
 | 1 | The verb ran and failed or refused. A verb that refuses prints one line starting `splice:` |
 | 2 | The verb is unknown or its words are not a verb's: usage printed |
-| 3 | `check-config` only: splice would refuse to boot on this `splice.toml`; every finding is printed |
+| 3 | `check-config`: splice would refuse to boot on this `splice.toml`; every finding is printed. `peer`: the daemon is not answering |
+| 4 | `peer` only: rate limited (429) |
+| 5 | `peer` only: the transport failed (502 or 503), such as a peer whose helper is not running |
 
 `doctor` exits 1 only on a real failure (a stopped daemon or an unused unsigned head is not one). `models`
 exits 1 when a declared row is over a published ceiling or no longer served. `install` exits 1 when a
@@ -424,6 +427,34 @@ operation through `act`. The app's root URL answering 503 does not establish whe
 Ask before using this command yourself. It changes a service registration and the native Codex MCP entry.
 Source: `app/.../cli/mcp/McpServiceCommand.kt`, `app/.../mcp/TempleMcpStartup.kt`.
 
+### peer
+
+```sh
+splice peer register gary [--cwd DIR] [--send-to walk-a,walk-b]
+splice peer list [--json]
+splice peer send --as gary walk-a "the text"
+splice peer inbox --as gary [--after N] [--limit N] [--ack] [--json]
+splice peer status --as gary <msgId>
+splice peer webhook set gary https://example.com/hook [--bearer-file F]
+splice peer webhook test gary
+splice peer rotate gary
+splice peer revoke gary [--purge]
+```
+
+A peer is a name every Claude Code session sees in ListAgents and can SendMessage to, with no session behind
+it. Splice runs one small helper process per peer, which journals what arrives and can push it to a webhook.
+`send --as` writes the peer's name as the sender itself; nothing in the command can change it. A Claude Code
+recipient reports back only when it holds, expires or drops a message, so `status` usually says `no problem
+reported`. The person's guide is `docs/peers.md` in the splice repo.
+
+`list` is free. Ask before every other verb: `register` writes into `~/.claude/sessions`, `revoke` and
+`rotate` end a key someone may be using, and `send` speaks to a session in the peer's name. Never read a peer's
+`peer.key`, `webhook.secret` or `webhook.bearer`; the `--as` verbs read the key for you, and `--follow` never
+exits, so do not run it in your pane.
+
+Source: `app/.../cli/peer/PeerCommand.kt`, `app/.../control/mount/PeersMount.kt`,
+`docs/specs/peer-messaging.md`.
+
 ### init
 
 ```
@@ -458,7 +489,7 @@ There is no verb that removes splice. `splice uninstall --all` removes wrapper l
 | `splice daemon`, `splice start` | Runs or starts the daemon in your shell; a second daemon is refused, and a foreground one ties up the pane |
 | `splice trace --purge` | Deletes a head's trace files; not undoable |
 | Bare `splice console` | Opens a browser on the person's desktop with the key in the URL. Its actions (`splice console snapshot`, ...) are yours |
-| Anything that reads `keys.toml`, `auth/`, `key-ledger.json` or `mgmt-key` | `cat`, `grep`, `cp`, a script: denied when the command names the file; a glob can still slip past (see operations.md, section 2). A key you meet in output is named by its setting, never repeated |
+| Anything that reads `keys.toml`, `auth/`, `key-ledger.json`, `mgmt-key` or a peer's `peers/<name>/` files | `cat`, `grep`, `cp`, a script: denied when the command names the file; a glob can still slip past (see operations.md, section 2). A key you meet in output is named by its setting, never repeated |
 
 Source: manager-home `CLAUDE.md` (what you may do, secrets, ask first); `SetupCommand.kt:1-5` (non-TTY defaults);
 `AddArgs.kt` (`--yes`); `LogsCommand.kt:27-31`; `TraceCommand.kt:47-56`.

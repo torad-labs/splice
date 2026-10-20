@@ -1195,6 +1195,10 @@ origin.
 - **`splice login` names a Claude login by its label, never its email,** in every sentence it prints.
 
 ### Fixed
+- **A restart no longer wipes the session totals of a head that was idle.** The status line's per-session figures are
+  kept in a file that is written at every stop. A head that had served no turn since it started wrote that file empty,
+  so each restart, an auto-update's included, erased the saved totals of every idle head. The file is now read before
+  it is written.
 - **A tool the client just loaded no longer reads as a failed load.** When Claude Code defers tools and the model asks
   for one, the answer holds a `tool_reference` block. The chat dialect and the Responses heads without a tool surface
   sent the model "tool_reference block omitted ... unsupported on this backend" in its place, and a model that read it

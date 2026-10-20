@@ -240,6 +240,12 @@ internal class ProbeEconomics(private val perf: PerfRowsFileSource) {
 
     private fun subtract(bucket: EconomicsBucket, probes: EconomicsBucket): EconomicsBucket = bucket.copy(
         counts = bucket.counts.copy(turns = bucket.turns - probes.turns),
+        tokens = BucketTokens(
+            inTokens = bucket.inTokens - probes.inTokens,
+            cachedTokens = bucket.cachedTokens - probes.cachedTokens,
+            cacheWriteTokens = bucket.cacheWriteTokens - probes.cacheWriteTokens,
+            outTokens = bucket.outTokens - probes.outTokens,
+        ),
         bytes = BucketBytes(
             reqBytes = bucket.reqBytes - probes.reqBytes,
             upstreamBytes = bucket.upstreamBytes - probes.upstreamBytes,

@@ -40,9 +40,10 @@ public class LoginRoutes(
     /** GET /api/auth/{head}/login/{id} (FEATURES.md §6): polls one login started by [startLogin]. */
     public suspend fun pollLogin(call: ApplicationCall) {
         val key = call.parameters["head"].orEmpty()
-        resolver.resolveOrRespond(call, key) ?: return
+        val head = resolver.resolveOrRespond(call, key) ?: return
         val accounts = accounts() ?: return AccountReplies.respondUnwired(call, AccountReplies.ACCOUNTS_PORT)
         val status = accounts.pollLogin(call.parameters["id"].orEmpty())
+            ?.takeIf { it.head == head.key }
         if (status == null) {
             AccountReplies.respondError(call, "unknown login id", HttpStatusCode.NotFound)
             return

@@ -1,7 +1,8 @@
-package splice.control.mcp.hub
+package splice.control.mcp.hub.records
 
 import kotlinx.serialization.json.JsonObject
 import splice.control.mcp.JsonRpcCodec
+import splice.control.mcp.hub.HubFields
 import splice.core.util.JsonScalars
 import splice.core.util.JsonWire
 import splice.core.util.SecureFile

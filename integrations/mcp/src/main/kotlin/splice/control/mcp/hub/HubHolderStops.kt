@@ -1,6 +1,9 @@
 package splice.control.mcp.hub
 
 import splice.control.mcp.McpResult
+import splice.control.mcp.hub.records.HubHolderOwner
+import splice.control.mcp.hub.records.HubHolderRecord
+import splice.control.mcp.hub.records.HubRecords
 import splice.core.util.JsonScalars
 import splice.core.util.LogSafe
 import splice.core.util.LogSink

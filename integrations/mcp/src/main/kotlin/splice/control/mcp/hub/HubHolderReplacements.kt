@@ -1,6 +1,8 @@
 package splice.control.mcp.hub
 
 import splice.control.mcp.McpResult
+import splice.control.mcp.hub.records.HubHolderRecord
+import splice.control.mcp.hub.records.HubRecords
 import splice.core.util.JsonScalars
 
 internal class HubHolderReplacements(

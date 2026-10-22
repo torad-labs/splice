@@ -317,8 +317,9 @@ private val SHIPPED_SITES: Map<String, Map<String, Int>> = mapOf(
     // interrupted retirement retryable without replaying it; drain pins keep an exact generation from eviction.
     "integrations/mcp/src/main/kotlin/splice/control/mcp/hub/HubListings.kt" to mapOf("writeAtomic0600(" to 1),
     // Holder records and launcher gates belong to the file layer; generation exit receipts stay with their owner.
-    "integrations/mcp/src/main/kotlin/splice/control/mcp/hub/HubRecordFiles.kt" to mapOf("writeAtomic0600(" to 2),
-    "integrations/mcp/src/main/kotlin/splice/control/mcp/hub/HubHolderExitEvidence.kt" to
+    "integrations/mcp/src/main/kotlin/splice/control/mcp/hub/records/HubRecordFiles.kt" to
+        mapOf("writeAtomic0600(" to 2),
+    "integrations/mcp/src/main/kotlin/splice/control/mcp/hub/records/HubHolderExitEvidence.kt" to
         mapOf("writeAtomic0600(" to 1),
     "integrations/mcp/src/main/kotlin/splice/control/mcp/hub/HubHolderRetirements.kt" to mapOf("writeAtomic0600(" to 1),
     "integrations/mcp/src/main/kotlin/splice/control/mcp/hub/HubDrainPins.kt" to mapOf("writeAtomic0600(" to 1),

@@ -1,5 +1,5 @@
 
-package splice.control.mcp.hub
+package splice.control.mcp.hub.records
 
 import java.nio.file.Path
 
@@ -9,7 +9,7 @@ internal const val HOLDER_STARTING = "starting"
 internal const val HOLDER_LIVE = "live"
 internal const val HOLDER_EXITED = "exited"
 
-/** The holder record concerns stay separate: files, exact ownership, and generation exit evidence. */
+/** The durable holder-record boundary owns reusable socket records, exact ownership, legacy migration, exit evidence, and executable identity. */
 internal class HubRecords(dir: Path) {
     val files = HubRecordFiles(dir)
     val ownership = HubRecordOwnership(files)

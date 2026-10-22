@@ -1,5 +1,11 @@
 package splice.control.mcp.hub
 
+import splice.control.mcp.hub.records.HubExecutableIdentity
+import splice.control.mcp.hub.records.HubHolderLaunch
+import splice.control.mcp.hub.records.HubHolderOwner
+import splice.control.mcp.hub.records.HubHolderRecord
+import splice.control.mcp.hub.records.HubHolderScopeClaim
+import splice.control.mcp.hub.records.HubRecords
 import splice.core.util.JsonScalars
 import java.io.IOException
 import java.nio.file.Files

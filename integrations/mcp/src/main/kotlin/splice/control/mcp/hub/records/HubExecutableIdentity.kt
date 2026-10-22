@@ -1,4 +1,4 @@
-package splice.control.mcp.hub
+package splice.control.mcp.hub.records
 
 import java.io.IOException
 import java.nio.file.Files

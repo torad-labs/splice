@@ -1,5 +1,6 @@
 package splice.control.mcp.hub
 
+import splice.control.mcp.hub.records.HubRecords
 import java.nio.file.Path
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.locks.ReentrantLock

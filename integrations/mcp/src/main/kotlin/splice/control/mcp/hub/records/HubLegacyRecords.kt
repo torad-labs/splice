@@ -1,6 +1,7 @@
-package splice.control.mcp.hub
+package splice.control.mcp.hub.records
 
 import kotlinx.serialization.json.JsonObject
+import splice.control.mcp.hub.HubFields
 import splice.core.util.JsonScalars
 
 /** Migrates only a baseline record whose live process proves its executable, birth, scope and child. */

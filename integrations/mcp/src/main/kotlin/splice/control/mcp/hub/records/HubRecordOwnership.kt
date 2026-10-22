@@ -1,7 +1,8 @@
-package splice.control.mcp.hub
+package splice.control.mcp.hub.records
 
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
+import splice.control.mcp.hub.HubFields
 import splice.core.util.JsonScalars
 
 private const val HOLDER_LAUNCHER_STARTED_AT = "launcher_started_at"

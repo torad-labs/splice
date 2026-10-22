@@ -79,7 +79,9 @@ internal class HolderSettlement(
     private fun queueForward(line: String) {
         val forward = HolderProtocol.forward(line)
         if (admitsForward(forward)) {
-            forward?.let { settlements.putIfAbsent(it, Settlement.PENDING) }
+            if (forward != null && !settlements.containsKey(forward)) {
+                settlements[forward] = Settlement.PENDING
+            }
             appendServer(line, null, HolderProtocol.initialized(line))
         } else {
             notice(HolderProtocol.refused(requireNotNull(forward)))

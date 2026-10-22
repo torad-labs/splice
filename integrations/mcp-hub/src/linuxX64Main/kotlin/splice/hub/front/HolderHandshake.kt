@@ -413,7 +413,7 @@ internal class HolderMemory(
 }
 
 private const val INITIALIZED = """{"jsonrpc":"2.0","method":"notifications/initialized"}"""
-private const val INITIALIZED_PENDING = "initialized_pending"
+internal const val INITIALIZED_PENDING = "initialized_pending"
 private const val UNPROVEN_INITIALIZATION = "the retained holder initialization is unproven"
 private const val INITIALIZED_UNPROVEN = "the initialized notification could not be durably retained"
 private const val MISSING_INITIALIZATION = "the retained holder has no durable initialization evidence"

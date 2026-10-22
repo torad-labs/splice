@@ -103,7 +103,7 @@ internal class RelaySettlements(
         val replay = recovery.requests.filter { key ->
             recovery.states[key] != QUEUED && recovery.states[key] != SETTLED
         }
-        requests.reconciliation.recovered(holder, recovery.generation, replay)
+        requests.reconciliation.recovered(holder, recovery.generation, replay.toSet())
     }
 
     private fun refused(holder: Holder, key: String) {

@@ -25,7 +25,9 @@ import java.nio.file.Path
 import java.nio.file.Paths
 import java.nio.file.StandardOpenOption
 import java.nio.file.attribute.FileTime
+import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicReference
+import java.util.concurrent.locks.ReentrantLock
 
 /**
  * One read-modify-write of `keys.toml`, performed while the sibling `.lock` is held.
@@ -293,13 +295,13 @@ public class KeyStore(
      *  Bounded, then FAILS LOUDLY — an unlocked concurrent RMW is the exact lost-update this
      *  exists to prevent, so unlike the read-mostly credential refresh there is no unlocked
      *  degrade for a WRITE. Holds are microseconds; 5s of contention means something is wedged. */
-    private fun <T> withStoreLock(block: StoreEdit<T>): T {
+    private fun <T> withStoreLock(block: StoreEdit<T>): T = KeyStoreJvmWrites.locked {
         val lockPath = path.resolveSibling("${path.fileName}.lock")
         lockPath.parent?.let { Files.createDirectories(it) }
         FileChannel.open(lockPath, StandardOpenOption.CREATE, StandardOpenOption.WRITE).use { channel ->
             val lock = acquireBounded(channel)
             try {
-                return block()
+                block()
             } finally {
                 lock.release()
             }
@@ -353,6 +355,22 @@ public val envNameRegex: Regex = Regex("[A-Z][A-Z0-9_]*")
 /** The warned-version sentinel for a store whose mtime cannot even be statted (DR-40): a real
  *  FileTime with a value no filesystem produces, value-equal across creations. */
 private val MTIME_UNREADABLE: FileTime = FileTime.fromMillis(Long.MIN_VALUE)
+
+/** Serializes same-JVM channel lifetimes before the separate cross-process file lock is opened. */
+private object KeyStoreJvmWrites {
+    private val lock = ReentrantLock()
+
+    fun <T> locked(edit: StoreEdit<T>): T {
+        check(lock.tryLock(LOCK_WAIT_MS, TimeUnit.MILLISECONDS)) {
+            "keys.toml locked by this process; refusing to write, existing keys preserved"
+        }
+        return try {
+            edit()
+        } finally {
+            lock.unlock()
+        }
+    }
+}
 
 // SH-11 mutation lock: holds are microseconds (parse + atomic write); 5s of contention
 // means a wedged peer, and the loud failure preserves the store.

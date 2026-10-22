@@ -10,10 +10,12 @@ internal class HostedServerStore {
     val bindings = HashMap<String, McpIdentity>()
     val reserved = HashMap<McpIdentity, Int>()
     val admissions = HashMap<McpIdentity, McpAdmission>()
+    val retiring = mutableSetOf<HostedServer>()
     var closed = false
 
     fun admissionRefusal(identity: McpIdentity, admission: McpAdmission?): String? = when {
         closed -> "MCP host is stopping"
+        retiring.any { it.identity == identity } -> "previous hosted MCP generation is still stopping"
         admission == null -> null
         admissions[identity] !== admission ->
             "MCP configuration changed after admission; drain and replace the previous server"
@@ -23,8 +25,14 @@ internal class HostedServerStore {
     fun namesOf(identity: McpIdentity): List<String> =
         bindings.filterValues { it == identity }.keys.toList()
 
+    /** Retries exact process settlement outside the registry lock, then releases only settled generations. */
+    fun settleRetirements() {
+        val pending = synchronized(lock) { retiring.toList() }
+        val settled = pending.filter { it.retirementSettled }
+        synchronized(lock) { retiring.removeAll(settled.toSet()) }
+    }
+
     fun rebindBusy(identity: McpIdentity): Boolean {
-        if ((reserved[identity] ?: 0) > 0) return true
         val previous = servers[identity] ?: return false
         return when {
             previous.admission.paused -> true

@@ -50,7 +50,12 @@ private class McpLaunchBarrier : McpLaunchGate {
 }
 
 /** What makes two entries the same process. */
-internal data class McpIdentity(val command: String, val args: List<String>, val env: Map<String, String>)
+internal data class McpIdentity(
+    val command: String,
+    val args: List<String>,
+    val env: Map<String, String>,
+    val cwd: String? = null,
+)
 
 private fun interface HostedServerNames {
     fun deliver(names: List<String>)
@@ -127,6 +132,9 @@ internal class HostedServers(
 
     fun get(name: String): HostedServer? = synchronized(lock) { bindings[name]?.let(servers::get) }
 
+    /** Keep discarded generations registry-owned until their exact captured process ownership is empty. */
+    private fun settleRetirements() = store.settleRetirements()
+
     /** Lease an existing process before sending, under the same lock eviction uses. */
     fun reserve(name: String): HostedServer? = synchronized(lock) {
         val id = bindings[name]
@@ -137,6 +145,7 @@ internal class HostedServers(
 
     /** Recheck idle state atomically with unbinding; a request lease always wins against eviction. */
     fun sweep(now: Long, idleMillis: Long) {
+        settleRetirements()
         val closing = Closing()
         synchronized(lock) {
             bindings.keys.filterNot(::reserved).forEach { sessions.expire(it, now, idleMillis) }
@@ -151,9 +160,10 @@ internal class HostedServers(
     /** The process for [name]'s current tuple, RESERVED against eviction until [release]: shared with
      *  every alias, replaced when the tuple changed. */
     fun acquire(name: String, admission: McpAdmission? = null): McpResult<HostedServer> {
-        val spec = sharing.hostedSpec(global(), name)
+        settleRetirements()
+        val spec = sharing.hostedSpec(global.inputs(), name)
             ?: return McpResult.Refused("'$name' is not a hosted MCP server")
-        val id = McpIdentity(spec.command, spec.args, spec.env)
+        val id = McpIdentity(spec.command, spec.args, spec.env, spec.cwd)
         val closing = Closing()
         val acquired = synchronized(lock) {
             val refusal = store.admissionRefusal(id, admission)
@@ -168,7 +178,7 @@ internal class HostedServers(
     }
 
     private fun create(spec: McpServerSpec): HostedServer {
-        val id = McpIdentity(spec.command, spec.args, spec.env)
+        val id = McpIdentity(spec.command, spec.args, spec.env, spec.cwd)
         val sink = HostedServerNotifications(
             HostedServerNotificationPublication { server, child, notification ->
                 synchronized(lock) {
@@ -255,6 +265,7 @@ internal class HostedServers(
             snapshot
         }
         stops.stopGenerations(closing.mapNotNull { it.close(reason, wait = false) })
+        synchronized(lock) { store.retiring += closing }
     }
 
     /** Drops [name]; the process goes only when no alias is left on its tuple. Caller holds [lock];
@@ -273,7 +284,7 @@ internal class HostedServers(
     /** Keeps the ordinary acquire path separate from registry lifecycle and notification ownership. */
     private inner class Acquisition {
         fun acquire(name: String, spec: McpServerSpec, closing: Closing): McpResult<HostedServer> {
-            val id = McpIdentity(spec.command, spec.args, spec.env)
+            val id = McpIdentity(spec.command, spec.args, spec.env, spec.cwd)
             val rebind = rebind(name, id, closing)
             if (rebind != null) return rebind
             val registered = registered(id, spec, closing)
@@ -316,7 +327,7 @@ internal class HostedServers(
     }
 
     /** The servers a registry change unbound, closed once the caller has let go of [lock]. */
-    private class Closing {
+    private inner class Closing {
         private val queued = mutableListOf<Pair<HostedServer, String>>()
 
         fun add(server: HostedServer, reason: String) {
@@ -324,7 +335,10 @@ internal class HostedServers(
         }
 
         fun run() {
-            queued.forEach { (server, reason) -> server.close(reason) }
+            queued.forEach { (server, reason) ->
+                server.close(reason)
+                synchronized(lock) { store.retiring += server }
+            }
         }
     }
 

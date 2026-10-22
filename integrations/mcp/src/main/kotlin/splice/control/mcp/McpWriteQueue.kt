@@ -11,10 +11,11 @@ import java.util.concurrent.TimeUnit
 
 internal data class McpWrite(
     val target: McpWriteTarget,
-    val encoded: String,
+    val bytes: Long,
     val requestId: Long?,
     val serverRequestId: Long?,
 ) {
+    var encoded: String? = null
     val completed = CompletableDeferred<Boolean>()
     var deadline: ScheduledFuture<*>? = null
 }
@@ -78,7 +79,8 @@ internal class McpWriteQueue(
 
     private fun writeToPipe(delivery: McpWrite): Boolean = synchronized(delivery.target.ioLock) {
         if (!permitted(delivery)) return@synchronized false
-        delivery.target.output.write(delivery.encoded)
+        val encoded = delivery.encoded ?: return@synchronized false
+        delivery.target.output.write(encoded)
         delivery.target.output.newLine()
         delivery.target.output.flush()
         true

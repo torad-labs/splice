@@ -34,8 +34,15 @@ internal class McpProcessGeneration(
     private val containment: McpProcessContainmentSource?,
     private val root: ProcessHandle = process.toHandle(),
 ) {
-    private val containmentLock = Any()
+    private val evidenceLock = Any()
     private var capturedContainment: McpProcessContainmentState? = null
+    private val capturedDescendants = mutableSetOf<ProcessHandle>()
+
+    /** Capture root descendants and positive scope evidence before either can disappear after launch. */
+    fun observe() {
+        descendants()
+        containmentState()
+    }
 
     fun handles(): List<ProcessHandle> {
         val members = when (val state = containmentState()) {
@@ -44,12 +51,13 @@ internal class McpProcessGeneration(
             McpProcessContainmentState.Unknown,
             -> emptyList()
         }
-        return (root.descendants().toList() + members + root).distinct()
+        return (descendants() + members + root).distinct()
     }
 
-    /** Only known empty containment proves this generation exited once its root is dead. */
+    /** Only known-empty containment and exited captured descendants prove a dead root's generation settled. */
     fun unresolved(): Boolean {
-        if (root.isAlive) return true
+        val descendants = descendants()
+        if (root.isAlive || descendants.any(ProcessHandle::isAlive)) return true
         return when (val state = containmentState()) {
             is McpProcessContainmentState.Present -> state.containment.members()?.any(ProcessHandle::isAlive) ?: true
             McpProcessContainmentState.Absent -> false
@@ -57,7 +65,12 @@ internal class McpProcessGeneration(
         }
     }
 
-    private fun containmentState(): McpProcessContainmentState = synchronized(containmentLock) {
+    private fun descendants(): List<ProcessHandle> = synchronized(evidenceLock) {
+        capturedDescendants += root.descendants().toList()
+        capturedDescendants.toList()
+    }
+
+    private fun containmentState(): McpProcessContainmentState = synchronized(evidenceLock) {
         capturedContainment ?: resolveContainment().also { state ->
             if (state !== McpProcessContainmentState.Unknown) capturedContainment = state
         }
@@ -94,14 +107,14 @@ internal class McpProcessStop {
     private val ownershipLock = Any()
     private val unresolved = mutableSetOf<McpProcessGeneration>()
 
-    /** Carries the launch-time root and generated scope until systemd exposes their exact cgroup. */
+    /** Carries launch-time descendants and a generated scope before either can disappear. */
     fun capture(process: Process, unit: String? = null): McpProcessGeneration {
         val root = process.toHandle()
         return McpProcessGeneration(
             process,
             McpProcessContainmentSource { containment(root, unit) },
             root,
-        )
+        ).also(McpProcessGeneration::observe)
     }
 
     /** Stops a fresh list only where no earlier generation capture exists. */
@@ -150,17 +163,13 @@ internal class McpProcessStop {
     }
 
     private fun containment(process: ProcessHandle, unit: String?): McpProcessContainmentState {
-        val child = (if (unit == null) cgroup(process.pid()) else scope(unit))
+        if (unit == null) return McpProcessContainmentState.Absent
+        val child = (scope(unit) ?: cgroup(process.pid())?.takeIf { it.substringAfterLast('/') == unit })
             ?.takeIf(String::isNotBlank)
             ?: return McpProcessContainmentState.Unknown
-        val host = cgroup(ProcessHandle.current().pid()) ?: return McpProcessContainmentState.Unknown
-        return if (child == host) {
-            if (unit == null) McpProcessContainmentState.Absent else McpProcessContainmentState.Unknown
-        } else {
-            McpProcessContainmentState.Present(
-                McpProcessContainment(Path.of("/sys/fs/cgroup").resolve(child.removePrefix("/"))),
-            )
-        }
+        return McpProcessContainmentState.Present(
+            McpProcessContainment(Path.of("/sys/fs/cgroup").resolve(child.removePrefix("/"))),
+        )
     }
 
     /** A launch-created scope names the cgroup even when its root already reparented a stdin-owning worker. */

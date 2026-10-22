@@ -1,6 +1,6 @@
 package splice.control.mcp
 
-import kotlinx.serialization.json.JsonObject
+import splice.client.mcp.McpServerInput
 import splice.client.mcp.McpServerSpec
 import splice.client.mcp.McpSharing
 
@@ -41,7 +41,9 @@ private class ReplacementOwnership(private val store: HostedServerStore) {
     }
 
     private fun tupleClaimed(identity: McpIdentity): Boolean =
-        store.servers.containsKey(identity) || store.candidates.containsKey(identity)
+        store.servers.containsKey(identity) ||
+            store.candidates.containsKey(identity) ||
+            store.retiring.any { it.identity == identity }
 }
 
 /** Validation and publication use the same registry lock as ordinary server leases. */
@@ -52,7 +54,7 @@ internal class HostedReplacementPlan(
 ) {
     private val ownership = ReplacementOwnership(store)
     fun prepare(name: String): McpResult<PreparedReplacement> {
-        val configured = global()
+        val configured = global.inputs()
         return synchronized(store.lock) {
             when (val read = read(name, configured)) {
                 is McpResult.Refused -> read
@@ -61,7 +63,7 @@ internal class HostedReplacementPlan(
         }
     }
 
-    private fun read(name: String, configured: JsonObject): McpResult<PreparedReplacement> {
+    private fun read(name: String, configured: List<McpServerInput>): McpResult<PreparedReplacement> {
         val old = store.bindings[name]?.let(store.servers::get)
             ?: return McpResult.Refused("MCP server is not running")
         val spec = sharing.hostedSpec(configured, name)
@@ -90,9 +92,9 @@ internal class HostedReplacementPlan(
         }
     }
 
-    private fun identity(spec: McpServerSpec): McpIdentity = McpIdentity(spec.command, spec.args, spec.env)
+    private fun identity(spec: McpServerSpec): McpIdentity = McpIdentity(spec.command, spec.args, spec.env, spec.cwd)
 
-    private fun aliasesMatch(names: List<String>, configured: JsonObject, target: McpIdentity): Boolean =
+    private fun aliasesMatch(names: List<String>, configured: List<McpServerInput>, target: McpIdentity): Boolean =
         names.all { name -> sharing.hostedSpec(configured, name)?.let(::identity) == target }
 
     /** A candidate is shutdown-owned before it is allowed to launch and exclusively reserves its tuple. */
@@ -109,9 +111,13 @@ internal class HostedReplacementPlan(
         }
     }
 
+    fun retire(server: HostedServer) {
+        synchronized(store.lock) { store.retiring += server }
+    }
+
     /** Publishes atomically while the incumbent's quiet fence excludes late reverse work. */
     fun commit(plan: PreparedReplacement, next: HostedServer): List<String>? {
-        val configured = global()
+        val configured = global.inputs()
         return synchronized(store.lock) {
             plan.fence?.whileHeld(
                 McpFenceAction {
@@ -126,7 +132,7 @@ internal class HostedReplacementPlan(
         }
     }
 
-    private fun publishable(plan: PreparedReplacement, next: HostedServer, configured: JsonObject): Boolean {
+    private fun publishable(plan: PreparedReplacement, next: HostedServer, configured: List<McpServerInput>): Boolean {
         val names = store.bindings.filterValues { it == plan.old.identity }.keys.toSet()
         val checks = listOf(
             ownership.owns(plan),

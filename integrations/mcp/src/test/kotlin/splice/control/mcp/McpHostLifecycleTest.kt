@@ -297,7 +297,11 @@ class McpHostLifecycleTest : McpHostFixture() {
         assertEquals(200, crashed.status)
         val err = json.parseToJsonElement(crashed.body!!).jsonObject
         assertEquals("9", err["id"]!!.jsonPrimitive.content)
-        assertTrue(err["error"]!!.jsonObject["message"]!!.jsonPrimitive.content.contains("exited"), crashed.body)
+        assertTrue(
+            err["error"]!!.jsonObject["message"]!!.jsonPrimitive.content
+                .contains("operation outcome unknown, not replayed"),
+            crashed.body,
+        )
         val again = text(call(b, 2, "echo", "y")).substringBefore(" ")
         assertNotEquals(first, again, "respawned under a new pid")
     }

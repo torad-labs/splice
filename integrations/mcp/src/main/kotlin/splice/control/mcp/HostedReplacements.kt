@@ -30,7 +30,10 @@ private class ReplacementAttempt(
         if (!plans.track(plan, next)) return McpResult.Refused("MCP host stopped during replacement")
         val result = candidateStart(next)
         committed = result is McpResult.Served
-        if (committed) plan.old.close("drained replacement")
+        if (committed) {
+            plan.old.close("drained replacement")
+            plans.retire(plan.old)
+        }
         return result
     }
 
@@ -53,6 +56,7 @@ private class ReplacementAttempt(
         candidate?.let {
             it.close("replacement was not committed")
             plans.discard(it)
+            plans.retire(it)
         }
         // The old admission stays explicitly drained after refusal. Only management's resume may reopen it.
         plan.fence?.reopen()
@@ -86,14 +90,14 @@ internal class HostedReplacements(
         // Roots-based reclassification changes future launches, not the sessions already on this child.
         val retained = retainedAdmission(name, retainedSession)
         if (retained != null) return retained
-        val spec = sharing.hostedSpec(global(), name) ?: return null
+        val spec = sharing.hostedSpec(global.inputs(), name) ?: return null
         return synchronized(store.lock) {
             if (store.closed) return@synchronized null
             val incumbent = store.bindings[name]?.let(store.servers::get)
             val identity = if (incumbent?.admission?.paused == true) {
                 incumbent.identity
             } else {
-                McpIdentity(spec.command, spec.args, spec.env)
+                McpIdentity(spec.command, spec.args, spec.env, spec.cwd)
             }
             identity to store.admissions.getOrPut(identity) { McpAdmission() }
         }
@@ -124,9 +128,12 @@ internal class HostedReplacements(
         store.bindings[name]?.let(store.servers::get)?.admission?.resume() ?: false
     }
 
-    suspend fun replace(name: String): McpResult<Unit> = when (val prepared = plans.prepare(name)) {
-        is McpResult.Refused -> prepared
-        is McpResult.Served -> perform(prepared.value)
+    suspend fun replace(name: String): McpResult<Unit> {
+        store.settleRetirements()
+        return when (val prepared = plans.prepare(name)) {
+            is McpResult.Refused -> prepared
+            is McpResult.Served -> perform(prepared.value)
+        }
     }
 
     private suspend fun perform(plan: PreparedReplacement): McpResult<Unit> {

@@ -1,6 +1,7 @@
 package splice.control.mcp
 
 import kotlinx.serialization.json.JsonObject
+import splice.core.util.JsonWire
 import java.io.BufferedWriter
 import java.util.Collections
 import java.util.IdentityHashMap
@@ -8,6 +9,8 @@ import kotlin.time.Duration
 
 /** Bounds queued writes and unsettled exchanges per direction, so caller timeouts cannot grow retained wire state. */
 internal const val WRITE_QUEUE_CAPACITY = 64
+private const val MAX_QUEUED_WRITE_BYTES = 1024L * 1024L
+private const val WRITE_LINE_BYTES = 1L
 
 /** One child/stdin generation, carrying its own short-lived retirement fence. */
 internal data class McpWriteTarget(
@@ -58,6 +61,46 @@ internal class McpReplacementFence(
     fun reopen(): Boolean = writer.reopen(target)
 }
 
+private fun interface McpWriteTargetAcceptance {
+    operator fun invoke(target: McpWriteTarget): Boolean
+}
+
+/** Atomically reserves retained wire bytes and the client request mapping before a write is encoded. */
+private class McpWriteAdmission<L : Any>(
+    private val lock: L,
+    private val requests: MutableMap<Long, McpWriteTarget>,
+    private val inFlight: MutableSet<McpWrite>,
+    private val accepting: McpWriteTargetAcceptance,
+) {
+    private var retainedBytes = 0L
+
+    fun reserve(
+        target: McpWriteTarget,
+        bytes: Long,
+        requestId: Long?,
+        serverRequestId: Long?,
+    ): McpWrite? = synchronized(lock) {
+        val requestRoom = requestId == null || requests.size < WRITE_QUEUE_CAPACITY
+        val byteRoom = bytes <= MAX_QUEUED_WRITE_BYTES && retainedBytes <= MAX_QUEUED_WRITE_BYTES - bytes
+        val room = requestRoom && byteRoom
+        if (!accepting(target) || !room) {
+            null
+        } else {
+            McpWrite(target, bytes, requestId, serverRequestId).also { delivery ->
+                requestId?.let { requests[it] = target }
+                inFlight += delivery
+                retainedBytes += bytes
+            }
+        }
+    }
+
+    /** The caller holds [lock], so release stays atomic with terminal request cleanup. */
+    fun release(delivery: McpWrite) {
+        inFlight.remove(delivery)
+        retainedBytes -= delivery.bytes
+    }
+}
+
 /** Bounded writes and their accounting share one generation fence, so retirement cannot strand a pending call. */
 internal class McpChildWriter(
     name: String,
@@ -79,9 +122,15 @@ internal class McpChildWriter(
         permitted,
         McpWriteResolved(::resolve),
         failures,
-        McpWriteRejected { delivery -> expire(delivery, "write queue is full") },
+        McpWriteRejected { delivery -> resolve(delivery, delivered = false, unqueued = true) },
     )
     private var closed = false
+    private val admission = McpWriteAdmission(
+        accountingLock,
+        requests,
+        writesInFlight,
+        McpWriteTargetAcceptance(::accepting),
+    )
 
     val unsettled: List<Long>
         get() = synchronized(accountingLock) { (requests.keys + serverRequests.keys).toList() }
@@ -184,22 +233,14 @@ internal class McpChildWriter(
         budget: Duration,
     ): McpWrite? {
         val selected = target(expected) ?: return null
-        val delivery = McpWrite(selected, codec.encode(msg), requestId, serverRequestId)
-        val registered = synchronized(accountingLock) {
-            val room = requestId == null || requests.size < WRITE_QUEUE_CAPACITY
-            val available = accepting(selected) && room
-            if (available) {
-                requestId?.let { requests[it] = selected }
-                writesInFlight += delivery
-            }
-            available
-        }
-        if (!registered) return null
-        queue(delivery, budget)
-        return delivery
+        val bytes = JsonWire.byteSize(msg) + WRITE_LINE_BYTES
+        val delivery = admission.reserve(selected, bytes, requestId, serverRequestId) ?: return null
+        delivery.encoded = codec.encode(msg)
+        return delivery.takeIf { queue(it, budget) }
     }
 
-    private fun queue(delivery: McpWrite, budget: Duration) {
+    private fun queue(delivery: McpWrite, budget: Duration): Boolean {
+        if (!writes.offer(delivery)) return false
         val deadline = failures.schedule(budget, McpWriteExpired { expire(delivery, "write deadline exceeded") })
         if (deadline == null) {
             expire(delivery, "writer closed before delivery")
@@ -209,8 +250,9 @@ internal class McpChildWriter(
                 if (delivery.completed.isCompleted) deadline.cancel(false)
                 !delivery.completed.isCompleted
             }
-            if (active) writes.offer(delivery)
+            if (!active) return true
         }
+        return true
     }
 
     private fun accepting(selected: McpWriteTarget): Boolean =
@@ -220,12 +262,14 @@ internal class McpChildWriter(
         if (resolve(delivery, false)) failures.report(delivery.target.child, reason)
     }
 
-    private fun resolve(write: McpWrite, delivered: Boolean): Boolean {
+    /** An unqueued executor refusal releases only work that never reached the child. */
+    private fun resolve(write: McpWrite, delivered: Boolean, unqueued: Boolean = false): Boolean {
         if (!write.completed.complete(delivered)) return false
         synchronized(accountingLock) {
             write.deadline?.cancel(false)
-            writesInFlight.remove(write)
-            if (delivered) write.serverRequestId?.let(serverRequests::remove)
+            admission.release(write)
+            if (delivered || unqueued) write.serverRequestId?.let(serverRequests::remove)
+            if (unqueued) write.requestId?.let(requests::remove)
         }
         return true
     }

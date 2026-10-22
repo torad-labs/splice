@@ -2,6 +2,7 @@
 // type. Split from HostedServer.kt (concentration, 2026-09-13).
 package splice.control.mcp
 
+import splice.client.mcp.McpServerProvenance
 import splice.client.mcp.McpServerSpec
 import splice.core.config.UserHome
 import splice.core.util.LogSink
@@ -21,10 +22,8 @@ internal fun interface McpProcessGenerationSource {
 }
 
 /** The default launcher: the spec's command/args/env, stderr drained separately with content withheld.
- *  A hosted child has no client whose cwd it could inherit, and the daemon's own cwd is whatever
- *  started it, so the child runs in [workingDir] (the home directory): a stated place, not an
- *  accident of the launch. A server that reads its cwd without naming it belongs in
- *  mcp_hosting_exclude (review 2026-09-14).
+ *  A hosted child runs in [workingDir] (the home directory) unless an explicitly registered service
+ *  supplied its validated fixed cwd. A client cwd stays per-session and never reaches this shared launcher.
  *
  *  V4-147: [containment] decides the two things a spawn owes the box — the cgroup the child runs in
  *  (a slice the host caps) and its oom_score_adj (off splice's inherited -1000). Null keeps the
@@ -39,7 +38,9 @@ internal class StdioProcessLauncher(
     override fun invoke(spec: McpServerSpec): Process {
         val command = listOf(spec.command) + spec.args
         val placement = containment?.prepare(command)
-        val builder = ProcessBuilder(placement?.command ?: command).directory(workingDir.toFile())
+        val folder = spec.cwd?.takeIf { spec.provenance == McpServerProvenance.REGISTERED_SERVICE }
+            ?.let(Path::of) ?: workingDir
+        val builder = ProcessBuilder(placement?.command ?: command).directory(folder.toFile())
         builder.environment().putAll(spec.env)
         val child = builder.start()
         generations[child] = stops.capture(child, placement?.unit)

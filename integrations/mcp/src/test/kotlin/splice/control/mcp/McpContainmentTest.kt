@@ -54,7 +54,18 @@ class McpContainmentTest {
 
         assertEquals(
             listOf("systemd-run", "--user", "--scope", "--quiet", "--slice=$APP_MCP_SLICE", "--") + COMMAND,
-            placed,
+            placed.filterNot { it.startsWith("--unit=splice-mcp-") },
+        )
+        assertTrue(
+            placed.any {
+                it.matches(
+                    Regex(
+                        "--unit=splice-mcp-[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-" +
+                            "[0-9a-f]{4}-[0-9a-f]{12}\\.scope",
+                    ),
+                )
+            },
+            placed.toString(),
         )
         assertFalse(logged().contains("not capped"), logged())
     }

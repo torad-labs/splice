@@ -106,24 +106,31 @@ private data class HostedForward(
     val clientId: JsonElement,
 )
 
+private data class HostedClientRequestId(val sessionId: String, val clientId: JsonElement)
+
 /** Owns client request and notification forwarding once the host has ensured the child is started. */
 private class HostedClientCalls(
     private val name: String,
     private val runtime: HostedClientRuntime,
     private val ids: AtomicLong,
     private val pending: ConcurrentHashMap<Long, Pending>,
+    private val reservations: ConcurrentHashMap<HostedClientRequestId, Pending>,
     private val progress: ProgressTokens,
 ) {
     suspend fun forward(sessionId: String, clientId: JsonElement, request: JsonObject): JsonObject {
-        if (pending.values.any { it.matches(sessionId, clientId) }) {
-            return runtime.codec.error(clientId, RPC_SERVER_EXITED, "request id is already in flight for this session")
-        }
         val deadline = McpDeadline(runtime.config.clock, runtime.config.requestTimeout())
         val hostId = ids.getAndIncrement()
         val (out, token) = progress.outbound(request, hostId)
-        val child = runtime.target.target()?.child
-            ?: return runtime.codec.error(clientId, RPC_SERVER_EXITED, "hosted MCP server '$name' is not ready")
         val slot = Pending(sessionId, clientId, token)
+        val reservation = HostedClientRequestId(sessionId, clientId)
+        if (reservations.putIfAbsent(reservation, slot) != null) {
+            return runtime.codec.error(clientId, RPC_SERVER_EXITED, "request id is already in flight for this session")
+        }
+        val child = runtime.target.target()?.child
+        if (child == null) {
+            reservations.remove(reservation, slot)
+            return runtime.codec.error(clientId, RPC_SERVER_EXITED, "hosted MCP server '$name' is not ready")
+        }
         val forwarded = HostedForward(hostId, child, out, slot, clientId)
         pending[hostId] = slot
         return try {
@@ -137,7 +144,12 @@ private class HostedClientCalls(
     private suspend fun awaitAnswer(forwarded: HostedForward, deadline: McpDeadline): JsonObject {
         val writeBudget = deadline.remaining()
         if (writeBudget <= Duration.ZERO) {
-            pending.remove(forwarded.hostId, forwarded.pending)
+            if (pending.remove(forwarded.hostId, forwarded.pending)) {
+                reservations.remove(
+                    HostedClientRequestId(forwarded.pending.sessionId, forwarded.pending.clientId),
+                    forwarded.pending,
+                )
+            }
             return timedOut(forwarded.clientId, forwarded.pending)
         }
         val delivered = runtime.writer.request(
@@ -173,7 +185,9 @@ private class HostedClientCalls(
     private fun deliveryRefused(hostId: Long, slot: Pending, clientId: JsonElement): JsonObject {
         // A writer admission refusal never owned this wire id. A failed write keeps it charged for its
         // exact generation, so cancellation and eventual child-exit cleanup remain available.
-        if (hostId !in runtime.writer.unsettled) pending.remove(hostId, slot)
+        if (hostId !in runtime.writer.unsettled && pending.remove(hostId, slot)) {
+            reservations.remove(HostedClientRequestId(slot.sessionId, slot.clientId), slot)
+        }
         return runtime.codec.error(
             clientId,
             RPC_SERVER_EXITED,
@@ -197,6 +211,7 @@ private data class HostedServerDispatchRuntime(
     val writer: McpChildWriter,
     val serverRequests: HostedServerRequests,
     val sink: NotificationSink,
+    val reservations: ConcurrentHashMap<HostedClientRequestId, Pending>,
 )
 
 /** Dispatches messages from one stdout generation only after its owner proves it is still current. */
@@ -220,7 +235,10 @@ private class HostedServerDispatch(
         val hostId = JsonScalars.str(msg["id"])?.toLongOrNull()
         hostId?.let(runtime.writer.settled::invoke)
         val slot = hostId?.let(pending::remove)
-        slot?.answer?.complete(runtime.codec.withId(msg, slot.clientId))
+        slot?.let {
+            runtime.reservations.remove(HostedClientRequestId(it.sessionId, it.clientId), it)
+            it.answer.complete(runtime.codec.withId(msg, it.clientId))
+        }
     }
 
     private fun notification(child: Process, msg: JsonObject) {
@@ -246,8 +264,12 @@ private class HostedGenerationRetention(
     private val stops: McpProcessStop,
     private val reaped: ChildReaped,
 ) {
-    fun settled(process: Process, generation: McpProcessGeneration): Boolean {
-        stops.stopGenerations(emptyList())
+    fun settled(
+        process: Process,
+        generation: McpProcessGeneration,
+        stopping: List<McpProcessGeneration> = emptyList(),
+    ): Boolean {
+        stops.stopGenerations(stopping)
         return reaped(process) && !stops.retains(generation)
     }
 }
@@ -352,8 +374,8 @@ private class HostedStoppedRelease(
     private val history: McpChildHistory,
     private val release: HostedRetiredRelease,
 ) {
-    fun release(stopping: HostedStoppingChild) {
-        if (!retention.settled(stopping.process, stopping.generation)) return
+    fun release(stopping: HostedStoppingChild, generations: List<McpProcessGeneration> = emptyList()) {
+        if (!retention.settled(stopping.process, stopping.generation, generations)) return
         release.release(stopping)?.let {
             send.exited(it)
             history.exited()
@@ -439,6 +461,7 @@ internal class HostedServer(
 ) {
     private val ids = AtomicLong(1)
     private val pending = ConcurrentHashMap<Long, Pending>()
+    private val reservations = ConcurrentHashMap<HostedClientRequestId, Pending>()
     val unsettled: List<Long> get() = send.unsettled
     var admission = McpAdmission()
     private val progress = ProgressTokens()
@@ -537,6 +560,7 @@ internal class HostedServer(
         ),
         ids,
         pending,
+        reservations,
         progress,
     )
     private val handshake = HostedHandshake(
@@ -604,7 +628,7 @@ internal class HostedServer(
         runtime.config.requestTimeout,
     )
     private val dispatcher = HostedServerDispatch(
-        HostedServerDispatchRuntime(codec, send, serverRequests, sink),
+        HostedServerDispatchRuntime(codec, send, serverRequests, sink, reservations),
         progress,
         pending,
         tools,
@@ -623,8 +647,8 @@ internal class HostedServer(
     /** When the current child was started (epoch ms), or null before the first start. */
     val startedAt: Long? get() = history.startedAt.takeIf { it > 0L }
 
-    /** The launch tuple this process serves; the registry keys reservations by it. */
-    val identity: McpIdentity get() = McpIdentity(spec.command, spec.args, spec.env)
+    /** The launch tuple this process serves; a registered fixed cwd is part of its ownership. */
+    val identity: McpIdentity get() = McpIdentity(spec.command, spec.args, spec.env, spec.cwd)
     val pid: Long? get() = process?.takeIf { it.isAlive }?.pid()
 
     /** Holds the generation fence until [enqueue] has accepted this child notification. */
@@ -693,6 +717,18 @@ internal class HostedServer(
         return stopped
     }
 
+    /** The registry retries a closed server until this exact root, captured descendants and scope have exited. */
+    internal val retirementSettled: Boolean
+        get() {
+            val stopping = synchronized(stateLock) {
+                val child = process
+                val owned = generation
+                if (child == null || owned == null) null else HostedStoppingChild(child, owned, retiredWriter)
+            }
+            stopping?.let { stoppedRelease.release(it, listOf(it.generation)) }
+            return synchronized(stateLock) { process == null && generation == null }
+        }
+
     private fun tearDown(reason: String, wait: Boolean = true): McpProcessGeneration? {
         val stopping = synchronized(stateLock) {
             val child = process
@@ -711,10 +747,7 @@ internal class HostedServer(
                 "[mcp-host] ${LogSafe.str(spec.name)}: closing pid ${LogSafe.str(it.process.pid().toString())} " +
                     "(${LogSafe.str(reason)})\n",
             )
-            if (wait) {
-                stops.stopGenerations(listOf(it.generation))
-                stoppedRelease.release(it)
-            }
+            if (wait) stoppedRelease.release(it, listOf(it.generation))
         }
         return stopping?.generation
     }
@@ -807,6 +840,11 @@ internal class HostedServer(
         pending.entries
             .filter { sessionId == null || it.value.sessionId == sessionId }
             .map { it.key }
-            .forEach { id -> pending.remove(id)?.fail(codec, message) }
+            .forEach { id ->
+                pending.remove(id)?.let { slot ->
+                    reservations.remove(HostedClientRequestId(slot.sessionId, slot.clientId), slot)
+                    slot.fail(codec, message)
+                }
+            }
     }
 }

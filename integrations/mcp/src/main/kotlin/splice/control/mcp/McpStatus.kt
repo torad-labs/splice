@@ -41,7 +41,7 @@ internal class McpStatus(
     private val inventory: McpInventory? = null,
 ) {
     fun json(): String {
-        val plan = sharing.plan(global())
+        val plan = sharing.plan(global.inputs())
         return buildJsonObject {
             put("hosting", sharing.enabled)
             putJsonObject("servers") {
@@ -60,7 +60,7 @@ internal class McpStatus(
 
     /** Why [name] is not shared right now, in the words `/api/mcp` carries; null when the host serves it. */
     fun unsharedReason(name: String): String? {
-        val plan = sharing.plan(global())
+        val plan = sharing.plan(global.inputs())
         return if (name in plan.hosted) null else plan.passthrough[name] ?: "no such server in your MCP configuration"
     }
 

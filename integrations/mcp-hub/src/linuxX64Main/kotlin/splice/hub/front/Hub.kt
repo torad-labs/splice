@@ -198,6 +198,7 @@ internal class HubReplacements(
     }
 
     private fun replayRetirement(route: Route, drain: HolderDrain, candidate: ReplacementCandidate) {
+        if (relay.inFlight(drain.socket) != 0) return
         routes.replacements.retire(route, drain.socket, drain.generation, candidate) { failure ->
             if (failure == null) {
                 holders.replacements.retirements.completed(route)
@@ -298,8 +299,18 @@ private class ReplacementRecovery(
     fun reconcile() = holders.replacements.all().forEach(::recover)
 
     private fun recover(drain: HolderDrain) {
-        val candidate = drain.candidate?.takeIf { pinned(drain) } ?: return
+        val candidate = drain.candidate ?: return
         val route = routes.byKey(drain.key()) ?: return
+        val retiring = drain.phase in setOf(RETIRING, RETIRE_BLOCKED, RETIRE_UNKNOWN)
+        if (retiring) {
+            replayRetirement(route, drain, candidate)
+        } else {
+            recoverPinned(route, drain, candidate)
+        }
+    }
+
+    private fun recoverPinned(route: Route, drain: HolderDrain, candidate: ReplacementCandidate) {
+        if (!pinned(drain)) return
         if (drain.phase in reconnecting && !connected(candidate, drain.phase)) return
         dispatch(route, drain, candidate)
     }

@@ -77,17 +77,12 @@ internal class HubOwnerPins(
     private fun ensure(drain: HolderDrain, done: (String?) -> Unit) {
         if (ready(drain)) return done(null)
         if (!pending.add(drain.key())) return done(OWNER_PIN_BUSY)
-        val claim = drain.ownerClaim
-        if (claim != null) {
-            confirm(drain, claim, done)
-        } else {
-            routes.pins.acquire(drain) { acquired, failure ->
-                if (acquired == null) {
-                    pending.remove(drain.key())
-                    done(failure)
-                } else {
-                    adopted(drain, acquired, done)
-                }
+        routes.pins.acquire(drain) { acquired, failure ->
+            if (acquired == null) {
+                pending.remove(drain.key())
+                done(failure)
+            } else {
+                adopted(drain, acquired, done)
             }
         }
     }

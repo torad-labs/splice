@@ -80,7 +80,11 @@ class Hub(
             routes.replacements.confirmExit(
                 holder.socket,
                 generation,
-                { relay.awaitsExit(holder, generation) },
+                {
+                    relay.awaitsExit(holder, generation).also { pending ->
+                        if (pending) holders.links.reconnect(holder, generation)
+                    }
+                },
             ) {
                 relay.exited(holder, generation)
                 holders.replacements.retirements.oldExited(holder.socket, generation)
@@ -206,9 +210,9 @@ internal class HubReplacements(
 
     /** A claimed retirement stays with its owner even after the front can no longer reach its candidate. */
     private fun retryRetirement(route: Route) {
-        val drain = holders.replacements.candidates.drain(route.server, route.launch)
-            ?.takeIf { relay.inFlight(it.socket) == 0 } ?: return
-        val claimed = holders.replacements.retirements.retry(route) ?: return
+        val claimed = holders.replacements.candidates.drain(route.server, route.launch)
+            ?.takeIf { relay.inFlight(it.socket) == 0 }
+            ?.let { holders.replacements.retirements.retry(route) } ?: return
         val candidate = claimed.candidate ?: return
         replayRetirement(route, claimed, candidate)
     }

@@ -61,7 +61,7 @@ internal class HubHolderRetirements(dir: Path) {
         state(replacement)?.let { return it }
         if (active.putIfAbsent(id, PERSISTING) != null) return null
         return if (write(replacement, wanted)) {
-            active[id] = stateName(wanted)
+            remember(id, wanted)
             wanted
         } else {
             active.remove(id, PERSISTING)
@@ -72,7 +72,7 @@ internal class HubHolderRetirements(dir: Path) {
     /** Records a settled outcome after the exact owner record confirms it. */
     fun complete(replacement: HubReplacement, state: HubRetirementState): Boolean =
         write(replacement, state).also { written ->
-            if (written) active[replacement.id()] = stateName(state)
+            if (written) remember(replacement.id(), state)
         }
 
     fun state(replacement: HubReplacement): HubRetirementState? {
@@ -82,8 +82,16 @@ internal class HubHolderRetirements(dir: Path) {
             HubRetirementRead.Unreadable -> HubRetirementState.UNKNOWN
             is HubRetirementRead.Present -> persistedState(persisted.body, replacement)
         }
-        durable?.takeUnless { it == HubRetirementState.UNKNOWN }?.let { active[id] = stateName(it) }
+        durable?.takeUnless { it == HubRetirementState.UNKNOWN }?.let { remember(id, it) }
         return durable
+    }
+
+    /** Terminal replay reads generation-addressed durable evidence instead of retaining daemon-lifetime history. */
+    private fun remember(id: String, state: HubRetirementState) {
+        when (state) {
+            HubRetirementState.RETIRED, HubRetirementState.ROLLED_BACK -> active.remove(id)
+            HubRetirementState.RETIRING, HubRetirementState.UNKNOWN -> active[id] = stateName(state)
+        }
     }
 
     private fun missingState(id: String): HubRetirementState? =

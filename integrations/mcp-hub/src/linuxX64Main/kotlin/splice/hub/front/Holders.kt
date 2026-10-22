@@ -23,8 +23,12 @@ data class Holder(val socket: String) {
     var initializedUncertain = false
     var retirementFence: String? = null
     var reverseResponseRetries = 0
+    var reverseResponseRetryGeneration: String? = null
+    var reverseResponseRetryCancel: (() -> Unit)? = null
     var resumeReverseResponses: ((String) -> Unit)? = null
     var scheduleReverseResponseRetry: ((String) -> Unit)? = null
+    var settlementProtocol = false
+    var settlementRecovery: String? = null
     var ready = false
     var connecting = false
     var listed = false
@@ -35,6 +39,7 @@ data class Holder(val socket: String) {
     val waiters = ArrayList<(String?) -> Unit>()
 
     fun resetGeneration(nextGeneration: String) {
+        cancelReverseResponseRetry()
         generation = nextGeneration
         attestedGeneration = null
         ready = false
@@ -47,7 +52,15 @@ data class Holder(val socket: String) {
         initializedPending = false
         initializedUncertain = false
         retirementFence = null
+        settlementProtocol = false
+        settlementRecovery = null
         recoveryUncertain = false
+    }
+
+    fun cancelReverseResponseRetry() {
+        reverseResponseRetryCancel?.invoke()
+        reverseResponseRetryCancel = null
+        reverseResponseRetryGeneration = null
     }
 
     /** Hands [failure], or null for ready, to everyone waiting on this holder. */
@@ -139,6 +152,7 @@ internal const val RECOVERY_UNCERTAIN = "recovery_uncertain"
 internal const val INITIALIZED_UNCERTAIN = "initialized_uncertain"
 internal const val RETIREMENT_FENCE = "retirement_fence"
 internal const val REVERSE_RESPONSE_RETRIES = "reverse_response_retries"
+internal const val SETTLEMENT_PROTOCOL = "settlement_protocol"
 internal const val CAPABILITIES = "capabilities"
 internal const val PHASE = "phase"
 internal const val BLOCKER = "blocker"

@@ -13,7 +13,14 @@ internal class HolderLinkRecovery(
     proof: HolderProof,
 ) {
     private val handshakes = HolderHandshakeFlow(context, replacements, persistence, memory, proof)
-    private val loss = HolderLinkLoss(context, replacements, persistence, ::reconnect)
+    private val loss =
+        HolderLinkLoss(
+            context,
+            replacements,
+            persistence,
+            ::reconnect,
+            Holder::cancelReverseResponseRetry,
+        )
     private val connections = HolderConnections(context.connections, ::fromHolder, loss::lost)
     private val generations = HolderGenerationReads(context.routes.attestations, context.timers, context.clock)
 
@@ -132,11 +139,14 @@ internal class HolderLinkRecovery(
     }
 
     private fun retry(holder: Holder, generation: String) {
-        context.timers.at(context.clock.now() + REVERSE_RESPONSE_RETRY) {
-            if (holder.generation == generation) {
-                if (holder.link?.closed == false) {
-                    if (handshakes.observed(holder)) holder.resumeReverseResponses?.invoke(generation)
-                }
+        if (holder.reverseResponseRetryGeneration == generation) return
+        holder.cancelReverseResponseRetry()
+        holder.reverseResponseRetryGeneration = generation
+        holder.reverseResponseRetryCancel = context.timers.at(context.clock.now() + REVERSE_RESPONSE_RETRY) {
+            holder.cancelReverseResponseRetry()
+            val currentGeneration = holder.generation == generation && holder.link?.closed == false
+            if (currentGeneration && handshakes.observed(holder)) {
+                holder.resumeReverseResponses?.invoke(generation)
             }
         }
     }
@@ -150,6 +160,7 @@ internal class HolderLinkRecovery(
     }
 
     private fun fromHolder(holder: Holder, link: HolderLink, line: String) {
+        if (holder.link === link && context.relay.inbound.control(holder, line)) return
         if (holder.link === link && handshakes.observed(holder)) {
             message(holder, link, line)
         } else if (holder.link === link) {
@@ -216,6 +227,7 @@ internal class HolderLinkLoss(
     private val replacements: HolderReplacements,
     private val persistence: HolderPersistence,
     private val reconnect: (Holder, String) -> Boolean,
+    private val cancelReverseResponseRetry: (Holder) -> Unit,
 ) {
     var stopping = false
 
@@ -233,6 +245,7 @@ internal class HolderLinkLoss(
     }
 
     private fun detached(holder: Holder): String? {
+        cancelReverseResponseRetry(holder)
         val generation = holder.generation ?: context.routes.generation(holder.socket)
         holder.generation = generation
         holder.link = null

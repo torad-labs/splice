@@ -204,10 +204,11 @@ class HttpListener(
     }
 }
 
-/** One POST to the daemon's control port, answered by [done] with the status and body, or status 0 when the daemon
- *  could not be reached. Connection: close, so the answer ends at end of file. */
+/** One POST to the daemon's control port, answered by [done] with the status and body, or status 0 when the transport
+ *  could not produce a complete answer. Connection: close, so the answer ends at end of file. */
 class DaemonCall(
     private val sys: Sys,
+    private val clock: Clock,
     private val path: String,
     private val key: String,
     private val body: String,
@@ -218,6 +219,7 @@ class DaemonCall(
     private val inbox = Bytes()
     private var connected = false
     private var answered = false
+    private val expiresAt = clock.now() + DAEMON_CALL_TIMEOUT_MS
 
     init {
         val bytes = body.encodeToByteArray()
@@ -230,6 +232,10 @@ class DaemonCall(
     }
 
     override fun events(): Int = if (!connected || outbox.size > 0) OUT else IN
+
+    override fun deadline(): Long? = expiresAt
+
+    override fun due() = finish(0, "")
 
     override fun ready(revents: Int) {
         if (!connected && revents and OUT != 0) {
@@ -366,6 +372,9 @@ private const val MAX_CONNECTIONS = 256
 // Two minutes: far past the few seconds a client keeps an idle connection for, so a client is always the first to close
 // one it is done with and never meets a connection this front closed under its next request.
 private const val REQUEST_TIMEOUT_MS = 120_000L
+
+// One bounded call leaves resolve/start budgets room to retry without treating an unanswered operation as settled.
+private const val DAEMON_CALL_TIMEOUT_MS = 5_000L
 private const val HEX = 16
 const val OK = 200
 const val ACCEPTED = 202

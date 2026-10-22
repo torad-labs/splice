@@ -85,7 +85,7 @@ class Front(
         val loop = Loop(clock)
         val files = HubFiles(hubDir)
         val timers = Timers(clock).also(loop::add)
-        val daemon = Daemon(sys, loop, controlPort, files)
+        val daemon = Daemon(sys, loop, clock, controlPort, files)
         val hub = Hub(files, daemon, Links(sys, loop), timers, clock)
         hub.restore()
         val control = HolderDrainControl(hub)
@@ -270,32 +270,54 @@ class Lifecycle(
 
 /** Deadlines without a descriptor: poll skips a negative fd, so this only ever wakes the loop on time. */
 class Timers(private val clock: Clock) : Watched(-1) {
-    private val due = ArrayList<Pair<Long, () -> Unit>>()
+    private val due = ArrayList<Scheduled>()
 
-    fun at(time: Long, action: () -> Unit) {
-        due += time to action
+    fun at(time: Long, action: () -> Unit): () -> Unit {
+        val scheduled = Scheduled(time, action)
+        due += scheduled
+        return {
+            scheduled.active = false
+            due.remove(scheduled)
+        }
     }
 
     override fun events(): Int = 0
 
     override fun ready(revents: Int) = Unit
 
-    override fun deadline(): Long? = due.minOfOrNull { it.first }
+    override fun deadline(): Long? = due.filter { it.active }.minOfOrNull { it.time }
 
     override fun due() {
         val now = clock.now()
-        val fire = due.filter { it.first <= now }
+        val fire = due.filter { it.time <= now }
         due.removeAll(fire)
-        fire.forEach { it.second() }
+        fire.forEach { scheduled ->
+            if (scheduled.active) {
+                scheduled.active = false
+                scheduled.action()
+            }
+        }
     }
+
+    private data class Scheduled(
+        val time: Long,
+        val action: () -> Unit,
+        var active: Boolean = true,
+    )
 }
 
 /** Calls to the daemon's control port, each one connection. */
-class Daemon(private val sys: Sys, private val loop: Loop, private val port: Int, private val files: HubFiles) {
+class Daemon(
+    private val sys: Sys,
+    private val loop: Loop,
+    private val clock: Clock,
+    private val port: Int,
+    private val files: HubFiles,
+) {
     fun call(path: String, body: String, done: (Int, String) -> Unit) {
         val fd = sys.connectTcp(port)
         if (fd < 0) return done(0, "")
-        loop.add(DaemonCall(sys, path, files.mgmtKey(), body, done, fd))
+        loop.add(DaemonCall(sys, clock, path, files.mgmtKey(), body, done, fd))
     }
 }
 

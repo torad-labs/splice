@@ -15,7 +15,7 @@ internal class HolderCandidateLinks(
         val drain = candidate(holder) ?: return null
         val reason = details.verify(drain, init)
         if (reason == null) {
-            if (drain.phase in setOf(PAUSED, CANDIDATE_STARTING)) drain.phase = CANDIDATE_READY
+            if (drain.phase in setOf(PAUSED, CANDIDATE_STARTING, CANDIDATE_BLOCKED)) drain.phase = CANDIDATE_READY
             drain.blocker = null
         } else {
             failed(holder, reason)
@@ -53,21 +53,6 @@ internal class HolderCandidateDetails {
         val captured = CapturedHolder(route, holder)
         val refusal = captured.refusal()
         return if (refusal == null) captured.drain() to null else null to refusal
-    }
-
-    fun reset(holder: Holder, generation: String) {
-        holder.generation = generation
-        holder.attestedGeneration = null
-        holder.ready = false
-        holder.connecting = false
-        holder.init = null
-        holder.identity = null
-        holder.handshakeId = null
-        holder.handshakeGeneration = null
-        holder.handshakeIdentity = null
-        holder.initializedPending = false
-        holder.retirementFence = null
-        holder.recoveryUncertain = false
     }
 
     fun verify(drain: HolderDrain, init: JsonObject): String? = when {

@@ -12,6 +12,7 @@ internal data class ServerResponseState(
     var delivery: String? = null,
     var durable: Boolean = false,
     var retries: Int = 0,
+    var utf8Bytes: Int = 0,
 )
 
 internal data class ServerRequestOutstanding(
@@ -29,13 +30,22 @@ private data class PreparedResponse(val link: HolderLink, val text: String)
 internal class ServerRequestLedger {
     val requests = HashMap<String, ServerRequestOutstanding>()
     private var next = 0L
+    private var retainedResponseBytes = 0L
 
     fun retain(holder: Holder, id: JsonElement): String? {
-        if (requests.size >= MAX_RETAINED_REVERSE) return null
+        if (requests.size >= MAX_RETAINED_REVERSE || retainedResponseBytes >= MAX_RETAINED_RESPONSE_BYTES) return null
         val generation = holder.generation ?: return null
         val key = nextKey()
         requests[key] = ServerRequestOutstanding(holder, generation, id)
         return key
+    }
+
+    fun reserveResponse(asked: ServerRequestOutstanding, text: String, utf8Bytes: Int): Boolean {
+        if (retainedResponseBytes + utf8Bytes.toLong() > MAX_RETAINED_RESPONSE_BYTES) return false
+        asked.response.text = text
+        asked.response.utf8Bytes = utf8Bytes
+        retainedResponseBytes += utf8Bytes.toLong()
+        return true
     }
 
     fun bind(key: String, session: Session, persistence: HolderPersistence): Boolean {
@@ -57,6 +67,7 @@ internal class ServerRequestLedger {
             (value as? JsonObject)?.let { body ->
                 restored(key, body, holder, sessions)?.let { asked ->
                     requests[key] = asked
+                    retainedResponseBytes += asked.response.utf8Bytes.toLong()
                     remembered(asked.holder)
                 }
             }
@@ -77,15 +88,23 @@ internal class ServerRequestLedger {
         }?.let { (key, asked) -> key to requireNotNull(asked.session) }
 
     fun settles(key: String, asked: ServerRequestOutstanding): Boolean {
-        if (requests[key] !== asked) return false
-        if (asked.holder.generation != asked.generation) return false
-        return asked.response.delivery == RESPONSE_WRITE_UNCERTAIN
+        val settled = requests[key] === asked &&
+            asked.holder.generation == asked.generation &&
+            asked.response.delivery == RESPONSE_WRITE_UNCERTAIN
+        if (settled) {
+            requests.remove(key)
+            retainedResponseBytes -= asked.response.utf8Bytes.toLong()
+        }
+        return settled
     }
 
     fun removeGeneration(holder: Holder, generation: String) {
         requests.entries
             .filter { (_, asked) -> asked.holder === holder && asked.generation == generation }
-            .forEach { (key, _) -> requests.remove(key) }
+            .forEach { (key, asked) ->
+                requests.remove(key)
+                retainedResponseBytes -= asked.response.utf8Bytes.toLong()
+            }
     }
 
     private fun restored(
@@ -108,6 +127,7 @@ internal class ServerRequestLedger {
                 delivery(body, response),
                 response != null,
                 Rpc.str(body, RESPONSE_RETRIES)?.toIntOrNull() ?: 0,
+                response?.encodeToByteArray()?.size ?: 0,
             ),
         )
     }
@@ -124,15 +144,13 @@ internal class ServerRequestLedger {
     }
 
     private fun delivery(body: JsonObject, response: String?): String? = when {
-        response == null -> legacyDelivery(body)
+        response == null -> {
+            val status = Rpc.str(body, RESPONSE_STATUS)
+            val answering = Rpc.str(body, ANSWERING)
+            if (status != null || answering == "true") RESPONSE_LEGACY_UNCERTAIN else null
+        }
         Rpc.str(body, RESPONSE_STATUS) == RESPONSE_PREPARED -> RESPONSE_PREPARED
         else -> RESPONSE_WRITE_UNCERTAIN
-    }
-
-    private fun legacyDelivery(body: JsonObject): String? {
-        val status = Rpc.str(body, RESPONSE_STATUS)
-        val answering = Rpc.str(body, ANSWERING)
-        return if (status != null || answering == "true") RESPONSE_LEGACY_UNCERTAIN else null
     }
 
     private fun nextKey(): String {
@@ -222,18 +240,17 @@ internal class ServerRequestDelivery(
             }
             asked.response.durable
         }
-        else -> asked.response.durable
+        else -> false
     }
 
     private fun stage(asked: ServerRequestOutstanding, text: String): Boolean {
-        val retained = ledger.requests.values.sumOf { it.response.text?.encodeToByteArray()?.size?.toLong() ?: 0L }
-        if (retained + text.encodeToByteArray().size.toLong() > MAX_RETAINED_RESPONSE_BYTES) return false
-        asked.response.text = text
+        val utf8Bytes = text.encodeToByteArray().size
+        val admitted = HolderOutputCapacity.accepts(utf8Bytes) && ledger.reserveResponse(asked, text, utf8Bytes)
+        if (!admitted) return false
         asked.response.delivery = RESPONSE_PREPARED
         asked.response.durable = persistence.checkpoint()
-        if (asked.response.durable) return true
-        retried(asked)
-        return false
+        if (!asked.response.durable) retried(asked)
+        return asked.response.durable
     }
 
     private fun send(key: String, asked: ServerRequestOutstanding) {
@@ -281,7 +298,6 @@ internal class ServerRequestDelivery(
 
     private fun settled(key: String, asked: ServerRequestOutstanding) {
         if (ledger.settles(key, asked)) {
-            ledger.requests.remove(key)
             asked.holder.reverseResponseRetries = 0
             persistence.changed()
         }

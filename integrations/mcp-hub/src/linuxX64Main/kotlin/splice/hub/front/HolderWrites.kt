@@ -17,7 +17,7 @@ class HolderWrites(private val sys: Sys) {
     val pending: Boolean get() = outbox.size > 0
 
     fun accepts(line: String): Boolean =
-        outbox.size.toLong() + line.encodeToByteArray().size + 1 <= MAX_QUEUED_OUTPUT_BYTES
+        outbox.size.toLong() + line.encodeToByteArray().size + LINE_END_BYTES <= MAX_QUEUED_OUTPUT_BYTES
 
     fun append(line: String, delivered: HolderWritten?) {
         val bytes = (line + "\n").encodeToByteArray()
@@ -37,4 +37,10 @@ class HolderWrites(private val sys: Sys) {
     }
 }
 
+/** A complete newline-delimited holder message must fit even when its queue is empty. */
+internal object HolderOutputCapacity {
+    fun accepts(lineBytes: Int): Boolean = lineBytes.toLong() + LINE_END_BYTES <= MAX_QUEUED_OUTPUT_BYTES
+}
+
 private const val MAX_QUEUED_OUTPUT_BYTES = 1024 * 1024L
+private const val LINE_END_BYTES = 1L

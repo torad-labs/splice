@@ -33,15 +33,7 @@ internal class HolderHandshakeFlow(
     }
 
     fun reset(holder: Holder, generation: String) {
-        holder.generation = generation
-        holder.attestedGeneration = null
-        holder.ready = false
-        holder.connecting = false
-        holder.identity = null
-        holder.init = null
-        holder.initializedPending = false
-        holder.retirementFence = null
-        holder.recoveryUncertain = false
+        holder.resetGeneration(generation)
         attempts.clear(holder)
     }
 }
@@ -50,6 +42,7 @@ internal class HolderHandshakeRecovery(private val flow: HolderHandshakeFlow) {
     fun recover(holder: Holder, link: HolderLink) {
         when {
             holder.recoveryUncertain -> flow.outcomes.failed(holder, UNPROVEN_INITIALIZATION)
+            holder.initializedUncertain -> flow.outcomes.failed(holder, INITIALIZED_UNPROVEN)
             holder.handshakeId != null -> resumed(holder)
             flow.proof.retained(holder, null) -> flow.notifications.ready(holder, link)
             else -> flow.outcomes.failed(holder, MISSING_INITIALIZATION)
@@ -148,21 +141,33 @@ internal class HolderInitializedDelivery(
     private val outcomes: HolderHandshakeOutcomes,
 ) {
     fun ready(holder: Holder, link: HolderLink) {
-        if (holder.initializedPending) pending(holder, link) else outcomes.ready(holder)
+        when {
+            holder.initializedUncertain -> outcomes.failed(holder, INITIALIZED_UNPROVEN)
+            holder.initializedPending -> pending(holder, link)
+            else -> outcomes.ready(holder)
+        }
     }
 
     fun pending(holder: Holder, link: HolderLink) {
-        link.send(INITIALIZED, HolderWritten { delivered(holder, link) })
+        holder.initializedPending = false
+        holder.initializedUncertain = true
+        if (!persistence.checkpoint()) {
+            holder.initializedPending = true
+            holder.initializedUncertain = false
+            outcomes.failed(holder, INITIALIZED_UNPROVEN)
+        } else if (!link.send(INITIALIZED, HolderWritten { delivered(holder, link) })) {
+            outcomes.failed(holder, INITIALIZED_UNPROVEN)
+        }
     }
 
     private fun delivered(holder: Holder, link: HolderLink) {
-        if (holder.link !== link || !holder.initializedPending) return
-        holder.initializedPending = false
+        if (holder.link !== link || !holder.initializedUncertain) return
+        holder.initializedUncertain = false
         if (persistence.checkpoint()) {
             holder.lastCall = context.clock.epoch()
             outcomes.ready(holder)
         } else {
-            holder.initializedPending = true
+            holder.initializedUncertain = true
             outcomes.failed(holder, INITIALIZED_UNPROVEN)
         }
     }
@@ -384,6 +389,7 @@ internal class HolderMemory(
         holder.handshakeIdentity = Rpc.str(body, HANDSHAKE_IDENTITY)
         holder.lastCall = (body[LAST_CALL] as? JsonPrimitive)?.longOrNull ?: 0L
         holder.initializedPending = Rpc.str(body, INITIALIZED_PENDING) == "true"
+        holder.initializedUncertain = Rpc.str(body, INITIALIZED_UNCERTAIN) == "true"
         holder.retirementFence = Rpc.str(body, RETIREMENT_FENCE)
         holder.reverseResponseRetries = Rpc.str(body, REVERSE_RESPONSE_RETRIES)?.toIntOrNull() ?: 0
         holder.recoveryUncertain = Rpc.str(body, RECOVERY_UNCERTAIN) == "true" || proof.unproven(holder)
@@ -395,6 +401,7 @@ internal class HolderMemory(
         val persisted = listOf(
             hasHandshake,
             holder.recoveryUncertain,
+            holder.initializedUncertain,
             holder.retirementFence != null,
             holder.reverseResponseRetries != 0,
         ).any { it }
@@ -410,6 +417,7 @@ internal class HolderMemory(
         holder.handshakeIdentity?.let { put(HANDSHAKE_IDENTITY, it) }
         put(LAST_CALL, holder.lastCall)
         put(INITIALIZED_PENDING, holder.initializedPending)
+        put(INITIALIZED_UNCERTAIN, holder.initializedUncertain)
         holder.retirementFence?.let { put(RETIREMENT_FENCE, it) }
         if (holder.reverseResponseRetries != 0) put(REVERSE_RESPONSE_RETRIES, holder.reverseResponseRetries)
         put(RECOVERY_UNCERTAIN, holder.recoveryUncertain)

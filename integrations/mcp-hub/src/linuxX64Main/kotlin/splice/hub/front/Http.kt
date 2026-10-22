@@ -128,17 +128,23 @@ class HttpConn(
         push(": stream open\n\n")
     }
 
-    /** One chunk on the stream: an event, or a comment that keeps it alive. */
-    fun push(event: String) {
-        if (closed) return
+    /** One chunk on the stream: an event, or a comment that keeps it alive. A slow client is disconnected once
+     *  buffering its next complete event would exceed the stream budget. */
+    fun push(event: String): Boolean {
+        if (closed) return false
         val bytes = event.encodeToByteArray()
+        val chunkBytes = bytes.size.toLong() + bytes.size.toString(HEX).length + CHUNK_DELIMITERS
+        if (outbox.size.toLong() + chunkBytes > MAX_QUEUED_STREAM_OUTPUT_BYTES) {
+            close()
+            return false
+        }
         outbox.append("${bytes.size.toString(HEX)}\r\n")
         outbox.append(bytes)
         outbox.append("\r\n")
-        if (!sys.flush(fd, outbox)) close()
+        return sys.flush(fd, outbox).also { flushed -> if (!flushed) close() }
     }
 
-    fun message(json: String) = push("event: message\ndata: $json\n\n")
+    fun message(json: String): Boolean = push("event: message\ndata: $json\n\n")
 
     private fun head(status: Int, size: Int, extra: Map<String, String>): String {
         val head = StringBuilder("HTTP/1.1 $status ${REASONS[status] ?: "Status"}\r\n")
@@ -279,8 +285,11 @@ class HolderLink(
 ) : Watched(fd) {
     val inbox = Bytes()
     private val writes = HolderWrites(sys)
+    private var sealed = false
     var reading = true
     val pendingOutput: Boolean get() = writes.pending
+
+    fun hasPendingOutput(): Boolean = writes.pending
 
     override fun events(): Int = (if (reading) IN else 0) or (if (writes.pending) OUT else 0)
 
@@ -316,19 +325,28 @@ class HolderLink(
         }
     }
 
-    fun accepts(line: String): Boolean = !closed && writes.accepts(line)
+    /** Stops new holder writes while queued bytes drain across a replacement fence. */
+    fun seal() {
+        sealed = true
+    }
+
+    /** Reopens this still-live exact link after its own generation's replacement rollback. */
+    fun unseal(): Boolean {
+        if (closed) return false
+        sealed = false
+        return true
+    }
+
+    fun accepts(line: String): Boolean = !closed && !sealed && writes.accepts(line)
 
     fun send(line: String, delivered: HolderWritten? = null): Boolean {
-        if (!accepts(line)) {
+        if (closed || sealed) return false
+        if (!writes.accepts(line)) {
             close()
             return false
         }
         writes.append(line, delivered)
-        if (!writes.flush(fd)) {
-            close()
-            return false
-        }
-        return true
+        return writes.flush(fd).also { flushed -> if (!flushed) close() }
     }
 
     override fun onClose() = onLost()
@@ -338,6 +356,8 @@ private val CRLF2 = "\r\n\r\n".encodeToByteArray()
 private val NL = "\n".encodeToByteArray()
 private const val MAX_HEADERS = 64 * 1024
 private const val MAX_BODY = 64 * 1024 * 1024
+private const val MAX_QUEUED_STREAM_OUTPUT_BYTES = 1024 * 1024L
+private const val CHUNK_DELIMITERS = 4L
 
 // Far above what the sessions on one machine hold open (a connection per session, and one more for a stream), so it
 // stops only a flood of idle connections from growing without bound.

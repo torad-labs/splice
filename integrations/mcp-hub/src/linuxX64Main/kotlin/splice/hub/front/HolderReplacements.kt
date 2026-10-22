@@ -32,12 +32,15 @@ internal data class HolderReplacements(
         if (holder.generation != null && holder.generation != drain.generation) return false
         val priorGeneration = holder.generation
         val priorFence = holder.retirementFence
+        val link = holder.link
         holder.generation = drain.generation
+        link?.seal()
         holder.retirementFence = drain.generation
         if (checkpoint()) {
             changed()
             return true
         }
+        if (holder.link === link && holder.generation == drain.generation) link?.unseal()
         holder.generation = priorGeneration
         holder.retirementFence = priorFence
         return false
@@ -49,8 +52,10 @@ internal data class HolderReplacements(
         return if (!held) {
             true
         } else {
+            val link = holder.link
             holder.retirementFence = null
             if (checkpoint()) {
+                if (holder.link === link && holder.generation == drain.generation) link?.unseal()
                 changed()
                 true
             } else {
@@ -245,8 +250,14 @@ internal class HolderCandidatePreparation(
         drain.candidate = candidate
         drain.blocker = null
         val holder = known.getOrPut(candidate.socket) { Holder(candidate.socket) }
-        if (holder.generation != candidate.generation) details.reset(holder, candidate.generation)
-        if (holder.ready) holder.init?.let { return links.verified(holder, it) }
+        if (holder.generation != candidate.generation) holder.resetGeneration(candidate.generation)
+        if (holder.ready) {
+            holder.init?.let {
+                val verified = links.verified(holder, it)
+                if (verified == null) changed()
+                return verified
+            }
+        }
         if (holder.connecting) return null
         drain.phase = CANDIDATE_STARTING
         return if (!checkpoint()) {
@@ -264,7 +275,7 @@ internal class HolderCandidatePreparation(
 
     fun reconnect(candidate: ReplacementCandidate, connect: (Holder) -> Unit): Boolean {
         val holder = known.getOrPut(candidate.socket) { Holder(candidate.socket) }
-        if (holder.generation != candidate.generation) details.reset(holder, candidate.generation)
+        if (holder.generation != candidate.generation) holder.resetGeneration(candidate.generation)
         if (current(candidate)) return true
         if (holder.connecting) return false
         holder.connecting = true

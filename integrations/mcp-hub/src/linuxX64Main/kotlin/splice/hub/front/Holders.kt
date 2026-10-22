@@ -20,6 +20,7 @@ data class Holder(val socket: String) {
     var handshakeIdentity: String? = null
     var recoveryUncertain = false
     var initializedPending = false
+    var initializedUncertain = false
     var retirementFence: String? = null
     var reverseResponseRetries = 0
     var resumeReverseResponses: ((String) -> Unit)? = null
@@ -32,6 +33,22 @@ data class Holder(val socket: String) {
      *  idle past its bound. */
     var lastCall = 0L
     val waiters = ArrayList<(String?) -> Unit>()
+
+    fun resetGeneration(nextGeneration: String) {
+        generation = nextGeneration
+        attestedGeneration = null
+        ready = false
+        connecting = false
+        identity = null
+        init = null
+        handshakeId = null
+        handshakeGeneration = null
+        handshakeIdentity = null
+        initializedPending = false
+        initializedUncertain = false
+        retirementFence = null
+        recoveryUncertain = false
+    }
 
     /** Hands [failure], or null for ready, to everyone waiting on this holder. */
     fun settle(failure: String?) {
@@ -119,6 +136,7 @@ internal const val HANDSHAKE_ID = "handshake_id"
 internal const val HANDSHAKE_GENERATION = "handshake_generation"
 internal const val HANDSHAKE_IDENTITY = "handshake_identity"
 internal const val RECOVERY_UNCERTAIN = "recovery_uncertain"
+internal const val INITIALIZED_UNCERTAIN = "initialized_uncertain"
 internal const val RETIREMENT_FENCE = "retirement_fence"
 internal const val REVERSE_RESPONSE_RETRIES = "reverse_response_retries"
 internal const val CAPABILITIES = "capabilities"

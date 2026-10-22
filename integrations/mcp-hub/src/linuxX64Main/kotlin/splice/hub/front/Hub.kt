@@ -137,6 +137,7 @@ internal class HubReplacements(
         holders,
         relay,
         { timers.at(clock.now() + CANDIDATE_REPLAY_RETRY) { recovery.reconcile() } },
+        { route -> recovery.retry(route) },
         ::completed,
     )
     private val recovery: ReplacementRecovery = ReplacementRecovery(
@@ -211,12 +212,20 @@ internal class HubReplacements(
     }
 
     private fun replayRetirement(route: Route, drain: HolderDrain, candidate: ReplacementCandidate) {
+        if (relay.inFlight(drain.socket) != 0) {
+            timers.at(clock.now() + RETIRE_RETRY) { retryRetirement(route) }
+            return
+        }
         if (!holders.replacements.fence(drain)) {
             holders.replacements.retirements.blocked(route, "the front could not durably close old-holder admission")
             timers.at(clock.now() + RETIRE_RETRY) { retryRetirement(route) }
             return
         }
-        if (relay.inFlight(drain.socket) != 0) return
+        val holder = holders.remember(drain.socket)
+        if (relay.inFlight(drain.socket) != 0 || holder.link?.hasPendingOutput() == true) {
+            timers.at(clock.now() + RETIRE_RETRY) { retryRetirement(route) }
+            return
+        }
         routes.replacements.retire(route, drain, candidate) { failure ->
             if (failure == null) {
                 completed(route)
@@ -229,9 +238,9 @@ internal class HubReplacements(
 
     /** A claimed retirement stays with its owner even after the front can no longer reach its candidate. */
     private fun retryRetirement(route: Route) {
-        val claimed = holders.replacements.candidates.drain(route.server, route.launch)
-            ?.takeIf { relay.inFlight(it.socket) == 0 }
-            ?.let { holders.replacements.retirements.retry(route) } ?: return
+        val drain = holders.replacements.candidates.drain(route.server, route.launch)
+            ?.takeIf { relay.inFlight(it.socket) == 0 } ?: return
+        val claimed = if (drain.phase == RETIRING) drain else holders.replacements.retirements.retry(route) ?: return
         val candidate = claimed.candidate ?: return
         replayRetirement(route, claimed, candidate)
     }
@@ -281,26 +290,10 @@ internal class HubReplacements(
                     route,
                     "the routed replacement has no exact moved-route record",
                 )
+                recovery.retry(route)
                 return@forEach
             }
-            val candidate = claimed.candidate ?: return@forEach
-            routes.replacements.rollback(route, claimed, candidate) { failure ->
-                if (failure != null) {
-                    holders.replacements.retirements.rollbackUnknown(route, failure)
-                } else if (!routes.replacements.restore(claimed.moved, claimed.socket, claimed.generation, candidate)) {
-                    holders.replacements.retirements.rollbackUnknown(
-                        route,
-                        "the restored routes no longer match the dead candidate generation",
-                    )
-                } else if (!holders.replacements.unfence(claimed)) {
-                    holders.replacements.retirements.rollbackUnknown(
-                        route,
-                        "the front could not durably reopen old-holder admission",
-                    )
-                } else {
-                    completed(route)
-                }
-            }
+            claimed.candidate?.let { replay.rollback(route, claimed, it) }
         }
     }
 }
@@ -331,6 +324,12 @@ private class ReplacementRecovery(
     private val replayAfterReconnect = setOf(COMMITTING, RETIRING, RETIRE_BLOCKED)
 
     fun reconcile() = context.holders.replacements.all().forEach(::recover)
+
+    fun retry(route: Route) {
+        context.timers.at(context.clock.now() + CANDIDATE_REPLAY_RETRY) {
+            context.routes.byKey(route.key())?.let { reconcile() }
+        }
+    }
 
     private fun recover(drain: HolderDrain) {
         val route = context.routes.byKey(drain.key()) ?: return
@@ -453,7 +452,6 @@ internal class HubHttp(
 
     private fun initialize(conn: HttpConn, msg: JsonObject, server: String, launch: String) {
         val id = msg[Rpc.ID] ?: JsonNull
-        val asked = Rpc.str(msg[Rpc.PARAMS] as? JsonObject, Rpc.PROTOCOL)
         val route = routes.of(server, launch)
         if (holders.replacements.admissions.paused(route)) {
             return conn.reply(UNAVAILABLE, Rpc.error(id, DRAINING))
@@ -470,10 +468,8 @@ internal class HubHttp(
                 val session = Session(Ids.session(), route)
                 sessions[session.id] = session
                 save()
-                val version = asked?.takeIf { it in Rpc.VERSIONS } ?: Rpc.str(init, Rpc.PROTOCOL)
-                val result = JsonObject(init + (Rpc.PROTOCOL to JsonPrimitive(version)))
                 files.say("session ${session.id.take(SHORT)} for ${route.server} (launch '${route.launch}')")
-                conn.reply(OK, Rpc.result(id, result), mapOf("Mcp-Session-Id" to session.id))
+                conn.reply(OK, Rpc.result(id, init), mapOf("Mcp-Session-Id" to session.id))
             }
         }
     }
@@ -516,11 +512,12 @@ internal class HubHttp(
     }
 
     private fun notification(conn: HttpConn, session: Session, msg: JsonObject, method: String) {
-        conn.reply(ACCEPTED)
-        if (method == "notifications/initialized") return
-        if (holders.replacements.admissions.paused(session.route) && method != CANCELLED) return
-        val holder = holders.links.of(session.route)?.takeIf { it.ready } ?: return
-        relay.notifications.notify(holder, session, msg)
+        if (method == "notifications/initialized") return conn.reply(ACCEPTED)
+        if (holders.replacements.admissions.paused(session.route) && method != CANCELLED) {
+            return conn.reply(UNAVAILABLE)
+        }
+        val holder = holders.links.of(session.route)?.takeIf { it.ready } ?: return conn.reply(UNAVAILABLE)
+        if (relay.notifications.notify(holder, session, msg)) conn.reply(ACCEPTED) else conn.reply(UNAVAILABLE)
     }
 
     private fun open(conn: HttpConn, session: Session?) {

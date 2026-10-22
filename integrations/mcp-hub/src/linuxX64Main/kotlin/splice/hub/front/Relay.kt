@@ -205,13 +205,14 @@ class Relay(
 
 /** The notification path owns only request-id translation; it never changes a generation ledger. */
 internal class RelayNotifications(private val calls: Map<String, WireOutstanding>) {
-    fun notify(holder: Holder, session: Session, msg: JsonObject) {
+    /** A notification is accepted only once its holder link accepted its complete wire message. */
+    fun notify(holder: Holder, session: Session, msg: JsonObject): Boolean {
         val cancelled = Rpc.str(msg, Rpc.METHOD) == CANCELLED
         val params = msg[Rpc.PARAMS] as? JsonObject
         val key = params?.takeIf { cancelled }?.get(REQUEST_ID)?.let { ownKey(holder, it, session) }
-        if (cancelled && key == null) return
+        if (cancelled && key == null) return true
         val text = key?.let { Rpc.encode(withRequestId(msg, requireNotNull(params), it)) } ?: Rpc.encode(msg)
-        holder.link?.send(text)
+        return holder.link?.send(text) == true
     }
 
     private fun ownKey(holder: Holder, id: JsonElement, session: Session): String? =
@@ -250,19 +251,28 @@ internal class RelayInbound(
     private fun asks(holder: Holder, msg: JsonObject, id: JsonElement) {
         if (holder.retirementFence == holder.generation) {
             holder.link?.send(Rpc.error(id, "the holder is retiring"))
-            return
+        } else {
+            when (val retained = requests.retain(holder, id)) {
+                is ServerRequestRetention.Retained -> deliver(holder, msg, id, retained.key)
+                ServerRequestRetention.CapacityRefused ->
+                    holder.link?.send(Rpc.error(id, "the front retained reverse capacity is full"))
+                ServerRequestRetention.PersistenceFailed -> Unit
+            }
         }
-        val key = requests.retain(holder, id)
-        if (key == null) {
-            holder.link?.send(Rpc.error(id, "the front retained-work limit is full"))
-            return
-        }
-        if (sharedRoots(holder, msg, id, key)) return
-        val target = target(holder)
-        if (target == null) {
-            requests.reply(key, Rpc.error(id, "no client has a stream open"))
-        } else if (requests.bind(key, target)) {
-            target.stream?.message(Rpc.with(msg, Rpc.ID, JsonPrimitive(key)))
+    }
+
+    private fun deliver(holder: Holder, msg: JsonObject, id: JsonElement, key: String) {
+        if (!sharedRoots(holder, msg, id, key)) {
+            val target = target(holder)
+            if (target == null) {
+                requests.reply(key, Rpc.error(id, "no client has a stream open"))
+            } else if (requests.bind(key, target)) {
+                val response = Rpc.with(msg, Rpc.ID, JsonPrimitive(key))
+                val published = target.stream?.message(response) == true
+                if (!published) {
+                    requests.reply(key, Rpc.error(id, "the selected client stream could not accept the request"))
+                }
+            }
         }
     }
 

@@ -6,6 +6,7 @@ internal class ReplacementReplay(
     private val holders: Holders,
     private val relay: Relay,
     private val retryCommit: (Route) -> Unit,
+    private val retryRollback: (Route) -> Unit,
     private val completed: (Route) -> Unit,
 ) {
     fun commit(route: Route, drain: HolderDrain, candidate: ReplacementCandidate) {
@@ -41,20 +42,19 @@ internal class ReplacementReplay(
     fun rollback(route: Route, drain: HolderDrain, candidate: ReplacementCandidate) {
         routes.replacements.rollback(route, drain, candidate) { failure ->
             if (failure != null) {
-                holders.replacements.retirements.rollbackUnknown(route, failure)
+                rollbackUnknown(route, failure)
             } else if (!routes.replacements.restore(drain.moved, drain.socket, drain.generation, candidate)) {
-                holders.replacements.retirements.rollbackUnknown(
-                    route,
-                    "the restored routes no longer match the dead candidate generation",
-                )
+                rollbackUnknown(route, "the restored routes no longer match the dead candidate generation")
             } else if (!holders.replacements.unfence(drain)) {
-                holders.replacements.retirements.rollbackUnknown(
-                    route,
-                    "the front could not durably reopen old-holder admission",
-                )
+                rollbackUnknown(route, "the front could not durably reopen old-holder admission")
             } else {
                 completed(route)
             }
         }
+    }
+
+    private fun rollbackUnknown(route: Route, words: String) {
+        holders.replacements.retirements.rollbackUnknown(route, words)
+        retryRollback(route)
     }
 }

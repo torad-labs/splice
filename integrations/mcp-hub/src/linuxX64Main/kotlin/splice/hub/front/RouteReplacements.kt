@@ -11,6 +11,7 @@ internal class RouteReplacements(
     private val clock: Clock,
 ) {
     private val candidateReplies = CandidateReplyParser()
+    private val exitPolls = HashSet<Pair<String, String>>()
 
     /** Starts the candidate that the daemon derived from its current canonical configured server state. */
     fun start(
@@ -114,9 +115,9 @@ internal class RouteReplacements(
         }
     }
 
-    /** Repeats ownership checks until the daemon confirms this exact holder generation exited or no relay id needs it. */
+    /** Repeats one ownership check chain until the daemon confirms this exact holder generation exited. */
     fun confirmExit(socket: String, generation: String, pending: () -> Boolean, then: () -> Unit) {
-        if (!pending()) return
+        if (!pending() || !exitPolls.add(socket to generation)) return
         val body = Rpc.encode(
             buildJsonObject {
                 put(SOCKET, socket)
@@ -125,9 +126,13 @@ internal class RouteReplacements(
         )
         daemon.call(REPLACEMENT_EXIT, body) { status, _ ->
             if (status in OK..NO_CONTENT) {
+                exitPolls.remove(socket to generation)
                 then()
             } else {
-                timers.at(clock.now() + EXIT_RETRY) { confirmExit(socket, generation, pending, then) }
+                timers.at(clock.now() + EXIT_RETRY) {
+                    exitPolls.remove(socket to generation)
+                    confirmExit(socket, generation, pending, then)
+                }
             }
         }
     }

@@ -15,7 +15,7 @@ import java.util.concurrent.ThreadPoolExecutor
 import java.util.concurrent.TimeUnit
 import kotlin.time.Duration
 
-/** One burst can queue 64 writes, enough to absorb client and reverse-reply spikes while bounding memory and shutdown. */
+/** Bounds queued writes and unsettled exchanges per direction, so caller timeouts cannot grow retained wire state. */
 private const val WRITE_QUEUE_CAPACITY = 64
 
 /** One child/stdin generation, carrying its own short-lived retirement fence. */
@@ -253,7 +253,7 @@ internal class McpChildWriter(
     fun retain(requestId: Long, child: Process): Boolean {
         val selected = target(child) ?: return false
         return synchronized(accountingLock) {
-            val available = accepting(selected) && child.isAlive
+            val available = accepting(selected) && child.isAlive && serverRequests.size < WRITE_QUEUE_CAPACITY
             if (available) serverRequests[requestId] = selected
             available
         }
@@ -289,7 +289,8 @@ internal class McpChildWriter(
         val selected = target(expected) ?: return null
         val delivery = McpWrite(selected, codec.encode(msg), requestId, serverRequestId)
         val registered = synchronized(accountingLock) {
-            val available = accepting(selected)
+            val room = requestId == null || requests.size < WRITE_QUEUE_CAPACITY
+            val available = accepting(selected) && room
             if (available) {
                 requestId?.let { requests[it] = selected }
                 serverRequestId?.let { serverRequests[it] = selected }
@@ -298,14 +299,22 @@ internal class McpChildWriter(
             available
         }
         if (!registered) return null
+        queue(delivery, budget)
+        return delivery
+    }
+
+    private fun queue(delivery: McpWrite, budget: Duration) {
         val deadline = failures.schedule(budget, McpWriteExpired { expire(delivery, "write deadline exceeded") })
         if (deadline == null) {
             expire(delivery, "writer closed before delivery")
         } else {
-            delivery.deadline = deadline
-            writes.offer(delivery)
+            val active = synchronized(accountingLock) {
+                delivery.deadline = deadline
+                if (delivery.completed.isCompleted) deadline.cancel(false)
+                !delivery.completed.isCompleted
+            }
+            if (active) writes.offer(delivery)
         }
-        return delivery
     }
 
     private fun accepting(selected: McpWriteTarget): Boolean =
@@ -317,8 +326,8 @@ internal class McpChildWriter(
 
     private fun resolve(write: McpWrite, delivered: Boolean): Boolean {
         if (!write.completed.complete(delivered)) return false
-        write.deadline?.cancel(false)
         synchronized(accountingLock) {
+            write.deadline?.cancel(false)
             writesInFlight.remove(write)
             if (delivered) write.serverRequestId?.let(serverRequests::remove)
         }

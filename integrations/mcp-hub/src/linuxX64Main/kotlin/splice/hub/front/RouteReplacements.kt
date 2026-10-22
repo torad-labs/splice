@@ -55,6 +55,7 @@ internal class RouteReplacements(
         moved.forEach { held ->
             held.socket = candidate.socket
             held.generation = candidate.generation
+            held.listing = null
         }
         // The caller persists these routes together with the drain's moved keys and ROUTED phase.
         return moved.map(Route::key).toSet()
@@ -72,6 +73,7 @@ internal class RouteReplacements(
         affected.forEach { held ->
             held.socket = oldSocket
             held.generation = oldGeneration
+            held.listing = null
         }
         // The caller removes the rolled-back drain in the same persisted snapshot.
         return true

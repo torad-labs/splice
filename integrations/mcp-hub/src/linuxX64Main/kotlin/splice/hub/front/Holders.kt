@@ -14,6 +14,11 @@ data class Holder(val socket: String) {
     var link: HolderLink? = null
     var identity: String? = null
     var init: JsonObject? = null
+    var handshakeId: String? = null
+    var handshakeGeneration: String? = null
+    var handshakeIdentity: String? = null
+    var recoveryUncertain = false
+    var resumeReverseResponses: ((String) -> Unit)? = null
     var ready = false
     var connecting = false
     var listed = false
@@ -44,6 +49,7 @@ data class HolderDrain(
     val capabilities: JsonObject,
 ) {
     var candidate: ReplacementCandidate? = null
+    var ownerClaim: String? = null
     var moved = emptySet<String>()
     var phase = PAUSED
     var blocker: String? = null
@@ -64,6 +70,7 @@ data class HolderDrain(
             put(CANDIDATE_GENERATION, it.generation)
             put(CANDIDATE_SHARED, it.shared)
         }
+        ownerClaim?.let { put(OWNER_CLAIM, it) }
         if (moved.isNotEmpty()) put(MOVED, JsonArray(moved.map(::JsonPrimitive)))
         blocker?.let { put(BLOCKER, it) }
     }
@@ -76,18 +83,19 @@ class Holders(
     clock: Clock,
     routes: Routes,
     relay: Relay,
-    changed: () -> Unit,
+    persistence: HolderPersistence,
 ) {
     private val known = HashMap<String, Holder>()
-    internal val replacements = HolderReplacements(known, changed)
+    internal val replacements = HolderReplacements(known, persistence::changed, persistence::checkpoint)
 
     /** Retains a restored ledger’s socket identity until exact exit evidence settles it. */
     fun remember(socket: String): Holder = known.getOrPut(socket) { Holder(socket) }
+
     internal val links = HolderLinks(
         HolderLinkContext(files, connections, timers, clock, routes, relay),
         known,
         replacements,
-        changed,
+        persistence,
     )
 
     /** Set while the front stops or upgrades: a link that closes then is the front's doing, not a lost holder. */
@@ -102,10 +110,15 @@ internal const val HELLO = "i:"
 internal const val IDENTITY = "identity"
 internal const val INITIALIZE = "initialize"
 internal const val LAST_CALL = "last_call"
+internal const val HANDSHAKE_ID = "handshake_id"
+internal const val HANDSHAKE_GENERATION = "handshake_generation"
+internal const val HANDSHAKE_IDENTITY = "handshake_identity"
+internal const val RECOVERY_UNCERTAIN = "recovery_uncertain"
 internal const val CAPABILITIES = "capabilities"
 internal const val PHASE = "phase"
 internal const val BLOCKER = "blocker"
 internal const val MOVED = "moved"
+internal const val OWNER_CLAIM = "owner_claim"
 internal const val CANDIDATE_SHARED = "candidate_shared"
 internal const val PAUSED = "admission_paused"
 internal const val CANDIDATE_STARTING = "candidate_starting"
@@ -118,7 +131,9 @@ internal const val RETIRE_BLOCKED = "retire_blocked"
 internal const val ROLLBACK_PENDING = "rollback_pending"
 internal const val ROLLING_BACK = "rolling_back"
 internal const val RETIRE_UNKNOWN = "retirement_unknown"
+internal const val ROLLBACK_UNKNOWN = "rollback_unknown"
 internal const val OLD_HOLDER_LOST = "old_holder_lost"
+internal const val UNPINNING = "unpinning"
 internal val pausingPhases = setOf(
     PAUSED,
     CANDIDATE_STARTING,
@@ -131,7 +146,9 @@ internal val pausingPhases = setOf(
     ROLLBACK_PENDING,
     ROLLING_BACK,
     RETIRE_UNKNOWN,
+    ROLLBACK_UNKNOWN,
     OLD_HOLDER_LOST,
+    UNPINNING,
 )
 internal const val HANDSHAKE_BUDGET = 60_000L
 internal const val NO_REPLACEMENT_PRIMITIVE =

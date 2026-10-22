@@ -119,9 +119,15 @@ forwarding. A local timeout, disconnect, or error reply never settles the backen
 retains bounded settlement evidence until the front durably checkpoints its receipt and acknowledges it. Recovery queries
 that evidence before releasing ownership. Only affirmative non-admission permits clearing a never-forwarded request, and
 only an affirmative never-flushed state permits retrying a retained reverse reply. Uncertain operations never replay.
-A legacy holder without that recovery protocol remains UNKNOWN until exact generation exit. Session/client request IDs
-remain reserved while their exchange is retained. The front writes active replacement drains with both old and candidate
+Holder settlement controls use a separate control socket. Child stdout stays on the data socket, including partially
+buffered lines, and cannot supply control evidence. A reverse receipt binds the exact JSON-RPC response identity; blank
+connection claims and unrelated responses never consume an armed reply. A legacy holder without that control endpoint
+keeps legacy data delivery and remains UNKNOWN until exact generation exit. Session/client request IDs remain reserved
+while their exchange is retained. The front writes active replacement drains with both old and candidate
 generations; the daemon pins either one until the drain resolves.
+An affirmatively exited holder leaves the retained registry only after all route, drain, ledger, link and recovery owners
+release that exact generation. Successful replacement does not keep full old initialization state as unbounded history.
+Unknown generations remain owned rather than being discarded to satisfy a memory ceiling.
 
 Capacity refusal does not settle an existing exchange. A reverse reply refused before queue admission keeps its incoming
 request charged and retains a bounded retry payload. Only a known never-queued reply may retry; an uncertain write must

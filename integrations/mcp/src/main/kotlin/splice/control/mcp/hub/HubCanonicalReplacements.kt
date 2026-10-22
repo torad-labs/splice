@@ -17,17 +17,18 @@ internal class HubCanonicalReplacements(
 ) {
     fun resolve(request: ReplacementStart): McpResult<CanonicalReplacement> {
         val routes = affected(request)
+        val owned = holders.owns(request.oldSocket, expectedGeneration = request.oldGeneration) ||
+            holders.records.exits.confirmed(request.oldSocket, request.oldGeneration)
         return when {
             routes == null -> McpResult.Refused("the old holder is not retained by this front route")
-            !holders.owns(request.oldSocket, expectedGeneration = request.oldGeneration) ->
-                McpResult.Refused("the old holder is not the daemon owner's exact generation")
+            !owned -> McpResult.Refused("the old holder has neither exact live ownership nor a generation exit receipt")
             else -> selection(routes.map(::target))
         }
     }
 
     private fun affected(request: ReplacementStart): List<HubRoute>? = front.report()
         ?.routes
-        ?.filter { it.socket == request.oldSocket }
+        ?.filter { it.socket == request.oldSocket && it.generation == request.oldGeneration }
         ?.takeIf { routes -> routes.any { it.server == request.server && it.launch == request.launch } }
 
     private fun target(route: HubRoute): McpResult<Pair<HubTarget, HubLaunchSpec>> {

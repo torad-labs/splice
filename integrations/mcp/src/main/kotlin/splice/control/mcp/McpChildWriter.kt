@@ -249,12 +249,16 @@ internal class McpChildWriter(
         synchronized(accountingLock) { requests.remove(id) }
     }
 
-    /** Charges a reverse request before its reply queue can race the replacement fence. */
+    /** Late reverse work invalidates a quiet replacement fence without killing the still-owned incumbent. */
     fun retain(requestId: Long, child: Process): Boolean {
         val selected = target(child) ?: return false
         return synchronized(accountingLock) {
-            val available = accepting(selected) && child.isAlive && serverRequests.size < WRITE_QUEUE_CAPACITY
-            if (available) serverRequests[requestId] = selected
+            val live = !closed && !selected.retired && child.isAlive
+            val available = live && serverRequests.size < WRITE_QUEUE_CAPACITY
+            if (available) {
+                selected.sealed = false
+                serverRequests[requestId] = selected
+            }
             available
         }
     }

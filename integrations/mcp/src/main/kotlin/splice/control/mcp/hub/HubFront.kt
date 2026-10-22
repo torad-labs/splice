@@ -17,6 +17,7 @@ internal data class HubRoute(
     val launch: String,
     val socket: String,
     val shared: Boolean,
+    val generation: String? = null,
 )
 
 /** One session the front holds: its server alias, holder socket, and launch. */
@@ -99,6 +100,7 @@ private class HubFrontReports {
                     JsonScalars.str(saved, HubFields.LAUNCH).orEmpty(),
                     socket,
                     JsonScalars.str(saved, HubFields.SHARED) != "false",
+                    JsonScalars.str(saved, HubFields.GENERATION),
                 )
             } else {
                 null

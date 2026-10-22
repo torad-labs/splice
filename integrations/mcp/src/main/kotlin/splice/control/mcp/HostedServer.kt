@@ -28,14 +28,90 @@ import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.Executors
 import java.util.concurrent.atomic.AtomicLong
 
+/** Starts one child while its registry still owns the right to do so. */
+internal fun interface McpLaunchGate {
+    fun launch(spec: McpServerSpec, launcher: McpProcessLauncher): Process?
+}
+
+/** The process services a hosted child needs throughout one owned lifetime. */
+internal data class HostedServerRuntime(
+    val config: McpHostConfig,
+    val launcher: McpProcessLauncher,
+    val reaped: ChildReaped,
+    val launches: McpLaunchGate,
+)
+
+internal fun interface McpReadyWriteTarget {
+    fun target(): McpWriteTarget?
+}
+
+/** Keeps the replacement fence separate from the host's normal request lifecycle. */
+internal class HostedServerReplacement(
+    private val writer: McpChildWriter,
+    private val target: McpReadyWriteTarget,
+) {
+    fun fence(): McpReplacementFence? {
+        val selected = target.target() ?: return null
+        return if (writer.seal(selected)) McpReplacementFence(writer, selected) else null
+    }
+}
+
+private fun interface HostedHandshakePublication {
+    suspend fun publish(process: Process, result: JsonObject): Boolean
+}
+
+private sealed class HostedHandshakeResult {
+    data class Served(val result: JsonObject) : HostedHandshakeResult()
+    data class Refused(val reason: String, val reply: McpResult.Refused) : HostedHandshakeResult()
+}
+
+/** Executes the bounded initialize exchange without adding branch pressure to process lifecycle ownership. */
+private class HostedHandshake(
+    private val name: String,
+    private val config: McpHostConfig,
+    private val codec: JsonRpcCodec,
+    private val ids: AtomicLong,
+    private val pending: ConcurrentHashMap<Long, Pending>,
+    private val writer: McpChildWriter,
+    private val publication: HostedHandshakePublication,
+) {
+    suspend fun run(process: Process): HostedHandshakeResult {
+        val id = ids.getAndIncrement()
+        val slot = Pending("host", JsonPrimitive(id))
+        pending[id] = slot
+        val delivered = writer.request(codec.initializeRequest(id), id, process, config.initializeTimeout())
+        val answer = if (delivered) await(slot) else null
+        if (answer == null) return unavailable(id, delivered)
+        val result = answer["result"] as? JsonObject
+        return if (result != null && publication.publish(process, result)) {
+            HostedHandshakeResult.Served(result)
+        } else {
+            HostedHandshakeResult.Refused(
+                "handshake failed",
+                McpResult.Refused("'$name' rejected the MCP handshake (server detail withheld)"),
+            )
+        }
+    }
+
+    private suspend fun await(slot: Pending): JsonObject? =
+        withTimeoutOrNull(config.initializeTimeout()) { slot.answer.await() }
+
+    private fun unavailable(id: Long, delivered: Boolean): HostedHandshakeResult.Refused {
+        pending.remove(id)
+        val reason = if (delivered) "no initialize answer" else "could not write initialize"
+        return HostedHandshakeResult.Refused(
+            reason,
+            McpResult.Refused("'$name' did not complete the MCP handshake", timedOut = true),
+        )
+    }
+}
+
 internal class HostedServer(
     private val spec: McpServerSpec,
-    private val config: McpHostConfig,
-    private val launcher: McpProcessLauncher,
+    private val runtime: HostedServerRuntime,
     private val codec: JsonRpcCodec,
     private val log: LogSink,
     private val sink: NotificationSink,
-    private val reaped: ChildReaped = waitForReap,
 ) {
     private val ids = AtomicLong(1)
     private val pending = ConcurrentHashMap<Long, Pending>()
@@ -45,7 +121,7 @@ internal class HostedServer(
     private val stops = McpProcessStop()
     private val stderr = McpStderr(log)
 
-    private val history = McpChildHistory(config.clock, spec.name)
+    private val history = McpChildHistory(runtime.config.clock, spec.name)
 
     /** Single-flight spawn: N sessions initializing at once must share ONE child, not race N up
      *  (the 4-session benchmark caught exactly that on 2026-09-13: four copies per server). */
@@ -66,6 +142,7 @@ internal class HostedServer(
 
     private val tools = ToolsListCache(codec)
     private val send = McpChildWriter(
+        spec.name,
         codec,
         McpWriteTargetSource { expected ->
             synchronized(stateLock) {
@@ -81,13 +158,33 @@ internal class HostedServer(
         },
         McpWriteFailure(::transportFailed),
     )
+    private val handshake = HostedHandshake(
+        spec.name,
+        runtime.config,
+        codec,
+        ids,
+        pending,
+        send,
+        HostedHandshakePublication(::publish),
+    )
+
+    /** Closes new work on this live generation and atomically proves that no old wire operation remains. */
+    internal val replacementFence = HostedServerReplacement(
+        send,
+        McpReadyWriteTarget {
+            synchronized(stateLock) {
+                val child = process
+                writer?.takeIf { child === it.child && child.isAlive && initResult != null }
+            }
+        },
+    )
     private val serverRequests = HostedServerRequests(
         spec.name,
         ServerRequestId(ids::getAndIncrement),
         codec,
         sink,
         send,
-        McpWriteFailure(::transportFailed),
+        runtime.config.requestTimeout,
     )
 
     @Volatile var lastError: String? = null
@@ -130,7 +227,7 @@ internal class HostedServer(
             ?: return codec.error(clientId, RPC_SERVER_EXITED, "hosted MCP server '${spec.name}' is not ready")
         val slot = Pending(sessionId, clientId, token)
         pending[hostId] = slot
-        if (!send(codec.withId(out, JsonPrimitive(hostId)), hostId, child)) {
+        if (!send.request(codec.withId(out, JsonPrimitive(hostId)), hostId, child, runtime.config.requestTimeout())) {
             pending.remove(hostId)
             return codec.error(
                 clientId,
@@ -142,7 +239,7 @@ internal class HostedServer(
         // caller's own deadline) is a TimeoutCancellationException too and must propagate, never be
         // read as "the child did not answer" (review 4 regression, 2026-09-13).
         // ONE reading for this request: the budget it waits under is the budget it was admitted under.
-        return withTimeoutOrNull(config.requestTimeout()) { slot.answer.await() } ?: run {
+        return withTimeoutOrNull(runtime.config.requestTimeout()) { slot.answer.await() } ?: run {
             pending.remove(hostId)
             codec.error(clientId, RPC_TIMED_OUT, "hosted MCP server '${spec.name}' did not answer in time")
         }
@@ -165,7 +262,7 @@ internal class HostedServer(
                 when {
                     out == null -> McpResult.Served(true)
                     child == null -> McpResult.Refused("hosted MCP server '${spec.name}' is not ready")
-                    else -> McpResult.Served(send(out, expected = child))
+                    else -> McpResult.Served(send.notify(out, child, runtime.config.requestTimeout()))
                 }
             }
         }
@@ -175,25 +272,29 @@ internal class HostedServer(
     fun close(reason: String, wait: Boolean = true): Process? {
         synchronized(stateLock) { closed = true }
         serverRequests.close()
-        return tearDown(reason, wait)
+        val stopped = tearDown(reason, wait)
+        send.close()
+        return stopped
     }
 
     private fun tearDown(reason: String, wait: Boolean = true): Process? {
-        val p = synchronized(stateLock) {
-            process.also {
-                process = null
-                writer = null
-                initResult = null
-                tools.drop()
-            }
+        val (p, target) = synchronized(stateLock) {
+            val stopped = process
+            val selected = writer
+            process = null
+            writer = null
+            initResult = null
+            tools.drop()
+            stopped to selected
         }
+        target?.let(send::retire)
         failPending("hosted MCP server '${spec.name}' closed: $reason")
         p?.let {
             log("[mcp-host] ${spec.name}: closing pid ${it.pid()} ($reason)\n")
             it.destroy()
             if (wait) {
                 stops.await(listOf(it))
-                send.exited(it)
+                target?.let(send::exited)
             }
         }
         return p
@@ -208,7 +309,7 @@ internal class HostedServer(
             else -> when (val launched = launch()) {
                 is McpResult.Refused -> launched
                 is McpResult.Served -> try {
-                    handshake(launched.value)
+                    completeHandshake(launched.value, handshake.run(launched.value))
                 } catch (e: CancellationException) {
                     tearDown("cancelled during the handshake")
                     throw e
@@ -219,62 +320,65 @@ internal class HostedServer(
 
     /** The child, adopted under [stateLock] — or torn down at once when close() won the race. */
     private fun launch(): McpResult<Process> {
-        val p = try {
-            launcher(spec)
-        } catch (e: IOException) {
-            lastError = "spawn failed: ${e.message}"
-            return McpResult.Refused("cannot start '${spec.name}': ${e.message}")
+        var spawnFailure: String? = null
+        val child = try {
+            runtime.launches.launch(spec, runtime.launcher)
+        } catch (failure: IOException) {
+            spawnFailure = failure.message
+            null
+        }
+        if (child == null) {
+            val reason = spawnFailure?.let { "cannot start '${spec.name}': $it" }
+                ?: "MCP host is stopping"
+            spawnFailure?.let { lastError = "spawn failed: $it" }
+            return McpResult.Refused(reason)
         }
         val adopted = synchronized(stateLock) {
             if (closed) {
-                p.destroyForcibly()
+                child.destroyForcibly()
                 false
             } else {
-                process = p
-                writer = McpWriteTarget(p, p.outputStream.bufferedWriter())
+                process = child
+                writer = McpWriteTarget(child, child.outputStream.bufferedWriter())
                 true
             }
         }
-        if (adopted) {
-            stderr.watch(spec.name, p)
+        return if (adopted) {
+            stderr.watch(spec.name, child)
             history.started()
-            Executors.defaultThreadFactory().newThread { pump(p) }.apply {
+            Executors.defaultThreadFactory().newThread { pump(child) }.apply {
                 name = "mcp-host-${spec.name}"
                 isDaemon = true
             }.start()
-            return McpResult.Served(p)
+            McpResult.Served(child)
+        } else {
+            McpResult.Refused("hosted MCP server '${spec.name}' was closed while starting")
         }
-        return McpResult.Refused("hosted MCP server '${spec.name}' was closed while starting")
     }
 
-    private suspend fun handshake(p: Process): McpResult<JsonObject> {
-        val hostId = ids.getAndIncrement()
-        val slot = Pending("host", JsonPrimitive(hostId))
-        pending[hostId] = slot
-        send(codec.initializeRequest(hostId), hostId, p)
-        // ONE reading for this handshake: the budget it waits under is the budget it began under.
-        val answer = withTimeoutOrNull(config.initializeTimeout()) { slot.answer.await() }
-        if (answer == null) {
-            pending.remove(hostId)
-            tearDown("no initialize answer")
-            return McpResult.Refused("'${spec.name}' did not complete the MCP handshake", timedOut = true)
+    private fun completeHandshake(process: Process, outcome: HostedHandshakeResult): McpResult<JsonObject> =
+        when (outcome) {
+            is HostedHandshakeResult.Served -> {
+                lastError = null
+                log("[mcp-host] ${spec.name}: hosted as pid ${process.pid()}\n")
+                McpResult.Served(outcome.result)
+            }
+            is HostedHandshakeResult.Refused -> {
+                tearDown(outcome.reason)
+                outcome.reply
+            }
         }
-        val result = answer["result"] as? JsonObject
-        if (result == null || !publish(p, result)) {
-            tearDown("handshake failed")
-            return McpResult.Refused("'${spec.name}' rejected the MCP handshake (server detail withheld)")
-        }
-        lastError = null
-        log("[mcp-host] ${spec.name}: hosted as pid ${p.pid()}\n")
-        return McpResult.Served(result)
-    }
 
     /** The child is operational only once it has been told `initialized`: send that FIRST, then
      *  publish under stateLock, and only while THIS child is still the adopted, live, unclosed one —
      *  a close() landing between the answer and the publish must win (reviews 2-3, 2026-09-13), or a
      *  session would be minted on a server that is dead, unbound, or not yet serving. */
-    private fun publish(p: Process, result: JsonObject): Boolean {
-        val initialized = send(codec.notification("notifications/initialized"))
+    private suspend fun publish(p: Process, result: JsonObject): Boolean {
+        val initialized = send.notify(
+            codec.notification("notifications/initialized"),
+            p,
+            runtime.config.initializeTimeout(),
+        )
         return synchronized(stateLock) {
             (initialized && !closed && process === p && p.isAlive).also { if (it) initResult = result }
         }
@@ -282,32 +386,26 @@ internal class HostedServer(
 
     /** A failed pipe may have delivered bytes. Never refund its wire IDs until that exact child exits. */
     private fun transportFailed(child: Process, reason: String) {
-        val mine = synchronized(stateLock) {
-            (process === child && writer != null).also {
-                if (it) {
-                    lastError = "$reason; delivery outcome unknown, operation was not replayed"
-                    writer = null
-                    initResult = null
-                    tools.drop()
-                }
+        val target = synchronized(stateLock) {
+            writer?.takeIf { process === child && it.child === child }?.also {
+                lastError = "$reason; delivery outcome unknown, operation was not replayed"
+                writer = null
+                initResult = null
+                tools.drop()
             }
-        }
-        if (!mine) return
-        send.idsOf(child).forEach { id ->
-            pending.remove(id)?.fail(codec, "hosted MCP transport failed; operation outcome unknown, not replayed")
-        }
+        } ?: return
+        send.retire(target)
+        failPending("hosted MCP transport failed; operation outcome unknown, not replayed")
         child.destroy()
         stops.await(listOf(child))
-        val exitCode = reaped.codeOf(child)
+        val exitCode = runtime.reaped.codeOf(child)
         synchronized(stateLock) { if (process === child) process = null }
-        send.exited(child)
-        if (mine) {
-            history.exited()
-            log(
-                "[mcp-host] ${LogSafe.str(spec.name)}: pid ${child.pid()} exited ${LogSafe.str(exitCode)} " +
-                    "(${LogSafe.str(lastError.orEmpty())})\n",
-            )
-        }
+        send.exited(target)
+        history.exited()
+        log(
+            "[mcp-host] ${LogSafe.str(spec.name)}: pid ${child.pid()} exited ${LogSafe.str(exitCode)} " +
+                "(${LogSafe.str(lastError.orEmpty())})\n",
+        )
     }
 
     /** The reader thread: one line, one message, until EOF, which fails this child's transport. */

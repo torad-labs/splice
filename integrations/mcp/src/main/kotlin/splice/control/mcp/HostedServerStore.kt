@@ -4,6 +4,7 @@ package splice.control.mcp
 internal class HostedServerStore {
     val lock = Any()
     val servers = HashMap<McpIdentity, HostedServer>()
+    val candidates = HashSet<HostedServer>()
     val bindings = HashMap<String, McpIdentity>()
     val reserved = HashMap<McpIdentity, Int>()
     val admissions = HashMap<McpIdentity, McpAdmission>()

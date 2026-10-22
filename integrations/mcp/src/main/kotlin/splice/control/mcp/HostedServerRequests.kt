@@ -8,20 +8,21 @@ import java.util.concurrent.ThreadPoolExecutor
 import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicBoolean
 
+/** Reverse requests can burst with one child frame; 64 bounds memory while leaving the stdout pump non-blocking. */
 private const val SERVER_REPLY_QUEUE_CAPACITY = 64
 
 internal fun interface ServerRequestId {
     operator fun invoke(): Long
 }
 
-/** Owns reverse JSON-RPC exchanges, whose reply can block without stalling the child's stdout pump. */
+/** Owns reverse reply dispatch, which holds its exact generation before a bounded worker submits stdin work. */
 internal class HostedServerRequests(
     name: String,
     private val nextRequestId: ServerRequestId,
     private val codec: JsonRpcCodec,
     private val sink: NotificationSink,
     private val writer: McpChildWriter,
-    private val failed: McpWriteFailure,
+    private val budget: McpRequestBudget,
 ) {
     private val closed = AtomicBoolean(false)
     private val replies = ThreadPoolExecutor(
@@ -32,25 +33,30 @@ internal class HostedServerRequests(
         ArrayBlockingQueue<Runnable>(SERVER_REPLY_QUEUE_CAPACITY),
         { task ->
             Executors.defaultThreadFactory().newThread(task).apply {
-                name = "mcp-host-reply-$name"
+                this.name = "mcp-host-reply-$name"
                 isDaemon = true
             }
         },
         ThreadPoolExecutor.AbortPolicy(),
     )
 
-    /** Charges the child before queueing its reply, until flush completion or this exact child exits. */
+    /** Retention precedes queueing, so the replacement fence sees a reverse request before it can commit. */
     fun dispatch(child: Process, msg: JsonObject) {
         if (closed.get()) return
         val requestId = nextRequestId()
-        if (!writer.retain(requestId, child)) return
+        if (!writer.retain(requestId, child)) {
+            writer.failures.report(child, "server request arrived after its generation was fenced")
+            return
+        }
         if (codec.method(msg) == "roots/list") sink.onRootsAsked()
         try {
             replies.execute {
-                if (!closed.get()) writer.reply(codec.serverReply(msg), requestId, child)
+                if (!closed.get() && !writer.reply(codec.serverReply(msg), requestId, child, budget())) {
+                    writer.failures.report(child, "server reply lost its generation")
+                }
             }
         } catch (_: RejectedExecutionException) {
-            if (!closed.get()) failed(child, "server reply queue is full")
+            if (!closed.get()) writer.failures.report(child, "server reply queue is full")
         }
     }
 

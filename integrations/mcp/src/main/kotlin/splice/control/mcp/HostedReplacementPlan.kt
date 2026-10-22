@@ -8,6 +8,7 @@ internal data class PreparedReplacement(
     val old: HostedServer,
     val names: List<String>,
     val spec: McpServerSpec,
+    val fence: McpReplacementFence? = null,
 )
 
 /** Validation and publication use the same registry lock as ordinary server leases. */
@@ -50,10 +51,13 @@ internal class HostedReplacementPlan(
     private fun reserve(plan: PreparedReplacement): McpResult<PreparedReplacement> {
         val old = plan.old
         val leased = (store.reserved[old.identity] ?: 0) != 0
-        return if (leased || !old.admission.beginReplacement(old.unsettled)) {
+        if (leased || !old.admission.beginReplacement()) {
+            return McpResult.Refused("pause admissions and wait for every on-wire request to settle")
+        }
+        val fence = old.replacementFence.fence()
+        return fence?.let { McpResult.Served(plan.copy(fence = it)) } ?: run {
+            old.admission.finishReplacement()
             McpResult.Refused("pause admissions and wait for every on-wire request to settle")
-        } else {
-            McpResult.Served(plan)
         }
     }
 
@@ -62,36 +66,63 @@ internal class HostedReplacementPlan(
     private fun aliasesMatch(names: List<String>, configured: JsonObject, target: McpIdentity): Boolean =
         names.all { name -> sharing.hostedSpec(configured, name)?.let(::identity) == target }
 
-    fun commit(plan: PreparedReplacement, next: HostedServer): Boolean {
+    /** A candidate is shutdown-owned before it is allowed to launch. */
+    fun track(plan: PreparedReplacement, next: HostedServer): Boolean = synchronized(store.lock) {
+        if (!owns(plan)) false else store.candidates.add(next)
+    }
+
+    fun discard(next: HostedServer) {
+        synchronized(store.lock) {
+            store.candidates.remove(next)
+            if (!store.servers.containsKey(next.identity)) {
+                store.admissions.remove(next.identity)
+            }
+        }
+    }
+
+    /** Publishes atomically, then returns the retained session names for post-publication invalidation. */
+    fun commit(plan: PreparedReplacement, next: HostedServer): List<String>? {
         val configured = global()
         return synchronized(store.lock) {
             if (!publishable(plan, next, configured)) {
-                false
+                null
             } else {
                 publish(plan, next)
-                true
+                plan.names
             }
         }
     }
 
     private fun publishable(plan: PreparedReplacement, next: HostedServer, configured: JsonObject): Boolean {
-        val old = plan.old
-        val names = store.bindings.filterValues { it == old.identity }.keys.toSet()
-        if (store.closed || !next.alive) return false
-        if (names != plan.names.toSet() || !aliasesMatch(plan.names, configured, next.identity)) return false
-        return stillOwned(old, next)
+        val names = store.bindings.filterValues { it == plan.old.identity }.keys.toSet()
+        val checks = listOf(
+            owns(plan),
+            candidateIsReady(next),
+            names == plan.names.toSet(),
+            aliasesMatch(plan.names, configured, next.identity),
+            stillOwned(plan.old, next),
+        )
+        return checks.all { it }
     }
 
+    private fun owns(plan: PreparedReplacement): Boolean {
+        if (store.closed || plan.fence?.held() != true) return false
+        return store.servers[plan.old.identity] === plan.old
+    }
+
+    private fun candidateIsReady(next: HostedServer): Boolean = next in store.candidates && next.alive
+
     private fun stillOwned(old: HostedServer, next: HostedServer): Boolean {
-        val leased = (store.reserved[old.identity] ?: 0) != 0
-        if (leased || old.unsettled.isNotEmpty()) return false
-        return store.servers[old.identity] === old && !store.servers.containsKey(next.identity)
+        if ((store.reserved[old.identity] ?: 0) != 0) return false
+        if (store.servers[old.identity] !== old) return false
+        return !store.servers.containsKey(next.identity)
     }
 
     private fun publish(plan: PreparedReplacement, next: HostedServer) {
         val old = plan.old
         // Waiters keep their admission object, client session objects and notification streams.
         next.admission = old.admission
+        store.candidates.remove(next)
         store.admissions.remove(old.identity)
         store.admissions[next.identity] = old.admission
         store.servers.remove(old.identity)

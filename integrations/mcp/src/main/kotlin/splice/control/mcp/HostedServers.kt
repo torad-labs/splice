@@ -39,6 +39,9 @@ internal class HostedServers(
         get() = store.closed
         set(value) { store.closed = value }
     private val stops = McpProcessStop()
+    private val launches = McpLaunchGate { spec, processLauncher ->
+        synchronized(lock) { if (closed) null else processLauncher(spec) }
+    }
     val replacements = HostedReplacements(store, sharing, global, sessions, ::create)
 
     fun get(name: String): HostedServer? = synchronized(lock) { bindings[name]?.let(servers::get) }
@@ -127,7 +130,13 @@ internal class HostedServers(
                 log("[mcp-host] ${spec.name}: asks its client for roots, so each later session starts its own\n")
             }
         }
-        return HostedServer(spec, config, launcher, codec, log, sink, reaped).also { server ->
+        return HostedServer(
+            spec,
+            HostedServerRuntime(config, launcher, reaped, launches),
+            codec,
+            log,
+            sink,
+        ).also { server ->
             server.admission = synchronized(lock) { store.admissions.getOrPut(id) { McpAdmission() } }
         }
     }
@@ -156,13 +165,14 @@ internal class HostedServers(
     fun closeAll(reason: String) {
         val closing = synchronized(lock) {
             closed = true
-            val snapshot = servers.values.toList()
+            val snapshot = (servers.values + store.candidates).distinct()
             store.admissions.values.forEach(McpAdmission::stop)
             store.admissions.clear()
             bindings.keys.forEach(sessions::dropServer)
             bindings.clear()
             reserved.clear()
             servers.clear()
+            store.candidates.clear()
             snapshot
         }
         stops.await(closing.mapNotNull { it.close(reason, wait = false) })

@@ -6,8 +6,59 @@ import kotlinx.serialization.json.JsonObject
 import splice.client.mcp.McpServerSpec
 import splice.client.mcp.McpSharing
 
+private const val TOOLS_LIST_CHANGED = """{"jsonrpc":"2.0","method":"notifications/tools/list_changed"}"""
+
 internal fun interface HostedServerFactory {
     operator fun invoke(spec: McpServerSpec): HostedServer
+}
+
+private fun interface ReplacementAcceptance {
+    suspend fun accept(plan: PreparedReplacement, next: HostedServer, handshake: JsonObject): McpResult<Unit>
+}
+
+/** Owns one candidate's launch, publication outcome and the exact rollback that follows it. */
+private class ReplacementAttempt(
+    private val plan: PreparedReplacement,
+    private val plans: HostedReplacementPlan,
+    private val create: HostedServerFactory,
+    private val accept: ReplacementAcceptance,
+) {
+    private var candidate: HostedServer? = null
+    private var committed = false
+
+    suspend fun run(): McpResult<Unit> {
+        val next = create(plan.spec)
+        candidate = next
+        if (!plans.track(plan, next)) return McpResult.Refused("MCP host stopped during replacement")
+        val result = candidateStart(next)
+        committed = result is McpResult.Served
+        if (committed) plan.old.close("drained replacement")
+        return result
+    }
+
+    fun finish() {
+        val resumable = committed || rollback()
+        plan.old.admission.finishReplacement()
+        if (resumable) plan.old.admission.resume() else plan.old.admission.stop()
+    }
+
+    private suspend fun candidateStart(next: HostedServer): McpResult<Unit> =
+        when (val started = next.ensureStarted()) {
+            is McpResult.Refused -> started
+            is McpResult.Served -> {
+                currentCoroutineContext().ensureActive()
+                accept(plan, next, started.value)
+            }
+        }
+
+    private fun rollback(): Boolean {
+        candidate?.let {
+            plans.discard(it)
+            it.close("replacement was not committed")
+        }
+        // A terminal old generation never reopens. A later request may still start a fresh one.
+        return plan.fence?.reopen() == true || !plan.old.alive
+    }
 }
 
 /** Rebinds a drained launch tuple without ending the client sessions or notification streams. */
@@ -81,41 +132,22 @@ internal class HostedReplacements(
     }
 
     private suspend fun perform(plan: PreparedReplacement): McpResult<Unit> {
-        var candidate: HostedServer? = null
-        var committed = false
-        var retired = false
-        try {
-            val next = create(plan.spec)
-            candidate = next
-            val result = when (val started = next.ensureStarted()) {
-                is McpResult.Refused -> started
-                is McpResult.Served -> {
-                    currentCoroutineContext().ensureActive()
-                    accept(plan, next, started.value)
-                }
-            }
-            committed = result is McpResult.Served
-            if (committed) {
-                plan.old.close("drained replacement")
-                retired = true
-            }
-            return result
+        val attempt = ReplacementAttempt(plan, plans, create, ReplacementAcceptance(::accept))
+        return try {
+            attempt.run()
         } finally {
-            try {
-                if (!committed) candidate?.close("replacement was not committed")
-            } finally {
-                plan.old.admission.finishReplacement()
-                if (retired) plan.old.admission.resume()
-            }
+            attempt.finish()
         }
     }
 
-    private fun accept(plan: PreparedReplacement, next: HostedServer, handshake: JsonObject): McpResult<Unit> = when {
-        !compatible(plan.names, handshake) ->
-            McpResult.Refused("replacement changes a live session's MCP protocol or capabilities")
-        !plans.commit(plan, next) ->
-            McpResult.Refused("MCP registry or configuration changed during replacement")
-        else -> McpResult.Served(Unit)
+    private fun accept(plan: PreparedReplacement, next: HostedServer, handshake: JsonObject): McpResult<Unit> {
+        if (!compatible(plan.names, handshake)) {
+            return McpResult.Refused("replacement changes a live session's MCP protocol or capabilities")
+        }
+        val retained = plans.commit(plan, next)
+            ?: return McpResult.Refused("MCP registry or configuration changed during replacement")
+        retained.forEach { sessions.fanOut(it, TOOLS_LIST_CHANGED) }
+        return McpResult.Served(Unit)
     }
 
     private fun compatible(names: List<String>, handshake: JsonObject): Boolean =

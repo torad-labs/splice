@@ -1,8 +1,21 @@
 package splice.control.mcp
 
+import kotlinx.coroutines.CompletableDeferred
 import kotlinx.serialization.json.JsonObject
 import java.io.BufferedWriter
 import java.io.IOException
+import java.util.Collections
+import java.util.IdentityHashMap
+import java.util.concurrent.ArrayBlockingQueue
+import java.util.concurrent.Executors
+import java.util.concurrent.RejectedExecutionException
+import java.util.concurrent.ScheduledFuture
+import java.util.concurrent.ThreadPoolExecutor
+import java.util.concurrent.TimeUnit
+import kotlin.time.Duration
+
+/** One burst can queue 64 writes, enough to absorb client and reverse-reply spikes while bounding memory and shutdown. */
+private const val WRITE_QUEUE_CAPACITY = 64
 
 /** An immutable child/stdin generation. Its lock serializes only this child's pipe writes. */
 internal data class McpWriteTarget(
@@ -20,72 +33,284 @@ internal fun interface McpWriteFailure {
     operator fun invoke(child: Process, reason: String)
 }
 
-/** Each write and its wire accounting belong to one immutable child/writer generation. */
+private data class McpWrite(
+    val target: McpWriteTarget,
+    val encoded: String,
+    val requestId: Long?,
+    val serverRequestId: Long?,
+) {
+    val completed = CompletableDeferred<Boolean>()
+    var deadline: ScheduledFuture<*>? = null
+}
+
+internal fun interface McpWriteExpired {
+    operator fun invoke()
+}
+
+internal fun interface McpFenceHeld {
+    operator fun invoke(target: McpWriteTarget): Boolean
+}
+
+internal fun interface McpSettled {
+    operator fun invoke(id: Long)
+}
+
+private fun interface McpWritePermitted {
+    operator fun invoke(delivery: McpWrite): Boolean
+}
+
+private fun interface McpWriteResolved {
+    operator fun invoke(delivery: McpWrite, delivered: Boolean): Boolean
+}
+
+private fun interface McpWriteRejected {
+    operator fun invoke(delivery: McpWrite)
+}
+
+/** Owns deadline and failure work, so pipe callers never execute terminal teardown inline. */
+internal class McpWriteFailures(name: String, private val failed: McpWriteFailure) {
+    private val executor = Executors.newSingleThreadScheduledExecutor { task ->
+        Executors.defaultThreadFactory().newThread(task).apply {
+            this.name = "mcp-host-write-deadline-$name"
+            isDaemon = true
+        }
+    }
+
+    fun schedule(budget: Duration, expired: McpWriteExpired): ScheduledFuture<*>? = try {
+        executor.schedule(
+            expired::invoke,
+            budget.inWholeMilliseconds.coerceAtLeast(1L),
+            TimeUnit.MILLISECONDS,
+        )
+    } catch (_: RejectedExecutionException) {
+        null
+    }
+
+    fun report(child: Process, reason: String) {
+        try {
+            executor.execute { failed(child, reason) }
+        } catch (_: RejectedExecutionException) {
+            // A closed owner already retires the child.
+        }
+    }
+
+    fun close() {
+        executor.shutdownNow()
+    }
+}
+
+/** Owns the bounded writer executor and drops no task silently when its queue reaches capacity. */
+private class McpWriteQueue(
+    name: String,
+    private val permitted: McpWritePermitted,
+    private val resolved: McpWriteResolved,
+    private val failures: McpWriteFailures,
+    private val rejected: McpWriteRejected,
+) {
+    private val executor = ThreadPoolExecutor(
+        1,
+        1,
+        0L,
+        TimeUnit.MILLISECONDS,
+        ArrayBlockingQueue<Runnable>(WRITE_QUEUE_CAPACITY),
+        { task ->
+            Executors.defaultThreadFactory().newThread(task).apply {
+                this.name = "mcp-host-write-$name"
+                isDaemon = true
+            }
+        },
+        ThreadPoolExecutor.AbortPolicy(),
+    )
+
+    fun offer(delivery: McpWrite): Boolean = try {
+        executor.execute { write(delivery) }
+        true
+    } catch (_: RejectedExecutionException) {
+        rejected(delivery)
+        false
+    }
+
+    fun close() {
+        executor.shutdownNow()
+    }
+
+    private fun write(delivery: McpWrite) {
+        try {
+            resolved(delivery, writeToPipe(delivery))
+        } catch (failure: IOException) {
+            if (resolved(delivery, false)) {
+                failures.report(delivery.target.child, "write failed: ${failure.message}")
+            }
+        }
+    }
+
+    private fun writeToPipe(delivery: McpWrite): Boolean = synchronized(delivery.target.ioLock) {
+        if (!permitted(delivery)) return@synchronized false
+        delivery.target.output.write(delivery.encoded)
+        delivery.target.output.newLine()
+        delivery.target.output.flush()
+        true
+    }
+}
+
+/** The exact generation a replacement sealed, which can reopen only while it is still live and sealed. */
+internal class McpReplacementFence(
+    private val writer: McpChildWriter,
+    private val target: McpWriteTarget,
+) {
+    fun held(): Boolean = writer.fenceHeld(target)
+
+    fun reopen(): Boolean = writer.reopen(target)
+}
+
+/** Bounded writes and their accounting share one generation fence, so retirement cannot strand a pending call. */
 internal class McpChildWriter(
+    name: String,
     private val codec: JsonRpcCodec,
     private val target: McpWriteTargetSource,
     private val failed: McpWriteFailure,
 ) {
-    /** Protects delivery accounting only. It must never cover a pipe write. */
+    /** Protects generation state and wire accounting only. It never covers a pipe write. */
     private val accountingLock = Any()
-    private val requests = HashMap<Long, Process>()
-    private val serverRequests = HashMap<Long, Process>()
+    private val requests = HashMap<Long, McpWriteTarget>()
+    private val serverRequests = HashMap<Long, McpWriteTarget>()
+    private val writesInFlight = Collections.newSetFromMap(IdentityHashMap<McpWrite, Boolean>())
+    private val sealed = HashSet<McpWriteTarget>()
+    private val retired = HashSet<McpWriteTarget>()
+    internal val failures = McpWriteFailures(name, failed)
+    private val permitted = McpWritePermitted { delivery ->
+        synchronized(accountingLock) { !delivery.completed.isCompleted && accepting(delivery.target) }
+    }
+    private val writes = McpWriteQueue(
+        name,
+        permitted,
+        McpWriteResolved(::resolve),
+        failures,
+        McpWriteRejected { delivery -> expire(delivery, "write queue is full") },
+    )
+    private var closed = false
 
     val unsettled: List<Long>
-        get() = synchronized(accountingLock) {
-            requests.entries.removeIf { !it.value.isAlive }
-            serverRequests.entries.removeIf { !it.value.isAlive }
-            (requests.keys + serverRequests.keys).toList()
-        }
+        get() = synchronized(accountingLock) { (requests.keys + serverRequests.keys).toList() }
 
-    /** Holds a server-initiated request from receipt until its reply fully writes or this exact child exits. */
-    fun retain(requestId: Long, child: Process): Boolean = synchronized(accountingLock) {
-        if (!child.isAlive) {
-            false
-        } else {
-            serverRequests[requestId] = child
-            true
+    /** Atomically stops new work on a quiet generation before replacement commits. */
+    fun seal(selected: McpWriteTarget): Boolean = synchronized(accountingLock) {
+        if (closed || !selected.child.isAlive) return@synchronized false
+        if (selected in retired || selected in sealed) return@synchronized false
+        val unsettled = requests.values.any { it === selected } || serverRequests.values.any { it === selected }
+        if (unsettled || writesInFlight.any { it.target === selected }) false else sealed.add(selected)
+    }
+
+    /** A failed replacement may reopen only the same live generation that its fence still owns. */
+    fun reopen(selected: McpWriteTarget): Boolean = synchronized(accountingLock) {
+        selected in sealed && selected !in retired && selected.child.isAlive && sealed.remove(selected)
+    }
+
+    internal val fenceHeld = McpFenceHeld { selected ->
+        synchronized(accountingLock) { selected in sealed && selected !in retired }
+    }
+
+    /** Terminal retirement rejects late registrations and completes waiters, but preserves unknown wire charges. */
+    fun retire(selected: McpWriteTarget): Boolean {
+        var retiredNow = false
+        val cancelled = synchronized(accountingLock) {
+            if (!retired.add(selected)) {
+                emptyList()
+            } else {
+                retiredNow = true
+                sealed.remove(selected)
+                writesInFlight.filter { it.target === selected }
+            }
+        }
+        cancelled.forEach { resolve(it, false) }
+        return retiredNow
+    }
+
+    /** A confirmed child exit is the only point that clears its unknown wire charges. */
+    fun exited(selected: McpWriteTarget) {
+        synchronized(accountingLock) {
+            requests.entries.removeIf { it.value === selected }
+            serverRequests.entries.removeIf { it.value === selected }
         }
     }
 
-    fun idsOf(child: Process): List<Long> = synchronized(accountingLock) {
-        requests.entries.filter { it.value === child }.map { it.key }
-    }
-
-    fun settled(id: Long) {
+    internal val settled = McpSettled { id ->
         synchronized(accountingLock) { requests.remove(id) }
     }
 
-    fun exited(child: Process) {
-        synchronized(accountingLock) {
-            requests.entries.removeIf { it.value === child }
-            serverRequests.entries.removeIf { it.value === child }
+    /** Charges a reverse request before its reply queue can race the replacement fence. */
+    fun retain(requestId: Long, child: Process): Boolean {
+        val selected = target(child) ?: return false
+        return synchronized(accountingLock) {
+            val available = !closed && selected !in retired && selected !in sealed && child.isAlive
+            if (available) serverRequests[requestId] = selected
+            available
         }
     }
 
-    /** Writes a reply only to [child]'s generation, releasing its retained charge after the flush. */
-    fun reply(msg: JsonObject, requestId: Long, child: Process): Boolean {
-        val written = invoke(msg, expected = child)
-        if (written) synchronized(accountingLock) { serverRequests.remove(requestId) }
-        return written
+    suspend fun request(msg: JsonObject, requestId: Long, expected: Process, budget: Duration): Boolean =
+        submit(msg, requestId, null, expected, budget)?.completed?.await() ?: false
+
+    suspend fun notify(msg: JsonObject, expected: Process? = null, budget: Duration): Boolean =
+        submit(msg, null, null, expected, budget)?.completed?.await() ?: false
+
+    /** Queues a reverse reply without making the stdout pump wait for a blocked stdin. */
+    fun reply(msg: JsonObject, requestId: Long, child: Process, budget: Duration): Boolean =
+        submit(msg, null, requestId, child, budget) != null
+
+    fun close() {
+        val cancelled = synchronized(accountingLock) {
+            closed = true
+            writesInFlight.toList()
+        }
+        cancelled.forEach { resolve(it, false) }
+        writes.close()
+        failures.close()
     }
 
-    operator fun invoke(msg: JsonObject, requestId: Long? = null, expected: Process? = null): Boolean {
-        val encoded = codec.encode(msg)
-        val selected = target(expected) ?: return false
-        requestId?.let {
-            synchronized(accountingLock) { requests[it] = selected.child }
-        }
-        return try {
-            synchronized(selected.ioLock) {
-                selected.output.write(encoded)
-                selected.output.newLine()
-                selected.output.flush()
+    private fun submit(
+        msg: JsonObject,
+        requestId: Long?,
+        serverRequestId: Long?,
+        expected: Process?,
+        budget: Duration,
+    ): McpWrite? {
+        val selected = target(expected) ?: return null
+        val delivery = McpWrite(selected, codec.encode(msg), requestId, serverRequestId)
+        val registered = synchronized(accountingLock) {
+            val available = !closed && selected !in retired && selected !in sealed
+            if (available) {
+                requestId?.let { requests[it] = selected }
+                serverRequestId?.let { serverRequests[it] = selected }
+                writesInFlight += delivery
             }
-            true
-        } catch (failure: IOException) {
-            failed(selected.child, "write failed: ${failure.message}")
-            false
+            available
         }
+        if (!registered) return null
+        val deadline = failures.schedule(budget, McpWriteExpired { expire(delivery, "write deadline exceeded") })
+        if (deadline == null) {
+            expire(delivery, "writer closed before delivery")
+        } else {
+            delivery.deadline = deadline
+            writes.offer(delivery)
+        }
+        return delivery
+    }
+
+    private fun accepting(selected: McpWriteTarget): Boolean =
+        !closed && selected !in retired && selected !in sealed
+
+    private fun expire(delivery: McpWrite, reason: String) {
+        if (resolve(delivery, false)) failures.report(delivery.target.child, reason)
+    }
+
+    private fun resolve(write: McpWrite, delivered: Boolean): Boolean {
+        if (!write.completed.complete(delivered)) return false
+        write.deadline?.cancel(false)
+        synchronized(accountingLock) {
+            writesInFlight.remove(write)
+            if (delivered) write.serverRequestId?.let(serverRequests::remove)
+        }
+        return true
     }
 }

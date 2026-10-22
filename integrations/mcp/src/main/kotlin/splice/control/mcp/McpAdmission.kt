@@ -58,9 +58,8 @@ internal class McpAdmission {
         }
     }
 
-    fun beginReplacement(unsettled: List<Long>): Boolean = synchronized(lock) {
-        if (phase != Phase.DRAINING) return@synchronized false
-        if (active != 0 || unsettled.isNotEmpty()) return@synchronized false
+    fun beginReplacement(): Boolean = synchronized(lock) {
+        if (phase != Phase.DRAINING || active != 0) return@synchronized false
         phase = Phase.REPLACING
         true
     }

@@ -26,6 +26,26 @@ public class McpHubRoutes(private val hub: McpHubCalls) {
         answer(call, hub.roots(call.receiveText()))
     }
 
+    public suspend fun replacementStart(call: ApplicationCall) {
+        answer(call, hub.replacementStart(call.receiveText()))
+    }
+
+    public suspend fun replacementCommit(call: ApplicationCall) {
+        answer(call, hub.replacementCommit(call.receiveText()))
+    }
+
+    public suspend fun replacementRetire(call: ApplicationCall) {
+        answer(call, hub.replacementRetire(call.receiveText()))
+    }
+
+    public suspend fun replacementRollback(call: ApplicationCall) {
+        answer(call, hub.replacementRollback(call.receiveText()))
+    }
+
+    public suspend fun replacementExit(call: ApplicationCall) {
+        answer(call, hub.replacementExit(call.receiveText()))
+    }
+
     private suspend fun answer(call: ApplicationCall, reply: McpHubReply) {
         val body = reply.body
         if (body == null) {

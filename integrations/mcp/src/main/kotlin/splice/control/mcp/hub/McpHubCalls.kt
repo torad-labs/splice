@@ -3,11 +3,6 @@
 // Oct 12). McpHub serves them; McpHubOff answers every call 503 with the reason the check gave, and sweeps nothing.
 package splice.control.mcp.hub
 
-import kotlinx.serialization.json.buildJsonObject
-import kotlinx.serialization.json.put
-import splice.core.util.JsonWire
-import splice.core.wire.HttpStatus
-
 public interface McpHubCalls {
     /** `POST /api/mcp/hub/resolve`. */
     public fun resolve(body: String): McpHubReply
@@ -20,6 +15,21 @@ public interface McpHubCalls {
 
     /** `POST /api/mcp/hub/roots`: a shared server asked its client for roots. */
     public fun roots(body: String): McpHubReply
+
+    /** `POST /api/mcp/hub/replacement/start`: starts the current configured tuple beside a retained holder. */
+    public suspend fun replacementStart(body: String): McpHubReply
+
+    /** `POST /api/mcp/hub/replacement/commit`: revalidates every affected canonical alias and launch before cutover. */
+    public fun replacementCommit(body: String): McpHubReply
+
+    /** `POST /api/mcp/hub/replacement/retire`: the daemon owner retires the exact old holder after front settlement. */
+    public fun replacementRetire(body: String): McpHubReply
+
+    /** `POST /api/mcp/hub/replacement/rollback`: restores an owner-confirmed live old generation before retirement began. */
+    public fun replacementRollback(body: String): McpHubReply
+
+    /** `POST /api/mcp/hub/replacement/exit`: confirms exactly one holder generation exited before relay ids settle. */
+    public fun replacementExit(body: String): McpHubReply
 
     /** The host's idle sweep, at [now], with the MCP idle limit [idleMs]. */
     public fun sweep(now: Long, idleMs: Long)
@@ -44,6 +54,16 @@ public class McpHubOff(reason: String) : McpHubCalls {
     override fun listing(body: String): McpHubReply = reply
 
     override fun roots(body: String): McpHubReply = reply
+
+    override suspend fun replacementStart(body: String): McpHubReply = reply
+
+    override fun replacementCommit(body: String): McpHubReply = reply
+
+    override fun replacementRetire(body: String): McpHubReply = reply
+
+    override fun replacementRollback(body: String): McpHubReply = reply
+
+    override fun replacementExit(body: String): McpHubReply = reply
 
     override fun sweep(now: Long, idleMs: Long) {
         // Nothing to stop: with the hub off, no holder was started.

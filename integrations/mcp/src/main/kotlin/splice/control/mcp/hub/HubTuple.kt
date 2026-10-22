@@ -55,6 +55,19 @@ internal class HubTuple(private val home: Path) {
             .joinToString("") { "%02x".format(it) }
     }
 
+    /** Opaque identity of the exact resolved process tuple that a replacement holder starts. */
+    fun fingerprint(spec: HubLaunchSpec): String {
+        val parts = listOf(
+            JsonPrimitive(spec.command),
+            JsonArray(spec.args.map(::JsonPrimitive)),
+            JsonObject(spec.env.toSortedMap().mapValues { JsonPrimitive(it.value) }),
+            JsonPrimitive(spec.folder.toString()),
+            JsonPrimitive(spec.inheritEnv),
+        )
+        return MessageDigest.getInstance("SHA-256").digest(JsonArray(parts).toString().toByteArray())
+            .joinToString("") { "%02x".format(it) }
+    }
+
     private fun expanded(value: String, env: Map<String, String>): String =
         VARIABLE.replace(value) { m -> env[m.groupValues[1]] ?: m.groups[2]?.value ?: m.value }
 }

@@ -1,9 +1,4 @@
-// NEW: MCP hub — what the front reports about the sessions it holds, read by the sweep before it stops a shared
-// holder. The front keeps its routing table in <state>/mcp-hub/front.json (splice-config's Hub.save): "routes", keyed
-// "<server>\n<launch>", each naming its holder's "socket" and the session's "launch"; and "sessions", each naming its
-// route's key; and "holders", keyed by socket, each with its "last_call" in epoch milliseconds (set on every request a
-// session sends it and at its first initialize; the front rewrites the file every 25 s). A holder is bound while a
-// session's route names its socket.
+// NEW: MCP hub — the front's persisted routing view, read before a shared holder may be swept.
 package splice.control.mcp.hub
 
 import kotlinx.serialization.json.JsonObject
@@ -13,32 +8,93 @@ import java.io.IOException
 import java.nio.file.Files
 import java.nio.file.Path
 
-/** One session the front holds: the socket of the holder it is bound to, and the launch it came from ("" unknown). */
-internal data class HubBinding(val socket: String, val launch: String)
+private const val ROUTES = "routes"
+private const val SESSIONS = "sessions"
+private const val HOLDERS = "holders"
+private const val SERVER = "server"
+private const val SOCKET = "socket"
+private const val LAUNCH = "launch"
+private const val SHARED = "shared"
+private const val LAST_CALL = "last_call"
 
-/** What the front saved: its sessions, and when each holder it initialized last took a call. */
-internal data class HubReport(val bindings: List<HubBinding>, val lastCalls: Map<String, Long>)
+/** One route the front retains: its server alias, launch, holder socket, and shared-routing declaration. */
+internal data class HubRoute(
+    val server: String,
+    val launch: String,
+    val socket: String,
+    val shared: Boolean,
+)
+
+/** One session the front holds: its server alias, holder socket, and launch. */
+internal data class HubBinding(val server: String, val socket: String, val launch: String)
+
+/** What the front saved: every retained route, its sessions, and when each holder last took a call. */
+internal data class HubReport(
+    val routes: List<HubRoute>,
+    val bindings: List<HubBinding>,
+    val lastCalls: Map<String, Long>,
+)
 
 internal class HubFront(private val file: Path) {
-    /** What the front last saved, or null when it saved nothing readable: the sweep then cannot tell who is bound. */
-    fun report(): HubReport? {
-        val saved = read() ?: return null
-        val holders = saved["holders"] as? JsonObject ?: JsonObject(emptyMap())
-        val lastCalls = holders.mapNotNull { (socket, holder) ->
-            JsonScalars.long(holder as? JsonObject, "last_call")?.let { socket to it }
-        }.toMap()
-        val routes = saved["routes"] as? JsonObject
-        val sessions = saved["sessions"] as? JsonObject ?: JsonObject(emptyMap())
-        val bindings = sessions.keys.mapNotNull { id ->
-            val route = JsonScalars.str(sessions, id)?.let { routes?.get(it) as? JsonObject }
-            JsonScalars.str(route, "socket")?.let { HubBinding(it, JsonScalars.str(route, "launch").orEmpty()) }
-        }
-        return HubReport(bindings, lastCalls)
-    }
+    private val reader = HubFrontReader(file)
+    private val reports = HubFrontReports()
 
-    private fun read(): JsonObject? = try {
+    /** What the front last saved, or null when it saved no readable route state. */
+    fun report(): HubReport? = reader.read()?.let(reports::report)
+}
+
+private class HubFrontReader(private val file: Path) {
+    fun read(): JsonObject? = try {
         file.takeIf(Files::isRegularFile)?.let { JsonRpcCodec().parse(Files.readString(it)) }
     } catch (_: IOException) {
         null
     }
+}
+
+private class HubFrontReports {
+    fun report(saved: JsonObject): HubReport? = routes(saved)?.let { routes ->
+        HubReport(routes, bindings(saved), lastCalls(saved))
+    }
+
+    private fun routes(saved: JsonObject): List<HubRoute>? = (saved[ROUTES] as? JsonObject)?.values?.mapNotNull(::route)
+
+    private fun route(value: kotlinx.serialization.json.JsonElement): HubRoute? =
+        (value as? JsonObject)?.let { saved ->
+            val server = JsonScalars.str(saved, SERVER)
+            val socket = JsonScalars.str(saved, SOCKET)
+            if (server != null && socket != null) {
+                HubRoute(
+                    server,
+                    JsonScalars.str(saved, LAUNCH).orEmpty(),
+                    socket,
+                    JsonScalars.str(saved, SHARED) != "false",
+                )
+            } else {
+                null
+            }
+        }
+
+    private fun bindings(saved: JsonObject): List<HubBinding> {
+        val routes = saved[ROUTES] as? JsonObject ?: return emptyList()
+        val sessions = saved[SESSIONS] as? JsonObject ?: return emptyList()
+        return sessions.keys.mapNotNull { session -> binding(session, sessions, routes) }
+    }
+
+    private fun binding(session: String, sessions: JsonObject, routes: JsonObject): HubBinding? =
+        JsonScalars.str(sessions, session)?.let { routes[it] as? JsonObject }?.let { route ->
+            val server = JsonScalars.str(route, SERVER)
+            val socket = JsonScalars.str(route, SOCKET)
+            if (server != null && socket != null) {
+                HubBinding(server, socket, JsonScalars.str(route, LAUNCH).orEmpty())
+            } else {
+                null
+            }
+        }
+
+    private fun lastCalls(saved: JsonObject): Map<String, Long> = (saved[HOLDERS] as? JsonObject)
+        ?.mapNotNull { (socket, holder) ->
+            JsonScalars.long(holder as? JsonObject, LAST_CALL)?.let { socket to it }
+        }
+        ?.toMap()
+        .orEmpty()
 }

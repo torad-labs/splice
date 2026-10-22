@@ -29,7 +29,9 @@ internal class ReplacementReplay(
                         "the target changed before its candidate could take the settled route",
                     )
                 } else {
-                    holders.replacements.candidates.routed(route, candidate, moved)
+                    if (!holders.replacements.candidates.routed(route, candidate, moved)) {
+                        routes.replacements.restore(moved, drain.socket, drain.generation, candidate)
+                    }
                 }
             }
         }
@@ -45,7 +47,7 @@ internal class ReplacementReplay(
                     "the restored routes no longer match the dead candidate generation",
                 )
             } else {
-                holders.replacements.retirements.rolledBack(route)
+                holders.replacements.retirements.completed(route)
             }
         }
     }

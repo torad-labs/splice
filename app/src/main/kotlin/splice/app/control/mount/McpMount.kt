@@ -57,6 +57,15 @@ internal class McpMount(
             route.post("/api/mcp/hub/start") { guard.guarded(call) { front.start(call) } }
             route.post("/api/mcp/hub/listing") { guard.guarded(call) { front.listing(call) } }
             route.post("/api/mcp/hub/roots") { guard.guarded(call) { front.roots(call) } }
+            route.post("/api/mcp/hub/replacement/pin/acquire") {
+                guard.guarded(call) { front.replacementPinAcquire(call) }
+            }
+            route.post("/api/mcp/hub/replacement/pin/confirm") {
+                guard.guarded(call) { front.replacementPinConfirm(call) }
+            }
+            route.post("/api/mcp/hub/replacement/pin/release") {
+                guard.guarded(call) { front.replacementPinRelease(call) }
+            }
             route.post("/api/mcp/hub/replacement/start") { guard.guarded(call) { front.replacementStart(call) } }
             route.post("/api/mcp/hub/replacement/retire") { guard.guarded(call) { front.replacementRetire(call) } }
             route.post("/api/mcp/hub/replacement/commit") { guard.guarded(call) { front.replacementCommit(call) } }

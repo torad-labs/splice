@@ -54,7 +54,7 @@ class Hub(
         routes.restore(saved["routes"] as? JsonObject)
         routes.refreshGenerations()
         holders.links.restore(saved["holders"] as? JsonObject)
-        holders.replacements.candidates.restore(saved["drains"] as? JsonObject)
+        holders.replacements.views.restore(saved["drains"] as? JsonObject)
         holders.replacements.all().forEach(holders.replacements.links::seed)
         (saved["sessions"] as? JsonObject)?.forEach { (id, value) ->
             (value as? JsonPrimitive)?.contentOrNull?.let(routes::byKey)?.let { sessions[id] = Session(id, it) }
@@ -67,7 +67,7 @@ class Hub(
         val state = buildJsonObject {
             put("routes", routes.state())
             put("holders", holders.links.state())
-            put("drains", holders.replacements.candidates.state())
+            put("drains", holders.replacements.views.state())
             put("sessions", JsonObject(sessions.mapValues { (_, session) -> JsonPrimitive(session.route.key()) }))
             put(RELAY, relay.state())
         }
@@ -76,12 +76,14 @@ class Hub(
 
     fun reconcile() {
         relay.reconcileExits { holder, generation ->
+            holders.links.reconnect(holder, generation)
             routes.replacements.confirmExit(
                 holder.socket,
                 generation,
                 { relay.awaitsExit(holder, generation) },
             ) {
                 relay.exited(holder, generation)
+                holders.replacements.retirements.oldExited(holder.socket, generation)
             }
         }
         replacements.reconcile()
@@ -104,8 +106,7 @@ class Hub(
     }
 
     private fun changed() {
-        save()
-        replacements.finish()
+        if (save()) replacements.finish()
     }
 }
 
@@ -116,19 +117,21 @@ internal class HubReplacements(
     private val timers: Timers,
     private val clock: Clock,
 ) {
+    private val ownerPins = HubOwnerPins(routes, holders, ::reconcile)
     private val replay = ReplacementReplay(routes, holders, relay)
     private val recovery = ReplacementRecovery(
         routes,
         holders,
         replay,
         timers,
-        holders.replacements::all,
+        clock,
+        ownerPins::ready,
         ::replayRetirement,
     )
 
-    fun pause(server: String, launch: String): String? {
-        val route = route(server, launch) ?: return "no retained route for $server and launch '$launch'"
-        return holders.replacements.candidates.pause(route, holders.links.of(route))
+    fun pause(server: String, launch: String, done: (String?) -> Unit) {
+        val route = route(server, launch) ?: return done("no retained route for $server and launch '$launch'")
+        ownerPins.pause(route, done)
     }
 
     fun replace(server: String, launch: String, done: (String?) -> Unit) {
@@ -140,8 +143,8 @@ internal class HubReplacements(
             done(null)
             return
         }
-        val drain = holders.replacements.candidates.drain(server, launch)
-            ?: return done("this target is not paused for replacement")
+        val drain = holders.replacements.candidates.drain(server, launch)?.takeIf(ownerPins::ready)
+            ?: return done("this target has no owner-confirmed replacement drain")
         val oldSocket = drain.socket
         val oldGeneration = drain.generation
         routes.replacements.start(route, oldSocket, oldGeneration) { candidate, failure ->
@@ -160,14 +163,14 @@ internal class HubReplacements(
         }
     }
 
-    fun resume(server: String, launch: String): Boolean {
-        val route = route(server, launch) ?: return false
-        return holders.replacements.candidates.resume(route)
+    fun resume(server: String, launch: String, done: (String?) -> Unit) {
+        val route = route(server, launch) ?: return done("no retained route for $server and launch '$launch'")
+        ownerPins.resume(route, done)
     }
 
     fun status(server: String, launch: String): JsonObject? {
         val drain = holders.replacements.candidates.drain(server, launch) ?: return null
-        return holders.replacements.candidates.status(
+        return holders.replacements.views.status(
             server,
             launch,
             relay.inFlight(drain.socket),
@@ -178,6 +181,7 @@ internal class HubReplacements(
     private fun route(server: String, launch: String): Route? = routes.byKey("$server\n$launch")
 
     fun finish() {
+        ownerPins.maintain(holders.replacements.all())
         cutOverReadyCandidates()
         retireOldCandidates()
         rollBackLostCandidates()
@@ -192,7 +196,7 @@ internal class HubReplacements(
     private fun replayRetirement(route: Route, drain: HolderDrain, candidate: ReplacementCandidate) {
         routes.replacements.retire(route, drain.socket, drain.generation, candidate) { failure ->
             if (failure == null) {
-                holders.replacements.retirements.retired(route)
+                holders.replacements.retirements.completed(route)
             } else {
                 holders.replacements.retirements.blocked(route, failure)
                 timers.at(clock.now() + RETIRE_RETRY) { retryRetirement(route) }
@@ -202,6 +206,8 @@ internal class HubReplacements(
 
     /** A claimed retirement stays with its owner even after the front can no longer reach its candidate. */
     private fun retryRetirement(route: Route) {
+        val drain = holders.replacements.candidates.drain(route.server, route.launch)
+            ?.takeIf { relay.inFlight(it.socket) == 0 } ?: return
         val claimed = holders.replacements.retirements.retry(route) ?: return
         val candidate = claimed.candidate ?: return
         replayRetirement(route, claimed, candidate)
@@ -209,6 +215,7 @@ internal class HubReplacements(
 
     private fun cutOverReadyCandidates() {
         holders.replacements.candidates.ready().forEach { drain ->
+            if (!ownerPins.ready(drain)) return@forEach
             val route = routes.byKey(drain.key()) ?: return@forEach
             val candidate = drain.candidate ?: return@forEach
             if (!holders.replacements.candidateLive(candidate) || relay.inFlight(drain.socket) != 0) return@forEach
@@ -219,10 +226,11 @@ internal class HubReplacements(
 
     private fun retireOldCandidates() {
         holders.replacements.retirements.candidates().forEach { drain ->
+            if (!ownerPins.ready(drain)) return@forEach
             val route = routes.byKey(drain.key()) ?: return@forEach
             val candidate = drain.candidate ?: return@forEach
             if (relay.inFlight(drain.socket) != 0) return@forEach
-            val claimed = holders.replacements.retirements.claim(route, holders.replacements.candidates::live)
+            val claimed = holders.replacements.retirements.claim(route, holders.replacements::candidateLive)
                 ?: return@forEach
             replayRetirement(route, claimed, candidate)
         }
@@ -256,7 +264,7 @@ internal class HubReplacements(
                         "the restored routes no longer match the dead candidate generation",
                     )
                 } else {
-                    holders.replacements.retirements.rolledBack(route)
+                    holders.replacements.retirements.completed(route)
                 }
             }
         }
@@ -269,7 +277,8 @@ private class ReplacementRecovery(
     private val holders: Holders,
     private val replay: ReplacementReplay,
     private val timers: Timers,
-    private val drains: () -> List<HolderDrain>,
+    private val clock: Clock,
+    private val pinned: (HolderDrain) -> Boolean,
     private val replayRetirement: (Route, HolderDrain, ReplacementCandidate) -> Unit,
 ) {
     private val reconnecting = setOf(
@@ -282,16 +291,20 @@ private class ReplacementRecovery(
     )
     private val replayAfterReconnect = setOf(COMMITTING, RETIRING, RETIRE_BLOCKED)
 
-    fun reconcile() = drains().forEach(::recover)
+    fun reconcile() = holders.replacements.all().forEach(::recover)
 
     private fun recover(drain: HolderDrain) {
+        val candidate = drain.candidate?.takeIf { pinned(drain) } ?: return
         val route = routes.byKey(drain.key()) ?: return
-        val candidate = drain.candidate ?: return
         if (drain.phase in reconnecting && !connected(candidate, drain.phase)) return
+        dispatch(route, drain, candidate)
+    }
+
+    private fun dispatch(route: Route, drain: HolderDrain, candidate: ReplacementCandidate) {
         when (drain.phase) {
             COMMITTING -> replay.commit(route, drain, candidate)
             RETIRING, RETIRE_BLOCKED -> replayRetirement(route, drain, candidate)
-            ROLLING_BACK -> replay.rollback(route, drain, candidate)
+            ROLLING_BACK, ROLLBACK_UNKNOWN -> replay.rollback(route, drain, candidate)
             else -> Unit
         }
     }

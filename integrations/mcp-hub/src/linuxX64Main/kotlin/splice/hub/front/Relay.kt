@@ -181,13 +181,22 @@ internal class RelayNotifications(private val calls: Map<String, WireOutstanding
     fun notify(holder: Holder, session: Session, msg: JsonObject) {
         val cancelled = Rpc.str(msg, Rpc.METHOD) == CANCELLED
         val params = msg[Rpc.PARAMS] as? JsonObject
-        val key = params?.takeIf { cancelled }?.get(REQUEST_ID)?.let { ownKey(it, session) }
+        val key = params?.takeIf { cancelled }?.get(REQUEST_ID)?.let { ownKey(holder, it, session) }
+        if (cancelled && key == null) return
         val text = key?.let { Rpc.encode(withRequestId(msg, requireNotNull(params), it)) } ?: Rpc.encode(msg)
         holder.link?.send(text)
     }
 
-    private fun ownKey(id: JsonElement, session: Session): String? =
-        calls.entries.firstOrNull { (_, call) -> call.clientId == id && call.session === session }?.key
+    private fun ownKey(holder: Holder, id: JsonElement, session: Session): String? =
+        calls.entries.firstOrNull { (_, call) ->
+            listOf(
+                call.clientId == id,
+                call.session === session,
+                call.holder === holder,
+                call.generation == holder.generation,
+                call.conn != null,
+            ).all { it }
+        }?.key
 
     private fun withRequestId(msg: JsonObject, params: JsonObject, key: String): JsonObject =
         JsonObject(msg + (Rpc.PARAMS to JsonObject(params + (REQUEST_ID to JsonPrimitive(key)))))

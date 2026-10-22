@@ -32,6 +32,7 @@ class Routes(
     private val toldRoots = HashSet<String>()
     private val generations = RouteGenerations(daemon, timers, clock, changed)
     internal val replacements = RouteReplacements(known, daemon, timers, clock)
+    internal val pins = RoutePins(daemon)
 
     fun of(server: String, launch: String): Route = Route(server, launch).let { known.getOrPut(it.key()) { it } }
 

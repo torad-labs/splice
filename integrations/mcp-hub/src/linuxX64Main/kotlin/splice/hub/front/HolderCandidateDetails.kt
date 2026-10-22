@@ -77,7 +77,8 @@ internal class HolderCandidateDetails {
 
     fun failedPhase(phase: String): String = when (phase) {
         ROUTED -> ROLLBACK_PENDING
-        RETIRING, RETIRE_BLOCKED, ROLLING_BACK -> RETIRE_UNKNOWN
+        RETIRING, RETIRE_BLOCKED -> RETIRE_UNKNOWN
+        ROLLING_BACK, ROLLBACK_UNKNOWN -> ROLLBACK_UNKNOWN
         ROLLBACK_PENDING, RETIRE_UNKNOWN -> phase
         else -> CANDIDATE_BLOCKED
     }
@@ -98,6 +99,7 @@ internal class HolderCandidateDetails {
             moved(document),
             Rpc.str(document, PHASE),
             Rpc.str(document, BLOCKER),
+            Rpc.str(document, OWNER_CLAIM),
         )
     }
 
@@ -154,12 +156,14 @@ private data class StoredDrain(
     val moved: Set<String>,
     val phase: String?,
     val blocker: String?,
+    val ownerClaim: String?,
 ) {
     fun drain(): HolderDrain? = holder.drain()?.also {
         it.candidate = candidate
         it.moved = moved
         it.phase = phase ?: PAUSED
         it.blocker = blocker
+        it.ownerClaim = ownerClaim
     }
 }
 

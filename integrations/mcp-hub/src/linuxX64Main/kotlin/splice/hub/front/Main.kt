@@ -173,12 +173,13 @@ class HolderDrainControl(private val hub: Hub) {
     }
 
     private fun pause(conn: HttpConn, target: HolderDrainTarget) {
-        val blocker = hub.replacements.pause(target.server, target.launch)
-        val status = hub.replacements.status(target.server, target.launch)
-        when {
-            blocker != null -> conn.reply(UNAVAILABLE, Rpc.error(JsonNull, blocker))
-            status == null -> conn.reply(UNAVAILABLE, Rpc.error(JsonNull, "the drain state was not retained"))
-            else -> conn.reply(OK, Rpc.encode(status))
+        hub.replacements.pause(target.server, target.launch) { blocker ->
+            val status = hub.replacements.status(target.server, target.launch)
+            when {
+                blocker != null -> conn.reply(UNAVAILABLE, Rpc.error(JsonNull, blocker))
+                status == null -> conn.reply(UNAVAILABLE, Rpc.error(JsonNull, "the drain state was not retained"))
+                else -> conn.reply(OK, Rpc.encode(status))
+            }
         }
     }
 
@@ -203,10 +204,8 @@ class HolderDrainControl(private val hub: Hub) {
     }
 
     private fun resume(conn: HttpConn, target: HolderDrainTarget) {
-        if (hub.replacements.resume(target.server, target.launch)) {
-            conn.reply(OK)
-        } else {
-            conn.reply(NOT_FOUND, Rpc.error(JsonNull, "no replacement drain for this target"))
+        hub.replacements.resume(target.server, target.launch) { failure ->
+            if (failure == null) conn.reply(OK) else conn.reply(UNAVAILABLE, Rpc.error(JsonNull, failure))
         }
     }
 

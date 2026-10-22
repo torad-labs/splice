@@ -69,7 +69,10 @@ internal class RouteReplacements(
         candidate: ReplacementCandidate,
     ): Boolean {
         val affected = moved.map { known[it] ?: return false }
-        if (affected.any { held -> noLongerCandidate(held, candidate) }) return false
+        val unrelated = affected.any { held ->
+            noLongerCandidate(held, candidate) && (held.socket != oldSocket || held.generation != oldGeneration)
+        }
+        if (unrelated) return false
         affected.forEach { held ->
             held.socket = oldSocket
             held.generation = oldGeneration
@@ -179,7 +182,8 @@ internal class RouteReplacements(
         }
         daemon.call(path, Rpc.encode(body)) { status, text ->
             val unreachable = status == 0 || status == UNAVAILABLE
-            if (unreachable && clock.now() < until) {
+            val retryable = unreachable && path != REPLACEMENT_RETIRE
+            if (retryable && clock.now() < until) {
                 timers.at(clock.now() + RETRY) { ask(route, path, until, extra, then) }
             } else {
                 then(status, text)

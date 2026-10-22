@@ -159,8 +159,8 @@ splice.lawsuite.ReadSet.declare(
     ),
 )
 
-val releaseVersion = project.version.toString()
-val releaseGroup = rootProject.name
+val releaseVersionValue = project.version.toString()
+val releaseGroupValue = rootProject.name
 val repositoryRoot = rootProject.layout.projectDirectory
 val rawBomDir = layout.buildDirectory.dir("reports/cyclonedx")
 val complianceDir = layout.buildDirectory.dir("reports/compliance")
@@ -247,8 +247,8 @@ val normalizeReleaseBom = tasks.register<splice.release.NormalizedBom>("normaliz
     dependsOn(tasks.cyclonedxDirectBom)
     source.set(rawBom)
     output.set(bom)
-    releaseGroup.set(releaseGroup)
-    releaseVersion.set(releaseVersion)
+    releaseGroup.set(releaseGroupValue)
+    releaseVersion.set(releaseVersionValue)
 }
 
 val normalizedBom = bom
@@ -256,7 +256,7 @@ val copyReleaseLicenses = tasks.register<splice.release.LicenseInventory>("copyR
     dependsOn(normalizeReleaseBom)
     bom.set(normalizedBom)
     inventory.set(licenses)
-    firstPartyGroup.set(releaseGroup)
+    firstPartyGroup.set(releaseGroupValue)
 }
 
 val generateThirdPartyNotices = tasks.register("generateThirdPartyNotices") {
@@ -480,8 +480,8 @@ releaseTag.orNull?.takeIf { it.isNotEmpty() }?.let { tag ->
     check(releaseTagPattern.matches(tag)) {
         "release stage: tag must be valid SemVer without build metadata, got $tag"
     }
-    check(tag == "v$releaseVersion") {
-        "release stage: tag $tag does not match package version $releaseVersion"
+    check(tag == "v$releaseVersionValue") {
+        "release stage: tag $tag does not match package version $releaseVersionValue"
     }
 }
 val stagingLauncher = javaToolchains.launcherFor(java.toolchain)
@@ -521,7 +521,7 @@ tasks.register("stageRelease") {
     inputs.files(hubHolder, hubFront).withPropertyName("mcpHubBinaries")
     inputs.property("releaseTag", releaseTag)
     outputs.dir(distDir)
-    val version = releaseVersion
+    val version = releaseVersionValue
     val launcher = stagingLauncher
     val repositoryDir = repositoryRoot.asFile
     doLast {

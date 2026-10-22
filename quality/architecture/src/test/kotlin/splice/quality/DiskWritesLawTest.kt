@@ -314,7 +314,7 @@ private val SHIPPED_SITES: Map<String, Map<String, Int>> = mapOf(
     // The hub's kept listings, holder records and generation-specific retirement evidence, in the mcp-listings and
     // mcp-hub README rows. Replacement outcomes make an interrupted retirement retryable without replaying it.
     "integrations/mcp/src/main/kotlin/splice/control/mcp/hub/HubListings.kt" to mapOf("writeAtomic0600(" to 1),
-    "integrations/mcp/src/main/kotlin/splice/control/mcp/hub/HubRecords.kt" to mapOf("writeAtomic0600(" to 1),
+    "integrations/mcp/src/main/kotlin/splice/control/mcp/hub/HubRecords.kt" to mapOf("writeAtomic0600(" to 2),
     "integrations/mcp/src/main/kotlin/splice/control/mcp/hub/HubHolderRetirements.kt" to mapOf("writeAtomic0600(" to 1),
     // Oct 13: canonical MCP publication replaces McpHubWiring's boot overwrite. One first-run create, then the
     // no-bootstrap fence, its copy carried from mcp-hub, the active key and its binding, in their README rows.

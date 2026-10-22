@@ -130,19 +130,18 @@ internal class HubReplacements(
     private val clock: Clock,
 ) {
     private val ownerPins = HubOwnerPins(routes, holders, ::reconcile)
-    private val replay = ReplacementReplay(
+    private val recoveryContext: ReplacementRecoveryContext =
+        ReplacementRecoveryContext(routes, holders, relay, timers, clock)
+    private val replay: ReplacementReplay = ReplacementReplay(
         routes,
         holders,
         relay,
         { timers.at(clock.now() + CANDIDATE_REPLAY_RETRY) { recovery.reconcile() } },
         ::completed,
     )
-    private val recovery = ReplacementRecovery(
-        routes,
-        holders,
+    private val recovery: ReplacementRecovery = ReplacementRecovery(
+        recoveryContext,
         replay,
-        timers,
-        clock,
         ownerPins::ready,
         ::replayRetirement,
     )
@@ -306,13 +305,18 @@ internal class HubReplacements(
     }
 }
 
+private data class ReplacementRecoveryContext(
+    val routes: Routes,
+    val holders: Holders,
+    val relay: Relay,
+    val timers: Timers,
+    val clock: Clock,
+)
+
 /** Restores a paused replacement only after the daemon-named candidate generation reconnects. */
 private class ReplacementRecovery(
-    private val routes: Routes,
-    private val holders: Holders,
+    private val context: ReplacementRecoveryContext,
     private val replay: ReplacementReplay,
-    private val timers: Timers,
-    private val clock: Clock,
     private val pinned: (HolderDrain) -> Boolean,
     private val replayRetirement: (Route, HolderDrain, ReplacementCandidate) -> Unit,
 ) {
@@ -326,21 +330,21 @@ private class ReplacementRecovery(
     )
     private val replayAfterReconnect = setOf(COMMITTING, RETIRING, RETIRE_BLOCKED)
 
-    fun reconcile() = holders.replacements.all().forEach(::recover)
+    fun reconcile() = context.holders.replacements.all().forEach(::recover)
 
     private fun recover(drain: HolderDrain) {
-        val route = routes.byKey(drain.key()) ?: return
+        val route = context.routes.byKey(drain.key()) ?: return
         reconcileOld(drain)
         val candidate = drain.candidate ?: return
         if (drain.phase in setOf(ROLLING_BACK, ROLLBACK_UNKNOWN)) {
             if (drain.phase == ROLLING_BACK) {
-                holders.replacements.retirements.rollbackUnknown(
+                context.holders.replacements.retirements.rollbackUnknown(
                     route,
                     "the replacement rollback outcome needs its candidate's exact exit",
                 )
             }
-            routes.replacements.confirmExit(candidate.socket, candidate.generation, { true }) {
-                holders.replacements.retirements.oldExited(candidate.socket, candidate.generation)
+            context.routes.replacements.confirmExit(candidate.socket, candidate.generation, { true }) {
+                context.holders.replacements.retirements.oldExited(candidate.socket, candidate.generation)
             }
             return
         }
@@ -353,17 +357,17 @@ private class ReplacementRecovery(
     }
 
     private fun reconcileOld(drain: HolderDrain) {
-        val holder = holders.remember(drain.socket)
-        routes.replacements.confirmExit(
+        val holder = context.holders.remember(drain.socket)
+        context.routes.replacements.confirmExit(
             drain.socket,
             drain.generation,
             {
-                holders.links.reconnect(holder, drain.generation)
+                context.holders.links.reconnect(holder, drain.generation)
                 true
             },
         ) {
-            relay.exited(holder, drain.generation)
-            holders.replacements.retirements.oldExited(drain.socket, drain.generation)
+            context.relay.exited(holder, drain.generation)
+            context.holders.replacements.retirements.oldExited(drain.socket, drain.generation)
         }
     }
 
@@ -377,7 +381,7 @@ private class ReplacementRecovery(
         when (drain.phase) {
             COMMITTING -> replay.commit(route, drain, candidate)
             RETIRING, RETIRE_BLOCKED -> replayRetirement(route, drain, candidate)
-            ROLLING_BACK -> holders.replacements.retirements.rollbackUnknown(
+            ROLLING_BACK -> context.holders.replacements.retirements.rollbackUnknown(
                 route,
                 "the replacement rollback outcome needs its candidate's exact exit",
             )
@@ -386,8 +390,12 @@ private class ReplacementRecovery(
     }
 
     private fun connected(candidate: ReplacementCandidate, phase: String): Boolean {
-        if (holders.replacements.reconnectCandidate(candidate, holders.links::connectCandidate)) return true
-        if (phase in replayAfterReconnect) timers.at(clock.now() + CANDIDATE_REPLAY_RETRY, ::reconcile)
+        val connected = context.holders.replacements.reconnectCandidate(
+            candidate,
+            context.holders.links::connectCandidate,
+        )
+        if (connected) return true
+        if (phase in replayAfterReconnect) context.timers.at(context.clock.now() + CANDIDATE_REPLAY_RETRY, ::reconcile)
         return false
     }
 }

@@ -16,6 +16,9 @@ class HolderWrites(private val sys: Sys) {
     private var written = 0L
     val pending: Boolean get() = outbox.size > 0
 
+    fun accepts(line: String): Boolean =
+        outbox.size.toLong() + line.encodeToByteArray().size + 1 <= MAX_QUEUED_OUTPUT_BYTES
+
     fun append(line: String, delivered: HolderWritten?) {
         val bytes = (line + "\n").encodeToByteArray()
         outbox.append(bytes, bytes.size)
@@ -33,3 +36,5 @@ class HolderWrites(private val sys: Sys) {
         return available
     }
 }
+
+private const val MAX_QUEUED_OUTPUT_BYTES = 1024 * 1024L

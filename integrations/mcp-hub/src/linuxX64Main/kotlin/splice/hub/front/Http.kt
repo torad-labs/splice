@@ -316,10 +316,19 @@ class HolderLink(
         }
     }
 
-    fun send(line: String, delivered: HolderWritten? = null) {
-        if (closed) return
+    fun accepts(line: String): Boolean = !closed && writes.accepts(line)
+
+    fun send(line: String, delivered: HolderWritten? = null): Boolean {
+        if (!accepts(line)) {
+            close()
+            return false
+        }
         writes.append(line, delivered)
-        if (!writes.flush(fd)) close()
+        if (!writes.flush(fd)) {
+            close()
+            return false
+        }
+        return true
     }
 
     override fun onClose() = onLost()

@@ -24,6 +24,23 @@ data class WireOutstanding(
     val at: Long,
 )
 
+private class ForwardAdmission(
+    val generation: String?,
+    val link: HolderLink?,
+    text: String,
+    retiring: Boolean,
+    retained: Int,
+) {
+    val refusal: String? = when {
+        generation == null -> "the holder has no owner-confirmed generation"
+        retiring -> "the holder is retiring"
+        link == null -> "the holder is no longer connected"
+        retained >= MAX_RETAINED_FORWARD -> "the front retained-work limit is full"
+        !link.accepts(text) -> "the holder output queue is full"
+        else -> null
+    }
+}
+
 class Relay(
     private val sessions: Map<String, Session>,
     private val routes: Routes,
@@ -106,36 +123,37 @@ class Relay(
 
     /** Sends a session's request to [holder] under a front-wide id. The wire id is durable before the holder sees it. */
     fun call(holder: Holder, conn: HttpConn, session: Session, msg: JsonObject, id: JsonElement) {
-        val generation = holder.generation
-        val link = holder.link
-        val refusal = when {
-            generation == null -> "the holder has no owner-confirmed generation"
-            holder.retirementFence == generation -> "the holder is retiring"
-            link == null -> "the holder is no longer connected"
-            else -> null
-        }
+        val key = nextKey()
+        val text = Rpc.with(msg, Rpc.ID, JsonPrimitive(key))
+        val forward = ForwardAdmission(
+            holder.generation,
+            holder.link,
+            text,
+            holder.retirementFence == holder.generation,
+            wireOutstanding.size,
+        )
+        val refusal = forward.refusal
         if (refusal != null) {
             conn.reply(UNAVAILABLE, Rpc.error(id, refusal))
+            return
+        }
+        val call = WireOutstanding(
+            holder,
+            requireNotNull(forward.generation),
+            conn,
+            id,
+            session,
+            Rpc.str(msg, Rpc.METHOD).orEmpty(),
+            clock.now(),
+        )
+        wireOutstanding[key] = call
+        if (checkpoint()) {
+            conn.onGone = { if (wireOutstanding[key] === call) call.conn = null }
+            holder.lastCall = clock.epoch()
+            requireNotNull(forward.link).send(text)
         } else {
-            val key = nextKey()
-            val call = WireOutstanding(
-                holder,
-                requireNotNull(generation),
-                conn,
-                id,
-                session,
-                Rpc.str(msg, Rpc.METHOD).orEmpty(),
-                clock.now(),
-            )
-            wireOutstanding[key] = call
-            if (checkpoint()) {
-                conn.onGone = { if (wireOutstanding[key] === call) call.conn = null }
-                holder.lastCall = clock.epoch()
-                requireNotNull(link).send(Rpc.with(msg, Rpc.ID, JsonPrimitive(key)))
-            } else {
-                wireOutstanding.remove(key)
-                conn.reply(UNAVAILABLE, Rpc.error(id, "the front could not durably retain this request"))
-            }
+            wireOutstanding.remove(key)
+            conn.reply(UNAVAILABLE, Rpc.error(id, "the front could not durably retain this request"))
         }
     }
 
@@ -203,7 +221,6 @@ internal class RelayNotifications(private val calls: Map<String, WireOutstanding
                 call.session === session,
                 call.holder === holder,
                 call.generation == holder.generation,
-                call.conn != null,
             ).all { it }
         }?.key
 
@@ -235,7 +252,11 @@ internal class RelayInbound(
             holder.link?.send(Rpc.error(id, "the holder is retiring"))
             return
         }
-        val key = requests.retain(holder, id) ?: return
+        val key = requests.retain(holder, id)
+        if (key == null) {
+            holder.link?.send(Rpc.error(id, "the front retained-work limit is full"))
+            return
+        }
         if (sharedRoots(holder, msg, id, key)) return
         val target = target(holder)
         if (target == null) {
@@ -311,6 +332,7 @@ private const val CLIENT_ID = "client_id"
 private const val CALL_SESSION = "session"
 private const val CALL_METHOD = "method"
 private const val CALL_AT = "at"
-private const val CANCELLED = "notifications/cancelled"
+internal const val CANCELLED = "notifications/cancelled"
 private const val REQUEST_ID = "requestId"
 private const val ROOTS_LIST = "roots/list"
+private const val MAX_RETAINED_FORWARD = 256

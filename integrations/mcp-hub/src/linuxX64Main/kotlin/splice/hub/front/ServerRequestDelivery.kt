@@ -7,23 +7,31 @@ import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.contentOrNull
 import kotlinx.serialization.json.put
 
+internal data class ServerResponseState(
+    var text: String? = null,
+    var delivery: String? = null,
+    var durable: Boolean = false,
+    var retries: Int = 0,
+)
+
 internal data class ServerRequestOutstanding(
     val holder: Holder,
     val generation: String,
     val id: JsonElement?,
     var session: Session? = null,
-    var response: String? = null,
-    var delivery: String? = null,
-    var retries: Int = 0,
+    val response: ServerResponseState = ServerResponseState(),
 ) {
-    val answering: Boolean get() = delivery != null
+    val answering: Boolean get() = response.delivery != null
 }
+
+private data class PreparedResponse(val link: HolderLink, val text: String)
 
 internal class ServerRequestLedger {
     val requests = HashMap<String, ServerRequestOutstanding>()
     private var next = 0L
 
     fun retain(holder: Holder, id: JsonElement): String? {
+        if (requests.size >= MAX_RETAINED_REVERSE) return null
         val generation = holder.generation ?: return null
         val key = nextKey()
         requests[key] = ServerRequestOutstanding(holder, generation, id)
@@ -71,7 +79,7 @@ internal class ServerRequestLedger {
     fun settles(key: String, asked: ServerRequestOutstanding): Boolean {
         if (requests[key] !== asked) return false
         if (asked.holder.generation != asked.generation) return false
-        return asked.delivery == RESPONSE_WRITE_UNCERTAIN
+        return asked.response.delivery == RESPONSE_WRITE_UNCERTAIN
     }
 
     fun removeGeneration(holder: Holder, generation: String) {
@@ -95,9 +103,12 @@ internal class ServerRequestLedger {
             generation,
             body[RESPONSE_ID],
             Rpc.str(body, SESSION)?.let(sessions::get),
-            response,
-            delivery(body, response),
-            Rpc.str(body, RESPONSE_RETRIES)?.toIntOrNull() ?: 0,
+            ServerResponseState(
+                response,
+                delivery(body, response),
+                response != null,
+                Rpc.str(body, RESPONSE_RETRIES)?.toIntOrNull() ?: 0,
+            ),
         )
     }
 
@@ -107,9 +118,9 @@ internal class ServerRequestLedger {
         asked.id?.let { put(RESPONSE_ID, it) }
         asked.session?.let { put(SESSION, it.id) }
         put(ANSWERING, asked.answering)
-        asked.response?.let { put(RESPONSE, it) }
-        asked.delivery?.let { put(RESPONSE_STATUS, it) }
-        if (asked.retries != 0) put(RESPONSE_RETRIES, asked.retries)
+        asked.response.text?.let { put(RESPONSE, it) }
+        asked.response.delivery?.let { put(RESPONSE_STATUS, it) }
+        if (asked.response.retries != 0) put(RESPONSE_RETRIES, asked.response.retries)
     }
 
     private fun delivery(body: JsonObject, response: String?): String? = when {
@@ -145,7 +156,15 @@ internal class ServerRequestDelivery(
         val key = (id as? JsonPrimitive)?.contentOrNull ?: return null
         val asked = ledger.requests[key]?.takeIf { it.session === session } ?: return null
         return asked.id?.let { original ->
-            if (asked.answering) true else reply(key, Rpc.with(msg, Rpc.ID, original))
+            val response = Rpc.with(msg, Rpc.ID, original)
+            if (!asked.answering) {
+                reply(key, response)
+            } else if (prepared(asked, response)) {
+                send(key, asked)
+                true
+            } else {
+                false
+            }
         }
     }
 
@@ -174,7 +193,7 @@ internal class ServerRequestDelivery(
     }
 
     /** A live persistence failure is answered on the exact holder generation rather than waiting for another restart. */
-    fun interrupted(key: String) {
+    val interrupted: (String) -> Unit = { key ->
         ledger.current(key)?.id?.let { id -> reply(key, Rpc.error(id, DELIVERY_INTERRUPTED)) }
     }
 
@@ -191,51 +210,71 @@ internal class ServerRequestDelivery(
     ): Boolean {
         if (asked.holder !== holder) return false
         if (asked.generation != generation) return false
-        return asked.delivery == RESPONSE_PREPARED && asked.retries < RESPONSE_RETRY_LIMIT
+        return asked.response.delivery == RESPONSE_PREPARED
     }
 
-    private fun prepared(asked: ServerRequestOutstanding, text: String): Boolean = when (asked.delivery) {
+    private fun prepared(asked: ServerRequestOutstanding, text: String): Boolean = when (asked.response.delivery) {
         null -> stage(asked, text)
-        RESPONSE_PREPARED -> asked.response != null
-        else -> false
+        RESPONSE_PREPARED -> {
+            if (!asked.response.durable) {
+                asked.response.durable = persistence.checkpoint()
+                if (!asked.response.durable) retried(asked)
+            }
+            asked.response.durable
+        }
+        else -> asked.response.durable
     }
 
     private fun stage(asked: ServerRequestOutstanding, text: String): Boolean {
-        asked.response = text
-        asked.delivery = RESPONSE_PREPARED
-        if (persistence.checkpoint()) return true
+        val retained = ledger.requests.values.sumOf { it.response.text?.encodeToByteArray()?.size?.toLong() ?: 0L }
+        if (retained + text.encodeToByteArray().size.toLong() > MAX_RETAINED_RESPONSE_BYTES) return false
+        asked.response.text = text
+        asked.response.delivery = RESPONSE_PREPARED
+        asked.response.durable = persistence.checkpoint()
+        if (asked.response.durable) return true
         retried(asked)
         return false
     }
 
     private fun send(key: String, asked: ServerRequestOutstanding) {
-        if (asked.holder.attestedGeneration != asked.generation) return
-        val link = asked.holder.link ?: return
-        if (writing(asked)) {
-            asked.response?.let { response ->
-                link.send(response, HolderWritten { settled(key, asked) })
-            }
+        preparedForSend(asked)?.let { prepared ->
+            if (writing(asked)) prepared.link.send(prepared.text, HolderWritten { settled(key, asked) })
         }
+    }
+
+    private fun preparedForSend(asked: ServerRequestOutstanding): PreparedResponse? {
+        if (asked.response.delivery != RESPONSE_PREPARED) return null
+        val link = asked.holder.link
+        val text = asked.response.text
+        var ready = asked.holder.attestedGeneration == asked.generation
+        if (ready) ready = link != null
+        if (ready) ready = text != null
+        if (ready) ready = link?.accepts(text.orEmpty()) == true
+        if (ready && !asked.response.durable) asked.response.durable = persistence.checkpoint()
+        if (!ready || !asked.response.durable) {
+            retried(asked)
+            return null
+        }
+        return PreparedResponse(requireNotNull(link), requireNotNull(text))
     }
 
     /** A persisted write attempt may have reached the holder only partly, so only exact exit can settle it. */
     private fun writing(asked: ServerRequestOutstanding): Boolean {
-        if (asked.delivery != RESPONSE_PREPARED) return false
-        asked.delivery = RESPONSE_WRITE_UNCERTAIN
+        if (asked.response.delivery != RESPONSE_PREPARED) return false
+        asked.response.delivery = RESPONSE_WRITE_UNCERTAIN
         if (persistence.checkpoint()) {
-            asked.retries = 0
+            asked.response.retries = 0
             asked.holder.reverseResponseRetries = 0
             return true
         }
-        asked.delivery = RESPONSE_PREPARED
+        asked.response.delivery = RESPONSE_PREPARED
         retried(asked)
         return false
     }
 
     private fun retried(asked: ServerRequestOutstanding) {
-        if (asked.retries >= RESPONSE_RETRY_LIMIT) return
-        asked.retries += 1
-        asked.holder.reverseResponseRetries = asked.retries
+        asked.response.retries = (asked.response.retries + 1).coerceAtMost(RESPONSE_RETRY_LIMIT)
+        asked.holder.reverseResponseRetries = asked.response.retries
         persistence.changed()
         asked.holder.scheduleReverseResponseRetry?.invoke(asked.generation)
     }
@@ -258,6 +297,8 @@ private const val RESPONSE = "response"
 private const val RESPONSE_STATUS = "response_status"
 private const val RESPONSE_RETRIES = "response_retries"
 private const val RESPONSE_RETRY_LIMIT = 3
+internal const val MAX_RETAINED_REVERSE = 256
+internal const val MAX_RETAINED_RESPONSE_BYTES = 16L * 1024 * 1024
 private const val RESPONSE_PREPARED = "prepared"
 private const val RESPONSE_WRITE_UNCERTAIN = "write_uncertain"
 private const val RESPONSE_LEGACY_UNCERTAIN = "legacy_write_uncertain"

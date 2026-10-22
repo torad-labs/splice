@@ -5,7 +5,7 @@ import kotlinx.serialization.json.JsonObject
 /** The stable front seam for connecting, restoring, and reattaching holder links. */
 internal class HolderLinks(
     context: HolderLinkContext,
-    known: MutableMap<String, Holder>,
+    private val known: MutableMap<String, Holder>,
     replacements: HolderReplacements,
     persistence: HolderPersistence,
 ) {

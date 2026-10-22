@@ -294,9 +294,12 @@ const ARMS: readonly Arm[] = [
     name: `UF-03 ${selector} raw-spawns instead of the unit`,
     run: async (ctx: Ctx) => {
       ctx.cold();
-      await ctx.launch({ [selector]: selectorValue(selector, ctx) });
-      if (existsSync(ctx.captures.unit)) return `${selector} set must never start the unit`;
-      return read(ctx.captures.java) === "spawned" ? null : `${selector} set must raw-spawn`;
+      const run = await ctx.launch({ [selector]: selectorValue(selector, ctx) });
+      const unit = read(ctx.captures.unit);
+      const java = read(ctx.captures.java);
+      const evidence = `exit=${run.code}, unit=${JSON.stringify(unit)}, java=${JSON.stringify(java)}, output=${JSON.stringify(run.output)}`;
+      if (existsSync(ctx.captures.unit)) return `${selector} set must never start the unit; ${evidence}`;
+      return java === "spawned" ? null : `${selector} set must raw-spawn; ${evidence}`;
     },
   })),
   {

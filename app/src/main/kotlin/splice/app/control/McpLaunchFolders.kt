@@ -128,7 +128,11 @@ internal class McpLaunchFolders(
      *  classed as a user-scope one would be (MCP hub step 3). */
     private fun classed(plan: McpLaunchPlan): JsonObject {
         val json = plan.json()
-        val decided = classes?.plan(JsonObject(plan.servers.associate { it.name to it.entry })) ?: return json
+        val decided = classes?.plan(
+            plan.servers.map { server ->
+                splice.client.mcp.McpServerInput(server.name, server.entry, server.provenance)
+            },
+        ) ?: return json
         val servers = (json[SERVERS_KEY] as? JsonArray).orEmpty().map { server ->
             val row = server as? JsonObject ?: return@map server
             val name = JsonScalars.str(row, "name").orEmpty()

@@ -4,6 +4,7 @@ import kotlinx.coroutines.withContext
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
 import splice.client.mcp.HUB_FRONT_CONNECT_MS
+import splice.client.mcp.McpServerInput
 import splice.client.mcp.TEMPLE_MCP_NAME
 import splice.client.mcp.TempleMcpEntry
 import splice.control.mcp.McpHost
@@ -22,9 +23,10 @@ import java.nio.file.Path
 internal class TempleMcpStartup(private val paths: StatePaths, private val log: LogSink) {
     suspend fun refresh(host: McpHost, home: Path, frontPort: Int?): McpReply {
         val source = TempleMcpEntry(home, paths = paths)
-        if (source.server() == null) return reply(null, registered = false)
+        val inputs = source.inputs()
+        if (inputs.isEmpty()) return reply(null, registered = false)
         val reachableFront = withContext(ProcessDispatchers().io()) { frontPort?.takeIf(::frontAnswers) }
-        val failure = start(host, source, reachableFront)
+        val failure = start(host, inputs, reachableFront)
         val clients = TempleMcpClients(source)
         val nativeHome = clients.nativeHome(splice.core.config.UserHome.dir())
         val nativeFailure = nativeHome?.let {
@@ -35,8 +37,8 @@ internal class TempleMcpStartup(private val paths: StatePaths, private val log: 
         return reply(error, registered = true)
     }
 
-    private suspend fun start(host: McpHost, source: TempleMcpEntry, frontPort: Int?): String? {
-        if (TEMPLE_MCP_NAME !in host.sharing.plan(source.entries()).hosted) return null
+    private suspend fun start(host: McpHost, inputs: List<McpServerInput>, frontPort: Int?): String? {
+        if (TEMPLE_MCP_NAME !in host.sharing.plan(inputs).hosted) return null
         return if (frontPort != null) {
             val started = host.hub?.start("{\"server\":\"$TEMPLE_MCP_NAME\"}")
             if (started?.status == HttpStatus.OK) null else "Temple MCP could not start through Splice's hub."

@@ -11,8 +11,9 @@ public data class McpServerSpec(
     val command: String,
     val args: List<String>,
     val env: Map<String, String>,
-    /** The entry's own `cwd`, unexpanded; set only on a per-session server, which starts there. */
+    /** The entry's own cwd. Registered services carry an owner-selected absolute directory. */
     val cwd: String? = null,
+    val provenance: McpServerProvenance = McpServerProvenance.CLIENT,
 )
 
 /** How the hub runs a server (MCP hub step 3): one copy for every session, one copy per session, or not at all,

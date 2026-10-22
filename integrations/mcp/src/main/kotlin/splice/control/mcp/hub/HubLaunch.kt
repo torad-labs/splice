@@ -4,7 +4,7 @@
 // runs (the folder and environment a per-session copy starts with), and which servers it loads.
 package splice.control.mcp.hub
 
-import kotlinx.serialization.json.JsonObject
+import splice.client.mcp.McpServerInput
 import java.nio.file.Path
 
 /** Where one launch's Claude Code runs: its working folder, and its whole environment, which Claude Code itself would
@@ -22,8 +22,7 @@ public fun interface McpLaunchPlaces {
     public fun of(launch: String): McpLaunchPlace?
 }
 
-/** The `mcpServers` object one launch loads, by the names Claude Code gives them; [place] null for an unknown
- *  launch. */
+/** The source-aware MCP entries one launch loads; [place] null for an unknown launch. */
 public fun interface McpLaunchServers {
-    public fun servers(launch: String, place: McpLaunchPlace?): JsonObject
+    public fun servers(launch: String, place: McpLaunchPlace?): List<McpServerInput>
 }

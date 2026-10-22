@@ -16,7 +16,7 @@ import java.nio.file.Path
  *  a client config; the management key never does. A host explicitly disabled by the person stays stdio. */
 internal class TempleMcpClients(private val source: TempleMcpEntry) {
     fun nativeEntry(sharing: McpSharing, frontPort: Int?): JsonObject {
-        val plan = sharing.plan(source.entries())
+        val plan = sharing.plan(source.inputs())
         val rewritten = plan.rewritten[TEMPLE_MCP_NAME] as? JsonObject ?: return JsonObject(emptyMap())
         if (TEMPLE_MCP_NAME !in plan.hosted) return JsonObject(rewritten - "type")
         return buildJsonObject {

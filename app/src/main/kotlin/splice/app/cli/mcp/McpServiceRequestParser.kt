@@ -13,7 +13,18 @@ import java.nio.file.Path
 private const val INVALID_LAUNCH_DESCRIPTOR =
     "Temple MCP launch descriptor is invalid; verify command, args, cwd, and env."
 
+/** The string constraints ProcessBuilder applies after a descriptor would otherwise be durable. */
+internal class McpProcessStrings {
+    fun valid(command: String, args: List<String>, environment: Map<String, String>): Boolean =
+        command.isNotBlank() && validValue(command) && args.all(::validValue) && environment.all { (name, value) ->
+            name.isNotEmpty() && '=' !in name && validValue(name) && validValue(value)
+        }
+
+    fun validValue(value: String): Boolean = '\u0000' !in value
+}
+
 internal class McpServiceRequestParser {
+    private val process = McpProcessStrings()
     internal data class Request(
         val command: String,
         val args: List<String>,
@@ -45,7 +56,7 @@ internal class McpServiceRequestParser {
         val codexHome = flags["--codex-home"]?.let(::path)
         val validShape = scriptMode != launchMode &&
             !(launchMode && "--command" in flags) &&
-            url != null &&
+            url != null && process.validValue(url) &&
             !("--codex-home" in flags && codexHome == null)
         if (!validShape) return ParseResult(null, null)
         return if (scriptMode) {
@@ -58,7 +69,7 @@ internal class McpServiceRequestParser {
     private fun scriptRequest(flags: Map<String, String>, url: String, codexHome: Path?): ParseResult {
         val script = flags["--script"]?.let(::path)?.takeIf { Files.isRegularFile(it) }
         val command = flags["--command"] ?: "bun"
-        val request = if (script != null && command.isNotBlank()) {
+        val request = if (script != null && process.valid(command, listOf(script.toString()), emptyMap())) {
             Request(command, listOf(script.toString()), null, emptyMap(), url, codexHome)
         } else {
             null
@@ -102,8 +113,16 @@ internal class McpServiceRequestParser {
         val args = argArray?.mapNotNull(::text)
         val directory = directory(root)
         val environment = environment(root)
-        val valid = command != null && argArray != null && args?.size == argArray.size &&
-            directory.valid && environment != null
+        val valid = command != null &&
+            argArray != null &&
+            args?.size == argArray.size &&
+            directory.valid &&
+            environment != null &&
+            process.valid(
+                command,
+                checkNotNull(args),
+                checkNotNull(environment),
+            )
         return if (valid) {
             Launch(checkNotNull(command), checkNotNull(args), directory.value, checkNotNull(environment))
         } else {
@@ -115,7 +134,14 @@ internal class McpServiceRequestParser {
         val raw = text(root["cwd"])
         val path = raw?.takeIf(String::isNotBlank)?.let(::path)
         val exists = path?.let { Files.isDirectory(it) } == true
-        return if ("cwd" !in root) ParsedDirectory(null, true) else ParsedDirectory(raw?.takeIf { exists }, exists)
+        return if ("cwd" !in root) {
+            ParsedDirectory(null, true)
+        } else {
+            ParsedDirectory(
+                path?.takeIf { exists }?.toString(),
+                exists,
+            )
+        }
     }
 
     private fun environment(root: JsonObject): Map<String, String>? =

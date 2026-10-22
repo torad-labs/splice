@@ -111,7 +111,9 @@ public class McpHubLaunch(
                 ).orEmpty()
         }
         val selected = planner.plan(launch.configDir, launch.folder).servers
-            .firstOrNull { it.name == TEMPLE_MCP_NAME }?.entry
+            .firstOrNull { it.name == TEMPLE_MCP_NAME }?.let { server ->
+                McpServerInput(server.name, server.entry, server.provenance)
+            }
         return if (head == null) {
             overlay?.managedArgs(launch.configDir.fileName.toString(), selected).orEmpty()
         } else {
@@ -128,7 +130,11 @@ public class McpHubLaunch(
     /** The hub file and plugin flags for a launch whose id and folder are known. */
     private fun planned(launch: HubLaunchFor, id: String, folder: Path): HubLaunchArgs {
         val plan = planner.plan(launch.configDir, folder)
-        val classes = sharing.plan(JsonObject(plan.servers.associate { it.name to it.entry }))
+        val classes = sharing.plan(
+            plan.servers.map { server ->
+                McpServerInput(server.name, server.entry, server.provenance)
+            },
+        )
         val runs = plan.servers.map { it.name }.filter { classes.classOf(it) != McpShareClass.OWN }.toSet()
         val plugins = if (flagHolds(launch.claude)) pluginsHeld(plan, runs) else emptyMap()
         val ownPlugin = plan.servers.filter { it.pluginRoot != null && it.pluginRoot !in plugins }.map { it.name }

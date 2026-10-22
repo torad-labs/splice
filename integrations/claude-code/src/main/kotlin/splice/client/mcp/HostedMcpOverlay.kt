@@ -31,26 +31,30 @@ public class HostedMcpOverlay(
     private val temple: TempleMcpEntry = TempleMcpEntry(home),
 ) {
     /** The launch's `--mcp-config <file>`, or nothing when [file] is null. */
-    public fun args(headKey: String, templeEntry: JsonObject? = selectedTemple()): List<String> =
+    public fun args(headKey: String, templeEntry: McpServerInput? = selectedTemple()): List<String> =
         file(headKey, templeEntry)?.let { listOf("--mcp-config", it.toString()) }.orEmpty()
 
     /** The file for a launch of [headKey], or null when nothing is hosted or his file cannot be read: the launch then
      *  runs over his own servers as before. Rewritten per launch, so it follows his file and the bearer. */
-    public fun file(headKey: String, templeEntry: JsonObject? = selectedTemple()): Path? =
-        write(JsonObject(servers().orEmpty() - TEMPLE_MCP_NAME + templeEntries(templeEntry)), headKey)
+    public fun file(headKey: String, templeEntry: McpServerInput? = selectedTemple()): Path? =
+        write(JsonObject(servers().orEmpty() - TEMPLE_MCP_NAME + templeEntries(templeEntry)), headKey, templeEntry)
 
     /** A head that isolates the person's other MCP servers still receives the registered Temple service. */
-    public fun managedArgs(headKey: String, templeEntry: JsonObject? = selectedTemple()): List<String> =
-        write(templeEntries(templeEntry), headKey)?.let { listOf("--mcp-config", it.toString()) }.orEmpty()
+    public fun managedArgs(headKey: String, templeEntry: McpServerInput? = selectedTemple()): List<String> =
+        write(templeEntries(templeEntry), headKey, templeEntry)?.let { listOf("--mcp-config", it.toString()) }.orEmpty()
 
-    private fun selectedTemple(): JsonObject? =
-        temple.server()?.entry ?: (servers()?.get(TEMPLE_MCP_NAME) as? JsonObject)
+    private fun selectedTemple(): McpServerInput? = temple.server()?.let { server ->
+        McpServerInput(server.name, server.entry, server.provenance)
+    } ?: (servers()?.get(TEMPLE_MCP_NAME) as? JsonObject)?.let { McpServerInput(TEMPLE_MCP_NAME, it) }
 
-    private fun templeEntries(entry: JsonObject?): JsonObject =
-        JsonObject(entry?.let { mapOf(TEMPLE_MCP_NAME to it) }.orEmpty())
+    private fun templeEntries(entry: McpServerInput?): JsonObject =
+        JsonObject(entry?.let { mapOf(TEMPLE_MCP_NAME to it.entry) }.orEmpty())
 
-    private fun write(servers: JsonObject, headKey: String): Path? {
-        val plan = sharing.plan(servers, headKey.ifBlank { null })
+    private fun write(servers: JsonObject, headKey: String, templeEntry: McpServerInput?): Path? {
+        val inputs = servers.map { (name, entry) ->
+            templeEntry?.takeIf { it.name == name } ?: McpServerInput(name, entry)
+        }
+        val plan = sharing.plan(inputs, headKey.ifBlank { null })
         val names = plan.hosted.keys + listOf(TEMPLE_MCP_NAME).filter { it in servers }
         if (names.isEmpty()) return null
         val body = buildJsonObject {

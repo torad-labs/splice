@@ -76,6 +76,12 @@ public fun interface McpBearer {
     public operator fun invoke(): String
 }
 
+/** Builds the complete passthrough plan when sharing cannot start, preserving every source entry and reason. */
+private class UnhostedMcpPlan {
+    operator fun invoke(global: JsonObject, reason: String, why: McpWhy): McpPlan =
+        McpPlan(emptyMap(), global.keys.associateWith { reason }, global, global.keys.associateWith { why })
+}
+
 public class McpSharing(
     public val enabled: Boolean,
     private val exclude: Set<String>,
@@ -95,7 +101,12 @@ public class McpSharing(
         rootsBound.record(spec)
     }
 
-    public fun plan(global: JsonObject, headKey: String? = null): McpPlan {
+    public fun plan(global: JsonObject, headKey: String? = null): McpPlan =
+        plan(global.map { (name, entry) -> McpServerInput(name, entry) }, headKey)
+
+    /** Only an explicit registered-service input lets its fixed cwd share one host process. */
+    public fun plan(inputs: List<McpServerInput>, headKey: String? = null): McpPlan {
+        val global = JsonObject(inputs.associate { it.name to it.entry })
         if (!enabled) return unhosted(global, "hosting disabled", McpWhy("hosting_disabled"))
         val hosted = LinkedHashMap<String, McpServerSpec>()
         val passthrough = LinkedHashMap<String, String>()
@@ -106,8 +117,10 @@ public class McpSharing(
         val token = lazy { bearer() }
         val rewritten = try {
             buildJsonObject {
-                global.forEach { (name, entry) ->
-                    val spec = eligible(name, entry, Refusals(passthrough, whys, perSession))
+                inputs.forEach { input ->
+                    val name = input.name
+                    val spec = eligible(input, Refusals(passthrough, whys, perSession))
+                    val entry = input.entry
                     if (spec == null) {
                         put(name, entry)
                     } else {
@@ -130,14 +143,16 @@ public class McpSharing(
         return McpPlan(hosted, passthrough, rewritten, whys, perSession)
     }
 
-    private fun unhosted(global: JsonObject, reason: String, why: McpWhy): McpPlan =
-        McpPlan(emptyMap(), global.keys.associateWith { reason }, global, global.keys.associateWith { why })
+    private val unhosted = UnhostedMcpPlan()
 
     /** The materializer-facing seam: the rewritten object, nothing else. */
     public fun rewrite(): McpRewrite = McpRewrite { global, headKey -> plan(global, headKey).rewritten }
 
     /** The spec for [name] as the operator's file declares it now, or null when it is not hosted. */
     public fun hostedSpec(global: JsonObject, name: String): McpServerSpec? = plan(global).hosted[name]
+
+    /** The source-aware counterpart used where the registration origin is available. */
+    public fun hostedSpec(inputs: List<McpServerInput>, name: String): McpServerSpec? = plan(inputs).hosted[name]
 
     /** Where one plan's refusals go: the words, the key and value, and the per-session servers with their tuples. */
     private data class Refusals(
@@ -146,23 +161,29 @@ public class McpSharing(
         val perSession: MutableMap<String, McpServerSpec>,
     )
 
-    private fun eligible(name: String, element: JsonElement, out: Refusals): McpServerSpec? {
-        val entry = Entry(element as? JsonObject)
-        val spec = entry.command?.let { McpServerSpec(name, it, entry.args, entry.env, entry.cwd) }
-        val rejection = rejection(name, entry) ?: spec?.let(::perProcess)
+    private fun eligible(input: McpServerInput, out: Refusals): McpServerSpec? {
+        val entry = Entry(input.entry as? JsonObject)
+        val spec = entry.command?.let {
+            McpServerSpec(input.name, it, entry.args, entry.env, entry.cwd, input.provenance)
+        }
+        val rejection = rejection(input.name, entry, input.provenance) ?: spec?.let(::perProcess)
         return if (rejection == null && spec != null) {
             spec
         } else {
-            out.reasons[name] = rejection?.words ?: "no command"
-            out.whys[name] = rejection?.why ?: McpWhy("no_command")
-            if (rejection?.perSession == true && spec != null) out.perSession[name] = spec
+            out.reasons[input.name] = rejection?.words ?: "no command"
+            out.whys[input.name] = rejection?.why ?: McpWhy("no_command")
+            if (rejection?.perSession == true && spec != null) out.perSession[input.name] = spec
             null
         }
     }
 
     /** Evidence the tuple alone cannot show: it asked for roots, or it is a server known to keep state per process. */
     private fun perProcess(spec: McpServerSpec): Rejected? {
-        val stateful = (listOf(spec.command) + spec.args).map(::packageOf).firstOrNull { it in STATEFUL_PACKAGES }
+        val stateful = (listOf(spec.command) + spec.args).map { token ->
+            val versionAt = token.lastIndexOf('@')
+            val bare = if (versionAt > 0) token.substring(0, versionAt) else token
+            if (bare.startsWith("@")) bare else bare.substringAfterLast('/')
+        }.firstOrNull { it in STATEFUL_PACKAGES }
         return when {
             rootsBound.asked(spec) ->
                 Rejected("asks the client for its roots (project-scoped)", McpWhy("roots"), perSession = true)
@@ -172,21 +193,14 @@ public class McpSharing(
         }
     }
 
-    /** A token's package name: its last path part, without an `@version` after the name. */
-    private fun packageOf(token: String): String {
-        val versionAt = token.lastIndexOf('@')
-        val bare = if (versionAt > 0) token.substring(0, versionAt) else token
-        return if (bare.startsWith("@")) bare else bare.substringAfterLast('/')
-    }
-
-    private fun rejection(name: String, entry: Entry): Rejected? = when {
+    private fun rejection(name: String, entry: Entry, provenance: McpServerProvenance): Rejected? = when {
         name in exclude -> Rejected("excluded by [daemon] mcp_hosting_exclude", McpWhy("excluded"))
         entry.obj == null -> Rejected("entry is not an object", McpWhy("unreadable"))
         entry.malformed != null -> Rejected(entry.malformed, McpWhy("unreadable"))
-        else -> launchRejection(entry)
+        else -> launchRejection(entry, provenance)
     }
 
-    private fun launchRejection(entry: Entry): Rejected? = when {
+    private fun launchRejection(entry: Entry, provenance: McpServerProvenance): Rejected? = when {
         entry.type != null && entry.type != "stdio" -> Rejected(
             "transport '${entry.type}' already serves many clients",
             McpWhy("transport", entry.url ?: entry.type),
@@ -194,7 +208,7 @@ public class McpSharing(
         entry.command == null -> Rejected("no command", McpWhy("no_command"))
         !shareByDefault.shared() ->
             Rejected("you chose one copy per session", McpWhy("per_session_choice"), perSession = true)
-        entry.obj?.containsKey("cwd") == true -> Rejected(
+        entry.obj?.containsKey("cwd") == true && provenance != McpServerProvenance.REGISTERED_SERVICE -> Rejected(
             "has a cwd (session-scoped)",
             McpWhy("cwd", str(entry.obj["cwd"])),
             perSession = true,

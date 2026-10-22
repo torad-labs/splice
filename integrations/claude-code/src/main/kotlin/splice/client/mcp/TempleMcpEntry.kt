@@ -16,6 +16,8 @@ import java.nio.file.Files
 import java.nio.file.Path
 
 public const val TEMPLE_MCP_NAME: String = "temple"
+public const val TEMPLE_MCP_PROVENANCE_KEY: String = "provenance"
+public const val TEMPLE_MCP_REGISTERED_SERVICE: String = "registered_service"
 
 /** The installed Temple stdio entry, shared by daemon boot and every client's launch plan. The app is not queried:
  *  its local MCP process must be discoverable before the app starts. Existing declarations keep their exact command,
@@ -34,15 +36,34 @@ public class TempleMcpEntry(
     public fun registration(): JsonObject = json.topLevel(registrationFile)
 
     public fun server(): McpPlannedServer? {
-        val entry = registration()["server"] as? JsonObject
+        val registration = registration()
+        val entry = registration["server"] as? JsonObject
         return entry?.takeIf(::stdio)?.let {
-            McpPlannedServer(TEMPLE_MCP_NAME, McpPlanScope.USER, registrationFile, it)
+            McpPlannedServer(
+                TEMPLE_MCP_NAME,
+                McpPlanScope.USER,
+                registrationFile,
+                it,
+                provenance = provenance(registration),
+            )
         } ?: fallback
     }
 
+    /** One source snapshot preserves the state registration's provenance through sharing decisions. */
+    public fun inputs(): List<McpServerInput> = server()?.let {
+        listOf(McpServerInput(it.name, it.entry, it.provenance))
+    }.orEmpty()
+
     public fun entries(): JsonObject = JsonObject(
-        server()?.let { mapOf(it.name to it.entry) }.orEmpty(),
+        inputs().associate { it.name to it.entry },
     )
+
+    private fun provenance(registration: JsonObject): McpServerProvenance =
+        if (JsonScalars.str(registration, TEMPLE_MCP_PROVENANCE_KEY) == TEMPLE_MCP_REGISTERED_SERVICE) {
+            McpServerProvenance.REGISTERED_SERVICE
+        } else {
+            McpServerProvenance.CLIENT
+        }
 
     private fun declared(): McpPlannedServer? {
         val files = (listOf(home.resolve(Keys.CLAUDE_JSON)) + homes.claudeJsonFiles()).distinct()

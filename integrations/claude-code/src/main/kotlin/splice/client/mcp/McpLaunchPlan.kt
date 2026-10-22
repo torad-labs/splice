@@ -3,6 +3,7 @@
 // reads his files and changes no launch. McpLaunchPlanner builds it; /api/mcp reports one per launch folder.
 package splice.client.mcp
 
+import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.addJsonObject
@@ -23,6 +24,19 @@ public enum class McpPlanScope(public val wire: String) {
     PLUGIN("plugin"),
 }
 
+/** Why a launch entry's cwd is fixed for the host rather than derived from a client session. */
+public enum class McpServerProvenance {
+    CLIENT,
+    REGISTERED_SERVICE,
+}
+
+/** An MCP entry plus the source fact the sharing planner needs before it decides how the host starts it. */
+public data class McpServerInput(
+    val name: String,
+    val entry: JsonElement,
+    val provenance: McpServerProvenance = McpServerProvenance.CLIENT,
+)
+
 /** One server Claude Code loads for the folder, under the name its tools carry (`mcp__<name>__<tool>`). [entry]
  *  is the declaration as Claude Code reads it, a plugin's root already filled in. It can hold credentials, so
  *  [McpLaunchPlan.json] never prints it. [pluginRoot] is a plugin server's install folder, the path the hub launch
@@ -33,6 +47,7 @@ public data class McpPlannedServer(
     val source: Path,
     val entry: JsonObject,
     val pluginRoot: Path? = null,
+    val provenance: McpServerProvenance = McpServerProvenance.CLIENT,
 )
 
 /** A declared server Claude Code would not load in the folder, with the reason in words a person can act on. */

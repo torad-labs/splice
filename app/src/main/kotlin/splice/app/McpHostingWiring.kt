@@ -15,6 +15,7 @@ import kotlinx.serialization.json.buildJsonObject
 import splice.client.mcp.GlobalMcpServersReader
 import splice.client.mcp.McpGlobalPlan
 import splice.client.mcp.McpInventory
+import splice.client.mcp.McpServerInput
 import splice.client.mcp.McpShareChoice
 import splice.client.mcp.McpSharing
 import splice.client.mcp.McpSourceKind
@@ -54,7 +55,13 @@ internal class McpGlobalRead(
     private var lastFailure: String? = null
 
     @Synchronized
-    override fun invoke(): JsonObject = JsonObject(declared() + temple.entries())
+    override fun invoke(): JsonObject = JsonObject(inputs().associate { it.name to it.entry })
+
+    @Synchronized
+    override fun inputs(): List<McpServerInput> {
+        val declared = declared().map { (name, entry) -> McpServerInput(name, entry) }
+        return (declared + temple.inputs()).associateBy(McpServerInput::name).values.toList()
+    }
 
     private fun declared(): JsonObject {
         val file = home.resolve(".claude.json")

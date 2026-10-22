@@ -154,6 +154,10 @@ The optional script-form `--command` names its Bun executable, and `--codex-home
 home. Splice keeps the registration under its canonical state directory, independently of Temple's process or
 temporary files. Reinstalling keeps an existing native home when none is supplied and backs up a changed
 registration. The CLI refreshes a running daemon; otherwise the next daemon boot starts the registered service.
+A registered service's `cwd` is a fixed launch directory, not a per-client session directory. That registration
+provenance permits sharing its exact command, arguments, environment and directory. Ordinary client entries with
+`cwd` retain their per-session classification. Descriptor paths are resolved before persistence; invalid process
+strings and environment names are refused before the prior registration is replaced.
 
 Every Claude launch plan includes this service under `temple`, with its tools still named `mcp__temple__*`.
 The current Temple contract is its six fixed tools; dispatch remains available through `act`, not a legacy

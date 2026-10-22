@@ -11,9 +11,9 @@
 package splice.app
 
 import kotlinx.coroutines.CoroutineDispatcher
-import kotlinx.serialization.json.JsonObject
 import splice.client.mcp.McpBearer
 import splice.client.mcp.McpLaunchPlanner
+import splice.client.mcp.McpServerInput
 import splice.client.mcp.McpSharing
 import splice.control.mcp.GlobalMcpServers
 import splice.control.mcp.McpHandshakeBudget
@@ -77,9 +77,11 @@ internal class McpHubWiring(
         val pid = launch.toLongOrNull()
         val home = place?.let { pid?.let { environment.configHome(it, UserHome.claudeDir()) } }
         if (place == null || home == null) {
-            global()
+            global.inputs()
         } else {
-            JsonObject(planner.plan(home, place.folder).servers.associate { it.name to it.entry })
+            planner.plan(home, place.folder).servers.map { server ->
+                McpServerInput(server.name, server.entry, server.provenance)
+            }
         }
     }
 

@@ -182,6 +182,9 @@ updates only its user-scoped `mcp_servers.temple` entry through Codex's versione
 other settings and server restrictions. This is the exception to the original no-client-file-write design.
 The entry carries MCP-scoped access only. Config backups and any file containing that access are owner-only.
 An existing shared app-server reloads MCP configuration without being stopped or restarted.
+The bridge preserves the registered runtime argument prefix, working directory and environment before initialization.
+Both transport directions admit retained bytes and pause their upstream reader while the downstream writer is blocked.
+A per-frame ceiling does not replace that aggregate queue budget. Refused oversized frames fail the bridge explicitly.
 
 ## Build order
 

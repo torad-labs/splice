@@ -8,8 +8,11 @@ import splice.core.util.JsonScalars
 import splice.core.util.JsonWire
 import splice.core.util.SecureFile
 import java.io.IOException
+import java.nio.charset.StandardCharsets
 import java.nio.file.Files
 import java.nio.file.Path
+import java.security.MessageDigest
+import java.util.HexFormat
 
 // why: a holder's socket and record are named by its key's first KEY_HEX hex digits, short enough for a Unix socket path
 internal const val KEY_HEX = 16
@@ -21,6 +24,8 @@ private const val HOLDER_PID = "pid"
 private const val HOLDER_CHILD_PID = "child_pid"
 private const val HOLDER_SCOPE = "scope"
 private const val HOLDER_EXIT_CONFIRMED_AT = "exit_confirmed_at"
+private const val HOLDER_EXIT_SOCKET = "socket"
+private const val HOLDER_EXITS_DIR = "holder-exits"
 
 /** One record at its fixed socket path. The body remains the source of an exact process-generation claim. */
 internal data class HubHolderRecord(val path: Path, val body: JsonObject)
@@ -35,6 +40,7 @@ internal data class HubHolderOwner(
 
 internal class HubRecords(private val dir: Path) {
     private val named = Regex("[0-9a-f]{$KEY_HEX}\\.json")
+    private val exits = HubHolderExitEvidence(dir)
 
     /** Every holder record, each with what it says. */
     fun all(): List<HubHolderRecord> {
@@ -80,25 +86,43 @@ internal class HubRecords(private val dir: Path) {
         return write(record.path, attested).takeIf { it }?.let { HubHolderRecord(record.path, attested) }
     }
 
-    /** Marks only this exact owner exited. A later generation at the same socket can never be marked by mistake. */
+    /** Persists this generation's exact exited scope before its reusable socket record can be replaced. */
     fun confirmExit(record: HubHolderRecord, owner: HubHolderOwner): Boolean {
-        val current = read(record.path) ?: return false
-        if (owner(current) != owner) return false
-        val exited = JsonObject(
-            current + mapOf(
-                HOLDER_STATE to JsonPrimitive(HOLDER_EXITED),
-                HOLDER_EXIT_CONFIRMED_AT to JsonPrimitive(System.currentTimeMillis()),
-            ),
-        )
-        return write(record.path, exited)
+        val socket = socketOf(record.path).toString()
+        return if (exits.confirmed(socket, owner.generation)) {
+            true
+        } else {
+            read(record.path)
+                ?.takeIf { current -> current == record.body && owner(current) == owner }
+                ?.let { current ->
+                    val confirmedAt = System.currentTimeMillis()
+                    exits.persist(socket, owner, confirmedAt) && (
+                        write(
+                            record.path,
+                            JsonObject(
+                                current + mapOf(
+                                    HOLDER_STATE to JsonPrimitive(HOLDER_EXITED),
+                                    HOLDER_EXIT_CONFIRMED_AT to JsonPrimitive(confirmedAt),
+                                ),
+                            ),
+                        ) || exits.confirmed(socket, owner.generation)
+                        )
+                } ?: false
+        }
     }
 
     fun isLive(record: HubHolderRecord): Boolean =
         JsonScalars.str(record.body, HOLDER_STATE) != HOLDER_EXITED
 
-    fun isConfirmedExit(record: HubHolderRecord): Boolean =
-        JsonScalars.str(record.body, HOLDER_STATE) == HOLDER_EXITED &&
+    fun isConfirmedExit(record: HubHolderRecord): Boolean {
+        val exited = JsonScalars.str(record.body, HOLDER_STATE) == HOLDER_EXITED &&
             JsonScalars.long(record.body, HOLDER_EXIT_CONFIRMED_AT) != null
+        val generation = JsonScalars.str(record.body, HOLDER_GENERATION)
+        return exited || generation?.let { isGenerationExitConfirmed(socketOf(record.path).toString(), it) } == true
+    }
+
+    /** Reads durable exit evidence, so a newer owner at this socket cannot erase an old generation's exit. */
+    fun isGenerationExitConfirmed(socket: String, generation: String): Boolean = exits.confirmed(socket, generation)
 
     fun owner(record: HubHolderRecord): HubHolderOwner? = owner(record.body)
 
@@ -109,6 +133,70 @@ internal class HubRecords(private val dir: Path) {
 
     fun read(record: Path): JsonObject? = try {
         record.takeIf(Files::isRegularFile)?.let { JsonRpcCodec().parse(Files.readString(it)) }
+    } catch (_: IOException) {
+        null
+    }
+
+    private fun owner(body: JsonObject): HubHolderOwner? {
+        val generation = JsonScalars.str(body, HOLDER_GENERATION)
+        val holderPid = JsonScalars.long(body, HOLDER_PID)
+        val childPid = JsonScalars.long(body, HOLDER_CHILD_PID)
+        val scope = JsonScalars.str(body, HOLDER_SCOPE)
+        return when {
+            generation == null -> null
+            holderPid == null -> null
+            childPid == null -> null
+            scope == null -> null
+            else -> HubHolderOwner(generation, holderPid, childPid, scope)
+        }
+    }
+
+    private fun write(path: Path, body: JsonObject): Boolean = try {
+        SecureFile.writeAtomic0600(path, JsonWire.string(body))
+        true
+    } catch (_: IOException) {
+        false
+    }
+}
+
+/** Exit evidence is generation-addressed, unlike the holder's reusable socket record. */
+private class HubHolderExitEvidence(dir: Path) {
+    private val exits = dir.resolve(HOLDER_EXITS_DIR)
+
+    fun persist(socket: String, owner: HubHolderOwner, confirmedAt: Long): Boolean = try {
+        Files.createDirectories(exits)
+        write(
+            file(socket, owner.generation),
+            JsonObject(
+                mapOf(
+                    HOLDER_EXIT_SOCKET to JsonPrimitive(socket),
+                    HOLDER_GENERATION to JsonPrimitive(owner.generation),
+                    HOLDER_PID to JsonPrimitive(owner.holderPid),
+                    HOLDER_CHILD_PID to JsonPrimitive(owner.childPid),
+                    HOLDER_SCOPE to JsonPrimitive(owner.scope),
+                    HOLDER_EXIT_CONFIRMED_AT to JsonPrimitive(confirmedAt),
+                ),
+            ),
+        )
+    } catch (_: IOException) {
+        false
+    }
+
+    fun confirmed(socket: String, generation: String): Boolean =
+        read(file(socket, generation))?.let { evidence ->
+            JsonScalars.str(evidence, HOLDER_EXIT_SOCKET) == socket &&
+                owner(evidence)?.generation == generation &&
+                JsonScalars.long(evidence, HOLDER_EXIT_CONFIRMED_AT) != null
+        } == true
+
+    private fun file(socket: String, generation: String): Path = exits.resolve(
+        HexFormat.of().formatHex(
+            MessageDigest.getInstance("SHA-256").digest("$socket\n$generation".toByteArray(StandardCharsets.UTF_8)),
+        ) + ".json",
+    )
+
+    private fun read(path: Path): JsonObject? = try {
+        path.takeIf(Files::isRegularFile)?.let { JsonRpcCodec().parse(Files.readString(it)) }
     } catch (_: IOException) {
         null
     }

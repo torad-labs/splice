@@ -114,6 +114,8 @@ public class McpHub(
 
     override fun resolve(body: String): McpHubReply = requests.resolve(body)
 
+    override fun attest(body: String): McpHubReply = requests.attest(body)
+
     override suspend fun start(body: String): McpHubReply = requests.start(body)
 
     override fun listing(body: String): McpHubReply = requests.listing(body)
@@ -140,6 +142,26 @@ public class McpHub(
         fun resolve(body: String): McpHubReply {
             val targeted = targets.target(body)
             return targeted.target?.let(targets::found) ?: targets.refused(targeted)
+        }
+
+        /** Attestation reads only the recorded holder owner and never reconstructs a target from current configuration. */
+        fun attest(body: String): McpHubReply {
+            val socket = JsonScalars.str(codec.parse(body), SOCKET)?.takeIf { it.isNotEmpty() }
+                ?: return targets.error(HttpStatus.BAD_REQUEST, "the attestation names no holder socket")
+            val generation = holders.generation(socket)
+                ?: return targets.error(
+                    HttpStatus.SERVICE_UNAVAILABLE,
+                    "the holder socket has no live owner generation",
+                )
+            return McpHubReply(
+                HttpStatus.OK,
+                JsonWire.string(
+                    buildJsonObject {
+                        put(SOCKET, socket)
+                        put(GENERATION, generation)
+                    },
+                ),
+            )
         }
 
         suspend fun start(body: String): McpHubReply {
@@ -198,7 +220,7 @@ public class McpHub(
                 run,
                 tuple.fingerprint(run),
             )
-            return when (val result = holders.start(holder, startBound)) {
+            return when (val result = holders.start(holder, startBound())) {
                 is McpResult.Served -> targets.found(target)
                 is McpResult.Refused -> targets.error(HttpStatus.INTERNAL_SERVER_ERROR, result.reason)
             }
@@ -560,7 +582,7 @@ private class McpHubReplacements(
                 replacement.run,
                 replacement.tuple,
             ),
-            startBound,
+            startBound(),
         )
     ) {
         is McpResult.Refused -> targets.error(HttpStatus.SERVICE_UNAVAILABLE, started.reason)

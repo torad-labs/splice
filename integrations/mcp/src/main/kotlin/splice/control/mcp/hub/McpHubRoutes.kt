@@ -14,6 +14,10 @@ public class McpHubRoutes(private val hub: McpHubCalls) {
         answer(call, hub.resolve(call.receiveText()))
     }
 
+    public suspend fun attest(call: ApplicationCall) {
+        answer(call, hub.attest(call.receiveText()))
+    }
+
     public suspend fun start(call: ApplicationCall) {
         answer(call, hub.start(call.receiveText()))
     }

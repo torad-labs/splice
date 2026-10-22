@@ -299,8 +299,10 @@ private class HubHolderStarts(
 
 private class HubHolderLiveness(
     private val records: HubRecords,
-    private val scope: HubHolderScope,
+    scope: HubHolderScope,
 ) {
+    private val ownership = HubHolderOwnership(records, scope)
+
     fun record(socket: String, expectedGeneration: String? = null): HubHolderRecord? = records.all()
         .firstOrNull { record ->
             records.socketOf(record.path).toString() == socket &&
@@ -311,40 +313,49 @@ private class HubHolderLiveness(
         record(socket, expectedGeneration)?.let(::attest)
 
     fun attest(record: HubHolderRecord): HubHolderRecord? {
-        if (!records.isLive(record)) return null
+        if (records.read(record.path) != record.body || !records.isLive(record)) return null
         val owner = records.owner(record)
         return if (owner != null) {
-            record.takeIf { ownerLive(it, owner) }
+            record.takeIf { ownership.live(it, owner) }
         } else {
-            unrecordedOwner(record)?.let { records.attest(record, it) }
+            ownership.unrecorded(record)?.let { records.attest(record, it) }
         }
     }
 
     fun ownerLive(record: HubHolderRecord): Boolean =
-        records.owner(record)?.let { ownerLive(record, it) } == true
+        records.owner(record)?.let { ownership.live(record, it) } == true
 
     fun confirmExit(record: HubHolderRecord): Boolean {
         if (records.isConfirmedExit(record)) return true
         val owner = records.owner(record) ?: return false
-        return ownerExited(owner) && records.confirmExit(record, owner)
+        return ownership.exited(owner) && records.confirmExit(record, owner)
     }
 
-    fun ownerExited(owner: HubHolderOwner): Boolean =
-        !inScope(owner.holderPid, owner.scope) &&
-            !inScope(owner.childPid, owner.scope) &&
-            scope.exited(owner.scope)
+    /** Confirms a retired generation from durable evidence even after its socket record names a newer holder. */
+    fun confirmedExit(socket: String, generation: String): Boolean =
+        records.isGenerationExitConfirmed(socket, generation) ||
+            record(socket, generation)?.let(::confirmExit) == true
 
-    fun requestStop(owner: HubHolderOwner): Boolean {
-        ProcessHandle.of(owner.holderPid).filter(ProcessHandle::isAlive).ifPresent { holder ->
-            holder.destroy()
-        }
-        return scope.stop(owner.scope)
-    }
+    /** Stops only the still-attested generation-specific scope, never a PID that might have been reused. */
+    fun requestStop(record: HubHolderRecord, owner: HubHolderOwner): Boolean = ownership.stop(record, owner)
 
-    fun waitForExit(owner: HubHolderOwner): Boolean =
-        exited(owner.holderPid) && exited(owner.childPid) && ownerExited(owner)
+    fun waitForExit(owner: HubHolderOwner): Boolean = ownership.waitForExit(owner)
+}
 
-    private fun unrecordedOwner(record: HubHolderRecord): HubHolderOwner? {
+/** /proc binds a record to a live scope; systemd remains the source of truth for that generation's lifetime. */
+private class HubHolderOwnership(
+    private val records: HubRecords,
+    private val scope: HubHolderScope,
+) {
+    fun live(record: HubHolderRecord, owner: HubHolderOwner): Boolean =
+        records.read(record.path) == record.body &&
+            records.isLive(record) &&
+            holderAlive(owner.holderPid, records.socketOf(record.path)) &&
+            inScope(owner.holderPid, owner.scope) &&
+            inScope(owner.childPid, owner.scope) &&
+            scope.running(owner.scope)
+
+    fun unrecorded(record: HubHolderRecord): HubHolderOwner? {
         val socket = records.socketOf(record.path)
         return JsonScalars.long(record.body, HOLDER_PID)
             ?.takeIf { holderAlive(it, socket) }
@@ -358,12 +369,15 @@ private class HubHolderLiveness(
             }
     }
 
-    private fun ownerLive(record: HubHolderRecord, owner: HubHolderOwner): Boolean =
-        records.isLive(record) &&
-            holderAlive(owner.holderPid, records.socketOf(record.path)) &&
-            inScope(owner.holderPid, owner.scope) &&
-            inScope(owner.childPid, owner.scope) &&
-            scope.running(owner.scope)
+    fun exited(owner: HubHolderOwner): Boolean =
+        !inScope(owner.holderPid, owner.scope) &&
+            !inScope(owner.childPid, owner.scope) &&
+            scope.exited(owner.scope)
+
+    fun stop(record: HubHolderRecord, owner: HubHolderOwner): Boolean = live(record, owner) && scope.stop(owner.scope)
+
+    fun waitForExit(owner: HubHolderOwner): Boolean =
+        exited(owner.holderPid) && exited(owner.childPid) && exited(owner)
 
     private fun holderAlive(pid: Long, socket: Path): Boolean = ProcessHandle.of(pid)
         .filter { it.isAlive }
@@ -484,7 +498,7 @@ private class HubHolderStops(
         return when {
             confirmed(record) -> McpResult.Served(Unit)
             owner == null -> McpResult.Refused("the holder has no attested child and scope owner")
-            !liveness.requestStop(owner) -> McpResult.Refused(
+            !liveness.requestStop(record, owner) -> McpResult.Refused(
                 "the holder's exact systemd scope did not accept retirement",
             )
             !liveness.waitForExit(owner) -> McpResult.Refused(
@@ -564,15 +578,12 @@ private class HubHolderReplacements(
         }
     }
 
-    fun exited(socket: String, generation: String): McpResult<Unit> {
-        val record = liveness.record(socket, generation)
-            ?: return McpResult.Refused("the holder generation is no longer recorded")
-        return if (stops.confirmed(record)) {
+    fun exited(socket: String, generation: String): McpResult<Unit> =
+        if (liveness.confirmedExit(socket, generation)) {
             McpResult.Served(Unit)
         } else {
             McpResult.Refused("the holder generation has not confirmed its child and scope exit")
         }
-    }
 
     private fun beginRetirement(replacement: HubReplacement): McpResult<Unit> {
         val candidate = candidate(replacement)
@@ -593,15 +604,12 @@ private class HubHolderReplacements(
             null -> McpResult.Refused("the replacement outcome is being persisted; retry retirement")
         }
 
+    /** A durable retirement owns its old generation after claim; candidate loss cannot turn it into a rollback. */
     private fun reconcile(replacement: HubReplacement): McpResult<Unit> {
+        if (liveness.confirmedExit(replacement.oldSocket, replacement.oldGeneration)) return completed(replacement)
         val old = liveness.record(replacement.oldSocket, replacement.oldGeneration)
-        val candidate = candidate(replacement)
-        return when {
-            old == null -> McpResult.Refused("the old holder generation is no longer recorded")
-            stops.confirmed(old) -> completed(replacement)
-            candidate == null -> McpResult.Refused("the candidate holder no longer owns its captured generation")
-            else -> stop(old, replacement)
-        }
+            ?: return McpResult.Refused("the old holder generation is no longer recorded")
+        return stop(old, replacement)
     }
 
     private fun stop(old: HubHolderRecord, replacement: HubReplacement): McpResult<Unit> =
@@ -611,8 +619,7 @@ private class HubHolderReplacements(
         }
 
     private fun rollbackAfterRetirementStarted(replacement: HubReplacement): McpResult<Unit> {
-        val old = liveness.record(replacement.oldSocket, replacement.oldGeneration)
-        if (old != null && stops.confirmed(old)) {
+        if (liveness.confirmedExit(replacement.oldSocket, replacement.oldGeneration)) {
             retirements.complete(replacement, HubRetirementState.RETIRED)
             return McpResult.Refused("the old holder retirement already completed")
         }

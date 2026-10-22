@@ -1,6 +1,5 @@
 import com.github.jengelman.gradle.plugins.shadow.tasks.ShadowJar
 import com.github.jengelman.gradle.plugins.shadow.transformers.IncludeResourceTransformer
-import groovy.json.JsonOutput
 import groovy.json.JsonSlurper
 import org.cyclonedx.model.Component
 import org.gradle.api.artifacts.component.ModuleComponentIdentifier
@@ -232,24 +231,6 @@ val allowedReleaseLicenses = setOf(
     "Unicode/ICU License",
 )
 
-// CycloneDX omits the POM licenses for these platform resources. Their exact 25.4.4.1.1 POMs declare
-// MIT License and Universal Permissive License, Version 1.0; preserve those primary declarations in
-// the published BOM. A version or artifact change falls outside this finite evidence and remains red.
-val graalJsCommunityIsolates = setOf(
-    "org.graalvm.js:js-isolate-darwin-aarch64-community:25.4.4.1.1",
-    "org.graalvm.js:js-isolate-linux-aarch64-community:25.4.4.1.1",
-    "org.graalvm.js:js-isolate-windows-amd64-community:25.4.4.1.1",
-)
-val graalJsCommunityIsolateLicenses = listOf(
-    linkedMapOf("license" to linkedMapOf("name" to "MIT License", "url" to "http://opensource.org/licenses/MIT")),
-    linkedMapOf(
-        "license" to linkedMapOf(
-            "name" to "Universal Permissive License, Version 1.0",
-            "url" to "http://opensource.org/licenses/UPL",
-        ),
-    ),
-)
-
 tasks.cyclonedxDirectBom {
     includeConfigs = listOf("runtimeClasspath")
     projectType = Component.Type.APPLICATION
@@ -262,76 +243,12 @@ tasks.cyclonedxDirectBom {
     xmlOutput.unsetConvention()
 }
 
-val normalizeReleaseBom = tasks.register("normalizeReleaseBom") {
-    val rawBom = rawBom
-    val bom = bom
-    val releaseGroup = releaseGroup
-    val releaseVersion = releaseVersion
+val normalizeReleaseBom = tasks.register<splice.release.NormalizedBom>("normalizeReleaseBom") {
     dependsOn(tasks.cyclonedxDirectBom)
-    inputs.file(rawBom).withPathSensitivity(PathSensitivity.NONE)
-    outputs.file(bom)
-    outputs.cacheIf("a pure function of the raw BOM") { true }
-    doLast {
-        val bomJson = JsonSlurper().parse(rawBom.get().asFile) as Map<*, *>
-        val stableBom = LinkedHashMap(bomJson)
-        val metadata = LinkedHashMap(bomJson["metadata"] as Map<*, *>)
-        metadata.remove("timestamp")
-        val component = LinkedHashMap(metadata["component"] as Map<*, *>)
-        component.remove("externalReferences")
-        metadata["component"] = component
-        stableBom["metadata"] = metadata
-
-        // CycloneDX currently reports Gradle project dependencies as "unspecified" even though
-        // every project has the release version. Normalize both component identities and the
-        // dependency graph refs so the published SBOM is internally consistent and usable.
-        val refReplacements = LinkedHashMap<String, String>()
-        val components = (bomJson["components"] as? List<*>).orEmpty().map { raw ->
-            val entry = LinkedHashMap(raw as Map<*, *>)
-            if (entry["group"] == releaseGroup && entry["version"] == "unspecified") {
-                entry["version"] = releaseVersion
-                listOf("bom-ref", "purl").forEach { key ->
-                    val old = entry[key]?.toString() ?: return@forEach
-                    val updated = old.replace("@unspecified", "@$releaseVersion")
-                    entry[key] = updated
-                    if (key == "bom-ref") refReplacements[old] = updated
-                }
-            }
-            val coordinate = "${entry["group"]}:${entry["name"]}:${entry["version"]}"
-            if (coordinate in graalJsCommunityIsolates && (entry["licenses"] as? List<*>).isNullOrEmpty()) {
-                entry["licenses"] = graalJsCommunityIsolateLicenses
-            }
-            entry
-        }
-        stableBom["components"] = components
-        stableBom["dependencies"] = (bomJson["dependencies"] as? List<*>).orEmpty().map { raw ->
-            val entry = LinkedHashMap(raw as Map<*, *>)
-            entry["ref"] = refReplacements[entry["ref"]?.toString()] ?: entry["ref"]
-            entry["dependsOn"] = (entry["dependsOn"] as? List<*>).orEmpty().map { ref ->
-                refReplacements[ref.toString()] ?: ref
-            }
-            entry
-        }
-
-        // actions/attest's CycloneDX detection requires serialNumber (bomFormat + specVersion
-        // alone are rejected at publish time), but a RANDOM serial would break the byte-identical
-        // rebuild verification this task exists for. Derive it from the normalized content:
-        // same inputs → same BOM → same serial, unique across genuinely different BOMs.
-        val canonical = JsonOutput.toJson(stableBom)
-        val digest = MessageDigest.getInstance("SHA-256").digest(canonical.toByteArray())
-        val serialHex = digest.take(16).joinToString("") { byte -> "%02x".format(byte) }
-        val serial = listOf(
-            serialHex.substring(0, 8),
-            serialHex.substring(8, 12),
-            serialHex.substring(12, 16),
-            serialHex.substring(16, 20),
-            serialHex.substring(20, 32),
-        ).joinToString("-")
-        stableBom["serialNumber"] = "urn:uuid:$serial"
-
-        val output = bom.get().asFile
-        output.parentFile.mkdirs()
-        output.writeText(JsonOutput.prettyPrint(JsonOutput.toJson(stableBom)) + "\n")
-    }
+    source.set(rawBom)
+    output.set(bom)
+    releaseGroup.set(releaseGroup)
+    releaseVersion.set(releaseVersion)
 }
 
 val normalizedBom = bom
@@ -559,6 +476,14 @@ val releaseTag =
         .zip(providers.environmentVariable("SPLICE_RELEASE_TAG").orElse("")) { fromRef, fromEnv ->
             fromRef.ifEmpty { fromEnv }
         }
+releaseTag.orNull?.takeIf { it.isNotEmpty() }?.let { tag ->
+    check(releaseTagPattern.matches(tag)) {
+        "release stage: tag must be valid SemVer without build metadata, got $tag"
+    }
+    check(tag == "v$releaseVersion") {
+        "release stage: tag $tag does not match package version $releaseVersion"
+    }
+}
 val stagingLauncher = javaToolchains.launcherFor(java.toolchain)
 
 // The MCP hub's two native binaries (docs/specs/mcp-hub.md), linked by :integrations-mcp-hub for linuxX64 and published
@@ -568,7 +493,6 @@ val hubHolder = hubBinaries.file("holderReleaseExecutable/splice-mcp-holder.kexe
 val hubFront = hubBinaries.file("frontReleaseExecutable/splice-mcp-front.kexe")
 
 tasks.register("stageRelease") {
-    val releaseTagPattern = releaseTagPattern
     val releaseJar = releaseJar
     val bom = bom
     val licenses = licenses
@@ -599,7 +523,6 @@ tasks.register("stageRelease") {
     outputs.dir(distDir)
     val version = releaseVersion
     val launcher = stagingLauncher
-    val tagProvider = releaseTag
     val repositoryDir = repositoryRoot.asFile
     doLast {
         // bun.lock records no root version, so the package-lock version cross-check has no successor;
@@ -614,16 +537,6 @@ tasks.register("stageRelease") {
             .start()
         check(install.waitFor() == 0) {
             "release stage: bun.lock does not agree with package.json (bun install --frozen-lockfile refused)"
-        }
-
-        val tag = tagProvider.get()
-        if (tag.isNotEmpty()) {
-            check(releaseTagPattern.matches(tag)) {
-                "release stage: tag must be valid SemVer without build metadata, got $tag"
-            }
-            check(tag == "v$version") {
-                "release stage: tag $tag does not match package version $version"
-            }
         }
 
         val jar = releaseJar.get().asFile

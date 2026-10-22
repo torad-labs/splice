@@ -3,9 +3,17 @@
 // Oct 12). McpHub serves them; McpHubOff answers every call 503 with the reason the check gave, and sweeps nothing.
 package splice.control.mcp.hub
 
+import kotlinx.serialization.json.buildJsonObject
+import kotlinx.serialization.json.put
+import splice.core.util.JsonWire
+import splice.core.wire.HttpStatus
+
 public interface McpHubCalls {
     /** `POST /api/mcp/hub/resolve`. */
     public fun resolve(body: String): McpHubReply
+
+    /** `POST /api/mcp/hub/attest`: returns the live owner generation for exactly the named retained socket. */
+    public fun attest(body: String): McpHubReply
 
     /** `POST /api/mcp/hub/start`. */
     public suspend fun start(body: String): McpHubReply
@@ -48,6 +56,8 @@ public class McpHubOff(reason: String) : McpHubCalls {
     )
 
     override fun resolve(body: String): McpHubReply = reply
+
+    override fun attest(body: String): McpHubReply = reply
 
     override suspend fun start(body: String): McpHubReply = reply
 

@@ -301,6 +301,11 @@ class HolderLink(
         lines()
     }
 
+    /** Promotes this new front connection before it can receive the holder's retained output. */
+    fun claim() {
+        send("")
+    }
+
     private fun lines() {
         var nl = inbox.indexOf(NL)
         while (nl >= 0) {

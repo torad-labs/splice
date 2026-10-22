@@ -57,10 +57,17 @@ internal class HolderCandidateDetails {
 
     fun reset(holder: Holder, generation: String) {
         holder.generation = generation
+        holder.attestedGeneration = null
         holder.ready = false
         holder.connecting = false
         holder.init = null
         holder.identity = null
+        holder.handshakeId = null
+        holder.handshakeGeneration = null
+        holder.handshakeIdentity = null
+        holder.initializedPending = false
+        holder.retirementFence = null
+        holder.recoveryUncertain = false
     }
 
     fun verify(drain: HolderDrain, init: JsonObject): String? = when {

@@ -84,8 +84,7 @@ internal class RouteReplacements(
 
     fun retire(
         route: Route,
-        oldSocket: String,
-        oldGeneration: String,
+        drain: HolderDrain,
         candidate: ReplacementCandidate,
         then: (String?) -> Unit,
     ) {
@@ -93,7 +92,7 @@ internal class RouteReplacements(
             route,
             REPLACEMENT_RETIRE,
             clock.now() + START_BUDGET,
-            body(oldSocket, oldGeneration, candidate),
+            claimedBody(drain, candidate),
         ) { status, reply ->
             completion(status, reply, "the daemon did not retire the exact old holder", then)
         }
@@ -101,8 +100,7 @@ internal class RouteReplacements(
 
     fun rollback(
         route: Route,
-        oldSocket: String,
-        oldGeneration: String,
+        drain: HolderDrain,
         candidate: ReplacementCandidate,
         then: (String?) -> Unit,
     ) {
@@ -110,7 +108,7 @@ internal class RouteReplacements(
             route,
             REPLACEMENT_ROLLBACK,
             clock.now() + START_BUDGET,
-            body(oldSocket, oldGeneration, candidate),
+            claimedBody(drain, candidate),
         ) { status, reply ->
             completion(status, reply, "the daemon could not confirm safe replacement rollback", then)
         }
@@ -157,6 +155,11 @@ internal class RouteReplacements(
         } else {
             then(Rpc.daemonWords(reply) ?: fallback)
         }
+    }
+
+    private fun claimedBody(drain: HolderDrain, candidate: ReplacementCandidate): JsonObject = buildJsonObject {
+        body(drain.socket, drain.generation, candidate).forEach { (key, value) -> put(key, value) }
+        drain.ownerClaim?.let { put(OWNER_CLAIM, it) }
     }
 
     private fun body(oldSocket: String, oldGeneration: String, candidate: ReplacementCandidate): JsonObject =

@@ -27,7 +27,7 @@ class ServerRequests(
     fun retain(holder: Holder, id: JsonElement): String? {
         val key = ledger.retain(holder, id) ?: return null
         delivery.remembers(holder)
-        return key.takeIf(persistence::checkpoint)
+        return if (persistence.checkpoint()) key else null
     }
 
     fun bind(key: String, session: Session): Boolean = ledger.bind(key, session, persistence)

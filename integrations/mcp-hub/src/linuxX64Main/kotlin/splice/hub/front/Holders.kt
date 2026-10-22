@@ -11,6 +11,7 @@ import kotlinx.serialization.json.put
 /** One holder's socket, as the front sees it. */
 data class Holder(val socket: String) {
     var generation: String? = null
+    var attestedGeneration: String? = null
     var link: HolderLink? = null
     var identity: String? = null
     var init: JsonObject? = null
@@ -18,7 +19,11 @@ data class Holder(val socket: String) {
     var handshakeGeneration: String? = null
     var handshakeIdentity: String? = null
     var recoveryUncertain = false
+    var initializedPending = false
+    var retirementFence: String? = null
+    var reverseResponseRetries = 0
     var resumeReverseResponses: ((String) -> Unit)? = null
+    var scheduleReverseResponseRetry: ((String) -> Unit)? = null
     var ready = false
     var connecting = false
     var listed = false
@@ -76,7 +81,7 @@ data class HolderDrain(
     }
 }
 
-class Holders(
+internal class Holders(
     files: HubFiles,
     connections: Links,
     timers: Timers,
@@ -114,6 +119,8 @@ internal const val HANDSHAKE_ID = "handshake_id"
 internal const val HANDSHAKE_GENERATION = "handshake_generation"
 internal const val HANDSHAKE_IDENTITY = "handshake_identity"
 internal const val RECOVERY_UNCERTAIN = "recovery_uncertain"
+internal const val RETIREMENT_FENCE = "retirement_fence"
+internal const val REVERSE_RESPONSE_RETRIES = "reverse_response_retries"
 internal const val CAPABILITIES = "capabilities"
 internal const val PHASE = "phase"
 internal const val BLOCKER = "blocker"

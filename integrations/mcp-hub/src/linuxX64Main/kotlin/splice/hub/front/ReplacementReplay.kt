@@ -38,13 +38,18 @@ internal class ReplacementReplay(
     }
 
     fun rollback(route: Route, drain: HolderDrain, candidate: ReplacementCandidate) {
-        routes.replacements.rollback(route, drain.socket, drain.generation, candidate) { failure ->
+        routes.replacements.rollback(route, drain, candidate) { failure ->
             if (failure != null) {
                 holders.replacements.retirements.rollbackUnknown(route, failure)
             } else if (!routes.replacements.restore(drain.moved, drain.socket, drain.generation, candidate)) {
                 holders.replacements.retirements.rollbackUnknown(
                     route,
                     "the restored routes no longer match the dead candidate generation",
+                )
+            } else if (!holders.replacements.unfence(drain)) {
+                holders.replacements.retirements.rollbackUnknown(
+                    route,
+                    "the front could not durably reopen old-holder admission",
                 )
             } else {
                 holders.replacements.retirements.completed(route)

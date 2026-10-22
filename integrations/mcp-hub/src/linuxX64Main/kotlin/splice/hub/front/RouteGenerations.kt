@@ -12,15 +12,23 @@ internal class RouteGenerations(
 ) {
     fun refresh(route: Route) {
         val socket = route.socket ?: return
-        attest(socket, clock.now() + RESOLVE_BUDGET) { status, body -> refreshed(route, socket, status, body) }
+        request(socket, clock.now() + RESOLVE_BUDGET) { status, body -> refreshed(route, socket, status, body) }
     }
 
-    private fun attest(socket: String, until: Long, then: (Int, String) -> Unit) {
+    fun attest(socket: String, then: (String?) -> Unit) {
+        request(socket, clock.now() + RESOLVE_BUDGET) { status, body ->
+            val record = JsonText.objectOrNull(body)
+            val generation = Rpc.str(record, GENERATION)
+            then(generation?.takeIf { status == OK && Rpc.str(record, SOCKET) == socket })
+        }
+    }
+
+    private fun request(socket: String, until: Long, then: (Int, String) -> Unit) {
         val body = Rpc.encode(buildJsonObject { put(SOCKET, socket) })
         daemon.call(ATTEST, body) { status, text ->
             val unreachable = status == 0 || status == UNAVAILABLE
             if (unreachable && clock.now() < until) {
-                timers.at(clock.now() + RETRY) { attest(socket, until, then) }
+                timers.at(clock.now() + RETRY) { request(socket, until, then) }
             } else {
                 then(status, text)
             }
@@ -34,4 +42,9 @@ internal class RouteGenerations(
         route.generation = Rpc.str(attested, GENERATION) ?: return
         changed()
     }
+}
+
+/** The generation reader a holder link uses before exposing its socket input. */
+internal class RouteAttestations(private val generations: RouteGenerations) {
+    fun read(socket: String, then: (String?) -> Unit) = generations.attest(socket, then)
 }

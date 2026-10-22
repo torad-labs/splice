@@ -107,27 +107,36 @@ class Relay(
     /** Sends a session's request to [holder] under a front-wide id. The wire id is durable before the holder sees it. */
     fun call(holder: Holder, conn: HttpConn, session: Session, msg: JsonObject, id: JsonElement) {
         val generation = holder.generation
-            ?: return conn.reply(UNAVAILABLE, Rpc.error(id, "the holder has no owner-confirmed generation"))
         val link = holder.link
-            ?: return conn.reply(UNAVAILABLE, Rpc.error(id, "the holder is no longer connected"))
-        val key = nextKey()
-        val call = WireOutstanding(
-            holder,
-            generation,
-            conn,
-            id,
-            session,
-            Rpc.str(msg, Rpc.METHOD).orEmpty(),
-            clock.now(),
-        )
-        wireOutstanding[key] = call
-        if (!checkpoint()) {
-            wireOutstanding.remove(key)
-            return conn.reply(UNAVAILABLE, Rpc.error(id, "the front could not durably retain this request"))
+        val refusal = when {
+            generation == null -> "the holder has no owner-confirmed generation"
+            holder.retirementFence == generation -> "the holder is retiring"
+            link == null -> "the holder is no longer connected"
+            else -> null
         }
-        conn.onGone = { if (wireOutstanding[key] === call) call.conn = null }
-        holder.lastCall = clock.epoch()
-        link.send(Rpc.with(msg, Rpc.ID, JsonPrimitive(key)))
+        if (refusal != null) {
+            conn.reply(UNAVAILABLE, Rpc.error(id, refusal))
+        } else {
+            val key = nextKey()
+            val call = WireOutstanding(
+                holder,
+                requireNotNull(generation),
+                conn,
+                id,
+                session,
+                Rpc.str(msg, Rpc.METHOD).orEmpty(),
+                clock.now(),
+            )
+            wireOutstanding[key] = call
+            if (checkpoint()) {
+                conn.onGone = { if (wireOutstanding[key] === call) call.conn = null }
+                holder.lastCall = clock.epoch()
+                requireNotNull(link).send(Rpc.with(msg, Rpc.ID, JsonPrimitive(key)))
+            } else {
+                wireOutstanding.remove(key)
+                conn.reply(UNAVAILABLE, Rpc.error(id, "the front could not durably retain this request"))
+            }
+        }
     }
 
     /** A session's answer to a server's request, sent back under the id the server used. */
@@ -222,14 +231,18 @@ internal class RelayInbound(
 
     /** A request from the server goes to the newest live client, or receives an explicit no-client error. */
     private fun asks(holder: Holder, msg: JsonObject, id: JsonElement) {
+        if (holder.retirementFence == holder.generation) {
+            holder.link?.send(Rpc.error(id, "the holder is retiring"))
+            return
+        }
         val key = requests.retain(holder, id) ?: return
         if (sharedRoots(holder, msg, id, key)) return
         val target = target(holder)
-        if (target == null || !requests.bind(key, target)) {
-            if (target == null) requests.reply(key, Rpc.error(id, "no client has a stream open"))
-            return
+        if (target == null) {
+            requests.reply(key, Rpc.error(id, "no client has a stream open"))
+        } else if (requests.bind(key, target)) {
+            target.stream?.message(Rpc.with(msg, Rpc.ID, JsonPrimitive(key)))
         }
-        target.stream?.message(Rpc.with(msg, Rpc.ID, JsonPrimitive(key)))
     }
 
     private fun target(holder: Holder): Session? =

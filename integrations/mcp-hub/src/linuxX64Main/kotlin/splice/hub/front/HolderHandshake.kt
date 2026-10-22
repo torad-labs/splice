@@ -15,6 +15,7 @@ internal class HolderHandshakeFlow(
 ) {
     private val attempts = HolderHandshakeAttempts(context, persistence, memory, proof)
     private val outcomes = HolderHandshakeOutcomes(replacements, persistence)
+    private val notifications = HolderInitializedDelivery(context, persistence, outcomes)
 
     fun retained(holder: Holder, generation: String?): Boolean = proof.retained(holder, generation)
 
@@ -24,27 +25,29 @@ internal class HolderHandshakeFlow(
         when {
             holder.recoveryUncertain -> outcomes.failed(holder, UNPROVEN_INITIALIZATION)
             holder.handshakeId != null -> resumed(holder)
-            proof.retained(holder, null) -> outcomes.ready(holder)
+            proof.retained(holder, null) -> notifications.ready(holder, link)
             else -> outcomes.failed(holder, MISSING_INITIALIZATION)
         }
-        if (!link.closed) link.resumeReading()
     }
 
     fun candidate(holder: Holder, link: HolderLink) {
-        if (holder.handshakeId != null) {
-            resumed(holder)
-        } else {
-            clearStaleAttempt(holder)
-            holder.identity = Ids.socket(holder.socket)
-            holder.init = null
-            started(holder, link, CANDIDATE_INITIALIZATION)
+        when {
+            holder.recoveryUncertain -> outcomes.failed(holder, UNPROVEN_INITIALIZATION)
+            proof.retained(holder, holder.generation) -> retainedCandidate(holder, link)
+            holder.handshakeId != null -> resumed(holder)
+            else -> {
+                clearStaleAttempt(holder)
+                holder.identity = Ids.socket(holder.socket)
+                holder.init = null
+                started(holder, link, CANDIDATE_INITIALIZATION)
+            }
         }
     }
 
     fun attached(route: Route, holder: Holder, link: HolderLink) {
         if (proof.retained(holder, route.generation)) {
             context.files.say("reconnected ${route.server} at ${holder.socket} without initialize")
-            outcomes.ready(holder)
+            notifications.ready(holder, link)
         } else if (holder.handshakeId != null) {
             resumed(holder)
         } else {
@@ -66,12 +69,25 @@ internal class HolderHandshakeFlow(
 
     fun reset(holder: Holder, generation: String) {
         holder.generation = generation
+        holder.attestedGeneration = null
         holder.ready = false
         holder.connecting = false
         holder.identity = null
         holder.init = null
+        holder.initializedPending = false
+        holder.retirementFence = null
         holder.recoveryUncertain = false
         attempts.clear(holder)
+    }
+
+    private fun retainedCandidate(holder: Holder, link: HolderLink) {
+        holder.init?.takeIf { replacements.links.verified(holder, it) == null }?.let {
+            if (persistence.checkpoint()) {
+                notifications.ready(holder, link)
+            } else {
+                outcomes.failed(holder, "the retained candidate could not be durably marked ready")
+            }
+        }
     }
 
     private fun started(holder: Holder, link: HolderLink, words: String) {
@@ -86,11 +102,10 @@ internal class HolderHandshakeFlow(
 
     private fun completed(holder: Holder, link: HolderLink, init: JsonObject) {
         holder.init = init
+        holder.initializedPending = true
         attempts.clear(holder)
         if (persistence.checkpoint()) {
-            holder.lastCall = context.clock.epoch()
-            link.send(INITIALIZED)
-            if (holder.link === link) outcomes.ready(holder)
+            notifications.pending(holder, link)
         } else {
             outcomes.uncertain(holder)
         }
@@ -114,6 +129,32 @@ internal class HolderHandshakeFlow(
     }
 }
 
+internal class HolderInitializedDelivery(
+    private val context: HolderLinkContext,
+    private val persistence: HolderPersistence,
+    private val outcomes: HolderHandshakeOutcomes,
+) {
+    fun ready(holder: Holder, link: HolderLink) {
+        if (holder.initializedPending) pending(holder, link) else outcomes.ready(holder)
+    }
+
+    fun pending(holder: Holder, link: HolderLink) {
+        link.send(INITIALIZED, HolderWritten { delivered(holder, link) })
+    }
+
+    private fun delivered(holder: Holder, link: HolderLink) {
+        if (holder.link !== link || !holder.initializedPending) return
+        holder.initializedPending = false
+        if (persistence.checkpoint()) {
+            holder.lastCall = context.clock.epoch()
+            outcomes.ready(holder)
+        } else {
+            holder.initializedPending = true
+            outcomes.failed(holder, INITIALIZED_UNPROVEN)
+        }
+    }
+}
+
 internal class HolderHandshakeOutcomes(
     private val replacements: HolderReplacements,
     private val persistence: HolderPersistence,
@@ -125,6 +166,7 @@ internal class HolderHandshakeOutcomes(
 
     fun uncertain(holder: Holder) {
         holder.init = null
+        holder.initializedPending = false
         holder.recoveryUncertain = true
         persistence.changed()
         failed(holder, "the initialize result could not be durably retained")
@@ -215,14 +257,7 @@ internal class HolderProof(private val routes: Routes) {
         return routeMatches(holder, generation)
     }
 
-    fun observed(holder: Holder): Boolean {
-        val current = routes.generation(holder.socket) ?: return true
-        if (holder.generation == null) {
-            holder.generation = current
-            return true
-        }
-        return holder.generation == current
-    }
+    fun observed(holder: Holder): Boolean = holder.attestedGeneration == holder.generation
 
     fun unproven(holder: Holder): Boolean =
         listOf(
@@ -254,10 +289,8 @@ internal class HolderProof(private val routes: Routes) {
     private fun expected(expected: String?, generation: String): Boolean =
         expected == null || expected == generation
 
-    private fun routeMatches(holder: Holder, generation: String): Boolean {
-        val current = routes.generation(holder.socket)
-        return current == null || current == generation
-    }
+    private fun routeMatches(holder: Holder, generation: String): Boolean =
+        holder.attestedGeneration == generation || routes.generation(holder.socket) == generation
 
     private fun changed(holder: Holder): Boolean {
         val current = routes.generation(holder.socket)
@@ -334,17 +367,22 @@ internal class HolderMemory(
         holder.handshakeGeneration = Rpc.str(body, HANDSHAKE_GENERATION)
         holder.handshakeIdentity = Rpc.str(body, HANDSHAKE_IDENTITY)
         holder.lastCall = (body[LAST_CALL] as? JsonPrimitive)?.longOrNull ?: 0L
+        holder.initializedPending = Rpc.str(body, INITIALIZED_PENDING) == "true"
+        holder.retirementFence = Rpc.str(body, RETIREMENT_FENCE)
+        holder.reverseResponseRetries = Rpc.str(body, REVERSE_RESPONSE_RETRIES)?.toIntOrNull() ?: 0
         holder.recoveryUncertain = Rpc.str(body, RECOVERY_UNCERTAIN) == "true" || proof.unproven(holder)
         holder.handshakeId?.removePrefix(HELLO)?.toLongOrNull()?.let { next = maxOf(next, it) }
     }
 
     private fun remembered(holder: Holder): Pair<String, JsonObject>? {
         val hasHandshake = holder.init != null || holder.handshakeId != null
-        return if (hasHandshake || holder.recoveryUncertain) {
-            holder.socket to record(holder)
-        } else {
-            null
-        }
+        val persisted = listOf(
+            hasHandshake,
+            holder.recoveryUncertain,
+            holder.retirementFence != null,
+            holder.reverseResponseRetries != 0,
+        ).any { it }
+        return if (persisted) holder.socket to record(holder) else null
     }
 
     private fun record(holder: Holder): JsonObject = buildJsonObject {
@@ -355,11 +393,16 @@ internal class HolderMemory(
         holder.handshakeGeneration?.let { put(HANDSHAKE_GENERATION, it) }
         holder.handshakeIdentity?.let { put(HANDSHAKE_IDENTITY, it) }
         put(LAST_CALL, holder.lastCall)
+        put(INITIALIZED_PENDING, holder.initializedPending)
+        holder.retirementFence?.let { put(RETIREMENT_FENCE, it) }
+        if (holder.reverseResponseRetries != 0) put(REVERSE_RESPONSE_RETRIES, holder.reverseResponseRetries)
         put(RECOVERY_UNCERTAIN, holder.recoveryUncertain)
     }
 }
 
 private const val INITIALIZED = """{"jsonrpc":"2.0","method":"notifications/initialized"}"""
+private const val INITIALIZED_PENDING = "initialized_pending"
 private const val UNPROVEN_INITIALIZATION = "the retained holder initialization is unproven"
+private const val INITIALIZED_UNPROVEN = "the initialized notification could not be durably retained"
 private const val MISSING_INITIALIZATION = "the retained holder has no durable initialization evidence"
 private const val CANDIDATE_INITIALIZATION = "the candidate has no durable initialize request"

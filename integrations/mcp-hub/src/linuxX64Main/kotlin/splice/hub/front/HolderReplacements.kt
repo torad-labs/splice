@@ -26,6 +26,39 @@ internal data class HolderReplacements(
         preparation.reconnect(candidate, connect)
 
     fun candidateLive(candidate: ReplacementCandidate): Boolean = preparation.current(candidate)
+
+    fun fence(drain: HolderDrain): Boolean {
+        val holder = known.getOrPut(drain.socket) { Holder(drain.socket) }
+        if (holder.generation != null && holder.generation != drain.generation) return false
+        val priorGeneration = holder.generation
+        val priorFence = holder.retirementFence
+        holder.generation = drain.generation
+        holder.retirementFence = drain.generation
+        if (checkpoint()) {
+            changed()
+            return true
+        }
+        holder.generation = priorGeneration
+        holder.retirementFence = priorFence
+        return false
+    }
+
+    fun unfence(drain: HolderDrain): Boolean {
+        val holder = known[drain.socket] ?: return true
+        val held = holder.generation == drain.generation && holder.retirementFence == drain.generation
+        return if (!held) {
+            true
+        } else {
+            holder.retirementFence = null
+            if (checkpoint()) {
+                changed()
+                true
+            } else {
+                holder.retirementFence = drain.generation
+                false
+            }
+        }
+    }
 }
 
 internal class HolderCandidates(
@@ -240,7 +273,12 @@ internal class HolderCandidatePreparation(
     }
 
     fun current(candidate: ReplacementCandidate): Boolean = known[candidate.socket]?.let { holder ->
-        listOf(holder.ready, holder.link != null, holder.generation == candidate.generation).all { it }
+        listOf(
+            holder.ready,
+            holder.link != null,
+            holder.generation == candidate.generation,
+            holder.attestedGeneration == candidate.generation,
+        ).all { it }
     } == true
 }
 
@@ -318,11 +356,18 @@ internal class HolderRetirements(
         }
     }
 
-    /** Exact exit evidence releases an OLD_HOLDER_LOST drain to recover its candidate or explicitly resume. */
+    /** Exact exit evidence releases old loss and a rollback whose candidate was confirmed gone. */
     fun oldExited(socket: String, generation: String) {
         store.drains.values
             .filter { it.socket == socket && it.generation == generation && it.phase == OLD_HOLDER_LOST }
             .forEach { drain -> transition(drain, if (drain.candidate == null) PAUSED else CANDIDATE_STARTING, null) }
+        store.drains.values
+            .filter { drain ->
+                drain.candidate?.socket == socket &&
+                    drain.candidate?.generation == generation &&
+                    drain.phase == ROLLBACK_UNKNOWN
+            }
+            .forEach { drain -> transition(drain, ROLLBACK_PENDING, null) }
     }
 
     private fun remove(route: Route) {

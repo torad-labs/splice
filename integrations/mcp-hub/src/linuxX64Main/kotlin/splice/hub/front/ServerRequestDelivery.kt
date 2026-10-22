@@ -14,6 +14,7 @@ internal data class ServerRequestOutstanding(
     var session: Session? = null,
     var response: String? = null,
     var delivery: String? = null,
+    var retries: Int = 0,
 ) {
     val answering: Boolean get() = delivery != null
 }
@@ -88,6 +89,7 @@ internal class ServerRequestLedger {
             Rpc.str(body, SESSION)?.let(sessions::get),
             response,
             delivery(body, response),
+            Rpc.str(body, RESPONSE_RETRIES)?.toIntOrNull() ?: 0,
         )
     }
 
@@ -99,6 +101,7 @@ internal class ServerRequestLedger {
         put(ANSWERING, asked.answering)
         asked.response?.let { put(RESPONSE, it) }
         asked.delivery?.let { put(RESPONSE_STATUS, it) }
+        if (asked.retries != 0) put(RESPONSE_RETRIES, asked.retries)
     }
 
     private fun delivery(body: JsonObject, response: String?): String? = when {
@@ -166,7 +169,7 @@ internal class ServerRequestDelivery(
     ): Boolean {
         if (asked.holder !== holder) return false
         if (asked.generation != generation) return false
-        return asked.delivery == RESPONSE_PREPARED
+        return asked.delivery == RESPONSE_PREPARED && asked.retries < RESPONSE_RETRY_LIMIT
     }
 
     private fun prepared(asked: ServerRequestOutstanding, text: String): Boolean = when (asked.delivery) {
@@ -185,6 +188,7 @@ internal class ServerRequestDelivery(
     }
 
     private fun send(key: String, asked: ServerRequestOutstanding) {
+        if (asked.holder.attestedGeneration != asked.generation) return
         val link = asked.holder.link ?: return
         if (writing(asked)) {
             asked.response?.let { response ->
@@ -197,14 +201,28 @@ internal class ServerRequestDelivery(
     private fun writing(asked: ServerRequestOutstanding): Boolean {
         if (asked.delivery != RESPONSE_PREPARED) return false
         asked.delivery = RESPONSE_WRITE_UNCERTAIN
-        if (persistence.checkpoint()) return true
+        if (persistence.checkpoint()) {
+            asked.retries = 0
+            asked.holder.reverseResponseRetries = 0
+            return true
+        }
         asked.delivery = RESPONSE_PREPARED
+        retried(asked)
         return false
+    }
+
+    private fun retried(asked: ServerRequestOutstanding) {
+        if (asked.retries >= RESPONSE_RETRY_LIMIT) return
+        asked.retries += 1
+        asked.holder.reverseResponseRetries = asked.retries
+        persistence.changed()
+        asked.holder.scheduleReverseResponseRetry?.invoke(asked.generation)
     }
 
     private fun settled(key: String, asked: ServerRequestOutstanding) {
         if (ledger.settles(key, asked)) {
             ledger.requests.remove(key)
+            asked.holder.reverseResponseRetries = 0
             persistence.changed()
         }
     }
@@ -215,6 +233,8 @@ private const val SESSION = "session"
 private const val ANSWERING = "answering"
 private const val RESPONSE = "response"
 private const val RESPONSE_STATUS = "response_status"
+private const val RESPONSE_RETRIES = "response_retries"
+private const val RESPONSE_RETRY_LIMIT = 3
 private const val RESPONSE_PREPARED = "prepared"
 private const val RESPONSE_WRITE_UNCERTAIN = "write_uncertain"
 private const val RESPONSE_LEGACY_UNCERTAIN = "legacy_write_uncertain"

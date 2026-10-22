@@ -206,8 +206,13 @@ internal class HubReplacements(
     }
 
     private fun replayRetirement(route: Route, drain: HolderDrain, candidate: ReplacementCandidate) {
+        if (!holders.replacements.fence(drain)) {
+            holders.replacements.retirements.blocked(route, "the front could not durably close old-holder admission")
+            timers.at(clock.now() + RETIRE_RETRY) { retryRetirement(route) }
+            return
+        }
         if (relay.inFlight(drain.socket) != 0) return
-        routes.replacements.retire(route, drain.socket, drain.generation, candidate) { failure ->
+        routes.replacements.retire(route, drain, candidate) { failure ->
             if (failure == null) {
                 holders.replacements.retirements.completed(route)
             } else {
@@ -268,13 +273,18 @@ internal class HubReplacements(
                 return@forEach
             }
             val candidate = claimed.candidate ?: return@forEach
-            routes.replacements.rollback(route, claimed.socket, claimed.generation, candidate) { failure ->
+            routes.replacements.rollback(route, claimed, candidate) { failure ->
                 if (failure != null) {
                     holders.replacements.retirements.rollbackUnknown(route, failure)
                 } else if (!routes.replacements.restore(claimed.moved, claimed.socket, claimed.generation, candidate)) {
                     holders.replacements.retirements.rollbackUnknown(
                         route,
                         "the restored routes no longer match the dead candidate generation",
+                    )
+                } else if (!holders.replacements.unfence(claimed)) {
+                    holders.replacements.retirements.rollbackUnknown(
+                        route,
+                        "the front could not durably reopen old-holder admission",
                     )
                 } else {
                     holders.replacements.retirements.completed(route)
@@ -309,6 +319,12 @@ private class ReplacementRecovery(
     private fun recover(drain: HolderDrain) {
         val candidate = drain.candidate ?: return
         val route = routes.byKey(drain.key()) ?: return
+        if (drain.phase == ROLLBACK_UNKNOWN) {
+            routes.replacements.confirmExit(candidate.socket, candidate.generation, { true }) {
+                holders.replacements.retirements.oldExited(candidate.socket, candidate.generation)
+            }
+            return
+        }
         val retiring = drain.phase in setOf(RETIRING, RETIRE_BLOCKED, RETIRE_UNKNOWN)
         if (retiring) {
             replayRetirement(route, drain, candidate)
@@ -327,7 +343,10 @@ private class ReplacementRecovery(
         when (drain.phase) {
             COMMITTING -> replay.commit(route, drain, candidate)
             RETIRING, RETIRE_BLOCKED -> replayRetirement(route, drain, candidate)
-            ROLLING_BACK, ROLLBACK_UNKNOWN -> replay.rollback(route, drain, candidate)
+            ROLLING_BACK -> holders.replacements.retirements.rollbackUnknown(
+                route,
+                "the replacement rollback outcome needs its candidate's exact exit",
+            )
             else -> Unit
         }
     }

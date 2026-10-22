@@ -8,14 +8,14 @@ internal class HolderLinkRecovery(
     private val context: HolderLinkContext,
     private val known: MutableMap<String, Holder>,
     private val replacements: HolderReplacements,
-    persistence: HolderPersistence,
+    private val persistence: HolderPersistence,
     memory: HolderMemory,
     proof: HolderProof,
 ) {
     private val handshakes = HolderHandshakeFlow(context, replacements, persistence, memory, proof)
     private val loss = HolderLinkLoss(context, replacements, persistence)
     private val connections = HolderConnections(context.connections, ::fromHolder, loss::lost)
-    private val generations = HolderGenerationReads(context.routes, context.timers, context.clock)
+    private val generations = HolderGenerationReads(context.routes.attestations, context.timers, context.clock)
 
     var stopping: Boolean
         get() = loss.stopping
@@ -28,26 +28,32 @@ internal class HolderLinkRecovery(
         if (link == null) {
             replacements.links.failed(holder, "the daemon-started candidate did not accept a front connection")
         } else {
-            generations.bind(holder, link)
-            handshakes.candidate(holder, link)
+            link.claim()
+            bound(holder, link) { handshakes.candidate(holder, link) }
         }
     }
 
     fun reconnect(holder: Holder, generation: String): Boolean {
         if (!handshakes.retained(holder, generation)) return false
-        val link = holder.link ?: connections.connect(holder) ?: return false
-        generations.bind(holder, link)
-        holder.settle(null)
-        holder.resumeReverseResponses?.invoke(generation)
-        link.resumeReading()
-        return holder.link === link && !link.closed && holder.ready
+        val link = holder.link ?: connections.connect(holder)?.also(HolderLink::claim) ?: return false
+        holder.scheduleReverseResponseRetry = { exact -> retry(holder, exact) }
+        generations.bind(holder, link) { attested ->
+            if (attested == generation) {
+                holder.attestedGeneration = attested
+                handshakes.recover(holder, link)
+            } else {
+                handshakes.reset(holder, attested)
+                holder.attestedGeneration = attested
+                link.close()
+            }
+        }
+        return !link.closed
     }
 
     fun adopt(fd: Int, socket: String, saved: ByteArray) {
         val holder = known.getOrPut(socket) { Holder(socket) }
         val link = connections.adopt(holder, fd, saved)
-        generations.bind(holder, link)
-        handshakes.recover(holder, link)
+        bound(holder, link) { handshakes.recover(holder, link) }
     }
 
     fun knownInit(route: Route, then: (JsonObject?, String?) -> Unit) {
@@ -91,15 +97,36 @@ internal class HolderLinkRecovery(
     private fun attach(route: Route, holder: Holder, startAllowed: Boolean) {
         val link = connections.connect(holder)
         when {
-            link != null -> connected(route, holder, link)
+            link != null -> {
+                link.claim()
+                connected(route, holder, link)
+            }
             startAllowed -> context.routes.start(route) { failure -> started(route, holder, failure) }
             else -> holder.settle("${route.server} did not start")
         }
     }
 
     private fun connected(route: Route, holder: Holder, link: HolderLink) {
-        generations.bind(holder, link)
-        handshakes.attached(route, holder, link)
+        bound(holder, link) { handshakes.attached(route, holder, link) }
+    }
+
+    private fun bound(holder: Holder, link: HolderLink, activated: () -> Unit) {
+        holder.scheduleReverseResponseRetry = { generation -> retry(holder, generation) }
+        generations.bind(holder, link) { attested ->
+            if (holder.generation != attested) handshakes.reset(holder, attested)
+            holder.attestedGeneration = attested
+            activated()
+        }
+    }
+
+    private fun retry(holder: Holder, generation: String) {
+        context.timers.at(context.clock.now() + REVERSE_RESPONSE_RETRY) {
+            if (holder.generation == generation) {
+                if (holder.link?.closed == false) {
+                    if (handshakes.observed(holder)) holder.resumeReverseResponses?.invoke(generation)
+                }
+            }
+        }
     }
 
     private fun started(route: Route, holder: Holder, failure: String?) {
@@ -129,6 +156,8 @@ internal class HolderLinkRecovery(
         }
     }
 }
+
+private const val REVERSE_RESPONSE_RETRY = 250L
 
 internal class HolderConnections(
     private val connections: Links,
@@ -192,6 +221,7 @@ internal class HolderLinkLoss(
     private fun detached(holder: Holder): String? {
         val generation = holder.generation ?: context.routes.generation(holder.socket)
         holder.generation = generation
+        holder.attestedGeneration = null
         holder.link = null
         holder.ready = false
         holder.connecting = false
@@ -203,9 +233,14 @@ internal class HolderLinkLoss(
             context.routes.replacements.confirmExit(
                 holder.socket,
                 exact,
-                { context.relay.awaitsExit(holder, exact) },
+                {
+                    context.relay.awaitsExit(holder, exact) ||
+                        replacements.links.candidate(holder) != null ||
+                        replacements.links.old(holder, exact) != null
+                },
             ) {
                 context.relay.exited(holder, exact)
+                replacements.retirements.oldExited(holder.socket, exact)
             }
         }
     }

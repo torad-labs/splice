@@ -99,6 +99,11 @@ the path of a tool call.
 
 Holders and servers run in hostshield's MCP slice (V4-147), so the box's memory cap still holds.
 
+The JVM writes one reusable socket record per holder and generation-addressed exit receipts. A launch record carries
+its unique systemd scope before the child PID is known, so only that exited scope can settle a failed start. The
+front writes active replacement drains with both old and candidate generations; the daemon pins either one until the
+drain resolves.
+
 ## What changes in Marcos's files
 
 For Claude Code, the plan reads his files and writes only splice's own state folder. The one stored

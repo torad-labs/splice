@@ -11,9 +11,13 @@ import java.nio.file.Path
 private const val ROUTES = "routes"
 private const val SESSIONS = "sessions"
 private const val HOLDERS = "holders"
+private const val DRAINS = "drains"
 private const val SERVER = "server"
 private const val SOCKET = "socket"
 private const val LAUNCH = "launch"
+private const val GENERATION = "generation"
+private const val CANDIDATE_SOCKET = "candidate_socket"
+private const val CANDIDATE_GENERATION = "candidate_generation"
 private const val SHARED = "shared"
 private const val LAST_CALL = "last_call"
 
@@ -28,10 +32,14 @@ internal data class HubRoute(
 /** One session the front holds: its server alias, holder socket, and launch. */
 internal data class HubBinding(val server: String, val socket: String, val launch: String)
 
-/** What the front saved: every retained route, its sessions, and when each holder last took a call. */
+/** One exact holder generation held by a persisted front replacement drain. */
+internal data class HubDrainHolder(val socket: String, val generation: String)
+
+/** What the front saved: retained routes, sessions, drain holders, and each holder's last call. */
 internal data class HubReport(
     val routes: List<HubRoute>,
     val bindings: List<HubBinding>,
+    val draining: Set<HubDrainHolder>,
     val lastCalls: Map<String, Long>,
 )
 
@@ -53,7 +61,7 @@ private class HubFrontReader(private val file: Path) {
 
 private class HubFrontReports {
     fun report(saved: JsonObject): HubReport? = routes(saved)?.let { routes ->
-        HubReport(routes, bindings(saved), lastCalls(saved))
+        HubReport(routes, bindings(saved), draining(saved), lastCalls(saved))
     }
 
     private fun routes(saved: JsonObject): List<HubRoute>? = (saved[ROUTES] as? JsonObject)?.values?.mapNotNull(::route)
@@ -89,6 +97,25 @@ private class HubFrontReports {
             } else {
                 null
             }
+        }
+
+    private fun draining(saved: JsonObject): Set<HubDrainHolder> = (saved[DRAINS] as? JsonObject)
+        ?.values
+        ?.flatMap(::drainHolders)
+        ?.toSet()
+        .orEmpty()
+
+    private fun drainHolders(value: kotlinx.serialization.json.JsonElement): List<HubDrainHolder> =
+        (value as? JsonObject)?.let { drain ->
+            listOfNotNull(
+                drainHolder(drain, SOCKET, GENERATION),
+                drainHolder(drain, CANDIDATE_SOCKET, CANDIDATE_GENERATION),
+            )
+        }.orEmpty()
+
+    private fun drainHolder(drain: JsonObject, socket: String, generation: String): HubDrainHolder? =
+        JsonScalars.str(drain, socket)?.let { name ->
+            JsonScalars.str(drain, generation)?.let { version -> HubDrainHolder(name, version) }
         }
 
     private fun lastCalls(saved: JsonObject): Map<String, Long> = (saved[HOLDERS] as? JsonObject)

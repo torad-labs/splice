@@ -68,18 +68,28 @@ private data class CanonicalReplacement(
 private data class SharedView(
     val bound: List<HubBinding>?,
     val current: Set<String>,
+    val draining: Set<HubDrainHolder>,
     val lastCalls: Map<String, Long>,
     val idleMs: Long,
     val now: Long,
 ) {
-    fun stopReason(record: HubRecord): String? = when {
-        bound == null -> null
-        lastCalls[record.socket]?.let { now - maxOf(it, record.recordedAt) >= idleMs } == true -> IDLE_REASON
-        bound.any { it.socket == record.socket } -> null
-        record.socket in current -> null
-        now - record.recordedAt < SHARED_GRACE_MS -> null
-        else -> ORPHANED
+    fun stopReason(record: HubRecord): String? {
+        val bindings = bound ?: return null
+        if (pinned(record) || shared(record, bindings)) return null
+        return idleReason(record) ?: orphanReason(record)
     }
+
+    fun pinned(record: HubRecord): Boolean =
+        record.generation?.let { HubDrainHolder(record.socket, it) in draining } ?: false
+
+    private fun shared(record: HubRecord, bindings: List<HubBinding>): Boolean =
+        bindings.any { it.socket == record.socket } || record.socket in current
+
+    private fun idleReason(record: HubRecord): String? =
+        lastCalls[record.socket]?.takeIf { now - maxOf(it, record.recordedAt) >= idleMs }?.let { IDLE_REASON }
+
+    private fun orphanReason(record: HubRecord): String? =
+        ORPHANED.takeIf { now - record.recordedAt >= SHARED_GRACE_MS }
 }
 
 public class McpHub(
@@ -196,6 +206,7 @@ public class McpHub(
             val view = SharedView(
                 bound,
                 currentShared(bound.orEmpty()),
+                report?.draining.orEmpty(),
                 report?.lastCalls.orEmpty(),
                 idleMs,
                 now,
@@ -205,7 +216,7 @@ public class McpHub(
 
         fun attached(): Map<String, Set<String>> {
             val bindings = front.report()?.bindings ?: return emptyMap()
-            val names = holders.records.serverBySocket()
+            val names = holders.records.files.serverBySocket()
             return bindings.filter { it.launch.isNotEmpty() }
                 .mapNotNull { binding -> names[binding.socket]?.let { it to binding.launch } }
                 .groupBy({ it.first }, { it.second })
@@ -234,9 +245,10 @@ public class McpHub(
             )
         }
 
-        private fun stopReason(record: HubRecord, view: SharedView): String? = when (val launch = record.launch) {
-            null -> view.stopReason(record)
-            else -> ENDED.takeIf { places.of(launch) == null }
+        private fun stopReason(record: HubRecord, view: SharedView): String? {
+            if (view.pinned(record)) return null
+            return record.launch?.let { launch -> ENDED.takeIf { places.of(launch) == null } }
+                ?: view.stopReason(record)
         }
 
         private fun currentShared(bound: List<HubBinding>): Set<String> {

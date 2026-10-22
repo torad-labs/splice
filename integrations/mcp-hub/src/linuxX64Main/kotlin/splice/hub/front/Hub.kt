@@ -1,7 +1,7 @@
 // The hub front's sessions: each session's HTTP side, from initialize to its stream. It answers initialize from what
 // it already knows, hands calls to the relay and asks the daemon, through the routes, only where a server is and to
 // start one. All of it is kept in front.json, whose shape the daemon's sweep reads: "routes" by route key, "holders"
-// by socket, and "sessions" as session id to route key.
+// by socket, active "drains" by target, and "sessions" as session id to route key.
 package splice.hub.front
 
 import kotlinx.serialization.json.JsonElement

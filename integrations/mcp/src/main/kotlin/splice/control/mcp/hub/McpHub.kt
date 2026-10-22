@@ -75,21 +75,21 @@ private data class SharedView(
 ) {
     fun stopReason(record: HubRecord): String? {
         val bindings = bound ?: return null
-        if (pinned(record) || shared(record, bindings)) return null
-        return idleReason(record) ?: orphanReason(record)
+        if (pinned(record)) return null
+        return idleReason(record) ?: orphanReason(record, bindings)
     }
 
     fun pinned(record: HubRecord): Boolean =
         record.generation?.let { HubDrainHolder(record.socket, it) in draining } ?: false
 
-    private fun shared(record: HubRecord, bindings: List<HubBinding>): Boolean =
-        bindings.any { it.socket == record.socket } || record.socket in current
-
     private fun idleReason(record: HubRecord): String? =
         lastCalls[record.socket]?.takeIf { now - maxOf(it, record.recordedAt) >= idleMs }?.let { IDLE_REASON }
 
-    private fun orphanReason(record: HubRecord): String? =
-        ORPHANED.takeIf { now - record.recordedAt >= SHARED_GRACE_MS }
+    private fun orphanReason(record: HubRecord, bindings: List<HubBinding>): String? =
+        ORPHANED.takeIf { unbound(record, bindings) && now - record.recordedAt >= SHARED_GRACE_MS }
+
+    private fun unbound(record: HubRecord, bindings: List<HubBinding>): Boolean =
+        bindings.none { it.socket == record.socket } && record.socket !in current
 }
 
 public class McpHub(

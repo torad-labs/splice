@@ -104,8 +104,8 @@ internal class HubRecordFiles(private val dir: Path) {
 /** Decodes and updates an owner only while its exact socket record still occupies the file. */
 internal class HubRecordOwnership(private val files: HubRecordFiles) {
     fun attest(record: HubHolderRecord, owner: HubHolderOwner): HubHolderRecord? {
-        val current = files.read(record.path) ?: return null
-        if (current != record.body) return null
+        val current = files.read(record.path)?.takeIf { it == record.body } ?: return null
+        if (launch(current)?.let { it != owner.launch() } == true) return null
         val attested = JsonObject(
             current + mapOf(
                 HOLDER_GENERATION to JsonPrimitive(owner.generation),
@@ -129,6 +129,13 @@ internal class HubRecordOwnership(private val files: HubRecordFiles) {
     fun currentExit(record: HubHolderRecord, owner: HubHolderOwner): Boolean =
         files.read(record.path)?.let { current ->
             JsonScalars.str(current, HOLDER_STATE) == HOLDER_EXITED && owner(current) == owner
+        } == true
+
+    fun currentLaunchExit(record: HubHolderRecord): Boolean =
+        files.read(record.path)?.let { current ->
+            JsonScalars.str(current, HOLDER_STATE) == HOLDER_EXITED &&
+                JsonScalars.long(current, HOLDER_EXIT_CONFIRMED_AT) != null &&
+                launch(current) == launch(record.body)
         } == true
 
     private fun owner(body: JsonObject): HubHolderOwner? = launch(body)?.let { launch ->
@@ -184,7 +191,7 @@ internal class HubHolderExitEvidence(
     }
 
     private fun markExited(record: HubHolderRecord, confirmedAt: Long): Boolean =
-        files.read(record.path)?.takeIf { it == record.body }?.let { current ->
+        files.read(record.path)?.takeIf { current -> sameGeneration(record.body, current) }?.let { current ->
             files.write(
                 record.path,
                 JsonObject(
@@ -195,6 +202,9 @@ internal class HubHolderExitEvidence(
                 ),
             )
         } == true
+
+    private fun sameGeneration(record: JsonObject, current: JsonObject): Boolean =
+        JsonScalars.str(record, HOLDER_GENERATION) == JsonScalars.str(current, HOLDER_GENERATION)
 
     private fun persist(socket: String, launch: HubHolderLaunch, childPid: Long?, confirmedAt: Long): Boolean = try {
         Files.createDirectories(exits)

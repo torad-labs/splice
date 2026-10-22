@@ -171,7 +171,6 @@ internal class DoctorReportShape(private val redaction: DoctorRedaction, private
         val q = p.quirks
         put("code_mode", p.codeModeEnabled)
         put("cache_key", names.token(q.cacheKey))
-        put("effort_ceiling", names.token(q.effortCeiling))
         put("store", q.store)
         put("tool_choice", q.toolChoice)
         put("account_id_header", q.accountIdHeader)

@@ -111,8 +111,8 @@ in-flight turns before restarting (V4-74). One exception is live already: a mode
   `env`; optional `file`), `quirks`, `extra_headers`, `models` (`id`, `label`, `description`,
   `context_window`, and the row's own `rates`), `extra_windows`, `window_rules`,
   `default_context_window`, `local` (inferred for openai-chat on a loopback base URL).
-- `[providers.<name>.quirks]`: `store`, `account_id_header`, `cache_key`, `effort_ceiling`,
-  `summary_field`, `compact_effort`, `tool_choice`, `reasoning_cache`, `parallel_tool_calls`,
+- `[providers.<name>.quirks]`: `store`, `account_id_header`, `cache_key`, `summary_field`,
+  `tool_choice`, `reasoning_cache`, `parallel_tool_calls`,
   `websocket`, `code_mode`, `zstd_request_body`, `reasoning_effort`, `mfjs`, `block_allowlist`,
   `strip_cache_control`, `synthesize_signatures`, `map_thinking_adaptive`,
   `strip_sampling_params`, `reanchor_prefill`; sub-table `tool_surface` with `enabled`,

@@ -332,6 +332,20 @@ function spawnGradle(
     childEnv.SPLICE_GRADLE_LABEL = admission.label;
     argv = [buildgate, "--exclusive", "--joint", join(import.meta.dir, "../../bin/gradlew"), ...gradleArgs];
   }
-  // detached: its own session and process group, so a signal can reach every process of the build and never this one.
-  return Bun.spawn(argv, { cwd: buildRoot, stdio: ["inherit", "inherit", "inherit"], env: childEnv, detached: true });
+  // Bun's detached spawn did not establish a signalable process group on the Linux Bun used by the gate:
+  // forwarding SIGTERM/SIGINT then left background Gradle children alive until their natural exit. GNU
+  // setsid creates the session before the wrapper executes, so its pid is the group leader that
+  // signalGroup addresses. Resolve it from the gate's own PATH because childEnv may be test-restricted.
+  // Linux must not silently fall back to the detached spawn whose group forwarding failed.
+  const setsid = process.platform === "linux" ? Bun.which("setsid") : null;
+  if (process.platform === "linux" && setsid === null) {
+    throw new Error("gate: Linux process-group forwarding requires setsid from util-linux; install it before building");
+  }
+  const command = setsid === null ? argv : [setsid, "--", ...argv];
+  return Bun.spawn(command, {
+    cwd: buildRoot,
+    stdio: ["inherit", "inherit", "inherit"],
+    env: childEnv,
+    detached: setsid === null,
+  });
 }

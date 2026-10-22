@@ -25,7 +25,9 @@ public data class QuirksConfig(
     val store: Boolean = false,
     @SerialName("account_id_header") val accountIdHeader: Boolean = false,
     @SerialName("cache_key") val cacheKey: String = "first-message-hash",
-    @SerialName("effort_ceiling") val effortCeiling: String = "max",
+    /** RETIRED 2026-10-21: each Responses provider applies its verified model ceiling. This generic
+     *  setting never reached that policy, so accepting it promised a cap it could not enforce. */
+    @SerialName("effort_ceiling") val effortCeiling: String? = null,
     @SerialName("summary_field") val summaryField: Boolean = true,
     /** RETIRED 2026-09-05 (operator law): a compaction is built exactly like a turn and inherits
      *  the session's model and effort — any pin moves the reasoning off the session's and the
@@ -143,9 +145,16 @@ public data class QuirksConfig(
      *  Absent keeps the provider's base value; an explicit value overrides Muse's built-in cap. */
     @SerialName("tool_name_cap") val toolNameCap: Int? = null,
 ) {
+    /** An explicit false disables the runner. Absent keeps the auth/dialect shape's default. */
+    internal fun codeModeEnabled(default: Boolean): Boolean = codeMode ?: default
+
     init {
         require(codeModeMemoryMb == null || codeModeMemoryMb > 0) {
             "[providers.*.quirks] code_mode_memory_mb must be positive"
+        }
+        require(effortCeiling == null) {
+            "[providers.*.quirks] effort_ceiling is retired: each provider applies its verified model ceiling; " +
+                "remove the key"
         }
         require(compactEffort == null) {
             "[providers.*.quirks] compact_effort = '$compactEffort' is retired: a compaction is built " +

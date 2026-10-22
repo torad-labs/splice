@@ -228,7 +228,7 @@ public data class ProviderConfig(
     /** Code mode graduated in 0.4.0 (Marcos, 2026-09-13): ON by default for the registry shape,
      *  `code_mode = false` still turns it off, and every other provider shape stays off. */
     public val codeModeEnabled: Boolean
-        get() = quirks.codeMode ?: codeModeShape
+        get() = quirks.codeModeEnabled(codeModeShape)
 
     private fun codeModeRefusal(): String {
         val named = AuthKindRegistry.knownKinds()

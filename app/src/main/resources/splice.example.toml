@@ -77,7 +77,6 @@ auth = { kind = "chatgpt-oauth" }
 store = false
 account_id_header = true
 cache_key = "first-message-hash"
-effort_ceiling = "max"
 summary_field = true
 # RETIRED — compact_effort is not a knob any more, and setting it FAILS AT LOAD. A compaction is
 # built exactly like a turn and inherits the session's model and effort: any pin moves the
@@ -212,7 +211,7 @@ auth = { kind = "grok-oauth" }  # browser login: `claude-grok login`
 # Raw reasoning items stay encrypted by xAI; public form is summary/reasoning_text only.
 # reasoning_cache = false documented here because xai returns no encrypted reasoning envelopes —
 # the cache would only widen the request's include[] for nothing (it defaults on for codex).
-quirks = { cache_key = "session-id", effort_ceiling = "high", summary_field = true, tool_choice = true, reasoning_cache = false }
+quirks = { cache_key = "session-id", summary_field = true, tool_choice = true, reasoning_cache = false }
 # The rows below are the models splice.toml DECIDES about: their order, labels, windows and slots.
 # At start and hourly, the daemon asks the endpoint what it serves (here <base_url>/models).
 # Discovered models reach heads without a models allowlist within an hour, with published windows.

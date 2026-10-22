@@ -232,6 +232,24 @@ val allowedReleaseLicenses = setOf(
     "Unicode/ICU License",
 )
 
+// CycloneDX omits the POM licenses for these platform resources. Their exact 25.4.4.1.1 POMs declare
+// MIT License and Universal Permissive License, Version 1.0; preserve those primary declarations in
+// the published BOM. A version or artifact change falls outside this finite evidence and remains red.
+val graalJsCommunityIsolates = setOf(
+    "org.graalvm.js:js-isolate-darwin-aarch64-community:25.4.4.1.1",
+    "org.graalvm.js:js-isolate-linux-aarch64-community:25.4.4.1.1",
+    "org.graalvm.js:js-isolate-windows-amd64-community:25.4.4.1.1",
+)
+val graalJsCommunityIsolateLicenses = listOf(
+    linkedMapOf("license" to linkedMapOf("name" to "MIT License", "url" to "http://opensource.org/licenses/MIT")),
+    linkedMapOf(
+        "license" to linkedMapOf(
+            "name" to "Universal Permissive License, Version 1.0",
+            "url" to "http://opensource.org/licenses/UPL",
+        ),
+    ),
+)
+
 tasks.cyclonedxDirectBom {
     includeConfigs = listOf("runtimeClasspath")
     projectType = Component.Type.APPLICATION
@@ -277,6 +295,10 @@ val normalizeReleaseBom = tasks.register("normalizeReleaseBom") {
                     entry[key] = updated
                     if (key == "bom-ref") refReplacements[old] = updated
                 }
+            }
+            val coordinate = "${entry["group"]}:${entry["name"]}:${entry["version"]}"
+            if (coordinate in graalJsCommunityIsolates && (entry["licenses"] as? List<*>).isNullOrEmpty()) {
+                entry["licenses"] = graalJsCommunityIsolateLicenses
             }
             entry
         }

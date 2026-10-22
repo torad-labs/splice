@@ -27,6 +27,8 @@ import java.io.IOException
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.Executors
 import java.util.concurrent.atomic.AtomicLong
+import kotlin.time.Duration
+import kotlin.time.Duration.Companion.milliseconds
 
 /** Starts one child while its registry still owns the right to do so. */
 internal fun interface McpLaunchGate {
@@ -57,12 +59,73 @@ internal class HostedServerReplacement(
 }
 
 private fun interface HostedHandshakePublication {
-    suspend fun publish(process: Process, result: JsonObject): Boolean
+    suspend fun publish(process: Process, result: JsonObject, budget: Duration): Boolean
+}
+
+private class McpDeadline(
+    private val clock: HostClock,
+    budget: Duration,
+) {
+    private val expiresAt = clock.millis() + budget.inWholeMilliseconds
+
+    fun remaining(): Duration = (expiresAt - clock.millis()).coerceAtLeast(0L).milliseconds
 }
 
 private sealed class HostedHandshakeResult {
     data class Served(val result: JsonObject) : HostedHandshakeResult()
     data class Refused(val reason: String, val reply: McpResult.Refused) : HostedHandshakeResult()
+}
+
+/** Proves a decoded stdout message still belongs to the active child generation. */
+private fun interface HostedServerGeneration {
+    fun current(child: Process): Boolean
+}
+
+private data class HostedServerDispatchRuntime(
+    val codec: JsonRpcCodec,
+    val writer: McpChildWriter,
+    val serverRequests: HostedServerRequests,
+    val sink: NotificationSink,
+)
+
+/** Dispatches messages from one stdout generation only after its owner proves it is still current. */
+private class HostedServerDispatch(
+    private val runtime: HostedServerDispatchRuntime,
+    private val progress: ProgressTokens,
+    private val pending: ConcurrentHashMap<Long, Pending>,
+    private val tools: ToolsListCache,
+    private val generation: HostedServerGeneration,
+) {
+    fun dispatch(child: Process, msg: JsonObject) {
+        when (runtime.codec.kind(msg)) {
+            RpcKind.RESPONSE -> response(msg)
+            RpcKind.REQUEST -> runtime.serverRequests.dispatch(child, msg)
+            RpcKind.NOTIFICATION -> notification(child, msg)
+            RpcKind.INVALID -> Unit
+        }
+    }
+
+    private fun response(msg: JsonObject) {
+        val hostId = JsonScalars.str(msg["id"])?.toLongOrNull()
+        hostId?.let(runtime.writer::settled)
+        val slot = hostId?.let(pending::remove)
+        slot?.answer?.complete(runtime.codec.withId(msg, slot.clientId))
+    }
+
+    private fun notification(child: Process, msg: JsonObject) {
+        if (!generation.current(child)) return
+        if (runtime.codec.method(msg) == "notifications/progress") {
+            // A missing owner is late or unknown progress, never a global notification.
+            progress.owner(msg, pending)?.let { (slot, routed) -> runtime.sink.onProgress(slot.sessionId, routed) }
+        } else {
+            ordinaryNotification(msg)
+        }
+    }
+
+    private fun ordinaryNotification(msg: JsonObject) {
+        if (runtime.codec.method(msg) == "notifications/tools/list_changed") tools.drop()
+        runtime.sink.onNotification(msg)
+    }
 }
 
 /** Executes the bounded initialize exchange without adding branch pressure to process lifecycle ownership. */
@@ -76,14 +139,17 @@ private class HostedHandshake(
     private val publication: HostedHandshakePublication,
 ) {
     suspend fun run(process: Process): HostedHandshakeResult {
+        val deadline = McpDeadline(config.clock, config.initializeTimeout())
         val id = ids.getAndIncrement()
         val slot = Pending("host", JsonPrimitive(id))
         pending[id] = slot
-        val delivered = writer.request(codec.initializeRequest(id), id, process, config.initializeTimeout())
-        val answer = if (delivered) await(slot) else null
+        val writeBudget = deadline.remaining()
+        val delivered = writeBudget > Duration.ZERO &&
+            writer.request(codec.initializeRequest(id), id, process, writeBudget)
+        val answer = if (delivered) await(slot, deadline.remaining()) else null
         if (answer == null) return unavailable(id, delivered)
         val result = answer["result"] as? JsonObject
-        return if (result != null && publication.publish(process, result)) {
+        return if (result != null && publication.publish(process, result, deadline.remaining())) {
             HostedHandshakeResult.Served(result)
         } else {
             HostedHandshakeResult.Refused(
@@ -93,8 +159,8 @@ private class HostedHandshake(
         }
     }
 
-    private suspend fun await(slot: Pending): JsonObject? =
-        withTimeoutOrNull(config.initializeTimeout()) { slot.answer.await() }
+    private suspend fun await(slot: Pending, budget: Duration): JsonObject? =
+        if (budget > Duration.ZERO) withTimeoutOrNull(budget) { slot.answer.await() } else null
 
     private fun unavailable(id: Long, delivered: Boolean): HostedHandshakeResult.Refused {
         pending.remove(id)
@@ -186,6 +252,17 @@ internal class HostedServer(
         send,
         runtime.config.requestTimeout,
     )
+    private val dispatcher = HostedServerDispatch(
+        HostedServerDispatchRuntime(codec, send, serverRequests, sink),
+        progress,
+        pending,
+        tools,
+        HostedServerGeneration { child ->
+            synchronized(stateLock) {
+                if (closed || process !== child) false else writer?.child === child
+            }
+        },
+    )
 
     @Volatile var lastError: String? = null
         private set
@@ -221,27 +298,31 @@ internal class HostedServer(
     }
 
     private suspend fun forward(sessionId: String, clientId: JsonElement, request: JsonObject): JsonObject {
+        val deadline = McpDeadline(runtime.config.clock, runtime.config.requestTimeout())
         val hostId = ids.getAndIncrement()
         val (out, token) = progress.outbound(request, hostId)
         val child = synchronized(stateLock) { process?.takeIf { it.isAlive && initResult != null } }
             ?: return codec.error(clientId, RPC_SERVER_EXITED, "hosted MCP server '${spec.name}' is not ready")
         val slot = Pending(sessionId, clientId, token)
         pending[hostId] = slot
-        if (!send.request(codec.withId(out, JsonPrimitive(hostId)), hostId, child, runtime.config.requestTimeout())) {
+        val writeBudget = deadline.remaining()
+        if (writeBudget <= Duration.ZERO) {
             pending.remove(hostId)
-            return codec.error(
+            return codec.error(clientId, RPC_TIMED_OUT, "hosted MCP server '${spec.name}' did not answer in time")
+        }
+        val delivered = send.request(codec.withId(out, JsonPrimitive(hostId)), hostId, child, writeBudget)
+        val answerBudget = deadline.remaining()
+        // A charged wire ID remains cancelable until this exact generation settles it or exits.
+        return when {
+            !delivered -> codec.error(
                 clientId,
                 RPC_SERVER_EXITED,
                 "request delivery was not confirmed; outcome unknown, not replayed",
             )
-        }
-        // withTimeoutOrNull, not withTimeout+catch: an OUTER cancellation (the client went away, a
-        // caller's own deadline) is a TimeoutCancellationException too and must propagate, never be
-        // read as "the child did not answer" (review 4 regression, 2026-09-13).
-        // ONE reading for this request: the budget it waits under is the budget it was admitted under.
-        return withTimeoutOrNull(runtime.config.requestTimeout()) { slot.answer.await() } ?: run {
-            pending.remove(hostId)
-            codec.error(clientId, RPC_TIMED_OUT, "hosted MCP server '${spec.name}' did not answer in time")
+            answerBudget <= Duration.ZERO ->
+                codec.error(clientId, RPC_TIMED_OUT, "hosted MCP server '${spec.name}' did not answer in time")
+            else -> withTimeoutOrNull(answerBudget) { slot.answer.await() }
+                ?: codec.error(clientId, RPC_TIMED_OUT, "hosted MCP server '${spec.name}' did not answer in time")
         }
     }
 
@@ -334,7 +415,6 @@ internal class HostedServer(
         }
         val adopted = synchronized(stateLock) {
             if (closed) {
-                child.destroyForcibly()
                 false
             } else {
                 process = child
@@ -342,17 +422,17 @@ internal class HostedServer(
                 true
             }
         }
-        return if (adopted) {
-            stderr.watch(spec.name, child)
-            history.started()
-            Executors.defaultThreadFactory().newThread { pump(child) }.apply {
-                name = "mcp-host-${spec.name}"
-                isDaemon = true
-            }.start()
-            McpResult.Served(child)
-        } else {
-            McpResult.Refused("hosted MCP server '${spec.name}' was closed while starting")
+        if (!adopted) {
+            stops.stop(listOf(child))
+            return McpResult.Refused("hosted MCP server '${spec.name}' was closed while starting")
         }
+        stderr.watch(spec.name, child)
+        history.started()
+        Executors.defaultThreadFactory().newThread { pump(child) }.apply {
+            name = "mcp-host-${spec.name}"
+            isDaemon = true
+        }.start()
+        return McpResult.Served(child)
     }
 
     private fun completeHandshake(process: Process, outcome: HostedHandshakeResult): McpResult<JsonObject> =
@@ -372,11 +452,11 @@ internal class HostedServer(
      *  publish under stateLock, and only while THIS child is still the adopted, live, unclosed one —
      *  a close() landing between the answer and the publish must win (reviews 2-3, 2026-09-13), or a
      *  session would be minted on a server that is dead, unbound, or not yet serving. */
-    private suspend fun publish(p: Process, result: JsonObject): Boolean {
-        val initialized = send.notify(
+    private suspend fun publish(p: Process, result: JsonObject, budget: Duration): Boolean {
+        val initialized = budget > Duration.ZERO && send.notify(
             codec.notification("notifications/initialized"),
             p,
-            runtime.config.initializeTimeout(),
+            budget,
         )
         return synchronized(stateLock) {
             (initialized && !closed && process === p && p.isAlive).also { if (it) initResult = result }
@@ -413,32 +493,12 @@ internal class HostedServer(
             generateSequence { reader.readLine() }
                 .filter { it.isNotBlank() }
                 .mapNotNull(codec::parse)
-                .forEach { dispatch(p, it) }
+                .forEach { dispatcher.dispatch(p, it) }
             "stdout closed"
         } catch (e: IOException) {
             "read failed: ${e.message}"
         }
         transportFailed(p, reason)
-    }
-
-    private fun dispatch(child: Process, msg: JsonObject) {
-        when (codec.kind(msg)) {
-            RpcKind.RESPONSE -> {
-                val hostId = JsonScalars.str(msg["id"])?.toLongOrNull()
-                hostId?.let(send::settled)
-                val slot = hostId?.let(pending::remove)
-                slot?.answer?.complete(codec.withId(msg, slot.clientId))
-            }
-            RpcKind.REQUEST -> serverRequests.dispatch(child, msg)
-            RpcKind.NOTIFICATION -> if (codec.method(msg) == "notifications/progress") {
-                // A missing owner is late or unknown progress, never a global notification.
-                progress.owner(msg, pending)?.let { (slot, routed) -> sink.onProgress(slot.sessionId, routed) }
-            } else {
-                if (codec.method(msg) == "notifications/tools/list_changed") tools.drop()
-                sink.onNotification(msg)
-            }
-            RpcKind.INVALID -> Unit
-        }
     }
 
     /** Fails what is in flight — everything, or only [sessionId]'s requests (its session ended). */

@@ -75,7 +75,7 @@ internal class HostedServers(
         set(value) { store.closed = value }
     private val stops = McpProcessStop()
     private val launches = McpLaunchGate { spec, processLauncher ->
-        synchronized(lock) { if (closed) null else processLauncher(spec) }
+        if (synchronized(lock) { !closed }) processLauncher(spec) else null
     }
     val replacements = HostedReplacements(store, sharing, global, sessions, ::create)
 

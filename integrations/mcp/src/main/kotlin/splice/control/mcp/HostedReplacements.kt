@@ -6,8 +6,6 @@ import kotlinx.serialization.json.JsonObject
 import splice.client.mcp.McpServerSpec
 import splice.client.mcp.McpSharing
 
-private const val TOOLS_LIST_CHANGED = """{"jsonrpc":"2.0","method":"notifications/tools/list_changed"}"""
-
 internal fun interface HostedServerFactory {
     operator fun invoke(spec: McpServerSpec): HostedServer
 }
@@ -53,8 +51,8 @@ private class ReplacementAttempt(
 
     private fun rollback() {
         candidate?.let {
-            plans.discard(it)
             it.close("replacement was not committed")
+            plans.discard(it)
         }
         // The old admission stays explicitly drained after refusal. Only management's resume may reopen it.
         plan.fence?.reopen()
@@ -146,7 +144,7 @@ internal class HostedReplacements(
         }
         val retained = plans.commit(plan, next)
             ?: return McpResult.Refused("MCP registry or configuration changed during replacement")
-        retained.forEach { sessions.fanOut(it, TOOLS_LIST_CHANGED) }
+        retained.forEach { name -> listInvalidations.forEach { sessions.fanOut(name, it) } }
         return McpResult.Served(Unit)
     }
 

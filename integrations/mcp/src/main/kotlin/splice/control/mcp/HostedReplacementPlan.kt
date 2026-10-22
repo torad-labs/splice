@@ -11,12 +11,46 @@ internal data class PreparedReplacement(
     val fence: McpReplacementFence? = null,
 )
 
+/** Checks and mutations that require the registry lock while a replacement owns its old generation. */
+private class ReplacementOwnership(private val store: HostedServerStore) {
+    fun available(old: HostedServer, identity: McpIdentity): Boolean {
+        if (store.closed || identity == old.identity) return false
+        return !tupleClaimed(identity)
+    }
+
+    fun track(plan: PreparedReplacement, next: HostedServer): Boolean {
+        if (!owns(plan) || tupleClaimed(next.identity)) {
+            return false
+        }
+        store.candidates[next.identity] = next
+        return true
+    }
+
+    fun owns(plan: PreparedReplacement): Boolean {
+        if (store.closed || plan.fence?.held() != true) return false
+        return store.servers[plan.old.identity] === plan.old
+    }
+
+    fun candidateIsReady(next: HostedServer): Boolean =
+        store.candidates[next.identity] === next && next.alive
+
+    fun stillOwned(old: HostedServer, next: HostedServer): Boolean {
+        if ((store.reserved[old.identity] ?: 0) != 0) return false
+        if (store.servers[old.identity] !== old) return false
+        return !store.servers.containsKey(next.identity)
+    }
+
+    private fun tupleClaimed(identity: McpIdentity): Boolean =
+        store.servers.containsKey(identity) || store.candidates.containsKey(identity)
+}
+
 /** Validation and publication use the same registry lock as ordinary server leases. */
 internal class HostedReplacementPlan(
     private val store: HostedServerStore,
     private val sharing: McpSharing,
     private val global: GlobalMcpServers,
 ) {
+    private val ownership = ReplacementOwnership(store)
     fun prepare(name: String): McpResult<PreparedReplacement> {
         val configured = global()
         return synchronized(store.lock) {
@@ -35,17 +69,12 @@ internal class HostedReplacementPlan(
         val names = store.bindings.filterValues { it == old.identity }.keys.toList()
         val identity = identity(spec)
         return when {
-            !available(old, identity) ->
+            !ownership.available(old, identity) ->
                 McpResult.Refused("replacement needs a new, unused launch tuple on a running host")
             !aliasesMatch(names, configured, identity) ->
                 McpResult.Refused("every alias must configure the same replacement launch tuple")
             else -> McpResult.Served(PreparedReplacement(old, names, spec))
         }
-    }
-
-    private fun available(old: HostedServer, identity: McpIdentity): Boolean {
-        if (store.closed || identity == old.identity) return false
-        return !store.servers.containsKey(identity) && !store.candidates.containsKey(identity)
     }
 
     private fun reserve(plan: PreparedReplacement): McpResult<PreparedReplacement> {
@@ -68,12 +97,7 @@ internal class HostedReplacementPlan(
 
     /** A candidate is shutdown-owned before it is allowed to launch and exclusively reserves its tuple. */
     fun track(plan: PreparedReplacement, next: HostedServer): Boolean = synchronized(store.lock) {
-        if (!owns(plan) || store.candidates.containsKey(next.identity)) {
-            false
-        } else {
-            store.candidates[next.identity] = next
-            true
-        }
+        ownership.track(plan, next)
     }
 
     fun discard(next: HostedServer) {
@@ -101,27 +125,13 @@ internal class HostedReplacementPlan(
     private fun publishable(plan: PreparedReplacement, next: HostedServer, configured: JsonObject): Boolean {
         val names = store.bindings.filterValues { it == plan.old.identity }.keys.toSet()
         val checks = listOf(
-            owns(plan),
-            candidateIsReady(next),
+            ownership.owns(plan),
+            ownership.candidateIsReady(next),
             names == plan.names.toSet(),
             aliasesMatch(plan.names, configured, next.identity),
-            stillOwned(plan.old, next),
+            ownership.stillOwned(plan.old, next),
         )
         return checks.all { it }
-    }
-
-    private fun owns(plan: PreparedReplacement): Boolean {
-        if (store.closed || plan.fence?.held() != true) return false
-        return store.servers[plan.old.identity] === plan.old
-    }
-
-    private fun candidateIsReady(next: HostedServer): Boolean =
-        store.candidates[next.identity] === next && next.alive
-
-    private fun stillOwned(old: HostedServer, next: HostedServer): Boolean {
-        if ((store.reserved[old.identity] ?: 0) != 0) return false
-        if (store.servers[old.identity] !== old) return false
-        return !store.servers.containsKey(next.identity)
     }
 
     private fun publish(plan: PreparedReplacement, next: HostedServer) {

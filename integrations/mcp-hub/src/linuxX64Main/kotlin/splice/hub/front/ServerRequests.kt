@@ -11,6 +11,7 @@ class ServerRequests(private val changed: () -> Unit) {
         val holder: Holder,
         val generation: String?,
         val id: JsonElement,
+        var session: Session? = null,
         var answering: Boolean = false,
     )
 
@@ -31,9 +32,13 @@ class ServerRequests(private val changed: () -> Unit) {
         return key
     }
 
-    fun answer(msg: JsonObject, id: JsonElement) {
+    fun bind(key: String, session: Session) {
+        requests[key]?.session = session
+    }
+
+    fun answer(session: Session, msg: JsonObject, id: JsonElement) {
         val key = (id as? JsonPrimitive)?.contentOrNull ?: return
-        val asked = requests[key] ?: return
+        val asked = requests[key]?.takeIf { it.session === session } ?: return
         reply(key, Rpc.with(msg, Rpc.ID, asked.id))
     }
 

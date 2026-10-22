@@ -15,6 +15,7 @@ internal class HolderLinks(
 ) {
     private val memory = HolderMemory(known, context.clock)
     private val handshake = HolderHandshake(memory)
+    private val generationReads = HolderGenerationReads(context.routes, context.timers, context.clock)
 
     fun connectCandidate(holder: Holder) = attachCandidate(holder)
 
@@ -27,7 +28,7 @@ internal class HolderLinks(
         val holder = known.getOrPut(socket) { Holder(socket) }
         holder.generation = context.routes.generation(socket) ?: holder.generation
         val link = context.connections.adopt(fd, socket, saved, { line -> fromHolder(holder, line) }, { lost(holder) })
-        holder.link = link
+        generationReads.bind(holder, link)
         val candidate = replacements.links.candidate(holder)
         if (candidate?.phase == CANDIDATE_STARTING) {
             holder.ready = false
@@ -81,7 +82,7 @@ internal class HolderLinks(
             replacements.links.failed(holder, "the daemon-started candidate did not accept a front connection")
             return
         }
-        holder.link = link
+        generationReads.bind(holder, link)
         holder.identity = Ids.socket(holder.socket)
         holder.init = null
         link.send(Rpc.encode(handshake.hello()))
@@ -104,7 +105,7 @@ internal class HolderLinks(
     }
 
     private fun handshake(route: Route, holder: Holder, link: HolderLink) {
-        holder.link = link
+        generationReads.bind(holder, link)
         val identity = Ids.socket(holder.socket)
         if (holder.init != null && holder.identity == identity) {
             context.files.say("adopted ${route.server} at ${holder.socket} without a handshake")

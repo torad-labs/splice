@@ -85,7 +85,7 @@ class Relay(
     }
 
     /** A session's answer to a server's request, sent back under the id the server used. */
-    fun answer(msg: JsonObject, id: JsonElement) = fromServer.answer(msg, id)
+    fun answer(session: Session, msg: JsonObject, id: JsonElement) = fromServer.answer(session, msg, id)
 
     fun fromHolder(holder: Holder, msg: JsonObject) {
         val id = msg[Rpc.ID]
@@ -168,6 +168,7 @@ class Relay(
             fromServer.reply(key, Rpc.error(id, "no client has a stream open"))
             return
         }
+        fromServer.bind(key, target)
         target.stream?.message(Rpc.with(msg, Rpc.ID, JsonPrimitive(key)))
     }
 

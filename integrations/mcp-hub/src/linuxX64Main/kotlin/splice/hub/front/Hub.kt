@@ -99,7 +99,7 @@ internal class HubReplacements(
     private val timers: Timers,
     private val clock: Clock,
 ) {
-    private val replay = ReplacementReplay(routes, holders)
+    private val replay = ReplacementReplay(routes, holders, relay)
 
     fun pause(server: String, launch: String): String? {
         val route = route(server, launch) ?: return missingRoute(server, launch)
@@ -167,6 +167,8 @@ internal class HubReplacements(
             val route = routes.byKey(drain.key()) ?: return@forEach
             val candidate = drain.candidate ?: return@forEach
             when (drain.phase) {
+                CANDIDATE_STARTING ->
+                    holders.replacements.candidates.startCandidate(route, candidate, holders.links::connectCandidate)
                 COMMITTING -> replay.commit(route, drain, candidate)
                 RETIRING, RETIRE_BLOCKED -> replayRetirement(route, drain, candidate)
                 ROLLING_BACK -> replay.rollback(route, drain, candidate)
@@ -199,25 +201,7 @@ internal class HubReplacements(
             val route = routes.byKey(drain.key()) ?: return@forEach
             if (relay.inFlight(drain.socket) != 0) return@forEach
             val candidate = holders.replacements.candidates.claimCandidate(route) ?: return@forEach
-            routes.replacements.commit(route, drain.socket, drain.generation, candidate) { failure ->
-                val routesMatch = holders.replacements.candidates.canRoute(route, candidate)
-                if (failure != null || !routesMatch) {
-                    holders.replacements.candidates.candidateBlocked(
-                        route,
-                        failure ?: "the candidate was no longer live when cutover was confirmed",
-                    )
-                    return@commit
-                }
-                val moved = routes.replacements.replace(route, drain.socket, drain.generation, candidate)
-                if (moved == null) {
-                    holders.replacements.candidates.candidateBlocked(
-                        route,
-                        "the target changed before its candidate could take the settled route",
-                    )
-                } else {
-                    holders.replacements.candidates.routed(route, candidate, moved)
-                }
-            }
+            replay.commit(route, drain, candidate)
         }
     }
 
@@ -225,19 +209,13 @@ internal class HubReplacements(
         holders.replacements.retirements.candidates().forEach { drain ->
             val route = routes.byKey(drain.key()) ?: return@forEach
             val candidate = drain.candidate ?: return@forEach
+            if (relay.inFlight(drain.socket) != 0) return@forEach
             val claimed = holders.replacements.retirements.claim(route) { expected ->
                 holders.links.of(route)?.let {
                     it.ready && it.link != null && it.generation == expected.generation
                 } == true
             } ?: return@forEach
-            routes.replacements.retire(route, claimed.socket, claimed.generation, candidate) { failure ->
-                if (failure == null) {
-                    holders.replacements.retirements.retired(route)
-                } else {
-                    holders.replacements.retirements.blocked(route, failure)
-                    timers.at(clock.now() + RETIRE_RETRY) { retryRetirement(route) }
-                }
-            }
+            replayRetirement(route, claimed, candidate)
         }
     }
 
@@ -314,7 +292,7 @@ internal class HubHttp(
         when {
             method != null && id != null -> request(conn, session, msg, method, id)
             method != null -> notification(conn, session, msg, method)
-            id != null -> conn.reply(ACCEPTED).also { relay.answer(msg, id) }
+            id != null -> conn.reply(ACCEPTED).also { relay.answer(session, msg, id) }
             else -> conn.reply(BAD_REQUEST, Rpc.error(JsonNull, "neither a request, a notification nor an answer"))
         }
     }

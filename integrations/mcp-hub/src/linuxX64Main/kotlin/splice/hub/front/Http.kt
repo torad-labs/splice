@@ -279,16 +279,26 @@ class HolderLink(
 ) : Watched(fd) {
     val inbox = Bytes()
     private val writes = HolderWrites(sys)
+    var reading = true
     val pendingOutput: Boolean get() = writes.pending
 
-    override fun events(): Int = IN or (if (writes.pending) OUT else 0)
+    override fun events(): Int = (if (reading) IN else 0) or (if (writes.pending) OUT else 0)
 
     override fun ready(revents: Int) {
         if (revents and OUT != 0 && !writes.flush(fd)) return close()
+        if (!reading) {
+            if (sys.gone(revents)) close()
+            return
+        }
         if (revents and IN != 0 || sys.gone(revents)) {
             if (sys.readInto(fd, inbox) == 0) return close()
             lines()
         }
+    }
+
+    fun resumeReading() {
+        reading = true
+        lines()
     }
 
     private fun lines() {

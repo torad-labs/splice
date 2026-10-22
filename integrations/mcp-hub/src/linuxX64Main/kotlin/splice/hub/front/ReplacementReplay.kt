@@ -1,9 +1,20 @@
 package splice.hub.front
 
 /** Replays persisted routing transitions against the daemon's durable replacement decision. */
-internal class ReplacementReplay(private val routes: Routes, private val holders: Holders) {
+internal class ReplacementReplay(
+    private val routes: Routes,
+    private val holders: Holders,
+    private val relay: Relay,
+) {
     fun commit(route: Route, drain: HolderDrain, candidate: ReplacementCandidate) {
         routes.replacements.commit(route, drain.socket, drain.generation, candidate) { failure ->
+            if (relay.inFlight(drain.socket) != 0) {
+                holders.replacements.candidates.candidateBlocked(
+                    route,
+                    "the old holder acquired work during validation; retry after those exchanges settle",
+                )
+                return@commit
+            }
             val routesMatch = holders.replacements.candidates.canRoute(route, candidate)
             if (failure != null || !routesMatch) {
                 holders.replacements.candidates.candidateBlocked(

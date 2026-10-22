@@ -51,7 +51,7 @@ internal class HolderCandidates(
     fun startCandidate(route: Route, candidate: ReplacementCandidate, connect: (Holder) -> Unit): String? {
         val drain = store.drains[route.key()] ?: return "this target is not paused for replacement"
         val refusal = preparation.refusal(drain, route, candidate)
-        return if (refusal != null || drain.candidate != null) {
+        return if (refusal != null) {
             refusal
         } else {
             preparation.prepare(drain, candidate, connect, changed)
@@ -98,7 +98,7 @@ internal class HolderCandidates(
     fun resume(route: Route): Boolean =
         store.drains[route.key()]?.takeIf { it.phase in resumablePhases }?.let {
             store.drains.remove(route.key())
-        } != null
+        }?.also { changed() } != null
 
     /** The target-specific drain view reports the retained wire ids, not only clients still attached to them. */
     fun status(server: String, launch: String, outstanding: Int, attached: Int): JsonObject? {
@@ -157,7 +157,7 @@ internal class HolderAdmissions(private val store: HolderReplacementStore) {
     private fun captures(drain: HolderDrain, route: Route): Boolean = listOf(
         route.key() in drain.moved,
         route.socket == drain.socket,
-        route.socket == drain.candidate?.socket,
+        drain.candidate?.socket?.let { route.socket == it } == true,
         drain.server == route.server && drain.launch == route.launch,
     ).any { it }
 }
@@ -186,6 +186,7 @@ private class HolderCandidatePreparation(
         val holder = known.getOrPut(candidate.socket) { Holder(candidate.socket) }
         if (holder.generation != candidate.generation) details.reset(holder, candidate.generation)
         if (holder.ready) holder.init?.let { return links.verified(holder, it) }
+        if (holder.connecting) return null
         drain.phase = CANDIDATE_STARTING
         holder.connecting = true
         connect(holder)

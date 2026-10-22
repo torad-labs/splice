@@ -364,6 +364,7 @@ internal class HolderMemory(
     private val proof: HolderProof,
 ) {
     private var next = 0L
+    private val records = HolderStateRecord()
 
     fun hello(): String = "$HELLO${++next}"
 
@@ -392,6 +393,7 @@ internal class HolderMemory(
         holder.initializedUncertain = Rpc.str(body, INITIALIZED_UNCERTAIN) == "true"
         holder.retirementFence = Rpc.str(body, RETIREMENT_FENCE)
         holder.reverseResponseRetries = Rpc.str(body, REVERSE_RESPONSE_RETRIES)?.toIntOrNull() ?: 0
+        holder.settlementProtocol = Rpc.str(body, SETTLEMENT_PROTOCOL) == "true"
         holder.recoveryUncertain = Rpc.str(body, RECOVERY_UNCERTAIN) == "true" || proof.unproven(holder)
         holder.handshakeId?.removePrefix(HELLO)?.toLongOrNull()?.let { next = maxOf(next, it) }
     }
@@ -404,23 +406,9 @@ internal class HolderMemory(
             holder.initializedUncertain,
             holder.retirementFence != null,
             holder.reverseResponseRetries != 0,
+            holder.settlementProtocol,
         ).any { it }
-        return if (persisted) holder.socket to record(holder) else null
-    }
-
-    private fun record(holder: Holder): JsonObject = buildJsonObject {
-        holder.generation?.let { put(GENERATION, it) }
-        holder.identity?.let { put(IDENTITY, it) }
-        holder.init?.let { put(INITIALIZE, it) }
-        holder.handshakeId?.let { put(HANDSHAKE_ID, it) }
-        holder.handshakeGeneration?.let { put(HANDSHAKE_GENERATION, it) }
-        holder.handshakeIdentity?.let { put(HANDSHAKE_IDENTITY, it) }
-        put(LAST_CALL, holder.lastCall)
-        put(INITIALIZED_PENDING, holder.initializedPending)
-        put(INITIALIZED_UNCERTAIN, holder.initializedUncertain)
-        holder.retirementFence?.let { put(RETIREMENT_FENCE, it) }
-        if (holder.reverseResponseRetries != 0) put(REVERSE_RESPONSE_RETRIES, holder.reverseResponseRetries)
-        put(RECOVERY_UNCERTAIN, holder.recoveryUncertain)
+        return if (persisted) holder.socket to records.record(holder) else null
     }
 }
 

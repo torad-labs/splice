@@ -6,6 +6,7 @@ import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.contentOrNull
 import kotlinx.serialization.json.put
+import splice.hub.holder.HolderProtocol
 
 internal data class ServerResponseState(
     var text: String? = null,
@@ -61,14 +62,12 @@ internal class ServerRequestLedger {
         saved: JsonObject?,
         holder: (String) -> Holder,
         sessions: Map<String, Session>,
-        remembered: (Holder) -> Unit,
     ) {
         saved?.forEach { (key, value) ->
             (value as? JsonObject)?.let { body ->
                 restored(key, body, holder, sessions)?.let { asked ->
                     requests[key] = asked
                     retainedResponseBytes += asked.response.utf8Bytes.toLong()
-                    remembered(asked.holder)
                 }
             }
         }
@@ -87,15 +86,17 @@ internal class ServerRequestLedger {
                 asked.session != null
         }?.let { (key, asked) -> key to requireNotNull(asked.session) }
 
-    fun settles(key: String, asked: ServerRequestOutstanding): Boolean {
+    fun settles(key: String, asked: ServerRequestOutstanding, checkpoint: () -> Boolean): Boolean {
         val settled = requests[key] === asked &&
             asked.holder.generation == asked.generation &&
             asked.response.delivery == RESPONSE_WRITE_UNCERTAIN
-        if (settled) {
-            requests.remove(key)
-            retainedResponseBytes -= asked.response.utf8Bytes.toLong()
-        }
-        return settled
+        if (!settled) return false
+        requests.remove(key)
+        retainedResponseBytes -= asked.response.utf8Bytes.toLong()
+        if (checkpoint()) return true
+        requests[key] = asked
+        retainedResponseBytes += asked.response.utf8Bytes.toLong()
+        return false
     }
 
     fun removeGeneration(holder: Holder, generation: String) {
@@ -199,10 +200,6 @@ internal class ServerRequestDelivery(
             true
         } == true
 
-    fun remembers(holder: Holder) {
-        holder.resumeReverseResponses = { generation -> resume(holder, generation) }
-    }
-
     /** A request never reaches a new client after restart; its exact holder id receives a durable recovery error. */
     fun recover() {
         ledger.requests.keys.forEach { key ->
@@ -213,22 +210,6 @@ internal class ServerRequestDelivery(
     /** A live persistence failure is answered on the exact holder generation rather than waiting for another restart. */
     val interrupted: (String) -> Unit = { key ->
         ledger.current(key)?.id?.let { id -> reply(key, Rpc.error(id, DELIVERY_INTERRUPTED)) }
-    }
-
-    private fun resume(holder: Holder, generation: String) {
-        ledger.requests
-            .filterValues { resumable(it, holder, generation) }
-            .forEach { (key, asked) -> send(key, asked) }
-    }
-
-    private fun resumable(
-        asked: ServerRequestOutstanding,
-        holder: Holder,
-        generation: String,
-    ): Boolean {
-        if (asked.holder !== holder) return false
-        if (asked.generation != generation) return false
-        return asked.response.delivery == RESPONSE_PREPARED
     }
 
     private fun prepared(asked: ServerRequestOutstanding, text: String): Boolean = when (asked.response.delivery) {
@@ -253,10 +234,26 @@ internal class ServerRequestDelivery(
         return asked.response.durable
     }
 
-    private fun send(key: String, asked: ServerRequestOutstanding) {
+    fun send(key: String, asked: ServerRequestOutstanding) {
         preparedForSend(asked)?.let { prepared ->
-            if (writing(asked)) prepared.link.send(prepared.text, HolderWritten { settled(key, asked) })
+            if (asked.holder.settlementProtocol) {
+                sendRecorded(key, asked, prepared)
+            } else {
+                sendLegacy(key, asked, prepared)
+            }
         }
+    }
+
+    private fun sendRecorded(key: String, asked: ServerRequestOutstanding, prepared: PreparedResponse) {
+        if (!prepared.link.accepts(HolderProtocol.reverse(key))) {
+            retried(asked)
+        } else if (writing(asked)) {
+            if (prepared.link.send(HolderProtocol.reverse(key))) prepared.link.send(prepared.text)
+        }
+    }
+
+    private fun sendLegacy(key: String, asked: ServerRequestOutstanding, prepared: PreparedResponse) {
+        if (writing(asked)) prepared.link.send(prepared.text, HolderWritten { settled(key, asked) })
     }
 
     private fun preparedForSend(asked: ServerRequestOutstanding): PreparedResponse? {
@@ -297,7 +294,7 @@ internal class ServerRequestDelivery(
     }
 
     private fun settled(key: String, asked: ServerRequestOutstanding) {
-        if (ledger.settles(key, asked)) {
+        if (ledger.settles(key, asked, persistence::checkpoint)) {
             asked.holder.reverseResponseRetries = 0
             persistence.changed()
         }
@@ -315,6 +312,6 @@ private const val RESPONSE_RETRIES = "response_retries"
 private const val RESPONSE_RETRY_LIMIT = 3
 internal const val MAX_RETAINED_REVERSE = 256
 internal const val MAX_RETAINED_RESPONSE_BYTES = 16L * 1024 * 1024
-private const val RESPONSE_PREPARED = "prepared"
-private const val RESPONSE_WRITE_UNCERTAIN = "write_uncertain"
+internal const val RESPONSE_PREPARED = "prepared"
+internal const val RESPONSE_WRITE_UNCERTAIN = "write_uncertain"
 private const val RESPONSE_LEGACY_UNCERTAIN = "legacy_write_uncertain"

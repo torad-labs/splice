@@ -20,6 +20,7 @@ class ServerRequests(
     private val persistence = HolderPersistence(changed, checkpoint)
     private val ledger = ServerRequestLedger()
     private val delivery = ServerRequestDelivery(ledger, persistence)
+    internal val reconciliation = ServerRequestReconciliation(ledger, persistence, delivery)
 
     val size: Int get() = ledger.requests.size
     val busy: Set<String> get() = ledger.requests.values.map { it.holder.socket }.toSet()
@@ -33,9 +34,8 @@ class ServerRequests(
         get() = ledger.requests.values.map { it.holder to it.generation }.distinct()
 
     /** Keeps the server request before it can reach a session. A failed checkpoint retains it and owns its recovery. */
-    fun retain(holder: Holder, id: JsonElement): ServerRequestRetention {
+    internal fun retain(holder: Holder, id: JsonElement): ServerRequestRetention {
         val key = ledger.retain(holder, id) ?: return ServerRequestRetention.CapacityRefused
-        delivery.remembers(holder)
         if (persistence.checkpoint()) return ServerRequestRetention.Retained(key)
         delivery.interrupted(key)
         return ServerRequestRetention.PersistenceFailed
@@ -48,7 +48,7 @@ class ServerRequests(
     }
 
     fun restore(saved: JsonObject?, holder: (String) -> Holder, sessions: Map<String, Session>) {
-        ledger.restore(saved, holder, sessions, delivery::remembers)
+        ledger.restore(saved, holder, sessions)
         delivery.recover()
     }
 

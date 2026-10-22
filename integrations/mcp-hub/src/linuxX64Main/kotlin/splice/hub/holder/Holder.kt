@@ -205,11 +205,14 @@ class Holder(private val socketPath: String, private val command: List<String>) 
     private val fromClient = Bytes()
     private val toServer = Bytes()
     private val toClient = Bytes()
+    private val settlement = HolderSettlement(toServer, toClient)
     private val scratch = ByteArray(CHUNK)
     private var sent = 0
     private var client: Fd? = null
     private var waiting: Fd? = null
     private var serverDone = false
+    private val clientOutputPending: Boolean
+        get() = client != null && toClient.size > 0
 
     fun run(): Int {
         signal(SIGPIPE, SIG_IGN)
@@ -220,7 +223,7 @@ class Holder(private val socketPath: String, private val command: List<String>) 
         // a stop for the holder is a stop for its server, passed on before the holder goes
         signal(SIGTERM, staticCFunction { _: Int -> kill(serverPid.value, SIGTERM); _exit(STOPPED) })
         val listener = Listener(socketPath)
-        while (!serverDone || flushing()) {
+        while (!serverDone || clientOutputPending) {
             if (!turn(server, listener)) break
         }
         listener.remove()
@@ -228,9 +231,6 @@ class Holder(private val socketPath: String, private val command: List<String>) 
         close(server.stdin.fd)
         return server.exitCode()
     }
-
-    /** Unsent server output still owed to a connected client, which keeps the holder up after the server ends. */
-    private fun flushing(): Boolean = client != null && toClient.size > 0
 
     private fun turn(server: Server, listener: Listener): Boolean = memScoped {
         val fds = allocArray<pollfd>(POLLED)
@@ -249,8 +249,8 @@ class Holder(private val socketPath: String, private val command: List<String>) 
     /** What each descriptor is polled for this turn; a full buffer stops reading the side that fills it. */
     private fun arm(fds: CArrayPointer<pollfd>, server: Server, listener: Listener) {
         watch(fds[AT_LISTENER], listener.fd.fd, POLLIN)
-        watch(fds[AT_SERVER_OUT], if (serverDone || toClient.size > CAP) -1 else server.stdout.fd, POLLIN)
-        val wantsIn = if (toServer.size > CAP) 0 else POLLIN
+        watch(fds[AT_SERVER_OUT], if (serverDone || toClient.size > HOLDER_BUFFER_CAP) -1 else server.stdout.fd, POLLIN)
+        val wantsIn = if (toServer.size > HOLDER_BUFFER_CAP) 0 else POLLIN
         val wantsOut = if (toClient.size > sent) POLLOUT else 0
         watch(fds[AT_CLIENT], client?.fd ?: -1, wantsIn or wantsOut)
         watch(fds[AT_SERVER_IN], if (toServer.size > 0) server.stdin.fd else -1, POLLOUT)
@@ -277,10 +277,7 @@ class Holder(private val socketPath: String, private val command: List<String>) 
             return
         }
         adopt(next)
-        fromClient.append(scratch, n)
-        val whole = fromClient.wholeLines()
-        toServer.append(fromClient.data, whole)
-        fromClient.drop(whole)
+        receivedClient(n)
     }
 
     private fun adopt(next: Fd) {
@@ -288,6 +285,24 @@ class Holder(private val socketPath: String, private val command: List<String>) 
         client = next
         fromClient.clear()
         sent = 0
+        settlement.adopted()
+    }
+
+    private fun receivedClient(n: Int) {
+        fromClient.append(scratch, n)
+        val whole = fromClient.wholeLines()
+        if (whole != 0) queueClientLines(whole)
+        fromClient.drop(whole)
+    }
+
+    private fun queueClientLines(whole: Int) {
+        var start = 0
+        while (start < whole) {
+            var end = start
+            while (fromClient.data[end] != NEWLINE) end++
+            settlement.accept(fromClient.text(start, end))
+            start = end + 1
+        }
     }
 
     private fun fromServer(server: Server) {
@@ -305,23 +320,30 @@ class Holder(private val socketPath: String, private val command: List<String>) 
             if (n < 0) return drop(current)
             sent += n
             val whole = toClient.wholeLines(sent)
+            if (whole != 0) deliveredClientLines(whole)
             toClient.drop(whole)
             sent -= whole
+            settlement.clientDelivered("")
         }
         val n = current.readInto(scratch)
         if (n == 0) return drop(current)
-        if (n > 0) {
-            fromClient.append(scratch, n)
-            val whole = fromClient.wholeLines()
-            toServer.append(fromClient.data, whole)
-            fromClient.drop(whole)
+        if (n > 0) receivedClient(n)
+    }
+
+    private fun deliveredClientLines(whole: Int) {
+        var start = 0
+        while (start < whole) {
+            var end = start
+            while (toClient.data[end] != NEWLINE) end++
+            settlement.clientDelivered(toClient.text(start, end))
+            start = end + 1
         }
     }
 
     private fun feedServer(server: Server) {
         val n = server.stdin.writeFrom(toServer)
         if (n > 0) {
-            toServer.drop(n)
+            settlement.serverFed(n)
         } else if (n < 0) {
             serverDone = true
         }
@@ -340,7 +362,8 @@ val serverPid = AtomicInt(0)
 
 private const val STOPPED = 143
 private const val CHUNK = 64 * 1024
-private const val CAP = 64 * 1024 * 1024
+internal const val HOLDER_BUFFER_CAP = 64 * 1024 * 1024
+private const val NEWLINE: Byte = 10
 private const val POLLED = 5
 private const val AT_LISTENER = 0
 private const val AT_SERVER_OUT = 1

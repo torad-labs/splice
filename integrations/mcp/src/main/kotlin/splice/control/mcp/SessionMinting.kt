@@ -26,11 +26,11 @@ internal class SessionMinting(
 ) {
 
     /** A session on [name]'s child: [sessionId] null mints a fresh id, non-null adopts the client's own. */
-    suspend fun mint(name: String, sessionId: String?, head: String? = null): Minted {
+    suspend fun mint(name: String, sessionId: String?, head: String? = null, admission: McpAdmission? = null): Minted {
         // acquire() reserves the server against eviction until release(); the handshake happens inside
         // that window and the session is registered only if the server is still bound when it ends —
         // so no session is ever created that must then be un-created.
-        val server = when (val acquired = servers.acquire(name)) {
+        val server = when (val acquired = servers.acquire(name, admission)) {
             is McpResult.Refused -> return Minted(null, acquired.reason)
             is McpResult.Served -> acquired.value
         }
@@ -67,9 +67,9 @@ internal class SessionMinting(
      *
      *  Refused for anything but a REQUEST (a notification needs no session to be answered), and for an
      *  id the host still holds or the client ended ([McpSessions.adoptable]). */
-    suspend fun adopt(name: String, client: McpClient, kind: RpcKind): McpSession? {
+    suspend fun adopt(name: String, client: McpClient, kind: RpcKind, admission: McpAdmission? = null): McpSession? {
         if (kind != RpcKind.REQUEST || !sessions.adoptable(client.sessionId)) return null
-        val minted = mint(name, client.sessionId, client.head)
+        val minted = mint(name, client.sessionId, client.head, admission)
         minted.session?.let { session -> log(adopted(name, session, client.protocolVersion)) }
         return minted.session
     }

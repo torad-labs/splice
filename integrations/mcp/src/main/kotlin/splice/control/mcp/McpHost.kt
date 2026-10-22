@@ -78,6 +78,9 @@ public class McpHost(
     public val probe: McpProbe =
         McpProbe(this, status, HostedServerLookup(servers::get), config.clock, config.testListTimeout)
 
+    /** Management-only pause, settlement status and compatible replacement for a hosted server. */
+    public val replacements: McpReplacements = McpReplacements(servers.replacements)
+
     @Volatile private var sweeper: ScheduledExecutorService? = null
 
     public fun start() {
@@ -113,14 +116,34 @@ public class McpHost(
     ): McpReply {
         val msg = codec.parse(body)
             ?: return bad(HttpStatus.BAD_REQUEST, JsonPrimitive(0), RPC_INVALID, "not a JSON-RPC object")
-        val kind = codec.kind(msg)
-        val id = msg["id"] ?: JsonPrimitive(0)
-        return when {
-            kind == RpcKind.INVALID -> bad(HttpStatus.BAD_REQUEST, id, RPC_INVALID, "invalid JSON-RPC")
-            kind == RpcKind.REQUEST && codec.method(msg) == "initialize" -> initialize(name, msg, head)
-            !protocolAccepted(name, sessionId, protocolVersion) ->
-                bad(HttpStatus.BAD_REQUEST, id, RPC_INVALID, "unsupported MCP-Protocol-Version '$protocolVersion'")
-            else -> forSession(name, McpClient(sessionId, protocolVersion, head), msg, kind)
+        val message = McpHostMessage(msg, codec)
+        val kind = message.kind
+        val id = message.id
+        if (kind == RpcKind.INVALID) return bad(HttpStatus.BAD_REQUEST, id, RPC_INVALID, "invalid JSON-RPC")
+        val admission = if (message.settlement) {
+            null
+        } else {
+            servers.replacements.admit(name, sessions.get(name, sessionId))
+        }
+        return if (!message.accepts(admission)) {
+            bad(HttpStatus.SERVICE_UNAVAILABLE, id, RPC_SERVER_ERROR, "no hosted MCP admission for '$name'")
+        } else {
+            try {
+                when {
+                    kind == RpcKind.REQUEST && codec.method(msg) == "initialize" ->
+                        initialize(name, msg, head, admission)
+                    !protocolAccepted(name, sessionId, protocolVersion) ->
+                        bad(
+                            HttpStatus.BAD_REQUEST,
+                            id,
+                            RPC_INVALID,
+                            "unsupported MCP-Protocol-Version '$protocolVersion'",
+                        )
+                    else -> forSession(name, McpClient(sessionId, protocolVersion, head), msg, kind, admission)
+                }
+            } finally {
+                admission?.leave()
+            }
         }
     }
 
@@ -184,19 +207,25 @@ public class McpHost(
     /** `/api/mcp`. */
     public fun statusJson(): String = status.json()
 
-    private suspend fun initialize(name: String, msg: JsonObject, head: String?): McpReply {
+    private suspend fun initialize(name: String, msg: JsonObject, head: String?, admission: McpAdmission?): McpReply {
         val id = msg.getValue("id")
-        val minted = minting.mint(name, null, head)
+        val minted = minting.mint(name, null, head, admission)
         val code = if (minted.timedOut) RPC_TIMED_OUT else RPC_SERVER_ERROR
         return minted.session?.let { McpReply(HTTP_OK, codec.encode(codec.result(id, it.initResult)), it.id) }
             ?: bad(HttpStatus.SERVICE_UNAVAILABLE, id, code, minted.failure)
     }
 
-    private suspend fun forSession(name: String, client: McpClient, msg: JsonObject, kind: RpcKind): McpReply {
+    private suspend fun forSession(
+        name: String,
+        client: McpClient,
+        msg: JsonObject,
+        kind: RpcKind,
+        admission: McpAdmission?,
+    ): McpReply {
         val id = msg["id"] ?: JsonPrimitive(0)
         val sessionId = client.sessionId
         val session = sessions.get(name, sessionId)
-            ?: minting.adopt(name, client, kind)
+            ?: minting.adopt(name, client, kind, admission)
             ?: return bad(HttpStatus.NOT_FOUND, id, RPC_UNKNOWN_SESSION, "session not found")
         sessions.touch(session)
         val server = servers.reserve(name)

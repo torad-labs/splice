@@ -31,6 +31,7 @@ internal class McpMount(
 
     override fun register(route: Route) {
         route.get("/api/mcp") { guard.guarded(call) { ControlReplies.respond(call, status()) } }
+        registerReplacements(route)
         route.post("/api/mcp/access-key/rotate") { guard.guarded(call) { access.rotate(call) } }
         route.post("/api/mcp/access-key/headers") { guard.guarded(call) { access.headers(call) } }
         route.post("/api/mcp/services/refresh") {
@@ -55,10 +56,49 @@ internal class McpMount(
             route.post("/api/mcp/hub/start") { guard.guarded(call) { front.start(call) } }
             route.post("/api/mcp/hub/listing") { guard.guarded(call) { front.listing(call) } }
             route.post("/api/mcp/hub/roots") { guard.guarded(call) { front.roots(call) } }
+            route.post("/api/mcp/hub/replacement/start") { guard.guarded(call) { front.replacementStart(call) } }
+            route.post("/api/mcp/hub/replacement/retire") { guard.guarded(call) { front.replacementRetire(call) } }
+            route.post("/api/mcp/hub/replacement/commit") { guard.guarded(call) { front.replacementCommit(call) } }
+            route.post("/api/mcp/hub/replacement/rollback") { guard.guarded(call) { front.replacementRollback(call) } }
+            route.post("/api/mcp/hub/replacement/exit") { guard.guarded(call) { front.replacementExit(call) } }
         }
         route.post("/mcp/{name}") { guard.guarded(call, Door.MCP) { routes.post(call) } }
         route.get("/mcp/{name}") { guard.guarded(call, Door.MCP) { routes.stream(call) } }
         route.delete("/mcp/{name}") { guard.guarded(call, Door.MCP) { routes.delete(call) } }
+    }
+
+    private fun registerReplacements(route: Route) {
+        route.get("/api/mcp/{name}/replacement") {
+            guard.guarded(call) {
+                respondReplacement(call, host.replacements.status(call.parameters["name"].orEmpty()))
+            }
+        }
+        route.post("/api/mcp/{name}/drain") {
+            guard.guarded(call) {
+                respondReplacement(call, host.replacements.drain(call.parameters["name"].orEmpty()))
+            }
+        }
+        route.post("/api/mcp/{name}/resume") {
+            guard.guarded(call) {
+                respondReplacement(call, host.replacements.resume(call.parameters["name"].orEmpty()))
+            }
+        }
+        route.post("/api/mcp/{name}/replace") {
+            guard.guarded(call) {
+                respondReplacement(call, host.replacements.replace(call.parameters["name"].orEmpty()))
+            }
+        }
+    }
+
+    private suspend fun respondReplacement(
+        call: io.ktor.server.application.ApplicationCall,
+        reply: splice.control.mcp.McpReply,
+    ) {
+        call.respondText(
+            reply.body.orEmpty(),
+            io.ktor.http.ContentType.Application.Json,
+            io.ktor.http.HttpStatusCode.fromValue(reply.status),
+        )
     }
 
     /** The host's status with the plans beside it, and each census row's place in them (`launches`), read once. */

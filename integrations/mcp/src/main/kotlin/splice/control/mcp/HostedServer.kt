@@ -39,12 +39,13 @@ internal class HostedServer(
 ) {
     private val ids = AtomicLong(1)
     private val pending = ConcurrentHashMap<Long, Pending>()
+    val unsettled: List<Long> get() = send.unsettled
+    var admission = McpAdmission()
     private val progress = ProgressTokens()
     private val stops = McpProcessStop()
     private val stderr = McpStderr(log)
 
     private val history = McpChildHistory(config.clock, spec.name)
-    private val writeLock = Any()
 
     /** Single-flight spawn: N sessions initializing at once must share ONE child, not race N up
      *  (the 4-session benchmark caught exactly that on 2026-09-13: four copies per server). */
@@ -63,6 +64,21 @@ internal class HostedServer(
     @Volatile private var initResult: JsonObject? = null
 
     private val tools = ToolsListCache(codec)
+    private val send = McpChildWriter(
+        codec,
+        McpWriteTargetSource { expected ->
+            synchronized(stateLock) {
+                val child = process
+                val output = writer
+                when {
+                    child == null || output == null -> null
+                    expected != null && child !== expected -> null
+                    else -> McpWriteTarget(child, output)
+                }
+            }
+        },
+        McpWriteFailure(::transportFailed),
+    )
 
     @Volatile var lastError: String? = null
         private set
@@ -100,11 +116,17 @@ internal class HostedServer(
     private suspend fun forward(sessionId: String, clientId: JsonElement, request: JsonObject): JsonObject {
         val hostId = ids.getAndIncrement()
         val (out, token) = progress.outbound(request, hostId)
+        val child = synchronized(stateLock) { process?.takeIf { it.isAlive && initResult != null } }
+            ?: return codec.error(clientId, RPC_SERVER_EXITED, "hosted MCP server '${spec.name}' is not ready")
         val slot = Pending(sessionId, clientId, token)
         pending[hostId] = slot
-        if (!send(codec.withId(out, JsonPrimitive(hostId)))) {
+        if (!send(codec.withId(out, JsonPrimitive(hostId)), hostId, child)) {
             pending.remove(hostId)
-            return codec.error(clientId, RPC_SERVER_EXITED, "hosted MCP server '${spec.name}' is not running")
+            return codec.error(
+                clientId,
+                RPC_SERVER_EXITED,
+                "request delivery was not confirmed; outcome unknown, not replayed",
+            )
         }
         // withTimeoutOrNull, not withTimeout+catch: an OUTER cancellation (the client went away, a
         // caller's own deadline) is a TimeoutCancellationException too and must propagate, never be
@@ -121,19 +143,22 @@ internal class HostedServer(
      *  reach the child under another session's id. False when the child could not be written. */
     suspend fun notify(sessionId: String, msg: JsonObject): McpResult<Boolean> {
         if (codec.method(msg) == "notifications/initialized") return McpResult.Served(true)
-        when (val up = ensureStarted()) {
-            is McpResult.Refused -> return up
-            is McpResult.Served -> Unit
+        return when (val up = ensureStarted()) {
+            is McpResult.Refused -> up
+            is McpResult.Served -> {
+                val out = if (codec.method(msg) == "notifications/cancelled") {
+                    progress.cancellation(sessionId, msg, pending, codec)
+                } else {
+                    msg
+                }
+                val child = synchronized(stateLock) { process?.takeIf { it.isAlive && initResult != null } }
+                when {
+                    out == null -> McpResult.Served(true)
+                    child == null -> McpResult.Refused("hosted MCP server '${spec.name}' is not ready")
+                    else -> McpResult.Served(send(out, expected = child))
+                }
+            }
         }
-        val out = if (codec.method(msg) != "notifications/cancelled") {
-            msg
-        } else {
-            val clientId = (msg["params"] as? JsonObject)?.get("requestId")
-            pending.entries
-                .firstOrNull { it.value.sessionId == sessionId && it.value.clientId == clientId }
-                ?.let { codec.withCancelledRequestId(msg, JsonPrimitive(it.key)) }
-        }
-        return McpResult.Served(out == null || send(out))
     }
 
     /** Permanent: the registry replaced or evicted this server; a spawn racing this call tears down. */
@@ -207,7 +232,7 @@ internal class HostedServer(
         val hostId = ids.getAndIncrement()
         val slot = Pending("host", JsonPrimitive(hostId))
         pending[hostId] = slot
-        send(codec.initializeRequest(hostId))
+        send(codec.initializeRequest(hostId), hostId, p)
         // ONE reading for this handshake: the budget it waits under is the budget it began under.
         val answer = withTimeoutOrNull(config.initializeTimeout()) { slot.answer.await() }
         if (answer == null) {
@@ -236,19 +261,23 @@ internal class HostedServer(
         }
     }
 
-    private fun send(msg: JsonObject): Boolean {
-        val w = writer ?: return false
-        return try {
-            synchronized(writeLock) {
-                w.write(codec.encode(msg))
-                w.newLine()
-                w.flush()
+    /** A failed pipe may have delivered bytes. Never refund its wire IDs until that exact child exits. */
+    private fun transportFailed(child: Process, reason: String) {
+        synchronized(stateLock) {
+            if (process === child) {
+                lastError = "$reason; delivery outcome unknown, operation was not replayed"
+                process = null
+                writer = null
+                initResult = null
+                tools.drop()
             }
-            true
-        } catch (e: IOException) {
-            lastError = "write failed: ${e.message}"
-            false
         }
+        send.idsOf(child).forEach { id ->
+            pending.remove(id)?.fail(codec, "hosted MCP transport failed; operation outcome unknown, not replayed")
+        }
+        child.destroy()
+        stops.await(listOf(child))
+        send.exited(child)
     }
 
     /** The reader thread: one line, one message, until EOF — which is the child's death. */
@@ -258,7 +287,7 @@ internal class HostedServer(
             generateSequence { reader.readLine() }
                 .filter { it.isNotBlank() }
                 .mapNotNull(codec::parse)
-                .forEach(::dispatch)
+                .forEach { dispatch(p, it) }
         } catch (e: IOException) {
             lastError = "read failed: ${e.message}"
         }
@@ -275,22 +304,24 @@ internal class HostedServer(
             }
         }
         if (!mine) return
+        send.exited(p)
         history.exited()
         lastError = lastError ?: "exited with code $code"
         log("[mcp-host] ${spec.name}: pid ${p.pid()} exited ($lastError)\n")
         failPending("hosted MCP server '${spec.name}' exited")
     }
 
-    private fun dispatch(msg: JsonObject) {
+    private fun dispatch(child: Process, msg: JsonObject) {
         when (codec.kind(msg)) {
             RpcKind.RESPONSE -> {
                 val hostId = JsonScalars.str(msg["id"])?.toLongOrNull()
+                hostId?.let(send::settled)
                 val slot = hostId?.let(pending::remove)
                 slot?.answer?.complete(codec.withId(msg, slot.clientId))
             }
             RpcKind.REQUEST -> {
                 if (codec.method(msg) == "roots/list") sink.onRootsAsked()
-                send(codec.serverReply(msg))
+                send(codec.serverReply(msg), expected = child)
             }
             RpcKind.NOTIFICATION -> if (codec.method(msg) == "notifications/progress") {
                 // A missing owner is late or unknown progress, never a global notification.

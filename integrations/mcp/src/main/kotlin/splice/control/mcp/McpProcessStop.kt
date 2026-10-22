@@ -9,13 +9,34 @@ internal class McpProcessStop {
     /** Callers signal every child first. Waiting on N stubborn children still costs one grace. */
     fun await(processes: List<Process>) {
         val deadline = System.nanoTime() + TimeUnit.MILLISECONDS.toNanos(DESTROY_GRACE_MS)
-        processes.forEach { process ->
+        val interrupted = processes.map { process -> await(process, deadline) }.any { it }
+        if (interrupted) Thread.currentThread().interrupt()
+    }
+
+    private fun await(process: Process, deadline: Long): Boolean {
+        var interrupted = false
+        val exited = try {
+            val left = (deadline - System.nanoTime()).coerceAtLeast(0L)
+            process.waitFor(left, TimeUnit.NANOSECONDS)
+        } catch (_: InterruptedException) {
+            interrupted = true
+            false
+        }
+        if (!exited) {
+            process.destroyForcibly()
+            interrupted = reap(process) || interrupted
+        }
+        return interrupted
+    }
+
+    private fun reap(process: Process): Boolean {
+        var interrupted = false
+        while (true) {
             try {
-                val left = (deadline - System.nanoTime()).coerceAtLeast(0L)
-                if (!process.waitFor(left, TimeUnit.NANOSECONDS)) process.destroyForcibly()
+                process.waitFor()
+                return interrupted
             } catch (_: InterruptedException) {
-                process.destroyForcibly()
-                Thread.currentThread().interrupt()
+                interrupted = true
             }
         }
     }

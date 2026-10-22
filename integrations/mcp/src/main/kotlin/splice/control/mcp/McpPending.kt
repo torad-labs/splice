@@ -42,6 +42,20 @@ internal interface NotificationSink {
  *  host's request id (unique per child); inbound, the pending slot maps it back and names the
  *  session it goes to (review 2026-09-14). */
 internal class ProgressTokens {
+    /** A cancellation must name the host id of this session's request, never another session's id. */
+    fun cancellation(
+        sessionId: String,
+        msg: JsonObject,
+        pending: Map<Long, Pending>,
+        codec: JsonRpcCodec,
+    ): JsonObject? {
+        val clientId = (msg[PARAMS] as? JsonObject)?.get("requestId")
+        val hostId = pending.entries.firstOrNull {
+            it.value.sessionId == sessionId && it.value.clientId == clientId
+        }?.key ?: return null
+        return codec.withCancelledRequestId(msg, JsonPrimitive(hostId))
+    }
+
     /** The request as the child sees it, plus the client's original token when it had one. */
     fun outbound(request: JsonObject, hostId: Long): Pair<JsonObject, JsonElement?> {
         val params = request[PARAMS] as? JsonObject

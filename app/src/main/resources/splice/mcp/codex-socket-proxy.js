@@ -7,6 +7,7 @@ import { dlopen, FFIType } from 'bun:ffi';
 
 const MAX_BYTES = 8_388_608;
 const MAX_HTTP_BYTES = 16_384;
+const MAX_RETAINED_BYTES = MAX_BYTES * 2;
 const SOL_SOCKET = 1;
 const SO_PEERCRED = 17;
 const UCRED_BYTES = 12;
@@ -17,6 +18,9 @@ let transport;
 let pending = Buffer.alloc(0);
 let opened = false;
 let fragment;
+let incoming = '';
+let stdoutBlocked = false;
+let stdinBlocked = false;
 
 function fail() {
   process.stderr.write('Native Codex WebSocket transport failed.\n');
@@ -92,6 +96,7 @@ function openWebSocket(endpoint, account, generation, library) {
 }
 
 function received(chunk, key) {
+  if (pending.length + chunk.length + (fragment?.length ?? 0) + process.stdout.writableLength > MAX_RETAINED_BYTES) fail();
   pending = Buffer.concat([pending, chunk]);
   if (!opened && !accepted(key)) return;
   frames();
@@ -119,6 +124,7 @@ function accepted(key) {
 }
 
 function frames() {
+  if (stdoutBlocked) return;
   while (pending.length >= 2) {
     const first = pending[0];
     const second = pending[1];
@@ -142,7 +148,7 @@ function frames() {
     if (length > MAX_BYTES || pending.length < header + length) return;
     const payload = pending.subarray(header, header + length);
     pending = pending.subarray(header + length);
-    frame(opcode, final, payload);
+    if (!frame(opcode, final, payload)) return;
   }
 }
 
@@ -157,33 +163,47 @@ function frame(opcode, final, payload) {
     } else if (opcode !== 0x0a) {
       fail();
     }
-    return;
+    return true;
   }
   if (opcode === 0x01) {
     if (fragment !== undefined) fail();
-    if (final) message(payload); else fragment = payload;
-  } else if (opcode === 0x00 && fragment !== undefined) {
+    if (final) return message(payload);
+    fragment = payload;
+    return true;
+  }
+  if (opcode === 0x00 && fragment !== undefined) {
     const joined = Buffer.concat([fragment, payload]);
     if (joined.length > MAX_BYTES) fail();
-    if (final) {
-      fragment = undefined;
-      message(joined);
-    } else {
+    if (!final) {
       fragment = joined;
+      return true;
     }
-  } else {
-    fail();
+    fragment = undefined;
+    return message(joined);
   }
+  fail();
 }
 
 function message(payload) {
-  process.stdout.write(payload.toString('utf8') + '\n');
+  const line = Buffer.from(`${payload.toString('utf8')}\n`);
+  if (pending.length + (fragment?.length ?? 0) + process.stdout.writableLength + line.length > MAX_RETAINED_BYTES) fail();
+  if (process.stdout.write(line)) return true;
+  stdoutBlocked = true;
+  transport.pause();
+  process.stdout.once('drain', () => {
+    stdoutBlocked = false;
+    transport.resume();
+    frames();
+  });
+  return false;
 }
 
 function sendFrame(opcode, payload) {
   if (payload.length > MAX_BYTES) fail();
   const prefix = payload.length < 126 ? 2 : payload.length <= 0xffff ? 4 : 10;
-  const frame = Buffer.alloc(prefix + 4 + payload.length);
+  const size = prefix + 4 + payload.length;
+  if ((transport?.writableLength ?? 0) + Buffer.byteLength(incoming) + size > MAX_RETAINED_BYTES) fail();
+  const frame = Buffer.alloc(size);
   frame[0] = 0x80 | opcode;
   frame[1] = 0x80 | (payload.length < 126 ? payload.length : payload.length <= 0xffff ? 126 : 127);
   if (prefix === 4) frame.writeUInt16BE(payload.length, 2);
@@ -192,7 +212,23 @@ function sendFrame(opcode, payload) {
   const mask = randomBytes(4);
   mask.copy(frame, offset);
   for (let index = 0; index < payload.length; index++) frame[offset + 4 + index] = payload[index] ^ mask[index % 4];
-  transport.write(frame);
+  if (transport.write(frame) || stdinBlocked) return;
+  stdinBlocked = true;
+  process.stdin.pause();
+  transport.once('drain', () => {
+    stdinBlocked = false;
+    input();
+  });
+}
+
+function input() {
+  let end;
+  while (!stdinBlocked && (end = incoming.indexOf('\n')) >= 0) {
+    const line = incoming.slice(0, end);
+    incoming = incoming.slice(end + 1);
+    if (line.trim()) sendFrame(0x01, Buffer.from(line, 'utf8'));
+  }
+  if (!stdinBlocked && opened) process.stdin.resume();
 }
 
 try {
@@ -204,22 +240,17 @@ try {
     !expectedSocket(control, account) || !expectedSocket(endpoint, account) || endpoint.includes(':')) fail();
   process.stdin.pause();
   process.stdin.setEncoding('utf8');
-  let incoming = '';
   process.stdin.on('data', chunk => {
+    if (Buffer.byteLength(incoming) + Buffer.byteLength(chunk) + (transport?.writableLength ?? 0) > MAX_RETAINED_BYTES) fail();
     incoming += chunk;
-    if (Buffer.byteLength(incoming) > MAX_BYTES) fail();
-    let end;
-    while ((end = incoming.indexOf('\n')) >= 0) {
-      const line = incoming.slice(0, end);
-      incoming = incoming.slice(end + 1);
-      if (line.trim()) sendFrame(0x01, Buffer.from(line, 'utf8'));
-    }
+    input();
   });
   process.stdin.on('end', () => {
     if (opened) sendFrame(0x08, Buffer.alloc(0));
     transport?.end();
   });
   process.stdin.on('error', fail);
+  process.stdout.on('error', fail);
   openWebSocket(endpoint, account, generation, peer);
 } catch {
   fail();

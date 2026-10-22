@@ -12,15 +12,23 @@ import java.nio.file.Path
 internal class NativeCodexMcpRpc(private val log: LogSink) {
     private val ioDispatcher = ProcessDispatchers().io()
 
+    internal data class LaunchContext(
+        val command: List<String>,
+        val cwd: Path? = null,
+        val environment: Map<String, String> = emptyMap(),
+    )
+
     suspend fun connect(
         home: Path,
-        command: List<String>,
+        launch: LaunchContext,
         initializeTimeoutMs: Long,
     ): NativeCodexMcpRpcSession? {
         val process = try {
             withContext(NonCancellable + ioDispatcher) {
-                ProcessBuilder(command)
+                ProcessBuilder(launch.command)
                     .apply {
+                        launch.cwd?.let { directory(it.toFile()) }
+                        environment().putAll(launch.environment)
                         environment()["CODEX_HOME"] = home.toString()
                         redirectError(ProcessBuilder.Redirect.DISCARD)
                     }

@@ -56,14 +56,14 @@ internal class NativeCodexMcp(
         val bridge = socket.command(home)?.let { rpc.connect(home, it, NATIVE_CODEX_SOCKET_TIMEOUT_MS) }
         val proxy = bridge ?: rpc.connect(
             home,
-            listOf("codex", "app-server", "proxy"),
+            NativeCodexMcpRpc.LaunchContext(listOf("codex", "app-server", "proxy")),
             NATIVE_CODEX_PROXY_TIMEOUT_MS,
         )
         if (proxy != null) return Connection(proxy, shared = true)
         log("[mcp-service] Native Codex socket unavailable; using an owned stdio config connection.\n")
         return rpc.connect(
             home,
-            listOf("codex", "app-server", "--stdio"),
+            NativeCodexMcpRpc.LaunchContext(listOf("codex", "app-server", "--stdio")),
             NATIVE_CODEX_DIALOG_TIMEOUT_MS,
         )?.let { Connection(it, shared = false) }
     }

@@ -55,8 +55,12 @@ internal class HubSweep(
         return if (holders.pinned(record.socket, record.generation, report.claims) || retained) {
             null
         } else {
-            record.launch?.let { launch -> ENDED.takeIf { places.of(launch) == null } }
-                ?: sharedView(report, now, idleMs).stopReason(record)
+            val launch = record.launch
+            if (launch != null) {
+                ENDED.takeIf { places.of(launch) == null }
+            } else {
+                sharedView(report, now, idleMs).stopReason(record)
+            }
         }
     }
 

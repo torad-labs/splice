@@ -43,8 +43,9 @@ internal class HubHolders(
     private val stops = HubHolderStops(records, holder.liveness, holder.lifecycle, log)
     private val starts = HubHolderStarts(dir, binary, slice, io, holder, log)
     private val pins = HubDrainPins(dir)
-    private val pinnedReplacements = HubReplacementPins(pins)
-    private val replacements = HubHolderReplacements(records, holder.liveness, stops, HubHolderRetirements(dir))
+    private val outcomes = HubHolderRetirements(dir)
+    private val pinnedReplacements = HubReplacementPins(pins, outcomes)
+    private val replacements = HubHolderReplacements(records, holder.liveness, stops, outcomes)
 
     fun socket(key: String): Path = starts.socket(key)
 
@@ -61,8 +62,10 @@ internal class HubHolders(
             tuple == null || JsonScalars.str(held.body, HubFields.TUPLE) == tuple
         } == true
 
-    fun retire(values: ReplacementValues): McpResult<Unit> = holder.lifecycle.serial(values.old.oldSocket) {
-        pinnedReplacements.run(values) {
+    fun retire(values: ReplacementValues): McpResult<Unit> = holder.lifecycle.serial(
+        setOf(values.old.oldSocket, values.candidateSocket),
+    ) {
+        pinnedReplacements.run(values, HubRetirementState.RETIRED) {
             replacements.retire(
                 values.old.oldSocket,
                 values.old.oldGeneration,
@@ -73,8 +76,10 @@ internal class HubHolders(
         }
     }
 
-    fun rollback(values: ReplacementValues): McpResult<Unit> = holder.lifecycle.serial(values.old.oldSocket) {
-        pinnedReplacements.run(values) {
+    fun rollback(values: ReplacementValues): McpResult<Unit> = holder.lifecycle.serial(
+        setOf(values.old.oldSocket, values.candidateSocket),
+    ) {
+        pinnedReplacements.run(values, HubRetirementState.ROLLED_BACK) {
             replacements.rollback(
                 values.old.oldSocket,
                 values.old.oldGeneration,
@@ -89,7 +94,10 @@ internal class HubHolders(
 
     fun acquirePin(request: HubDrainPinRequest, claims: Set<HubDrainClaim>): McpResult<HubDrainPin> =
         holder.lifecycle.serial(request.oldSocket) {
-            if (holder.liveness.attest(request.oldSocket, request.oldGeneration) == null) {
+            val recovered = pins.recover(request, claims)
+            if (recovered != null) {
+                McpResult.Served(recovered)
+            } else if (holder.liveness.attest(request.oldSocket, request.oldGeneration) == null) {
                 McpResult.Refused("the old holder is not the daemon owner's exact live generation")
             } else {
                 pins.acquire(request, claims)?.let(::McpResult.Served)
@@ -99,7 +107,9 @@ internal class HubHolders(
 
     fun confirmPin(request: HubDrainPinRequest, claim: String, claims: Set<HubDrainClaim>): McpResult<Unit> =
         holder.lifecycle.serial(request.oldSocket) {
-            if (holder.liveness.attest(request.oldSocket, request.oldGeneration) == null) {
+            val recovered = pins.recover(request, claims)?.claim == claim
+            val live = recovered || holder.liveness.attest(request.oldSocket, request.oldGeneration) != null
+            if (!live) {
                 McpResult.Refused("the old holder is no longer the daemon owner's exact live generation")
             } else if (pins.confirm(request, claim, claims)) {
                 McpResult.Served(Unit)

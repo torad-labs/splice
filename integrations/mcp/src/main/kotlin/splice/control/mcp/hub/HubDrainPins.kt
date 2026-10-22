@@ -40,7 +40,14 @@ internal data class HubDrainPin(
     val claim: String,
     val state: String,
     val until: Long,
-)
+) {
+    /** A released claim is confirmed only for its still-durable front checkpoint's terminal replay. */
+    fun confirmed(claims: Set<HubDrainClaim>): Boolean = when (state) {
+        PIN_ACTIVE -> true
+        PIN_RELEASED -> HubDrainClaim(request, claim) in claims
+        else -> false
+    }
+}
 
 /** A durable front drain checkpoint that keeps one pending owner claim beyond its initial write lease. */
 internal data class HubDrainClaim(val request: HubDrainPinRequest, val claim: String)
@@ -105,7 +112,7 @@ internal class HubDrainPins(dir: Path) {
         when (val read = snapshot.read(file(request))) {
             is PinRead.Present -> when {
                 !matches(read.pin, request) || read.pin.claim != claim -> false
-                read.pin.state == PIN_ACTIVE -> true
+                read.pin.confirmed(claims) -> true
                 read.pin.state != PIN_PENDING || !held(read.pin, claims, System.currentTimeMillis()) -> false
                 else -> write(read.pin.copy(state = PIN_ACTIVE))
             }
@@ -130,6 +137,17 @@ internal class HubDrainPins(dir: Path) {
     }
 
     fun readable(): Boolean = lock.withLock { snapshot.all() != null }
+
+    /** A durable front checkpoint recovers existing ownership, including its terminal replay after old-holder exit. */
+    fun recover(request: HubDrainPinRequest, claims: Set<HubDrainClaim>): HubDrainPin? = lock.withLock {
+        val stored = snapshot.read(file(request)) as? PinRead.Present
+        stored?.pin?.takeIf { matches(it, request) && HubDrainClaim(request, it.claim) in claims }
+    }
+
+    fun activeClaim(request: HubDrainPinRequest, claim: String): Boolean = lock.withLock {
+        val stored = snapshot.read(file(request)) as? PinRead.Present
+        stored?.pin?.let { matches(it, request) && it.claim == claim && it.state == PIN_ACTIVE } == true
+    }
 
     fun hasClaim(request: HubDrainPinRequest, claim: String): Boolean = lock.withLock {
         val stored = snapshot.read(file(request)) as? PinRead.Present

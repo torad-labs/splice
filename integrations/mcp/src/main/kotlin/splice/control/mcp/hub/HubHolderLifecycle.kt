@@ -16,6 +16,19 @@ internal class HubHolderLifecycle {
 
     fun <T> serial(socket: String, action: HubLifecycleAction<T>): T =
         locks.computeIfAbsent(socket) { ReentrantLock() }.withLock { action() }
+
+    /** Replacement actions lock every socket in lexical order, so reciprocal old/candidate work cannot deadlock. */
+    fun <T> serial(sockets: Set<String>, action: HubLifecycleAction<T>): T =
+        serial(sockets.toSortedSet().toList(), 0, action)
+
+    private fun <T> serial(sockets: List<String>, index: Int, action: HubLifecycleAction<T>): T =
+        if (index == sockets.size) {
+            action()
+        } else {
+            locks.computeIfAbsent(sockets[index]) { ReentrantLock() }.withLock {
+                serial(sockets, index + 1, action)
+            }
+        }
 }
 
 /** One shared record owner carries every reusable-record update through the same socket lifecycle lock. */

@@ -1,9 +1,12 @@
 package splice.control.mcp.hub
 
 import splice.core.util.JsonScalars
+import java.io.IOException
+import java.nio.file.Files
 import java.nio.file.Path
 
-private const val SYSTEMD_RUN = "systemd-run"
+// why: a baseline holder starts immediately after its record, so a much newer PID cannot be adopted after reuse.
+private const val LEGACY_LAUNCH_WINDOW_MS = 60_000L
 
 internal class HubHolderLiveness(
     private val records: HubRecords,
@@ -73,6 +76,8 @@ internal class HubHolderLiveness(
         val current = latestLocked(record) ?: return false
         return if (records.exits.confirmed(record) || records.exits.confirmed(current)) {
             true
+        } else if (records.legacy.retire(current)) {
+            true
         } else {
             records.ownership.owner(current)?.let { owner -> ownership.confirmExit(current, owner) }
                 ?: launchExited(current, unlaunched)
@@ -82,7 +87,8 @@ internal class HubHolderLiveness(
     private fun launchExited(record: HubHolderRecord, unlaunched: Boolean): Boolean {
         val claim = records.ownership.claim(record) ?: return false
         val launch = records.ownership.launch(record)
-        val launcherGone = unlaunched && launch == null || launch?.let(ownership::launcherExited) == true
+        val launcherGone = launch?.let(ownership::launcherExited) == true ||
+            unlaunched && records.ownership.unlaunched(record)
         return launcherGone && scope.exited(claim.scope) && records.exits.confirmScope(record)
     }
 
@@ -99,68 +105,101 @@ private class HubHolderOwnership(
     private val records: HubRecords,
     private val scope: HubHolderScope,
 ) {
+    private val proof = HubHolderProof(scope)
+
     fun live(record: HubHolderRecord, owner: HubHolderOwner): Boolean =
         records.files.read(record.path) == record.body &&
             records.files.live(record) &&
-            holderAlive(owner.holderPid, records.files.socketOf(record.path), owner.scope, owner.holderStartedAt) &&
-            inScope(owner.holderPid, owner.scope) &&
-            inScope(owner.childPid, owner.scope) &&
+            proof.holderAlive(
+                owner.holderPid,
+                records.files.socketOf(record.path),
+                owner.executable,
+                owner.holderStartedAt,
+            ) &&
+            proof.inScope(owner.holderPid, owner.scope) &&
+            proof.inScope(owner.childPid, owner.scope) &&
             scope.running(owner.scope)
 
-    fun unrecorded(record: HubHolderRecord): HubHolderOwner? = candidate(record)?.let { candidate ->
-        records.ownership.claim(record)?.let { claim ->
-            candidate.takeIf {
-                holderAlive(candidate.holderPid, candidate.socket, candidate.scope, candidate.holderStartedAt) &&
-                    inScope(candidate.childPid, candidate.scope)
-            }?.let {
-                HubHolderOwner(
-                    claim.generation,
-                    candidate.holderPid,
-                    candidate.childPid,
-                    claim.scope,
-                    candidate.holderStartedAt,
-                )
-            }
+    fun unrecorded(record: HubHolderRecord): HubHolderOwner? =
+        candidate(record)?.let { candidate -> claimed(record, candidate) }
+
+    private fun claimed(record: HubHolderRecord, candidate: UnrecordedCandidate): HubHolderOwner? {
+        val migrated = records.legacy.claim(record, candidate.scope)
+        val claim = records.ownership.claim(record) ?: migrated ?: return null
+        val expected = JsonScalars.str(record.body, HubFields.EXECUTABLE)
+            ?: candidate.executable.takeIf { migrated != null }
+            ?: return null
+        return candidate.takeIf { attested(it, claim, expected, migrated != null) }?.let {
+            HubHolderOwner(
+                claim.generation,
+                candidate.holderPid,
+                candidate.childPid,
+                claim.scope,
+                candidate.holderStartedAt,
+                expected,
+            )
         }
     }
 
-    private fun candidate(record: HubHolderRecord): UnrecordedCandidate? {
-        val claim = records.ownership.claim(record) ?: return null
-        val holder = holder(record) ?: return null
-        return recordedScope(claim, holder)?.let { scopeName ->
-            childOf(holder.pid)?.takeIf { childPid -> inScope(childPid, scopeName) }?.let { childPid ->
-                UnrecordedCandidate(
-                    holder.pid,
-                    childPid,
-                    scopeName,
-                    holder.startedAt,
-                    records.files.socketOf(record.path),
-                )
-            }
+    private fun attested(
+        candidate: UnrecordedCandidate,
+        claim: HubHolderScopeClaim,
+        expected: String,
+        legacy: Boolean,
+    ): Boolean = claim.scope == candidate.scope &&
+        (!legacy || candidate.holderStartedAt <= candidate.recordedAt + LEGACY_LAUNCH_WINDOW_MS) &&
+        proof.holderAlive(candidate.holderPid, candidate.socket, expected, candidate.holderStartedAt) &&
+        proof.inScope(candidate.childPid, candidate.scope)
+
+    private fun candidate(record: HubHolderRecord): UnrecordedCandidate? = holder(record)?.let { holder ->
+        val scopeName = activeScope(holder)
+        val childPid = scopeName?.let { scope ->
+            proof.childOf(holder.pid)?.takeIf { child -> proof.inScope(child, scope) }
+        }
+        val recordedAt = JsonScalars.long(record.body, HubFields.AT) ?: return@let null
+        if (scopeName != null && childPid != null) {
+            UnrecordedCandidate(
+                holder.pid,
+                childPid,
+                scopeName,
+                holder.startedAt,
+                holder.executable,
+                recordedAt,
+                records.files.socketOf(record.path),
+            )
+        } else {
+            null
         }
     }
 
     private fun holder(record: HubHolderRecord): LegacyHolder? {
         val recordedAt = JsonScalars.long(record.body, HubFields.AT) ?: return null
         val pid = JsonScalars.long(record.body, HubFields.PID) ?: return null
-        return ProcessHandle.of(pid).filter(ProcessHandle::isAlive)
-            .flatMap { handle -> handle.info().startInstant() }
-            .map { started -> started.toEpochMilli() }
-            .filter { startedAt -> startedAt >= recordedAt }
-            .map { startedAt -> LegacyHolder(pid, startedAt) }
-            .orElse(null)
+        return ProcessHandle.of(pid).filter(ProcessHandle::isAlive).flatMap { handle ->
+            handle.info().startInstant().flatMap { started ->
+                handle.info().command().map { executable ->
+                    LegacyHolder(pid, started.toEpochMilli(), executable)
+                }
+            }
+        }.filter { holder -> holder.startedAt >= recordedAt }.orElse(null)
     }
 
-    private fun recordedScope(claim: HubHolderScopeClaim, holder: LegacyHolder): String? =
-        scope.of(holder.pid)?.takeIf { scopeName -> scopeName == claim.scope && scope.running(scopeName) }
+    private fun activeScope(holder: LegacyHolder): String? =
+        scope.of(holder.pid)?.takeIf(scope::running)
 
-    private data class LegacyHolder(val pid: Long, val startedAt: Long)
+    private data class LegacyHolder(
+        val pid: Long,
+        val startedAt: Long,
+        val executable: String,
+    )
 
     private data class UnrecordedCandidate(
         val holderPid: Long,
         val childPid: Long,
         val scope: String,
         val holderStartedAt: Long,
+        val executable: String,
+        val recordedAt: Long,
         val socket: Path,
     )
 
@@ -184,8 +223,13 @@ private class HubHolderOwnership(
     fun orphaned(record: HubHolderRecord, owner: HubHolderOwner): Boolean =
         records.files.read(record.path) == record.body &&
             records.files.live(record) &&
-            !holderAlive(owner.holderPid, records.files.socketOf(record.path), owner.scope, owner.holderStartedAt) &&
-            inScope(owner.childPid, owner.scope) &&
+            !proof.holderAlive(
+                owner.holderPid,
+                records.files.socketOf(record.path),
+                owner.executable,
+                owner.holderStartedAt,
+            ) &&
+            proof.inScope(owner.childPid, owner.scope) &&
             scope.running(owner.scope)
 
     fun stop(record: HubHolderRecord, owner: HubHolderOwner): Boolean =
@@ -196,33 +240,45 @@ private class HubHolderOwnership(
             scope.stop(owner.scope)
 
     fun waitForExit(owner: HubHolderOwner): Boolean = scope.waitForExit(owner.scope)
+}
 
-    private fun holderAlive(pid: Long, socket: Path, scopeName: String, startedAt: Long?): Boolean =
-        startedAt?.let { expected ->
-            ProcessHandle.of(pid)
-                .filter(ProcessHandle::isAlive)
-                .filter { handle ->
-                    handle.info().startInstant().map { it.toEpochMilli() == expected }.orElse(false)
-                }
-                .filter { handle ->
-                    handle.info().command().map { command ->
-                        Path.of(command).fileName.toString() == SYSTEMD_RUN
-                    }.orElse(false)
-                }
-                .flatMap { handle -> handle.info().arguments() }
-                .map { args ->
-                    args.contains(socket.toString()) && args.contains("--unit=${scopeName.removeSuffix(".scope")}")
-                }
-                .orElse(false)
+/** `/proc` evidence binds each candidate to the executable and process birth its durable record expects. */
+private class HubHolderProof(private val scope: HubHolderScope) {
+    fun holderAlive(pid: Long, socket: Path, executable: String?, startedAt: Long?): Boolean =
+        executable?.let { expected ->
+            startedAt?.let { birth ->
+                ProcessHandle.of(pid)
+                    .filter(ProcessHandle::isAlive)
+                    .filter { handle ->
+                        handle.info().startInstant().map { it.toEpochMilli() == birth }.orElse(false)
+                    }
+                    .filter { handle -> matchesExecutable(handle, expected) }
+                    .flatMap { handle -> handle.info().arguments() }
+                    .map { args -> args.contains(socket.toString()) }
+                    .orElse(false)
+            }
         } == true
 
-    private fun childOf(pid: Long): Long? = ProcessHandle.of(pid)
+    private fun matchesExecutable(handle: ProcessHandle, executable: String): Boolean =
+        handle.info().command().map { actual -> sameExecutable(actual, executable) }.orElse(false)
+
+    private fun sameExecutable(actual: String, expected: String): Boolean = try {
+        Files.isSameFile(Path.of(actual), Path.of(expected))
+    } catch (_: IOException) {
+        false
+    } catch (_: IllegalArgumentException) {
+        false
+    } catch (_: SecurityException) {
+        false
+    }
+
+    fun childOf(pid: Long): Long? = ProcessHandle.of(pid)
         .map { holder ->
             holder.children().use { children -> children.filter(ProcessHandle::isAlive).findFirst().orElse(null) }
         }
         .map(ProcessHandle::pid)
         .orElse(null)
 
-    private fun inScope(pid: Long, scopeName: String): Boolean =
+    fun inScope(pid: Long, scopeName: String): Boolean =
         ProcessHandle.of(pid).filter(ProcessHandle::isAlive).isPresent && scope.of(pid) == scopeName
 }

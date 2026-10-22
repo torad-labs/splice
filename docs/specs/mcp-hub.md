@@ -132,6 +132,8 @@ existing claim, so a lost acquire reply is recoverable. A later generation canno
 requests also carry the captured `owner_claim`; the daemon checks it under the old socket's lifecycle lock before any
 replacement side effect, and completion releases only that claim. A retry of an older outcome
 cannot release a newer drain on the same generation. A failed durable release refuses completion and remains retryable.
+Only an active claim authorizes a new process action. A released claim can replay its exact completed outcome but cannot
+start or continue retirement. A matching durable front checkpoint can recover its existing claim after the old holder exits.
 `unpinning` checkpoints protect neither old nor candidate generations after the owner claim is released. Destructive
 sweeps refresh both claim and exact candidate-drain state while holding the socket lifecycle lock.
 

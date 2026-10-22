@@ -24,6 +24,7 @@ internal const val HOLDER_EXITED = "exited"
 
 private const val HOLDER_EXIT_CONFIRMED_AT = "exit_confirmed_at"
 private const val HOLDER_EXITS_DIR = "holder-exits"
+private const val HOLDER_GATES_DIR = "holder-gates"
 private const val HOLDER_LAUNCHER_STARTED_AT = "launcher_started_at"
 
 /** One record at its fixed socket path. The body remains the source of an exact process-generation claim. */
@@ -58,6 +59,7 @@ internal data class HubHolderOwner(
     val childPid: Long,
     val scope: String,
     val holderStartedAt: Long? = null,
+    val executable: String? = null,
 ) {
     fun launch(): HubHolderLaunch = HubHolderLaunch(generation, holderPid, scope, holderStartedAt)
 }
@@ -66,6 +68,7 @@ internal data class HubHolderOwner(
 internal class HubRecords(dir: Path) {
     val files = HubRecordFiles(dir)
     val ownership = HubRecordOwnership(files)
+    val legacy = HubLegacyRecords(files)
     val exits = HubHolderExitEvidence(dir, files, ownership)
 }
 
@@ -102,6 +105,23 @@ internal class HubRecordFiles(private val dir: Path) {
         null
     }
 
+    /** The gate opens only after the exact launcher identity is durable in its holder record. */
+    fun gate(claim: HubHolderScopeClaim): Path = dir.resolve(HOLDER_GATES_DIR).resolve(claim.generation)
+
+    fun releaseGate(claim: HubHolderScopeClaim): Boolean = try {
+        Files.createDirectories(gate(claim).parent)
+        SecureFile.writeAtomic0600(gate(claim), claim.generation)
+        true
+    } catch (_: IOException) {
+        false
+    }
+
+    fun gateReleased(claim: HubHolderScopeClaim): Boolean = try {
+        gate(claim).takeIf(Files::isRegularFile)?.let(Files::readString) == claim.generation
+    } catch (_: IOException) {
+        false
+    }
+
     fun write(path: Path, body: JsonObject): Boolean = try {
         SecureFile.writeAtomic0600(path, JsonWire.string(body))
         true
@@ -122,7 +142,8 @@ internal class HubRecordFiles(private val dir: Path) {
     private fun listed(): HubRecordScan {
         val records = Files.list(dir).use { paths ->
             paths.filter { path -> named.matches(path.fileName.toString()) }.toList().map { path ->
-                read(path)?.takeIf(::namesServer)?.let { body -> HubHolderRecord(path, body) }
+                read(path)?.takeIf { body -> JsonScalars.str(body, HubFields.SERVER) != null }
+                    ?.let { body -> HubHolderRecord(path, body) }
             }
         }
         return records.takeIf { it.none { record -> record == null } }
@@ -132,8 +153,6 @@ internal class HubRecordFiles(private val dir: Path) {
     }
 
     private fun file(key: String): Path = dir.resolve("${key.take(KEY_HEX)}.json")
-
-    private fun namesServer(body: JsonObject): Boolean = JsonScalars.str(body, HubFields.SERVER) != null
 }
 
 /** Decodes and updates an owner only while its exact socket record still occupies the file. */
@@ -150,6 +169,7 @@ internal class HubRecordOwnership(private val files: HubRecordFiles) {
             values[HubFields.SCOPE] = JsonPrimitive(owner.scope)
             values[HubFields.STATE] = JsonPrimitive(HOLDER_LIVE)
             owner.holderStartedAt?.let { values[HOLDER_LAUNCHER_STARTED_AT] = JsonPrimitive(it) }
+            owner.executable?.let { values[HubFields.EXECUTABLE] = JsonPrimitive(it) }
         }
         val attested = JsonObject(fields)
         return files.write(record.path, attested).takeIf { it }?.let { HubHolderRecord(record.path, attested) }
@@ -173,6 +193,13 @@ internal class HubRecordOwnership(private val files: HubRecordFiles) {
         return files.write(record.path, started).takeIf { it }?.let { HubHolderRecord(record.path, started) }
     }
 
+    fun unlaunched(record: HubHolderRecord): Boolean =
+        claim(record)?.let { claim ->
+            JsonScalars.str(record.body, HubFields.LAUNCH_GATED) == "true" &&
+                launch(record) == null &&
+                !files.gateReleased(claim)
+        } == true
+
     fun currentExit(record: HubHolderRecord, owner: HubHolderOwner): Boolean =
         files.read(record.path)?.let { current ->
             JsonScalars.str(current, HubFields.STATE) == HOLDER_EXITED && owner(current) == owner
@@ -194,7 +221,14 @@ internal class HubRecordOwnership(private val files: HubRecordFiles) {
 
     private fun owner(body: JsonObject): HubHolderOwner? = launch(body)?.let { launch ->
         JsonScalars.long(body, HubFields.CHILD_PID)?.let { child ->
-            HubHolderOwner(launch.generation, launch.holderPid, child, launch.scope, launch.holderStartedAt)
+            HubHolderOwner(
+                launch.generation,
+                launch.holderPid,
+                child,
+                launch.scope,
+                launch.holderStartedAt,
+                JsonScalars.str(body, HubFields.EXECUTABLE),
+            )
         }
     }
 
@@ -215,6 +249,32 @@ internal class HubRecordOwnership(private val files: HubRecordFiles) {
         if (generation == null || scope == null) return null
         return HubHolderScopeClaim(generation, scope)
     }
+}
+
+/** Migrates only a baseline record whose live process proves its executable, birth, scope and child. */
+internal class HubLegacyRecords(private val files: HubRecordFiles) {
+    fun claim(record: HubHolderRecord, scope: String): HubHolderScopeClaim? =
+        record.takeIf { legacy(it.body) }?.let { HubHolderScopeClaim(scope, scope) }
+
+    /** A dead baseline PID proves only that process gone. No scope, owner or receipt is invented. */
+    fun retire(record: HubHolderRecord): Boolean {
+        val current = files.read(record.path)?.takeIf { it == record.body } ?: return false
+        val pid = JsonScalars.long(current, HubFields.PID)?.takeIf { legacy(current) } ?: return false
+        val exited = JsonObject(
+            current + mapOf(
+                HubFields.STATE to JsonPrimitive(HOLDER_EXITED),
+                HOLDER_EXIT_CONFIRMED_AT to JsonPrimitive(System.currentTimeMillis()),
+            ),
+        )
+        return !ProcessHandle.of(pid).filter(ProcessHandle::isAlive).isPresent &&
+            files.write(record.path, exited)
+    }
+
+    private fun legacy(body: JsonObject): Boolean =
+        JsonScalars.str(body, HubFields.GENERATION) == null &&
+            JsonScalars.str(body, HubFields.SCOPE) == null &&
+            JsonScalars.long(body, HubFields.PID) != null &&
+            JsonScalars.long(body, HubFields.AT) != null
 }
 
 /** Exit evidence is generation-addressed, unlike the holder's reusable socket record. */

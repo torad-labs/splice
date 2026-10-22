@@ -50,13 +50,44 @@ private class HubFrontReader(private val file: Path) {
     }
 }
 
+/** Malformed ownership is not an empty drain set: destructive sweeps require every retained identity to decode. */
+private class HubDrainChecks {
+    fun readable(saved: JsonObject): Boolean {
+        val value = saved[HubFields.DRAINS] ?: return true
+        return (value as? JsonObject)?.values?.all { drain ->
+            (drain as? JsonObject)?.let(::valid) == true
+        } == true
+    }
+
+    private fun valid(drain: JsonObject): Boolean {
+        val oldFields = listOf(HubFields.SERVER, HubFields.SOCKET, HubFields.GENERATION, HubFields.PHASE)
+        val old = oldFields.all { JsonScalars.str(drain, it)?.isNotEmpty() == true }
+        val candidate = listOf(
+            JsonScalars.str(drain, HubFields.CANDIDATE_SOCKET),
+            JsonScalars.str(drain, HubFields.CANDIDATE_GENERATION),
+            JsonScalars.str(drain, HubFields.CANDIDATE_TUPLE),
+        )
+        val absent = candidate.all { it == null }
+        val complete = candidate.all { !it.isNullOrEmpty() }
+        return old && (absent || complete)
+    }
+}
+
 private class HubFrontReports {
-    fun report(saved: JsonObject): HubReport? = routes(saved)?.let { routes ->
-        HubReport(routes, bindings(saved), draining(saved), claims(saved), lastCalls(saved))
+    private val drains = HubDrainChecks()
+
+    fun report(saved: JsonObject): HubReport? = if (drains.readable(saved)) {
+        routes(saved)?.let { routes ->
+            HubReport(routes, bindings(saved), draining(saved), claims(saved), lastCalls(saved))
+        }
+    } else {
+        null
     }
 
     private fun routes(saved: JsonObject): List<HubRoute>? =
-        (saved[HubFields.ROUTES] as? JsonObject)?.values?.mapNotNull(::route)
+        (saved[HubFields.ROUTES] as? JsonObject)?.values?.map(::route)
+            ?.takeUnless { routes -> routes.any { it == null } }
+            ?.filterNotNull()
 
     private fun route(value: kotlinx.serialization.json.JsonElement): HubRoute? =
         (value as? JsonObject)?.let { saved ->

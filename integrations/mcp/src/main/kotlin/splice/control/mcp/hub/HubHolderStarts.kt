@@ -23,6 +23,25 @@ import kotlin.time.Duration
 
 // why: socket creation wakes this interval; the same interval bounds startup readiness without busy polling.
 private const val READY_CHECK_MS = 100L
+
+// why: a gate that survives a crash must leave before it can accumulate as an unowned waiting launcher.
+private const val GATE_WAIT_SECONDS = 300
+
+// why: abandonment joins the exact Process instance before its generation-specific scope can be retired.
+private const val LAUNCHER_STOP_WAIT_MS = 5_000L
+
+private const val SHELL = "/bin/sh"
+private const val SYSTEMD_RUN = "/usr/bin/systemd-run"
+private const val GATE_SCRIPT = "remaining=\$3\n" +
+    "while [ ! -f \"\$1\" ] && [ \"\$remaining\" -gt 0 ]; do\n" +
+    "  /usr/bin/sleep 1\n" +
+    "  remaining=\$((remaining - 1))\n" +
+    "done\n" +
+    "[ -f \"\$1\" ] || exit 1\n" +
+    "IFS= read -r token < \"\$1\"\n" +
+    "[ \"\$token\" = \"\$2\" ] || exit 1\n" +
+    "shift 3\n" +
+    "exec \"\$@\""
 private val MANAGER_ENV = listOf("XDG_RUNTIME_DIR", "DBUS_SESSION_BUS_ADDRESS")
 
 internal class HubHolderStarts(
@@ -33,6 +52,7 @@ internal class HubHolderStarts(
     private val holder: HubHolderContext,
     private val log: LogSink,
 ) {
+    private val cleanup = HubHolderLaunchCleanup()
     fun socket(key: String): Path = dir.resolve("${key.take(KEY_HEX)}.sock")
 
     fun running(key: String): Boolean = holder.liveness.attest(socket(key).toString()) != null
@@ -47,10 +67,10 @@ internal class HubHolderStarts(
             current == null -> null
             holder.records.exits.confirmed(current) -> null
             holder.liveness.attest(current) != null -> McpResult.Served(Unit)
-            holder.liveness.confirmExit(current) -> null
+            holder.liveness.confirmExit(current, unlaunched = true) -> null
             holder.records.ownership.owner(current) == null &&
                 holder.liveness.requestLaunchStop(current) &&
-                holder.liveness.confirmExit(current) -> null
+                holder.liveness.confirmExit(current, unlaunched = true) -> null
             else -> McpResult.Refused("the recorded holder cannot attest its exact child and scope ownership")
         }
     }
@@ -67,7 +87,7 @@ internal class HubHolderStarts(
         return dir.fileSystem.newWatchService().use { watch ->
             dir.register(watch, StandardWatchEventKinds.ENTRY_CREATE)
             val process = try {
-                builder(socket, start.spec, scopeName).start()
+                builder(socket, start.spec, claim).start()
             } catch (error: IOException) {
                 holder.liveness.confirmExit(intent, unlaunched = true)
                 return@use McpResult.Refused("cannot start '${start.server}': ${SafeFailureText.render(error)}")
@@ -75,11 +95,14 @@ internal class HubHolderStarts(
             val launch = HubHolderLaunch(
                 claim.generation,
                 process.pid(),
-                scopeName,
+                claim.scope,
                 process.toHandle().info().startInstant().map { it.toEpochMilli() }.orElse(null),
             )
             val record = holder.records.ownership.started(intent, launch)
-                ?: return@use failedStart(start, intent, "could not persist its holder launch")
+                ?: return@use failedStart(start, intent, "could not persist its holder launch", process = process)
+            if (!holder.records.files.releaseGate(claim)) {
+                return@use failedStart(start, record, "could not release its holder launch", process = process)
+            }
             ready(start, process, watch, bound, record)
         }
     }
@@ -112,8 +135,14 @@ internal class HubHolderStarts(
         bound: Duration,
     ): McpResult<Unit> = when (outcome) {
         is McpResult.Served -> served(start, process, record, outcome)
-        is McpResult.Refused -> outcome.also { abandon(record) }
-        null -> failedStart(start, record, "did not open its socket within ${bound.inWholeSeconds} s", true)
+        is McpResult.Refused -> outcome.also { abandon(record, process) }
+        null -> failedStart(
+            start,
+            record,
+            "did not open its socket within ${bound.inWholeSeconds} s",
+            true,
+            process,
+        )
     }
 
     private fun served(
@@ -125,7 +154,7 @@ internal class HubHolderStarts(
         log("[mcp-hub] ${LogSafe.str(start.server)}: holder ${LogSafe.str(process.pid().toString())} serves\n")
         outcome
     } else {
-        failedStart(start, record, "could not attest its child and scope")
+        failedStart(start, record, "could not attest its child and scope", process = process)
     }
 
     private fun failedStart(
@@ -133,15 +162,17 @@ internal class HubHolderStarts(
         record: HubHolderRecord?,
         reason: String,
         timedOut: Boolean = false,
+        process: Process? = null,
     ): McpResult<Unit> {
-        abandon(record)
+        abandon(record, process)
         return McpResult.Refused("'${start.server}' $reason", timedOut = timedOut)
     }
 
-    private fun abandon(record: HubHolderRecord?) {
+    private fun abandon(record: HubHolderRecord?, process: Process? = null) {
+        process?.let(cleanup::stop)
         record?.let { held ->
             holder.liveness.requestLaunchStop(held)
-            holder.liveness.confirmExit(held)
+            holder.liveness.confirmExit(held, unlaunched = true)
         }
     }
 
@@ -153,19 +184,28 @@ internal class HubHolderStarts(
         else -> null
     }
 
-    private fun builder(socket: Path, spec: HubLaunchSpec, scopeName: String): ProcessBuilder {
-        val argv = listOf(
-            "systemd-run",
+    private fun builder(socket: Path, spec: HubLaunchSpec, claim: HubHolderScopeClaim): ProcessBuilder {
+        val systemd = listOf(
+            SYSTEMD_RUN,
             "--user",
             "--scope",
             "--quiet",
             "--slice=$slice",
-            "--unit=${scopeName.removeSuffix(".scope")}",
+            "--unit=${claim.scope.removeSuffix(".scope")}",
             "--",
             binary.toString(),
             socket.toString(),
             spec.command,
         ) + spec.args
+        val argv = listOf(
+            SHELL,
+            "-c",
+            GATE_SCRIPT,
+            "splice-holder-gate",
+            holder.records.files.gate(claim).toString(),
+            claim.generation,
+            GATE_WAIT_SECONDS.toString(),
+        ) + systemd
         val builder = ProcessBuilder(argv)
             .directory(spec.folder.toFile())
             .redirectInput(ProcessBuilder.Redirect.from(File("/dev/null")))
@@ -187,6 +227,8 @@ internal class HubHolderStarts(
                 put(HubFields.LAUNCH, start.launch.orEmpty())
                 put(HubFields.TUPLE, start.tuple)
                 put(HubFields.AT, at)
+                put(HubFields.EXECUTABLE, binary.toString())
+                put(HubFields.LAUNCH_GATED, true)
                 put(HubFields.GENERATION, claim.generation)
                 put(HubFields.SCOPE, claim.scope)
                 put(HubFields.STATE, HOLDER_STARTING)
@@ -200,5 +242,24 @@ internal class HubHolderStarts(
         true
     } catch (_: IOException) {
         false
+    }
+}
+
+/** The launcher Process instance is exact, so timeout cleanup never signals a PID that another process could reuse. */
+private class HubHolderLaunchCleanup {
+    fun stop(process: Process) {
+        if (process.isAlive) process.destroy()
+        var interrupted = false
+        var joined = false
+        while (!joined) {
+            try {
+                joined = process.waitFor(LAUNCHER_STOP_WAIT_MS, TimeUnit.MILLISECONDS)
+                if (!joined) process.destroyForcibly()
+            } catch (_: InterruptedException) {
+                interrupted = true
+                process.destroyForcibly()
+            }
+        }
+        if (interrupted) Thread.currentThread().interrupt()
     }
 }

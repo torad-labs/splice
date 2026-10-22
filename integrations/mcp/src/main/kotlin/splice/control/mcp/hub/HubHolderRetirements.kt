@@ -77,20 +77,23 @@ internal class HubHolderRetirements(dir: Path) {
 
     fun state(replacement: HubReplacement): HubRetirementState? {
         val id = replacement.id()
-        active[id]?.let { return stateOf(it) }
-        val state = when (val persisted = read(replacement)) {
-            HubRetirementRead.Missing -> null
+        val durable = when (val persisted = read(replacement)) {
+            HubRetirementRead.Missing -> missingState(id)
             HubRetirementRead.Unreadable -> HubRetirementState.UNKNOWN
-            is HubRetirementRead.Present ->
-                persisted.body
-                    .takeIf { matches(it, replacement) }
-                    ?.let { JsonScalars.str(it, RETIREMENT_STATE) }
-                    ?.let(::stateOf)
-                    ?: HubRetirementState.UNKNOWN
+            is HubRetirementRead.Present -> persistedState(persisted.body, replacement)
         }
-        state?.takeUnless { it == HubRetirementState.UNKNOWN }?.let { active.putIfAbsent(id, stateName(it)) }
-        return state
+        durable?.takeUnless { it == HubRetirementState.UNKNOWN }?.let { active[id] = stateName(it) }
+        return durable
     }
+
+    private fun missingState(id: String): HubRetirementState? =
+        active[id]?.takeUnless { it == PERSISTING }?.let { HubRetirementState.UNKNOWN }
+
+    private fun persistedState(body: JsonObject, replacement: HubReplacement): HubRetirementState =
+        body.takeIf { matches(it, replacement) }
+            ?.let { JsonScalars.str(it, RETIREMENT_STATE) }
+            ?.let(::stateOf)
+            ?: HubRetirementState.UNKNOWN
 
     private fun write(replacement: HubReplacement, state: HubRetirementState): Boolean {
         if (!writable(replacement)) return false

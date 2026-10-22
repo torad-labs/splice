@@ -51,7 +51,10 @@ internal class HubSweep(
     private fun stopReason(record: HubRecord, now: Long, idleMs: Long): String? {
         val report = front.report() ?: return null
         if (!holders.pinStoreReadable()) return null
-        val retained = record.generation?.let { HubDrainHolder(record.socket, it) in report.draining } ?: false
+        val retained = record.generation?.let { generation ->
+            val identity = HubDrainHolder(record.socket, generation)
+            identity in report.draining || identity in report.outstanding
+        } ?: false
         return if (holders.pinned(record.socket, record.generation, report.claims) || retained) {
             null
         } else {

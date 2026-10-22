@@ -26,13 +26,14 @@ internal data class HubBinding(val server: String, val socket: String, val launc
 /** One exact holder generation held by a persisted front replacement drain. */
 internal data class HubDrainHolder(val socket: String, val generation: String)
 
-/** What the front saved: retained routes, sessions, drain holders, and each holder's last call. */
+/** What the front saved: routes, sessions, drains, outstanding exchanges, and each holder's last call. */
 internal data class HubReport(
     val routes: List<HubRoute>,
     val bindings: List<HubBinding>,
     val draining: Set<HubDrainHolder>,
     val claims: Set<HubDrainClaim>,
     val lastCalls: Map<String, Long>,
+    val outstanding: Set<HubDrainHolder> = emptySet(),
 )
 
 internal class HubFront(private val file: Path) {
@@ -76,15 +77,16 @@ private class HubDrainChecks {
 
 private class HubFrontReports {
     private val drains = HubDrainChecks()
+    private val exchanges = HubOutstandingReads()
 
-    fun report(saved: JsonObject): HubReport? = if (drains.readable(saved)) {
-        routes(saved)?.let { routes ->
+    fun report(saved: JsonObject): HubReport? {
+        if (!drains.readable(saved)) return null
+        val outstanding = exchanges.read(saved) ?: return null
+        return routes(saved)?.let { routes ->
             bindings(saved)?.let { bindings ->
-                HubReport(routes, bindings, draining(saved), claims(saved), lastCalls(saved))
+                HubReport(routes, bindings, draining(saved), claims(saved), lastCalls(saved), outstanding)
             }
         }
-    } else {
-        null
     }
 
     private fun routes(saved: JsonObject): List<HubRoute>? =

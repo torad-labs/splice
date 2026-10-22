@@ -25,7 +25,7 @@ internal class SessionMinting(
     private val log: LogSink,
 ) {
     private data class Started(
-        val initialization: HostedInitialization? = null,
+        val initialization: HostedServerLifecycle.Initialization? = null,
         val failure: String = "",
         val timedOut: Boolean = false,
     )

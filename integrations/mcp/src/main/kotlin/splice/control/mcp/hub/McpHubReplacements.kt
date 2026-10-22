@@ -104,7 +104,7 @@ internal class McpHubReplacements(
                 put(HubFields.GENERATION, generation)
                 put(HubFields.SHARED, replacement.target.shared)
             }
-            McpHubReply(HubResponses.OK, JsonWire.string(body))
+            McpHubReply(HttpStatus.OK, JsonWire.string(body))
         } else {
             targets.error(
                 HttpStatus.SERVICE_UNAVAILABLE,

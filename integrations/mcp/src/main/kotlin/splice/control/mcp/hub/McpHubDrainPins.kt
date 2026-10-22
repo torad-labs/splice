@@ -21,7 +21,7 @@ internal class McpHubDrainPins(
         val request = parsed.request ?: return targets.error(HttpStatus.BAD_REQUEST, parsed.error.orEmpty())
         return when (val acquired = holders.acquirePin(request, claims())) {
             is McpResult.Served -> McpHubReply(
-                HubResponses.OK,
+                HttpStatus.OK,
                 JsonWire.string(buildJsonObject { put(HubFields.CLAIM, acquired.value.claim) }),
             )
             is McpResult.Refused -> targets.error(HttpStatus.SERVICE_UNAVAILABLE, acquired.reason)

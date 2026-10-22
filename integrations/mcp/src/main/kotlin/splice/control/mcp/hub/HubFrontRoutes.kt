@@ -9,7 +9,7 @@ import splice.core.util.JsonScalars
 internal class HubFrontRoutes {
     fun read(saved: JsonObject): List<HubRoute>? {
         val routes = saved[HubFields.ROUTES] as? JsonObject ?: return null
-        val sessions = saved[HubFields.SESSIONS] as? JsonObject ?: return null
+        val sessions = saved[HubFields.FRONT_STATE_SESSIONS] as? JsonObject ?: return null
         val bound = sessions.keys.mapNotNull { JsonScalars.str(sessions, it) }.toSet()
         return routes.filterNot { (key, value) -> pending(key, value, bound) }
             .values.map(::route)

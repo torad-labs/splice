@@ -70,7 +70,7 @@ internal class HubTargets(
             put("listing", listings.kept(target.listing)?.toString())
             holders.generation(socket)?.let { put(HubFields.GENERATION, it) }
         }
-        return McpHubReply(HubResponses.OK, JsonWire.string(body))
+        return McpHubReply(HttpStatus.OK, JsonWire.string(body))
     }
 
     fun refused(targeted: Targeted): McpHubReply =

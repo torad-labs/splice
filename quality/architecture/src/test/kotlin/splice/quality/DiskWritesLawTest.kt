@@ -101,7 +101,7 @@ internal object DiskWrites {
                     "state",
             ),
             NotAFile(
-                "integrations/mcp/src/main/kotlin/splice/control/mcp/HostedServer.kt",
+                "integrations/mcp/src/main/kotlin/splice/control/mcp/HostedServerLifecycle.kt",
                 ".bufferedWriter(",
                 "a hosted MCP server's stdin: the process's output stream, not a file",
             ),

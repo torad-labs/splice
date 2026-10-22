@@ -92,7 +92,7 @@ private class HubFrontReports {
 
     private fun bindings(saved: JsonObject): List<HubBinding>? {
         val routes = saved[HubFields.ROUTES] as? JsonObject ?: return null
-        val sessions = saved[HubFields.SESSIONS] as? JsonObject ?: return null
+        val sessions = saved[HubFields.FRONT_STATE_SESSIONS] as? JsonObject ?: return null
         return sessions.keys.map { session -> binding(session, sessions, routes) }
             .takeUnless { bindings -> bindings.any { it == null } }
             ?.filterNotNull()

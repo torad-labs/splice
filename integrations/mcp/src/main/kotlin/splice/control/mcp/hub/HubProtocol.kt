@@ -1,7 +1,6 @@
 package splice.control.mcp.hub
 
 import splice.control.mcp.APP_MCP_SLICE
-import splice.core.wire.HttpStatus
 import java.nio.file.Path
 
 internal object HubStorage {
@@ -11,8 +10,6 @@ internal object HubStorage {
 }
 
 internal object HubResponses {
-    const val OK = HttpStatus.OK
-
     // why: mutating hub control operations return no body after their durable state transition completes.
     const val NO_CONTENT = 204
 }

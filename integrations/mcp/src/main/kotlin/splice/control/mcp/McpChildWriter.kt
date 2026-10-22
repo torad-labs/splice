@@ -7,10 +7,16 @@ import java.util.Collections
 import java.util.IdentityHashMap
 import kotlin.time.Duration
 
-/** Bounds queued writes and unsettled exchanges per direction, so caller timeouts cannot grow retained wire state. */
+// why: 64 slots bound per-direction exchange tracking when a child stops consuming stdin.
 internal const val WRITE_QUEUE_CAPACITY = 64
+
+// why: one MiB caps encoded writes retained while a child is not consuming stdin.
 private const val MAX_QUEUED_WRITE_BYTES = 1024L * 1024L
+
+// why: reverse replies share the write ceiling so they cannot wait outside its byte bound.
 private const val MAX_RETAINED_REPLY_BYTES = MAX_QUEUED_WRITE_BYTES
+
+// why: supported Linux/macOS runtimes add one newline byte to each JSON-RPC line.
 private const val WRITE_LINE_BYTES = 1L
 
 /** One child/stdin generation, carrying its own short-lived retirement fence. */

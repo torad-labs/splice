@@ -23,7 +23,7 @@ internal object HubFields {
     const val ROUTES = "routes"
     const val SCOPE = "scope"
     const val SERVER = "server"
-    const val SESSIONS = "sessions"
+    const val FRONT_STATE_SESSIONS = "sessions"
     const val SHARED = "shared"
     const val SOCKET = "socket"
     const val STATE = "state"

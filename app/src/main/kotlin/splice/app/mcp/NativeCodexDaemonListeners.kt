@@ -3,25 +3,33 @@ package splice.app.mcp
 import java.nio.file.Files
 import java.nio.file.Path
 
-// why: procfs Unix-socket flags are hexadecimal text.
-private const val HEX_RADIX = 16
+// why: /proc reports the Unix-socket Flags column in hexadecimal, so parsing uses base 16.
+private const val PROCFS_HEX_RADIX = 16
 
 // why: /proc/<pid>/net/unix begins with a column header.
 private const val UNIX_SOCKET_HEADER_ROWS = 1
 
-// why: these fields extend through the Unix socket path.
+// why: the eight procfs columns end with the socket path.
 private const val UNIX_SOCKET_MIN_FIELDS = 8
 
-// why: procfs fields distinguish an accepting SOCK_STREAM listener from a bound endpoint.
+// why: Flags is the fourth zero-based column in the procfs Unix-socket record.
 private const val UNIX_SOCKET_FLAGS_FIELD = 3
+
+// why: procfs sets bit 16 when a Unix stream socket accepts connections.
 private const val UNIX_SOCKET_ACCEPTING_FLAG = 0x10000L
+
+// why: Type is the fifth zero-based column in the procfs Unix-socket record.
 private const val UNIX_SOCKET_TYPE_FIELD = 4
 private const val UNIX_SOCKET_STREAM_TYPE = "0001"
+
+// why: St follows Type as the sixth zero-based column in the procfs record.
 private const val UNIX_SOCKET_STATE_FIELD = 5
 private const val UNIX_SOCKET_LISTENING_STATE = "01"
 
-// why: this procfs inode is the listener's kernel identity, not the filesystem socket's st_ino.
+// why: the seventh procfs column is the kernel listener inode, not filesystem st_ino.
 private const val UNIX_SOCKET_INODE_FIELD = 6
+
+// why: Path is the eighth column; the split limit preserves spaces in its value.
 private const val UNIX_SOCKET_PATH_FIELD = 7
 
 /** Reads the one kernel listener a recorded daemon process currently holds. */
@@ -68,7 +76,7 @@ internal class NativeCodexDaemonListeners {
         fields.size >= UNIX_SOCKET_MIN_FIELDS &&
             fields[UNIX_SOCKET_TYPE_FIELD] == UNIX_SOCKET_STREAM_TYPE &&
             fields[UNIX_SOCKET_STATE_FIELD] == UNIX_SOCKET_LISTENING_STATE &&
-            fields[UNIX_SOCKET_FLAGS_FIELD].toLongOrNull(HEX_RADIX)
+            fields[UNIX_SOCKET_FLAGS_FIELD].toLongOrNull(PROCFS_HEX_RADIX)
                 ?.and(UNIX_SOCKET_ACCEPTING_FLAG) == UNIX_SOCKET_ACCEPTING_FLAG &&
             fields[UNIX_SOCKET_INODE_FIELD] in inodes
 

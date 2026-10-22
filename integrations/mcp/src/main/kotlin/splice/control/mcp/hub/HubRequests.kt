@@ -36,7 +36,7 @@ internal class HubRequests(
         val generation = holders.generation(socket)
             ?: return targets.error(HttpStatus.SERVICE_UNAVAILABLE, "the holder socket has no live owner generation")
         return McpHubReply(
-            HubResponses.OK,
+            HttpStatus.OK,
             JsonWire.string(
                 buildJsonObject {
                     put(HubFields.SOCKET, socket)

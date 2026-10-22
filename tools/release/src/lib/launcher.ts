@@ -22,6 +22,7 @@
 // one left in the daemon-state file.
 import { chmodSync, copyFileSync, existsSync, mkdirSync, readFileSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { execFileSync } from "node:child_process";
+import { randomUUID } from "node:crypto";
 import { join } from "node:path";
 import { shimMarkers } from "./shim.ts";
 import { makeSandbox, writeStub } from "./sandbox.ts";
@@ -295,11 +296,13 @@ const ARMS: readonly Arm[] = [
     run: async (ctx: Ctx) => {
       ctx.cold();
       const run = await ctx.launch({ [selector]: selectorValue(selector, ctx) });
-      const unit = read(ctx.captures.unit);
-      const java = read(ctx.captures.java);
-      const evidence = `exit=${run.code}, unit=${JSON.stringify(unit)}, java=${JSON.stringify(java)}, output=${JSON.stringify(run.output)}`;
-      if (existsSync(ctx.captures.unit)) return `${selector} set must never start the unit; ${evidence}`;
-      return java === "spawned" ? null : `${selector} set must raw-spawn; ${evidence}`;
+      const unitStarted = existsSync(ctx.captures.unit);
+      const javaStarted = read(ctx.captures.java) === "spawned";
+      if (!unitStarted && javaStarted) return null;
+      const outputPath = join("/tmp", `splice-launcher-failure-${randomUUID()}.log`);
+      writeFileSync(outputPath, run.output, { flag: "wx", mode: 0o600 });
+      const failure = unitStarted ? `${selector} set must never start the unit` : `${selector} set must raw-spawn`;
+      return `${failure}; exit=${run.code}, unit_started=${unitStarted}, java_started=${javaStarted}, private_output=${outputPath}`;
     },
   })),
   {

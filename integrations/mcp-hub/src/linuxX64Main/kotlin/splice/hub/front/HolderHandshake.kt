@@ -7,63 +7,28 @@ import kotlinx.serialization.json.longOrNull
 import kotlinx.serialization.json.put
 
 internal class HolderHandshakeFlow(
-    private val context: HolderLinkContext,
-    private val replacements: HolderReplacements,
-    private val persistence: HolderPersistence,
+    internal val context: HolderLinkContext,
+    internal val replacements: HolderReplacements,
+    internal val persistence: HolderPersistence,
     memory: HolderMemory,
-    private val proof: HolderProof,
+    internal val proof: HolderProof,
 ) {
-    private val attempts = HolderHandshakeAttempts(context, persistence, memory, proof)
-    private val outcomes = HolderHandshakeOutcomes(replacements, persistence)
-    private val notifications = HolderInitializedDelivery(context, persistence, outcomes)
+    internal val attempts = HolderHandshakeAttempts(context, persistence, memory, proof)
+    internal val outcomes = HolderHandshakeOutcomes(replacements, persistence)
+    internal val notifications = HolderInitializedDelivery(context, persistence, outcomes)
+    val recovery = HolderHandshakeRecovery(this)
 
     fun retained(holder: Holder, generation: String?): Boolean = proof.retained(holder, generation)
 
     fun observed(holder: Holder): Boolean = proof.observed(holder)
 
-    fun recover(holder: Holder, link: HolderLink) {
-        when {
-            holder.recoveryUncertain -> outcomes.failed(holder, UNPROVEN_INITIALIZATION)
-            holder.handshakeId != null -> resumed(holder)
-            proof.retained(holder, null) -> notifications.ready(holder, link)
-            else -> outcomes.failed(holder, MISSING_INITIALIZATION)
-        }
-    }
+    fun baseline(holder: Holder): Boolean = proof.baseline(holder)
 
-    fun candidate(holder: Holder, link: HolderLink) {
-        when {
-            holder.recoveryUncertain -> outcomes.failed(holder, UNPROVEN_INITIALIZATION)
-            proof.retained(holder, holder.generation) -> retainedCandidate(holder, link)
-            holder.handshakeId != null -> resumed(holder)
-            else -> {
-                clearStaleAttempt(holder)
-                holder.identity = Ids.socket(holder.socket)
-                holder.init = null
-                started(holder, link, CANDIDATE_INITIALIZATION)
-            }
-        }
-    }
-
-    fun attached(route: Route, holder: Holder, link: HolderLink) {
-        if (proof.retained(holder, route.generation)) {
-            context.files.say("reconnected ${route.server} at ${holder.socket} without initialize")
-            notifications.ready(holder, link)
-        } else if (holder.handshakeId != null) {
-            resumed(holder)
-        } else {
-            holder.identity = Ids.socket(holder.socket)
-            holder.init = null
-            started(holder, link, "${route.server} has no durable initialize request")
-        }
-    }
-
-    fun received(holder: Holder, link: HolderLink, msg: JsonObject) {
-        if (!attempts.pending(holder)) return
-        val init = msg[Rpc.RESULT] as? JsonObject
-        when {
-            init == null -> refused(holder)
-            replacements.links.verified(holder, init) != null -> Unit
-            else -> completed(holder, link, init)
+    fun adopt(holder: Holder, generation: String) {
+        if (holder.generation == null && proof.baseline(holder)) {
+            holder.generation = generation
+        } else if (holder.generation != generation) {
+            reset(holder, generation)
         }
     }
 
@@ -79,53 +44,101 @@ internal class HolderHandshakeFlow(
         holder.recoveryUncertain = false
         attempts.clear(holder)
     }
+}
+
+internal class HolderHandshakeRecovery(private val flow: HolderHandshakeFlow) {
+    fun recover(holder: Holder, link: HolderLink) {
+        when {
+            holder.recoveryUncertain -> flow.outcomes.failed(holder, UNPROVEN_INITIALIZATION)
+            holder.handshakeId != null -> resumed(holder)
+            flow.proof.retained(holder, null) -> flow.notifications.ready(holder, link)
+            else -> flow.outcomes.failed(holder, MISSING_INITIALIZATION)
+        }
+    }
+
+    fun candidate(holder: Holder, link: HolderLink) {
+        when {
+            holder.recoveryUncertain -> flow.outcomes.failed(holder, UNPROVEN_INITIALIZATION)
+            flow.proof.retained(holder, holder.generation) -> retainedCandidate(holder, link)
+            holder.handshakeId != null -> resumed(holder)
+            else -> {
+                clearStaleAttempt(holder)
+                holder.identity = Ids.socket(holder.socket)
+                holder.init = null
+                started(holder, link, CANDIDATE_INITIALIZATION)
+            }
+        }
+    }
+
+    fun attached(route: Route, holder: Holder, link: HolderLink) {
+        if (flow.proof.retained(holder, route.generation)) {
+            flow.context.files.say("reconnected ${route.server} at ${holder.socket} without initialize")
+            flow.notifications.ready(holder, link)
+        } else if (holder.handshakeId != null) {
+            resumed(holder)
+        } else {
+            holder.identity = Ids.socket(holder.socket)
+            holder.init = null
+            started(holder, link, "${route.server} has no durable initialize request")
+        }
+    }
+
+    fun received(holder: Holder, link: HolderLink, msg: JsonObject) {
+        if (!flow.attempts.pending(holder)) return
+        val init = msg[Rpc.RESULT] as? JsonObject
+        when {
+            init == null -> refused(holder)
+            flow.replacements.links.verified(holder, init) != null -> Unit
+            else -> completed(holder, link, init)
+        }
+    }
 
     private fun retainedCandidate(holder: Holder, link: HolderLink) {
-        holder.init?.takeIf { replacements.links.verified(holder, it) == null }?.let {
-            if (persistence.checkpoint()) {
-                notifications.ready(holder, link)
+        holder.init?.takeIf { flow.replacements.links.verified(holder, it) == null }?.let {
+            if (flow.persistence.checkpoint()) {
+                flow.notifications.ready(holder, link)
             } else {
-                outcomes.failed(holder, "the retained candidate could not be durably marked ready")
+                flow.outcomes.failed(holder, "the retained candidate could not be durably marked ready")
             }
         }
     }
 
     private fun started(holder: Holder, link: HolderLink, words: String) {
-        if (!attempts.start(holder, link, ::expired)) outcomes.failed(holder, words)
+        if (!flow.attempts.start(holder, link, ::expired)) flow.outcomes.failed(holder, words)
     }
 
     private fun resumed(holder: Holder) {
         holder.ready = false
         holder.connecting = true
-        if (!attempts.resume(holder, ::expired)) outcomes.failed(holder, UNPROVEN_INITIALIZATION)
+        if (!flow.attempts.resume(holder, ::expired)) flow.outcomes.failed(holder, UNPROVEN_INITIALIZATION)
     }
 
     private fun completed(holder: Holder, link: HolderLink, init: JsonObject) {
         holder.init = init
         holder.initializedPending = true
-        attempts.clear(holder)
-        if (persistence.checkpoint()) {
-            notifications.pending(holder, link)
+        flow.attempts.clear(holder)
+        if (flow.persistence.checkpoint()) {
+            flow.notifications.pending(holder, link)
         } else {
-            outcomes.uncertain(holder)
+            flow.outcomes.uncertain(holder)
         }
     }
 
     private fun refused(holder: Holder) {
-        val words = if (replacements.links.candidate(holder) == null) {
+        val words = if (flow.replacements.links.candidate(holder) == null) {
             "the server refused initialize"
         } else {
             "the candidate refused initialize"
         }
-        outcomes.failed(holder, words)
+        flow.outcomes.failed(holder, words)
     }
 
     private fun expired(holder: Holder) {
-        outcomes.failed(holder, "the holder did not answer its original initialize request")
+        flow.outcomes.failed(holder, "the holder did not answer its original initialize request")
     }
 
     private fun clearStaleAttempt(holder: Holder) {
-        if (holder.handshakeGeneration != null) attempts.clear(holder)
+        if (holder.handshakeGeneration != null) flow.attempts.clear(holder)
     }
 }
 
@@ -259,9 +272,12 @@ internal class HolderProof(private val routes: Routes) {
 
     fun observed(holder: Holder): Boolean = holder.attestedGeneration == holder.generation
 
+    fun baseline(holder: Holder): Boolean =
+        holder.generation == null && initialized(holder) && identityMatches(holder)
+
     fun unproven(holder: Holder): Boolean =
         listOf(
-            holder.generation == null,
+            holder.generation == null && !baseline(holder),
             changed(holder),
             missingIdentity(holder),
             incompleteAttempt(holder),
@@ -293,8 +309,8 @@ internal class HolderProof(private val routes: Routes) {
         holder.attestedGeneration == generation || routes.generation(holder.socket) == generation
 
     private fun changed(holder: Holder): Boolean {
-        val current = routes.generation(holder.socket)
-        return current != null && current != holder.generation
+        val generation = holder.generation ?: return false
+        return routes.generation(holder.socket)?.let { it != generation } == true
     }
 
     private fun missingIdentity(holder: Holder): Boolean =

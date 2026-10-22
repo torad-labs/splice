@@ -18,7 +18,7 @@ internal data class HolderReplacements(
     val admissions = HolderAdmissions(store)
     val views = HolderDrainViews(store, details)
     val candidates = HolderCandidates(store, changed, checkpoint, preparation, links, details)
-    val retirements = HolderRetirements(store, changed, checkpoint)
+    val retirements = HolderRetirements(store, changed, checkpoint, preparation)
 
     fun all(): List<HolderDrain> = store.all()
 
@@ -286,6 +286,7 @@ internal class HolderRetirements(
     private val store: HolderReplacementStore,
     private val changed: () -> Unit,
     private val checkpoint: () -> Boolean,
+    private val preparation: HolderCandidatePreparation,
 ) {
     fun candidates(): List<HolderDrain> =
         store.drains.values.filter { it.phase == ROUTED && it.candidate != null }
@@ -360,7 +361,11 @@ internal class HolderRetirements(
     fun oldExited(socket: String, generation: String) {
         store.drains.values
             .filter { it.socket == socket && it.generation == generation && it.phase == OLD_HOLDER_LOST }
-            .forEach { drain -> transition(drain, if (drain.candidate == null) PAUSED else CANDIDATE_STARTING, null) }
+            .forEach { drain ->
+                val candidate = drain.candidate
+                val phase = if (candidate?.let(preparation::current) == true) CANDIDATE_READY else CANDIDATE_STARTING
+                transition(drain, if (candidate == null) PAUSED else phase, null)
+            }
         store.drains.values
             .filter { drain ->
                 drain.candidate?.socket == socket &&

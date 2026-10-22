@@ -23,17 +23,24 @@ class ServerRequests(
     val retainedGenerations: List<Pair<Holder, String>>
         get() = ledger.requests.values.map { it.holder to it.generation }.distinct()
 
-    /** Keeps the server request before it can reach a session. A failed checkpoint leaves it charged but unforwarded. */
+    /** Keeps the server request before it can reach a session. A failed checkpoint receives a retryable recovery error. */
     fun retain(holder: Holder, id: JsonElement): String? {
         val key = ledger.retain(holder, id) ?: return null
         delivery.remembers(holder)
-        return if (persistence.checkpoint()) key else null
+        if (persistence.checkpoint()) return key
+        delivery.interrupted(key)
+        return null
     }
 
-    fun bind(key: String, session: Session): Boolean = ledger.bind(key, session, persistence)
+    fun bind(key: String, session: Session): Boolean {
+        val bound = ledger.bind(key, session, persistence)
+        if (!bound) delivery.interrupted(key)
+        return bound
+    }
 
     fun restore(saved: JsonObject?, holder: (String) -> Holder, sessions: Map<String, Session>) {
         ledger.restore(saved, holder, sessions, delivery::remembers)
+        delivery.recover()
     }
 
     fun state(): JsonObject = ledger.state()

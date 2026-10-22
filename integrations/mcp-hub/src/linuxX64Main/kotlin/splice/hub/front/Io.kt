@@ -144,9 +144,14 @@ class Sys {
         fcntl(fd, F_SETFD, 0)
     }
 
+    /** Restores descriptor containment after an attempted in-place exec returns. */
+    fun protect(fd: Int) {
+        fcntl(fd, F_SETFD, FD_CLOEXEC)
+    }
+
     fun nonblocking(fd: Int): Int = fd.also {
         fcntl(it, F_SETFL, fcntl(it, F_GETFL) or O_NONBLOCK)
-        fcntl(it, F_SETFD, FD_CLOEXEC)
+        protect(it)
     }
 
     /** Bytes read into [into], 0 at end of file or on an error, -1 when nothing is ready now. */

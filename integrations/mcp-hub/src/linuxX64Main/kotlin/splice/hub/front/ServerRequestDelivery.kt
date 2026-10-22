@@ -156,6 +156,18 @@ internal class ServerRequestDelivery(
         holder.resumeReverseResponses = { generation -> resume(holder, generation) }
     }
 
+    /** A request never reaches a new client after restart; its exact holder id receives a durable recovery error. */
+    fun recover() {
+        ledger.requests.keys.forEach { key ->
+            ledger.current(key)?.id?.let { id -> reply(key, Rpc.error(id, RECOVERY_INTERRUPTED)) }
+        }
+    }
+
+    /** A live persistence failure is answered on the exact holder generation rather than waiting for another restart. */
+    fun interrupted(key: String) {
+        ledger.current(key)?.id?.let { id -> reply(key, Rpc.error(id, DELIVERY_INTERRUPTED)) }
+    }
+
     private fun resume(holder: Holder, generation: String) {
         ledger.requests
             .filterValues { resumable(it, holder, generation) }
@@ -182,8 +194,7 @@ internal class ServerRequestDelivery(
         asked.response = text
         asked.delivery = RESPONSE_PREPARED
         if (persistence.checkpoint()) return true
-        asked.response = null
-        asked.delivery = null
+        retried(asked)
         return false
     }
 
@@ -228,6 +239,8 @@ internal class ServerRequestDelivery(
     }
 }
 
+private const val RECOVERY_INTERRUPTED = "the front restarted before this server request could reach its client"
+private const val DELIVERY_INTERRUPTED = "the front could not durably retain this server request"
 private const val RESPONSE_ID = "response_id"
 private const val SESSION = "session"
 private const val ANSWERING = "answering"

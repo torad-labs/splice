@@ -47,52 +47,33 @@ class Upgrade(private val sys: Sys, private val files: HubFiles, private val arg
     /** Writes the descriptors and execs. Returns only when the exec failed. */
     fun exec(loop: Loop, listener: HttpListener, hub: Hub, path: String) {
         hub.stopping = true
-        hub.save()
-        val all = loop.all()
-        val state = buildJsonObject {
-            put("listener", listener.fd)
-            put(
-                "conns",
-                buildJsonArray {
-                    all.filterIsInstance<HttpConn>().forEach { c ->
-                        add(
-                            buildJsonObject {
-                                put("fd", c.fd)
-                                put(INBOX, Base64.encode(c.inbox.data, 0, c.inbox.size))
-                                c.streamOf?.takeIf { c.streaming }?.let { put("stream", it) }
-                            },
-                        )
-                    }
-                },
-            )
-            put(
-                "links",
-                buildJsonArray {
-                    all.filterIsInstance<HolderLink>().forEach { l ->
-                        add(
-                            buildJsonObject {
-                                put("fd", l.fd)
-                                put("socket", l.socket)
-                                put(INBOX, Base64.encode(l.inbox.data, 0, l.inbox.size))
-                            },
-                        )
-                    }
-                },
-            )
+        if (!hub.save()) return handoffFailed(hub, "the hub state could not be durably saved")
+        val handoff = UpgradeHandoff(listener, loop.all())
+        if (!handoff.save(files)) return handoffFailed(hub, "the descriptor handoff could not be durably saved")
+        handoff.inherit(sys)
+        try {
+            replacing(path, handoff)
+        } finally {
+            handoff.protect(sys)
         }
-        files.saveExec(Json.encodeToString(JsonObject.serializer(), state))
-        all.filter { it is HttpConn || it is HolderLink || it is HttpListener }.forEach { sys.inherit(it.fd) }
+        handoffFailed(hub, "the exec of $path failed")
+    }
+
+    private fun replacing(path: String, handoff: UpgradeHandoff) {
         val kept = args.filterIndexed { i, a -> a != "--resume" && (i == 0 || args[i - 1] != "--resume") }
         val argv = listOf(path) + kept + listOf("--resume", files.execPath())
-        val conns = all.count { it is HttpConn }
-        files.say("upgrading in place: $conns connections, ${all.count { it is HolderLink }} holders")
+        handoff.announced(files)
         memScoped {
             val c = allocArray<CPointerVar<ByteVar>>(argv.size + 1)
             argv.forEachIndexed { i, a -> c[i] = a.cstr.ptr }
             c[argv.size] = null
             execv(path, c)
         }
-        files.say("the exec of $path failed; carrying on with the running code")
+    }
+
+    private fun handoffFailed(hub: Hub, words: String) {
+        hub.stopping = false
+        files.say("$words; carrying on with the running code")
     }
 
     /** The binary at this process's own path, which an install has replaced by now. */
@@ -126,6 +107,60 @@ class Upgrade(private val sys: Sys, private val files: HubFiles, private val arg
         val conns = state["conns"]?.jsonArray?.size ?: 0
         files.say("resumed in place: $conns connections, ${state["links"]?.jsonArray?.size ?: 0} holders")
         return l
+    }
+}
+
+private class UpgradeHandoff(
+    private val listener: HttpListener,
+    private val all: List<Watched>,
+) {
+    private val inherited = all.filter { it is HttpConn || it is HolderLink || it is HttpListener }
+
+    fun save(files: HubFiles): Boolean = files.saveExec(Json.encodeToString(JsonObject.serializer(), state()))
+
+    fun inherit(sys: Sys) {
+        inherited.forEach { sys.inherit(it.fd) }
+    }
+
+    fun protect(sys: Sys) {
+        inherited.forEach { sys.protect(it.fd) }
+    }
+
+    fun announced(files: HubFiles) {
+        files.say(
+            "upgrading in place: ${all.count { it is HttpConn }} connections, " +
+                "${all.count { it is HolderLink }} holders",
+        )
+    }
+
+    private fun state(): JsonObject = buildJsonObject {
+        put("listener", listener.fd)
+        put("conns", connections())
+        put("links", links())
+    }
+
+    private fun connections() = buildJsonArray {
+        all.filterIsInstance<HttpConn>().forEach { conn ->
+            add(
+                buildJsonObject {
+                    put("fd", conn.fd)
+                    put(INBOX, Base64.encode(conn.inbox.data, 0, conn.inbox.size))
+                    conn.streamOf?.takeIf { conn.streaming }?.let { put("stream", it) }
+                },
+            )
+        }
+    }
+
+    private fun links() = buildJsonArray {
+        all.filterIsInstance<HolderLink>().forEach { link ->
+            add(
+                buildJsonObject {
+                    put("fd", link.fd)
+                    put("socket", link.socket)
+                    put(INBOX, Base64.encode(link.inbox.data, 0, link.inbox.size))
+                },
+            )
+        }
     }
 }
 

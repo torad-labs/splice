@@ -28,32 +28,37 @@ internal class HolderLinkRecovery(
         if (link == null) {
             replacements.links.failed(holder, "the daemon-started candidate did not accept a front connection")
         } else {
+            bound(holder, link) { handshakes.recovery.candidate(holder, link) }
             link.claim()
-            bound(holder, link) { handshakes.candidate(holder, link) }
         }
     }
 
     fun reconnect(holder: Holder, generation: String): Boolean {
         if (!handshakes.retained(holder, generation)) return false
-        val link = holder.link ?: connections.connect(holder)?.also(HolderLink::claim) ?: return false
+        val existing = holder.link
+        val link = existing ?: connections.connect(holder) ?: return false
         holder.scheduleReverseResponseRetry = { exact -> retry(holder, exact) }
         generations.bind(holder, link) { attested ->
+            val prior = holder.generation
             if (attested == generation) {
                 holder.attestedGeneration = attested
-                handshakes.recover(holder, link)
+                handshakes.recovery.recover(holder, link)
             } else {
                 handshakes.reset(holder, attested)
+                context.routes.ownership.adopt(holder.socket, prior, attested)
                 holder.attestedGeneration = attested
+                persistence.changed()
                 link.close()
             }
         }
+        if (existing == null) link.claim()
         return !link.closed
     }
 
     fun adopt(fd: Int, socket: String, saved: ByteArray) {
         val holder = known.getOrPut(socket) { Holder(socket) }
         val link = connections.adopt(holder, fd, saved)
-        bound(holder, link) { handshakes.recover(holder, link) }
+        bound(holder, link) { handshakes.recovery.recover(holder, link) }
     }
 
     fun knownInit(route: Route, then: (JsonObject?, String?) -> Unit) {
@@ -81,7 +86,10 @@ internal class HolderLinkRecovery(
     private fun knownInit(route: Route): JsonObject? = route.socket?.let(known::get)?.init
 
     private fun live(route: Route, holder: Holder, then: (String?) -> Unit) {
-        route.generation?.takeIf { it != holder.generation }?.let { handshakes.reset(holder, it) }
+        val expected = route.generation
+        if (expected != null && expected != holder.generation) {
+            if (!handshakes.baseline(holder)) handshakes.reset(holder, expected)
+        }
         when {
             holder.recoveryUncertain -> then("the retained holder initialization is unproven")
             holder.ready && handshakes.retained(holder, route.generation) -> then(null)
@@ -98,8 +106,8 @@ internal class HolderLinkRecovery(
         val link = connections.connect(holder)
         when {
             link != null -> {
-                link.claim()
                 connected(route, holder, link)
+                link.claim()
             }
             startAllowed -> context.routes.start(route) { failure -> started(route, holder, failure) }
             else -> holder.settle("${route.server} did not start")
@@ -107,14 +115,18 @@ internal class HolderLinkRecovery(
     }
 
     private fun connected(route: Route, holder: Holder, link: HolderLink) {
-        bound(holder, link) { handshakes.attached(route, holder, link) }
+        bound(holder, link) { handshakes.recovery.attached(route, holder, link) }
     }
 
     private fun bound(holder: Holder, link: HolderLink, activated: () -> Unit) {
         holder.scheduleReverseResponseRetry = { generation -> retry(holder, generation) }
         generations.bind(holder, link) { attested ->
-            if (holder.generation != attested) handshakes.reset(holder, attested)
+            val knownGeneration = holder.generation
+            val prior = knownGeneration ?: context.routes.generation(holder.socket)
+            handshakes.adopt(holder, attested)
+            context.routes.ownership.adopt(holder.socket, prior, attested)
             holder.attestedGeneration = attested
+            if (knownGeneration != attested) persistence.changed()
             activated()
         }
     }
@@ -149,10 +161,11 @@ internal class HolderLinkRecovery(
     private fun message(holder: Holder, link: HolderLink, line: String) {
         val msg = JsonText.objectOrNull(line) ?: return
         val id = (msg[Rpc.ID] as? JsonPrimitive)?.contentOrNull
-        if (id == holder.handshakeId) {
-            handshakes.received(holder, link, msg)
-        } else {
-            context.relay.inbound.fromHolder(holder, msg)
+        when {
+            id == null || id != holder.handshakeId -> context.relay.inbound.fromHolder(holder, msg)
+            Rpc.str(msg, Rpc.METHOD) != null -> context.relay.inbound.fromHolder(holder, msg)
+            Rpc.RESULT !in msg && "error" !in msg -> context.relay.inbound.fromHolder(holder, msg)
+            else -> handshakes.recovery.received(holder, link, msg)
         }
     }
 }
@@ -255,7 +268,7 @@ internal class HolderLinkLoss(
             old.phase = OLD_HOLDER_LOST
             old.blocker = "the old holder link closed; its process outcome is unknown"
         }
-        context.routes.forget(holder.socket)
+        // The exact old route stays paused until confirmed() receives the daemon's durable generation-exit receipt.
         holder.settle("${holder.socket} closed")
         persistence.changed()
         return true

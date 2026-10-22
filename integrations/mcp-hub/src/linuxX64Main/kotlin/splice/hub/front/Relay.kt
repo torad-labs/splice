@@ -251,7 +251,9 @@ internal class RelayInbound(
     private fun newest(holder: Holder): Session? =
         calls.values
             .filter { call ->
-                call.session?.let { session -> session.route.socket == holder.socket && session.stream != null } == true
+                call.session?.let { session ->
+                    sessions[session.id] === session && session.route.socket == holder.socket && session.stream != null
+                } == true
             }
             .maxByOrNull { it.at }
             ?.session

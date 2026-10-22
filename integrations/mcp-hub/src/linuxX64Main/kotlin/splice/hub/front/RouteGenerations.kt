@@ -48,3 +48,15 @@ internal class RouteGenerations(
 internal class RouteAttestations(private val generations: RouteGenerations) {
     fun read(socket: String, then: (String?) -> Unit) = generations.attest(socket, then)
 }
+
+/** Aligns only routes that still name the exact generation a fresh holder attestation replaced. */
+internal class RouteOwnership(private val known: Map<String, Route>) {
+    fun adopt(socket: String, prior: String?, generation: String) {
+        known.values
+            .filter { route -> route.socket == socket && route.generation == prior }
+            .forEach { route ->
+                route.generation = generation
+                route.listing = null
+            }
+    }
+}

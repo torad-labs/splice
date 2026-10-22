@@ -382,7 +382,7 @@ class HubFiles(private val dir: String) {
 
     fun execPath(): String = "$dir/front-exec.json"
 
-    fun saveExec(text: String) = stateWriter.write(execPath(), text)
+    fun saveExec(text: String): Boolean = stateWriter.write(execPath(), text)
 
     fun readJson(path: String): JsonObject? =
         read(path)?.let(JsonText::objectOrNull)

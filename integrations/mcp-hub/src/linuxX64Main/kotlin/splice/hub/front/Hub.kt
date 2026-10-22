@@ -319,7 +319,13 @@ private class ReplacementRecovery(
     private fun recover(drain: HolderDrain) {
         val candidate = drain.candidate ?: return
         val route = routes.byKey(drain.key()) ?: return
-        if (drain.phase == ROLLBACK_UNKNOWN) {
+        if (drain.phase in setOf(ROLLING_BACK, ROLLBACK_UNKNOWN)) {
+            if (drain.phase == ROLLING_BACK) {
+                holders.replacements.retirements.rollbackUnknown(
+                    route,
+                    "the replacement rollback outcome needs its candidate's exact exit",
+                )
+            }
             routes.replacements.confirmExit(candidate.socket, candidate.generation, { true }) {
                 holders.replacements.retirements.oldExited(candidate.socket, candidate.generation)
             }
@@ -485,6 +491,11 @@ internal class HubHttp(
     private fun end(conn: HttpConn, session: Session?) {
         session?.let {
             relay.retire(it, SESSION_ENDED)
+            it.stream?.let { stream ->
+                it.stream = null
+                stream.streamOf = null
+                stream.close()
+            }
             sessions.remove(it.id)
             save()
         }

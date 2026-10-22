@@ -32,6 +32,7 @@ class Routes(
     private val toldRoots = HashSet<String>()
     private val generations = RouteGenerations(daemon, timers, clock, changed)
     internal val attestations = RouteAttestations(generations)
+    internal val ownership = RouteOwnership(known)
     internal val replacements = RouteReplacements(known, daemon, timers, clock)
     internal val pins = RoutePins(daemon)
 

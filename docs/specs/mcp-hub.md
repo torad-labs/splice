@@ -147,11 +147,13 @@ choice, sharing yes or no, lives in splice.toml as the answer `splice setup` sav
 Marcos, through the-temple, October 18: "Could we make it so the MCP is installed on Codex and Claude
 via Splice, and that it starts together with Splice please."
 
-Temple provisions its already-resolved local entry with `splice mcp install temple --script FILE --url URL`.
-The optional `--command` names its Bun executable and `--codex-home` selects the native Codex home. Splice
-keeps the registration under its canonical state directory, independently of Temple's process or temporary
-files. Reinstalling keeps an existing native home when none is supplied and backs up a changed registration.
-The CLI refreshes a running daemon; otherwise the next daemon boot starts the registered service.
+Temple provisions its already-resolved local launch with either `splice mcp install temple --launch-file FILE --url URL`
+or the compatible `splice mcp install temple --script FILE --url URL` form. A launch file is JSON with a
+nonblank `command`, string-array `args`, and optional existing-directory `cwd` and string-valued `env`.
+The optional script-form `--command` names its Bun executable, and `--codex-home` selects the native Codex
+home. Splice keeps the registration under its canonical state directory, independently of Temple's process or
+temporary files. Reinstalling keeps an existing native home when none is supplied and backs up a changed
+registration. The CLI refreshes a running daemon; otherwise the next daemon boot starts the registered service.
 
 Every Claude launch plan includes this service under `temple`, with its tools still named `mcp__temple__*`.
 The current Temple contract is its six fixed tools; dispatch remains available through `act`, not a legacy

@@ -1,33 +1,17 @@
 package splice.app.cli.mcp
 
-import kotlinx.serialization.json.JsonArray
-import kotlinx.serialization.json.JsonPrimitive
-import kotlinx.serialization.json.buildJsonObject
-import kotlinx.serialization.json.put
-import kotlinx.serialization.json.putJsonObject
 import splice.app.cli.AdminSupport
 import splice.client.mcp.TempleMcpEntry
 import splice.core.terminal.TerminalOutput
 import splice.core.util.EnvReader
-import splice.core.util.JsonScalars
-import splice.core.util.PathProbe
-import splice.core.util.SecureFile
 import splice.core.wire.HttpStatus
 import splice.daemonclient.ControlPlaneClient
 import splice.daemonclient.MgmtKeyRead
 import splice.daemonclient.PostReading
 import splice.topology.TopologyStatePaths
-import java.net.URI
-import java.nio.file.Files
-import java.nio.file.Path
-import java.security.MessageDigest
-import java.util.HexFormat
 
 internal const val MCP_SERVICE_USAGE =
-    "install temple --script FILE --url URL [--command COMMAND] [--codex-home DIR]"
-
-// why: the SHA-256 prefix gives each prior registration a compact, content-derived backup name.
-private const val BACKUP_HASH_CHARS = 12
+    "install temple (--script FILE [--command COMMAND] | --launch-file FILE) --url URL [--codex-home DIR]"
 
 // why: the refresh call is bounded after the Temple registration has already been persisted.
 private const val SERVICE_REFRESH_MS = 90_000
@@ -39,75 +23,25 @@ internal class McpServiceCommand(
     private val err: TerminalOutput = TerminalOutput(System.err::println),
     private val env: EnvReader = EnvReader(System::getenv),
 ) {
-    private data class Requested(val script: Path, val url: String, val command: String, val codexHome: Path?)
+    private val requestParser = McpServiceRequestParser()
+    private val registration = McpServiceRegistration(env)
 
     fun run(args: List<String>): Int {
-        val wanted = parse(args)
+        val parsed = requestParser.parse(args)
+        val wanted = parsed.request
         if (wanted == null) {
-            err.line("usage: splice mcp $MCP_SERVICE_USAGE")
+            err.line(parsed.error ?: "usage: splice mcp $MCP_SERVICE_USAGE")
             return 2
         }
         return try {
             val home = AdminSupport.home()
             val source = TempleMcpEntry(home, env, TopologyStatePaths(env, home).current())
-            persist(source, wanted)
+            registration.persist(source, wanted)
             refresh()
         } catch (failure: java.io.IOException) {
             err.line("Temple MCP was not registered (${failure::class.simpleName}); no credential values were printed.")
             1
         }
-    }
-
-    private fun parse(args: List<String>): Requested? {
-        if (args.take(2) != listOf("install", "temple")) return null
-        val pairs = args.drop(2).chunked(2)
-        val flags = pairs.filter { it.size == 2 }.associate { it[0] to it[1] }
-        val allowed = setOf("--script", "--url", "--command", "--codex-home")
-        val malformed = pairs.any { it.size != 2 } || flags.size != pairs.size
-        if (malformed || !allowed.containsAll(flags.keys)) return null
-        return requested(flags)
-    }
-
-    private fun requested(flags: Map<String, String>): Requested? {
-        val script = flags["--script"]?.let(PathProbe::spelled)?.toAbsolutePath()?.normalize()
-        val url = flags["--url"]?.takeIf(::validUrl)
-        val native = flags["--codex-home"]?.let(PathProbe::spelled)?.toAbsolutePath()?.normalize()
-        val badNative = "--codex-home" in flags && native == null
-        val missing = script == null || url == null
-        val unusable = script?.let { !Files.isRegularFile(it) } == true || badNative
-        val badCommand = flags["--command"]?.isBlank() == true
-        val invalid = unusable || badCommand
-        return if (missing || invalid) {
-            null
-        } else {
-            Requested(checkNotNull(script), checkNotNull(url), flags["--command"] ?: "bun", native)
-        }
-    }
-
-    private fun validUrl(value: String): Boolean = try {
-        val uri = URI(value)
-        uri.scheme in setOf("http", "https") && !uri.host.isNullOrBlank()
-    } catch (_: java.net.URISyntaxException) {
-        false
-    }
-
-    private fun persist(source: TempleMcpEntry, wanted: Requested) {
-        val previous = source.registration()
-        val native = wanted.codexHome?.toString() ?: JsonScalars.str(previous, "codex_home")
-            ?: env("TEMPLE_CODEX_HOME") ?: env("CODEX_HOME")
-        val body = buildJsonObject {
-            putJsonObject("server") {
-                put("command", wanted.command)
-                put("args", JsonArray(listOf(JsonPrimitive(wanted.script.toString()))))
-                putJsonObject("env") { put("TEMPLE_URL", wanted.url) }
-            }
-            native?.let { put("codex_home", it) }
-        }
-        if (previous == body) return
-        val file = source.registrationFile
-        Files.createDirectories(file.parent)
-        if (Files.exists(file)) backup(file)
-        SecureFile.writeAtomic0600(file, body.toString())
     }
 
     private fun refresh(): Int {
@@ -130,13 +64,5 @@ internal class McpServiceCommand(
                 1
             }
         }
-    }
-
-    private fun backup(file: Path) {
-        val old = Files.readString(file)
-        val hash = HexFormat.of().formatHex(MessageDigest.getInstance("SHA-256").digest(old.toByteArray()))
-            .take(BACKUP_HASH_CHARS)
-        val saved = file.resolveSibling("${file.fileName}.bak-$hash")
-        if (!Files.exists(saved)) SecureFile.writeAtomic0600(saved, old)
     }
 }

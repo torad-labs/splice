@@ -115,10 +115,13 @@ checkpoint names `owner_claim`; either state excludes the old generation from an
 the checkpoint never arrives. An active claim is released only by the durable drain outcome, never by a stale front
 snapshot. Explicit resume persists `unpinning` with its claim, releases idempotently, then checkpoints the drain removal.
 The front records each client-to-holder and holder-to-session exchange under its exact socket and generation before
-forwarding, then retains it through a received response, a fully flushed explicit error, or the matching exit receipt. A
-restored client request is never replayed. A restored reverse request with no recoverable response id stays charged until
-exact exit. The front writes active replacement drains with both old and candidate generations; the daemon pins either one
-until the drain resolves.
+forwarding. A local timeout, disconnect, or error reply never settles the backend's outstanding operation. The holder
+retains bounded settlement evidence until the front durably checkpoints its receipt and acknowledges it. Recovery queries
+that evidence before releasing ownership. Only affirmative non-admission permits clearing a never-forwarded request, and
+only an affirmative never-flushed state permits retrying a retained reverse reply. Uncertain operations never replay.
+A legacy holder without that recovery protocol remains UNKNOWN until exact generation exit. Session/client request IDs
+remain reserved while their exchange is retained. The front writes active replacement drains with both old and candidate
+generations; the daemon pins either one until the drain resolves.
 
 Capacity refusal does not settle an existing exchange. A reverse reply refused before queue admission keeps its incoming
 request charged and retains a bounded retry payload. Only a known never-queued reply may retry; an uncertain write must

@@ -40,7 +40,7 @@ internal class HostedServerRequests(
         ThreadPoolExecutor.AbortPolicy(),
     )
 
-    /** Retention precedes queueing, so the replacement fence sees a reverse request before it can commit. */
+    /** Retention precedes reply submission, and the child writer owns one bounded retry until it flushes or exits. */
     fun dispatch(child: Process, msg: JsonObject) {
         if (closed.get()) return
         val requestId = nextRequestId()

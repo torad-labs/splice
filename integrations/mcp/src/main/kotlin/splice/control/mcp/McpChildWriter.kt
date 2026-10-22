@@ -10,6 +10,7 @@ import kotlin.time.Duration
 /** Bounds queued writes and unsettled exchanges per direction, so caller timeouts cannot grow retained wire state. */
 internal const val WRITE_QUEUE_CAPACITY = 64
 private const val MAX_QUEUED_WRITE_BYTES = 1024L * 1024L
+private const val MAX_RETAINED_REPLY_BYTES = MAX_QUEUED_WRITE_BYTES
 private const val WRITE_LINE_BYTES = 1L
 
 /** One child/stdin generation, carrying its own short-lived retirement fence. */
@@ -65,6 +66,73 @@ private fun interface McpWriteTargetAcceptance {
     operator fun invoke(target: McpWriteTarget): Boolean
 }
 
+private data class McpReverseReply(
+    val requestId: Long,
+    val target: McpWriteTarget,
+    val encoded: String,
+    val bytes: Long,
+    val budget: Duration,
+    var retrying: Boolean = false,
+)
+
+private fun interface McpReverseReplyHeld {
+    operator fun invoke(requestId: Long, target: McpWriteTarget): Boolean
+}
+
+private fun interface McpReverseReplyAttempt {
+    operator fun invoke(reply: McpReverseReply): Boolean
+}
+
+/** Holds one never-queued reverse response per retained request until another write frees stdin capacity. */
+private class McpReverseReplies<L : Any>(
+    private val lock: L,
+    private val held: McpReverseReplyHeld,
+    private val attempt: McpReverseReplyAttempt,
+) {
+    private val replies = LinkedHashMap<Long, McpReverseReply>()
+    private var retainedBytes = 0L
+
+    fun retain(reply: McpReverseReply): Boolean = synchronized(lock) {
+        val byteRoom = reply.bytes <= MAX_RETAINED_REPLY_BYTES &&
+            retainedBytes <= MAX_RETAINED_REPLY_BYTES - reply.bytes
+        when {
+            !held(reply.requestId, reply.target) -> false
+            replies.containsKey(reply.requestId) -> false
+            !byteRoom -> false
+            else -> {
+                replies[reply.requestId] = reply
+                retainedBytes += reply.bytes
+                true
+            }
+        }
+    }
+
+    fun retry() {
+        val reply = synchronized(lock) {
+            replies.values.firstOrNull { !it.retrying && held(it.requestId, it.target) }?.also { it.retrying = true }
+        } ?: return
+        val queued = attempt(reply)
+        synchronized(lock) {
+            val retained = replies[reply.requestId]
+            if (retained === reply) {
+                if (queued) {
+                    replies.remove(reply.requestId)
+                    retainedBytes -= reply.bytes
+                } else {
+                    retained.retrying = false
+                }
+            }
+        }
+    }
+
+    fun exited(target: McpWriteTarget) = synchronized(lock) {
+        replies.values.filter { it.target === target }.forEach { reply ->
+            replies.remove(reply.requestId)
+            retainedBytes -= reply.bytes
+        }
+    }
+}
+
 /** Atomically reserves retained wire bytes and the client request mapping before a write is encoded. */
 private class McpWriteAdmission<L : Any>(
     private val lock: L,
@@ -114,6 +182,31 @@ internal class McpChildWriter(
     private val serverRequests = HashMap<Long, McpWriteTarget>()
     private val writesInFlight = Collections.newSetFromMap(IdentityHashMap<McpWrite, Boolean>())
     internal val failures = McpWriteFailures(name, failed)
+    private var closed = false
+    private val accepting = McpWriteTargetAcceptance { selected ->
+        !closed && !selected.retired && !selected.sealed
+    }
+    private val admission = McpWriteAdmission(
+        accountingLock,
+        requests,
+        writesInFlight,
+        accepting,
+    )
+    private val reverseReplies = McpReverseReplies(
+        accountingLock,
+        McpReverseReplyHeld { requestId, selected ->
+            !closed && !selected.retired && selected.child.isAlive && serverRequests[requestId] === selected
+        },
+        McpReverseReplyAttempt { reply ->
+            val delivery = admission.reserve(reply.target, reply.bytes, null, reply.requestId)
+            if (delivery == null) {
+                false
+            } else {
+                delivery.encoded = reply.encoded
+                queue(delivery, reply.budget)
+            }
+        },
+    )
     private val permitted = McpWritePermitted { delivery ->
         synchronized(accountingLock) { !delivery.completed.isCompleted && accepting(delivery.target) }
     }
@@ -123,13 +216,7 @@ internal class McpChildWriter(
         McpWriteResolved(::resolve),
         failures,
         McpWriteRejected { delivery -> resolve(delivery, delivered = false, unqueued = true) },
-    )
-    private var closed = false
-    private val admission = McpWriteAdmission(
-        accountingLock,
-        requests,
-        writesInFlight,
-        McpWriteTargetAcceptance(::accepting),
+        McpWriteAvailable(reverseReplies::retry),
     )
 
     val unsettled: List<Long>
@@ -179,12 +266,13 @@ internal class McpChildWriter(
         return retiredNow
     }
 
-    /** A confirmed child exit is the only point that clears its unknown wire charges. */
+    /** A confirmed child exit is the only point that clears its unknown wire charges and retained replies. */
     fun exited(selected: McpWriteTarget) {
         synchronized(accountingLock) {
             requests.entries.removeIf { it.value === selected }
             serverRequests.entries.removeIf { it.value === selected }
         }
+        reverseReplies.exited(selected)
     }
 
     internal val settled = McpSettled { id ->
@@ -211,9 +299,20 @@ internal class McpChildWriter(
     suspend fun notify(msg: JsonObject, expected: Process? = null, budget: Duration): Boolean =
         submit(msg, null, null, expected, budget)?.completed?.await() ?: false
 
-    /** Queues a reverse reply without making the stdout pump wait for a blocked stdin. */
-    fun reply(msg: JsonObject, requestId: Long, child: Process, budget: Duration): Boolean =
-        submit(msg, null, requestId, child, budget) != null
+    /** A known unqueued reply stays retained for this exact live generation until a later stdin slot accepts it. */
+    fun reply(msg: JsonObject, requestId: Long, child: Process, budget: Duration): Boolean {
+        if (submit(msg, null, requestId, child, budget) != null) return true
+        val selected = target(child) ?: return false
+        return reverseReplies.retain(
+            McpReverseReply(
+                requestId,
+                selected,
+                codec.encode(msg),
+                JsonWire.byteSize(msg) + WRITE_LINE_BYTES,
+                budget,
+            ),
+        )
+    }
 
     fun close() {
         val cancelled = synchronized(accountingLock) {
@@ -241,36 +340,38 @@ internal class McpChildWriter(
 
     private fun queue(delivery: McpWrite, budget: Duration): Boolean {
         if (!writes.offer(delivery)) return false
-        val deadline = failures.schedule(budget, McpWriteExpired { expire(delivery, "write deadline exceeded") })
+        val deadline = failures.schedule(
+            budget,
+            McpWriteExpired {
+                if (resolve(delivery, false)) {
+                    failures.report(delivery.target.child, "write deadline exceeded")
+                }
+            },
+        )
         if (deadline == null) {
-            expire(delivery, "writer closed before delivery")
+            if (resolve(delivery, false)) {
+                failures.report(delivery.target.child, "writer closed before delivery")
+            }
         } else {
-            val active = synchronized(accountingLock) {
+            synchronized(accountingLock) {
                 delivery.deadline = deadline
                 if (delivery.completed.isCompleted) deadline.cancel(false)
-                !delivery.completed.isCompleted
             }
-            if (!active) return true
         }
         return true
-    }
-
-    private fun accepting(selected: McpWriteTarget): Boolean =
-        !closed && !selected.retired && !selected.sealed
-
-    private fun expire(delivery: McpWrite, reason: String) {
-        if (resolve(delivery, false)) failures.report(delivery.target.child, reason)
     }
 
     /** An unqueued executor refusal releases only work that never reached the child. */
     private fun resolve(write: McpWrite, delivered: Boolean, unqueued: Boolean = false): Boolean {
-        if (!write.completed.complete(delivered)) return false
+        val completed = write.completed.complete(delivered)
         synchronized(accountingLock) {
-            write.deadline?.cancel(false)
-            admission.release(write)
-            if (delivered || unqueued) write.serverRequestId?.let(serverRequests::remove)
-            if (unqueued) write.requestId?.let(requests::remove)
+            if (completed) {
+                write.deadline?.cancel(false)
+                admission.release(write)
+                if (unqueued) write.requestId?.let(requests::remove)
+            }
+            if (delivered) write.serverRequestId?.let(serverRequests::remove)
         }
-        return true
+        return completed
     }
 }

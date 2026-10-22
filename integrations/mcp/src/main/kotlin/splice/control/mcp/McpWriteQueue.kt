@@ -32,13 +32,18 @@ internal fun interface McpWriteRejected {
     operator fun invoke(delivery: McpWrite)
 }
 
-/** Owns the bounded writer executor and drops no task silently when its queue reaches capacity. */
+internal fun interface McpWriteAvailable {
+    operator fun invoke()
+}
+
+/** Owns the bounded writer executor and signals each released stdin slot to retained reverse replies. */
 internal class McpWriteQueue(
     name: String,
     private val permitted: McpWritePermitted,
     private val resolved: McpWriteResolved,
     private val failures: McpWriteFailures,
     private val rejected: McpWriteRejected,
+    private val available: McpWriteAvailable,
 ) {
     private val executor = ThreadPoolExecutor(
         1,
@@ -74,6 +79,8 @@ internal class McpWriteQueue(
             if (resolved(delivery, false)) {
                 failures.report(delivery.target.child, "write failed: ${failure.message}")
             }
+        } finally {
+            available()
         }
     }
 

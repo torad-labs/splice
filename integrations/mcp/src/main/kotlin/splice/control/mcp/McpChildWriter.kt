@@ -10,6 +10,7 @@ import java.util.concurrent.ArrayBlockingQueue
 import java.util.concurrent.Executors
 import java.util.concurrent.RejectedExecutionException
 import java.util.concurrent.ScheduledFuture
+import java.util.concurrent.ScheduledThreadPoolExecutor
 import java.util.concurrent.ThreadPoolExecutor
 import java.util.concurrent.TimeUnit
 import kotlin.time.Duration
@@ -71,11 +72,13 @@ private fun interface McpWriteRejected {
 
 /** Owns deadline and failure work, so pipe callers never execute terminal teardown inline. */
 internal class McpWriteFailures(name: String, private val failed: McpWriteFailure) {
-    private val executor = Executors.newSingleThreadScheduledExecutor { task ->
+    private val executor = ScheduledThreadPoolExecutor(1) { task ->
         Executors.defaultThreadFactory().newThread(task).apply {
             this.name = "mcp-host-write-deadline-$name"
             isDaemon = true
         }
+    }.apply {
+        removeOnCancelPolicy = true
     }
 
     fun schedule(budget: Duration, expired: McpWriteExpired): ScheduledFuture<*>? = try {

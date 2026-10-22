@@ -22,7 +22,7 @@ private const val MAX_DELETED_IDS = 4096
 /** What a client that fell [STREAM_BUFFER] notifications behind must not miss: that the lists it
  *  caches may have changed. The dropped backlog is replaced by these, so a `tools/list_changed`
  *  that was queued is never lost silently — the client re-lists once it catches up. */
-private val LIST_INVALIDATIONS = listOf("tools", "prompts", "resources").map { kind ->
+internal val listInvalidations = listOf("tools", "prompts", "resources").map { kind ->
     """{"jsonrpc":"2.0","method":"notifications/$kind/list_changed"}"""
 }
 
@@ -52,9 +52,9 @@ internal class McpSession(
         val sent = stream.trySend(text)
         if (sent.isSuccess || sent.isClosed) return
         val backlog = generateSequence { stream.tryReceive().getOrNull() }.toList() + text
-        val methods = LIST_INVALIDATIONS.mapNotNull { codec.parse(it)?.let(codec::method) }.toSet()
+        val methods = listInvalidations.mapNotNull { codec.parse(it)?.let(codec::method) }.toSet()
         if (backlog.all { codec.parse(it)?.let(codec::method) in methods }) {
-            LIST_INVALIDATIONS.forEach { stream.trySend(it) }
+            listInvalidations.forEach { stream.trySend(it) }
             stream.trySend(text)
         } else {
             overflowed = true

@@ -126,7 +126,7 @@ internal class HolderLinks(
         val msg = JsonText.objectOrNull(line) ?: return
         val key = (msg[Rpc.ID] as? JsonPrimitive)?.contentOrNull
         val handshake = Rpc.str(msg, Rpc.METHOD) == null && key?.startsWith(HELLO) == true
-        if (handshake) handshaken(holder, msg) else context.relay.fromHolder(holder, msg)
+        if (handshake) handshaken(holder, msg) else context.relay.inbound.fromHolder(holder, msg)
     }
 
     private fun handshaken(holder: Holder, msg: JsonObject) {

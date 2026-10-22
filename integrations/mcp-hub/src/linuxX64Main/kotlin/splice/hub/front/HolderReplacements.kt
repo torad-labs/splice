@@ -16,22 +16,26 @@ internal data class HolderReplacements(
 ) {
     private val store = HolderReplacementStore()
     private val details = HolderCandidateDetails()
-    val admissions = HolderAdmissions(store)
     val links = HolderCandidateLinks(known, store, changed, details)
-    val candidates = HolderCandidates(known, store, changed, details, links)
+    private val preparation = HolderCandidatePreparation(known, details, links)
+    val admissions = HolderAdmissions(store)
+    val candidates = HolderCandidates(store, changed, preparation, links)
     val retirements = HolderRetirements(store, changed)
 
     fun all(): List<HolderDrain> = store.all()
+
+    fun reconnectCandidate(candidate: ReplacementCandidate, connect: (Holder) -> Unit): Boolean =
+        preparation.reconnect(candidate, connect)
+
+    fun candidateLive(candidate: ReplacementCandidate): Boolean = preparation.current(candidate)
 }
 
 internal class HolderCandidates(
-    private val known: MutableMap<String, Holder>,
     private val store: HolderReplacementStore,
     private val changed: () -> Unit,
-    private val details: HolderCandidateDetails,
+    private val preparation: HolderCandidatePreparation,
     private val links: HolderCandidateLinks,
 ) {
-    private val preparation = HolderCandidatePreparation(known, details, links)
 
     fun drain(server: String, launch: String): HolderDrain? = store.drains["$server\n$launch"]
 
@@ -192,6 +196,16 @@ private class HolderCandidatePreparation(
         connect(holder)
         changed()
         return null
+    }
+
+    fun reconnect(candidate: ReplacementCandidate, connect: (Holder) -> Unit): Boolean {
+        val holder = known.getOrPut(candidate.socket) { Holder(candidate.socket) }
+        if (holder.generation != candidate.generation) details.reset(holder, candidate.generation)
+        if (current(candidate)) return true
+        if (holder.connecting) return false
+        holder.connecting = true
+        connect(holder)
+        return current(candidate)
     }
 
     fun current(candidate: ReplacementCandidate): Boolean = known[candidate.socket]?.let { holder ->

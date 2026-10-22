@@ -99,10 +99,14 @@ the path of a tool call.
 
 Holders and servers run in hostshield's MCP slice (V4-147), so the box's memory cap still holds.
 
-The JVM writes one reusable socket record per holder and generation-addressed exit receipts. A launch record carries
-its unique systemd scope before the child PID is known, so only that exited scope can settle a failed start. The
-front writes active replacement drains with both old and candidate generations; the daemon pins either one until the
-drain resolves.
+The JVM writes one reusable socket record per holder and generation-addressed exit receipts. One per-socket lifecycle
+lock covers record replacement, child attestation, and exit marking. A launch record carries its unique systemd scope
+before the child PID is known, so only that exited scope can settle or retire an incomplete failed start. The
+front owns the `front.json` relay ledger. It records each client-to-holder and holder-to-session exchange under its
+exact socket and generation before forwarding, then retains it through a received response, a fully flushed explicit
+error, or the matching exit receipt. A restored client request is never replayed. A restored reverse request with no
+recoverable response id stays charged until exact exit. The front writes active replacement drains with both old and
+candidate generations; the daemon pins either one until the drain resolves.
 
 ## What changes in Marcos's files
 

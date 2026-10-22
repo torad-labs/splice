@@ -6,7 +6,7 @@
 //
 // The listening socket is systemd's when LISTEN_FDS says so (one TCP socket, fd 3), else --port on 127.0.0.1. Files in
 // the hub folder: access-key (the bearer sessions present, written by the daemon) and front.json (this front's own
-// state: routes, sessions, initialized holders, and target drain contracts). The daemon's management key is <state>/mgmt-key.
+// state: routes, sessions, initialized holders, generation-bound relay ledgers, and target drain contracts). The daemon's management key is <state>/mgmt-key.
 @file:OptIn(ExperimentalForeignApi::class)
 
 package splice.hub.front
@@ -37,6 +37,7 @@ import platform.posix.SIG_IGN
 import platform.posix.close
 import platform.posix.exit
 import platform.posix.fstat
+import platform.posix.fsync
 import platform.posix.getenv
 import platform.posix.geteuid
 import platform.posix.getpid
@@ -363,6 +364,7 @@ private class McpAccessRead(private val dir: String) {
 /** The hub folder: the keys the front reads, its own state, the daemon's kept listings, and its log line. */
 class HubFiles(private val dir: String) {
     private val access = McpAccessRead(dir)
+    private val stateWriter = HubStateWriter(::say)
 
     val accessKey: String? get() = access.key()
 
@@ -381,7 +383,7 @@ class HubFiles(private val dir: String) {
 
     fun execPath(): String = "$dir/front-exec.json"
 
-    fun saveExec(text: String) = write(execPath(), text)
+    fun saveExec(text: String) = stateWriter.write(execPath(), text)
 
     fun readJson(path: String): JsonObject? =
         read(path)?.let(JsonText::objectOrNull)
@@ -392,17 +394,7 @@ class HubFiles(private val dir: String) {
 
     fun loadState(): JsonObject? = readJson("$dir/front.json")
 
-    fun saveState(text: String) = write("$dir/front.json", text)
-
-    private fun write(path: String, text: String) {
-        val tmp = "$path.tmp"
-        val fd = open(tmp, O_WRONLY or O_CREAT or O_TRUNC, OWNER_RW)
-        if (fd < 0) return say("could not write $tmp")
-        val bytes = text.encodeToByteArray()
-        bytes.usePinned { write(fd, it.addressOf(0), bytes.size.convert()) }
-        close(fd)
-        rename(tmp, path)
-    }
+    fun saveState(text: String): Boolean = stateWriter.write("$dir/front.json", text)
 
     /** The kept tools/list answer, or null when there is none. */
     fun listing(path: String?): JsonElement? = path?.let(::read)?.let { text ->
@@ -426,6 +418,44 @@ class HubFiles(private val dir: String) {
         while (sys.readInto(fd, out) > 0) Unit
         close(fd)
         return out.text(0, out.size)
+    }
+}
+
+/** The front's durable state-file primitive. A false result means a caller must not expose its new ledger state. */
+private class HubStateWriter(private val report: (String) -> Unit) {
+    fun write(path: String, text: String): Boolean {
+        val temporary = "$path.tmp"
+        val fd = open(temporary, O_WRONLY or O_CREAT or O_TRUNC, OWNER_RW)
+        if (fd < 0) return failed("could not write $temporary")
+        val bytes = text.encodeToByteArray()
+        val flushed = writeAll(fd, bytes) && fsync(fd) == 0
+        val closed = close(fd) == 0
+        return (flushed && closed && rename(temporary, path) == 0 && syncDirectory(path))
+            .takeIf { it }
+            ?: failed("could not save $path").also { unlink(temporary) }
+    }
+
+    private fun writeAll(fd: Int, bytes: ByteArray): Boolean = bytes.usePinned { pinned ->
+        var offset = 0
+        while (offset < bytes.size) {
+            val count = write(fd, pinned.addressOf(offset), (bytes.size - offset).convert())
+            if (count <= 0) return@usePinned false
+            offset += count.toInt()
+        }
+        true
+    }
+
+    private fun syncDirectory(path: String): Boolean {
+        val fd = open(path.substringBeforeLast('/'), O_RDONLY or O_DIRECTORY)
+        if (fd < 0) return false
+        val synced = fsync(fd) == 0
+        val closed = close(fd) == 0
+        return synced && closed
+    }
+
+    private fun failed(words: String): Boolean {
+        report(words)
+        return false
     }
 }
 

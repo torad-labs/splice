@@ -15,7 +15,7 @@ internal class HolderCandidateLinks(
         val drain = candidate(holder) ?: return null
         val reason = details.verify(drain, init)
         if (reason == null) {
-            drain.phase = CANDIDATE_READY
+            if (drain.phase in setOf(PAUSED, CANDIDATE_STARTING)) drain.phase = CANDIDATE_READY
             drain.blocker = null
         } else {
             failed(holder, reason)

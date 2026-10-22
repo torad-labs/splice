@@ -80,6 +80,9 @@ class Holders(
 ) {
     private val known = HashMap<String, Holder>()
     internal val replacements = HolderReplacements(known, changed)
+
+    /** Retains a restored ledger’s socket identity until exact exit evidence settles it. */
+    fun remember(socket: String): Holder = known.getOrPut(socket) { Holder(socket) }
     internal val links = HolderLinks(
         HolderLinkContext(files, connections, timers, clock, routes, relay),
         known,

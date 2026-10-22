@@ -25,7 +25,7 @@ class Hub(
 ) {
     internal val sessions = HashMap<String, Session>()
     internal val routes = Routes(daemon, timers, clock, ::changed)
-    internal val relay = Relay(sessions, routes, clock, ::changed)
+    internal val relay = Relay(sessions, routes, clock, ::changed, ::save)
     internal val holders = Holders(files, links, timers, clock, routes, relay, ::changed)
     internal val replacements = HubReplacements(routes, holders, relay, timers, clock)
     internal val http = HubHttp(files, sessions, routes, holders, relay, ::save)
@@ -59,27 +59,44 @@ class Hub(
         (saved["sessions"] as? JsonObject)?.forEach { (id, value) ->
             (value as? JsonPrimitive)?.contentOrNull?.let(routes::byKey)?.let { sessions[id] = Session(id, it) }
         }
+        relay.restore(saved[RELAY] as? JsonObject, holders::remember)
         files.say("restored ${sessions.size} sessions")
     }
 
-    fun save() {
+    fun save(): Boolean {
         val state = buildJsonObject {
             put("routes", routes.state())
             put("holders", holders.links.state())
             put("drains", holders.replacements.candidates.state())
             put("sessions", JsonObject(sessions.mapValues { (_, session) -> JsonPrimitive(session.route.key()) }))
+            put(RELAY, relay.state())
         }
-        files.saveState(Rpc.encode(state))
+        return files.saveState(Rpc.encode(state))
     }
 
-    fun reconcile() = replacements.reconcile()
+    fun reconcile() {
+        relay.reconcileExits { holder, generation ->
+            routes.replacements.confirmExit(
+                holder.socket,
+                generation,
+                { relay.awaitsExit(holder, generation) },
+            ) {
+                relay.exited(holder, generation)
+            }
+        }
+        replacements.reconcile()
+    }
 
     fun keepAlive() {
         replacements.finish()
-        sessions.values.filter { it.route.launch.toIntOrNull()?.let(Ids::running) == false }.forEach {
-            sessions.remove(it.id)
-            it.stream?.close()
-        }
+        sessions.values
+            .filter { it.route.launch.toIntOrNull()?.let(Ids::running) == false }
+            .toList()
+            .forEach { session ->
+                relay.retire(session, SESSION_EXPIRED)
+                sessions.remove(session.id)
+                session.stream?.close()
+            }
         sessions.values.forEach { it.stream?.push(": keepalive\n\n") }
         holders.links.touch(relay.busy)
         save()
@@ -100,15 +117,23 @@ internal class HubReplacements(
     private val clock: Clock,
 ) {
     private val replay = ReplacementReplay(routes, holders, relay)
+    private val recovery = ReplacementRecovery(
+        routes,
+        holders,
+        replay,
+        timers,
+        holders.replacements::all,
+        ::replayRetirement,
+    )
 
     fun pause(server: String, launch: String): String? {
-        val route = route(server, launch) ?: return missingRoute(server, launch)
+        val route = route(server, launch) ?: return "no retained route for $server and launch '$launch'"
         return holders.replacements.candidates.pause(route, holders.links.of(route))
     }
 
     fun replace(server: String, launch: String, done: (String?) -> Unit) {
         val route = route(server, launch)
-            ?: return done(missingRoute(server, launch))
+            ?: return done("no retained route for $server and launch '$launch'")
         val candidateReady = holders.replacements.candidates.ready(route).isNotEmpty()
         val retirementPending = holders.replacements.retirements.pending(route) != null
         if (candidateReady || retirementPending) {
@@ -152,9 +177,6 @@ internal class HubReplacements(
 
     private fun route(server: String, launch: String): Route? = routes.byKey("$server\n$launch")
 
-    private fun missingRoute(server: String, launch: String): String =
-        "no retained route for $server and launch '$launch'"
-
     fun finish() {
         cutOverReadyCandidates()
         retireOldCandidates()
@@ -163,18 +185,7 @@ internal class HubReplacements(
     }
 
     fun reconcile() {
-        holders.replacements.all().forEach { drain ->
-            val route = routes.byKey(drain.key()) ?: return@forEach
-            val candidate = drain.candidate ?: return@forEach
-            when (drain.phase) {
-                CANDIDATE_STARTING ->
-                    holders.replacements.candidates.startCandidate(route, candidate, holders.links::connectCandidate)
-                COMMITTING -> replay.commit(route, drain, candidate)
-                RETIRING, RETIRE_BLOCKED -> replayRetirement(route, drain, candidate)
-                ROLLING_BACK -> replay.rollback(route, drain, candidate)
-                else -> Unit
-            }
-        }
+        recovery.reconcile()
         finish()
     }
 
@@ -199,9 +210,10 @@ internal class HubReplacements(
     private fun cutOverReadyCandidates() {
         holders.replacements.candidates.ready().forEach { drain ->
             val route = routes.byKey(drain.key()) ?: return@forEach
-            if (relay.inFlight(drain.socket) != 0) return@forEach
-            val candidate = holders.replacements.candidates.claimCandidate(route) ?: return@forEach
-            replay.commit(route, drain, candidate)
+            val candidate = drain.candidate ?: return@forEach
+            if (!holders.replacements.candidateLive(candidate) || relay.inFlight(drain.socket) != 0) return@forEach
+            val claimed = holders.replacements.candidates.claimCandidate(route) ?: return@forEach
+            replay.commit(route, drain, claimed)
         }
     }
 
@@ -210,11 +222,8 @@ internal class HubReplacements(
             val route = routes.byKey(drain.key()) ?: return@forEach
             val candidate = drain.candidate ?: return@forEach
             if (relay.inFlight(drain.socket) != 0) return@forEach
-            val claimed = holders.replacements.retirements.claim(route) { expected ->
-                holders.links.of(route)?.let {
-                    it.ready && it.link != null && it.generation == expected.generation
-                } == true
-            } ?: return@forEach
+            val claimed = holders.replacements.retirements.claim(route, holders.replacements.candidates::live)
+                ?: return@forEach
             replayRetirement(route, claimed, candidate)
         }
     }
@@ -254,13 +263,53 @@ internal class HubReplacements(
     }
 }
 
+/** Restores a paused replacement only after the daemon-named candidate generation reconnects. */
+private class ReplacementRecovery(
+    private val routes: Routes,
+    private val holders: Holders,
+    private val replay: ReplacementReplay,
+    private val timers: Timers,
+    private val drains: () -> List<HolderDrain>,
+    private val replayRetirement: (Route, HolderDrain, ReplacementCandidate) -> Unit,
+) {
+    private val reconnecting = setOf(
+        CANDIDATE_STARTING,
+        CANDIDATE_READY,
+        COMMITTING,
+        ROUTED,
+        RETIRING,
+        RETIRE_BLOCKED,
+    )
+    private val replayAfterReconnect = setOf(COMMITTING, RETIRING, RETIRE_BLOCKED)
+
+    fun reconcile() = drains().forEach(::recover)
+
+    private fun recover(drain: HolderDrain) {
+        val route = routes.byKey(drain.key()) ?: return
+        val candidate = drain.candidate ?: return
+        if (drain.phase in reconnecting && !connected(candidate, drain.phase)) return
+        when (drain.phase) {
+            COMMITTING -> replay.commit(route, drain, candidate)
+            RETIRING, RETIRE_BLOCKED -> replayRetirement(route, drain, candidate)
+            ROLLING_BACK -> replay.rollback(route, drain, candidate)
+            else -> Unit
+        }
+    }
+
+    private fun connected(candidate: ReplacementCandidate, phase: String): Boolean {
+        if (holders.replacements.reconnectCandidate(candidate, holders.links::connectCandidate)) return true
+        if (phase in replayAfterReconnect) timers.at(clock.now() + CANDIDATE_REPLAY_RETRY, ::reconcile)
+        return false
+    }
+}
+
 internal class HubHttp(
     private val files: HubFiles,
     private val sessions: MutableMap<String, Session>,
     private val routes: Routes,
     private val holders: Holders,
     private val relay: Relay,
-    private val save: () -> Unit,
+    private val save: () -> Boolean,
 ) {
     fun handle(conn: HttpConn, req: Request) {
         val server = req.path.removePrefix(PREFIX).takeIf { req.path.startsWith(PREFIX) && it.isNotEmpty() }
@@ -366,7 +415,7 @@ internal class HubHttp(
         if (method == "notifications/initialized") return
         if (holders.replacements.admissions.paused(session.route) && method != CANCELLED) return
         val holder = holders.links.of(session.route)?.takeIf { it.ready } ?: return
-        relay.notify(holder, session, msg)
+        relay.notifications.notify(holder, session, msg)
     }
 
     private fun open(conn: HttpConn, session: Session?) {
@@ -380,6 +429,7 @@ internal class HubHttp(
 
     private fun end(conn: HttpConn, session: Session?) {
         session?.let {
+            relay.retire(it, SESSION_ENDED)
             sessions.remove(it.id)
             save()
         }
@@ -392,3 +442,7 @@ private const val DRAINING = "this MCP target is paused for a safe replacement d
 private const val SHORT = 8
 private const val KEEPALIVE = 25_000L
 private const val RETIRE_RETRY = 250L
+private const val CANDIDATE_REPLAY_RETRY = 250L
+private const val RELAY = "relay"
+private const val SESSION_ENDED = "the MCP session ended before it answered the server request"
+private const val SESSION_EXPIRED = "the MCP session expired before it answered the server request"

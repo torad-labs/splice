@@ -392,6 +392,7 @@ internal class HolderMemory(
         holder.initializedPending = Rpc.str(body, INITIALIZED_PENDING) == "true"
         holder.initializedUncertain = Rpc.str(body, INITIALIZED_UNCERTAIN) == "true"
         holder.retirementFence = Rpc.str(body, RETIREMENT_FENCE)
+        holder.exitConfirmedGeneration = Rpc.str(body, EXIT_CONFIRMED_GENERATION)?.takeIf { it == holder.generation }
         holder.reverseResponseRetries = Rpc.str(body, REVERSE_RESPONSE_RETRIES)?.toIntOrNull() ?: 0
         holder.settlementProtocol = Rpc.str(body, SETTLEMENT_PROTOCOL) == "true"
         holder.recoveryUncertain = Rpc.str(body, RECOVERY_UNCERTAIN) == "true" || proof.unproven(holder)
@@ -405,6 +406,7 @@ internal class HolderMemory(
             holder.recoveryUncertain,
             holder.initializedUncertain,
             holder.retirementFence != null,
+            holder.exitConfirmedGeneration != null,
             holder.reverseResponseRetries != 0,
             holder.settlementProtocol,
         ).any { it }

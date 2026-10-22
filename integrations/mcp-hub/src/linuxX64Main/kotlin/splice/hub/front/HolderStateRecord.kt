@@ -30,6 +30,7 @@ internal class HolderStateRecord {
 
     private fun continuity(out: JsonObjectBuilder, holder: Holder) {
         holder.retirementFence?.let { out.put(RETIREMENT_FENCE, it) }
+        holder.exitConfirmedGeneration?.let { out.put(EXIT_CONFIRMED_GENERATION, it) }
         if (holder.reverseResponseRetries != 0) out.put(REVERSE_RESPONSE_RETRIES, holder.reverseResponseRetries)
         if (holder.settlementProtocol) out.put(SETTLEMENT_PROTOCOL, true)
         out.put(RECOVERY_UNCERTAIN, holder.recoveryUncertain)

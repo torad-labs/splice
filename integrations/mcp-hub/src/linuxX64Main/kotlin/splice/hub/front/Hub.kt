@@ -204,6 +204,7 @@ internal class HubReplacements(
         retireOldCandidates()
         rollBackLostCandidates()
         reconcileUnknownRetirements()
+        holders.prune()
     }
 
     fun reconcile() {
@@ -248,6 +249,8 @@ internal class HubReplacements(
     private fun completed(route: Route) {
         if (!holders.replacements.retirements.completed(route)) {
             timers.at(clock.now() + RETIRE_RETRY) { completed(route) }
+        } else {
+            holders.prune()
         }
     }
 

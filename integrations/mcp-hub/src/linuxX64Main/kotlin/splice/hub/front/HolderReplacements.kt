@@ -18,9 +18,12 @@ internal data class HolderReplacements(
     val admissions = HolderAdmissions(store)
     val views = HolderDrainViews(store, details)
     val candidates = HolderCandidates(store, changed, checkpoint, preparation, links, details)
-    val retirements = HolderRetirements(store, changed, checkpoint, preparation)
+    val retirements = HolderRetirements(known, store, changed, checkpoint, preparation)
 
     fun all(): List<HolderDrain> = store.all()
+
+    fun owns(holder: Holder, generation: String): Boolean =
+        links.candidate(holder) != null || links.old(holder, generation) != null
 
     fun reconnectCandidate(candidate: ReplacementCandidate, connect: (Holder) -> Unit): Boolean =
         preparation.reconnect(candidate, connect)
@@ -294,6 +297,7 @@ internal class HolderCandidatePreparation(
 }
 
 internal class HolderRetirements(
+    private val known: MutableMap<String, Holder>,
     private val store: HolderReplacementStore,
     private val changed: () -> Unit,
     private val checkpoint: () -> Boolean,
@@ -353,6 +357,7 @@ internal class HolderRetirements(
         return drain
     }
 
+    /** The old exact generation exited, so persist its release mark with removal of its replacement drain. */
     fun completed(route: Route): Boolean = remove(route)
 
     /** A rollback whose outcome is unknown remains distinct from a retirement that the daemon owns. */
@@ -388,11 +393,18 @@ internal class HolderRetirements(
 
     private fun remove(route: Route): Boolean {
         val removed = store.drains.remove(route.key()) ?: return true
+        val holder = known[removed.socket]?.takeIf { it.generation == removed.generation }
+        val priorExit = holder?.exitConfirmedGeneration
+        val priorFence = holder?.retirementFence
+        holder?.exitConfirmedGeneration = removed.generation
+        if (holder?.retirementFence == removed.generation) holder.retirementFence = null
         return if (checkpoint()) {
             changed()
             true
         } else {
             store.drains[route.key()] = removed
+            holder?.exitConfirmedGeneration = priorExit
+            holder?.retirementFence = priorFence
             false
         }
     }

@@ -6,7 +6,7 @@ import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.contentOrNull
 import kotlinx.serialization.json.put
-import splice.hub.holder.HolderProtocol
+import splice.hub.holder.HolderControlWire
 
 internal data class ServerResponseState(
     var text: String? = null,
@@ -26,7 +26,29 @@ internal data class ServerRequestOutstanding(
     val answering: Boolean get() = response.delivery != null
 }
 
-private data class PreparedResponse(val link: HolderLink, val text: String)
+private data class PreparedResponse(
+    val link: HolderLink,
+    val control: HolderLink?,
+    val reverse: String?,
+    val text: String,
+)
+
+/** Validates the current holder links before a durable reverse response can leave the front. */
+private class HolderReplyRoute(private val holder: Holder) {
+    fun prepare(key: String, asked: ServerRequestOutstanding): PreparedResponse? {
+        val text = asked.response.text ?: return null
+        val link = holder.link ?: return null
+        var ready = holder.attestedGeneration == asked.generation
+        if (ready) ready = link.accepts(text)
+        val control = holder.control
+        val reverse = asked.id?.let { id -> HolderControlWire.reverse(key, id) }
+        if (ready) ready = controlReady(control, reverse)
+        return if (ready) PreparedResponse(link, control, reverse, text) else null
+    }
+
+    private fun controlReady(control: HolderLink?, reverse: String?): Boolean =
+        !holder.settlementProtocol || control?.let { link -> reverse?.let(link::accepts) } == true
+}
 
 internal class ServerRequestLedger {
     val requests = HashMap<String, ServerRequestOutstanding>()
@@ -235,20 +257,38 @@ internal class ServerRequestDelivery(
     }
 
     fun send(key: String, asked: ServerRequestOutstanding) {
-        preparedForSend(asked)?.let { prepared ->
+        preparedForSend(key, asked)?.let { prepared ->
             if (asked.holder.settlementProtocol) {
-                sendRecorded(key, asked, prepared)
+                sendRecorded(asked, prepared)
             } else {
                 sendLegacy(key, asked, prepared)
             }
         }
     }
 
-    private fun sendRecorded(key: String, asked: ServerRequestOutstanding, prepared: PreparedResponse) {
-        if (!prepared.link.accepts(HolderProtocol.reverse(key))) {
+    private fun sendRecorded(asked: ServerRequestOutstanding, prepared: PreparedResponse) {
+        val control = prepared.control
+        if (control == null) {
             retried(asked)
-        } else if (writing(asked)) {
-            if (prepared.link.send(HolderProtocol.reverse(key))) prepared.link.send(prepared.text)
+            return
+        }
+        val reverse = prepared.reverse
+        if (reverse == null) {
+            retried(asked)
+            return
+        }
+        if (!control.accepts(reverse)) {
+            retried(asked)
+            return
+        }
+        if (writing(asked)) control.send(reverse)
+    }
+
+    fun armed(asked: ServerRequestOutstanding) {
+        if (asked.response.delivery == RESPONSE_WRITE_UNCERTAIN &&
+            asked.holder.attestedGeneration == asked.generation
+        ) {
+            asked.response.text?.let { text -> asked.holder.link?.send(text) }
         }
     }
 
@@ -256,20 +296,17 @@ internal class ServerRequestDelivery(
         if (writing(asked)) prepared.link.send(prepared.text, HolderWritten { settled(key, asked) })
     }
 
-    private fun preparedForSend(asked: ServerRequestOutstanding): PreparedResponse? {
-        if (asked.response.delivery != RESPONSE_PREPARED) return null
-        val link = asked.holder.link
-        val text = asked.response.text
-        var ready = asked.holder.attestedGeneration == asked.generation
-        if (ready) ready = link != null
-        if (ready) ready = text != null
-        if (ready) ready = link?.accepts(text.orEmpty()) == true
-        if (ready && !asked.response.durable) asked.response.durable = persistence.checkpoint()
-        if (!ready || !asked.response.durable) {
+    private fun preparedForSend(key: String, asked: ServerRequestOutstanding): PreparedResponse? {
+        val prepared = asked.takeIf { it.response.delivery == RESPONSE_PREPARED }
+            ?.let { HolderReplyRoute(it.holder).prepare(key, it) }
+        if (prepared == null) {
             retried(asked)
             return null
         }
-        return PreparedResponse(requireNotNull(link), requireNotNull(text))
+        if (!asked.response.durable) asked.response.durable = persistence.checkpoint()
+        return prepared.takeIf { asked.response.durable }.also { delivered ->
+            if (delivered == null) retried(asked)
+        }
     }
 
     /** A persisted write attempt may have reached the holder only partly, so only exact exit can settle it. */

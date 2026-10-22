@@ -5,28 +5,37 @@ import splice.hub.io.Bytes
 /** Bounded exact-key evidence retained beside the holder's byte queues, never in the MCP server. */
 internal class HolderSettlement(
     private val toServer: Bytes,
-    private val toClient: Bytes,
+    private val toControl: Bytes,
 ) {
     private val settlements = HashMap<String, Settlement>()
     private val serverReceipts = ArrayDeque<ServerReceipt>()
-    private val awaitingReverse = ArrayDeque<String>()
+    private val awaitingReverse = ArrayDeque<ArmedReverse>()
     private val notices = ArrayDeque<String>()
     private var serverQueued = 0L
     private var serverWritten = 0L
     private var protocolReady = false
+    private var controlAvailable = false
 
-    fun accept(line: String) {
-        val command = HolderProtocol.command(line)
-        if (command == null) queueServer(line) else control(command)
+    fun acceptClient(line: String) {
+        queueServer(line)
     }
 
-    fun adopted() {
-        if (protocolReady) notice(HolderProtocol.ready())
+    fun acceptControl(line: String) {
+        HolderProtocol.command(line)?.let(::control)
+    }
+
+    fun controlChanged(available: Boolean) {
+        controlAvailable = available
+        if (available && protocolReady) notice(HolderControlWire.ready())
+        if (available) flushNotices()
+    }
+
+    fun controlDelivered() {
+        flushNotices()
     }
 
     fun clientDelivered(line: String) {
         HolderProtocol.response(line)?.let(::settled)
-        flushNotices()
     }
 
     fun serverFed(n: Int) {
@@ -37,40 +46,42 @@ internal class HolderSettlement(
             receipt.key?.let(::settled)
             if (receipt.announce && !protocolReady) {
                 protocolReady = true
-                notice(HolderProtocol.ready())
+                if (controlAvailable) notice(HolderControlWire.ready())
             }
         }
     }
 
     private fun control(command: HolderProtocol.Command) {
         when (command) {
-            is HolderProtocol.Command.Recover -> recovered(command.round)
+            is HolderProtocol.Command.Recover -> {
+                settlements.forEach { (key, state) ->
+                    notice(HolderControlWire.state(command.round, key, state.wire))
+                }
+                notice(HolderControlWire.complete(command.round))
+            }
             is HolderProtocol.Command.Acknowledge -> settlements.remove(command.key)
-            is HolderProtocol.Command.Reverse -> reverse(command.key)
+            is HolderProtocol.Command.Reverse -> reverse(command)
         }
     }
 
-    private fun recovered(round: String) {
-        settlements.forEach { (key, state) -> notice(HolderProtocol.state(round, key, state.wire)) }
-        notice(HolderProtocol.complete(round))
-    }
-
-    private fun reverse(key: String) {
-        when (settlements[key]) {
+    private fun reverse(command: HolderProtocol.Command.Reverse) {
+        when (settlements[command.key]) {
             null -> if (settlements.size < MAX_SETTLEMENTS) {
-                settlements[key] = Settlement.ARMED
-                awaitingReverse.addLast(key)
+                settlements[command.key] = Settlement.ARMED
+                awaitingReverse.addLast(ArmedReverse(command.key, command.identity))
+                notice(HolderControlWire.armed(command.key))
             }
-            Settlement.ARMED, Settlement.PENDING, Settlement.QUEUED, Settlement.SETTLED -> Unit
+            Settlement.ARMED -> notice(HolderControlWire.armed(command.key))
+            Settlement.PENDING, Settlement.QUEUED, Settlement.SETTLED -> Unit
         }
     }
 
     private fun queueServer(line: String) {
-        val reverse = awaitingReverse.firstOrNull()
-        if (reverse != null && settlements[reverse] == Settlement.ARMED) {
+        val armed = awaitingReverse.firstOrNull()?.takeIf { settlements[it.key] == Settlement.ARMED }
+        if (armed != null && HolderProtocol.reverseResponse(line, armed.identity)) {
             awaitingReverse.removeFirst()
-            settlements[reverse] = Settlement.QUEUED
-            appendServer(line, reverse, announce = false)
+            settlements[armed.key] = Settlement.QUEUED
+            appendServer(line, armed.key, announce = false)
         } else {
             queueForward(line)
         }
@@ -78,20 +89,16 @@ internal class HolderSettlement(
 
     private fun queueForward(line: String) {
         val forward = HolderProtocol.forward(line)
-        if (admitsForward(forward)) {
+        val retained = forward?.let(settlements::containsKey) ?: true
+        val room = settlements.size < MAX_SETTLEMENTS
+        if (retained || room) {
             if (forward != null && !settlements.containsKey(forward)) {
                 settlements[forward] = Settlement.PENDING
             }
             appendServer(line, null, HolderProtocol.initialized(line))
         } else {
-            notice(HolderProtocol.refused(requireNotNull(forward)))
+            notice(HolderControlWire.refused(requireNotNull(forward)))
         }
-    }
-
-    private fun admitsForward(key: String?): Boolean = when {
-        key == null -> true
-        settlements.containsKey(key) -> true
-        else -> settlements.size < MAX_SETTLEMENTS
     }
 
     private fun appendServer(line: String, key: String?, announce: Boolean) {
@@ -104,7 +111,7 @@ internal class HolderSettlement(
     private fun settled(key: String) {
         if (settlements[key] != null && settlements[key] != Settlement.SETTLED) {
             settlements[key] = Settlement.SETTLED
-            notice(HolderProtocol.settled(key))
+            notice(HolderControlWire.settled(key))
         }
     }
 
@@ -114,14 +121,16 @@ internal class HolderSettlement(
     }
 
     private fun flushNotices() {
-        while (notices.isNotEmpty()) {
+        while (controlAvailable && notices.isNotEmpty()) {
             val bytes = (notices.first() + "\n").encodeToByteArray()
-            if (toClient.size + bytes.size > HOLDER_BUFFER_CAP) return
+            if (toControl.size + bytes.size > HOLDER_BUFFER_CAP) return
             notices.removeFirst()
-            toClient.append(bytes)
+            toControl.append(bytes)
         }
     }
 }
+
+private data class ArmedReverse(val key: String, val identity: String)
 
 private data class ServerReceipt(
     val through: Long,

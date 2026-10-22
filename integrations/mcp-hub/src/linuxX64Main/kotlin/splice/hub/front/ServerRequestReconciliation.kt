@@ -24,6 +24,13 @@ internal class ServerRequestReconciliation(
         if (reset.isNotEmpty()) prepareReplay(reset)
     }
 
+    fun armed(holder: Holder, generation: String, key: String) {
+        ledger.requests[key]?.takeIf { asked ->
+            asked.holder === holder && asked.generation == generation &&
+                asked.response.delivery == RESPONSE_WRITE_UNCERTAIN
+        }?.let(delivery::armed)
+    }
+
     fun settled(holder: Holder, generation: String, key: String): Boolean {
         val asked = ledger.requests[key] ?: return true
         val exact = asked.holder === holder && asked.generation == generation

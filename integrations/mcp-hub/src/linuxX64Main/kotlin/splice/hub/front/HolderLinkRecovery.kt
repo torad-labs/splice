@@ -3,6 +3,7 @@ package splice.hub.front
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.contentOrNull
+import splice.hub.holder.HolderProtocol
 
 internal class HolderLinkRecovery(
     private val context: HolderLinkContext,
@@ -21,7 +22,12 @@ internal class HolderLinkRecovery(
             ::reconnect,
             Holder::cancelReverseResponseRetry,
         )
-    private val connections = HolderConnections(context.connections, ::fromHolder, loss::lost)
+    private val connections = HolderConnections(
+        context.connections,
+        ::fromHolder,
+        loss::lost,
+    )
+    private val controls = HolderControlLinks(context.connections, context.relay.inbound)
     private val generations = HolderGenerationReads(context.routes.attestations, context.timers, context.clock)
 
     var stopping: Boolean
@@ -58,6 +64,7 @@ internal class HolderLinkRecovery(
                 link.close()
             }
         }
+        controls.connect(holder)
         if (existing == null) link.claim()
         return !link.closed
     }
@@ -136,6 +143,7 @@ internal class HolderLinkRecovery(
             if (knownGeneration != attested) persistence.changed()
             activated()
         }
+        controls.connect(holder)
     }
 
     private fun retry(holder: Holder, generation: String) {
@@ -160,7 +168,6 @@ internal class HolderLinkRecovery(
     }
 
     private fun fromHolder(holder: Holder, link: HolderLink, line: String) {
-        if (holder.link === link && context.relay.inbound.control(holder, line)) return
         if (holder.link === link && handshakes.observed(holder)) {
             message(holder, link, line)
         } else if (holder.link === link) {
@@ -188,27 +195,61 @@ internal class HolderConnections(
     private val onLine: (Holder, HolderLink, String) -> Unit,
     private val onLost: (Holder, HolderLink) -> Unit,
 ) {
-    fun connect(holder: Holder): HolderLink? = HolderLinkBinding(holder, onLine, onLost).connect(connections)
+    fun connect(holder: Holder): HolderLink? =
+        HolderLinkBinding(holder, holder.socket, onLine, onLost).connect(connections)
 
     fun adopt(holder: Holder, fd: Int, saved: ByteArray): HolderLink =
-        HolderLinkBinding(holder, onLine, onLost).adopt(connections, fd, saved)
+        HolderLinkBinding(holder, holder.socket, onLine, onLost).adopt(connections, fd, saved)
+}
+
+/** Owns the separate evidence channel and closes its matching data link on control loss. */
+internal class HolderControlLinks(
+    private val connections: Links,
+    private val relay: RelayInbound,
+) {
+    fun connect(holder: Holder) {
+        if (holder.control?.closed == false) return
+        HolderLinkBinding(
+            holder,
+            HolderProtocol.controlSocket(holder.socket),
+            ::received,
+            ::lost,
+        ).connect(connections)?.let { link ->
+            holder.control = link
+            link.claim()
+        }
+    }
+
+    private fun received(holder: Holder, link: HolderLink, line: String) {
+        if (holder.control === link) {
+            HolderProtocol.event(line)?.let { frame -> relay.control(holder, frame) }
+        }
+    }
+
+    private fun lost(holder: Holder, link: HolderLink) {
+        if (holder.control === link) {
+            holder.control = null
+            holder.link?.close()
+        }
+    }
 }
 
 internal class HolderLinkBinding(
     private val holder: Holder,
+    private val socket: String,
     private val onLine: (Holder, HolderLink, String) -> Unit,
     private val onLost: (Holder, HolderLink) -> Unit,
 ) {
     private var link: HolderLink? = null
 
     fun connect(connections: Links): HolderLink? {
-        val opened = connections.connect(holder.socket, ::line, ::lost) ?: return null
+        val opened = connections.connect(socket, ::line, ::lost) ?: return null
         link = opened
         return opened
     }
 
     fun adopt(connections: Links, fd: Int, saved: ByteArray): HolderLink {
-        val opened = connections.adopt(fd, holder.socket, saved, ::line, ::lost)
+        val opened = connections.adopt(fd, socket, saved, ::line, ::lost)
         link = opened
         return opened
     }

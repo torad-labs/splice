@@ -7,10 +7,9 @@ import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.contentOrNull
 
-/** The holder-only control frames never reach the MCP server once a front and holder have both negotiated this revision. */
+/** Parses holder control and identifies the child messages that own settlement. */
 object HolderProtocol {
-    private const val PREFIX = "@splice-holder/1"
-    private val controls = HolderControlFrames(PREFIX)
+    private val controls = HolderControlFrames(CONTROL_PREFIX)
     private val wire = HolderWireIds()
 
     sealed interface Command {
@@ -18,11 +17,13 @@ object HolderProtocol {
 
         data class Acknowledge(val key: String) : Command
 
-        data class Reverse(val key: String) : Command
+        data class Reverse(val key: String, val identity: String) : Command
     }
 
     sealed interface Event {
         data object Ready : Event
+
+        data class Armed(val key: String) : Event
 
         data class State(val round: String, val key: String, val state: String) : Event
 
@@ -37,27 +38,37 @@ object HolderProtocol {
 
     fun event(line: String): Event? = controls.event(line)
 
-    fun recover(round: String): String = "$PREFIX recover $round"
-
-    fun acknowledge(key: String): String = "$PREFIX ack $key"
-
-    fun reverse(key: String): String = "$PREFIX reverse $key"
-
-    fun ready(): String = "$PREFIX ready"
-
-    fun state(round: String, key: String, state: String): String = "$PREFIX state $round $key $state"
-
-    fun complete(round: String): String = "$PREFIX complete $round"
-
-    fun settled(key: String): String = "$PREFIX settled $key"
-
-    fun refused(key: String): String = "$PREFIX refused $key"
+    fun controlSocket(socket: String): String = "$socket.control"
 
     fun forward(line: String): String? = wire.forward(line)
 
     fun initialized(line: String): Boolean = wire.initialized(line)
 
     fun response(line: String): String? = wire.response(line)
+
+    fun reverseResponse(line: String, identity: String): Boolean = wire.reverseResponse(line, identity)
+}
+
+/** Writes holder-only frames for the private control socket. */
+object HolderControlWire {
+    fun recover(round: String): String = "$CONTROL_PREFIX recover $round"
+
+    fun acknowledge(key: String): String = "$CONTROL_PREFIX ack $key"
+
+    fun reverse(key: String, id: JsonElement): String =
+        "$CONTROL_PREFIX reverse $key ${HolderWireIds().identity(id)}"
+
+    fun ready(): String = "$CONTROL_PREFIX ready"
+
+    fun armed(key: String): String = "$CONTROL_PREFIX armed $key"
+
+    fun state(round: String, key: String, state: String): String = "$CONTROL_PREFIX state $round $key $state"
+
+    fun complete(round: String): String = "$CONTROL_PREFIX complete $round"
+
+    fun settled(key: String): String = "$CONTROL_PREFIX settled $key"
+
+    fun refused(key: String): String = "$CONTROL_PREFIX refused $key"
 }
 
 private class HolderControlFrames(private val prefix: String) {
@@ -68,18 +79,26 @@ private class HolderControlFrames(private val prefix: String) {
     private fun commandFrame(words: List<String>): HolderProtocol.Command? = when (words.firstOrNull()) {
         RECOVER -> oneArgument(words, ::round)?.let(HolderProtocol.Command::Recover)
         ACKNOWLEDGE -> oneArgument(words, ::key)?.let(HolderProtocol.Command::Acknowledge)
-        REVERSE -> oneArgument(words, ::reverseKey)?.let(HolderProtocol.Command::Reverse)
+        REVERSE -> reverse(words)
         else -> null
     }
 
     private fun eventFrame(words: List<String>): HolderProtocol.Event? = when (words.firstOrNull()) {
         READY -> HolderProtocol.Event.Ready.takeIf { words.size == READY_WORDS }
+        ARMED -> oneArgument(words, ::reverseKey)?.let(HolderProtocol.Event::Armed)
         COMPLETE -> oneArgument(words, ::round)?.let(HolderProtocol.Event::Complete)
         SETTLED -> oneArgument(words, ::key)?.let(HolderProtocol.Event::Settled)
         REFUSED -> oneArgument(words, ::forwardKey)?.let(HolderProtocol.Event::Refused)
         STATE -> state(words)
         else -> null
     }
+
+    private fun reverse(words: List<String>): HolderProtocol.Command.Reverse? =
+        words.takeIf { it.size == REVERSE_WORDS }?.let {
+            val key = it[ARGUMENT_INDEX].takeIf(::reverseKey)
+            val identity = it[IDENTITY_INDEX].takeIf(::identity)
+            if (key == null || identity == null) null else HolderProtocol.Command.Reverse(key, identity)
+        }
 
     private fun state(words: List<String>): HolderProtocol.Event.State? =
         words.takeIf { it.size == STATE_WORDS }?.let {
@@ -104,9 +123,9 @@ private class HolderControlFrames(private val prefix: String) {
 
     private fun round(value: String): Boolean = value.length == ROUND_CHARS && value.all(::hex)
 
-    private fun hex(char: Char): Boolean = char in '0'..'9' || char in 'a'..'f'
+    private fun identity(value: String): Boolean = value.length % HEX_DIGITS == 0 && value.all(::hex)
 
-    private fun key(value: String): Boolean = forwardKey(value) || reverseKey(value)
+    private fun hex(char: Char): Boolean = char in '0'..'9' || char in 'a'..'f'
 
     private fun forwardKey(value: String): Boolean = numbered(value, FORWARD_PREFIX)
 
@@ -121,19 +140,27 @@ private class HolderWireIds {
 
     fun initialized(line: String): Boolean = method(line) == INITIALIZED
 
-    fun response(line: String): String? = responseId(line)?.takeIf(::forwardKey)
+    fun response(line: String): String? = responseId(line)?.takeIf(::scalar)?.takeIf(::forwardKey)
+
+    fun reverseResponse(line: String, identity: String): Boolean = responseId(line)?.let(::identity) == identity
+
+    fun identity(id: JsonElement): String = Json.encodeToString(JsonElement.serializer(), id)
+        .encodeToByteArray()
+        .joinToString("") { byte -> byte.toUByte().toString(HEX).padStart(HEX_DIGITS, '0') }
 
     private fun request(line: String): String? = objectOrNull(line)
         ?.takeIf { method(it) != null }
         ?.get(ID)
         ?.let(::scalar)
 
-    private fun responseId(line: String): String? = objectOrNull(line)
-        ?.takeIf { method(it) == null }
+    private fun responseId(line: String): JsonElement? = objectOrNull(line)
+        ?.takeIf(::response)
         ?.get(ID)
-        ?.let(::scalar)
 
-    private fun method(line: String): String? = objectOrNull(line)?.let(::method)
+    private fun response(value: JsonObject): Boolean {
+        if (method(value) != null) return false
+        return RESULT in value || ERROR in value
+    }
 
     private fun method(value: JsonObject): String? = value[METHOD]?.let(::scalar)
 
@@ -150,10 +177,12 @@ private class HolderWireIds {
         value.removePrefix(FORWARD_PREFIX).takeIf { value.startsWith(FORWARD_PREFIX) }?.all(Char::isDigit) == true
 }
 
+private const val CONTROL_PREFIX = "@splice-holder/1"
 private const val RECOVER = "recover"
 private const val ACKNOWLEDGE = "ack"
 private const val REVERSE = "reverse"
 private const val READY = "ready"
+private const val ARMED = "armed"
 private const val COMPLETE = "complete"
 private const val SETTLED = "settled"
 private const val REFUSED = "refused"
@@ -163,13 +192,19 @@ private const val FORWARD_PREFIX = "f:"
 private const val REVERSE_PREFIX = "s:"
 private const val ID = "id"
 private const val METHOD = "method"
-private const val MAX_CONTROL_CHARS = 128
+private const val RESULT = "result"
+private const val ERROR = "error"
+private const val MAX_CONTROL_CHARS = 1024 * 1024
 private const val ROUND_CHARS = 32
 private const val READY_WORDS = 1
 private const val COMMAND_WORDS = 2
+private const val REVERSE_WORDS = 3
 private const val STATE_WORDS = 4
 private const val ARGUMENT_INDEX = 1
+private const val IDENTITY_INDEX = 2
 private const val ROUND_INDEX = 1
 private const val KEY_INDEX = 2
 private const val STATE_INDEX = 3
+private const val HEX_DIGITS = 2
+private const val HEX = 16
 private val STATES = setOf("pending", "armed", "queued", "settled")

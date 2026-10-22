@@ -13,6 +13,7 @@ data class Holder(val socket: String) {
     var generation: String? = null
     var attestedGeneration: String? = null
     var link: HolderLink? = null
+    var control: HolderLink? = null
     var identity: String? = null
     var init: JsonObject? = null
     var handshakeId: String? = null
@@ -22,6 +23,7 @@ data class Holder(val socket: String) {
     var initializedPending = false
     var initializedUncertain = false
     var retirementFence: String? = null
+    var exitConfirmedGeneration: String? = null
     var reverseResponseRetries = 0
     var reverseResponseRetryGeneration: String? = null
     var reverseResponseRetryCancel: (() -> Unit)? = null
@@ -52,6 +54,7 @@ data class Holder(val socket: String) {
         initializedPending = false
         initializedUncertain = false
         retirementFence = null
+        exitConfirmedGeneration = null
         settlementProtocol = false
         settlementRecovery = null
         recoveryUncertain = false
@@ -116,15 +119,48 @@ internal class Holders(
     connections: Links,
     timers: Timers,
     clock: Clock,
-    routes: Routes,
-    relay: Relay,
-    persistence: HolderPersistence,
+    private val routes: Routes,
+    private val relay: Relay,
+    private val persistence: HolderPersistence,
 ) {
     private val known = HashMap<String, Holder>()
     internal val replacements = HolderReplacements(known, persistence::changed, persistence::checkpoint)
 
     /** Retains a restored ledger’s socket identity until exact exit evidence settles it. */
     fun remember(socket: String): Holder = known.getOrPut(socket) { Holder(socket) }
+
+    /** Removes only generations whose successful retirement is durable and has released every front owner. */
+    fun prune() {
+        known.values.toList().forEach(::releaseExited)
+        val evicted = known.values.filter(::evictable)
+        evicted.forEach { known.remove(it.socket) }
+        if (evicted.isNotEmpty()) persistence.changed()
+    }
+
+    private fun releaseExited(holder: Holder) {
+        val generation = holder.exitConfirmedGeneration ?: return
+        holder.cancelReverseResponseRetry()
+        if (relay.awaitsExit(holder, generation) || holder.settlementRecovery != null) {
+            relay.exited(holder, generation)
+        }
+    }
+
+    private fun evictable(holder: Holder): Boolean {
+        val generation = holder.exitConfirmedGeneration ?: return false
+        return listOf(
+            holder.generation == generation,
+            holder.retirementFence == null,
+            holder.link == null,
+            !holder.connecting,
+            holder.waiters.isEmpty(),
+            !routes.ownership.owns(holder.socket, generation),
+            !replacements.owns(holder, generation),
+            !relay.awaitsExit(holder, generation),
+            holder.settlementRecovery == null,
+            holder.reverseResponseRetries == 0,
+            holder.reverseResponseRetryGeneration == null,
+        ).all { it }
+    }
 
     internal val links = HolderLinks(
         HolderLinkContext(files, connections, timers, clock, routes, relay),
@@ -151,6 +187,7 @@ internal const val HANDSHAKE_IDENTITY = "handshake_identity"
 internal const val RECOVERY_UNCERTAIN = "recovery_uncertain"
 internal const val INITIALIZED_UNCERTAIN = "initialized_uncertain"
 internal const val RETIREMENT_FENCE = "retirement_fence"
+internal const val EXIT_CONFIRMED_GENERATION = "exit_confirmed_generation"
 internal const val REVERSE_RESPONSE_RETRIES = "reverse_response_retries"
 internal const val SETTLEMENT_PROTOCOL = "settlement_protocol"
 internal const val CAPABILITIES = "capabilities"

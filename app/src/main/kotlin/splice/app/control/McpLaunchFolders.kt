@@ -11,6 +11,7 @@ import splice.client.mcp.McpLaunchPlan
 import splice.client.mcp.McpLaunchPlanner
 import splice.client.mcp.McpPlan
 import splice.client.mcp.McpPlanScope
+import splice.client.mcp.McpServerInput
 import splice.core.config.UserHome
 import splice.core.util.JsonScalars
 import splice.core.util.PathProbe
@@ -39,7 +40,7 @@ private data class Declared(val name: String, val scope: McpPlanScope, val file:
 
 /** How the hub would run each of one launch's servers (MCP hub step 3); the host's plan in production. */
 internal fun interface McpServerClasses {
-    fun plan(servers: JsonObject): McpPlan
+    fun plan(servers: List<McpServerInput>): McpPlan
 }
 
 internal class McpLaunchFolders(

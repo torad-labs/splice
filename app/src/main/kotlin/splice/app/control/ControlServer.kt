@@ -64,6 +64,7 @@ import splice.app.control.peer.PeersMount
 import splice.app.control.usage.UsageMount
 import splice.app.head.HeadRemovalAssembly
 import splice.app.peer.PeersWiring
+import splice.client.mcp.McpServerInput
 import splice.core.config.ConfigService
 import splice.core.util.LogSink
 import splice.core.version.ClientVersionTracker
@@ -190,7 +191,12 @@ internal class ControlServer(
         McpMount(
             host,
             guard,
-            McpLaunchFolders(sessions, McpServerClasses { host.sharing.plan(it) }),
+            McpLaunchFolders(
+                sessions,
+                McpServerClasses { servers: List<McpServerInput> ->
+                    host.sharing.plan(servers)
+                },
+            ),
             runtime.mcpServices,
         )
     }

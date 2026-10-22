@@ -53,6 +53,7 @@ internal class McpMount(
         // MCP hub steps 3 and 4: the front's calls, management key only.
         hub?.let { front ->
             route.post("/api/mcp/hub/resolve") { guard.guarded(call) { front.resolve(call) } }
+            route.post("/api/mcp/hub/attest") { guard.guarded(call) { front.attest(call) } }
             route.post("/api/mcp/hub/start") { guard.guarded(call) { front.start(call) } }
             route.post("/api/mcp/hub/listing") { guard.guarded(call) { front.listing(call) } }
             route.post("/api/mcp/hub/roots") { guard.guarded(call) { front.roots(call) } }

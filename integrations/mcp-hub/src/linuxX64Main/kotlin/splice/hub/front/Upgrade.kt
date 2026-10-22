@@ -1,4 +1,4 @@
-// The front's in-place upgrade. On SIGUSR2 it stops reading new requests, lets every call in flight finish, writes what
+// The front's in-place upgrade. On SIGUSR2 it stops admitting new operations, lets every call in flight finish, writes what
 // each open descriptor is, and execs the binary now at its own path, which an install has replaced. The pid, the
 // listening socket, every session's connection and stream, and every holder link carry over, so no session sees a
 // close. A request that arrives meanwhile waits in the kernel and is read by the new code.
@@ -33,10 +33,15 @@ import kotlin.io.encoding.ExperimentalEncodingApi
 class Upgrade(private val sys: Sys, private val files: HubFiles, private val args: List<String>) {
     /** Whether the loop can hand over now: no retained wire id, no unanswered request, and nothing unwritten. */
     fun settled(loop: Loop, wireOutstanding: Int): Boolean =
-        wireOutstanding == 0 && loop.all().none { it is HttpConn && !it.streaming && !it.quiet() || it is DaemonCall }
+        wireOutstanding == 0 && quiet(loop)
 
-    fun drain(loop: Loop) {
-        loop.all().filterIsInstance<HttpConn>().forEach { it.draining = true }
+    private fun quiet(loop: Loop): Boolean = loop.all().none { watched ->
+        when (watched) {
+            is HttpConn -> watched.pendingOutput || (!watched.streaming && !watched.quiet())
+            is HolderLink -> watched.pendingOutput
+            is DaemonCall -> true
+            else -> false
+        }
     }
 
     /** Writes the descriptors and execs. Returns only when the exec failed. */

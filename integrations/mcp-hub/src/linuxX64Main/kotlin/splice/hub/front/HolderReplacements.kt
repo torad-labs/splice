@@ -185,7 +185,7 @@ private class HolderCandidatePreparation(
         drain.blocker = null
         val holder = known.getOrPut(candidate.socket) { Holder(candidate.socket) }
         if (holder.generation != candidate.generation) details.reset(holder, candidate.generation)
-        if (holder.ready && holder.init != null) return links.verify(holder, holder.init)
+        if (holder.ready) holder.init?.let { return links.verified(holder, it) }
         drain.phase = CANDIDATE_STARTING
         holder.connecting = true
         connect(holder)
@@ -213,12 +213,17 @@ internal class HolderRetirements(
             changed()
         }
 
-    fun retry(route: Route) {
-        store.drains[route.key()]?.takeIf { it.phase == RETIRE_BLOCKED }?.let { drain ->
-            drain.phase = ROUTED
+    /** Reclaims either an inconclusive retirement or a failed owner call before asking its durable owner again. */
+    fun retry(route: Route): HolderDrain? =
+        store.drains[route.key()]?.takeIf { drain ->
+            drain.phase in retirementRetryPhases && drain.candidate != null
+        }?.also { drain ->
+            drain.phase = RETIRING
             changed()
         }
-    }
+
+    fun unknowns(): List<HolderDrain> =
+        store.drains.values.filter { it.phase == RETIRE_UNKNOWN && it.candidate != null }
 
     fun rollbacks(): List<HolderDrain> =
         store.drains.values.filter { it.phase == ROLLBACK_PENDING && it.candidate != null }
@@ -263,3 +268,4 @@ internal class HolderRetirements(
 
 private val candidateStartPhases = setOf(PAUSED, CANDIDATE_STARTING, CANDIDATE_READY)
 private val resumablePhases = setOf(PAUSED, CANDIDATE_STARTING, CANDIDATE_READY, CANDIDATE_BLOCKED)
+private val retirementRetryPhases = setOf(RETIRE_BLOCKED, RETIRE_UNKNOWN)

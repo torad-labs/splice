@@ -9,7 +9,6 @@ internal class RouteReplacements(
     private val daemon: Daemon,
     private val timers: Timers,
     private val clock: Clock,
-    private val changed: () -> Unit,
 ) {
     private val candidateReplies = CandidateReplyParser()
 
@@ -57,7 +56,7 @@ internal class RouteReplacements(
             held.socket = candidate.socket
             held.generation = candidate.generation
         }
-        changed()
+        // The caller persists these routes together with the drain's moved keys and ROUTED phase.
         return moved.map(Route::key).toSet()
     }
 
@@ -74,7 +73,7 @@ internal class RouteReplacements(
             held.socket = oldSocket
             held.generation = oldGeneration
         }
-        changed()
+        // The caller removes the rolled-back drain in the same persisted snapshot.
         return true
     }
 

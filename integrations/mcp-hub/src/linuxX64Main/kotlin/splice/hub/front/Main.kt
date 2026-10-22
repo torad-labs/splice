@@ -89,9 +89,18 @@ class Front(
         hub.restore()
         val control = HolderDrainControl(hub)
         val upgrade = Upgrade(sys, files, args)
+        val admission = UpgradeAdmission()
         val listen = { fd: Int ->
             HttpListener(sys.nonblocking(fd), sys, loop, clock, files::admits) { conn, request ->
-                if (control.handles(request.path)) control.handle(conn, request) else hub.http.handle(conn, request)
+                when {
+                    upgradeAsked.value == 1 && !admission.permits(request) ->
+                        conn.reply(
+                            UNAVAILABLE,
+                            Rpc.error(JsonNull, "the MCP front is draining for an in-place upgrade"),
+                        )
+                    control.handles(request.path) -> control.handle(conn, request)
+                    else -> hub.http.handle(conn, request)
+                }
             }.also(loop::add)
         }
         val listener = resume?.let { upgrade.resume(it, listen, hub) } ?: fresh(sys, files, listen) ?: return NO_SOCKET
@@ -228,7 +237,6 @@ class Lifecycle(
     private fun beginUpgrade() {
         upgradeBy = clock.now() + DRAIN
         upgradeBlocked = false
-        upgrade.drain(loop)
         files.say("upgrade asked: ${hub.inFlight()} calls in flight")
     }
 
@@ -249,10 +257,7 @@ class Lifecycle(
         upgradeBy = 0L
         upgradeBlocked = false
         hub.stopping = false
-        loop.all().filterIsInstance<HttpConn>().forEach {
-            it.draining = false
-            it.parse()
-        }
+        loop.all().filterIsInstance<HttpConn>().forEach(HttpConn::parse)
     }
 
     private fun beginStop() {

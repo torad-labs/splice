@@ -99,6 +99,8 @@ internal class HubReplacements(
     private val timers: Timers,
     private val clock: Clock,
 ) {
+    private val replay = ReplacementReplay(routes, holders)
+
     fun pause(server: String, launch: String): String? {
         val route = route(server, launch) ?: return missingRoute(server, launch)
         return holders.replacements.candidates.pause(route, holders.links.of(route))
@@ -157,42 +159,21 @@ internal class HubReplacements(
         cutOverReadyCandidates()
         retireOldCandidates()
         rollBackLostCandidates()
+        reconcileUnknownRetirements()
     }
 
     fun reconcile() {
-        holders.replacements.candidates.all().forEach { drain ->
+        holders.replacements.all().forEach { drain ->
             val route = routes.byKey(drain.key()) ?: return@forEach
             val candidate = drain.candidate ?: return@forEach
             when (drain.phase) {
-                COMMITTING -> replayCommit(route, drain, candidate)
+                COMMITTING -> replay.commit(route, drain, candidate)
                 RETIRING, RETIRE_BLOCKED -> replayRetirement(route, drain, candidate)
-                ROLLING_BACK -> replayRollback(route, drain, candidate)
+                ROLLING_BACK -> replay.rollback(route, drain, candidate)
                 else -> Unit
             }
         }
         finish()
-    }
-
-    private fun replayCommit(route: Route, drain: HolderDrain, candidate: ReplacementCandidate) {
-        routes.replacements.commit(route, drain.socket, drain.generation, candidate) { failure ->
-            val routesMatch = holders.replacements.candidates.canRoute(route, candidate)
-            if (failure != null || !routesMatch) {
-                holders.replacements.candidates.candidateBlocked(
-                    route,
-                    failure ?: "the candidate was no longer live when cutover was confirmed",
-                )
-            } else {
-                val moved = routes.replacements.replace(route, drain.socket, drain.generation, candidate)
-                if (moved == null) {
-                    holders.replacements.candidates.candidateBlocked(
-                        route,
-                        "the target changed before its candidate could take the settled route",
-                    )
-                } else {
-                    holders.replacements.candidates.routed(route, candidate, moved)
-                }
-            }
-        }
     }
 
     private fun replayRetirement(route: Route, drain: HolderDrain, candidate: ReplacementCandidate) {
@@ -201,24 +182,16 @@ internal class HubReplacements(
                 holders.replacements.retirements.retired(route)
             } else {
                 holders.replacements.retirements.blocked(route, failure)
-                timers.at(clock.now() + RETIRE_RETRY) { holders.replacements.retirements.retry(route) }
+                timers.at(clock.now() + RETIRE_RETRY) { retryRetirement(route) }
             }
         }
     }
 
-    private fun replayRollback(route: Route, drain: HolderDrain, candidate: ReplacementCandidate) {
-        routes.replacements.rollback(route, drain.socket, drain.generation, candidate) { failure ->
-            if (failure != null) {
-                holders.replacements.retirements.rollbackUnknown(route, failure)
-            } else if (!routes.replacements.restore(drain.moved, drain.socket, drain.generation, candidate)) {
-                holders.replacements.retirements.rollbackUnknown(
-                    route,
-                    "the restored routes no longer match the dead candidate generation",
-                )
-            } else {
-                holders.replacements.retirements.rolledBack(route)
-            }
-        }
+    /** A claimed retirement stays with its owner even after the front can no longer reach its candidate. */
+    private fun retryRetirement(route: Route) {
+        val claimed = holders.replacements.retirements.retry(route) ?: return
+        val candidate = claimed.candidate ?: return
+        replayRetirement(route, claimed, candidate)
     }
 
     private fun cutOverReadyCandidates() {
@@ -252,18 +225,26 @@ internal class HubReplacements(
         holders.replacements.retirements.candidates().forEach { drain ->
             val route = routes.byKey(drain.key()) ?: return@forEach
             val candidate = drain.candidate ?: return@forEach
-            val live = holders.links.of(route)?.let {
-                it.ready && it.link != null && it.generation == candidate.generation
-            } == true
-            val claimed = holders.replacements.retirements.claim(route, live) ?: return@forEach
+            val claimed = holders.replacements.retirements.claim(route) { expected ->
+                holders.links.of(route)?.let {
+                    it.ready && it.link != null && it.generation == expected.generation
+                } == true
+            } ?: return@forEach
             routes.replacements.retire(route, claimed.socket, claimed.generation, candidate) { failure ->
                 if (failure == null) {
                     holders.replacements.retirements.retired(route)
                 } else {
                     holders.replacements.retirements.blocked(route, failure)
-                    timers.at(clock.now() + RETIRE_RETRY) { holders.replacements.retirements.retry(route) }
+                    timers.at(clock.now() + RETIRE_RETRY) { retryRetirement(route) }
                 }
             }
+        }
+    }
+
+    /** An unknown retirement is reconciled through the durable owner, never converted into candidate rollback. */
+    private fun reconcileUnknownRetirements() {
+        holders.replacements.retirements.unknowns().forEach { drain ->
+            routes.byKey(drain.key())?.let(::retryRetirement)
         }
     }
 
@@ -405,6 +386,7 @@ internal class HubHttp(
     private fun notification(conn: HttpConn, session: Session, msg: JsonObject, method: String) {
         conn.reply(ACCEPTED)
         if (method == "notifications/initialized") return
+        if (holders.replacements.admissions.paused(session.route) && method != CANCELLED) return
         val holder = holders.links.of(session.route)?.takeIf { it.ready } ?: return
         relay.notify(holder, session, msg)
     }

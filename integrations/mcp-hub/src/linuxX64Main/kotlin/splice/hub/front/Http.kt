@@ -20,6 +20,7 @@ class HttpConn(
 ) : Watched(fd) {
     val inbox = Bytes()
     private val outbox = Bytes()
+    val pendingOutput: Boolean get() = outbox.size > 0
 
     /** The monotonic time by which the request this connection is waiting for must have arrived whole. */
     private var requestBy = clock.now() + REQUEST_TIMEOUT_MS
@@ -36,9 +37,6 @@ class HttpConn(
      *  client moves to the next front rather than reusing a connection this one is about to drop. */
     var closing = false
 
-    /** Set while the front prepares an in-place upgrade: nothing new is read, so what arrives waits in the kernel. */
-    var draining = false
-
     /** Whether everything this connection owes has been written. */
     fun quiet(): Boolean = !busy && outbox.size == 0
 
@@ -50,7 +48,7 @@ class HttpConn(
         busy = streaming
     }
 
-    override fun events(): Int = (if (busy || draining) 0 else IN) or (if (outbox.size > 0) OUT else 0)
+    override fun events(): Int = (if (busy) 0 else IN) or (if (outbox.size > 0) OUT else 0)
 
     override fun deadline(): Long? = if (idle) requestBy else null
 
@@ -76,7 +74,7 @@ class HttpConn(
 
     private fun doneStopping(): Boolean = closing && quiet() && !streaming
 
-    private val idle: Boolean get() = !busy && !draining && !streaming
+    private val idle: Boolean get() = !busy && !streaming
 
     /** Reads the next request once its head and body are in; a head too large or malformed closes the connection. */
     fun parse() {
@@ -280,12 +278,13 @@ class HolderLink(
     private val onLost: () -> Unit,
 ) : Watched(fd) {
     val inbox = Bytes()
-    private val outbox = Bytes()
+    private val writes = HolderWrites(sys)
+    val pendingOutput: Boolean get() = writes.pending
 
-    override fun events(): Int = IN or (if (outbox.size > 0) OUT else 0)
+    override fun events(): Int = IN or (if (writes.pending) OUT else 0)
 
     override fun ready(revents: Int) {
-        if (revents and OUT != 0 && !sys.flush(fd, outbox)) return close()
+        if (revents and OUT != 0 && !writes.flush(fd)) return close()
         if (revents and IN != 0 || sys.gone(revents)) {
             if (sys.readInto(fd, inbox) == 0) return close()
             lines()
@@ -302,10 +301,10 @@ class HolderLink(
         }
     }
 
-    fun send(line: String) {
-        outbox.append(line)
-        outbox.append(NL)
-        if (!sys.flush(fd, outbox)) close()
+    fun send(line: String, delivered: HolderWritten? = null) {
+        if (closed) return
+        writes.append(line, delivered)
+        if (!writes.flush(fd)) close()
     }
 
     override fun onClose() = onLost()

@@ -3,7 +3,6 @@ package splice.control.mcp
 import kotlinx.serialization.json.JsonObject
 import java.io.BufferedWriter
 import java.io.IOException
-import java.util.concurrent.ConcurrentHashMap
 
 internal data class McpWriteTarget(val child: Process, val output: BufferedWriter)
 
@@ -22,22 +21,46 @@ internal class McpChildWriter(
     private val failed: McpWriteFailure,
 ) {
     private val lock = Any()
-    private val requests = ConcurrentHashMap<Long, Process>()
+    private val requests = HashMap<Long, Process>()
+    private val serverRequests = HashMap<Long, Process>()
 
     val unsettled: List<Long>
-        get() {
+        get() = synchronized(lock) {
             requests.entries.removeIf { !it.value.isAlive }
-            return requests.keys.toList()
+            serverRequests.entries.removeIf { !it.value.isAlive }
+            (requests.keys + serverRequests.keys).toList()
         }
 
-    fun idsOf(child: Process): List<Long> = requests.entries.filter { it.value === child }.map { it.key }
+    /** Holds a server-initiated request from receipt until its reply fully writes or this exact child exits. */
+    fun retain(requestId: Long, child: Process): Boolean = synchronized(lock) {
+        if (!child.isAlive) {
+            false
+        } else {
+            serverRequests[requestId] = child
+            true
+        }
+    }
+
+    fun idsOf(child: Process): List<Long> = synchronized(lock) {
+        requests.entries.filter { it.value === child }.map { it.key }
+    }
 
     fun settled(id: Long) {
-        requests.remove(id)
+        synchronized(lock) { requests.remove(id) }
     }
 
     fun exited(child: Process) {
-        requests.entries.removeIf { it.value === child }
+        synchronized(lock) {
+            requests.entries.removeIf { it.value === child }
+            serverRequests.entries.removeIf { it.value === child }
+        }
+    }
+
+    /** Writes a reply only to [child]'s generation, releasing its retained charge after the flush. */
+    fun reply(msg: JsonObject, requestId: Long, child: Process): Boolean {
+        val written = invoke(msg, expected = child)
+        if (written) synchronized(lock) { serverRequests.remove(requestId) }
+        return written
     }
 
     operator fun invoke(msg: JsonObject, requestId: Long? = null, expected: Process? = null): Boolean {

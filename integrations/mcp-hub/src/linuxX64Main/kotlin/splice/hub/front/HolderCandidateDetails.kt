@@ -76,8 +76,8 @@ internal class HolderCandidateDetails {
     }
 
     fun failedPhase(phase: String): String = when (phase) {
-        ROUTED, RETIRING, RETIRE_BLOCKED -> ROLLBACK_PENDING
-        ROLLING_BACK -> RETIRE_UNKNOWN
+        ROUTED -> ROLLBACK_PENDING
+        RETIRING, RETIRE_BLOCKED, ROLLING_BACK -> RETIRE_UNKNOWN
         ROLLBACK_PENDING, RETIRE_UNKNOWN -> phase
         else -> CANDIDATE_BLOCKED
     }
@@ -101,7 +101,7 @@ internal class HolderCandidateDetails {
         )
     }
 
-    private fun candidate(document: JsonObject): CandidateRecord = CandidateRecord(
+    private fun candidate(document: JsonObject): StoredCandidateRecord = StoredCandidateRecord(
         Rpc.str(document, CANDIDATE_SOCKET),
         Rpc.str(document, CANDIDATE_TUPLE),
         Rpc.str(document, CANDIDATE_GENERATION),
@@ -192,7 +192,7 @@ private data class StoredTarget(
     val launch: String?,
 )
 
-private data class CandidateRecord(
+private data class StoredCandidateRecord(
     val socket: String?,
     val tuple: String?,
     val generation: String?,

@@ -30,7 +30,8 @@ class Routes(
 ) {
     private val known = HashMap<String, Route>()
     private val toldRoots = HashSet<String>()
-    internal val replacements = RouteReplacements(known, daemon, timers, clock, changed)
+    private val generations = RouteGenerations(daemon, timers, clock, changed)
+    internal val replacements = RouteReplacements(known, daemon, timers, clock)
 
     fun of(server: String, launch: String): Route = Route(server, launch).let { known.getOrPut(it.key()) { it } }
 
@@ -117,13 +118,9 @@ class Routes(
         }
     }
 
-    /** Older front state lacked generations, so refresh only those retained routes before any link loss needs settlement. */
+    /** Older front state lacked generations, so attest each saved socket without re-resolving its current configuration. */
     fun refreshGenerations() {
-        known.values.filter { it.socket != null && it.generation == null }.forEach { route ->
-            ask(route, "/api/mcp/hub/resolve", clock.now() + RESOLVE_BUDGET) { status, body ->
-                if (status == OK) place(route, body)
-            }
-        }
+        known.values.filter { it.socket != null && it.generation == null }.forEach(generations::refresh)
     }
 
     fun state(): JsonObject =
@@ -185,6 +182,7 @@ internal const val CANDIDATE_TUPLE = "candidate_tuple"
 internal const val CANDIDATE_GENERATION = "candidate_generation"
 internal const val TUPLE = "tuple"
 internal const val GENERATION = "generation"
+internal const val ATTEST = "/api/mcp/hub/attest"
 internal const val REPLACEMENT_START = "/api/mcp/hub/replacement/start"
 internal const val REPLACEMENT_COMMIT = "/api/mcp/hub/replacement/commit"
 internal const val REPLACEMENT_RETIRE = "/api/mcp/hub/replacement/retire"

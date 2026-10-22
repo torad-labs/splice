@@ -23,9 +23,6 @@ data class WireOutstanding(
     val at: Long,
 )
 
-/** A server request is charged to the one holder generation that sent it until an answer or owner-confirmed exit. */
-data class ServerOutstanding(val holder: Holder, val generation: String, val id: JsonElement)
-
 class Relay(
     private val sessions: Map<String, Session>,
     private val routes: Routes,
@@ -33,7 +30,7 @@ class Relay(
     private val changed: () -> Unit,
 ) {
     private val wireOutstanding = HashMap<String, WireOutstanding>()
-    private val fromServer = HashMap<String, ServerOutstanding>()
+    private val fromServer = ServerRequests(changed)
     private var next = 0L
 
     /** Wire ids not yet answered or confirmed lost in either direction. */
@@ -41,11 +38,11 @@ class Relay(
 
     fun inFlight(socket: String?): Int =
         wireOutstanding.values.count { it.holder.socket == socket } +
-            fromServer.values.count { it.holder.socket == socket }
+            fromServer.count(socket)
 
     fun awaitsExit(holder: Holder, generation: String): Boolean =
         wireOutstanding.values.any { it.holder === holder && it.generation == generation } ||
-            fromServer.values.any { it.holder === holder && it.generation == generation }
+            fromServer.awaitsExit(holder, generation)
 
     fun attachedClients(server: String, launch: String): Int =
         wireOutstanding.values.count {
@@ -54,7 +51,7 @@ class Relay(
 
     /** The sockets of holders with a call out: a holder working on a long call is in use, not idle. */
     val busy: Set<String>
-        get() = (wireOutstanding.values.map { it.holder.socket } + fromServer.values.map { it.holder.socket }).toSet()
+        get() = wireOutstanding.values.map { it.holder.socket }.toSet() + fromServer.busy
 
     /** Sends a session's request to [holder] under a front-wide id. The wire id remains until the holder settles it. */
     fun call(holder: Holder, conn: HttpConn, session: Session, msg: JsonObject, id: JsonElement) {
@@ -88,15 +85,7 @@ class Relay(
     }
 
     /** A session's answer to a server's request, sent back under the id the server used. */
-    fun answer(msg: JsonObject, id: JsonElement) {
-        val key = (id as? JsonPrimitive)?.contentOrNull ?: return
-        val asked = fromServer[key] ?: return
-        val link = asked.holder.link
-        if (asked.holder.generation != asked.generation || link == null) return
-        fromServer.remove(key)
-        link.send(Rpc.with(msg, Rpc.ID, asked.id))
-        changed()
-    }
+    fun answer(msg: JsonObject, id: JsonElement) = fromServer.answer(msg, id)
 
     fun fromHolder(holder: Holder, msg: JsonObject) {
         val id = msg[Rpc.ID]
@@ -129,9 +118,7 @@ class Relay(
         wireOutstanding.entries
             .filter { (_, call) -> call.holder === holder && call.generation == generation }
             .forEach { (key, _) -> wireOutstanding.remove(key) }
-        fromServer.entries
-            .filter { (_, call) -> call.holder === holder && call.generation == generation }
-            .forEach { (key, _) -> fromServer.remove(key) }
+        fromServer.exited(holder, generation)
         changed()
     }
 
@@ -139,10 +126,10 @@ class Relay(
      *  the front answers none, as the in-process host does, and tells the daemon, which records it so the next
      *  connection starts its own copy in its own folder (spec step 3). False for a session's own copy, whose one
      *  session is asked. */
-    private fun sharedRoots(holder: Holder, id: JsonElement): Boolean {
+    private fun sharedRoots(holder: Holder, id: JsonElement, key: String): Boolean {
         val route = sessions.values.firstOrNull { it.route.socket == holder.socket }?.route
         if (route != null && !route.shared) return false
-        holder.link?.send(Rpc.result(id, buildJsonObject { put("roots", JsonArray(emptyList())) }))
+        fromServer.reply(key, Rpc.result(id, buildJsonObject { put("roots", JsonArray(emptyList())) }))
         route?.let(routes::rootsAsked)
         return true
     }
@@ -170,20 +157,17 @@ class Relay(
     /** A request from the server to a client (roots, sampling): to the session whose call is newest, else any session
      *  of this holder with a stream open. */
     private fun asks(holder: Holder, msg: JsonObject, id: JsonElement) {
-        if (Rpc.str(msg, Rpc.METHOD) == ROOTS_LIST && sharedRoots(holder, id)) return
+        val key = fromServer.retain(holder, id)
+        if (Rpc.str(msg, Rpc.METHOD) == ROOTS_LIST && sharedRoots(holder, id, key)) return
         val newest = wireOutstanding.values
             .filter { it.session.route.socket == holder.socket && it.session.stream != null }
             .maxByOrNull { it.at }
             ?.session
         val target = newest ?: sessions.values.firstOrNull { it.route.socket == holder.socket && it.stream != null }
         if (target == null) {
-            holder.link?.send(Rpc.error(id, "no client has a stream open"))
+            fromServer.reply(key, Rpc.error(id, "no client has a stream open"))
             return
         }
-        val generation = holder.generation
-            ?: return holder.link?.send(Rpc.error(id, "the holder has no owner-confirmed generation"))
-        val key = "s:${++next}"
-        fromServer[key] = ServerOutstanding(holder, generation, id)
         target.stream?.message(Rpc.with(msg, Rpc.ID, JsonPrimitive(key)))
     }
 

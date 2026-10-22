@@ -71,13 +71,20 @@ internal class HostedServer(
                 val child = process
                 val output = writer
                 when {
-                    child == null || output == null -> null
+                    closed || child == null || output == null -> null
                     expected != null && child !== expected -> null
                     else -> McpWriteTarget(child, output)
                 }
             }
         },
         McpWriteFailure(::transportFailed),
+    )
+    private val serverRequests = HostedServerRequests(
+        spec.name,
+        ServerRequestId(ids::getAndIncrement),
+        codec,
+        sink,
+        send,
     )
 
     @Volatile var lastError: String? = null
@@ -164,6 +171,7 @@ internal class HostedServer(
     /** Permanent: the registry replaced or evicted this server; a spawn racing this call tears down. */
     fun close(reason: String, wait: Boolean = true): Process? {
         synchronized(stateLock) { closed = true }
+        serverRequests.close()
         return tearDown(reason, wait)
     }
 
@@ -180,7 +188,10 @@ internal class HostedServer(
         p?.let {
             log("[mcp-host] ${spec.name}: closing pid ${it.pid()} ($reason)\n")
             it.destroy()
-            if (wait) stops.await(listOf(it))
+            if (wait) {
+                stops.await(listOf(it))
+                send.exited(it)
+            }
         }
         return p
     }
@@ -224,7 +235,10 @@ internal class HostedServer(
                 true
             }
         }
-        if (adopted) return McpResult.Served(p)
+        if (adopted) {
+            p.onExit().thenRun { send.exited(p) }
+            return McpResult.Served(p)
+        }
         return McpResult.Refused("hosted MCP server '${spec.name}' was closed while starting")
     }
 
@@ -319,10 +333,7 @@ internal class HostedServer(
                 val slot = hostId?.let(pending::remove)
                 slot?.answer?.complete(codec.withId(msg, slot.clientId))
             }
-            RpcKind.REQUEST -> {
-                if (codec.method(msg) == "roots/list") sink.onRootsAsked()
-                send(codec.serverReply(msg), expected = child)
-            }
+            RpcKind.REQUEST -> serverRequests.dispatch(child, msg)
             RpcKind.NOTIFICATION -> if (codec.method(msg) == "notifications/progress") {
                 // A missing owner is late or unknown progress, never a global notification.
                 progress.owner(msg, pending)?.let { (slot, routed) -> sink.onProgress(slot.sessionId, routed) }

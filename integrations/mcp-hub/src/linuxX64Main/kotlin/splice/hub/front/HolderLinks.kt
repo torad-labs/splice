@@ -174,7 +174,7 @@ internal class HolderLinks(
         }
         val old = replacements.links.old(holder, generation)
         if (old != null) {
-            if (old.phase !in setOf(RETIRING, RETIRE_BLOCKED)) {
+            if (old.phase !in setOf(RETIRING, RETIRE_BLOCKED, RETIRE_UNKNOWN)) {
                 old.phase = OLD_HOLDER_LOST
                 old.blocker = "the old holder link closed; its process outcome is unknown"
             }

@@ -227,10 +227,10 @@ not taken as a running front. It answers whether the hub serves, not what the op
 would point a session at a dead hub whenever sharing is on, and McpShareChoice read here would plan per-session copies \
 while the hub serves."""
 
-# ── 11 names, () -> Long (TWO MORE ARE DUPLICATES AND ARE NOT LISTED) ─────────────────────────────
+# ── 13 names, () -> Long (TWO MORE ARE DUPLICATES AND ARE NOT LISTED) ─────────────────────────────
 [[groups]]
 signature = "()->Long"
-dated = "2026-09-17"
+dated = "2026-10-21"
 names = [
     "ElapsedClock",
     "HeadPerfSkipSource",
@@ -241,6 +241,7 @@ names = [
     "QuotaIntervalMs",
     "RemainingTurnWait",
     "RequestReadBudgetMs",
+    "ServerRequestId",
     "WallClock",
     "WriteBoundMs",
     "WsPathPulse",
@@ -287,7 +288,7 @@ ceilings is expected it would give that operation five minutes to finish by defa
 would poll the provider's usage endpoint as often as one request is allowed to take, which is the hammering \
 ConfigCoercion's floor exists to prevent. \
 IngressReadIdleMs (Oct 11) is the third CONFIGURED CEILING in milliseconds, and the one that sits between the two: how long the control listener lets a request body go SILENT after its headers before it closes the connection, re-armed at every chunk so a PATCH of ingressReadIdleMs bounds the next one. It is not RequestReadBudgetMs, which bounds how long a head spends reading one whole body, and it is not WriteBoundMs, which bounds splice's own write outward: this one is a gap between two chunks, so a slow upload that keeps sending is never cut by it. \
-DELIBERATELY ABSENT: ElapsedNow (upstream/RuntimeSeams.kt:40) is ElapsedClock's role in a \
+ServerRequestId (added 2026-10-21) allocates the numeric identifier passed to the hosted child's reply writer for each reverse request; it identifies an exchange, not a time or budget, so a clock-shaped substitute would silently change the protocol identifier. DELIBERATELY ABSENT: ElapsedNow (upstream/RuntimeSeams.kt:40) is ElapsedClock's role in a \
 second module, and AccountNow (upstream/credentials/AccountSelection.kt:22) is WallClock's. Both are red \
 by name until the fix row reconciles them; listing them here would be a lie that closes the wall."""
 
@@ -492,17 +493,18 @@ model a later Continue on move put it on, from the daemon's own perf rows and mo
 compares against its menu and keeps as a move's "from" model. Served by HeadOfSession it would put a head \
 key where a model id is compared, and the menu would offer back the very model the session is on."""
 
-# ── 3 names, () -> T ──────────────────────────────────────────────────────────────────────────────
+# ── 5 names, () -> T ──────────────────────────────────────────────────────────────────────────────
 [[groups]]
 signature = "()->#1"
-dated = "2026-10-05"
+dated = "2026-10-21"
 names = [
     "DayDirectoryAction",
+    "HubLifecycleAction",
     "RawBlock",
     "StoreEdit",
     "NativeCodexMcpBlockingOperation",
 ]
-reason = """RawBlock is "the work done while the terminal is in raw mode — run exactly once, raw or not"; it is the BODY the raw-mode bracket wraps, and the bracket's own ShutdownHookAdd / ShutdownHookRemove pair is what guarantees the restore. StoreEdit is "one read-modify-write of `keys.toml`, performed while the sibling `.lock` is held", and its KDoc is explicit that the type IS the boundary of the lost-update fix rather than a formatting of braces: a `set` that read outside the section and wrote inside it would still lose an update. It is also `private`, because the lock is KeyStore's own and nothing outside that file may claim to run under it. DayDirectoryAction is "one operation under the directory-wide day mutation fence", held before a head's lock through body admission, eviction and index publication. Confusing it with a store edit would allow cross-head eviction between a trace body's append and its metadata publication. The three scoped bodies protect a TTY, one key store and the shared trace directory, respectively. NativeCodexMcpBlockingOperation wraps a Codex RPC process-stream read or write dispatched to the RPC I/O worker; its role is transport I/O, not a shared-file mutation fence."""
+reason = """RawBlock is "the work done while the terminal is in raw mode — run exactly once, raw or not"; it is the BODY the raw-mode bracket wraps, and the bracket's own ShutdownHookAdd / ShutdownHookRemove pair is what guarantees the restore. StoreEdit is "one read-modify-write of `keys.toml`, performed while the sibling `.lock` is held", and its KDoc is explicit that the type IS the boundary of the lost-update fix rather than a formatting of braces: a `set` that read outside the section and wrote inside it would still lose an update. It is also `private`, because the lock is KeyStore's own and nothing outside that file may claim to run under it. DayDirectoryAction is "one operation under the directory-wide day mutation fence", held before a head's lock through body admission, eviction and index publication. Confusing it with a store edit would allow cross-head eviction between a trace body's append and its metadata publication. The three scoped bodies protect a TTY, one key store and the shared trace directory, respectively. NativeCodexMcpBlockingOperation wraps a Codex RPC process-stream read or write dispatched to the RPC I/O worker; its role is transport I/O, not a shared-file mutation fence. HubLifecycleAction runs one holder start or cleanup action while that socket's lifecycle lock is held; its scope is one generation-specific holder, not a directory-wide trace mutation, key-store edit, TTY bracket or RPC worker."""
 
 # ── 3 names, () -> String? ────────────────────────────────────────────────────────────────────────
 [[groups]]

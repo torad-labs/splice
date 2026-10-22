@@ -78,6 +78,7 @@ store = false
 account_id_header = true
 cache_key = "first-message-hash"
 summary_field = true
+# retired: effort_ceiling — each Responses provider applies its verified model ceiling; the generic setting could not enforce one
 # RETIRED — compact_effort is not a knob any more, and setting it FAILS AT LOAD. A compaction is
 # built exactly like a turn and inherits the session's model and effort: any pin moves the
 # reasoning off the session's, and the backend's prompt cache then misses the whole transcript on

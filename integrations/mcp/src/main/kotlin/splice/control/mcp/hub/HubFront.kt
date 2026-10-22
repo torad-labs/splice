@@ -78,38 +78,17 @@ private class HubDrainChecks {
 private class HubFrontReports {
     private val drains = HubDrainChecks()
     private val exchanges = HubOutstandingReads()
+    private val routeReads = HubFrontRoutes()
 
     fun report(saved: JsonObject): HubReport? {
         if (!drains.readable(saved)) return null
         val outstanding = exchanges.read(saved) ?: return null
-        return routes(saved)?.let { routes ->
+        return routeReads.read(saved)?.let { routes ->
             bindings(saved)?.let { bindings ->
                 HubReport(routes, bindings, draining(saved), claims(saved), lastCalls(saved), outstanding)
             }
         }
     }
-
-    private fun routes(saved: JsonObject): List<HubRoute>? =
-        (saved[HubFields.ROUTES] as? JsonObject)?.values?.map(::route)
-            ?.takeUnless { routes -> routes.any { it == null } }
-            ?.filterNotNull()
-
-    private fun route(value: kotlinx.serialization.json.JsonElement): HubRoute? =
-        (value as? JsonObject)?.let { saved ->
-            val server = JsonScalars.str(saved, HubFields.SERVER)
-            val socket = JsonScalars.str(saved, HubFields.SOCKET)
-            if (server != null && socket != null) {
-                HubRoute(
-                    server,
-                    JsonScalars.str(saved, HubFields.LAUNCH).orEmpty(),
-                    socket,
-                    JsonScalars.str(saved, HubFields.SHARED) != "false",
-                    JsonScalars.str(saved, HubFields.GENERATION),
-                )
-            } else {
-                null
-            }
-        }
 
     private fun bindings(saved: JsonObject): List<HubBinding>? {
         val routes = saved[HubFields.ROUTES] as? JsonObject ?: return null

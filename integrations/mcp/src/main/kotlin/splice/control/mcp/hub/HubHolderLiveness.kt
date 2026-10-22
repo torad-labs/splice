@@ -114,7 +114,6 @@ private class HubHolderOwnership(
                 owner.holderStartedAt,
             ) &&
             proof.inScope(owner.holderPid, owner.scope) &&
-            proof.inScope(owner.childPid, owner.scope) &&
             scope.running(owner.scope)
 
     fun unrecorded(record: HubHolderRecord): HubHolderOwner? =

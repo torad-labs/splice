@@ -11,6 +11,7 @@ internal class HolderLinkRecovery(
     private val persistence: HolderPersistence,
     memory: HolderMemory,
     proof: HolderProof,
+    markExited: (Holder, String) -> HolderExitMark,
 ) {
     private val handshakes = HolderHandshakeFlow(context, replacements, persistence, memory, proof)
     private val loss =
@@ -20,6 +21,7 @@ internal class HolderLinkRecovery(
             persistence,
             ::reconnect,
             Holder::cancelReverseResponseRetry,
+            markExited,
         )
     private val connections = HolderConnections(
         context.connections,
@@ -237,12 +239,34 @@ internal class HolderLinkBinding(
     }
 }
 
+internal enum class HolderExitMark { MARKED, REPLACED, PERSISTENCE_FAILED }
+
+/** Persists an exact daemon exit only for the holder object and generation still in this front registry. */
+internal class HolderExitMarks(
+    private val known: Map<String, Holder>,
+    private val persistence: HolderPersistence,
+) {
+    fun mark(holder: Holder, generation: String): HolderExitMark {
+        if (known[holder.socket] !== holder || holder.generation != generation) return HolderExitMark.REPLACED
+        if (holder.exitConfirmedGeneration == generation) return HolderExitMark.MARKED
+        val prior = holder.exitConfirmedGeneration
+        holder.exitConfirmedGeneration = generation
+        return if (persistence.checkpoint()) {
+            HolderExitMark.MARKED
+        } else {
+            holder.exitConfirmedGeneration = prior
+            HolderExitMark.PERSISTENCE_FAILED
+        }
+    }
+}
+
 internal class HolderLinkLoss(
     private val context: HolderLinkContext,
     private val replacements: HolderReplacements,
     private val persistence: HolderPersistence,
     private val reconnect: (Holder, String) -> Boolean,
     private val cancelReverseResponseRetry: (Holder) -> Unit,
+    private val markExited: (Holder, String) -> HolderExitMark,
 ) {
     var stopping = false
 
@@ -275,16 +299,31 @@ internal class HolderLinkLoss(
                 holder.socket,
                 exact,
                 {
-                    settlementPending(holder, exact).also { pending ->
-                        if (pending) reconnect(holder, exact)
+                    exitPending(holder, exact).also { pending ->
+                        if (pending && settlementPending(holder, exact)) reconnect(holder, exact)
                     }
                 },
             ) {
-                context.relay.exited(holder, exact)
-                replacements.retirements.oldExited(holder.socket, exact)
+                when (markExited(holder, exact)) {
+                    HolderExitMark.MARKED,
+                    HolderExitMark.REPLACED,
+                    -> {
+                        context.relay.exited(holder, exact)
+                        replacements.retirements.oldExited(holder.socket, exact)
+                    }
+                    HolderExitMark.PERSISTENCE_FAILED -> retryExit(holder, exact)
+                }
             }
         }
     }
+
+    private fun retryExit(holder: Holder, generation: String) {
+        context.timers.at(context.clock.now() + EXIT_RETRY) { confirmed(holder, generation) }
+    }
+
+    /** A disconnected exact generation stays under exit probing, but a reconnected or replaced holder stops the probe. */
+    private fun exitPending(holder: Holder, generation: String): Boolean =
+        holder.generation == generation && holder.link == null
 
     private fun settlementPending(holder: Holder, generation: String): Boolean =
         context.relay.awaitsExit(holder, generation) ||

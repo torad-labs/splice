@@ -17,6 +17,7 @@ internal data class McpWrite(
 ) {
     var encoded: String? = null
     val completed = CompletableDeferred<Boolean>()
+    var terminal = false
     var deadline: ScheduledFuture<*>? = null
 }
 
@@ -32,6 +33,11 @@ internal fun interface McpWriteRejected {
     operator fun invoke(delivery: McpWrite)
 }
 
+/** Publishes a wire outcome that became unknown after this write entered the bounded executor. */
+internal fun interface McpWriteFailed {
+    operator fun invoke(delivery: McpWrite, reason: String): Boolean
+}
+
 internal fun interface McpWriteAvailable {
     operator fun invoke()
 }
@@ -41,7 +47,7 @@ internal class McpWriteQueue(
     name: String,
     private val permitted: McpWritePermitted,
     private val resolved: McpWriteResolved,
-    private val failures: McpWriteFailures,
+    private val failed: McpWriteFailed,
     private val rejected: McpWriteRejected,
     private val available: McpWriteAvailable,
 ) {
@@ -76,9 +82,7 @@ internal class McpWriteQueue(
         try {
             resolved(delivery, writeToPipe(delivery))
         } catch (failure: IOException) {
-            if (resolved(delivery, false)) {
-                failures.report(delivery.target.child, "write failed: ${failure.message}")
-            }
+            failed(delivery, "write failed: ${failure.message}")
         } finally {
             available()
         }

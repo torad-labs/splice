@@ -13,7 +13,7 @@ internal fun interface McpWriteExpired {
     operator fun invoke()
 }
 
-/** Owns deadline and failure work, so pipe callers never execute terminal teardown inline. */
+/** Schedules deadlines and drains failure work after its owner synchronously fenced the exact transport. */
 internal class McpWriteFailures(name: String, private val failed: McpWriteFailure) {
     private val pending = Collections.newSetFromMap(IdentityHashMap<Process, Boolean>())
     private val executor = ScheduledThreadPoolExecutor(1) { task ->
@@ -35,18 +35,28 @@ internal class McpWriteFailures(name: String, private val failed: McpWriteFailur
         null
     }
 
-    fun report(child: Process, reason: String) {
-        if (!synchronized(pending) { pending.add(child) }) return
+    /** Fence and publish first. A second accepted failure waits for that publication, then shares its drain. */
+    fun publish(child: Process, reason: String): Boolean {
+        val drain = synchronized(pending) {
+            if (!pending.add(child)) {
+                null
+            } else {
+                failed(child, reason).also { published ->
+                    if (published == null) pending.remove(child)
+                }
+            }
+        } ?: return false
         try {
-            executor.execute { dispatch(child, reason) }
+            executor.execute { dispatch(child, drain) }
         } catch (_: RejectedExecutionException) {
             synchronized(pending) { pending.remove(child) }
         }
+        return true
     }
 
-    private fun dispatch(child: Process, reason: String) {
+    private fun dispatch(child: Process, drain: McpWriteFailureDrain) {
         try {
-            failed(child, reason)
+            drain()
         } finally {
             synchronized(pending) { pending.remove(child) }
         }

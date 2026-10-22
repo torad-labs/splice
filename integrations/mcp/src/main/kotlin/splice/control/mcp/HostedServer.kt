@@ -82,7 +82,7 @@ internal class HostedServer(
                 }
             }
         },
-        McpWriteFailure { child, reason -> transportFailures.failed(child, reason) },
+        McpWriteFailure { child, reason -> transportFailures.publish(child, reason) },
     )
     private val transportFailures: HostedServerLifecycle.TransportFailure = HostedServerLifecycle.TransportFailure(
         HostedServerLifecycle.TransportRuntime(spec.name, send, stops, runtime.reaped, log),

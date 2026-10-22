@@ -11,7 +11,8 @@ internal class HolderLinks(
 ) {
     private val proof = HolderProof(context.routes)
     private val memory = HolderMemory(known, context.clock, proof)
-    private val recovery = HolderLinkRecovery(context, known, replacements, persistence, memory, proof)
+    private val exits = HolderExitMarks(known, persistence)
+    private val recovery = HolderLinkRecovery(context, known, replacements, persistence, memory, proof, exits::mark)
 
     var stopping: Boolean
         get() = recovery.stopping
@@ -27,6 +28,9 @@ internal class HolderLinks(
     fun reconnect(holder: Holder, generation: String): Boolean = recovery.reconnect(holder, generation)
 
     fun of(route: Route): Holder? = route.socket?.let(known::get)
+
+    /** Records a daemon-confirmed exit only while this registry still owns the captured exact generation. */
+    fun markExited(holder: Holder, generation: String): HolderExitMark = exits.mark(holder, generation)
 
     fun adopt(fd: Int, socket: String, saved: ByteArray) {
         recovery.adopt(fd, socket, saved)

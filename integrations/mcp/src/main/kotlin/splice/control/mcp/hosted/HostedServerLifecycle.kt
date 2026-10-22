@@ -10,6 +10,7 @@ import splice.control.mcp.McpProcessGeneration
 import splice.control.mcp.McpProcessLauncher
 import splice.control.mcp.McpProcessStop
 import splice.control.mcp.McpReplacementFence
+import splice.control.mcp.McpWriteFailureDrain
 import splice.control.mcp.McpWriteTarget
 import splice.core.util.LogSafe
 import splice.core.util.LogSink
@@ -116,15 +117,24 @@ internal class HostedServerLifecycle(private val host: HostedServer) {
         val description: FailureDescription,
     )
 
-    /** Owns bounded failure retirement without making the server's request entry point branch on process state. */
+    /** Publishes retirement before a failed write wakes, then drains its exact generation asynchronously. */
     internal class TransportFailure(
         private val runtime: TransportRuntime,
         private val actions: TransportActions,
     ) {
-        fun failed(child: Process, reason: String) {
-            val retired = actions.retire.retire(child, reason) ?: return
+        fun publish(child: Process, reason: String): McpWriteFailureDrain? {
+            val retired = actions.retire.retire(child, reason) ?: return null
             runtime.send.retire(retired.target)
             actions.failPending.fail("hosted MCP transport failed; operation outcome unknown, not replayed")
+            return McpWriteFailureDrain { drain(child, retired) }
+        }
+
+        /** The child pump has no accepted stdin waiter, so it may run its own published drain here. */
+        fun failed(child: Process, reason: String) {
+            publish(child, reason)?.invoke()
+        }
+
+        private fun drain(child: Process, retired: RetiredChild) {
             runtime.stops.stopGenerations(listOf(retired.generation))
             val reaped = runtime.reaped(child)
             val exactExit = reaped && !runtime.stops.retains(retired.generation)

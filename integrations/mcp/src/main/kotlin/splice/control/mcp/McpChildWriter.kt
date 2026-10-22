@@ -38,8 +38,14 @@ internal fun interface McpWriteTargetSource {
     operator fun invoke(expected: Process?): McpWriteTarget?
 }
 
+/** Publishes one exact transport failure before its accepted write wakes, and returns its asynchronous reaper. */
 internal fun interface McpWriteFailure {
-    operator fun invoke(child: Process, reason: String)
+    operator fun invoke(child: Process, reason: String): McpWriteFailureDrain?
+}
+
+/** Stops and reaps a failure that was already synchronously fenced and published. */
+internal fun interface McpWriteFailureDrain {
+    operator fun invoke()
 }
 
 internal fun interface McpFenceHeld {
@@ -195,6 +201,11 @@ private class McpWriteAdmission<L : Any>(
         }
     }
 
+    /** Claims one terminal result while holding the same accounting lock that owns its retained bytes. */
+    fun claimTerminal(delivery: McpWrite): Boolean = synchronized(lock) {
+        if (delivery.terminal) false else true.also { delivery.terminal = true }
+    }
+
     /** The caller holds [lock], so release stays atomic with terminal request cleanup. */
     fun release(delivery: McpWrite) {
         inFlight.remove(delivery)
@@ -242,13 +253,13 @@ internal class McpChildWriter(
         failures,
     )
     private val permitted = McpWritePermitted { delivery ->
-        synchronized(accountingLock) { !delivery.completed.isCompleted && accepting(delivery.target) }
+        synchronized(accountingLock) { !delivery.terminal && accepting(delivery.target) }
     }
     private val writes = McpWriteQueue(
         name,
         permitted,
         McpWriteResolved(::resolve),
-        failures,
+        McpWriteFailed(::failedAccepted),
         McpWriteRejected { delivery -> resolve(delivery, delivered = false, unqueued = true) },
         McpWriteAvailable(reverseReplies::retry),
     )
@@ -377,36 +388,42 @@ internal class McpChildWriter(
         if (!writes.offer(delivery)) return false
         val deadline = failures.schedule(
             budget,
-            McpWriteExpired {
-                if (resolve(delivery, false)) {
-                    failures.report(delivery.target.child, "write deadline exceeded")
-                }
-            },
+            McpWriteExpired { failedAccepted(delivery, "write deadline exceeded") },
         )
         if (deadline == null) {
-            if (resolve(delivery, false)) {
-                failures.report(delivery.target.child, "writer closed before delivery")
-            }
+            failedAccepted(delivery, "writer closed before delivery")
         } else {
             synchronized(accountingLock) {
                 delivery.deadline = deadline
-                if (delivery.completed.isCompleted) deadline.cancel(false)
+                if (delivery.terminal) deadline.cancel(false)
             }
         }
         return true
     }
 
+    /** An accepted write whose wire outcome is unknown fences the host before its waiter may resume. */
+    private fun failedAccepted(write: McpWrite, reason: String): Boolean {
+        if (!admission.claimTerminal(write)) return false
+        failures.publish(write.target.child, reason)
+        finish(write, delivered = false)
+        return true
+    }
+
     /** An unqueued executor refusal releases only work that never reached the child. */
     private fun resolve(write: McpWrite, delivered: Boolean, unqueued: Boolean = false): Boolean {
-        val completed = write.completed.complete(delivered)
+        if (!claimTerminal(write)) return false
+        finish(write, delivered, unqueued)
+        return true
+    }
+
+    /** Accounting is released before its waiter wakes. Unknown request charges remain until settlement or exact exit. */
+    private fun finish(write: McpWrite, delivered: Boolean, unqueued: Boolean = false) {
         synchronized(accountingLock) {
-            if (completed) {
-                write.deadline?.cancel(false)
-                admission.release(write)
-                if (unqueued) write.requestId?.let(requests::remove)
-            }
+            write.deadline?.cancel(false)
+            admission.release(write)
+            if (unqueued) write.requestId?.let(requests::remove)
             if (delivered) write.serverRequestId?.let(serverRequests::remove)
         }
-        return completed
+        write.completed.complete(delivered)
     }
 }

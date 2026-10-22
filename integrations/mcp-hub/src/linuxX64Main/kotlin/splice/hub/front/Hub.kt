@@ -94,8 +94,17 @@ class Hub(
                     }
                 },
             ) {
-                relay.exited(holder, generation)
-                holders.replacements.retirements.oldExited(holder.socket, generation)
+                when (holders.links.markExited(holder, generation)) {
+                    HolderExitMark.MARKED,
+                    HolderExitMark.REPLACED,
+                    -> {
+                        relay.exited(holder, generation)
+                        holders.replacements.retirements.oldExited(holder.socket, generation)
+                    }
+                    HolderExitMark.PERSISTENCE_FAILED -> {
+                        timers.at(clock.now() + EXIT_RETRY, ::reconcile)
+                    }
+                }
             }
         }
         replacements.reconcile()

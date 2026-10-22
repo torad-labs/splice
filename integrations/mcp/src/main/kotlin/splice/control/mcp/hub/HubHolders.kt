@@ -100,7 +100,7 @@ internal class HubHolders(
             } else if (holder.liveness.attest(request.oldSocket, request.oldGeneration) == null) {
                 McpResult.Refused("the old holder is not the daemon owner's exact live generation")
             } else {
-                pins.acquire(request, claims)?.let(::McpResult.Served)
+                pins.acquire(request, claims)?.let { McpResult.Served(it) }
                     ?: McpResult.Refused("the front drain ownership claim was not persisted")
             }
         }

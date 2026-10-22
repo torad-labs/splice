@@ -116,14 +116,14 @@ internal class HubDrainPins(dir: Path) {
                 read.pin.state != PIN_PENDING || !held(read.pin, claims, System.currentTimeMillis()) -> false
                 else -> write(read.pin.copy(state = PIN_ACTIVE))
             }
-            else -> false
+            PinRead.Unreadable, PinRead.Missing -> false
         }
     }
 
     fun release(request: HubDrainPinRequest, claim: String): Boolean = lock.withLock {
         when (val read = snapshot.read(file(request))) {
             is PinRead.Present -> releaseStored(read.pin, request, claim)
-            else -> false
+            PinRead.Unreadable, PinRead.Missing -> false
         }
     }
 

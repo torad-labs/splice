@@ -218,7 +218,7 @@ private class HostedServerDispatch(
 
     private fun response(msg: JsonObject) {
         val hostId = JsonScalars.str(msg["id"])?.toLongOrNull()
-        hostId?.let(runtime.writer::settled)
+        hostId?.let(runtime.writer.settled::invoke)
         val slot = hostId?.let(pending::remove)
         slot?.answer?.complete(runtime.codec.withId(msg, slot.clientId))
     }
@@ -472,7 +472,7 @@ internal class HostedServer(
     @Volatile private var initResult: JsonObject? = null
 
     private val tools = ToolsListCache(codec)
-    private val send = McpChildWriter(
+    private val send: McpChildWriter = McpChildWriter(
         spec.name,
         codec,
         McpWriteTargetSource { expected ->
@@ -489,7 +489,7 @@ internal class HostedServer(
         },
         McpWriteFailure { child, reason -> transportFailures.failed(child, reason) },
     )
-    private val transportFailures = HostedTransportFailure(
+    private val transportFailures: HostedTransportFailure = HostedTransportFailure(
         HostedTransportRuntime(spec.name, send, stops, runtime.reaped, history, log),
         HostedTransportActions(
             HostedFailureRetirement { child, reason ->

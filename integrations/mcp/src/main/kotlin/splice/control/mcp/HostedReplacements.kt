@@ -45,7 +45,7 @@ private class ReplacementAttempt(
             is McpResult.Refused -> started
             is McpResult.Served -> {
                 currentCoroutineContext().ensureActive()
-                accept(plan, next, started.value)
+                accept.accept(plan, next, started.value)
             }
         }
 

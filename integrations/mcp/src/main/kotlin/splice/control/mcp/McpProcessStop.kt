@@ -11,36 +11,73 @@ import java.util.concurrent.TimeoutException
 private const val DESTROY_GRACE_MS = 2_000L
 private const val CONTAINMENT_LOOKUP_MS = 1_000L
 
-/** Resolves launch ownership again while systemd registers a generated scope after its root started. */
-internal fun interface McpProcessContainmentSource {
-    fun resolve(): McpProcessContainment?
+/** Keeps a known uncontained launch distinct from a scope that could not be read. */
+internal sealed class McpProcessContainmentState {
+    data class Present(val containment: McpProcessContainment) : McpProcessContainmentState()
+
+    object Absent : McpProcessContainmentState()
+
+    object Unknown : McpProcessContainmentState()
 }
 
-/** The child and its cgroup at launch, so reparented workers stay owned by this exact generation. */
+/** Resolves launch ownership again while systemd registers a generated scope after its root started. */
+internal fun interface McpProcessContainmentSource {
+    fun resolve(): McpProcessContainmentState
+}
+
+/** The child, launch-time root identity and cgroup evidence that keep reparented workers in this generation. */
 internal class McpProcessGeneration(
     val process: Process,
     private val containment: McpProcessContainmentSource?,
+    private val root: ProcessHandle = process.toHandle(),
 ) {
+    private val containmentLock = Any()
+    private var capturedContainment: McpProcessContainmentState? = null
+
     fun handles(): List<ProcessHandle> {
-        val root = process.toHandle()
-        return (root.descendants().toList() + containment?.resolve()?.members().orEmpty() + root).distinct()
+        val members = when (val state = containmentState()) {
+            is McpProcessContainmentState.Present -> state.containment.members().orEmpty()
+            McpProcessContainmentState.Absent,
+            McpProcessContainmentState.Unknown,
+            -> emptyList()
+        }
+        return (root.descendants().toList() + members + root).distinct()
     }
 
-    /** A scope proves every member stopped. Without one, only the root's exit permits recovery. */
+    /** Only known empty containment proves this generation exited once its root is dead. */
     fun unresolved(): Boolean {
-        val members = containment?.resolve()?.members()
-        return members?.any(ProcessHandle::isAlive) ?: process.isAlive
+        if (root.isAlive) return true
+        return when (val state = containmentState()) {
+            is McpProcessContainmentState.Present -> state.containment.members()?.any(ProcessHandle::isAlive) ?: true
+            McpProcessContainmentState.Absent -> false
+            McpProcessContainmentState.Unknown -> true
+        }
     }
+
+    private fun containmentState(): McpProcessContainmentState = synchronized(containmentLock) {
+        capturedContainment ?: resolveContainment().also { state ->
+            if (state !== McpProcessContainmentState.Unknown) capturedContainment = state
+        }
+    }
+
+    private fun resolveContainment(): McpProcessContainmentState =
+        containment?.resolve() ?: McpProcessContainmentState.Absent
 }
 
 /** A unique cgroup is the process-generation identity; a failed read never proves its members are gone. */
 internal class McpProcessContainment(private val directory: Path) {
     fun members(): List<ProcessHandle>? = try {
-        Files.readAllLines(directory.resolve("cgroup.procs"))
-            .mapNotNull { it.toLongOrNull()?.let(ProcessHandle::of)?.orElse(null) }
+        val ids = Files.readAllLines(directory.resolve("cgroup.procs")).map { it.toLongOrNull() }
+        if (ids.any { it == null }) {
+            null
+        } else {
+            ids.mapNotNull { it?.let(ProcessHandle::of)?.orElse(null) }
+        }
     } catch (_: NoSuchFileException) {
         emptyList()
     } catch (_: IOException) {
+        null
+    } catch (_: SecurityException) {
         null
     }
 }
@@ -54,9 +91,15 @@ internal class McpProcessStop {
     private val ownershipLock = Any()
     private val unresolved = mutableSetOf<McpProcessGeneration>()
 
-    /** Carries a generated unit until systemd exposes its ControlGroup, rather than losing ownership on one early read. */
-    fun capture(process: Process, unit: String? = null): McpProcessGeneration =
-        McpProcessGeneration(process, McpProcessContainmentSource { containment(process.toHandle(), unit) })
+    /** Carries the launch-time root and generated scope until systemd exposes their exact cgroup. */
+    fun capture(process: Process, unit: String? = null): McpProcessGeneration {
+        val root = process.toHandle()
+        return McpProcessGeneration(
+            process,
+            McpProcessContainmentSource { containment(root, unit) },
+            root,
+        )
+    }
 
     /** Stops a fresh list only where no earlier generation capture exists. */
     fun stop(processes: List<Process>) {
@@ -103,10 +146,18 @@ internal class McpProcessStop {
         if (waits.any(McpStopWait::interrupted)) Thread.currentThread().interrupt()
     }
 
-    private fun containment(process: ProcessHandle, unit: String?): McpProcessContainment? {
-        val child = unit?.let(::scope)?.takeIf(String::isNotBlank) ?: cgroup(process.pid()) ?: return null
-        if (child == cgroup(ProcessHandle.current().pid())) return null
-        return McpProcessContainment(Path.of("/sys/fs/cgroup").resolve(child.removePrefix("/")))
+    private fun containment(process: ProcessHandle, unit: String?): McpProcessContainmentState {
+        val child = (if (unit == null) cgroup(process.pid()) else scope(unit))
+            ?.takeIf(String::isNotBlank)
+            ?: return McpProcessContainmentState.Unknown
+        val host = cgroup(ProcessHandle.current().pid()) ?: return McpProcessContainmentState.Unknown
+        return if (child == host) {
+            if (unit == null) McpProcessContainmentState.Absent else McpProcessContainmentState.Unknown
+        } else {
+            McpProcessContainmentState.Present(
+                McpProcessContainment(Path.of("/sys/fs/cgroup").resolve(child.removePrefix("/"))),
+            )
+        }
     }
 
     /** A launch-created scope names the cgroup even when its root already reparented a stdin-owning worker. */

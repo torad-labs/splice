@@ -58,7 +58,7 @@ public class HubUnits(private val unitDir: Path, private val record: Path, priva
             return
         }
         if (systemctl(ENABLE) != null) {
-            output.line("splice: turned the MCP hub on (enabled and started $SOCKET)")
+            output.line("splice: turned the MCP hub on (enabled and started $FRONT_SOCKET_UNIT)")
         } else {
             output.line("splice: the MCP hub's socket did not start; run: $ENABLE_LINE")
         }
@@ -159,9 +159,9 @@ private const val LOAD_STATE_NOT_FOUND = "not-found"
 // why: the bound on one systemctl --user call; a call still running past it is killed and reads as no answer.
 private const val TIMEOUT_MS = 15_000L
 
-private const val SOCKET = "splice-mcp-front.socket"
-private val ENABLE = listOf("enable", "--now", SOCKET)
-private const val ENABLE_LINE = "systemctl --user enable --now $SOCKET"
+private const val FRONT_SOCKET_UNIT = "splice-mcp-front.socket"
+private val ENABLE = listOf("enable", "--now", FRONT_SOCKET_UNIT)
+private const val ENABLE_LINE = "systemctl --user enable --now $FRONT_SOCKET_UNIT"
 private const val SERVICE = "splice-mcp-front.service"
 private val LOAD_STATE = listOf("show", "-p", "LoadState", "--value")
 private const val RELOAD_LINE = "systemctl --user reload $SERVICE"

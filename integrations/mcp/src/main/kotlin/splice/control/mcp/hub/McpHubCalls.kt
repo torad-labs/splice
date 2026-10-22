@@ -1,6 +1,4 @@
-// NEW: MCP hub item 6 — the hub's three calls and its sweep, as the routes and the host reach them, so a machine the
-// hub cannot run on answers each call in words instead of missing the routes (splice-config's hub-or-fallback check,
-// Oct 12). McpHub serves them; McpHubOff answers every call 503 with the reason the check gave, and sweeps nothing.
+// MCP hub calls stay available when the machine falls back to in-process hosting.
 package splice.control.mcp.hub
 
 import kotlinx.serialization.json.buildJsonObject
@@ -8,7 +6,7 @@ import kotlinx.serialization.json.put
 import splice.core.util.JsonWire
 import splice.core.wire.HttpStatus
 
-public interface McpHubCalls {
+public interface HubRequestCalls {
     /** `POST /api/mcp/hub/resolve`. */
     public fun resolve(body: String): McpHubReply
 
@@ -23,7 +21,9 @@ public interface McpHubCalls {
 
     /** `POST /api/mcp/hub/roots`: a shared server asked its client for roots. */
     public fun roots(body: String): McpHubReply
+}
 
+public interface HubReplacementCalls {
     /** `POST /api/mcp/hub/replacement/start`: starts the current configured tuple beside a retained holder. */
     public suspend fun replacementStart(body: String): McpHubReply
 
@@ -39,42 +39,77 @@ public interface McpHubCalls {
     /** `POST /api/mcp/hub/replacement/exit`: confirms exactly one holder generation exited before relay ids settle. */
     public fun replacementExit(body: String): McpHubReply
 
+    /** `POST /api/mcp/hub/replacement/pin/acquire`: durably excludes an exact old generation before front checkpoint. */
+    public fun replacementPinAcquire(body: String): McpHubReply
+
+    /** `POST /api/mcp/hub/replacement/pin/confirm`: binds a persisted front drain to its exact owner claim. */
+    public fun replacementPinConfirm(body: String): McpHubReply
+
+    /** `POST /api/mcp/hub/replacement/pin/release`: idempotently settles an exact persisted owner claim. */
+    public fun replacementPinRelease(body: String): McpHubReply
+}
+
+public interface HubMaintenanceCalls {
     /** The host's idle sweep, at [now], with the MCP idle limit [idleMs]. */
     public fun sweep(now: Long, idleMs: Long)
 
-    /** Each hub-served server, by the name its holder's record writes, to the launch ids (Claude Code pids) of the
-     *  sessions the front has bound to its holders, shared and per-session alike. Empty when the front saved nothing
-     *  readable (splice-usage's ask for §8's ownership visible per session, Oct 13). */
+    /** Each hub-served server, by the name its holder's record writes, to the launch ids of front-bound sessions. */
     public fun attached(): Map<String, Set<String>>
 }
 
-/** The hub on a machine it cannot run on: the daemon keeps hosting MCP in process, and the front is told why. */
-public class McpHubOff(reason: String) : McpHubCalls {
-    private val reply = McpHubReply(
+public interface McpHubCalls : HubRequestCalls, HubReplacementCalls, HubMaintenanceCalls
+
+/** The hub on a machine it cannot run on: the daemon keeps hosting MCP in process. */
+public class McpHubOff(reason: String) : McpHubCalls by HubOffCalls(reason)
+
+private class HubOffCalls(reason: String) :
+    McpHubCalls,
+    HubRequestCalls by HubOffRequests(reason),
+    HubReplacementCalls by HubOffReplacements(reason),
+    HubMaintenanceCalls by HubOffMaintenance
+
+private class HubOffReply(reason: String) {
+    val reply = McpHubReply(
         HttpStatus.SERVICE_UNAVAILABLE,
         JsonWire.string(buildJsonObject { put("error", "the MCP hub is off on this machine: $reason") }),
     )
+}
 
-    override fun resolve(body: String): McpHubReply = reply
+private class HubOffRequests(reason: String) : HubRequestCalls {
+    private val unavailable = HubOffReply(reason).reply
 
-    override fun attest(body: String): McpHubReply = reply
+    override fun resolve(body: String): McpHubReply = unavailable
 
-    override suspend fun start(body: String): McpHubReply = reply
+    override fun attest(body: String): McpHubReply = unavailable
 
-    override fun listing(body: String): McpHubReply = reply
+    override suspend fun start(body: String): McpHubReply = unavailable
 
-    override fun roots(body: String): McpHubReply = reply
+    override fun listing(body: String): McpHubReply = unavailable
 
-    override suspend fun replacementStart(body: String): McpHubReply = reply
+    override fun roots(body: String): McpHubReply = unavailable
+}
 
-    override fun replacementCommit(body: String): McpHubReply = reply
+private class HubOffReplacements(reason: String) : HubReplacementCalls {
+    private val unavailable = HubOffReply(reason).reply
 
-    override fun replacementRetire(body: String): McpHubReply = reply
+    override suspend fun replacementStart(body: String): McpHubReply = unavailable
 
-    override fun replacementRollback(body: String): McpHubReply = reply
+    override fun replacementCommit(body: String): McpHubReply = unavailable
 
-    override fun replacementExit(body: String): McpHubReply = reply
+    override fun replacementRetire(body: String): McpHubReply = unavailable
 
+    override fun replacementRollback(body: String): McpHubReply = unavailable
+
+    override fun replacementExit(body: String): McpHubReply = unavailable
+
+    override fun replacementPinAcquire(body: String): McpHubReply = unavailable
+
+    override fun replacementPinConfirm(body: String): McpHubReply = unavailable
+
+    override fun replacementPinRelease(body: String): McpHubReply = unavailable
+}
+
+private object HubOffMaintenance : HubMaintenanceCalls {
     override fun sweep(now: Long, idleMs: Long) {
         // Nothing to stop: with the hub off, no holder was started.
     }

@@ -50,6 +50,18 @@ public class McpHubRoutes(private val hub: McpHubCalls) {
         answer(call, hub.replacementExit(call.receiveText()))
     }
 
+    public suspend fun replacementPinAcquire(call: ApplicationCall) {
+        answer(call, hub.replacementPinAcquire(call.receiveText()))
+    }
+
+    public suspend fun replacementPinConfirm(call: ApplicationCall) {
+        answer(call, hub.replacementPinConfirm(call.receiveText()))
+    }
+
+    public suspend fun replacementPinRelease(call: ApplicationCall) {
+        answer(call, hub.replacementPinRelease(call.receiveText()))
+    }
+
     private suspend fun answer(call: ApplicationCall, reply: McpHubReply) {
         val body = reply.body
         if (body == null) {

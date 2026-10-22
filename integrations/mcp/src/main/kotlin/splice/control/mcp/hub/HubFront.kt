@@ -8,18 +8,8 @@ import java.io.IOException
 import java.nio.file.Files
 import java.nio.file.Path
 
-private const val ROUTES = "routes"
-private const val SESSIONS = "sessions"
-private const val HOLDERS = "holders"
-private const val DRAINS = "drains"
-private const val SERVER = "server"
-private const val SOCKET = "socket"
-private const val LAUNCH = "launch"
-private const val GENERATION = "generation"
-private const val CANDIDATE_SOCKET = "candidate_socket"
-private const val CANDIDATE_GENERATION = "candidate_generation"
-private const val SHARED = "shared"
 private const val LAST_CALL = "last_call"
+private const val UNPINNING = "unpinning"
 
 /** One route the front retains: its server alias, launch, holder socket, and shared-routing declaration. */
 internal data class HubRoute(
@@ -40,6 +30,7 @@ internal data class HubReport(
     val routes: List<HubRoute>,
     val bindings: List<HubBinding>,
     val draining: Set<HubDrainHolder>,
+    val claims: Set<HubDrainClaim>,
     val lastCalls: Map<String, Long>,
 )
 
@@ -61,21 +52,22 @@ private class HubFrontReader(private val file: Path) {
 
 private class HubFrontReports {
     fun report(saved: JsonObject): HubReport? = routes(saved)?.let { routes ->
-        HubReport(routes, bindings(saved), draining(saved), lastCalls(saved))
+        HubReport(routes, bindings(saved), draining(saved), claims(saved), lastCalls(saved))
     }
 
-    private fun routes(saved: JsonObject): List<HubRoute>? = (saved[ROUTES] as? JsonObject)?.values?.mapNotNull(::route)
+    private fun routes(saved: JsonObject): List<HubRoute>? =
+        (saved[HubFields.ROUTES] as? JsonObject)?.values?.mapNotNull(::route)
 
     private fun route(value: kotlinx.serialization.json.JsonElement): HubRoute? =
         (value as? JsonObject)?.let { saved ->
-            val server = JsonScalars.str(saved, SERVER)
-            val socket = JsonScalars.str(saved, SOCKET)
+            val server = JsonScalars.str(saved, HubFields.SERVER)
+            val socket = JsonScalars.str(saved, HubFields.SOCKET)
             if (server != null && socket != null) {
                 HubRoute(
                     server,
-                    JsonScalars.str(saved, LAUNCH).orEmpty(),
+                    JsonScalars.str(saved, HubFields.LAUNCH).orEmpty(),
                     socket,
-                    JsonScalars.str(saved, SHARED) != "false",
+                    JsonScalars.str(saved, HubFields.SHARED) != "false",
                 )
             } else {
                 null
@@ -83,33 +75,59 @@ private class HubFrontReports {
         }
 
     private fun bindings(saved: JsonObject): List<HubBinding> {
-        val routes = saved[ROUTES] as? JsonObject ?: return emptyList()
-        val sessions = saved[SESSIONS] as? JsonObject ?: return emptyList()
+        val routes = saved[HubFields.ROUTES] as? JsonObject ?: return emptyList()
+        val sessions = saved[HubFields.SESSIONS] as? JsonObject ?: return emptyList()
         return sessions.keys.mapNotNull { session -> binding(session, sessions, routes) }
     }
 
     private fun binding(session: String, sessions: JsonObject, routes: JsonObject): HubBinding? =
         JsonScalars.str(sessions, session)?.let { routes[it] as? JsonObject }?.let { route ->
-            val server = JsonScalars.str(route, SERVER)
-            val socket = JsonScalars.str(route, SOCKET)
+            val server = JsonScalars.str(route, HubFields.SERVER)
+            val socket = JsonScalars.str(route, HubFields.SOCKET)
             if (server != null && socket != null) {
-                HubBinding(server, socket, JsonScalars.str(route, LAUNCH).orEmpty())
+                HubBinding(server, socket, JsonScalars.str(route, HubFields.LAUNCH).orEmpty())
             } else {
                 null
             }
         }
 
-    private fun draining(saved: JsonObject): Set<HubDrainHolder> = (saved[DRAINS] as? JsonObject)
+    private fun draining(saved: JsonObject): Set<HubDrainHolder> = (saved[HubFields.DRAINS] as? JsonObject)
         ?.values
         ?.flatMap(::drainHolders)
         ?.toSet()
         .orEmpty()
 
+    private fun claims(saved: JsonObject): Set<HubDrainClaim> = (saved[HubFields.DRAINS] as? JsonObject)
+        ?.values
+        ?.mapNotNull { value -> (value as? JsonObject)?.let(::claim) }
+        ?.toSet()
+        .orEmpty()
+
+    private fun claim(drain: JsonObject): HubDrainClaim? =
+        drain.takeUnless { JsonScalars.str(it, HubFields.PHASE) == UNPINNING }
+            ?.let(::claimFields)
+
+    private fun claimFields(drain: JsonObject): HubDrainClaim? {
+        val server = JsonScalars.str(drain, HubFields.SERVER)
+        val launch = JsonScalars.str(drain, HubFields.LAUNCH)
+        val socket = JsonScalars.str(drain, HubFields.SOCKET)
+        val generation = JsonScalars.str(drain, HubFields.GENERATION)
+        val claim = JsonScalars.str(drain, HubFields.OWNER_CLAIM)
+        return if (listOf(server, launch, socket, generation, claim).any { it == null }) {
+            null
+        } else {
+            HubDrainClaim(
+                HubDrainPinRequest(server.orEmpty(), launch.orEmpty(), socket.orEmpty(), generation.orEmpty()),
+                claim.orEmpty(),
+            )
+        }
+    }
+
     private fun drainHolders(value: kotlinx.serialization.json.JsonElement): List<HubDrainHolder> =
-        (value as? JsonObject)?.let { drain ->
+        (value as? JsonObject)?.takeUnless { JsonScalars.str(it, HubFields.PHASE) == UNPINNING }?.let { drain ->
             listOfNotNull(
-                drainHolder(drain, SOCKET, GENERATION),
-                drainHolder(drain, CANDIDATE_SOCKET, CANDIDATE_GENERATION),
+                drainHolder(drain, HubFields.SOCKET, HubFields.GENERATION),
+                drainHolder(drain, HubFields.CANDIDATE_SOCKET, HubFields.CANDIDATE_GENERATION),
             )
         }.orEmpty()
 
@@ -118,7 +136,7 @@ private class HubFrontReports {
             JsonScalars.str(drain, generation)?.let { version -> HubDrainHolder(name, version) }
         }
 
-    private fun lastCalls(saved: JsonObject): Map<String, Long> = (saved[HOLDERS] as? JsonObject)
+    private fun lastCalls(saved: JsonObject): Map<String, Long> = (saved[HubFields.HOLDERS] as? JsonObject)
         ?.mapNotNull { (socket, holder) ->
             JsonScalars.long(holder as? JsonObject, LAST_CALL)?.let { socket to it }
         }

@@ -1,0 +1,28 @@
+package splice.control.mcp.hub
+
+/** Field names shared by the JVM hub's holder records, front state, and daemon-control bodies. */
+internal object HubFields {
+    const val AT = "at"
+    const val CANDIDATE_GENERATION = "candidate_generation"
+    const val CANDIDATE_SOCKET = "candidate_socket"
+    const val CANDIDATE_TUPLE = "candidate_tuple"
+    const val CHILD_PID = "child_pid"
+    const val CLAIM = "claim"
+    const val DRAINS = "drains"
+    const val GENERATION = "generation"
+    const val HOLDERS = "holders"
+    const val LAUNCH = "launch"
+    const val OLD_GENERATION = "old_generation"
+    const val OLD_SOCKET = "old_socket"
+    const val OWNER_CLAIM = "owner_claim"
+    const val PHASE = "phase"
+    const val PID = "pid"
+    const val ROUTES = "routes"
+    const val SCOPE = "scope"
+    const val SERVER = "server"
+    const val SESSIONS = "sessions"
+    const val SHARED = "shared"
+    const val SOCKET = "socket"
+    const val STATE = "state"
+    const val TUPLE = "tuple"
+}

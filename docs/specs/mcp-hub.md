@@ -100,13 +100,40 @@ the path of a tool call.
 Holders and servers run in hostshield's MCP slice (V4-147), so the box's memory cap still holds.
 
 The JVM writes one reusable socket record per holder and generation-addressed exit receipts. One per-socket lifecycle
-lock covers record replacement, child attestation, and exit marking. A launch record carries its unique systemd scope
-before the child PID is known, so only that exited scope can settle or retire an incomplete failed start. The
-front owns the `front.json` relay ledger. It records each client-to-holder and holder-to-session exchange under its
-exact socket and generation before forwarding, then retains it through a received response, a fully flushed explicit
-error, or the matching exit receipt. A restored client request is never replayed. A restored reverse request with no
-recoverable response id stays charged until exact exit. The front writes active replacement drains with both old and
-candidate generations; the daemon pins either one until the drain resolves.
+lock covers record replacement, child attestation, exit marking, drain-claim acquisition, and destructive eviction. Before
+`systemd-run` can release a holder into its unique scope, the JVM persists a generation-specific `starting` intent with
+that scope. Recovery can stop only that recorded scope, even when no holder PID was persisted. A recorded owner is never
+rebuilt from an unrecorded process after its liveness check fails. A live unrecorded attestation proves both the holder and
+its child belong to the same scope. Scope retirement sends no PID signal: an exact current record and unique active scope
+authorize systemd to stop the scope, then scope exit settles it. Each exit receipt carries the holder tuple as well as its
+socket, generation and scope, so a replacement rollback accepts an exited candidate after socket reuse only on its exact
+generation-and-tuple receipt.
+
+The front owns the `front.json` relay ledger. Before it writes a paused replacement drain, it acquires the daemon's exact
+old-generation owner claim. The durable claim is `pending` during the front checkpoint and `active` only after the
+checkpoint names `owner_claim`; either state excludes the old generation from an idle sweep. A pending claim expires when
+the checkpoint never arrives. An active claim is released only by the durable drain outcome, never by a stale front
+snapshot. Explicit resume persists `unpinning` with its claim, releases idempotently, then checkpoints the drain removal.
+The front records each client-to-holder and holder-to-session exchange under its exact socket and generation before
+forwarding, then retains it through a received response, a fully flushed explicit error, or the matching exit receipt. A
+restored client request is never replayed. A restored reverse request with no recoverable response id stays charged until
+exact exit. The front writes active replacement drains with both old and candidate generations; the daemon pins either one
+until the drain resolves.
+
+### Front owner-claim adapter
+
+The native front acquires `POST /api/mcp/hub/replacement/pin/acquire` before it persists a paused drain. Its body is
+`server`, `launch`, `old_socket`, and `old_generation`. A successful response is `{ "claim": "…" }`. The front writes
+that value as `owner_claim` in the same durable drain checkpoint, then sends the same four fields plus `claim` to
+`POST /api/mcp/hub/replacement/pin/confirm`. A refused confirm stops the replacement before any candidate routing or
+retirement. The release endpoint is `POST /api/mcp/hub/replacement/pin/release` with those same five fields. It is
+idempotent only for that exact target, old generation, and claim. A re-acquire of the same live target returns its
+existing claim, so a lost acquire reply is recoverable. A later generation cannot release it. Retirement and rollback
+requests also carry the captured `owner_claim`; the daemon checks it under the old socket's lifecycle lock before any
+replacement side effect, and completion releases only that claim. A retry of an older outcome
+cannot release a newer drain on the same generation. A failed durable release refuses completion and remains retryable.
+`unpinning` checkpoints protect neither old nor candidate generations after the owner claim is released. Destructive
+sweeps refresh both claim and exact candidate-drain state while holding the socket lifecycle lock.
 
 ## What changes in Marcos's files
 

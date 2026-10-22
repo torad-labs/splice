@@ -20,12 +20,8 @@ private const val RETIREMENT_STATE = "state"
 private const val RETIRING = "retiring"
 private const val RETIRED = "retired"
 private const val ROLLED_BACK = "rolled_back"
+private const val OUTCOME_UNKNOWN = "unknown"
 private const val PERSISTING = "persisting"
-private const val OLD_SOCKET = "old_socket"
-private const val OLD_GENERATION = "old_generation"
-private const val CANDIDATE_SOCKET = "candidate_socket"
-private const val CANDIDATE_TUPLE = "candidate_tuple"
-private const val CANDIDATE_GENERATION = "candidate_generation"
 
 /** The four generation-specific identities which make one retirement retryable across a daemon restart. */
 internal data class HubReplacement(
@@ -44,7 +40,15 @@ internal data class HubReplacement(
     )
 }
 
-internal enum class HubRetirementState { RETIRING, RETIRED, ROLLED_BACK }
+internal enum class HubRetirementState { RETIRING, RETIRED, ROLLED_BACK, UNKNOWN }
+
+private sealed class HubRetirementRead {
+    data class Present(val body: JsonObject) : HubRetirementRead()
+
+    object Missing : HubRetirementRead()
+
+    object Unreadable : HubRetirementRead()
+}
 
 /** Durable operation outcomes prevent a lost response from replaying an ambiguous process action. */
 internal class HubHolderRetirements(dir: Path) {
@@ -74,52 +78,72 @@ internal class HubHolderRetirements(dir: Path) {
     fun state(replacement: HubReplacement): HubRetirementState? {
         val id = replacement.id()
         active[id]?.let { return stateOf(it) }
-        val persisted = read(replacement)
-            ?.takeIf { matches(it, replacement) }
-            ?.let { JsonScalars.str(it, RETIREMENT_STATE) }
-            ?.let(::stateOf)
-            ?: return null
-        active.putIfAbsent(id, stateName(persisted))
-        return persisted
+        val state = when (val persisted = read(replacement)) {
+            HubRetirementRead.Missing -> null
+            HubRetirementRead.Unreadable -> HubRetirementState.UNKNOWN
+            is HubRetirementRead.Present ->
+                persisted.body
+                    .takeIf { matches(it, replacement) }
+                    ?.let { JsonScalars.str(it, RETIREMENT_STATE) }
+                    ?.let(::stateOf)
+                    ?: HubRetirementState.UNKNOWN
+        }
+        state?.takeUnless { it == HubRetirementState.UNKNOWN }?.let { active.putIfAbsent(id, stateName(it)) }
+        return state
     }
 
-    private fun write(replacement: HubReplacement, state: HubRetirementState): Boolean = try {
-        Files.createDirectories(outcomes)
-        SecureFile.writeAtomic0600(file(replacement), JsonWire.string(body(replacement, state)))
-        true
-    } catch (_: IOException) {
-        false
+    private fun write(replacement: HubReplacement, state: HubRetirementState): Boolean {
+        if (!writable(replacement)) return false
+        return try {
+            Files.createDirectories(outcomes)
+            SecureFile.writeAtomic0600(file(replacement), JsonWire.string(body(replacement, state)))
+            true
+        } catch (_: IOException) {
+            false
+        }
+    }
+
+    private fun writable(replacement: HubReplacement): Boolean = when (val existing = read(replacement)) {
+        HubRetirementRead.Missing -> true
+        HubRetirementRead.Unreadable -> false
+        is HubRetirementRead.Present -> matches(existing.body, replacement)
     }
 
     private fun file(replacement: HubReplacement): Path = outcomes.resolve("${replacement.id()}.json")
 
-    private fun read(replacement: HubReplacement): JsonObject? = try {
-        file(replacement)
-            .takeIf(Files::isRegularFile)
-            ?.let { JsonRpcCodec().parse(Files.readString(it)) }
+    private fun read(replacement: HubReplacement): HubRetirementRead = try {
+        val path = file(replacement)
+        when {
+            Files.notExists(path) -> HubRetirementRead.Missing
+            !Files.isRegularFile(path) -> HubRetirementRead.Unreadable
+            else -> JsonRpcCodec().parse(Files.readString(path))
+                ?.let(HubRetirementRead::Present)
+                ?: HubRetirementRead.Unreadable
+        }
     } catch (_: IOException) {
-        null
+        HubRetirementRead.Unreadable
     }
 
     private fun matches(body: JsonObject, replacement: HubReplacement): Boolean =
-        JsonScalars.str(body, OLD_SOCKET) == replacement.oldSocket &&
-            JsonScalars.str(body, OLD_GENERATION) == replacement.oldGeneration &&
-            JsonScalars.str(body, CANDIDATE_SOCKET) == replacement.candidateSocket &&
-            JsonScalars.str(body, CANDIDATE_TUPLE) == replacement.candidateTuple &&
-            JsonScalars.str(body, CANDIDATE_GENERATION) == replacement.candidateGeneration
+        JsonScalars.str(body, HubFields.OLD_SOCKET) == replacement.oldSocket &&
+            JsonScalars.str(body, HubFields.OLD_GENERATION) == replacement.oldGeneration &&
+            JsonScalars.str(body, HubFields.CANDIDATE_SOCKET) == replacement.candidateSocket &&
+            JsonScalars.str(body, HubFields.CANDIDATE_TUPLE) == replacement.candidateTuple &&
+            JsonScalars.str(body, HubFields.CANDIDATE_GENERATION) == replacement.candidateGeneration
 
     private fun body(replacement: HubReplacement, state: HubRetirementState) = buildJsonObject {
-        put(OLD_SOCKET, replacement.oldSocket)
-        put(OLD_GENERATION, replacement.oldGeneration)
-        put(CANDIDATE_SOCKET, replacement.candidateSocket)
-        put(CANDIDATE_TUPLE, replacement.candidateTuple)
-        put(CANDIDATE_GENERATION, replacement.candidateGeneration)
+        put(HubFields.OLD_SOCKET, replacement.oldSocket)
+        put(HubFields.OLD_GENERATION, replacement.oldGeneration)
+        put(HubFields.CANDIDATE_SOCKET, replacement.candidateSocket)
+        put(HubFields.CANDIDATE_TUPLE, replacement.candidateTuple)
+        put(HubFields.CANDIDATE_GENERATION, replacement.candidateGeneration)
         put(
             RETIREMENT_STATE,
             when (state) {
                 HubRetirementState.RETIRING -> RETIRING
                 HubRetirementState.RETIRED -> RETIRED
                 HubRetirementState.ROLLED_BACK -> ROLLED_BACK
+                HubRetirementState.UNKNOWN -> OUTCOME_UNKNOWN
             },
         )
     }
@@ -128,12 +152,14 @@ internal class HubHolderRetirements(dir: Path) {
         HubRetirementState.RETIRING -> RETIRING
         HubRetirementState.RETIRED -> RETIRED
         HubRetirementState.ROLLED_BACK -> ROLLED_BACK
+        HubRetirementState.UNKNOWN -> OUTCOME_UNKNOWN
     }
 
     private fun stateOf(value: String): HubRetirementState? = when (value) {
         RETIRING -> HubRetirementState.RETIRING
         RETIRED -> HubRetirementState.RETIRED
         ROLLED_BACK -> HubRetirementState.ROLLED_BACK
+        OUTCOME_UNKNOWN -> HubRetirementState.UNKNOWN
         else -> null
     }
 }

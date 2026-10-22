@@ -18,26 +18,38 @@ import java.util.HexFormat
 
 // why: a holder's socket and record are named by its key's first KEY_HEX hex digits, short enough for a Unix socket path
 internal const val KEY_HEX = 16
-internal const val HOLDER_STATE = "state"
+internal const val HOLDER_STARTING = "starting"
 internal const val HOLDER_LIVE = "live"
 internal const val HOLDER_EXITED = "exited"
-internal const val HOLDER_GENERATION = "generation"
-private const val HOLDER_PID = "pid"
-private const val HOLDER_CHILD_PID = "child_pid"
-private const val HOLDER_SCOPE = "scope"
+
 private const val HOLDER_EXIT_CONFIRMED_AT = "exit_confirmed_at"
-private const val HOLDER_EXIT_SOCKET = "socket"
 private const val HOLDER_EXITS_DIR = "holder-exits"
+private const val HOLDER_LAUNCHER_STARTED_AT = "launcher_started_at"
 
 /** One record at its fixed socket path. The body remains the source of an exact process-generation claim. */
 internal data class HubHolderRecord(val path: Path, val body: JsonObject)
+
+private sealed class HubRecordScan {
+    data class Readable(val records: List<HubHolderRecord>) : HubRecordScan()
+
+    object Unreadable : HubRecordScan()
+}
+
+/** A generation-specific systemd scope recorded before a holder process can escape. */
+internal data class HubHolderScopeClaim(
+    val generation: String,
+    val scope: String,
+)
 
 /** A generation's holder process and unique systemd scope, known before its child can be attested. */
 internal data class HubHolderLaunch(
     val generation: String,
     val holderPid: Long,
     val scope: String,
-)
+    val holderStartedAt: Long? = null,
+) {
+    fun claim(): HubHolderScopeClaim = HubHolderScopeClaim(generation, scope)
+}
 
 /** The holder and child in one generation-specific systemd scope. */
 internal data class HubHolderOwner(
@@ -45,8 +57,9 @@ internal data class HubHolderOwner(
     val holderPid: Long,
     val childPid: Long,
     val scope: String,
+    val holderStartedAt: Long? = null,
 ) {
-    fun launch(): HubHolderLaunch = HubHolderLaunch(generation, holderPid, scope)
+    fun launch(): HubHolderLaunch = HubHolderLaunch(generation, holderPid, scope, holderStartedAt)
 }
 
 /** The holder record's three concerns stay separate: files, exact ownership, and generation exit evidence. */
@@ -60,26 +73,26 @@ internal class HubRecords(dir: Path) {
 internal class HubRecordFiles(private val dir: Path) {
     private val named = Regex("[0-9a-f]{$KEY_HEX}\\.json")
 
-    fun all(): List<HubHolderRecord> {
-        if (!Files.isDirectory(dir)) return emptyList()
-        val paths = Files.list(dir).use { it.filter { path -> named.matches(path.fileName.toString()) }.toList() }
-        return paths.mapNotNull { path -> read(path)?.takeIf(::namesServer)?.let { HubHolderRecord(path, it) } }
-    }
+    fun all(): List<HubHolderRecord> = (scan() as? HubRecordScan.Readable)?.records.orEmpty()
+
+    /** A malformed or unreadable record blocks lifecycle changes until an operator repairs its durable state. */
+    fun readable(): Boolean = scan() is HubRecordScan.Readable
 
     fun serverBySocket(): Map<String, String> = all()
         .mapNotNull { record ->
-            JsonScalars.str(record.body, "server")
+            JsonScalars.str(record.body, HubFields.SERVER)
                 ?.takeIf { live(record) }
                 ?.let { socketOf(record.path).toString() to it }
         }
         .toMap()
 
     fun begin(key: String, body: JsonObject): HubHolderRecord? {
+        if (!readable()) return null
         val path = file(key)
         return write(path, body).takeIf { it }?.let { HubHolderRecord(path, body) }
     }
 
-    fun live(record: HubHolderRecord): Boolean = JsonScalars.str(record.body, HOLDER_STATE) != HOLDER_EXITED
+    fun live(record: HubHolderRecord): Boolean = JsonScalars.str(record.body, HubFields.STATE) != HOLDER_EXITED
 
     fun socketOf(record: Path): Path = record.resolveSibling(record.fileName.toString().removeSuffix(".json") + ".sock")
 
@@ -96,60 +109,111 @@ internal class HubRecordFiles(private val dir: Path) {
         false
     }
 
+    private fun scan(): HubRecordScan = try {
+        when {
+            Files.notExists(dir) -> HubRecordScan.Readable(emptyList())
+            !Files.isDirectory(dir) -> HubRecordScan.Unreadable
+            else -> listed()
+        }
+    } catch (_: IOException) {
+        HubRecordScan.Unreadable
+    }
+
+    private fun listed(): HubRecordScan {
+        val records = Files.list(dir).use { paths ->
+            paths.filter { path -> named.matches(path.fileName.toString()) }.toList().map { path ->
+                read(path)?.takeIf(::namesServer)?.let { body -> HubHolderRecord(path, body) }
+            }
+        }
+        return records.takeIf { it.none { record -> record == null } }
+            ?.map { requireNotNull(it) }
+            ?.let(HubRecordScan::Readable)
+            ?: HubRecordScan.Unreadable
+    }
+
     private fun file(key: String): Path = dir.resolve("${key.take(KEY_HEX)}.json")
 
-    private fun namesServer(body: JsonObject): Boolean = JsonScalars.str(body, "server") != null
+    private fun namesServer(body: JsonObject): Boolean = JsonScalars.str(body, HubFields.SERVER) != null
 }
 
 /** Decodes and updates an owner only while its exact socket record still occupies the file. */
 internal class HubRecordOwnership(private val files: HubRecordFiles) {
     fun attest(record: HubHolderRecord, owner: HubHolderOwner): HubHolderRecord? {
         val current = files.read(record.path)?.takeIf { it == record.body } ?: return null
-        if (launch(current)?.let { it != owner.launch() } == true) return null
-        val attested = JsonObject(
-            current + mapOf(
-                HOLDER_GENERATION to JsonPrimitive(owner.generation),
-                HOLDER_PID to JsonPrimitive(owner.holderPid),
-                HOLDER_CHILD_PID to JsonPrimitive(owner.childPid),
-                HOLDER_SCOPE to JsonPrimitive(owner.scope),
-                HOLDER_STATE to JsonPrimitive(HOLDER_LIVE),
-            ),
-        )
+        if (launch(current)?.let { it.claim() != owner.launch().claim() || it.holderPid != owner.holderPid } == true) {
+            return null
+        }
+        val fields = current.toMutableMap().also { values ->
+            values[HubFields.GENERATION] = JsonPrimitive(owner.generation)
+            values[HubFields.PID] = JsonPrimitive(owner.holderPid)
+            values[HubFields.CHILD_PID] = JsonPrimitive(owner.childPid)
+            values[HubFields.SCOPE] = JsonPrimitive(owner.scope)
+            values[HubFields.STATE] = JsonPrimitive(HOLDER_LIVE)
+            owner.holderStartedAt?.let { values[HOLDER_LAUNCHER_STARTED_AT] = JsonPrimitive(it) }
+        }
+        val attested = JsonObject(fields)
         return files.write(record.path, attested).takeIf { it }?.let { HubHolderRecord(record.path, attested) }
     }
 
-    fun owner(record: HubHolderRecord): HubHolderOwner? = launch(record.body)?.let { launch ->
-        JsonScalars.long(record.body, HOLDER_CHILD_PID)?.let { child ->
-            HubHolderOwner(launch.generation, launch.holderPid, child, launch.scope)
-        }
-    }
+    fun owner(record: HubHolderRecord): HubHolderOwner? = owner(record.body)
 
     fun launch(record: HubHolderRecord): HubHolderLaunch? = launch(record.body)
 
+    fun claim(record: HubHolderRecord): HubHolderScopeClaim? = claim(record.body)
+
+    fun started(record: HubHolderRecord, launch: HubHolderLaunch): HubHolderRecord? {
+        val current = files.read(record.path)?.takeIf { it == record.body } ?: return null
+        if (claim(current) != launch.claim() || launch.holderStartedAt == null) return null
+        val started = JsonObject(
+            current + mapOf(
+                HubFields.PID to JsonPrimitive(launch.holderPid),
+                HOLDER_LAUNCHER_STARTED_AT to JsonPrimitive(launch.holderStartedAt),
+            ),
+        )
+        return files.write(record.path, started).takeIf { it }?.let { HubHolderRecord(record.path, started) }
+    }
+
     fun currentExit(record: HubHolderRecord, owner: HubHolderOwner): Boolean =
         files.read(record.path)?.let { current ->
-            JsonScalars.str(current, HOLDER_STATE) == HOLDER_EXITED && owner(current) == owner
+            JsonScalars.str(current, HubFields.STATE) == HOLDER_EXITED && owner(current) == owner
+        } == true
+
+    fun currentScopeExit(record: HubHolderRecord): Boolean =
+        files.read(record.path)?.let { current ->
+            JsonScalars.str(current, HubFields.STATE) == HOLDER_EXITED &&
+                JsonScalars.long(current, HOLDER_EXIT_CONFIRMED_AT) != null &&
+                claim(current) == claim(record.body)
         } == true
 
     fun currentLaunchExit(record: HubHolderRecord): Boolean =
         files.read(record.path)?.let { current ->
-            JsonScalars.str(current, HOLDER_STATE) == HOLDER_EXITED &&
+            JsonScalars.str(current, HubFields.STATE) == HOLDER_EXITED &&
                 JsonScalars.long(current, HOLDER_EXIT_CONFIRMED_AT) != null &&
                 launch(current) == launch(record.body)
         } == true
 
     private fun owner(body: JsonObject): HubHolderOwner? = launch(body)?.let { launch ->
-        JsonScalars.long(body, HOLDER_CHILD_PID)?.let { child ->
-            HubHolderOwner(launch.generation, launch.holderPid, child, launch.scope)
+        JsonScalars.long(body, HubFields.CHILD_PID)?.let { child ->
+            HubHolderOwner(launch.generation, launch.holderPid, child, launch.scope, launch.holderStartedAt)
         }
     }
 
-    private fun launch(body: JsonObject): HubHolderLaunch? {
-        val generation = JsonScalars.str(body, HOLDER_GENERATION)
-        val holder = JsonScalars.long(body, HOLDER_PID)
-        val scope = JsonScalars.str(body, HOLDER_SCOPE)
-        if (listOf(generation, holder, scope).any { it == null }) return null
-        return HubHolderLaunch(requireNotNull(generation), requireNotNull(holder), requireNotNull(scope))
+    private fun launch(body: JsonObject): HubHolderLaunch? = claim(body)?.let { claim ->
+        JsonScalars.long(body, HubFields.PID)?.let { holder ->
+            HubHolderLaunch(
+                claim.generation,
+                holder,
+                claim.scope,
+                JsonScalars.long(body, HOLDER_LAUNCHER_STARTED_AT),
+            )
+        }
+    }
+
+    private fun claim(body: JsonObject): HubHolderScopeClaim? {
+        val generation = JsonScalars.str(body, HubFields.GENERATION)
+        val scope = JsonScalars.str(body, HubFields.SCOPE)
+        if (generation == null || scope == null) return null
+        return HubHolderScopeClaim(generation, scope)
     }
 }
 
@@ -162,32 +226,30 @@ internal class HubHolderExitEvidence(
     private val exits = dir.resolve(HOLDER_EXITS_DIR)
 
     fun confirm(record: HubHolderRecord, owner: HubHolderOwner): Boolean =
-        confirm(record, owner.launch(), owner.childPid)
+        confirm(record, owner.launch().claim(), owner.childPid)
 
-    fun confirmLaunch(record: HubHolderRecord): Boolean =
-        ownership.launch(record)?.let { confirm(record, it, null) } ?: false
+    fun confirmScope(record: HubHolderRecord): Boolean =
+        ownership.claim(record)?.let { confirm(record, it, null) } ?: false
 
-    fun confirmed(record: HubHolderRecord): Boolean {
-        if (JsonScalars.str(record.body, HOLDER_STATE) == HOLDER_EXITED) {
-            return JsonScalars.long(record.body, HOLDER_EXIT_CONFIRMED_AT) != null
+    fun confirmed(record: HubHolderRecord): Boolean =
+        if (JsonScalars.str(record.body, HubFields.STATE) == HOLDER_EXITED) {
+            JsonScalars.long(record.body, HOLDER_EXIT_CONFIRMED_AT) != null
+        } else {
+            JsonScalars.str(record.body, HubFields.GENERATION)?.let { generation ->
+                confirmed(files.socketOf(record.path).toString(), generation)
+            } ?: false
         }
-        val generation = JsonScalars.str(record.body, HOLDER_GENERATION) ?: return false
-        return confirmed(files.socketOf(record.path).toString(), generation)
-    }
 
-    fun confirmed(socket: String, generation: String): Boolean {
-        val receipt = read(file(socket, generation)) ?: return false
-        if (JsonScalars.str(receipt, HOLDER_EXIT_SOCKET) != socket) return false
-        return receiptLaunch(receipt)?.generation == generation &&
-            JsonScalars.long(receipt, HOLDER_EXIT_CONFIRMED_AT) != null
-    }
+    fun confirmed(socket: String, generation: String, tuple: String? = null): Boolean =
+        read(file(socket, generation))?.let { receipt -> matches(receipt, socket, generation, tuple) } == true
 
-    private fun confirm(record: HubHolderRecord, launch: HubHolderLaunch, childPid: Long?): Boolean {
+    private fun confirm(record: HubHolderRecord, claim: HubHolderScopeClaim, childPid: Long?): Boolean {
         val socket = files.socketOf(record.path).toString()
-        if (confirmed(socket, launch.generation)) return true
+        val tuple = JsonScalars.str(record.body, HubFields.TUPLE)
+        if (confirmed(socket, claim.generation, tuple)) return true
         val confirmedAt = System.currentTimeMillis()
-        return persist(socket, launch, childPid, confirmedAt) &&
-            (markExited(record, confirmedAt) || confirmed(socket, launch.generation))
+        return persist(socket, claim, childPid, tuple, confirmedAt) &&
+            (markExited(record, confirmedAt) || confirmed(socket, claim.generation, tuple))
     }
 
     private fun markExited(record: HubHolderRecord, confirmedAt: Long): Boolean =
@@ -196,7 +258,7 @@ internal class HubHolderExitEvidence(
                 record.path,
                 JsonObject(
                     current + mapOf(
-                        HOLDER_STATE to JsonPrimitive(HOLDER_EXITED),
+                        HubFields.STATE to JsonPrimitive(HOLDER_EXITED),
                         HOLDER_EXIT_CONFIRMED_AT to JsonPrimitive(confirmedAt),
                     ),
                 ),
@@ -204,26 +266,33 @@ internal class HubHolderExitEvidence(
         } == true
 
     private fun sameGeneration(record: JsonObject, current: JsonObject): Boolean =
-        JsonScalars.str(record, HOLDER_GENERATION) == JsonScalars.str(current, HOLDER_GENERATION)
+        JsonScalars.str(record, HubFields.GENERATION) == JsonScalars.str(current, HubFields.GENERATION)
 
-    private fun persist(socket: String, launch: HubHolderLaunch, childPid: Long?, confirmedAt: Long): Boolean = try {
+    private fun persist(
+        socket: String,
+        claim: HubHolderScopeClaim,
+        childPid: Long?,
+        tuple: String?,
+        confirmedAt: Long,
+    ): Boolean = try {
         Files.createDirectories(exits)
-        write(file(socket, launch.generation), receipt(socket, launch, childPid, confirmedAt))
+        write(file(socket, claim.generation), receipt(socket, claim, childPid, tuple, confirmedAt))
     } catch (_: IOException) {
         false
     }
 
     private fun receipt(
         socket: String,
-        launch: HubHolderLaunch,
+        claim: HubHolderScopeClaim,
         childPid: Long?,
+        tuple: String?,
         confirmedAt: Long,
     ): JsonObject = buildJsonObject {
-        put(HOLDER_EXIT_SOCKET, socket)
-        put(HOLDER_GENERATION, launch.generation)
-        put(HOLDER_PID, launch.holderPid)
-        put(HOLDER_SCOPE, launch.scope)
-        childPid?.let { put(HOLDER_CHILD_PID, it) }
+        put(HubFields.SOCKET, socket)
+        put(HubFields.GENERATION, claim.generation)
+        put(HubFields.SCOPE, claim.scope)
+        tuple?.let { put(HubFields.TUPLE, it) }
+        childPid?.let { put(HubFields.CHILD_PID, it) }
         put(HOLDER_EXIT_CONFIRMED_AT, confirmedAt)
     }
 
@@ -239,12 +308,17 @@ internal class HubHolderExitEvidence(
         null
     }
 
-    private fun receiptLaunch(body: JsonObject): HubHolderLaunch? {
-        val generation = JsonScalars.str(body, HOLDER_GENERATION)
-        val holder = JsonScalars.long(body, HOLDER_PID)
-        val scope = JsonScalars.str(body, HOLDER_SCOPE)
-        if (listOf(generation, holder, scope).any { it == null }) return null
-        return HubHolderLaunch(requireNotNull(generation), requireNotNull(holder), requireNotNull(scope))
+    private fun matches(receipt: JsonObject, socket: String, generation: String, tuple: String?): Boolean =
+        JsonScalars.str(receipt, HubFields.SOCKET) == socket &&
+            (tuple == null || JsonScalars.str(receipt, HubFields.TUPLE) == tuple) &&
+            receiptClaim(receipt)?.generation == generation &&
+            JsonScalars.long(receipt, HOLDER_EXIT_CONFIRMED_AT) != null
+
+    private fun receiptClaim(body: JsonObject): HubHolderScopeClaim? {
+        val generation = JsonScalars.str(body, HubFields.GENERATION)
+        val scope = JsonScalars.str(body, HubFields.SCOPE)
+        if (generation == null || scope == null) return null
+        return HubHolderScopeClaim(generation, scope)
     }
 
     private fun write(path: Path, body: JsonObject): Boolean = try {

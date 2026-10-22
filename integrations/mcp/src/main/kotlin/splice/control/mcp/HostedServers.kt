@@ -8,6 +8,7 @@ package splice.control.mcp
 import kotlinx.serialization.json.JsonObject
 import splice.client.mcp.McpServerSpec
 import splice.client.mcp.McpSharing
+import splice.control.mcp.hosted.HostedServerLifecycle
 import splice.core.util.LogSink
 import java.util.concurrent.locks.ReentrantLock
 import kotlin.concurrent.withLock

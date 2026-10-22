@@ -1,7 +1,16 @@
-package splice.control.mcp
+package splice.control.mcp.hosted
 
 import kotlinx.serialization.json.JsonObject
 import splice.client.mcp.McpServerSpec
+import splice.control.mcp.ChildReaped
+import splice.control.mcp.HostedServer
+import splice.control.mcp.McpChildWriter
+import splice.control.mcp.McpHostConfig
+import splice.control.mcp.McpProcessGeneration
+import splice.control.mcp.McpProcessLauncher
+import splice.control.mcp.McpProcessStop
+import splice.control.mcp.McpReplacementFence
+import splice.control.mcp.McpWriteTarget
 import splice.core.util.LogSafe
 import splice.core.util.LogSink
 

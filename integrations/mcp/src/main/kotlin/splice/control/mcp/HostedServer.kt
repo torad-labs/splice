@@ -15,6 +15,9 @@ import kotlinx.coroutines.sync.Mutex
 import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonObject
 import splice.client.mcp.McpServerSpec
+import splice.control.mcp.hosted.HostedClientCalls
+import splice.control.mcp.hosted.HostedServerLifecycle
+import splice.control.mcp.hosted.HostedServerSpawn
 import splice.core.util.LogSink
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.atomic.AtomicLong

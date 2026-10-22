@@ -6,6 +6,7 @@
 // child's handshake.
 package splice.control.mcp
 
+import splice.control.mcp.hosted.HostedServerLifecycle
 import splice.core.util.LogSink
 
 // why: how much of a session id a log line carries — enough to follow one session across lines, never

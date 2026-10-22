@@ -1,4 +1,4 @@
-package splice.control.mcp
+package splice.control.mcp.hosted
 
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.sync.withLock
@@ -6,6 +6,16 @@ import kotlinx.coroutines.withTimeoutOrNull
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
 import splice.client.mcp.McpServerSpec
+import splice.control.mcp.HostedServer
+import splice.control.mcp.HostedServerRequests
+import splice.control.mcp.JsonRpcCodec
+import splice.control.mcp.McpChildHistory
+import splice.control.mcp.McpChildLines
+import splice.control.mcp.McpChildWriter
+import splice.control.mcp.McpHostConfig
+import splice.control.mcp.McpResult
+import splice.control.mcp.McpStderr
+import splice.control.mcp.Pending
 import splice.core.util.LogSink
 import java.io.IOException
 import java.util.concurrent.Executors

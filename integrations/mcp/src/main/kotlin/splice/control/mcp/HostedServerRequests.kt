@@ -1,7 +1,9 @@
 package splice.control.mcp
 
 import kotlinx.serialization.json.JsonObject
+import splice.core.util.JsonScalars
 import java.util.concurrent.ArrayBlockingQueue
+import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.Executors
 import java.util.concurrent.RejectedExecutionException
 import java.util.concurrent.ThreadPoolExecutor
@@ -76,5 +78,63 @@ internal class HostedServerRequests(
 
     fun close() {
         if (closed.compareAndSet(false, true)) replies.shutdownNow()
+    }
+
+    /** Proves a decoded stdout message still belongs to the active child generation. */
+    internal fun interface Generation {
+        fun current(child: Process): Boolean
+    }
+
+    internal data class DispatchRuntime(
+        val codec: JsonRpcCodec,
+        val writer: McpChildWriter,
+        val sink: NotificationSink,
+        val reservations: ConcurrentHashMap<HostedClientCalls.RequestId, Pending>,
+    )
+
+    /** Dispatches messages from one stdout generation only after its owner proves it is still current. */
+    internal class Dispatcher(
+        private val runtime: DispatchRuntime,
+        private val requests: HostedServerRequests,
+        private val progress: ProgressTokens,
+        private val pending: ConcurrentHashMap<Long, Pending>,
+        private val tools: ToolsListCache,
+        private val generation: Generation,
+    ) {
+        fun dispatch(child: Process, msg: JsonObject) {
+            when (runtime.codec.kind(msg)) {
+                RpcKind.RESPONSE -> response(msg)
+                RpcKind.REQUEST -> requests.dispatch(child, msg)
+                RpcKind.NOTIFICATION -> notification(child, msg)
+                RpcKind.INVALID -> Unit
+            }
+        }
+
+        private fun response(msg: JsonObject) {
+            val hostId = JsonScalars.str(msg["id"])?.toLongOrNull()
+            hostId?.let(runtime.writer.settled::invoke)
+            val slot = hostId?.let(pending::remove)
+            slot?.let {
+                runtime.reservations.remove(HostedClientCalls.RequestId(it.sessionId, it.clientId), it)
+                it.answer.complete(runtime.codec.withId(msg, it.clientId))
+            }
+        }
+
+        private fun notification(child: Process, msg: JsonObject) {
+            if (!generation.current(child)) return
+            if (runtime.codec.method(msg) == "notifications/progress") {
+                // A missing owner is late or unknown progress, never a global notification.
+                progress.owner(msg, pending)?.let { (slot, routed) ->
+                    runtime.sink.onProgress(child, slot.sessionId, routed)
+                }
+            } else {
+                ordinaryNotification(child, msg)
+            }
+        }
+
+        private fun ordinaryNotification(child: Process, msg: JsonObject) {
+            if (runtime.codec.method(msg) == "notifications/tools/list_changed") tools.drop()
+            runtime.sink.onNotification(child, msg)
+        }
     }
 }

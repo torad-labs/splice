@@ -15,7 +15,7 @@ import kotlin.concurrent.withLock
 private const val MILLIS_PER_MINUTE = 60_000L
 
 /** Serializes unbounded launch/adoption outside the registry lock, so shutdown cannot pass a late child. */
-private class McpLaunchBarrier : McpLaunchGate {
+private class McpLaunchBarrier : HostedServerLifecycle.LaunchGate {
     private val lock = ReentrantLock()
     private val stops = McpProcessStop()
     private var closed = false
@@ -24,7 +24,7 @@ private class McpLaunchBarrier : McpLaunchGate {
     override fun launch(
         spec: McpServerSpec,
         launcher: McpProcessLauncher,
-        adoption: McpLaunchAdoption,
+        adoption: HostedServerLifecycle.LaunchAdoption,
     ): Process? = lock.withLock {
         if (closed) {
             null
@@ -185,7 +185,9 @@ internal class HostedServers(
                     if (servers[server.identity] === server) {
                         server.enqueueIfOwned(
                             child,
-                            HostedNotificationEnqueue { notification.deliver(store.namesOf(server.identity)) },
+                            HostedServerLifecycle.NotificationEnqueue {
+                                notification.deliver(store.namesOf(server.identity))
+                            },
                         )
                     }
                 }
@@ -198,7 +200,7 @@ internal class HostedServers(
         )
         val server = HostedServer(
             spec,
-            HostedServerRuntime(config, launcher, reaped, launches),
+            HostedServerLifecycle.Runtime(config, launcher, reaped, launches),
             codec,
             log,
             sink,
@@ -217,7 +219,7 @@ internal class HostedServers(
     fun createSession(
         name: String,
         server: HostedServer,
-        initialization: HostedInitialization,
+        initialization: HostedServerLifecycle.Initialization,
         sessionId: String?,
         head: String?,
     ): McpSession? = synchronized(lock) {
@@ -228,7 +230,7 @@ internal class HostedServers(
     private fun releaseCurrent(
         name: String,
         server: HostedServer,
-        initialization: HostedInitialization? = null,
+        initialization: HostedServerLifecycle.Initialization? = null,
     ): Boolean {
         // The identity comes from the server itself, never from a scan of `servers`: a server
         // unbound between acquire and release (a sweep, a tuple change) is no longer in the map,

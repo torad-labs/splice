@@ -11,490 +11,60 @@
 // A server needing sampling or elicitation is not a sharing candidate; the operator excludes it.
 package splice.control.mcp
 
-import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.sync.Mutex
-import kotlinx.coroutines.sync.withLock
-import kotlinx.coroutines.withTimeoutOrNull
 import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonObject
-import kotlinx.serialization.json.JsonPrimitive
 import splice.client.mcp.McpServerSpec
-import splice.core.util.JsonScalars
-import splice.core.util.LogSafe
 import splice.core.util.LogSink
-import java.io.IOException
 import java.util.concurrent.ConcurrentHashMap
-import java.util.concurrent.Executors
 import java.util.concurrent.atomic.AtomicLong
 import kotlin.time.Duration
-import kotlin.time.Duration.Companion.milliseconds
-
-/** Adopts a child while the launch barrier still prevents daemon shutdown from passing it. */
-internal fun interface McpLaunchAdoption {
-    fun adopt(process: Process, generation: McpProcessGeneration): Boolean
-}
-
-/** Starts and adopts one child while its registry still owns the right to do so. */
-internal fun interface McpLaunchGate {
-    fun launch(spec: McpServerSpec, launcher: McpProcessLauncher, adoption: McpLaunchAdoption): Process?
-}
-
-/** The process services a hosted child needs throughout one owned lifetime. */
-internal data class HostedServerRuntime(
-    val config: McpHostConfig,
-    val launcher: McpProcessLauncher,
-    val reaped: ChildReaped,
-    val launches: McpLaunchGate,
-)
-
-internal fun interface McpReadyWriteTarget {
-    fun target(): McpWriteTarget?
-}
-
-/** Keeps the replacement fence separate from the host's normal request lifecycle. */
-internal class HostedServerReplacement(
-    private val writer: McpChildWriter,
-    private val target: McpReadyWriteTarget,
-) {
-    fun fence(): McpReplacementFence? {
-        val selected = target.target() ?: return null
-        return if (writer.seal(selected)) McpReplacementFence(writer, selected) else null
-    }
-}
-
-/** The initialize result and the exact child generation that produced it. */
-internal data class HostedInitialization(
-    val result: JsonObject,
-    val generation: McpProcessGeneration,
-)
-
-private fun interface HostedHandshakePublication {
-    suspend fun publish(process: Process, result: JsonObject, budget: Duration): HostedInitialization?
-}
-
-private class McpDeadline(
-    private val clock: HostClock,
-    budget: Duration,
-) {
-    private val expiresAt = clock.millis() + budget.inWholeMilliseconds
-
-    fun remaining(): Duration = (expiresAt - clock.millis()).coerceAtLeast(0L).milliseconds
-}
-
-private sealed class HostedHandshakeResult {
-    data class Served(val initialization: HostedInitialization) : HostedHandshakeResult()
-    data class Refused(val reason: String, val reply: McpResult.Refused) : HostedHandshakeResult()
-}
-
-private fun interface HostedClientTarget {
-    fun target(): McpWriteTarget?
-}
-
-private data class HostedClientRuntime(
-    val config: McpHostConfig,
-    val codec: JsonRpcCodec,
-    val writer: McpChildWriter,
-    val target: HostedClientTarget,
-)
-
-private data class HostedForward(
-    val hostId: Long,
-    val child: Process,
-    val request: JsonObject,
-    val pending: Pending,
-    val clientId: JsonElement,
-)
-
-private data class HostedClientRequestId(val sessionId: String, val clientId: JsonElement)
-
-/** Owns client request and notification forwarding once the host has ensured the child is started. */
-private class HostedClientCalls(
-    private val name: String,
-    private val runtime: HostedClientRuntime,
-    private val ids: AtomicLong,
-    private val pending: ConcurrentHashMap<Long, Pending>,
-    private val reservations: ConcurrentHashMap<HostedClientRequestId, Pending>,
-    private val progress: ProgressTokens,
-) {
-    suspend fun forward(sessionId: String, clientId: JsonElement, request: JsonObject): JsonObject {
-        val deadline = McpDeadline(runtime.config.clock, runtime.config.requestTimeout())
-        val hostId = ids.getAndIncrement()
-        val (out, token) = progress.outbound(request, hostId)
-        val slot = Pending(sessionId, clientId, token)
-        val reservation = HostedClientRequestId(sessionId, clientId)
-        if (reservations.putIfAbsent(reservation, slot) != null) {
-            return runtime.codec.error(clientId, RPC_SERVER_EXITED, "request id is already in flight for this session")
-        }
-        val child = runtime.target.target()?.child
-        if (child == null) {
-            reservations.remove(reservation, slot)
-            return runtime.codec.error(clientId, RPC_SERVER_EXITED, "hosted MCP server '$name' is not ready")
-        }
-        val forwarded = HostedForward(hostId, child, out, slot, clientId)
-        pending[hostId] = slot
-        return try {
-            awaitAnswer(forwarded, deadline)
-        } catch (error: CancellationException) {
-            slot.terminateProgress()
-            throw error
-        }
-    }
-
-    private suspend fun awaitAnswer(forwarded: HostedForward, deadline: McpDeadline): JsonObject {
-        val writeBudget = deadline.remaining()
-        if (writeBudget <= Duration.ZERO) {
-            if (pending.remove(forwarded.hostId, forwarded.pending)) {
-                reservations.remove(
-                    HostedClientRequestId(forwarded.pending.sessionId, forwarded.pending.clientId),
-                    forwarded.pending,
-                )
-            }
-            return timedOut(forwarded.clientId, forwarded.pending)
-        }
-        val delivered = runtime.writer.request(
-            runtime.codec.withId(forwarded.request, JsonPrimitive(forwarded.hostId)),
-            forwarded.hostId,
-            forwarded.child,
-            writeBudget,
-        )
-        val answerBudget = deadline.remaining()
-        // A charged wire ID remains cancelable until this exact generation settles it or exits.
-        return when {
-            !delivered -> deliveryRefused(forwarded.hostId, forwarded.pending, forwarded.clientId)
-            answerBudget <= Duration.ZERO -> timedOut(forwarded.clientId, forwarded.pending)
-            else -> withTimeoutOrNull(answerBudget) { forwarded.pending.answer.await() }
-                ?: timedOut(forwarded.clientId, forwarded.pending)
-        }
-    }
-
-    suspend fun notify(sessionId: String, msg: JsonObject): McpResult<Boolean> {
-        val out = if (runtime.codec.method(msg) == "notifications/cancelled") {
-            progress.cancellation(sessionId, msg, pending, runtime.codec)
-        } else {
-            msg
-        }
-        val child = runtime.target.target()?.child
-        return when {
-            out == null -> McpResult.Served(true)
-            child == null -> McpResult.Refused("hosted MCP server '$name' is not ready")
-            else -> McpResult.Served(runtime.writer.notify(out, child, runtime.config.requestTimeout()))
-        }
-    }
-
-    private fun deliveryRefused(hostId: Long, slot: Pending, clientId: JsonElement): JsonObject {
-        // A writer admission refusal never owned this wire id. A failed write keeps it charged for its
-        // exact generation, so cancellation and eventual child-exit cleanup remain available.
-        if (hostId !in runtime.writer.unsettled && pending.remove(hostId, slot)) {
-            reservations.remove(HostedClientRequestId(slot.sessionId, slot.clientId), slot)
-        }
-        return runtime.codec.error(
-            clientId,
-            RPC_SERVER_EXITED,
-            "request delivery was not confirmed; outcome unknown, not replayed",
-        )
-    }
-
-    private fun timedOut(clientId: JsonElement, slot: Pending): JsonObject {
-        slot.terminateProgress()
-        return runtime.codec.error(clientId, RPC_TIMED_OUT, "hosted MCP server '$name' did not answer in time")
-    }
-}
-
-/** Proves a decoded stdout message still belongs to the active child generation. */
-private fun interface HostedServerGeneration {
-    fun current(child: Process): Boolean
-}
-
-private data class HostedServerDispatchRuntime(
-    val codec: JsonRpcCodec,
-    val writer: McpChildWriter,
-    val serverRequests: HostedServerRequests,
-    val sink: NotificationSink,
-    val reservations: ConcurrentHashMap<HostedClientRequestId, Pending>,
-)
-
-/** Dispatches messages from one stdout generation only after its owner proves it is still current. */
-private class HostedServerDispatch(
-    private val runtime: HostedServerDispatchRuntime,
-    private val progress: ProgressTokens,
-    private val pending: ConcurrentHashMap<Long, Pending>,
-    private val tools: ToolsListCache,
-    private val generation: HostedServerGeneration,
-) {
-    fun dispatch(child: Process, msg: JsonObject) {
-        when (runtime.codec.kind(msg)) {
-            RpcKind.RESPONSE -> response(msg)
-            RpcKind.REQUEST -> runtime.serverRequests.dispatch(child, msg)
-            RpcKind.NOTIFICATION -> notification(child, msg)
-            RpcKind.INVALID -> Unit
-        }
-    }
-
-    private fun response(msg: JsonObject) {
-        val hostId = JsonScalars.str(msg["id"])?.toLongOrNull()
-        hostId?.let(runtime.writer.settled::invoke)
-        val slot = hostId?.let(pending::remove)
-        slot?.let {
-            runtime.reservations.remove(HostedClientRequestId(it.sessionId, it.clientId), it)
-            it.answer.complete(runtime.codec.withId(msg, it.clientId))
-        }
-    }
-
-    private fun notification(child: Process, msg: JsonObject) {
-        if (!generation.current(child)) return
-        if (runtime.codec.method(msg) == "notifications/progress") {
-            // A missing owner is late or unknown progress, never a global notification.
-            progress.owner(msg, pending)?.let { (slot, routed) ->
-                runtime.sink.onProgress(child, slot.sessionId, routed)
-            }
-        } else {
-            ordinaryNotification(child, msg)
-        }
-    }
-
-    private fun ordinaryNotification(child: Process, msg: JsonObject) {
-        if (runtime.codec.method(msg) == "notifications/tools/list_changed") tools.drop()
-        runtime.sink.onNotification(child, msg)
-    }
-}
-
-/** Rechecks retained scope ownership before the server may reuse a child slot after a failed transport. */
-private class HostedGenerationRetention(
-    private val stops: McpProcessStop,
-    private val reaped: ChildReaped,
-) {
-    fun settled(
-        process: Process,
-        generation: McpProcessGeneration,
-        stopping: List<McpProcessGeneration> = emptyList(),
-    ): Boolean {
-        stops.stopGenerations(stopping)
-        return reaped(process) && !stops.retains(generation)
-    }
-}
-
-/** One retired generation retains its child wire charges until its exact scope proves empty. */
-private data class HostedRetiredChild(
-    val target: McpWriteTarget,
-    val generation: McpProcessGeneration,
-)
-
-private data class HostedStoppingChild(
-    val process: Process,
-    val generation: McpProcessGeneration,
-    val retired: McpWriteTarget? = null,
-)
-
-private fun interface HostedFailureRetirement {
-    fun retire(child: Process, reason: String): HostedRetiredChild?
-}
-
-private fun interface HostedFailureRelease {
-    fun release(child: Process, generation: McpProcessGeneration): Boolean
-}
-
-private fun interface HostedPendingFailure {
-    fun fail(message: String)
-}
-
-internal fun interface HostedNotificationEnqueue {
-    fun enqueue()
-}
-
-private fun interface HostedFailureDescription {
-    fun describe(): String
-}
-
-private data class HostedTransportRuntime(
-    val name: String,
-    val send: McpChildWriter,
-    val stops: McpProcessStop,
-    val reaped: ChildReaped,
-    val history: McpChildHistory,
-    val log: LogSink,
-)
-
-private data class HostedTransportActions(
-    val retire: HostedFailureRetirement,
-    val release: HostedFailureRelease,
-    val failPending: HostedPendingFailure,
-    val description: HostedFailureDescription,
-)
-
-private fun interface HostedSpawnReadiness {
-    fun ready(): Boolean
-}
-
-private fun interface HostedChildLaunch {
-    fun launch(): McpResult<Process>
-}
-
-private fun interface HostedSpawnHandshake {
-    suspend fun handshake(process: Process): McpResult<HostedInitialization>
-}
-
-private fun interface HostedSpawnTearDown {
-    fun tearDown(reason: String)
-}
-
-/** Owns bounded failure retirement without making the server's request entry point branch on process state. */
-private class HostedTransportFailure(
-    private val runtime: HostedTransportRuntime,
-    private val actions: HostedTransportActions,
-) {
-    fun failed(child: Process, reason: String) {
-        val retired = actions.retire.retire(child, reason) ?: return
-        runtime.send.retire(retired.target)
-        actions.failPending.fail("hosted MCP transport failed; operation outcome unknown, not replayed")
-        runtime.stops.stopGenerations(listOf(retired.generation))
-        val reaped = runtime.reaped(child)
-        val exactExit = reaped && !runtime.stops.retains(retired.generation)
-        if (exactExit && actions.release.release(child, retired.generation)) {
-            runtime.send.exited(retired.target)
-            runtime.history.exited()
-        }
-        val exitCode = if (reaped) child.exitValue().toString() else "unknown"
-        runtime.log(
-            "[mcp-host] ${LogSafe.str(runtime.name)}: pid ${child.pid()} exited ${LogSafe.str(exitCode)} " +
-                "(${LogSafe.str(actions.description.describe())})\n",
-        )
-    }
-}
-
-/** Starts a child only after retained transport ownership is gone, then keeps cancellation teardown exact. */
-private fun interface HostedRetiredRelease {
-    fun release(stopping: HostedStoppingChild): McpWriteTarget?
-}
-
-/** Releases a retained generation only once its exact process and containment have exited. */
-private class HostedStoppedRelease(
-    private val retention: HostedGenerationRetention,
-    private val send: McpChildWriter,
-    private val history: McpChildHistory,
-    private val release: HostedRetiredRelease,
-) {
-    fun release(stopping: HostedStoppingChild, generations: List<McpProcessGeneration> = emptyList()) {
-        if (!retention.settled(stopping.process, stopping.generation, generations)) return
-        release.release(stopping)?.let {
-            send.exited(it)
-            history.exited()
-        }
-    }
-}
-
-private class HostedSpawn(
-    private val name: String,
-    private val history: McpChildHistory,
-    private val ready: HostedSpawnReadiness,
-    private val launch: HostedChildLaunch,
-    private val handshake: HostedSpawnHandshake,
-    private val tearDown: HostedSpawnTearDown,
-) {
-    suspend fun start(): McpResult<HostedInitialization> {
-        if (!ready.ready()) return McpResult.Refused("hosted MCP server '$name' is stopping after a transport failure")
-        return history.admit() ?: afterLaunch()
-    }
-
-    private suspend fun afterLaunch(): McpResult<HostedInitialization> {
-        val child = when (val launched = launch.launch()) {
-            is McpResult.Refused -> return launched
-            is McpResult.Served -> launched.value
-        }
-        return try {
-            handshake.handshake(child)
-        } catch (error: CancellationException) {
-            tearDown.tearDown("cancelled during the handshake")
-            throw error
-        }
-    }
-}
-
-/** Executes the bounded initialize exchange without adding branch pressure to process lifecycle ownership. */
-private class HostedHandshake(
-    private val name: String,
-    private val config: McpHostConfig,
-    private val codec: JsonRpcCodec,
-    private val ids: AtomicLong,
-    private val pending: ConcurrentHashMap<Long, Pending>,
-    private val writer: McpChildWriter,
-    private val publication: HostedHandshakePublication,
-) {
-    suspend fun run(process: Process): HostedHandshakeResult {
-        val deadline = McpDeadline(config.clock, config.initializeTimeout())
-        val id = ids.getAndIncrement()
-        val slot = Pending("host", JsonPrimitive(id))
-        pending[id] = slot
-        val writeBudget = deadline.remaining()
-        val delivered = writeBudget > Duration.ZERO &&
-            writer.request(codec.initializeRequest(id), id, process, writeBudget)
-        val answer = if (delivered) await(slot, deadline.remaining()) else null
-        if (answer == null) return unavailable(id, delivered)
-        val result = answer["result"] as? JsonObject
-        val initialization = result?.let { publication.publish(process, it, deadline.remaining()) }
-        return initialization?.let(HostedHandshakeResult::Served)
-            ?: HostedHandshakeResult.Refused(
-                "handshake failed",
-                McpResult.Refused("'$name' rejected the MCP handshake (server detail withheld)"),
-            )
-    }
-
-    private suspend fun await(slot: Pending, budget: Duration): JsonObject? =
-        if (budget > Duration.ZERO) withTimeoutOrNull(budget) { slot.answer.await() } else null
-
-    private fun unavailable(id: Long, delivered: Boolean): HostedHandshakeResult.Refused {
-        pending.remove(id)
-        val reason = if (delivered) "no initialize answer" else "could not write initialize"
-        return HostedHandshakeResult.Refused(
-            reason,
-            McpResult.Refused("'$name' did not complete the MCP handshake", timedOut = true),
-        )
-    }
-}
 
 internal class HostedServer(
-    private val spec: McpServerSpec,
-    private val runtime: HostedServerRuntime,
-    private val codec: JsonRpcCodec,
-    private val log: LogSink,
+    internal val spec: McpServerSpec,
+    private val runtime: HostedServerLifecycle.Runtime,
+    internal val codec: JsonRpcCodec,
+    internal val log: LogSink,
     private val sink: NotificationSink,
 ) {
     private val ids = AtomicLong(1)
-    private val pending = ConcurrentHashMap<Long, Pending>()
-    private val reservations = ConcurrentHashMap<HostedClientRequestId, Pending>()
+    internal val pending = ConcurrentHashMap<Long, Pending>()
+    internal val reservations = ConcurrentHashMap<HostedClientCalls.RequestId, Pending>()
     val unsettled: List<Long> get() = send.unsettled
     var admission = McpAdmission()
     private val progress = ProgressTokens()
-    private val stops = McpProcessStop()
-    private val retention = HostedGenerationRetention(stops, runtime.reaped)
+    internal val stops = McpProcessStop()
+    private val retention = HostedServerLifecycle.GenerationRetention(stops, runtime.reaped)
     private val stderr = McpStderr(log)
+    private val errors = HostedServerSpawn.Error()
 
     private val history = McpChildHistory(runtime.config.clock, spec.name)
 
     /** Single-flight spawn: N sessions initializing at once must share ONE child, not race N up
      *  (the 4-session benchmark caught exactly that on 2026-09-13: four copies per server). */
-    private val spawnLock = Mutex()
+    internal val spawnLock = Mutex()
 
     /** Guards process/initResult so a pump ending an OLD child can never clear its replacement, and
      *  a spawn that lands after close() tears its child down instead of running orphaned. */
-    private val stateLock = Any()
+    internal val stateLock = Any()
 
-    @Volatile private var closed = false
+    @Volatile internal var closed = false
 
-    @Volatile private var process: Process? = null
+    @Volatile internal var process: Process? = null
 
     /** The immutable stdin writer for [process]'s exact generation. */
-    @Volatile private var writer: McpWriteTarget? = null
+    @Volatile internal var writer: McpWriteTarget? = null
 
     /** The process tree and cgroup captured at adoption, before its launcher parent can reparent workers. */
-    @Volatile private var generation: McpProcessGeneration? = null
+    @Volatile internal var generation: McpProcessGeneration? = null
 
     /** A retired writer's unknown wire charges clear only after its retained generation proves empty. */
-    @Volatile private var retiredWriter: McpWriteTarget? = null
+    @Volatile internal var retiredWriter: McpWriteTarget? = null
 
-    @Volatile private var initResult: JsonObject? = null
+    @Volatile internal var initResult: JsonObject? = null
 
-    private val tools = ToolsListCache(codec)
-    private val send: McpChildWriter = McpChildWriter(
+    internal val tools = ToolsListCache(codec)
+    internal val send: McpChildWriter = McpChildWriter(
         spec.name,
         codec,
         McpWriteTargetSource { expected ->
@@ -511,10 +81,10 @@ internal class HostedServer(
         },
         McpWriteFailure { child, reason -> transportFailures.failed(child, reason) },
     )
-    private val transportFailures: HostedTransportFailure = HostedTransportFailure(
-        HostedTransportRuntime(spec.name, send, stops, runtime.reaped, history, log),
-        HostedTransportActions(
-            HostedFailureRetirement { child, reason ->
+    private val transportFailures: HostedServerLifecycle.TransportFailure = HostedServerLifecycle.TransportFailure(
+        HostedServerLifecycle.TransportRuntime(spec.name, send, stops, runtime.reaped, history, log),
+        HostedServerLifecycle.TransportActions(
+            HostedServerLifecycle.FailureRetirement { child, reason ->
                 synchronized(stateLock) {
                     val target = writer
                     if (process !== child || target?.child !== child) {
@@ -525,11 +95,11 @@ internal class HostedServer(
                         retiredWriter = target
                         initResult = null
                         tools.drop()
-                        HostedRetiredChild(target, requireNotNull(generation))
+                        HostedServerLifecycle.RetiredChild(target, requireNotNull(generation))
                     }
                 }
             },
-            HostedFailureRelease { child, owned ->
+            HostedServerLifecycle.FailureRelease { child, owned ->
                 synchronized(stateLock) {
                     if (process !== child || generation !== owned) {
                         false
@@ -541,17 +111,17 @@ internal class HostedServer(
                     }
                 }
             },
-            HostedPendingFailure { message -> failPending(message) },
-            HostedFailureDescription { lastError.orEmpty() },
+            HostedServerLifecycle.PendingFailure { message -> failPending(message) },
+            HostedServerLifecycle.FailureDescription { lastError.orEmpty() },
         ),
     )
     private val clientCalls = HostedClientCalls(
         spec.name,
-        HostedClientRuntime(
+        HostedClientCalls.Runtime(
             runtime.config,
             codec,
             send,
-            HostedClientTarget {
+            HostedClientCalls.Target {
                 synchronized(stateLock) {
                     writer?.takeIf { process === it.child && it.child.isAlive && initResult != null }
                 }
@@ -562,20 +132,27 @@ internal class HostedServer(
         reservations,
         progress,
     )
-    private val handshake = HostedHandshake(
+    private val client = HostedClientCalls.Client(this, clientCalls)
+    private val handshake = HostedServerSpawn.Handshake(
         spec.name,
         runtime.config,
         codec,
         ids,
         pending,
         send,
-        HostedHandshakePublication(::publish),
+        HostedServerSpawn.HandshakePublication(::publish),
     )
-    private val stoppedRelease = HostedStoppedRelease(
+    private val handshakeCompletion = HostedServerSpawn.Completion(
+        spec.name,
+        log,
+        errors,
+        HostedServerSpawn.HostedSpawnTearDown { reason -> tearDown(reason) },
+    )
+    internal val stoppedRelease = HostedServerLifecycle.StoppedRelease(
         retention,
         send,
         history,
-        HostedRetiredRelease { stopping ->
+        HostedServerLifecycle.RetiredRelease { stopping ->
             synchronized(stateLock) {
                 if (process !== stopping.process || generation !== stopping.generation) {
                     null
@@ -587,38 +164,19 @@ internal class HostedServer(
             }
         },
     )
-    private val spawner = HostedSpawn(
-        spec.name,
-        history,
-        HostedSpawnReadiness {
-            val stopping = synchronized(stateLock) {
-                val child = process
-                val owned = generation
-                if (writer != null) {
-                    null
-                } else {
-                    child?.let { owned?.let { generation -> HostedStoppingChild(it, generation) } }
-                }
-            }
-            stopping?.let(stoppedRelease::release)
-            synchronized(stateLock) { process == null }
-        },
-        HostedChildLaunch(::launch),
-        HostedSpawnHandshake { child -> completeHandshake(child, handshake.run(child)) },
-        HostedSpawnTearDown { reason -> tearDown(reason) },
-    )
+    private val lifecycle = HostedServerLifecycle(this)
 
     /** Closes new work on this live generation and atomically proves that no old wire operation remains. */
-    internal val replacementFence = HostedServerReplacement(
+    internal val replacementFence = HostedServerLifecycle.Replacement(
         send,
-        McpReadyWriteTarget {
+        HostedServerLifecycle.ReadyWriteTarget {
             synchronized(stateLock) {
                 val child = process
                 writer?.takeIf { child === it.child && child.isAlive && initResult != null }
             }
         },
     )
-    private val serverRequests = HostedServerRequests(
+    internal val serverRequests = HostedServerRequests(
         spec.name,
         ServerRequestId(ids::getAndIncrement),
         codec,
@@ -626,20 +184,59 @@ internal class HostedServer(
         send,
         runtime.config.requestTimeout,
     )
-    private val dispatcher = HostedServerDispatch(
-        HostedServerDispatchRuntime(codec, send, serverRequests, sink, reservations),
+    private val dispatcher = HostedServerRequests.Dispatcher(
+        HostedServerRequests.DispatchRuntime(codec, send, sink, reservations),
+        serverRequests,
         progress,
         pending,
         tools,
-        HostedServerGeneration { child ->
+        HostedServerRequests.Generation { child ->
             synchronized(stateLock) {
                 if (closed || process !== child) false else writer?.child === child
             }
         },
     )
+    private val childPump = HostedServerSpawn.ChildPump(codec, dispatcher, transportFailures)
+    private val childLaunch = HostedServerSpawn.ChildLauncher(
+        spec,
+        runtime,
+        stderr,
+        history,
+        errors,
+        HostedServerLifecycle.LaunchAdoption(::adopt),
+        childPump,
+    )
+    private val spawner = HostedServerSpawn(
+        spec.name,
+        history,
+        HostedServerSpawn.Readiness {
+            val stopping = synchronized(stateLock) {
+                val child = process
+                val owned = generation
+                if (writer != null) {
+                    null
+                } else {
+                    child?.let {
+                        owned?.let { generation -> HostedServerLifecycle.StoppingChild(it, generation) }
+                    }
+                }
+            }
+            stopping?.let(stoppedRelease::release)
+            synchronized(stateLock) { process == null }
+        },
+        childLaunch,
+        HostedServerSpawn.HandshakeResultHandler { child ->
+            handshakeCompletion.complete(child, handshake.run(child))
+        },
+        HostedServerSpawn.HostedSpawnTearDown { reason -> tearDown(reason) },
+    )
+    private val starter = HostedServerSpawn.Starter(this, spawner)
 
-    @Volatile var lastError: String? = null
-        private set
+    var lastError: String?
+        get() = errors.value
+        internal set(value) {
+            errors.value = value
+        }
 
     val alive: Boolean get() = process?.isAlive == true && initResult != null
 
@@ -651,199 +248,51 @@ internal class HostedServer(
     val pid: Long? get() = process?.takeIf { it.isAlive }?.pid()
 
     /** Holds the generation fence until [enqueue] has accepted this child notification. */
-    internal fun enqueueIfOwned(child: Process, enqueue: HostedNotificationEnqueue) = synchronized(stateLock) {
-        if (process !== child) return@synchronized
-        if (writer?.child !== child) return@synchronized
-        if (generation?.process === child) enqueue.enqueue()
-    }
+    internal fun enqueueIfOwned(child: Process, enqueue: HostedServerLifecycle.NotificationEnqueue) =
+        lifecycle.enqueueIfOwned(child, enqueue)
 
-    internal fun owns(initialization: HostedInitialization): Boolean = synchronized(stateLock) {
-        process === initialization.generation.process &&
-            generation === initialization.generation &&
-            writer?.child === process &&
-            initResult === initialization.result
-    }
+    internal fun owns(initialization: HostedServerLifecycle.Initialization): Boolean = lifecycle.owns(initialization)
 
     /** The child's initialize result, spawning and handshaking first when the child is not up. */
-    suspend fun ensureStarted(): McpResult<JsonObject> = when (val started = ensureInitialized()) {
-        is McpResult.Refused -> started
-        is McpResult.Served -> McpResult.Served(started.value.result)
-    }
+    suspend fun ensureStarted(): McpResult<JsonObject> = starter.ensureStarted()
 
     /** Keeps the exact generation that supplied initialization for registry-bound session publication. */
-    suspend fun ensureInitialized(): McpResult<HostedInitialization> =
-        started?.let { McpResult.Served(it) } ?: spawnLock.withLock {
-            if (closed) {
-                McpResult.Refused("hosted MCP server '${spec.name}' was closed")
-            } else {
-                started?.let { McpResult.Served(it) } ?: spawner.start()
-            }
-        }
-
-    private val started: HostedInitialization?
-        get() = synchronized(stateLock) {
-            val result = initResult ?: return@synchronized null
-            val owned = generation ?: return@synchronized null
-            if (process?.isAlive != true) null else HostedInitialization(result, owned)
-        }
+    suspend fun ensureInitialized(): McpResult<HostedServerLifecycle.Initialization> = starter.ensureInitialized()
 
     /** Forward one request; the answer comes back under [clientId] no matter how the child numbered it. */
-    suspend fun call(sessionId: String, clientId: JsonElement, request: JsonObject): JsonObject {
-        when (val up = ensureStarted()) {
-            is McpResult.Refused -> return codec.error(clientId, RPC_SERVER_ERROR, up.reason)
-            is McpResult.Served -> Unit
-        }
-        return tools.answer(request, clientId, ListingAsk { clientCalls.forward(sessionId, clientId, request) })
-    }
+    suspend fun call(sessionId: String, clientId: JsonElement, request: JsonObject): JsonObject =
+        client.call(sessionId, clientId, request)
 
     /** Forward a client notification: initialized is the host's own (swallowed), cancelled is remapped
      *  to the host id of THAT session's request and dropped when it names none — a cancel must never
      *  reach the child under another session's id. False when the child could not be written. */
-    suspend fun notify(sessionId: String, msg: JsonObject): McpResult<Boolean> {
-        if (codec.method(msg) == "notifications/initialized") return McpResult.Served(true)
-        return when (val up = ensureStarted()) {
-            is McpResult.Refused -> up
-            is McpResult.Served -> clientCalls.notify(sessionId, msg)
-        }
-    }
+    suspend fun notify(sessionId: String, msg: JsonObject): McpResult<Boolean> =
+        client.notify(sessionId, msg)
 
     /** Permanent: the registry replaced or evicted this server; a spawn racing this call tears down. */
-    fun close(reason: String, wait: Boolean = true): McpProcessGeneration? {
-        synchronized(stateLock) { closed = true }
-        serverRequests.close()
-        val stopped = tearDown(reason, wait)
-        send.close()
-        return stopped
-    }
+    fun close(reason: String, wait: Boolean = true): McpProcessGeneration? = lifecycle.close(reason, wait)
 
     /** The registry retries a closed server until this exact root, captured descendants and scope have exited. */
     internal val retirementSettled: Boolean
-        get() {
-            val stopping = synchronized(stateLock) {
-                val child = process
-                val owned = generation
-                if (child == null || owned == null) null else HostedStoppingChild(child, owned, retiredWriter)
-            }
-            stopping?.let { stoppedRelease.release(it, listOf(it.generation)) }
-            return synchronized(stateLock) { process == null && generation == null }
-        }
+        get() = lifecycle.retirementSettled
 
-    private fun tearDown(reason: String, wait: Boolean = true): McpProcessGeneration? {
-        val stopping = synchronized(stateLock) {
-            val child = process
-            val owned = generation ?: child?.let(stops::capture)?.also { generation = it }
-            val selected = writer
-            writer = null
-            if (selected != null) retiredWriter = selected
-            initResult = null
-            tools.drop()
-            child?.let { running -> owned?.let { HostedStoppingChild(running, it, selected) } }
-        }
-        stopping?.let {
-            it.retired?.let(send::retire)
-            failPending("hosted MCP server '${spec.name}' closed: $reason")
-            log(
-                "[mcp-host] ${LogSafe.str(spec.name)}: closing pid ${LogSafe.str(it.process.pid().toString())} " +
-                    "(${LogSafe.str(reason)})\n",
-            )
-            if (wait) stoppedRelease.release(it, listOf(it.generation))
-        }
-        return stopping?.generation
-    }
+    private fun tearDown(reason: String, wait: Boolean = true): McpProcessGeneration? =
+        lifecycle.tearDown(reason, wait)
 
-    /** The child, adopted under the launch barrier before daemon shutdown can complete. */
-    private fun launch(): McpResult<Process> {
-        var spawnFailure: String? = null
-        val child = try {
-            runtime.launches.launch(spec, runtime.launcher, McpLaunchAdoption(::adopt))
-        } catch (failure: IOException) {
-            spawnFailure = failure.message
-            null
-        }
-        if (child == null) {
-            val reason = spawnFailure?.let { "cannot start '${spec.name}': $it" }
-                ?: "MCP host is stopping"
-            spawnFailure?.let { lastError = "spawn failed: $it" }
-            return McpResult.Refused(reason)
-        }
-        stderr.watch(spec.name, child)
-        history.started()
-        Executors.defaultThreadFactory().newThread { pump(child) }.apply {
-            name = "mcp-host-${spec.name}"
-            isDaemon = true
-        }.start()
-        return McpResult.Served(child)
-    }
-
-    private fun adopt(child: Process, owned: McpProcessGeneration): Boolean = synchronized(stateLock) {
-        if (closed) {
-            false
-        } else {
-            process = child
-            writer = McpWriteTarget(child, child.outputStream.bufferedWriter())
-            generation = owned
-            true
-        }
-    }
-
-    private fun completeHandshake(
-        process: Process,
-        outcome: HostedHandshakeResult,
-    ): McpResult<HostedInitialization> = when (outcome) {
-        is HostedHandshakeResult.Served -> {
-            lastError = null
-            log("[mcp-host] ${spec.name}: hosted as pid ${process.pid()}\n")
-            McpResult.Served(outcome.initialization)
-        }
-        is HostedHandshakeResult.Refused -> {
-            tearDown(outcome.reason)
-            outcome.reply
-        }
-    }
+    private fun adopt(child: Process, owned: McpProcessGeneration): Boolean = lifecycle.adopt(child, owned)
 
     /** The child is operational only once it has been told `initialized`: send that FIRST, then
      *  publish under stateLock, and only while THIS child is still the adopted, live, unclosed one —
      *  a close() landing between the answer and the publish must win (reviews 2-3, 2026-09-13), or a
      *  session would be minted on a server that is dead, unbound, or not yet serving. */
-    private suspend fun publish(p: Process, result: JsonObject, budget: Duration): HostedInitialization? {
-        val initialized = budget > Duration.ZERO && send.notify(
-            codec.notification("notifications/initialized"),
-            p,
-            budget,
-        )
-        return synchronized(stateLock) {
-            generation?.takeIf { initialized && !closed && process === p && p.isAlive }?.let { owned ->
-                initResult = result
-                HostedInitialization(result, owned)
-            }
-        }
-    }
-
-    /** The reader thread: one line, one message, until EOF, which fails this child's transport. */
-    private fun pump(p: Process) {
-        val reader = McpChildLines(p.inputStream.reader())
-        val reason = try {
-            generateSequence { reader.next() }
-                .filter { it.isNotBlank() }
-                .mapNotNull(codec::parse)
-                .forEach { dispatcher.dispatch(p, it) }
-            "stdout closed"
-        } catch (e: IOException) {
-            "read failed: ${e.message}"
-        }
-        transportFailures.failed(p, reason)
-    }
+    private suspend fun publish(
+        p: Process,
+        result: JsonObject,
+        budget: Duration,
+    ): HostedServerLifecycle.Initialization? =
+        lifecycle.publish(p, result, budget)
 
     /** Fails what is in flight — everything, or only [sessionId]'s requests (its session ended). */
-    fun failPending(message: String, sessionId: String? = null) {
-        pending.entries
-            .filter { sessionId == null || it.value.sessionId == sessionId }
-            .map { it.key }
-            .forEach { id ->
-                pending.remove(id)?.let { slot ->
-                    reservations.remove(HostedClientRequestId(slot.sessionId, slot.clientId), slot)
-                    slot.fail(codec, message)
-                }
-            }
-    }
+    fun failPending(message: String, sessionId: String? = null) =
+        lifecycle.failPending(message, sessionId)
 }

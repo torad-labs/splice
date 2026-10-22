@@ -129,7 +129,7 @@ internal class Holders(
     /** Retains a restored ledger’s socket identity until exact exit evidence settles it. */
     fun remember(socket: String): Holder = known.getOrPut(socket) { Holder(socket) }
 
-    /** Removes only generations whose successful retirement is durable and has released every front owner. */
+    /** Removes only generations whose retirement or rollback exit is durable and has released every front owner. */
     fun prune() {
         known.values.toList().forEach(::releaseExited)
         val evicted = known.values.filter(::evictable)

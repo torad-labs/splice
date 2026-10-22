@@ -12,13 +12,14 @@ internal sealed interface ServerRequestRetention {
     data object PersistenceFailed : ServerRequestRetention
 }
 
-/** A server request stays charged until its response flushes or the exact holder generation exits. */
-class ServerRequests(
+/** A server request stays charged until holder proof confirms child delivery or the exact generation exits. */
+internal class ServerRequests(
     changed: () -> Unit,
     checkpoint: () -> Boolean,
+    keys: RelayWireKeys = RelayWireKeys(),
 ) {
     private val persistence = HolderPersistence(changed, checkpoint)
-    private val ledger = ServerRequestLedger()
+    private val ledger = ServerRequestLedger(keys)
     private val delivery = ServerRequestDelivery(ledger, persistence)
     internal val reconciliation = ServerRequestReconciliation(ledger, persistence, delivery)
 

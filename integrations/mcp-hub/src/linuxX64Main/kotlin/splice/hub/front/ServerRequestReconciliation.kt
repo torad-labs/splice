@@ -19,7 +19,7 @@ internal class ServerRequestReconciliation(
     fun recovered(holder: Holder, generation: String, replay: Set<String>) {
         val reset = ledger.requests.filter { (key, asked) ->
             key in replay && asked.holder === holder && asked.generation == generation &&
-                asked.response.delivery == RESPONSE_WRITE_UNCERTAIN
+                asked.response.delivery == RESPONSE_WRITE_UNCERTAIN && asked.response.recorded
         }
         if (reset.isNotEmpty()) prepareReplay(reset)
     }
@@ -28,7 +28,11 @@ internal class ServerRequestReconciliation(
         ledger.requests[key]?.takeIf { asked ->
             asked.holder === holder && asked.generation == generation &&
                 asked.response.delivery == RESPONSE_WRITE_UNCERTAIN
-        }?.let(delivery::armed)
+        }?.let { delivery.armed(key, it) }
+    }
+
+    fun refused(holder: Holder, generation: String, key: String) {
+        ledger.requests[key]?.takeIf { it.holder === holder && it.generation == generation }?.let(delivery::notArmed)
     }
 
     fun settled(holder: Holder, generation: String, key: String): Boolean {
@@ -43,7 +47,10 @@ internal class ServerRequestReconciliation(
             asked.response.delivery == RESPONSE_PREPARED
 
     private fun prepareReplay(reset: Map<String, ServerRequestOutstanding>) {
-        reset.values.forEach { it.response.delivery = RESPONSE_PREPARED }
+        reset.values.forEach {
+            it.response.delivery = RESPONSE_PREPARED
+            it.response.sentOn = null
+        }
         if (!persistence.checkpoint()) {
             reset.values.forEach { it.response.delivery = RESPONSE_WRITE_UNCERTAIN }
         }

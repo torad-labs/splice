@@ -47,6 +47,10 @@ object HolderProtocol {
     fun response(line: String): String? = wire.response(line)
 
     fun reverseResponse(line: String, identity: String): Boolean = wire.reverseResponse(line, identity)
+
+    fun responseIdentity(line: String): String? = wire.responseIdentity(line)
+
+    fun rejected(line: String): Boolean = wire.rejected(line)
 }
 
 /** Writes holder-only frames for the private control socket. */
@@ -88,7 +92,7 @@ private class HolderControlFrames(private val prefix: String) {
         ARMED -> oneArgument(words, ::reverseKey)?.let(HolderProtocol.Event::Armed)
         COMPLETE -> oneArgument(words, ::round)?.let(HolderProtocol.Event::Complete)
         SETTLED -> oneArgument(words, ::key)?.let(HolderProtocol.Event::Settled)
-        REFUSED -> oneArgument(words, ::forwardKey)?.let(HolderProtocol.Event::Refused)
+        REFUSED -> oneArgument(words, ::key)?.let(HolderProtocol.Event::Refused)
         STATE -> state(words)
         else -> null
     }
@@ -123,26 +127,30 @@ private class HolderControlFrames(private val prefix: String) {
 
     private fun round(value: String): Boolean = value.length == ROUND_CHARS && value.all(::hex)
 
-    private fun identity(value: String): Boolean = value.length % HEX_DIGITS == 0 && value.all(::hex)
+    private fun identity(value: String): Boolean =
+        value.isNotEmpty() && value.length <= MAX_IDENTITY_HEX && value.length % HEX_DIGITS == 0 && value.all(::hex)
 
     private fun hex(char: Char): Boolean = char in '0'..'9' || char in 'a'..'f'
 
-    private fun forwardKey(value: String): Boolean = numbered(value, FORWARD_PREFIX)
+    private fun key(value: String): Boolean = HolderWireKeys.accepts(value)
 
-    private fun reverseKey(value: String): Boolean = numbered(value, REVERSE_PREFIX)
-
-    private fun numbered(value: String, prefix: String): Boolean =
-        value.removePrefix(prefix).takeIf { value.startsWith(prefix) }?.all(Char::isDigit) == true
+    private fun reverseKey(value: String): Boolean = HolderWireKeys.reverse(value)
 }
 
 private class HolderWireIds {
     fun forward(line: String): String? = request(line)?.takeIf(::forwardKey)
 
-    fun initialized(line: String): Boolean = method(line) == INITIALIZED
+    fun initialized(line: String): Boolean = objectOrNull(line)?.let(::method) == INITIALIZED
 
-    fun response(line: String): String? = responseId(line)?.takeIf(::scalar)?.takeIf(::forwardKey)
+    fun response(line: String): String? = responseId(line)?.let(::scalar)?.takeIf(::forwardKey)
 
-    fun reverseResponse(line: String, identity: String): Boolean = responseId(line)?.let(::identity) == identity
+    fun reverseResponse(line: String, identity: String): Boolean = responseIdentity(line) == identity
+
+    fun responseIdentity(line: String): String? = responseId(line)?.let(::identity)
+
+    fun rejected(line: String): Boolean = objectOrNull(line)?.let {
+        method(it) == null && ID in it && ERROR in it && RESULT !in it
+    } == true
 
     fun identity(id: JsonElement): String = Json.encodeToString(JsonElement.serializer(), id)
         .encodeToByteArray()
@@ -173,8 +181,7 @@ private class HolderWireIds {
             null
         }
 
-    private fun forwardKey(value: String): Boolean =
-        value.removePrefix(FORWARD_PREFIX).takeIf { value.startsWith(FORWARD_PREFIX) }?.all(Char::isDigit) == true
+    private fun forwardKey(value: String): Boolean = HolderWireKeys.forward(value)
 }
 
 private const val CONTROL_PREFIX = "@splice-holder/1"
@@ -188,13 +195,12 @@ private const val SETTLED = "settled"
 private const val REFUSED = "refused"
 private const val STATE = "state"
 private const val INITIALIZED = "notifications/initialized"
-private const val FORWARD_PREFIX = "f:"
-private const val REVERSE_PREFIX = "s:"
 private const val ID = "id"
 private const val METHOD = "method"
 private const val RESULT = "result"
 private const val ERROR = "error"
-private const val MAX_CONTROL_CHARS = 1024 * 1024
+private const val MAX_IDENTITY_HEX = 64 * 1024
+private const val MAX_CONTROL_CHARS = 128 * 1024
 private const val ROUND_CHARS = 32
 private const val READY_WORDS = 1
 private const val COMMAND_WORDS = 2

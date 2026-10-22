@@ -138,7 +138,7 @@ internal class HubReplacements(
         relay,
         { timers.at(clock.now() + CANDIDATE_REPLAY_RETRY) { recovery.reconcile() } },
         { route -> recovery.retry(route) },
-        ::completed,
+        { route -> completed(route, holders.replacements.completions::rolledBack) },
     )
     private val recovery: ReplacementRecovery = ReplacementRecovery(
         recoveryContext,
@@ -229,7 +229,7 @@ internal class HubReplacements(
         }
         routes.replacements.retire(route, drain, candidate) { failure ->
             if (failure == null) {
-                completed(route)
+                completed(route, holders.replacements.completions::retired)
             } else {
                 holders.replacements.retirements.blocked(route, failure)
                 timers.at(clock.now() + RETIRE_RETRY) { retryRetirement(route) }
@@ -246,9 +246,9 @@ internal class HubReplacements(
         replayRetirement(route, claimed, candidate)
     }
 
-    private fun completed(route: Route) {
-        if (!holders.replacements.retirements.completed(route)) {
-            timers.at(clock.now() + RETIRE_RETRY) { completed(route) }
+    private fun completed(route: Route, complete: (Route) -> Boolean) {
+        if (!complete(route)) {
+            timers.at(clock.now() + RETIRE_RETRY) { completed(route, complete) }
         } else {
             holders.prune()
         }

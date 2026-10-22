@@ -198,105 +198,6 @@ class Listener(private val path: String) {
     }
 }
 
-/** The control socket carries holder evidence; the data socket carries only complete child stdout lines. */
-private class HolderControlChannel(
-    private val listener: Listener,
-    private val output: Bytes,
-    private val settlement: HolderSettlement,
-) {
-    private val input = Bytes()
-    private val scratch = ByteArray(CHUNK)
-    private var sent = 0
-    private var client: Fd? = null
-    private var waiting: Fd? = null
-
-    val listenerFd: Int get() = listener.fd.fd
-    val waitingFd: Int get() = waiting?.fd ?: -1
-    val clientFd: Int get() = client?.fd ?: -1
-    val events: Int get() = (if (client == null) 0 else POLLIN) or (if (output.size > sent) POLLOUT else 0)
-    val pendingOutput: Boolean get() = client != null && output.size > 0
-
-    fun accept() {
-        listener.accept()?.let(::hold)
-    }
-
-    fun claim() {
-        val next = waiting ?: return
-        waiting = null
-        val n = next.readInto(scratch)
-        if (n <= 0) {
-            if (n == 0) close(next.fd) else waiting = next
-        } else {
-            adopt(next)
-            received(n)
-        }
-    }
-
-    fun serve() {
-        val current = client ?: return
-        if (output.size > sent) {
-            val n = current.writeFrom(output.tail(sent))
-            if (n < 0) return drop(current)
-            sent += n
-            val whole = output.wholeLines(sent)
-            output.drop(whole)
-            sent -= whole
-            settlement.controlDelivered()
-        }
-        val n = current.readInto(scratch)
-        if (n == 0) return drop(current)
-        if (n > 0) received(n)
-    }
-
-    fun reset() {
-        waiting?.let { close(it.fd) }
-        client?.let { close(it.fd) }
-        waiting = null
-        client = null
-        input.clear()
-        sent = 0
-        settlement.controlChanged(false)
-    }
-
-    fun remove() {
-        listener.remove()
-    }
-
-    private fun hold(next: Fd) {
-        waiting?.let { close(it.fd) }
-        waiting = next
-    }
-
-    private fun adopt(next: Fd) {
-        client?.let { close(it.fd) }
-        client = next
-        input.clear()
-        sent = 0
-        settlement.controlChanged(true)
-    }
-
-    private fun received(n: Int) {
-        input.append(scratch, n)
-        val whole = input.wholeLines()
-        var start = 0
-        while (start < whole) {
-            var end = start
-            while (input.data[end] != NEWLINE) end++
-            settlement.acceptControl(input.text(start, end))
-            start = end + 1
-        }
-        input.drop(whole)
-    }
-
-    private fun drop(current: Fd) {
-        close(current.fd)
-        client = null
-        input.clear()
-        sent = 0
-        settlement.controlChanged(false)
-    }
-}
-
 /** The pump keeps raw child bytes separate from holder evidence and only reconnects on whole child lines. */
 class Holder(private val socketPath: String, private val command: List<String>) {
     private val fromClient = Bytes()
@@ -307,7 +208,12 @@ class Holder(private val socketPath: String, private val command: List<String>) 
     private val settlement = HolderSettlement(toServer, toControl)
     private val scratch = ByteArray(CHUNK)
     private val controls by lazy {
-        HolderControlChannel(Listener(HolderProtocol.controlSocket(socketPath)), toControl, settlement)
+        HolderControlChannel(
+            Listener(HolderProtocol.controlSocket(socketPath)),
+            toControl,
+            settlement,
+            requireNotNull(splice.hub.front.Ids.socket(socketPath)),
+        )
     }
     private var sent = 0
     private var client: Fd? = null
@@ -340,7 +246,7 @@ class Holder(private val socketPath: String, private val command: List<String>) 
         val fds = allocArray<pollfd>(POLLED)
         val current = client
         arm(fds, server, listener)
-        if (poll(fds, POLLED.convert(), -1) < 0) return@memScoped errno == EINTR
+        if (poll(fds, POLLED.convert(), HOLDER_POLL_MS) < 0) return@memScoped errno == EINTR
         val ready = { i: Int -> fds[i].revents.toInt() and (POLLIN or POLLOUT or POLLHUP or POLLERR) != 0 }
         if (ready(AT_LISTENER)) listener.accept()?.let(::hold)
         if (ready(AT_CONTROL_LISTENER)) controls.accept()
@@ -355,6 +261,7 @@ class Holder(private val socketPath: String, private val command: List<String>) 
 
     /** What each descriptor is polled for this turn; a full buffer stops reading the side that fills it. */
     private fun arm(fds: CArrayPointer<pollfd>, server: Server, listener: Listener) {
+        controls.expire()
         watch(fds[AT_LISTENER], listener.fd.fd, POLLIN)
         watch(
             fds[AT_SERVER_OUT],
@@ -395,15 +302,18 @@ class Holder(private val socketPath: String, private val command: List<String>) 
     }
 
     private fun adopt(next: Fd) {
-        val replaced = client != null
         client?.let { close(it.fd) }
-        if (replaced) controls.reset()
+        controls.dataChanged(next)
         client = next
         fromClient.clear()
         sent = 0
     }
 
     private fun receivedClient(n: Int) {
+        if (fromClient.size.toLong() + toServer.size + n > HOLDER_BUFFER_CAP) {
+            client?.let(::drop)
+            return
+        }
         fromClient.append(scratch, n)
         val whole = fromClient.wholeLines()
         if (whole != 0) queueClientLines(whole)
@@ -415,7 +325,8 @@ class Holder(private val socketPath: String, private val command: List<String>) 
         while (start < whole) {
             var end = start
             while (fromClient.data[end] != NEWLINE) end++
-            settlement.acceptClient(fromClient.text(start, end))
+            val line = fromClient.text(start, end)
+            if (!controls.dataLine(line)) settlement.acceptClient(line, recorded = controls.recorded)
             start = end + 1
         }
     }
@@ -468,7 +379,7 @@ class Holder(private val socketPath: String, private val command: List<String>) 
 
     private fun drop(current: Fd) {
         close(current.fd)
-        controls.reset()
+        controls.dataChanged(null)
         client = null
         fromClient.clear()
         sent = 0
@@ -482,6 +393,7 @@ private const val STOPPED = 143
 private const val CHUNK = 64 * 1024
 internal const val HOLDER_BUFFER_CAP = 64 * 1024 * 1024
 private const val NEWLINE: Byte = 10
+private const val HOLDER_POLL_MS = 1000
 private const val POLLED = 8
 private const val AT_LISTENER = 0
 private const val AT_SERVER_OUT = 1

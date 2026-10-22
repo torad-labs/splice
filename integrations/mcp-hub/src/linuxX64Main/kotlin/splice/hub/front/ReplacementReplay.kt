@@ -7,7 +7,7 @@ internal class ReplacementReplay(
     private val relay: Relay,
     private val retryCommit: (Route) -> Unit,
     private val retryRollback: (Route) -> Unit,
-    private val completed: (Route) -> Unit,
+    private val rolledBack: (Route) -> Unit,
 ) {
     fun commit(route: Route, drain: HolderDrain, candidate: ReplacementCandidate) {
         routes.replacements.commit(route, drain.socket, drain.generation, candidate) { failure ->
@@ -48,7 +48,7 @@ internal class ReplacementReplay(
             } else if (!holders.replacements.unfence(drain)) {
                 rollbackUnknown(route, "the front could not durably reopen old-holder admission")
             } else {
-                completed(route)
+                rolledBack(route)
             }
         }
     }

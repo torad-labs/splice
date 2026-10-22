@@ -107,7 +107,12 @@ class HttpConn(
     fun reply(status: Int, body: String = "", extra: Map<String, String> = emptyMap()) {
         if (closed) return
         val bytes = body.encodeToByteArray()
-        outbox.append(head(status, bytes.size, extra))
+        val headers = head(status, bytes.size, extra).encodeToByteArray()
+        if (outbox.size.toLong() + headers.size + bytes.size > MAX_QUEUED_HTTP_OUTPUT_BYTES) {
+            close()
+            return
+        }
+        outbox.append(headers)
         outbox.append(bytes)
         busy = false
         requestBy = clock.now() + REQUEST_TIMEOUT_MS
@@ -292,6 +297,12 @@ class HolderLink(
     val inbox = Bytes()
     private val writes = HolderWrites(sys)
     private var sealed = false
+    internal var evidenceControl: HolderLink? = null
+    internal var legacyReceipts: HolderLink? = null
+    internal var beginRecovery: (() -> Unit)? = null
+    internal var endRecovery: (() -> Unit)? = null
+    internal var negotiating = false
+    internal var recorded = false
     var reading = true
     val pendingOutput: Boolean get() = writes.pending
 
@@ -306,12 +317,13 @@ class HolderLink(
             return
         }
         if (revents and IN != 0 || sys.gone(revents)) {
-            if (sys.readInto(fd, inbox) == 0) return close()
+            if (sys.readInto(fd, inbox) == 0 || inbox.size > MAX_HOLDER_INPUT_BYTES) return close()
             lines()
         }
     }
 
     fun resumeReading() {
+        if (negotiating) return
         reading = true
         lines()
     }
@@ -324,6 +336,7 @@ class HolderLink(
     private fun lines() {
         var nl = inbox.indexOf(NL)
         while (nl >= 0) {
+            if (closed || !reading) break
             val line = inbox.text(0, nl)
             inbox.drop(nl + 1)
             if (line.isNotBlank()) onLine(line)
@@ -355,11 +368,16 @@ class HolderLink(
         return writes.flush(fd).also { flushed -> if (!flushed) close() }
     }
 
-    override fun onClose() = onLost()
+    override fun onClose() {
+        evidenceControl?.close()
+        onLost()
+    }
 }
 
 private val CRLF2 = "\r\n\r\n".encodeToByteArray()
 private val NL = "\n".encodeToByteArray()
+private const val MAX_QUEUED_HTTP_OUTPUT_BYTES = 64L * 1024 * 1024 + 64 * 1024
+private const val MAX_HOLDER_INPUT_BYTES = 64 * 1024 * 1024
 private const val MAX_HEADERS = 64 * 1024
 private const val MAX_BODY = 64 * 1024 * 1024
 private const val MAX_QUEUED_STREAM_OUTPUT_BYTES = 1024 * 1024L

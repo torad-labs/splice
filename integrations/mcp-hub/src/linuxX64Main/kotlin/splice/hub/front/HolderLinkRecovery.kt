@@ -3,7 +3,6 @@ package splice.hub.front
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.contentOrNull
-import splice.hub.holder.HolderProtocol
 
 internal class HolderLinkRecovery(
     private val context: HolderLinkContext,
@@ -27,7 +26,7 @@ internal class HolderLinkRecovery(
         ::fromHolder,
         loss::lost,
     )
-    private val controls = HolderControlLinks(context.connections, context.relay.inbound)
+    private val controls = HolderControlLinks(context.connections, context.relay.inbound, context.timers, context.clock)
     private val generations = HolderGenerationReads(context.routes.attestations, context.timers, context.clock)
 
     var stopping: Boolean
@@ -48,28 +47,36 @@ internal class HolderLinkRecovery(
 
     fun reconnect(holder: Holder, generation: String): Boolean {
         if (!handshakes.retained(holder, generation)) return false
-        val existing = holder.link
-        val link = existing ?: connections.connect(holder) ?: return false
-        holder.scheduleReverseResponseRetry = { exact -> retry(holder, exact) }
-        generations.bind(holder, link) { attested ->
-            val prior = holder.generation
-            if (attested == generation) {
-                holder.attestedGeneration = attested
-                handshakes.recovery.recover(holder, link)
-            } else {
-                handshakes.reset(holder, attested)
-                context.routes.ownership.adopt(holder.socket, prior, attested)
-                holder.attestedGeneration = attested
-                persistence.changed()
-                link.close()
-            }
+        val existing = holder.link?.takeUnless { it.closed }
+        return if (existing != null) {
+            true
+        } else {
+            connections.connect(holder)?.let { link ->
+                holder.scheduleReverseResponseRetry = { exact -> retry(holder, exact) }
+                generations.bind(holder, link) { attested ->
+                    val prior = holder.generation
+                    if (attested == generation) {
+                        holder.attestedGeneration = attested
+                        controls.connect(holder, link) { handshakes.recovery.recover(holder, link) }
+                    } else {
+                        handshakes.reset(holder, attested)
+                        context.routes.ownership.adopt(holder.socket, prior, attested)
+                        holder.attestedGeneration = attested
+                        persistence.changed()
+                        link.close()
+                    }
+                }
+                link.claim()
+                !link.closed
+            } ?: false
         }
-        controls.connect(holder)
-        if (existing == null) link.claim()
-        return !link.closed
     }
 
     fun adopt(fd: Int, socket: String, saved: ByteArray) {
+        if (socket.endsWith(".control")) {
+            platform.posix.close(fd)
+            return
+        }
         val holder = known.getOrPut(socket) { Holder(socket) }
         val link = connections.adopt(holder, fd, saved)
         bound(holder, link) { handshakes.recovery.recover(holder, link) }
@@ -141,9 +148,8 @@ internal class HolderLinkRecovery(
             context.routes.ownership.adopt(holder.socket, prior, attested)
             holder.attestedGeneration = attested
             if (knownGeneration != attested) persistence.changed()
-            activated()
+            controls.connect(holder, link, activated)
         }
-        controls.connect(holder)
     }
 
     private fun retry(holder: Holder, generation: String) {
@@ -200,38 +206,6 @@ internal class HolderConnections(
 
     fun adopt(holder: Holder, fd: Int, saved: ByteArray): HolderLink =
         HolderLinkBinding(holder, holder.socket, onLine, onLost).adopt(connections, fd, saved)
-}
-
-/** Owns the separate evidence channel and closes its matching data link on control loss. */
-internal class HolderControlLinks(
-    private val connections: Links,
-    private val relay: RelayInbound,
-) {
-    fun connect(holder: Holder) {
-        if (holder.control?.closed == false) return
-        HolderLinkBinding(
-            holder,
-            HolderProtocol.controlSocket(holder.socket),
-            ::received,
-            ::lost,
-        ).connect(connections)?.let { link ->
-            holder.control = link
-            link.claim()
-        }
-    }
-
-    private fun received(holder: Holder, link: HolderLink, line: String) {
-        if (holder.control === link) {
-            HolderProtocol.event(line)?.let { frame -> relay.control(holder, frame) }
-        }
-    }
-
-    private fun lost(holder: Holder, link: HolderLink) {
-        if (holder.control === link) {
-            holder.control = null
-            holder.link?.close()
-        }
-    }
 }
 
 internal class HolderLinkBinding(

@@ -13,12 +13,22 @@ internal data class HolderReplacements(
 ) {
     private val store = HolderReplacementStore()
     private val details = HolderCandidateDetails()
+    private data class RollbackRelease(
+        val old: Holder?,
+        val candidate: ReplacementCandidate?,
+        val exited: Holder?,
+        val held: Boolean,
+        val oldGeneration: String,
+        val link: HolderLink?,
+    )
+
     val links = HolderCandidateLinks(known, store, changed, details)
     private val preparation = HolderCandidatePreparation(known, details, links, checkpoint)
     val admissions = HolderAdmissions(store)
     val views = HolderDrainViews(store, details)
     val candidates = HolderCandidates(store, changed, checkpoint, preparation, links, details)
-    val retirements = HolderRetirements(known, store, changed, checkpoint, preparation)
+    val completions = HolderReplacementCompletion(known, store, changed, checkpoint)
+    val retirements = HolderRetirements(store, changed, checkpoint, preparation)
 
     fun all(): List<HolderDrain> = store.all()
 
@@ -49,23 +59,40 @@ internal data class HolderReplacements(
         return false
     }
 
-    fun unfence(drain: HolderDrain): Boolean {
-        val holder = known[drain.socket] ?: return true
-        val held = holder.generation == drain.generation && holder.retirementFence == drain.generation
-        return if (!held) {
+    /** A confirmed rollback reopens the old holder and marks only the exact candidate generation exited. */
+    fun unfence(drain: HolderDrain): Boolean =
+        rollbackRelease(drain)?.let(::persistRollback) ?: true
+
+    private fun rollbackRelease(drain: HolderDrain): RollbackRelease? {
+        val old = known[drain.socket]
+        val held = old?.let { holder ->
+            holder.generation == drain.generation && holder.retirementFence == drain.generation
+        } == true
+        val candidate = drain.candidate?.takeIf { drain.phase == ROLLING_BACK }
+        val exited = candidate?.let(known::get)?.takeIf { holder -> holder.generation == candidate.generation }
+        return RollbackRelease(old, candidate, exited, held, drain.generation, old?.link)
+            .takeIf { held || exited != null }
+    }
+
+    private fun persistRollback(release: RollbackRelease): Boolean {
+        val priorFence = release.old?.retirementFence
+        val priorExit = release.exited?.exitConfirmedGeneration
+        if (release.held) release.old?.retirementFence = null
+        release.exited?.exitConfirmedGeneration = release.candidate?.generation
+        return if (checkpoint()) {
+            if (release.held) unseal(release)
+            changed()
             true
         } else {
-            val link = holder.link
-            holder.retirementFence = null
-            if (checkpoint()) {
-                if (holder.link === link && holder.generation == drain.generation) link?.unseal()
-                changed()
-                true
-            } else {
-                holder.retirementFence = drain.generation
-                false
-            }
+            release.old?.retirementFence = priorFence
+            release.exited?.exitConfirmedGeneration = priorExit
+            false
         }
+    }
+
+    private fun unseal(release: RollbackRelease) {
+        val old = release.old ?: return
+        if (old.link === release.link && old.generation == release.oldGeneration) release.link?.unseal()
     }
 }
 
@@ -296,8 +323,46 @@ internal class HolderCandidatePreparation(
     } == true
 }
 
-internal class HolderRetirements(
+internal class HolderReplacementCompletion(
     private val known: MutableMap<String, Holder>,
+    private val store: HolderReplacementStore,
+    private val changed: () -> Unit,
+    private val checkpoint: () -> Boolean,
+) {
+    /** The daemon confirmed the old exact generation exited, so its terminal retirement can release it. */
+    fun retired(route: Route): Boolean {
+        val drain = store.drains[route.key()]?.takeIf { it.phase == RETIRING } ?: return false
+        val exited = known[drain.socket]?.takeIf { holder -> holder.generation == drain.generation }
+        return remove(route, drain, exited)
+    }
+
+    /** The daemon confirmed rollback with the old generation live, so this removes no old exit ownership. */
+    fun rolledBack(route: Route): Boolean {
+        val drain = store.drains[route.key()]?.takeIf { it.phase == ROLLING_BACK } ?: return false
+        return remove(route, drain, null)
+    }
+
+    private fun remove(route: Route, drain: HolderDrain, exited: Holder?): Boolean {
+        store.drains.remove(route.key())
+        val priorExit = exited?.exitConfirmedGeneration
+        val priorFence = exited?.retirementFence
+        if (exited != null) {
+            exited.exitConfirmedGeneration = drain.generation
+            if (exited.retirementFence == drain.generation) exited.retirementFence = null
+        }
+        return if (checkpoint()) {
+            changed()
+            true
+        } else {
+            store.drains[route.key()] = drain
+            exited?.exitConfirmedGeneration = priorExit
+            exited?.retirementFence = priorFence
+            false
+        }
+    }
+}
+
+internal class HolderRetirements(
     private val store: HolderReplacementStore,
     private val changed: () -> Unit,
     private val checkpoint: () -> Boolean,
@@ -357,9 +422,6 @@ internal class HolderRetirements(
         return drain
     }
 
-    /** The old exact generation exited, so persist its release mark with removal of its replacement drain. */
-    fun completed(route: Route): Boolean = remove(route)
-
     /** A rollback whose outcome is unknown remains distinct from a retirement that the daemon owns. */
     fun rollbackUnknown(route: Route, words: String) {
         store.drains[route.key()]?.let { drain ->
@@ -389,24 +451,6 @@ internal class HolderRetirements(
                     drain.phase == ROLLBACK_UNKNOWN
             }
             .forEach { drain -> transition(drain, ROLLBACK_PENDING, null) }
-    }
-
-    private fun remove(route: Route): Boolean {
-        val removed = store.drains.remove(route.key()) ?: return true
-        val holder = known[removed.socket]?.takeIf { it.generation == removed.generation }
-        val priorExit = holder?.exitConfirmedGeneration
-        val priorFence = holder?.retirementFence
-        holder?.exitConfirmedGeneration = removed.generation
-        if (holder?.retirementFence == removed.generation) holder.retirementFence = null
-        return if (checkpoint()) {
-            changed()
-            true
-        } else {
-            store.drains[route.key()] = removed
-            holder?.exitConfirmedGeneration = priorExit
-            holder?.retirementFence = priorFence
-            false
-        }
     }
 
     private fun transition(drain: HolderDrain, phase: String, blocker: String?) {

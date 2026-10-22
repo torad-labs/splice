@@ -12,6 +12,7 @@ import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.contentOrNull
 import kotlinx.serialization.json.longOrNull
 import kotlinx.serialization.json.put
+import splice.hub.holder.HolderAdmissionWire
 import splice.hub.holder.HolderProtocol
 
 /** A client request admitted to a holder under a front-wide wire id. Its client may disappear before the holder settles. */
@@ -23,7 +24,11 @@ data class WireOutstanding(
     val session: Session?,
     val method: String,
     val at: Long,
-)
+) {
+    /** Socket-write proof is not proof that a live front has consumed its response data. */
+    var backendSettled = false
+    var recorded = false
+}
 
 private class ForwardAdmission(
     val generation: String?,
@@ -37,7 +42,7 @@ private class ForwardAdmission(
         generation == null -> "the holder has no owner-confirmed generation"
         retiring -> "the holder is retiring"
         link == null -> "the holder is no longer connected"
-        recovering -> "the holder is reconciling durable delivery"
+        recovering || link.negotiating -> "the holder is reconciling durable delivery"
         retained >= MAX_RETAINED_FORWARD -> "the front retained-work limit is full"
         !link.accepts(text) -> "the holder output queue is full"
         else -> null
@@ -52,7 +57,8 @@ class Relay(
     private val checkpoint: () -> Boolean,
 ) {
     private val wireOutstanding = HashMap<String, WireOutstanding>()
-    private val fromServer = ServerRequests(changed, checkpoint)
+    private val keys = RelayWireKeys()
+    private val fromServer = ServerRequests(changed, checkpoint, keys)
     private val settlements = RelaySettlements(
         wireOutstanding,
         fromServer,
@@ -68,7 +74,6 @@ class Relay(
         settlements,
         resume,
     )
-    private var next = 0L
 
     /** Wire ids not yet answered or confirmed lost in either direction. */
     val inFlight: Int get() = wireOutstanding.size + fromServer.size
@@ -78,7 +83,7 @@ class Relay(
             fromServer.count(socket)
 
     fun awaitsExit(holder: Holder, generation: String): Boolean =
-        wireOutstanding.values.any { it.holder === holder && it.generation == generation } ||
+        wireOutstanding.values.any { it.holder === holder && it.generation == generation && !it.backendSettled } ||
             fromServer.awaitsExit(holder, generation)
 
     /** Rechecks every restored ledger against the daemon's generation-addressed exit evidence. */
@@ -89,26 +94,18 @@ class Relay(
     }
 
     fun restore(saved: JsonObject?, holder: (String) -> Holder) {
-        (saved?.get(RELAY_CALLS) as? JsonObject)?.forEach { (key, value) ->
-            val body = value as? JsonObject ?: return@forEach
-            val socket = Rpc.str(body, SOCKET) ?: return@forEach
-            val generation = Rpc.str(body, GENERATION) ?: return@forEach
-            wireOutstanding[key] = WireOutstanding(
-                holder(socket),
-                generation,
-                null,
-                body[CLIENT_ID],
-                Rpc.str(body, CALL_SESSION)?.let(sessions::get),
-                Rpc.str(body, CALL_METHOD).orEmpty(),
-                (body[CALL_AT] as? JsonPrimitive)?.longOrNull ?: 0L,
-            ).also { resume.remember(it.holder) }
-            restored(key)
-        }
+        val counters = saved?.get(WIRE_KEYS)
+        require(counters == null || counters is JsonObject) { "the persisted wire-key counters are malformed" }
+        keys.restore(counters as? JsonObject)
+        val retained = saved?.get(RELAY_CALLS) as? JsonObject
+        require((retained?.size ?: 0) <= MAX_RETAINED_FORWARD) { "the persisted forward ledger exceeds its item limit" }
+        retained?.forEach { (key, value) -> restoreCall(key, value, holder) }
         fromServer.restore(saved?.get(SERVER_REQUESTS) as? JsonObject, holder, sessions)
         fromServer.retainedGenerations.map { it.first }.distinct().forEach(resume::remember)
     }
 
     fun state(): JsonObject = buildJsonObject {
+        put(WIRE_KEYS, keys.state())
         put(
             RELAY_CALLS,
             JsonObject(
@@ -120,6 +117,7 @@ class Relay(
                         call.session?.let { put(CALL_SESSION, it.id) }
                         put(CALL_METHOD, call.method)
                         put(CALL_AT, call.at)
+                        put(CALL_RECORDED, call.recorded)
                     }
                 },
             ),
@@ -144,7 +142,11 @@ class Relay(
             conn.reply(UNAVAILABLE, Rpc.error(id, "request id is already in flight for this session"))
             return
         }
-        val key = nextKey()
+        val key = keys.forward()
+        if (key == null) {
+            conn.reply(UNAVAILABLE, Rpc.error(id, "the durable wire-key sequence is exhausted"))
+            return
+        }
         val text = Rpc.with(msg, Rpc.ID, JsonPrimitive(key))
         val forward = ForwardAdmission(
             holder.generation,
@@ -168,10 +170,11 @@ class Relay(
             Rpc.str(msg, Rpc.METHOD).orEmpty(),
             clock.now(),
         )
+        call.recorded = forward.link?.recorded == true
         wireOutstanding[key] = call
         resume.remember(holder)
         if (checkpoint()) {
-            conn.onGone = { if (wireOutstanding[key] === call) call.conn = null }
+            conn.onGone = { settlements.detached(key, call) }
             holder.lastCall = clock.epoch()
             requireNotNull(forward.link).send(text)
         } else {
@@ -188,18 +191,23 @@ class Relay(
 
     /** Losing a socket does not prove that the holder's child stopped executing its operation. */
     fun lost(holder: Holder) {
-        wireOutstanding.values.filter { it.holder === holder && it.generation == holder.generation }.forEach { call ->
-            call.clientId?.let { id ->
-                call.conn?.reply(
-                    OK,
-                    Rpc.error(
-                        id,
-                        "the holder connection was lost; the operation's outcome is unknown and it was not replayed",
-                    ),
-                )
+        wireOutstanding
+            .filterValues { it.holder === holder && it.generation == holder.generation }
+            .toList()
+            .forEach { (key, call) ->
+                val conn = call.conn
+                settlements.detached(key, call)
+                call.clientId?.let { id ->
+                    conn?.reply(
+                        OK,
+                        Rpc.error(
+                            id,
+                            "the holder connection was lost; " +
+                                "the operation's outcome is unknown and it was not replayed",
+                        ),
+                    )
+                }
             }
-            call.conn = null
-        }
         // Keep both directions charged. A later response or the owner's exact-generation exit can settle them; link loss cannot.
         changed()
     }
@@ -208,26 +216,36 @@ class Relay(
     fun exited(holder: Holder, generation: String) {
         wireOutstanding.entries
             .filter { (_, call) -> call.holder === holder && call.generation == generation }
-            .forEach { (key, _) -> wireOutstanding.remove(key) }
+            .forEach { (key, call) ->
+                call.backendSettled = true
+                if (call.conn == null) wireOutstanding.remove(key)
+            }
         fromServer.exited(holder, generation)
         settlements.exited(holder, generation)
         changed()
     }
 
+    private fun restoreCall(key: String, value: JsonElement, holder: (String) -> Holder) {
+        val body = value as? JsonObject ?: return
+        val socket = Rpc.str(body, SOCKET) ?: return
+        val generation = Rpc.str(body, GENERATION) ?: return
+        wireOutstanding[key] = WireOutstanding(
+            holder(socket),
+            generation,
+            null,
+            body[CLIENT_ID],
+            Rpc.str(body, CALL_SESSION)?.let(sessions::get),
+            Rpc.str(body, CALL_METHOD).orEmpty(),
+            (body[CALL_AT] as? JsonPrimitive)?.longOrNull ?: 0L,
+        ).also {
+            it.recorded = Rpc.str(body, CALL_RECORDED) == "true"
+            resume.remember(it.holder)
+        }
+        keys.retained(key)
+    }
+
     private fun reserved(session: Session, id: JsonElement): Boolean =
         wireOutstanding.values.any { it.session === session && it.clientId == id }
-
-    private fun nextKey(): String {
-        var key: String
-        do {
-            key = "f:${++next}"
-        } while (key in wireOutstanding)
-        return key
-    }
-
-    private fun restored(key: String) {
-        key.removePrefix("f:").toLongOrNull()?.let { next = maxOf(next, it) }
-    }
 }
 
 /** The notification path owns only request-id translation; it never changes a generation ledger. */
@@ -284,7 +302,7 @@ internal class RelayInbound(
     /** A request from the server goes to the newest live client, or receives an explicit no-client error. */
     private fun asks(holder: Holder, msg: JsonObject, id: JsonElement) {
         if (holder.retirementFence == holder.generation) {
-            holder.link?.send(Rpc.error(id, "the holder is retiring"))
+            refuse(holder, id, "the holder is retiring")
         } else {
             when (val retained = requests.retain(holder, id)) {
                 is ServerRequestRetention.Retained -> {
@@ -292,10 +310,15 @@ internal class RelayInbound(
                     deliver(holder, msg, id, retained.key)
                 }
                 ServerRequestRetention.CapacityRefused ->
-                    holder.link?.send(Rpc.error(id, "the front retained reverse capacity is full"))
+                    refuse(holder, id, "the front retained reverse capacity is full")
                 ServerRequestRetention.PersistenceFailed -> Unit
             }
         }
+    }
+
+    private fun refuse(holder: Holder, id: JsonElement, reason: String) {
+        val text = Rpc.error(id, reason)
+        holder.link?.let { link -> link.send(if (link.recorded) HolderAdmissionWire.reject(text) else text) }
     }
 
     private fun deliver(holder: Holder, msg: JsonObject, id: JsonElement, key: String) {
@@ -343,7 +366,9 @@ internal class RelayInbound(
     }
 
     private fun deliver(call: WireOutstanding, msg: JsonObject) {
-        call.conn?.let { conn ->
+        val conn = call.conn
+        call.conn = null
+        conn?.let {
             conn.onGone = null
             call.clientId?.let { id -> conn.reply(OK, Rpc.with(msg, Rpc.ID, id)) }
         }
@@ -379,12 +404,14 @@ internal class RelayInbound(
     }
 }
 
+private const val WIRE_KEYS = "wire_keys"
 private const val RELAY_CALLS = "calls"
 private const val SERVER_REQUESTS = "server_requests"
 private const val CLIENT_ID = "client_id"
 private const val CALL_SESSION = "session"
 private const val CALL_METHOD = "method"
 private const val CALL_AT = "at"
+private const val CALL_RECORDED = "recorded"
 internal const val CANCELLED = "notifications/cancelled"
 private const val REQUEST_ID = "requestId"
 private const val ROOTS_LIST = "roots/list"

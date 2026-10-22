@@ -20,6 +20,7 @@ import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
 import splice.client.mcp.McpServerSpec
 import splice.core.util.JsonScalars
+import splice.core.util.LogSafe
 import splice.core.util.LogSink
 import java.io.BufferedReader
 import java.io.IOException
@@ -199,23 +200,20 @@ internal class HostedServer(
     }
 
     private suspend fun spawn(): McpResult<JsonObject> {
-        if (process != null) failPending("hosted MCP server '${spec.name}' exited")
-        history.admit()?.let { return it }
-        val p = when (val launched = launch()) {
-            is McpResult.Refused -> return launched
-            is McpResult.Served -> launched.value
-        }
-        stderr.watch(spec.name, p)
-        history.started()
-        Executors.defaultThreadFactory().newThread { pump(p) }.apply {
-            name = "mcp-host-${spec.name}"
-            isDaemon = true
-        }.start()
-        return try {
-            handshake(p)
-        } catch (e: CancellationException) {
-            tearDown("cancelled during the handshake")
-            throw e
+        val stopping = synchronized(stateLock) { process != null }
+        val admission = if (stopping) null else history.admit()
+        return when {
+            stopping -> McpResult.Refused("hosted MCP server '${spec.name}' is stopping after a transport failure")
+            admission != null -> admission
+            else -> when (val launched = launch()) {
+                is McpResult.Refused -> launched
+                is McpResult.Served -> try {
+                    handshake(launched.value)
+                } catch (e: CancellationException) {
+                    tearDown("cancelled during the handshake")
+                    throw e
+                }
+            }
         }
     }
 
@@ -238,7 +236,12 @@ internal class HostedServer(
             }
         }
         if (adopted) {
-            p.onExit().thenRun { send.exited(p) }
+            stderr.watch(spec.name, p)
+            history.started()
+            Executors.defaultThreadFactory().newThread { pump(p) }.apply {
+                name = "mcp-host-${spec.name}"
+                isDaemon = true
+            }.start()
             return McpResult.Served(p)
         }
         return McpResult.Refused("hosted MCP server '${spec.name}' was closed while starting")
@@ -279,52 +282,47 @@ internal class HostedServer(
 
     /** A failed pipe may have delivered bytes. Never refund its wire IDs until that exact child exits. */
     private fun transportFailed(child: Process, reason: String) {
-        synchronized(stateLock) {
-            if (process === child) {
-                lastError = "$reason; delivery outcome unknown, operation was not replayed"
-                process = null
-                writer = null
-                initResult = null
-                tools.drop()
+        val mine = synchronized(stateLock) {
+            (process === child && writer != null).also {
+                if (it) {
+                    lastError = "$reason; delivery outcome unknown, operation was not replayed"
+                    writer = null
+                    initResult = null
+                    tools.drop()
+                }
             }
         }
+        if (!mine) return
         send.idsOf(child).forEach { id ->
             pending.remove(id)?.fail(codec, "hosted MCP transport failed; operation outcome unknown, not replayed")
         }
         child.destroy()
         stops.await(listOf(child))
+        val exitCode = reaped.codeOf(child)
+        synchronized(stateLock) { if (process === child) process = null }
         send.exited(child)
+        if (mine) {
+            history.exited()
+            log(
+                "[mcp-host] ${LogSafe.str(spec.name)}: pid ${child.pid()} exited ${LogSafe.str(exitCode)} " +
+                    "(${LogSafe.str(lastError.orEmpty())})\n",
+            )
+        }
     }
 
-    /** The reader thread: one line, one message, until EOF — which is the child's death. */
+    /** The reader thread: one line, one message, until EOF, which fails this child's transport. */
     private fun pump(p: Process) {
         val reader: BufferedReader = p.inputStream.bufferedReader()
-        try {
+        val reason = try {
             generateSequence { reader.readLine() }
                 .filter { it.isNotBlank() }
                 .mapNotNull(codec::parse)
                 .forEach { dispatch(p, it) }
+            "stdout closed"
         } catch (e: IOException) {
-            lastError = "read failed: ${e.message}"
+            "read failed: ${e.message}"
         }
-        tools.drop() // stale whoever owns the slot now: a replacement shares this cache
-        if (process !== p) return
-        val code = reaped.codeOf(p)
-        // Compare-and-clear: a replacement may have been spawned during the wait; never clear it.
-        val mine = synchronized(stateLock) {
-            (process === p).also {
-                if (it) {
-                    process = null
-                    initResult = null
-                }
-            }
-        }
-        if (!mine) return
-        send.exited(p)
-        history.exited()
-        lastError = lastError ?: "exited with code $code"
-        log("[mcp-host] ${spec.name}: pid ${p.pid()} exited ($lastError)\n")
-        failPending("hosted MCP server '${spec.name}' exited")
+        transportFailed(p, reason)
     }
 
     private fun dispatch(child: Process, msg: JsonObject) {

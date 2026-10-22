@@ -5,7 +5,9 @@ import splice.core.util.JsonWire
 import java.io.BufferedWriter
 import java.util.Collections
 import java.util.IdentityHashMap
+import java.util.concurrent.ScheduledFuture
 import kotlin.time.Duration
+import kotlin.time.Duration.Companion.milliseconds
 
 // why: 64 slots bound per-direction exchange tracking when a child stops consuming stdin.
 internal const val WRITE_QUEUE_CAPACITY = 64
@@ -18,6 +20,9 @@ private const val MAX_RETAINED_REPLY_BYTES = MAX_QUEUED_WRITE_BYTES
 
 // why: supported Linux/macOS runtimes add one newline byte to each JSON-RPC line.
 private const val WRITE_LINE_BYTES = 1L
+
+// why: a single quarter-second wakeup recovers capacity races without retaining a timer per reverse reply.
+private const val HOSTED_REPLY_RETRY_MS = 250L
 
 /** One child/stdin generation, carrying its own short-lived retirement fence. */
 internal data class McpWriteTarget(
@@ -89,14 +94,16 @@ private fun interface McpReverseReplyAttempt {
     operator fun invoke(reply: McpReverseReply): Boolean
 }
 
-/** Holds one never-queued reverse response per retained request until another write frees stdin capacity. */
+/** Holds bounded never-queued reverse responses with one coalesced wakeup, independent of writer completion races. */
 private class McpReverseReplies<L : Any>(
     private val lock: L,
     private val held: McpReverseReplyHeld,
     private val attempt: McpReverseReplyAttempt,
+    private val failures: McpWriteFailures,
 ) {
     private val replies = LinkedHashMap<Long, McpReverseReply>()
     private var retainedBytes = 0L
+    private var wakeup: ScheduledFuture<*>? = null
 
     fun retain(reply: McpReverseReply): Boolean = synchronized(lock) {
         val byteRoom = reply.bytes <= MAX_RETAINED_REPLY_BYTES &&
@@ -108,6 +115,7 @@ private class McpReverseReplies<L : Any>(
             else -> {
                 replies[reply.requestId] = reply
                 retainedBytes += reply.bytes
+                scheduleRetry()
                 true
             }
         }
@@ -128,7 +136,26 @@ private class McpReverseReplies<L : Any>(
                     retained.retrying = false
                 }
             }
+            scheduleRetry()
         }
+    }
+
+    private fun scheduleRetry() {
+        if (wakeup != null) return
+        if (replies.values.none { !it.retrying && held(it.requestId, it.target) }) return
+        wakeup = failures.schedule(HOSTED_REPLY_RETRY_MS.milliseconds, McpWriteExpired(::retryScheduled))
+    }
+
+    private fun retryScheduled() {
+        synchronized(lock) { wakeup = null }
+        retry()
+    }
+
+    fun close() = synchronized(lock) {
+        wakeup?.cancel(false)
+        wakeup = null
+        replies.clear()
+        retainedBytes = 0L
     }
 
     fun exited(target: McpWriteTarget) = synchronized(lock) {
@@ -212,6 +239,7 @@ internal class McpChildWriter(
                 queue(delivery, reply.budget)
             }
         },
+        failures,
     )
     private val permitted = McpWritePermitted { delivery ->
         synchronized(accountingLock) { !delivery.completed.isCompleted && accepting(delivery.target) }
@@ -326,6 +354,7 @@ internal class McpChildWriter(
             writesInFlight.toList()
         }
         cancelled.forEach { resolve(it, false) }
+        reverseReplies.close()
         writes.close()
         failures.close()
     }

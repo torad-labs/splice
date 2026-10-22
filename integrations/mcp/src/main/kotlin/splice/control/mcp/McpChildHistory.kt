@@ -22,9 +22,15 @@ private const val BACKOFF_MAX_SHIFT = 4
 
 internal class McpChildHistory(private val clock: HostClock, private val name: String) {
     /** Consecutive short-lived children; the second and later wait before respawning. */
-    @Volatile private var crashes = 0
+    private var crashes = 0
 
-    @Volatile private var exitedAt = 0L
+    private var exitedAt = 0L
+
+    /** Identifies a started child even when a test clock holds the same millisecond across launches. */
+    private var generation = 0L
+
+    /** The generation whose transport failure already supplied [exitedAt]. */
+    private var failedGeneration = -1L
 
     @Volatile var startedAt: Long = 0L
         private set
@@ -32,6 +38,7 @@ internal class McpChildHistory(private val clock: HostClock, private val name: S
     /** A crash loop (the last child died young, and so did the one before) waits before the next spawn: 5 s, 10 s, ... 60 s;
      *  calls in between fail in words instead of respawning at once. One crash still respawns immediately: a single failure is
      *  not a loop (review 2026-09-14). Null admits the spawn. */
+    @Synchronized
     fun admit(): McpResult.Refused? {
         val loop = if (exitedAt > 0L && exitedAt - startedAt < CRASH_LOOP_MS) crashes + 1 else 0
         val sinceExit = clock.millis() - exitedAt
@@ -48,12 +55,22 @@ internal class McpChildHistory(private val clock: HostClock, private val name: S
     }
 
     /** The child is up. */
+    @Synchronized
     fun started() {
+        generation += 1
         startedAt = clock.millis()
     }
 
-    /** The child is gone. */
-    fun exited() {
+    /** The owned child transport failed. This records failure before the rejected request wakes, not settlement. */
+    @Synchronized
+    fun failed() {
+        failedGeneration = generation
         exitedAt = clock.millis()
+    }
+
+    /** The child is gone. A prior transport failure has already recorded this generation's backoff point. */
+    @Synchronized
+    fun exited() {
+        if (failedGeneration != generation) exitedAt = clock.millis()
     }
 }

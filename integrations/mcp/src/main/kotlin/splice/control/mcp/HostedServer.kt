@@ -90,6 +90,9 @@ internal class HostedServer(
                     if (process !== child || target?.child !== child) {
                         null
                     } else {
+                        // A caller wakes from failPending below. Backoff must already know this exact owned
+                        // transport failed, while generation release remains separately proven.
+                        history.failed()
                         lastError = "$reason; delivery outcome unknown, operation was not replayed"
                         writer = null
                         retiredWriter = target

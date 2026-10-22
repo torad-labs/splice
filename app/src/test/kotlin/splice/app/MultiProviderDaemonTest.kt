@@ -204,7 +204,7 @@ class MultiProviderDaemonTest {
         dialect = "openai-responses"
         base_url = "${grokMock.baseUrl}"
         auth = { kind = "api-key", file = "${grokKey.esc()}" }
-        quirks = { cache_key = "session-id", effort_ceiling = "high", summary_field = true }
+        quirks = { cache_key = "session-id", summary_field = true }
         [[providers.xai.models]]
         id = "grok-4.5"
         context_window = 1000000

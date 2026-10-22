@@ -297,7 +297,8 @@ private val SHIPPED_SITES: Map<String, Map<String, Int>> = mapOf(
     "app/src/main/kotlin/splice/app/daemon/DaemonLock.kt" to mapOf("FileChannel.open(" to 1),
     // The MCP hub front's environment file, in the mcp-front.env README row.
     "app/src/main/kotlin/splice/app/McpFrontEnv.kt" to mapOf("writeAtomic0600(" to 1),
-    "app/src/main/kotlin/splice/app/cli/mcp/McpServiceCommand.kt" to mapOf("writeAtomic0600(" to 2),
+    // Registration replacement and its content-addressed backup are owned by the extracted registration writer.
+    "app/src/main/kotlin/splice/app/cli/mcp/McpServiceRegistration.kt" to mapOf("writeAtomic0600(" to 2),
     "app/src/main/kotlin/splice/app/head/HeadTraceStores.kt" to mapOf("ActivityDays(" to 1),
     "app/src/main/kotlin/splice/app/mcp/NativeCodexMcpFiles.kt" to mapOf("writeAtomic0600(" to 2),
     "app/src/main/kotlin/splice/app/mcp/NativeCodexSocketProxy.kt" to mapOf("writeAtomic0600(" to 1),

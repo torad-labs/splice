@@ -710,7 +710,7 @@ replay_reasoning = true
 dialect = "openai-responses"
 base_url = "http://127.0.0.1:${mockPort}"
 auth = { kind = "chatgpt-oauth", file = "${m.AUTH_PATH}" }
-quirks = { store = false, account_id_header = true, cache_key = "first-message-hash", effort_ceiling = "max", summary_field = true }
+quirks = { store = false, account_id_header = true, cache_key = "first-message-hash", summary_field = true }
 
 [[providers.codex.models]]
 id = "gpt-5-codex"

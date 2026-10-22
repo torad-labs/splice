@@ -68,7 +68,7 @@ class TeamActivitySampleTest {
         dialect = "openai-responses"
         base_url = "${mock.baseUrl}"
         auth = { kind = "chatgpt-oauth", file = "$authFile" }
-        quirks = { store = false, account_id_header = true, cache_key = "first-message-hash", effort_ceiling = "max", summary_field = true, zstd_request_body = true }
+        quirks = { store = false, account_id_header = true, cache_key = "first-message-hash", summary_field = true, zstd_request_body = true }
 
         [[providers.codex.models]]
         id = "gpt-5.6-sol"

@@ -88,7 +88,10 @@ internal class HubHolderLiveness(
 
     private fun latestLocked(record: HubHolderRecord): HubHolderRecord? =
         records.files.read(record.path)?.let { current -> HubHolderRecord(record.path, current) }
-            ?.takeIf { current -> records.ownership.launch(current) == records.ownership.launch(record) }
+            ?.takeIf { current ->
+                records.ownership.claim(current) == records.ownership.claim(record) &&
+                    records.ownership.launch(current) == records.ownership.launch(record)
+            }
 }
 
 /** /proc binds a record to a live scope; systemd remains the source of truth for that generation's lifetime. */

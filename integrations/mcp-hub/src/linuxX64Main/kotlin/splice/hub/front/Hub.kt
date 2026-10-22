@@ -26,7 +26,15 @@ class Hub(
     internal val sessions = HashMap<String, Session>()
     internal val routes = Routes(daemon, timers, clock, ::changed)
     internal val relay = Relay(sessions, routes, clock, ::changed, ::save)
-    internal val holders = Holders(files, links, timers, clock, routes, relay, ::changed)
+    internal val holders = Holders(
+        files,
+        links,
+        timers,
+        clock,
+        routes,
+        relay,
+        HolderPersistence(::changed, ::save),
+    )
     internal val replacements = HubReplacements(routes, holders, relay, timers, clock)
     internal val http = HubHttp(files, sessions, routes, holders, relay, ::save)
 

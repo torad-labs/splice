@@ -391,7 +391,7 @@ class HubFiles(private val dir: String) {
         unlink(path)
     }
 
-    fun loadState(): JsonObject? = readJson("$dir/front.json")
+    fun loadState(): JsonObject? = HubStateReader().load("$dir/front.json")
 
     fun saveState(text: String): Boolean = stateWriter.write("$dir/front.json", text)
 

@@ -45,9 +45,10 @@ class ServerRequests(
 
     fun state(): JsonObject = ledger.state()
 
-    fun answer(session: Session, msg: JsonObject, id: JsonElement) {
+    fun answer(session: Session, msg: JsonObject, id: JsonElement): Boolean? =
         delivery.answer(session, msg, id)
-    }
+
+    fun forwarded(holder: Holder, id: JsonElement): Pair<String, Session>? = ledger.forwarded(holder, id)
 
     fun retire(session: Session, reason: String) {
         delivery.retire(session, reason)

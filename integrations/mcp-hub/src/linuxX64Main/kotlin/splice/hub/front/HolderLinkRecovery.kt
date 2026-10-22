@@ -13,7 +13,7 @@ internal class HolderLinkRecovery(
     proof: HolderProof,
 ) {
     private val handshakes = HolderHandshakeFlow(context, replacements, persistence, memory, proof)
-    private val loss = HolderLinkLoss(context, replacements, persistence)
+    private val loss = HolderLinkLoss(context, replacements, persistence, ::reconnect)
     private val connections = HolderConnections(context.connections, ::fromHolder, loss::lost)
     private val generations = HolderGenerationReads(context.routes.attestations, context.timers, context.clock)
 
@@ -215,6 +215,7 @@ internal class HolderLinkLoss(
     private val context: HolderLinkContext,
     private val replacements: HolderReplacements,
     private val persistence: HolderPersistence,
+    private val reconnect: (Holder, String) -> Boolean,
 ) {
     var stopping = false
 
@@ -234,7 +235,6 @@ internal class HolderLinkLoss(
     private fun detached(holder: Holder): String? {
         val generation = holder.generation ?: context.routes.generation(holder.socket)
         holder.generation = generation
-        holder.attestedGeneration = null
         holder.link = null
         holder.ready = false
         holder.connecting = false
@@ -247,9 +247,9 @@ internal class HolderLinkLoss(
                 holder.socket,
                 exact,
                 {
-                    context.relay.awaitsExit(holder, exact) ||
-                        replacements.links.candidate(holder) != null ||
-                        replacements.links.old(holder, exact) != null
+                    settlementPending(holder, exact).also { pending ->
+                        if (pending) reconnect(holder, exact)
+                    }
                 },
             ) {
                 context.relay.exited(holder, exact)
@@ -257,6 +257,11 @@ internal class HolderLinkLoss(
             }
         }
     }
+
+    private fun settlementPending(holder: Holder, generation: String): Boolean =
+        context.relay.awaitsExit(holder, generation) ||
+            replacements.links.candidate(holder) != null ||
+            replacements.links.old(holder, generation) != null
 
     private fun replacementLost(holder: Holder, generation: String?): Boolean {
         if (replacements.links.candidate(holder) != null) {

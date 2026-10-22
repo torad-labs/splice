@@ -342,7 +342,7 @@ internal class HolderRetirements(
         return drain
     }
 
-    fun completed(route: Route) = remove(route)
+    fun completed(route: Route): Boolean = remove(route)
 
     /** A rollback whose outcome is unknown remains distinct from a retirement that the daemon owns. */
     fun rollbackUnknown(route: Route, words: String) {
@@ -375,12 +375,14 @@ internal class HolderRetirements(
             .forEach { drain -> transition(drain, ROLLBACK_PENDING, null) }
     }
 
-    private fun remove(route: Route) {
-        val removed = store.drains.remove(route.key()) ?: return
-        if (checkpoint()) {
+    private fun remove(route: Route): Boolean {
+        val removed = store.drains.remove(route.key()) ?: return true
+        return if (checkpoint()) {
             changed()
+            true
         } else {
             store.drains[route.key()] = removed
+            false
         }
     }
 
@@ -401,6 +403,6 @@ internal class HolderRetirements(
         store.drains[route.key()]?.takeIf { it.phase == RETIRE_BLOCKED && it.candidate != null }
 }
 
-private val candidateStartPhases = setOf(PAUSED, CANDIDATE_STARTING, CANDIDATE_READY)
+private val candidateStartPhases = setOf(PAUSED, CANDIDATE_STARTING, CANDIDATE_READY, CANDIDATE_BLOCKED)
 private val resumablePhases = setOf(PAUSED, CANDIDATE_STARTING, CANDIDATE_READY, CANDIDATE_BLOCKED, UNPINNING)
 private val retirementRetryPhases = setOf(RETIRE_BLOCKED, RETIRE_UNKNOWN)

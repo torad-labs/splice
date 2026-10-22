@@ -53,6 +53,7 @@ internal class HubHolderStarts(
     private val log: LogSink,
 ) {
     private val cleanup = HubHolderLaunchCleanup()
+    private val executables = HubExecutableIdentity()
     fun socket(key: String): Path = dir.resolve("${key.take(KEY_HEX)}.sock")
 
     fun running(key: String): Boolean = holder.liveness.attest(socket(key).toString()) != null
@@ -220,20 +221,23 @@ internal class HubHolderStarts(
     }
 
     private fun record(start: HubStart, claim: HubHolderScopeClaim, at: Long): HubHolderRecord? =
-        holder.records.files.begin(
-            start.key,
-            buildJsonObject {
-                put(HubFields.SERVER, start.server)
-                put(HubFields.LAUNCH, start.launch.orEmpty())
-                put(HubFields.TUPLE, start.tuple)
-                put(HubFields.AT, at)
-                put(HubFields.EXECUTABLE, binary.toString())
-                put(HubFields.LAUNCH_GATED, true)
-                put(HubFields.GENERATION, claim.generation)
-                put(HubFields.SCOPE, claim.scope)
-                put(HubFields.STATE, HOLDER_STARTING)
-            },
-        )
+        executables.of(binary)?.let { executableIdentity ->
+            holder.records.files.begin(
+                start.key,
+                buildJsonObject {
+                    put(HubFields.SERVER, start.server)
+                    put(HubFields.LAUNCH, start.launch.orEmpty())
+                    put(HubFields.TUPLE, start.tuple)
+                    put(HubFields.AT, at)
+                    put(HubFields.EXECUTABLE, binary.toString())
+                    put(HubFields.EXECUTABLE_ID, executableIdentity)
+                    put(HubFields.LAUNCH_GATED, true)
+                    put(HubFields.GENERATION, claim.generation)
+                    put(HubFields.SCOPE, claim.scope)
+                    put(HubFields.STATE, HOLDER_STARTING)
+                },
+            )
+        }
 
     private fun accepts(socket: Path): Boolean = try {
         SocketChannel.open(StandardProtocolFamily.UNIX).use { channel ->

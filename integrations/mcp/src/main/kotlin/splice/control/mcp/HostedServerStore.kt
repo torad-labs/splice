@@ -20,6 +20,9 @@ internal class HostedServerStore {
         else -> null
     }
 
+    fun namesOf(identity: McpIdentity): List<String> =
+        bindings.filterValues { it == identity }.keys.toList()
+
     fun rebindBusy(identity: McpIdentity): Boolean {
         if ((reserved[identity] ?: 0) > 0) return true
         val previous = servers[identity] ?: return false

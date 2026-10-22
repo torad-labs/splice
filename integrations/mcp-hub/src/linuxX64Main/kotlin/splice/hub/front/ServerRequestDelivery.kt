@@ -60,6 +60,14 @@ internal class ServerRequestLedger {
     fun current(key: String): ServerRequestOutstanding? =
         requests[key]?.takeIf { it.holder.generation == it.generation }
 
+    fun forwarded(holder: Holder, id: JsonElement): Pair<String, Session>? =
+        requests.entries.firstOrNull { (_, asked) ->
+            asked.holder === holder &&
+                asked.generation == holder.generation &&
+                asked.id == id &&
+                asked.session != null
+        }?.let { (key, asked) -> key to requireNotNull(asked.session) }
+
     fun settles(key: String, asked: ServerRequestOutstanding): Boolean {
         if (requests[key] !== asked) return false
         if (asked.holder.generation != asked.generation) return false
@@ -133,12 +141,12 @@ internal class ServerRequestDelivery(
     private val ledger: ServerRequestLedger,
     private val persistence: HolderPersistence,
 ) {
-    fun answer(session: Session, msg: JsonObject, id: JsonElement) {
-        val key = (id as? JsonPrimitive)?.contentOrNull ?: return
-        ledger.requests[key]
-            ?.takeIf { it.session === session }
-            ?.id
-            ?.let { reply(key, Rpc.with(msg, Rpc.ID, it)) }
+    fun answer(session: Session, msg: JsonObject, id: JsonElement): Boolean? {
+        val key = (id as? JsonPrimitive)?.contentOrNull ?: return null
+        val asked = ledger.requests[key]?.takeIf { it.session === session } ?: return null
+        return asked.id?.let { original ->
+            if (asked.answering) true else reply(key, Rpc.with(msg, Rpc.ID, original))
+        }
     }
 
     fun retire(session: Session, reason: String) {
@@ -148,9 +156,11 @@ internal class ServerRequestDelivery(
             .forEach { key -> ledger.requests[key]?.id?.let { reply(key, Rpc.error(it, reason)) } }
     }
 
-    fun reply(key: String, text: String) {
-        ledger.current(key)?.takeIf { prepared(it, text) }?.let { send(key, it) }
-    }
+    fun reply(key: String, text: String): Boolean =
+        ledger.current(key)?.takeIf { prepared(it, text) }?.let {
+            send(key, it)
+            true
+        } == true
 
     fun remembers(holder: Holder) {
         holder.resumeReverseResponses = { generation -> resume(holder, generation) }

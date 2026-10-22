@@ -5,6 +5,8 @@ internal class ReplacementReplay(
     private val routes: Routes,
     private val holders: Holders,
     private val relay: Relay,
+    private val retryCommit: (Route) -> Unit,
+    private val completed: (Route) -> Unit,
 ) {
     fun commit(route: Route, drain: HolderDrain, candidate: ReplacementCandidate) {
         routes.replacements.commit(route, drain.socket, drain.generation, candidate) { failure ->
@@ -28,10 +30,9 @@ internal class ReplacementReplay(
                         route,
                         "the target changed before its candidate could take the settled route",
                     )
-                } else {
-                    if (!holders.replacements.candidates.routed(route, candidate, moved)) {
-                        routes.replacements.restore(moved, drain.socket, drain.generation, candidate)
-                    }
+                } else if (!holders.replacements.candidates.routed(route, candidate, moved)) {
+                    routes.replacements.restore(moved, drain.socket, drain.generation, candidate)
+                    retryCommit(route)
                 }
             }
         }
@@ -52,7 +53,7 @@ internal class ReplacementReplay(
                     "the front could not durably reopen old-holder admission",
                 )
             } else {
-                holders.replacements.retirements.completed(route)
+                completed(route)
             }
         }
     }

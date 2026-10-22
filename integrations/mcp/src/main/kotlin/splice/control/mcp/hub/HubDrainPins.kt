@@ -202,6 +202,8 @@ internal class HubDrainPins(dir: Path) {
 }
 
 private class HubDrainPinSnapshot(private val pins: Path) {
+    private val named = Regex("[0-9a-f]{64}\\.json")
+
     fun all(): List<HubDrainPin>? = files()?.let(::decoded)
 
     fun read(path: Path): PinRead = try {
@@ -218,7 +220,9 @@ private class HubDrainPinSnapshot(private val pins: Path) {
         when {
             Files.notExists(pins) -> emptyList()
             !Files.isDirectory(pins) -> null
-            else -> Files.list(pins).use { paths -> paths.toList() }
+            else -> Files.list(pins).use { paths ->
+                paths.filter { named.matches(it.fileName.toString()) }.toList()
+            }
         }
     } catch (_: IOException) {
         null

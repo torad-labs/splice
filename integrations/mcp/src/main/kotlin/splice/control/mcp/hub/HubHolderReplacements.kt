@@ -64,15 +64,12 @@ internal class HubHolderReplacements(
             McpResult.Refused("the holder generation has not confirmed its child and scope exit")
         }
 
-    private fun beginRetirement(replacement: HubReplacement): McpResult<Unit> {
-        val candidate = candidate(replacement)
-        val old = liveness.attest(replacement.oldSocket, replacement.oldGeneration)
-        return when {
-            candidate == null -> McpResult.Refused("the candidate holder no longer owns its captured generation")
-            old == null -> McpResult.Refused("the old holder generation is no longer live")
-            else -> claimedRetirement(replacement)
+    private fun beginRetirement(replacement: HubReplacement): McpResult<Unit> =
+        if (candidate(replacement) == null) {
+            McpResult.Refused("the candidate holder no longer owns its captured generation")
+        } else {
+            claimedRetirement(replacement)
         }
-    }
 
     private fun claimedRetirement(replacement: HubReplacement): McpResult<Unit> =
         when (retirements.claim(replacement, HubRetirementState.RETIRING)) {

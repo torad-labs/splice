@@ -72,6 +72,7 @@ private fun interface McpWriteRejected {
 
 /** Owns deadline and failure work, so pipe callers never execute terminal teardown inline. */
 internal class McpWriteFailures(name: String, private val failed: McpWriteFailure) {
+    private val pending = Collections.newSetFromMap(IdentityHashMap<Process, Boolean>())
     private val executor = ScheduledThreadPoolExecutor(1) { task ->
         Executors.defaultThreadFactory().newThread(task).apply {
             this.name = "mcp-host-write-deadline-$name"
@@ -92,15 +93,25 @@ internal class McpWriteFailures(name: String, private val failed: McpWriteFailur
     }
 
     fun report(child: Process, reason: String) {
+        if (!synchronized(pending) { pending.add(child) }) return
         try {
-            executor.execute { failed(child, reason) }
+            executor.execute { dispatch(child, reason) }
         } catch (_: RejectedExecutionException) {
-            // A closed owner already retires the child.
+            synchronized(pending) { pending.remove(child) }
+        }
+    }
+
+    private fun dispatch(child: Process, reason: String) {
+        try {
+            failed(child, reason)
+        } finally {
+            synchronized(pending) { pending.remove(child) }
         }
     }
 
     fun close() {
         executor.shutdownNow()
+        synchronized(pending) { pending.clear() }
     }
 }
 
@@ -158,12 +169,25 @@ private class McpWriteQueue(
     }
 }
 
+internal fun interface McpFenceAction<T> {
+    operator fun invoke(): T
+}
+
+/** Publication and late reverse-work admission share the same accounting monitor. */
+internal class McpFenceExecutor<L : Any>(private val lock: L, private val held: McpFenceHeld) {
+    fun <T> whileHeld(target: McpWriteTarget, action: McpFenceAction<T>): T? = synchronized(lock) {
+        if (held(target)) action() else null
+    }
+}
+
 /** The exact generation a replacement sealed, which can reopen only while it is still live and sealed. */
 internal class McpReplacementFence(
     private val writer: McpChildWriter,
     private val target: McpWriteTarget,
 ) {
     fun held(): Boolean = writer.fenceHeld(target)
+
+    fun <T> whileHeld(action: McpFenceAction<T>): T? = writer.publication.whileHeld(target, action)
 
     fun reopen(): Boolean = writer.reopen(target)
 }
@@ -217,8 +241,11 @@ internal class McpChildWriter(
     }
 
     internal val fenceHeld = McpFenceHeld { selected ->
-        synchronized(accountingLock) { selected.sealed && !selected.retired }
+        synchronized(accountingLock) {
+            !closed && selected.sealed && !selected.retired && selected.child.isAlive
+        }
     }
+    internal val publication = McpFenceExecutor(accountingLock, fenceHeld)
 
     /** Terminal retirement rejects late registrations and completes waiters, but preserves unknown wire charges. */
     fun retire(selected: McpWriteTarget): Boolean {
@@ -297,7 +324,6 @@ internal class McpChildWriter(
             val available = accepting(selected) && room
             if (available) {
                 requestId?.let { requests[it] = selected }
-                serverRequestId?.let { serverRequests[it] = selected }
                 writesInFlight += delivery
             }
             available

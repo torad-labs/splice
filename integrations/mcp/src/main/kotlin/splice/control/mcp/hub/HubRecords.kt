@@ -60,6 +60,7 @@ internal data class HubHolderOwner(
     val scope: String,
     val holderStartedAt: Long? = null,
     val executable: String? = null,
+    val executableIdentity: String? = null,
 ) {
     fun launch(): HubHolderLaunch = HubHolderLaunch(generation, holderPid, scope, holderStartedAt)
 }
@@ -155,6 +156,23 @@ internal class HubRecordFiles(private val dir: Path) {
     private fun file(key: String): Path = dir.resolve("${key.take(KEY_HEX)}.json")
 }
 
+/** An executable inode remains stable when its installed pathname is atomically replaced or marked deleted. */
+internal class HubExecutableIdentity {
+    fun of(path: Path): String? = try {
+        Files.readAttributes(path, "unix:dev,ino").let { attributes ->
+            val device = attributes["dev"]
+            val inode = attributes["ino"]
+            if (device == null || inode == null) null else "$device:$inode"
+        }
+    } catch (_: IOException) {
+        null
+    } catch (_: SecurityException) {
+        null
+    } catch (_: UnsupportedOperationException) {
+        null
+    }
+}
+
 /** Decodes and updates an owner only while its exact socket record still occupies the file. */
 internal class HubRecordOwnership(private val files: HubRecordFiles) {
     fun attest(record: HubHolderRecord, owner: HubHolderOwner): HubHolderRecord? {
@@ -162,6 +180,11 @@ internal class HubRecordOwnership(private val files: HubRecordFiles) {
         if (launch(current)?.let { it.claim() != owner.launch().claim() || it.holderPid != owner.holderPid } == true) {
             return null
         }
+        val attested = attestedBody(current, owner)
+        return files.write(record.path, attested).takeIf { it }?.let { HubHolderRecord(record.path, attested) }
+    }
+
+    private fun attestedBody(current: JsonObject, owner: HubHolderOwner): JsonObject {
         val fields = current.toMutableMap().also { values ->
             values[HubFields.GENERATION] = JsonPrimitive(owner.generation)
             values[HubFields.PID] = JsonPrimitive(owner.holderPid)
@@ -170,9 +193,9 @@ internal class HubRecordOwnership(private val files: HubRecordFiles) {
             values[HubFields.STATE] = JsonPrimitive(HOLDER_LIVE)
             owner.holderStartedAt?.let { values[HOLDER_LAUNCHER_STARTED_AT] = JsonPrimitive(it) }
             owner.executable?.let { values[HubFields.EXECUTABLE] = JsonPrimitive(it) }
+            owner.executableIdentity?.let { values[HubFields.EXECUTABLE_ID] = JsonPrimitive(it) }
         }
-        val attested = JsonObject(fields)
-        return files.write(record.path, attested).takeIf { it }?.let { HubHolderRecord(record.path, attested) }
+        return JsonObject(fields)
     }
 
     fun owner(record: HubHolderRecord): HubHolderOwner? = owner(record.body)
@@ -228,6 +251,7 @@ internal class HubRecordOwnership(private val files: HubRecordFiles) {
                 launch.scope,
                 launch.holderStartedAt,
                 JsonScalars.str(body, HubFields.EXECUTABLE),
+                JsonScalars.str(body, HubFields.EXECUTABLE_ID),
             )
         }
     }
@@ -257,18 +281,6 @@ internal class HubLegacyRecords(private val files: HubRecordFiles) {
         record.takeIf { legacy(it.body) }?.let { HubHolderScopeClaim(scope, scope) }
 
     /** A dead baseline PID proves only that process gone. No scope, owner or receipt is invented. */
-    fun retire(record: HubHolderRecord): Boolean {
-        val current = files.read(record.path)?.takeIf { it == record.body } ?: return false
-        val pid = JsonScalars.long(current, HubFields.PID)?.takeIf { legacy(current) } ?: return false
-        val exited = JsonObject(
-            current + mapOf(
-                HubFields.STATE to JsonPrimitive(HOLDER_EXITED),
-                HOLDER_EXIT_CONFIRMED_AT to JsonPrimitive(System.currentTimeMillis()),
-            ),
-        )
-        return !ProcessHandle.of(pid).filter(ProcessHandle::isAlive).isPresent &&
-            files.write(record.path, exited)
-    }
 
     private fun legacy(body: JsonObject): Boolean =
         JsonScalars.str(body, HubFields.GENERATION) == null &&

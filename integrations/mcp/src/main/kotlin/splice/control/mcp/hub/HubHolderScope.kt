@@ -9,6 +9,7 @@ import java.util.concurrent.TimeUnit
 private const val SYSTEMCTL = "systemctl"
 private const val USER_MANAGER = "--user"
 private const val SCOPE_ACTIVE = "active"
+private const val SCOPE_FAILED = "failed"
 private const val SCOPE_INACTIVE = "inactive"
 private const val SCOPE_NOT_FOUND = "not-found"
 
@@ -23,6 +24,8 @@ private const val SCOPE_STOP_POLL_MS = 100L
 
 /** systemd is the scope's source of truth, while /proc binds legacy records to the live scope that owns them. */
 internal class HubHolderScope {
+    private data class ScopeState(val active: String?, val tasks: Long?)
+
     fun name(key: String, at: Long): String =
         "splice-mcp-${key.take(KEY_HEX)}-$at-${UUID.randomUUID().toString().replace("-", "")}.scope"
 
@@ -35,15 +38,18 @@ internal class HubHolderScope {
         null
     }
 
-    fun running(scopeName: String): Boolean = state(scopeName) == SCOPE_ACTIVE
+    fun running(scopeName: String): Boolean = status(scopeName)?.active == SCOPE_ACTIVE
 
-    fun exited(scopeName: String): Boolean = state(scopeName) in setOf(SCOPE_INACTIVE, SCOPE_NOT_FOUND)
+    fun exited(scopeName: String): Boolean = status(scopeName)?.let { state ->
+        state.active in setOf(SCOPE_INACTIVE, SCOPE_NOT_FOUND) ||
+            state.active == SCOPE_FAILED && state.tasks == 0L
+    } == true
 
     fun stop(scopeName: String): Boolean = command(listOf("stop", "--no-block", scopeName)) == 0
 
     fun waitForExit(scopeName: String): Boolean {
         val deadline = System.nanoTime() + TimeUnit.MILLISECONDS.toNanos(SCOPE_STOP_WAIT_MS)
-        while (running(scopeName) && System.nanoTime() < deadline) {
+        while (!exited(scopeName) && System.nanoTime() < deadline) {
             try {
                 Thread.sleep(SCOPE_STOP_POLL_MS)
             } catch (_: InterruptedException) {
@@ -54,21 +60,28 @@ internal class HubHolderScope {
         return exited(scopeName)
     }
 
-    private fun state(scopeName: String): String? = try {
+    private fun status(scopeName: String): ScopeState? = try {
         val process = ProcessBuilder(
             SYSTEMCTL,
             USER_MANAGER,
             "show",
             "--property=ActiveState",
-            "--value",
+            "--property=TasksCurrent",
             scopeName,
         ).redirectError(ProcessBuilder.Redirect.DISCARD).start()
         if (!process.waitFor(SYSTEMCTL_QUERY_WAIT_MS, TimeUnit.MILLISECONDS)) {
             process.destroyForcibly()
             null
         } else {
-            process.inputStream.bufferedReader().use { it.readText().trim() }
+            process.inputStream.bufferedReader().use { it.readLines() }
                 .takeIf { process.exitValue() == 0 }
+                ?.let { lines ->
+                    val properties = lines.mapNotNull { line ->
+                        val separator = line.indexOf('=')
+                        if (separator < 0) null else line.substring(0, separator) to line.substring(separator + 1)
+                    }.toMap()
+                    ScopeState(properties["ActiveState"], properties["TasksCurrent"]?.toLongOrNull())
+                }
         }
     } catch (_: IOException) {
         null

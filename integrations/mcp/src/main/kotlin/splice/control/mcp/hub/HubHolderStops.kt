@@ -34,7 +34,7 @@ internal class HubHolderStops(
         lifecycle.serial(records.files.socketOf(record.path).toString()) { stopLocked(record, reason) }
 
     private fun stopLocked(record: HubHolderRecord, reason: String): McpResult<Unit> {
-        val current = liveness.latest(record) ?: return McpResult.Served(Unit)
+        val current = liveness.attest(record) ?: liveness.latest(record) ?: return McpResult.Served(Unit)
         if (confirmed(current)) return confirmedStop(current, reason)
         return records.ownership.owner(current)?.let { owner -> retire(current, owner, reason) }
             ?: retireIncomplete(current, reason)

@@ -130,7 +130,13 @@ internal class HubReplacements(
     private val clock: Clock,
 ) {
     private val ownerPins = HubOwnerPins(routes, holders, ::reconcile)
-    private val replay = ReplacementReplay(routes, holders, relay)
+    private val replay = ReplacementReplay(
+        routes,
+        holders,
+        relay,
+        { timers.at(clock.now() + CANDIDATE_REPLAY_RETRY) { recovery.reconcile() } },
+        ::completed,
+    )
     private val recovery = ReplacementRecovery(
         routes,
         holders,
@@ -214,7 +220,7 @@ internal class HubReplacements(
         if (relay.inFlight(drain.socket) != 0) return
         routes.replacements.retire(route, drain, candidate) { failure ->
             if (failure == null) {
-                holders.replacements.retirements.completed(route)
+                completed(route)
             } else {
                 holders.replacements.retirements.blocked(route, failure)
                 timers.at(clock.now() + RETIRE_RETRY) { retryRetirement(route) }
@@ -229,6 +235,12 @@ internal class HubReplacements(
             ?.let { holders.replacements.retirements.retry(route) } ?: return
         val candidate = claimed.candidate ?: return
         replayRetirement(route, claimed, candidate)
+    }
+
+    private fun completed(route: Route) {
+        if (!holders.replacements.retirements.completed(route)) {
+            timers.at(clock.now() + RETIRE_RETRY) { completed(route) }
+        }
     }
 
     private fun cutOverReadyCandidates() {
@@ -287,7 +299,7 @@ internal class HubReplacements(
                         "the front could not durably reopen old-holder admission",
                     )
                 } else {
-                    holders.replacements.retirements.completed(route)
+                    completed(route)
                 }
             }
         }
@@ -317,8 +329,9 @@ private class ReplacementRecovery(
     fun reconcile() = holders.replacements.all().forEach(::recover)
 
     private fun recover(drain: HolderDrain) {
-        val candidate = drain.candidate ?: return
         val route = routes.byKey(drain.key()) ?: return
+        reconcileOld(drain)
+        val candidate = drain.candidate ?: return
         if (drain.phase in setOf(ROLLING_BACK, ROLLBACK_UNKNOWN)) {
             if (drain.phase == ROLLING_BACK) {
                 holders.replacements.retirements.rollbackUnknown(
@@ -336,6 +349,21 @@ private class ReplacementRecovery(
             replayRetirement(route, drain, candidate)
         } else {
             recoverPinned(route, drain, candidate)
+        }
+    }
+
+    private fun reconcileOld(drain: HolderDrain) {
+        val holder = holders.remember(drain.socket)
+        routes.replacements.confirmExit(
+            drain.socket,
+            drain.generation,
+            {
+                holders.links.reconnect(holder, drain.generation)
+                true
+            },
+        ) {
+            relay.exited(holder, drain.generation)
+            holders.replacements.retirements.oldExited(drain.socket, drain.generation)
         }
     }
 
@@ -402,8 +430,16 @@ internal class HubHttp(
         when {
             method != null && id != null -> request(conn, session, msg, method, id)
             method != null -> notification(conn, session, msg, method)
-            id != null -> conn.reply(ACCEPTED).also { relay.answer(session, msg, id) }
+            id != null -> answer(conn, session, msg, id)
             else -> conn.reply(BAD_REQUEST, Rpc.error(JsonNull, "neither a request, a notification nor an answer"))
+        }
+    }
+
+    private fun answer(conn: HttpConn, session: Session, msg: JsonObject, id: JsonElement) {
+        if (relay.answer(session, msg, id) == false) {
+            conn.reply(UNAVAILABLE)
+        } else {
+            conn.reply(ACCEPTED)
         }
     }
 

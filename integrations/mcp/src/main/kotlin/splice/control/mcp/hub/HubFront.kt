@@ -79,7 +79,9 @@ private class HubFrontReports {
 
     fun report(saved: JsonObject): HubReport? = if (drains.readable(saved)) {
         routes(saved)?.let { routes ->
-            HubReport(routes, bindings(saved), draining(saved), claims(saved), lastCalls(saved))
+            bindings(saved)?.let { bindings ->
+                HubReport(routes, bindings, draining(saved), claims(saved), lastCalls(saved))
+            }
         }
     } else {
         null
@@ -107,10 +109,12 @@ private class HubFrontReports {
             }
         }
 
-    private fun bindings(saved: JsonObject): List<HubBinding> {
-        val routes = saved[HubFields.ROUTES] as? JsonObject ?: return emptyList()
-        val sessions = saved[HubFields.SESSIONS] as? JsonObject ?: return emptyList()
-        return sessions.keys.mapNotNull { session -> binding(session, sessions, routes) }
+    private fun bindings(saved: JsonObject): List<HubBinding>? {
+        val routes = saved[HubFields.ROUTES] as? JsonObject ?: return null
+        val sessions = saved[HubFields.SESSIONS] as? JsonObject ?: return null
+        return sessions.keys.map { session -> binding(session, sessions, routes) }
+            .takeUnless { bindings -> bindings.any { it == null } }
+            ?.filterNotNull()
     }
 
     private fun binding(session: String, sessions: JsonObject, routes: JsonObject): HubBinding? =

@@ -140,7 +140,7 @@ class Relay(
     }
 
     /** A session's answer to a server's request, sent back under the id the server used. */
-    fun answer(session: Session, msg: JsonObject, id: JsonElement) = fromServer.answer(session, msg, id)
+    fun answer(session: Session, msg: JsonObject, id: JsonElement): Boolean? = fromServer.answer(session, msg, id)
 
     /** A retired session receives no more work, so every recoverable reverse request gets a final explicit error. */
     fun retire(session: Session, reason: String) = fromServer.retire(session, reason)
@@ -284,8 +284,24 @@ internal class RelayInbound(
 
     private fun told(holder: Holder, msg: JsonObject, method: String) {
         if (method == "notifications/tools/list_changed") holder.listed = false
-        val text = Rpc.encode(msg)
-        sessions.values.filter { it.route.socket == holder.socket }.forEach { it.stream?.message(text) }
+        if (method == CANCELLED) {
+            cancelled(holder, msg)
+        } else {
+            val text = Rpc.encode(msg)
+            sessions.values.filter { it.route.socket == holder.socket }.forEach { it.stream?.message(text) }
+        }
+    }
+
+    private fun cancelled(holder: Holder, msg: JsonObject) {
+        val params = msg[Rpc.PARAMS] as? JsonObject ?: return
+        val forwarded = params[REQUEST_ID]?.let { requests.forwarded(holder, it) } ?: return
+        val session = forwarded.second
+        if (sessions[session.id] === session) {
+            val rewritten = JsonObject(
+                msg + (Rpc.PARAMS to JsonObject(params + (REQUEST_ID to JsonPrimitive(forwarded.first)))),
+            )
+            session.stream?.message(Rpc.encode(rewritten))
+        }
     }
 }
 

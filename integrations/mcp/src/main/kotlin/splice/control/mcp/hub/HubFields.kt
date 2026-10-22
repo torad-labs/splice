@@ -10,6 +10,7 @@ internal object HubFields {
     const val CLAIM = "claim"
     const val DRAINS = "drains"
     const val EXECUTABLE = "executable"
+    const val EXECUTABLE_ID = "executable_id"
     const val GENERATION = "generation"
     const val HOLDERS = "holders"
     const val LAUNCH = "launch"

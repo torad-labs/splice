@@ -11,23 +11,21 @@ import java.nio.file.Path
 internal class NativeCodexBridgeCommand {
     private data class ScriptArgument(val position: Int, val path: Path)
 
-    private val hostshieldRuntimePrefix = listOf("bun", "--hostshield-runtime")
-
-    fun create(server: JsonObject, bridge: Path, socket: Path): List<String>? = try {
-        command(server, bridge, socket)
+    fun create(server: JsonObject, bridge: Path, endpoint: NativeCodexSocketEndpoint): List<String>? = try {
+        command(server, bridge, endpoint)
     } catch (_: InvalidPathException) {
         null
     } catch (_: SecurityException) {
         null
     }
 
-    private fun command(server: JsonObject, bridge: Path, socket: Path): List<String>? {
+    private fun command(server: JsonObject, bridge: Path, endpoint: NativeCodexSocketEndpoint): List<String>? {
         val executable = JsonScalars.str(server, "command")
         val arguments = arguments(server)
         val script = arguments?.let(::scriptArgument)
         return executable?.let { command ->
             arguments?.let { values ->
-                script?.let { source -> invocation(command, values, source, bridge, socket) }
+                script?.let { source -> invocation(command, values, source, bridge, endpoint) }
             }
         }
     }
@@ -59,15 +57,21 @@ internal class NativeCodexBridgeCommand {
         arguments: List<String>,
         script: ScriptArgument,
         bridge: Path,
-        socket: Path,
+        endpoint: NativeCodexSocketEndpoint,
     ): List<String>? {
         val executableName = executable.substringAfterLast('/')
+        val generation = endpoint.binding?.identity
+        val bridgeArguments = listOf(
+            bridge.toString(),
+            endpoint.path.toString(),
+            generation?.pid?.toString().orEmpty(),
+            generation?.startTicks?.toString().orEmpty(),
+            generation?.bootId.orEmpty(),
+        )
         return when {
-            directBun(executableName, arguments, script) ->
-                listOf(executable, bridge.toString(), socket.toString(), script.path.toString())
+            directBun(executableName, arguments, script) -> listOf(executable) + bridgeArguments
             isHostshieldLaunch(executableName, arguments, script) ->
-                listOf(executable) + arguments.take(script.position) +
-                    listOf(bridge.toString(), socket.toString(), script.path.toString())
+                listOf(executable) + arguments.take(script.position) + bridgeArguments
             else -> null
         }
     }
@@ -76,7 +80,7 @@ internal class NativeCodexBridgeCommand {
         executableName: String,
         arguments: List<String>,
         script: ScriptArgument,
-    ): Boolean = executableName == "bun" && arguments.take(script.position).isEmpty()
+    ): Boolean = executableName == "bun" && script.position == 0 && arguments.size == 1
 
     private fun isHostshieldLaunch(
         executableName: String,
@@ -85,7 +89,12 @@ internal class NativeCodexBridgeCommand {
     ): Boolean =
         executableName == "hostshield" && isHostshieldRuntime(arguments, script)
 
-    private fun isHostshieldRuntime(arguments: List<String>, script: ScriptArgument): Boolean =
-        script.position == hostshieldRuntimePrefix.size &&
-            arguments.take(hostshieldRuntimePrefix.size) == hostshieldRuntimePrefix
+    /** Retained HostShield commands protect Bun with a runtime/hash preamble, then pass Bun's flags after `--`. */
+    private fun isHostshieldRuntime(arguments: List<String>, script: ScriptArgument): Boolean {
+        val preamble = listOf("bun", "--hostshield-runtime", "", "--hostshield-sha256", "")
+        if (script.position != arguments.lastIndex || arguments.indexOf("--") != preamble.size) return false
+        return arguments.take(preamble.size).zip(preamble).all { (actual, expected) ->
+            if (expected.isEmpty()) actual.isNotBlank() else actual == expected
+        } && arguments[preamble.lastIndex].matches(Regex("[0-9a-fA-F]{64}"))
+    }
 }

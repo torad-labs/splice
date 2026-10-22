@@ -1,22 +1,13 @@
 package splice.control.mcp
 
-import kotlinx.coroutines.CompletableDeferred
 import kotlinx.serialization.json.JsonObject
 import java.io.BufferedWriter
-import java.io.IOException
 import java.util.Collections
 import java.util.IdentityHashMap
-import java.util.concurrent.ArrayBlockingQueue
-import java.util.concurrent.Executors
-import java.util.concurrent.RejectedExecutionException
-import java.util.concurrent.ScheduledFuture
-import java.util.concurrent.ScheduledThreadPoolExecutor
-import java.util.concurrent.ThreadPoolExecutor
-import java.util.concurrent.TimeUnit
 import kotlin.time.Duration
 
 /** Bounds queued writes and unsettled exchanges per direction, so caller timeouts cannot grow retained wire state. */
-private const val WRITE_QUEUE_CAPACITY = 64
+internal const val WRITE_QUEUE_CAPACITY = 64
 
 /** One child/stdin generation, carrying its own short-lived retirement fence. */
 internal data class McpWriteTarget(
@@ -36,137 +27,12 @@ internal fun interface McpWriteFailure {
     operator fun invoke(child: Process, reason: String)
 }
 
-private data class McpWrite(
-    val target: McpWriteTarget,
-    val encoded: String,
-    val requestId: Long?,
-    val serverRequestId: Long?,
-) {
-    val completed = CompletableDeferred<Boolean>()
-    var deadline: ScheduledFuture<*>? = null
-}
-
-internal fun interface McpWriteExpired {
-    operator fun invoke()
-}
-
 internal fun interface McpFenceHeld {
     operator fun invoke(target: McpWriteTarget): Boolean
 }
 
 internal fun interface McpSettled {
     operator fun invoke(id: Long)
-}
-
-private fun interface McpWritePermitted {
-    operator fun invoke(delivery: McpWrite): Boolean
-}
-
-private fun interface McpWriteResolved {
-    operator fun invoke(delivery: McpWrite, delivered: Boolean): Boolean
-}
-
-private fun interface McpWriteRejected {
-    operator fun invoke(delivery: McpWrite)
-}
-
-/** Owns deadline and failure work, so pipe callers never execute terminal teardown inline. */
-internal class McpWriteFailures(name: String, private val failed: McpWriteFailure) {
-    private val pending = Collections.newSetFromMap(IdentityHashMap<Process, Boolean>())
-    private val executor = ScheduledThreadPoolExecutor(1) { task ->
-        Executors.defaultThreadFactory().newThread(task).apply {
-            this.name = "mcp-host-write-deadline-$name"
-            isDaemon = true
-        }
-    }.apply {
-        removeOnCancelPolicy = true
-    }
-
-    fun schedule(budget: Duration, expired: McpWriteExpired): ScheduledFuture<*>? = try {
-        executor.schedule(
-            expired::invoke,
-            budget.inWholeMilliseconds.coerceAtLeast(1L),
-            TimeUnit.MILLISECONDS,
-        )
-    } catch (_: RejectedExecutionException) {
-        null
-    }
-
-    fun report(child: Process, reason: String) {
-        if (!synchronized(pending) { pending.add(child) }) return
-        try {
-            executor.execute { dispatch(child, reason) }
-        } catch (_: RejectedExecutionException) {
-            synchronized(pending) { pending.remove(child) }
-        }
-    }
-
-    private fun dispatch(child: Process, reason: String) {
-        try {
-            failed(child, reason)
-        } finally {
-            synchronized(pending) { pending.remove(child) }
-        }
-    }
-
-    fun close() {
-        executor.shutdownNow()
-        synchronized(pending) { pending.clear() }
-    }
-}
-
-/** Owns the bounded writer executor and drops no task silently when its queue reaches capacity. */
-private class McpWriteQueue(
-    name: String,
-    private val permitted: McpWritePermitted,
-    private val resolved: McpWriteResolved,
-    private val failures: McpWriteFailures,
-    private val rejected: McpWriteRejected,
-) {
-    private val executor = ThreadPoolExecutor(
-        1,
-        1,
-        0L,
-        TimeUnit.MILLISECONDS,
-        ArrayBlockingQueue<Runnable>(WRITE_QUEUE_CAPACITY),
-        { task ->
-            Executors.defaultThreadFactory().newThread(task).apply {
-                this.name = "mcp-host-write-$name"
-                isDaemon = true
-            }
-        },
-        ThreadPoolExecutor.AbortPolicy(),
-    )
-
-    fun offer(delivery: McpWrite): Boolean = try {
-        executor.execute { write(delivery) }
-        true
-    } catch (_: RejectedExecutionException) {
-        rejected(delivery)
-        false
-    }
-
-    fun close() {
-        executor.shutdownNow()
-    }
-
-    private fun write(delivery: McpWrite) {
-        try {
-            resolved(delivery, writeToPipe(delivery))
-        } catch (failure: IOException) {
-            if (resolved(delivery, false)) {
-                failures.report(delivery.target.child, "write failed: ${failure.message}")
-            }
-        }
-    }
-
-    private fun writeToPipe(delivery: McpWrite): Boolean = synchronized(delivery.target.ioLock) {
-        if (!permitted(delivery)) return@synchronized false
-        delivery.target.output.write(delivery.encoded)
-        delivery.target.output.newLine()
-        delivery.target.output.flush()
-        true
-    }
 }
 
 internal fun interface McpFenceAction<T> {

@@ -163,6 +163,8 @@ public const val APP_MCP_SLICE: String = "app-mcp.slice"
 // why: systemd's own word for "no ceiling" in `show -p MemoryMax --value`, which is what a slice
 // nobody declared answers — the value that must never read as containment.
 private const val UNCAPPED = "infinity"
+
+// why: an unavailable user manager must leave launch uncapped rather than stall the spawn path indefinitely.
 private const val CONTAINMENT_READ_MS = 1_000L
 
 // why: the adj every hosted child is raised to. Strictly above the -400 floor an out-of-memory reaper

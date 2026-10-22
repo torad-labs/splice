@@ -8,7 +8,10 @@ import java.nio.file.Path
 import java.util.concurrent.TimeUnit
 import java.util.concurrent.TimeoutException
 
+// why: every owned generation shares this bounded grace before forced teardown starts.
 private const val DESTROY_GRACE_MS = 2_000L
+
+// why: scope discovery must not hold shutdown while systemd has not yet published a generated unit.
 private const val CONTAINMENT_LOOKUP_MS = 1_000L
 
 /** Keeps a known uncontained launch distinct from a scope that could not be read. */

@@ -411,7 +411,7 @@ internal class McpChildWriter(
 
     /** An unqueued executor refusal releases only work that never reached the child. */
     private fun resolve(write: McpWrite, delivered: Boolean, unqueued: Boolean = false): Boolean {
-        if (!claimTerminal(write)) return false
+        if (!admission.claimTerminal(write)) return false
         finish(write, delivered, unqueued)
         return true
     }

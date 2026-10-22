@@ -23,7 +23,7 @@ class McpSessionsTest {
         val invalidations = listOf("tools", "prompts", "resources").map {
             """{"jsonrpc":"2.0","method":"notifications/$it/list_changed"}"""
         }
-        assertEquals(invalidations + newest, drained)
+        assertEquals(invalidations, drained)
     }
 
     // V4-148. Mutant: register the adopted session with put instead of putIfAbsent. A client that

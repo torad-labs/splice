@@ -97,7 +97,6 @@ internal class HostedServerLifecycle(private val host: HostedServer) {
         val send: McpChildWriter,
         val stops: McpProcessStop,
         val reaped: ChildReaped,
-        val history: McpChildHistory,
         val log: LogSink,
     )
 
@@ -122,7 +121,6 @@ internal class HostedServerLifecycle(private val host: HostedServer) {
             val exactExit = reaped && !runtime.stops.retains(retired.generation)
             if (exactExit && actions.release.release(child, retired.generation)) {
                 runtime.send.exited(retired.target)
-                runtime.history.exited()
             }
             val exitCode = if (reaped) child.exitValue().toString() else "unknown"
             runtime.log(
@@ -141,15 +139,11 @@ internal class HostedServerLifecycle(private val host: HostedServer) {
     internal class StoppedRelease(
         private val retention: GenerationRetention,
         private val send: McpChildWriter,
-        private val history: McpChildHistory,
         private val release: RetiredRelease,
     ) {
         fun release(stopping: StoppingChild, generations: List<McpProcessGeneration> = emptyList()) {
             if (!retention.settled(stopping.process, stopping.generation, generations)) return
-            release.release(stopping)?.let {
-                send.exited(it)
-                history.exited()
-            }
+            release.release(stopping)?.let(send::exited)
         }
     }
 

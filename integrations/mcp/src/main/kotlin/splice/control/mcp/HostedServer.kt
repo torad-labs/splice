@@ -82,7 +82,7 @@ internal class HostedServer(
         McpWriteFailure { child, reason -> transportFailures.failed(child, reason) },
     )
     private val transportFailures: HostedServerLifecycle.TransportFailure = HostedServerLifecycle.TransportFailure(
-        HostedServerLifecycle.TransportRuntime(spec.name, send, stops, runtime.reaped, history, log),
+        HostedServerLifecycle.TransportRuntime(spec.name, send, stops, runtime.reaped, log),
         HostedServerLifecycle.TransportActions(
             HostedServerLifecycle.FailureRetirement { child, reason ->
                 synchronized(stateLock) {
@@ -104,6 +104,7 @@ internal class HostedServer(
                     if (process !== child || generation !== owned) {
                         false
                     } else {
+                        history.exited()
                         process = null
                         generation = null
                         retiredWriter = null
@@ -151,12 +152,12 @@ internal class HostedServer(
     internal val stoppedRelease = HostedServerLifecycle.StoppedRelease(
         retention,
         send,
-        history,
         HostedServerLifecycle.RetiredRelease { stopping ->
             synchronized(stateLock) {
                 if (process !== stopping.process || generation !== stopping.generation) {
                     null
                 } else {
+                    history.exited()
                     process = null
                     generation = null
                     retiredWriter.also { retiredWriter = null }

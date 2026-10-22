@@ -89,12 +89,18 @@ class Hub(
                 holder.socket,
                 generation,
                 {
-                    relay.awaitsExit(holder, generation).also { pending ->
-                        if (pending) holders.links.reconnect(holder, generation)
-                    }
+                    val pending = relay.awaitsExit(holder, generation)
+                    if (pending) holders.links.reconnect(holder, generation)
+                    pending || holders.exitPending(holder, generation)
                 },
             ) { reconciledExit(holder, generation) }
         }
+        reconcileHolderExits()
+        replacements.reconcile()
+    }
+
+    /** Lifetime ownership outlives ledger settlement and is refreshed even if another coalesced subscriber ended. */
+    private fun reconcileHolderExits() {
         holders.exitCandidates().forEach { (holder, generation) ->
             routes.replacements.confirmExit(
                 holder.socket,
@@ -104,7 +110,6 @@ class Hub(
                 if (holders.exitPending(holder, generation)) reconciledExit(holder, generation)
             }
         }
-        replacements.reconcile()
     }
 
     private fun reconciledExit(holder: Holder, generation: String) {
@@ -123,6 +128,7 @@ class Hub(
 
     fun keepAlive() {
         replacements.finish()
+        reconcileHolderExits()
         sessions.values
             .filter { it.route.launch.toIntOrNull()?.let(Ids::running) == false }
             .toList()

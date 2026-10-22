@@ -12,7 +12,7 @@ const SO_PEERCRED = 17;
 const UCRED_BYTES = 12;
 const PROC_START_TICKS_INDEX_AFTER_COMMAND = 19;
 const WEBSOCKET_GUID = '258EAFA5-E914-47DA-95CA-C5AB0DC85B11';
-const [control, expectedPid, expectedStartTicks, expectedBootId] = process.argv.slice(2);
+const [control, registeredScript, expectedPid, expectedStartTicks, expectedBootId] = process.argv.slice(2);
 let transport;
 let pending = Buffer.alloc(0);
 let opened = false;
@@ -200,7 +200,7 @@ try {
   const endpoint = realpathSync(control);
   const generation = expectedGeneration();
   const peer = process.platform === 'linux' ? peerCredentials() : null;
-  if ((process.platform === 'linux' && (generation === null || peer === null)) ||
+  if (!registeredScript || (process.platform === 'linux' && (generation === null || peer === null)) ||
     !expectedSocket(control, account) || !expectedSocket(endpoint, account) || endpoint.includes(':')) fail();
   process.stdin.pause();
   process.stdin.setEncoding('utf8');

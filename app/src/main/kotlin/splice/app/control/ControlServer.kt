@@ -308,6 +308,7 @@ internal class ControlServer(
                 }
             },
         ) {
+            splice.http.listen.HttpListenerThreads.configure(this)
             connector {
                 host = "127.0.0.1"
                 port = this@ControlServer.listen.port

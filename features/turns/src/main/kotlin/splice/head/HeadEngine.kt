@@ -119,6 +119,7 @@ internal class HeadEngine(
                 }
             },
         ) {
+            splice.http.listen.HttpListenerThreads.configure(this)
             connector {
                 host = "127.0.0.1"
                 port = listen.port

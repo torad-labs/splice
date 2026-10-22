@@ -24,36 +24,64 @@ internal class SessionMinting(
     private val sessions: McpSessions,
     private val log: LogSink,
 ) {
+    private data class Started(
+        val initialization: HostedInitialization? = null,
+        val failure: String = "",
+        val timedOut: Boolean = false,
+    )
 
     /** A session on [name]'s child: [sessionId] null mints a fresh id, non-null adopts the client's own. */
-    suspend fun mint(name: String, sessionId: String?, head: String? = null, admission: McpAdmission? = null): Minted {
-        // acquire() reserves the server against eviction until release(); the handshake happens inside
-        // that window and the session is registered only if the server is still bound when it ends —
-        // so no session is ever created that must then be un-created.
-        val server = when (val acquired = servers.acquire(name, admission)) {
-            is McpResult.Refused -> return Minted(null, acquired.reason)
-            is McpResult.Served -> acquired.value
+    suspend fun mint(name: String, sessionId: String?, head: String? = null, admission: McpAdmission? = null): Minted =
+        when (val acquired = servers.acquire(name, admission)) {
+            is McpResult.Refused -> Minted(null, acquired.reason)
+            is McpResult.Served -> mint(acquired.value, name, sessionId, head)
         }
-        var initResult: kotlinx.serialization.json.JsonObject? = null
-        var failure = ""
-        var timedOut = false
-        // The reservation ends in a finally: a client that cancels mid-handshake (review 4) must not
-        // leave the server marked "starting" forever, or capacity would refuse every newcomer.
-        try {
-            when (val started = server.ensureStarted()) {
-                is McpResult.Served -> initResult = started.value
-                is McpResult.Refused -> {
-                    failure = started.reason
-                    timedOut = started.timedOut
-                }
-            }
+
+    /** Cancellation before [start] returns must still release the registry lease. */
+    private suspend fun mint(
+        server: HostedServer,
+        name: String,
+        sessionId: String?,
+        head: String?,
+    ): Minted {
+        var started: Started? = null
+        return try {
+            val result = start(server)
+            started = result
+            settle(name, server, result, sessionId, head)
         } finally {
-            if (!servers.release(name, server)) {
-                failure = failure.ifEmpty { "hosted MCP server '$name' was replaced while starting" }
+            if (started == null) servers.release(name, server)
+        }
+    }
+
+    private suspend fun start(server: HostedServer): Started = when (val result = server.ensureInitialized()) {
+        is McpResult.Served -> Started(initialization = result.value)
+        is McpResult.Refused -> Started(failure = result.reason, timedOut = result.timedOut)
+    }
+
+    private fun settle(
+        name: String,
+        server: HostedServer,
+        started: Started,
+        sessionId: String?,
+        head: String?,
+    ): Minted {
+        val ready = started.initialization ?: return released(name, server, started)
+        val session = servers.createSession(name, server, ready, sessionId, head)
+        return session?.let { Minted(it, "") }
+            ?: Minted(null, "hosted MCP server '$name' was replaced while starting")
+    }
+
+    private fun released(name: String, server: HostedServer, started: Started): Minted {
+        val stillBound = servers.release(name, server)
+        val words = if (stillBound) {
+            started.failure
+        } else {
+            started.failure.ifEmpty {
+                "hosted MCP server '$name' was replaced while starting"
             }
         }
-        val session = initResult?.takeIf { failure.isEmpty() }?.let { sessions.create(name, it, sessionId, head) }
-        return session?.let { Minted(it, "") } ?: Minted(null, failure, timedOut)
+        return Minted(null, words, started.timedOut)
     }
 
     /** The session for an id this host does not know — minted under the CLIENT's id, so a restart, an

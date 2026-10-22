@@ -109,16 +109,20 @@ internal class HostedReplacementPlan(
         }
     }
 
-    /** Publishes atomically, then returns the retained session names for post-publication invalidation. */
+    /** Publishes atomically while the incumbent's quiet fence excludes late reverse work. */
     fun commit(plan: PreparedReplacement, next: HostedServer): List<String>? {
         val configured = global()
         return synchronized(store.lock) {
-            if (!publishable(plan, next, configured)) {
-                null
-            } else {
-                publish(plan, next)
-                plan.names
-            }
+            plan.fence?.whileHeld(
+                McpFenceAction {
+                    if (!publishable(plan, next, configured)) {
+                        null
+                    } else {
+                        publish(plan, next)
+                        plan.names
+                    }
+                },
+            )
         }
     }
 

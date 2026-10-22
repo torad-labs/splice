@@ -45,18 +45,32 @@ internal class HostedServerRequests(
         if (closed.get()) return
         val requestId = nextRequestId()
         if (!writer.retain(requestId, child)) {
-            writer.failures.report(child, "server request arrived after its generation was fenced")
+            reject(child, msg, requestId)
             return
         }
         if (codec.method(msg) == "roots/list") sink.onRootsAsked()
         try {
             replies.execute {
-                if (!closed.get() && !writer.reply(codec.serverReply(msg), requestId, child, budget())) {
-                    writer.failures.report(child, "server reply lost its generation")
-                }
+                if (!closed.get()) writer.reply(codec.serverReply(msg), requestId, child, budget())
             }
         } catch (_: RejectedExecutionException) {
-            if (!closed.get()) writer.failures.report(child, "server reply queue is full")
+            reject(child, msg, requestId)
+        }
+    }
+
+    /** Saturation answers this exact reverse id through the bounded child writer without inferring child exit. */
+    private fun reject(child: Process, msg: JsonObject, requestId: Long) {
+        if (!closed.get()) {
+            writer.reply(
+                codec.error(
+                    msg.getValue("id"),
+                    RPC_SERVER_EXITED,
+                    "hosted MCP server reverse request capacity is full",
+                ),
+                requestId,
+                child,
+                budget(),
+            )
         }
     }
 

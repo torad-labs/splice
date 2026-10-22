@@ -21,6 +21,15 @@ private const val HOST_TOKEN_PREFIX = "splice-"
 internal class Pending(val sessionId: String, val clientId: JsonElement, val progressToken: JsonElement? = null) {
     val answer = CompletableDeferred<JsonObject>()
 
+    @Volatile var terminal = false
+        private set
+
+    fun terminateProgress() {
+        terminal = true
+    }
+
+    fun matches(session: String, id: JsonElement): Boolean = sessionId == session && clientId == id
+
     /** The answer the caller gets when the child never will answer: an error under ITS id. */
     fun fail(codec: JsonRpcCodec, message: String) {
         answer.complete(codec.error(clientId, RPC_SERVER_EXITED, message))
@@ -30,8 +39,8 @@ internal class Pending(val sessionId: String, val clientId: JsonElement, val pro
 /** Where the child's unsolicited notifications go: fanned out to every session, except a progress
  *  notification, which belongs to the one session whose request carries its token. */
 internal interface NotificationSink {
-    fun onNotification(msg: JsonObject)
-    fun onProgress(sessionId: String, msg: JsonObject)
+    fun onNotification(child: Process, msg: JsonObject)
+    fun onProgress(child: Process, sessionId: String, msg: JsonObject)
 
     /** The child asked its client for roots: it depends on them, so it is no longer shared. */
     fun onRootsAsked()
@@ -50,9 +59,10 @@ internal class ProgressTokens {
         codec: JsonRpcCodec,
     ): JsonObject? {
         val clientId = (msg[PARAMS] as? JsonObject)?.get("requestId")
-        val hostId = pending.entries.firstOrNull {
+        val matches = pending.entries.filter {
             it.value.sessionId == sessionId && it.value.clientId == clientId
-        }?.key ?: return null
+        }
+        val hostId = matches.singleOrNull()?.key ?: return null
         return codec.withCancelledRequestId(msg, JsonPrimitive(hostId))
     }
 
@@ -72,7 +82,7 @@ internal class ProgressTokens {
         val token = (params[PROGRESS_TOKEN] as? JsonPrimitive)?.takeIf { it.isString }?.content
         val slot = token?.takeIf { it.startsWith(HOST_TOKEN_PREFIX) }
             ?.removePrefix(HOST_TOKEN_PREFIX)?.toLongOrNull()?.let(pending::get)
-        val original = slot?.progressToken ?: return null
+        val original = slot?.takeUnless { it.terminal }?.progressToken ?: return null
         return slot to JsonObject(msg + (PARAMS to JsonObject(params + (PROGRESS_TOKEN to original))))
     }
 }

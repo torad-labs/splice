@@ -39,6 +39,8 @@ import splice.core.util.LogSink
 import java.io.IOException
 import java.nio.file.Files
 import java.nio.file.Path
+import java.util.UUID
+import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicBoolean
 
 /** A systemd slice's memory ceiling, as `systemctl --user show <slice> -p MemoryMax --value` prints
@@ -52,6 +54,9 @@ internal fun interface SliceMemoryCap {
 internal fun interface OomScoreAdjWrite {
     public operator fun invoke(pid: Long, value: Int): Int?
 }
+
+/** The generated scope identity is carried through spawn, so teardown owns the same cgroup even after its root exits. */
+internal data class McpContainmentLaunch(val command: List<String>, val unit: String? = null)
 
 /** Where a hosted child runs and how killable it is. Both halves are per-spawn, and neither ever
  *  touches splice's own process: [protect] writes exactly one pid, the child's. */
@@ -69,8 +74,11 @@ internal class McpContainment(
 
     /** The argv to spawn: inside the declared slice when that slice CARRIES A CAP, else the command as
      *  it stands. Containment that does not exist is said once, never faked. */
-    public fun placed(command: List<String>): List<String> {
-        if (darwin != null) return command
+    public fun placed(command: List<String>): List<String> = prepare(command).command
+
+    /** Carries an exact scope name from launch into process ownership before its root can reparent a worker. */
+    internal fun prepare(command: List<String>): McpContainmentLaunch {
+        if (darwin != null) return McpContainmentLaunch(command)
         val ceiling = cap(slice)
         if (ceiling == null || ceiling == UNCAPPED) {
             if (uncappedSaid.compareAndSet(false, true)) {
@@ -81,9 +89,19 @@ internal class McpContainment(
                         "slice to contain them\n",
                 )
             }
-            return command
+            return McpContainmentLaunch(command)
         }
-        return listOf("systemd-run", "--user", "--scope", "--quiet", "--slice=$slice", "--") + command
+        val unit = "splice-mcp-${UUID.randomUUID()}.scope"
+        val placed = listOf(
+            "systemd-run",
+            "--user",
+            "--scope",
+            "--quiet",
+            "--unit=$unit",
+            "--slice=$slice",
+            "--",
+        ) + command
+        return McpContainmentLaunch(placed, unit)
     }
 
     /** Off splice's inherited -1000, so every reaper can select the child. A value that did not land
@@ -109,8 +127,11 @@ internal class SystemdSliceCap : SliceMemoryCap {
         val process = ProcessBuilder("systemctl", "--user", "show", slice, "-p", "MemoryMax", "--value")
             .redirectErrorStream(false)
             .start()
-        val value = process.inputStream.bufferedReader().use { it.readText() }.trim()
-        if (process.waitFor() == 0) value.takeIf { it.isNotEmpty() } else null
+        if (!process.waitFor(CONTAINMENT_READ_MS, TimeUnit.MILLISECONDS)) {
+            process.destroyForcibly()
+            return null
+        }
+        process.inputStream.bufferedReader().use { it.readText() }.trim().takeIf { process.exitValue() == 0 }
     } catch (_: IOException) {
         null
     }
@@ -142,6 +163,7 @@ public const val APP_MCP_SLICE: String = "app-mcp.slice"
 // why: systemd's own word for "no ceiling" in `show -p MemoryMax --value`, which is what a slice
 // nobody declared answers — the value that must never read as containment.
 private const val UNCAPPED = "infinity"
+private const val CONTAINMENT_READ_MS = 1_000L
 
 // why: the adj every hosted child is raised to. Strictly above the -400 floor an out-of-memory reaper
 // is conventionally told to skip, so every reaper can still select it — the whole point of the raise —

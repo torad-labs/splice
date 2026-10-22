@@ -9,19 +9,60 @@ import kotlinx.serialization.json.JsonObject
 import splice.client.mcp.McpServerSpec
 import splice.client.mcp.McpSharing
 import splice.core.util.LogSink
+import java.util.concurrent.locks.ReentrantLock
+import kotlin.concurrent.withLock
 
 private const val MILLIS_PER_MINUTE = 60_000L
+
+/** Serializes unbounded launch/adoption outside the registry lock, so shutdown cannot pass a late child. */
+private class McpLaunchBarrier : McpLaunchGate {
+    private val lock = ReentrantLock()
+    private val stops = McpProcessStop()
+    private var closed = false
+    private val unresolved = mutableSetOf<McpProcessGeneration>()
+
+    override fun launch(
+        spec: McpServerSpec,
+        launcher: McpProcessLauncher,
+        adoption: McpLaunchAdoption,
+    ): Process? = lock.withLock {
+        if (closed) {
+            null
+        } else {
+            val child = launcher(spec)
+            val generation = (launcher as? McpProcessGenerationSource)?.capture(child) ?: stops.capture(child)
+            if (adoption.adopt(child, generation)) {
+                child
+            } else {
+                unresolved += stops.stopGenerations(listOf(generation))
+                null
+            }
+        }
+    }
+
+    /** Waits through any spawn and adoption, then refuses every later launch before registry shutdown begins. */
+    fun close() = lock.withLock {
+        closed = true
+        val retained = stops.stopGenerations(unresolved.toList())
+        unresolved.clear()
+        unresolved += retained
+    }
+}
 
 /** What makes two entries the same process. */
 internal data class McpIdentity(val command: String, val args: List<String>, val env: Map<String, String>)
 
-private fun interface HostedServerAliases {
-    operator fun invoke(server: HostedServer): List<String>
+private fun interface HostedServerNames {
+    fun deliver(names: List<String>)
 }
 
-/** Routes a child's notifications only once its exact generation is registered under its tuple. */
+private fun interface HostedServerNotificationPublication {
+    fun publish(server: HostedServer, child: Process, notification: HostedServerNames)
+}
+
+/** Routes a child's notifications only while the registry holds that exact published instance. */
 private class HostedServerNotifications(
-    private val aliases: HostedServerAliases,
+    private val publication: HostedServerNotificationPublication,
     private val sessions: McpSessions,
     private val codec: JsonRpcCodec,
     private val sharing: McpSharing,
@@ -34,12 +75,17 @@ private class HostedServerNotifications(
         owner = server
     }
 
-    override fun onNotification(msg: JsonObject) {
-        names().forEach { sessions.fanOut(it, codec.encode(msg)) }
+    override fun onNotification(child: Process, msg: JsonObject) {
+        publish(child, HostedServerNames { names -> names.forEach { sessions.fanOut(it, codec.encode(msg)) } })
     }
 
-    override fun onProgress(sessionId: String, msg: JsonObject) {
-        names().forEach { sessions.deliver(it, sessionId, codec.encode(msg)) }
+    override fun onProgress(child: Process, sessionId: String, msg: JsonObject) {
+        publish(
+            child,
+            HostedServerNames { names ->
+                names.forEach { sessions.deliver(it, sessionId, codec.encode(msg)) }
+            },
+        )
     }
 
     override fun onRootsAsked() {
@@ -47,7 +93,9 @@ private class HostedServerNotifications(
         log("[mcp-host] ${spec.name}: asks its client for roots, so each later session starts its own\n")
     }
 
-    private fun names(): List<String> = owner?.let(aliases::invoke).orEmpty()
+    private fun publish(child: Process, notification: HostedServerNames) {
+        owner?.let { publication.publish(it, child, notification) }
+    }
 }
 
 internal class HostedServers(
@@ -74,9 +122,7 @@ internal class HostedServers(
         get() = store.closed
         set(value) { store.closed = value }
     private val stops = McpProcessStop()
-    private val launches = McpLaunchGate { spec, processLauncher ->
-        if (synchronized(lock) { !closed }) processLauncher(spec) else null
-    }
+    private val launches = McpLaunchBarrier()
     val replacements = HostedReplacements(store, sharing, global, sessions, ::create)
 
     fun get(name: String): HostedServer? = synchronized(lock) { bindings[name]?.let(servers::get) }
@@ -121,21 +167,19 @@ internal class HostedServers(
         return acquired
     }
 
-    /** A new server for [id], evicting one first at capacity. Caller holds [lock]. */
-    private fun register(id: McpIdentity, spec: McpServerSpec, closing: Closing): McpResult<HostedServer> {
-        // ONE reading for this attempt, carried into the refusal: a raise between the comparison and the
-        // message would have the operator read a ceiling that never applied to them (McpServerCeiling).
-        val ceiling = config.maxServers()
-        if (servers.size >= ceiling) evictOne(closing, ceiling)?.let { return it }
-        val server = create(spec)
-        servers[id] = server
-        return McpResult.Served(server)
-    }
-
     private fun create(spec: McpServerSpec): HostedServer {
         val id = McpIdentity(spec.command, spec.args, spec.env)
         val sink = HostedServerNotifications(
-            HostedServerAliases(::namesOf),
+            HostedServerNotificationPublication { server, child, notification ->
+                synchronized(lock) {
+                    if (servers[server.identity] === server) {
+                        server.enqueueIfOwned(
+                            child,
+                            HostedNotificationEnqueue { notification.deliver(store.namesOf(server.identity)) },
+                        )
+                    }
+                }
+            },
             sessions,
             codec,
             sharing,
@@ -156,6 +200,26 @@ internal class HostedServers(
 
     /** Ends the reservation [acquire] took; true when [server] is still bound to [name] and alive. */
     fun release(name: String, server: HostedServer): Boolean = synchronized(lock) {
+        releaseCurrent(name, server)
+    }
+
+    /** Publishes a session only while the same generation that supplied initialize still owns [name]. */
+    fun createSession(
+        name: String,
+        server: HostedServer,
+        initialization: HostedInitialization,
+        sessionId: String?,
+        head: String?,
+    ): McpSession? = synchronized(lock) {
+        if (!releaseCurrent(name, server, initialization)) return@synchronized null
+        sessions.create(name, initialization.result, sessionId, head)
+    }
+
+    private fun releaseCurrent(
+        name: String,
+        server: HostedServer,
+        initialization: HostedInitialization? = null,
+    ): Boolean {
         // The identity comes from the server itself, never from a scan of `servers`: a server
         // unbound between acquire and release (a sweep, a tuple change) is no longer in the map,
         // and its reservation must still end or eviction refuses newcomers until restart
@@ -163,7 +227,8 @@ internal class HostedServers(
         val id = server.identity
         val left = (reserved[id] ?: 1) - 1
         if (left > 0) reserved[id] = left else reserved.remove(id)
-        bindings[name] == id && servers[id] === server && server.alive
+        val published = bindings[name] == id && servers[id] === server
+        return published && (initialization?.let { server.owns(it) } ?: server.alive)
     }
 
     /** Is [name]'s process leased? The idle sweep must not retire it or its sessions mid-operation. */
@@ -176,6 +241,7 @@ internal class HostedServers(
     }
 
     fun closeAll(reason: String) {
+        launches.close()
         val closing = synchronized(lock) {
             closed = true
             val snapshot = (servers.values + store.candidates.values).distinct()
@@ -188,16 +254,8 @@ internal class HostedServers(
             store.candidates.clear()
             snapshot
         }
-        stops.stop(closing.mapNotNull { it.close(reason, wait = false) })
+        stops.stopGenerations(closing.mapNotNull { it.close(reason, wait = false) })
     }
-
-    /** A candidate has no routes until this registry holds THAT instance under its tuple. */
-    private fun namesOf(server: HostedServer): List<String> = synchronized(lock) {
-        if (servers[server.identity] !== server) emptyList() else namesOf(server.identity)
-    }
-
-    private fun namesOf(id: McpIdentity): List<String> =
-        bindings.filterValues { it == id }.keys.toList()
 
     /** Drops [name]; the process goes only when no alias is left on its tuple. Caller holds [lock];
      *  the close itself is queued on [closing] and runs AFTER the lock is released, because a child
@@ -242,6 +300,15 @@ internal class HostedServers(
             else -> servers[id]?.let { McpResult.Served(it) } ?: register(id, spec, closing)
         }
 
+        /** A new server for [id], evicting one first at capacity. Caller holds [lock]. */
+        private fun register(id: McpIdentity, spec: McpServerSpec, closing: Closing): McpResult<HostedServer> {
+            val ceiling = config.maxServers()
+            if (servers.size >= ceiling) evictOne(closing, ceiling)?.let { return it }
+            val server = create(spec)
+            servers[id] = server
+            return McpResult.Served(server)
+        }
+
         private fun reserve(name: String, id: McpIdentity) {
             bindings[name] = id
             reserved[id] = (reserved[id] ?: 0) + 1
@@ -265,14 +332,14 @@ internal class HostedServers(
      *  caller's one reading of [McpServerCeiling], so the number in the refusal is the one that refused. */
     private fun evictOne(closing: Closing, ceiling: Int): McpResult.Refused? {
         val victim = servers.keys
-            .filterNot { id -> namesOf(id).any { reserved(it) || sessions.streaming(it) } }
-            .minByOrNull { id -> namesOf(id).maxOfOrNull(sessions::lastActivity) ?: 0L }
+            .filterNot { id -> store.namesOf(id).any { reserved(it) || sessions.streaming(it) } }
+            .minByOrNull { id -> store.namesOf(id).maxOfOrNull(sessions::lastActivity) ?: 0L }
             ?: return McpResult.Refused(
                 "MCP host at capacity ($ceiling servers, all streaming or starting)",
             )
-        val last = namesOf(victim).maxOfOrNull(sessions::lastActivity) ?: 0L
+        val last = store.namesOf(victim).maxOfOrNull(sessions::lastActivity) ?: 0L
         val idle = (config.clock.millis() - last) / MILLIS_PER_MINUTE
-        namesOf(victim).forEach { unbind(it, "evicted after $idle min idle to host a newer server", closing) }
+        store.namesOf(victim).forEach { unbind(it, "evicted after $idle min idle to host a newer server", closing) }
         servers.remove(victim)?.let { closing.add(it, "evicted (no names bound)") }
         return null
     }

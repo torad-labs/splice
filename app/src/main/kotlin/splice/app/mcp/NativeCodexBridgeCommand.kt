@@ -38,12 +38,7 @@ internal class NativeCodexBridgeCommand {
 
     private fun scriptArgument(arguments: List<String>): ScriptArgument? =
         arguments.mapIndexedNotNull { position, argument ->
-            val path = Path.of(argument)
-            if (isTempleScript(path)) {
-                ScriptArgument(position, path)
-            } else {
-                null
-            }
+            Path.of(argument).takeIf(::isTempleScript)?.let { ScriptArgument(position, it) }
         }.singleOrNull()
 
     private fun isTempleScript(path: Path): Boolean =
@@ -52,6 +47,7 @@ internal class NativeCodexBridgeCommand {
     private fun isRegisteredTempleScript(path: Path): Boolean =
         path.fileName?.toString() == "tools-server.ts" && Files.isRegularFile(path)
 
+    /** The registered runtime remains opaque. Only its one anchored tools-server target is substituted. */
     private fun invocation(
         executable: String,
         arguments: List<String>,
@@ -59,42 +55,16 @@ internal class NativeCodexBridgeCommand {
         bridge: Path,
         endpoint: NativeCodexSocketEndpoint,
     ): List<String>? {
-        val executableName = executable.substringAfterLast('/')
+        if (script.position != arguments.lastIndex) return null
         val generation = endpoint.binding?.identity
         val bridgeArguments = listOf(
             bridge.toString(),
             endpoint.path.toString(),
+            script.path.toString(),
             generation?.pid?.toString().orEmpty(),
             generation?.startTicks?.toString().orEmpty(),
             generation?.bootId.orEmpty(),
         )
-        return when {
-            directBun(executableName, arguments, script) -> listOf(executable) + bridgeArguments
-            isHostshieldLaunch(executableName, arguments, script) ->
-                listOf(executable) + arguments.take(script.position) + bridgeArguments
-            else -> null
-        }
-    }
-
-    private fun directBun(
-        executableName: String,
-        arguments: List<String>,
-        script: ScriptArgument,
-    ): Boolean = executableName == "bun" && script.position == 0 && arguments.size == 1
-
-    private fun isHostshieldLaunch(
-        executableName: String,
-        arguments: List<String>,
-        script: ScriptArgument,
-    ): Boolean =
-        executableName == "hostshield" && isHostshieldRuntime(arguments, script)
-
-    /** Retained HostShield commands protect Bun with a runtime/hash preamble, then pass Bun's flags after `--`. */
-    private fun isHostshieldRuntime(arguments: List<String>, script: ScriptArgument): Boolean {
-        val preamble = listOf("bun", "--hostshield-runtime", "", "--hostshield-sha256", "")
-        if (script.position != arguments.lastIndex || arguments.indexOf("--") != preamble.size) return false
-        return arguments.take(preamble.size).zip(preamble).all { (actual, expected) ->
-            if (expected.isEmpty()) actual.isNotBlank() else actual == expected
-        } && arguments[preamble.lastIndex].matches(Regex("[0-9a-fA-F]{64}"))
+        return listOf(executable) + arguments.take(script.position) + bridgeArguments
     }
 }

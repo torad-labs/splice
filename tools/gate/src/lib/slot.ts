@@ -15,7 +15,7 @@
 //   - a signal reaches the WRAPPER, not only the process group: `kill <pid>` on the gate is how a
 //     seat, a CI cancel and a supervisor all stop a run, and the shell script dies of it in
 //     milliseconds. That is why gradle is orchestrated asynchronously below (:98-131).
-import { existsSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, readFileSync, readdirSync, rmSync, writeFileSync } from "node:fs";
 import { dirname, join, sep } from "node:path";
 import { takeExclusive } from "./flock.ts";
 import type { Layout } from "./repo.ts";
@@ -168,9 +168,29 @@ function signalGroup(child: Bun.Subprocess, signal: NodeJS.Signals): void {
 function groupAlive(pid: number): boolean {
   try {
     process.kill(-pid, 0);
-    return true;
+    return process.platform !== "linux" || groupHasRunningMember(pid);
   } catch (error) {
     return (error as NodeJS.ErrnoException).code === "EPERM";
+  }
+}
+
+/** kill(0) also sees zombies. Only running group members retain a Linux build slot, never reaping receipts. */
+function groupHasRunningMember(group: number): boolean {
+  try {
+    for (const name of readdirSync("/proc")) {
+      if (!/^\d+$/.test(name)) continue;
+      try {
+        const stat = readFileSync(`/proc/${name}/stat`, "utf8");
+        const fields = stat.slice(stat.lastIndexOf(")") + 2).trim().split(/\s+/);
+        // procfs fields 3 and 5 follow the parenthesized command as state and process-group id.
+        if (Number(fields[2]) === group && fields[0] !== "Z" && fields[0] !== "X") return true;
+      } catch (error) {
+        if (!["ENOENT", "ESRCH"].includes((error as NodeJS.ErrnoException).code ?? "")) return true;
+      }
+    }
+    return false;
+  } catch {
+    return true;
   }
 }
 

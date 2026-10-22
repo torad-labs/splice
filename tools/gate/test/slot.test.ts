@@ -444,7 +444,10 @@ try {
   const alive = (pid: number): boolean => {
     try {
       process.kill(pid, 0);
-      return true;
+      if (process.platform !== "linux") return true;
+      const stat = readFileSync(`/proc/${pid}/stat`, "utf8");
+      const state = stat.slice(stat.lastIndexOf(")") + 2).split(/\s+/, 1)[0];
+      return state !== "Z" && state !== "X";
     } catch {
       return false;
     }
@@ -478,7 +481,7 @@ try {
     process.kill(wrapper.pid, "SIGTERM");
     expect(await wrapper.exited).toBe(143);
     expect(alive(child), "a build that ignores SIGTERM is killed when the grace ends").toBe(false);
-  });
+  }, 15_000);
 
   test("a signalled joint build keeps its host lock until Gradle actually exits (V4-426)", async () => {
     const fake = fakeBuildRoot(

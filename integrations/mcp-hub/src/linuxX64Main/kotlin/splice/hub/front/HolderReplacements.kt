@@ -69,7 +69,9 @@ internal data class HolderReplacements(
             holder.generation == drain.generation && holder.retirementFence == drain.generation
         } == true
         val candidate = drain.candidate?.takeIf { drain.phase == ROLLING_BACK }
-        val exited = candidate?.let(known::get)?.takeIf { holder -> holder.generation == candidate.generation }
+        val exited = candidate?.let { selected ->
+            known[selected.socket]?.takeIf { holder -> holder.generation == selected.generation }
+        }
         return RollbackRelease(old, candidate, exited, held, drain.generation, old?.link)
             .takeIf { held || exited != null }
     }

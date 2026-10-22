@@ -31,9 +31,9 @@ import kotlin.io.encoding.Base64
 import kotlin.io.encoding.ExperimentalEncodingApi
 
 class Upgrade(private val sys: Sys, private val files: HubFiles, private val args: List<String>) {
-    /** Whether the loop can hand over now: nothing read and unanswered, nothing unwritten. */
-    fun settled(loop: Loop): Boolean =
-        loop.all().none { it is HttpConn && !it.streaming && !it.quiet() || it is DaemonCall }
+    /** Whether the loop can hand over now: no retained wire id, no unanswered request, and nothing unwritten. */
+    fun settled(loop: Loop, wireOutstanding: Int): Boolean =
+        wireOutstanding == 0 && loop.all().none { it is HttpConn && !it.streaming && !it.quiet() || it is DaemonCall }
 
     fun drain(loop: Loop) {
         loop.all().filterIsInstance<HttpConn>().forEach { it.draining = true }

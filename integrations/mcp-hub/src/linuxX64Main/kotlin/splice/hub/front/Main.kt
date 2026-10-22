@@ -6,7 +6,7 @@
 //
 // The listening socket is systemd's when LISTEN_FDS says so (one TCP socket, fd 3), else --port on 127.0.0.1. Files in
 // the hub folder: access-key (the bearer sessions present, written by the daemon) and front.json (this front's own
-// state: routes, sessions, and the holders it has initialized). The daemon's management key is <state>/mgmt-key.
+// state: routes, sessions, initialized holders, and target drain contracts). The daemon's management key is <state>/mgmt-key.
 @file:OptIn(ExperimentalForeignApi::class)
 
 package splice.hub.front
@@ -21,6 +21,7 @@ import kotlinx.cinterop.staticCFunction
 import kotlinx.cinterop.toKString
 import kotlinx.cinterop.usePinned
 import kotlinx.serialization.json.JsonElement
+import kotlinx.serialization.json.JsonNull
 import kotlinx.serialization.json.JsonObject
 import platform.posix.O_CREAT
 import platform.posix.O_DIRECTORY
@@ -86,11 +87,15 @@ class Front(
         val daemon = Daemon(sys, loop, controlPort, files)
         val hub = Hub(files, daemon, Links(sys, loop), timers, clock)
         hub.restore()
+        val control = HolderDrainControl(hub)
         val upgrade = Upgrade(sys, files, args)
         val listen = { fd: Int ->
-            HttpListener(sys.nonblocking(fd), sys, loop, clock, files::admits, hub::handle).also(loop::add)
+            HttpListener(sys.nonblocking(fd), sys, loop, clock, files::admits) { conn, request ->
+                if (control.handles(request.path)) control.handle(conn, request) else hub.http.handle(conn, request)
+            }.also(loop::add)
         }
         val listener = resume?.let { upgrade.resume(it, listen, hub) } ?: fresh(sys, files, listen) ?: return NO_SOCKET
+        hub.reconcile()
         hub.keepAlive()
         loop.run(Lifecycle(clock, loop, files, hub, upgrade, listener)::done)
         hub.stopping = true
@@ -113,8 +118,93 @@ class Front(
     }
 }
 
+/** Management-key control of a single retained holder's admission boundary. No process action is available here. */
+class HolderDrainControl(private val hub: Hub) {
+    fun handles(path: String): Boolean =
+        path == HOLDER_DRAIN || path == HOLDER_DRAIN_STATUS || path == HOLDER_DRAIN_REPLACE
+
+    fun handle(conn: HttpConn, request: Request) {
+        val target = target(conn, request) ?: return
+        action(conn, request, target)
+    }
+
+    private fun target(conn: HttpConn, request: Request): HolderDrainTarget? {
+        val body = JsonText.objectOrNull(request.body)
+        return parseTarget(body) ?: rejectTarget(conn, body)
+    }
+
+    private fun parseTarget(body: JsonObject?): HolderDrainTarget? {
+        val server = server(body) ?: return null
+        val launch = Rpc.str(body, "launch") ?: return null
+        return HolderDrainTarget(server, launch)
+    }
+
+    private fun rejectTarget(conn: HttpConn, body: JsonObject?): HolderDrainTarget? {
+        val words = when {
+            body == null -> "the drain target must be one JSON object"
+            server(body) == null -> "the drain target needs server"
+            else -> "the drain target needs launch"
+        }
+        conn.reply(BAD_REQUEST, Rpc.error(JsonNull, words))
+        return null
+    }
+
+    private fun server(body: JsonObject?): String? =
+        Rpc.str(body, "server")?.takeIf(String::isNotEmpty)
+
+    private fun action(conn: HttpConn, request: Request, target: HolderDrainTarget) {
+        when (request.path to request.method) {
+            HOLDER_DRAIN to "POST" -> pause(conn, target)
+            HOLDER_DRAIN_STATUS to "POST" -> status(conn, target)
+            HOLDER_DRAIN_REPLACE to "POST" -> replace(conn, target)
+            HOLDER_DRAIN to "DELETE" -> resume(conn, target)
+            else -> conn.reply(NOT_ALLOWED)
+        }
+    }
+
+    private fun pause(conn: HttpConn, target: HolderDrainTarget) {
+        val blocker = hub.replacements.pause(target.server, target.launch)
+        val status = hub.replacements.status(target.server, target.launch)
+        when {
+            blocker != null -> conn.reply(UNAVAILABLE, Rpc.error(JsonNull, blocker))
+            status == null -> conn.reply(UNAVAILABLE, Rpc.error(JsonNull, "the drain state was not retained"))
+            else -> conn.reply(OK, Rpc.encode(status))
+        }
+    }
+
+    private fun status(conn: HttpConn, target: HolderDrainTarget) {
+        val status = hub.replacements.status(target.server, target.launch)
+        if (status == null) {
+            conn.reply(NOT_FOUND, Rpc.error(JsonNull, "no replacement drain for this target"))
+        } else {
+            conn.reply(OK, Rpc.encode(status))
+        }
+    }
+
+    private fun replace(conn: HttpConn, target: HolderDrainTarget) {
+        hub.replacements.replace(target.server, target.launch) { failure ->
+            val status = hub.replacements.status(target.server, target.launch)
+            when {
+                failure != null -> conn.reply(UNAVAILABLE, Rpc.error(JsonNull, failure))
+                status == null -> conn.reply(NOT_FOUND, Rpc.error(JsonNull, "no replacement drain for this target"))
+                else -> conn.reply(OK, Rpc.encode(status))
+            }
+        }
+    }
+
+    private fun resume(conn: HttpConn, target: HolderDrainTarget) {
+        if (hub.replacements.resume(target.server, target.launch)) {
+            conn.reply(OK)
+        } else {
+            conn.reply(NOT_FOUND, Rpc.error(JsonNull, "no replacement drain for this target"))
+        }
+    }
+
+    private data class HolderDrainTarget(val server: String, val launch: String)
+}
+
 /** The front's two ways out of the loop: an in-place upgrade asked by SIGUSR2, and a stop asked by SIGTERM. Both
- *  let the calls in flight finish first, up to a bound. */
+ *  wait for every wire call the front admitted. */
 class Lifecycle(
     private val clock: Clock,
     private val loop: Loop,
@@ -125,6 +215,7 @@ class Lifecycle(
 ) {
     private var stopAt = 0L
     private var upgradeBy = 0L
+    private var upgradeBlocked = false
 
     /** One loop turn's check; true once the front may exit. */
     fun done(): Boolean {
@@ -136,17 +227,27 @@ class Lifecycle(
 
     private fun beginUpgrade() {
         upgradeBy = clock.now() + DRAIN
+        upgradeBlocked = false
         upgrade.drain(loop)
         files.say("upgrade asked: ${hub.inFlight()} calls in flight")
     }
 
-    private fun upgradeDue(): Boolean = upgradeBy != 0L && (upgrade.settled(loop) || clock.now() > upgradeBy)
+    private fun upgradeDue(): Boolean {
+        if (upgradeBy == 0L) return false
+        if (upgrade.settled(loop, hub.inFlight())) return true
+        if (clock.now() > upgradeBy && !upgradeBlocked) {
+            upgradeBlocked = true
+            files.say("upgrade blocked: ${hub.inFlight()} wire calls remain; old front retained")
+        }
+        return false
+    }
 
     /** Execs the new code; returns only when the exec failed, and then the running code carries on. */
     private fun finishUpgrade() {
         upgrade.exec(loop, listener, hub, upgrade.ownPath())
         upgradeAsked.value = 0
         upgradeBy = 0L
+        upgradeBlocked = false
         hub.stopping = false
         loop.all().filterIsInstance<HttpConn>().forEach {
             it.draining = false
@@ -188,8 +289,8 @@ class Timers(private val clock: Clock) : Watched(-1) {
 class Daemon(private val sys: Sys, private val loop: Loop, private val port: Int, private val files: HubFiles) {
     fun call(path: String, body: String, done: (Int, String) -> Unit) {
         val fd = sys.connectTcp(port)
-        val call = DaemonCall(sys, path, files.mgmtKey(), body, done, fd)
-        if (fd >= 0) loop.add(call)
+        if (fd < 0) return done(0, "")
+        loop.add(DaemonCall(sys, path, files.mgmtKey(), body, done, fd))
     }
 }
 
@@ -258,13 +359,20 @@ private class McpAccessRead(private val dir: String) {
 class HubFiles(private val dir: String) {
     private val access = McpAccessRead(dir)
 
-    fun accessKey(): String? = access.key()
+    val accessKey: String? get() = access.key()
 
-    /** Whether a request head carries the bearer sessions present: asked before a body is read, and again with it. */
-    fun admits(headers: Map<String, String>): Boolean =
-        accessKey()?.let { headers["authorization"] == "Bearer $it" } == true
+    /** Authenticates MCP session traffic or the front's narrow management controls before their body is buffered. */
+    fun admits(path: String, headers: Map<String, String>): Boolean =
+        when {
+            path.startsWith(MCP_PATH) -> accessKey?.let { headers["authorization"] == "Bearer $it" } == true
+            path in setOf(HOLDER_DRAIN, HOLDER_DRAIN_STATUS, HOLDER_DRAIN_REPLACE) -> managementAdmits(headers)
+            else -> false
+        }
 
     fun mgmtKey(): String = read("${dir.substringBeforeLast('/')}/mgmt-key")?.trim().orEmpty()
+
+    private fun managementAdmits(headers: Map<String, String>): Boolean =
+        mgmtKey().takeIf(String::isNotEmpty)?.let { headers["authorization"] == "Bearer $it" } == true
 
     fun execPath(): String = "$dir/front-exec.json"
 
@@ -316,6 +424,10 @@ class HubFiles(private val dir: String) {
     }
 }
 
+private const val MCP_PATH = "/mcp/"
+private const val HOLDER_DRAIN = "/mgmt/mcp/holders/drain"
+private const val HOLDER_DRAIN_STATUS = "/mgmt/mcp/holders/drain/status"
+private const val HOLDER_DRAIN_REPLACE = "/mgmt/mcp/holders/drain/replace"
 private const val SYSTEMD_FD = 3
 private const val USAGE = 2
 private const val NO_SOCKET = 3

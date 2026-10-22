@@ -11,12 +11,16 @@ import kotlinx.serialization.json.put
 /** Where one server for one launch runs, as the daemon said. */
 data class Route(val server: String, val launch: String) {
     var socket: String? = null
+    var generation: String? = null
     var shared = true
     var listing: String? = null
     val waiters = ArrayList<(String?) -> Unit>()
 
     fun key(): String = "$server\n$launch"
 }
+
+/** Candidate holder supplied by the daemon from its current canonical configured tuple. */
+data class ReplacementCandidate(val socket: String, val tuple: String, val generation: String, val shared: Boolean)
 
 class Routes(
     private val daemon: Daemon,
@@ -26,15 +30,21 @@ class Routes(
 ) {
     private val known = HashMap<String, Route>()
     private val toldRoots = HashSet<String>()
+    internal val replacements = RouteReplacements(known, daemon, timers, clock, changed)
 
     fun of(server: String, launch: String): Route = Route(server, launch).let { known.getOrPut(it.key()) { it } }
 
     fun byKey(key: String): Route? = known[key]
 
+    fun generation(socket: String): String? = known.values.firstOrNull { it.socket == socket }?.generation
+
     /** Forgets where the holder at [socket] was, once it is gone: the next call asks the daemon again, so a launch
      *  follows a changed plan (a new sharing choice, a new server version) instead of the socket it resolved first. */
     fun forget(socket: String) {
-        known.values.filter { it.socket == socket }.forEach { it.socket = null }
+        known.values.filter { it.socket == socket }.forEach {
+            it.socket = null
+            it.generation = null
+        }
         changed()
     }
 
@@ -96,39 +106,57 @@ class Routes(
     }
 
     fun restore(saved: JsonObject?) {
-        saved?.forEach { (key, v) ->
-            val o = v as? JsonObject ?: return@forEach
-            val route = Route(Rpc.str(o, SERVER) ?: return@forEach, Rpc.str(o, LAUNCH).orEmpty())
-            route.socket = Rpc.str(o, SOCKET)
-            route.shared = Rpc.str(o, SHARED) != "false"
-            route.listing = Rpc.str(o, LISTING)
+        saved?.forEach { (key, value) ->
+            val routeBody = value as? JsonObject ?: return@forEach
+            val route = Route(Rpc.str(routeBody, SERVER) ?: return@forEach, Rpc.str(routeBody, LAUNCH).orEmpty())
+            route.socket = Rpc.str(routeBody, SOCKET)
+            route.generation = Rpc.str(routeBody, GENERATION)
+            route.shared = Rpc.str(routeBody, SHARED) != "false"
+            route.listing = Rpc.str(routeBody, LISTING)
             known[key] = route
+        }
+    }
+
+    /** Older front state lacked generations, so refresh only those retained routes before any link loss needs settlement. */
+    fun refreshGenerations() {
+        known.values.filter { it.socket != null && it.generation == null }.forEach { route ->
+            ask(route, "/api/mcp/hub/resolve", clock.now() + RESOLVE_BUDGET) { status, body ->
+                if (status == OK) place(route, body)
+            }
         }
     }
 
     fun state(): JsonObject =
         JsonObject(
-            known.mapValues { (_, r) ->
+            known.mapValues { (_, route) ->
                 buildJsonObject {
-                    put(SERVER, r.server)
-                    put(LAUNCH, r.launch)
-                    put(SOCKET, r.socket)
-                    put(SHARED, r.shared)
-                    put(LISTING, r.listing)
+                    put(SERVER, route.server)
+                    put(LAUNCH, route.launch)
+                    put(SOCKET, route.socket)
+                    put(GENERATION, route.generation)
+                    put(SHARED, route.shared)
+                    put(LISTING, route.listing)
                 }
             },
         )
 
     /** A daemon call retried while the daemon cannot be reached, until [until]. */
-    private fun ask(route: Route, path: String, until: Long, then: (Int, String) -> Unit) {
+    private fun ask(
+        route: Route,
+        path: String,
+        until: Long,
+        extra: JsonObject = JsonObject(emptyMap()),
+        then: (Int, String) -> Unit,
+    ) {
         val body = buildJsonObject {
             put(SERVER, route.server)
             put(LAUNCH, route.launch)
+            extra.forEach { (key, value) -> put(key, value) }
         }
         daemon.call(path, Rpc.encode(body)) { status, text ->
             val unreachable = status == 0 || status == UNAVAILABLE
             if (unreachable && clock.now() < until) {
-                timers.at(clock.now() + RETRY) { ask(route, path, until, then) }
+                timers.at(clock.now() + RETRY) { ask(route, path, until, extra, then) }
             } else {
                 then(status, text)
             }
@@ -136,20 +164,34 @@ class Routes(
     }
 
     private fun place(route: Route, body: String) {
-        val o = JsonText.objectOrNull(body) ?: return
-        route.socket = Rpc.str(o, SOCKET) ?: route.socket
-        route.shared = Rpc.str(o, SHARED) != "false"
-        route.listing = Rpc.str(o, LISTING)
+        val parsed = JsonText.objectOrNull(body) ?: return
+        route.socket = Rpc.str(parsed, SOCKET) ?: route.socket
+        route.generation = Rpc.str(parsed, GENERATION)
+        route.shared = Rpc.str(parsed, SHARED) != "false"
+        route.listing = Rpc.str(parsed, LISTING)
         changed()
     }
 }
 
-private const val SERVER = "server"
-private const val LAUNCH = "launch"
-private const val SOCKET = "socket"
-private const val SHARED = "shared"
-private const val LISTING = "listing"
-private const val RESOLVE_BUDGET = 30_000L
-private const val START_BUDGET = 60_000L
-private const val RETRY = 250L
-private const val NO_CONTENT = 204
+internal const val SERVER = "server"
+internal const val LAUNCH = "launch"
+internal const val SOCKET = "socket"
+internal const val SHARED = "shared"
+internal const val LISTING = "listing"
+internal const val OLD_SOCKET = "old_socket"
+internal const val OLD_GENERATION = "old_generation"
+internal const val CANDIDATE_SOCKET = "candidate_socket"
+internal const val CANDIDATE_TUPLE = "candidate_tuple"
+internal const val CANDIDATE_GENERATION = "candidate_generation"
+internal const val TUPLE = "tuple"
+internal const val GENERATION = "generation"
+internal const val REPLACEMENT_START = "/api/mcp/hub/replacement/start"
+internal const val REPLACEMENT_COMMIT = "/api/mcp/hub/replacement/commit"
+internal const val REPLACEMENT_RETIRE = "/api/mcp/hub/replacement/retire"
+internal const val REPLACEMENT_ROLLBACK = "/api/mcp/hub/replacement/rollback"
+internal const val REPLACEMENT_EXIT = "/api/mcp/hub/replacement/exit"
+internal const val RESOLVE_BUDGET = 30_000L
+internal const val START_BUDGET = 60_000L
+internal const val RETRY = 250L
+internal const val EXIT_RETRY = 250L
+internal const val NO_CONTENT = 204

@@ -15,7 +15,7 @@ class HttpConn(
     fd: Int,
     private val sys: Sys,
     private val clock: Clock,
-    private val admits: (Map<String, String>) -> Boolean,
+    private val admits: (String, Map<String, String>) -> Boolean,
     private val onRequest: (HttpConn, Request) -> Unit,
 ) : Watched(fd) {
     val inbox = Bytes()
@@ -90,7 +90,7 @@ class HttpConn(
         val start = end + CRLF2.size
         when {
             !head.valid() || length > MAX_BODY -> close()
-            !admits(head.headers) -> {
+            !admits(head.path(), head.headers) -> {
                 // no bearer: 401 and close, the body unread, so it never reaches the buffer
                 closing = true
                 inbox.drop(inbox.size)
@@ -181,7 +181,7 @@ class HttpListener(
     private val sys: Sys,
     private val loop: Loop,
     private val clock: Clock,
-    private val admits: (Map<String, String>) -> Boolean,
+    private val admits: (String, Map<String, String>) -> Boolean,
     private val handler: (HttpConn, Request) -> Unit,
 ) :
     Watched(fd) {

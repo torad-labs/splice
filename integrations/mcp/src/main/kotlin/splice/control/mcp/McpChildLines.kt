@@ -28,7 +28,9 @@ internal class McpChildLines(private val reader: Reader) {
 
     private fun read(): Int {
         if (position >= available) {
-            available = reader.read(buffer)
+            do {
+                available = reader.read(buffer)
+            } while (available == 0)
             position = 0
         }
         return if (available < 0) -1 else buffer[position++].code

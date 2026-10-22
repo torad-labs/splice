@@ -7,6 +7,8 @@ private const val ACCEPT_THREADS = 1
 
 // Socket events and application dispatch stay independent, with another thread available while one is occupied.
 private const val SOCKET_THREADS = 2
+
+// Route bodies leave these connection-affine executors before blocking; keep a second executor for independent clients.
 private const val APPLICATION_THREADS = 2
 
 /** Sizes each engine's own groups without sharing socket-adoption ownership or limiting concurrent requests. */

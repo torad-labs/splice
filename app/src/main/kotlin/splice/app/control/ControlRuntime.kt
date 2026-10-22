@@ -3,12 +3,14 @@
 // it had as a ControlServer parameter.
 package splice.app.control
 
+import kotlinx.coroutines.CoroutineDispatcher
 import splice.control.mcp.McpHost
 import splice.control.mcp.McpReply
 import splice.core.version.ClientVersionTracker
 import splice.launch.recipe.LaunchService
 import splice.lifecycle.restart.ShutdownDaemon
 import splice.sessions.registry.SessionSource
+import splice.upstream.codemode.ProcessDispatchers
 
 public data class ControlRuntime(
     val launchService: LaunchService? = null,
@@ -18,6 +20,8 @@ public data class ControlRuntime(
     val mcpHost: McpHost? = null,
     val clientVersions: ClientVersionTracker = ClientVersionTracker(),
     val mcpServices: McpServiceRefresh? = null,
+    /** Blocking management handlers never occupy Netty's connection-affine application executors. */
+    val callDispatcher: CoroutineDispatcher = ProcessDispatchers().io(),
 )
 
 /** App-owned service installation, separate from the transport host's process and session lifecycle. */

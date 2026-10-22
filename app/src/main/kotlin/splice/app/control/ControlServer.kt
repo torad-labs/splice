@@ -18,6 +18,7 @@
 package splice.app.control
 
 import io.ktor.http.ContentType
+import io.ktor.server.application.ApplicationCallPipeline
 import io.ktor.server.application.pluginOrNull
 import io.ktor.server.application.serverConfig
 import io.ktor.server.engine.EmbeddedServer
@@ -32,6 +33,7 @@ import io.ktor.server.routing.get
 import io.ktor.server.routing.getAllRoutes
 import io.ktor.server.routing.routing
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.withContext
 import splice.app.control.api.ControlAudit
 import splice.app.control.api.ControlHealthReport
 import splice.app.control.api.HeadResolver
@@ -301,6 +303,9 @@ internal class ControlServer(
                 module {
                     guard.admit(this)
                     guard.refuseForeignHosts(this)
+                    intercept(ApplicationCallPipeline.Call) {
+                        withContext(runtime.callDispatcher) { proceed() }
+                    }
                     routing {
                         get("/health") { call.respondText(readings.health.json(), ContentType.Application.Json) }
                         mounts.forEach { it.register(this) }

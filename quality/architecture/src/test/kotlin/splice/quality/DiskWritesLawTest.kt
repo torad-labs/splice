@@ -315,8 +315,10 @@ private val SHIPPED_SITES: Map<String, Map<String, Int>> = mapOf(
     // documented in the mcp-listings, mcp-hub and mcp-hub/drain-pins README rows. Replacement outcomes make an
     // interrupted retirement retryable without replaying it; drain pins keep an exact generation from eviction.
     "integrations/mcp/src/main/kotlin/splice/control/mcp/hub/HubListings.kt" to mapOf("writeAtomic0600(" to 1),
-    // The third write releases a generation's launcher only after its process identity is durable in the record.
-    "integrations/mcp/src/main/kotlin/splice/control/mcp/hub/HubRecords.kt" to mapOf("writeAtomic0600(" to 3),
+    // Holder records and launcher gates belong to the file layer; generation exit receipts stay with their owner.
+    "integrations/mcp/src/main/kotlin/splice/control/mcp/hub/HubRecordFiles.kt" to mapOf("writeAtomic0600(" to 2),
+    "integrations/mcp/src/main/kotlin/splice/control/mcp/hub/HubHolderExitEvidence.kt" to
+        mapOf("writeAtomic0600(" to 1),
     "integrations/mcp/src/main/kotlin/splice/control/mcp/hub/HubHolderRetirements.kt" to mapOf("writeAtomic0600(" to 1),
     "integrations/mcp/src/main/kotlin/splice/control/mcp/hub/HubDrainPins.kt" to mapOf("writeAtomic0600(" to 1),
     // Oct 13: canonical MCP publication replaces McpHubWiring's boot overwrite. One first-run create, then the

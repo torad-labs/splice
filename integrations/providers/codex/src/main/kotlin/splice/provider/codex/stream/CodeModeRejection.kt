@@ -17,7 +17,8 @@ internal object CodeModeRejection {
         error.outcome()
     } else {
         TurnOutcome.Failure(
-            "splice code-mode source rejected (${SafeFailureText.render(error)}); source was not rerun",
+            "splice code-mode source rejected (${error::class.simpleName}${SafeFailureText.site(error)}: " +
+                "${SafeFailureText.render(error)}); source was not rerun",
             cause = FailureCause.CODE_MODE_PROTOCOL,
             phase = FailurePhase.MID_OUTPUT,
             traits = FailureTraits(deterministic = true),

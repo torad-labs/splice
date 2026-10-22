@@ -22,7 +22,6 @@ import splice.client.mcp.McpServerSpec
 import splice.core.util.JsonScalars
 import splice.core.util.LogSafe
 import splice.core.util.LogSink
-import java.io.BufferedReader
 import java.io.IOException
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.Executors
@@ -822,9 +821,9 @@ internal class HostedServer(
 
     /** The reader thread: one line, one message, until EOF, which fails this child's transport. */
     private fun pump(p: Process) {
-        val reader: BufferedReader = p.inputStream.bufferedReader()
+        val reader = McpChildLines(p.inputStream.reader())
         val reason = try {
-            generateSequence { reader.readLine() }
+            generateSequence { reader.next() }
                 .filter { it.isNotBlank() }
                 .mapNotNull(codec::parse)
                 .forEach { dispatcher.dispatch(p, it) }

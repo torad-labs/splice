@@ -120,6 +120,10 @@ public class McpHost(
         head: String? = null,
     ): McpReply = posts.post(name, sessionId, body, protocolVersion, head)
 
+    /** GET and DELETE validate the same server-negotiated protocol as POST, including adopted sessions. */
+    public fun protocolAccepted(name: String, sessionId: String?, protocolVersion: String?): Boolean =
+        posts.protocolAccepted(name, sessionId, protocolVersion)
+
     /** The session's notification stream for a GET; null when the session is unknown. */
     public fun openStream(name: String, sessionId: String?): ReceiveChannel<String>? {
         val server = servers.reserve(name) ?: return null
@@ -234,7 +238,7 @@ private class McpPostHandler(
         kind == RpcKind.REQUEST && codec.method(msg) == "initialize"
 
     /** An unknown session must reach the session path's 404 before protocol validation. */
-    private fun protocolAccepted(name: String, sessionId: String?, protocolVersion: String?): Boolean {
+    fun protocolAccepted(name: String, sessionId: String?, protocolVersion: String?): Boolean {
         val session = sessions.get(name, sessionId) ?: return true
         return session.adopted || protocolVersion == null || session.protocolVersion == protocolVersion
     }

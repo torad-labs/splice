@@ -12,7 +12,11 @@ import java.util.UUID
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.atomic.AtomicInteger
 
+// why: list-only backlog coalesces at this item ceiling; byte admission separately bounds large notifications.
 private const val STREAM_BUFFER = 256
+
+// why: each hosted client may retain at most one MiB of notification text, matching the native stream's byte policy.
+private const val STREAM_BYTES = 1_048_576L
 
 // why: the ceiling on remembered DELETEd ids (V4-148). One client session ends one id, so this is
 // thousands of Claude Code sessions' worth of memory for a per-id boolean, and a client whose id fell
@@ -41,6 +45,7 @@ internal class McpSession(
     val stream: Channel<String> = Channel(STREAM_BUFFER, BufferOverflow.SUSPEND)
     val openStreams = AtomicInteger()
     private val codec = JsonRpcCodec()
+    private var offeredBytes = 0L
 
     @Volatile var overflowed: Boolean = false
         private set
@@ -49,15 +54,35 @@ internal class McpSession(
      *  end that session explicitly so its next request reinitializes instead of trusting stale state. */
     @Synchronized
     fun offer(text: String) {
-        val sent = stream.trySend(text)
-        if (sent.isSuccess || sent.isClosed) return
+        val bytes = text.toByteArray(Charsets.UTF_8).size.toLong()
+        if (bytes <= STREAM_BYTES && offeredBytes <= STREAM_BYTES - bytes) {
+            val sent = stream.trySend(text)
+            if (sent.isSuccess) offeredBytes += bytes
+            if (sent.isSuccess || sent.isClosed) return
+        }
+        rebuild(text)
+    }
+
+    /** The conservative counter includes consumed frames until pressure asks us to recount the actual queue. */
+    private fun rebuild(text: String) {
         val backlog = generateSequence { stream.tryReceive().getOrNull() }.toList() + text
+        offeredBytes = backlog.sumOf { it.toByteArray(Charsets.UTF_8).size.toLong() }
+        val room = backlog.size <= STREAM_BUFFER && offeredBytes <= STREAM_BYTES
+        if (room) {
+            backlog.forEach { stream.trySend(it) }
+        } else {
+            overflow(backlog)
+        }
+    }
+
+    private fun overflow(backlog: List<String>) {
         val methods = listInvalidations.mapNotNull { codec.parse(it)?.let(codec::method) }.toSet()
         if (backlog.all { codec.parse(it)?.let(codec::method) in methods }) {
+            offeredBytes = listInvalidations.sumOf { it.toByteArray(Charsets.UTF_8).size.toLong() }
             listInvalidations.forEach { stream.trySend(it) }
-            stream.trySend(text)
         } else {
             overflowed = true
+            offeredBytes = 0L
             stream.trySend(
                 """{"jsonrpc":"2.0","method":"notifications/message","params":{"level":"error",""" +
                     """"data":"notification stream overflow; reinitialize this MCP session"}}""",

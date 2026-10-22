@@ -93,21 +93,32 @@ class Hub(
                         if (pending) holders.links.reconnect(holder, generation)
                     }
                 },
+            ) { reconciledExit(holder, generation) }
+        }
+        holders.exitCandidates().forEach { (holder, generation) ->
+            routes.replacements.confirmExit(
+                holder.socket,
+                generation,
+                { holders.exitPending(holder, generation) },
             ) {
-                when (holders.links.markExited(holder, generation)) {
-                    HolderExitMark.MARKED,
-                    HolderExitMark.REPLACED,
-                    -> {
-                        relay.exited(holder, generation)
-                        holders.replacements.retirements.oldExited(holder.socket, generation)
-                    }
-                    HolderExitMark.PERSISTENCE_FAILED -> {
-                        timers.at(clock.now() + EXIT_RETRY, ::reconcile)
-                    }
-                }
+                if (holders.exitPending(holder, generation)) reconciledExit(holder, generation)
             }
         }
         replacements.reconcile()
+    }
+
+    private fun reconciledExit(holder: Holder, generation: String) {
+        when (holders.links.markExited(holder, generation)) {
+            HolderExitMark.MARKED,
+            HolderExitMark.REPLACED,
+            -> {
+                relay.exited(holder, generation)
+                holders.replacements.retirements.oldExited(holder.socket, generation)
+            }
+            HolderExitMark.PERSISTENCE_FAILED -> {
+                timers.at(clock.now() + EXIT_RETRY, ::reconcile)
+            }
+        }
     }
 
     fun keepAlive() {

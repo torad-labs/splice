@@ -129,6 +129,22 @@ internal class Holders(
     /** Retains a restored ledger’s socket identity until exact exit evidence settles it. */
     fun remember(socket: String): Holder = known.getOrPut(socket) { Holder(socket) }
 
+    /** Restored disconnected lifetimes still need exact exit probes even when their initialization outcome is unknown. */
+    fun exitCandidates(): List<Pair<Holder, String>> = known.values.mapNotNull { holder ->
+        holder.generation?.takeIf { generation -> exitPending(holder, generation) }?.let { holder to it }
+    }
+
+    /** Probing is read-only. Only a positive exit receipt may mark state; actual pruning checks every remaining owner. */
+    fun exitPending(holder: Holder, generation: String): Boolean = listOf(
+        known[holder.socket] === holder,
+        holder.generation == generation,
+        holder.exitConfirmedGeneration != generation,
+        holder.link == null,
+        holder.control == null,
+        !holder.connecting,
+        holder.waiters.isEmpty(),
+    ).all { it }
+
     /** Removes only generations whose retirement or rollback exit is durable and has released every front owner. */
     fun prune() {
         known.values.toList().forEach(::releaseExited)

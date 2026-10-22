@@ -120,6 +120,16 @@ restored client request is never replayed. A restored reverse request with no re
 exact exit. The front writes active replacement drains with both old and candidate generations; the daemon pins either one
 until the drain resolves.
 
+Capacity refusal does not settle an existing exchange. A reverse reply refused before queue admission keeps its incoming
+request charged and retains a bounded retry payload. Only a known never-queued reply may retry; an uncertain write must
+not replay. Retry work coalesces by exact holder generation instead of creating a timer for every retained reply.
+Hosted notification streams have both an item ceiling and a UTF-8 byte ceiling. Child output is frame-bounded before JSON
+parsing and fan-out, so the in-process fallback does not depend on the native front for memory admission. Only list-change
+invalidations may coalesce on overflow; losing another notification explicitly ends that session.
+
+Each daemon management connection has a monotonic deadline. Expiry closes that connection and completes it once with an
+unknown or unavailable outcome. It never proves a generation exited, an owner claim was released, or an operation settled.
+
 ### Front owner-claim adapter
 
 The native front acquires `POST /api/mcp/hub/replacement/pin/acquire` before it persists a paused drain. Its body is

@@ -22,7 +22,6 @@ import splice.client.mcp.McpServerSpec
 import splice.core.util.JsonScalars
 import splice.core.util.LogSink
 import java.io.BufferedReader
-import java.io.BufferedWriter
 import java.io.IOException
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.Executors
@@ -59,7 +58,8 @@ internal class HostedServer(
 
     @Volatile private var process: Process? = null
 
-    @Volatile private var writer: BufferedWriter? = null
+    /** The immutable stdin writer for [process]'s exact generation. */
+    @Volatile private var writer: McpWriteTarget? = null
 
     @Volatile private var initResult: JsonObject? = null
 
@@ -69,11 +69,12 @@ internal class HostedServer(
         McpWriteTargetSource { expected ->
             synchronized(stateLock) {
                 val child = process
-                val output = writer
+                val target = writer
                 when {
-                    closed || child == null || output == null -> null
+                    closed || child == null || target == null -> null
+                    child !== target.child -> null
                     expected != null && child !== expected -> null
-                    else -> McpWriteTarget(child, output)
+                    else -> target
                 }
             }
         },
@@ -85,6 +86,7 @@ internal class HostedServer(
         codec,
         sink,
         send,
+        McpWriteFailure(::transportFailed),
     )
 
     @Volatile var lastError: String? = null
@@ -231,7 +233,7 @@ internal class HostedServer(
                 false
             } else {
                 process = p
-                writer = p.outputStream.bufferedWriter()
+                writer = McpWriteTarget(p, p.outputStream.bufferedWriter())
                 true
             }
         }

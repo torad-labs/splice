@@ -17,12 +17,14 @@ import kotlin.time.Duration
 /** One burst can queue 64 writes, enough to absorb client and reverse-reply spikes while bounding memory and shutdown. */
 private const val WRITE_QUEUE_CAPACITY = 64
 
-/** An immutable child/stdin generation. Its lock serializes only this child's pipe writes. */
+/** One child/stdin generation, carrying its own short-lived retirement fence. */
 internal data class McpWriteTarget(
     val child: Process,
     val output: BufferedWriter,
 ) {
     val ioLock = Any()
+    var sealed = false
+    var retired = false
 }
 
 internal fun interface McpWriteTargetSource {
@@ -175,8 +177,6 @@ internal class McpChildWriter(
     private val requests = HashMap<Long, McpWriteTarget>()
     private val serverRequests = HashMap<Long, McpWriteTarget>()
     private val writesInFlight = Collections.newSetFromMap(IdentityHashMap<McpWrite, Boolean>())
-    private val sealed = HashSet<McpWriteTarget>()
-    private val retired = HashSet<McpWriteTarget>()
     internal val failures = McpWriteFailures(name, failed)
     private val permitted = McpWritePermitted { delivery ->
         synchronized(accountingLock) { !delivery.completed.isCompleted && accepting(delivery.target) }
@@ -196,29 +196,37 @@ internal class McpChildWriter(
     /** Atomically stops new work on a quiet generation before replacement commits. */
     fun seal(selected: McpWriteTarget): Boolean = synchronized(accountingLock) {
         if (closed || !selected.child.isAlive) return@synchronized false
-        if (selected in retired || selected in sealed) return@synchronized false
+        if (selected.retired || selected.sealed) return@synchronized false
         val unsettled = requests.values.any { it === selected } || serverRequests.values.any { it === selected }
-        if (unsettled || writesInFlight.any { it.target === selected }) false else sealed.add(selected)
+        if (unsettled || writesInFlight.any { it.target === selected }) {
+            false
+        } else {
+            selected.sealed = true
+            true
+        }
     }
 
     /** A failed replacement may reopen only the same live generation that its fence still owns. */
     fun reopen(selected: McpWriteTarget): Boolean = synchronized(accountingLock) {
-        selected in sealed && selected !in retired && selected.child.isAlive && sealed.remove(selected)
+        val reopen = selected.sealed && !selected.retired && selected.child.isAlive
+        if (reopen) selected.sealed = false
+        reopen
     }
 
     internal val fenceHeld = McpFenceHeld { selected ->
-        synchronized(accountingLock) { selected in sealed && selected !in retired }
+        synchronized(accountingLock) { selected.sealed && !selected.retired }
     }
 
     /** Terminal retirement rejects late registrations and completes waiters, but preserves unknown wire charges. */
     fun retire(selected: McpWriteTarget): Boolean {
         var retiredNow = false
         val cancelled = synchronized(accountingLock) {
-            if (!retired.add(selected)) {
+            if (selected.retired) {
                 emptyList()
             } else {
                 retiredNow = true
-                sealed.remove(selected)
+                selected.retired = true
+                selected.sealed = false
                 writesInFlight.filter { it.target === selected }
             }
         }
@@ -242,7 +250,7 @@ internal class McpChildWriter(
     fun retain(requestId: Long, child: Process): Boolean {
         val selected = target(child) ?: return false
         return synchronized(accountingLock) {
-            val available = !closed && selected !in retired && selected !in sealed && child.isAlive
+            val available = accepting(selected) && child.isAlive
             if (available) serverRequests[requestId] = selected
             available
         }
@@ -278,7 +286,7 @@ internal class McpChildWriter(
         val selected = target(expected) ?: return null
         val delivery = McpWrite(selected, codec.encode(msg), requestId, serverRequestId)
         val registered = synchronized(accountingLock) {
-            val available = !closed && selected !in retired && selected !in sealed
+            val available = accepting(selected)
             if (available) {
                 requestId?.let { requests[it] = selected }
                 serverRequestId?.let { serverRequests[it] = selected }
@@ -298,7 +306,7 @@ internal class McpChildWriter(
     }
 
     private fun accepting(selected: McpWriteTarget): Boolean =
-        !closed && selected !in retired && selected !in sealed
+        !closed && !selected.retired && !selected.sealed
 
     private fun expire(delivery: McpWrite, reason: String) {
         if (resolve(delivery, false)) failures.report(delivery.target.child, reason)

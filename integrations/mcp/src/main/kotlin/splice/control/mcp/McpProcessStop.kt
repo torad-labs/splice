@@ -6,11 +6,21 @@ import java.util.concurrent.TimeUnit
 private const val DESTROY_GRACE_MS = 2_000L
 
 internal class McpProcessStop {
-    /** Callers signal every child first. Waiting on N stubborn children still costs one grace. */
+    /** Signals through ProcessHandle, which avoids Process.destroy closing a blocked child's stdin in the caller. */
+    fun stop(processes: List<Process>) {
+        processes.forEach(::signal)
+        await(processes)
+    }
+
+    /** Callers that already signalled every child wait one shared grace. */
     fun await(processes: List<Process>) {
         val deadline = System.nanoTime() + TimeUnit.MILLISECONDS.toNanos(DESTROY_GRACE_MS)
         val interrupted = processes.map { process -> await(process, deadline) }.any { it }
         if (interrupted) Thread.currentThread().interrupt()
+    }
+
+    private fun signal(process: Process) {
+        process.toHandle().destroy()
     }
 
     private fun await(process: Process, deadline: Long): Boolean {
@@ -23,7 +33,7 @@ internal class McpProcessStop {
             false
         }
         if (!exited) {
-            process.destroyForcibly()
+            process.toHandle().destroyForcibly()
             interrupted = reap(process) || interrupted
         }
         return interrupted

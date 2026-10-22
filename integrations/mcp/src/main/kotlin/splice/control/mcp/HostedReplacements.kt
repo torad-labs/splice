@@ -37,9 +37,9 @@ private class ReplacementAttempt(
     }
 
     fun finish() {
-        val resumable = committed || rollback()
+        if (!committed) rollback()
         plan.old.admission.finishReplacement()
-        if (resumable) plan.old.admission.resume() else plan.old.admission.stop()
+        if (committed) plan.old.admission.resume()
     }
 
     private suspend fun candidateStart(next: HostedServer): McpResult<Unit> =
@@ -51,13 +51,13 @@ private class ReplacementAttempt(
             }
         }
 
-    private fun rollback(): Boolean {
+    private fun rollback() {
         candidate?.let {
             plans.discard(it)
             it.close("replacement was not committed")
         }
-        // A terminal old generation never reopens. A later request may still start a fresh one.
-        return plan.fence?.reopen() == true || !plan.old.alive
+        // The old admission stays explicitly drained after refusal. Only management's resume may reopen it.
+        plan.fence?.reopen()
     }
 }
 

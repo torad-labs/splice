@@ -15,6 +15,41 @@ private const val MILLIS_PER_MINUTE = 60_000L
 /** What makes two entries the same process. */
 internal data class McpIdentity(val command: String, val args: List<String>, val env: Map<String, String>)
 
+private fun interface HostedServerAliases {
+    operator fun invoke(server: HostedServer): List<String>
+}
+
+/** Routes a child's notifications only once its exact generation is registered under its tuple. */
+private class HostedServerNotifications(
+    private val aliases: HostedServerAliases,
+    private val sessions: McpSessions,
+    private val codec: JsonRpcCodec,
+    private val sharing: McpSharing,
+    private val spec: McpServerSpec,
+    private val log: LogSink,
+) : NotificationSink {
+    @Volatile private var owner: HostedServer? = null
+
+    fun bind(server: HostedServer) {
+        owner = server
+    }
+
+    override fun onNotification(msg: JsonObject) {
+        names().forEach { sessions.fanOut(it, codec.encode(msg)) }
+    }
+
+    override fun onProgress(sessionId: String, msg: JsonObject) {
+        names().forEach { sessions.deliver(it, sessionId, codec.encode(msg)) }
+    }
+
+    override fun onRootsAsked() {
+        sharing.rootsAsked(spec)
+        log("[mcp-host] ${spec.name}: asks its client for roots, so each later session starts its own\n")
+    }
+
+    private fun names(): List<String> = owner?.let(aliases::invoke).orEmpty()
+}
+
 internal class HostedServers(
     private val sharing: McpSharing,
     private val global: GlobalMcpServers,
@@ -79,28 +114,11 @@ internal class HostedServers(
             if (refusal != null) {
                 McpResult.Refused(refusal)
             } else {
-                acquireLocked(name, spec, closing)
+                Acquisition().acquire(name, spec, closing)
             }
         }
         closing.run()
         return acquired
-    }
-
-    private fun acquireLocked(name: String, spec: McpServerSpec, closing: Closing): McpResult<HostedServer> {
-        val id = McpIdentity(spec.command, spec.args, spec.env)
-        val bound = bindings[name]
-        if (bound != null && bound != id) {
-            if (store.rebindBusy(bound)) {
-                return McpResult.Refused("MCP configuration changed while its previous server is in use")
-            }
-            unbind(name, "configuration changed", closing)
-        }
-        val registered = servers[id]?.let { McpResult.Served(it) } ?: register(id, spec, closing)
-        if (registered is McpResult.Served) {
-            bindings[name] = id
-            reserved[id] = (reserved[id] ?: 0) + 1
-        }
-        return registered
     }
 
     /** A new server for [id], evicting one first at capacity. Caller holds [lock]. */
@@ -116,29 +134,24 @@ internal class HostedServers(
 
     private fun create(spec: McpServerSpec): HostedServer {
         val id = McpIdentity(spec.command, spec.args, spec.env)
-        val sink = object : NotificationSink {
-            override fun onNotification(msg: JsonObject) {
-                namesOf(id).forEach { alias -> sessions.fanOut(alias, codec.encode(msg)) }
-            }
-
-            override fun onProgress(sessionId: String, msg: JsonObject) {
-                namesOf(id).forEach { alias -> sessions.deliver(alias, sessionId, codec.encode(msg)) }
-            }
-
-            override fun onRootsAsked() {
-                sharing.rootsAsked(spec)
-                log("[mcp-host] ${spec.name}: asks its client for roots, so each later session starts its own\n")
-            }
-        }
-        return HostedServer(
+        val sink = HostedServerNotifications(
+            HostedServerAliases(::namesOf),
+            sessions,
+            codec,
+            sharing,
+            spec,
+            log,
+        )
+        val server = HostedServer(
             spec,
             HostedServerRuntime(config, launcher, reaped, launches),
             codec,
             log,
             sink,
-        ).also { server ->
-            server.admission = synchronized(lock) { store.admissions.getOrPut(id) { McpAdmission() } }
-        }
+        )
+        sink.bind(server)
+        server.admission = synchronized(lock) { store.admissions.getOrPut(id) { McpAdmission() } }
+        return server
     }
 
     /** Ends the reservation [acquire] took; true when [server] is still bound to [name] and alive. */
@@ -165,7 +178,7 @@ internal class HostedServers(
     fun closeAll(reason: String) {
         val closing = synchronized(lock) {
             closed = true
-            val snapshot = (servers.values + store.candidates).distinct()
+            val snapshot = (servers.values + store.candidates.values).distinct()
             store.admissions.values.forEach(McpAdmission::stop)
             store.admissions.clear()
             bindings.keys.forEach(sessions::dropServer)
@@ -175,11 +188,16 @@ internal class HostedServers(
             store.candidates.clear()
             snapshot
         }
-        stops.await(closing.mapNotNull { it.close(reason, wait = false) })
+        stops.stop(closing.mapNotNull { it.close(reason, wait = false) })
+    }
+
+    /** A candidate has no routes until this registry holds THAT instance under its tuple. */
+    private fun namesOf(server: HostedServer): List<String> = synchronized(lock) {
+        if (servers[server.identity] !== server) emptyList() else namesOf(server.identity)
     }
 
     private fun namesOf(id: McpIdentity): List<String> =
-        synchronized(lock) { bindings.filterValues { it == id }.keys.toList() }
+        bindings.filterValues { it == id }.keys.toList()
 
     /** Drops [name]; the process goes only when no alias is left on its tuple. Caller holds [lock];
      *  the close itself is queued on [closing] and runs AFTER the lock is released, because a child
@@ -191,6 +209,42 @@ internal class HostedServers(
         if (bindings.none { it.value == id }) {
             store.admissions.remove(id)
             servers.remove(id)?.let { closing.add(it, reason) }
+        }
+    }
+
+    /** Keeps the ordinary acquire path separate from registry lifecycle and notification ownership. */
+    private inner class Acquisition {
+        fun acquire(name: String, spec: McpServerSpec, closing: Closing): McpResult<HostedServer> {
+            val id = McpIdentity(spec.command, spec.args, spec.env)
+            val rebind = rebind(name, id, closing)
+            if (rebind != null) return rebind
+            val registered = registered(id, spec, closing)
+            if (registered is McpResult.Served) reserve(name, id)
+            return registered
+        }
+
+        private fun rebind(name: String, id: McpIdentity, closing: Closing): McpResult.Refused? {
+            val bound = bindings[name]
+            if (bound == null || bound == id) return null
+            if (store.rebindBusy(bound)) {
+                return McpResult.Refused("MCP configuration changed while its previous server is in use")
+            }
+            unbind(name, "configuration changed", closing)
+            return null
+        }
+
+        private fun registered(
+            id: McpIdentity,
+            spec: McpServerSpec,
+            closing: Closing,
+        ): McpResult<HostedServer> = when {
+            store.candidates.containsKey(id) -> McpResult.Refused("MCP replacement is preparing this launch tuple")
+            else -> servers[id]?.let { McpResult.Served(it) } ?: register(id, spec, closing)
+        }
+
+        private fun reserve(name: String, id: McpIdentity) {
+            bindings[name] = id
+            reserved[id] = (reserved[id] ?: 0) + 1
         }
     }
 

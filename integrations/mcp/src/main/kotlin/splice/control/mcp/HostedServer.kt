@@ -291,9 +291,8 @@ internal class HostedServer(
         failPending("hosted MCP server '${spec.name}' closed: $reason")
         p?.let {
             log("[mcp-host] ${spec.name}: closing pid ${it.pid()} ($reason)\n")
-            it.destroy()
             if (wait) {
-                stops.await(listOf(it))
+                stops.stop(listOf(it))
                 target?.let(send::exited)
             }
         }
@@ -396,8 +395,7 @@ internal class HostedServer(
         } ?: return
         send.retire(target)
         failPending("hosted MCP transport failed; operation outcome unknown, not replayed")
-        child.destroy()
-        stops.await(listOf(child))
+        stops.stop(listOf(child))
         val exitCode = runtime.reaped.codeOf(child)
         synchronized(stateLock) { if (process === child) process = null }
         send.exited(target)

@@ -44,8 +44,8 @@ internal class HostedReplacementPlan(
     }
 
     private fun available(old: HostedServer, identity: McpIdentity): Boolean {
-        if (store.closed) return false
-        return identity != old.identity && !store.servers.containsKey(identity)
+        if (store.closed || identity == old.identity) return false
+        return !store.servers.containsKey(identity) && !store.candidates.containsKey(identity)
     }
 
     private fun reserve(plan: PreparedReplacement): McpResult<PreparedReplacement> {
@@ -66,14 +66,19 @@ internal class HostedReplacementPlan(
     private fun aliasesMatch(names: List<String>, configured: JsonObject, target: McpIdentity): Boolean =
         names.all { name -> sharing.hostedSpec(configured, name)?.let(::identity) == target }
 
-    /** A candidate is shutdown-owned before it is allowed to launch. */
+    /** A candidate is shutdown-owned before it is allowed to launch and exclusively reserves its tuple. */
     fun track(plan: PreparedReplacement, next: HostedServer): Boolean = synchronized(store.lock) {
-        if (!owns(plan)) false else store.candidates.add(next)
+        if (!owns(plan) || store.candidates.containsKey(next.identity)) {
+            false
+        } else {
+            store.candidates[next.identity] = next
+            true
+        }
     }
 
     fun discard(next: HostedServer) {
         synchronized(store.lock) {
-            store.candidates.remove(next)
+            if (store.candidates[next.identity] === next) store.candidates.remove(next.identity)
             if (!store.servers.containsKey(next.identity)) {
                 store.admissions.remove(next.identity)
             }
@@ -110,7 +115,8 @@ internal class HostedReplacementPlan(
         return store.servers[plan.old.identity] === plan.old
     }
 
-    private fun candidateIsReady(next: HostedServer): Boolean = next in store.candidates && next.alive
+    private fun candidateIsReady(next: HostedServer): Boolean =
+        store.candidates[next.identity] === next && next.alive
 
     private fun stillOwned(old: HostedServer, next: HostedServer): Boolean {
         if ((store.reserved[old.identity] ?: 0) != 0) return false
@@ -122,7 +128,7 @@ internal class HostedReplacementPlan(
         val old = plan.old
         // Waiters keep their admission object, client session objects and notification streams.
         next.admission = old.admission
-        store.candidates.remove(next)
+        store.candidates.remove(next.identity)
         store.admissions.remove(old.identity)
         store.admissions[next.identity] = old.admission
         store.servers.remove(old.identity)

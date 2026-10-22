@@ -4,7 +4,9 @@ package splice.control.mcp
 internal class HostedServerStore {
     val lock = Any()
     val servers = HashMap<McpIdentity, HostedServer>()
-    val candidates = HashSet<HostedServer>()
+
+    /** A candidate owns its tuple before publication, so no second server can claim the same child identity. */
+    val candidates = HashMap<McpIdentity, HostedServer>()
     val bindings = HashMap<String, McpIdentity>()
     val reserved = HashMap<McpIdentity, Int>()
     val admissions = HashMap<McpIdentity, McpAdmission>()

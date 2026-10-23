@@ -56,6 +56,13 @@ export function resolveJdk21(env: Record<string, string | undefined> = Bun.env):
     const bin = join(declared, "bin", "java");
     if (executable(bin) && javaMajor(bin, env) === "21") return { javaHome: declared };
   }
+  // SPLICE_JAVA is the java the launcher runs splice on, for a machine whose default java is older for its own work
+  // (an Android toolchain on 17). The gate builds the same code, so it takes the same JDK.
+  const named = env.SPLICE_JAVA;
+  if (named && executable(named) && javaMajor(named, env) === "21") {
+    const home = javaHomeOf(named, env);
+    if (home) return { javaHome: home };
+  }
   const onPath = Bun.which("java", { PATH: env.PATH ?? "" });
   if (onPath && javaMajor(onPath, env) === "21") {
     const home = javaHomeOf(onPath, env);
@@ -63,7 +70,7 @@ export function resolveJdk21(env: Record<string, string | undefined> = Bun.env):
   }
   return {
     error:
-      "GATE: FAIL — JDK 21 required, none found (checked $JAVA_HOME and PATH java).\n" +
+      "GATE: FAIL — JDK 21 required, none found (checked $JAVA_HOME, $SPLICE_JAVA and PATH java).\n" +
       "  Install a JDK 21 and re-run, e.g.:\n" +
       "    macOS:  brew install openjdk@21\n" +
       "    Debian/Ubuntu: sudo apt install openjdk-21-jdk\n" +

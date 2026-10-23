@@ -36,16 +36,16 @@
 // splice's OWN directory rather than buildgate's: buildgate is hostshield-owned
 // (hostshield MANIFEST.toml:38, `owner = true`), and borrowing another component's runtime directory
 // couples this to a layout we do not control.
-import { dlopen, FFIType, suffix } from "bun:ffi";
 import { closeSync, ftruncateSync, mkdirSync, openSync, readFileSync, writeSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
+import { libcFlock } from "./flock.ts";
 
 const LOCK_EX = 2;
 const LOCK_NB = 4;
 
-const { symbols: libc } = dlopen(`libc.${suffix}.6`, {
-  flock: { args: [FFIType.i32, FFIType.i32], returns: FFIType.i32 },
-});
+// flock.ts's loader, not a dlopen of `libc.so.6` here: that name exists only on glibc, so the gate could not start on
+// macOS at all (2026-10-22, the Mac clone pushed with no gate).
+const libc = { flock: (fd: number, op: number): number => libcFlock()(fd, op) };
 
 const UNKNOWN_RUN: OpenRun = { headAtStart: "unknown", start: "unknown", pid: 0 };
 

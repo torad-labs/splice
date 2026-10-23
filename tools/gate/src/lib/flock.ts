@@ -19,7 +19,8 @@ const LOCK_UN = 8;
 
 let cached: ((fd: number, op: number) => number) | undefined;
 
-function libcFlock(): (fd: number, op: number) => number {
+/** flock(2) from whichever libc this machine has: glibc on Linux, libSystem on macOS. The run sentinel shares it. */
+export function libcFlock(): (fd: number, op: number) => number {
   if (cached) return cached;
   const candidates = ["libc.so.6", "libc.so", "libSystem.B.dylib"];
   const failures: string[] = [];

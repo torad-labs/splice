@@ -15,6 +15,7 @@ import splice.core.GATEWAY_VERSION
 import splice.core.SHIM_VERSION
 import splice.core.version.ClientVersionTracker
 import splice.core.wire.ControlFields
+import splice.share.remote.RemoteLinks
 
 internal class ControlHealthReport(
     private val readiness: HeadReadiness,
@@ -23,6 +24,8 @@ internal class ControlHealthReport(
     private val topologyStale: TopologyStale,
     private val clientVersions: ClientVersionTracker,
     private val mcpHub: McpHubVerdict? = null,
+    /** LAN share: the machines this one joined, each as the daemon's last check found it (`remotes`). */
+    private val remotes: RemoteLinks? = null,
 ) {
     /** The /health body, read at the current instant. */
     fun json(): String = json(System.currentTimeMillis())
@@ -60,7 +63,24 @@ internal class ControlHealthReport(
                 put("mcpHub", if (hub.offReason == null) "on" else "off")
                 hub.offReason?.let { put("mcpHubOffReason", it) }
             }
+            putRemotes(this)
         }.toString()
+    }
+
+    /** Each joined machine's last check: `{reachable, since, why?, down?}` by name; absent when none was checked. */
+    private fun putRemotes(into: JsonObjectBuilder) {
+        val reach = remotes?.reach().orEmpty()
+        if (reach.isEmpty()) return
+        into.putJsonObject("remotes") {
+            reach.forEach { (name, found) ->
+                putJsonObject(name) {
+                    put("reachable", found.reachable)
+                    put("since", found.since)
+                    found.why?.let { put("why", it) }
+                    if (found.down.isNotEmpty()) put("down", JsonArray(found.down.sorted().map { JsonPrimitive(it) }))
+                }
+            }
+        }
     }
 
     /** V4-394: which heads failed, and why, beside the count; absent on a healthy boot so the old

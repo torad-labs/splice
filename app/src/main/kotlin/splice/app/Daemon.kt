@@ -53,7 +53,11 @@ import splice.models.roster.DeclaredHeads
 import splice.oauth.codex.CodexRefresh
 import splice.share.ShareServer
 import splice.share.ShareStart
+import splice.share.ShareState
 import splice.share.SharedCatalogs
+import splice.share.SharedQuotas
+import splice.share.remote.RemoteLinks
+import splice.share.remote.RemotesStore
 import splice.topology.TopologyLoader
 import splice.usage.quota.ClientUserAgent
 import java.nio.file.Path
@@ -103,6 +107,10 @@ public class Daemon(
     private val compactionInstructions =
         CompactionInstructions(topology.compaction, topologyDir, log = log)
 
+    /** LAN share: the machines this one joined (`[remotes]`), each with its pinned certificate and kept token. ONE
+     *  instance for the relay's upstream trust, the roster refresh, the quota polls and the reachability check. */
+    private val remotes = RemoteLinks(topology, RemotesStore(ShareState(statePaths).remotesFile))
+
     /** V4-162: the context windows splice.toml declares, re-read while the daemon runs, and the
      *  version the control plane publishes as running. Hoisted above [controlPlane], which reports
      *  it; its catalogs resolve through [buildInputs] at re-read time, after start() built the heads. */
@@ -138,6 +146,7 @@ public class Daemon(
                 }
             },
             running = topologyWindows,
+            remotes = remotes,
         ),
         refreshCall,
         mcpHosting = McpHostingSettings(share = McpShareChoice { topologyWindows.mcpShare }).with(topology.daemon),
@@ -187,7 +196,7 @@ public class Daemon(
         ).also {
             it.credentialAccountNames = controlPlane.credentialAccountNames
             it.sentCredentials = controlPlane.sentCredentials
-            it.remotes = topology.remotes
+            it.remotes = remotes
         }
     private val managedHeadFactory = ManagedHeadFactory(
         statePaths = statePaths,
@@ -202,6 +211,7 @@ public class Daemon(
             // usage endpoint buckets by (ClaudeUsageProbe). One tracker, the same one every head observes into.
             clientUserAgent = ClientUserAgent(clientVersions::newestClaudeCodeUserAgent),
             readFailures = controlPlane.quotaReadFailures,
+            remotes = remotes,
         ),
         perfSources = controlPlane.perfRows,
     )
@@ -262,6 +272,8 @@ public class Daemon(
             log,
             LocalWindowRefresh(controlPlane.buildInputs::refreshLocalModels),
         )
+        // LAN share: whether each machine this one joined, and each head it offers, is up; ends with the probe scope.
+        remotes.watch(controlPlane.probeScope, log)
         controlPlane.start(
             controlPort = controlPort,
             heads = heads,
@@ -276,8 +288,10 @@ public class Daemon(
         // MCP hub step 6: each installed Claude Code version's --plugin-dir-no-mcp verdict, checked in the background.
         controlPlane.pluginFlagChecks.request()
         // LAN share (docs/specs/lan-share.md): opened last, over the heads that started; null when [share] is off.
-        share = ShareStart(topology, statePaths, mgmtKey, config, log)
-            .start(SharedCatalogs { key -> heads[key]?.let { it.statusline.catalog } })
+        share = ShareStart(topology, statePaths, mgmtKey, config, log).start(
+            SharedCatalogs { key -> heads[key]?.let { it.statusline.catalog } },
+            SharedQuotas { key -> heads[key]?.sources?.usage?.quota() },
+        )
         val degraded = if (failed.isEmpty()) "" else " DEGRADED=${failed.keys}"
         log("[daemon] up: control :$controlPort, heads ${heads.keys}$degraded\n")
     }

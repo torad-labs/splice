@@ -26,8 +26,8 @@ import splice.core.util.SafeFailureText
 import splice.share.ShareInfo
 import splice.share.ShareState
 import splice.share.remote.RemoteHttp
-import splice.share.remote.RemoteTrust
 import splice.share.remote.RemoteTopology
+import splice.share.remote.RemoteTrust
 import splice.share.remote.RemotesStore
 import java.net.URI
 import java.util.concurrent.TimeUnit

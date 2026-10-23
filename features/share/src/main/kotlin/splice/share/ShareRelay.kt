@@ -46,6 +46,10 @@ import java.net.http.HttpRequest
 import java.net.http.HttpResponse
 import java.time.Duration
 
+/** One relayed request: the offered [head], its loopback [port], its own [path] and query (`/v1/messages?beta=true`),
+ *  and the joined machine it came from, by the name it joined under (ShareServer's client-name rule, header-safe). */
+internal data class ShareTarget(val head: String, val port: Int, val path: String, val client: String)
+
 internal class ShareRelay(
     private val turnKey: TurnKey,
     /** Each head's live config, for the body limits that head enforces itself. */
@@ -59,8 +63,8 @@ internal class ShareRelay(
         .connectTimeout(Duration.ofMillis(RELAY_CONNECT_TIMEOUT_MS))
         .build()
 
-    /** [target] is the head's own path and query (`/v1/messages?beta=true`). */
-    suspend fun relay(call: ApplicationCall, head: String, port: Int, target: String) {
+    suspend fun relay(call: ApplicationCall, to: ShareTarget) {
+        val (head, port, target) = to
         val body = bounded(call, head) ?: return
         val publisher = if (body.isEmpty()) {
             HttpRequest.BodyPublishers.noBody()
@@ -73,8 +77,9 @@ internal class ShareRelay(
             if (name.lowercase() !in notForwarded) values.forEach { request.header(name, it) }
         }
         request.header("Authorization", "Bearer ${turnKey.get()}")
-        // The client's own head scales the counts for its window, so the head here reports them raw (TurnWiring).
-        request.header(SHARE_RELAY_HEADER, "1")
+        // The client's own head scales the counts for its window, so the head here reports them raw (TurnWiring). The
+        // value names the joined machine, which the head's request rows keep as where the turn came from.
+        request.header(SHARE_RELAY_HEADER, to.client)
         val streamed = HttpResponse.BodyHandlers.ofInputStream()
         val sent = withContext(io) { Cancellables.runCatchingCancellable { http.send(request.build(), streamed) } }
         val response = sent.getOrElse { failure ->

@@ -17,7 +17,6 @@ import java.net.URI
 import java.net.http.HttpClient
 import java.net.http.HttpRequest
 import java.net.http.HttpResponse
-import java.security.cert.CertificateException
 import java.time.Duration
 import java.util.concurrent.CompletableFuture
 import java.util.concurrent.CompletionException
@@ -59,8 +58,7 @@ public class RemoteHttp(private val trust: RemoteTrust) {
 
     /** [trust]'s own words when [failure] is a certificate it refused, else null: what a person is told instead of a
      *  handshake error. */
-    public fun refusal(failure: Throwable?): String? =
-        generateSequence(failure) { it.cause }.filterIsInstance<CertificateException>().firstOrNull()?.message
+    public fun refusal(failure: Throwable?): String? = CertificateRefusal.of(failure)
 
     /** What a remote's `[remotes]` entry keeps: scheme, host and port, with no path. */
     public fun base(host: String, port: Int): String = "https://${if (':' in host) "[$host]" else host}:$port"

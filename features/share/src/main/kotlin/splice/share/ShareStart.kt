@@ -23,8 +23,9 @@ public class ShareStart(
     private val config: ConfigService,
     private val log: LogSink,
 ) {
-    /** The running listener, or null when `[share]` is off or its port would not open. */
-    public fun start(running: SharedCatalogs): ShareServer? {
+    /** The running listener, or null when `[share]` is off or its port would not open. [running] and [quotas] read
+     *  the daemon's heads as they are at each request. */
+    public fun start(running: SharedCatalogs, quotas: SharedQuotas): ShareServer? {
         val share = topology.share
         if (!share.enabled) return null
         val host = ShareHostName()
@@ -32,7 +33,7 @@ public class ShareStart(
         val io = ProcessDispatchers().io()
         val server = ShareServer(
             ShareEndpoint(share.port, tls),
-            ShareHeads(topology, running, host.short(), tls.fingerprint),
+            ShareHeads(topology, running, host.short(), tls.fingerprint, quotas),
             ShareClients(ShareState(statePaths).clientsFile),
             ShareNetwork(host.full(), share.hostnames),
             ShareRelay(TurnKey(mgmtKey), config, io, log),
@@ -71,6 +72,7 @@ public class ShareStart(
 public class ShareState(statePaths: StatePaths) {
     public val clientsFile: Path = statePaths.stateDir.resolve("share").resolve("clients.json")
     public val remotesFile: Path = statePaths.stateDir.resolve("share").resolve("remotes.json")
+
     /** The listener's key and certificate (ShareCertificate). */
     public val certificateFile: Path = statePaths.stateDir.resolve("share").resolve("tls.pem")
 }

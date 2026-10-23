@@ -67,6 +67,10 @@ public data class TurnScope(
     /** The hash of the request's messages (MessagesHash) when it named a session, streaming or not: its perf row
      *  carries it, so a re-send of a cut stream (Claude Code re-sends it with stream=false) links to the row it cut. */
     val messagesHash: String? = null,
+    /** LAN share: the joined machine that relayed this turn here (the share relay's header), whose client holds the
+     *  session's transcript; null for a turn sent on this machine. Its perf row names it, so Requests says where the
+     *  turn came from. */
+    val relayedFrom: String? = null,
 )
 
 /** Tool-surface partition sizes for THIS turn's request; both null when deferral was not in play.

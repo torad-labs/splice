@@ -190,6 +190,8 @@ public data class ProviderConfig(
             modelsUrl?.takeIf { it.isNotBlank() }?.let { return it }
             val base = baseUrl.trimEnd('/')
             return when {
+                // LAN share: the relayed head's picker on the machine this one joined (its share route).
+                auth.kind == AuthKind.SpliceRemote.wire -> "$base/roster"
                 dialect == Dialect.ANTHROPIC_PASSTHROUGH -> "$base/v1/models"
                 dialect == Dialect.OPENAI_RESPONSES && auth.kind == AuthKind.ChatgptOAuth.wire ->
                     "$base/models?client_version=$CODEX_LIST_CLIENT_VERSION"

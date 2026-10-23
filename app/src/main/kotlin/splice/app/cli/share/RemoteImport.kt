@@ -33,9 +33,9 @@ import splice.share.remote.RemoteJoin
 import splice.share.remote.RemoteJoined
 import splice.share.remote.RemoteJoined.Joined
 import splice.share.remote.RemoteNames
-import splice.share.remote.RemoteTrust
 import splice.share.remote.RemoteRelay
 import splice.share.remote.RemoteTopology
+import splice.share.remote.RemoteTrust
 import splice.share.remote.RemotesStore
 import splice.terminal.ConfirmPrompt
 

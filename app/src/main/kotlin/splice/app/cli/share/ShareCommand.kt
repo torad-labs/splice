@@ -16,12 +16,14 @@ import splice.core.terminal.TerminalOutput
 import splice.core.topology.Topology
 import splice.core.util.Cancellables
 import splice.core.util.EnvReader
+import splice.core.util.LocalTimeText
 import splice.core.util.SafeFailureText
 import splice.share.ShareCertificate
 import splice.share.ShareClients
 import splice.share.ShareState
 import java.net.InetSocketAddress
 import java.net.Socket
+import java.time.Instant
 
 internal const val SHARE_USAGE = "on [--port N] | off | status | revoke <machine>"
 
@@ -78,6 +80,13 @@ internal class ShareCommand(
         return PeerExit.DONE
     }
 
+    /** A stored instant in this machine's own time (LocalTimeText); one that does not parse is shown as stored. */
+    private fun said(instant: String): String =
+        Cancellables.runCatchingCancellable { LocalTimeText().at(Instant.parse(instant).epochSecond) }
+            .getOrElse { instant }
+
+    private fun turns(count: Int): String = if (count == 1) "1 turn" else "$count turns"
+
     private fun status(): Int {
         val topology = loaded() ?: return PeerExit.REFUSED
         val share = topology.share
@@ -93,9 +102,14 @@ internal class ShareCommand(
         }
         val joined = clients.all()
         if (joined.isEmpty()) out.line("  machines  none joined")
+        val seen = clients.activity.read().associateBy { it.name }
+        val today = clients.activity.today()
         joined.forEach { machine ->
             val name = machine.name.padEnd(MACHINE_NAME_PAD)
-            out.line("  machine   $name from ${machine.address}, joined ${machine.joinedAt}")
+            // Written by the daemon at most once a minute, so "last seen" and the count can trail by that much.
+            val heard = seen[machine.name]
+                ?.let { ", last seen ${said(it.lastSeen)}, ${turns(it.turnsOn(today))} today" }
+            out.line("  machine   $name from ${machine.address}, joined ${said(machine.joinedAt)}${heard.orEmpty()}")
         }
         return PeerExit.DONE
     }

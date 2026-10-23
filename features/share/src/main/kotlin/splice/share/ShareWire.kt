@@ -14,6 +14,8 @@ import splice.core.model.ModelRates
 import splice.core.model.TurnPrice
 import splice.core.topology.ProviderFamilyRule
 import splice.core.topology.Topology
+import splice.core.usage.QuotaSnapshot
+import java.time.Instant
 
 /** `GET /share/v1/info`: who this machine is and the heads it offers, as their pickers show them now. */
 @Serializable
@@ -67,8 +69,10 @@ internal class ShareHeads(
     val server: String,
     /** The fingerprint of the certificate the listener serves. */
     private val fingerprint: String,
+    private val quotas: SharedQuotas,
 ) {
     private val offered: List<String> = topology.share.sharedHeads(topology).filter { running.of(it) != null }
+    private val upSince = Instant.now().toString()
 
     fun keys(): List<String> = offered
 
@@ -76,6 +80,15 @@ internal class ShareHeads(
     fun port(key: String): Int? = key.takeIf { it in offered }?.let { topology.heads[it]?.port }
 
     fun info(): ShareInfo = ShareInfo(server, GATEWAY_VERSION, offered.mapNotNull(::described), fingerprint)
+
+    /** One offered head as [info] describes it, or null for any other name or a head that stopped. */
+    fun head(key: String): SharedHead? = key.takeIf { it in offered }?.let(::described)
+
+    /** An offered head's plan windows now, or null for none or any other name. */
+    fun quota(key: String): QuotaSnapshot? = key.takeIf { it in offered }?.let(quotas::of)
+
+    fun health(): ShareHealth =
+        ShareHealth(server, GATEWAY_VERSION, upSince, offered.map { ShareHeadState(it, running.of(it) != null) })
 
     private fun described(key: String): SharedHead? {
         val served = running.of(key) ?: return null

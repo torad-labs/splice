@@ -507,7 +507,7 @@ function mapRow(head, row) {
   return {
     id: `${head.key}:${row.turn || row.turn_id || row.ts}`, head: head.key, cmd: head.command, turn: row.turn ?? null,
     provider: state.providerOf[head.key] ?? null,
-    ts: new Date(row.ts), sid, outcome: row.outcome, cause: row.cause ?? null, hash: row.messages_hash ?? null,
+    ts: new Date(row.ts), sid, outcome: row.outcome, cause: row.cause ?? null, hash: row.messages_hash ?? null, from: row.from ?? null,
     model: modelName(state.modelLabel, row.model), modelId: row.model ?? null,
     account: row.account ?? null, acctLabel: row.account_label ?? null, compact: row.compact === true,
     attempts: row.attempts ?? 0, retries: row.retries ?? 0, counts: countsOf(row), sourceAttempts: row.source_attempts ?? null,
@@ -794,7 +794,7 @@ function rowHtml(r) {
     + `<span class="lamp ${lampCls}" aria-hidden="true">${lamp}</span>`
     + `<div class="top"><time>${state.order === "price" ? dayOf(r.ts) : ""}${clockS(r.ts)}</time><button class="name" data-open="${esc(r.id)}">${esc(r.compare ? COMPARE_LABEL : sessTitle(r.sid))}</button>${word}`
     + `<span class="dur${slow ? " slow" : ""}">${secs(r.total)}</span>${worthHtml(r)}<span class="cost${r.cost == null ? " gap" : ""}">${costText(r)}</span></div>`
-    + `<div class="meta">${headChip(r)}<span>${esc(r.model ?? "No model")}</span>${r.account ? acctTag(r, ` title="${esc(r.account)}"`) : ""}${toks}${sends}${noReading}${retry}</div>${match}</article>`;
+    + `<div class="meta">${headChip(r)}<span>${esc(r.model ?? "No model")}</span>${r.account ? acctTag(r, ` title="${esc(r.account)}"`) : ""}${r.from ? `<span title="Sent from ${esc(r.from)}, which uses this machine's commands through sharing">from ${esc(r.from)}</span>` : ""}${toks}${sends}${noReading}${retry}</div>${match}</article>`;
 }
 const markIn = (t) => RV.markIn(t);
 // A WINDOW CAN HOLD MORE REQUESTS THAN ONE READ CARRIES. The daemon answers with the newest 2,000 of each command and

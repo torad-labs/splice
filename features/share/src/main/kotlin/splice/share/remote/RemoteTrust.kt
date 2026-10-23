@@ -64,3 +64,10 @@ public class RemoteTrust(private val pin: String?, private val machine: String) 
 
     private fun refusedClient(): Nothing = throw CertificateException("a share client takes no client certificate")
 }
+
+/** A refused certificate's words, found anywhere in a failure's causes: what a person is told instead of a handshake
+ *  error. Null for any other failure. */
+internal object CertificateRefusal {
+    fun of(failure: Throwable?): String? =
+        generateSequence(failure) { it.cause }.filterIsInstance<CertificateException>().firstOrNull()?.message
+}

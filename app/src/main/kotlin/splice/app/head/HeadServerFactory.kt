@@ -17,7 +17,6 @@ import splice.core.config.TurnKey
 import splice.core.config.UserHome
 import splice.core.prompt.SystemPromptLayers
 import splice.core.topology.ProjectConfig
-import splice.core.topology.RemoteConfig
 import splice.core.util.LogSink
 import splice.core.version.ClientVersionTracker
 import splice.head.HeadDeps
@@ -30,6 +29,7 @@ import splice.head.compaction.CompactionTail
 import splice.head.compaction.SessionProjectLookup
 import splice.head.turn.LiveTurns
 import splice.head.wire.WireTap
+import splice.share.remote.RemoteLinks
 import splice.upstream.Provider
 import splice.upstream.retry.InflightGate
 import splice.usage.budgets.BudgetPlans
@@ -64,7 +64,7 @@ internal class HeadServerFactory(
 
     /** LAN share: the machines this one joined (`[remotes]`), assigned beside the two above; a `splice-remote` head's
      *  upstream trusts only the certificate its machine's entry pins (UpstreamFactory). */
-    internal var remotes: Map<String, RemoteConfig> = emptyMap()
+    internal var remotes: RemoteLinks? = null
 
     // v0.4.0: what a launched session holds, derived from the management key (see [TurnKey]).
     private val turnKey = TurnKey(mgmtKey)

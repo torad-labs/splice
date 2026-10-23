@@ -32,6 +32,7 @@ public data class PerfRowMeta(
         transcript.sessionId?.let { into.put("session_id", it) }
         transcript.responseMessageId?.let { into.put("response_message_id", it) }
         transcript.messagesHash?.let { into.put("messages_hash", it) }
+        transcript.from?.let { into.put("from", it) }
         transcript.turns.trace?.let { into.put("turn", it) }
         transcript.turns.request?.let { into.put("turn_id", it) }
         // V4-444: whether a capture was kept for this turn, said OUTRIGHT on every row. A null `turn` already
@@ -83,4 +84,7 @@ public data class PerfTranscriptIds(
     /** The hash of the request's messages, on a request that named a session: Requests links a cut turn's row to
      *  the re-send of the same messages in the same session. */
     val messagesHash: String? = null,
+    /** LAN share: the joined machine that relayed the turn here, which holds the session's transcript; null for a
+     *  turn sent on this machine, and then the row carries no `from`. */
+    val from: String? = null,
 )

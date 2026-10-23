@@ -48,7 +48,7 @@ class ShareRelayBoundsTest {
     @Test
     fun `a body declared past the head's cap gets the head's own 413`() = testApplication {
         val relay = relay()
-        routing { post("/turn") { relay.relay(call, "h", NO_HEAD_PORT, "/v1/messages") } }
+        routing { post("/turn") { relay.relay(call, ShareTarget("h", NO_HEAD_PORT, "/v1/messages", "test")) } }
         val response = client.post("/turn") { setBody("x".repeat(HEAD_CAP + 1)) }
         assertEquals(HttpStatus.CONTENT_TOO_LARGE, response.status.value)
         assertEquals(tooLarge, response.bodyAsText())
@@ -57,7 +57,7 @@ class ShareRelayBoundsTest {
     @Test
     fun `a body of no declared length is refused the same once it passes the cap`() = testApplication {
         val relay = relay()
-        routing { post("/turn") { relay.relay(call, "h", NO_HEAD_PORT, "/v1/messages") } }
+        routing { post("/turn") { relay.relay(call, ShareTarget("h", NO_HEAD_PORT, "/v1/messages", "test")) } }
         val undeclared = object : OutgoingContent.WriteChannelContent() {
             override suspend fun writeTo(channel: ByteWriteChannel) {
                 channel.writeFully(ByteArray(HEAD_CAP + 1))

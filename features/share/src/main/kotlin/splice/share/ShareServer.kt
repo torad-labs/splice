@@ -3,7 +3,9 @@
 // alone, by that decision. Every request passes ShareNetwork first (private source, own Host); turns then
 // need a joined machine's token ([guarded]) and are relayed to the head on loopback (ShareRelay). It never
 // serves a management route, the console, or any head that `[share]` does not offer. Open by decision:
-// what this machine offers (info) and joining it (trust the LAN, Marcos, 2026-10-22).
+// what this machine offers (info) and joining it (trust the LAN, Marcos, 2026-10-22). Phase 2 adds, for joined
+// machines only, each head's roster and plan windows and this machine's health (ShareStatus), and counts each
+// guarded request toward that machine's last seen (ShareActivity).
 package splice.share
 
 import io.ktor.http.ContentType
@@ -31,6 +33,7 @@ import kotlinx.coroutines.withContext
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonPrimitive
 import splice.core.auth.BearerScheme
+import splice.core.usage.QuotaJson
 import splice.core.util.Cancellables
 import splice.core.util.LogSink
 import splice.core.util.SafeFailureText
@@ -86,6 +89,8 @@ public class ShareServer internal constructor(
     public fun stop() {
         engine?.stop(SHARE_STOP_GRACE_MS, SHARE_STOP_TIMEOUT_MS)
         engine = null
+        Cancellables.runCatchingCancellable { clients.activity.flush() }
+            .onFailure { log("[share] last seen was not written: ${SafeFailureText.render(it)}\n") }
     }
 
     private suspend fun admitted(call: ApplicationCall): Boolean {
@@ -105,21 +110,49 @@ public class ShareServer internal constructor(
             call.respondText(json.encodeToString(ShareInfo.serializer(), heads.info()), ContentType.Application.Json)
         }
         root.post(SHARE_JOIN_PATH) { join(call) }
+        root.get(SHARE_HEALTH_PATH) {
+            guarded(call)?.let { respondJson(call, json.encodeToString(ShareHealth.serializer(), heads.health())) }
+        }
         root.route("$SHARE_HEADS_PATH/{head}") {
             // Any answer proves the path is there: what `splice add`'s reachability check asks of a base URL.
             get { call.respondText("splice share: head '${call.parameters["head"]}'\n") }
-            post("/v1/messages") { if (guarded(call)) relayed(call, "/v1/messages") }
-            post("/v1/messages/count_tokens") { if (guarded(call)) relayed(call, "/v1/messages/count_tokens") }
-            get("/v1/models") { if (guarded(call)) relayed(call, "/v1/models") }
+            post("/v1/messages") { guarded(call, turn = true)?.let { relayed(call, "/v1/messages", it) } }
+            post("/v1/messages/count_tokens") { guarded(call)?.let { relayed(call, "/v1/messages/count_tokens", it) } }
+            get("/v1/models") { guarded(call)?.let { relayed(call, "/v1/models", it) } }
+            get("/roster") { guarded(call)?.let { roster(call) } }
+            get("/usage") { guarded(call)?.let { usage(call) } }
         }
     }
 
-    /** True for a joined machine's token; anything else is answered here, with a 401 in words, and is false. */
-    private suspend fun guarded(call: ApplicationCall): Boolean {
+    /** The joined machine whose token this is, counted as heard from ([turn] counts a relayed turn); anything else is
+     *  answered here, with a 401 in words, and is null. */
+    private suspend fun guarded(call: ApplicationCall, turn: Boolean = false): String? {
         val bearer = BearerScheme.bearerToken(call.request.headers[HttpHeaders.Authorization])
-        if (withContext(io) { clients.holder(bearer) } != null) return true
-        refuse(call, HttpStatus.UNAUTHORIZED, "this machine has not joined, or was revoked; run `splice remote` again")
-        return false
+        val holder = withContext(io) { clients.holder(bearer)?.also { clients.activity.heard(it.name, turn) } }
+        if (holder == null) {
+            val why = "this machine has not joined, or was revoked; run `splice remote` again"
+            refuse(call, HttpStatus.UNAUTHORIZED, why)
+        }
+        return holder?.name
+    }
+
+    private suspend fun roster(call: ApplicationCall) {
+        val head = heads.head(call.parameters["head"].orEmpty())
+        if (head == null) {
+            refuse(call, HttpStatus.NOT_FOUND, "head '${call.parameters["head"]}' is not offered by ${heads.server}")
+            return
+        }
+        respondJson(call, json.encodeToString(SharedHead.serializer(), head))
+    }
+
+    /** The head's plan windows in QuotaJson's shape; `{}` when it holds none, which reads back as no snapshot. */
+    private suspend fun usage(call: ApplicationCall) {
+        val quota = heads.quota(call.parameters["head"].orEmpty())
+        respondJson(call, quota?.let { QuotaJson().encode(it) } ?: "{}")
+    }
+
+    private suspend fun respondJson(call: ApplicationCall, body: String) {
+        call.respondText(body, ContentType.Application.Json)
     }
 
     /** Trust the LAN (Marcos, 2026-10-22): a private-network machine that asks is accepted with no code. Its body is
@@ -147,7 +180,7 @@ public class ShareServer internal constructor(
         call.respondText(json.encodeToString(ShareJoined.serializer(), joined), ContentType.Application.Json)
     }
 
-    private suspend fun relayed(call: ApplicationCall, path: String) {
+    private suspend fun relayed(call: ApplicationCall, path: String, client: String) {
         val head = call.parameters["head"].orEmpty()
         val port = heads.port(head)
         if (port == null) {
@@ -155,7 +188,7 @@ public class ShareServer internal constructor(
             return
         }
         val query = call.request.queryString().takeIf { it.isNotEmpty() }?.let { "?$it" }.orEmpty()
-        relay.relay(call, head, port, path + query)
+        relay.relay(call, ShareTarget(head, port, path + query, client))
     }
 
     private suspend fun refuse(call: ApplicationCall, status: Int, message: String) {

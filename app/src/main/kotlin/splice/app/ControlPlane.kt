@@ -27,6 +27,7 @@ import splice.app.provider.ClaudeAccountWiring
 import splice.app.provider.HeadBuildInputs
 import splice.app.provider.ModelRosters
 import splice.app.provider.ProviderAssembly
+import splice.app.provider.RosterSources
 import splice.core.compaction.CompactionInstructions
 import splice.core.usage.QuotaReadFailures
 import splice.core.version.ClientVersionTracker
@@ -84,7 +85,7 @@ internal class ControlPlane(
 
     /** 2026-09-22: every head's DISCOVERED models — Daemon.start() resolves them before any head is
      *  assembled, and each head's catalog reads its own through [buildInputs]. */
-    internal val modelRosters = ModelRosters(statePaths, log)
+    internal val modelRosters = ModelRosters(statePaths, log, RosterSources(topology.remotes))
 
     // Held here so Daemon can drop the app.provider + spi imports (concentration, 2026-08-19).
     // probeScope is the daemon's OWN scope — ProviderAssembly must receive the SAME instance

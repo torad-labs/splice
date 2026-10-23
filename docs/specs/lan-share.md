@@ -67,6 +67,9 @@ claudex ─▶ head :3099 (anthropic-passthrough) ──TLS, pinned──▶ sha
   | `POST /share/v1/heads/{head}/v1/messages` | client token | relay, streamed |
   | `POST /share/v1/heads/{head}/v1/messages/count_tokens` | client token | relay |
   | `GET /share/v1/heads/{head}/v1/models` | client token | relay |
+  | `GET /share/v1/heads/{head}/roster` | client token | the head's picker as it stands now (a `SharedHead`, as `/info` lists it): the using machine's hourly roster refresh reads it instead of `/v1/models`, so wrapped ids never reach its picker (phase 2) |
+  | `GET /share/v1/heads/{head}/usage` | client token | the head's plan windows now, in `QuotaJson`'s shape, `{}` for none: the using machine's quota poll for that head, so its bars show this machine's plan (phase 2) |
+  | `GET /share/v1/health` | client token | this machine's name, version, when its listener came up, and each offered head's `running`: the using machine's reachability check, every minute (phase 2) |
 
   Every request: source address must be loopback, RFC 1918, 100.64/10 (Tailscale), link-local or
   fc00::/7, else 403. Host must be an IP literal or one of this machine's names (`<host>`,
@@ -77,6 +80,11 @@ claudex ─▶ head :3099 (anthropic-passthrough) ──TLS, pinned──▶ sha
   The head's own admission, inflight gate, account selection and honest-failure paths run unchanged.
 - Client tokens: 32 random bytes, stored hashed with name, address, first and last seen in
   `<state>/share/clients.json` through `SecureFile.writeAtomic0600`. Never the management or turn key.
+- Activity (phase 2): every guarded request marks its machine seen, and a relayed turn counts toward its turns today.
+  The daemon keeps both in memory and writes `<state>/share/activity.json` at most once a minute and when sharing stops
+  (`ShareActivity`), so a turn never waits on the disk for it. `splice share status` shows them beside each machine.
+  A relayed turn carries the machine's name in `x-splice-share-relay`, the header the relay already set, and its perf
+  row records it, so the Requests page says where the turn came from.
 - Discovery (phase 1): the client asks every address of each private IPv4 network it is on (a /24 around
   itself on a network wider than /22) for `/share/v1/info` on the share port, all at once under one deadline.
   No multicast and no new dependency; mDNS advertising replaces this in phase 2.
@@ -150,8 +158,8 @@ claudex ─▶ head :3099 (anthropic-passthrough) ──TLS, pinned──▶ sha
 - **A changed certificate is retried like any TLS failure.** The turn ends with the refusal's words, what to run
   first, but through the generic bounded retry and as an overloaded error, which Claude Code retries too. Naming it
   a permanent failure is a change to the shared retry plan, left for its owner.
-- **Server-side only:** usage bars, account pools and plan windows live on the server. The Mac's
-  status line shows the relay head's own counts; dollar estimates come from the mirrored rates.
+- **Server-side only:** account pools and the logins themselves live on the server. Since phase 2 the Mac's plan bars
+  read the server head's windows (`/usage`), and its turns bill as on-plan.
 - **No cross-machine `ListAgents`.** Sessions on the two machines do not see each other yet.
 - **Project system-prompt layers** resolve on the server from a cwd it does not have; only head-level
   prompts apply to relayed turns.
@@ -174,8 +182,14 @@ Built on `feat/lan-share`, merged into `feat/v0.4.0` through the gate. Milestone
    one-line imports, `remote list | sync | remove`, phase-1 migration.
 2. **TLS and pinning** (landed): a self-signed certificate minted at the first `share on`, the listener on TLS only, and the
    certificate's SHA-256 pinned in `[remotes.<name>] fingerprint` at join, on every client path.
-3. **Fidelity**: roster, usage and health routes on the listener; the using machine's plan bars, live rows and
-   reachability come from them; turns carry the joined machine's name; last seen per joined machine.
+3. **Fidelity** (landed): roster, usage and health routes on the listener. On the using machine one `RemoteLinks`
+   (each `[remotes]` entry's pin, and its token read per request) serves every daemon path to a remote: the relay's
+   upstream trust; the hourly roster refresh, which reads a `splice-remote` head's rows from `/roster`
+   (`RosterSources`); the quota poll, which reads `/usage` (`HeadQuotaPolling`); and a check of `/health` every minute.
+   A head whose machine did not answer, or whose head there is not running, is "Not answering" in the console as a
+   stopped local runtime is; `/health` names each machine's state under `remotes`, and doctor shows one row per
+   machine. `splice models` says a remote head lists its models on its own machine. On the sharing machine:
+   last seen and turns today per joined machine, and the machine's name on each relayed turn's perf row.
 4. **Console**: a Sharing tab for both sides.
 5. **Discovery**: mDNS (`_splice._tcp`), Tailscale peers, the subnet probe as fallback.
 6. **Sessions across machines**: each machine's live sessions mirrored on the other, so ListAgents and SendMessage

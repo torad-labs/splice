@@ -48,6 +48,10 @@ public class ShareClients(private val file: Path) {
     private val lock = ShareFileLock(file)
     private val hex = HexFormat.of()
 
+    /** When each machine was last heard from (ShareActivity), kept beside this book. A revoked machine's line stays
+     *  until the daemon next writes it; every reader lists only the machines this book still holds. */
+    public val activity: ShareActivity = ShareActivity(file.resolveSibling("activity.json"))
+
     /** A new token for [name], replacing any it held: a machine that imports again gets a fresh one and the
      *  old one stops working. Throws IOException, writing nothing, when the book cannot be read or locked. */
     @Synchronized

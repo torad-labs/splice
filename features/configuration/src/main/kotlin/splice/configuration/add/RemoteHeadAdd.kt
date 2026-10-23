@@ -86,20 +86,24 @@ internal class RemoteHeadAdd(
     /** Whether the key store is where [head]'s provider finds its key: a value of [envVar] in the environment and a
      *  key file that yields a key come before it (ApiKeyAuthProvider), and would keep the revoked token in use. The
      *  renewal then says where the new one has to go instead of reporting it renewed (PR #247's fifth review). A file
-     *  that cannot be read, or holds no key, is passed over for the store, as the provider passes it over (sixth). */
+     *  that cannot be read, or holds no key, is passed over for the store, as the provider passes it over (sixth). The
+     *  file is opened only once the environment is known not to come first, in the provider's order (seventh). */
     private fun applies(head: String, auth: AuthConfig, envVar: String, env: EnvReader): Boolean {
-        val file = auth.file?.takeIf { path ->
-            val at = Path.of(TopologyLoader.expandHome(path))
-            Cancellables.runCatchingCancellable { ApiKeyFile.key(Files.readString(at)) }.fold({ it != null }, { false })
-        }
+        val file = auth.file
         val ahead = when {
             env(envVar)?.isNotEmpty() == true -> "$envVar is set in this environment; unset it where splice starts"
-            file != null -> "its provider reads $file first; put the token there, or drop that file from its auth"
+            file != null && yieldsKey(file) ->
+                "its provider reads $file first; put the token there, or drop that file from its auth"
             else -> return true
         }
         output.line("  '$head': the new token is in the key store, but $ahead, then restart splice")
         return false
     }
+
+    /** Whether the key file at [file] yields a key as the provider reads it (ApiKeyFile). */
+    private fun yieldsKey(file: String): Boolean = Cancellables.runCatchingCancellable {
+        ApiKeyFile.key(Files.readString(Path.of(TopologyLoader.expandHome(file))))
+    }.fold({ it != null }, { false })
 
     /** A provider other than [self] that reads its key from [envVar], whose key a write there would replace. One
      *  for another head of the same sharing server, under [serverHeads], reads that server's token by design

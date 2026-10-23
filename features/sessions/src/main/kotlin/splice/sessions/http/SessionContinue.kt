@@ -90,18 +90,23 @@ public class SessionContinue(
     }
 
     public suspend fun move(session: String, head: String, model: String?, clear: Boolean = false): JsonReply {
+        // what the move decides on, counted before anything reads the session: an act landing after it stops the move
+        val ask = Ask(clear, drive.turns.acts(session))
         // the whole move is this press's alone, from its plan to its last word: a second plans nothing, types nothing
         if (!ledger.opens(session)) return Refusals.reply(HttpStatusCode.Conflict, MOVE_IN_FLIGHT)
         return try {
             when (val plan = plan(session, head, model)) {
                 is Plan.Refused -> plan.reply
-                is Plan.Go -> go(plan.move, clear)
+                is Plan.Go -> go(plan.move, ask)
             }
         } finally {
             // a reply that did not come from the arrival left the grant and the pending mark open; the move closes too
             ledger.dropped(session)
         }
     }
+
+    /** What the press asked beyond the move: whether to empty the prompt, and the session's act count as it came. */
+    private data class Ask(val clear: Boolean, val seen: Long)
 
     /** A move ready to make, or the reply that refuses it. */
     private sealed class Plan {
@@ -146,42 +151,51 @@ public class SessionContinue(
     }
 
     /** A client still running is ended in its pane first; one already gone goes on in a new terminal. */
-    private suspend fun go(move: Move, clear: Boolean): JsonReply {
+    private suspend fun go(move: Move, ask: Ask): JsonReply {
         val pid = move.pid ?: return openNew(move)
         val driving = drive.driver() ?: return unwired()
         val at = drive.locate(driving, move.session, MOVE_NOT_OURS, MOVE_CLOSED)
         val pane = at.pane
-        return if (pane == null) requireNotNull(at.refusal) else handOver(driving, pane, pid, move, clear)
+        return if (pane == null) requireNotNull(at.refusal) else handOver(driving, pane, pid, move, ask)
     }
 
     /** End the client in [pane] with its own exit, and resume once it has gone. A turn in flight is stopped first,
      *  and the stopped message Claude Code puts back, with anything he typed while it ran, is his: it is answered back
      *  to him, and emptied only on his say-so, never to get the move through (Marlin, move check 4). The prompt is read
-     *  and `/exit` typed in the pane's turn, refused when anything was given to the session since the move looked, and
-     *  nothing else is typed there until the client has left: a message that landed after `/exit` would reach the
-     *  shell it leaves in front. A client that does not leave in time keeps the pane marked (PR #247's reviews). */
+     *  and `/exit` typed in the pane's turn, refused when anything was given to the session since the press came or
+     *  it runs a turn the move did not stop, and nothing else is typed there until the client has left: a message
+     *  that landed after `/exit` would reach the shell it leaves in front. A client that does not leave in time keeps
+     *  the pane marked (PR #247's reviews). */
     private suspend fun handOver(
         driving: SessionDriver,
         pane: SessionPane,
         pid: Long,
         move: Move,
-        clear: Boolean,
+        ask: Ask,
     ): JsonReply {
-        val seen = drive.turns.acts(pane)
         if (move.working) stopTurn(driving, pane, move)?.let { return it }
         val exit = object : PaneTurns.Exit {
+            override val pid: Long = pid
+
             override fun check(): JsonReply? = when {
-                drive.turns.acts(pane) != seen -> Refusals.reply(
+                drive.turns.acts(move.session) != ask.seen -> Refusals.reply(
                     HttpStatusCode.Conflict,
                     "it was given something while the move waited its turn, so nothing was started on ${move.head}",
                     Refusal.WORKING,
                 )
-                clear -> null
+                // a turn the move did not stop: one the person started in the terminal itself, past splice's count
+                registry?.read().orEmpty().any { it.sessionId == move.session && it.status.state in busy } ->
+                    Refusals.reply(
+                        HttpStatusCode.Conflict,
+                        "it started working while the move waited its turn, so nothing was started on ${move.head}",
+                        Refusal.WORKING,
+                    )
+                ask.clear -> null
                 else -> drive.drafted(move.session)
             }
 
             override fun keys(): JsonReply? = Cancellables.runCatchingCleanup {
-                if (clear) driving.terminal.press(pane, SessionKey.CLEAR)
+                if (ask.clear) driving.terminal.press(pane, SessionKey.CLEAR)
                 driving.terminal.send(pane, EXIT_COMMAND)
             }.exceptionOrNull()?.let(::refusedByTerminal)
 

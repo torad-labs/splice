@@ -56,6 +56,9 @@ public class SessionEnd(
         end(session, JsonScalars.objectOrNull(Json, body)?.let { JsonScalars.str(it, "confirm") } == "true")
 
     public suspend fun end(session: String, confirm: Boolean): JsonReply {
+        // What End decides on, counted before anything reads the session. Unconfirmed, it is looked at again in the
+        // pane's turn before `/exit` goes, so an act landing after this count stops it, before or after the read.
+        val seen = drive.turns.acts(session).takeUnless { confirm }
         val record = running(session)
         val driving = drive.driver()
         val at = driving?.let { drive.locate(it, session, END_NOT_OURS, END_CLOSED) }
@@ -63,11 +66,7 @@ public class SessionEnd(
             record == null -> Refusals.reply(HttpStatusCode.NotFound, "no running session: $session", Refusal.ENDED)
             driving == null -> Refusals.reply(HttpStatusCode.ServiceUnavailable, NO_TERMINAL_TO_DRIVE)
             at?.pane == null -> requireNotNull(at?.refusal)
-            else -> {
-                // What End decides on now; unconfirmed, it is looked at again in the pane's turn before `/exit` goes.
-                val seen = drive.turns.acts(at.pane).takeUnless { confirm }
-                (if (confirm) null else cost(record)) ?: close(driving, at.pane, record, seen)
-            }
+            else -> (if (confirm) null else cost(record)) ?: close(driving, at.pane, record, seen)
         }
     }
 
@@ -88,7 +87,7 @@ public class SessionEnd(
 
     /** Stop what runs or asks, empty the prompt, type `/exit`, and wait for the client to go. Every key is typed in
      *  the pane's turn, the one a message and an answer take, with the session found in that pane again first.
-     *  [seen] is the pane's act count End decided on, null once he confirmed. */
+     *  [seen] is the session's act count End decided on, null once he confirmed. */
     private suspend fun close(
         driving: SessionDriver,
         pane: SessionPane,
@@ -118,7 +117,9 @@ public class SessionEnd(
     private suspend fun exit(driving: SessionDriver, pane: SessionPane, record: SessionRecord, seen: Long?): JsonReply {
         val session = record.sessionId.orEmpty()
         val exit = object : PaneTurns.Exit {
-            override fun check(): JsonReply? = seen?.let { unchanged(pane, session, it) }
+            override val pid: Long? = record.process.pid
+
+            override fun check(): JsonReply? = seen?.let { unchanged(session, it) }
 
             override fun keys(): JsonReply? = Cancellables.runCatchingCleanup {
                 driving.terminal.press(pane, SessionKey.CLEAR)
@@ -137,8 +138,8 @@ public class SessionEnd(
 
     /** An End he did not confirm, looked at again in the pane's turn: an act on the session since End looked, a turn
      *  it runs now, or words in its prompt are his, and End stops for them, the way it would have on the first look. */
-    private fun unchanged(pane: SessionPane, session: String, seen: Long): JsonReply? =
-        if (drive.turns.acts(pane) != seen) {
+    private fun unchanged(session: String, seen: Long): JsonReply? =
+        if (drive.turns.acts(session) != seen) {
             Refusals.reply(HttpStatusCode.Conflict, END_ACTED, Refusal.WORKING)
         } else {
             cost(session)

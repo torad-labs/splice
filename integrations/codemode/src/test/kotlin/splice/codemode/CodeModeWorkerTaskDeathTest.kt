@@ -24,9 +24,13 @@ import java.util.concurrent.ConcurrentLinkedQueue
 private const val OVERFLOWING_DEPTH = 3_000
 
 // why: GraalJS parses a member chain in a loop, but the worker's compiler walks the tree it builds recursively:
-// 4,000 accesses compile, 8,000 overflow it on most workers, and 20,000 trip the guest parse's own heap guard first.
-// A worker whose stack and JIT state let 8,000 compile overflows the engine at run time instead (CI run 37234377673).
+// on a 1 MiB stack 4,000 accesses compile, and 8,000 overflow the compiler or the engine's own parse or run, wherever
+// the stack and JIT state run out first (CI run 37234377673).
 private const val OVERFLOWING_CHAIN = 8_000
+
+// why: the chain is sized to a stack, so the worker's is pinned to x86_64 Linux's default. An arm64 Mac's default
+// is 2 MiB, where 8,000 accesses compile and run, and its JVM spawns the worker with that default.
+private const val CHAIN_WORKER_STACK = "-Xss1m"
 
 /** A member chain too long for the worker's stack ends with the program's own error from whichever side overflows:
  *  splice's compiler (CodeModeStatementCompilerTest pins that side on a fixed stack) or the engine at run time. */
@@ -67,7 +71,7 @@ class CodeModeWorkerTaskDeathTest {
     @Test
     fun `a program whose member chain overflows the worker's stack ends with its own error, never a lost worker`() =
         runBlocking {
-            runtime().use { runtime ->
+            runtime(CHAIN_WORKER_STACK).use { runtime ->
                 val chain = "const a = {}; a.a = a; const v = " + "a.".repeat(OVERFLOWING_CHAIN) + "a;\n"
                 warm(runtime)
                 val step = withTimeout(ANSWER_BOUND_MS) { run(runtime, chain, "") }
@@ -130,10 +134,14 @@ class CodeModeWorkerTaskDeathTest {
             }
         }
 
-    private fun runtime(): JvmCodeModeRuntime = JvmCodeModeRuntime(
+    /** [stack], when given, is the worker JVM's thread stack option, placed right after its java executable. */
+    private fun runtime(stack: String? = null): JvmCodeModeRuntime = JvmCodeModeRuntime(
         launch = HostLaunch(
             classpath = classpath,
-            spawn = WorkerSpawn { builder -> builder.start().also(spawned::add) },
+            spawn = WorkerSpawn { builder ->
+                stack?.let { builder.command().add(1, it) }
+                builder.start().also(spawned::add)
+            },
         ),
     ).also { it.observeHostLifecycle(LogSink(messages::add)) }
 

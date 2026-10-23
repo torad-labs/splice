@@ -1,5 +1,6 @@
 // install.sh installs a launcher that pairs with the jar (2026-10-01). The two are version-locked: the
-// launcher refuses a daemon whose shim version is not its own. A prebuilt jar installed with no sibling
+// launcher refuses a daemon whose release (SPLICE_GATEWAY_VERSION) is not its own, or that serves an
+// older shim generation, so a pair shares both markers. A prebuilt jar installed with no sibling
 // launcher (`SPLICE_JAR=… ./install.sh`) reused whatever launcher was already installed, so a newer jar
 // went live beside an older launcher, and the run still said "installed". The jar names the launcher it
 // needs (`shim-version`, in every release since 0.3.0) and the launcher carries the same marker
@@ -31,7 +32,8 @@ const TOOLS = [
   "ln", "readlink", "install", "chmod", "mkdir", "dirname", "cat", "head", "tr", "timeout", "printf",
 ];
 
-const launcher = (marker: string) => `#!/usr/bin/env node\nconst SPLICE_SHIM_VERSION = "${marker}";\n`;
+const launcher = (marker: string, release = "9.9.9") =>
+  `#!/usr/bin/env node\nconst SPLICE_SHIM_VERSION = "${marker}";\nconst SPLICE_GATEWAY_VERSION = "${release}";\n`;
 const NEW = launcher("shim-new");
 const OLD = launcher("shim-old");
 const PREVIOUS_JAR = "previous jar\n";
@@ -125,13 +127,20 @@ describe("install.sh pairs the launcher with the jar", () => {
     const r = await installPrebuilt({ installed: OLD });
     expect(r.code, r.out).toBe(0);
     expect(r.shim).toBe(NEW);
+    // Same shim generation, earlier release (0.4.0-beta.2 and 0.4.0 are both shim-21): its handshake
+    // would refuse this jar's daemon, so the release's launcher replaces it too.
+    const earlier = await installPrebuilt({ installed: launcher("shim-new", "9.9.8") });
+    expect(earlier.code, earlier.out).toBe(0);
+    expect(earlier.shim).toBe(NEW);
   });
 
   test("an installed launcher that already pairs is kept, and a 0.3.x launcher's marker is read too", async () => {
     const kept = await installPrebuilt({ installed: `${NEW}// a local edit\n` });
     expect(kept.code, kept.out).toBe(0);
     expect(kept.shim).toBe(`${NEW}// a local edit\n`);
-    const bash = await installPrebuilt({ installed: "#!/usr/bin/env bash\nSPLICE_SHIM_VERSION=\"shim-new\"\n" });
+    const bash = await installPrebuilt({
+      installed: "#!/usr/bin/env bash\nSPLICE_SHIM_VERSION=\"shim-new\"\nSPLICE_GATEWAY_VERSION=\"9.9.9\"\n",
+    });
     expect(bash.code, bash.out).toBe(0);
     expect(bash.shim).toContain('SPLICE_SHIM_VERSION="shim-new"');
   });

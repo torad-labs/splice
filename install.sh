@@ -191,6 +191,21 @@ shim_marker() {
   sed -nE '/^(const )?SPLICE_SHIM_VERSION ?= ?"[^"]*";?$/{s/^[^"]*"([^"]*)".*$/\1/p;q;}' "$1"
 }
 
+# release_marker <launcher> — the launcher's SPLICE_GATEWAY_VERSION, the release its handshake demands of
+# the daemon, character for character. Two releases can share a shim generation (0.4.0-beta.2 and 0.4.0
+# are both shim-21), so the shim marker alone does not make a pair. Empty when missing or unmarked.
+release_marker() {
+  [ -f "$1" ] || return 0
+  sed -nE '/^(const )?SPLICE_GATEWAY_VERSION ?= ?"[^"]*";?$/{s/^[^"]*"([^"]*)".*$/\1/p;q;}' "$1"
+}
+
+# jar_release <jar> — the release the jar's daemon reports (its `version` verb: `splice <release>`).
+# Empty when the jar cannot say.
+jar_release() {
+  local said
+  if said="$(java -jar "$1" version 2>/dev/null)"; then printf '%s\n' "$said" | awk '/^splice / { print $2; exit }'; fi
+}
+
 # jar_shim <jar> — the launcher version the jar needs (its `shim-version` verb). Empty when the jar
 # cannot say, which no launcher pairs with: the check before the commit refuses it by name.
 jar_shim() {
@@ -264,11 +279,15 @@ if [ -n "${SPLICE_JAR:-}" ]; then
   else
     # The first launcher at hand that pairs with this jar: the bundle's own, the checkout's, the one
     # already installed. None pairs → empty, and the release's own launcher is fetched below. The
-    # installed one was once reused unchecked, which put a newer jar beside an older launcher.
+    # installed one was once reused unchecked, which put a newer jar beside an older launcher. A pair
+    # shares both the shim generation and the release: the launcher's handshake refuses any daemon
+    # whose release is not its own.
     WANT_SHIM="$(jar_shim "$JAR_TMP")"
+    WANT_RELEASE="$(jar_release "$JAR_TMP")"
     PAIRED=""
     for candidate in "$(dirname "$SPLICE_JAR")/splice-launch" "$SHIM_SRC" "${SHARE_DIR}/splice-launch"; do
-      if [ -n "$WANT_SHIM" ] && [ "$(shim_marker "$candidate")" = "$WANT_SHIM" ]; then
+      if [ -n "$WANT_SHIM" ] && [ -n "$WANT_RELEASE" ] && [ "$(shim_marker "$candidate")" = "$WANT_SHIM" ] \
+        && [ "$(release_marker "$candidate")" = "$WANT_RELEASE" ]; then
         PAIRED="$candidate"
         break
       fi
@@ -319,7 +338,7 @@ fi
 
 # A standalone prebuilt JAR can bootstrap its matching release shim when it has no sibling.
 if [ ! -f "$SHIM_SRC" ]; then
-  JAR_VERSION="$(java -jar "$JAR_TMP" version | awk '/^splice / { print $2 }')"
+  JAR_VERSION="$(jar_release "$JAR_TMP")"
   [ -n "$JAR_VERSION" ] || { echo "splice: prebuilt jar has no readable splice version" >&2; exit 1; }
   REPO="torad-labs/splice"
   RELEASE_BASE="${SPLICE_RELEASE_BASE_URL:-https://github.com/${REPO}/releases/download/v${JAR_VERSION}}"
@@ -359,13 +378,16 @@ case "$JAR_VERSION_OUTPUT" in
   *) echo "splice: candidate jar failed validation: ${JAR_VERSION_OUTPUT:-<empty>}" >&2; exit 1 ;;
 esac
 
-# The launcher and the jar are version-locked (the launcher refuses a daemon whose version is not its
-# own), so a pair that does not match is refused here, before anything goes live, rather than found at
-# the first launch.
+# The launcher and the jar are version-locked (the launcher refuses a daemon whose release is not its
+# own, and one that serves an older shim generation), so a pair that does not match on both is refused
+# here, before anything goes live, rather than found at the first launch.
 WANT_SHIM="$(jar_shim "$JAR_TMP")"
 HAVE_SHIM="$(shim_marker "$SHIM_SRC")"
-if [ -z "$WANT_SHIM" ] || [ "$HAVE_SHIM" != "$WANT_SHIM" ]; then
-  echo "splice: the launcher $SHIM_SRC is ${HAVE_SHIM:-unmarked}, but this jar needs ${WANT_SHIM:-a launcher it did not name};" \
+WANT_RELEASE="$(jar_release "$JAR_TMP")"
+HAVE_RELEASE="$(release_marker "$SHIM_SRC")"
+if [ -z "$WANT_SHIM" ] || [ "$HAVE_SHIM" != "$WANT_SHIM" ] || [ -z "$WANT_RELEASE" ] || [ "$HAVE_RELEASE" != "$WANT_RELEASE" ]; then
+  echo "splice: the launcher $SHIM_SRC is ${HAVE_SHIM:-unmarked} for release ${HAVE_RELEASE:-<unmarked>}," \
+    "but this jar needs ${WANT_SHIM:-a launcher it did not name} for release ${WANT_RELEASE:-<unnamed>};" \
     "install the launcher built with this jar (SPLICE_SHIM=<path>)" >&2
   exit 1
 fi

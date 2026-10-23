@@ -34,8 +34,8 @@ const TOOLS = [
 ];
 
 const JAR = "synthetic splice jar bytes\n";
-// The marker pairs it with the fake jar's `shim-version` below; install.sh refuses a pair that does not match.
-const SHIM = '#!/usr/bin/env node\n// synthetic splice-launch\nconst SPLICE_SHIM_VERSION = "shim-test";\n';
+// The markers pair it with the fake jar's `shim-version` and `version` below; install.sh refuses a pair that does not match.
+const SHIM = '#!/usr/bin/env node\n// synthetic splice-launch\nconst SPLICE_SHIM_VERSION = "shim-test";\nconst SPLICE_GATEWAY_VERSION = "9.9.9";\n';
 const sha = (text: string) => createHash("sha256").update(text).digest("hex");
 
 function exe(path: string, body: string) {

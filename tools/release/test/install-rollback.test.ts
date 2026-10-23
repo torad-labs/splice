@@ -64,8 +64,8 @@ esac
   const candidate = join(dir, "candidate");
   mkdirSync(candidate);
   writeFileSync(join(candidate, "splice.jar"), "new jar\n");
-  // Paired with the fake jar's `shim-version`, so the install reaches the commit the fake mv refuses.
-  writeFileSync(join(candidate, "splice-launch"), '#!/usr/bin/env node\n// new shim\nconst SPLICE_SHIM_VERSION = "shim-test";\n');
+  // Paired with the fake jar's `shim-version` and `version`, so the install reaches the commit the fake mv refuses.
+  writeFileSync(join(candidate, "splice-launch"), '#!/usr/bin/env node\n// new shim\nconst SPLICE_SHIM_VERSION = "shim-test";\nconst SPLICE_GATEWAY_VERSION = "9.9.9";\n');
   const share = join(dir, "share");
   mkdirSync(share);
   writeFileSync(join(share, "splice.jar"), "previous jar\n");

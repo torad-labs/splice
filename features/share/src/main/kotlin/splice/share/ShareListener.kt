@@ -24,7 +24,7 @@ public class ShareListener(
     statePaths: StatePaths,
     private val log: LogSink,
     /** The daemon's mirrors of other machines' sessions: a joined machine's are kept here, and it is shown this one's. */
-    private val mirrors: SessionMirrors? = null,
+    public val mirrors: SessionMirrors? = null,
 ) {
     private val mutex = Mutex()
     private val advert = SystemMdns().advert(log)

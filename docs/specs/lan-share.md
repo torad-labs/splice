@@ -253,6 +253,12 @@ Built on `feat/lan-share`, merged into `feat/v0.4.0` through the gate. Milestone
      machine on the network may join and each mirror is a process, so a daemon hosts at most 256. A mirror's name is
      what ListAgents shows and an envelope carries (`[A-Za-z0-9._-]`, 64 characters), and two sessions of one name are
      told apart by the start of their ids.
-   - **Not yet.** The Sessions page's machine badge and the Sharing page's counts. A receipt to a sender in
-     `/tmp/cc-socks` on a Mac, where `/tmp` is a link the receipt path refuses (`PeerNoteSocket.inOwnFolder`, as for
-     peers). A message refused on the far side of the outbox reaches no one.
+   - **The pages.** On the Sessions page a mirror is a row of its own machine: a badge names the machine, no folder
+     here is claimed for it, it groups under the machine's name (by project and by command), and it is read only
+     (SendMessage and Close; no composer, note, stop or move). It reads stale or live as its session does on the other
+     machine, since the link carries when that session was last heard from (`heard_at`), and it leaves the list with
+     its record, never kept as ended. On the Sharing page each machine's card says how many of its sessions are listed
+     here and how many of this machine's it was last shown ("Sessions: 2 of its listed here · 1 of this machine's listed
+     there"); one that has not looked yet says so, and one no session crosses with says nothing.
+   - **Not yet.** A receipt to a sender in `/tmp/cc-socks` on a Mac, where `/tmp` is a link the receipt path refuses
+     (`PeerNoteSocket.inOwnFolder`, as for peers). A message refused on the far side of the outbox reaches no one.

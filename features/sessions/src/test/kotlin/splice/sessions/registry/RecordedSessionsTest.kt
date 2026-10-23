@@ -46,6 +46,23 @@ class RecordedSessionsTest {
         assertEquals(setOf("session_id", "name", "cwd", "head", "last_activity_ms"), keysOf(kept))
     }
 
+    // LAN share, milestone 6: the session a mirror stands for runs on another machine, whose own Sessions page keeps it
+    // once it ends. Here it only leaves, whether it ended there or the link to that machine went quiet.
+    @Test
+    fun `a mirror of another machine's session leaves the listing with its record and is never kept as ended`() {
+        val mirror = live("bbbb-2", at = now - 60_000, route = SessionRoute.Unknown).copy(
+            name = "rig-lead@torad-server",
+            client = SessionClient("splice-mirror", "splice-mirror/0.4.0"),
+        )
+        listed = listOf(mirror)
+        assertEquals(listOf("bbbb-2"), sessions.list().sessions.map { it.sessionId })
+
+        listed = emptyList()
+
+        assertEquals(emptyList<String?>(), sessions.list().sessions.map { it.sessionId })
+        assertFalse(Files.exists(dir.resolve("bbbb-2.json")), "nothing of it is kept here")
+    }
+
     @Test
     fun `a session still registered is listed once, as the registry has it`() {
         listed = listOf(live("aaaa-1", at = now))

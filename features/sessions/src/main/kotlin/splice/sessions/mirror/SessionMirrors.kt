@@ -18,6 +18,7 @@ import splice.sessions.peer.SendOutcome
 import splice.sessions.peer.helper.HelperLog
 import splice.sessions.peer.helper.PeerRegistryFiles
 import splice.sessions.peer.helper.PeerSockets
+import splice.sessions.registry.MIRROR_KIND
 import splice.sessions.registry.PidIdentity
 import splice.sessions.registry.ProcPidIdentity
 import splice.sessions.registry.SessionAvailability
@@ -30,8 +31,13 @@ import java.nio.file.Path
  *  the log the mirrors' inboxes count what they saw in. */
 public data class MirrorPlace(val registry: Path, val sockets: Path, val log: Path)
 
-/** A session on another machine: its id there, and the name it goes by there. */
-public data class MirroredSession(val id: String, val name: String)
+/** A session on another machine: its id there, the name it goes by there, and when it was last heard from there, by
+ *  that machine's clock (null when its record says nothing of it). */
+public data class MirroredSession(val id: String, val name: String, val heardAt: Long? = null)
+
+/** How sessions cross with one machine: how many of its sessions are mirrored here, and how many of this machine's it
+ *  was last shown (null until it is, and again once its link goes quiet). */
+public data class MirrorCounts(val here: Int, val there: Int?)
 
 /** What became of a message a mirror carried on: its [status] there, or null when it is on its way. */
 public data class MirrorCarried(val status: DeliveryStatus?, val detail: String? = null)
@@ -74,13 +80,40 @@ public class SessionMirrors(
     /** The carrier each machine's mirrors hand a message to, kept so a sender's mirror can be made on demand. */
     private val carriers = mutableMapOf<String, MirrorCarrier>()
 
+    /** How many of this machine's sessions each machine was last shown. */
+    private val shownTo = mutableMapOf<String, Int>()
+
     /** The machines that offered more sessions than there was room for, said once until they fit again. */
     private val overfull = mutableSetOf<String>()
 
     /** This machine's own running sessions, as another machine is shown them: every one Claude Code registered here
      *  whose process runs, mirrors left out. */
     public fun local(): List<MirroredSession> = ownRecords().mapNotNull { record ->
-        record.sessionId?.let { id -> MirroredSession(id, record.name ?: id.take(SHORT_ID_CHARS)) }
+        record.sessionId?.let { id ->
+            val heardAt = listOfNotNull(record.process.updatedAt, record.status.updatedAt).maxOrNull()
+            MirroredSession(id, record.name ?: id.take(SHORT_ID_CHARS), heardAt)
+        }
+    }
+
+    /** How sessions cross with [machine], as the Sharing page shows it. */
+    public fun counts(machine: String): MirrorCounts = synchronized(lock) {
+        MirrorCounts(byMachine[machine]?.size ?: 0, shownTo[machine])
+    }
+
+    /** [machine] was just shown [sessions] of this machine's running sessions. */
+    public fun shown(machine: String, sessions: Int) {
+        synchronized(lock) { shownTo[machine] = sessions }
+    }
+
+    /** Withdraws [machine]'s mirrors and forgets it: its link went quiet, so nothing crosses with it until it looks
+     *  again. */
+    public fun withdraw(machine: String) {
+        synchronized(lock) {
+            byMachine.remove(machine)?.values?.forEach(Mirror::close)
+            carriers.remove(machine)
+            shownTo.remove(machine)
+            overfull.remove(machine)
+        }
     }
 
     /** Makes [sessions] the mirrors of [machine]: each new one registered, each gone one withdrawn, a renamed one
@@ -98,6 +131,7 @@ public class SessionMirrors(
             if (stale) mirror.close()
             stale
         }
+        held.forEach { (id, mirror) -> wanted[id]?.let(mirror::heard) }
         val fresh = wanted.values.filter { it.id !in held }
         val room = (MIRRORS_AT_MOST - byMachine.values.sumOf { it.size }).coerceAtLeast(0)
         for (session in fresh.take(room)) {

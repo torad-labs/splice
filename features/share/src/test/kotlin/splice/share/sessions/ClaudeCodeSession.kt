@@ -38,6 +38,8 @@ internal class ClaudeCodeSession(
     private val registry: Path,
     sockets: Path,
     val name: String,
+    /** When the session was last heard from, as its record's updatedAt says: now, unless a test says it is idle. */
+    heardAt: Long? = null,
 ) : AutoCloseable {
     private val process: Process = ProcessBuilder("sleep", "600").start()
     val pid: Long = process.pid()
@@ -71,10 +73,22 @@ internal class ClaudeCodeSession(
             put("name", name)
             put("nameSource", "user")
             put("status", "idle")
-            put("updatedAt", now)
-            put("statusUpdatedAt", now)
+            put("updatedAt", heardAt ?: now)
+            put("statusUpdatedAt", heardAt ?: now)
         }
         Files.writeString(registry.resolve("$pid.json"), record.toString())
+    }
+
+    /** The session turned busy at [at]: Claude Code rewrites its record's status and both of its times. */
+    fun busyAt(at: Long) {
+        val file = registry.resolve("$pid.json")
+        val record = Json.parseToJsonElement(Files.readString(file)).jsonObject
+        val busy = mapOf(
+            "status" to JsonPrimitive("busy"),
+            "updatedAt" to JsonPrimitive(at),
+            "statusUpdatedAt" to JsonPrimitive(at),
+        )
+        Files.writeString(file, JsonObject(record + busy).toString())
     }
 
     /** The names ListAgents shows this session: every record in its registry whose process is alive, itself left out. */

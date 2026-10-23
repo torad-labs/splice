@@ -25,6 +25,10 @@ private const val STALE_AFTER_MS = 30L * 60L * 1000L
 /** Claude Code's word, in a registration's status, for a session at rest. */
 private const val IDLE_STATUS = "idle"
 
+/** What a mirror of another machine's session says it is, in its record's `kind`, `entrypoint` and `version` (LAN
+ *  share, milestone 6): how a listing here tells it from a session of this machine's own. */
+internal const val MIRROR_KIND = "splice-mirror"
+
 /** A registration is a few hundred bytes; the directory is shared by every head, so a runaway or
  *  foreign file there is skipped rather than read whole on every poll. */
 private const val MAX_RECORD_BYTES = 64L shl 10
@@ -81,6 +85,11 @@ public data class SessionRecord(
 
     /** The splice head this session talks to, or null when [route] names none (direct or unknown). */
     public val head: String? get() = (route as? SessionRoute.Head)?.key
+
+    /** The machine a mirror stands for, when this is one: a session that runs on that machine, which ListAgents names
+     *  `<session>@<machine>` (neither part holds an `@`). Null for a session of this machine's own. */
+    internal val machine: String?
+        get() = name?.takeIf { client.kind == MIRROR_KIND }?.substringAfterLast('@', "")?.ifEmpty { null }
 
     /** A live session no head is known for yet: the only kind a head is joined to from what its requests showed. */
     internal fun wantsHead(): Boolean = availability != SessionAvailability.GONE && route !is SessionRoute.Head

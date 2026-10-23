@@ -15,12 +15,17 @@ import io.ktor.client.request.setBody
 import io.ktor.client.statement.HttpResponse
 import io.ktor.client.statement.bodyAsText
 import io.ktor.http.HttpMethod
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.cancel
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.withTimeout
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.boolean
+import kotlinx.serialization.json.int
 import kotlinx.serialization.json.jsonArray
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
@@ -35,9 +40,15 @@ import splice.core.config.MgmtKey
 import splice.core.config.StatePaths
 import splice.core.testing.TestPorts
 import splice.core.util.EnvReader
+import splice.sessions.mirror.MirrorCarried
+import splice.sessions.mirror.MirrorCarrier
+import splice.sessions.mirror.MirrorPlace
+import splice.sessions.mirror.MirroredSession
+import splice.sessions.mirror.SessionMirrors
 import splice.share.ShareHostName
 import splice.share.ShareListener
 import splice.share.ShareStart
+import splice.share.ShareState
 import splice.share.SharedCatalogs
 import splice.share.SharedQuotas
 import splice.share.remote.RemoteDiscovery
@@ -48,6 +59,7 @@ import splice.topology.TopologyLoader
 import java.net.Socket
 import java.nio.file.Files
 import java.nio.file.Path
+import java.nio.file.attribute.PosixFilePermissions
 
 private const val SHARE_TIMEOUT_MS = 20_000L
 private const val SHARE_POLL_MS = 20L
@@ -117,7 +129,7 @@ class SharingRoutesTest {
         EnvReader { vars[it] }
     }
 
-    private fun serve(wired: Boolean = true, test: suspend (ShareCall) -> Unit) {
+    private fun serve(wired: Boolean = true, mirrors: SessionMirrors? = null, test: suspend (ShareCall) -> Unit) {
         val paths = StatePaths(envReader = env)
         val mgmt = MgmtKey(paths)
         val config = ConfigService(paths)
@@ -133,6 +145,7 @@ class SharingRoutesTest {
             SharedQuotas { null },
             paths,
             { },
+            mirrors,
         )
         if (wired) control.ports.sharing = SharingParts(listener, remotes = null, env = env)
         runBlocking { control.start() }
@@ -212,6 +225,47 @@ class SharingRoutesTest {
             )
             assertEquals(0, view.getValue("joined").jsonArray.size)
             assertEquals(0, view.getValue("remotes").jsonArray.size)
+        }
+    }
+
+    // LAN share, milestone 6: each machine sessions cross with says how many of its sessions are listed here and how many
+    // of this machine's it was last shown; one nothing crossed with yet says so by leaving the second out.
+    @Test
+    fun `each machine says how many of its sessions are listed here and how many of ours it was shown`() {
+        Files.writeString(file, Files.readString(file) + "\n[remotes.far]\nurl = \"https://far.lan:3097\"\n")
+        val paths = StatePaths(envReader = env)
+        val clients = ShareState(paths).clientsFile
+        Files.createDirectories(clients.parent)
+        Files.writeString(
+            clients,
+            """{"clients":[{"name":"mini","token_sha256":"00","address":"10.0.0.2",""" +
+                """"joined_at":"2026-10-23T12:00:00Z"}]}""",
+        )
+        val sockets = Files.createDirectory(
+            tmp.resolve("s"),
+            PosixFilePermissions.asFileAttribute(PosixFilePermissions.fromString("rwx------")),
+        )
+        val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+        val place = MirrorPlace(tmp.resolve("r"), sockets, tmp.resolve("m.log"))
+        val mirrors = SessionMirrors(place, scope, Dispatchers.IO) { }
+        Files.createDirectories(tmp.resolve("r"))
+        val carrier = MirrorCarrier { _, _, _ -> MirrorCarried(null) }
+        try {
+            mirrors.mirror("mini", listOf(MirroredSession("a", "splice"), MirroredSession("b", "review")), carrier)
+            mirrors.shown("mini", 1)
+            mirrors.mirror("far", listOf(MirroredSession("c", "rig-lead")), carrier)
+            serve(mirrors = mirrors) { call ->
+                val view = read(call)
+                val mini = view.getValue("joined").jsonArray.single().jsonObject
+                assertEquals(2, mini.getValue("sessions_here").jsonPrimitive.int, "mini's two sessions are listed here")
+                assertEquals(1, mini.getValue("sessions_there").jsonPrimitive.int, "mini was shown this machine's one")
+                val far = view.getValue("remotes").jsonArray.single().jsonObject
+                assertEquals(1, far.getValue("sessions_here").jsonPrimitive.int)
+                assertFalse("sessions_there" in far, "far has not been shown this machine's sessions yet")
+            }
+        } finally {
+            mirrors.close()
+            scope.cancel()
         }
     }
 

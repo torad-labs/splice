@@ -139,7 +139,7 @@ internal class ShareServer(
     /** This machine's sessions and a joined machine's, each route for a joined machine only. */
     private fun sessionRoutes(root: Route) {
         root.route(SHARE_SESSIONS_PATH) {
-            get { guarded(call)?.let { sessions.list(call) } }
+            get { guarded(call)?.let { sessions.list(call, it) } }
             put { guarded(call)?.let { sessions.offer(call, it) } }
             get("/outbox") { guarded(call)?.let { sessions.outbox(call, it) } }
             post("/{id}/message") { guarded(call)?.let { sessions.note(call, it) } }

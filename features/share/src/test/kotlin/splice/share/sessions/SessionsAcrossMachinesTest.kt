@@ -32,8 +32,12 @@ import splice.core.topology.RemoteConfig
 import splice.core.topology.ShareConfig
 import splice.core.topology.Topology
 import splice.core.util.EnvReader
+import splice.sessions.mirror.MirrorCounts
 import splice.sessions.mirror.MirrorPlace
 import splice.sessions.mirror.SessionMirrors
+import splice.sessions.registry.SessionAvailability
+import splice.sessions.registry.SessionRegistry
+import splice.sessions.registry.SessionRoute
 import splice.share.ShareInfo
 import splice.share.ShareListener
 import splice.share.ShareStart
@@ -66,6 +70,9 @@ private const val POLL_MS = 50L
 
 // why: how long a test waits for what the next few looks bring before it fails.
 private const val SETTLE_MS = 15_000L
+
+// why: well past the half hour after which splice reads a session it has not heard from as stale.
+private const val HOUR_MS = 3_600_000L
 
 // why: the client name the joined machine gives, as `splice remote` gives its host name.
 private const val MINI = "mini"
@@ -104,7 +111,13 @@ class SessionsAcrossMachinesTest {
         val paths = StatePaths(envReader = EnvReader { env[it] })
         val mirrors = SessionMirrors(MirrorPlace(registry, sockets, home.resolve("m.log")), scope, Dispatchers.IO) { }
 
-        fun session(name: String) = ClaudeCodeSession(registry, sockets, name).also(opened::add)
+        fun session(name: String, heardAt: Long? = null) =
+            ClaudeCodeSession(registry, sockets, name, heardAt).also(opened::add)
+
+        /** How splice's Sessions page here reads the session named [name] at [now]: null when it is not listed. */
+        fun availability(name: String, now: Long): SessionAvailability? =
+            SessionRegistry(registry, { SessionRoute.Unknown }, clock = { now }).read()
+                .firstOrNull { it.name == name }?.availability
     }
 
     private val opened = mutableListOf<AutoCloseable>()
@@ -211,6 +224,32 @@ class SessionsAcrossMachinesTest {
         assertEquals(setOf("splice@$MINI"), onTorad, "torad shows mini's session, and no mirror of its own")
     }
 
+    /** Waits, up to a deadline, until [machine] reads [name] at [now] as [wanted], and answers how it reads it then. */
+    private fun reads(machine: Machine, name: String, now: Long, wanted: SessionAvailability) = runBlocking {
+        val until = System.currentTimeMillis() + SETTLE_MS
+        var read = machine.availability(name, now)
+        while (read != wanted && System.currentTimeMillis() < until) {
+            delay(POLL_MS)
+            read = machine.availability(name, now)
+        }
+        read
+    }
+
+    @Test
+    fun `a mirror reads stale or live as its session on the other machine does`() {
+        val now = System.currentTimeMillis()
+        val rig = torad.session("rig-lead", heardAt = now - HOUR_MS)
+        mini.session("splice")
+        join()
+        val mirror = "rig-lead@$toradName"
+        val idle = reads(mini, mirror, now, SessionAvailability.STALE)
+        assertEquals(SessionAvailability.STALE, idle, "idle an hour there")
+
+        rig.busyAt(now)
+        val busy = reads(mini, mirror, now, SessionAvailability.LIVE)
+        assertEquals(SessionAvailability.LIVE, busy, "busy there now")
+    }
+
     @Test
     fun `a message crosses to the session named, and its reply comes back the same way`() {
         val rig = torad.session("rig-lead")
@@ -242,6 +281,32 @@ class SessionsAcrossMachinesTest {
 
         torad.session("reviewer")
         assertTrue("reviewer@$toradName" in listed(splice) { "reviewer@$toradName" in it }, "a new session appears")
+    }
+
+    /** Waits, up to a deadline, until [machine]'s counts for [other] are [wanted], and answers them then. */
+    private fun counted(machine: Machine, other: String, wanted: MirrorCounts) = runBlocking {
+        val until = System.currentTimeMillis() + SETTLE_MS
+        var counts = machine.mirrors.counts(other)
+        while (counts != wanted && System.currentTimeMillis() < until) {
+            delay(POLL_MS)
+            counts = machine.mirrors.counts(other)
+        }
+        counts
+    }
+
+    @Test
+    fun `each machine counts the sessions crossing with the other each way, until it stops looking`() {
+        torad.session("rig-lead")
+        mini.session("splice")
+        mini.session("review")
+        val link = join()
+
+        assertEquals(MirrorCounts(here = 1, there = 2), counted(mini, toradName, MirrorCounts(1, 2)), "on mini")
+        assertEquals(MirrorCounts(here = 2, there = 1), counted(torad, MINI, MirrorCounts(2, 1)), "on torad")
+
+        runBlocking { link.cancelAndJoin() }
+        val quiet = MirrorCounts(here = 0, there = null)
+        assertEquals(quiet, counted(torad, MINI, quiet), "a machine that stopped looking is counted nothing either way")
     }
 
     @Test

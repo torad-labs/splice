@@ -96,8 +96,16 @@ function joinedHtml(joined, on) {
       ? `<span class="armed"><span class="said">Its next turn is refused until it joins again</span><button class="act small danger" data-act="revoke" data-name="${esc(m.name)}">Revoke</button><button class="act small quiet" data-act="keep">Keep</button></span>`
       : `<button class="act small quiet" data-act="arm" data-key="${esc(key)}">Revoke</button>`;
     return `<article class="card m" style="--c:var(--key-light)"><div class="top"><span class="name">${esc(m.name)}</span><span class="slot">${act}</span></div>
-      <p class="facts">${esc(seen)}</p><p class="facts mute">From ${esc(m.address)}, joined ${esc(when(m.joined_at))}</p>${saidHtml(key)}</article>`;
+      <p class="facts">${esc(seen)}</p><p class="facts mute">From ${esc(m.address)}, joined ${esc(when(m.joined_at))}</p>${sessionsHtml(m)}${saidHtml(key)}</article>`;
   }).join("")}</div>`;
+}
+
+/** How sessions cross with machine [m]: how many of its are listed here, and how many of this machine's it was last
+ *  shown. Nothing when no session crosses with it. */
+function sessionsHtml(m) {
+  if (m.sessions_here == null) return "";
+  const there = m.sessions_there == null ? "this machine's not listed there yet" : `${m.sessions_there} of this machine's listed there`;
+  return `<p class="facts sessions">${esc(`Sessions: ${m.sessions_here} of its listed here · ${there}`)}</p>`;
 }
 
 // ---------- other machines ----------
@@ -122,7 +130,7 @@ function remoteHtml(r) {
     : `<button class="act small" data-act="sync" data-name="${esc(r.name)}"${busy(key) ? " disabled" : ""}>${busy(key) ? WAIT : ""}Update models</button><button class="act small quiet" data-act="arm" data-key="${esc(key)}">Remove</button>`;
   const at = r.url.replace(/^https?:\/\//, "");
   return `<article class="card m" style="--c:var(${r.reachable === false || !r.token ? "--limit" : "--live"})"><div class="top"><span class="name">${esc(r.name)}</span><span class="at">${esc(at)}</span><span class="slot">${acts}</span></div>
-    <p class="facts">${state}</p><ul class="cmdlist">${cmds || `<li class="none">It offers no commands</li>`}</ul>${saidHtml(key)}</article>`;
+    <p class="facts">${state}</p>${sessionsHtml(r)}<ul class="cmdlist">${cmds || `<li class="none">It offers no commands</li>`}</ul>${saidHtml(key)}</article>`;
 }
 /** The machines the last scan found that this one does not use yet, each with what it offers. */
 function foundHtml(s) {

@@ -31,9 +31,14 @@ import splice.upstream.Ticker
 import java.util.concurrent.ConcurrentHashMap
 import kotlin.time.Duration.Companion.seconds
 
-/** One session as the link spells it: its id on its own machine, and its name there. */
+/** One session as the link spells it: its id on its own machine, its name there, and when it was last heard from there,
+ *  in that machine's epoch milliseconds. */
 @Serializable
-internal data class ShareSession(val id: String, val name: String)
+internal data class ShareSession(
+    val id: String,
+    val name: String,
+    @SerialName("heard_at") val heardAt: Long? = null,
+)
 
 /** `GET` and `PUT /share/v1/sessions`: a machine's running sessions, and on a `PUT`, how often it looks, which sets how
  *  long its mirrors last here without another. */
@@ -73,10 +78,12 @@ internal class ShareSessionHost(
     /** When each machine's mirrors here end, in epoch ms, unless it offers its sessions again before. */
     private val leases = ConcurrentHashMap<String, Long>()
 
-    /** This machine's running sessions. */
-    suspend fun list(call: ApplicationCall) {
+    /** This machine's running sessions, as [client] is shown them. */
+    suspend fun list(call: ApplicationCall, client: String) {
         val hosting = hosted(call) ?: return
-        respond(call, ShareSessions.serializer(), ShareSessions(hosting.local().map { ShareSession(it.id, it.name) }))
+        val sessions = hosting.local().map { ShareSession(it.id, it.name, it.heardAt) }
+        respond(call, ShareSessions.serializer(), ShareSessions(sessions))
+        hosting.shown(client, sessions.size)
     }
 
     /** [client]'s running sessions, mirrored here from now on. */
@@ -121,7 +128,7 @@ internal class ShareSessionHost(
     }
 
     private fun withdraw(client: String) {
-        mirrors?.mirror(client, emptyList(), outboxes.carrier(client))
+        mirrors?.withdraw(client)
     }
 
     private suspend fun hosted(call: ApplicationCall): SessionMirrors? {
@@ -146,7 +153,7 @@ internal class ShareSessionHost(
         call.respondText(errors.body(message), ContentType.Application.Json, HttpStatusCode.fromValue(status))
     }
 
-    private fun mirrored(session: ShareSession) = MirroredSession(session.id, session.name)
+    private fun mirrored(session: ShareSession) = MirroredSession(session.id, session.name, session.heardAt)
 }
 
 /** The notes a session here wrote to a joined machine's mirror, waiting for that machine to collect them. */
@@ -170,7 +177,7 @@ internal class ShareOutboxes {
     private fun box(client: String): Channel<ShareOutboxNote> =
         boxes.computeIfAbsent(client) { Channel(OUTBOX_CAPACITY) }
 
-    private fun spelled(session: MirroredSession) = ShareSession(session.id, session.name)
+    private fun spelled(session: MirroredSession) = ShareSession(session.id, session.name, session.heardAt)
 }
 
 internal const val SHARE_SESSIONS_PATH: String = "/share/v1/sessions"

@@ -5,6 +5,7 @@
 package splice.app.control.api.share
 
 import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.JsonObjectBuilder
 import kotlinx.serialization.json.addJsonObject
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
@@ -78,8 +79,17 @@ internal class SharingView(private val parts: SharingParts, private val file: To
                     put("last_seen", it.lastSeen)
                     put("turns_today", it.turnsOn(today))
                 }
+                crossing(machine.name, this)
             }
         }
+    }
+
+    /** How sessions cross with [machine]: how many of its sessions are listed here, and how many of this machine's it
+     *  was last shown, left out until it has been. Nothing where this daemon hosts no mirrors. */
+    private fun crossing(machine: String, into: JsonObjectBuilder) {
+        val counts = parts.listener.mirrors?.counts(machine) ?: return
+        into.put("sessions_here", counts.here)
+        counts.there?.let { into.put("sessions_there", it) }
     }
 
     /** One machine this one joined: where it is, its pin, whether a token is kept for it, whether it answered the last
@@ -93,6 +103,7 @@ internal class SharingView(private val parts: SharingParts, private val file: To
             put("url", remote.url)
             remote.fingerprint?.let { put("fingerprint", it) }
             put("token", name in tokens)
+            crossing(name, this)
             reach?.let { found ->
                 put("reachable", found.reachable)
                 put("since", found.since)

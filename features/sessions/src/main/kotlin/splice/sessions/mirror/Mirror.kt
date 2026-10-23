@@ -27,6 +27,7 @@ import splice.sessions.peer.helper.RECORD_MODE
 import splice.sessions.peer.helper.RegistryKeyFile
 import splice.sessions.peer.helper.RegistryRecordFile
 import splice.sessions.peer.helper.SocketBind
+import splice.sessions.registry.MIRROR_KIND
 import java.nio.channels.ServerSocketChannel
 import java.nio.file.Files
 import java.nio.file.Path
@@ -34,10 +35,6 @@ import java.nio.file.attribute.PosixFilePermissions
 import java.security.SecureRandom
 import java.util.HexFormat
 import java.util.UUID
-
-/** What a mirror's record says it is, in `kind`, `entrypoint` and `version`: how a listing here tells it from a
- *  session of this machine's own. */
-internal const val MIRROR_KIND = "splice-mirror"
 
 // why: the anchor holds a pid and nothing else; cat reads its pipe from the daemon and exits at its end, which comes
 // when the daemon exits, however it exits.
@@ -65,6 +62,14 @@ internal class Mirror(
 
     private var channel: ServerSocketChannel? = null
     private var serving: Job? = null
+    private val openedAt = System.currentTimeMillis()
+    private val procStart by lazy { parts.identity.procStart(pid) }
+    private val domain by lazy { parts.identity.hostDomain() }
+
+    /** When its session was last heard from on its machine, which its record's times say; null until that machine
+     *  says, when they say the mirror opened. */
+    @Volatile
+    private var heardAt: Long? = session.heardAt
 
     /** Whether its anchor still holds the pid its record names. */
     fun alive(): Boolean = anchor.isAlive
@@ -87,6 +92,16 @@ internal class Mirror(
         return null
     }
 
+    /** Takes when [listed], its session as its machine lists it now, was last heard from, and rewrites the record when
+     *  that moved, so a listing here reads the session live or stale as its own machine does. */
+    fun heard(listed: MirroredSession) {
+        val at = listed.heardAt ?: return
+        if (at == heardAt) return
+        heardAt = at
+        Cancellables.runCatchingCancellable { writeRecord() }
+            .onFailure { parts.helperLog.error("record unrefreshed", it) }
+    }
+
     /** Removes its record and then its key file, closes its socket and ends its anchor. */
     fun close() {
         val dir = parts.place.registry
@@ -104,17 +119,18 @@ internal class Mirror(
     }
 
     private fun register() {
-        val dir = parts.place.registry
-        val procStart = parts.identity.procStart(pid)
-        val domain = parts.identity.hostDomain()
         val key = parts.files.encode(RegistryKeyFile(token, procStart, domain))
-        SecureFile.writeAtomic0600(parts.files.key(dir, pid, socket), key)
-        val now = System.currentTimeMillis()
+        SecureFile.writeAtomic0600(parts.files.key(parts.place.registry, pid, socket), key)
+        writeRecord()
+    }
+
+    private fun writeRecord() {
+        val heard = heardAt ?: openedAt
         val record = RegistryRecordFile(
             pid = pid,
             sessionId = UUID.nameUUIDFromBytes("$machine/${session.id}".toByteArray()).toString(),
             cwd = NO_CWD,
-            startedAt = now,
+            startedAt = openedAt,
             procStart = procStart,
             version = "$MIRROR_KIND/$GATEWAY_VERSION",
             peerFeatures = emptyList(),
@@ -123,11 +139,11 @@ internal class Mirror(
             pidDomain = domain,
             messagingSocketPath = socket.toString(),
             name = from.name,
-            nameSince = now,
-            updatedAt = now,
-            statusUpdatedAt = now,
+            nameSince = openedAt,
+            updatedAt = heard,
+            statusUpdatedAt = heard,
         )
-        val path = parts.files.record(dir, pid)
+        val path = parts.files.record(parts.place.registry, pid)
         SecureFile.writeAtomic0600(path, parts.files.encode(record))
         Files.setPosixFilePermissions(path, PosixFilePermissions.fromString(RECORD_MODE))
     }
@@ -196,7 +212,7 @@ internal object MirrorNames {
         val repeated = safe.groupingBy { it }.eachCount().filterValues { it > 1 }.keys
         return sessions.zip(safe) { session, name ->
             val tag = safe(session.id).take(ID_CHARS)
-            MirroredSession(session.id, if (name in repeated) "${name.take(MAX_CHARS - ID_CHARS - 1)}-$tag" else name)
+            session.copy(name = if (name in repeated) "${name.take(MAX_CHARS - ID_CHARS - 1)}-$tag" else name)
         }
     }
 

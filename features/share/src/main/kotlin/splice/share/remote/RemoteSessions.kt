@@ -61,23 +61,24 @@ public class RemoteSessions(
                 runInterruptible(io) {
                     val api = links.api(name)
                     val theirs = api.sessions(url)
-                    api.offer(url, mirrors.local().map { ShareSession(it.id, it.name) }, lookMs)
-                    theirs.map { MirroredSession(it.id, it.name) }
+                    val ours = mirrors.local()
+                    api.offer(url, ours.map { ShareSession(it.id, it.name, it.heardAt) }, lookMs)
+                    theirs.map { MirroredSession(it.id, it.name, it.heardAt) } to ours.size
                 }
             }
-            val theirs = looked.fold(
-                onSuccess = { found ->
+            looked.fold(
+                onSuccess = { (theirs, shown) ->
                     if (failing) log("[remote $name] its sessions are mirrored here again\n")
                     failing = false
-                    found
+                    withContext(io) { mirrors.mirror(name, theirs, carrier) }
+                    mirrors.shown(name, shown)
                 },
                 onFailure = { failure ->
                     if (!failing) log("[remote $name] its sessions are not mirrored here: ${said(failure)}\n")
                     failing = true
-                    emptyList()
+                    withContext(io) { mirrors.withdraw(name) }
                 },
             )
-            withContext(io) { mirrors.mirror(name, theirs, carrier) }
         } while (currentCoroutineContext().isActive && ticker.awaitTick(lookMs))
     }
 

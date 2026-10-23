@@ -2,10 +2,12 @@
 # tools/e2e/docker/plan-limit.sh — an Anthropic plan-limit 429, through splice, to the REAL Claude
 # Code at the pinned version. Run INSIDE the container by `run.sh --scenario plan-limit`.
 #
-# Single-login native refusals reach Claude Code as HTTP 429 with unchanged body and rate-limit
-# headers, with one upstream attempt and no proxy retries. That client runs in persistent retry
-# mode (CLAUDE_CODE_RETRY_WATCHDOG=1), sleeps until the reset and resumes. A pooled refusal moves
-# the same request to a free login before any client response.
+# Single-login native refusals reach Claude Code as HTTP 429 with the native body and rate-limit
+# headers verbatim, except unified-reset (and retry-after, if sent), which name splice's 30 s
+# recheck when the native one is later (ClientRecheck.kt); one upstream attempt, no proxy retries.
+# That client runs in persistent retry mode (CLAUDE_CODE_RETRY_WATCHDOG=1): it asks again at each
+# 30 s recheck, which splice answers locally while the limit holds, and resumes after the reset.
+# A pooled refusal moves the same request to a free login before any client response.
 # The upstream is mock_anthropic.ts: a five-hour plan-limit 429
 # with the unified headers Claude Code reads, until its reset, then 200.
 #
@@ -202,11 +204,11 @@ pool_turn() {
 }
 step "real Claude Code: same request completes on the next login without hearing 429" pool_turn
 
-# ── 4. native HTTP 429: unchanged wire, one attempt, local follower, bounded re-probe ───────────
-step "native 429: verbatim headers and body, one attempt without proxy retries" \
+# ── 4. native HTTP 429: native wire but recheck deadlines, one attempt, local follower, re-probe ──
+step "native 429: verbatim body and headers except the 30 s recheck deadlines, one attempt without proxy retries" \
   bun "$PLAN_TS" probe "$PROBE_HEAD_PORT" "$OUT/first-frame.json" "$OUT/upstream-probe.jsonl"
 
-# ── 5. the real client sleeps through the limit and resumes after the reset ─────────────────────
+# ── 5. the real client rechecks every 30 s through the limit and resumes after the reset ───────
 plan_turn() {
   local out rc
   out="$(ANTHROPIC_API_KEY=mock-key DISABLE_AUTOUPDATER=1 DISABLE_TELEMETRY=1 DISABLE_ERROR_REPORTING=1 \

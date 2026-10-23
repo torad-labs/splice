@@ -2,10 +2,12 @@
 /** The structured half of plan-limit.sh: what the client is told, and what the upstream saw.
  *
  *  probe <port> <out> <log> three turns compared with the mock's recorded native responses:
- *                           FIRST, streamed: HTTP 429 with unchanged body and rate-limit headers,
+ *                           FIRST, streamed: HTTP 429 with the native body and rate-limit headers,
  *                           one upstream attempt; SECOND, streamed at once: that same native
  *                           refusal, held locally with no upstream attempt; THIRD, buffered after
- *                           the bounded hold: one new attempt, again relayed unchanged.
+ *                           the bounded hold: one new attempt, again relayed. The body and every
+ *                           header are verbatim except unified-reset and retry-after, which name
+ *                           splice's 30 s recheck (ClientRecheck.kt) when the native one is later.
  *  upstream <log> [max]     the mock's request log as a timeline, and how many turns reached the
  *                           upstream while it was still at its limit. With [max], more than that
  *                           many fails.
@@ -21,6 +23,10 @@ class CheckFailed extends Error {}
 /** The longest the head refuses on its own before a turn probes the upstream again: NF-01's clamp,
  *  MAX_RATE_LIMIT_COOLDOWN_MS in integrations/upstream's RateLimitCooldown.kt. */
 const HEAD_HOLD_CEILING_MS = 120_000;
+/** How soon a limit answer tells the client to ask again: CLIENT_RECHECK_SECONDS in features/turns' ClientRecheck.kt. */
+const CLIENT_RECHECK_S = 30;
+const UNIFIED_RESET = "anthropic-ratelimit-unified-reset";
+const RETRY_AFTER = "retry-after";
 function check(condition: unknown, message: string): asserts condition {
   if (!condition) throw new CheckFailed(message);
 }
@@ -30,7 +36,9 @@ interface Answer {
   headers: Record<string, string>;
   body: string;
   elapsed_ms: number;
-  /** When the answer was whole (epoch ms): the clock a reset it carries is judged against. */
+  /** When the request was sent (epoch ms): the earliest clock a recheck deadline on the answer can have been written at. */
+  started_ms: number;
+  /** When the answer was whole (epoch ms): the latest such clock, and the one a reset it carries is judged against. */
   received_ms: number;
 }
 
@@ -53,7 +61,7 @@ async function turn(port: string, stream = true): Promise<Answer> {
   });
   const body = await res.text();
   const received = Date.now();
-  return { status: res.status, headers, body, elapsed_ms: received - started, received_ms: received };
+  return { status: res.status, headers, body, elapsed_ms: received - started, started_ms: started, received_ms: received };
 }
 
 interface NativeReply {
@@ -76,12 +84,36 @@ function nativeReply(answer: Answer, expected: NativeReply | undefined, label: s
   const source = Object.entries(expected.headers).filter(([name]) => selected(name));
   check(source.length > 0, `${label}: the mock recorded no rate-limit headers`);
   for (const [name, value] of source) {
-    check(answer.headers[name] === value, `${label}: ${name} changed: expected '${value}', got '${answer.headers[name]}'`);
+    if (name === UNIFIED_RESET) recheckReset(answer, value, label);
+    else if (name === RETRY_AFTER) recheckRetryAfter(answer, value, label);
+    else check(answer.headers[name] === value, `${label}: ${name} changed: expected '${value}', got '${answer.headers[name]}'`);
   }
   check(Object.keys(answer.headers).filter(selected).length === source.length, `${label}: splice invented rate-limit headers`);
-  console.log(`${label} ${answer.status} after ${answer.elapsed_ms} ms; native body and ${source.length} headers unchanged`);
-  for (const [name, value] of source) console.log(`  ${name}: ${value}`);
+  console.log(`${label} ${answer.status} after ${answer.elapsed_ms} ms; native body and ${source.length} headers relayed, `
+    + `retry deadlines at splice's ${CLIENT_RECHECK_S} s recheck`);
+  for (const [name, value] of source) {
+    const named = answer.headers[name];
+    console.log(`  ${name}: ${named}${named === value ? "" : ` (native ${value})`}`);
+  }
   console.log(`  ${answer.body}`);
+}
+
+/** ClientRecheck.unifiedReset: a native reset later than floor(now) + 30 s is written as that recheck, `now` being when the
+ *  head wrote the answer, between the request's start and the answer's arrival. */
+function recheckReset(answer: Answer, native: string, label: string): void {
+  const named = answer.headers[UNIFIED_RESET];
+  const earliest = Math.floor(answer.started_ms / 1000) + CLIENT_RECHECK_S;
+  const latest = Math.floor(answer.received_ms / 1000) + CLIENT_RECHECK_S;
+  check(named !== undefined && Number(named) >= earliest && Number(named) <= latest,
+    `${label}: ${UNIFIED_RESET} should name the ${CLIENT_RECHECK_S} s recheck, between ${earliest} and ${latest}, got '${named}'`);
+  check(Number(named) < Number(native), `${label}: ${UNIFIED_RESET} '${named}' is not earlier than the native '${native}'`);
+}
+
+/** ClientRecheck.retryAfter: a native wait of more than 30 s (seconds, as the mock sends it) is written as "30"; a shorter one stays. */
+function recheckRetryAfter(answer: Answer, native: string, label: string): void {
+  const expected = /^\d+$/.test(native) && Number(native) > CLIENT_RECHECK_S ? String(CLIENT_RECHECK_S) : native;
+  check(answer.headers[RETRY_AFTER] === expected,
+    `${label}: ${RETRY_AFTER} expected '${expected}' for native '${native}', got '${answer.headers[RETRY_AFTER]}'`);
 }
 
 const verbs: Record<string, (argv: readonly string[]) => Promise<void> | void> = {
@@ -100,8 +132,9 @@ const verbs: Record<string, (argv: readonly string[]) => Promise<void> | void> =
     check(attempts.length === 1, "the held follower reached upstream");
     nativeReply(second, attempts[0], "SECOND");
 
-    // The native plan reset remains on the wire, but splice's local horizon still ends at its ceiling.
-    const namedReset = Number(second.headers["anthropic-ratelimit-unified-reset"] ?? "0") * 1000;
+    // The head holds from the upstream's own reset, bounded by its ceiling; the reset on the client's answer names only
+    // splice's 30 s recheck, so the wait is scheduled from the native reply the mock recorded.
+    const namedReset = Number(attempts[0]?.headers[UNIFIED_RESET] ?? "0") * 1000;
     const holdUntil = Math.min(namedReset, second.received_ms + HEAD_HOLD_CEILING_MS);
     await Bun.sleep(Math.max(0, holdUntil - Date.now()) + 1_000);
     const third = await turn(port, false);

@@ -4,6 +4,7 @@
 package splice.app.share
 
 import splice.app.control.ManagedHead
+import splice.core.config.ConfigService
 import splice.core.config.MgmtKey
 import splice.core.config.StatePaths
 import splice.core.config.TurnKey
@@ -19,6 +20,8 @@ internal class ShareStart(
     private val topology: Topology,
     private val statePaths: StatePaths,
     private val mgmtKey: MgmtKey,
+    /** Each offered head's live config: the relay reads a client's body under that head's own limits. */
+    private val config: ConfigService,
     private val log: LogSink,
 ) {
     fun start(running: Map<String, ManagedHead>): ShareServer? {
@@ -30,7 +33,7 @@ internal class ShareStart(
             ShareHeads(topology, running, host.short()),
             ShareClients(ShareState(statePaths).clientsFile),
             ShareNetwork(host.full(), share.hostnames),
-            ShareRelay(TurnKey(mgmtKey), ProcessDispatchers().io(), log),
+            ShareRelay(TurnKey(mgmtKey), config, ProcessDispatchers().io(), log),
             log,
         )
         return Cancellables.runCatchingCancellable { server.also(ShareServer::start) }.fold(

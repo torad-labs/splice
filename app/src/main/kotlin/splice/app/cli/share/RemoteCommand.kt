@@ -126,7 +126,9 @@ internal class RemoteCommand(
                 command = command,
                 baseUrl = baseUrl,
                 token = joined.token,
-                models = shared.models.map { RemoteModel(it.id, it.label, it.contextWindow, it.slots) },
+                models = shared.models.map {
+                    RemoteModel(it.id, it.label, it.contextWindow, it.slots, it.compactionReserve)
+                },
             )
             if (verb.addRemote(head, env)) {
                 added = true
@@ -137,10 +139,11 @@ internal class RemoteCommand(
         return ready
     }
 
-    /** The key and command a shared head is written under here: its own, or, when either is taken by a head that
-     *  is not this one, `<name>-<server>` once the person agrees. Null skips the head. */
+    /** The key and command a shared head is written under here: its own, or, when the key names a head or a provider
+     *  here or the command is another head's, `<name>-<server>` once the person agrees. Null skips the head. */
     private fun localNames(topology: Topology, key: String, command: String, server: String): Pair<String, String>? {
-        val taken = key in topology.heads || topology.heads.any { (k, head) -> (head.claude.command ?: k) == command }
+        val keyTaken = key in topology.heads || key in topology.providers
+        val taken = keyTaken || topology.heads.any { (k, head) -> (head.claude.command ?: k) == command }
         if (!taken) return key to command
         val suffix = server.lowercase().replace(Regex("[^a-z0-9-]"), "-")
         return if (confirm("'$command' is already a command here. Add $server's as '$command-$suffix'?", true)) {

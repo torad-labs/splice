@@ -56,10 +56,9 @@ internal class CollectTurn(
      *  Messages JSON body — no SSE channel, no liveness pinger. */
     suspend fun collect(call: ApplicationCall, inputs: TurnInputs): Boolean {
         val built = inputs.built
-        val terminal = CollectingTerminal(
-            built.meta.route.originalModel,
-            wiring.usagePayloadBuilder(provider.catalog, built.meta, clientWindow.of(call, built.meta.scope.sessionId)),
-        )
+        val window = clientWindow.of(call, built.meta.scope.sessionId)
+        val usage = wiring.usagePayloadBuilder(provider.catalog, built.meta, window, !clientWindow.relayed(call))
+        val terminal = CollectingTerminal(built.meta.route.originalModel, usage)
         // Inert writer: collect never writes SSE frames. clientGone is flipped by Netty
         // closeFuture (HD-29), not by a failed write.
         val channel = ClientChannel(

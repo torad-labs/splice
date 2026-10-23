@@ -9,6 +9,7 @@ import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
 import splice.app.control.ManagedHead
 import splice.core.GATEWAY_VERSION
+import splice.core.model.CompactionBudgets
 import splice.core.topology.Topology
 
 /** `GET /share/v1/info`: who this machine is and the heads it offers, as their pickers show them now. */
@@ -35,6 +36,10 @@ internal data class SharedModel(
     val label: String,
     @SerialName("context_window") val contextWindow: Long,
     val slots: List<String> = emptyList(),
+    /** The context this head holds back below [contextWindow] when it places the client's compaction (a row
+     *  override or the provider's calibration), null for none. The client's head scales the relayed counts, which
+     *  arrive raw, so it mirrors this as the row's `compaction_reserve_tokens`. */
+    @SerialName("compaction_reserve_tokens") val compactionReserve: Long? = null,
 )
 
 /** The heads this machine offers, described from what each running head serves NOW: its live catalog (rows,
@@ -56,10 +61,13 @@ internal class ShareHeads(
     fun info(): ShareInfo = ShareInfo(server, GATEWAY_VERSION, offered.mapNotNull(::described))
 
     private fun described(key: String): SharedHead? {
-        val catalog = running[key]?.let { it.statusline.catalog }?.live() ?: return null
+        val served = running[key]?.let { it.statusline.catalog } ?: return null
+        val catalog = served.live()
         val slots = catalog.client.tierModels.entries.groupBy({ it.value }, { it.key })
         val rows = catalog.models.map { row ->
-            SharedModel(row.id, row.label.ifBlank { row.id }, row.contextWindow, slots[row.id].orEmpty().sorted())
+            val reserve = CompactionBudgets.forRow(served, row.id)?.totalTokens
+            val label = row.label.ifBlank { row.id }
+            SharedModel(row.id, label, row.contextWindow, slots[row.id].orEmpty().sorted(), reserve)
         }
         val pinned = rows.firstOrNull { it.id == catalog.pinnedModel }
         val command = topology.heads[key]?.let { it.claude.command } ?: key

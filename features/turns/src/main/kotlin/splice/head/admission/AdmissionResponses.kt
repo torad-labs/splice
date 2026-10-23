@@ -22,7 +22,8 @@ import java.time.ZoneOffset
 import java.time.format.DateTimeFormatter
 import java.util.Locale
 
-private const val INVALID_REQUEST_ERROR = "invalid_request_error"
+// The error type a request the head will not read is answered with; the share relay refuses a body with it too.
+public const val INVALID_REQUEST_ERROR: String = "invalid_request_error"
 private const val PERMISSION_ERROR = "permission_error"
 
 /** Shared pre-turn HTTP bodies. The real response status owns retry semantics, not the SSE rule. */

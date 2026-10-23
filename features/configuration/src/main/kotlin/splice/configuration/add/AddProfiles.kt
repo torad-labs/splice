@@ -32,6 +32,8 @@ internal data class AddModel(
     val rates: ModelRates? = null,
     /** V4-232: the Claude model the client resolves this row as (ModelEntry.clientModel). Null = none. */
     val clientModel: String? = null,
+    /** ModelEntry.compactionReserveTokens: a remote head mirrors the reserve its sharing head compacts by. */
+    val compactionReserve: Long? = null,
 ) {
     /** The rate card emitted INLINE on the model row — never as a `[providers.X.models.rates]`
      *  sub-table. That spelling repeats its header once per model, and splice's own
@@ -171,7 +173,8 @@ public class AddProfiles {
                 "id = \"${m.id}\"",
                 "label = \"${m.label}\"",
                 "context_window = ${m.contextWindow}",
-            ) + m.clientModel?.let { listOf("client_model = \"$it\"") }.orEmpty() + m.ratesLine()
+            ) + m.clientModel?.let { listOf("client_model = \"$it\"") }.orEmpty() +
+                m.compactionReserve?.let { listOf("compaction_reserve_tokens = $it") }.orEmpty() + m.ratesLine()
         }
         val kin = family?.let { listOf("[providers.$key.discovery]", "family = \"$it\"") }.orEmpty()
         val provider = origin + (tables + kin).takeIf { shared == null }.orEmpty()

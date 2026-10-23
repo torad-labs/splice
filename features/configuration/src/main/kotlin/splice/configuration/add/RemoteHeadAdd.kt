@@ -37,6 +37,9 @@ public data class RemoteModel(
     public val label: String,
     public val contextWindow: Long,
     public val slots: List<String>,
+    /** The context the sharing head holds back below [contextWindow] when it places the client's compaction, null
+     *  when it holds none. This machine's head scales the relayed raw counts, so it needs the same reserve. */
+    public val compactionReserve: Long? = null,
 )
 
 internal class RemoteHeadAdd(
@@ -45,11 +48,10 @@ internal class RemoteHeadAdd(
 ) {
     private val profiles = AddProfiles()
 
-    /** The token is stored first, so the add's credential check finds it; AddCommand's answer is returned. */
-    suspend fun add(head: RemoteHead, env: EnvReader): Boolean {
-        if (!storeToken(head.key, head.token, env)) return false
-        return command.addDescribed(profile(head), env)
-    }
+    /** The token is stored once the add's refusals have passed and before its checks, so the credential check
+     *  finds it; AddCommand's answer is returned. */
+    suspend fun add(head: RemoteHead, env: EnvReader): Boolean =
+        command.addDescribed(profile(head), env, TokenClaim(head.token, profiles.apiKeyEnv(head.key), env))
 
     /** A head imported before only needs its new token: a machine that joins again gets a fresh one, and the
      *  old one stops working on the sharing machine. */
@@ -86,6 +88,49 @@ internal class RemoteHeadAdd(
         // A splice head leaves its pinned model out of /v1/models, so its list cannot decide the rows. Tiers go in a
         // model_slots table: the sharing head may put one model behind several tiers, which a models list refuses.
         policy = AddModelPolicy(listAuthoritative = false, tierTable = true),
-        models = head.models.map { AddModel(it.id, it.label, it.contextWindow, slots = it.slots) },
+        models = head.models.map {
+            AddModel(it.id, it.label, it.contextWindow, slots = it.slots, compactionReserve = it.compactionReserve)
+        },
     )
+
+    /** A new head's token, written only under a name nothing else here uses: no other provider reads [envVar] and
+     *  the key store holds nothing under it, so an import never replaces a key it did not write. Taken back when
+     *  the add writes nothing, unless a `splice key set` replaced it in between. */
+    private inner class TokenClaim(
+        private val token: String,
+        private val envVar: String,
+        env: EnvReader,
+    ) : AddSideWrite {
+        private val store = KeyStore(KeyStorePath.defaultPath(env))
+        private var claimed = false
+
+        override fun claim(candidate: AddCandidate): Boolean {
+            val reader = candidate.topology.providers.entries.firstOrNull { (key, provider) ->
+                val auth = provider.auth
+                key != candidate.providerKey && auth.isApiKey && auth.effectiveApiKeyEnv(key) == envVar
+            }?.key
+            if (reader != null) {
+                output.line("  [providers.$reader] already reads $envVar; import this head under another name")
+                return false
+            }
+            claimed = Cancellables.runCatchingCancellable { store.placeholders.writeIfAbsent(envVar, token) }.fold(
+                onSuccess = { it },
+                onFailure = {
+                    output.line("  could not store $envVar in ${store.path}: ${SafeFailureText.render(it)}")
+                    return false
+                },
+            )
+            if (!claimed) {
+                val fix = "import this head under another name, or free the name with: splice key unset $envVar"
+                output.line("  $envVar already holds a key in ${store.path}, which an import never replaces; $fix")
+            }
+            return claimed
+        }
+
+        override fun release() {
+            if (!claimed) return
+            Cancellables.runCatchingCancellable { store.placeholders.unsetIfValue(envVar, token) }
+                .onFailure { output.line("  $envVar left in ${store.path}: ${SafeFailureText.render(it)}") }
+        }
+    }
 }

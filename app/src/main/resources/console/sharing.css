@@ -56,6 +56,14 @@
 .facts.mute { margin-top: .25rem; font-weight: 400; color: var(--text-mute); }
 .facts .state { white-space: normal; }
 
+/* whether Claude Code sessions cross with the machine: its name, the counts while on or why nothing crosses while off,
+   and the switch at the end, in the page's own Off | On order */
+.crossing { display: flex; flex-wrap: wrap; align-items: center; gap: .3rem .7rem; margin-top: .7rem; min-height: 2.2rem; }
+.crossing .sub { font: 500 .95rem/1.2 var(--font-name); color: var(--text); }
+.crossing .hint { flex: 1 1 14rem; }
+.crossing > .switch { margin-left: auto; }
+.crossing .sessions { color: var(--text-body); }
+
 .empty { margin: 0; font: 500 .95rem/1.45 var(--font-name); color: var(--text-mute); max-width: 40rem; }
 .empty.limit { color: var(--limit); }
 .empty code { font: 500 .9rem/1 var(--font-data); color: var(--text-body); }

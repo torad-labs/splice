@@ -137,26 +137,33 @@ internal class ShareServer(
         sessionRoutes(root)
     }
 
-    /** This machine's sessions and a joined machine's, each route for a joined machine only. */
+    /** This machine's sessions and a joined machine's, each route for a joined machine whose Sessions switch is on. */
     private fun sessionRoutes(root: Route) {
         root.route(SHARE_SESSIONS_PATH) {
-            get { guarded(call)?.let { sessions.list(call, it) } }
-            put { guarded(call)?.let { sessions.offer(call, it) } }
-            get("/outbox") { guarded(call)?.let { sessions.outbox(call, it) } }
-            post("/{id}/message") { guarded(call)?.let { sessions.note(call, it) } }
+            get { guarded(call, crossing = true)?.let { sessions.list(call, it) } }
+            put { guarded(call, crossing = true)?.let { sessions.offer(call, it) } }
+            get("/outbox") { guarded(call, crossing = true)?.let { sessions.outbox(call, it) } }
+            post("/{id}/message") { guarded(call, crossing = true)?.let { sessions.note(call, it) } }
         }
     }
 
     /** The joined machine whose token this is, counted as heard from ([turn] counts a relayed turn); anything else is
-     *  answered here, with a 401 in words, and is null. */
-    private suspend fun guarded(call: ApplicationCall, turn: Boolean = false): String? {
+     *  answered here, with a 401 in words, and is null. A route that [crossing] reaches this machine's sessions also
+     *  needs that machine's Sessions switch on here (the President's decision on the round-1 review, Oct 23: trust the
+     *  LAN for commands, not for sessions); one whose switch is off is answered with a 403 in words, and is null. */
+    private suspend fun guarded(call: ApplicationCall, turn: Boolean = false, crossing: Boolean = false): String? {
         val bearer = BearerScheme.bearerToken(call.request.headers[HttpHeaders.Authorization])
         val holder = withContext(io) { clients.holder(bearer)?.also { clients.activity.heard(it.name, turn) } }
-        if (holder == null) {
-            val why = "this machine has not joined, or was revoked; run `splice remote` again"
-            refuse(call, HttpStatus.UNAUTHORIZED, why)
+        val refused = when {
+            holder == null ->
+                HttpStatus.UNAUTHORIZED to "this machine has not joined, or was revoked; run `splice remote` again"
+            crossing && !holder.sessions ->
+                HttpStatus.FORBIDDEN to "${heads.server} does not share its sessions with '${holder.name}': turn " +
+                    "Sessions on for it on ${heads.server}'s Sharing page"
+            else -> null
         }
-        return holder?.name
+        refused?.let { (status, why) -> refuse(call, status, why) }
+        return holder?.name?.takeIf { refused == null }
     }
 
     private suspend fun roster(call: ApplicationCall) {

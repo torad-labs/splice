@@ -96,16 +96,24 @@ function joinedHtml(joined, on) {
       ? `<span class="armed"><span class="said">Its next turn is refused until it joins again</span><button class="act small danger" data-act="revoke" data-name="${esc(m.name)}">Revoke</button><button class="act small quiet" data-act="keep">Keep</button></span>`
       : `<button class="act small quiet" data-act="arm" data-key="${esc(key)}">Revoke</button>`;
     return `<article class="card m" style="--c:var(--key-light)"><div class="top"><span class="name">${esc(m.name)}</span><span class="slot">${act}</span></div>
-      <p class="facts">${esc(seen)}</p><p class="facts mute">From ${esc(m.address)}, joined ${esc(when(m.joined_at))}</p>${sessionsHtml(m)}${saidHtml(key)}</article>`;
+      <p class="facts">${esc(seen)}</p><p class="facts mute">From ${esc(m.address)}, joined ${esc(when(m.joined_at))}</p>${crossingHtml(m, "machines", key)}${saidHtml(key)}</article>`;
   }).join("")}</div>`;
 }
 
-/** How sessions cross with machine [m]: how many of its are listed here, and how many of this machine's it was last
- *  shown. Nothing when no session crosses with it. */
-function sessionsHtml(m) {
+/** Whether Claude Code sessions cross with this machine, and the switch that says so: off until he turns it on. [side]
+ *  is "machines" for one that joined this machine and "remotes" for one this machine joined. */
+function crossingHtml(m, side, key) {
+  const on = m.sessions === true;
+  const says = on ? countsHtml(m) : `<span class="hint">Off: its sessions and this machine's don't see or message each other</span>`;
+  const btn = (want, label) => `<button data-act="sessions" data-side="${side}" data-name="${esc(m.name)}" data-on="${want ? 1 : 0}" aria-pressed="${on === want}"${busy(key) ? " disabled" : ""}>${label}</button>`;
+  return `<div class="crossing"><span class="sub">Sessions</span>${says}<div class="switch small" role="group" aria-label="Sessions with ${esc(m.name)}">${btn(false, "Off")}${btn(true, "On")}</div></div>`;
+}
+
+/** How many of its sessions are listed here and how many of this machine's there, beside the switch that is on. */
+function countsHtml(m) {
   if (m.sessions_here == null) return "";
   const there = m.sessions_there == null ? "this machine's not listed there yet" : `${m.sessions_there} of this machine's listed there`;
-  return `<p class="facts sessions">${esc(`Sessions: ${m.sessions_here} of its listed here · ${there}`)}</p>`;
+  return `<span class="hint sessions">${esc(`${m.sessions_here} of its listed here · ${there}`)}</span>`;
 }
 
 // ---------- other machines ----------
@@ -130,7 +138,7 @@ function remoteHtml(r) {
     : `<button class="act small" data-act="sync" data-name="${esc(r.name)}"${busy(key) ? " disabled" : ""}>${busy(key) ? WAIT : ""}Update models</button><button class="act small quiet" data-act="arm" data-key="${esc(key)}">Remove</button>`;
   const at = r.url.replace(/^https?:\/\//, "");
   return `<article class="card m" style="--c:var(${r.reachable === false || !r.token ? "--limit" : "--live"})"><div class="top"><span class="name">${esc(r.name)}</span><span class="at">${esc(at)}</span><span class="slot">${acts}</span></div>
-    <p class="facts">${state}</p>${sessionsHtml(r)}<ul class="cmdlist">${cmds || `<li class="none">It offers no commands</li>`}</ul>${saidHtml(key)}</article>`;
+    <p class="facts">${state}</p>${crossingHtml(r, "remotes", key)}<ul class="cmdlist">${cmds || `<li class="none">It offers no commands</li>`}</ul>${saidHtml(key)}</article>`;
 }
 /** The machines the last scan found that this one does not use yet, each with what it offers. */
 function foundHtml(s) {
@@ -242,6 +250,12 @@ document.addEventListener("click", async (e) => {
     case "arm": ui.armed = t.dataset.key; render(); return;
     case "keep": ui.armed = null; render(); return;
     case "revoke": act(`machine:${t.dataset.name}`, () => API.del(`/api/share/machines/${encodeURIComponent(t.dataset.name)}`)); return;
+    case "sessions": {
+      if (t.getAttribute("aria-pressed") === "true") return;
+      const machines = t.dataset.side === "machines", name = encodeURIComponent(t.dataset.name);
+      act(`${machines ? "machine" : "remote"}:${t.dataset.name}`, () => API.put(`/api/${machines ? "share/machines" : "remotes"}/${name}/sessions`, { on: t.dataset.on === "1" }));
+      return;
+    }
     case "remove": act(`remote:${t.dataset.name}`, () => API.del(`/api/remotes/${encodeURIComponent(t.dataset.name)}`)); return;
     case "sync": act(`remote:${t.dataset.name}`, () => API.post(`/api/remotes/${encodeURIComponent(t.dataset.name)}/sync`, {})); return;
     case "scan": scan(); return;

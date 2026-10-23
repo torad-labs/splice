@@ -3,7 +3,8 @@
 // `<machine>/<name>` (SessionMirrors), and offers this machine's own there, so each side lists the other's. A message a
 // session here writes to a mirror goes to that machine at once; one its sessions write to this machine's mirrors there
 // waits in its outbox, which a collection held open here picks up and delivers. A machine that does not answer has no
-// session mirrored here until it does.
+// session mirrored here until it does. Nothing crosses with a machine whose Sessions switch is off here (RemotesStore):
+// its link neither looks, offers nor collects, and turning the switch off withdraws its mirrors at the next look.
 package splice.share.remote
 
 import kotlinx.coroutines.CompletableDeferred
@@ -24,6 +25,7 @@ import splice.sessions.mirror.MirroredSession
 import splice.sessions.mirror.SessionMirrors
 import splice.sessions.peer.DeliveryStatus
 import splice.share.ShareNote
+import splice.share.ShareOutbox
 import splice.share.ShareOutboxAck
 import splice.share.ShareOutboxNote
 import splice.share.ShareSession
@@ -65,7 +67,18 @@ public class RemoteSessions(
     private suspend fun look(name: String, url: String, first: CompletableDeferred<Unit>) {
         val carrier = carrierTo(name, url)
         var failing = false
+        var off = false
         do {
+            if (!links.sessions(name)) {
+                if (!off) {
+                    log("[remote $name] no session crosses with it: Sessions is off for it on the Sharing page\n")
+                    withContext(io) { mirrors.withdraw(name) }
+                }
+                off = true
+                failing = false
+                continue
+            }
+            off = false
             val looked = Cancellables.runCatchingCancellable {
                 runInterruptible(io) {
                     val api = links.api(name)
@@ -94,19 +107,23 @@ public class RemoteSessions(
 
     /** Delivers what [name]'s sessions write to this machine's, as it arrives, and acknowledges it with the next
      *  collection, so [name] holds a note until it knows it arrived. A collection that fails waits for the next look
-     *  before it tries again; the look says why the machine does not answer. */
+     *  before it tries again; the look says why the machine does not answer. While [name]'s Sessions switch is off it
+     *  collects nothing, and a collection the switch went off under delivers nothing: its notes wait there. */
     private suspend fun collect(name: String, url: String) {
         var ack: ShareOutboxAck? = null
         do {
-            val collected = Cancellables.runCatchingCancellable {
-                runInterruptible(io) { links.api(name).outbox(url, ack) }
-            }
-            val answer = collected.fold(onSuccess = { it }, onFailure = { null })
-            answer?.notes?.forEach { deliver(name, it) }
-            ack = answer?.acknowledging() ?: ack
+            val answer = if (links.sessions(name)) collected(name, url, ack) else null
+            val delivered = answer?.takeIf { links.sessions(name) }
+            delivered?.notes?.forEach { deliver(name, it) }
+            ack = delivered?.acknowledging() ?: ack
             val again = answer != null || ticker.awaitTick(lookMs)
         } while (currentCoroutineContext().isActive && again)
     }
+
+    /** One collection of [name]'s outbox, acknowledging [ack]; null when it failed. */
+    private suspend fun collected(name: String, url: String, ack: ShareOutboxAck?): ShareOutbox? =
+        Cancellables.runCatchingCancellable { runInterruptible(io) { links.api(name).outbox(url, ack) } }
+            .fold(onSuccess = { it }, onFailure = { null })
 
     private suspend fun deliver(name: String, note: ShareOutboxNote) {
         val from = MirroredSession(note.from.id, note.from.name)

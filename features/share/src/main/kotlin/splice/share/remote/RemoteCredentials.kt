@@ -22,15 +22,19 @@ import java.nio.file.NoSuchFileException
 import java.nio.file.Path
 import java.time.Instant
 
-/** One joined machine, by its `[remotes]` key, with the token it issued this machine. */
+/** One joined machine, by its `[remotes]` key, with the token it issued this machine, and its Sessions switch here:
+ *  whether that machine may list, write into and read from this machine's sessions, off until the Sharing page turns it
+ *  on, and off again after a re-join. */
 @Serializable
 internal data class RemoteToken(
     val name: String,
     val token: String,
     @SerialName("joined_at") val joinedAt: String,
+    val sessions: Boolean = false,
 ) {
     // The token is the secret; a log of this record names the machine only.
-    override fun toString(): String = "RemoteToken(name=$name, token=<redacted>, joinedAt=$joinedAt)"
+    override fun toString(): String =
+        "RemoteToken(name=$name, token=<redacted>, joinedAt=$joinedAt, sessions=$sessions)"
 }
 
 @Serializable
@@ -54,6 +58,17 @@ public class RemotesStore(private val file: Path) {
             val kept = book.remotes.filterNot { it.name == name }
             write(RemoteTokenBook(kept + RemoteToken(name, token, Instant.now().toString())))
         }
+    }
+
+    /** Whether [name]'s Sessions switch is on here; off for a machine no token is kept for. */
+    public fun sessions(name: String): Boolean = read().remotes.firstOrNull { it.name == name }?.sessions == true
+
+    /** Turns [name]'s Sessions switch [on] or off. False when no token is kept for [name]. Throws IOException, writing
+     *  nothing, as [save] does. */
+    public fun allowSessions(name: String, on: Boolean): Boolean = edited { book ->
+        val found = book.remotes.any { it.name == name }
+        if (found) write(RemoteTokenBook(book.remotes.map { if (it.name == name) it.copy(sessions = on) else it }))
+        found
     }
 
     /** False when no token is kept for [name]. Throws IOException, writing nothing, as [save] does. */

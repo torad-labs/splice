@@ -27,13 +27,16 @@ import java.security.SecureRandom
 import java.time.Instant
 import java.util.HexFormat
 
-/** One joined machine. [tokenSha256] is the hex SHA-256 of its token; the token is never stored. */
+/** One joined machine. [tokenSha256] is the hex SHA-256 of its token; the token is never stored. [sessions] is its
+ *  Sessions switch: whether it may list, write into and read from this machine's sessions, off until the Sharing page
+ *  turns it on, and off again when the machine joins again. */
 @Serializable
 public data class ShareClient(
     public val name: String,
     @SerialName("token_sha256") public val tokenSha256: String,
     public val address: String,
     @SerialName("joined_at") public val joinedAt: String,
+    public val sessions: Boolean = false,
 )
 
 @Serializable
@@ -66,6 +69,15 @@ public class ShareClients(private val file: Path) {
     internal fun holder(token: String?): ShareClient? {
         val presented = token?.let { digest(it).toByteArray(UTF_8) } ?: return null
         return read().clients.firstOrNull { MessageDigest.isEqual(it.tokenSha256.toByteArray(UTF_8), presented) }
+    }
+
+    /** Turns [name]'s Sessions switch [on] or off. False when no machine has that name. Throws IOException, writing
+     *  nothing, as [join] does. */
+    @Synchronized
+    public fun allowSessions(name: String, on: Boolean): Boolean = edited { book ->
+        val found = book.clients.any { it.name == name }
+        if (found) write(ShareClientBook(book.clients.map { if (it.name == name) it.copy(sessions = on) else it }))
+        found
     }
 
     /** False when no machine has that name. Throws IOException, writing nothing, as [join] does. */

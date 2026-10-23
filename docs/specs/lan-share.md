@@ -27,7 +27,9 @@ login is asked for.
   rotate one token and sign each other out (README, "Credential locations").
 - **Trust the LAN.** A machine on a private network that asks to join a sharing server is accepted
   without a code. Guardrails that cost no step: sharing is off until `splice share on`; the listener
-  admits private source addresses only; each client gets its own token, listed and revocable.
+  admits private source addresses only; each client gets its own token, listed and revocable. Trust
+  reaches commands only: a joined machine crosses no Claude Code session until its Sessions switch is
+  on (milestone 6, Bounds).
 
 ## How it works
 
@@ -203,6 +205,8 @@ Built on `feat/lan-share`, merged into `feat/v0.4.0` through the gate. Milestone
    | `GET /api/share` | this machine's sharing, its joined machines, and the machines it uses (`SharingView`) |
    | `PUT /api/share` | `{enabled?, port?, heads?}` written to `[share]`; the listener follows it at once, with no restart |
    | `DELETE /api/share/machines/{name}` | revoke a joined machine |
+   | `PUT /api/share/machines/{name}/sessions` | `{on}`: whether a joined machine may cross sessions with this one |
+   | `PUT /api/remotes/{name}/sessions` | `{on}`: whether a machine this one joined may cross sessions with it |
    | `POST /api/remotes/scan` | the sharing machines found, each marked when already used here |
    | `POST /api/remotes` | `{host, port?}`: import one, as `splice remote add` does |
    | `POST /api/remotes/{name}/sync` | its commands as it serves them now |
@@ -255,17 +259,26 @@ Built on `feat/lan-share`, merged into `feat/v0.4.0` through the gate. Milestone
      later collection acknowledges it (`&box=<outbox>&after=<seq>`): a collection cut on the way, because the machine
      slept, restarted its daemon or lost its network, takes nothing with it, and a change to `[share]` keeps what waits.
      A restart of the sharing daemon loses what its outbox held. A refusal goes back to the sender as a receipt, in words.
-   - **Bounds.** Every route needs a joined machine's token, and the link names the machine, never the request. Any
-     machine on the network may join and each mirror is a process, so a daemon hosts at most 256. A mirror's name is
+   - **Bounds.** Every route needs a joined machine's token, and the link names the machine, never the request. A
+     machine is booked under its `[remotes]` spelling (`RemoteNames`), so two machines that each joined the other
+     name each other once. No joined machine can list, write into or read from this machine's sessions until Marcos
+     turns that machine's Sessions switch on, in either direction of the pair (the President's decision on the
+     round-1 review, Oct 23: these sessions run with permissions bypassed, and an open join reaching them is a step from
+     a key file leaving the machine). Each machine card on the Sharing page carries one, off until turned on and off
+     again when the machine joins again: on a machine that joined this one it gates the four session routes, which
+     answer 403 in words while it is off; on a machine this one joined it gates this machine's link, which then neither
+     looks, offers nor collects, and withdraws that machine's mirrors here. Sessions cross only while both ends are on.
+     A switch turned off ends the crossing at the link's next look; the mirrors made before it last at most their
+     lease. Any machine on the network may join and each mirror is a process, so a daemon hosts at most 256. A mirror's name is
      what ListAgents shows and an envelope carries (`[A-Za-z0-9._-]`, 64 characters), and two sessions of one name are
      told apart by the start of their ids.
    - **The pages.** On the Sessions page a mirror is a row of its own machine: a badge names the machine, no folder
      here is claimed for it, it groups under the machine's name (by project and by command), and it is read only
      (SendMessage and Close; no composer, note, stop or move). It reads stale or live as its session does on the other
      machine, since the link carries when that session was last heard from (`heard_at`), and it leaves the list with
-     its record, never kept as ended. On the Sharing page each machine's card says how many of its sessions are listed
-     here and how many of this machine's it was last shown ("Sessions: 2 of its listed here · 1 of this machine's listed
-     there"); one that has not looked yet says so, and one no session crosses with says nothing.
+     its record, never kept as ended. On the Sharing page each machine's card has its Sessions switch, Off or On; while
+     it is on, its line says how many of its sessions are listed here and how many of this machine's it was last shown
+     ("2 of its listed here · 1 of this machine's listed there"), and while it is off, that nothing crosses.
    - **Not yet.** A message refused on the far side of the outbox reaches no one.
    - **Receipts on a Mac.** A Mac's Claude Code names its socket `/tmp/cc-socks/<pid>.sock`, and `/tmp` there is a
      link to `/private/tmp`. `PeerNoteSocket.inOwnFolder` allows a link above the sender's sockets folder, since it

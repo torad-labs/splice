@@ -22,6 +22,12 @@ internal class SharingMount(ports: ConsolePorts, private val guard: ControlGuard
         route.delete("/api/share/machines/{name}") {
             guard.guarded(call) { routes.revoke(call.parameters["name"].orEmpty()).send(call) }
         }
+        route.put("/api/share/machines/{name}/sessions") {
+            guard.guarded(call) { routes.machineSessions(call.parameters["name"].orEmpty(), call).send(call) }
+        }
+        route.put("/api/remotes/{name}/sessions") {
+            guard.guarded(call) { routes.remoteSessions(call.parameters["name"].orEmpty(), call).send(call) }
+        }
         route.post("/api/remotes/scan") { guard.guarded(call) { remotes.scan().send(call) } }
         route.post("/api/remotes") { guard.guarded(call) { remotes.import(call).send(call) } }
         route.post("/api/remotes/{name}/sync") {

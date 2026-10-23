@@ -55,6 +55,7 @@ import splice.share.remote.RemoteDiscovery
 import splice.share.remote.RemoteFound
 import splice.share.remote.RemoteHttp
 import splice.share.remote.RemoteTrust
+import splice.share.remote.RemotesStore
 import splice.topology.TopologyLoader
 import java.net.Socket
 import java.nio.file.Files
@@ -266,6 +267,57 @@ class SharingRoutesTest {
         } finally {
             mirrors.close()
             scope.cancel()
+        }
+    }
+
+    /** The page's PUT of one Sessions switch at [path], and whether it was done. */
+    private suspend fun switched(call: ShareCall, path: String, on: Boolean): JsonObject {
+        val reply = call(HttpMethod.Put, path, "{\"on\":$on}", true)
+        assertEquals(200, reply.status.value, reply.bodyAsText())
+        return json(reply.bodyAsText())
+    }
+
+    /** The Sessions switch of the one machine that joined this one, and of the one machine this one joined. */
+    private fun switches(view: JsonObject): List<Boolean> = listOf("joined", "remotes").map { rows ->
+        view.getValue(rows).jsonArray.single().jsonObject.getValue("sessions").jsonPrimitive.boolean
+    }
+
+    // The round-1 review's second finding, as the President decided it (Oct 23): no joined machine can list, write into
+    // or read from this machine's sessions until Marcos turns that machine's switch on, in either direction of the pair.
+    @Test
+    fun `each machine's Sessions switch reads off until the page turns it on, on either side, and off again`() {
+        Files.writeString(file, Files.readString(file) + "\n[remotes.far]\nurl = \"https://far.lan:3097\"\n")
+        val state = ShareState(StatePaths(envReader = env))
+        Files.createDirectories(state.clientsFile.parent)
+        Files.writeString(
+            state.clientsFile,
+            """{"clients":[{"name":"mini","token_sha256":"00","address":"10.0.0.2",""" +
+                """"joined_at":"2026-10-23T12:00:00Z"}]}""",
+        )
+        RemotesStore(state.remotesFile).save("far", "far-token")
+        serve { call ->
+            assertEquals(listOf(false, false), switches(read(call)), "off on both sides until the page turns it on")
+            val unkeyed = call(HttpMethod.Put, "/api/share/machines/mini/sessions", "{\"on\":true}", false)
+            assertEquals(401, unkeyed.status.value, "the switch is guarded")
+
+            assertTrue(switched(call, "/api/share/machines/mini/sessions", true).getValue("ok").jsonPrimitive.boolean)
+            assertEquals(listOf(true, false), switches(read(call)), "mini may cross sessions with this machine")
+            assertTrue(switched(call, "/api/remotes/far/sessions", true).getValue("ok").jsonPrimitive.boolean)
+            assertEquals(listOf(true, true), switches(read(call)), "and this machine with far")
+            assertTrue(RemotesStore(state.remotesFile).sessions("far"), "where the daemon's link reads it")
+
+            switched(call, "/api/share/machines/mini/sessions", false)
+            switched(call, "/api/remotes/far/sessions", false)
+            assertEquals(listOf(false, false), switches(read(call)), "and both off again")
+
+            for (path in listOf("/api/share/machines/nobody/sessions", "/api/remotes/nobody/sessions")) {
+                val refused = switched(call, path, true)
+                assertFalse(refused.getValue("ok").jsonPrimitive.boolean, path)
+                val said = refused.getValue("said").jsonArray.single().jsonObject
+                assertTrue("nobody" in said.getValue("text").jsonPrimitive.content, said.toString())
+            }
+            val unread = call(HttpMethod.Put, "/api/share/machines/mini/sessions", "on", true)
+            assertEquals(400, unread.status.value, "a body the route cannot read is told what to send")
         }
     }
 

@@ -1,7 +1,9 @@
 // NEW: LAN share, phase 2, milestone 6 (docs/specs/lan-share.md). The goal: a Claude Code session on one machine sees
 // the live sessions of a machine it is joined with in ListAgents, as `<name>@<machine>`, and messages them with
 // SendMessage, each way; a session that ends leaves the other machine at the next look; and only a joined machine is
-// shown any. Two machines in one JVM, each with its own Claude Code registry, sockets folder and state: "torad" shares
+// shown any. Since the round-1 review (the President's decision, Oct 23): no joined machine can list, write into or read
+// from this machine's sessions until that machine's Sessions switch is on here, in either direction of the pair, so the
+// tests below that cross sessions turn both switches on, as Marcos does on each Sharing page. Two machines in one JVM, each with its own Claude Code registry, sockets folder and state: "torad" shares
 // over its real TLS listener, and "mini" joined it and runs the daemon's session link, as the daemon runs both. The
 // sessions are Claude Code's own shapes (ClaudeCodeSession); everything between them is splice's real code.
 package splice.share.sessions
@@ -53,6 +55,8 @@ import splice.share.remote.RemoteNames
 import splice.share.remote.RemoteSessions
 import splice.share.remote.RemoteTrust
 import splice.share.remote.RemotesStore
+import splice.upstream.Ticker
+import splice.upstream.codemode.ProcessTicker
 import java.net.URI
 import java.net.http.HttpClient
 import java.net.http.HttpRequest
@@ -61,6 +65,7 @@ import java.nio.file.Files
 import java.nio.file.Path
 import java.nio.file.attribute.PosixFilePermissions
 import java.util.UUID
+import java.util.concurrent.atomic.AtomicInteger
 import javax.net.ssl.SSLSocket
 import kotlin.random.Random
 
@@ -72,6 +77,9 @@ private const val SLOW_LOOK_MS = 20_000L
 
 // why: how often a test reads the registry while it waits for the next look.
 private const val POLL_MS = 50L
+
+// why: enough of the link's looks with a switch off that a request it made would have been heard.
+private const val LOOKS_OFF = 3
 
 // why: how long a test waits for what the next few looks bring before it fails.
 private const val SETTLE_MS = 15_000L
@@ -178,16 +186,29 @@ class SessionsAcrossMachinesTest {
      *  it answers. */
     private fun join(): Job = link(links(joined().second))
 
-    /** mini's links once it kept [joined]'s token and pin, as `splice remote` keeps them. */
-    private fun links(joined: RemoteJoined.Joined): RemoteLinks = links(mini, toradName, joined, port)
+    /** mini's links once it kept [joined]'s token and pin, as `splice remote` keeps them, with torad's Sessions switch
+     *  on there unless [sessions] says off. */
+    private fun links(joined: RemoteJoined.Joined, sessions: Boolean = true): RemoteLinks =
+        links(mini, toradName, joined, port, sessions)
 
-    /** [machine]'s links once it kept the token and pin of its join to [name], which shares on [at]. */
-    private fun links(machine: Machine, name: String, joined: RemoteJoined.Joined, at: Int): RemoteLinks {
-        val store = RemotesStore(machine.paths.stateDir.resolve("share").resolve("remotes.json"))
+    /** [machine]'s links once it kept the token and pin of its join to [name], which shares on [at], with [name]'s
+     *  Sessions switch on there as [sessions] says. */
+    private fun links(
+        machine: Machine,
+        name: String,
+        joined: RemoteJoined.Joined,
+        at: Int,
+        sessions: Boolean = true,
+    ): RemoteLinks {
+        val store = store(machine)
         store.save(name, joined.token)
+        if (sessions) store.allowSessions(name, true)
         val remotes = mapOf(name to RemoteConfig(joined.http.base("127.0.0.1", at), joined.pin))
         return RemoteLinks(Topology(remotes = remotes), store)
     }
+
+    /** [machine]'s own tokens on the machines it joined, and their Sessions switches, as its Sharing page turns them. */
+    private fun store(machine: Machine) = RemotesStore(machine.paths.stateDir.resolve("share").resolve("remotes.json"))
 
     /** [machine]'s daemon starting its session link over [links]. */
     private fun link(links: RemoteLinks, machine: Machine = mini): Job =
@@ -223,11 +244,14 @@ class SessionsAcrossMachinesTest {
     private fun heardFrom(name: String): String? =
         listener.clients.activity.now().firstOrNull { it.name == name }?.lastSeen
 
-    /** torad's description, and mini's join there under [client]. */
-    private fun joined(client: String = MINI): Pair<ShareInfo, RemoteJoined.Joined> {
+    /** torad's description, and mini's join there under [client], with mini's Sessions switch on at torad unless
+     *  [sessions] says off. */
+    private fun joined(client: String = MINI, sessions: Boolean = true): Pair<ShareInfo, RemoteJoined.Joined> {
         val info = described(port)
         toradName = RemoteNames.of(info.server)
-        return info to RemoteJoin(client).join(RemoteFound("127.0.0.1", port, info)) as RemoteJoined.Joined
+        val joined = RemoteJoin(client).join(RemoteFound("127.0.0.1", port, info)) as RemoteJoined.Joined
+        if (sessions) assertTrue(listener.clients.allowSessions(RemoteNames.of(client), true), "$client joined")
+        return info to joined
     }
 
     /** The description of the machine sharing on [at], as a scan reads it before it trusts any certificate. */
@@ -299,7 +323,8 @@ class SessionsAcrossMachinesTest {
         val rig = torad.session("rig-lead")
         val splice = mini.session("splice")
         val miniPort = TestPorts.reserve()
-        opened += sharing(mini, miniPort).let { sharing -> AutoCloseable { runBlocking { sharing.stop() } } }
+        val miniSharing = sharing(mini, miniPort)
+        opened += AutoCloseable { runBlocking { miniSharing.stop() } }
         // mini joins torad under its host name, and torad joins mini back under its own, each as `splice remote` does,
         // keying the other by the name its listener gives.
         val (toradInfo, joined) = joined(MIXED)
@@ -307,6 +332,7 @@ class SessionsAcrossMachinesTest {
         val miniName = RemoteNames.of(MIXED)
         val back = RemoteJoin(toradInfo.server).join(RemoteFound("127.0.0.1", miniPort, described(miniPort)))
         val toradLinks = links(torad, miniName, back as RemoteJoined.Joined, miniPort)
+        assertTrue(miniSharing.clients.allowSessions(RemoteNames.of(toradInfo.server), true), "torad joined mini")
 
         // Each machine's sessions reach the other both ways: offered by their own machine, and looked at by the other.
         offered(miniLinks)
@@ -326,6 +352,98 @@ class SessionsAcrossMachinesTest {
         assertEquals(setOf("$miniName/splice"), onTorad, "torad lists mini's session once")
         assertEquals(setOf("$miniName/splice"), rig.agents(), "and still once after both links ran")
         assertEquals(setOf("$toradName/rig-lead"), splice.agents(), "mini lists torad's session once")
+    }
+
+    /** What torad answers the machine holding [token] on each session route, in turn: its listing, an offer of mini's
+     *  session, a collection, and a note from that session to the session here whose id is [to]. */
+    private fun answers(info: ShareInfo, token: String, to: String): List<HttpResponse<String>> {
+        val http = HttpClient.newBuilder().sslContext(RemoteTrust(info.fingerprint, "torad").context).build()
+        val sessions = "https://127.0.0.1:$port/share/v1/sessions"
+        val offer = """{"sessions":[{"id":"s-mini","name":"splice"}]}"""
+        val note = """{"from":{"id":"s-mini","name":"splice"},"text":"hello from mini"}"""
+        return listOf(
+            HttpRequest.newBuilder(URI.create(sessions)).GET(),
+            HttpRequest.newBuilder(URI.create(sessions)).PUT(HttpRequest.BodyPublishers.ofString(offer)),
+            HttpRequest.newBuilder(URI.create("$sessions/outbox?wait=0")).GET(),
+            HttpRequest.newBuilder(URI.create("$sessions/$to/message")).POST(HttpRequest.BodyPublishers.ofString(note)),
+        ).map { asked ->
+            http.send(asked.header("Authorization", "Bearer $token").build(), HttpResponse.BodyHandlers.ofString())
+        }
+    }
+
+    @Test
+    fun `a joined machine is refused every session route until its Sessions switch is on here, and once it is off`() {
+        val rig = torad.session("rig-lead")
+        val rigId = torad.mirrors.local().single { it.name == "rig-lead" }.id
+        val (info, joined) = joined(sessions = false)
+        val refused = answers(info, joined.token, rigId)
+        assertEquals(List(4) { 403 }, refused.map { it.statusCode() }, "a machine that only joined reaches no session")
+        refused.forEach { answer ->
+            assertTrue("rig-lead" !in answer.body(), answer.body())
+            assertTrue("Sessions" in answer.body(), "the refusal names the switch: ${answer.body()}")
+        }
+        assertTrue(rig.agents().none { it.startsWith("$MINI/") }, "its offer made no mirror here")
+        assertEquals(null, rig.heard(0), "its note reached no session")
+
+        assertTrue(listener.clients.allowSessions(MINI, true))
+        val allowed = answers(info, joined.token, rigId)
+        assertEquals(List(4) { 200 }, allowed.map { it.statusCode() }, allowed.map { it.body() }.toString())
+        assertTrue("rig-lead" in allowed.first().body(), "it lists this machine's sessions")
+        assertEquals("hello from mini", rig.heard(SETTLE_MS / 1_000)?.text, "its note reaches the session")
+
+        assertTrue(listener.clients.allowSessions(MINI, false))
+        val off = answers(info, joined.token, rigId).map { it.statusCode() }
+        assertEquals(List(4) { 403 }, off, "a switch turned off refuses it again")
+    }
+
+    @Test
+    fun `a machine that joins again starts with its Sessions switch off`() {
+        torad.session("rig-lead")
+        val rigId = torad.mirrors.local().single { it.name == "rig-lead" }.id
+        joined()
+        val (info, again) = joined(sessions = false)
+        val answered = answers(info, again.token, rigId).map { it.statusCode() }
+        assertEquals(List(4) { 403 }, answered, "a new join is a machine the switch has not been turned on for")
+    }
+
+    @Test
+    fun `a machine whose Sessions switch is off for the machine it joined crosses no session with it until it is on`() {
+        val rig = torad.session("rig-lead")
+        val splice = mini.session("splice")
+        val links = links(joined().second, sessions = false)
+        val looks = AtomicInteger()
+        val counted = Ticker { ms -> ProcessTicker().awaitTick(ms).also { looks.incrementAndGet() } }
+        checkNotNull(RemoteSessions(links, mini.mirrors, { }, LOOK_MS, counted).start(scope))
+        val looked = runBlocking {
+            val until = System.currentTimeMillis() + SETTLE_MS
+            while (looks.get() < LOOKS_OFF && System.currentTimeMillis() < until) delay(POLL_MS)
+            looks.get() >= LOOKS_OFF
+        }
+        assertTrue(looked, "mini's link went round $LOOKS_OFF times")
+        assertEquals(null, heardFrom(MINI), "mini asked torad nothing of its sessions")
+        assertEquals(emptySet<String>(), splice.agents(), "mini lists none of torad's sessions")
+        assertTrue(rig.agents().none { it.startsWith("$MINI/") }, "torad lists none of mini's")
+
+        assertTrue(store(mini).allowSessions(toradName, true))
+        assertTrue("$toradName/rig-lead" in listed(splice) { "$toradName/rig-lead" in it }, "on, mini lists torad's")
+        assertTrue("$MINI/splice" in listed(rig) { "$MINI/splice" in it }, "and torad lists mini's, with no restart")
+
+        assertTrue(store(mini).allowSessions(toradName, false))
+        assertTrue("$toradName/rig-lead" !in listed(splice) { "$toradName/rig-lead" !in it }, "off, mini lists none")
+        assertTrue("$MINI/splice" !in listed(rig) { "$MINI/splice" !in it }, "and torad none of mini's")
+    }
+
+    @Test
+    fun `a joined machine whose Sessions switch is turned off here leaves our listing, and ours leave its`() {
+        val rig = torad.session("rig-lead")
+        val splice = mini.session("splice")
+        join()
+        listed(splice) { "$toradName/rig-lead" in it }
+        listed(rig) { "$MINI/splice" in it }
+
+        assertTrue(listener.clients.allowSessions(MINI, false))
+        assertTrue("$MINI/splice" !in listed(rig) { "$MINI/splice" !in it }, "torad no longer lists mini's session")
+        assertTrue("$toradName/rig-lead" !in listed(splice) { "$toradName/rig-lead" !in it }, "nor mini torad's")
     }
 
     @Test

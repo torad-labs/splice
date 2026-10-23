@@ -39,6 +39,10 @@ public class RemoteLinks(topology: Topology, private val store: RemotesStore) {
 
     public fun names(): Set<String> = remotes.keys
 
+    /** Whether [name]'s Sessions switch is on here, read from the store at each call, so the Sharing page turns it with
+     *  no restart. */
+    public fun sessions(name: String): Boolean = store.sessions(name)
+
     /** Where [name]'s listener answers, as `[remotes]` keeps it; null for a machine not joined. */
     public fun url(name: String): String? = remotes[name]?.url
 

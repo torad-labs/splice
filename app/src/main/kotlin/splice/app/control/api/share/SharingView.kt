@@ -24,9 +24,17 @@ import splice.share.remote.RemotesStore
 internal class SharingView(private val parts: SharingParts, private val file: Topology) {
     private val state = ShareState(StatePaths(envReader = parts.env))
 
+    private val store = RemotesStore(state.remotesFile)
+
     /** The machines a token is kept for; a store that cannot be read reads as none, and each then says so. */
     private val tokens: Set<String> by lazy {
-        Cancellables.runCatchingCancellable { RemotesStore(state.remotesFile).names().toSet() }
+        Cancellables.runCatchingCancellable { store.names().toSet() }
+            .fold(onSuccess = { it }, onFailure = { emptySet() })
+    }
+
+    /** The machines this one joined whose Sessions switch is on here; none when the store cannot be read. */
+    private val crossing: Set<String> by lazy {
+        Cancellables.runCatchingCancellable { tokens.filter(store::sessions).toSet() }
             .fold(onSuccess = { it }, onFailure = { emptySet() })
     }
 
@@ -75,6 +83,7 @@ internal class SharingView(private val parts: SharingParts, private val file: To
                 put("name", machine.name)
                 put("address", machine.address)
                 put("joined_at", machine.joinedAt)
+                put("sessions", machine.sessions)
                 seen[machine.name]?.let {
                     put("last_seen", it.lastSeen)
                     put("turns_today", it.turnsOn(today))
@@ -103,6 +112,7 @@ internal class SharingView(private val parts: SharingParts, private val file: To
             put("url", remote.url)
             remote.fingerprint?.let { put("fingerprint", it) }
             put("token", name in tokens)
+            put("sessions", name in crossing)
             crossing(name, this)
             reach?.let { found ->
                 put("reachable", found.reachable)

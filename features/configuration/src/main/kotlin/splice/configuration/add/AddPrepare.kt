@@ -275,9 +275,10 @@ private class AddPortChoice(private val bindable: HeadPortBindable, private val 
         return maxOf(occupied.maxOrNull() ?: 0, FIRST_HEAD_PORT - 1) + 1
     }
 
+    /** The share listener's port is taken even while sharing is off: `splice share on` must not find a head on it. */
     fun choose(current: Topology, candidateUrl: String?, floor: Int): Int? {
         val taken = current.heads.values.map { it.port }.toSet() +
-            listOfNotNull(current.daemon.controlPort) +
+            listOfNotNull(current.daemon.controlPort, current.share.port) +
             (current.providers.values.mapNotNull { localPort(it.baseUrl) } + listOfNotNull(localPort(candidateUrl)))
         return (floor..lastHeadPort).firstOrNull { port -> port !in taken && bindable.on(port) }
     }

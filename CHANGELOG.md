@@ -7,6 +7,10 @@
   dialect: every earlier turn's reasoning goes back to the model until the conversation compacts, as Codex sends it.
   Off, a session lost its reasoning at each new prompt and each peer message. An install whose splice.toml says
   `replay_reasoning = false`, as the 0.3.x template wrote it, keeps it off until that line changes.
+- **Local models get their reasoning back too.** On the `openai-chat` dialect, each earlier assistant turn sent to a
+  local runtime carries the reasoning the model wrote, as `reasoning_content`, so its chat template renders the
+  history the model produced instead of an empty think block on every turn. splice's own wait notices never ride.
+  `quirks = { replay_reasoning = false }` turns it off for a provider; a hosted vendor stays off unless set true.
 - **Tool callbacks progress as results arrive.** Code-mode cells can issue up to 32 callbacks while encoded frames remain bounded. A partial result batch settles its ready promises, retains unfinished callbacks and terminal errors for recovery, and continues without waiting on a paused source stream.
 - **Deferred tool history stays attached to its callback.** Canonical history preserves generated declarations beside their relocated function calls, preventing a returned batch from abandoning its running script.
 - **Optional WebSocket prefix preparation.** When the Responses WebSocket transport is explicitly enabled, the Codex profile can prepare the instruction/tool prefix before generation. Continuation state rejects stale responses. WebSockets remain off by default.

@@ -106,6 +106,12 @@ public data class QuirksConfig(
      *  that conversation re-prefills from zero. null/false = off (id_slot is llama.cpp's own field;
      *  other runtimes have no slots to pin). */
     @SerialName("slot_affinity") val slotAffinity: Boolean? = null,
+    /** openai-chat only: send each earlier assistant turn's reasoning back as its `reasoning_content`, the text the
+     *  model wrote, so a self-served model's chat template renders the history it produced instead of an empty think
+     *  block on every earlier turn (Marcos, 2026-10-23: "pass reasoning for self served heads like glm and qwen").
+     *  null keeps the default: ON for a LOCAL runtime, OFF for a hosted vendor, some of which refuse the field in
+     *  input messages. Splice's own wait notice never rides. */
+    @SerialName("replay_reasoning") val replayReasoning: Boolean? = null,
     /** openai-responses only: the deferred tool surface (tool_search) for responses-lite turns.
      *  ABSENT TABLE = feature off — the nullable-overlay idiom of [reasoningCache] above. */
     @SerialName("tool_surface") val toolSurface: ToolSurfaceConfig? = null,

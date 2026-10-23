@@ -19,8 +19,11 @@ public sealed class ContentBlock {
     @Serializable
     public data class DocumentBlock(val source: MediaSource? = null) : ContentBlock()
 
+    /** [signature] is what the client round-trips beside the text: a vendor's, or one splice minted
+     *  ([splice.core.turn.SpliceSignatures]), which is how a dialect that sends thinking back tells splice's own wait
+     *  notice from the model's reasoning. Null when the client sent none. */
     @Serializable
-    public data class ThinkingBlock(val thinking: String = "") : ContentBlock()
+    public data class ThinkingBlock(val thinking: String = "", val signature: String? = null) : ContentBlock()
 
     @Serializable
     public data class RedactedThinkingBlock(val data: String = "") : ContentBlock()

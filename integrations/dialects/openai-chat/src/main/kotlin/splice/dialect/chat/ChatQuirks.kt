@@ -33,6 +33,9 @@ public data class ChatReasoningQuirks(
     val xhighModels: Regex? = null,
     /** Opt-in client effort aliases. null preserves the existing thinking-budget tiers. */
     val effortVocabulary: ChatEffortVocabulary? = null,
+    /** Send each earlier assistant turn's thinking back as its `reasoning_content`, which llama-server hands the
+     *  model's chat template. Off unless the provider is a local runtime or opts in (`replay_reasoning`). */
+    val replayReasoning: Boolean = false,
 )
 
 public data class ChatQuirks(
@@ -59,6 +62,11 @@ public data class ChatQuirks(
      *  is what keeps every unopted head's request bytes identical. */
     public fun withStreamUsageToml(streamUsage: Boolean?): ChatQuirks =
         copy(emitUsageInStream = streamUsage ?: this.emitUsageInStream)
+
+    /** Overlay `[providers.*.quirks].replay_reasoning`, or a caller's own default for a provider kind (on for a local
+     *  runtime), onto the profile. null keeps this profile's own value, which keeps every unopted head's request bytes. */
+    public fun withReplayReasoningToml(replayReasoning: Boolean?): ChatQuirks =
+        copy(reasoning = reasoning.copy(replayReasoning = replayReasoning ?: reasoning.replayReasoning))
 
     /** Honest markers for content this dialect cannot carry: documents always; images when the
      *  vendor has no vision. An image-only message still yields a marker — silently dropping the

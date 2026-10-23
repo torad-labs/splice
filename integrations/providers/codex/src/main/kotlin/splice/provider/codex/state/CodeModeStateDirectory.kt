@@ -71,7 +71,8 @@ internal class CodeModeStateDirectory(
 
     /** Until Oct 23 a removed conversation left its journal's lock file behind: 11,103 empty ones on one
      *  machine, back to Oct 1. A lock whose journal is gone guards nothing, and nothing appends while the
-     *  registry loads, so each one goes here. One that cannot be removed stays for the next start. */
+     *  registry loads, so each one goes here, as does a lock left beside a pre-.jsonl ".json" journal that is
+     *  gone (199 from Oct 2 on the same machine). One that cannot be removed stays for the next start. */
     private fun dropOrphanLocks(listed: List<Path>) {
         val names = listed.mapTo(mutableSetOf()) { it.fileName.toString() }
         val orphans = listed.filter { file ->
@@ -128,4 +129,4 @@ internal class CodeModeStateDirectory(
 }
 
 private val FILE_NAME = Regex("[0-9a-f]{64}\\.jsonl?")
-private val LOCK_NAME = Regex("[0-9a-f]{64}\\.jsonl\\.lock")
+private val LOCK_NAME = Regex("[0-9a-f]{64}\\.jsonl?\\.lock")

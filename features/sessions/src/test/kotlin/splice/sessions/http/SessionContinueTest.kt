@@ -14,6 +14,7 @@ import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.io.TempDir
 import splice.core.session.SessionKey
 import splice.core.session.SessionPane
+import splice.http.JsonReply
 import splice.sessions.registry.SessionRecord
 import splice.sessions.transcript.ModelMove
 import java.nio.file.Files
@@ -61,6 +62,10 @@ class SessionContinueTest {
             registry = rig.registry,
             home = tmp.resolve("home"),
             ledger = object : MoveLedger {
+                private val open = mutableSetOf<String>()
+
+                override fun opens(session: String): Boolean = open.add(session)
+
                 override fun leaving(record: SessionRecord, to: String, model: String?) {
                     leaving = ModelMove(null, model.orEmpty(), to, 1L, record.head, "claude-fable-5-1")
                 }
@@ -73,6 +78,7 @@ class SessionContinueTest {
 
                 override fun dropped(session: String) {
                     leaving = null
+                    open.remove(session)
                 }
             },
         )
@@ -275,6 +281,27 @@ class SessionContinueTest {
         assertEquals(HttpStatusCode.GatewayTimeout, move(LEAD, """{"head":"codex"}""").status)
         assertTrue(terminal.sent.isEmpty(), "nothing typed: not with his words, not over a running turn")
         assertTrue(terminal.pressed.none { it.second == SessionKey.CLEAR })
+    }
+
+    @Test
+    fun `a second press while it is moving is refused, and only the first move reaches its terminal`() {
+        panes.remember(LEAD, leadPane)
+        var second: JsonReply? = null
+        afterExit = {
+            // another tab presses while the first move waits on the old client's exit
+            afterExit = {}
+            second = runBlocking { continueOn.move(LEAD, "codex", null) }
+        }
+
+        val first = move(LEAD, """{"head":"codex","model":"gpt-6-sol"}""")
+
+        assertEquals(HttpStatusCode.OK, first.status)
+        assertEquals(HttpStatusCode.Conflict, second?.status)
+        val refused = rig.json(checkNotNull(second).body).getValue("error").jsonPrimitive.content
+        assertEquals("it is already moving; wait for that move to answer", refused)
+        assertEquals(listOf(leadPane to "/exit"), terminal.sent, "one exit, and no resume typed into the new client")
+        assertEquals(listOf("claude-codex", "-r", LEAD, "--model", "gpt-6-sol"), terminal.opened.single().command)
+        assertEquals("gpt-6-sol", kept.single().second.model, "the mark is the first move's, never the second's")
     }
 
     @Test

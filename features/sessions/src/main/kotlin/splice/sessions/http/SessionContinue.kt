@@ -24,6 +24,9 @@
 // One splice cannot reach (the refusals SessionDrive gives). One whose prompt holds words he has not sent: `/exit`
 // would be sent with them. A working turn is stopped first, as Stop would, and once it has stopped the prompt is
 // emptied, because Claude Code puts the stopped message back in it and that message is already in the transcript.
+// One already moving, pressed again from another tab or the manager's head: both would plan against the one client
+// and end it, and the later resume would be typed into the client the earlier one started. The press is answered 409
+// before anything is read or typed, and the move in flight goes on alone (PR #247's second review).
 // The route waits for the client to exit and for the session to register on the new command, and answers:
 //   200  it runs on the new command: its id, the command, and what a person types to sit in front of it.
 //   400  no command named.   404  no such session.   409  refused, and why.
@@ -57,6 +60,7 @@ private const val EXIT_COMMAND = "/exit"
 private const val MOVE_CLOSED = "its terminal is closed, so there is no client to move"
 private const val MOVE_NOT_OURS =
     "splice did not start this session, so it cannot move it from here; exit it and resume it on the other command"
+private const val MOVE_IN_FLIGHT = "it is already moving; wait for that move to answer"
 
 public class SessionContinue(
     private val drive: SessionDrive,
@@ -64,8 +68,9 @@ public class SessionContinue(
     private val handover: SessionHandover,
     private val registry: SessionSource?,
     private val home: Path,
-    /** Where a move that came back is kept, with what it left, read before it leaves. */
-    private val ledger: MoveLedger? = null,
+    /** Where a move that came back is kept, with what it left, read before it leaves, and which session has a move in
+     *  flight: one ledger under every Continue on, so a session moves once at a time from any of them. */
+    private val ledger: MoveLedger,
 ) {
     /** The client's own words for a turn in flight. */
     private val busy = setOf("working", "busy")
@@ -84,16 +89,19 @@ public class SessionContinue(
         return move(session, head, JsonScalars.str(obj, "model")?.takeIf(String::isNotBlank), clear)
     }
 
-    public suspend fun move(session: String, head: String, model: String?, clear: Boolean = false): JsonReply =
-        when (val plan = plan(session, head, model)) {
-            is Plan.Refused -> plan.reply
-            is Plan.Go -> try {
-                go(plan.move, clear)
-            } finally {
-                // a reply that did not come from the arrival left the grant and the pending mark open
-                ledger?.dropped(session)
+    public suspend fun move(session: String, head: String, model: String?, clear: Boolean = false): JsonReply {
+        // the whole move is this press's alone, from its plan to its last word: a second plans nothing, types nothing
+        if (!ledger.opens(session)) return Refusals.reply(HttpStatusCode.Conflict, MOVE_IN_FLIGHT)
+        return try {
+            when (val plan = plan(session, head, model)) {
+                is Plan.Refused -> plan.reply
+                is Plan.Go -> go(plan.move, clear)
             }
+        } finally {
+            // a reply that did not come from the arrival left the grant and the pending mark open; the move closes too
+            ledger.dropped(session)
         }
+    }
 
     /** A move ready to make, or the reply that refuses it. */
     private sealed class Plan {
@@ -112,7 +120,7 @@ public class SessionContinue(
                 val resume = listOf("-r", session) + model?.let { listOf("--model", it) }.orEmpty()
                 val running = record.availability != SessionAvailability.GONE
                 val folder = record.process.cwd?.takeIf { Files.isDirectory(Path.of(it)) } ?: home.toString()
-                ledger?.leaving(record, head, model)
+                ledger.leaving(record, head, model)
                 Plan.Go(
                     Move(
                         session = session,

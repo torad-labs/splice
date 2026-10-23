@@ -204,6 +204,12 @@ internal class MoveArrival(
 }
 
 public interface MoveLedger {
+    /** He pressed Continue on for [session]: true when this press opens its move, false while another of its moves is
+     *  in flight. One at a time, from any tab or the manager's head: two would both plan against the one client and
+     *  end it, and the later resume would be typed into the client the earlier one started. A move opened here is
+     *  the only one that writes or closes what this ledger keeps for [session], and [dropped] closes it. */
+    public fun opens(session: String): Boolean
+
     /** [record] is about to move onto command [to] and [model]: what it leaves is read now, before it leaves. */
     public fun leaving(record: SessionRecord, to: String, model: String?)
 
@@ -219,6 +225,7 @@ public interface MoveLedger {
      *  refused before its client was ended (a draft in the prompt, a closed terminal, an exit that did not come) never
      *  reached a new client, so it keeps no mark and records no unmoved one, and the trust it carried does not outlive
      *  it.
-     *  After [arrived] or [failed] there is nothing left to close. */
+     *  After [arrived] or [failed] there is nothing left to close but the move [opens] opened, which closes here, so
+     *  the next press opens one. */
     public fun dropped(session: String)
 }

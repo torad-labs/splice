@@ -11,6 +11,11 @@
 //   THE FOLDER: which folder the session is moving out of (MovingTrust), so the launch can carry the trust he
 //   granted there. Claude Code keeps a home-folder trust for the session alone, so home is the one folder whose
 //   grant leaves nothing to read; FolderTrust is what decides that, and this only says what is moving.
+//
+// ONE MOVE OF A SESSION AT A TIME (Oct 22, PR #247's second review). Sessions and the manager's head each build their
+// own Continue on over this one ledger, so this is where a press finds a move already in flight and is refused. Both
+// records are keyed by session, and only the move in flight writes or closes them: a second press never overwrites the
+// first one's mark or closes it under it.
 package splice.app.control.mount
 
 import splice.client.resume.ModelMoves
@@ -36,6 +41,11 @@ internal class ContinueLedger(
 ) : MoveLedger {
     private val pending = ConcurrentHashMap<String, ModelMove>()
 
+    /** The sessions with a move in flight, opened by [opens] and closed by [dropped]. */
+    private val inFlight: MutableSet<String> = ConcurrentHashMap.newKeySet()
+
+    override fun opens(session: String): Boolean = inFlight.add(session)
+
     override fun leaving(record: SessionRecord, to: String, model: String?) {
         val id = record.sessionId ?: return
         val now = pressedAt()
@@ -59,5 +69,6 @@ internal class ContinueLedger(
     override fun dropped(session: String) {
         moving.done(session)
         pending.remove(session)
+        inFlight.remove(session)
     }
 }

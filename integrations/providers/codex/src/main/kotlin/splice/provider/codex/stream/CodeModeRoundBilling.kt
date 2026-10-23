@@ -26,12 +26,19 @@ internal class CodeModeRoundBilling(
     private val log: LogSink,
 ) {
     private var postingRow: PostingTurnRow? = null
-    private var owed: CodeModeOwedRound? = null
+
+    @Volatile private var owed: CodeModeOwedRound? = null
+
     private var postingHeld = false
     private var readerEnded = false
     private var usageConsumed = false
     private var reported: Usage? = null
     private val unreported: Boolean get() = !usageConsumed && reported == null
+
+    /** Whether a posting step's row still waits for this round's terminal ([claim]), which [settle] releases it with.
+     *  Read without [lifecycle]: the registry's key lock is taken under it ([consume]), so a reader holding that lock
+     *  must not take it. A row is owed before its step's last cell borrower releases, so no reclaim sees it late. */
+    val owes: Boolean get() = owed != null
 
     fun start(row: PostingTurnRow?) = synchronized(lifecycle) { postingRow = row }
 

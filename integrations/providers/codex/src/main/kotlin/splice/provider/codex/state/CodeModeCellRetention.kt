@@ -53,7 +53,7 @@ internal class CodeModeCellRetention(
         val idle = ranked(key, CELL_IDLE_MS).filter { (priority, record) ->
             priority < 2 && (record.id !in cells || record.key != protectedKey)
         }
-        idle.forEach { (priority, record) -> park(record, reasons[priority]) }
+        idle.forEach { (priority, record) -> park(record, reasons[priority], reclaim = true) }
         return idle.isNotEmpty()
     }
 
@@ -69,7 +69,7 @@ internal class CodeModeCellRetention(
         }?.second ?: return null
         val priority = rank(victim, CELL_IDLE_MS)?.takeIf { it < 2 } ?: return null
         val reason = pressureReasons[priority]
-        park(victim, "$reason to admit a newer script")
+        park(victim, "$reason to admit a newer script", reclaim = true)
         return victim
     }
 
@@ -149,14 +149,20 @@ internal class CodeModeCellRetention(
         if (CodeModeRecordKeys.of(records, key).isEmpty()) closeSession(key)
     }
 
-    /** A park is not a use: keep the record's last-use timestamp and all no-rerun callback evidence. */
-    fun park(record: CodeModeRecord, message: String) {
+    /** A park is not a use: keep the record's last-use timestamp and all no-rerun callback evidence. A [reclaim] takes
+     *  back a cell its session no longer vouches for. It is no client's cut, so a round still streaming toward its
+     *  posting step's row is let go to its terminal, which bills that row the round's usage. Ending its lease cancelled
+     *  the round, and the row was released with a cut and none of it (round 14 of #247). A newer program or a
+     *  superseding history is the client's own cut, which the lease's end gives to the step that made it. */
+    fun park(record: CodeModeRecord, message: String, reclaim: Boolean = false) {
         check(!running(record)) { "an executing code-mode cell cannot be reclaimed" }
         admissions.remove(record.id)
         record.phase = CodeModePhase.LOST
         record.cellStartedAt = null
         CodeModeRecordErrors.replace(record, "$message; source was not rerun")
-        CodeModeSourceEnds.defer(record.sourceEnd)
+        record.sourceEnd?.let { lease ->
+            if (reclaim && lease.owed) lease.release() else CodeModeSourceEnds.defer(lease)
+        }
         record.sourceEnd = null
         cells.remove(record.id)?.close()
         record.cellIdleSince = null

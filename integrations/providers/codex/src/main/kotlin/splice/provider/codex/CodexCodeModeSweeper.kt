@@ -292,17 +292,25 @@ internal class CodeModeRecordRetention(
         now: Long,
     ): Boolean {
         val own = CodeModeRecordKeys.of(records, key)
-        // A record still holding its round's upstream lease has a turn yet to take that round's outcome, and the row the
-        // turn posts may be owed the round's usage (CodeModeStreams.billFinished). Ending the lease cancels the round, so
-        // its conversation stays (round 13 of #247), and no lease is left held by a record the head let go (round 12).
-        // Expiry ends it after its 24 hours if no turn ever takes it.
-        val stays = key in busy || !idle(own) || own.any { it.phase == CodeModePhase.LOST || it.sourceEnd != null }
+        val stays = key in busy || !idle(own) || own.any { it.phase == CodeModePhase.LOST || mayBill(it) }
         if (stays || overBound(records, busy) == null) return false
         Gone(records, expired, now).finished(key, "the head is past its bounds at the timed sweep") ?: return false
+        // Every lease left here guards a round that already ended, so ending it cancels nothing, and no lease is left
+        // held by a record the head let go (round 12 of #247).
+        own.forEach(CodeModeRecord::endSource)
         // The session its scripts ran in goes too, or its engine and host lease stay held after the head let it go
         // (round 11 of #247).
         closeSession(key)
         return true
+    }
+
+    /** Whether [record]'s round may still bill a row. While its reader runs, the row its posting step wrote may be owed
+     *  the round's usage (CodeModeStreams.billFinished), and ending the lease would cancel the round (round 13 of
+     *  #247). Once it settled, its usage may wait in the record for the turn that takes its outcome. Otherwise the
+     *  lease guards nothing, and keeping its conversation to expiry held it past the bounds for 24 hours (round 14). */
+    private fun mayBill(record: CodeModeRecord): Boolean {
+        val lease = record.sourceEnd ?: return false
+        return lease.reading || record.sourceState?.let { it.usage != null && !it.consumed } == true
     }
 
     /** The least recently used conversation outside [except] whose records are all finished and whose

@@ -470,8 +470,27 @@ daemon_left_alone() {
 }
 step "install.sh left the running $FROM_TAG daemon alone" daemon_left_alone
 
-config_untouched() { (cd "$CONFIG" && sha256sum -c "$PRIVATE/config.sha256") && diff <(config_hashes) "$PRIVATE/config.sha256"; }
-step "config and credentials are byte-identical after the install (splice.toml, keys.toml)" config_untouched
+# The v0.4.0 spec §5 promise is that existing config and credentials are never changed, so every file the
+# $FROM_TAG home held (config.sha256, taken before the install) must still hash identically. The install runs
+# `splice init`, which ADDS files of its own and only these: the manager's folder (manager/…, ManagerHome) and the
+# MCP hub front's mcp-front.env (McpFrontEnv). A new file that is neither fails, named.
+config_kept_and_only_init_files_added() {
+  (cd "$CONFIG" && sha256sum --strict -c "$PRIVATE/config.sha256") ||
+    { echo "a file the $FROM_TAG home held changed or is gone (the FAILED lines above)"; return 1; }
+  local added path stray=0
+  added="$(LC_ALL=C comm -13 <(sed -E 's/^[0-9a-f]{64}  //' "$PRIVATE/config.sha256" | LC_ALL=C sort) \
+                    <(cd "$CONFIG" && find . -type f | LC_ALL=C sort))"
+  [ -n "$added" ] || { echo "no file was added; every $FROM_TAG file is unchanged"; return 0; }
+  while IFS= read -r path; do
+    case "$path" in
+      ./manager/* | ./mcp-front.env) echo "added by splice init: $path" ;;
+      *) echo "added, and splice init does not write it: $path"; stray=$((stray + 1)) ;;
+    esac
+  done <<<"$added"
+  [ "$stray" -eq 0 ] || { echo "$stray file(s) appeared in $CONFIG that splice init does not write"; return 1; }
+  echo "every $FROM_TAG file is unchanged; the files added are all splice init's"
+}
+step "every $FROM_TAG config and credential file (splice.toml, keys.toml, auth/) is byte-identical after the install, and splice init adds only manager/ and mcp-front.env" config_kept_and_only_init_files_added
 
 # The first launch replaces the stale daemon; asserted on the process, not on a version string both
 # sides could share: the daemon serving /health must be a new process holding the candidate jar open.

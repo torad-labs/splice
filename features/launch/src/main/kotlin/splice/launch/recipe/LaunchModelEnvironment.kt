@@ -14,11 +14,40 @@ internal object LaunchModelEnvironment {
         buildMap {
             // V4-449: an explicit pin selects the initial model only. Without one, the client chooses.
             if (spec.models.pinnedModel.isNotBlank()) put("ANTHROPIC_MODEL", spec.models.pinnedModel)
-            // Every tier must name the same client selector as the enforced allowlist, even
-            // when tiers share a backend. A discovery-wrapped duplicate used to hide a picker row,
-            // but the client now rejects that off-list selector before a subagent can reach us.
+            // The picker lists one row per PLANTED TIER (Claude Code 2.1.257: fen()/hen()/uen()
+            // emit a row whenever ANTHROPIC_DEFAULT_<tier>_MODEL is set, value = the alias, label =
+            // _NAME) and dedupes rows by value only, so two tiers on one model drew that model
+            // twice: Sol as opus and as fable on claudex, K2.7 Code as sonnet and as haiku on
+            // claude-kimi (the 2026-09-04 release recording). The tier cannot be left unset: the
+            // alias then resolves to Claude Code's built-in model, which this head rejects
+            // ("proxies its own models only"), and every fable- or haiku-tiered subagent dies.
+            // The one lever is the allowlist: a tier row whose model is not on availableModels is
+            // hidden, while the head accepts its own DISCOVERY-WRAPPED spelling (catalog.contains
+            // unwraps). So a repeated tier is planted as "<prefix><id>": routed like the first, drawn
+            // never. Cache rows are untouched on purpose: Claude Code already drops a cache row that
+            // repeats a tier's model, and the cache row is where the Default line's label comes from
+            // (stripping them printed "currently gpt-5.6-sol[1m]"; verified live 2026-09-04). Known
+            // cost: a subagent on the wrapped tier runs under a wrapped ACTIVE id, for which Claude
+            // Code does not honor CLAUDE_CODE_MAX_CONTEXT_TOKENS (header note).
+            // V4-232: a repeated tier of a PRESENTED row is planted as the Claude model the row is
+            // presented as instead. The client resolves it through settings.json modelOverrides and
+            // sends the row's own id (verified on 2.1.283), so it is routed like the first and, off
+            // availableModels, drawn never, like the wrapped spelling, which the client does not know
+            // and named in a [claude-code:unrecognized_model] line for every haiku-tier title and subagent.
+            // Oct 22: 4f33819e6 (Oct 17) planted every tier bare, saying the client now rejects the wrapped selector
+            // before a subagent reaches us; claudex's /model then drew its one model four times, against the 0.4.0
+            // changelog. Re-checked on Claude Code 2.1.296 and 2.1.309: `--model haiku` and an Agent-tool subagent on
+            // a wrapped tier both reach the head, and the picker draws each model once. The wrapped spelling is back.
+            val presentedAs = spec.models.tiers.modelOverrides.entries.associate { (claude, row) -> row to claude }
+            val planted = mutableSetOf<String>()
             slots.forEach { (slot, model) ->
-                put("ANTHROPIC_DEFAULT_${slot}_MODEL", spec.models.tiers.clientId(model))
+                val spelling = when {
+                    planted.add(model) -> spec.models.tiers.clientId(model)
+                    model in presentedAs -> presentedAs.getValue(model)
+                    spec.models.discoveryPrefix.isNotBlank() -> spec.models.discoveryPrefix + model
+                    else -> model
+                }
+                put("ANTHROPIC_DEFAULT_${slot}_MODEL", spelling)
                 val label = spec.models.modelLabels[model] ?: model
                 put("ANTHROPIC_DEFAULT_${slot}_MODEL_NAME", label)
                 put("ANTHROPIC_DEFAULT_${slot}_MODEL_DESCRIPTION", label)

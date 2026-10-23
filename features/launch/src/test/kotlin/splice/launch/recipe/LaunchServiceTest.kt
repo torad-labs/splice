@@ -277,19 +277,23 @@ class LaunchServiceTest(@param:TempDir private val tmp: Path) {
         dangerouslySkipPermissions = false,
     )
 
-    // Repeated tier slots keep the same allowed client selector. A discovery-wrapped duplicate is
-    // not on availableModels and Claude Code rejects it when the enforced roster is active.
+    // 2026-09-04: Claude Code 2.1.257 draws one picker row per PLANTED tier and dedupes by value
+    // ("opus" vs "fable"), so two tiers on one model listed it twice. A repeated tier is planted
+    // under the head's discovery-wrapped id: routed (catalog.contains unwraps), hidden (not on
+    // availableModels). The first tier, the labels and the cache rows are untouched.
+    // Oct 22: planting every tier bare (4f33819e6) drew claudex's one model four times; the wrapped
+    // spelling reaches the head on Claude Code 2.1.296 and 2.1.309, so it is back.
     @Test
-    fun `a tier that repeats an earlier tier's model keeps the allowed client id`() {
+    fun `a tier that repeats an earlier tier's model is planted under the wrapped id`() {
         val env = launchKimiWithRepeatedTier(prefix = "claude-kimi--").env
         assertEquals("kimi-k3", env["ANTHROPIC_DEFAULT_OPUS_MODEL"])
         assertEquals("kimi-k2.7-code", env["ANTHROPIC_DEFAULT_SONNET_MODEL"])
         assertEquals(
-            "kimi-k2.7-code",
+            "claude-kimi--kimi-k2.7-code",
             env["ANTHROPIC_DEFAULT_HAIKU_MODEL"],
-            "haiku repeats sonnet using its allowed id",
+            "haiku repeats sonnet: wrapped",
         )
-        assertEquals("kimi-k3", env["ANTHROPIC_DEFAULT_FABLE_MODEL"], "fable repeats opus using its allowed id")
+        assertEquals("claude-kimi--kimi-k3", env["ANTHROPIC_DEFAULT_FABLE_MODEL"], "fable repeats opus: wrapped")
         assertEquals("Kimi K2.7 Code", env["ANTHROPIC_DEFAULT_HAIKU_MODEL_NAME"], "the label stays the model's own")
         assertEquals("Kimi K3 (256k)", env["ANTHROPIC_DEFAULT_FABLE_MODEL_NAME"])
     }

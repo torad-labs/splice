@@ -97,35 +97,20 @@ class PresentedRowLaunchTest(@param:TempDir private val tmp: Path) {
     }
 
     @Test
-    fun `a presented row's repeated tiers use its allowlisted row id`() {
+    fun `a presented row's repeated tier is its Claude model, not a wrapped id the client does not know`() {
         val env = service.launch(spec(catalog(245_760L)), emptyList(), dangerouslySkipPermissions = false).env
         val tiers = listOf("OPUS", "SONNET", "HAIKU", "FABLE").associateWith { env["ANTHROPIC_DEFAULT_${it}_MODEL"] }
 
-        assertEquals(
-            mapOf(
-                "OPUS" to "bonsai-2-27b",
-                "SONNET" to "bonsai-2-27b",
-                "HAIKU" to "bonsai-2-27b",
-                "FABLE" to "bonsai-2-27b",
-            ),
-            tiers,
-        )
+        assertEquals(1, tiers.values.count { it == "bonsai-2-27b" }, "the first tier plants the row: $tiers")
+        assertEquals(3, tiers.values.count { it == "claude-sonnet-4-6" }, "each repeat plants its Claude model: $tiers")
     }
 
     @Test
-    fun `an unpresented row's repeated tiers keep the allowlisted row id`() {
+    fun `an unpresented row's repeated tiers keep the wrapped spelling`() {
         val env = service.launch(spec(catalog(245_760L, clientModel = null)), emptyList(), false).env
         val tiers = listOf("OPUS", "SONNET", "HAIKU", "FABLE").associateWith { env["ANTHROPIC_DEFAULT_${it}_MODEL"] }
 
-        assertEquals(
-            mapOf(
-                "OPUS" to "bonsai-2-27b",
-                "SONNET" to "bonsai-2-27b",
-                "HAIKU" to "bonsai-2-27b",
-                "FABLE" to "bonsai-2-27b",
-            ),
-            tiers,
-        )
+        assertEquals(3, tiers.values.count { it == "claude-bonsai--bonsai-2-27b" }, "$tiers")
     }
 
     @Test

@@ -71,7 +71,7 @@ internal class CodeModeRoundBilling(
     fun settle(readerEnd: Boolean, clientCut: Boolean) {
         val (due, usage) = synchronized(lifecycle) {
             if (readerEnd) readerEnded = true
-            val due = owed ?: return
+            val due = owed ?: return checkpoint(readerEnd)
             val current = record() ?: return
             val usage = try {
                 consume(current)
@@ -89,6 +89,18 @@ internal class CodeModeRoundBilling(
         }
         Cancellables.runCatchingBestEffort { due.settle(usage) }.onFailure { failure ->
             log("[code-mode] the posting turn's row was not released (${failure::class.simpleName})")
+        }
+    }
+
+    /** No row holds this terminal (a failed startup's retry owns it), so its consuming save never runs. The parsed
+     *  terminal saves the finished source itself; a failed save is retried by the next sweep. */
+    private fun checkpoint(readerEnd: Boolean) {
+        if (readerEnd) return
+        val current = record() ?: return
+        try {
+            registry.source.checkpoint(current)
+        } catch (error: CodeModePersistenceException) {
+            log("[code-mode] finished source saved later: its checkpoint was not saved (${error::class.simpleName})")
         }
     }
 }

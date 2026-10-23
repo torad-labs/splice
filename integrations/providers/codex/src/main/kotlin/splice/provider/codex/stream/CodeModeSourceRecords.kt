@@ -66,6 +66,14 @@ internal class CodeModeSourceRecords(
             true
         }
 
+    /** Saves a finished source no billing claim saved, so an exact retry after a hard stop still finds it complete.
+     *  Its usage stays unconsumed for its eventual owner; a removed or lost record is never written back. */
+    fun checkpoint(record: CodeModeRecord) = access.withKey(record.key) {
+        val finished = record.error == null && record.sourceState?.complete == true
+        if (record !in records || !finished) return@withKey
+        store.save(records, history.entries, dirtyKeys = setOf(record.key), changedRecord = record)
+    }
+
     /** A result request takes terminal billing once, and the claim survives a later restart. */
     fun consume(record: CodeModeRecord): Usage? = access.withKey(record.key) {
         val state = record.sourceState ?: return@withKey null

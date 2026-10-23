@@ -15,23 +15,24 @@ import splice.core.reasoning.ReasoningReplay
 import splice.provider.codex.stream.CodeModeSourceBuffer
 import splice.provider.codex.stream.CodeModeSwitchingSink
 import splice.upstream.codemode.CodeModeLimits
-import splice.upstream.codemode.CodeModeManual
 import splice.upstream.codemode.CodeModeSealedSource
 import splice.upstream.codemode.CodeModeSourcePart
 import splice.upstream.sse.WireSink
 
 class CodeModeStreamPortsTest : CodeModeBridgeTestSupport() {
+    /** A script runs only once its whole item arrived (Oct 23): a streamed prefix reaches no cursor, and the
+     *  terminal hands each cursor the whole source in one part. */
     @Test
-    fun `independent source cursors each receive the prefix and remaining terminal suffix`() = runBlocking {
+    fun `a source cursor gets nothing while the item streams and the whole item at the terminal`() = runBlocking {
         val buffer = CodeModeSourceBuffer()
         val first = buffer.view()
         val retry = buffer.view()
-        assertEquals(CodeModeManual.streamingSealedGlobals, (retry as CodeModeSealedSource).sealedGlobals)
+        assertTrue(retry !is CodeModeSealedSource)
         buffer.publish("prefix")
-        assertEquals(CodeModeSourcePart.Delta("prefix"), first.read())
+        assertNull(first.readAvailable())
         val waiting = async { first.read() }
         buffer.complete("prefix-suffix")
-        assertEquals(CodeModeSourcePart.Complete("-suffix"), waiting.await())
+        assertEquals(CodeModeSourcePart.Complete("prefix-suffix"), waiting.await())
         assertEquals(CodeModeSourcePart.Complete("prefix-suffix"), retry.read())
         assertEquals(CodeModeSourcePart.Complete(), first.read())
     }

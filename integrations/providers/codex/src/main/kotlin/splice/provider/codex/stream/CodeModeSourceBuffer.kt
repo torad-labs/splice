@@ -1,4 +1,12 @@
 // NEW: a bounded captured source offers a fresh cursor only for proven pre-dispatch retries.
+//
+// WHOLE ITEMS ONLY (Oct 23, 2026). A cursor hands the worker nothing until the response terminal certifies the
+// exec item, then the whole item in one part, as Codex dispatches exec only on its completed item (codex-rs
+// turn.rs:2903-3014). Statements used to run as they streamed: a script's first client
+// tool calls went out before its upstream round ended, so one round outlived the client response that carried
+// them, and the detached reader, switching attachments, cut claims and split billing that followed were the
+// most-fixed code-mode family since Sep 1 (77 commits). The model never opens a second exec while one runs, and
+// its sources are short (661 chars at p50), so the overlap this gives up is a fraction of a script's generation.
 package splice.provider.codex.stream
 
 import kotlinx.coroutines.NonCancellable
@@ -12,8 +20,6 @@ import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.selects.select
 import kotlinx.coroutines.withContext
 import splice.upstream.codemode.CodeModeCell
-import splice.upstream.codemode.CodeModeManual
-import splice.upstream.codemode.CodeModeSealedSource
 import splice.upstream.codemode.CodeModeSource
 import splice.upstream.codemode.CodeModeSourcePart
 import java.io.IOException
@@ -116,47 +122,22 @@ internal class CodeModeSourceBuffer(
         throw IOException(failure.error)
     }
 
+    /** A cursor over the source: it waits for the response terminal, then reads the whole item as one
+     *  [CodeModeSourcePart.Complete], or the failure that ended it. A later read gets the empty remainder. */
     fun view(): CodeModeSource {
         var position = 0
-        return object : CodeModeSealedSource {
-            override val sealedGlobals: Set<String> = CodeModeManual.streamingSealedGlobals
+        return object : CodeModeSource {
+            override suspend fun read(): CodeModeSourcePart = part(state.first { it.terminal != null })
 
-            override suspend fun read(): CodeModeSourcePart {
-                while (true) {
-                    val next = state.first { it.terminal != null || (!it.itemComplete && it.text.length > position) }
-                    commitAndReadPart(next)?.let { return it }
-                }
-            }
+            override suspend fun readAvailable(): CodeModeSourcePart? = state.value.takeIf { it.terminal != null }
+                ?.let(::part)
 
-            override suspend fun readAvailable(): CodeModeSourcePart? {
-                val next = state.value
-                if (!hasAvailablePart(next, position)) return null
-                return commitAndReadPart(next)
-            }
-
-            private fun commitAndReadPart(next: SourceSnapshot): CodeModeSourcePart? {
-                (next.terminal as? CodeModeSourcePart.Failed)?.let { return it }
-                beforeRead.commit(next.text)
-                val latest = state.value
-                if (newerPartFinished(latest, next)) return null
-                val remainder = next.text.substring(position)
-                position = next.text.length
-                return if (next.terminal is CodeModeSourcePart.Complete) {
-                    CodeModeSourcePart.Complete(remainder)
-                } else {
-                    CodeModeSourcePart.Delta(remainder)
-                }
-            }
-
-            private fun hasAvailablePart(snapshot: SourceSnapshot, offset: Int): Boolean {
-                if (snapshot.terminal != null) return true
-                if (snapshot.itemComplete) return false
-                return snapshot.text.length > offset
-            }
-
-            private fun newerPartFinished(latest: SourceSnapshot, next: SourceSnapshot): Boolean {
-                if (latest === next) return false
-                return latest.itemComplete || latest.terminal != null
+            private fun part(ended: SourceSnapshot): CodeModeSourcePart {
+                (ended.terminal as? CodeModeSourcePart.Failed)?.let { return it }
+                beforeRead.commit(ended.text)
+                val remainder = ended.text.substring(position)
+                position = ended.text.length
+                return CodeModeSourcePart.Complete(remainder)
             }
         }
     }

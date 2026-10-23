@@ -175,7 +175,7 @@ public class SessionContinue(
     ): JsonReply {
         if (move.working) stopTurn(driving, pane, move, ask)?.let { return it }
         val exit = object : PaneTurns.Exit {
-            override val pid: Long = pid
+            override val process = move.process
 
             override fun check(): JsonReply? = changed(move, ask) ?: when {
                 // working now, on a turn the move did not stop: one the person started in the terminal itself, which

@@ -35,6 +35,9 @@ import splice.sessions.http.Refusal.REFUSED
 import splice.sessions.prompt.ScreenChoices
 import splice.sessions.prompt.ScreenOffer
 import splice.sessions.registry.PidAlive
+import splice.sessions.registry.PidIdentity
+import splice.sessions.registry.ProcPidIdentity
+import splice.sessions.registry.SessionProcess
 import java.util.concurrent.ConcurrentHashMap
 
 internal const val NO_TERMINAL_TO_DRIVE = "splice has no terminal to drive sessions in yet"
@@ -293,6 +296,9 @@ public class SessionDrive(
 internal class PaneTurns(
     /** Whether a client process still runs: the operating system's answer, read for a pane whose exit wait ran out. */
     private val alive: PidAlive = PidAlive { pid -> pid > 0 && ProcessHandle.of(pid).map { it.isAlive }.orElse(false) },
+    /** A pid's kernel start time, the registry's own reading: what tells a marked client from a later process under
+     *  its pid. */
+    private val identity: PidIdentity = ProcPidIdentity(),
 ) {
     /** Each monitor serializes the terminal calls it wraps and guards no state. */
     private val monitors = List(PANE_TURNS) { Any() }
@@ -338,16 +344,20 @@ internal class PaneTurns(
         held(pane, session, again, nothing, act)
 
     /** [exit]'s check and keys in [pane]'s turn, then its wait for the client to leave. From the keys on, [pane] is
-     *  marked as being left by [session]'s [Exit.pid] until the client is seen gone; a terminal that refused the keys
-     *  may still have taken them, so it keeps the mark too. A pane another End or move already marked for [session]
-     *  gets nothing typed again: this one waits on that client to leave, so a second `/exit` cannot land in the shell
-     *  the first one leaves in front (PR #247's seventh review). Null once the client has left; else the refusal, or
-     *  [Exit.stayed]. */
+     *  marked as being left by [session]'s [Exit.process] until the client is seen gone; a terminal that refused the
+     *  keys may still have taken them, so it keeps the mark too. A pane another End or move already marked for this
+     *  same client gets nothing typed again: once [Exit.check] still passes, this one waits on that client to leave, so
+     *  a second `/exit` cannot land in the shell the first one leaves in front, and a request an act since made stale
+     *  is still refused (PR #247's seventh and eighth reviews). A mark an earlier client of [session] left there, one
+     *  still running, refuses it. Null once the client has left; else the refusal, or [Exit.stayed]. */
     suspend fun leave(pane: SessionPane, session: String, again: Relocate, exit: Exit): JsonReply? {
-        var mark = Leaver(session, exit.pid)
+        var mark = Leaver(session, exit.process)
         val join = InTurn {
-            leaving[pane.id]?.let { mark = it }
-            null
+            exit.check() ?: run {
+                val going = joined(pane, exit) ?: return@run refusedLeaving()
+                mark = going
+                null
+            }
         }
         held(pane, session, again, join) {
             exit.check() ?: run {
@@ -373,17 +383,30 @@ internal class PaneTurns(
             }
         }
 
-    /** Whether [pane] is still being left by [session]'s client: marked for it, and that client's process, when
-     *  known, still running. A mark whose process has gone is dropped here, in the pane's turn. */
+    /** The mark [exit] waits on in a pane already being left: one another End or move typed `/exit` under for this
+     *  same client. Null when the mark is an earlier client's, still running. */
+    private fun joined(pane: SessionPane, exit: Exit): Leaver? =
+        leaving[pane.id]?.takeIf { it.process?.sameAs(exit.process) == true }
+
+    /** Whether [pane] is still being left by [session]'s client: marked for it, and that client, when known, not
+     *  [gone]. A mark whose client has gone is dropped here, in the pane's turn. */
     private fun stillLeaving(pane: SessionPane, session: String): Boolean {
         val mark = leaving[pane.id]?.takeIf { it.session == session } ?: return false
-        val gone = mark.pid?.let { !alive(it) } ?: false
+        val gone = gone(mark.process)
         if (gone) leaving.remove(pane.id, mark)
         return !gone
     }
 
+    /** Whether [client] has gone: its pid no longer runs, or another process runs under that pid now, told by the
+     *  kernel start time the client registered (PR #247's eighth review). One with no pid known never goes here. */
+    private fun gone(client: SessionProcess?): Boolean {
+        val pid = client?.pid ?: return false
+        val start = client.procStart
+        return !alive(pid) || start != null && identity.procStart(pid)?.let { it != start } == true
+    }
+
     /** A pane's `/exit` mark: the session it was typed for, and its client's process when the record knew one. */
-    private data class Leaver(val session: String, val pid: Long?)
+    private data class Leaver(val session: String, val process: SessionProcess?)
 
     /** The session located anew inside its pane's turn, as SessionDrive.locate answers it. */
     fun interface Relocate {
@@ -397,9 +420,9 @@ internal class PaneTurns(
 
     /** What End and Continue on type to end a client, in the order [leave] runs it. */
     interface Exit {
-        /** The client process `/exit` is typed to, when the session's record knows it; null keeps the pane marked
+        /** The client `/exit` is typed to, as the session's record knows it; one with no pid keeps the pane marked
          *  until an End or a move sees the client leave. */
-        val pid: Long?
+        val process: SessionProcess?
 
         /** The refusal that keeps the keys from going, read inside the turn; null lets them go. */
         fun check(): JsonReply?

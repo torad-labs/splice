@@ -55,11 +55,15 @@ public data class SessionProcess(
     val messagingSocketPath: String?,
     /** The registry directory this registration was read from: where its key file sits beside it (peer messaging, spec 1.1). */
     val registryDir: String? = null,
+    /** The kernel start time Claude Code registered for [pid], as PidIdentity.procStart spells it: what tells this
+     *  client from a later process given the same pid when [startedAt] is absent or equal. */
+    val procStart: String? = null,
 ) {
-    /** Whether [other] is this same client: the same pid, started at the same time, since a later client can be
-     *  given a pid an earlier one had (PR #247's seventh review). */
+    /** Whether [other] is this same client: the same pid, started at the same time by both the registration's clock
+     *  and the kernel's, since a later client can be given a pid an earlier one had (PR #247's seventh and eighth
+     *  reviews). */
     public fun sameAs(other: SessionProcess?): Boolean =
-        other != null && other.pid == pid && other.startedAt == startedAt
+        other != null && other.pid == pid && other.startedAt == startedAt && other.procStart == procStart
 }
 
 /** Which Claude Code client the session runs: its kind and version, and how it was started. */
@@ -222,6 +226,7 @@ public class SessionRegistry(
                 updatedAt = updatedAt,
                 messagingSocketPath = JsonScalars.str(obj, "messagingSocketPath"),
                 registryDir = sessionsDir.toString(),
+                procStart = JsonScalars.str(obj, "procStart"),
             ),
             client = SessionClient(
                 kind = JsonScalars.str(obj, "kind"),

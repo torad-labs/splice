@@ -128,7 +128,7 @@ public class SessionEnd(
     private suspend fun exit(driving: SessionDriver, pane: SessionPane, record: SessionRecord, seen: Long?): JsonReply {
         val session = record.sessionId.orEmpty()
         val exit = object : PaneTurns.Exit {
-            override val pid: Long? = record.process.pid
+            override val process = record.process
 
             override fun check(): JsonReply? = moved(record, seen) ?: seen?.let { cost(session) }
 

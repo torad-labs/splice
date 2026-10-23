@@ -5,6 +5,9 @@
 package splice.sessions.http
 
 import io.ktor.http.HttpStatusCode
+import kotlinx.coroutines.CompletableDeferred
+import kotlinx.coroutines.CoroutineStart
+import kotlinx.coroutines.async
 import kotlinx.coroutines.runBlocking
 import kotlinx.serialization.json.jsonPrimitive
 import org.junit.jupiter.api.Assertions.assertEquals
@@ -97,7 +100,11 @@ class TeamStartTest {
     private var accountExists = true
     private var command: StartCommand = StartCommand.Ready(listOf("claudex"))
 
-    private fun start(on: TeamRig = rig, wired: Boolean = true) = TeamStart(
+    private fun start(
+        on: TeamRig = rig,
+        wired: Boolean = true,
+        arrival: SessionArrival = SessionArrival { _, _ -> arrives },
+    ) = TeamStart(
         teams = TeamSource { on.store },
         drive = SessionDrive(TerminalSource { SessionDriver(terminal, panes).takeIf { wired } }),
         commands = StartCommands { command },
@@ -105,7 +112,7 @@ class TeamStartTest {
             pinned += Triple(head, label, session)
             accountExists
         },
-        arrival = SessionArrival { _, _ -> arrives },
+        arrival = arrival,
         registry = rig.registry,
         home = tmp.resolve("home"),
     )
@@ -206,6 +213,37 @@ class TeamStartTest {
         assertEquals(HttpStatusCode.Conflict, reply.status, reply.body)
         assertNull(slot("b1").session)
         assertNull(panes.paneFor(asked))
+    }
+
+    /** Two tabs asking at once: the second is told the slot is already starting, and the slot runs one client. */
+    @Test
+    fun `a start asked while the slot is already starting is refused and opens no second client`() = runBlocking {
+        val id = team().id
+        val up = CompletableDeferred<Boolean>()
+        // the first member comes up only when the test says so; any other would come up at once
+        val firstWaits = SessionArrival { session, _ ->
+            if (session == terminal.opened.first().session) up.await() else true
+        }
+        val starter = start(arrival = firstWaits)
+        val first = async(start = CoroutineStart.UNDISPATCHED) { starter.start(id, "b1") }
+        val second = starter.start(id, "b1")
+        assertEquals(HttpStatusCode.Conflict, second.status, second.body)
+        assertEquals("b1 is already starting", error(second))
+        up.complete(true)
+        assertEquals(HttpStatusCode.OK, first.await().status)
+        assertEquals(setOf(checkNotNull(slot("b1").session)), panes.known.keys, "one client, the slot's")
+    }
+
+    @Test
+    fun `a start that does not come up keeps a binding made meanwhile`() = runBlocking {
+        val id = team().id
+        val rebound = SessionArrival { _, _ ->
+            rig.store.bind(id, mapOf("b1" to LEAD))
+            false
+        }
+        val reply = start(arrival = rebound).start(id, "b1")
+        assertEquals(HttpStatusCode.GatewayTimeout, reply.status, reply.body)
+        assertEquals(LEAD, slot("b1").session, "the give-back did not overwrite it")
     }
 
     @Test

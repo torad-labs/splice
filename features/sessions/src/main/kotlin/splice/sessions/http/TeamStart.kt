@@ -27,6 +27,12 @@
 // left on Starting. The 504 carries the screen's last lines, because the reason is usually on it (a folder to trust,
 // a sign-in to finish), and splice does not answer those for the person.
 //
+// ONE START AT A TIME PER SLOT. Starts run concurrently (the route's blocking-I/O dispatcher), so a start holds its
+// slot from its first read to its answer, and a second start asked meanwhile is told the slot is already starting
+// rather than opening a second client the slot cannot hold. The hold is in memory only, so a daemon that stops never
+// leaves a slot on Starting. The bind and the give-back are each made only while the slot still holds what this start
+// left in it, so a binding made meanwhile by hand is never overwritten.
+//
 // THE TERMINAL IS THE CONTRACT'S (SessionTerminal): no terminal product is named here. A session splice did not open
 // has no pane and is refused on stop, never typed into (SessionPanes).
 package splice.sessions.http
@@ -46,6 +52,7 @@ import splice.sessions.teams.TeamStore
 import java.nio.file.Files
 import java.nio.file.Path
 import java.util.UUID
+import java.util.concurrent.ConcurrentHashMap
 
 // why: a cold Claude Code on a slow disk, or one that stops at a first-run prompt, shows itself within this long;
 // past it the screen is the answer, and a person is never left looking at Starting.
@@ -79,14 +86,23 @@ public class TeamStart(
     /** How a screen is read for a question asked before the session registers: the drive's own reading. */
     private val choices = ScreenChoices()
 
+    /** The slots a start is under way for, by team id and slot id (the header's ONE START AT A TIME PER SLOT). */
+    private val starting: MutableSet<Pair<String, String>> = ConcurrentHashMap.newKeySet()
+
     public suspend fun start(teamId: String, slotId: String): JsonReply {
         val store = teams() ?: return Refusals.reply(HttpStatusCode.ServiceUnavailable, TEAMS_UNWIRED)
-        return when (val member = locate(store, teamId, slotId)) {
-            is Located.Missing -> member.reply
-            is Located.Member -> pending(
-                store,
-                member,
-            ) ?: refusalToStart(member.team, member.slot) ?: launchable(store, member)
+        val held = teamId to slotId
+        if (!starting.add(held)) return Refusals.reply(HttpStatusCode.Conflict, "$slotId is already starting")
+        return try {
+            when (val member = locate(store, teamId, slotId)) {
+                is Located.Missing -> member.reply
+                is Located.Member -> pending(
+                    store,
+                    member,
+                ) ?: refusalToStart(member.team, member.slot) ?: launchable(store, member)
+            }
+        } finally {
+            starting.remove(held)
         }
     }
 
@@ -152,7 +168,10 @@ public class TeamStart(
         if (slot.account != null && !pins.pin(slot.head, slot.account, session)) {
             return Refusals.reply(HttpStatusCode.Conflict, "${slot.head} has no account named ${slot.account}")
         }
-        store.bind(team.id, mapOf(slot.id to session))
+        val bound = store.bind(team.id, mapOf(slot.id to session), held = mapOf(slot.id to slot.session))
+        if (bound.slots.none { it.id == slot.id && it.session == session }) {
+            return Refusals.reply(HttpStatusCode.Conflict, "${slot.id} was bound to another session while it started")
+        }
         // The flags that make the member a member: the id splice minted, the slot's own name, and its model.
         val flags = listOf("--session-id", session, "--name", slot.id) +
             slot.model?.let { listOf("--model", it) }.orEmpty()
@@ -166,7 +185,7 @@ public class TeamStart(
                 awaitUp(store, driving, member, session, pane)
             },
             onFailure = {
-                giveBack(store, member)
+                giveBack(store, member, session)
                 Refusals.reply(HttpStatusCode.BadGateway, "the terminal would not open: ${it.message}")
             },
         )
@@ -184,7 +203,7 @@ public class TeamStart(
             awaitUp(store, driving, member, session, pane)
         } else {
             driving.panes.forget(session)
-            store.bind(member.team.id, mapOf(member.slot.id to null))
+            store.bind(member.team.id, mapOf(member.slot.id to null), held = mapOf(member.slot.id to session))
             Refusals.reply(
                 HttpStatusCode.Conflict,
                 "${member.slot.id} did not start: its terminal closed",
@@ -228,7 +247,7 @@ public class TeamStart(
         val closing = Cancellables.runCatchingCleanup { driving.terminal.close(pane) }
             .fold({ "" }, { "; its terminal would not close: ${it.message}" })
         driving.panes.forget(session)
-        giveBack(store, member)
+        giveBack(store, member, session)
         val said = "${member.slot.id} did not start: Claude Code had not registered after ${ARRIVAL_SECONDS}s"
         return JsonReply(
             HttpStatusCode.GatewayTimeout,
@@ -239,8 +258,10 @@ public class TeamStart(
         )
     }
 
-    /** The slot as it was before the start: bound to what it held, or open. */
-    private fun giveBack(store: TeamStore, member: Located.Member) {
-        store.bind(member.team.id, mapOf(member.slot.id to member.slot.session))
+    /** The slot as it was before the start: bound to what it held, or open. Only while it still holds [session], the
+     *  one this start bound: a binding made since is kept. */
+    private fun giveBack(store: TeamStore, member: Located.Member, session: String) {
+        val slot = member.slot.id
+        store.bind(member.team.id, mapOf(slot to member.slot.session), held = mapOf(slot to session))
     }
 }

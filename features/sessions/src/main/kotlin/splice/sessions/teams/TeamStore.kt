@@ -221,16 +221,25 @@ public class TeamStore(
         return saved
     }
 
-    /** Binds (or with null, unbinds) sessions to slots. A slot id the team does not have is refused. */
+    /** Binds (or with null, unbinds) sessions to slots. A slot id the team does not have is refused. With [held], the
+     *  sessions the caller read in those slots, nothing is written once any of them holds another: the team comes
+     *  back as it stands, so a start's bind and give-back never overwrite a binding made meanwhile (TeamStart). */
     @Synchronized
-    public fun bind(teamId: String, bindings: Map<String, String?>): Team = change(teamId) { team ->
-        val unknown = bindings.keys - team.slots.map { it.id }.toSet()
-        if (unknown.isNotEmpty()) throw TeamRefusal("no such slot in ${team.id}: ${unknown.sorted().joinToString()}")
-        team.copy(
-            slots = team.slots.map { slot ->
-                if (slot.id in bindings) rules.remembered(slot.copy(session = bindings[slot.id]), clock()) else slot
-            },
-        )
+    public fun bind(teamId: String, bindings: Map<String, String?>, held: Map<String, String?> = emptyMap()): Team {
+        val moved = writable().firstOrNull { it.id == teamId }
+            ?.takeIf { team -> team.slots.any { it.id in held && it.session != held[it.id] } }
+        if (moved != null) return moved
+        return change(teamId) { team ->
+            val unknown = bindings.keys - team.slots.map { it.id }.toSet()
+            if (unknown.isNotEmpty()) {
+                throw TeamRefusal("no such slot in ${team.id}: ${unknown.sorted().joinToString()}")
+            }
+            team.copy(
+                slots = team.slots.map { slot ->
+                    if (slot.id in bindings) rules.remembered(slot.copy(session = bindings[slot.id]), clock()) else slot
+                },
+            )
+        }
     }
 
     /** Sets one slot's standing instructions; blank clears them. */

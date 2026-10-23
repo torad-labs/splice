@@ -15,9 +15,11 @@ import org.junit.jupiter.api.Assertions.assertFalse
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.BeforeEach
 import org.junit.jupiter.api.Test
+import org.junit.jupiter.api.assertThrows
 import org.junit.jupiter.api.io.TempDir
 import splice.core.session.SessionKey
 import splice.core.session.SessionPane
+import java.io.IOException
 import java.nio.file.Path
 import java.util.concurrent.TimeUnit
 
@@ -63,6 +65,9 @@ class TmuxTerminalTest {
      *  opens outlives it whether the test closed its pane or not. */
     private fun open(vararg command: String): SessionPane =
         terminal.open("11111111-2222-4333-8444-555555555555", command.toList(), tmp.toString())
+
+    /** The tmux pane number inside an opaque id, as tmux itself takes it. */
+    private fun number(pane: SessionPane): String = pane.id.substringBefore('@').substringBefore('+')
 
     /** Polls [screen] until [holds], and answers the last screen it read. Never sleeps for a duration. */
     private fun screenUntil(pane: SessionPane, holds: (String) -> Boolean): String {
@@ -113,7 +118,7 @@ class TmuxTerminalTest {
     @Test
     fun `a clear empties what the prompt held, so the message after it arrives alone`() {
         val pane = open("sh", "-c", "while IFS= read -r line; do echo \"got:\$line\"; done")
-        val typed = listOf("send-keys", "-t", pane.id.substringBefore("@"), "-l", "leftover")
+        val typed = listOf("send-keys", "-t", number(pane), "-l", "leftover")
         TmuxCommand("tmux", socket, DEADLINE_MS).run(typed)
 
         terminal.press(pane, SessionKey.CLEAR)
@@ -157,7 +162,9 @@ class TmuxTerminalTest {
         val elsewhere = SessionPane("%0@" + tmp.resolve("never-started.sock"))
 
         assertFalse(terminal.isOpen(elsewhere), "a server that was never started holds no live pane")
-        assertEquals("", terminal.screen(elsewhere), "and there is no screen to read")
+        assertThrows<IOException>("a screen that cannot be read says so, never reads as an empty prompt") {
+            terminal.screen(elsewhere)
+        }
         terminal.send(elsewhere, "type this")
         terminal.press(elsewhere, SessionKey.STOP)
         terminal.close(elsewhere)
@@ -172,8 +179,8 @@ class TmuxTerminalTest {
         val theirs = elsewhere.open("22222222-2222-4333-8444-555555555555", listOf("cat"), tmp.toString())
         try {
             assertEquals(
-                mine.id.substringBefore('@'),
-                theirs.id.substringBefore('@'),
+                number(mine),
+                number(theirs),
                 "both servers call their first pane the same number, which is the hazard",
             )
             assertTrue(mine.id != theirs.id, "and the pane splice holds is still the two of them apart")
@@ -208,9 +215,35 @@ class TmuxTerminalTest {
         val pane = open("sh", "-c", "echo pid=\$\$; exec cat")
         val pid = screenUntil(pane) { "pid=" in it }.substringAfter("pid=").lines().first().trim().toLong()
 
-        assertEquals(pane, terminal.recorded(pane.id.substringBefore("@"), socket.toString()))
-        assertTrue(terminal.hosts(pane, pid), "the process the pane was started with is in front of it")
-        assertFalse(terminal.hosts(pane, ProcessHandle.current().pid()), "a process the pane never held is not")
+        val recorded = requireNotNull(terminal.recorded(number(pane), socket.toString()))
+        assertTrue(terminal.isOpen(recorded), "the launch's record names the live pane")
+        assertTrue(terminal.hosts(recorded, pid), "the process the pane was started with is in front of it")
+        assertFalse(terminal.hosts(recorded, ProcessHandle.current().pid()), "a process the pane never held is not")
         assertEquals(null, terminal.recorded("not-a-pane", socket.toString()))
+    }
+
+    /** A server that exits and starts again on the same socket numbers its panes from the start again. The pane
+     *  splice opened is gone with it, and the stranger's shell that now has its number is never typed into. */
+    @Test
+    fun `a pane splice opened is not live once a restarted server gives its number to another shell`() {
+        val pane = open("cat")
+        killServer(socket)
+        val shell = listOf("sh", "-c", "while IFS= read -r line; do echo \"got:\$line\"; done")
+        val stranger = TmuxCommand("tmux", socket, DEADLINE_MS)
+            .must(listOf("new-session", "-d", "-P", "-F", "#{pane_id}", "--") + shell).trim()
+        assertEquals(number(pane), stranger, "the restarted server gave its first pane the same number")
+
+        assertFalse(terminal.isOpen(pane), "the pane splice opened is gone, whatever holds its number now")
+        terminal.send(pane, "hello")
+        terminal.press(pane, SessionKey.ACCEPT)
+
+        // A line typed to the shell directly, after the acts above: the shell answers in order, so once it has
+        // answered this one, anything those acts had typed would be on the screen before it.
+        val theirs = requireNotNull(terminal.recorded(stranger, socket.toString()))
+        TmuxCommand("tmux", socket, DEADLINE_MS).must(listOf("send-keys", "-t", stranger, "-l", "marker"))
+        TmuxCommand("tmux", socket, DEADLINE_MS).must(listOf("send-keys", "-t", stranger, "Enter"))
+        val screen = screenUntil(theirs) { "got:marker" in it }
+        assertTrue("got:marker" in screen, "the shell answered: $screen")
+        assertFalse("hello" in screen, "nothing splice meant for its session reached the shell: $screen")
     }
 }

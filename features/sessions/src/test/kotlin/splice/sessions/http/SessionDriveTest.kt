@@ -13,8 +13,10 @@ import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 import splice.core.session.SessionKey
 import splice.core.session.SessionPane
+import splice.core.session.SessionTerminal
 import splice.http.JsonReply
 import splice.sessions.prompt.trustScreen
+import java.io.IOException
 
 class SessionDriveTest {
     private val terminal = FakeTerminal()
@@ -101,6 +103,26 @@ class SessionDriveTest {
         assertEquals(HttpStatusCode.OK, cleared.status, cleared.body)
         assertEquals(listOf(SessionPane("%7") to SessionKey.CLEAR), terminal.pressed)
         assertEquals(listOf(SessionPane("%7") to "Say hi."), terminal.sent)
+    }
+
+    /** A capture that failed or timed out is not an empty prompt: his unsent words could be there. */
+    @Test
+    fun `a prompt splice cannot read is never taken for an empty one, and only his say-so types into it`() {
+        val unread = object : SessionTerminal by terminal {
+            override fun screen(pane: SessionPane): String = throw IOException("tmux capture-pane did not answer")
+        }
+        val blind = SessionDrive(TerminalSource { SessionDriver(unread, panes) })
+
+        val said = blind.sayJson(OURS, """{"text": "Say hi."}""")
+        assertEquals(HttpStatusCode.Conflict, said.status, said.body)
+        assertEquals("refused", reason(said))
+        assertTrue(said.body.contains("could not read its screen"), said.body)
+        val answered = blind.answerJson(OURS, """{"choice": 1, "label": "Yes"}""")
+        assertEquals(HttpStatusCode.Conflict, answered.status, answered.body)
+        assertTrue(terminal.sent.isEmpty() && terminal.pressed.isEmpty(), "nothing typed into a prompt unseen")
+
+        assertEquals(HttpStatusCode.OK, blind.sayJson(OURS, """{"text": "Say hi.", "clear": true}""").status)
+        assertEquals(listOf(SessionPane("%7") to "Say hi."), terminal.sent, "on his say-so it goes")
     }
 
     @Test

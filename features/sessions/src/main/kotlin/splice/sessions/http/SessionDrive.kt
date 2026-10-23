@@ -47,7 +47,16 @@ private const val SCREEN_NOT_OURS =
 private const val ANSWER_CLOSED = "its terminal is closed, so nothing is being asked"
 private const val SCREEN_MOVED = "the screen no longer shows that choice where it was, so nothing was pressed"
 private const val DRAFT_HELD = "its prompt already holds words, and a message would be sent with them"
+private const val DRAFT_UNREAD =
+    "splice could not read its screen, so it cannot tell whether its prompt holds unsent words, and did nothing: "
+private const val CHOICE_UNREAD =
+    "splice could not read its screen, so it cannot see that choice is still there, and pressed nothing: "
+private const val SAY_CLOSED = "its terminal is closed, so nothing can be sent to it"
 private const val TERMINAL_REFUSED = "the terminal did not take it: "
+
+// why: how many monitors the panes share, so two acts in one pane never interleave and a pane splice will not see
+// again leaves nothing behind. Two panes that share a monitor only take turns.
+private const val PANE_TURNS = 64
 private const val LAUNCH_PANE_GONE =
     "the terminal this session was started in is gone; open it where it runs now"
 private const val LAUNCH_PANE_TAKEN =
@@ -77,50 +86,65 @@ public class SessionDrive(
     /** Where the numbered keys begin, so a choice answers with the digit the person presses. */
     private val firstChoice = SessionKey.CHOICE_1.ordinal
 
+    /** One act at a time in a pane, from what it checks on the screen to its last key: two messages at once would each
+     *  find the prompt empty, and one's paste or clear would land between the other's paste and its Enter. Each
+     *  monitor serializes the terminal calls it wraps and guards no state. */
+    private val paneTurns = List(PANE_TURNS) { Any() }
+
+    private val unwired = refuse(HttpStatusCode.ServiceUnavailable, NO_TERMINAL_TO_DRIVE, Refusal.NO_TERMINAL)
+
     /** Give the session [text] as the person would: whole, line breaks intact, then submitted. The client takes it at
      *  once when idle and queues it mid-turn, which is its behaviour and not splice's to change. What is sent is
      *  exactly [text]: a prompt that already holds words is refused with them, and emptied first only when [clear]
      *  says so. */
     public fun say(session: String, text: String, clear: Boolean = false): JsonReply {
         if (text.isBlank()) return refuse(HttpStatusCode.BadRequest, "a message needs words in it")
-        if (!clear) drafted(session)?.let { return it }
-        return inPane(session, SAY_NOT_OURS, "its terminal is closed, so nothing can be sent to it") { driving, pane ->
+        return inPane(
+            session,
+            SAY_NOT_OURS,
+            SAY_CLOSED,
+            held = { driving, pane -> if (clear) null else draft(driving, pane) },
+        ) { driving, pane ->
             if (clear) driving.terminal.press(pane, SessionKey.CLEAR)
             driving.terminal.send(pane, text)
         }
     }
 
-    /** The refusal a message meets when the session's prompt already holds words, carrying them; null when it is empty
-     *  or splice cannot reach or read it, which the act itself then answers for. SessionContinue asks it before `/exit`. */
+    /** The refusal a message meets when the session's prompt already holds words, carrying them, or when its screen
+     *  cannot be read, since a prompt splice could not see is not an empty one; null when it is empty or splice cannot
+     *  reach it, which the act itself then answers for. SessionEnd and SessionContinue ask it before `/exit`. */
     internal fun drafted(session: String): JsonReply? {
         val driving = driver() ?: return null
-        val pane = locate(driving, session, SAY_NOT_OURS, "").pane?.takeIf(driving.terminal::isOpen) ?: return null
-        val draft = Cancellables.runCatchingCleanup { choices.on(driving.terminal.screen(pane)).draft }.getOrDefault("")
-        return draft.takeIf { it.isNotBlank() }?.let {
-            Refusals.reply(HttpStatusCode.Conflict, DRAFT_HELD, Refusal.DRAFT, it)
-        }
+        return locate(driving, session, SAY_NOT_OURS, "").pane?.let { draft(driving, it) }
     }
+
+    /** What [pane]'s prompt holds, as the refusal [drafted] answers. */
+    private fun draft(driving: SessionDriver, pane: SessionPane): JsonReply? =
+        Cancellables.runCatchingCleanup { choices.on(driving.terminal.screen(pane)).draft }.fold(
+            onSuccess = { held ->
+                held.takeIf { it.isNotBlank() }
+                    ?.let { Refusals.reply(HttpStatusCode.Conflict, DRAFT_HELD, Refusal.DRAFT, it) }
+            },
+            onFailure = { refuse(HttpStatusCode.Conflict, DRAFT_UNREAD + SafeFailureText.render(it), REFUSED) },
+        )
 
     /** Answer what the session is waiting on as the person would: a numbered choice by its digit, and a menu drawn
      *  without numbers (the folder trust question) by moving the pointer from where the screen shows it, then
      *  accepting. [label], when the page sends the words it showed, must still be that choice's words on the screen:
-     *  a screen that changed under the click is refused, never answered with whatever now sits at that place. */
+     *  a screen that changed under the click is refused, never answered with whatever now sits at that place, and a
+     *  screen splice could not read is refused too, since nothing on it can be said to be where it was. */
     public fun answer(session: String, choice: Int, label: String? = null): JsonReply {
-        val driving = driver() ?: return unwired()
+        val driving = driver() ?: return unwired
         val key = choiceKeys.getOrNull(choice - 1)
             ?: return refuse(HttpStatusCode.BadRequest, "a choice is one of the numbered options, 1 to 9")
         val pane = locate(driving, session, ANSWER_NOT_OURS, ANSWER_CLOSED).pane
-        val offer = pane?.let {
-            Cancellables.runCatchingCleanup {
-                choices.on(
-                    driving.terminal.screen(it),
-                )
-            }.getOrNull()
-        }
-        return if (offer?.moved(choice, label) == true) {
-            refuse(HttpStatusCode.Conflict, SCREEN_MOVED, Refusal.SCREEN_MOVED)
-        } else {
-            inPane(session, ANSWER_NOT_OURS, ANSWER_CLOSED) { _, at ->
+        val read = pane?.let { Cancellables.runCatchingCleanup { choices.on(driving.terminal.screen(it)) } }
+        val unread = read?.exceptionOrNull()
+        val offer = read?.getOrNull()
+        return when {
+            unread != null -> refuse(HttpStatusCode.Conflict, CHOICE_UNREAD + SafeFailureText.render(unread), REFUSED)
+            offer?.moved(choice, label) == true -> refuse(HttpStatusCode.Conflict, SCREEN_MOVED, Refusal.SCREEN_MOVED)
+            else -> inPane(session, ANSWER_NOT_OURS, ANSWER_CLOSED) { _, at ->
                 (offer?.keys(choice, key) ?: listOf(key)).forEach { driving.terminal.press(at, it) }
             }
         }
@@ -156,7 +180,7 @@ public class SessionDrive(
     /** What the session's prompt asks right now, and the numbered choices its own client drew. A screen splice cannot
      *  read a choice on answers 200 with none, so a card keeps its fallback rather than failing over one pane. */
     public fun screen(session: String): JsonReply {
-        val driving = driver() ?: return unwired()
+        val driving = driver() ?: return unwired
         val at = locate(driving, session, SCREEN_NOT_OURS, "its terminal is closed, so nothing is being asked")
         val pane = at.pane ?: return requireNotNull(at.refusal)
         return Cancellables.runCatchingCleanup { driving.terminal.screen(pane) }.fold(
@@ -165,25 +189,36 @@ public class SessionDrive(
         )
     }
 
+    /** [act] in the session's pane, holding that pane's turn from [held], which refuses the act once the pane is held
+     *  (null lets it go on), to the act's last key. */
     private inline fun inPane(
         session: String,
         notOurs: String,
         closed: String,
+        held: (SessionDriver, SessionPane) -> JsonReply? = { _, _ -> null },
         act: (SessionDriver, SessionPane) -> Unit,
     ): JsonReply {
-        val driving = driver() ?: return unwired()
+        val driving = driver() ?: return unwired
         val at = locate(driving, session, notOurs, closed)
         val pane = at.pane ?: return requireNotNull(at.refusal)
-        acted.acted(session)
-        return Cancellables.runCatchingCleanup { act(driving, pane) }.fold(
-            onSuccess = { JsonReply(HttpStatusCode.OK, "{}") },
-            onFailure = { refuse(HttpStatusCode.BadGateway, TERMINAL_REFUSED + SafeFailureText.render(it), REFUSED) },
-        )
+        return synchronized(paneTurns[Math.floorMod(pane.id.hashCode(), PANE_TURNS)]) {
+            held(driving, pane) ?: run {
+                acted.acted(session)
+                Cancellables.runCatchingCleanup { act(driving, pane) }.fold(
+                    onSuccess = { JsonReply(HttpStatusCode.OK, "{}") },
+                    onFailure = {
+                        refuse(HttpStatusCode.BadGateway, TERMINAL_REFUSED + SafeFailureText.render(it), REFUSED)
+                    },
+                )
+            }
+        }
     }
 
     /** The pane to act in for [session], or the refusal that says why there is none. A pane splice opened is used
-     *  while it is open. Otherwise the terminal the session's own launch recorded is used only while that pane is
-     *  open AND still has the session's process in front, so a closed or reused terminal is refused by name. */
+     *  while it is open, which the terminal answers for the very pane it opened: the process it started there, not
+     *  only the pane's number, which a restarted server hands to another shell. Otherwise the terminal the session's
+     *  own launch recorded is used only while that pane is open AND still has the session's process in front, so a
+     *  closed or reused terminal is refused by name. */
     internal fun locate(driving: SessionDriver, session: String, notOurs: String, closed: String): Located {
         val mine = driving.panes.paneFor(session)
         if (mine != null) return if (driving.terminal.isOpen(mine)) Located(pane = mine) else refused(closed, CLOSED)
@@ -200,8 +235,6 @@ public class SessionDrive(
             else -> Located(pane = pane)
         }
     }
-
-    private fun unwired() = refuse(HttpStatusCode.ServiceUnavailable, NO_TERMINAL_TO_DRIVE, Refusal.NO_TERMINAL)
 
     private fun refused(sentence: String, reason: Refusal) =
         Located(refusal = refuse(HttpStatusCode.Conflict, sentence, reason))

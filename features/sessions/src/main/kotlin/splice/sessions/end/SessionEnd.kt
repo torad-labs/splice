@@ -64,7 +64,9 @@ public class SessionEnd(
         }
     }
 
-    /** What ending [session] would lose, as the refusal that names it, or null when nothing would go. */
+    /** What ending [session] would lose, as the refusal that names it, or null when nothing would go. A prompt whose
+     *  screen cannot be read is refused too (SessionDrive.drafted): unsent words splice could not see are never
+     *  emptied unasked. */
     public fun cost(session: String): JsonReply? = running(session)?.let(::cost)
 
     private fun cost(record: SessionRecord): JsonReply? =

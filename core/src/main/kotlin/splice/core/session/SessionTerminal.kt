@@ -43,13 +43,16 @@ public interface SessionTerminal {
     public fun press(pane: SessionPane, key: SessionKey)
 
     /** What the session is showing right now, so a caller reads the choices this client version offers
-     *  instead of a list splice would have to keep in step with it. */
+     *  instead of a list splice would have to keep in step with it. A screen that cannot be read throws: it is
+     *  never answered as an empty one, which a caller would take for an empty prompt. */
     public fun screen(pane: SessionPane): String
 
     /** End the session: let the client exit on its own, and close the terminal if it does not. */
     public fun close(pane: SessionPane)
 
-    /** Whether [pane] is still live. A pane the person closed is gone, and acting on it is a no-op. */
+    /** Whether [pane] is still live. A pane the person closed is gone, and acting on it is a no-op. A pane [open]
+     *  answered is live only while the process it started there is still the pane's own: a terminal that has
+     *  since come to carry its name (a restarted server numbering its panes again) is not that pane. */
     public fun isOpen(pane: SessionPane): Boolean
 
     /** The pane a session's own launch recorded ([LaunchTerminal][splice.core.process.LaunchTerminal]: the pane it

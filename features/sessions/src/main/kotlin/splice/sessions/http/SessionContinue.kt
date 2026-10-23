@@ -116,7 +116,7 @@ public class SessionContinue(
     }
 
     private fun plan(session: String, head: String, model: String?): Plan {
-        val record = registry?.read().orEmpty().firstOrNull { it.sessionId == session }
+        val record = live(session, orExited = true)
             ?: return Plan.Refused(Refusals.reply(HttpStatusCode.NotFound, "no such session: $session"))
         refusalToMove(record, head, model)?.let { return Plan.Refused(it) }
         return when (val command = commands.forHead(head)) {
@@ -133,7 +133,7 @@ public class SessionContinue(
                         from = record.head ?: head,
                         argv = command.argv + resume,
                         folder = folder,
-                        pid = record.process.pid?.takeIf { running },
+                        process = record.process.takeIf { running },
                         working = running && record.status.state in busy,
                     ),
                 )
@@ -180,7 +180,7 @@ public class SessionContinue(
             override fun check(): JsonReply? = changed(move, ask) ?: when {
                 // working now, on a turn the move did not stop: one the person started in the terminal itself, which
                 // splice's count does not see. A turn the move stopped already reads stopped here (RegistryHandover).
-                registry?.read().orEmpty().any { it.sessionId == move.session && it.status.state in busy } ->
+                live(move.session)?.status?.state in busy ->
                     Refusals.reply(
                         HttpStatusCode.Conflict,
                         "it started working while the move waited its turn, so nothing was started on ${move.head}",
@@ -222,22 +222,32 @@ public class SessionContinue(
     }
 
     /** Why the move stops in its pane's turn before a key goes, or null: anything given to the session since the
-     *  press came, or a client process other than [Move.pid], the one the move read, such as the same session
-     *  resumed in that pane meanwhile. The Stop, the `/exit`, the pane's mark and the wait all name that process,
-     *  so another is refused rather than typed to or waited on (PR #247's sixth review). */
+     *  press came, or a running client other than [Move.process], the one the move read, such as the same session
+     *  resumed in that pane meanwhile, even under the same pid. The Stop, the `/exit`, the pane's mark and the wait
+     *  all name that process, so another is refused rather than typed to or waited on (PR #247's sixth and seventh
+     *  reviews). */
     private fun changed(move: Move, ask: Ask): JsonReply? = when {
         drive.turns.acts(move.session) != ask.seen -> Refusals.reply(
             HttpStatusCode.Conflict,
             "it was given something while the move waited its turn, so nothing was started on ${move.head}",
             Refusal.WORKING,
         )
-        registry?.read().orEmpty().firstOrNull { it.sessionId == move.session }?.process?.pid != move.pid ->
+        move.process?.sameAs(live(move.session)?.process) != true ->
             Refusals.reply(
                 HttpStatusCode.Conflict,
                 "its client was started again while the move waited its turn, so nothing was started on ${move.head}",
                 Refusal.PANE_TAKEN,
             )
         else -> null
+    }
+
+    /** [session]'s running registration, the one its pane is located by, never an exited one listed beside it
+     *  (PR #247's seventh review). With [orExited], the exited one when none runs, which a move plans from and takes
+     *  into a new terminal. */
+    private fun live(session: String, orExited: Boolean = false): SessionRecord? {
+        val records = registry?.read().orEmpty().filter { it.sessionId == session }
+        return records.firstOrNull { it.availability != SessionAvailability.GONE }
+            ?: records.firstOrNull()?.takeIf { orExited }
     }
 
     /** [move]'s session located anew, as its pane's turn checks it before a key goes. */

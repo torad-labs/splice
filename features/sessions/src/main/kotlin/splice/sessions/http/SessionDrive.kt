@@ -307,6 +307,12 @@ internal class PaneTurns(
     /** How many acts each session has been given, so an End or a move decided on an earlier look sees one land. */
     private val acts = ConcurrentHashMap<String, Long>()
 
+    /** What a say, answer or stop gets in a pane being left. */
+    private val refusedLeaving = InTurn { Refusals.reply(HttpStatusCode.Conflict, PANE_LEAVING, Refusal.ENDED) }
+
+    /** What an End's or a move's Escape gets there: nothing typed, nothing refused. */
+    private val nothing = InTurn { null }
+
     /** How many acts [session] has been given: End and Continue on read it as the request arrives, before anything
      *  reads the session, and again in their turn. */
     fun acts(session: String): Long = acts[session] ?: 0L
@@ -323,20 +329,27 @@ internal class PaneTurns(
      *  process, while this waited is refused, never typed into. Null when [act] went through; [act] counts itself with
      *  [acting] before its keys. */
     fun turn(pane: SessionPane, session: String, again: Relocate, act: InTurn): JsonReply? =
-        held(pane, session, again, ending = false, act)
+        held(pane, session, again, refusedLeaving, act)
 
-    /** End's and Continue on's own keys before `/exit` (the Escape that stops a turn): the same turn, which a session
-     *  being ended may take again, and not counted as an act on it. */
+    /** End's and Continue on's own keys before `/exit` (the Escape that stops a turn), in the same turn. In a pane
+     *  already being left by [session]'s client, nothing is typed and null answers: that client is leaving, so there
+     *  is nothing to stop, and the exit that follows waits on it ([leave]). */
     fun ending(pane: SessionPane, session: String, again: Relocate, act: InTurn): JsonReply? =
-        held(pane, session, again, ending = true, act)
+        held(pane, session, again, nothing, act)
 
     /** [exit]'s check and keys in [pane]'s turn, then its wait for the client to leave. From the keys on, [pane] is
      *  marked as being left by [session]'s [Exit.pid] until the client is seen gone; a terminal that refused the keys
-     *  may still have taken them, so it keeps the mark too. Null once the client has left; else the refusal, or
+     *  may still have taken them, so it keeps the mark too. A pane another End or move already marked for [session]
+     *  gets nothing typed again: this one waits on that client to leave, so a second `/exit` cannot land in the shell
+     *  the first one leaves in front (PR #247's seventh review). Null once the client has left; else the refusal, or
      *  [Exit.stayed]. */
     suspend fun leave(pane: SessionPane, session: String, again: Relocate, exit: Exit): JsonReply? {
-        val mark = Leaver(session, exit.pid)
-        held(pane, session, again, ending = true) {
+        var mark = Leaver(session, exit.pid)
+        val join = InTurn {
+            leaving[pane.id]?.let { mark = it }
+            null
+        }
+        held(pane, session, again, join) {
             exit.check() ?: run {
                 leaving[pane.id] = mark
                 exit.keys()
@@ -347,14 +360,15 @@ internal class PaneTurns(
         return null
     }
 
-    private fun held(pane: SessionPane, session: String, again: Relocate, ending: Boolean, act: InTurn): JsonReply? =
+    /** [act] in [pane]'s turn once [again] still finds [session] there; [beingLeft] instead while the pane is being
+     *  left by [session]'s client. */
+    private fun held(pane: SessionPane, session: String, again: Relocate, beingLeft: InTurn, act: InTurn): JsonReply? =
         synchronized(monitors[Math.floorMod(pane.id.hashCode(), PANE_TURNS)]) {
             val now = again()
             when {
                 now.pane == null -> requireNotNull(now.refusal)
                 now.pane != pane -> Refusals.reply(HttpStatusCode.Conflict, PANE_CHANGED, Refusal.PANE_TAKEN)
-                !ending && stillLeaving(pane, session) ->
-                    Refusals.reply(HttpStatusCode.Conflict, PANE_LEAVING, Refusal.ENDED)
+                stillLeaving(pane, session) -> beingLeft()
                 else -> act()
             }
         }

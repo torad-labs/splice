@@ -55,7 +55,12 @@ public data class SessionProcess(
     val messagingSocketPath: String?,
     /** The registry directory this registration was read from: where its key file sits beside it (peer messaging, spec 1.1). */
     val registryDir: String? = null,
-)
+) {
+    /** Whether [other] is this same client: the same pid, started at the same time, since a later client can be
+     *  given a pid an earlier one had (PR #247's seventh review). */
+    public fun sameAs(other: SessionProcess?): Boolean =
+        other != null && other.pid == pid && other.startedAt == startedAt
+}
 
 /** Which Claude Code client the session runs: its kind and version, and how it was started. */
 public data class SessionClient(

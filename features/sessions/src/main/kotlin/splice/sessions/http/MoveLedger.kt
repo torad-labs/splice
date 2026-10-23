@@ -27,6 +27,7 @@ import splice.core.util.Cancellables
 import splice.core.util.SafeFailureText
 import splice.http.JsonReply
 import splice.sessions.registry.SessionAvailability
+import splice.sessions.registry.SessionProcess
 import splice.sessions.registry.SessionRecord
 import splice.sessions.registry.SessionSource
 import java.nio.file.Path
@@ -38,16 +39,19 @@ private const val MISSED_NO_START = "no_start"
 private const val MISSED_NO_ANSWER = "no_answer"
 
 /** A move SessionContinue decided: the session, the command it goes to and the one it left, the argv that resumes it
- *  there, the folder it runs in, and the client to end first (its pid, null when it already exited). */
+ *  there, the folder it runs in, and the client to end first (its process, null when it already exited). */
 internal data class Move(
     val session: String,
     val head: String,
     val from: String,
     val argv: List<String>,
     val folder: String,
-    val pid: Long?,
+    val process: SessionProcess?,
     val working: Boolean,
-)
+) {
+    /** The pid of the client to end first, null when it already exited or the registry knew none. */
+    val pid: Long? get() = process?.pid
+}
 
 /** How an attempt ended: the session that came up (the moved one, or the launch's copy of it), or why none did. */
 private sealed class Landing {

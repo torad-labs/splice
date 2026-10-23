@@ -210,7 +210,7 @@ public class SessionDrive(
         val driving = driver() ?: return unwired
         val at = locate(driving, session, notOurs, closed)
         val pane = at.pane ?: return requireNotNull(at.refusal)
-        return turns.turn(pane, { locate(driving, session, notOurs, closed) }) {
+        return turns.turn(pane, session, { locate(driving, session, notOurs, closed) }) {
             held(driving, pane) ?: run {
                 acted.acted(session)
                 Cancellables.runCatchingCleanup { act(driving, pane) }.exceptionOrNull()?.let {
@@ -286,43 +286,61 @@ public class SessionDrive(
 
 /** One act at a time in a pane, from what it checks on the screen to its last key: two messages at once would each
  *  find the prompt empty, and one's paste or clear would land between the other's paste and its Enter. Say, answer,
- *  stop, End and Continue on all take a pane's turn here, and none types into a pane being left. */
+ *  stop, End and Continue on all take a pane's turn here, and once `/exit` is typed into a pane for a session, nothing
+ *  but that session's own End or move is typed there until its client is seen gone. */
 internal class PaneTurns {
     /** Each monitor serializes the terminal calls it wraps and guards no state. */
     private val monitors = List(PANE_TURNS) { Any() }
 
-    /** Panes End or Continue on has typed `/exit` into and not yet seen the client leave. Nothing more is typed
-     *  into one: what lands after the client goes lands in whatever it leaves in front, a shell that would run it. */
-    private val leaving: MutableSet<String> = ConcurrentHashMap.newKeySet()
+    /** Each pane `/exit` was typed into, with the session it was typed for: what lands after the client goes lands in
+     *  whatever it leaves in front, a shell that would run it. The mark goes only once the client is seen leaving. A
+     *  wait that ran out or was cancelled keeps it, since the client may still be going (PR #247's fourth review). */
+    private val leaving = ConcurrentHashMap<String, String>()
 
-    /** [act] in [pane] holding its turn, once [again] (the session located anew inside the turn) still finds it there
-     *  and no `/exit` is leaving it: a client that exited, or a pane that came to hold another process, while this
-     *  waited is refused, never typed into. Null when [act] went through. */
-    fun turn(pane: SessionPane, again: Relocate, act: InTurn): JsonReply? =
+    /** How many acts each pane has taken a turn for, so an End or a move decided on an earlier look sees one land. */
+    private val acts = ConcurrentHashMap<String, Long>()
+
+    /** How many acts [pane] has taken: End and Continue on read it before they decide, and again in their turn. */
+    fun acts(pane: SessionPane): Long = acts[pane.id] ?: 0L
+
+    /** [act] for [session] in [pane] holding its turn, once [again] (the session located anew inside the turn) still
+     *  finds it there and no `/exit` was typed there for it: a client that exited, or a pane that came to hold another
+     *  process, while this waited is refused, never typed into. Null when [act] went through, which counts as an
+     *  act. */
+    fun turn(pane: SessionPane, session: String, again: Relocate, act: InTurn): JsonReply? =
+        held(pane, session, again, ending = false, act)
+
+    /** End's and Continue on's own keys before `/exit` (the Escape that stops a turn): the same turn, which a session
+     *  being ended may take again, and not counted as an act on it. */
+    fun ending(pane: SessionPane, session: String, again: Relocate, act: InTurn): JsonReply? =
+        held(pane, session, again, ending = true, act)
+
+    /** [exit]'s check and keys in [pane]'s turn, then its wait for the client to leave. From the keys on, [pane] is
+     *  marked as being left by [session] until the wait sees the client go; a terminal that refused the keys may still
+     *  have taken them, so it keeps the mark too. Null once the client has left; else the refusal, or [Exit.stayed]. */
+    suspend fun leave(pane: SessionPane, session: String, again: Relocate, exit: Exit): JsonReply? {
+        held(pane, session, again, ending = true) {
+            exit.check() ?: run {
+                leaving[pane.id] = session
+                exit.keys()
+            }
+        }?.let { return it }
+        if (!exit.left()) return exit.stayed()
+        leaving.remove(pane.id, session)
+        return null
+    }
+
+    private fun held(pane: SessionPane, session: String, again: Relocate, ending: Boolean, act: InTurn): JsonReply? =
         synchronized(monitors[Math.floorMod(pane.id.hashCode(), PANE_TURNS)]) {
             val now = again()
             when {
                 now.pane == null -> requireNotNull(now.refusal)
                 now.pane != pane -> Refusals.reply(HttpStatusCode.Conflict, PANE_CHANGED, Refusal.PANE_TAKEN)
-                pane.id in leaving -> Refusals.reply(HttpStatusCode.Conflict, PANE_LEAVING, Refusal.ENDED)
-                else -> act()
+                !ending && leaving[pane.id] == session ->
+                    Refusals.reply(HttpStatusCode.Conflict, PANE_LEAVING, Refusal.ENDED)
+                else -> act().also { refused -> if (refused == null && !ending) acts.merge(pane.id, 1L, Long::plus) }
             }
         }
-
-    /** The last keys of End or Continue on: [keys] typed in [pane] in its [turn], after which nothing else is typed
-     *  there until [gone] answers, the wait for the client to leave. A message that lands after `/exit` would reach
-     *  the shell the client leaves behind, so it is refused for as long as the client may still be going. */
-    suspend fun leave(pane: SessionPane, again: Relocate, keys: InTurn, gone: ClientGone): JsonReply {
-        var marked = false
-        return try {
-            turn(pane, again) {
-                marked = leaving.add(pane.id)
-                keys()
-            } ?: gone()
-        } finally {
-            if (marked) leaving.remove(pane.id)
-        }
-    }
 
     /** The session located anew inside its pane's turn, as SessionDrive.locate answers it. */
     fun interface Relocate {
@@ -334,8 +352,18 @@ internal class PaneTurns {
         operator fun invoke(): JsonReply?
     }
 
-    /** The wait, after the last keys, for the client to leave the pane, and what the route then answers. */
-    fun interface ClientGone {
-        suspend operator fun invoke(): JsonReply
+    /** What End and Continue on type to end a client, in the order [leave] runs it. */
+    interface Exit {
+        /** The refusal that keeps the keys from going, read inside the turn; null lets them go. */
+        fun check(): JsonReply?
+
+        /** `/exit` and what empties the prompt before it; the refusal when the terminal did not take them. */
+        fun keys(): JsonReply?
+
+        /** Whether the client left the pane within the route's wait. */
+        suspend fun left(): Boolean
+
+        /** The answer when it did not. */
+        fun stayed(): JsonReply
     }
 }

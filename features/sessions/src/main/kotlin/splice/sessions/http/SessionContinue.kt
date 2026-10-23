@@ -157,8 +157,9 @@ public class SessionContinue(
     /** End the client in [pane] with its own exit, and resume once it has gone. A turn in flight is stopped first,
      *  and the stopped message Claude Code puts back, with anything he typed while it ran, is his: it is answered back
      *  to him, and emptied only on his say-so, never to get the move through (Marlin, move check 4). The prompt is read
-     *  and `/exit` typed in the pane's turn, and nothing else is typed there until the client has left: a message that
-     *  landed after `/exit` would reach the shell it leaves in front (PR #247's third review). */
+     *  and `/exit` typed in the pane's turn, refused when anything was given to the session since the move looked, and
+     *  nothing else is typed there until the client has left: a message that landed after `/exit` would reach the
+     *  shell it leaves in front. A client that does not leave in time keeps the pane marked (PR #247's reviews). */
     private suspend fun handOver(
         driving: SessionDriver,
         pane: SessionPane,
@@ -166,31 +167,37 @@ public class SessionContinue(
         move: Move,
         clear: Boolean,
     ): JsonReply {
+        val seen = drive.turns.acts(pane)
         if (move.working) stopTurn(driving, pane, move)?.let { return it }
-        return drive.turns.leave(
-            pane,
-            again(driving, move),
-            keys = {
-                (if (clear) null else drive.drafted(move.session)) ?: Cancellables.runCatchingCleanup {
-                    if (clear) driving.terminal.press(pane, SessionKey.CLEAR)
-                    driving.terminal.send(pane, EXIT_COMMAND)
-                }.exceptionOrNull()?.let(::refusedByTerminal)
-            },
-        ) {
-            if (!handover.left(move.session, pid, EXIT_SECONDS)) {
-                Refusals.reply(
-                    HttpStatusCode.GatewayTimeout,
-                    "its client did not exit within ${EXIT_SECONDS}s, so nothing was started on ${move.head}",
+        val exit = object : PaneTurns.Exit {
+            override fun check(): JsonReply? = when {
+                drive.turns.acts(pane) != seen -> Refusals.reply(
+                    HttpStatusCode.Conflict,
+                    "it was given something while the move waited its turn, so nothing was started on ${move.head}",
+                    Refusal.WORKING,
                 )
-            } else {
-                resume(driving, pane, move)
+                clear -> null
+                else -> drive.drafted(move.session)
             }
+
+            override fun keys(): JsonReply? = Cancellables.runCatchingCleanup {
+                if (clear) driving.terminal.press(pane, SessionKey.CLEAR)
+                driving.terminal.send(pane, EXIT_COMMAND)
+            }.exceptionOrNull()?.let(::refusedByTerminal)
+
+            override suspend fun left(): Boolean = handover.left(move.session, pid, EXIT_SECONDS)
+
+            override fun stayed(): JsonReply = Refusals.reply(
+                HttpStatusCode.GatewayTimeout,
+                "its client did not exit within ${EXIT_SECONDS}s, so nothing was started on ${move.head}",
+            )
         }
+        return drive.turns.leave(pane, move.session, again(driving, move), exit) ?: resume(driving, pane, move)
     }
 
     /** Stop the turn in flight, its key typed in the pane's turn; null once it has stopped. */
     private suspend fun stopTurn(driving: SessionDriver, pane: SessionPane, move: Move): JsonReply? {
-        drive.turns.turn(pane, again(driving, move)) {
+        drive.turns.ending(pane, move.session, again(driving, move)) {
             Cancellables.runCatchingCleanup { driving.terminal.press(pane, SessionKey.STOP) }
                 .exceptionOrNull()?.let(::refusedByTerminal)
         }?.let { return it }

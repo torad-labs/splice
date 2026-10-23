@@ -6,6 +6,7 @@
 // wire knobs the sharing head needs. Turns run on the sharing machine's login; nothing is copied here.
 package splice.configuration.add
 
+import splice.core.auth.ApiKeyFile
 import splice.core.config.KeyStore
 import splice.core.config.KeyStorePath
 import splice.core.model.ModelRates
@@ -83,10 +84,14 @@ internal class RemoteHeadAdd(
     }
 
     /** Whether the key store is where [head]'s provider finds its key: a value of [envVar] in the environment and a
-     *  key file come before it (ApiKeyAuthProvider), and would keep the revoked token in use. The renewal then says
-     *  where the new one has to go instead of reporting it renewed (PR #247's fifth review). */
+     *  key file that yields a key come before it (ApiKeyAuthProvider), and would keep the revoked token in use. The
+     *  renewal then says where the new one has to go instead of reporting it renewed (PR #247's fifth review). A file
+     *  that cannot be read, or holds no key, is passed over for the store, as the provider passes it over (sixth). */
     private fun applies(head: String, auth: AuthConfig, envVar: String, env: EnvReader): Boolean {
-        val file = auth.file?.takeIf { Files.exists(Path.of(TopologyLoader.expandHome(it))) }
+        val file = auth.file?.takeIf { path ->
+            val at = Path.of(TopologyLoader.expandHome(path))
+            Cancellables.runCatchingCancellable { ApiKeyFile.key(Files.readString(at)) }.fold({ it != null }, { false })
+        }
         val ahead = when {
             env(envVar)?.isNotEmpty() == true -> "$envVar is set in this environment; unset it where splice starts"
             file != null -> "its provider reads $file first; put the token there, or drop that file from its auth"

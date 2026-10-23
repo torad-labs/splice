@@ -7,8 +7,7 @@
 // credential that cannot be renewed and buy nothing.
 package splice.provider.openai
 
-import kotlinx.serialization.json.Json
-import kotlinx.serialization.json.jsonObject
+import splice.core.auth.ApiKeyFile
 import splice.core.auth.AuthDescription
 import splice.core.auth.CredentialKey
 import splice.core.auth.Credentials
@@ -18,7 +17,6 @@ import splice.core.config.KeyStorePath
 import splice.core.util.Cancellables
 import splice.core.util.DaemonLog
 import splice.core.util.EnvReader
-import splice.core.util.JsonScalars
 import splice.core.util.LogSink
 import splice.core.util.SafeFailureText
 import java.nio.file.Files
@@ -58,8 +56,6 @@ public class ApiKeyAuthProvider(
      *  need isolation inject their own sink. */
     private val log: LogSink = LogSink(DaemonLog::write),
 ) : RefreshableAuthProvider {
-
-    private val json = Json { ignoreUnknownKeys = true }
 
     override suspend fun credentials(): Credentials? = resolveKey()?.let { Credentials.ApiKey(it.value) }
 
@@ -119,14 +115,7 @@ public class ApiKeyAuthProvider(
     // disambiguate that caught NoSuch — never as a pre-gate. Every other failure logs before the
     // existing no-key fallthrough.
     private fun readKeyFile(file: Path): String? =
-        Cancellables.runCatchingCancellable {
-            val text = Files.readString(file).trim()
-            if (text.startsWith("{")) {
-                JsonScalars.str(json.parseToJsonElement(text).jsonObject, "api_key")
-            } else {
-                text.takeIf { it.isNotEmpty() }
-            }
-        }.getOrElse { failure ->
+        Cancellables.runCatchingCancellable { ApiKeyFile.key(Files.readString(file)) }.getOrElse { failure ->
             val genuinelyAbsent = failure is java.nio.file.NoSuchFileException &&
                 !Files.exists(file, LinkOption.NOFOLLOW_LINKS)
             if (!genuinelyAbsent) {

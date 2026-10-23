@@ -53,8 +53,9 @@ class TopologyWriterTest {
         WallClock { NOW },
     )
 
+    /** What sits beside splice.toml besides it and the empty lock every save takes. */
     private fun backups(): List<String> = Files.list(tmp).use { paths ->
-        paths.map { it.fileName.toString() }.filter { it != "splice.toml" }.toList()
+        paths.map { it.fileName.toString() }.filter { it != "splice.toml" && it != ".splice.toml.lock" }.toList()
     }
 
     /** The refusal left the file exactly as it was and wrote nothing beside it. */

@@ -2,6 +2,7 @@
 // add and add-model on both surfaces, moved out of AddCommand.save so none of them can write differently.
 package splice.configuration.add
 
+import splice.core.topology.TopologyFileLock
 import splice.core.topology.TopologyFileTarget
 import splice.core.util.Cancellables
 import splice.core.util.SafeFailureText
@@ -37,17 +38,18 @@ internal class AddWrite {
 
     /** [composed] renamed over [path] only while the file still holds [existing]: the same re-read and
      *  rename as [write], for add-model's roster edit, which changes the middle of the file rather than
-     *  appending (V4-220: add-model read the file before its prompts and renamed over any edit since). */
-    fun replace(path: Path, existing: String, composed: String): AddWritten {
+     *  appending (V4-220: add-model read the file before its prompts and renamed over any edit since). The
+     *  re-read and the rename hold [TopologyFileLock], the console writer's lock too, so two saves that read
+     *  the same bytes cannot both pass the re-read and have the later rename drop the earlier edit. */
+    fun replace(path: Path, existing: String, composed: String): AddWritten = TopologyFileLock.held(path) {
         // Normalized the way the candidate's `existing` was (one trailing newline), or a config saved
         // without one would be "changed" on every run and never written (review 2026-09-14).
         val stale = Cancellables.runCatchingCancellable { normalized(Files.readString(path)) }.fold(
             onSuccess = { if (it == normalized(existing)) null else AddWritten.Changed },
             onFailure = { AddWritten.Unreadable(SafeFailureText.render(it)) },
         )
-        if (stale != null) return stale
-        SecureFile.writeAtomic0600(TopologyFileTarget.of(path), composed)
-        return AddWritten.Written
+        if (stale == null) SecureFile.writeAtomic0600(TopologyFileTarget.of(path), composed)
+        stale ?: AddWritten.Written
     }
 
     private fun normalized(text: String): String = text.trimEnd('\n') + "\n"

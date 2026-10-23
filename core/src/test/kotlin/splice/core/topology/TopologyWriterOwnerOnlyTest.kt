@@ -98,7 +98,11 @@ class TopologyWriterOwnerOnlyTest {
         assertEquals(EDITED, Files.readString(target), "the edit landed in the link's target")
         assertEquals(backupDir, backup.parent, "the backup is in splice's own directory")
         val dotfiles = Files.list(target.parent).use { paths -> paths.map { it.fileName.toString() }.toList() }
-        assertEquals(listOf("splice.toml"), dotfiles, "no backup and no temp file in the dotfiles directory")
+        assertEquals(
+            listOf(".splice.toml.lock", "splice.toml"),
+            dotfiles.sorted(),
+            "no backup and no temp file in the dotfiles directory, only the empty lock every save of it takes",
+        )
         if (Files.getFileStore(tmp).supportsFileAttributeView("posix")) assertEquals("rw-------", mode(target))
     }
 
@@ -140,7 +144,11 @@ class TopologyWriterOwnerOnlyTest {
         val _ = writer(NOW, config.resolve("splice.toml")).write(topology(8802))
 
         assertEquals(EDITED, Files.readString(repo.resolve("splice.toml")))
-        assertEquals(listOf("splice.toml"), names(repo), "the backup holds the header secrets: never in the repo")
+        assertEquals(
+            listOf(".splice.toml.lock", "splice.toml"),
+            names(repo),
+            "the backup holds the header secrets: never in the repo, where only the empty save lock goes",
+        )
     }
 
     @Test

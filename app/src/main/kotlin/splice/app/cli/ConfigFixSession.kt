@@ -5,6 +5,7 @@
 package splice.app.cli
 
 import splice.core.terminal.TerminalOutput
+import splice.core.topology.TopologyFileLock
 import splice.core.topology.TopologyFinding
 import splice.core.util.SecureFile
 import java.nio.file.Files
@@ -113,10 +114,9 @@ internal class ConfigFixSession(
         ?.substringBefore('=')?.trim()
 
     private fun removeLine(line: Int): Boolean {
-        val lines = Files.readAllLines(file)
         backupOnce()
         output.line("removing line $line (${assignmentAt(line)})")
-        write(lines.filterIndexed { index, _ -> index != line - 1 })
+        rewrite { lines -> lines.filterIndexed { index, _ -> index != line - 1 } }
         return true
     }
 
@@ -129,8 +129,7 @@ internal class ConfigFixSession(
         output.line("setting $key on line $line to your value")
         backupOnce()
         val written = if (literal) typed else "\"$typed\""
-        val lines = Files.readAllLines(file)
-        write(lines.mapIndexed { index, text -> if (index == line - 1) "$key = $written" else text })
+        rewrite { lines -> lines.mapIndexed { index, text -> if (index == line - 1) "$key = $written" else text } }
         return true
     }
 
@@ -141,9 +140,14 @@ internal class ConfigFixSession(
         return opened
     }
 
-    private fun write(lines: List<String>) {
+    /** [change] applied to the file as it is now, read and written under the lock the console's and
+     *  `splice add`'s saves take: an edit one of them saved during the fix is kept, and one they had
+     *  prepared from the older bytes is refused at its re-read instead of writing over this one. */
+    private inline fun rewrite(change: (List<String>) -> List<String>) {
         backupOnce()
-        SecureFile.writeAtomic0600(file, lines.joinToString("\n", postfix = "\n"))
+        TopologyFileLock.held(file) {
+            SecureFile.writeAtomic0600(file, change(Files.readAllLines(file)).joinToString("\n", postfix = "\n"))
+        }
     }
 
     private fun backupOnce() {

@@ -64,13 +64,20 @@ import splice.core.util.LogSink
 import splice.core.util.SafeFailureText
 import splice.core.util.SecureFile
 import splice.core.util.WallClock
+import java.nio.channels.FileChannel
+import java.nio.channels.FileLock
+import java.nio.channels.OverlappingFileLockException
+import java.nio.file.FileSystemException
 import java.nio.file.Files
+import java.nio.file.LinkOption
 import java.nio.file.Path
+import java.nio.file.StandardOpenOption
 import java.security.MessageDigest
 import java.time.Instant
 import java.time.ZoneOffset
 import java.time.format.DateTimeFormatter
 import java.util.HexFormat
+import java.util.concurrent.TimeUnit
 
 // why: 12 hex characters of the file's SHA-256, carried as the write's precondition token. Long
 // enough that two concurrent edits cannot collide by accident, short enough to pass in a header.
@@ -81,6 +88,13 @@ private const val HASH_PREFIX = 12
 private const val BACKUPS_KEPT = 10
 private const val TOPOLOGY_FILE = "splice.toml"
 private const val UNEXPRESSIBLE = "the writer cannot express this edit; nothing was written"
+
+// why: a save holds the lock across one re-read, one compare and one rename, well under a second. A holder
+// past five seconds is wedged, and the save fails rather than parking a console request or a CLI behind it.
+private const val TOPOLOGY_LOCK_WAIT_MS = 5_000L
+
+// why: ten milliseconds between tries keeps a contended save prompt without spinning a core.
+private const val TOPOLOGY_LOCK_POLL_MS = 10L
 
 /** splice.toml text to the topology it declares — TopologyLoader.parse in production, the loader the
  *  daemon boots with, so the writer's verdict and the next boot's cannot differ. */
@@ -95,6 +109,45 @@ public fun interface TopologyParse {
 public object TopologyFileTarget {
     public fun of(configured: Path): Path =
         if (Files.isSymbolicLink(configured)) configured.toRealPath() else configured
+}
+
+/** Review of PR #247, round 5: one cross-process lock over every save's re-read, compare and rename. Two saves
+ *  that read the same bytes both passed the staleness check, and the later rename discarded the earlier edit
+ *  while both reported success. The lock is an empty `.<name>.lock` beside the file's real target, the one place
+ *  every writer of that file agrees on whatever folder it started from. It is never removed, so a waiting
+ *  process locks the same inode as the holder, and a holder past [TOPOLOGY_LOCK_WAIT_MS] fails the save. */
+public object TopologyFileLock {
+    public inline fun <T> held(configured: Path, write: () -> T): T =
+        open(configured).use { channel -> acquire(channel, configured).use { write() } }
+
+    @PublishedApi
+    internal fun open(configured: Path): FileChannel {
+        // A link that no longer resolves still gets a lock, beside the path the operator gave, so the save
+        // goes on to the re-read that refuses it instead of failing here first.
+        val target = Cancellables.runCatchingCancellable { TopologyFileTarget.of(configured) }
+            .fold(onSuccess = { it }, onFailure = { configured })
+            .toAbsolutePath()
+        val lock = target.resolveSibling(".${target.fileName}.lock")
+        return FileChannel.open(lock, StandardOpenOption.CREATE, StandardOpenOption.WRITE, LinkOption.NOFOLLOW_LINKS)
+    }
+
+    @PublishedApi
+    internal fun acquire(channel: FileChannel, configured: Path): FileLock {
+        val deadline = System.nanoTime() + TimeUnit.MILLISECONDS.toNanos(TOPOLOGY_LOCK_WAIT_MS)
+        while (true) {
+            // Another thread of this process holding it is the same wait as another process holding it.
+            val lock = try {
+                channel.tryLock()
+            } catch (_: OverlappingFileLockException) {
+                null
+            }
+            if (lock != null) return lock
+            if (System.nanoTime() >= deadline) {
+                throw FileSystemException("$configured", null, "another save of this file is still running")
+            }
+            Thread.sleep(TOPOLOGY_LOCK_POLL_MS)
+        }
+    }
 }
 
 /** V4-284: the one spelling of a backup's name, `<config name>.bak-<utc second>-<hash prefix>`, for the
@@ -178,25 +231,27 @@ public class TopologyWriter(
         }
     }
 
-    private fun commit(existing: String, composed: String): TopologyWriteResult {
+    /** The re-read and the rename under [TopologyFileLock], so a second save cannot pass the same re-read. */
+    private fun commit(existing: String, composed: String): TopologyWriteResult = TopologyFileLock.held(path) {
         if (Files.readString(path) != existing) {
-            return refused("$TOPOLOGY_FILE changed while this write was prepared; nothing was written, read it again")
-        }
-        val target = TopologyFileTarget.of(path)
-        val backup = backupOf(existing)
-        val made = !Files.exists(backup)
-        if (made) SecureFile.writeAtomic0600(backup, existing)
-        Cancellables.runCatchingCancellable { SecureFile.writeAtomic0600(target, composed) }.onFailure {
-            if (made) {
-                Cancellables.discard(
-                    Cancellables.runCatchingCancellable { Files.deleteIfExists(backup) },
-                    "the write's own failure is what the caller hears; this backup then goes at a later cap",
-                )
+            refused("$TOPOLOGY_FILE changed while this write was prepared; nothing was written, read it again")
+        } else {
+            val target = TopologyFileTarget.of(path)
+            val backup = backupOf(existing)
+            val made = !Files.exists(backup)
+            if (made) SecureFile.writeAtomic0600(backup, existing)
+            Cancellables.runCatchingCancellable { SecureFile.writeAtomic0600(target, composed) }.onFailure {
+                if (made) {
+                    Cancellables.discard(
+                        Cancellables.runCatchingCancellable { Files.deleteIfExists(backup) },
+                        "the write's own failure is what the caller hears; this backup then goes at a later cap",
+                    )
+                }
+                throw it
             }
-            throw it
+            dropOldBackups(backup)
+            TopologyWriteResult.Written(backup)
         }
-        dropOldBackups(backup)
-        return TopologyWriteResult.Written(backup)
     }
 
     /** Where [existing]'s backup goes. The backup is written 0600; a directory that could not be held

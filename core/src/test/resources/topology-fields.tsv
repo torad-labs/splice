@@ -134,6 +134,7 @@ providers.*.quirks.code_mode_timeout_ms
 providers.*.quirks.code_mode_workers	
 providers.*.quirks.compact_effort	
 providers.*.quirks.effort_ceiling	
+providers.*.quirks.forward_client_identity	
 providers.*.quirks.map_thinking_adaptive	
 providers.*.quirks.mfjs	
 providers.*.quirks.parallel_tool_calls	
@@ -164,3 +165,8 @@ providers.*.quirks.zstd_request_body
 providers.*.window_rules	
 providers.*.window_rules[].context_window	
 providers.*.window_rules[].prefix	
+share	
+share.enabled	
+share.heads	
+share.hostnames	
+share.port	

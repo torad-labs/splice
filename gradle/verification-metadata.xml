@@ -4978,6 +4978,9 @@
          <artifact name="kotlin-native-prebuilt-2.3.21-linux-x86_64.tar.gz">
             <sha256 value="5c1b6b95d181ce8982e13c0b74b56d80032f008da8b7e8742ab7676e480d60e3" origin="Maven Central, SHA-1 f80659a1cf85c3f7fd226f4dcb7dca9e1a13b222 matched"/>
          </artifact>
+         <artifact name="kotlin-native-prebuilt-2.3.21-macos-aarch64.tar.gz">
+            <sha256 value="ae4c8d0d0c18a9dd3ac6a9eb1222c1b902f78ac0996de634f7a771faf5e6e583" origin="Maven Central, SHA-1 c557c413016b263592b053226bb6a69f7b31d5b4 matched"/>
+         </artifact>
          <artifact name="kotlin-native-prebuilt-2.3.21.pom">
             <sha256 value="b76ad8c3146787c2e38a059e03419a5e766451e787eefad08b365626daeade3c" origin="Maven Central, SHA-1 a1eb9b4180a5dfe7eb05ace41a0b2c19c5a270bc matched"/>
          </artifact>

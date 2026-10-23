@@ -53,7 +53,7 @@ describe("the JDK 21 resolver", () => {
     }
   });
 
-  test("no 21 anywhere is a refusal that names both places it looked and the remedy", () => {
+  test("no 21 anywhere is a refusal that names every place it looked and the remedy", () => {
     const box = mkdtempSync(join(tmpdir(), "gate-jdk-"));
     try {
       fakeJava(join(box, "onpath"), "17.0.2", "/seventeen");
@@ -61,7 +61,7 @@ describe("the JDK 21 resolver", () => {
       expect("error" in jdk).toBe(true);
       const message = (jdk as { error: string }).error;
       expect(message).toContain("JDK 21 required");
-      expect(message).toContain("$JAVA_HOME and PATH java");
+      expect(message).toContain("$JAVA_HOME, $SPLICE_JAVA and PATH java");
       expect(message).toContain("adoptium.net");
     } finally {
       rmSync(box, { recursive: true, force: true });

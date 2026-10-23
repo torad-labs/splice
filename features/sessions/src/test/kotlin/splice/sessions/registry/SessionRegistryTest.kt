@@ -92,6 +92,34 @@ class SessionRegistryTest {
         assertEquals(SessionAvailability.LIVE, unjudged, "no host domain: not judged")
     }
 
+    /** Claude Code 2.1.296 wrote pidDomain "linux" on a Mac, and a running session keeps the registration its start
+     *  wrote, so a Mac reads that spelling as its own. Another host's full domain stays foreign. The host here is a Mac
+     *  as ProcPidIdentity reads one: no /proc, no machine-id, and ps for each start. */
+    @Test
+    fun `on a Mac a session registered under the old linux domain is judged by its start, another host's is GONE`(
+        @TempDir dir: Path,
+    ) {
+        val old = ProcessBuilder("sleep", "600").start()
+        val foreign = ProcessBuilder("sleep", "600").start()
+        try {
+            val darwin = DarwinPs(here = true)
+            val mac = ProcPidIdentity(dir.resolve("no-proc"), dir.resolve("no-machine-id"), darwin = darwin)
+            val other = "linux:ffffffffffffffffffffffffffffffff:pid:[4026531836]"
+            for ((process, domain) in listOf(old to "linux", foreign to other)) {
+                val pid = process.pid()
+                val start = checkNotNull(darwin.lstart(pid)) { "ps reads the start of $pid" }
+                write(dir, pid, """{"pid":$pid,"updatedAt":$now,"pidDomain":"$domain","procStart":"$start"}""")
+            }
+            val rows = registry(dir, alive = setOf(old.pid(), foreign.pid()), identity = mac).read()
+                .associateBy { it.process.pid }
+            assertEquals(SessionAvailability.LIVE, rows.getValue(old.pid()).availability, "the old spelling, its start")
+            assertEquals(SessionAvailability.GONE, rows.getValue(foreign.pid()).availability, "another host's pid")
+        } finally {
+            old.destroyForcibly()
+            foreign.destroyForcibly()
+        }
+    }
+
     /** V4-444: Claude Code rewrites its registration only when the session's status changes, so a
      *  session busy for hours kept a 12-hour-old updatedAt and read STALE while this daemon served its
      *  turns. A turn served for the session's id is the session being heard from too. */

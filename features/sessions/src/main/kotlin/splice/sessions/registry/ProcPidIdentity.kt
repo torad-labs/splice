@@ -41,6 +41,8 @@ internal class ProcPidIdentity(
 
     override fun hostDomain(): String? = domain ?: darwin.domain()
 
+    override fun hosts(domain: String): Boolean = domain == hostDomain() || this.domain == null && darwin.spells(domain)
+
     override fun procStart(pid: Long): String? {
         if (darwin.here) return darwin.lstart(pid)
         val stat = read(procRoot.resolve(pid.toString()).resolve("stat")) ?: return null

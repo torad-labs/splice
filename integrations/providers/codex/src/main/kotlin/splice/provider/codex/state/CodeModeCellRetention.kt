@@ -151,8 +151,9 @@ internal class CodeModeCellRetention(
 
     /** A park is not a use: keep the record's last-use timestamp and all no-rerun callback evidence. A [reclaim] takes
      *  back a cell its session no longer vouches for. It is no client's cut, so a round still streaming toward its
-     *  posting step's row is let go to its terminal, which bills that row the round's usage. Ending its lease cancelled
-     *  the round, and the row was released with a cut and none of it (round 14 of #247). A newer program or a
+     *  posting step's row is let go to its terminal, which bills that row the round's usage, and closing its cell then
+     *  frees only the engine. Ending its lease, or closing its cell, cancelled the round, and the row was released with
+     *  a cut and none of it (rounds 14 and 15 of #247). A newer program or a
      *  superseding history is the client's own cut, which the lease's end gives to the step that made it. */
     fun park(record: CodeModeRecord, message: String, reclaim: Boolean = false) {
         check(!running(record)) { "an executing code-mode cell cannot be reclaimed" }

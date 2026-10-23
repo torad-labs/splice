@@ -82,9 +82,9 @@ internal class CodeModeSourceLease(
 
     /** Lets the round go without cutting it: no record or step reaches it again, and its reader runs to the terminal,
      *  which still bills the row it is owed ([CodeModeRoundBilling.reported] when its record is gone). A head stop still
-     *  stops it. */
+     *  stops it. Closing the retained cell after this cuts nothing (round 15 of #247). */
     fun release() {
-        retire()
+        round.cut.release()
         rounds.remove(id, round)
     }
 

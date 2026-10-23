@@ -2,6 +2,9 @@
 package splice.app.sources
 
 import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.JsonArray
+import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.jsonArray
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
@@ -192,5 +195,98 @@ class ProbeEconomicsHoursTest {
         val later = assertInstanceOf(EconomicsRead.Rows::class.java, source.read())
         assertEquals(listOf(30 * PROBE_HOUR, 31 * PROBE_HOUR), later.rows.map { it.hour }, "a later look reads both")
         assertEquals(emptyList<Long>(), later.notRead)
+    }
+
+    // A row held for a streaming round lands with its turn's time, which can be hours before the line it follows when
+    // the round was held past the late-row margin, so the hours a line with nothing after it may hold wait for that row.
+    @Test
+    fun `an hour a torn line may hold is read once a late row after the line rules it out`(@TempDir dir: Path) {
+        val file = dir.resolve("head-perf.jsonl")
+        Files.writeString(
+            file,
+            atHour(20 * PROBE_HOUR + 123, MODELED_WORK_ROW, LOCAL_WORK_ROW) +
+                atHour(22 * PROBE_HOUR + 123, MODELED_WORK_ROW, LOCAL_WORK_ROW) + "\u0000".repeat(944) + "\n",
+        )
+        var now = 20 * PROBE_HOUR + 123
+        val store = store(dir, WallClock { now })
+        recordWork(store)
+        now = 22 * PROBE_HOUR + 123
+        recordWork(store)
+        val source = EconomicsStoreSource(store, PerfRowsFileSource(file))
+        val first = assertInstanceOf(EconomicsRead.Rows::class.java, source.read())
+        assertEquals(listOf(22 * PROBE_HOUR), first.notRead, "the line may hold the hour of the rows before it")
+        Files.writeString(file, atHour(20 * PROBE_HOUR + 500, MODELED_WORK_ROW), StandardOpenOption.APPEND)
+        val later = assertInstanceOf(EconomicsRead.Rows::class.java, source.read())
+        assertEquals(listOf(20 * PROBE_HOUR, 22 * PROBE_HOUR), later.rows.map { it.hour }, "the late row ends the line")
+        assertEquals(emptyList<Long>(), later.notRead)
+    }
+
+    // Live, Oct 23: claude-grok kept 41 hours not read under the tear rule of a build before the rule was saved. After
+    // the upgrade those hours are judged again and shown.
+    @Test
+    fun `an hour an older build kept as not read is shown after the upgrade`(@TempDir dir: Path) {
+        val file = dir.resolve("head-perf.jsonl")
+        Files.writeString(
+            file,
+            atHour(20 * PROBE_HOUR + 123, MODELED_WORK_ROW, LOCAL_WORK_ROW) +
+                atHour(21 * PROBE_HOUR + 123, MODELED_WORK_ROW, LOCAL_WORK_ROW) +
+                atHour(24 * PROBE_HOUR + 123, MODELED_WORK_ROW, LOCAL_WORK_ROW),
+        )
+        var now = 20 * PROBE_HOUR + 123
+        val store = store(dir, WallClock { now })
+        recordWork(store)
+        now = 21 * PROBE_HOUR + 123
+        recordWork(store)
+        now = 24 * PROBE_HOUR + 123
+        recordWork(store)
+        assertEquals(emptyList<Long>(), shown(store, file).notRead)
+        val kept = dir.resolve("head-perf-probe-judgments.json")
+        val saved = Json.parseToJsonElement(Files.readString(kept)).jsonObject
+        val hours = saved.getValue("hours").jsonArray.map { hour ->
+            val judged = hour.jsonObject
+            if (judged.getValue("hour").jsonPrimitive.long != 20 * PROBE_HOUR) {
+                judged
+            } else {
+                JsonObject(judged + ("gap" to JsonPrimitive("UNREADABLE")))
+            }
+        }
+        Files.writeString(kept, JsonObject(saved - "tearRule" + ("hours" to JsonArray(hours))).toString())
+        val read = shown(store, file)
+        assertEquals(listOf(20 * PROBE_HOUR, 21 * PROBE_HOUR, 24 * PROBE_HOUR), read.rows.map { it.hour })
+        assertEquals(emptyList<Long>(), read.notRead, "an hour kept under an older tear rule is judged again")
+    }
+
+    // A file that comes with rows the log was read without, such as a restored archive, can hold the turns an hour
+    // lacked, so that hour is judged again and shown.
+    @Test
+    fun `an hour the log lacked is shown once a file brings its rows back`(@TempDir dir: Path) {
+        val file = dir.resolve("head-perf.jsonl")
+        Files.writeString(
+            file,
+            atHour(19 * PROBE_HOUR + 123, MODELED_WORK_ROW, LOCAL_WORK_ROW) +
+                atHour(20 * PROBE_HOUR + 123, MODELED_WORK_ROW) +
+                atHour(21 * PROBE_HOUR + 123, SYNTHETIC_PROBE_ROW, MODELED_WORK_ROW, LOCAL_WORK_ROW) +
+                atHour(23 * PROBE_HOUR + 123, MODELED_WORK_ROW, LOCAL_WORK_ROW),
+        )
+        var now = 19 * PROBE_HOUR + 123
+        val store = store(dir, WallClock { now })
+        recordWork(store)
+        now = 20 * PROBE_HOUR + 123
+        recordWork(store)
+        now = 21 * PROBE_HOUR + 123
+        store.record(turn("", 0, 30, 15, 2L to 1L), outcome = "error:upstream-failed")
+        recordWork(store)
+        now = 23 * PROBE_HOUR + 123
+        recordWork(store)
+        val source = EconomicsStoreSource(store, PerfRowsFileSource(file))
+        val first = assertInstanceOf(EconomicsRead.Rows::class.java, source.read())
+        assertEquals(listOf(20 * PROBE_HOUR), first.notRead, "the log holds one request of the two the rollup counted")
+        Files.writeString(file.resolveSibling("${file.fileName}.1"), atHour(20 * PROBE_HOUR + 123, LOCAL_WORK_ROW))
+        val later = assertInstanceOf(EconomicsRead.Rows::class.java, source.read())
+        assertEquals(
+            listOf(19 * PROBE_HOUR, 20 * PROBE_HOUR, 21 * PROBE_HOUR, 23 * PROBE_HOUR),
+            later.rows.map { it.hour },
+        )
+        assertEquals(emptyList<Long>(), later.notRead, "the file brought the request the log lacked")
     }
 }

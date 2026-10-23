@@ -21,14 +21,17 @@ internal enum class PerfSelection { WORK, ECONOMICS }
 /** One line inside the window that a scan could not read as a row: its leading timestamp, or null where its readable
  *  start names none; whether that start names a model, which no legacy probe row does; and when its row can lie. */
 internal data class PerfTear(val ts: Long?, val namedModel: Boolean, val span: PerfTearSpan = PerfTearSpan()) {
+    /** Whether nothing yet bounds this line's row from above: it has no ts, no row comes after it and its file is
+     *  `.1` or the live one. The next row appended bounds it, so the hours it may hold are not settled. */
+    val open: Boolean get() = ts == null && span.notAfter == null && span.rotatedAt == null
+
     /** Whether this line's row may belong to the hour starting at [hour], so that hour's rows may not be all its turns:
      *  its leading ts is in it, or it has none, [hour] ends after the earliest time its row can carry, starts no later
      *  than the latest, and a read from [hour] opens its file. */
     fun mayHold(hour: Long, files: PerfReadFiles): Boolean =
         ts?.let { hourOf(it) == hour } ?: (span.reaches(hour) && files.opens(span.rotatedAt, hour))
 
-    /** The newest hour this line's row can belong to, or null when nothing bounds it: it has no ts, no row comes after
-     *  it yet and its file is `.1` or the live one. The first row after it
+    /** The newest hour this line's row can belong to, or null when nothing bounds it ([open]). The first row after it
      *  bounds it, and an archive's rotation second bounds its rows to within a second past it, which may reach the
      *  next hour. */
     fun latestHour(files: PerfReadFiles): Long? = ts?.let { hourOf(it) } ?: listOfNotNull(

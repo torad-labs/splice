@@ -83,16 +83,13 @@ internal class PerfSourceStamp(
     /** What became of this stamp's files among [files], or null when one went while they were looked at. A marked file
      *  whose name is still there and whose bytes begin no file was REWRITTEN. A file other than the live one that
      *  [brings] rows no marked file held, such as a restored archive, was ADDED. A rotation does neither: it renames
-     *  the live file to `.1` (grown by appends), copies `.1` whole into the archive and deletes archives past the
-     *  window. */
+     *  the live file to `.1` (grown by appends), copies `.1` whole into the archive ([rotatedOver] when that copy
+     *  failed) and deletes archives past the window. */
     fun since(files: List<Path>): PerfFilesSince? {
         val now = files.map { reader.of(it) ?: return null }
         return try {
-            // Each file is tried against the one of its own name first, which holds it unless a rotation moved it.
             when {
-                marks.any { mark ->
-                    now.any { it.path == mark.path } && now.sortedBy { it.path != mark.path }.none { carries(it, mark) }
-                } -> PerfFilesSince.REWRITTEN
+                marks.any { mark -> rewritten(mark, now) } -> PerfFilesSince.REWRITTEN
                 now.any { file -> file.path != growing && brings(file, now) } -> PerfFilesSince.ADDED
                 else -> PerfFilesSince.KEPT
             }
@@ -101,6 +98,23 @@ internal class PerfSourceStamp(
         } catch (_: IOException) {
             PerfFilesSince.REWRITTEN
         }
+    }
+
+    /** Whether [mark]'s name is still among [now] and no file begins with its bytes, and no rotation explains it. Each
+     *  file is tried against the one of its own name first, which holds it unless a rotation moved it. */
+    private fun rewritten(mark: PerfFileMark, now: List<PerfFileMark>): Boolean =
+        now.any { it.path == mark.path } && !rotatedOver(mark, now) &&
+            now.sortedBy { it.path != mark.path }.none { carries(it, mark) }
+
+    /** Whether a rotation renamed the live file over [mark]'s name: the file there now begins with the live file's
+     *  marked bytes. [mark]'s rows went to the archive, or were lost when that copy failed, which PerfStats.archiveRolled
+     *  allows in silence (a full disk, an archive directory that cannot be written, or none at all). Rows that are gone
+     *  mend no hour, so a lost copy is no rewrite (round 14 of #247). An empty live mark begins every file, so it
+     *  vouches for none. */
+    private fun rotatedOver(mark: PerfFileMark, now: List<PerfFileMark>): Boolean {
+        if (mark.path == growing) return false
+        val live = marks.firstOrNull { it.path == growing }?.takeIf { it.size > 0 } ?: return false
+        return now.firstOrNull { it.path == mark.path }?.let { carries(it, live) } == true
     }
 
     /** Whether [file] holds rows no marked file held: it begins with no mark's bytes, and no marked file still among

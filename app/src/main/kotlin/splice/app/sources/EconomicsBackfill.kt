@@ -137,7 +137,7 @@ internal class EconomicsBackfill(
      *  when no kept edge covers [from], so its edge replaces the kept one. A rollup with no hours at all vouches for
      *  nothing, so no edge is kept and the next read scans again. */
     private fun cover(from: Long, reach: Long?) {
-        val next = reach?.let { BackfillEdge(from, it) }
+        val next = reach?.let { BackfillEdge(from, it, TEAR_RULE) }
         edge = next
         if (next != null) saved.save(next) else saved.clear()
     }
@@ -169,17 +169,21 @@ internal class EconomicsBackfill(
         evidence.tears.any { it.mayHold(hour, perf.files) }
 }
 
-/** A covered edge as it is kept on disk: the window edge a pass closed the gap down to, and the oldest hour the
- *  rollup held once that pass's hours were written into it. */
+/** A covered edge as it is kept on disk: the window edge a pass closed the gap down to, the oldest hour the rollup
+ *  held once that pass's hours were written into it, and the [TEAR_RULE] the pass left torn hours out under (null
+ *  before 2). */
 @Serializable
-internal data class BackfillEdge(val from: Long, val reach: Long)
+internal data class BackfillEdge(val from: Long, val reach: Long, val tearRule: Int? = null)
 
-/** The covered edge across restarts. An unreadable or missing file is no edge, so the next read decides again. */
+/** The covered edge across restarts. An unreadable or missing file is no edge, so the next read decides again, and
+ *  so is an edge kept under an older tear rule: the hours that pass left out as torn are never built while the edge
+ *  stands, and under rule 1 that was the hour after the oldest one for any head with an old torn line before the
+ *  window, such as claude-grok's NUL line of Jul 20 (round 14 of #247). */
 internal class BackfillEdgeFile(private val path: Path) {
     private val json = Json { ignoreUnknownKeys = true }
 
     fun load(): BackfillEdge? = try {
-        json.decodeFromString(BackfillEdge.serializer(), Files.readString(path))
+        json.decodeFromString(BackfillEdge.serializer(), Files.readString(path)).takeIf { it.tearRule == TEAR_RULE }
     } catch (_: IOException) {
         null
     } catch (_: SerializationException) {

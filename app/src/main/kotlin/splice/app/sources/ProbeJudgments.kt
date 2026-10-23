@@ -21,11 +21,12 @@ import java.io.IOException
 import java.nio.file.Files
 import java.nio.file.Path
 
-// why: which hours a torn line may hold decides which hours are not read, and a judgment kept under an older rule stays
-// wrong while its rollup and files stand, so a kept hour that was not read is judged again once under a newer one.
+// why: which hours a torn line may hold decides which hours are not read and which the backfill leaves out, and a
+// judgment or a backfill edge kept under an older rule stays wrong while its rollup and files stand, so a kept hour
+// that was not read is judged again once under a newer one, and an edge is covered again (EconomicsBackfill).
 // 2: Oct 23, 2026, a line with no time ends at the row written after it; claude-grok kept 41 hours from Oct 13 to Oct 22
 // not read under rule 1 for a NUL line of Jul 20 (round 13 of #247).
-private const val TEAR_RULE = 2
+internal const val TEAR_RULE = 2
 
 /** One hour's answer: the rollup signature it answered, the probes to take off, or why the hour cannot be shown. */
 internal data class ProbeJudged(val signature: List<Long>, val probes: EconomicsBucket?, val gap: ProbeGap?)

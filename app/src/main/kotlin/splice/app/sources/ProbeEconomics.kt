@@ -133,14 +133,16 @@ internal class ProbeEconomics(private val perf: PerfRowsFileSource) {
         val probes = summarize(read.probes)
         private val probeLike = read.probeLike
         private val torn = hours.filter { hour -> probeLike.any { it.mayHold(hour, perf.files) } }.toSet()
+        private val open = hours.filter { hour -> probeLike.any { it.open && it.mayHold(hour, perf.files) } }.toSet()
         private val newest = read.work.rows.maxOfOrNull { it.ts }
 
         /** A torn line is not mended by later rows and no new probe is ever written, so an hour that holds either is settled
-         *  at once; any other hour waits for the log to move on. A line with no row after it yet is no exception: the row
-         *  that comes after it bounds it no earlier than the hours the rollup already holds, since that row is written
-         *  after their turns ended and lands within the late-row margin of its own time. */
+         *  at once; any other hour waits for the log to move on, and so does one a line with nothing after it may hold,
+         *  since the next row bounds that line ([PerfTear.open]). That row can carry a time hours before the line, when
+         *  its round was held past the late-row margin, which is not a bound, so it can free an hour the rollup already
+         *  holds (round 14 of #247). */
         fun settled(hour: Long): Boolean =
-            hour in torn || hour in probes || newest != null && hour + SETTLED_AFTER_MS <= newest
+            hour in torn && hour !in open || hour in probes || newest != null && hour + SETTLED_AFTER_MS <= newest
 
         // Probes were dispatched only until they were retired, and none is written now. An hour more than one past the newest probe row or
         // the newest hour a probe-like torn line can lie in, and after the one the log begins in, has no probe to take off: the log's only

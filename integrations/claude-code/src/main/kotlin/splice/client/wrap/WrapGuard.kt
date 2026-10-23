@@ -10,6 +10,7 @@ import splice.core.util.Cancellables
 import splice.core.util.LogSink
 import splice.core.util.SafeFailureText
 import java.nio.file.ClosedWatchServiceException
+import java.nio.file.NoSuchFileException
 import java.nio.file.Path
 import java.nio.file.StandardWatchEventKinds.ENTRY_CREATE
 import java.nio.file.StandardWatchEventKinds.ENTRY_DELETE
@@ -86,22 +87,33 @@ public class WrapGuard(
         }
     }
 
-    private fun register(): WatchService? = Cancellables.runCatchingCancellable {
-        binDir.fileSystem.newWatchService().also { service ->
-            try {
-                binDir.register(service, ENTRY_CREATE, ENTRY_DELETE, ENTRY_MODIFY)
-            } catch (failure: java.io.IOException) {
-                service.close()
-                throw failure
-            }
-        }
-    }.fold(
+    private fun register(): WatchService? = Cancellables.runCatchingCancellable { watched(SCAN_ATTEMPTS) }.fold(
         onSuccess = { service -> service.also { watcher = it } },
         onFailure = { failure ->
             log("[wrap] cannot watch $binDir (${SafeFailureText.render(failure)}); checking every ${tickSeconds}s\n")
             null
         },
     )
+
+    /** A new watch on [binDir]. On a Mac the JDK's watch polls, and registering scans the folder, so an entry the
+     *  updater renames away mid-scan (its `.claude.updating`) fails the scan with NoSuchFileException naming that
+     *  entry. That is a rename in flight, not a folder that cannot be watched, so the scan runs again; a folder that
+     *  is itself missing still fails at once. */
+    private fun watched(attempts: Int): WatchService =
+        try {
+            binDir.fileSystem.newWatchService().also { service ->
+                try {
+                    binDir.register(service, ENTRY_CREATE, ENTRY_DELETE, ENTRY_MODIFY)
+                } catch (failure: java.io.IOException) {
+                    service.close()
+                    throw failure
+                }
+            }
+        } catch (vanished: NoSuchFileException) {
+            val entry = vanished.file?.let { Path.of(it).parent == binDir } == true
+            if (!entry || attempts <= 1) throw vanished
+            watched(attempts - 1)
+        }
 
     private fun reconcileOnce() {
         Cancellables.runCatchingCancellable { head.reconcile() }.fold(
@@ -118,3 +130,6 @@ public class WrapGuard(
 // why: a slow safety net, not the mechanism: the directory watch responds to updater link changes;
 // this also covers a directory that could not be watched or an event the platform dropped.
 private const val SAFETY_TICK_SECONDS = 60L
+
+// why: one rename in flight costs one rescan; three covers an updater that stages and swaps twice in a row.
+private const val SCAN_ATTEMPTS = 3

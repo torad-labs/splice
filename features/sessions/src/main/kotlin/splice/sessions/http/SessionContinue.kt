@@ -154,15 +154,11 @@ public class SessionContinue(
         return if (pane == null) requireNotNull(at.refusal) else handOver(driving, pane, pid, move, clear)
     }
 
-    /** What the prompt holds before `/exit`: a turn in flight is stopped first, and the stopped message Claude Code
-     *  puts back, with anything he typed while it ran, is his. It is answered back to him, and emptied only on his
-     *  say-so, never to get the move through (Marlin, move check 4). Null once the prompt is ready for `/exit`. */
-    private suspend fun prompt(driving: SessionDriver, pane: SessionPane, move: Move, clear: Boolean): JsonReply? {
-        if (move.working) stopTurn(driving, pane, move)?.let { return it }
-        return if (clear) emptyPrompt(driving, pane) else drive.drafted(move.session)
-    }
-
-    /** End the client in [pane] with its own exit, and resume once it has gone. */
+    /** End the client in [pane] with its own exit, and resume once it has gone. A turn in flight is stopped first,
+     *  and the stopped message Claude Code puts back, with anything he typed while it ran, is his: it is answered back
+     *  to him, and emptied only on his say-so, never to get the move through (Marlin, move check 4). The prompt is read
+     *  and `/exit` typed in the pane's turn, and nothing else is typed there until the client has left: a message that
+     *  landed after `/exit` would reach the shell it leaves in front (PR #247's third review). */
     private suspend fun handOver(
         driving: SessionDriver,
         pane: SessionPane,
@@ -170,22 +166,34 @@ public class SessionContinue(
         move: Move,
         clear: Boolean,
     ): JsonReply {
-        prompt(driving, pane, move, clear)?.let { return it }
-        val sent = Cancellables.runCatchingCleanup { driving.terminal.send(pane, EXIT_COMMAND) }.exceptionOrNull()
-        return when {
-            sent != null -> refusedByTerminal(sent)
-            !handover.left(move.session, pid, EXIT_SECONDS) -> Refusals.reply(
-                HttpStatusCode.GatewayTimeout,
-                "its client did not exit within ${EXIT_SECONDS}s, so nothing was started on ${move.head}",
-            )
-            else -> resume(driving, pane, move)
+        if (move.working) stopTurn(driving, pane, move)?.let { return it }
+        return drive.turns.leave(
+            pane,
+            again(driving, move),
+            keys = {
+                (if (clear) null else drive.drafted(move.session)) ?: Cancellables.runCatchingCleanup {
+                    if (clear) driving.terminal.press(pane, SessionKey.CLEAR)
+                    driving.terminal.send(pane, EXIT_COMMAND)
+                }.exceptionOrNull()?.let(::refusedByTerminal)
+            },
+        ) {
+            if (!handover.left(move.session, pid, EXIT_SECONDS)) {
+                Refusals.reply(
+                    HttpStatusCode.GatewayTimeout,
+                    "its client did not exit within ${EXIT_SECONDS}s, so nothing was started on ${move.head}",
+                )
+            } else {
+                resume(driving, pane, move)
+            }
         }
     }
 
-    /** Stop the turn in flight; null once it has stopped. */
+    /** Stop the turn in flight, its key typed in the pane's turn; null once it has stopped. */
     private suspend fun stopTurn(driving: SessionDriver, pane: SessionPane, move: Move): JsonReply? {
-        Cancellables.runCatchingCleanup { driving.terminal.press(pane, SessionKey.STOP) }
-            .exceptionOrNull()?.let { return refusedByTerminal(it) }
+        drive.turns.turn(pane, again(driving, move)) {
+            Cancellables.runCatchingCleanup { driving.terminal.press(pane, SessionKey.STOP) }
+                .exceptionOrNull()?.let(::refusedByTerminal)
+        }?.let { return it }
         if (!handover.stopped(move.session, STOP_SECONDS)) {
             return Refusals.reply(
                 HttpStatusCode.GatewayTimeout,
@@ -195,10 +203,9 @@ public class SessionContinue(
         return null
     }
 
-    /** Empty the prompt, on his say-so: `/exit` would be sent after whatever it holds. */
-    private fun emptyPrompt(driving: SessionDriver, pane: SessionPane): JsonReply? =
-        Cancellables.runCatchingCleanup { driving.terminal.press(pane, SessionKey.CLEAR) }
-            .exceptionOrNull()?.let(::refusedByTerminal)
+    /** [move]'s session located anew, as its pane's turn checks it before a key goes. */
+    private fun again(driving: SessionDriver, move: Move): PaneTurns.Relocate =
+        PaneTurns.Relocate { drive.locate(driving, move.session, MOVE_NOT_OURS, MOVE_CLOSED) }
 
     /** The resume where the person is: his own shell when one is left in front, else a new terminal. */
     private suspend fun resume(driving: SessionDriver, pane: SessionPane, move: Move): JsonReply {

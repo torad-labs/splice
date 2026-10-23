@@ -47,27 +47,39 @@ internal class TmuxCommand(
         // stderr into stdout: a tmux client prints one short line on failure ("can't find pane: %4"), and that
         // line is the only account of why a call refused. The output is read while the client runs, not after it
         // exits: a pane bigger than a pipe's buffer (64 KiB on Linux) blocks the client on its own write, and a
-        // wait for an exit that cannot come ends in the deadline killing a healthy capture.
+        // wait for an exit that cannot come ends in the deadline killing a healthy capture. The input is written the
+        // same way, beside the wait: a message bigger than the pipe blocks its write until the client reads it, and
+        // a client that stops reading must meet the deadline, not hold the caller (and the pane's turn) forever.
         val process = ProcessBuilder(argv).redirectErrorStream(true).start()
         val output = readers.submit(Callable { kept(process.inputStream) })
-        process.outputStream.use { stdin -> if (input != null) stdin.write(input.toByteArray(Charsets.UTF_8)) }
+        val fed = readers.submit(
+            Callable {
+                process.outputStream.use { stdin -> if (input != null) stdin.write(input.toByteArray(Charsets.UTF_8)) }
+            },
+        )
         if (!process.waitFor(deadlineMs, TimeUnit.MILLISECONDS)) {
+            // the kill closes the pipe's far end, which ends a write still blocked on it
             process.destroyForcibly()
             throw IOException("tmux ${args.first()} did not answer within $deadlineMs ms")
         }
-        return TmuxReply(process.exitValue(), drained(output, args.first()).toString(Charsets.UTF_8))
+        val reply = TmuxReply(process.exitValue(), drained(output, args.first()).toString(Charsets.UTF_8))
+        // a client that refused has its own line for why, which says more than the pipe it stopped reading
+        if (reply.ok) settled(fed, args.first(), "input could not be written")
+        return reply
     }
 
     /** What the [output] reader kept of a [verb] call's reply; a reply past [MAX_REPLY_BYTES] is refused as too long
      *  rather than cut short. */
-    private fun drained(output: Future<ByteArray?>, verb: String): ByteArray {
-        val read = try {
-            output.get()
-        } catch (failed: ExecutionException) {
-            val reason = SafeFailureText.render(failed.cause ?: failed)
-            throw IOException("tmux $verb reply could not be read: $reason", failed)
-        }
-        return read ?: throw IOException("tmux $verb reply is more than $MAX_REPLY_BYTES bytes")
+    private fun drained(output: Future<ByteArray?>, verb: String): ByteArray =
+        settled(output, verb, "reply could not be read")
+            ?: throw IOException("tmux $verb reply is more than $MAX_REPLY_BYTES bytes")
+
+    /** What [task] answered for a [verb] call; what stopped it is an IOException that says what [failed]. */
+    private fun <T> settled(task: Future<T>, verb: String, failed: String): T = try {
+        task.get()
+    } catch (stopped: ExecutionException) {
+        val reason = SafeFailureText.render(stopped.cause ?: stopped)
+        throw IOException("tmux $verb $failed: $reason", stopped)
     }
 
     /** The same call, refused out loud when tmux refuses it: a caller that needs it to have happened. */

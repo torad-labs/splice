@@ -34,6 +34,7 @@ import splice.sessions.http.Refusal.CLOSED
 import splice.sessions.http.Refusal.REFUSED
 import splice.sessions.prompt.ScreenChoices
 import splice.sessions.prompt.ScreenOffer
+import java.util.concurrent.ConcurrentHashMap
 
 internal const val NO_TERMINAL_TO_DRIVE = "splice has no terminal to drive sessions in yet"
 internal const val STOP_NOT_OURS =
@@ -61,6 +62,8 @@ private const val LAUNCH_PANE_GONE =
     "the terminal this session was started in is gone; open it where it runs now"
 private const val LAUNCH_PANE_TAKEN =
     "the terminal this session was started in is running something else now, so nothing is typed into it"
+private const val PANE_CHANGED = "its terminal changed while this waited its turn, so nothing was typed into it"
+private const val PANE_LEAVING = "it is ending, so nothing more is typed into its terminal"
 
 /** A person acted on the session with this id: said something to it, answered it, or stopped it. */
 public fun interface SessionActed {
@@ -86,10 +89,8 @@ public class SessionDrive(
     /** Where the numbered keys begin, so a choice answers with the digit the person presses. */
     private val firstChoice = SessionKey.CHOICE_1.ordinal
 
-    /** One act at a time in a pane, from what it checks on the screen to its last key: two messages at once would each
-     *  find the prompt empty, and one's paste or clear would land between the other's paste and its Enter. Each
-     *  monitor serializes the terminal calls it wraps and guards no state. */
-    private val paneTurns = List(PANE_TURNS) { Any() }
+    /** The pane turns every act takes, End's included (SessionEnd). */
+    internal val turns = PaneTurns()
 
     private val unwired = refuse(HttpStatusCode.ServiceUnavailable, NO_TERMINAL_TO_DRIVE, Refusal.NO_TERMINAL)
 
@@ -132,22 +133,30 @@ public class SessionDrive(
      *  without numbers (the folder trust question) by moving the pointer from where the screen shows it, then
      *  accepting. [label], when the page sends the words it showed, must still be that choice's words on the screen:
      *  a screen that changed under the click is refused, never answered with whatever now sits at that place, and a
-     *  screen splice could not read is refused too, since nothing on it can be said to be where it was. */
+     *  screen splice could not read is refused too, since nothing on it can be said to be where it was. The screen
+     *  is read inside the pane's turn, so the keys pressed are the ones the screen showed when they went. */
     public fun answer(session: String, choice: Int, label: String? = null): JsonReply {
-        val driving = driver() ?: return unwired
+        driver() ?: return unwired
         val key = choiceKeys.getOrNull(choice - 1)
             ?: return refuse(HttpStatusCode.BadRequest, "a choice is one of the numbered options, 1 to 9")
-        val pane = locate(driving, session, ANSWER_NOT_OURS, ANSWER_CLOSED).pane
-        val read = pane?.let { Cancellables.runCatchingCleanup { choices.on(driving.terminal.screen(it)) } }
-        val unread = read?.exceptionOrNull()
-        val offer = read?.getOrNull()
-        return when {
-            unread != null -> refuse(HttpStatusCode.Conflict, CHOICE_UNREAD + SafeFailureText.render(unread), REFUSED)
-            offer?.moved(choice, label) == true -> refuse(HttpStatusCode.Conflict, SCREEN_MOVED, Refusal.SCREEN_MOVED)
-            else -> inPane(session, ANSWER_NOT_OURS, ANSWER_CLOSED) { _, at ->
-                (offer?.keys(choice, key) ?: listOf(key)).forEach { driving.terminal.press(at, it) }
-            }
-        }
+        var offer: ScreenOffer? = null
+        return inPane(
+            session,
+            ANSWER_NOT_OURS,
+            ANSWER_CLOSED,
+            held = { driving, pane ->
+                val read = Cancellables.runCatchingCleanup { choices.on(driving.terminal.screen(pane)) }
+                offer = read.getOrNull()
+                val unread = read.exceptionOrNull()
+                when {
+                    unread != null ->
+                        refuse(HttpStatusCode.Conflict, CHOICE_UNREAD + SafeFailureText.render(unread), REFUSED)
+                    offer?.moved(choice, label) == true ->
+                        refuse(HttpStatusCode.Conflict, SCREEN_MOVED, Refusal.SCREEN_MOVED)
+                    else -> null
+                }
+            },
+        ) { driving, at -> (offer?.keys(choice, key) ?: listOf(key)).forEach { driving.terminal.press(at, it) } }
     }
 
     /** POST .../say's body, {"text": "...", "clear": true}: a body that names no text is refused as an empty message,
@@ -195,32 +204,31 @@ public class SessionDrive(
         session: String,
         notOurs: String,
         closed: String,
-        held: (SessionDriver, SessionPane) -> JsonReply? = { _, _ -> null },
-        act: (SessionDriver, SessionPane) -> Unit,
+        crossinline held: (SessionDriver, SessionPane) -> JsonReply? = { _, _ -> null },
+        crossinline act: (SessionDriver, SessionPane) -> Unit,
     ): JsonReply {
         val driving = driver() ?: return unwired
         val at = locate(driving, session, notOurs, closed)
         val pane = at.pane ?: return requireNotNull(at.refusal)
-        return synchronized(paneTurns[Math.floorMod(pane.id.hashCode(), PANE_TURNS)]) {
+        return turns.turn(pane, { locate(driving, session, notOurs, closed) }) {
             held(driving, pane) ?: run {
                 acted.acted(session)
-                Cancellables.runCatchingCleanup { act(driving, pane) }.fold(
-                    onSuccess = { JsonReply(HttpStatusCode.OK, "{}") },
-                    onFailure = {
-                        refuse(HttpStatusCode.BadGateway, TERMINAL_REFUSED + SafeFailureText.render(it), REFUSED)
-                    },
-                )
+                Cancellables.runCatchingCleanup { act(driving, pane) }.exceptionOrNull()?.let {
+                    refuse(HttpStatusCode.BadGateway, TERMINAL_REFUSED + SafeFailureText.render(it), REFUSED)
+                }
             }
-        }
+        } ?: JsonReply(HttpStatusCode.OK, "{}")
     }
 
     /** The pane to act in for [session], or the refusal that says why there is none. A pane splice opened is used
      *  while it is open, which the terminal answers for the very pane it opened: the process it started there, not
-     *  only the pane's number, which a restarted server hands to another shell. Otherwise the terminal the session's
-     *  own launch recorded is used only while that pane is open AND still has the session's process in front, so a
-     *  closed or reused terminal is refused by name. */
+     *  only the pane's number, which a restarted server hands to another shell. A remembered pane that carries no
+     *  such process (one an earlier build wrote, or a shell a move resumed in) is never trusted on its number: it is
+     *  found afresh, as a session splice remembers no pane for. Otherwise the terminal the session's own launch
+     *  recorded is used only while that pane is open AND still has the session's process in front, so a closed or
+     *  reused terminal is refused by name. */
     internal fun locate(driving: SessionDriver, session: String, notOurs: String, closed: String): Located {
-        val mine = driving.panes.paneFor(session)
+        val mine = driving.panes.paneFor(session)?.takeIf(driving.terminal::owned)
         if (mine != null) return if (driving.terminal.isOpen(mine)) Located(pane = mine) else refused(closed, CLOSED)
         val launch = launched.of(session) ?: return refused(notOurs, Refusal.NOT_OURS)
         return launchedPane(driving.terminal, launch)
@@ -274,4 +282,60 @@ public class SessionDrive(
 
     private fun refuse(status: HttpStatusCode, sentence: String, reason: Refusal? = null) =
         Refusals.reply(status, sentence, reason)
+}
+
+/** One act at a time in a pane, from what it checks on the screen to its last key: two messages at once would each
+ *  find the prompt empty, and one's paste or clear would land between the other's paste and its Enter. Say, answer,
+ *  stop, End and Continue on all take a pane's turn here, and none types into a pane being left. */
+internal class PaneTurns {
+    /** Each monitor serializes the terminal calls it wraps and guards no state. */
+    private val monitors = List(PANE_TURNS) { Any() }
+
+    /** Panes End or Continue on has typed `/exit` into and not yet seen the client leave. Nothing more is typed
+     *  into one: what lands after the client goes lands in whatever it leaves in front, a shell that would run it. */
+    private val leaving: MutableSet<String> = ConcurrentHashMap.newKeySet()
+
+    /** [act] in [pane] holding its turn, once [again] (the session located anew inside the turn) still finds it there
+     *  and no `/exit` is leaving it: a client that exited, or a pane that came to hold another process, while this
+     *  waited is refused, never typed into. Null when [act] went through. */
+    fun turn(pane: SessionPane, again: Relocate, act: InTurn): JsonReply? =
+        synchronized(monitors[Math.floorMod(pane.id.hashCode(), PANE_TURNS)]) {
+            val now = again()
+            when {
+                now.pane == null -> requireNotNull(now.refusal)
+                now.pane != pane -> Refusals.reply(HttpStatusCode.Conflict, PANE_CHANGED, Refusal.PANE_TAKEN)
+                pane.id in leaving -> Refusals.reply(HttpStatusCode.Conflict, PANE_LEAVING, Refusal.ENDED)
+                else -> act()
+            }
+        }
+
+    /** The last keys of End or Continue on: [keys] typed in [pane] in its [turn], after which nothing else is typed
+     *  there until [gone] answers, the wait for the client to leave. A message that lands after `/exit` would reach
+     *  the shell the client leaves behind, so it is refused for as long as the client may still be going. */
+    suspend fun leave(pane: SessionPane, again: Relocate, keys: InTurn, gone: ClientGone): JsonReply {
+        var marked = false
+        return try {
+            turn(pane, again) {
+                marked = leaving.add(pane.id)
+                keys()
+            } ?: gone()
+        } finally {
+            if (marked) leaving.remove(pane.id)
+        }
+    }
+
+    /** The session located anew inside its pane's turn, as SessionDrive.locate answers it. */
+    fun interface Relocate {
+        operator fun invoke(): SessionDrive.Located
+    }
+
+    /** What an act types once its pane's turn is held: the refusal that stopped it, or null once its keys went. */
+    fun interface InTurn {
+        operator fun invoke(): JsonReply?
+    }
+
+    /** The wait, after the last keys, for the client to leave the pane, and what the route then answers. */
+    fun interface ClientGone {
+        suspend operator fun invoke(): JsonReply
+    }
 }

@@ -65,6 +65,9 @@ internal class FakeTerminal(var openFails: Boolean = false, var screenText: Stri
 
     override fun isOpen(pane: SessionPane): Boolean = live
 
+    /** A pane [open] answered carries its process; one [recorded] answered, `%N@server`, does not. */
+    override fun owned(pane: SessionPane): Boolean = '@' !in pane.id
+
     /** The pids each pane has in front, as the person's terminal would show them. */
     val inFront = mutableMapOf<SessionPane, Long>()
 

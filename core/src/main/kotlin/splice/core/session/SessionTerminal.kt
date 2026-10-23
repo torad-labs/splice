@@ -55,6 +55,11 @@ public interface SessionTerminal {
      *  since come to carry its name (a restarted server numbering its panes again) is not that pane. */
     public fun isOpen(pane: SessionPane): Boolean
 
+    /** Whether [pane] carries the process [open] started in it, so [isOpen] can tell it from a stranger that came to
+     *  hold its number. A pane that carries none (one [recorded] answered, or one remembered by an earlier build) is
+     *  never trusted on its number alone: the caller checks it with [hosts] against the session's own process. */
+    public fun owned(pane: SessionPane): Boolean
+
     /** The pane a session's own launch recorded ([LaunchTerminal][splice.core.process.LaunchTerminal]: the pane it
      *  ran in and the server holding it), as this terminal's pane, or null when it names none this terminal has. */
     public fun recorded(pane: String, server: String): SessionPane?

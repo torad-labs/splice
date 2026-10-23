@@ -14,7 +14,8 @@
 // server that exits and starts again on the same socket numbers its panes from %0 again, so a remembered `%3`
 // can name a stranger's shell. A pane splice opens is recorded with the process splice started in it, the
 // session's client, and it is live only while that process is still the pane's own; any other is not the
-// terminal splice opened, and nothing is typed into it (PR #247 review 2).
+// terminal splice opened, and nothing is typed into it (PR #247 review 2). A pane remembered before panes carried
+// their process names none, and is never trusted on its number: the console finds the session afresh (review 3).
 //
 // WHY PASTE, NOT TYPING. A message is loaded into a tmux buffer and pasted with bracketed paste, so its line
 // breaks arrive as part of one message instead of as Enter presses that would each submit a fragment of it;
@@ -128,7 +129,9 @@ public class TmuxTerminal(
     }
 
     /** Live, and for a pane splice opened, still running the process splice started in it: the same number on a
-     *  server that started again is another terminal, which splice did not open. */
+     *  server that started again is another terminal, which splice did not open. A pane with no owner answers for
+     *  liveness alone, which is why no caller trusts one on this: [owned] is false for it, and the pane is checked
+     *  against the session's own process with [hosts] instead. */
     override fun isOpen(pane: SessionPane): Boolean {
         val at = paneOf(pane) ?: return false
         val reply = tmux.run(listOf("display-message", "-p", "-t", at.id, "#{pane_dead} #{pane_pid}"), at.socket)
@@ -136,6 +139,10 @@ public class TmuxTerminal(
         val live = reply.ok && shown.first() == "0"
         return live && (at.owner == null || shown.getOrNull(1)?.toLongOrNull() == at.owner)
     }
+
+    /** A pane [open] answered carries the process it started; one [recorded] answered, or one remembered from before
+     *  panes carried their process (`%3@socket`), does not. */
+    override fun owned(pane: SessionPane): Boolean = paneOf(pane)?.owner != null
 
     /** A launch records a pane by its number alone, so the pane answered carries no process: [hosts] is what checks
      *  that one. */

@@ -23,6 +23,7 @@ import splice.core.util.Cancellables
 import splice.core.util.JsonScalars
 import splice.http.JsonReply
 import splice.sessions.http.NO_TERMINAL_TO_DRIVE
+import splice.sessions.http.PaneTurns
 import splice.sessions.http.Refusal
 import splice.sessions.http.Refusals
 import splice.sessions.http.SessionDrive
@@ -60,7 +61,7 @@ public class SessionEnd(
             record == null -> Refusals.reply(HttpStatusCode.NotFound, "no running session: $session", Refusal.ENDED)
             driving == null -> Refusals.reply(HttpStatusCode.ServiceUnavailable, NO_TERMINAL_TO_DRIVE)
             at?.pane == null -> requireNotNull(at?.refusal)
-            else -> (if (confirm) null else cost(record)) ?: close(driving, at.pane, record)
+            else -> (if (confirm) null else cost(record)) ?: close(driving, at.pane, record, confirm)
         }
     }
 
@@ -79,39 +80,59 @@ public class SessionEnd(
     private fun running(session: String): SessionRecord? = registry?.read().orEmpty()
         .firstOrNull { it.sessionId == session && it.availability != SessionAvailability.GONE }
 
-    /** Stop what runs or asks, empty the prompt, type `/exit`, and wait for the client to go. */
-    private suspend fun close(driving: SessionDriver, pane: SessionPane, record: SessionRecord): JsonReply =
-        halt(driving, pane, record) ?: exit(driving, pane, record)
+    /** Stop what runs or asks, empty the prompt, type `/exit`, and wait for the client to go. Every key is typed in
+     *  the pane's turn, the one a message and an answer take, with the session found in that pane again first. */
+    private suspend fun close(
+        driving: SessionDriver,
+        pane: SessionPane,
+        record: SessionRecord,
+        confirm: Boolean,
+    ): JsonReply = halt(driving, pane, record) ?: exit(driving, pane, record, confirm)
 
     /** Stop a turn in flight or a question on screen (Escape does both); null once nothing runs or asks. */
     private suspend fun halt(driving: SessionDriver, pane: SessionPane, record: SessionRecord): JsonReply? {
         val working = record.status.state in busy
         if (!working && record.status.waitingFor == null) return null
-        val failed = Cancellables.runCatchingCleanup { driving.terminal.press(pane, SessionKey.STOP) }.exceptionOrNull()
+        val pressed = drive.turns.turn(pane, again(driving, record)) {
+            Cancellables.runCatchingCleanup { driving.terminal.press(pane, SessionKey.STOP) }
+                .exceptionOrNull()?.let { refused() }
+        }
         return when {
-            failed != null -> refused()
+            pressed != null -> pressed
             working && !handover.stopped(record.sessionId.orEmpty(), END_STOP_SECONDS) ->
                 Refusals.reply(HttpStatusCode.GatewayTimeout, "its turn did not stop within ${END_STOP_SECONDS}s")
             else -> null
         }
     }
 
-    /** Empty the prompt, type `/exit`, and wait for the client to go. */
-    private suspend fun exit(driving: SessionDriver, pane: SessionPane, record: SessionRecord): JsonReply {
-        val failed = Cancellables.runCatchingCleanup {
-            driving.terminal.press(pane, SessionKey.CLEAR)
-            driving.terminal.send(pane, "/exit")
-        }.exceptionOrNull()
-        return when {
-            failed != null -> refused()
-            !exited(driving, pane, record) ->
-                Refusals.reply(HttpStatusCode.GatewayTimeout, "its client did not exit within ${END_EXIT_SECONDS}s")
-            else -> {
-                driving.panes.forget(record.sessionId.orEmpty())
-                JsonReply(HttpStatusCode.OK, "{}")
-            }
+    /** Empty the prompt, type `/exit`, and wait for the client to go, with nothing else typed into the pane until it
+     *  has. An End he did not confirm reads the prompt again in the turn: words a message left there since are his. */
+    private suspend fun exit(
+        driving: SessionDriver,
+        pane: SessionPane,
+        record: SessionRecord,
+        confirm: Boolean,
+    ): JsonReply = drive.turns.leave(
+        pane,
+        again(driving, record),
+        keys = {
+            (if (confirm) null else drive.drafted(record.sessionId.orEmpty())) ?: Cancellables.runCatchingCleanup {
+                driving.terminal.press(pane, SessionKey.CLEAR)
+                driving.terminal.send(pane, "/exit")
+            }.exceptionOrNull()?.let { refused() }
+        },
+    ) {
+        if (!exited(driving, pane, record)) {
+            Refusals.reply(HttpStatusCode.GatewayTimeout, "its client did not exit within ${END_EXIT_SECONDS}s")
+        } else {
+            driving.panes.forget(record.sessionId.orEmpty())
+            JsonReply(HttpStatusCode.OK, "{}")
         }
     }
+
+    /** [record]'s session located anew, as its pane's turn checks it before a key goes. */
+    private fun again(driving: SessionDriver, record: SessionRecord): PaneTurns.Relocate =
+        PaneTurns.Relocate { drive.locate(driving, record.sessionId.orEmpty(), END_NOT_OURS, END_CLOSED) }
 
     private fun refused(): JsonReply =
         Refusals.reply(HttpStatusCode.Conflict, "the terminal did not take it", Refusal.REFUSED)

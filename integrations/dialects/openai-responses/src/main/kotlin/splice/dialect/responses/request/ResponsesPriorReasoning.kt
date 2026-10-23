@@ -1,5 +1,5 @@
-// NEW: replay_reasoning=false means reasoning from an earlier turn does not ride back (the operator's
-// words in splice.toml: replayed encrypted reasoning thins fresh reasoning). Two paths put it back anyway:
+// NEW: replay_reasoning=false means reasoning from an earlier turn does not ride back. Replay ships on
+// (Knob.REPLAY_REASONING); this is the opt-out's one enforcement point. Two paths put it back anyway:
 // the gateway cache in front of every client function_call, and code mode's stored continuity. Both end
 // in one Responses input array, so this is the one place that drops it, whichever path wrote it.
 package splice.dialect.responses.request

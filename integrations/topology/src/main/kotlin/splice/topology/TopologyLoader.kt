@@ -209,7 +209,7 @@ control_port = 3096
 # Reasoning display (edit + restart; env/PATCH still override):
 show_reasoning = "text"
 summary = "detailed"
-replay_reasoning = false
+replay_reasoning = true
 
 [defaults]
 # How far back splice keeps this install's history: the hourly spend totals and the request

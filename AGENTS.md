@@ -8,20 +8,20 @@ gateway, routed at write time by
 half (the Kotlin module suites, plus the migration oracle's 11 byte-exact
 fixtures — `npm run oracle:replay`). Do not weaken either.
 
-1. **L1 — hard lock RETIRED (2026-07-14); replay DEFAULT-OFF (2026-07-15,
-   measured).** Was "no reasoning-item replay." Replay is now a supported,
-   config-gated behavior (`replayReasoning`): `codex/translate-request.mjs` can
-   set `include: ['reasoning.encrypted_content']` and decode `redacted_thinking`
-   blocks back into reasoning input items. But it ships **OFF**: measured, replay
-   makes the model REUSE its prior thinking instead of re-deriving fresh, which
-   suppressed the detailed-reasoning "wall" — output fell ~4× and the reasoning
-   went thin. **Replay ships off.** Current launch defaults also keep
-   `mirror_reasoning` off under the standing project ruling in `CLAUDE.md`;
-   L2 still pins the mirror's implementation and wire behavior when enabled.
-   `prompt_cache_key` (keyed on the first user message) warms
-   the INPUT cache independently of replay (66% hit, up to 99% on continuation,
-   with replay off). Opt into replay for extra cache warmth over reasoning depth
-   with `CLAUDEX_REPLAY_REASONING=1`.
+1. **L1 — hard lock RETIRED (2026-07-14); replay DEFAULT-ON (2026-10-23,
+   Marcos).** Replay is a supported, config-gated behavior (`replayReasoning`):
+   earlier turns' reasoning items ride back as input until the conversation
+   compacts, as Codex sends them. It shipped off from 2026-07-15 on a measurement
+   that replay thinned the detailed-reasoning "wall" (~4×). The 2026-10-22
+   claudex-vs-Codex comparison found the cost of off: only 26% of earlier tool
+   steps reached the model with their reasoning, against about 90% in Codex,
+   and a seat lost its reasoning at every peer message. Marcos: off "is a big
+   defect and it should not be off by default". **Replay ships on**;
+   `replay_reasoning = false` or `CLAUDEX_REPLAY_REASONING=0` turns it off.
+   Current launch defaults keep `mirror_reasoning` off under the standing
+   project ruling in `CLAUDE.md`; L2 still pins the mirror's implementation and
+   wire behavior when enabled. `prompt_cache_key` (keyed on the first user
+   message) warms the INPUT cache independently of replay.
 2. **L2 — the mirror never regresses.** ONE `mirrorInto()` in
    `reasoning/mirror.mjs`, called by the stream path (`codex/stream.mjs`) and
    the non-stream path (`codex-proxy.mjs`). Thresholds are named there:

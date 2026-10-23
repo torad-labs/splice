@@ -63,10 +63,10 @@ const createKnobs = (scope) => {
       { home: "reasoning", also: "reasoning summaries thinking summary detailed concise auto" }),
     K("showReasoning", "Where reasoning shows", { k: "pick", names: { text: "In the reply", thinking: "In the thinking block", off: "Hidden" } }, "text",
       { home: "reasoning", also: "show reasoning in claude code display thinking as text" }),
-    // OFF THE PAGE, NOT OFF THE DAEMON (Marlin, Oct 12): its only measured effect is thinner fresh reasoning
-    // (Knob.kt:106-109, ~4x), it is off by default, and it is meant as an environment opt-in, so it serves no job he
-    // has. No `home`: SettingsCoverageTest carries it in offPage with that reason.
-    K("replayReasoning", "Send earlier reasoning back", { k: "flag" }, false, { also: "thinking replay" }),
+    // OFF THE PAGE, NOT OFF THE DAEMON (Marlin, Oct 12): on by default for every head since Oct 23 (Knob.kt), and
+    // turning it off is an environment or TOML choice, so it serves no job on the page. No `home`:
+    // SettingsCoverageTest carries it in offPage with that reason.
+    K("replayReasoning", "Send earlier reasoning back", { k: "flag" }, true, { also: "thinking replay" }),
     K("progressLine", "Waiting line in the terminal", { k: "flag" }, true,
       { home: "reasoning", also: "progress line while it thinks waiting status" }),
     // one row, read as a sentence: "When thinking stops short, continue [models] up to [3 times]" (foldCard below)

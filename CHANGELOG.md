@@ -3,6 +3,10 @@
 ## splice v0.4.0: teams across models, resume on another model, and one-command setup - 2026-10-14
 
 ### Highlights
+- **GPT keeps its reasoning across prompts.** `replay_reasoning` now ships on for every head on the Responses
+  dialect: every earlier turn's reasoning goes back to the model until the conversation compacts, as Codex sends it.
+  Off, a session lost its reasoning at each new prompt and each peer message. An install whose splice.toml says
+  `replay_reasoning = false`, as the 0.3.x template wrote it, keeps it off until that line changes.
 - **Tool callbacks progress as results arrive.** Code-mode cells can issue up to 32 callbacks while encoded frames remain bounded. A partial result batch settles its ready promises, retains unfinished callbacks and terminal errors for recovery, and continues without waiting on a paused source stream.
 - **Deferred tool history stays attached to its callback.** Canonical history preserves generated declarations beside their relocated function calls, preventing a returned batch from abandoning its running script.
 - **Optional WebSocket prefix preparation.** When the Responses WebSocket transport is explicitly enabled, the Codex profile can prepare the instruction/tool prefix before generation. Continuation state rejects stale responses. WebSockets remain off by default.

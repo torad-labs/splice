@@ -990,7 +990,7 @@ When a provider answers 429, splice waits its `Retry-After` up to 15 s, or 15 s 
 
 splice never has, exposes, or reconstructs the model's raw chain-of-thought or exact reasoning. Provider-native readable fields may be displayed as thinking blocks, but `mirror_reasoning` is locked off after every configuration layer: TOML, state, environment variables, and runtime PATCH cannot enable a synthetic transcript summary.
 
-Replaying reasoning through Claude Code's own transcript (`replay_reasoning`) ships off. The `reasoning_cache` ships on for ChatGPT, OpenAI and Muse: it sends the model's reasoning back with every earlier tool call until the conversation compacts, and persists to disk, including readable summaries supplied by the provider. Set `CLAUDEX_REPLAY_REASONING=1` only if you deliberately prefer additional replay/cache warmth over the deeper fresh reasoning observed without replay.
+Replaying reasoning (`replay_reasoning`) ships on: every earlier turn's reasoning goes back to the model until the conversation compacts, the way Codex sends it. Off, splice drops each reasoning item that came before the last real prompt, and a seat driven by peer messages loses its reasoning at every message. The `reasoning_cache` ships on for ChatGPT, OpenAI and Muse: it supplies the reasoning behind each earlier tool call, and persists to disk, including readable summaries supplied by the provider. Set `replay_reasoning = false` or `CLAUDEX_REPLAY_REASONING=0` to keep earlier turns' reasoning out.
 
 ## The cache-replay experiment
 

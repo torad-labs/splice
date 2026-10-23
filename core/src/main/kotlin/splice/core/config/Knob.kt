@@ -101,13 +101,15 @@ public enum class Knob(
         KnobDefault.Text("text"),
     ),
 
-    // OFF for every head (codex/grok/openai). Input-injecting prior opaque encrypted reasoning items thins fresh
-    // reasoning depth (~4x measured). Include-encrypted handle is separate and still ON when
-    // showReasoning is on. Opt in only with CLAUDEX_REPLAY_REASONING=1.
+    // ON for every head (Marcos, Oct 22: off "is a big defect and it should not be off by default"). Off, splice
+    // dropped every reasoning item before the last real prompt: 26% of earlier tool steps reached claudex's model
+    // with their reasoning, against about 90% in Codex's own requests, which keep it until compaction (Oct 22
+    // claudex-vs-Codex comparison). The July note that replay thins fresh reasoning (~4x) stays on record;
+    // CLAUDEX_REPLAY_REASONING=0 or replay_reasoning = false turns it off.
     REPLAY_REASONING(
         "replayReasoning",
         listOf("CLAUDEX_REPLAY_REASONING", "CODEX_REPLAY_REASONING"),
-        KnobDefault.Flag(false),
+        KnobDefault.Flag(true),
     ),
 
     // The transcript mirror ("[reasoning summary]" text block, L2) is operator-locked OFF.

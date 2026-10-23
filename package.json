@@ -33,6 +33,6 @@
     "@ast-grep/cli"
   ],
   "overrides": {
-    "handlebars": "4.7.9"
+    "handlebars": "4.7.10"
   }
 }

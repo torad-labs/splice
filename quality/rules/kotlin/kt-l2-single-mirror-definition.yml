@@ -21,7 +21,8 @@ rule:
   has:
     kind: simple_identifier
     regex: ^mirrorInto$
-  # the one definition is the member of `class Mirror`, exempt by that declaration and not by the file that holds it
+  # The exception is the canonical owner, not any class with the same name. The gate's declaration
+  # runner binds this package/class match to the one source file named by L2 below.
   not:
     inside:
       kind: class_declaration
@@ -29,3 +30,9 @@ rule:
       has:
         kind: type_identifier
         regex: ^Mirror$
+      inside:
+        kind: source_file
+        stopBy: end
+        has:
+          pattern: package splice.head.reasoning
+          stopBy: end

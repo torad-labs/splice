@@ -39,6 +39,11 @@ import { tmpdir } from "node:os";
 import { dirname, join, resolve as pathResolve } from "node:path";
 import { astGrepBin } from "./astgrep.ts";
 import { findRepoRoot } from "./repo.ts";
+import {
+  CANONICAL_MIRROR_FILE,
+  MIRROR_DEFINITION_RULE,
+  mirrorDefinitionsOf,
+} from "./single-source.ts";
 
 export const LIFECYCLES = ["pretooluse"] as const;
 export type Lifecycle = (typeof LIFECYCLES)[number];
@@ -153,7 +158,20 @@ function scanMirrored(r: Roots, rel: string, content: string): Match[] {
     const target = join(tmp, rel);
     mkdirSync(dirname(target), { recursive: true });
     writeFileSync(target, content, "utf8");
-    return scanAstGrep(r, [rel], tmp);
+    const matches = scanAstGrep(r, [rel], tmp);
+    if (!rel.endsWith(".kt") && !rel.endsWith(".kts")) return matches;
+    const definitions = mirrorDefinitionsOf(r.root, tmp, [rel]);
+    const invalid = definitions.length > 1
+      ? definitions
+      : definitions.filter((definition) => definition.file !== CANONICAL_MIRROR_FILE);
+    const mirrorErrors = invalid.map((definition): Match => ({
+      severity: "error",
+      ruleId: MIRROR_DEFINITION_RULE,
+      file: definition.file,
+      message: `mirrorInto must be the sole declaration in ${CANONICAL_MIRROR_FILE}`,
+      range: { start: { line: definition.line - 1 } },
+    }));
+    return [...matches, ...mirrorErrors];
   } finally {
     rmSync(tmp, { recursive: true, force: true });
   }

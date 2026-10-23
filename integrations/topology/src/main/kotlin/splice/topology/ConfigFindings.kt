@@ -167,7 +167,10 @@ public object ConfigFindings {
         "the parser cannot read this line; check it for a missing =, quote or bracket, or a value the setting rejects"
     private const val WITHHELD =
         "the file cannot be decoded and the parser's text is withheld because it can quote values; check the last edit"
+
+    // why: a decoder wraps a rule failure at most a few levels deep; the walk stops on a cyclic or runaway chain.
     private const val MAX_CAUSES = 8
+
     private val PARSER_LINE = Regex("^Line (\\d+):")
     private val STRUCTURE_LINE = Regex(" \\(line (\\d+)\\)")
 }

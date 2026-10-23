@@ -89,7 +89,12 @@ internal object SchemaKeysConsumed {
     )
 
     /** Keys deliberately parsed and deliberately not acted on. (key, "YYYY-MM-DD: why"). */
-    val ALLOWLIST: List<Pair<String, String>> = emptyList()
+    val ALLOWLIST: List<Pair<String, String>> = listOf(
+        "effort_ceiling" to
+            "2026-10-22: RETIRED and read only so a 0.3.2 config still loads. The 0.3.2 release's own example " +
+            "config sets it, refusing it rolled every upgrade from that config back, and the v0.4.0 spec keeps an " +
+            "operator's config as written. It never reached the effort policy, so no value of it changes a turn.",
+    )
 
     /** What each exclusion list is, for one run. The checker swapped module globals; a law is
      *  handed them, which is what lets the red proof mutate one list without touching the other. */

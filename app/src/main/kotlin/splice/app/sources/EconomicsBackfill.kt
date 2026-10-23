@@ -46,12 +46,13 @@ internal class EconomicsBackfill(
 ) {
     private val rows = EconomicsFromRows(price, plans)
     private val refusal = PerfRefusal(perf.files, perf.files.refusalFile("backfill"))
+    private val saved = BackfillEdgeFile(perf.files.stateFile("backfill-edge"))
 
-    /** The earliest cutoff a pass has already covered, or null when none has. A moment and not a
-     *  flag: a pass closes the gap down to the window's edge AS IT STOOD, and widening the window
-     *  moves that edge further back and opens a new gap. */
+    /** The earliest cutoff a pass has already covered, or null when none has, kept across restarts. A moment and not
+     *  a flag: a pass closes the gap down to the window's edge AS IT STOOD, and widening the window moves that edge
+     *  further back and opens a new gap. */
     @Volatile
-    private var filledFrom: Long? = null
+    private var edge: BackfillEdge? = saved.load()
 
     /**
      * The hours to add to [held], or empty when there are none to add, when the gap is already
@@ -60,13 +61,11 @@ internal class EconomicsBackfill(
     fun missing(held: List<EconomicsBucket>): List<EconomicsBucket> {
         val from = kept.now().cutoffMs(clock()) ?: 0L
         val oldestHeld = held.minOfOrNull { it.hour }
-        if (done(from, oldestHeld)) {
-            cover(from)
-            return emptyList()
-        }
+        if (done(from, oldestHeld)) return emptyList()
         val evidence = exact(from) ?: return emptyList()
-        cover(from)
-        return built(evidence, from, oldestHeld)
+        val added = built(evidence, from, oldestHeld)
+        cover(from, listOfNotNull(oldestHeld, added.firstOrNull()?.hour).minOrNull())
+        return added
     }
 
     /** The evidence from [from] when the log reads whole. A log refused for a torn row stays refused while its files are
@@ -93,12 +92,25 @@ internal class EconomicsBackfill(
      */
     private fun done(from: Long, oldestHeld: Long?): Boolean {
         if (oldestHeld != null && oldestHeld <= from) return true
-        return from >= (filledFrom ?: return false)
+        val covered = edge ?: return false
+        return from >= covered.from && stillReaches(covered, from, oldestHeld)
     }
 
-    /** Record that the gap is closed down to [from], keeping the earliest edge any pass reached. */
-    private fun cover(from: Long) {
-        filledFrom = minOf(filledFrom ?: from, from)
+    /**
+     * Whether the rollup still holds what the covering pass left in it: it reaches back as far as it did then, or to
+     * the window's edge since, which trims it from behind. A rollup cleared, or rebuilt younger, has lost the hours the
+     * pass wrote, so its gap is open again; an edge kept on disk must not outlive the hours it vouches for.
+     */
+    private fun stillReaches(covered: BackfillEdge, from: Long, oldestHeld: Long?): Boolean =
+        oldestHeld != null && oldestHeld <= maxOf(covered.reach, from) + BACKFILL_HOUR_MS
+
+    /** Record that a pass closed the gap down to [from], leaving the rollup's oldest hour at [reach]. A pass runs only
+     *  when no kept edge covers [from], so its edge replaces the kept one. A rollup with no hours at all vouches for
+     *  nothing, so no edge is kept and the next read scans again. */
+    private fun cover(from: Long, reach: Long?) {
+        val next = reach?.let { BackfillEdge(from, it) }
+        edge = next
+        if (next != null) saved.save(next) else saved.clear()
     }
 
     /** One bucket per hour of rows inside the gap, each priced at the cards splice holds now. */

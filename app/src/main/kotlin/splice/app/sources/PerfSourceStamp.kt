@@ -1,6 +1,6 @@
 // NEW: what a perf source's files held at one moment, so a later look can tell appended files from replaced or rewritten ones.
 // Oct 23, 2026: [PerfReadFiles.opens] tells the backfill from which hours a read opens the archive a torn line lies in,
-// and [PerfSourceStamp.rewroteNone] tells a rotation from a rewrite, so the probe check keeps its torn hours across one.
+// and [PerfReadFiles.since] tells a rotation from a rewrite or an added file, so the probe check keeps its torn hours across one.
 package splice.app.sources
 
 import kotlinx.serialization.Serializable
@@ -53,6 +53,10 @@ internal class PerfFileMarks {
     }
 }
 
+/** What became of a stamp's files: nothing that can mend an hour, a file came with rows the stamp never saw, or one
+ *  of them was rewritten. */
+internal enum class PerfFilesSince { KEPT, ADDED, REWRITTEN }
+
 /** The files of one perf source (both live generations and every archive) at one moment, and which of them may grow. */
 internal class PerfSourceStamp(
     internal val marks: List<PerfFileMark>,
@@ -76,19 +80,36 @@ internal class PerfSourceStamp(
     /** Whether [files] are the files this stamp was taken of, none added and none gone. */
     fun covers(files: List<Path>): Boolean = files.toSet() == marks.map { it.path }.toSet()
 
-    /** Whether no file this stamp was taken of was rewritten: each one's bytes still begin a file among [files], or its
-     *  name is gone. A rotation rewrites nothing: it renames the live file to `.1` (grown by appends), copies `.1` whole
-     *  into the archive, and deletes archives past the window. */
-    fun rewroteNone(files: List<Path>): Boolean {
-        val now = files.map { reader.of(it) ?: return false }
+    /** What became of this stamp's files among [files], or null when one went while they were looked at. A marked file
+     *  whose name is still there and whose bytes begin no file was REWRITTEN. A file other than the live one that
+     *  [brings] rows no marked file held, such as a restored archive, was ADDED. A rotation does neither: it renames
+     *  the live file to `.1` (grown by appends), copies `.1` whole into the archive and deletes archives past the
+     *  window. */
+    fun since(files: List<Path>): PerfFilesSince? {
+        val now = files.map { reader.of(it) ?: return null }
         return try {
-            marks.all { mark ->
-                now.none { it.path == mark.path } || now.sortedBy { it.path != mark.path }.any { carries(it, mark) }
+            // Each file is tried against the one of its own name first, which holds it unless a rotation moved it.
+            when {
+                marks.any { mark ->
+                    now.any { it.path == mark.path } && now.sortedBy { it.path != mark.path }.none { carries(it, mark) }
+                } -> PerfFilesSince.REWRITTEN
+                now.any { file -> file.path != growing && brings(file, now) } -> PerfFilesSince.ADDED
+                else -> PerfFilesSince.KEPT
             }
+        } catch (_: NoSuchFileException) {
+            null
         } catch (_: IOException) {
-            false
+            PerfFilesSince.REWRITTEN
         }
     }
+
+    /** Whether [file] holds rows no marked file held: it begins with no mark's bytes, and no marked file still among
+     *  [now] begins with its bytes, as `.1` does while a rotation is still copying it into the archive. */
+    private fun brings(file: PerfFileMark, now: List<PerfFileMark>): Boolean =
+        marks.sortedBy { it.path != file.path }.none { mark ->
+            carries(file, mark) ||
+                now.firstOrNull { it.path == mark.path && it.path != file.path }?.let { carries(it, file) } == true
+        }
 
     /** Whether [file] begins with the bytes [mark] was taken of. */
     private fun carries(file: PerfFileMark, mark: PerfFileMark): Boolean = when {
@@ -142,8 +163,14 @@ internal class PerfReadFiles(
     /** Whether the files are the ones [stamp] was taken of, none added or gone, only the live one grown by appends. */
     fun unchanged(stamp: PerfSourceStamp): Boolean = stamp.covers(list().orEmpty()) && stamp.holds()
 
-    /** Whether every file [stamp] was taken of still holds the bytes it held then, under any name, or is gone. */
-    fun rewroteNone(stamp: PerfSourceStamp): Boolean = list()?.let { stamp.rewroteNone(it) } ?: false
+    /** What became of [stamp]'s files. A file that went while they were looked at was moved by a rotation in flight, so
+     *  they are looked at once more; files that cannot be listed count as rewritten, so nothing judged from them stays. */
+    fun since(stamp: PerfSourceStamp): PerfFilesSince = look(stamp) ?: look(stamp) ?: PerfFilesSince.REWRITTEN
+
+    private fun look(stamp: PerfSourceStamp): PerfFilesSince? {
+        val files = list() ?: return PerfFilesSince.REWRITTEN
+        return stamp.since(files)
+    }
 
     /** The archived generations with their rotation seconds, oldest first. No archive directory is quiet (nothing has
      *  rotated out yet, or the archive is off); any other failure to list it goes to [errors] as a read error, because

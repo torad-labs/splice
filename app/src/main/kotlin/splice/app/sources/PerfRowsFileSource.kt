@@ -238,8 +238,10 @@ public class PerfRowsFileSource internal constructor(
         override fun beforeCutoff(line: String): Long? =
             if (afterInWindowRow || PerfLineHints.hasEmptyModel(line)) null else provablyBefore(line)
 
+        /** A range skipped whole still holds rows written after the lines ahead of it ([passed]). */
         override fun canSkip(minimum: Long, maximum: Long): Boolean =
-            !afterInWindowRow && (oldest?.let { minimum >= it && maximum < sinceMs } ?: false)
+            (!afterInWindowRow && (oldest?.let { minimum >= it && maximum < sinceMs } ?: false))
+                .also { skips -> if (skips) passed(minimum, maximum) }
 
         /** Starts reading the generation archived at [rotated], or a live one when null. */
         fun enter(rotated: Long?) {
@@ -249,7 +251,7 @@ public class PerfRowsFileSource internal constructor(
 
         override fun knownSpan(minimum: Long, maximum: Long) {
             oldest = minOf(oldest ?: minimum, minimum)
-            newestAhead = maxOf(newestAhead ?: maximum, maximum)
+            passed(minimum, maximum)
             if (maximum < sinceMs) afterInWindowRow = false
         }
 
@@ -258,6 +260,7 @@ public class PerfRowsFileSource internal constructor(
         override fun raw(line: String) {
             val hint = provablyBefore(line).takeUnless { afterInWindowRow }
             if (hint != null && !PerfLineHints.hasEmptyModel(line)) {
+                passed(hint, hint)
                 if (PerfLineHints.carriesDrops(line)) held.baseline(Baseline(raw = line), rows.isNotEmpty())
                 return
             }
@@ -273,8 +276,7 @@ public class PerfRowsFileSource internal constructor(
                 return
             }
             afterInWindowRow = row.ts >= sinceMs
-            newestAhead = maxOf(newestAhead ?: row.ts, row.ts)
-            boundTears(row.ts)
+            passed(row.ts, row.ts)
             if (skipBefore(line)) return
             oldest = minOf(oldest ?: row.ts, row.ts)
             held.cutoffSample(line.drops.count, row.ts < sinceMs, rows.isNotEmpty())
@@ -288,9 +290,13 @@ public class PerfRowsFileSource internal constructor(
             }
         }
 
-        /** The first row after a torn line, at [rowTs], bounds that line's row, which was written before it. */
-        private fun boundTears(rowTs: Long) {
-            for (at in unbounded until tears.size) tears[at] = tears[at].before(rowTs + LATE_ROW_MS)
+        /** Rows from [minimum] to [maximum] lie here, parsed or not: the newest is ahead of the lines after them, and the
+         *  first after a torn line bounds that line's row, which was written before it. A row skipped unparsed bounds it
+         *  too: round 13 of #247 found claude-grok's Jul 20 NUL line bounded by the first row each read parsed, inside
+         *  the read, so every hour the probe check read first was not read. */
+        private fun passed(minimum: Long, maximum: Long) {
+            newestAhead = maxOf(newestAhead ?: maximum, maximum)
+            for (at in unbounded until tears.size) tears[at] = tears[at].before(minimum + LATE_ROW_MS)
             unbounded = tears.size
         }
 

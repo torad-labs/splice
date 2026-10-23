@@ -21,6 +21,12 @@ import java.io.IOException
 import java.nio.file.Files
 import java.nio.file.Path
 
+// why: which hours a torn line may hold decides which hours are not read, and a judgment kept under an older rule stays
+// wrong while its rollup and files stand, so a kept hour that was not read is judged again once under a newer one.
+// 2: Oct 23, 2026, a line with no time ends at the row written after it; claude-grok kept 41 hours from Oct 13 to Oct 22
+// not read under rule 1 for a NUL line of Jul 20 (round 13 of #247).
+private const val TEAR_RULE = 2
+
 /** One hour's answer: the rollup signature it answered, the probes to take off, or why the hour cannot be shown. */
 internal data class ProbeJudged(val signature: List<Long>, val probes: EconomicsBucket?, val gap: ProbeGap?)
 
@@ -76,9 +82,13 @@ internal data class SavedJudgment(
     }
 }
 
-/** Every kept answer and the files they were judged from. */
+/** Every kept answer, the files they were judged from, and the [TEAR_RULE] they were judged under (null before 2). */
 @Serializable
-internal data class SavedJudgments(val marks: List<SavedPerfMark>? = null, val hours: List<SavedJudgment>)
+internal data class SavedJudgments(
+    val marks: List<SavedPerfMark>? = null,
+    val hours: List<SavedJudgment>,
+    val tearRule: Int? = null,
+)
 
 /** Where one head's judged hours are kept: `<head>-perf-probe-judgments.json`, beside the live request log. */
 internal class ProbeJudgments(private val files: PerfReadFiles) {
@@ -88,7 +98,8 @@ internal class ProbeJudgments(private val files: PerfReadFiles) {
     /** What a previous run kept; a missing or unreadable file keeps nothing, so every hour is judged as before. */
     fun load(): KeptJudgments? {
         val kept = decoded() ?: return null
-        val judged = kept.hours.mapNotNull { saved -> saved.judged()?.let { saved.hour to it } }.toMap()
+        val judged = kept.hours.mapNotNull { saved -> saved.judged()?.let { saved.hour to it } }
+            .filter { (_, answer) -> answer.gap == null || kept.tearRule == TEAR_RULE }.toMap()
         val stamp = kept.marks?.let { marks ->
             files.stampOf(marks.map { PerfFileMark(Path.of(it.path), it.fileKey, it.size, it.checksum) })
         }
@@ -102,7 +113,7 @@ internal class ProbeJudgments(private val files: PerfReadFiles) {
             val hours = judged.entries.sortedBy { it.key }.map { (hour, answer) ->
                 SavedJudgment(hour, answer.signature, answer.probes?.let(::sums), answer.gap?.name)
             }
-            val text = json.encodeToString(SavedJudgments.serializer(), SavedJudgments(marks, hours))
+            val text = json.encodeToString(SavedJudgments.serializer(), SavedJudgments(marks, hours, TEAR_RULE))
             SecureFile.writeAtomic0600(path, text)
         } catch (_: IOException) {
             // The answers still stand in memory for this run.

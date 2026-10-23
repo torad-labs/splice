@@ -7,13 +7,16 @@ import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
 import kotlinx.serialization.json.long
 import org.junit.jupiter.api.Assertions.assertEquals
+import org.junit.jupiter.api.Assertions.assertInstanceOf
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.io.TempDir
 import splice.core.util.WallClock
 import splice.usage.UsageHeads
 import splice.usage.economics.EconomicsPayloads
+import splice.usage.economics.EconomicsRead
 import java.nio.file.Files
 import java.nio.file.Path
+import java.nio.file.StandardOpenOption
 
 class ProbeEconomicsHoursTest {
     // An hour before the newest probe whose rollup is ahead of the log may hide a probe the log lost, so it reads Not read.
@@ -157,5 +160,37 @@ class ProbeEconomicsHoursTest {
             read.notRead,
             "the hours from the row before the line to the row after it are not read",
         )
+    }
+
+    // Each look reads from the oldest hour it has not judged, so a torn line long before it lies before the read, and so
+    // do the rows written after it, which the read passes over unparsed, and a later look skips whole from the cache.
+    // Live, Oct 23: claude-grok's NUL line of Jul 20 kept every hour from Oct 13 to Oct 22 from being read.
+    @Test
+    fun `a torn line with no time before the read costs no hour the read reaches`(@TempDir dir: Path) {
+        val file = dir.resolve("head-perf.jsonl")
+        Files.writeString(
+            file,
+            atHour(20 * PROBE_HOUR + 123, MODELED_WORK_ROW, LOCAL_WORK_ROW) + "\u0000".repeat(944) + "\n" +
+                atHour(21 * PROBE_HOUR + 123, MODELED_WORK_ROW, LOCAL_WORK_ROW) +
+                atHour(29 * PROBE_HOUR + 123, MODELED_WORK_ROW, LOCAL_WORK_ROW, MODELED_WORK_ROW, LOCAL_WORK_ROW) +
+                atHour(30 * PROBE_HOUR + 123, MODELED_WORK_ROW, LOCAL_WORK_ROW),
+        )
+        var now = 30 * PROBE_HOUR + 123
+        val store = store(dir, WallClock { now })
+        recordWork(store)
+        val source = EconomicsStoreSource(store, PerfRowsFileSource(file))
+        val first = assertInstanceOf(EconomicsRead.Rows::class.java, source.read())
+        assertEquals(listOf(30 * PROBE_HOUR), first.rows.map { it.hour }, "the first look reads its hour")
+        assertEquals(emptyList<Long>(), first.notRead)
+        Files.writeString(
+            file,
+            atHour(31 * PROBE_HOUR + 123, MODELED_WORK_ROW, LOCAL_WORK_ROW),
+            StandardOpenOption.APPEND,
+        )
+        now = 31 * PROBE_HOUR + 123
+        recordWork(store)
+        val later = assertInstanceOf(EconomicsRead.Rows::class.java, source.read())
+        assertEquals(listOf(30 * PROBE_HOUR, 31 * PROBE_HOUR), later.rows.map { it.hour }, "a later look reads both")
+        assertEquals(emptyList<Long>(), later.notRead)
     }
 }

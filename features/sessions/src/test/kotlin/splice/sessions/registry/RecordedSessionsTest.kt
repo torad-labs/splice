@@ -51,7 +51,7 @@ class RecordedSessionsTest {
     @Test
     fun `a mirror of another machine's session leaves the listing with its record and is never kept as ended`() {
         val mirror = live("bbbb-2", at = now - 60_000, route = SessionRoute.Unknown).copy(
-            name = "rig-lead@torad-server",
+            name = "torad-server/rig-lead",
             client = SessionClient("splice-mirror", "splice-mirror/0.4.0"),
         )
         listed = listOf(mirror)

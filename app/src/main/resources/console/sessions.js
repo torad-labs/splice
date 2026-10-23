@@ -142,9 +142,9 @@ function sessionOf(row) {
   return {
     // a linked worktree is named by its own folder, never its whole path, which ran past the card's edge (splice-usage, Oct 13)
     // another machine's session is named here as there; its machine is the badge, and the pane's SendMessage line
-    // carries the whole name, `<name>@<machine>`
+    // carries the whole name, `<machine>/<name>`
     machine: row.machine ?? null,
-    id: row.session_id, row, name: (row.machine && row.name?.endsWith(`@${row.machine}`) ? row.name.slice(0, -row.machine.length - 1) : row.name) || null, first: row.title || null, repo: folderOf(row), wt: row.repo?.worktree?.split("/").filter(Boolean).pop() || null,
+    id: row.session_id, row, name: (row.machine && row.name?.startsWith(`${row.machine}/`) ? row.name.slice(row.machine.length + 1) : row.name) || null, first: row.title || null, repo: folderOf(row), wt: row.repo?.worktree?.split("/").filter(Boolean).pop() || null,
     project: row.project ?? null, // as the daemon resolved it (ProjectWire); absent is "No project", never a guess here
     head: row.head, cmd: cmdOf(row), provider: state.providerOf[row.head] ?? null,
     model: modelName(state.modelLabel, turn?.model ?? row.model ?? row.served_model), // a running turn's model is the one in use now; reading off: what splice served it

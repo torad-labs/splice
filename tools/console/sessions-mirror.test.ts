@@ -11,7 +11,7 @@ import { layout } from "../gate/src/lib/repo.ts";
 const consoleDir = join(layout().repoRoot, "app/src/main/resources/console");
 const mirror = {
   // as SessionsRoutes writes a mirror's row: its machine named, no folder here, its record's version and socket
-  session_id: "s-mirror", name: "rig-lead@torad-server", machine: "torad-server", head: "unknown head", route: "direct",
+  session_id: "s-mirror", name: "torad-server/rig-lead", machine: "torad-server", head: "unknown head", route: "direct",
   availability: "live", status: "busy", cwd: null, version: "splice-mirror/0.4.0", address: "uds:/tmp/cc-socks/91.sock",
   started_at: 1, updated_at: 2,
 };
@@ -66,7 +66,7 @@ test("another machine's session names its machine, and its pane offers only the 
   const pane = page.locator("section.pane");
   await expect(pane).toBeVisible();
   await expect(pane.locator(".sendto")).toHaveCount(1);
-  await expect(pane.locator(".sendto .cmd")).toHaveText('SendMessage(to="rig-lead@torad-server")');
+  await expect(pane.locator(".sendto .cmd")).toHaveText('SendMessage(to="torad-server/rig-lead")');
   await expect(pane.locator(".acts button")).toHaveText([""]); // Close alone, an icon
   await expect(pane.locator("form.composer")).toHaveCount(0);
   await expect(pane).not.toContainText("Resume in a terminal");

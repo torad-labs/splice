@@ -230,7 +230,9 @@ Built on `feat/lan-share`, merged into `feat/v0.4.0` through the gate. Milestone
    separate install id. A source that cannot look, and an address that has not answered by the deadline, leave the
    other machines found.
 6. **Sessions across machines** (landed): each machine's running sessions are Claude Code peers on the other, as
-   `<name>@<machine>`, so ListAgents lists them and SendMessage reaches them, both ways.
+   `<machine>/<name>` (`torad-server/rig-lead`), so ListAgents lists them and SendMessage reaches them, both ways.
+   Not `<name>@<machine>`, as first planned: ListAgents lists that name, but SendMessage refuses any `to` with an `@`
+   as a teammate's team ("to must be a bare teammate name", Claude Code 2.1.309, Oct 23), and delivers to the `/` form.
    - **Mirrors.** A session of the other machine is a mirror here: a registry record and key file in this machine's
      Claude Code sessions folder, and a socket in its sockets folder (`$XDG_RUNTIME_DIR/cc-socks`, else
      `/tmp/cc-socks`), served by the daemon with the peers' inbox loop (this user's processes only, the key file's
@@ -244,7 +246,7 @@ Built on `feat/lan-share`, merged into `feat/v0.4.0` through the gate. Milestone
      machine keeps those mirrors for three looks past the last offer (from 1 s to a minute) and withdraws them when its
      listener closes; a machine that does not answer has none mirrored on the other until it does.
    - **Messages.** A message to a mirror goes to its machine at once (`POST /share/v1/sessions/{id}/message`), which
-     delivers it from its own mirror of the sender, so the envelope's `from` and `from-name` (`<sender>@<machine>`)
+     delivers it from its own mirror of the sender, so the envelope's `from` and `from-name` (`<machine>/<sender>`)
      are a mirror there and a reply comes back the same way. A message for the joining machine's sessions waits in its
      outbox on the sharing machine until the joining machine collects it with a held request
      (`GET .../outbox?wait=25`), so the joining machine takes no connection in. A refusal goes back to the sender as a

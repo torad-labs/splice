@@ -1,5 +1,5 @@
 // NEW: LAN share, phase 2, milestone 6 (docs/specs/lan-share.md). One session of another machine, made a Claude Code
-// peer here: in every session's ListAgents as `<name>@<machine>`, and taking SendMessage. Claude Code 2.1.309 lists a
+// peer here: in every session's ListAgents as `<machine>/<name>`, and taking SendMessage. Claude Code 2.1.309 lists a
 // record only when it is named `<pid>.json` for a live pid, one per pid (tools/probes/claude-code-mirror-anchor.ts, Oct
 // 23), so each mirror holds a pid of its own: an anchor, `/bin/cat` reading a pipe from the daemon, which exits when
 // the daemon does, however it ends. The daemon holds the socket, which the probe showed delivers. The socket sits in
@@ -57,8 +57,10 @@ internal class Mirror(
     private val socket: Path = parts.place.sockets.resolve("$pid.sock")
     private val token = HexFormat.of().formatHex(ByteArray(PEER_TOKEN_BYTES).also(SecureRandom()::nextBytes))
 
-    /** The address and name a message from this mirror carries: what the session it reaches replies to. */
-    val from: PeerSender = PeerSender(socket.toString(), "${session.name}@${MirrorNames.safe(machine)}")
+    /** The address and name a message from this mirror carries: what the session it reaches replies to. Never
+     *  `<name>@<machine>`: Claude Code's SendMessage refuses an @ as a teammate's team ("to must be a bare teammate
+     *  name", 2.1.309, Oct 23), while it lists and delivers to `<machine>/<name>`. */
+    val from: PeerSender = PeerSender(socket.toString(), "${MirrorNames.safe(machine)}/${session.name}")
 
     private var channel: ServerSocketChannel? = null
     private var serving: Job? = null
@@ -192,7 +194,7 @@ internal class Mirror(
     }
 }
 
-/** The name part of a mirror's `<name>@<machine>`: what Claude Code can list and an envelope can carry, and no two
+/** The name part of a mirror's `<machine>/<name>`: what Claude Code can list and an envelope can carry, and no two
  *  of one machine's alike, so a SendMessage by name reaches one. */
 internal object MirrorNames {
     private val unsafe = Regex("[^A-Za-z0-9._-]+")

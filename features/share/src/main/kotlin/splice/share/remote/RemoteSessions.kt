@@ -1,6 +1,6 @@
 // NEW: LAN share, phase 2, milestone 6 (docs/specs/lan-share.md). Sessions across machines, the joining side: for
 // each machine this one joined, a look every few seconds reads that machine's running sessions, mirrors them here as
-// `<name>@<machine>` (SessionMirrors), and offers this machine's own there, so each side lists the other's. A message a
+// `<machine>/<name>` (SessionMirrors), and offers this machine's own there, so each side lists the other's. A message a
 // session here writes to a mirror goes to that machine at once; one its sessions write to this machine's mirrors there
 // waits in its outbox, which a collection held open here picks up and delivers. A machine that does not answer has no
 // session mirrored here until it does.

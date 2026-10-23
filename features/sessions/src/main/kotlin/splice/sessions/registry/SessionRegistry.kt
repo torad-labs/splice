@@ -87,9 +87,9 @@ public data class SessionRecord(
     public val head: String? get() = (route as? SessionRoute.Head)?.key
 
     /** The machine a mirror stands for, when this is one: a session that runs on that machine, which ListAgents names
-     *  `<session>@<machine>` (neither part holds an `@`). Null for a session of this machine's own. */
+     *  `<machine>/<session>` (neither part holds a `/`). Null for a session of this machine's own. */
     internal val machine: String?
-        get() = name?.takeIf { client.kind == MIRROR_KIND }?.substringAfterLast('@', "")?.ifEmpty { null }
+        get() = name?.takeIf { client.kind == MIRROR_KIND }?.substringBefore('/', "")?.ifEmpty { null }
 
     /** A live session no head is known for yet: the only kind a head is joined to from what its requests showed. */
     internal fun wantsHead(): Boolean = availability != SessionAvailability.GONE && route !is SessionRoute.Head

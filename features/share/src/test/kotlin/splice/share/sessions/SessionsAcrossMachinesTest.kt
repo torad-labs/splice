@@ -86,8 +86,10 @@ private const val NAMES_SEED = 23
 // why: enough sessions that equal names, empty ones and long ones all come up in one draw.
 private const val NAMES_DRAWN = 60
 
-// why: a session's name as Claude Code's ListAgents can show it and an envelope's from-name can carry it.
-private val SAFE_MIRROR = Regex("^[A-Za-z0-9._-]{1,64}@$MINI$")
+// why: a session's name as Claude Code's ListAgents can show it, its SendMessage takes it, and an envelope's
+// from-name can carry it. Never `<name>@<machine>`: SendMessage refuses an @ as a teammate's team ("to must be a bare
+// teammate name", Claude Code 2.1.309, Oct 23).
+private val SAFE_MIRROR = Regex("^$MINI/[A-Za-z0-9._-]{1,64}$")
 
 class SessionsAcrossMachinesTest {
 
@@ -214,14 +216,14 @@ class SessionsAcrossMachinesTest {
     }
 
     @Test
-    fun `each machine lists the other's live sessions as name at machine, and never its own back`() {
+    fun `each machine lists the other's live sessions under that machine's name, and never its own back`() {
         val rig = torad.session("rig-lead")
         val splice = mini.session("splice")
         join()
-        val onMini = listed(splice) { "rig-lead@$toradName" in it }
-        val onTorad = listed(rig) { "splice@$MINI" in it }
-        assertEquals(setOf("rig-lead@$toradName"), onMini, "mini shows torad's session, and no mirror of its own")
-        assertEquals(setOf("splice@$MINI"), onTorad, "torad shows mini's session, and no mirror of its own")
+        val onMini = listed(splice) { "$toradName/rig-lead" in it }
+        val onTorad = listed(rig) { "$MINI/splice" in it }
+        assertEquals(setOf("$toradName/rig-lead"), onMini, "mini shows torad's session, and no mirror of its own")
+        assertEquals(setOf("$MINI/splice"), onTorad, "torad shows mini's session, and no mirror of its own")
     }
 
     /** Waits, up to a deadline, until [machine] reads [name] at [now] as [wanted], and answers how it reads it then. */
@@ -241,7 +243,7 @@ class SessionsAcrossMachinesTest {
         val rig = torad.session("rig-lead", heardAt = now - HOUR_MS)
         mini.session("splice")
         join()
-        val mirror = "rig-lead@$toradName"
+        val mirror = "$toradName/rig-lead"
         val idle = reads(mini, mirror, now, SessionAvailability.STALE)
         assertEquals(SessionAvailability.STALE, idle, "idle an hour there")
 
@@ -255,17 +257,17 @@ class SessionsAcrossMachinesTest {
         val rig = torad.session("rig-lead")
         val splice = mini.session("splice")
         join()
-        listed(splice) { "rig-lead@$toradName" in it }
+        listed(splice) { "$toradName/rig-lead" in it }
 
-        splice.send("rig-lead@$toradName", "hello from mini")
+        splice.send("$toradName/rig-lead", "hello from mini")
         val got = checkNotNull(rig.heard(SETTLE_MS / 1_000)) { "torad's session took the message" }
         assertEquals("hello from mini", got.text)
-        assertEquals("splice@$MINI", got.fromName, "the sender is named as the other machine's session")
+        assertEquals("$MINI/splice", got.fromName, "the sender is named as the other machine's session")
 
         rig.send(checkNotNull(got.from), "hello back")
         val back = checkNotNull(splice.heard(SETTLE_MS / 1_000)) { "the reply reached mini's session" }
         assertEquals("hello back", back.text)
-        assertEquals("rig-lead@$toradName", back.fromName)
+        assertEquals("$toradName/rig-lead", back.fromName)
     }
 
     @Test
@@ -273,14 +275,14 @@ class SessionsAcrossMachinesTest {
         val rig = torad.session("rig-lead")
         val splice = mini.session("splice")
         join()
-        listed(splice) { "rig-lead@$toradName" in it }
+        listed(splice) { "$toradName/rig-lead" in it }
 
         rig.close()
-        val after = listed(splice) { "rig-lead@$toradName" !in it }
-        assertTrue("rig-lead@$toradName" !in after, "an ended session is no longer listed on the other machine")
+        val after = listed(splice) { "$toradName/rig-lead" !in it }
+        assertTrue("$toradName/rig-lead" !in after, "an ended session is no longer listed on the other machine")
 
         torad.session("reviewer")
-        assertTrue("reviewer@$toradName" in listed(splice) { "reviewer@$toradName" in it }, "a new session appears")
+        assertTrue("$toradName/reviewer" in listed(splice) { "$toradName/reviewer" in it }, "a new session appears")
     }
 
     /** Waits, up to a deadline, until [machine]'s counts for [other] are [wanted], and answers them then. */
@@ -314,11 +316,11 @@ class SessionsAcrossMachinesTest {
         val rig = torad.session("rig-lead")
         mini.session("splice")
         val link = join()
-        listed(rig) { "splice@$MINI" in it }
+        listed(rig) { "$MINI/splice" in it }
 
         runBlocking { link.cancelAndJoin() }
-        val after = listed(rig) { "splice@$MINI" !in it }
-        assertTrue("splice@$MINI" !in after, "a machine that stopped looking has no session listed on the other")
+        val after = listed(rig) { "$MINI/splice" !in it }
+        assertTrue("$MINI/splice" !in after, "a machine that stopped looking has no session listed on the other")
     }
 
     @Test
@@ -326,14 +328,14 @@ class SessionsAcrossMachinesTest {
         val rig = torad.session("rig-lead")
         val splice = mini.session("splice")
         join()
-        listed(splice) { "rig-lead@$toradName" in it }
-        listed(rig) { "splice@$MINI" in it }
+        listed(splice) { "$toradName/rig-lead" in it }
+        listed(rig) { "$MINI/splice" in it }
 
         runBlocking { listener.stop() }
-        val onMini = listed(splice) { "rig-lead@$toradName" !in it }
-        assertTrue("rig-lead@$toradName" !in onMini, "the joined machine no longer lists one that stopped sharing")
-        val onTorad = listed(rig) { "splice@$MINI" !in it }
-        assertTrue("splice@$MINI" !in onTorad, "the machine that stopped sharing no longer lists the joined one's")
+        val onMini = listed(splice) { "$toradName/rig-lead" !in it }
+        assertTrue("$toradName/rig-lead" !in onMini, "the joined machine no longer lists one that stopped sharing")
+        val onTorad = listed(rig) { "$MINI/splice" !in it }
+        assertTrue("$MINI/splice" !in onTorad, "the machine that stopped sharing no longer lists the joined one's")
     }
 
     @Test
@@ -348,7 +350,7 @@ class SessionsAcrossMachinesTest {
         val sessions = names.map { UUID(random.nextLong(), random.nextLong()).toString() to it }
         assertEquals(200, offer(sessions))
 
-        val listed = rig.agents().filter { it.endsWith("@$MINI") }
+        val listed = rig.agents().filter { it.startsWith("$MINI/") }
         assertEquals(NAMES_DRAWN, listed.size, "every session offered is listed")
         listed.forEach { assertTrue(SAFE_MIRROR.matches(it), "'$it' is a name ListAgents shows and a reply uses") }
         assertEquals(listed.size, listed.toSet().size, "no two are listed under one name")
@@ -359,7 +361,7 @@ class SessionsAcrossMachinesTest {
         val rig = torad.session("rig-lead")
         val sessions = (1..MIRRORS_AT_MOST + 44).map { UUID(0L, it.toLong()).toString() to "s$it" }
         assertEquals(200, offer(sessions))
-        assertEquals(MIRRORS_AT_MOST, rig.agents().count { it.endsWith("@$MINI") })
+        assertEquals(MIRRORS_AT_MOST, rig.agents().count { it.startsWith("$MINI/") })
     }
 
     @Test

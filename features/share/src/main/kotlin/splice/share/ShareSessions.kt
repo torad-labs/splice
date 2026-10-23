@@ -1,6 +1,6 @@
 // NEW: LAN share, phase 2, milestone 6 (docs/specs/lan-share.md). Sessions across machines, the sharing side. A
 // joined machine reads this one's running sessions (`GET /share/v1/sessions`), offers its own (`PUT`), which this
-// machine mirrors as `<name>@<that machine>` (SessionMirrors), and writes to one of this machine's sessions
+// machine mirrors as `<that machine>/<name>` (SessionMirrors), and writes to one of this machine's sessions
 // (`POST .../{id}/message`), from the mirror of its sender here, so the reply comes back through it. A message a
 // session here writes to one of those mirrors waits in that machine's outbox until it collects it
 // (`GET .../outbox?wait=<s>`), since a joined machine need take no connection in. Every route needs a joined machine's

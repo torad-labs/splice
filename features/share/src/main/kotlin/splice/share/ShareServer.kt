@@ -42,6 +42,7 @@ import splice.core.util.LogSink
 import splice.core.util.SafeFailureText
 import splice.core.wire.HttpStatus
 import splice.http.listen.HttpListenerThreads
+import splice.share.remote.RemoteNames
 import splice.upstream.codemode.ProcessTicker
 
 internal class ShareServer(
@@ -189,15 +190,18 @@ internal class ShareServer(
             return
         }
         val address = call.request.origin.remoteAddress
+        // Booked under the name a machine that joins it back keys it by in `[remotes]`, so its sessions here, offered
+        // by it or looked at from here, are one machine's.
+        val name = RemoteNames.of(asked)
         // A book this machine cannot read or lock refuses the join and is left as it is (ShareClients.edited).
-        val issued = withContext(io) { Cancellables.runCatchingCancellable { clients.join(asked, address) } }
+        val issued = withContext(io) { Cancellables.runCatchingCancellable { clients.join(name, address) } }
         val token = issued.getOrElse { failure ->
-            log("[share] '$asked' could not join from $address: ${SafeFailureText.render(failure)}\n")
+            log("[share] '$name' could not join from $address: ${SafeFailureText.render(failure)}\n")
             val why = "this machine could not update its list of joined machines; its log says why"
             refuse(call, HttpStatus.SERVICE_UNAVAILABLE, why)
             return
         }
-        log("[share] '$asked' joined from $address\n")
+        log("[share] '$name' joined from $address\n")
         val joined = ShareJoined(heads.server, token)
         call.respondText(json.encodeToString(ShareJoined.serializer(), joined), ContentType.Application.Json)
     }

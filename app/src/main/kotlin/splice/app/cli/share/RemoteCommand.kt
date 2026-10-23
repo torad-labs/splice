@@ -8,6 +8,7 @@ package splice.app.cli.share
 import splice.app.AddWiring
 import splice.app.LifecycleWiring
 import splice.app.cli.AdminSupport
+import splice.app.cli.peer.PeerExit
 import splice.app.share.SHARE_HEADS_PATH
 import splice.app.share.ShareHostName
 import splice.configuration.add.DaemonRestart
@@ -56,14 +57,14 @@ internal class RemoteCommand(
             out.line("no machine on your networks shares heads.")
             out.line("  on the machine with the logins: ${CYAN}splice share on$RESET")
             out.line("  across Tailscale or another network: ${CYAN}splice remote add <host>$RESET")
-            return FAILED
+            return PeerExit.REFUSED
         }
         var imported = false
         found.forEach { machine ->
             describe(machine)
             if (confirm("Use ${machine.info.server}'s heads here?", true)) imported = import(machine) || imported
         }
-        return if (imported) OK else FAILED
+        return if (imported) PeerExit.DONE else PeerExit.REFUSED
     }
 
     private suspend fun addHost(target: String): Int {
@@ -74,11 +75,12 @@ internal class RemoteCommand(
         if (info == null) {
             val hint = "is ${CYAN}splice share on$RESET there?"
             err.line("splice remote: nothing at $host:$port answers as a sharing splice ($hint)")
-            return FAILED
+            return PeerExit.REFUSED
         }
         val machine = RemoteFound(host, port, info)
         describe(machine)
-        return if (confirm("Use ${info.server}'s heads here?", true) && import(machine)) OK else FAILED
+        val imported = confirm("Use ${info.server}'s heads here?", true) && import(machine)
+        return if (imported) PeerExit.DONE else PeerExit.REFUSED
     }
 
     private fun describe(machine: RemoteFound) {
@@ -178,17 +180,19 @@ internal class RemoteCommand(
             val base = topology.providers[head.provider]?.baseUrl.orEmpty()
             out.line("${(head.claude.command ?: key).padEnd(COMMAND_PAD)} $DIM$base$RESET")
         }
-        return OK
+        return PeerExit.DONE
     }
 
     private fun usage(): Int {
         err.line("usage: splice remote $REMOTE_USAGE")
-        return USAGE
+        return PeerExit.BAD_USAGE
     }
 }
 
-private const val OK = 0
-private const val FAILED = 1
-private const val USAGE = 2
+// why: the command column of a listing: `claude-` and a head name of up to eleven characters line their models
+// up, and a longer command pushes only its own row's models to the right.
 private const val COMMAND_PAD = 18
+
+// why: `remote add` waits this long for /share/v1/info, longer than RemoteHttp's connect and request timeouts
+// together (0.8 s + 3 s), so the request's own timeout answers first and this only bounds a reply that never comes.
 private const val ANSWER_WAIT_S = 5L

@@ -6,6 +6,7 @@ package splice.app.cli.share
 
 import splice.app.LifecycleWiring
 import splice.app.cli.AdminSupport
+import splice.app.cli.peer.PeerExit
 import splice.app.share.ShareClients
 import splice.app.share.ShareState
 import splice.core.config.StatePaths
@@ -54,9 +55,9 @@ internal class ShareCommand(
     }
 
     private fun switch(on: Boolean, port: Int?): Int {
-        val current = loaded() ?: return FAILED
+        val current = loaded() ?: return PeerExit.REFUSED
         val share = current.share.copy(enabled = on, port = port ?: current.share.port)
-        if (!saved(current.copy(share = share))) return FAILED
+        if (!saved(current.copy(share = share))) return PeerExit.REFUSED
         out.line("$GREEN✓$RESET sharing ${if (on) "on, port ${share.port}" else "off"} in $path")
         return restarted(current.copy(share = share))
     }
@@ -84,18 +85,18 @@ internal class ShareCommand(
     private fun restarted(topology: Topology): Int {
         if (!AdminSupport.daemonUp(AdminSupport.controlPort(topology, env))) {
             out.line("  the daemon is not running; it follows this at its next start")
-            return OK
+            return PeerExit.DONE
         }
         if (!LifecycleWiring.restart()) {
             err.line("splice share: the restart failed; run ${CYAN}splice restart$RESET")
-            return FAILED
+            return PeerExit.REFUSED
         }
         if (topology.share.enabled) out.line("  ${DIM}on your other machines:$RESET ${CYAN}splice remote$RESET")
-        return OK
+        return PeerExit.DONE
     }
 
     private fun status(): Int {
-        val topology = loaded() ?: return FAILED
+        val topology = loaded() ?: return PeerExit.REFUSED
         val share = topology.share
         if (share.enabled) {
             val state = if (listening(share.port)) "${GREEN}listening$RESET" else "not listening (is the daemon up?)"
@@ -106,32 +107,37 @@ internal class ShareCommand(
         }
         val joined = clients.all()
         if (joined.isEmpty()) out.line("  machines  none joined")
-        joined.forEach { out.line("  machine   ${it.name.padEnd(NAME_PAD)} from ${it.address}, joined ${it.joinedAt}") }
-        return OK
+        joined.forEach { machine ->
+            val name = machine.name.padEnd(MACHINE_NAME_PAD)
+            out.line("  machine   $name from ${machine.address}, joined ${machine.joinedAt}")
+        }
+        return PeerExit.DONE
     }
 
     private fun revoke(name: String): Int {
         if (!clients.revoke(name)) {
             err.line("splice share: no machine named '$name' has joined (see ${CYAN}splice share status$RESET)")
-            return FAILED
+            return PeerExit.REFUSED
         }
         val back = "${CYAN}splice remote$RESET"
         out.line("$GREEN✓$RESET '$name' revoked: its next turn is refused until it runs $back again")
-        return OK
+        return PeerExit.DONE
     }
 
     private fun listening(port: Int): Boolean = Cancellables.runCatchingCancellable {
-        Socket().use { it.connect(InetSocketAddress("127.0.0.1", port), PROBE_TIMEOUT_MS) }
+        Socket().use { it.connect(InetSocketAddress("127.0.0.1", port), LISTENER_PROBE_MS) }
     }.isSuccess
 
     private fun usage(): Int {
         err.line("usage: splice share $SHARE_USAGE")
-        return USAGE
+        return PeerExit.BAD_USAGE
     }
 }
 
-private const val OK = 0
-private const val FAILED = 1
-private const val USAGE = 2
-private const val NAME_PAD = 16
-private const val PROBE_TIMEOUT_MS = 500
+// why: the machine column of `splice share status`: a host name of up to sixteen characters lines up the
+// address and the join time beside it, and a longer name pushes only its own row.
+private const val MACHINE_NAME_PAD = 16
+
+// why: a connect to this machine's own loopback answers in well under a millisecond when the listener is up,
+// so half a second only bounds a stalled stack and keeps `splice share status` instant either way.
+private const val LISTENER_PROBE_MS = 500

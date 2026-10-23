@@ -9,6 +9,11 @@
       "subsystems": 2,
       "reason": "model_slots, V4-254, 2026-09-30: tier map split from the models allowlist"
     },
+    "core/src/main/kotlin/splice/core/topology/QuirksConfig.kt QuirksConfig": {
+      "params": 33,
+      "subsystems": 0,
+      "reason": "forward_client_identity, LAN share, 2026-10-22: QuirksConfig is the one flat [providers.X.quirks] table ktoml decodes strictly, and kotlinx.serialization cannot flatten a nested type, so grouping keys would move them into a sub-table and change splice.toml; the retired keys stay fields too: effort_ceiling because 0.3.2's example config sets it and must load as written, compact_effort so a config that sets it is refused by name"
+    },
     "features/configuration/src/main/kotlin/splice/configuration/add/AddProfiles.kt AddProfile": {
       "params": 13,
       "subsystems": 0,

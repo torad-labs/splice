@@ -42,7 +42,7 @@ internal class ShareClients(private val file: Path) {
      *  old one stops working. */
     @Synchronized
     fun join(name: String, address: String): String {
-        val token = hex.formatHex(ByteArray(TOKEN_BYTES).also(random::nextBytes))
+        val token = hex.formatHex(ByteArray(SHARE_TOKEN_BYTES).also(random::nextBytes))
         val joined = ShareClient(name, digest(token), address, Instant.now().toString())
         write(ShareClientBook(read().clients.filterNot { it.name == name } + joined))
         return token
@@ -82,4 +82,6 @@ internal class ShareClients(private val file: Path) {
         hex.formatHex(MessageDigest.getInstance("SHA-256").digest(token.toByteArray(UTF_8)))
 }
 
-private const val TOKEN_BYTES = 32
+// why: 256 random bits, the strength of the SHA-256 it is stored as; the token is all a joined machine presents,
+// and the listener faces a whole network.
+private const val SHARE_TOKEN_BYTES = 32

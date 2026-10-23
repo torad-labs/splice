@@ -3,6 +3,7 @@
 // decided once.
 package splice.tmux
 
+import splice.core.util.SafeFailureText
 import java.io.IOException
 import java.io.InputStream
 import java.io.OutputStream
@@ -11,6 +12,7 @@ import java.util.concurrent.Callable
 import java.util.concurrent.ExecutionException
 import java.util.concurrent.ExecutorService
 import java.util.concurrent.Executors
+import java.util.concurrent.Future
 import java.util.concurrent.TimeUnit
 
 // why: the most one reply is kept. A screen is rows times columns, and even a very large terminal is well under a
@@ -53,12 +55,19 @@ internal class TmuxCommand(
             process.destroyForcibly()
             throw IOException("tmux ${args.first()} did not answer within $deadlineMs ms")
         }
-        val out = try {
+        return TmuxReply(process.exitValue(), drained(output, args.first()).toString(Charsets.UTF_8))
+    }
+
+    /** What the [output] reader kept of a [verb] call's reply; a reply past [MAX_REPLY_BYTES] is refused as too long
+     *  rather than cut short. */
+    private fun drained(output: Future<ByteArray?>, verb: String): ByteArray {
+        val read = try {
             output.get()
         } catch (failed: ExecutionException) {
-            throw IOException("tmux ${args.first()} reply could not be read: ${failed.cause?.message}", failed)
+            val reason = SafeFailureText.render(failed.cause ?: failed)
+            throw IOException("tmux $verb reply could not be read: $reason", failed)
         }
-        return TmuxReply(process.exitValue(), out.toString(Charsets.UTF_8))
+        return read ?: throw IOException("tmux $verb reply is more than $MAX_REPLY_BYTES bytes")
     }
 
     /** The same call, refused out loud when tmux refuses it: a caller that needs it to have happened. */
@@ -71,13 +80,14 @@ internal class TmuxCommand(
     }
 
     /** Everything [stream] carries, to its end. Past [MAX_REPLY_BYTES] the rest is read and dropped, so the client
-     *  is never left blocked on a full pipe, and the reply is refused as too long rather than cut short. */
-    private fun kept(stream: InputStream): ByteArray = stream.use {
+     *  is never left blocked on a full pipe, and null is answered, so the reply is refused rather than cut short. */
+    private fun kept(stream: InputStream): ByteArray? = stream.use {
         val head = it.readNBytes(MAX_REPLY_BYTES + 1)
         if (head.size > MAX_REPLY_BYTES) {
             it.transferTo(OutputStream.nullOutputStream())
-            throw IOException("more than $MAX_REPLY_BYTES bytes")
+            null
+        } else {
+            head
         }
-        head
     }
 }

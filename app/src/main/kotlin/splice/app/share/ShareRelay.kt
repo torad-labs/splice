@@ -40,7 +40,7 @@ internal class ShareRelay(
 ) {
     private val http: HttpClient = HttpClient.newBuilder()
         .version(HttpClient.Version.HTTP_1_1)
-        .connectTimeout(Duration.ofMillis(CONNECT_TIMEOUT_MS))
+        .connectTimeout(Duration.ofMillis(RELAY_CONNECT_TIMEOUT_MS))
         .build()
 
     /** [target] is the head's own path and query (`/v1/messages?beta=true`). */
@@ -112,6 +112,14 @@ internal class ShareRelay(
     private val notReturned = setOf("content-length", "transfer-encoding", "connection", "keep-alive", "content-type")
 }
 
-private const val CONNECT_TIMEOUT_MS = 5_000L
+// why: the head is on this machine's loopback, where a live listener accepts at once; a connect still waiting after
+// five seconds is a head that is not answering, and the client hears a 502 in words instead of hanging.
+private const val RELAY_CONNECT_TIMEOUT_MS = 5_000L
+
+// why: one read of the head's answer: an SSE event is a few hundred bytes, so 16 KiB carries a whole burst per
+// flush while holding little memory for each relayed stream.
 private const val PUMP_BUFFER_BYTES = 16 * 1024
+
+// why: what InputStream.read answers at the end of the stream; a failed read of the head's answer ends the relay the
+// same way, as the head hanging up.
 private const val END_OF_STREAM = -1

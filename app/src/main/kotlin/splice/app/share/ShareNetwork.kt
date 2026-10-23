@@ -57,8 +57,8 @@ internal class ShareNetwork(
 
     private fun carrierGrade(ip: InetAddress): Boolean {
         val bytes = (ip as? Inet4Address)?.address ?: return false
-        val first = bytes[0].toInt() and BYTE_MASK
-        val second = bytes[1].toInt() and BYTE_MASK
+        val first = bytes[0].toUByte().toInt()
+        val second = bytes[1].toUByte().toInt()
         return first == CGNAT_FIRST_OCTET && second and CGNAT_SECOND_MASK == CGNAT_SECOND_OCTET
     }
 
@@ -68,13 +68,17 @@ internal class ShareNetwork(
     }
 }
 
-private const val BYTE_MASK = 0xff
-
-// 100.64.0.0/10: first octet 100, top two bits of the second octet 01.
+// why: 100.64.0.0/10, carrier-grade NAT and the range Tailscale hands out, starts with the octet 100.
 private const val CGNAT_FIRST_OCTET = 100
+
+// why: a /10 fixes only the top two bits of the second octet, so those two are all that is compared.
 private const val CGNAT_SECOND_MASK = 0xc0
+
+// why: in 100.64/10 those two bits read 01, the second octets 64 through 127.
 private const val CGNAT_SECOND_OCTET = 0x40
 
-// fc00::/7
+// why: fc00::/7, IPv6's unique local range, fixes the top seven bits of the first byte.
 private const val ULA_MASK = 0xfe
+
+// why: those seven bits read 1111110, the first bytes 0xfc and 0xfd.
 private const val ULA_PREFIX = 0xfc

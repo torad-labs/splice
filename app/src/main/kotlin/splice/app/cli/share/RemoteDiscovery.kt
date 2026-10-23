@@ -7,6 +7,7 @@ package splice.app.cli.share
 import splice.app.share.ShareInfo
 import splice.core.util.Cancellables
 import java.net.Inet4Address
+import java.net.InetAddress
 import java.net.InterfaceAddress
 import java.net.NetworkInterface
 import java.nio.ByteBuffer
@@ -38,29 +39,33 @@ internal class RemoteDiscovery(private val http: RemoteHttp) {
         Cancellables.runCatchingCancellable { reply.get(leftNanos, TimeUnit.NANOSECONDS) }
             .fold(onSuccess = { it }, onFailure = { null })
 
-    /** Every host address of [network], or of the /24 around this machine when the network is larger. */
+    /** Every host address of [network], or of the /24 around this machine when the network is larger. The
+     *  address is read as one Int, so its 32 bits are [Int.SIZE_BITS]. */
     private fun hosts(network: InterfaceAddress): List<String> {
         val declared = network.networkPrefixLength.toInt()
         val prefix = if (declared < MIN_PREFIX) AROUND_PREFIX else declared.coerceAtMost(MAX_PREFIX)
         val self = ByteBuffer.wrap(network.address.address).int
-        val mask = -1 shl (IPV4_BITS - prefix)
+        val mask = -1 shl (Int.SIZE_BITS - prefix)
         val base = self and mask
-        val size = 1 shl (IPV4_BITS - prefix)
+        val size = 1 shl (Int.SIZE_BITS - prefix)
         return (1 until size - 1).map { offset -> dotted(base + offset) }
     }
 
+    /** An address as `a.b.c.d`; four raw bytes, so no name is looked up. */
     private fun dotted(address: Int): String =
-        (IPV4_BITS - BYTE_BITS downTo 0 step BYTE_BITS).joinToString(".") { shift ->
-            ((address ushr shift) and BYTE_MASK).toString()
-        }
+        InetAddress.getByAddress(ByteBuffer.allocate(Int.SIZE_BYTES).putInt(address).array()).hostAddress
 }
 
+// why: one deadline for the whole scan: a machine on the same network answers /share/v1/info in milliseconds, so
+// two and a half seconds leaves room for a slow Wi-Fi peer while `splice remote` still answers within three.
 private const val SCAN_DEADLINE_MS = 2_500L
-private const val IPV4_BITS = 32
-private const val BYTE_BITS = 8
-private const val BYTE_MASK = 0xff
 
-// A /22 is 1022 hosts, the most one scan asks; anything wider is narrowed to the /24 this machine is in.
+// why: a /22 is 1022 hosts, the most one scan asks; anything wider is narrowed to the /24 this machine is in.
 private const val MIN_PREFIX = 22
+
+// why: the network a wider one is narrowed to: the /24 around this machine, 254 hosts, a home network's usual size.
 private const val AROUND_PREFIX = 24
+
+// why: a /31 or /32 (a point-to-point link, a VPN's own address) has no host range of its own, so it is probed as
+// the /30 around it, the two hosts beside this machine.
 private const val MAX_PREFIX = 30

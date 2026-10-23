@@ -63,7 +63,7 @@ internal class ShareServer(
                 host = SHARE_BIND_HOST
                 port = this@ShareServer.port
             }
-            shutdownGracePeriod = STOP_GRACE_MS
+            shutdownGracePeriod = SHARE_STOP_GRACE_MS
         }
         server.start(wait = false)
         engine = server
@@ -71,7 +71,7 @@ internal class ShareServer(
     }
 
     fun stop() {
-        engine?.stop(STOP_GRACE_MS, STOP_TIMEOUT_MS)
+        engine?.stop(SHARE_STOP_GRACE_MS, SHARE_STOP_TIMEOUT_MS)
         engine = null
     }
 
@@ -149,5 +149,10 @@ internal class ShareErrors {
 
 // All interfaces: ShareNetwork decides who is answered, by source address and Host, before any route runs.
 private const val SHARE_BIND_HOST = "0.0.0.0"
-private const val STOP_GRACE_MS = 1_000L
-private const val STOP_TIMEOUT_MS = 5_000L
+
+// why: a stop lets requests already in the listener finish for a second before it closes; a relayed turn still
+// streaming is cut, and the other machine's client retries it as it retries any cut turn.
+private const val SHARE_STOP_GRACE_MS = 1_000L
+
+// why: the most a daemon stop waits on this listener in all, so a relay stuck on a head cannot hold up a restart.
+private const val SHARE_STOP_TIMEOUT_MS = 5_000L

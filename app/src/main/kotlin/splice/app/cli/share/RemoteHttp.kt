@@ -22,13 +22,13 @@ internal class RemoteHttp {
     private val json = Json { ignoreUnknownKeys = true }
     private val http: HttpClient = HttpClient.newBuilder()
         .version(HttpClient.Version.HTTP_1_1)
-        .connectTimeout(Duration.ofMillis(CONNECT_TIMEOUT_MS))
+        .connectTimeout(Duration.ofMillis(REMOTE_CONNECT_TIMEOUT_MS))
         .build()
 
     /** What the machine at [host]:[port] offers; completes with null when nothing there answers as splice. */
     fun info(host: String, port: Int): CompletableFuture<ShareInfo?> {
         val request = HttpRequest.newBuilder(url(host, port, SHARE_INFO_PATH))
-            .timeout(Duration.ofMillis(REQUEST_TIMEOUT_MS))
+            .timeout(Duration.ofMillis(REMOTE_REQUEST_TIMEOUT_MS))
             .GET()
             .build()
         return http.sendAsync(request, HttpResponse.BodyHandlers.ofString())
@@ -40,7 +40,7 @@ internal class RemoteHttp {
     fun join(host: String, port: Int, client: String): ShareJoined {
         val body = json.encodeToString(ShareJoin.serializer(), ShareJoin(client))
         val request = HttpRequest.newBuilder(url(host, port, SHARE_JOIN_PATH))
-            .timeout(Duration.ofMillis(REQUEST_TIMEOUT_MS))
+            .timeout(Duration.ofMillis(REMOTE_REQUEST_TIMEOUT_MS))
             .header("Content-Type", "application/json")
             .POST(HttpRequest.BodyPublishers.ofString(body))
             .build()
@@ -57,5 +57,10 @@ internal class RemoteHttp {
             .fold(onSuccess = { it }, onFailure = { null })
 }
 
-private const val CONNECT_TIMEOUT_MS = 800L
-private const val REQUEST_TIMEOUT_MS = 3_000L
+// why: a machine on the same network accepts a connection in a few milliseconds, and a scan asks hundreds of
+// addresses where nothing listens, some of which drop the packets rather than refuse; 800 ms gives up on those.
+private const val REMOTE_CONNECT_TIMEOUT_MS = 800L
+
+// why: /share/v1/info is a small answer built in memory and /share/v1/join one file write, so three seconds covers
+// a busy sharing daemon and still ends a hung one well inside RemoteCommand's five-second wait.
+private const val REMOTE_REQUEST_TIMEOUT_MS = 3_000L

@@ -28,6 +28,7 @@ import org.junit.jupiter.api.Assertions.assertNull
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Assumptions.assumeTrue
 import org.junit.jupiter.api.Test
+import org.junit.jupiter.api.assertThrows
 import org.junit.jupiter.api.io.TempDir
 import splice.core.util.EnvReader
 import java.nio.file.Files
@@ -51,6 +52,7 @@ class StateRootTest {
         assertEquals(home.resolve(SPLICE_STATE_HOME).resolve("state"), paths.stateDir)
         assertEquals(StateDirOrigin.DEFAULT, paths.origin)
         assertNull(paths.unmigratedLegacyDir, "nothing to migrate on a box that never had the old root")
+        assertNull(paths.freshStartRefusal, "a fresh box must still initialize")
     }
 
     // The upgrade case, and the one that matters on every existing install: the old root is the only
@@ -187,6 +189,11 @@ class StateRootTest {
                 home.resolve(LEGACY_STATE_HOME).resolve("state").toString() in paths.rootProbeFault!!,
                 "the fault must name the path an operator has to go look at: ${paths.rootProbeFault}",
             )
+            // PR #247 review: and it refuses the first start, naming that path, before a key exists that
+            // would keep the new root live once the old one is readable again.
+            val refused = assertThrows<java.nio.file.FileSystemException> { MgmtKey(paths, log = { }).get() }
+            assertTrue(legacyRoot.toPath().resolve("state").toString() in refused.message.orEmpty(), refused.message)
+            assertTrue(Files.notExists(paths.mgmtKeyFile), "no key may be minted while the old root is unresolved")
         } finally {
             legacyRoot.setExecutable(true, false)
             legacyRoot.setReadable(true, false)
@@ -206,6 +213,7 @@ class StateRootTest {
         assertEquals(home.resolve(SPLICE_STATE_HOME).resolve("state"), paths.stateDir)
         assertEquals(StateDirOrigin.DEFAULT, paths.origin)
         assertNull(paths.unmigratedLegacyDir, "a file is not history to migrate")
+        assertNull(paths.freshStartRefusal, "a file was inspected and holds no state, so a start may proceed")
         assertTrue("is not a directory" in paths.rootProbeFault.orEmpty(), paths.rootProbeFault.orEmpty())
     }
 

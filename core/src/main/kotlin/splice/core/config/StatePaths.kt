@@ -137,8 +137,9 @@ internal sealed class RootProbe {
     data object Absent : RootProbe()
 
     /** There, and not usable — a regular file at the root path, or a probe that failed. NEVER
-     *  read as absent, because the difference is the operator's whole history. */
-    data class Unusable(val reason: String) : RootProbe()
+     *  read as absent, because the difference is the operator's whole history. [unresolved] is the
+     *  probe that failed: the path was never inspected, so whether state is behind it is unknown. */
+    data class Unusable(val reason: String, val unresolved: Boolean) : RootProbe()
 }
 
 public class StatePaths(
@@ -220,6 +221,20 @@ public class StatePaths(
         legacyDir.resolve(MGMT_KEY) to legacyKeyProbe,
     ).mapNotNull { (path, probe) -> (probe as? RootProbe.Unusable)?.let { "$path ${it.reason}" } }
         .joinToString("; ").takeIf { it.isNotEmpty() }
+
+    /** PR #247 review: why a FIRST start must not happen yet, as a sentence naming paths only — null whenever
+     *  one may. With the pre-0.4 root unreadable, neither adoption arm can fire and [stateDir] falls to the
+     *  current layout; a mgmt-key minted there is permanent, because once it exists the key decides above and
+     *  keeps the current root live after access to the pre-0.4 one comes back, so that history and every
+     *  bearer it issued stay out of reach while its files sit untouched. Only a probe that FAILED refuses: a
+     *  fresh box (proven absent) and a file at the path (inspected, holds no state) still start, and a
+     *  current root that already holds its key is never asked, since [MgmtKey] reads the key before minting. */
+    public val freshStartRefusal: String? = (legacyProbe as? RootProbe.Unusable)?.takeIf { it.unresolved }?.let {
+        "the pre-0.4 state dir $legacyDir ${it.reason}; splice will not start a new installation in $defaultDir " +
+            "until it can be inspected, because a new management key would hide that state dir's history and " +
+            "revoke its bearers for good. Restore access to $legacyDir, or set $STATE_DIR_ENV to choose a state " +
+            "dir, then start again"
+    }
 
     public val rootDir: Path = stateDir.parent ?: stateDir
 
@@ -346,10 +361,10 @@ public class StatePaths(
         // with the same typed failures — which are the whole point of this function.
         val found = Files.readAttributes(path, "basic:$kind")[kind] == true
         val wrongKind = if (kind == FILE) "is not a file" else "is not a directory"
-        if (found) RootProbe.Found else RootProbe.Unusable(wrongKind)
+        if (found) RootProbe.Found else RootProbe.Unusable(wrongKind, unresolved = false)
     } catch (_: NoSuchFileException) {
         RootProbe.Absent
     } catch (failure: IOException) {
-        RootProbe.Unusable("could not be read (${SafeFailureText.render(failure)})")
+        RootProbe.Unusable("could not be read (${SafeFailureText.render(failure)})", unresolved = true)
     }
 }

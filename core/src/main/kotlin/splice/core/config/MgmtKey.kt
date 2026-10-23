@@ -16,6 +16,7 @@ import splice.core.util.LogSink
 import splice.core.util.SafeFailureText
 import splice.core.util.SecureFile
 import splice.core.util.WallClock
+import java.nio.file.FileSystemException
 import java.nio.file.Files
 import java.nio.file.LinkOption
 import java.nio.file.Path
@@ -63,7 +64,7 @@ public class MgmtKey(
             // A read that vanished: genuine absence, OR a dangling symlink (entry present, target
             // gone). Only the former is the quiet first run.
             Files.exists(path, LinkOption.NOFOLLOW_LINKS) -> "dangling symlink (${SafeFailureText.render(failure)})"
-            else -> null
+            else -> firstRun(path)
         }
         if (problem != null) {
             // Publish-gated wording (DR-56 redo, codex): this line fires BEFORE the write below,
@@ -82,6 +83,15 @@ public class MgmtKey(
         SecureFile.writeAtomic0600(path, "$key\n")
         mintedAtMs = clock()
         return key
+    }
+
+    /** The quiet first run: no problem to report, so the mint goes ahead, unless [StatePaths.freshStartRefusal]
+     *  says the pre-0.4 root could not be inspected (PR #247 review). A key minted then would keep this root
+     *  live after that one is readable again, so the start is refused instead. FileSystemException because
+     *  SafeFailureText renders that class whole, and the sentence names paths only. */
+    private fun firstRun(path: Path): String? {
+        val refusal = statePaths.freshStartRefusal ?: return null
+        throw FileSystemException(path.toString(), null, refusal)
     }
 
     /** Constant-time bearer check (`Authorization: Bearer <key>`) — scheme parsing shared with

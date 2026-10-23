@@ -110,7 +110,7 @@ class CodexCodeModeHistoryTest : CodeModeBridgeTestSupport() {
     }
 
     @Test
-    fun `unexpected native replay at another baseline offset abandons the script and continues upstream`() = runTest {
+    fun `a native search ahead of a running script falls back once and the script still gets its result`() = runTest {
         val runtime = ScriptedRuntime(
             ArrayDeque(
                 listOf(
@@ -125,29 +125,27 @@ class CodexCodeModeHistoryTest : CodeModeBridgeTestSupport() {
             .intercept(baselineWithNativeSearch(), readSink) { RoundResult.Outcome(outerOutcome()) }
         val readId = readSink.tools.single().id
         var upstreamCalls = 0
+        var posted = ""
 
         val outcome = manager.interceptor(turn(readId, "A"), null, disableParallel = false)
-            .intercept(callbackWithUnexpectedSearch(readId), RecordingSink()) {
+            .intercept(callbackWithUnexpectedSearch(readId), RecordingSink()) { body ->
                 upstreamCalls++
+                posted = body
                 RoundResult.Outcome(completedOutcome())
             }.turn()
 
-        // The running cell is closed without rerunning its source, and the turn goes upstream on
-        // the client's history rather than failing the conversation.
+        // The edited history is the client's, folded once: the script gets its result and finishes, and its exec
+        // call and output go upstream in place of its client call. Until 2026-10-23 the script was abandoned here.
         assertTrue(outcome is TurnOutcome.Success)
         assertEquals(1, upstreamCalls)
-        assertEquals(1, runtime.cell.advances)
-        assertTrue(runtime.cell.closed)
-        assertTrue(
-            logLines.any {
-                "[code-mode] abandoned record" in it &&
-                    "code-mode native discovery history conflicts with its captured position: unexpected-offset" in it
-            },
-        )
+        assertEquals(2, runtime.cell.advances, "the script got its result")
+        assertFalse(readId in posted, "the script's call went upstream as a client call: $posted")
+        assertEquals(2, Regex("outer-call").findAll(posted).count(), "the exec call and its output: $posted")
+        assertTrue(logLines.none { "abandoned record" in it }, logLines.joinToString("\n"))
     }
 
     @Test
-    fun `an abandoned record retires with its evidence instead of being abandoned again every turn`() = runTest {
+    fun `an edited history sent again on later turns never reruns or abandons its script`() = runTest {
         val runtime = ScriptedRuntime(
             ArrayDeque(
                 listOf(
@@ -170,9 +168,11 @@ class CodexCodeModeHistoryTest : CodeModeBridgeTestSupport() {
                 }.turn()
             assertTrue(outcome is TurnOutcome.Success)
         }
-        // 2026-09-20: one LOST record was re-found by its client ids and re-abandoned on 82 turns.
+        // 2026-09-20: one LOST record was re-found by its client ids and re-abandoned on 82 turns. Since 2026-10-23
+        // the edit falls back once and the script finishes, so nothing is abandoned at all.
         assertEquals(3, upstreamCalls)
-        assertEquals(1, logLines.count { "abandoned record" in it })
+        assertEquals(2, runtime.cell.advances, "the script ran once and got its result")
+        assertTrue(logLines.none { "abandoned record" in it }, logLines.joinToString("\n"))
     }
 
     private fun nativeSearchBody(searchId: String): String =

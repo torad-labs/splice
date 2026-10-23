@@ -1,12 +1,11 @@
 // NEW: nothing splice writes moves a parked script's history under it. Two of the three live
 // abandons on 2026-09-26 (one gpt-5.6-sol subagent, records 8cbd23d8 and 48c27b3f) were splice's own
-// rewrites. (1) A completed record's rewrite put its continuity reasoning ahead of the native tool
-// search it made before its script, at the same offset, whenever the client did not replay the
-// search (it never does): the next script, started in that record's live continuation where the order
-// was still upstream's, found [rB, rA, search] where it recorded [rA, search][rB] and was abandoned
-// as "native discovery history was edited". (2) A record abandoned in the request that started the
-// next script was rewritten to its canonical output on the following request, under the new script's
-// baseline, which had recorded its raw callbacks: abandoned again, as "logical history does not match".
+// rewrites: a completed record's continuity put ahead of the native search it made before its script, and a
+// record abandoned in one request rewritten under the next script's baseline. Since 2026-10-23 each request
+// extends what GPT was last sent, the way Codex builds each request from what it recorded (codex-rs
+// core/src/session/turn.rs:1618), so a script resumes on what it started on; an edit ahead of a running script
+// falls back to the client's history once and the script keeps running, where it was abandoned before; and an
+// abandoned record keeps the client's calls for good.
 package splice.provider.codex
 
 import kotlinx.coroutines.test.runTest
@@ -61,7 +60,9 @@ class CodeModeHistoryPlacementTest : CodeModeBridgeTestSupport() {
             val read1 = first.tools.single().id
 
             val second = RecordingSink()
-            val answered1 = listOf(DEVELOPER, user("Find the reader and use it."), read(read1), output(read1, "A"))
+            // The client replays the reasoning it was shown, never the search it was not.
+            val answered1 = listOf(DEVELOPER, user("Find the reader and use it."), reasoning("rs_a")) +
+                reasoning("rs_b") + read(read1) + output(read1, "A")
             manager.interceptor(turn(read1, "A"), disableParallel = false).intercept(body(answered1), second) {
                 RoundResult.Outcome(outerOutcome("outer-2"))
             }
@@ -76,8 +77,8 @@ class CodeModeHistoryPlacementTest : CodeModeBridgeTestSupport() {
 
             assertTrue(logLines.none { ABANDONED in it }, logLines.joinToString("\n"))
             assertEquals(4, runtime.cell.advances, "the second script got its result")
-            // V4-388: the search leaves the wire (exec declares no tool_search, as codex declares none);
-            // the reasoning around it keeps upstream's order.
+            // V4-388: the search leaves the wire (exec declares no tool_search, as codex declares none). The reasoning
+            // is the client's replay, sent once and in the order upstream produced it.
             assertEquals(
                 listOf("reasoning:rs_a", "reasoning:rs_b"),
                 beforeCall(posted, "outer-1"),
@@ -86,7 +87,7 @@ class CodeModeHistoryPlacementTest : CodeModeBridgeTestSupport() {
         }
 
     @Test
-    fun `a record abandoned in the request that starts the next script is never rewritten under it`() =
+    fun `an edit ahead of a running script falls back once and the script keeps running`() =
         runTest {
             val runtime = ScriptedRuntime(
                 ArrayDeque(
@@ -101,7 +102,7 @@ class CodeModeHistoryPlacementTest : CodeModeBridgeTestSupport() {
             val read1 = startFirst(manager)
             val second = RecordingSink()
             manager.interceptor(turn(read1, "A"), disableParallel = false)
-                .intercept(body(abandoning(read1)), second) { RoundResult.Outcome(outerOutcome("outer-2")) }
+                .intercept(body(abandoning(read1)), second) { error("the script asks its next call before any post") }
             val read2 = second.tools.single().id
 
             var posted = ""
@@ -111,18 +112,24 @@ class CodeModeHistoryPlacementTest : CodeModeBridgeTestSupport() {
                     RoundResult.Outcome(completedOutcome())
                 }
 
-            assertEquals(1, logLines.count { ABANDONED in it }, "only the first record: ${logLines.joinToString("\n")}")
-            assertEquals(3, runtime.cell.advances, "the second script got its result")
-            assertTrue(read1 in posted, "the abandoned record's callback stays the client's")
-            assertFalse("outer-1" in posted, "the abandoned record is never rewritten to its canonical output")
+            assertTrue(logLines.none { ABANDONED in it }, logLines.joinToString("\n"))
+            assertEquals(3, runtime.cell.advances, "the script got both results")
+            assertFalse(read1 in posted || read2 in posted, "a client call the script made went upstream: $posted")
+            assertEquals(2, Regex("outer-1").findAll(posted).count(), "the exec call and its output: $posted")
+            assertFalse("rs_once" in posted, "the edit the client took back went upstream: $posted")
         }
 
     @Test
     fun `a record abandoned before a restart, read back from its store, is never rewritten`() = runTest {
-        val manager = bridge(ScriptedRuntime(ArrayDeque(listOf(CodeModeStep.Calls(listOf(call("r", "Read")))))))
+        val steps = listOf(CodeModeStep.Calls(listOf(call("r", "Read"))), CodeModeStep.Completed("done"))
+        val manager = bridge(ScriptedRuntime(ArrayDeque(steps)))
         val read1 = startFirst(manager)
         manager.interceptor(turn(read1, "A"), disableParallel = false)
-            .intercept(body(abandoning(read1)), RecordingSink()) { RoundResult.Outcome(completedOutcome()) }
+            .intercept(body(history(read1)), RecordingSink()) { RoundResult.Outcome(completedOutcome()) }
+        // A store an older splice wrote, which abandoned the record and went on upstream on its client calls.
+        val record = manager.registry.recordsFor(stateFiles.records().single().getValue("key").jsonPrimitive.content)
+            .single()
+        manager.registry.changes.save(record) { it.error = "$CODE_MODE_ABANDONED: synthetic; source was not rerun" }
         val stored = stateFiles.text()
         assertTrue("code-mode history no longer places the running script" in stored, "the store keeps the detail")
 

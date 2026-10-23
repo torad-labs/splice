@@ -55,6 +55,10 @@ internal data class CodeModeRecord(
     /** First runtime advance for the wall-time line; owned by this record and never persisted. */
     @Volatile var cellStartedAt: Long? = null
 
+    /** The kept upstream post whose response started this script (CodeModeUpstreamLedger), so a script that made
+     *  no client call is sent after that post and nowhere else. Never persisted: the ledger is not either. */
+    @Volatile var postedOn: Long? = null
+
     @Volatile var retainedBytes: Long? = null
     var heapLease: HeapLease? = null
 

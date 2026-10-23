@@ -90,7 +90,7 @@ class CodexCodeModeEnvironmentTest : CodeModeBridgeTestSupport() {
     }
 
     @Test
-    fun `a completed record whose metadata predates v3 is omitted from the rewrite and logged`() = runTest {
+    fun `a completed record whose metadata predates v3 still folds to its exec call and output`() = runTest {
         val runtime = ScriptedRuntime(
             ArrayDeque(
                 listOf(
@@ -118,10 +118,12 @@ class CodexCodeModeEnvironmentTest : CodeModeBridgeTestSupport() {
                 RoundResult.Outcome(completedOutcome())
             }.turn()
 
+        // Since 2026-10-23 a record folds by its exec call and output alone, which every version stored; it
+        // was omitted before, and its client calls went upstream as ordinary ones.
         assertTrue(outcome is TurnOutcome.Success)
-        assertTrue(readId in posted)
-        assertFalse("outer-call" in posted)
-        assertTrue(logLines.any { "history rewrite skipped record" in it && "metadata is unavailable" in it })
+        assertFalse(readId in posted, "the script's call went upstream as a client call: $posted")
+        assertEquals(2, Regex("outer-call").findAll(posted).count(), "the exec call and its output: $posted")
+        assertTrue(logLines.none { "history rewrite skipped record" in it }, logLines.joinToString("\n"))
     }
 
     @Test

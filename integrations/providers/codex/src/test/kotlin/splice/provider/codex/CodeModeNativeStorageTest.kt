@@ -50,7 +50,7 @@ class CodeModeNativeStorageTest : CodeModeBridgeTestSupport() {
     }
 
     @Test
-    fun `a restored chain replays each inherited native and script continuity exactly once`() = runTest {
+    fun `a restored chain sends each script once, after the reasoning the client replays for it`() = runTest {
         val runtime = QueuedRuntime(ArrayDeque((1..4).map { ArrayDeque(listOf(CodeModeStep.Completed("done"))) }))
         var posts = 0
         manager(runtime).interceptor(turn(), null, disableParallel = false).intercept(opening, RecordingSink()) {
@@ -65,26 +65,28 @@ class CodeModeNativeStorageTest : CodeModeBridgeTestSupport() {
                 },
             )
         }
+        // The client replays the history it holds and the reasoning it was shown; since 2026-10-23 that replay is the
+        // only copy, and each script that made no client call goes right after its own.
         val restored = manager(QueuedRuntime(ArrayDeque()))
         var posted = ""
-        restored.interceptor(turn(), null, disableParallel = false)
-            .intercept(
-                """{"input":[{"role":"developer","content":"s"},""" +
-                    """{"role":"user","content":"start"},{"role":"user","content":"next"}]}""",
-                RecordingSink(),
-            ) {
-                posted = it
-                RoundResult.Outcome(completedOutcome())
-            }
-        val items = Json.parseToJsonElement(posted).jsonObject.getValue("input") as JsonArray
-        val reasoningIds = items.map { it.jsonObject }.filter { it["type"]?.toString() == "\"reasoning\"" }
-            .map { it.getValue("id").toString() }
-        assertEquals(listOf("native-root", "step-1", "step-2", "step-3", "step-4").map { "\"$it\"" }, reasoningIds)
+        val replay = (1..4).map { n ->
+            """{"type":"reasoning","id":"step-$n","summary":[],"encrypted_content":"synthetic-$n"}"""
+        }
+        val next = replay + """{"role":"user","content":"next"}"""
+        val history = opening.removeSuffix("]}") + next.joinToString(",", prefix = ",", postfix = "]}")
+        restored.interceptor(turn(), null, disableParallel = false).intercept(history, RecordingSink()) {
+            posted = it
+            RoundResult.Outcome(completedOutcome())
+        }
+        val items = (Json.parseToJsonElement(posted).jsonObject.getValue("input") as JsonArray).map { it.jsonObject }
+        val shape = items.drop(2).map { it["id"] ?: it["call_id"] ?: it["content"] }.map { it.toString().trim('"') }
+        val expected = listOf("native-root") + (1..4).flatMap { listOf("step-$it", "outer-$it", "outer-$it") }
+        assertEquals(expected + "next", shape)
         assertTrue(logLines.none { "history rewrite skipped" in it }, logLines.toString())
     }
 
     @Test
-    fun `removing a parent from the durable checkpoint preserves inherited natives after restart`() = runTest {
+    fun `a parent removed from the checkpoint leaves the client's native as the only copy after restart`() = runTest {
         val runtime = QueuedRuntime(ArrayDeque((1..2).map { ArrayDeque(listOf(CodeModeStep.Completed("done"))) }))
         val manager = manager(runtime)
         var posts = 0
@@ -102,7 +104,8 @@ class CodeModeNativeStorageTest : CodeModeBridgeTestSupport() {
         assertEquals(1, stateFiles.records().size)
         assertEquals(sourceState, store.load().records.single().sourceState, "promotion preserves source settlement")
         val restored = manager(QueuedRuntime(ArrayDeque()))
-        val history = """{"input":[{"role":"user","content":"start"},{"role":"user","content":"next"}]}"""
+        // Since 2026-10-23 the client's history is what GPT is sent: splice adds no native copy of its own.
+        val history = opening.removeSuffix("]}") + """,{"role":"user","content":"next"}]}"""
         var posted = ""
         restored.interceptor(turn(), disableParallel = false).intercept(history, RecordingSink()) {
             posted = it

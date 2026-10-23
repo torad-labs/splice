@@ -135,7 +135,8 @@ internal class CodexCodeModeHistoryCodec(private val json: Json) {
 
     fun string(item: JsonObject?, key: String): String = JsonScalars.str(item, key).orEmpty()
 
-    private fun isPreamble(element: JsonElement): Boolean {
+    /** Whether [element] is part of the lite preamble, which is environment and not history. */
+    fun isPreamble(element: JsonElement): Boolean {
         val item = element as? JsonObject ?: return false
         // V4-390: a mid-conversation context message is developer-role too, but typed; it is history.
         return string(item, CODE_MODE_FIELD_ROLE) == ROLE_DEVELOPER && string(item, FIELD_CALL_ID).isEmpty() &&
@@ -169,12 +170,14 @@ internal data class CodeModeConversation(
 
 /** One round's request as code mode reads it: [round] is what it posts, and [request] is what every reader
  *  of the round reads. An unchanged history posts [round] as it arrived. [digests] is shared with every body
- *  rebuilt from this one, whose history items are this one's, borrowed. */
+ *  rebuilt from this one, whose history items are this one's, borrowed. [echoes]: what a body extending the last
+ *  post sends past the client's history, that the client replays next (see CodeModeLedgerEntry). */
 internal class CodeModeBody(
     val round: RoundBody,
     json: Json,
     val emission: CodeModeEmission? = null,
     val digests: InputItemDigests = InputItemDigests(),
+    val echoes: List<JsonElement> = emptyList(),
 ) {
     /** The body parsed once: its root and input array, or null when it is not a Responses request. A tree
      *  is read as itself; only text is parsed. */

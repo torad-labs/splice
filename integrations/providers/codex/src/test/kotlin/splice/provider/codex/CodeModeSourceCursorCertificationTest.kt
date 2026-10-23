@@ -11,8 +11,6 @@ import org.junit.jupiter.api.Assertions.assertFalse
 import org.junit.jupiter.api.Assertions.assertThrows
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
-import org.junit.jupiter.params.ParameterizedTest
-import org.junit.jupiter.params.provider.ValueSource
 import splice.provider.codex.stream.CodeModeSourceBuffer
 import splice.provider.codex.stream.CodeModeSourceCommit
 import splice.upstream.codemode.CodeModeCell
@@ -23,17 +21,16 @@ import java.io.IOException
 
 class CodeModeSourceCursorCertificationTest {
     @Test
-    fun `a completed item waits for terminal certification before its cursor reads it`() = runBlocking {
+    fun `a cursor commits and reads the item only once its response terminal certifies it`() = runBlocking {
         val committed = mutableListOf<String>()
         val source = CodeModeSourceBuffer(CodeModeSourceCommit { committed += it })
         source.publish("synthetic prefix")
         val cursor = source.view()
 
-        source.seal()
         val read = async { cursor.read() }
         yield()
 
-        assertFalse(read.isCompleted, "a completed item is not yet certified by its response terminal")
+        assertFalse(read.isCompleted, "an item is not certified until its response terminal")
         assertTrue(committed.isEmpty())
 
         source.complete("synthetic prefix and certified suffix")
@@ -95,14 +92,5 @@ class CodeModeSourceCursorCertificationTest {
         assertEquals(0, closed)
         assertFalse(source.startupRejected)
         cell.close()
-    }
-
-    @ParameterizedTest
-    @ValueSource(strings = ["", "prefix"])
-    fun `more source bytes cannot reopen a sealed item`(prefix: String) {
-        val source = CodeModeSourceBuffer()
-        source.publish(prefix)
-        source.seal()
-        assertThrows(IllegalStateException::class.java) { source.publish(prefix + "extra") }
     }
 }

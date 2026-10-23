@@ -7,6 +7,9 @@
 // them, and the detached reader, switching attachments, cut claims and split billing that followed were the
 // most-fixed code-mode family since Sep 1 (77 commits). The model never opens a second exec while one runs, and
 // its sources are short (661 chars at p50), so the overlap this gives up is a fraction of a script's generation.
+// The buffer kept the streamed path's item seal and statement certification until round 11 of #247 found them
+// unreachable: a cell starts only after the cursor read the terminal, which no later failure replaces, and the capture
+// already refuses a delta after its item completed.
 package splice.provider.codex.stream
 
 import kotlinx.coroutines.NonCancellable
@@ -28,7 +31,6 @@ import java.util.concurrent.atomic.AtomicReference
 private data class SourceSnapshot(
     val text: String,
     val terminal: CodeModeSourcePart? = null,
-    val itemComplete: Boolean = false,
 )
 
 /** Joins an accumulated prefix to the conversation batch before a cursor hands it to the worker. */
@@ -58,26 +60,11 @@ internal class CodeModeSourceBuffer(
         var kept = true
         state.update { previous ->
             check(previous.terminal !is CodeModeSourcePart.Complete) { "source already ended" }
-            check(!previous.itemComplete) { "source item already completed" }
             check(text.startsWith(previous.text)) { "dispatched source changed" }
             kept = previous.terminal == null
             if (kept) SourceSnapshot(text) else previous
         }
         return kept
-    }
-
-    /** Item completion freezes unread statements until the response terminal certifies their source. */
-    fun seal() {
-        state.update { previous ->
-            check(previous.terminal !is CodeModeSourcePart.Complete) { "source already ended" }
-            if (previous.terminal != null) previous else previous.copy(itemComplete = true)
-        }
-    }
-
-    /** A statement selected just before item completion still cannot escape as a client call afterward. */
-    suspend fun awaitCertification() {
-        val next = state.first { !it.itemComplete || it.terminal != null }
-        (next.terminal as? CodeModeSourcePart.Failed)?.let { throw IOException(it.error) }
     }
 
     fun complete(text: String) {

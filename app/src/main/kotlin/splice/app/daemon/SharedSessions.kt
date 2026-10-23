@@ -11,12 +11,14 @@ import splice.core.config.UserHome
 import splice.core.util.EnvReader
 import splice.core.util.LogSink
 import splice.sessions.mirror.MirrorPlace
+import splice.sessions.mirror.MirrorSweep
 import splice.sessions.mirror.SessionMirrors
 import splice.share.ShareState
 import splice.share.remote.RemoteLinks
 import splice.share.remote.RemoteSessions
 import splice.upstream.LifecycleScope
 import splice.upstream.codemode.ProcessDispatchers
+import splice.upstream.codemode.ProcessTicker
 import java.nio.file.Path
 
 // why: where Claude Code puts its sockets folder when no runtime folder is set, as on a Mac.
@@ -39,6 +41,7 @@ internal class SharedSessions(env: EnvReader, statePaths: StatePaths, private va
         scope,
         ProcessDispatchers().io(),
         log,
+        MirrorSweep { ProcessTicker().awaitTick(it) },
     )
 
     /** Links each machine in [remotes] to this one's sessions; nothing when this one joined none. */

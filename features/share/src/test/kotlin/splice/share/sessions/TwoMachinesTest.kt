@@ -29,6 +29,7 @@ import splice.core.topology.ShareConfig
 import splice.core.topology.Topology
 import splice.core.util.EnvReader
 import splice.sessions.mirror.MirrorPlace
+import splice.sessions.mirror.MirrorSweep
 import splice.sessions.mirror.SessionMirrors
 import splice.sessions.registry.SessionAvailability
 import splice.sessions.registry.SessionRegistry
@@ -50,6 +51,7 @@ import splice.share.remote.RemoteNames
 import splice.share.remote.RemoteSessions
 import splice.share.remote.RemoteTrust
 import splice.share.remote.RemotesStore
+import splice.upstream.codemode.ProcessTicker
 import java.net.URI
 import java.net.http.HttpClient
 import java.net.http.HttpRequest
@@ -114,7 +116,13 @@ internal abstract class TwoMachinesTest {
             "HOME" to home.toString(),
         )
         val paths = StatePaths(envReader = EnvReader { env[it] })
-        val mirrors = SessionMirrors(MirrorPlace(registry, sockets, home.resolve("m.log")), scope, Dispatchers.IO) { }
+        val mirrors = SessionMirrors(
+            MirrorPlace(registry, sockets, home.resolve("m.log")),
+            scope,
+            Dispatchers.IO,
+            { },
+            MirrorSweep { ProcessTicker().awaitTick(it) },
+        )
 
         fun session(name: String, heardAt: Long? = null) =
             ClaudeCodeSession(registry, sockets, name, heardAt).also(opened::add)
@@ -245,9 +253,13 @@ internal abstract class TwoMachinesTest {
     protected fun described(at: Int): ShareInfo =
         checkNotNull(RemoteHttp(RemoteTrust(null, "torad")).info("127.0.0.1", at).get())
 
-    /** mini offers torad [sessions] (id to name) itself, as any joined machine can, and torad's answer's status. */
-    protected fun offer(sessions: List<Pair<String, String>>): Int {
-        val (info, joined) = joined()
+    /** mini offers torad [sessions] (id to name) itself, as any joined machine can, over [joining], and torad's answer's
+     *  status. */
+    protected fun offer(
+        sessions: List<Pair<String, String>>,
+        joining: Pair<ShareInfo, RemoteJoined.Joined> = joined(),
+    ): Int {
+        val (info, joined) = joining
         val http = HttpClient.newBuilder().sslContext(RemoteTrust(info.fingerprint, "torad").context).build()
         val body = buildJsonObject {
             putJsonArray("sessions") {

@@ -271,11 +271,20 @@ Built on `feat/lan-share`, merged into `feat/v0.4.0` through the gate. Milestone
      again when the machine joins again: on a machine that joined this one it gates the four session routes, which
      answer 403 in words while it is off; on a machine this one joined it gates this machine's link, which then neither
      looks, offers nor collects, and withdraws that machine's mirrors here. Sessions cross only while both ends are on.
-     Two machines that each joined the other run two links, and each holds the other in both its books; it is one
-     machine with one switch (`SessionsSwitch`), on only while each book that holds it has it on, so an Off on either
-     of its cards stops both links, and either card turns it in both books (the round-2 review).
-     A switch turned off ends the crossing at the link's next look; the mirrors made before it last at most their
-     lease. Any machine on the network may join and each mirror is a process, so a daemon hosts at most 256. A mirror's name is
+     Two machines that each joined the other run two links, and each holds the other in both its books: sessions cross
+     with it only while each card that names it is on (`SessionsSwitch`), so an Off on either stops both links (the
+     round-2 review). Each card turns its own book alone (the round-3 review): anyone on the network may join under any
+     name, so the machine on one card may not be the one on the other, and only the card that shows where a machine
+     joined from lets it in. Under trust the LAN, a device that joins under a machine's name takes that machine's place
+     in the book of joined machines, as any re-join does, so it holds the machine's sessions off until the machine
+     joins again and Marcos turns that card on.
+     A switch turned off ends the crossing at the link's next look, and each look while it is off withdraws what a
+     collection already under way made since. Every mirror, whatever made it (a look, an offer or a note), ends once
+     nothing has come from its machine for the time its last word gave it (`SessionMirrors`): three looks for a look or
+     an offer, a minute for a note from a machine that never offered; and a listener that closes withdraws every machine
+     it mirrored. Any machine on the network may join and each mirror is a process, so a daemon hosts at most 256, and a
+     note past that is refused with that reason. Each mirror's inbox waits on a virtual thread, so however many there
+     are, none holds a thread the rest of the daemon needs (at 64 they once stalled it). A mirror's name is
      what ListAgents shows and an envelope carries (`[A-Za-z0-9._-]`, 64 characters), and two sessions of one name are
      told apart by the start of their ids.
    - **The pages.** On the Sessions page a mirror is a row of its own machine: a badge names the machine, no folder
@@ -284,7 +293,9 @@ Built on `feat/lan-share`, merged into `feat/v0.4.0` through the gate. Milestone
      machine, since the link carries when that session was last heard from (`heard_at`), and it leaves the list with
      its record, never kept as ended. On the Sharing page each machine's card has its Sessions switch, Off or On; while
      it is on, its line says how many of its sessions are listed here and how many of this machine's it was last shown
-     ("2 of its listed here · 1 of this machine's listed there"), and while it is off, that nothing crosses.
+     ("2 of its listed here · 1 of this machine's listed there"), and while it is off, that nothing crosses. A machine on
+     both lists has a switch on each card, and while one is on and the other off, the one on says nothing crosses until
+     both are on.
    - **Not yet.** A message refused on the far side of the outbox reaches no one.
    - **Receipts on a Mac.** A Mac's Claude Code names its socket `/tmp/cc-socks/<pid>.sock`, and `/tmp` there is a
      link to `/private/tmp`. `PeerNoteSocket.inOwnFolder` allows a link above the sender's sockets folder, since it

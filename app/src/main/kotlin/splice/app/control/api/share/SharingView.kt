@@ -67,7 +67,9 @@ internal class SharingView(private val parts: SharingParts, private val file: To
         }
     }
 
-    /** The machines that joined, with when each was last heard from as the daemon holds it now. */
+    /** The machines that joined, with when each was last heard from as the daemon holds it now. Each card's
+     *  `sessions` is its own switch, which its On and Off turn; `crossing`, whether sessions cross with the machine,
+     *  which takes every card that names it on. */
     private fun joined(): List<JsonObject> {
         val activity = parts.listener.clients.activity
         val seen = activity.now().associateBy { it.name }
@@ -77,7 +79,8 @@ internal class SharingView(private val parts: SharingParts, private val file: To
                 put("name", machine.name)
                 put("address", machine.address)
                 put("joined_at", machine.joinedAt)
-                put("sessions", parts.listener.switch.on(machine.name))
+                put("sessions", machine.sessions)
+                put("crossing", parts.listener.switch.on(machine.name))
                 seen[machine.name]?.let {
                     put("last_seen", it.lastSeen)
                     put("turns_today", it.turnsOn(today))
@@ -106,7 +109,8 @@ internal class SharingView(private val parts: SharingParts, private val file: To
             put("url", remote.url)
             remote.fingerprint?.let { put("fingerprint", it) }
             put("token", name in tokens)
-            put("sessions", parts.listener.switch.on(name))
+            put("sessions", store.sessions(name))
+            put("crossing", parts.listener.switch.on(name))
             crossing(name, this)
             reach?.let { found ->
                 put("reachable", found.reachable)

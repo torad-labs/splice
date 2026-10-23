@@ -5,9 +5,10 @@
 //   PUT /api/remotes/{name}/sessions          {on}: whether a machine this one joined may cross sessions
 //
 // A switch starts off, and a re-join turns it off again (the President's decision on the round-1 review, Oct 23): no
-// joined machine lists, writes into or reads from this machine's sessions until Marcos turns it on. A machine on both
-// lists is one machine with one switch (SessionsSwitch), so either of its cards turns it in both books. A refusal is an
-// answer, as the page's other rows give one (Said).
+// joined machine lists, writes into or reads from this machine's sessions until Marcos turns it on. Each route turns its
+// own card's book alone (SessionsSwitch): anyone on the network may join under the name of a machine this one joined,
+// and only the card that shows where a machine joined from lets it in. A machine on both lists crosses sessions while
+// both its cards are on. A refusal is an answer, as the page's other rows give one (Said).
 package splice.app.control.api.share
 
 import io.ktor.http.HttpStatusCode
@@ -30,12 +31,14 @@ internal class SessionsSwitchRoutes(private val wired: SharingWired) {
 
     /** Turns the Sessions switch of [name], a machine that joined this one, as the body says. */
     suspend fun machine(name: String, call: ApplicationCall): JsonReply =
-        switched(call, "no machine named '$name' has joined") { parts, on -> parts.listener.switch.turn(name, on) }
+        switched(call, "no machine named '$name' has joined") { parts, on ->
+            parts.listener.switch.turnJoined(name, on)
+        }
 
     /** Turns the Sessions switch of [name], a machine this one joined, where the daemon's link reads it. */
     suspend fun remote(name: String, call: ApplicationCall): JsonReply =
         switched(call, "this machine has not joined one named '$name'") { parts, on ->
-            parts.listener.switch.turn(name, on)
+            parts.listener.switch.turnUsed(name, on)
         }
 
     /** One switch turned by [turn], which answers false for a machine it does not know, said as [unknown]. */

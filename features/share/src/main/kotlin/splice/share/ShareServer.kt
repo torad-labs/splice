@@ -31,7 +31,6 @@ import io.ktor.server.routing.put
 import io.ktor.server.routing.route
 import io.ktor.server.routing.routing
 import kotlinx.coroutines.CoroutineDispatcher
-import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonPrimitive
@@ -42,7 +41,6 @@ import splice.core.util.LogSink
 import splice.core.util.SafeFailureText
 import splice.core.wire.HttpStatus
 import splice.http.listen.HttpListenerThreads
-import splice.upstream.codemode.ProcessTicker
 
 internal class ShareServer(
     /** Where it listens, the certificate it serves (TLS only, since phase 2) and whom it answers. */
@@ -73,7 +71,6 @@ internal class ShareServer(
                 module {
                     intercept(ApplicationCallPipeline.Plugins) { if (!admitted(call)) finish() }
                     routing { routes(this) }
-                    launch { sessions.sweep(ProcessTicker()) }
                 }
             },
         ) {

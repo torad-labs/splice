@@ -1,7 +1,8 @@
-// NEW: LAN share, phase 2, the round-1 and round-2 reviews (docs/specs/lan-share.md, Bounds). The goal, the
+// NEW: LAN share, phase 2, the round-1 to round-3 reviews (docs/specs/lan-share.md, Bounds). The goal, the
 // President's decision of Oct 23: no joined machine can list, write into or read from this machine's sessions until
-// Marcos turns that machine's Sessions switch on, in either direction of the pair; and a machine that joined this one
-// and that this one joined is one machine with one switch, so an Off on either of its cards stops both links. The
+// Marcos turns that machine's Sessions switch on, in either direction of the pair. A machine that joined this one and
+// that this one joined crosses sessions only while both its cards are on, so an Off on either stops both links; and
+// since anyone on the network may join under any name, an On on one card lets in no machine the other card names. The
 // machines are TwoMachinesTest's.
 package splice.share.sessions
 
@@ -27,11 +28,12 @@ import java.util.concurrent.atomic.AtomicInteger
 
 internal class SessionsSwitchAcrossMachinesTest : TwoMachinesTest() {
 
-    /** What torad answers the machine holding [token] on each session route, in turn: its listing, an offer of mini's
-     *  session, a collection, and a note from that session to the session here whose id is [to]. */
-    private fun answers(info: ShareInfo, token: String, to: String): List<HttpResponse<String>> {
+    /** What the machine described by [info], sharing on [at], answers the machine holding [token] on each session
+     *  route, in turn: its listing, an offer of mini's session, a collection, and a note from that session to the
+     *  session there whose id is [to]. */
+    private fun answers(info: ShareInfo, token: String, to: String, at: Int = port): List<HttpResponse<String>> {
         val http = HttpClient.newBuilder().sslContext(RemoteTrust(info.fingerprint, "torad").context).build()
-        val sessions = "https://127.0.0.1:$port/share/v1/sessions"
+        val sessions = "https://127.0.0.1:$at/share/v1/sessions"
         val offer = """{"sessions":[{"id":"s-mini","name":"splice"}]}"""
         val note = """{"from":{"id":"s-mini","name":"splice"},"text":"hello from mini"}"""
         return listOf(
@@ -117,6 +119,27 @@ internal class SessionsSwitchAcrossMachinesTest : TwoMachinesTest() {
         assertTrue(listener.clients.allowSessions(MINI, false))
         assertTrue("$MINI/splice" !in listed(rig) { "$MINI/splice" !in it }, "torad no longer lists mini's session")
         assertTrue("$toradName/rig-lead" !in listed(splice) { "$toradName/rig-lead" !in it }, "nor mini torad's")
+    }
+
+    // The round-3 review: Marcos turns On the card of torad, the machine mini joined, which shows torad's pinned address.
+    // A device that joined mini under torad's name is a machine that joined mini, let in only by its own card, which
+    // shows where it joined from.
+    @Test
+    fun `a machine that joins under the name of one this machine joined is not let in by that one's card`() {
+        val splice = mini.session("splice")
+        val spliceId = mini.mirrors.local().single { it.name == "splice" }.id
+        val miniPort = TestPorts.reserve()
+        val miniSharing = sharing(mini, miniPort)
+        opened += AutoCloseable { runBlocking { miniSharing.stop() } }
+        links(joined().second)
+        val miniInfo = described(miniPort)
+        val posing = RemoteJoin(toradName).join(RemoteFound("127.0.0.1", miniPort, miniInfo)) as RemoteJoined.Joined
+
+        assertTrue(miniSharing.switch.turnUsed(toradName, true), "mini's card for torad, the machine it joined")
+        val answered = answers(miniInfo, posing.token, spliceId, miniPort)
+        assertEquals(List(4) { 403 }, answered.map { it.statusCode() }, answered.map { it.body() }.toString())
+        assertTrue(splice.agents().none { it.startsWith("$toradName/") }, "its offer made no mirror on mini")
+        assertEquals(null, splice.heard(0), "its note reached no session")
     }
 
     /** Waits until [splice] on mini lists none of torad's sessions and [rig] on torad none of mini's, then [looks]

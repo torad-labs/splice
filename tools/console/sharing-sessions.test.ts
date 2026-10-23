@@ -2,8 +2,9 @@
 // this machine's it was shown, so the sessions crossing each way can be read without opening the Sessions page. Since
 // the round-1 review (the President's decision, Oct 23), each card also carries the machine's Sessions switch, off until
 // Marcos turns it on: a machine whose switch is off says nothing crosses and counts nothing, and pressing the switch
-// asks the daemon to turn it on that machine's own side. Through the real page against a stub daemon (LAN share,
-// milestone 6).
+// asks the daemon to turn it on that machine's own side. Since the round-3 review, a machine on both lists has a switch
+// on each card, and sessions cross only while both are on: a card turned on while the other is off says so. Through the
+// real page against a stub daemon (LAN share, milestone 6).
 import { afterAll, beforeAll, expect, test } from "bun:test";
 import { chromium, type Browser, type Page } from "@playwright/test";
 import { existsSync } from "node:fs";
@@ -15,11 +16,16 @@ const share = {
   machine: "torad-server",
   sharing: { enabled: true, port: 3097, listening: true, following: true, fingerprint: "sha256:aa", commands: [] },
   joined: [
-    { name: "Marcoss-Mini", address: "192.168.1.243", joined_at: "2026-10-23T09:07:52Z", sessions: true, sessions_here: 2, sessions_there: 1 },
-    { name: "laptop", address: "192.168.1.50", joined_at: "2026-10-23T09:07:52Z", sessions: false, sessions_here: 0 },
+    { name: "Marcoss-Mini", address: "192.168.1.243", joined_at: "2026-10-23T09:07:52Z", sessions: true, crossing: true, sessions_here: 2, sessions_there: 1 },
+    { name: "laptop", address: "192.168.1.50", joined_at: "2026-10-23T09:07:52Z", sessions: false, crossing: false, sessions_here: 0 },
+    { name: "both", address: "192.168.1.60", joined_at: "2026-10-23T09:07:52Z", sessions: true, crossing: false, sessions_here: 0 },
   ],
-  remotes: [{ name: "studio", url: "https://studio.lan:3097", fingerprint: "sha256:bb", token: true, reachable: true,
-    since: "2026-10-23T11:00:00Z", commands: [], sessions: true, sessions_here: 1 }],
+  remotes: [
+    { name: "studio", url: "https://studio.lan:3097", fingerprint: "sha256:bb", token: true, reachable: true,
+      since: "2026-10-23T11:00:00Z", commands: [], sessions: true, crossing: true, sessions_here: 1 },
+    { name: "both", url: "https://both.lan:3097", fingerprint: "sha256:cc", token: true, reachable: true,
+      since: "2026-10-23T11:00:00Z", commands: [], sessions: false, crossing: false, sessions_here: 0 },
+  ],
 };
 /** Each switch the page asked the daemon to turn: the route and the body it sent. */
 const turned: { path: string; body: unknown }[] = [];
@@ -97,6 +103,21 @@ test("a machine whose Sessions switch is off says nothing crosses, and counts no
   expect(await sessionsOf("laptop")).toBeNull();
   expect(await cardText("laptop")).toContain("don't see or message each other");
   expect(await cardText("Marcoss-Mini")).not.toContain("don't see or message each other");
+});
+
+/** What the card named [name] says, whole, in the section of machines that joined ("here") or of other machines. */
+async function cardIn(section: "here" | "there", name: string): Promise<string> {
+  return page.evaluate(([where, n]) => {
+    const cards = [...document.querySelectorAll(`.provider.${where} .card.m`)];
+    return cards.find((c) => c.querySelector(".name")?.textContent === n)?.textContent ?? "";
+  }, [section, name] as const);
+}
+
+test("a machine on both lists whose card here is on and whose other card is off says nothing crosses until both are", async () => {
+  const here = await cardIn("here", "both");
+  expect(here).toContain("Off on its card under Other machines: nothing crosses until both are on");
+  expect(here).not.toContain("listed here");
+  expect(await cardIn("there", "both")).toContain("don't see or message each other");
 });
 
 test("pressing a switch asks the daemon to turn it, on that machine's own side", async () => {

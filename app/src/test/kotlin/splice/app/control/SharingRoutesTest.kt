@@ -42,7 +42,9 @@ import splice.core.testing.TestPorts
 import splice.core.util.EnvReader
 import splice.sessions.mirror.MirrorCarried
 import splice.sessions.mirror.MirrorCarrier
+import splice.sessions.mirror.MirrorLink
 import splice.sessions.mirror.MirrorPlace
+import splice.sessions.mirror.MirrorSweep
 import splice.sessions.mirror.MirroredSession
 import splice.sessions.mirror.SessionMirrors
 import splice.share.ShareClients
@@ -65,6 +67,9 @@ import java.nio.file.attribute.PosixFilePermissions
 
 private const val SHARE_TIMEOUT_MS = 20_000L
 private const val SHARE_POLL_MS = 20L
+
+// why: longer than any test here runs, so no mirror one makes ends by its time while the page is read.
+private const val MIRRORS_LAST_MS = 3_600_000L
 
 // Two heads on their own key, which this machine can offer, and one that forwards the caller's own Claude login,
 // which it cannot.
@@ -249,13 +254,14 @@ class SharingRoutesTest {
         )
         val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
         val place = MirrorPlace(tmp.resolve("r"), sockets, tmp.resolve("m.log"))
-        val mirrors = SessionMirrors(place, scope, Dispatchers.IO) { }
+        // Its mirrors last longer than the test, so they never look for ended ones.
+        val mirrors = SessionMirrors(place, scope, Dispatchers.IO, { }, MirrorSweep { false })
         Files.createDirectories(tmp.resolve("r"))
-        val carrier = MirrorCarrier { _, _, _ -> MirrorCarried(null) }
+        val link = MirrorLink(MirrorCarrier { _, _, _ -> MirrorCarried(null) }, MIRRORS_LAST_MS)
         try {
-            mirrors.mirror("mini", listOf(MirroredSession("a", "splice"), MirroredSession("b", "review")), carrier)
+            mirrors.mirror("mini", listOf(MirroredSession("a", "splice"), MirroredSession("b", "review")), link)
             mirrors.shown("mini", 1)
-            mirrors.mirror("far", listOf(MirroredSession("c", "rig-lead")), carrier)
+            mirrors.mirror("far", listOf(MirroredSession("c", "rig-lead")), link)
             serve(mirrors = mirrors) { call ->
                 val view = read(call)
                 val mini = view.getValue("joined").jsonArray.single().jsonObject
@@ -278,10 +284,12 @@ class SharingRoutesTest {
         return json(reply.bodyAsText())
     }
 
-    /** The Sessions switch of the one machine that joined this one, and of the one machine this one joined. */
-    private fun switches(view: JsonObject): List<Boolean> = listOf("joined", "remotes").map { rows ->
-        view.getValue(rows).jsonArray.single().jsonObject.getValue("sessions").jsonPrimitive.boolean
-    }
+    /** The Sessions switch of the one machine that joined this one, and of the one machine this one joined, as each
+     *  card shows it; or, with [key] "crossing", whether sessions cross with each. */
+    private fun switches(view: JsonObject, key: String = "sessions"): List<Boolean> =
+        listOf("joined", "remotes").map { rows ->
+            view.getValue(rows).jsonArray.single().jsonObject.getValue(key).jsonPrimitive.boolean
+        }
 
     // The round-1 review's second finding, as the President decided it (Oct 23): no joined machine can list, write into
     // or read from this machine's sessions until Marcos turns that machine's switch on, in either direction of the pair.
@@ -311,19 +319,27 @@ class SharingRoutesTest {
             switched(call, "/api/remotes/far/sessions", false)
             assertEquals(listOf(false, false), switches(read(call)), "and both off again")
 
-            for (path in listOf("/api/share/machines/nobody/sessions", "/api/remotes/nobody/sessions")) {
+            // Each card turns its own book: a name only the other book holds is a machine this card does not know.
+            val elsewhere = listOf("share/machines/nobody", "share/machines/far", "remotes/nobody", "remotes/mini")
+            for (path in elsewhere.map { "/api/$it/sessions" }) {
                 val refused = switched(call, path, true)
                 assertFalse(refused.getValue("ok").jsonPrimitive.boolean, path)
                 val said = refused.getValue("said").jsonArray.single().jsonObject
-                assertTrue("nobody" in said.getValue("text").jsonPrimitive.content, said.toString())
+                val named = path.split("/").dropLast(1).last()
+                assertTrue(named in said.getValue("text").jsonPrimitive.content, said.toString())
             }
+            assertEquals(listOf(false, false), switches(read(call)), "and turned nothing")
             val unread = call(HttpMethod.Put, "/api/share/machines/mini/sessions", "on", true)
             assertEquals(400, unread.status.value, "a body the route cannot read is told what to send")
         }
     }
 
+    // The round-3 review: anyone on the network may join under any name, so the machine on one card may not be the one
+    // on the other. Each card turns only its own book, as it shows it, and sessions cross while both are on. This
+    // replaces round 2's one switch turned from either card, which let a device that joined under a used machine's name
+    // in through the card of the machine it named.
     @Test
-    fun `a machine that joined this one and that this one joined has one Sessions switch, on both its cards`() {
+    fun `a machine that joined this one and that this one joined crosses sessions only while both its cards are on`() {
         Files.writeString(file, Files.readString(file) + "\n[remotes.both]\nurl = \"https://both.lan:3097\"\n")
         val state = ShareState(StatePaths(envReader = env))
         Files.createDirectories(state.clientsFile.parent)
@@ -336,19 +352,21 @@ class SharingRoutesTest {
         val clients = ShareClients(state.clientsFile)
         serve { call ->
             assertTrue(switched(call, "/api/share/machines/both/sessions", true).getValue("ok").jsonPrimitive.boolean)
-            assertEquals(listOf(true, true), switches(read(call)), "one card turns the machine's one switch")
-            assertTrue(RemotesStore(state.remotesFile).sessions("both"), "in the book its link reads")
+            assertEquals(listOf(true, false), switches(read(call)), "the card turned shows On, the other still Off")
+            assertEquals(listOf(false, false), switches(read(call), "crossing"), "and nothing crosses yet")
+            assertFalse(RemotesStore(state.remotesFile).sessions("both"), "an On on one card turns no other")
 
-            // A re-join turns the switch off in the book it writes, and the machine reads off on both cards.
+            assertTrue(switched(call, "/api/remotes/both/sessions", true).getValue("ok").jsonPrimitive.boolean)
+            assertEquals(listOf(true, true), switches(read(call)))
+            assertEquals(listOf(true, true), switches(read(call), "crossing"), "both on, sessions cross")
+
+            // A re-join turns its own card off, and nothing crosses, whichever card is read.
             assertTrue(clients.allowSessions("both", false))
-            assertEquals(listOf(false, false), switches(read(call)), "off on one card is off on both")
-
-            switched(call, "/api/remotes/both/sessions", true)
-            assertEquals(listOf(true, true), switches(read(call)), "the other card turns it on in both books")
-            assertTrue(clients.all().single().sessions, "the joined machine's book too")
+            assertEquals(listOf(false, true), switches(read(call)))
+            assertEquals(listOf(false, false), switches(read(call), "crossing"), "off on one card stops both")
             switched(call, "/api/remotes/both/sessions", false)
             assertEquals(listOf(false, false), switches(read(call)))
-            assertFalse(clients.all().single().sessions, "and off in both")
+            assertFalse(clients.all().single().sessions, "and the joined card stayed as it was")
         }
     }
 

@@ -58,14 +58,15 @@ public class ShareClients(private val file: Path) {
 
     /** A new token for the machine that [asked] to join, replacing any it held: a machine that imports again gets a
      *  fresh one and the old one stops working. It is booked under the name a machine that joins it back keys it by in
-     *  `[remotes]` (RemoteNames), so its sessions here, offered by it or looked at from here, are one machine's.
+     *  `[remotes]` (RemoteNames), so its sessions here, offered by it or looked at from here, are one machine's, and it
+     *  takes the place of an entry phase 1 booked under the name as given, capitals and all.
      *  Throws IOException, writing nothing, when the book cannot be read or locked. */
     @Synchronized
     internal fun join(asked: String, address: String): String = edited { book ->
         val name = RemoteNames.of(asked)
         val token = hex.formatHex(ByteArray(SHARE_TOKEN_BYTES).also(random::nextBytes))
         val joined = ShareClient(name, digest(token), address, Instant.now().toString())
-        write(ShareClientBook(book.clients.filterNot { it.name == name } + joined))
+        write(ShareClientBook(book.clients.filterNot { RemoteNames.of(it.name) == name } + joined))
         token
     }
 

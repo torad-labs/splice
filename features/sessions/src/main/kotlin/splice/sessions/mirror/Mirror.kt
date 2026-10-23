@@ -88,9 +88,9 @@ internal class Mirror(
             close()
             return "its registry record cannot be written: ${SafeFailureText.render(written)}"
         }
-        serving = parts.scope.launch {
-            PeerInboxServer(bound, token, Connections(), parts.targets, parts.helperLog, parts.io, parts.user).serve()
-        }
+        val inbox =
+            PeerInboxServer(bound, token, Connections(), parts.targets, parts.helperLog, parts.inboxes, parts.user)
+        serving = parts.scope.launch { inbox.serve() }
         return null
     }
 

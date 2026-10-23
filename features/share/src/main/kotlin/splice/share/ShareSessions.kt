@@ -7,7 +7,8 @@
 // later collection acknowledges it (`&box=<outbox>&after=<seq>`): a collection whose answer never arrived, because the
 // machine slept, restarted its daemon or lost its network, takes nothing with it. Every route needs a joined machine's
 // token, so the machine is named by the link and never by the request. A machine's mirrors here last three of its
-// looks past its last offer, and go when this listener closes: a machine that stopped looking has no session listed.
+// looks past its last offer (SessionMirrors ends them), and go when this listener closes: a machine that stopped looking
+// has no session listed, and neither has one whose only word was a note.
 package splice.share
 
 import io.ktor.http.ContentType
@@ -27,10 +28,10 @@ import splice.core.util.Cancellables
 import splice.core.wire.HttpStatus
 import splice.sessions.mirror.MirrorCarried
 import splice.sessions.mirror.MirrorCarrier
+import splice.sessions.mirror.MirrorLink
 import splice.sessions.mirror.MirroredSession
 import splice.sessions.mirror.SessionMirrors
 import splice.sessions.peer.DeliveryStatus
-import splice.upstream.Ticker
 import java.util.UUID
 import java.util.concurrent.ConcurrentHashMap
 import kotlin.time.Duration.Companion.seconds
@@ -95,8 +96,8 @@ internal class ShareSessionHost(
 ) {
     private val json = Json { ignoreUnknownKeys = true }
 
-    /** When each machine's mirrors here end, in epoch ms, unless it offers its sessions again before. */
-    private val leases = ConcurrentHashMap<String, Long>()
+    /** The machines whose mirrors this listener made, by an offer or a note: withdrawn when it closes. */
+    private val served: MutableSet<String> = ConcurrentHashMap.newKeySet()
 
     /** Whether [client] may list, write into and read from this machine's sessions: its one Sessions switch is on. */
     fun crossing(client: String): Boolean = parts.switch.on(client)
@@ -114,8 +115,9 @@ internal class ShareSessionHost(
         val hosting = hosted(call) ?: return
         val offered = read(call, ShareSessions.serializer(), SESSIONS_BODY_MAX_BYTES) ?: return
         val lease = ((offered.lookMs ?: LEASE_MAX_MS) * LEASE_LOOKS).coerceIn(LEASE_MIN_MS, LEASE_MAX_MS)
-        leases[client] = System.currentTimeMillis() + lease
-        withContext(io) { hosting.mirror(client, offered.sessions.map(::mirrored), parts.outboxes.carrier(client)) }
+        served += client
+        val link = MirrorLink(parts.outboxes.carrier(client), lease)
+        withContext(io) { hosting.mirror(client, offered.sessions.map(::mirrored), link) }
         respond(call, ShareSessions.serializer(), ShareSessions(emptyList()))
     }
 
@@ -124,7 +126,10 @@ internal class ShareSessionHost(
         val hosting = hosted(call) ?: return
         val note = read(call, ShareNote.serializer(), NOTE_BODY_MAX_BYTES) ?: return
         val to = call.parameters["id"].orEmpty()
-        val carried = hosting.deliver(to, client, mirrored(note.from), note.text, parts.outboxes.carrier(client))
+        served += client
+        // A machine that never offered: its sender's mirror lasts as long as any machine's that stopped looking.
+        val link = MirrorLink(parts.outboxes.carrier(client), LEASE_MAX_MS)
+        val carried = hosting.deliver(to, client, mirrored(note.from), note.text, link)
         respond(call, ShareNoteAnswer.serializer(), ShareNoteAnswer(carried.status?.wire, carried.detail))
     }
 
@@ -138,18 +143,10 @@ internal class ShareSessionHost(
         respond(call, ShareOutbox.serializer(), parts.outboxes.collect(client, ack, wait))
     }
 
-    /** Withdraws the mirrors of each machine whose lease ran out, every [SWEEP_MS], until the listener stops. */
-    suspend fun sweep(ticker: Ticker) {
-        while (ticker.awaitTick(SWEEP_MS)) {
-            val now = System.currentTimeMillis()
-            val ended = leases.filterValues { it < now }.filter { (client, at) -> leases.remove(client, at) }.keys
-            if (ended.isNotEmpty()) withContext(io) { ended.forEach(::withdraw) }
-        }
-    }
-
-    /** Withdraws every machine's mirrors: the listener is closing. Blocking. */
+    /** Withdraws the mirrors of every machine this listener made any for: it is closing. One a request still running
+     *  makes after this ends with its time (SessionMirrors). Blocking. */
     fun withdraw() {
-        leases.keys.toList().filter { leases.remove(it) != null }.forEach(::withdraw)
+        served.toList().filter { served.remove(it) }.forEach(::withdraw)
     }
 
     private fun withdraw(client: String) {
@@ -250,16 +247,13 @@ private const val NOTE_BODY_MAX_BYTES = 131_072
 private const val SESSIONS_READ_MS = 5_000L
 
 // why: a machine's mirrors outlast three of its looks, so one late or failed look does not withdraw and remake them.
-private const val LEASE_LOOKS = 3L
+internal const val LEASE_LOOKS: Long = 3L
 
 // why: a lease shorter than a second would withdraw a machine's mirrors between two requests of one look.
-private const val LEASE_MIN_MS = 1_000L
+internal const val LEASE_MIN_MS: Long = 1_000L
 
 // why: a machine that stopped looking leaves the other's listing within a minute, whatever look it asked for.
-private const val LEASE_MAX_MS = 60_000L
-
-// why: a lease that ran out is noticed within a second.
-private const val SWEEP_MS = 1_000L
+internal const val LEASE_MAX_MS: Long = 60_000L
 
 // why: notes waiting for a machine that is collecting them are a handful; 256 not yet acknowledged is a machine that
 // stopped collecting, and the next one is refused as dropped instead of held.

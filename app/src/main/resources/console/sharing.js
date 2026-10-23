@@ -100,11 +100,16 @@ function joinedHtml(joined, on) {
   }).join("")}</div>`;
 }
 
-/** Whether Claude Code sessions cross with this machine, and the switch that says so: off until he turns it on. [side]
- *  is "machines" for one that joined this machine and "remotes" for one this machine joined. */
+/** Whether Claude Code sessions cross with this machine, and this card's switch: off until he turns it on. [side] is
+ *  "machines" for one that joined this machine and "remotes" for one this machine joined. A machine on both lists has a
+ *  switch on each card, and nothing crosses until both are on. */
 function crossingHtml(m, side, key) {
   const on = m.sessions === true;
-  const says = on ? countsHtml(m) : `<span class="hint">Off: its sessions and this machine's don't see or message each other</span>`;
+  const other = side === "machines" ? "Other machines" : "Machines that joined";
+  let says;
+  if (!on) says = `<span class="hint">Off: its sessions and this machine's don't see or message each other</span>`;
+  else if (m.crossing === false) says = `<span class="hint">On here, Off on its card under ${other}: nothing crosses until both are on</span>`;
+  else says = countsHtml(m);
   const btn = (want, label) => `<button data-act="sessions" data-side="${side}" data-name="${esc(m.name)}" data-on="${want ? 1 : 0}" aria-pressed="${on === want}"${busy(key) ? " disabled" : ""}>${label}</button>`;
   return `<div class="crossing"><span class="sub">Sessions</span>${says}<div class="switch small" role="group" aria-label="Sessions with ${esc(m.name)}">${btn(false, "Off")}${btn(true, "On")}</div></div>`;
 }

@@ -9,13 +9,18 @@ package splice.share.sessions
 import kotlinx.coroutines.cancelAndJoin
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.runBlocking
+import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.jsonObject
+import kotlinx.serialization.json.jsonPrimitive
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 import splice.core.testing.TestPorts
 import splice.core.topology.ShareConfig
 import splice.sessions.mirror.MirrorCounts
+import splice.sessions.peer.DeliveryStatus
 import splice.sessions.registry.SessionAvailability
+import splice.share.ShareState
 import splice.share.remote.RemoteFound
 import splice.share.remote.RemoteHttp
 import splice.share.remote.RemoteJoin
@@ -27,6 +32,8 @@ import java.net.URI
 import java.net.http.HttpClient
 import java.net.http.HttpRequest
 import java.net.http.HttpResponse
+import java.nio.file.Files
+import java.time.Duration
 import java.util.UUID
 import kotlin.random.Random
 
@@ -276,6 +283,46 @@ internal class SessionsAcrossMachinesTest : TwoMachinesTest() {
         val sessions = (1..MIRRORS_AT_MOST + 44).map { UUID(0L, it.toLong()).toString() to "s$it" }
         assertEquals(200, offer(sessions))
         assertEquals(MIRRORS_AT_MOST, rig.agents().count { it.startsWith("$MINI/") })
+    }
+
+    // The round-3 review: a note from a session this machine cannot mirror is refused, and its sender is told why.
+    // Found on the way: at that many mirrors the daemon stopped answering at all, so it must still answer, at once.
+    @Test
+    fun `a note from a session past the most mirrors one daemon hosts is refused for that, in words`() {
+        torad.session("rig-lead")
+        val rigId = torad.mirrors.local().single { it.name == "rig-lead" }.id
+        val sessions = (1..MIRRORS_AT_MOST).map { UUID(0L, it.toLong()).toString() to "s$it" }
+        val (info, joined) = joined()
+        assertEquals(200, offer(sessions, info to joined))
+        val other = RemoteJoin("other").join(RemoteFound("127.0.0.1", port, info))
+        assertTrue(other is RemoteJoined.Joined, "the listener still takes a join: $other")
+        val http = HttpClient.newBuilder().sslContext(RemoteTrust(info.fingerprint, "torad").context).build()
+        val note = """{"from":{"id":"s-late","name":"late"},"text":"one too many"}"""
+        val asked = HttpRequest.newBuilder(URI.create("https://127.0.0.1:$port/share/v1/sessions/$rigId/message"))
+            .header("Authorization", "Bearer ${joined.token}")
+            .POST(HttpRequest.BodyPublishers.ofString(note))
+            .timeout(Duration.ofMillis(SETTLE_MS))
+            .build()
+        val answer = Json.parseToJsonElement(http.send(asked, HttpResponse.BodyHandlers.ofString()).body()).jsonObject
+        assertEquals(DeliveryStatus.REFUSED.wire, answer.getValue("status").jsonPrimitive.content, answer.toString())
+        val why = answer.getValue("detail").jsonPrimitive.content
+        assertTrue("$MIRRORS_AT_MOST" in why, "the sender is told this machine hosts no more mirrors: $why")
+        assertTrue("not offered" !in why, "and not that mini never offered its sessions: $why")
+    }
+
+    // The round-3 review: phase 1 booked a machine under the name it gave, capitals and all. Its re-join books it under
+    // its `[remotes]` spelling, which takes the old entry's place, so the Sharing page shows the machine once.
+    @Test
+    fun `a machine booked under the name it gave in phase 1 is booked once when it joins again`() {
+        val book = ShareState(torad.paths).clientsFile
+        Files.createDirectories(book.parent)
+        Files.writeString(
+            book,
+            """{"clients":[{"name":"$MIXED","token_sha256":"00","address":"10.0.0.2",""" +
+                """"joined_at":"2026-10-22T12:00:00Z"}]}""",
+        )
+        joined(MIXED)
+        assertEquals(listOf(RemoteNames.of(MIXED)), listener.clients.all().map { it.name })
     }
 
     @Test

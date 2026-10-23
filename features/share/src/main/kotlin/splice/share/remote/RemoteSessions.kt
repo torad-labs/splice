@@ -4,8 +4,9 @@
 // session here writes to a mirror goes to that machine at once; one its sessions write to this machine's mirrors there
 // waits in its outbox, which a collection held open here picks up and delivers from a mirror of its sender, made then
 // if none is left. A machine that does not answer has no session mirrored here until it does. Nothing crosses with a
-// machine whose Sessions switch is off here (SessionsSwitch): its link neither looks, offers nor collects, and turning
-// the switch off withdraws its mirrors at the next look.
+// machine whose Sessions switch is off here (SessionsSwitch): its link neither looks, offers nor collects, and each of
+// its looks while the switch is off withdraws its mirrors, so one a collection made as the switch went off goes too.
+// Each look gives a machine's mirrors three looks more (SessionMirrors ends them), as its offers do on the other side.
 package splice.share.remote
 
 import kotlinx.coroutines.CoroutineScope
@@ -21,9 +22,13 @@ import splice.core.util.LogSink
 import splice.core.util.SafeFailureText
 import splice.sessions.mirror.MirrorCarried
 import splice.sessions.mirror.MirrorCarrier
+import splice.sessions.mirror.MirrorLink
 import splice.sessions.mirror.MirroredSession
 import splice.sessions.mirror.SessionMirrors
 import splice.sessions.peer.DeliveryStatus
+import splice.share.LEASE_LOOKS
+import splice.share.LEASE_MAX_MS
+import splice.share.LEASE_MIN_MS
 import splice.share.ShareNote
 import splice.share.ShareOutbox
 import splice.share.ShareOutboxAck
@@ -43,31 +48,32 @@ public class RemoteSessions(
 ) {
     private val io = ProcessDispatchers().io()
 
+    /** How long a machine's mirrors here last without another look that answers: three looks, as on the other side. */
+    private val lasts = (lookMs * LEASE_LOOKS).coerceIn(LEASE_MIN_MS, LEASE_MAX_MS)
+
     /** Looks at and collects from every joined machine until [scope] ends. Null when this one joined none. */
     public fun start(scope: CoroutineScope): Job? {
         val joined = links.names().mapNotNull { name -> links.url(name)?.let { name to it } }
         if (joined.isEmpty()) return null
         return scope.launch {
             for ((name, url) in joined) {
-                val carrier = carrierTo(name, url)
-                launch { look(name, url, carrier) }
-                launch { collect(name, url, carrier) }
+                val link = MirrorLink(carrierTo(name, url), lasts)
+                launch { look(name, url, link) }
+                launch { collect(name, url, link) }
             }
         }
     }
 
-    /** Mirrors [name]'s sessions here, each carrying a message by [carrier], and offers this machine's there, every
-     *  [lookMs]. A machine that does not answer has its mirrors withdrawn, which is said once, and so is its coming
+    /** Mirrors [name]'s sessions here, each carrying a message by [link]'s carrier, and offers this machine's there,
+     *  every [lookMs]. A machine that does not answer has its mirrors withdrawn, which is said once, and so is its coming
      *  back. */
-    private suspend fun look(name: String, url: String, carrier: MirrorCarrier) {
+    private suspend fun look(name: String, url: String, link: MirrorLink) {
         var failing = false
         var off = false
         do {
             if (!links.sessions(name)) {
-                if (!off) {
-                    log("[remote $name] no session crosses with it: Sessions is off for it on the Sharing page\n")
-                    withContext(io) { mirrors.withdraw(name) }
-                }
+                if (!off) log("[remote $name] no session crosses with it: Sessions is off for it on the Sharing page\n")
+                withContext(io) { mirrors.withdraw(name) }
                 off = true
                 failing = false
                 continue
@@ -86,7 +92,7 @@ public class RemoteSessions(
                 onSuccess = { (theirs, shown) ->
                     if (failing) log("[remote $name] its sessions are mirrored here again\n")
                     failing = false
-                    withContext(io) { mirrors.mirror(name, theirs, carrier) }
+                    withContext(io) { mirrors.mirror(name, theirs, link) }
                     mirrors.shown(name, shown)
                 },
                 onFailure = { failure ->
@@ -103,13 +109,13 @@ public class RemoteSessions(
      *  before it tries again; the look says why the machine does not answer. While [name]'s Sessions switch is off it
      *  collects nothing, and a collection the switch went off under delivers nothing: its notes wait there. A note
      *  whose sender has no mirror here, made by none of [name]'s looks since a withdraw, is delivered from one made
-     *  with [carrier], so a reply goes back the same way. */
-    private suspend fun collect(name: String, url: String, carrier: MirrorCarrier) {
+     *  with [link], so a reply goes back the same way. */
+    private suspend fun collect(name: String, url: String, link: MirrorLink) {
         var ack: ShareOutboxAck? = null
         do {
             val answer = if (links.sessions(name)) collected(name, url, ack) else null
             val delivered = answer?.takeIf { links.sessions(name) }
-            delivered?.notes?.forEach { deliver(name, it, carrier) }
+            delivered?.notes?.forEach { deliver(name, it, link) }
             ack = delivered?.acknowledging() ?: ack
             val again = answer != null || ticker.awaitTick(lookMs)
         } while (currentCoroutineContext().isActive && again)
@@ -120,9 +126,9 @@ public class RemoteSessions(
         Cancellables.runCatchingCancellable { runInterruptible(io) { links.api(name).outbox(url, ack) } }
             .fold(onSuccess = { it }, onFailure = { null })
 
-    private suspend fun deliver(name: String, note: ShareOutboxNote, carrier: MirrorCarrier) {
+    private suspend fun deliver(name: String, note: ShareOutboxNote, link: MirrorLink) {
         val from = MirroredSession(note.from.id, note.from.name)
-        val carried = mirrors.deliver(note.to.id, name, from, note.text, carrier)
+        val carried = mirrors.deliver(note.to.id, name, from, note.text, link)
         carried.detail?.let { why ->
             log("[remote $name] a note from ${LogSafe.str(from.name)} was not delivered: ${LogSafe.str(why)}\n")
         }

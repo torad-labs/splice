@@ -17,11 +17,15 @@ import splice.core.config.StatePaths
 import splice.core.util.EnvReader
 import splice.sessions.mirror.MirrorCarried
 import splice.sessions.mirror.MirrorCarrier
+import splice.sessions.mirror.MirrorLink
 import splice.sessions.mirror.MirroredSession
 import java.nio.file.Files
 import java.nio.file.Path
 import java.nio.file.Paths
 import kotlin.io.path.listDirectoryEntries
+
+// why: longer than any test here runs, so the mirror ends by the daemon's stop and never by its time.
+private const val MIRRORS_LAST_MS = 3_600_000L
 
 class SharedSessionsTest {
 
@@ -35,8 +39,8 @@ class SharedSessionsTest {
         val shared = SharedSessions(reader, StatePaths(envReader = reader)) { }
         val registry = Path.of(env.getValue("HOME"), ".claude", "sessions")
         val record = try {
-            val carrier = MirrorCarrier { _, _, _ -> MirrorCarried(null) }
-            shared.mirrors.mirror("far", listOf(MirroredSession("id-1", "rig-lead")), carrier)
+            val link = MirrorLink(MirrorCarrier { _, _, _ -> MirrorCarried(null) }, MIRRORS_LAST_MS)
+            shared.mirrors.mirror("far", listOf(MirroredSession("id-1", "rig-lead")), link)
             Json.parseToJsonElement(Files.readString(registry.listDirectoryEntries("*.json").single())).jsonObject
         } finally {
             shared.stop()

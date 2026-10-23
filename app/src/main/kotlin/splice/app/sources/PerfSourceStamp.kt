@@ -101,10 +101,12 @@ internal class PerfSourceStamp(
     }
 
     /** Whether [mark]'s name is still among [now] and no file begins with its bytes, and no rotation explains it. Each
-     *  file is tried against the one of its own name first, which holds it unless a rotation moved it. */
+     *  file is tried against the one of its own name first, which holds it unless a rotation moved it. The rotation
+     *  is tried last: it reads the file's bytes, where an unchanged file is answered from its stored marks
+     *  (round 15 of #247). */
     private fun rewritten(mark: PerfFileMark, now: List<PerfFileMark>): Boolean =
-        now.any { it.path == mark.path } && !rotatedOver(mark, now) &&
-            now.sortedBy { it.path != mark.path }.none { carries(it, mark) }
+        now.any { it.path == mark.path } &&
+            now.sortedBy { it.path != mark.path }.none { carries(it, mark) } && !rotatedOver(mark, now)
 
     /** Whether a rotation renamed the live file over [mark]'s name: the file there now begins with the live file's
      *  marked bytes. [mark]'s rows went to the archive, or were lost when that copy failed, which PerfStats.archiveRolled

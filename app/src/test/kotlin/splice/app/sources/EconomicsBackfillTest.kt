@@ -300,6 +300,35 @@ class EconomicsBackfillTest {
         )
     }
 
+    /** Round 14 of #247: under the first tear rule, a pass left out the hour after the partial one for any head with an
+     *  old torn line before the window, as claude-grok's NUL line of Jul 20, and kept its edge. While that edge stood the
+     *  hour was never built, so it stayed missing from the history until it aged out of the window. */
+    @Test
+    fun `an hour an older build's edge left out is built after the upgrade`(@TempDir dir: Path) {
+        val perf = dir.resolve("head-perf.jsonl")
+        Files.writeString(
+            perf,
+            listOf(5 * HOUR_MS, 6 * HOUR_MS, 7 * HOUR_MS, NOW_MS).joinToString("\n") { rowAt(it) } + "\n",
+        )
+        var now = 7 * HOUR_MS + 123
+        val store = EconomicsStore(dir.resolve("economics.json"), TurnPrice(card), WallClock { now }, log = { })
+        store.record(work())
+        now = NOW_MS
+        store.record(work())
+        // The edge as a build before the tear rule was saved kept it: the gap closed down to the window, with the
+        // rollup reaching back to 7h, and no tear rule.
+        Files.writeString(
+            dir.resolve("head-perf-backfill-edge.json"),
+            """{"from":${-1_000 * HOUR_MS},"reach":${7 * HOUR_MS}}""",
+        )
+
+        assertEquals(
+            listOf(6 * HOUR_MS, 7 * HOUR_MS, 10 * HOUR_MS),
+            source(store, perf).rows().map { it.hour },
+            "the hour between the partial one and the rollup's oldest is built once the older edge is set aside",
+        )
+    }
+
     /** One head's economics as an install keeping [window] would read it. */
     private fun reaching(dir: Path, perf: Path, window: HistoryWindow, now: Long): List<EconomicsRow> {
         val store = EconomicsStore(

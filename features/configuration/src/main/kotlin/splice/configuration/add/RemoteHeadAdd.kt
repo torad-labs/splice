@@ -10,12 +10,16 @@ import splice.core.config.KeyStore
 import splice.core.config.KeyStorePath
 import splice.core.model.ModelRates
 import splice.core.terminal.TerminalOutput
+import splice.core.topology.AuthConfig
 import splice.core.topology.Dialect
 import splice.core.topology.DialectWires
 import splice.core.topology.Topology
 import splice.core.util.Cancellables
 import splice.core.util.EnvReader
 import splice.core.util.SafeFailureText
+import splice.topology.TopologyLoader
+import java.nio.file.Files
+import java.nio.file.Path
 
 /** One head as the sharing machine described it, with the local [key] and [command] it is written under. */
 public data class RemoteHead(
@@ -60,8 +64,9 @@ internal class RemoteHeadAdd(
     /** A head imported before only needs its new token: a machine that joins again gets a fresh one, and the
      *  old one stops working on the sharing machine. The token goes where [head]'s provider reads its key, and only
      *  when no other provider reads that name too: a renewal never replaces another provider's key (PR #247's fourth
-     *  review). */
-    fun renew(topology: Topology, head: String, token: String, env: EnvReader): Boolean {
+     *  review). Providers for the same sharing server's heads, under [serverHeads], read its one token, so they may
+     *  share the name. True only when the key store, where the token goes, is where the provider reads it. */
+    fun renew(topology: Topology, head: String, token: String, env: EnvReader, serverHeads: String): Boolean {
         val providerKey = topology.heads[head]?.provider
         val auth = providerKey?.let { topology.providers[it] }?.auth?.takeIf { it.isApiKey }
         if (providerKey == null || auth == null) {
@@ -69,19 +74,37 @@ internal class RemoteHeadAdd(
             return false
         }
         val envVar = auth.effectiveApiKeyEnv(providerKey)
-        val other = otherReader(topology, providerKey, envVar)
+        val other = otherReader(topology, providerKey, envVar, serverHeads)
         if (other != null) {
             output.line("  [providers.$other] also reads $envVar, so '$head' kept its old token; give each its own env")
             return false
         }
-        return storeToken(envVar, token, env)
+        return storeToken(envVar, token, env) && applies(head, auth, envVar, env)
     }
 
-    /** A provider other than [self] that reads its key from [envVar], whose key a write there would replace. */
-    private fun otherReader(topology: Topology, self: String, envVar: String): String? =
-        topology.providers.entries.firstOrNull { (key, provider) ->
-            key != self && provider.auth.isApiKey && provider.auth.effectiveApiKeyEnv(key) == envVar
-        }?.key
+    /** Whether the key store is where [head]'s provider finds its key: a value of [envVar] in the environment and a
+     *  key file come before it (ApiKeyAuthProvider), and would keep the revoked token in use. The renewal then says
+     *  where the new one has to go instead of reporting it renewed (PR #247's fifth review). */
+    private fun applies(head: String, auth: AuthConfig, envVar: String, env: EnvReader): Boolean {
+        val file = auth.file?.takeIf { Files.exists(Path.of(TopologyLoader.expandHome(it))) }
+        val ahead = when {
+            env(envVar)?.isNotEmpty() == true -> "$envVar is set in this environment; unset it where splice starts"
+            file != null -> "its provider reads $file first; put the token there, or drop that file from its auth"
+            else -> return true
+        }
+        output.line("  '$head': the new token is in the key store, but $ahead, then restart splice")
+        return false
+    }
+
+    /** A provider other than [self] that reads its key from [envVar], whose key a write there would replace. One
+     *  for another head of the same sharing server, under [serverHeads], reads that server's token by design
+     *  (docs/specs/lan-share.md, the import), so it is not another reader. */
+    private fun otherReader(topology: Topology, self: String, envVar: String, serverHeads: String? = null): String? =
+        topology.providers.entries
+            .filter { (key, provider) -> key != self && serverHeads?.let { provider.baseUrl.startsWith(it) } != true }
+            .filter { (_, provider) -> provider.auth.isApiKey }
+            .firstOrNull { (key, provider) -> provider.auth.effectiveApiKeyEnv(key) == envVar }
+            ?.key
 
     private fun storeToken(envVar: String, token: String, env: EnvReader): Boolean {
         val store = KeyStore(KeyStorePath.defaultPath(env))

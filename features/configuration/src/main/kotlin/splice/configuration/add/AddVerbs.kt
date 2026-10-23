@@ -33,9 +33,15 @@ public class AddVerb(
     /** `splice remote`: a head another of the person's machines shares, regenerated here (RemoteHeadAdd). */
     public suspend fun addRemote(head: RemoteHead, env: EnvReader): Boolean = remote.add(head, env)
 
-    /** `splice remote` again: a head imported before keeps its row and takes the newly issued token. */
-    public fun renewRemote(topology: Topology, head: String, token: String, env: EnvReader): Boolean =
-        remote.renew(topology, head, token, env)
+    /** `splice remote` again: a head imported before keeps its row and takes the newly issued token, which the
+     *  server's other heads under [serverHeads], its relay prefix, may read too. */
+    public fun renewRemote(
+        topology: Topology,
+        head: String,
+        token: String,
+        env: EnvReader,
+        serverHeads: String,
+    ): Boolean = remote.renew(topology, head, token, env, serverHeads)
 }
 
 /** `splice add-model`: OpenRouter catalog rows picked through [select] and [multi]. */

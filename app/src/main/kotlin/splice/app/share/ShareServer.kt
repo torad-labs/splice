@@ -53,7 +53,24 @@ internal class ShareServer(
     private val clientName = Regex("^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$")
     private var engine: EmbeddedServer<NettyApplicationEngine, NettyApplicationEngine.Configuration>? = null
 
+    /** Listens on every address, IPv6 and IPv4 on one socket, so a client that reaches this machine over IPv6 (a
+     *  unique local fd00:: address, link-local) is answered too (PR #247's fifth review). A kernel with IPv6 off
+     *  refuses that socket, and the listener then takes IPv4 alone, saying so. */
     fun start() {
+        val server = Cancellables.runCatchingCancellable { listening(SHARE_BIND_ANY) }.fold(
+            onSuccess = { it },
+            onFailure = { failure ->
+                val why = SafeFailureText.render(failure)
+                log("[share] could not listen on IPv6 and IPv4 ($why); trying IPv4 alone\n")
+                listening(SHARE_BIND_IPV4)
+            },
+        )
+        engine = server
+        log("[share] offering ${heads.keys()} on :$port to this machine's private networks\n")
+    }
+
+    /** A started listener on [bind]; one that could not start is stopped first, so its threads do not stay. */
+    private fun listening(bind: String): EmbeddedServer<NettyApplicationEngine, NettyApplicationEngine.Configuration> {
         val server = embeddedServer(
             Netty,
             serverConfig {
@@ -65,14 +82,19 @@ internal class ShareServer(
         ) {
             HttpListenerThreads.configure(this)
             connector {
-                host = SHARE_BIND_HOST
+                host = bind
                 port = this@ShareServer.port
             }
             shutdownGracePeriod = SHARE_STOP_GRACE_MS
         }
-        server.start(wait = false)
-        engine = server
-        log("[share] offering ${heads.keys()} on :$port to this machine's private networks\n")
+        Cancellables.runCatchingCancellable { server.start(wait = false) }.onFailure {
+            Cancellables.discard(
+                Cancellables.runCatchingCancellable { server.stop(0L, 0L) },
+                "the start's own failure is what the caller hears",
+            )
+            throw it
+        }
+        return server
     }
 
     fun stop() {
@@ -161,8 +183,13 @@ internal class ShareErrors {
         """{"type":"error","error":{"type":"api_error","message":${JsonPrimitive("splice share: $message")}}}"""
 }
 
-// All interfaces: ShareNetwork decides who is answered, by source address and Host, before any route runs.
-private const val SHARE_BIND_HOST = "0.0.0.0"
+// All interfaces, IPv6 and IPv4 on one socket where the kernel allows it: ShareNetwork decides who is answered, by
+// source address and Host, before any route runs. An IPv4 client comes in on an IPv4-mapped address, which Java and
+// ShareNetwork both read as the IPv4 address it carries.
+private const val SHARE_BIND_ANY = "::"
+
+// Every IPv4 interface, on a machine whose kernel has IPv6 turned off.
+private const val SHARE_BIND_IPV4 = "0.0.0.0"
 
 // why: a stop lets requests already in the listener finish for a second before it closes; a relayed turn still
 // streaming is cut, and the other machine's client retries it as it retries any cut turn.

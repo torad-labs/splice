@@ -119,6 +119,8 @@ internal class RemoteCommand(
         val verb = AddWiring.add(restart = DaemonRestart { true })
         var added = false
         var ready = false
+        // every head this server shares sits under one relay prefix, and its providers here read one token
+        val serverHeads = http.url(host, machine.port, "$SHARE_HEADS_PATH/").toString()
         machine.info.heads.forEach { shared ->
             val topology = TopologyLoader.loadOrMaterialize(TopologyLoader.configPath(env))
             val baseUrl = http.url(host, machine.port, "$SHARE_HEADS_PATH/${shared.key}").toString()
@@ -126,7 +128,7 @@ internal class RemoteCommand(
                 topology.providers[head.provider]?.baseUrl == baseUrl
             }
             if (already != null) {
-                if (verb.renewRemote(topology, already.key, joined.token, env)) {
+                if (verb.renewRemote(topology, already.key, joined.token, env, serverHeads)) {
                     out.line("$GREEN✓$RESET ${already.key}: already here; its token on $server is renewed")
                     ready = true
                 }

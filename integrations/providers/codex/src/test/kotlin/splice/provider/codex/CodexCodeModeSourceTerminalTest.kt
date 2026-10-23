@@ -39,7 +39,7 @@ class CodexCodeModeSourceTerminalTest : CodeModeStatementStreamSupport() {
 
     @Test
     @Timeout(20)
-    fun `item completion before response completion cannot finalize source or upstream billing`() = runBlocking {
+    fun `item completion before response completion cannot finalize source or upstream billing`() = runBlocking<Unit> {
         val runtime = IncrementalRuntime()
         val manager = bridge(runtime)
         val sink = StepSink()

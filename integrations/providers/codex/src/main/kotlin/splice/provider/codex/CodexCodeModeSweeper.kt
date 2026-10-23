@@ -20,7 +20,6 @@ import splice.provider.codex.state.CodeModeExpiredHistory
 import splice.provider.codex.state.CodeModeSessionEnd
 import splice.provider.codex.state.collection.CodeModeRecordKeys
 import splice.provider.codex.state.lease.CodeModeSessionAlive
-import splice.provider.codex.stream.CodeModeSourceEnds
 import splice.upstream.codemode.CodeModeCell
 import java.util.concurrent.Executors
 import java.util.concurrent.ScheduledFuture
@@ -160,8 +159,7 @@ internal class CodexCodeModeSweeper(
         if (stale.isEmpty()) return false
         stale.forEach { record ->
             admissions.remove(record.id)
-            CodeModeSourceEnds.defer(record.sourceEnd)
-            record.sourceEnd = null
+            record.endSource()
             cells.remove(record.id)?.close()
             history.remember(record, config.clock.millis())
         }
@@ -296,11 +294,12 @@ internal class CodeModeRecordRetention(
         val own = CodeModeRecordKeys.of(records, key)
         val stays = key in busy || !idle(own) || own.any { it.phase == CodeModePhase.LOST }
         if (stays || overBound(records, busy) == null) return false
-        Gone(records, expired, now, ends = true).finished(key, "the head is past its bounds at the timed sweep")
-            ?: return false
-        // As an expiry and an admission do: the session its scripts ran in goes with its last record, or its engine and
-        // host lease stay held after the head let it go (round 11 of #247). Every one of [key]'s records was finished,
-        // so every one went.
+        Gone(records, expired, now).finished(key, "the head is past its bounds at the timed sweep") ?: return false
+        // As an expiry and an admission do, every one of [own], all finished and all gone, ends its round's upstream lease
+        // (round 12 of #247: one completed before its outcome was taken still held it), and the session its scripts ran
+        // in goes too, or its engine and host lease stay held after the head let it go (round 11). Nothing can take a
+        // lease once its record is gone. An admission's plan ends its own at publishEvictions, once published.
+        own.forEach(CodeModeRecord::endSource)
         closeSession(key)
         return true
     }
@@ -334,7 +333,6 @@ internal class CodeModeRecordRetention(
         private val records: MutableList<CodeModeRecord>,
         private val expired: CodeModeExpiredHistory,
         private val now: Long,
-        private val ends: Boolean = false,
     ) {
         /** The least recently used conversation other than [except] whose records are all finished, whole.
          *  The bytes freed, or null when there is none. */
@@ -347,16 +345,6 @@ internal class CodeModeRecordRetention(
             if (going.isEmpty()) return null
             records.removeAll(going.toSet())
             going.forEach { expired.remember(it, now) }
-            // A finished record may still hold its round's upstream lease, as when the client cancelled the posting step
-            // before the outcome was taken. On the timed sweep ([ends]) nothing can take it after the record goes, so the
-            // lease ends with the record, as at an expiry (round 12 of #247). An admission's plan ends its own leases
-            // when it is published (AdmissionPlan.publishEvictions).
-            if (ends) {
-                going.forEach { record ->
-                    CodeModeSourceEnds.defer(record.sourceEnd)
-                    record.sourceEnd = null
-                }
-            }
             val freed = going.sumOf(::bytesOf)
             log(
                 "[code-mode] conversation ${key.take(RECORD_ID_LOG_CHARS)}: ${going.size} record(s), $freed bytes, " +

@@ -13,6 +13,7 @@ import org.junit.jupiter.api.Test
 import splice.core.turn.ErrorType
 import splice.core.turn.FailureCause
 import splice.core.turn.TurnOutcome
+import splice.provider.codex.history.CodeModeUpstreamHistory
 import splice.provider.codex.state.CodeModeStateJournal
 import splice.provider.codex.state.save.CodeModeStateWrite
 import splice.provider.codex.stream.CodeModeRuntimeRun
@@ -244,7 +245,8 @@ class CodexCodeModeStartupFailureTest : CodeModeBridgeTestSupport() {
         val wire = CodexCodeModeWire(Json, config.log)
         val validation = CodexCodeModeValidation(config)
         val machine = CodexCodeModeMachine(config, active, validation)
-        val driver = CodexCodeModeDriver(config, CodeModeRuntimeRun(config.runtimes), active, wire, validation, machine)
+        val runs = CodeModeRuntimeRun(config.runtimes)
+        val driver = CodexCodeModeDriver(config, runs, active, wire, validation, machine, CodeModeUpstreamHistory(Json))
         val sink = RecordingSink()
         val context = CodeModeRunContext(
             turn(),

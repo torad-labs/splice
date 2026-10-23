@@ -12,6 +12,7 @@ import splice.core.turn.FailureTraits
 import splice.core.turn.GatewayCustomCall
 import splice.core.turn.TurnOutcome
 import splice.core.turn.noRequestUsage
+import splice.provider.codex.history.CodeModeUpstreamHistory
 import splice.provider.codex.stream.CodeModeLiveRound
 import splice.provider.codex.stream.CodeModeOutcomeAccumulator
 import splice.provider.codex.stream.CodeModeRecordFactory
@@ -37,6 +38,8 @@ internal class CodexCodeModeDriver(
     private val wire: CodexCodeModeWire,
     private val validation: CodexCodeModeValidation,
     private val machine: CodexCodeModeMachine,
+    /** Each conversation's last post, which the next request extends while the client's history only grows. */
+    val sent: CodeModeUpstreamHistory,
 ) {
     val streams = CodeModeStreams(config, registry, wire)
     private val factory = CodeModeRecordFactory(config, wire)
@@ -44,16 +47,16 @@ internal class CodexCodeModeDriver(
 
     /** A redirectable post can yield a durable script while its upstream response remains live. */
     suspend fun post(context: CodeModeRunContext, initialOuter: GatewayCustomCall?, body: CodeModeBody): TurnOutcome {
-        wire.sent.sent(context, body)
+        sent.sent(context, body)
         val post = context.link.post as? CodeModeRedirectablePost
-            ?: return drive(context, initialOuter, body, wire.sent.settled(context, context.link.post(body)))
+            ?: return drive(context, initialOuter, body, sent.settled(context, context.link.post(body)))
         val round = streams.begin(context, body, post) { call ->
             driveProblem(context, listOf(call), call)?.let { error(it) }
             validation.outer(call.copy(input = call.input.ifBlank { "source pending" }))?.let { error(it) }
             context.scripts++
             val pending = TurnOutcome.Success(false, false, noRequestUsage)
             val record = checkNotNull(factory.create(context, call, body, pending))
-            record.postedOn = wire.sent.newest(context.key)
+            record.postedOn = sent.newest(context.key)
             record.sourceState = CodeModeSourceState()
             check(registry.add(record)) { "code-mode registry capacity reached" }
             record
@@ -91,7 +94,7 @@ internal class CodexCodeModeDriver(
         record: CodeModeRecord?,
     ): TurnOutcome {
         round.localFailure?.let { return it }
-        if (record == null) return drive(context, initialOuter, body, wire.sent.settled(context, round.outcome()))
+        if (record == null) return drive(context, initialOuter, body, sent.settled(context, round.outcome()))
         streams.keep(record, round)
         val (_, advanced) = startRuntime(record, context, round)
         return round.localFailure ?: if (record.phase == CodeModePhase.COMPLETED) {
@@ -209,7 +212,7 @@ internal class CodexCodeModeDriver(
         body: CodeModeBody,
     ): CodeModeRewrite {
         val records = (registry.recordsFor(context.key) + context.completed).distinctBy(CodeModeRecord::id)
-        wire.sent.extend(context, records)?.let { return CodeModeRewrite(it) }
+        sent.extend(context, records)?.let { return CodeModeRewrite(it) }
         val posted = context.recovery?.upstream(context.completed) ?: context.completed
         val capture = posted.lastOrNull { it.id == record.id }
         return context.link.post.canonicalize(body, posted, context.turn.rendering.media, capture)
@@ -224,7 +227,7 @@ internal class CodexCodeModeDriver(
         validation.outer(outer)?.let { return null to failure(it) }
         val record = factory.create(context, outer, body, outcome)
             ?: return null to failure("code mode requires a Responses input array")
-        record.postedOn = wire.sent.newest(context.key)
+        record.postedOn = sent.newest(context.key)
         return if (!registry.add(record)) {
             null to failure("code-mode registry capacity reached")
         } else {

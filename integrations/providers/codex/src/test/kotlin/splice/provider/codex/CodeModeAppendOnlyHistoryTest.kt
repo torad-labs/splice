@@ -4,7 +4,9 @@
 // nativeOrder", 18 expected, 21 found), and every abandonment moved the prompt under the cache: the cached
 // prefix sat at 107,776 tokens while the input grew to 131,922. The conversations here are generated: scripts of
 // zero to three client steps, reasoning GPT returns and the client replays before the calls of the same message,
-// and plain answers followed by a new user message. A rewound conversation cuts the client's history back to an
+// a preface said before a script, which the client may join in one message with the prose GPT says after it when
+// nothing came between them (a reanchored round streams into the text block the client already had), and plain
+// answers followed by a new user message. A rewound conversation cuts the client's history back to an
 // earlier user message and edits it: that falls back to the client's history once and then only extends again.
 package splice.provider.codex
 
@@ -74,6 +76,9 @@ class CodeModeAppendOnlyHistoryTest : CodeModeBridgeTestSupport() {
         private var posts = 0
         private var requests = 0
 
+        /** Where this request's items start in [client]: prose said since may be joined in one message. */
+        private var spoken = 0
+
         /** Null when the conversation held, else what broke first. */
         suspend fun broke(): String? {
             while (posts < upstreamTurns) {
@@ -101,6 +106,7 @@ class CodeModeAppendOnlyHistoryTest : CodeModeBridgeTestSupport() {
                 RoundResult.Outcome(reply.outcome)
             }
             val first = posts - exchanges.size
+            spoken = client.size
             val broke = exchanges.withIndex()
                 .firstNotNullOfOrNull { (index, exchange) -> post(first + index, exchange) }
             results = sink.tools.map { CodeModeResult(it.id, "out-${it.id}") }
@@ -121,11 +127,21 @@ class CodeModeAppendOnlyHistoryTest : CodeModeBridgeTestSupport() {
             previous = sent
             answered.outer?.let(outers::add)
             client += answered.reasoning.map(Wire::reasoning)
-            answered.text?.let { text ->
-                client += Wire.assistant(text)
-                client += Wire.user("$NEXT$post.")
-            }
+            (answered.preface ?: answered.text)?.let { said(it, joins = answered.reasoning.isEmpty()) }
+            answered.text?.let { client += Wire.user("$NEXT$post.") }
             return null
+        }
+
+        /** GPT's prose as the client keeps it: a message of its own, or, when it [joins] prose said earlier in this
+         *  request with nothing between them, the same message, as Claude Code keeps text streamed into one block. */
+        private fun said(text: String, joins: Boolean) {
+            val last = client.lastOrNull()?.takeIf { client.size > spoken && joins && random.nextBoolean() }
+            val before = last?.let { Json.parseToJsonElement(it).jsonObject }?.takeIf { it.text("role") == "assistant" }
+            if (before == null) {
+                client += Wire.assistant(text)
+            } else {
+                client[client.lastIndex] = Wire.assistant(before.text("content") + text)
+            }
         }
 
         /** Cuts the client's history back to one of its user messages after the first and edits it. GPT's next post
@@ -158,6 +174,7 @@ class CodeModeAppendOnlyHistoryTest : CodeModeBridgeTestSupport() {
                     reasoning,
                     text,
                     null,
+                    null,
                 )
             }
             // A script may make no client call at all: it finishes inside the request that started it.
@@ -167,17 +184,21 @@ class CodeModeAppendOnlyHistoryTest : CodeModeBridgeTestSupport() {
             }
             scripts += ArrayDeque<CodeModeStep>(steps + CodeModeStep.Completed("script $posts done"))
             stepCounts += steps.size + 1
+            val preface = "Preface $posts. ".takeIf { random.nextBoolean() }
             val outer = outerOutcome("outer-$seed-$posts")
             val handoffs = outer.handoffs.copy(reasoningEnvelopes = envelopes)
-            return Reply(outer.copy(handoffs = handoffs), reasoning, null, "outer-$seed-$posts")
+            val said = preface?.let { RoundText(bodyText = it, emittedText = true) } ?: outer.text
+            return Reply(outer.copy(handoffs = handoffs, text = said), reasoning, null, "outer-$seed-$posts", preface)
         }
     }
 
+    /** GPT's answer: the outcome splice is given, the reasoning and prose the client replays, and the exec call. */
     private data class Reply(
         val outcome: TurnOutcome,
         val reasoning: List<String>,
         val text: String?,
         val outer: String?,
+        val preface: String?,
     )
 
     /** Where [after] stops starting with [before], as GPT's prompt cache sees it. */

@@ -117,7 +117,7 @@ internal class CodexCodeModeHistoryCodec(private val json: Json) {
         val unchanged = original != null && received != null && rebuilt.size == received.size &&
             rebuilt.indices.all { rebuilt[it] === received[it] }
         if (unchanged) return CodeModeRewrite(original)
-        val request = JsonObject(root + (FIELD_INPUT to rebuilt))
+        val request = JsonObject(root + (CODE_MODE_FIELD_INPUT to rebuilt))
         val digests = original?.digests ?: InputItemDigests()
         return CodeModeRewrite(CodeModeBody(RoundBody.Tree(request), json, emitted.at(request), digests))
     }
@@ -154,11 +154,11 @@ internal object CodeModeCallReplay {
     fun item(record: CodeModeRecord): JsonObject =
         if (
             record.sourceState?.complete == true ||
-            JsonScalars.strOrEmpty(record.origin.outer[FIELD_INPUT]) == record.origin.source
+            JsonScalars.strOrEmpty(record.origin.outer[CODE_MODE_FIELD_INPUT]) == record.origin.source
         ) {
             record.origin.outer
         } else {
-            JsonObject(record.origin.outer + (FIELD_INPUT to JsonPrimitive(record.origin.source)))
+            JsonObject(record.origin.outer + (CODE_MODE_FIELD_INPUT to JsonPrimitive(record.origin.source)))
         }
 }
 
@@ -186,7 +186,7 @@ internal class CodeModeBody(
             is RoundBody.Tree -> round.element
             is RoundBody.Text -> json.parseToJsonElement(round.text)
         } as? JsonObject
-        val input = root?.get(FIELD_INPUT) as? JsonArray
+        val input = root?.get(CODE_MODE_FIELD_INPUT) as? JsonArray
         if (root != null && input != null) root to input else null
     }
 }
@@ -222,7 +222,7 @@ internal class CodeModeEmission(
 internal const val CODE_MODE_FIELD_CALL_ID = "call_id"
 internal const val CODE_MODE_FIELD_TYPE = "type"
 internal const val CODE_MODE_FIELD_ROLE = "role"
-private const val FIELD_INPUT = "input"
+internal const val CODE_MODE_FIELD_INPUT = "input"
 private const val FIELD_OUTPUT = "output"
 private const val ROLE_DEVELOPER = "developer"
 private const val FIELD_PHASE = "phase"

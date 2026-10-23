@@ -1,5 +1,5 @@
 // NEW: per conversation, the exact histories code mode last sent GPT, which the next request only extends.
-package splice.provider.codex.state
+package splice.provider.codex.history
 
 import kotlinx.serialization.json.JsonElement
 
@@ -61,7 +61,15 @@ internal class CodeModeUpstreamLedger(
     }
 }
 
+// why: one conversation per seat or subagent talking to GPT at once; a conversation past it falls back once.
 private const val LEDGER_CONVERSATIONS = 32
+
+// why: the main history plus the side requests Claude Code sends on the same conversation (a summary, a quick
+// question) between two of its turns.
 private const val LEDGER_POSTS = 4
+
+// why: the LinkedHashMap defaults, spelled out because its access-order constructor takes all three arguments.
 private const val LEDGER_INITIAL = 16
+
+// why: the LinkedHashMap default load factor, for the same reason.
 private const val LEDGER_LOAD = 0.75f

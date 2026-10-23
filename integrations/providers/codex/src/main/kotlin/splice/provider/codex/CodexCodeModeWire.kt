@@ -16,7 +16,6 @@ import splice.dialect.responses.request.AssistantPhase
 import splice.dialect.responses.request.ResponsesAssistantText
 import splice.dialect.responses.request.ResponsesCodeModeProjection
 import splice.dialect.responses.request.ResponsesPriorReasoning
-import splice.provider.codex.history.CodeModeUpstreamHistory
 import splice.provider.codex.history.CodexCodeModeHistory
 import splice.provider.codex.state.diagnostics.CodeModeHistoryOmissions
 import splice.provider.codex.state.diagnostics.CodeModeNativeRejection
@@ -32,9 +31,6 @@ internal class CodexCodeModeWire(
     private val replayReasoning: CodeModeReplayReasoning = CodeModeReplayReasoning { true },
 ) {
     private val history = CodexCodeModeHistory(json)
-
-    /** Each conversation's last post, which the next request extends while the client's history only grows. */
-    val sent = CodeModeUpstreamHistory(json)
     private val priorReasoning = ResponsesPriorReasoning()
     private val namespace = ResponsesFunctionNamespace()
 

@@ -6,18 +6,11 @@ import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonObject
 import splice.core.turn.TurnOutcome
-import splice.dialect.responses.request.ResponsesCodeModeInput
-import splice.dialect.responses.request.ResponsesCodeModeReplay
-import splice.provider.codex.CODE_MODE_FIELD_CALL_ID
-import splice.provider.codex.CODE_MODE_FIELD_TYPE
+import splice.provider.codex.CODE_MODE_FIELD_INPUT
 import splice.provider.codex.CodeModeBody
-import splice.provider.codex.CodeModeCallReplay
-import splice.provider.codex.CodeModePhase
 import splice.provider.codex.CodeModeRecord
 import splice.provider.codex.CodeModeRunContext
 import splice.provider.codex.CodexCodeModeHistoryCodec
-import splice.provider.codex.state.CodeModeLedgerEntry
-import splice.provider.codex.state.CodeModeUpstreamLedger
 import splice.upstream.RoundBody
 
 /**
@@ -70,9 +63,9 @@ internal class CodeModeUpstreamHistory(private val json: Json) {
         val preamble = input.subList(0, preambleCount(input))
         val conversation = input.subList(preamble.size, input.size)
         val (entry, tail) = extended(key, conversation, records, changed)
-        val replayed = if (tail.isEmpty()) 0 else entry.echoes.size
+        val fresh = conversation.size > entry.covered.size
         val echoed = scripts.silent(records, entry.sent)
-        val folded = entry.sent + CodeModeScriptFold(codec, owners(records), echoed, scripts).fold(tail.drop(replayed))
+        val folded = entry.sent + CodeModeScriptFold(codec, owners(records), echoed, scripts).fold(tail)
         val due = if (entry === nothing) {
             CodeModeScriptDue { record, prior -> scripts.startedOn(record, preamble + prior) }
         } else {
@@ -80,11 +73,11 @@ internal class CodeModeUpstreamHistory(private val json: Json) {
         }
         val appended = scripts.appended(records, folded, conversation, due)
         val items = preamble + folded + appended.flatMap { scripts.continuity(it) + scripts.placement(it) }
-        val echoes = (if (tail.isEmpty()) entry.echoes else emptyList()) + appended.flatMap(scripts::continuity)
+        val echoes = (if (fresh) emptyList() else entry.echoes) + appended.flatMap(scripts::continuity)
         return if (items == input && echoes.isEmpty()) {
             client
         } else {
-            val rebuilt = JsonObject(root + (FIELD_INPUT to JsonArray(items)))
+            val rebuilt = JsonObject(root + (CODE_MODE_FIELD_INPUT to JsonArray(items)))
             CodeModeBody(RoundBody.Tree(rebuilt), json, digests = client.digests, echoes = echoes)
         }
     }
@@ -135,12 +128,14 @@ internal class CodeModeUpstreamHistory(private val json: Json) {
     }
 
     /** What the client added since [entry]'s post, or null when its conversation does not extend that post's. A
-     *  non-empty addition starts with the post's echoes, which it replays. */
+     *  non-empty addition starts with the post's echoes, which GPT was already sent and so are left out: the client
+     *  replays them, joining a preface with the prose GPT gave after it when they came in one message. */
     private fun newItems(entry: CodeModeLedgerEntry, conversation: List<JsonElement>): List<JsonElement>? {
         val covered = entry.covered.size
         if (conversation.size < covered || conversation.subList(0, covered) != entry.covered) return null
         val tail = conversation.subList(covered, conversation.size)
-        return tail.takeIf { it.isEmpty() || codec.continuityAt(it, 0, entry.echoes) }
+        if (tail.isEmpty()) return tail
+        return scripts.echo(tail, 0, entry.echoes)?.let { scripts.after(tail, it) }
     }
 
     /** How many leading items of [input] are the lite preamble, which is environment and not history. */
@@ -153,139 +148,3 @@ internal class CodeModeUpstreamHistory(private val json: Json) {
             .forEach { record -> record.clientIds().forEach { put(it, record) } }
     }
 }
-
-/**
- * Where a finished script that made no client call goes, since nothing of it is in the client's history but the
- * reasoning and preface it replays: after that replay when the client has it, else after the post the script
- * started on, or, once splice no longer holds that post, after the history the script was measured on when that is
- * the whole history (a request retried after its reply was lost, a restart).
- */
-private class CodeModeScriptPlacements(private val codec: CodexCodeModeHistoryCodec) {
-    fun finished(record: CodeModeRecord): Boolean =
-        record.phase == CodeModePhase.COMPLETED && record.progress.output != null
-
-    /** Each script that made no client call and is not in [sent] yet, with the replay that places it. */
-    fun silent(
-        records: List<CodeModeRecord>,
-        sent: List<JsonElement>,
-    ): List<Pair<CodeModeRecord, List<JsonElement>>> {
-        val placed = sent.mapNotNullTo(HashSet(), codec::callId)
-        return records.filter { finished(it) && !it.abandoned() && it.clientIds().isEmpty() }
-            .filterNot { it.origin.outerCallId in placed }
-            .map { it to continuity(it) }
-            .filter { (_, replay) -> replay.isNotEmpty() }
-    }
-
-    /** The scripts to send after [folded], in the order they ran: each [due] on the history before it. */
-    fun appended(
-        records: List<CodeModeRecord>,
-        folded: List<JsonElement>,
-        conversation: List<JsonElement>,
-        due: CodeModeScriptDue,
-    ): List<CodeModeRecord> {
-        var prior = folded
-        return records.filter { record ->
-            val sends = unsent(record, prior, conversation) && due.after(record, prior)
-            if (sends) prior = prior + continuity(record) + placement(record)
-            sends
-        }
-    }
-
-    /** Whether [record]'s script was measured on exactly [input], its preamble included. */
-    fun startedOn(record: CodeModeRecord, input: List<JsonElement>): Boolean {
-        val logical = codec.conversation(codec.projection.project(JsonArray(input))).body.logicalItems
-        return codec.baselineBoundary(logical, record) == logical.size
-    }
-
-    /** The reasoning and preface GPT gave before the script's call, in the order it gave them. */
-    fun continuity(record: CodeModeRecord): List<JsonElement> = codec.projection.rebuild(
-        ResponsesCodeModeInput(
-            record.carry.continuity,
-            record.carry.replay.map { ResponsesCodeModeReplay(it.logicalOffset, null, it.items) },
-        ),
-    )
-
-    fun placement(record: CodeModeRecord): List<JsonElement> =
-        listOf(CodeModeCallReplay.item(record), codec.customOutput(record)) + record.accepted.durableMedia()
-
-    /** Whether a script that made no client call is still to be sent: nothing of it is in the client's history. */
-    private fun unsent(record: CodeModeRecord, prior: List<JsonElement>, conversation: List<JsonElement>): Boolean {
-        val ids = record.clientIds()
-        val called = conversation.any { codec.callId(it) in ids }
-        val placed = prior.any { codec.callId(it) == record.origin.outerCallId }
-        return finished(record) && !called && !placed
-    }
-}
-
-/** Whether a script that made no client call is sent right after [prior], the history GPT is sent ahead of it. */
-private fun interface CodeModeScriptDue {
-    fun after(record: CodeModeRecord, prior: List<JsonElement>): Boolean
-}
-
-/** One pass over the client's new items, folding each finished script's calls into its exec call and output, and
- *  sending each script that made no client call right after the reasoning and preface the client replays for it. */
-private class CodeModeScriptFold(
-    private val codec: CodexCodeModeHistoryCodec,
-    private val owners: Map<String, CodeModeRecord>,
-    echoed: List<Pair<CodeModeRecord, List<JsonElement>>>,
-    private val scripts: CodeModeScriptPlacements,
-) {
-    private val out = mutableListOf<JsonElement>()
-    private val between = mutableListOf<JsonElement>()
-    private val opened = mutableSetOf<String>()
-    private val followUps = mutableSetOf<Int>()
-    private val unplaced = echoed.toMutableList()
-    private var open: CodeModeRecord? = null
-
-    fun fold(items: List<JsonElement>): List<JsonElement> {
-        val last = HashMap<String, Int>()
-        items.forEachIndexed { index, item -> owner(item)?.let { last[it.id] = index } }
-        items.forEachIndexed { index, item ->
-            val record = owner(item)
-            when {
-                index in followUps -> Unit
-                record != null -> callback(items, index, record, last[record.id] == index)
-                else -> plain(items, index)
-            }
-        }
-        return out + between
-    }
-
-    private fun plain(items: List<JsonElement>, index: Int) {
-        val into = if (open != null) between else out
-        into += items[index]
-        val placed = unplaced.firstOrNull { (_, replay) ->
-            index + 1 >= replay.size && codec.continuityAt(items, index + 1 - replay.size, replay)
-        } ?: return
-        unplaced.remove(placed)
-        into += scripts.placement(placed.first)
-    }
-
-    private fun callback(items: List<JsonElement>, index: Int, record: CodeModeRecord, closes: Boolean) {
-        if (opened.add(record.id)) {
-            out += CodeModeCallReplay.item(record)
-            open = record
-        }
-        val result = codec.string(items[index] as? JsonObject, CODE_MODE_FIELD_TYPE) == TYPE_RESULT
-        val media = codec.callId(items[index])?.takeIf { result }?.let(record.accepted::media).orEmpty()
-        val end = minOf(index + 1 + media.size, items.size)
-        if (media.isNotEmpty() && items.subList(index + 1, end) == media) followUps += (index + 1 until end)
-        if (closes) {
-            out += codec.customOutput(record)
-            out += record.accepted.durableMedia()
-            out += between
-            between.clear()
-            open = null
-        }
-    }
-
-    private fun owner(item: JsonElement): CodeModeRecord? {
-        val type = codec.string(item as? JsonObject, CODE_MODE_FIELD_TYPE)
-        if (type != TYPE_CALL && type != TYPE_RESULT) return null
-        return owners[codec.string(item as? JsonObject, CODE_MODE_FIELD_CALL_ID)]
-    }
-}
-
-private const val FIELD_INPUT = "input"
-private const val TYPE_CALL = "function_call"
-private const val TYPE_RESULT = "function_call_output"

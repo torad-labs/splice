@@ -191,15 +191,19 @@ class CodexCodeModeReanchorTest {
                     nextPosted = event(it)
                     closedSuccessRound()
                 }
-            val abandons = lines.filter { "logical history does not match its persisted baseline" in it }
-            if (changedBaseline) {
-                assertEquals(1, abandons.size, "recovery must not weaken stable-baseline integrity")
-            } else {
-                assertEquals(emptyList<String>(), abandons, "client-visible history must place the reanchored record")
+            // Since 2026-10-23 an edit to the history a script started on is never an abandon (goal: code mode keeps
+            // GPT's history the way Codex does, rule 3): GPT is sent the client's history once, and a script that
+            // cannot go on there stops with the result it was given in its exec output, where it was abandoned before.
+            val abandons = lines.filter { "abandoned record" in it || "does not match its persisted baseline" in it }
+            assertEquals(emptyList<String>(), abandons, "client-visible history must place the reanchored record")
+            val posted = checkNotNull(nextPosted).getValue("input").jsonArray
+            if (reload || changedBaseline) {
+                val output = execOutput(posted)
+                assertTrue(callback in output && "\"output\":\"read\"" in output, "the result reaches GPT: $output")
             }
             val privateMarker = recovery.privateMarker()
             assertTrue(
-                privateMarker !in checkNotNull(nextPosted).getValue("input").jsonArray,
+                privateMarker !in posted,
                 "private recovery item $privateMarker must not survive in ${checkNotNull(nextPosted)}",
             )
             assertEquals(if (reload || changedBaseline) 1 else 2, runtime.advances, "source is never regenerated")
@@ -415,6 +419,11 @@ class CodexCodeModeReanchorTest {
         }
         return listOf(ResponsesAssistantText.item(prose.toString(), AssistantPhase.COMMENTARY), checkNotNull(callback))
     }
+
+    /** The output GPT is sent for the one exec call in [input]: a stopped script's carries the results it was given. */
+    private fun execOutput(input: JsonArray): String = input.mapNotNull { it as? JsonObject }
+        .single { JsonScalars.str(it, "type") == "custom_tool_call_output" }
+        .let { JsonScalars.str(it, "output").orEmpty() }
 
     private fun translator() = responsesTestTranslator(
         collectReasoningEnvelopes = true,

@@ -125,11 +125,14 @@ public class UpgradeAuto(
     }
 }
 
-/** SemVer 2.0.0 precedence over a normalized version (UpgradeLayout.isVersion): the numbers, then a release above any
- *  of its prereleases, then the prerelease identifiers, numeric ones below alphanumeric ones and compared as numbers. */
+/** SemVer 2.0.0 precedence over a normalized version (UpgradeLayout.isVersion): build metadata ignored (§10), then the
+ *  numbers, then a release above any of its prereleases, then the prerelease identifiers, numeric ones below
+ *  alphanumeric ones and compared as numbers. */
 internal class ReleaseOrder(version: String) : Comparable<ReleaseOrder> {
-    private val core = version.substringBefore('-').split('.').map { it.toLong() }
-    private val pre = version.substringAfter('-', "").split('.').filter { it.isNotEmpty() }
+    // why: isVersion accepts `0.4.1+build.7`, and build metadata never takes part in precedence, so it goes first.
+    private val precedence = version.substringBefore('+')
+    private val core = precedence.substringBefore('-').split('.').map { it.toLong() }
+    private val pre = precedence.substringAfter('-', "").split('.').filter { it.isNotEmpty() }
 
     override fun compareTo(other: ReleaseOrder): Int {
         val numbers = core.zip(other.core).firstOrNull { (a, b) -> a != b }?.let { (a, b) -> a.compareTo(b) }

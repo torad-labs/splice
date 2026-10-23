@@ -106,6 +106,20 @@ class UpgradeCheckRoutesTest {
     }
 
     @Test
+    fun `a beta tap names the newest release even when its tag carries build metadata`() {
+        val list = """
+            [{"draft":false,"prerelease":false,"tag_name":"v0.4.1+build.7"},
+             {"draft":false,"prerelease":true,"tag_name":"v0.4.1-beta.2"}]
+        """.trimIndent()
+        val beta = AutoUpdateSettings { AutoUpdatePolicy(enabled = true, beta = true) }
+        val onBeta = UpgradeChecks(EnvReader { null }, WallClock { now }, beta).also {
+            it.channel = ReleaseChannel(EnvReader { null }, UpgradeFetch { list.toByteArray() })
+        }
+        val read = (onBeta.check() as UpgradeCheckOutcome.Done).snapshot
+        assertEquals("0.4.1+build.7", read.latest)
+    }
+
+    @Test
     fun `a second tap within ten seconds is refused with when to retry and does not fetch`() = testApplication {
         mount()
         client.post("/api/upgrade/check")

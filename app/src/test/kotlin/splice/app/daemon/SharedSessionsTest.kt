@@ -57,7 +57,7 @@ class SharedSessionsTest {
     fun `a mirror is registered in the Claude folder and listens in the runtime folder's cc-socks`() {
         val run = Files.createDirectories(tmp.resolve("run"))
         val (record, withdrawn) = mirrored(env("XDG_RUNTIME_DIR" to run.toString()))
-        assertEquals("rig-lead@far", record.getValue("name").jsonPrimitive.content)
+        assertEquals("far/rig-lead", record.getValue("name").jsonPrimitive.content)
         assertEquals(run.resolve("cc-socks"), socketFolder(record))
         assertTrue(withdrawn, "a daemon stop withdraws its mirrors")
     }

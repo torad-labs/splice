@@ -160,7 +160,8 @@ claudex ─▶ head :3099 (anthropic-passthrough) ──TLS, pinned──▶ sha
   a permanent failure is a change to the shared retry plan, left for its owner.
 - **Server-side only:** account pools and the logins themselves live on the server. Since phase 2 the Mac's plan bars
   read the server head's windows (`/usage`), and its turns bill as on-plan.
-- **No cross-machine `ListAgents`.** Sessions on the two machines do not see each other yet.
+- **No cross-machine `ListAgents`.** Sessions on the two machines did not see each other; phase 2's sixth milestone
+  mirrors them.
 - **Project system-prompt layers** resolve on the server from a cwd it does not have; only head-level
   prompts apply to relayed turns.
 
@@ -228,5 +229,30 @@ Built on `feat/lan-share`, merged into `feat/v0.4.0` through the gate. Milestone
    none (phase 1) by its name. The certificate's fingerprint is that stable identity, so `/share/v1/info` gains no
    separate install id. A source that cannot look, and an address that has not answered by the deadline, leave the
    other machines found.
-6. **Sessions across machines**: each machine's live sessions mirrored on the other, so ListAgents and SendMessage
-   reach `<name>@<machine>`.
+6. **Sessions across machines** (landed): each machine's running sessions are Claude Code peers on the other, as
+   `<name>@<machine>`, so ListAgents lists them and SendMessage reaches them, both ways.
+   - **Mirrors.** A session of the other machine is a mirror here: a registry record and key file in this machine's
+     Claude Code sessions folder, and a socket in its sockets folder (`$XDG_RUNTIME_DIR/cc-socks`, else
+     `/tmp/cc-socks`), served by the daemon with the peers' inbox loop (this user's processes only, the key file's
+     token, a line cap). Claude Code 2.1.309 lists a record only as `<pid>.json` for a live pid, one per pid (probe:
+     `tools/probes/claude-code-mirror-anchor.ts`, Oct 23: a second record for one pid, and one not named for a pid,
+     are never listed; one named for a child process's pid lists and takes SendMessage while the daemon holds the
+     socket). So each mirror holds a pid of its own: `/bin/cat` reading a pipe from the daemon, which ends when the
+     daemon does, however it ends. Its record says `kind: "splice-mirror"`, so a machine never offers a mirror back.
+   - **The link.** Every 5 s the joining machine reads each machine it joined (`GET /share/v1/sessions`, its running
+     sessions, mirrors left out), mirrors them, and offers its own (`PUT`, with how often it looks). The sharing
+     machine keeps those mirrors for three looks past the last offer (from 1 s to a minute) and withdraws them when its
+     listener closes; a machine that does not answer has none mirrored on the other until it does.
+   - **Messages.** A message to a mirror goes to its machine at once (`POST /share/v1/sessions/{id}/message`), which
+     delivers it from its own mirror of the sender, so the envelope's `from` and `from-name` (`<sender>@<machine>`)
+     are a mirror there and a reply comes back the same way. A message for the joining machine's sessions waits in its
+     outbox on the sharing machine until the joining machine collects it with a held request
+     (`GET .../outbox?wait=25`), so the joining machine takes no connection in. A refusal goes back to the sender as a
+     receipt, in words.
+   - **Bounds.** Every route needs a joined machine's token, and the link names the machine, never the request. Any
+     machine on the network may join and each mirror is a process, so a daemon hosts at most 256. A mirror's name is
+     what ListAgents shows and an envelope carries (`[A-Za-z0-9._-]`, 64 characters), and two sessions of one name are
+     told apart by the start of their ids.
+   - **Not yet.** The Sessions page's machine badge and the Sharing page's counts. A receipt to a sender in
+     `/tmp/cc-socks` on a Mac, where `/tmp` is a link the receipt path refuses (`PeerNoteSocket.inOwnFolder`, as for
+     peers). A message refused on the far side of the outbox reaches no one.

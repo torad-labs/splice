@@ -5,7 +5,8 @@
 // serves a management route, the console, or any head that `[share]` does not offer. Open by decision:
 // what this machine offers (info) and joining it (trust the LAN, Marcos, 2026-10-22). Phase 2 adds, for joined
 // machines only, each head's roster and plan windows and this machine's health (ShareStatus), and counts each
-// guarded request toward that machine's last seen (ShareActivity).
+// guarded request toward that machine's last seen (ShareActivity). Milestone 6 adds the sessions of each side
+// (ShareSessions), for joined machines only.
 package splice.share
 
 import io.ktor.http.ContentType
@@ -26,9 +27,11 @@ import io.ktor.server.response.respondText
 import io.ktor.server.routing.Route
 import io.ktor.server.routing.get
 import io.ktor.server.routing.post
+import io.ktor.server.routing.put
 import io.ktor.server.routing.route
 import io.ktor.server.routing.routing
 import kotlinx.coroutines.CoroutineDispatcher
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonPrimitive
@@ -39,14 +42,16 @@ import splice.core.util.LogSink
 import splice.core.util.SafeFailureText
 import splice.core.wire.HttpStatus
 import splice.http.listen.HttpListenerThreads
+import splice.upstream.codemode.ProcessTicker
 
 internal class ShareServer(
-    /** Where it listens and the certificate it serves: TLS only, since phase 2. */
+    /** Where it listens, the certificate it serves (TLS only, since phase 2) and whom it answers. */
     private val endpoint: ShareEndpoint,
     private val heads: ShareHeads,
     private val clients: ShareClients,
-    private val network: ShareNetwork,
     private val relay: ShareRelay,
+    /** This machine's sessions and its mirrors of a joined machine's (ShareSessions). */
+    private val sessions: ShareSessionHost,
     /** The client book's lock wait and file I/O block, so they run here, off the listener's two call threads
      *  (HttpListenerThreads), which every shared turn and info request needs free. */
     private val io: CoroutineDispatcher,
@@ -68,6 +73,7 @@ internal class ShareServer(
                 module {
                     intercept(ApplicationCallPipeline.Plugins) { if (!admitted(call)) finish() }
                     routing { routes(this) }
+                    launch { sessions.sweep(ProcessTicker()) }
                 }
             },
         ) {
@@ -93,6 +99,7 @@ internal class ShareServer(
     fun stop() {
         engine?.stop(SHARE_STOP_GRACE_MS, SHARE_STOP_TIMEOUT_MS)
         engine = null
+        sessions.withdraw()
         Cancellables.runCatchingCancellable { clients.activity.flush() }
             .onFailure { log("[share] last seen was not written: ${SafeFailureText.render(it)}\n") }
     }
@@ -101,8 +108,8 @@ internal class ShareServer(
         val source = call.request.origin.remoteAddress
         val host = call.request.headers[HttpHeaders.Host]
         val reason = when {
-            !network.admitsSource(source) -> "requests from $source are not from a private network"
-            !network.admitsHost(host) -> "this Host is not one of this machine's names"
+            !endpoint.network.admitsSource(source) -> "requests from $source are not from a private network"
+            !endpoint.network.admitsHost(host) -> "this Host is not one of this machine's names"
             else -> return true
         }
         refuse(call, HttpStatus.FORBIDDEN, reason)
@@ -125,6 +132,17 @@ internal class ShareServer(
             get("/v1/models") { guarded(call)?.let { relayed(call, "/v1/models", it) } }
             get("/roster") { guarded(call)?.let { roster(call) } }
             get("/usage") { guarded(call)?.let { usage(call) } }
+        }
+        sessionRoutes(root)
+    }
+
+    /** This machine's sessions and a joined machine's, each route for a joined machine only. */
+    private fun sessionRoutes(root: Route) {
+        root.route(SHARE_SESSIONS_PATH) {
+            get { guarded(call)?.let { sessions.list(call) } }
+            put { guarded(call)?.let { sessions.offer(call, it) } }
+            get("/outbox") { guarded(call)?.let { sessions.outbox(call, it) } }
+            post("/{id}/message") { guarded(call)?.let { sessions.note(call, it) } }
         }
     }
 
@@ -200,8 +218,8 @@ internal class ShareServer(
     }
 }
 
-/** The share listener's [port] and the certificate it serves there (ShareCertificate). */
-internal data class ShareEndpoint(val port: Int, val tls: ShareTls)
+/** The share listener's [port], the certificate it serves there (ShareCertificate), and the [network] it answers. */
+internal data class ShareEndpoint(val port: Int, val tls: ShareTls, val network: ShareNetwork)
 
 /** Errors in the Anthropic shape, so Claude Code on the client prints the message instead of a bare status. */
 internal class ShareErrors {

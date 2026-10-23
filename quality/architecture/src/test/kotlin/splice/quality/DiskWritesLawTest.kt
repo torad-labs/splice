@@ -426,6 +426,9 @@ private val SHIPPED_SITES: Map<String, Map<String, Int>> = mapOf(
     "features/sessions/src/main/kotlin/splice/sessions/registry/SeenSessions.kt" to mapOf("writeAtomic0600(" to 1),
     // The latest manager session, head and consent, in the manager.json README row.
     "features/sessions/src/main/kotlin/splice/sessions/manager/ManagerPointer.kt" to mapOf("writeAtomic0600(" to 1),
+    // A mirror of another machine's session: its registry key file and record under ~/.claude/sessions, in the
+    // README's two rows for them.
+    "features/sessions/src/main/kotlin/splice/sessions/mirror/Mirror.kt" to mapOf("writeAtomic0600(" to 2),
     // A peer helper's helper.json, helper.log and helper.lock (package B), in the README's state/peers row.
     "features/sessions/src/main/kotlin/splice/sessions/peer/helper/PeerHelper.kt" to mapOf(
         "FileChannel.open(" to 1,

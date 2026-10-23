@@ -18,6 +18,7 @@ import splice.app.control.FailedHeads
 import splice.app.control.ManagedHead
 import splice.app.daemon.BootedTopology
 import splice.app.daemon.HeadCatalogs
+import splice.app.daemon.SharedSessions
 import splice.app.daemon.TopologyWindows
 import splice.app.head.HEAD_STOP_BUDGET_MS
 import splice.app.head.HeadBoot
@@ -44,6 +45,7 @@ import splice.core.topology.HeadModel
 import splice.core.topology.ProviderFamilyRule
 import splice.core.topology.Topology
 import splice.core.topology.TopologyKnobLayer
+import splice.core.util.EnvReader
 import splice.core.util.LogSink
 import splice.core.version.ClientVersionTracker
 import splice.head.compaction.CompactionTail
@@ -111,6 +113,9 @@ public class Daemon(
      *  instance for the relay's upstream trust, the roster refresh, the quota polls and the reachability check. */
     private val remotes = RemoteLinks(topology, RemotesStore(ShareState(statePaths).remotesFile))
 
+    /** LAN share, milestone 6: the mirrors of other machines' sessions, and the link to each machine this one joined. */
+    private val sharedSessions = SharedSessions(EnvReader(System::getenv), statePaths, log)
+
     /** LAN share (docs/specs/lan-share.md): the listener as `[share]` says it now. Opened last in [start], over the
      *  heads that started, and following the file from then on (TopologyWindows, the console's Sharing page). */
     private val sharing = ShareListener(
@@ -119,6 +124,7 @@ public class Daemon(
         SharedQuotas { key -> heads[key]?.sources?.usage?.quota() },
         statePaths,
         log,
+        sharedSessions.mirrors,
     )
 
     /** V4-162: the context windows splice.toml declares, re-read while the daemon runs, and the
@@ -284,6 +290,8 @@ public class Daemon(
         )
         // LAN share: whether each machine this one joined, and each head it offers, is up; ends with the probe scope.
         remotes.watch(controlPlane.probeScope, log)
+        // Each machine this one joined lists this one's sessions, and this one lists its.
+        sharedSessions.start(remotes)
         controlPlane.start(
             controlPort = controlPort,
             heads = heads,
@@ -313,6 +321,7 @@ public class Daemon(
             controlPlane.ownership.fence()
             // Other machines' turns stop arriving before the heads drain the ones already running.
             sharing.stop()
+            sharedSessions.stop()
 
             // Heads stop in PARALLEL under a phase DEADLINE, then control stops — see
             // [HeadShutdown.stopHeads]. The supervisor scope + stopFailureHandler live there so an

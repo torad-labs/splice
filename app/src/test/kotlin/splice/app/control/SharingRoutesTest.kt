@@ -132,7 +132,8 @@ class SharingRoutesTest {
             SharedCatalogs { null },
             SharedQuotas { null },
             paths,
-        ) { }
+            { },
+        )
         if (wired) control.ports.sharing = SharingParts(listener, remotes = null, env = env)
         runBlocking { control.start() }
         val port = control.listeningPort

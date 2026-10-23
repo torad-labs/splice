@@ -13,6 +13,7 @@ import splice.core.topology.Topology
 import splice.core.util.Cancellables
 import splice.core.util.LogSink
 import splice.core.util.SafeFailureText
+import splice.sessions.mirror.SessionMirrors
 import splice.upstream.codemode.ProcessDispatchers
 import java.net.InetAddress
 import java.nio.file.Path
@@ -26,12 +27,14 @@ public class ShareStart(
     private val log: LogSink,
 ) {
     /** The listener [share] asks for, with [clients] as its book of joined machines, or why there is none. [running]
-     *  and [quotas] read the daemon's heads as they are at each request. Blocking: it binds a port. */
+     *  and [quotas] read the daemon's heads as they are at each request; [mirrors] hosts a joined machine's sessions.
+     *  Blocking: it binds a port. */
     internal fun open(
         share: ShareConfig,
         clients: ShareClients,
         running: SharedCatalogs,
         quotas: SharedQuotas,
+        mirrors: SessionMirrors?,
     ): ShareOpen {
         if (!share.enabled) return ShareOpen.Off
         val host = ShareHostName()
@@ -43,12 +46,13 @@ public class ShareStart(
             return ShareOpen.Refused(why)
         }
         val io = ProcessDispatchers().io()
+        val relay = ShareRelay(TurnKey(mgmtKey), config, io, log)
         val server = ShareServer(
-            ShareEndpoint(share.port, tls),
+            ShareEndpoint(share.port, tls, ShareNetwork(host.full(), share.hostnames)),
             ShareHeads(topology.copy(share = share), running, host.short(), tls.fingerprint, quotas),
             clients,
-            ShareNetwork(host.full(), share.hostnames),
-            ShareRelay(TurnKey(mgmtKey), config, io, log),
+            relay,
+            ShareSessionHost(mirrors, relay, ShareErrors(), io),
             io,
             log,
         )
@@ -82,13 +86,19 @@ internal sealed class ShareOpen {
 }
 
 /** Where sharing keeps its state, for the daemon and the `splice share` and `splice remote` verbs alike: the machines
- *  that joined this one, this machine's own tokens on the machines it joined, and the listener's certificate. */
+ *  that joined this one, this machine's own tokens on the machines it joined, the listener's certificate, and the
+ *  mirrors' log. */
 public class ShareState(statePaths: StatePaths) {
-    public val clientsFile: Path = statePaths.stateDir.resolve("share").resolve("clients.json")
-    public val remotesFile: Path = statePaths.stateDir.resolve("share").resolve("remotes.json")
+    private val dir: Path = statePaths.stateDir.resolve("share")
+
+    public val clientsFile: Path = dir.resolve("clients.json")
+    public val remotesFile: Path = dir.resolve("remotes.json")
 
     /** The listener's key and certificate (ShareCertificate). */
-    public val certificateFile: Path = statePaths.stateDir.resolve("share").resolve("tls.pem")
+    public val certificateFile: Path = dir.resolve("tls.pem")
+
+    /** What the mirrors of other machines' sessions saw: counts and errors, never a message's text. */
+    public val mirrorsLog: Path = dir.resolve("mirrors.log")
 }
 
 /** This machine's name: [full] as the OS reports it, [short] up to the first dot, as clients are told it. */

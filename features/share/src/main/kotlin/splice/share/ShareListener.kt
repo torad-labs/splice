@@ -13,6 +13,7 @@ import kotlinx.coroutines.sync.withLock
 import splice.core.config.StatePaths
 import splice.core.topology.ShareConfig
 import splice.core.util.LogSink
+import splice.sessions.mirror.SessionMirrors
 import splice.upstream.codemode.ProcessDispatchers
 
 public class ShareListener(
@@ -22,6 +23,8 @@ public class ShareListener(
     private val quotas: SharedQuotas,
     statePaths: StatePaths,
     private val log: LogSink,
+    /** The daemon's mirrors of other machines' sessions: a joined machine's are kept here, and it is shown this one's. */
+    private val mirrors: SessionMirrors? = null,
 ) {
     private val mutex = Mutex()
     private val advert = SystemMdns().advert(log)
@@ -51,7 +54,7 @@ public class ShareListener(
         val open = server
         open?.stop()
         server = null
-        followed = when (val opened = opener.open(share, clients, running, quotas)) {
+        followed = when (val opened = opener.open(share, clients, running, quotas, mirrors)) {
             is ShareOpen.Listening -> {
                 server = opened.server
                 advert.on(ShareHostName().short(), share.port)

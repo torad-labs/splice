@@ -10,6 +10,7 @@ dependencies {
     implementation(project(":integrations-http"))
     implementation(project(":integrations-upstream"))
     implementation(project(":features-turns"))
+    implementation(project(":features-sessions"))
     implementation(libs.ktor.server.core)
     implementation(libs.ktor.server.netty)
     implementation(libs.ktor.network.tls.certificates)
@@ -20,5 +21,6 @@ dependencies {
         exclude(group = "io.ktor", module = "ktor-client-apache5")
     }
     testImplementation(libs.kotlinx.coroutines.test)
+    testImplementation(testFixtures(project(":core")))
     testImplementation(libs.junit.platform.launcher)
 }

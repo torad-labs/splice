@@ -1,8 +1,11 @@
 // NEW: LAN share, phase 2, milestone 3 (docs/specs/lan-share.md). The reads a daemon makes on a machine it joined,
 // outside a turn: a head's roster and plan windows, and whether the machine and its heads are up. Each presents this
-// machine's token there and trusts only that machine's pinned certificate (RemoteLinks hands both).
+// machine's token there and trusts only that machine's pinned certificate (RemoteLinks hands both). Milestone 6 adds
+// the sessions of each side: reading the machine's, offering this one's, a note to one of its sessions, and collecting
+// the notes its sessions wrote to this machine's (ShareSessions).
 package splice.share.remote
 
+import kotlinx.serialization.KSerializer
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
@@ -11,12 +14,21 @@ import splice.core.usage.QuotaSnapshot
 import splice.core.util.Cancellables
 import splice.core.util.SafeFailureText
 import splice.core.wire.HttpStatus
+import splice.share.OUTBOX_MAX_WAIT_S
 import splice.share.SHARE_HEALTH_PATH
+import splice.share.SHARE_SESSIONS_PATH
 import splice.share.ShareHealth
+import splice.share.ShareNote
+import splice.share.ShareNoteAnswer
+import splice.share.ShareOutbox
+import splice.share.ShareOutboxNote
+import splice.share.ShareSession
+import splice.share.ShareSessions
 import splice.share.SharedHead
 import java.io.IOException
 import java.net.ConnectException
 import java.net.URI
+import java.net.URLEncoder
 import java.net.UnknownHostException
 import java.net.http.HttpClient
 import java.net.http.HttpRequest
@@ -48,11 +60,45 @@ public class RemoteApi internal constructor(
     internal fun health(url: String): ShareHealth =
         json.decodeFromString(ShareHealth.serializer(), get(url.trimEnd('/') + SHARE_HEALTH_PATH))
 
-    private fun get(url: String): String {
+    /** The machine at [url]'s running sessions. */
+    internal fun sessions(url: String): List<ShareSession> =
+        json.decodeFromString(ShareSessions.serializer(), get(sessionsAt(url))).sessions
+
+    /** Offers this machine's running [sessions] to the machine at [url], which mirrors them until three of this
+     *  machine's looks, every [lookMs], pass without another offer. */
+    internal fun offer(url: String, sessions: List<ShareSession>, lookMs: Long) {
+        val offered = body(ShareSessions.serializer(), ShareSessions(sessions, lookMs))
+        send(sessionsAt(url), REMOTE_API_REQUEST_MS, "PUT", offered)
+    }
+
+    /** [note] to the session [to] on the machine at [url]: what became of it there. */
+    internal fun note(url: String, to: String, note: ShareNote): ShareNoteAnswer {
+        val path = sessionsAt(url) + "/" + URLEncoder.encode(to, Charsets.UTF_8) + "/message"
+        val answer = send(path, REMOTE_API_REQUEST_MS, "POST", body(ShareNote.serializer(), note))
+        return json.decodeFromString(ShareNoteAnswer.serializer(), answer)
+    }
+
+    /** The notes the machine at [url] holds for this one, waiting there up to [OUTBOX_MAX_WAIT_S] for the first. */
+    internal fun outbox(url: String): List<ShareOutboxNote> {
+        val waited = sessionsAt(url) + "/outbox?wait=" + OUTBOX_MAX_WAIT_S
+        val waitMs = Duration.ofSeconds(OUTBOX_MAX_WAIT_S).toMillis()
+        val answer = send(waited, waitMs + REMOTE_API_REQUEST_MS, "GET", HttpRequest.BodyPublishers.noBody())
+        return json.decodeFromString(ShareOutbox.serializer(), answer).notes
+    }
+
+    private fun sessionsAt(url: String): String = url.trimEnd('/') + SHARE_SESSIONS_PATH
+
+    private fun <T> body(shape: KSerializer<T>, value: T): HttpRequest.BodyPublisher =
+        HttpRequest.BodyPublishers.ofString(json.encodeToString(shape, value))
+
+    private fun get(url: String): String = send(url, REMOTE_API_REQUEST_MS, "GET", HttpRequest.BodyPublishers.noBody())
+
+    private fun send(url: String, timeoutMs: Long, method: String, body: HttpRequest.BodyPublisher): String {
         val request = HttpRequest.newBuilder(URI.create(url))
-            .timeout(Duration.ofMillis(REMOTE_API_REQUEST_MS))
+            .timeout(Duration.ofMillis(timeoutMs))
             .header("Authorization", "Bearer ${token()}")
-            .GET()
+            .header("Content-Type", "application/json")
+            .method(method, body)
             .build()
         val response = Cancellables.runCatchingCancellable { http.send(request, HttpResponse.BodyHandlers.ofString()) }
             .getOrElse { failure -> throw RemoteUnanswered("$name did not answer: ${why(failure)}", failure) }

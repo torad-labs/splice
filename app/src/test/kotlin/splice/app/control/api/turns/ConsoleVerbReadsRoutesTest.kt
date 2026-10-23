@@ -46,6 +46,7 @@ import splice.core.config.MgmtKey
 import splice.core.config.StatePaths
 import splice.core.head.Head
 import splice.core.head.HeadHealth
+import splice.core.testing.TestPorts
 import splice.core.turn.ReasoningDisplay
 import splice.core.turn.TurnMeta
 import splice.core.turn.TurnReasoning
@@ -59,7 +60,6 @@ import splice.head.wire.WireTaps
 import splice.usage.quota.HeadUsageSource
 import splice.usage.quota.RateLimitView
 import splice.usage.quota.UsageView
-import java.net.ServerSocket
 import java.nio.file.Files
 import java.nio.file.Path
 
@@ -248,7 +248,7 @@ class ConsoleVerbReadsRoutesTest {
     private suspend fun awaitPort() {
         val deadline = System.nanoTime() + TIMEOUT_MS * 1_000_000
         while (System.nanoTime() < deadline) {
-            if (runCatching { ServerSocket(port).close() }.isFailure) return
+            if (TestPorts.listening(port)) return
             delay(POLL_MS)
         }
         error("the control server never bound :$port")

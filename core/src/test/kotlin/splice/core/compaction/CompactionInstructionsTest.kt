@@ -14,7 +14,11 @@ import java.util.concurrent.Executors
 class CompactionInstructionsTest {
 
     @TempDir
-    lateinit var tmp: Path
+    lateinit var temp: Path
+
+    // why: a file rule's source names the file by real path. A Mac's temp folder is under /var, a link to
+    // /private/var, so the topology directory is its real path, as a loaded topology's is.
+    private val tmp: Path by lazy { temp.toRealPath() }
 
     @Test
     fun `project-model then project then model then global precedence replaces rather than layers`() {

@@ -56,6 +56,7 @@ import splice.core.config.StatePaths
 import splice.core.head.Head
 import splice.core.head.HeadHealth
 import splice.core.model.ModelEntry
+import splice.core.testing.TestPorts
 import splice.core.topology.AuthConfig
 import splice.core.topology.Dialect
 import splice.core.topology.HeadConfig
@@ -74,7 +75,6 @@ import splice.usage.budgets.BudgetStore
 import splice.usage.quota.HeadUsageSource
 import splice.usage.quota.RateLimitView
 import splice.usage.quota.UsageView
-import java.net.ServerSocket
 import java.nio.file.Files
 import java.nio.file.Path
 import io.ktor.server.routing.post as serverPost
@@ -228,7 +228,7 @@ class ConsoleV4133RoutesTest {
         val hookPort = hookServer.engine.resolvedConnectors().single().port
         try {
             withTimeout(TIMEOUT_MS) {
-                while (runCatching { ServerSocket(hookPort).close() }.isSuccess) delay(POLL_MS)
+                while (!TestPorts.listening(hookPort)) delay(POLL_MS)
             }
             store.replace(store.settings().copy(webhookUrl = "http://127.0.0.1:$hookPort/hook"))
             val sent = req { post("$url/api/alerts/test") { auth() } }
@@ -437,7 +437,7 @@ class ConsoleV4133RoutesTest {
     private suspend fun awaitPort() {
         val deadline = System.nanoTime() + TIMEOUT_MS * 1_000_000
         while (System.nanoTime() < deadline) {
-            if (runCatching { ServerSocket(port).close() }.isFailure) return
+            if (TestPorts.listening(port)) return
             delay(POLL_MS)
         }
         error("the control server never bound :$port")

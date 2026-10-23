@@ -45,7 +45,12 @@ private fun interface TeamsCall {
 class TeamsRoutesWiringTest {
 
     @TempDir
-    lateinit var tmp: Path
+    lateinit var temp: Path
+
+    // why: a session records its cwd as the OS resolves it, and a Mac's temp folder is under /var, a link to
+    // /private/var. The repo is probed only under a trusted root, which the OS temp folder is on Linux (/tmp) and
+    // not on a Mac, so the config names it.
+    private val tmp: Path by lazy { temp.toRealPath() }
 
     private val rig by lazy { TeamRig(tmp) }
 
@@ -56,7 +61,7 @@ class TeamsRoutesWiringTest {
             port = 0,
             // bound by the OS at start and read back below: no lease-then-bind window
             heads = emptyMap(),
-            config = ConfigService(paths),
+            config = ConfigService(paths, headOverrides = mapOf("statuslineGitRoots" to tmp.toString())),
             runtime = ControlRuntime(sessions = rig.registry),
             auth = ControlAuth(mgmtKey = mgmt, log = { }),
         )

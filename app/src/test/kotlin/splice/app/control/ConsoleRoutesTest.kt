@@ -46,6 +46,7 @@ import splice.core.head.Head
 import splice.core.head.HeadHealth
 import splice.core.model.ModelCatalog
 import splice.core.model.ModelEntry
+import splice.core.testing.TestPorts
 import splice.core.topology.HeadModel
 import splice.diagnostics.doctor.DoctorReport
 import splice.diagnostics.logs.HeadLogSource
@@ -61,7 +62,6 @@ import splice.usage.perf.PerfTurnFacts
 import splice.usage.quota.HeadUsageSource
 import splice.usage.quota.RateLimitView
 import splice.usage.quota.UsageView
-import java.net.ServerSocket
 import java.nio.file.Path
 import java.util.concurrent.CopyOnWriteArrayList
 
@@ -455,7 +455,7 @@ class ConsoleRoutesTest {
     private suspend fun awaitPort() {
         val deadline = System.nanoTime() + TIMEOUT_MS * 1_000_000
         while (System.nanoTime() < deadline) {
-            if (runCatching { ServerSocket(port).close() }.isFailure) return
+            if (TestPorts.listening(port)) return
             delay(POLL_MS)
         }
         error("the control server never bound :$port")

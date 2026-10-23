@@ -41,6 +41,7 @@ import splice.core.model.ModelRates
 import splice.core.model.TokenBuckets
 import splice.core.model.TokenCost
 import splice.core.model.TurnPrice
+import splice.core.testing.TestPorts
 import splice.core.turn.AbsorbedRounds
 import splice.core.turn.UsageHistory
 import splice.core.util.WallClock
@@ -55,7 +56,6 @@ import splice.head.usage.TurnTools
 import splice.usage.quota.HeadUsageSource
 import splice.usage.quota.RateLimitView
 import splice.usage.quota.UsageView
-import java.net.ServerSocket
 import java.nio.file.Files
 import java.nio.file.Path
 
@@ -259,7 +259,7 @@ class EconomicsCostRouteTest {
     private suspend fun awaitPort() {
         val deadline = System.nanoTime() + TIMEOUT_MS * 1_000_000
         while (System.nanoTime() < deadline) {
-            if (runCatching { ServerSocket(port).close() }.isFailure) return
+            if (TestPorts.listening(port)) return
             delay(POLL_MS)
         }
         error("the control server never bound :$port")

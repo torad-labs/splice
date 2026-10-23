@@ -31,6 +31,7 @@ import splice.client.ClaudePolicy
 import splice.client.wrap.WrapStateStore
 import splice.client.wrap.WrappedHead
 import splice.core.config.InstallPaths
+import splice.core.testing.TestPorts
 import splice.launch.HeadTrees
 import splice.launch.LaunchGateway
 import splice.launch.LaunchHead
@@ -40,7 +41,6 @@ import splice.launch.LaunchSpec
 import splice.launch.absentAuth
 import splice.launch.launchHeadsOf
 import splice.launch.runningHead
-import java.net.ServerSocket
 import java.nio.file.Files
 import java.nio.file.Path
 import kotlin.io.path.writeText
@@ -120,7 +120,7 @@ class ClaudeHeadRoutesTest {
                 // can be taken between choosing it and binding it.
                 val port = server.engine.resolvedConnectors().single().port
                 withTimeout(TIMEOUT_MS) {
-                    while (runCatching { ServerSocket(port).close() }.isSuccess) delay(POLL_MS)
+                    while (!TestPorts.listening(port)) delay(POLL_MS)
                     test(port, rig)
                 }
             }

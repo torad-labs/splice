@@ -115,7 +115,11 @@ internal class ShareCommand(
     }
 
     private fun revoke(name: String): Int {
-        if (!clients.revoke(name)) {
+        val found = Cancellables.runCatchingCancellable { clients.revoke(name) }.getOrElse { failure ->
+            err.line("splice share: nothing was revoked: ${SafeFailureText.render(failure)}")
+            return PeerExit.REFUSED
+        }
+        if (!found) {
             err.line("splice share: no machine named '$name' has joined (see ${CYAN}splice share status$RESET)")
             return PeerExit.REFUSED
         }

@@ -32,6 +32,7 @@ import kotlinx.serialization.json.JsonPrimitive
 import splice.core.auth.BearerScheme
 import splice.core.util.Cancellables
 import splice.core.util.LogSink
+import splice.core.util.SafeFailureText
 import splice.core.wire.HttpStatus
 import splice.http.listen.HttpListenerThreads
 
@@ -119,7 +120,13 @@ internal class ShareServer(
             return
         }
         val address = call.request.origin.remoteAddress
-        val token = clients.join(asked, address)
+        // A book this machine cannot read or lock refuses the join and is left as it is (ShareClients.edited).
+        val token = Cancellables.runCatchingCancellable { clients.join(asked, address) }.getOrElse { failure ->
+            log("[share] '$asked' could not join from $address: ${SafeFailureText.render(failure)}\n")
+            val why = "this machine could not update its list of joined machines; its log says why"
+            refuse(call, HttpStatus.SERVICE_UNAVAILABLE, why)
+            return
+        }
         log("[share] '$asked' joined from $address\n")
         val joined = ShareJoined(heads.server, token)
         call.respondText(json.encodeToString(ShareJoined.serializer(), joined), ContentType.Application.Json)

@@ -82,15 +82,13 @@ internal data class ShareSessionParts(val mirrors: SessionMirrors?, val outboxes
 
 /** The session routes' answers, over [parts]' mirrors; when this daemon hosts none, every route says so. */
 internal class ShareSessionHost(
-    parts: ShareSessionParts,
+    private val parts: ShareSessionParts,
     private val relay: ShareRelay,
     private val errors: ShareErrors,
     /** Mirrors are made and withdrawn here: each spawns or ends a process and writes files. */
     private val io: CoroutineDispatcher,
 ) {
     private val json = Json { ignoreUnknownKeys = true }
-    private val mirrors = parts.mirrors
-    private val outboxes = parts.outboxes
 
     /** When each machine's mirrors here end, in epoch ms, unless it offers its sessions again before. */
     private val leases = ConcurrentHashMap<String, Long>()
@@ -109,7 +107,7 @@ internal class ShareSessionHost(
         val offered = read(call, ShareSessions.serializer(), SESSIONS_BODY_MAX_BYTES) ?: return
         val lease = ((offered.lookMs ?: LEASE_MAX_MS) * LEASE_LOOKS).coerceIn(LEASE_MIN_MS, LEASE_MAX_MS)
         leases[client] = System.currentTimeMillis() + lease
-        withContext(io) { hosting.mirror(client, offered.sessions.map(::mirrored), outboxes.carrier(client)) }
+        withContext(io) { hosting.mirror(client, offered.sessions.map(::mirrored), parts.outboxes.carrier(client)) }
         respond(call, ShareSessions.serializer(), ShareSessions(emptyList()))
     }
 
@@ -129,7 +127,7 @@ internal class ShareSessionHost(
         val query = call.request.queryParameters
         val wait = query["wait"]?.toLongOrNull()?.coerceIn(0L, OUTBOX_MAX_WAIT_S) ?: 0L
         val ack = query["box"]?.let { box -> query["after"]?.toLongOrNull()?.let { ShareOutboxAck(box, it) } }
-        respond(call, ShareOutbox.serializer(), outboxes.collect(client, ack, wait))
+        respond(call, ShareOutbox.serializer(), parts.outboxes.collect(client, ack, wait))
     }
 
     /** Withdraws the mirrors of each machine whose lease ran out, every [SWEEP_MS], until the listener stops. */
@@ -147,10 +145,11 @@ internal class ShareSessionHost(
     }
 
     private fun withdraw(client: String) {
-        mirrors?.withdraw(client)
+        parts.mirrors?.withdraw(client)
     }
 
     private suspend fun hosted(call: ApplicationCall): SessionMirrors? {
+        val mirrors = parts.mirrors
         if (mirrors == null) refuse(call, HttpStatus.SERVICE_UNAVAILABLE, "this machine does not share its sessions")
         return mirrors
     }

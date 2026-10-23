@@ -14,6 +14,7 @@ import splice.app.control.mount.ControlGuard
 /** [ports] is read at CALL time: ConsolePortsWiring assigns [ConsolePorts.sharing] after the server is constructed. */
 internal class SharingMount(ports: ConsolePorts, private val guard: ControlGuard) {
     private val routes = SharingRoutes(SharingWired { ports.sharing })
+    private val switches = SessionsSwitchRoutes(SharingWired { ports.sharing })
     private val remotes = RemoteRoutes()
 
     fun register(route: Route) {
@@ -23,10 +24,10 @@ internal class SharingMount(ports: ConsolePorts, private val guard: ControlGuard
             guard.guarded(call) { routes.revoke(call.parameters["name"].orEmpty()).send(call) }
         }
         route.put("/api/share/machines/{name}/sessions") {
-            guard.guarded(call) { routes.machineSessions(call.parameters["name"].orEmpty(), call).send(call) }
+            guard.guarded(call) { switches.machine(call.parameters["name"].orEmpty(), call).send(call) }
         }
         route.put("/api/remotes/{name}/sessions") {
-            guard.guarded(call) { routes.remoteSessions(call.parameters["name"].orEmpty(), call).send(call) }
+            guard.guarded(call) { switches.remote(call.parameters["name"].orEmpty(), call).send(call) }
         }
         route.post("/api/remotes/scan") { guard.guarded(call) { remotes.scan().send(call) } }
         route.post("/api/remotes") { guard.guarded(call) { remotes.import(call).send(call) } }

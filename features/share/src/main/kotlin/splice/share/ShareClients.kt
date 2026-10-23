@@ -13,6 +13,7 @@ import kotlinx.serialization.json.Json
 import splice.core.util.Cancellables
 import splice.core.util.PathProbe
 import splice.core.util.SecureFile
+import splice.share.remote.RemoteNames
 import java.nio.channels.FileChannel
 import java.nio.channels.FileLock
 import java.nio.channels.OverlappingFileLockException
@@ -55,10 +56,13 @@ public class ShareClients(private val file: Path) {
      *  until the daemon next writes it; every reader lists only the machines this book still holds. */
     public val activity: ShareActivity = ShareActivity(file.resolveSibling("activity.json"))
 
-    /** A new token for [name], replacing any it held: a machine that imports again gets a fresh one and the
-     *  old one stops working. Throws IOException, writing nothing, when the book cannot be read or locked. */
+    /** A new token for the machine that [asked] to join, replacing any it held: a machine that imports again gets a
+     *  fresh one and the old one stops working. It is booked under the name a machine that joins it back keys it by in
+     *  `[remotes]` (RemoteNames), so its sessions here, offered by it or looked at from here, are one machine's.
+     *  Throws IOException, writing nothing, when the book cannot be read or locked. */
     @Synchronized
-    internal fun join(name: String, address: String): String = edited { book ->
+    internal fun join(asked: String, address: String): String = edited { book ->
+        val name = RemoteNames.of(asked)
         val token = hex.formatHex(ByteArray(SHARE_TOKEN_BYTES).also(random::nextBytes))
         val joined = ShareClient(name, digest(token), address, Instant.now().toString())
         write(ShareClientBook(book.clients.filterNot { it.name == name } + joined))

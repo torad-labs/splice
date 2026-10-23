@@ -4,9 +4,10 @@
 // session splice never launched (DIRECT) from a launch nothing recorded, and whose CLAUDE_CONFIG_DIR names its config
 // home. macOS has no /proc. This reads the same facts from /bin/ps, which needs no root for this user's processes.
 //
-// THE SPELLINGS ARE CLAUDE CODE'S OWN (2.1.296, read from its bundle on Oct 13): off Linux and Windows its pidDomain is
-// the literal "linux", and its procStart is `ps -o lstart= -p <pid>` run with LC_ALL=C and TZ=UTC, trimmed. The
-// lstart here is that command with that environment, so the two strings are equal for the same process.
+// THE SPELLINGS ARE CLAUDE CODE'S OWN (2.1.309, read from its bundle on Oct 23): off Linux, WSL and Windows its
+// pidDomain is the literal "darwin" (2.1.296 wrote "linux", and every session on a Mac then read GONE here), and its
+// procStart is `ps -o lstart= -p <pid>` run with LC_ALL=C and TZ=UTC, trimmed. The lstart here is that command with
+// that environment, so the two strings are equal for the same process.
 //
 // THE ENVIRONMENT comes from `ps -E -ww -o command=`, which prints the arguments and then the environment, joined by
 // spaces. The arguments alone (`ps -ww -o command=`) are cut from its front, and the rest is split before each
@@ -30,7 +31,7 @@ import java.io.IOException
 import java.util.concurrent.TimeUnit
 
 /** Claude Code's pidDomain on every host but Linux, WSL and Windows. */
-private const val DARWIN_PID_DOMAIN = "linux"
+private const val DARWIN_PID_DOMAIN = "darwin"
 
 private const val PS = "/bin/ps"
 

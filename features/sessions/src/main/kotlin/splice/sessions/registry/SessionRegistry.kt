@@ -105,7 +105,7 @@ public fun interface PidAlive {
  *  kernel start time and its wall-clock start. One seam, because [SessionRegistry] judges them together;
  *  a test answers from a tree it wrote. Every fact is null when it is not readable. */
 public interface PidIdentity {
-    /** `linux:<machine-id>:pid:[<inode>]`, the domain a pid is meaningful in (on macOS, Claude Code's `linux`). */
+    /** `linux:<machine-id>:pid:[<inode>]`, the domain a pid is meaningful in (on macOS, Claude Code's `darwin`). */
     public fun hostDomain(): String?
 
     /** The kernel start time of [pid] as /proc/<pid>/stat spells it (on macOS, as `ps -o lstart=` does). */

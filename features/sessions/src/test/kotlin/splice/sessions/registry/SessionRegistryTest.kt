@@ -43,7 +43,7 @@ class SessionRegistryTest {
             val stat = Files.createDirectories(proc.resolve(pid.toString())).resolve("stat")
             Files.writeString(stat, "$pid (claude) S ${List(18) { "0" }.joinToString(" ")} $start\n")
         }
-        return ProcPidIdentity(proc, machineFile, PidStartedAt { started[it] })
+        return ProcPidIdentity(proc, machineFile, PidStartedAt { started[it] }, DarwinPs(here = false))
     }
 
     private fun registry(
@@ -238,5 +238,44 @@ class SessionRegistryTest {
         assertEquals(SessionAvailability.LIVE, rows.getValue(11L).availability, "busy inside a tool")
         assertEquals(SessionAvailability.STALE, rows.getValue(12L).availability, "idle after an interrupt")
         assertEquals(SessionAvailability.LIVE, rows.getValue(13L).availability, "a registration with no status")
+    }
+
+    /** The identity Claude Code 2.1.309 writes beside [pid] on this host, spelled as its bundle spells it (read Oct 23):
+     *  on Linux, pidDomain `linux:<machine-id>:<pid namespace>` and procStart field 22 of /proc/<pid>/stat; anywhere
+     *  else but Windows, pidDomain "darwin" and procStart `ps -o lstart= -p <pid>` under LC_ALL=C and TZ=UTC, trimmed. */
+    private fun claudeCodeWrites(pid: Long): Pair<String, String> {
+        if (System.getProperty("os.name").orEmpty().startsWith("Linux")) {
+            val machine = Files.readString(Paths.get("/etc/machine-id")).trim()
+            val namespace = Files.readSymbolicLink(Paths.get("/proc/self/ns/pid"))
+            val stat = Files.readString(Paths.get("/proc/$pid/stat")).substringAfterLast(')').trim().split(' ')
+            return "linux:$machine:$namespace" to stat[19]
+        }
+        val ps = ProcessBuilder("ps", "-o", "lstart=", "-p", "$pid")
+        ps.environment()["LC_ALL"] = "C"
+        ps.environment()["TZ"] = "UTC"
+        return "darwin" to ps.start().inputStream.use { it.readAllBytes() }.decodeToString().trim()
+    }
+
+    /** A session Claude Code started on this machine, read the way the Sessions page reads it: the real pid identity,
+     *  the real process table. On a Mac every one read GONE while the host domain was spelled "linux" (Oct 23). */
+    @Test
+    fun `a session Claude Code registered on this machine is live while its process runs, and gone once it ends`(
+        @TempDir dir: Path,
+    ) {
+        val session = ProcessBuilder("sleep", "60").start()
+        try {
+            val pid = session.pid()
+            val (domain, start) = claudeCodeWrites(pid)
+            val heard = System.currentTimeMillis()
+            val identity = """"pidDomain":"$domain","procStart":"$start""""
+            write(dir, pid, """{"pid":$pid,"sessionId":"s-1","updatedAt":$heard,$identity}""")
+            val registry = SessionRegistry(dir, routeOf = { SessionRoute.Direct })
+            assertEquals(SessionAvailability.LIVE, registry.read().single().availability, "$domain / $start")
+            session.destroy()
+            session.waitFor()
+            assertEquals(SessionAvailability.GONE, registry.read().single().availability, "the process ended")
+        } finally {
+            session.destroyForcibly()
+        }
     }
 }

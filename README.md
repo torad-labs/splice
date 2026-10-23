@@ -995,7 +995,7 @@ Replaying reasoning (`replay_reasoning`) ships on: every earlier turn's reasonin
 
 An A/B run in July 2026 asked one question: **does replaying opaque encrypted reasoning items back into a request bust the prompt cache?** Two isolated real Claude Code sessions ran the same fixed multi-turn workload on a side port, only the replay toggled, and a captured, sanitized transcript replayed it without live credentials. Its harness was retired with the Node proxy it drove; the result is what matters:
 
-The cache effect remains workload-dependent, but the reasoning-depth result was strong enough to make replay default-off: replay caused the model to reuse prior thinking, reducing output and making reasoning thin.
+The cache effect remains workload-dependent. The reasoning-depth result made replay default-off in July: replay caused the model to reuse prior thinking, reducing output and making reasoning thin. Since Oct 23, 2026 replay ships on again. With it off, only 26% of claudex's earlier tool steps reached the model with their reasoning, against about 90% in Codex's own requests, and a seat driven by peer messages lost its reasoning at every message.
 
 ## Layout
 

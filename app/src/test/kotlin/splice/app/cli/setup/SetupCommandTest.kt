@@ -604,7 +604,7 @@ control_port = 3096
 # Reasoning display (edit + restart; env/PATCH still override):
 show_reasoning = "text"
 summary = "detailed"
-replay_reasoning = false
+replay_reasoning = true
 mcp_share = true
 
 [defaults]

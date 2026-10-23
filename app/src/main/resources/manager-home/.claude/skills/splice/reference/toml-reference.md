@@ -95,7 +95,7 @@ core/src/main/kotlin/splice/core/config/ConfigService.kt (coerceRejects, lines 2
 | `show_reasoning` | string | `"text"` | `"text"`, `"thinking"` or `"off"`: how reasoning streams into Claude Code | restart from TOML; HOT by PATCH |
 | `summary` | string | `"detailed"` | `"detailed"`, `"concise"`, `"auto"`, `"none"` | restart; HOT by PATCH |
 | `effort` | string | absent (reads as high) | default reasoning effort | restart |
-| `replay_reasoning` | bool | false | replay prior encrypted reasoning; leave false | restart; HOT by PATCH |
+| `replay_reasoning` | bool | true | send earlier turns' reasoning back to the model, as Codex does | restart; HOT by PATCH |
 | `mirror_reasoning` | bool | false | locked off; nothing can enable it | n/a |
 | `fold_reasoning_models` | array of strings | `gpt-5.6-luna`, `gpt-5.6-terra`, `gpt-5.5` | models whose cut reasoning is continued | restart; HOT by PATCH |
 | `fold_max_continue` | int | 3 | hidden continuation rounds per fold | restart; HOT by PATCH |

@@ -57,7 +57,7 @@ when it compacts, when the provider rejects its reasoning as stale, or when the 
 `quirks = { reasoning_cache = false }` deletes the stored files the next time the daemon starts
 (`splice restart`); removing the head deletes its directory at that start too. Entries are keyed by
 conversation. Sending reasoning back through Claude Code's own transcript is a separate setting,
-`replay_reasoning` in `[daemon]`, and defaults off.
+`replay_reasoning` in `[daemon]`, and defaults on.
 
 Code mode is separate from this cache: its records keep the model's reasoning summaries in
 plaintext on disk until 24 hours after the record's last use, checked every 5 minutes whether or not

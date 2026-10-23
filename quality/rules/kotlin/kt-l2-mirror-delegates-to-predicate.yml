@@ -34,5 +34,7 @@ rule:
     - not:
         has:
           stopBy: end
-          kind: simple_identifier
-          regex: ^willMirror$
+          kind: call_expression
+          has:
+            kind: simple_identifier
+            regex: ^willMirror$

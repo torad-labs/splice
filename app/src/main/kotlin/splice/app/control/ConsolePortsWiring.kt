@@ -19,6 +19,8 @@ import splice.lifecycle.upgrade.AutoUpdateSettings
 import splice.lifecycle.upgrade.ConsoleUpgradeStatus
 import splice.lifecycle.upgrade.UpgradeChecks
 import splice.lifecycle.upgrade.UpgradeStatus
+import splice.share.ShareListener
+import splice.share.remote.RemoteLinks
 import splice.topology.TopologyLoader
 import java.nio.file.Path
 
@@ -88,3 +90,12 @@ internal object ConsolePortsWiring {
         topology.path?.let { LifecycleWiring.autoUpdate(upgradeRuns, it, log).start() }
     }
 }
+
+/** This machine's share listener, and the machines it joined (null where no daemon built them): what the Sharing page's
+ *  rows read and turn (LAN share, milestone 4), a port of ConsolePorts assigned after the server is built. [env] is the
+ *  daemon's: where splice.toml and the state folder are, which the rows read and write. */
+internal data class SharingParts(
+    val listener: ShareListener,
+    val remotes: RemoteLinks?,
+    val env: EnvReader = EnvReader(System::getenv),
+)

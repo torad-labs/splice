@@ -88,8 +88,12 @@ internal class RegistryHandover(private val sessions: SessionSource?, private va
         }
     }
 
+    /** No running registration of [session] works: an exited one listed beside it keeps the status it last wrote,
+     *  which is not the client a stop waits on (PR #247's eighth review). */
     override suspend fun stopped(session: String, seconds: Long): Boolean = within(seconds) {
-        sessions?.read().orEmpty().none { it.sessionId == session && it.status.state in running }
+        sessions?.read().orEmpty().none {
+            it.sessionId == session && it.availability != SessionAvailability.GONE && it.status.state in running
+        }
     }
 
     override suspend fun cameOn(session: String, head: String, seconds: Long): Boolean = within(seconds) {

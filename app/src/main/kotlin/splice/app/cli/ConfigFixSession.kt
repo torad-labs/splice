@@ -116,8 +116,10 @@ internal class ConfigFixSession(
         output.line("  [q] quit; splice does not start")
     }
 
-    /** The key assigned on [line], when that line holds one `key = value` assignment. */
-    private fun assignmentAt(line: Int): String? = Files.readAllLines(file).getOrNull(line - 1)
+    /** The key assigned on [line] of the bytes the findings came from ([checked]), when that line holds one
+     *  `key = value` assignment. Read from them, not the file, so a save in between neither breaks the menu nor
+     *  hands an edit another line's key; [rewrite] then finds the file changed and writes nothing (seventh review). */
+    private fun assignmentAt(line: Int): String? = checked.lines().getOrNull(line - 1)
         ?.takeIf { it.contains('=') && !it.trimStart().startsWith("#") }
         ?.substringBefore('=')?.trim()
 

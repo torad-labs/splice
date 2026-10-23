@@ -59,7 +59,16 @@ public data class SessionProcess(
     val messagingSocketPath: String?,
     /** The registry directory this registration was read from: where its key file sits beside it (peer messaging, spec 1.1). */
     val registryDir: String? = null,
-)
+    /** The kernel start time Claude Code registered for [pid], as PidIdentity.procStart spells it: what tells this
+     *  client from a later process given the same pid when [startedAt] is absent or equal. */
+    val procStart: String? = null,
+) {
+    /** Whether [other] is this same client: the same pid, started at the same time by both the registration's clock
+     *  and the kernel's, since a later client can be given a pid an earlier one had (PR #247's seventh and eighth
+     *  reviews). */
+    public fun sameAs(other: SessionProcess?): Boolean =
+        other != null && other.pid == pid && other.startedAt == startedAt && other.procStart == procStart
+}
 
 /** Which Claude Code client the session runs: its kind and version, and how it was started. */
 public data class SessionClient(
@@ -122,6 +131,16 @@ public interface PidIdentity {
 
     /** When [pid] started (epoch ms). */
     public fun startedAt(pid: Long): Long?
+
+    /** Whether [pid] now runs a process other than the client registered as started at [procStart] (the kernel's
+     *  spelling) or [startedAt] (epoch ms): the kernel start decides when both sides know it; else the wall-clock
+     *  start, past [PID_REUSE_TOLERANCE_MS]. The registry judges registrations by it, and a pane's exit mark its
+     *  client (PR #247's ninth review). False when neither start is known. */
+    public fun reused(pid: Long, procStart: String?, startedAt: Long?): Boolean {
+        val start = procStart?.let { this.procStart(pid) }
+        if (procStart != null && start != null) return procStart != start
+        return startedAt != null && (this.startedAt(pid) ?: 0L) > startedAt + PID_REUSE_TOLERANCE_MS
+    }
 }
 
 /** When this daemon last heard from each session id (epoch ms): now while a turn of it is live,
@@ -226,6 +245,7 @@ public class SessionRegistry(
                 updatedAt = updatedAt,
                 messagingSocketPath = JsonScalars.str(obj, "messagingSocketPath"),
                 registryDir = sessionsDir.toString(),
+                procStart = JsonScalars.str(obj, "procStart"),
             ),
             client = SessionClient(
                 kind = JsonScalars.str(obj, "kind"),
@@ -242,9 +262,7 @@ public class SessionRegistry(
         val hostDomain = identity.hostDomain()
         val judged = domain != null && hostDomain != null
         if (judged && domain != hostDomain) return true
-        val start = procStart?.let { identity.procStart(pid) }
-        if (procStart != null && start != null) return procStart != start
-        return startedAt != null && (identity.startedAt(pid) ?: 0L) > startedAt + PID_REUSE_TOLERANCE_MS
+        return identity.reused(pid, procStart, startedAt)
     }
 
     private fun gone(pid: Long, domain: String?, procStart: String?, startedAt: Long?): Boolean =

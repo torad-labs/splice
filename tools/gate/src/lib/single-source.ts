@@ -31,6 +31,11 @@ interface Hit {
   readonly text: string;
 }
 
+export type MirrorDefinitionHit = Hit;
+
+export const MIRROR_DEFINITION_RULE = "kt-l2-single-mirror-definition";
+export const CANONICAL_MIRROR_FILE = "features/turns/src/main/kotlin/splice/head/reasoning/Mirror.kt";
+
 function declarationsOf(repoRoot: string, ruleDoc: Node, utilDoc: Node): Hit[] {
   const dir = mkdtempSync(join(tmpdir(), "gate-single-source-"));
   try {
@@ -47,6 +52,71 @@ function declarationsOf(repoRoot: string, ruleDoc: Node, utilDoc: Node): Hit[] {
     }
     const hits = JSON.parse(proc.stdout.toString() || "[]") as { file: string; range: { start: { line: number } }; text: string }[];
     return hits.map((h) => ({ file: h.file, line: h.range.start.line + 1, text: h.text }));
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+}
+
+/** The single-mirror exception's candidates, from the same owner shape the ast-grep wall exempts. */
+export function mirrorDefinitionsOf(
+  repoRoot: string,
+  cwd: string,
+  targets: readonly string[],
+): MirrorDefinitionHit[] {
+  return scanMirrorDefinitions(repoRoot, join(repoRoot, "sgconfig.yml"), cwd, targets);
+}
+
+/** One canonical package/class exception must have exactly one definition in its actual source file. */
+export function mirrorDefinitionProblems(repoRoot: string, sgconfigPath: string): string[] {
+  const definitions = scanMirrorDefinitions(repoRoot, sgconfigPath, repoRoot, ["."]);
+  if (definitions.length === 1 && definitions[0]!.file.replace(/^\.\//, "") === CANONICAL_MIRROR_FILE) return [];
+  const found = definitions.map((definition) => `${definition.file}:${definition.line}`).join(", ") || "none";
+  return [`${MIRROR_DEFINITION_RULE}: expected one definition in ${CANONICAL_MIRROR_FILE}; found ${found}`];
+}
+
+function scanMirrorDefinitions(
+  repoRoot: string,
+  sgconfigPath: string,
+  cwd: string,
+  targets: readonly string[],
+): MirrorDefinitionHit[] {
+  const config = readSgConfig(sgconfigPath);
+  const rule = readRules(config.ruleDirs).find((candidate) => candidate.id === MIRROR_DEFINITION_RULE);
+  if (!rule) throw new Error(`gate: missing ${MIRROR_DEFINITION_RULE}`);
+  const doc = Bun.YAML.parse(readFileSync(rule.path, "utf8")) as Node;
+  const body = doc.rule;
+  if (!isNode(body) || !isNode(body.not) || !isNode(body.not.inside)) {
+    throw new Error(`gate: ${MIRROR_DEFINITION_RULE} has no owner exception to verify`);
+  }
+  const declarationRule = {
+    ...doc,
+    id: `${MIRROR_DEFINITION_RULE}-owner-declarations`,
+    rule: {
+      ...Object.fromEntries(Object.entries(body).filter(([key]) => key !== "not")),
+      inside: body.not.inside,
+    },
+  };
+  const dir = mkdtempSync(join(tmpdir(), "gate-mirror-definitions-"));
+  try {
+    const file = join(dir, "definitions.yml");
+    writeFileSync(file, Bun.YAML.stringify(declarationRule, null, 2));
+    const proc = Bun.spawnSync(
+      [astGrepBin(repoRoot), "scan", "--rule", file, "--json=compact", ...targets],
+      { cwd, stdout: "pipe", stderr: "pipe" },
+    );
+    if (proc.exitCode !== 0 && proc.exitCode !== 1) {
+      throw new Error(`gate: ast-grep could not verify ${MIRROR_DEFINITION_RULE} (exit ${proc.exitCode}): ${proc.stderr.toString().trim()}`);
+    }
+    const hits = JSON.parse(proc.stdout.toString() || "[]") as {
+      file: string;
+      range: { start: { line: number } };
+      text: string;
+    }[];
+    return hits.map((hit) => ({
+      file: hit.file.replace(/^\.\//, "").replaceAll("\\", "/"),
+      line: hit.range.start.line + 1,
+      text: hit.text,
+    }));
   } finally {
     rmSync(dir, { recursive: true, force: true });
   }

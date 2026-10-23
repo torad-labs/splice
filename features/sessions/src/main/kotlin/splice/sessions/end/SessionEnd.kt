@@ -128,7 +128,7 @@ public class SessionEnd(
     private suspend fun exit(driving: SessionDriver, pane: SessionPane, record: SessionRecord, seen: Long?): JsonReply {
         val session = record.sessionId.orEmpty()
         val exit = object : PaneTurns.Exit {
-            override val pid: Long? = record.process.pid
+            override val process = record.process
 
             override fun check(): JsonReply? = moved(record, seen) ?: seen?.let { cost(session) }
 
@@ -148,14 +148,14 @@ public class SessionEnd(
     }
 
     /** The refusal when the session moved on since End looked, read in the pane's turn before a key goes: its running
-     *  client is not [record]'s process, as when the same session was resumed in that pane meanwhile, which the pane
-     *  finds by session and not by process, so an Escape, `/exit` or wait meant for the first would reach or name the
-     *  wrong one; or, unconfirmed ([seen] set), it was given something since End counted [seen] acts on it (PR #247's
-     *  sixth review). */
+     *  client is not [record]'s process, as when the same session was resumed in that pane meanwhile, even under the
+     *  same pid, which the pane finds by session and not by process, so an Escape, `/exit` or wait meant for the
+     *  first would reach or name the wrong one; or, unconfirmed ([seen] set), it was given something since End counted
+     *  [seen] acts on it (PR #247's sixth and seventh reviews). */
     private fun moved(record: SessionRecord, seen: Long?): JsonReply? {
         val session = record.sessionId.orEmpty()
         return when {
-            running(session)?.process?.pid != record.process.pid ->
+            !record.process.sameAs(running(session)?.process) ->
                 Refusals.reply(HttpStatusCode.Conflict, END_REPLACED, Refusal.PANE_TAKEN)
             seen != null && drive.turns.acts(session) != seen ->
                 Refusals.reply(HttpStatusCode.Conflict, END_ACTED, Refusal.WORKING)

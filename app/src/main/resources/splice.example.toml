@@ -20,7 +20,7 @@ control_port = 3096          # loopback-only control plane + dashboard
 show_reasoning = "text"      # "text" | "thinking" | "off"  — stream thinking into Claude Code (HOT, per turn)
 summary        = "detailed"  # "detailed" | "concise" | "auto" | "none" (HOT, per turn)
 # effort       = "high"      # optional; omit → high (Grok floors invalid values to low)
-replay_reasoning = false     # (HOT, per turn) NEVER turn on lightly: replaying prior opaque encrypted reasoning items thins fresh reasoning
+replay_reasoning = true      # (HOT, per turn) send the model's earlier reasoning back, as Codex does until compaction
 mirror_reasoning = false     # operator-locked off; TOML, state, env, and runtime PATCH cannot enable transcript mirrors
 # Plan-usage bars: a subscription head (ChatGPT, Kimi, SuperGrok) polls its provider's usage
 # endpoint every five minutes with that head's own bearer. Env CLAUDEX_QUOTA_POLL=off stops every

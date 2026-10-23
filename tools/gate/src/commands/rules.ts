@@ -20,7 +20,7 @@ import { configGuardProblems } from "../lib/configguard.ts";
 import { LIFECYCLES, hook, isLifecycle } from "../lib/hook.ts";
 import { layout } from "../lib/repo.ts";
 import { routingProblems } from "../lib/routing.ts";
-import { singleSourceProblems } from "../lib/single-source.ts";
+import { mirrorDefinitionProblems, singleSourceProblems } from "../lib/single-source.ts";
 
 export const usage =
   "rules [--tests]                      ast-grep walls + rule routing + config guard (--tests: the rules' own cases only)\n" +
@@ -83,6 +83,12 @@ export async function rules(argv: readonly string[]): Promise<number> {
   }
   console.log("single-source: PASS");
 
+  const mirrors = mirrorDefinitionProblems(repoRoot, join(repoRoot, ROUTED_CONFIG));
+  if (mirrors.length) {
+    for (const problem of mirrors) console.error(`  ✗ ${problem}`);
+    console.error("mirror-definition: FAIL");
+    return 1;
+  }
   const guard = configGuardProblems(repoRoot);
   if (guard.length) {
     for (const p of guard) console.error(p.startsWith("  ✗") ? p : `  ✗ ${p}`);

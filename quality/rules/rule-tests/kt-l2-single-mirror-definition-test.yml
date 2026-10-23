@@ -1,7 +1,9 @@
 id: kt-l2-single-mirror-definition
 valid:
-  # the one definition, exempt by its shape: a member of class Mirror
+  # the one definition, exempt by its owner: a member of class Mirror in package splice.head.reasoning
   - |
+    package splice.head.reasoning
+
     internal class Mirror {
         public suspend fun mirrorInto(sink: WireSink, thinking: String) {}
     }
@@ -17,5 +19,16 @@ invalid:
   # the same member of any other class is a second definition
   - |
     internal class Other {
+        public suspend fun mirrorInto(sink: WireSink, thinking: String) {}
+    }
+  # so is a class named Mirror outside the canonical package, or with no package at all
+  - |
+    package splice.head.other
+
+    internal class Mirror {
+        public suspend fun mirrorInto(sink: WireSink, thinking: String) {}
+    }
+  - |
+    internal class Mirror {
         public suspend fun mirrorInto(sink: WireSink, thinking: String) {}
     }

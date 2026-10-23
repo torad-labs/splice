@@ -173,16 +173,11 @@ public class SessionContinue(
         move: Move,
         ask: Ask,
     ): JsonReply {
-        if (move.working) stopTurn(driving, pane, move)?.let { return it }
+        if (move.working) stopTurn(driving, pane, move, ask)?.let { return it }
         val exit = object : PaneTurns.Exit {
             override val pid: Long = pid
 
-            override fun check(): JsonReply? = when {
-                drive.turns.acts(move.session) != ask.seen -> Refusals.reply(
-                    HttpStatusCode.Conflict,
-                    "it was given something while the move waited its turn, so nothing was started on ${move.head}",
-                    Refusal.WORKING,
-                )
+            override fun check(): JsonReply? = changed(move, ask) ?: when {
                 // working now, on a turn the move did not stop: one the person started in the terminal itself, which
                 // splice's count does not see. A turn the move stopped already reads stopped here (RegistryHandover).
                 registry?.read().orEmpty().any { it.sessionId == move.session && it.status.state in busy } ->
@@ -210,10 +205,11 @@ public class SessionContinue(
         return drive.turns.leave(pane, move.session, again(driving, move), exit) ?: resume(driving, pane, move)
     }
 
-    /** Stop the turn in flight, its key typed in the pane's turn; null once it has stopped. */
-    private suspend fun stopTurn(driving: SessionDriver, pane: SessionPane, move: Move): JsonReply? {
+    /** Stop the turn in flight, its key typed in the pane's turn once nothing [changed]; null once it has stopped. A
+     *  turn given to the session after the press came is not the one the move decided to stop (sixth review). */
+    private suspend fun stopTurn(driving: SessionDriver, pane: SessionPane, move: Move, ask: Ask): JsonReply? {
         drive.turns.ending(pane, move.session, again(driving, move)) {
-            Cancellables.runCatchingCleanup { driving.terminal.press(pane, SessionKey.STOP) }
+            changed(move, ask) ?: Cancellables.runCatchingCleanup { driving.terminal.press(pane, SessionKey.STOP) }
                 .exceptionOrNull()?.let(::refusedByTerminal)
         }?.let { return it }
         if (!handover.stopped(move.session, STOP_SECONDS)) {
@@ -223,6 +219,25 @@ public class SessionContinue(
             )
         }
         return null
+    }
+
+    /** Why the move stops in its pane's turn before a key goes, or null: anything given to the session since the
+     *  press came, or a client process other than [Move.pid], the one the move read, such as the same session
+     *  resumed in that pane meanwhile. The Stop, the `/exit`, the pane's mark and the wait all name that process,
+     *  so another is refused rather than typed to or waited on (PR #247's sixth review). */
+    private fun changed(move: Move, ask: Ask): JsonReply? = when {
+        drive.turns.acts(move.session) != ask.seen -> Refusals.reply(
+            HttpStatusCode.Conflict,
+            "it was given something while the move waited its turn, so nothing was started on ${move.head}",
+            Refusal.WORKING,
+        )
+        registry?.read().orEmpty().firstOrNull { it.sessionId == move.session }?.process?.pid != move.pid ->
+            Refusals.reply(
+                HttpStatusCode.Conflict,
+                "its client was started again while the move waited its turn, so nothing was started on ${move.head}",
+                Refusal.PANE_TAKEN,
+            )
+        else -> null
     }
 
     /** [move]'s session located anew, as its pane's turn checks it before a key goes. */

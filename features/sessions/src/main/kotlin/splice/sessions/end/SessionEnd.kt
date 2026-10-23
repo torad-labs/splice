@@ -42,6 +42,8 @@ private const val END_NOT_OURS = "splice did not start this session, so it canno
 private const val END_CLOSED = "its terminal is closed, so it has already ended"
 private const val END_ACTED =
     "it was given something while End waited its turn; ending it now may cut what that started"
+private const val END_REPLACED =
+    "its client is not the one End found: it ended or was started again while End waited its turn, so nothing was typed"
 
 public class SessionEnd(
     private val drive: SessionDrive,
@@ -93,33 +95,42 @@ public class SessionEnd(
         pane: SessionPane,
         record: SessionRecord,
         seen: Long?,
-    ): JsonReply = halt(driving, pane, record) ?: exit(driving, pane, record, seen)
+    ): JsonReply = halt(driving, pane, record, seen) ?: exit(driving, pane, record, seen)
 
-    /** Stop a turn in flight or a question on screen (Escape does both); null once nothing runs or asks. */
-    private suspend fun halt(driving: SessionDriver, pane: SessionPane, record: SessionRecord): JsonReply? {
+    /** Stop a turn in flight or a question on screen (Escape does both); null once nothing runs or asks. Escape goes in
+     *  the pane's turn only while nothing [moved]: a turn started since End looked is not the one it would cut. */
+    private suspend fun halt(
+        driving: SessionDriver,
+        pane: SessionPane,
+        record: SessionRecord,
+        seen: Long?,
+    ): JsonReply? {
         val working = record.status.state in busy
         if (!working && record.status.waitingFor == null) return null
-        val pressed = drive.turns.ending(pane, record.sessionId.orEmpty(), again(driving, record)) {
-            Cancellables.runCatchingCleanup { driving.terminal.press(pane, SessionKey.STOP) }
+        val session = record.sessionId.orEmpty()
+        val pressed = drive.turns.ending(pane, session, again(driving, record)) {
+            moved(record, seen) ?: Cancellables.runCatchingCleanup { driving.terminal.press(pane, SessionKey.STOP) }
                 .exceptionOrNull()?.let { refused() }
         }
         return when {
             pressed != null -> pressed
-            working && !handover.stopped(record.sessionId.orEmpty(), END_STOP_SECONDS) ->
+            working && !handover.stopped(session, END_STOP_SECONDS) ->
                 Refusals.reply(HttpStatusCode.GatewayTimeout, "its turn did not stop within ${END_STOP_SECONDS}s")
             else -> null
         }
     }
 
     /** Empty the prompt, type `/exit`, and wait for the client to go, with nothing else typed into the pane until it
-     *  has. An End he did not confirm ([seen] set) looks again in the turn (unchanged). A client that does not leave
-     *  in time keeps the pane marked as being left, since it may still be going. */
+     *  has. The keys go only while nothing [moved], to the client the mark and the wait name. An End he did not
+     *  confirm ([seen] set) also stops for a turn it runs now or words in its prompt, which are his, the way it would
+     *  have on the first look ([cost]). A client that does not leave in time keeps the
+     *  pane marked as being left, since it may still be going. */
     private suspend fun exit(driving: SessionDriver, pane: SessionPane, record: SessionRecord, seen: Long?): JsonReply {
         val session = record.sessionId.orEmpty()
         val exit = object : PaneTurns.Exit {
             override val pid: Long? = record.process.pid
 
-            override fun check(): JsonReply? = seen?.let { unchanged(session, it) }
+            override fun check(): JsonReply? = moved(record, seen) ?: seen?.let { cost(session) }
 
             override fun keys(): JsonReply? = Cancellables.runCatchingCleanup {
                 driving.terminal.press(pane, SessionKey.CLEAR)
@@ -136,14 +147,21 @@ public class SessionEnd(
         return JsonReply(HttpStatusCode.OK, "{}")
     }
 
-    /** An End he did not confirm, looked at again in the pane's turn: an act on the session since End looked, a turn
-     *  it runs now, or words in its prompt are his, and End stops for them, the way it would have on the first look. */
-    private fun unchanged(session: String, seen: Long): JsonReply? =
-        if (drive.turns.acts(session) != seen) {
-            Refusals.reply(HttpStatusCode.Conflict, END_ACTED, Refusal.WORKING)
-        } else {
-            cost(session)
+    /** The refusal when the session moved on since End looked, read in the pane's turn before a key goes: its running
+     *  client is not [record]'s process, as when the same session was resumed in that pane meanwhile, which the pane
+     *  finds by session and not by process, so an Escape, `/exit` or wait meant for the first would reach or name the
+     *  wrong one; or, unconfirmed ([seen] set), it was given something since End counted [seen] acts on it (PR #247's
+     *  sixth review). */
+    private fun moved(record: SessionRecord, seen: Long?): JsonReply? {
+        val session = record.sessionId.orEmpty()
+        return when {
+            running(session)?.process?.pid != record.process.pid ->
+                Refusals.reply(HttpStatusCode.Conflict, END_REPLACED, Refusal.PANE_TAKEN)
+            seen != null && drive.turns.acts(session) != seen ->
+                Refusals.reply(HttpStatusCode.Conflict, END_ACTED, Refusal.WORKING)
+            else -> null
         }
+    }
 
     /** [record]'s session located anew, as its pane's turn checks it before a key goes. */
     private fun again(driving: SessionDriver, record: SessionRecord): PaneTurns.Relocate =

@@ -214,6 +214,7 @@ public class SessionDrive(
         return turns.turn(pane, session, { locate(driving, session, notOurs, closed) }) {
             held(driving, pane) ?: run {
                 acted.acted(session)
+                turns.acting(session)
                 Cancellables.runCatchingCleanup { act(driving, pane) }.exceptionOrNull()?.let {
                     refuse(HttpStatusCode.BadGateway, TERMINAL_REFUSED + SafeFailureText.render(it), REFUSED)
                 }
@@ -310,10 +311,17 @@ internal class PaneTurns(
      *  reads the session, and again in their turn. */
     fun acts(session: String): Long = acts[session] ?: 0L
 
+    /** Count an act on [session], in its pane's turn once nothing refused it and before its first key: a terminal
+     *  call that fails may still have taken effect, as a send whose Enter tmux took before its reply was lost, so the
+     *  attempt counts, not only a success (PR #247's sixth review). */
+    fun acting(session: String) {
+        acts.merge(session, 1L, Long::plus)
+    }
+
     /** [act] for [session] in [pane] holding its turn, once [again] (the session located anew inside the turn) still
      *  finds it there and no `/exit` was typed there for it: a client that exited, or a pane that came to hold another
-     *  process, while this waited is refused, never typed into. Null when [act] went through, which counts as an
-     *  act. */
+     *  process, while this waited is refused, never typed into. Null when [act] went through; [act] counts itself with
+     *  [acting] before its keys. */
     fun turn(pane: SessionPane, session: String, again: Relocate, act: InTurn): JsonReply? =
         held(pane, session, again, ending = false, act)
 
@@ -347,7 +355,7 @@ internal class PaneTurns(
                 now.pane != pane -> Refusals.reply(HttpStatusCode.Conflict, PANE_CHANGED, Refusal.PANE_TAKEN)
                 !ending && stillLeaving(pane, session) ->
                     Refusals.reply(HttpStatusCode.Conflict, PANE_LEAVING, Refusal.ENDED)
-                else -> act().also { refused -> if (refused == null && !ending) acts.merge(session, 1L, Long::plus) }
+                else -> act()
             }
         }
 

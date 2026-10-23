@@ -29,7 +29,6 @@ import splice.upstream.codemode.CodeModeRuntime
 import splice.upstream.codemode.CodeModeSource
 import splice.upstream.codemode.CodeModeSourcePart
 import splice.upstream.codemode.CodeModeStep
-import splice.upstream.failure.CodeModeStartException
 import splice.upstream.sse.CustomToolSource
 import splice.upstream.sse.WireSink
 import java.io.IOException
@@ -242,13 +241,8 @@ abstract class CodeModeStatementStreamSupport : CodeModeBridgeTestSupport() {
         }
     }
 
-    protected inner class IncrementalRuntime(
-        private val failFirst: Boolean = false,
-        private val failCallSave: Boolean = false,
-    ) : CodeModeRuntime {
-        val delivered = mutableListOf<List<CodeModeResult>>()
-        val firstReads = mutableListOf<CodeModeSourcePart>()
-        val firstRead = CompletableDeferred<Unit>()
+    /** Runs a model's exec item as the runtime receives it: whole, once the response terminal certified it. */
+    protected inner class IncrementalRuntime : CodeModeRuntime {
         var starts = 0
         override suspend fun start(
             source: String,
@@ -262,23 +256,11 @@ abstract class CodeModeStatementStreamSupport : CodeModeBridgeTestSupport() {
             descriptions: Map<String, String>,
         ): CodeModeCell {
             starts++
-            val first = source.read().also(firstReads::add)
-            firstRead.complete(Unit)
-            if (failFirst && starts == 1) throw CodeModeStartException(IOException("boot failed before dispatch"))
+            val whole = source.read()
             return object : CodeModeCell {
-                private var initial: CodeModeSourcePart? = first
-                private var sequence = 0
-                override suspend fun advance(results: List<CodeModeResult>): CodeModeStep {
-                    delivered += results
-                    return when (val part = initial.also { initial = null } ?: source.read()) {
-                        is CodeModeSourcePart.Delta -> {
-                            if (failCallSave && sequence == 0) stateFiles.block()
-                            val name = if (part.text.contains("Read")) "Read" else "Edit"
-                            CodeModeStep.Calls(listOf(call("runtime-${sequence++}", name)))
-                        }
-                        is CodeModeSourcePart.Complete -> CodeModeStep.Completed("done")
-                        is CodeModeSourcePart.Failed -> throw IOException(part.error)
-                    }
+                override suspend fun advance(results: List<CodeModeResult>): CodeModeStep = when (whole) {
+                    is CodeModeSourcePart.Complete -> CodeModeStep.Completed("done")
+                    is CodeModeSourcePart.Failed -> throw IOException(whole.error)
                 }
                 override fun close() = Unit
             }

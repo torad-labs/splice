@@ -129,9 +129,6 @@ internal class CodeModeSourceBuffer(
         return object : CodeModeSource {
             override suspend fun read(): CodeModeSourcePart = part(state.first { it.terminal != null })
 
-            override suspend fun readAvailable(): CodeModeSourcePart? = state.value.takeIf { it.terminal != null }
-                ?.let(::part)
-
             private fun part(ended: SourceSnapshot): CodeModeSourcePart {
                 (ended.terminal as? CodeModeSourcePart.Failed)?.let { return it }
                 beforeRead.commit(ended.text)

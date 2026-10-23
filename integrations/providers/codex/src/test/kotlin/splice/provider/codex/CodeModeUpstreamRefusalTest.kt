@@ -1,19 +1,14 @@
 // NEW: an upstream refusal of a code-mode source post ends the client's turn as that refusal, never as an overload.
 package splice.provider.codex
 
-import kotlinx.coroutines.CompletableDeferred
-import kotlinx.coroutines.async
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.withTimeout
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertSame
-import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.Timeout
-import splice.core.turn.TurnOutcome
 import splice.upstream.RedirectableRoundPost
 import splice.upstream.RoundResult
-import splice.upstream.codemode.CodeModeResult
 import splice.upstream.sse.WireSink
 import splice.upstream.transport.UpstreamFailed
 
@@ -52,37 +47,17 @@ class CodeModeUpstreamRefusalTest : CodeModeStatementStreamSupport() {
     fun `a finished script's continuation refused upstream ends the client's step as that refusal`() = runBlocking {
         val runtime = IncrementalRuntime()
         val manager = bridge(runtime)
-        val sinks = List(3) { StepSink() }
-        val itemCompletion = CompletableDeferred<Unit>()
-        val gated = GatedPost(sinks.first()).apply { itemCompletionGate = itemCompletion }
+        val gated = GatedPost(StepSink()).apply {
+            wholeOnly = true
+            complete.complete(Unit)
+        }
         val post = Refusing(gated, refuseFrom = 2)
-        val callbacks = mutableListOf<SeenTool>()
         try {
-            for (step in sinks.indices) {
-                val results = callbacks.mapIndexed { index, call -> CodeModeResult(call.id, "result-$index") }
-                val request = async {
-                    manager.interceptor(turn(results = results), disableParallel = false)
-                        .intercept(history(callbacks), sinks[step], post)
-                }
-                if (step > 0) gated.gates[step].complete(Unit)
-                callbacks += withTimeout(30_000) { sinks[step].callback.await() }
-                val outcome = withTimeout(30_000) { request.await() }.turn()
-                assertTrue(outcome is TurnOutcome.Success, "step $step: $outcome")
+            val ended = withTimeout(5_000) {
+                manager.interceptor(turn(), disableParallel = false).intercept(BASE_REQUEST, StepSink(), post)
             }
-            val final = async {
-                run {
-                    manager.interceptor(
-                        turn(
-                            results = callbacks.mapIndexed { index, call -> CodeModeResult(call.id, "result-$index") },
-                        ),
-                        disableParallel = false,
-                    ).intercept(history(callbacks), StepSink(), post)
-                }
-            }
-            itemCompletion.complete(Unit)
-            gated.complete.complete(Unit)
-            val ended = withTimeout(5_000) { final.await() }
             assertSame(post.refusal, (ended as RoundResult.Ended).ending, "ended=$ended")
+            assertEquals(1, runtime.starts, "the script ran once, from its whole item")
             assertEquals(1, post.refused, "the refused continuation is posted once")
         } finally {
             manager.onHeadStop()

@@ -791,14 +791,11 @@ class WsCompletionTest(@param:TempDir private val tmp: Path) {
             return object : CodeModeCell {
                 override suspend fun advance(results: List<CodeModeResult>): CodeModeStep {
                     advancing.complete(Unit)
-                    while (true) {
-                        when (val part = source.read()) {
-                            is CodeModeSourcePart.Delta -> Unit
-                            is CodeModeSourcePart.Failed -> throw IOException(part.error)
-                            is CodeModeSourcePart.Complete -> return CodeModeStep.Calls(
-                                listOf(CodeModeCall("synthetic-runtime-call", "SyntheticTool", buildJsonObject {})),
-                            )
-                        }
+                    return when (val part = source.read()) {
+                        is CodeModeSourcePart.Failed -> throw IOException(part.error)
+                        is CodeModeSourcePart.Complete -> CodeModeStep.Calls(
+                            listOf(CodeModeCall("synthetic-runtime-call", "SyntheticTool", buildJsonObject {})),
+                        )
                     }
                 }
 

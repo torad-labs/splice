@@ -2,24 +2,27 @@
 package splice.provider.codex
 
 import kotlinx.coroutines.CompletableDeferred
+import kotlinx.coroutines.async
+import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.withTimeout
 import kotlinx.serialization.json.jsonPrimitive
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.Timeout
-import splice.core.turn.TurnOutcome
 import splice.provider.codex.stream.CodeModeStreams
 
 internal class CodeModeTerminalCutTest : CodeModeStatementStreamSupport() {
-    private suspend fun cutsAfterDisposal(finished: Boolean): Long {
+    /** The posting step waits for its whole exec item, so the round is cancelled under that waiting step: mid-stream,
+     *  once its first fragment reached the reader, or, when [finished], after the upstream parsed its terminal. */
+    private suspend fun cutsAfterDisposal(finished: Boolean): Long = coroutineScope {
         val manager = bridge(IncrementalRuntime())
         val sink = StepSink()
         val source = GatedPost(sink)
         val streams: CodeModeStreams = manager.driver.streams
+        val step = async { manager.interceptor(turn(), disableParallel = false).intercept(BASE_REQUEST, sink, source) }
         try {
-            manager.interceptor(turn(), disableParallel = false).intercept(BASE_REQUEST, sink, source).turn()
-                as TurnOutcome.Success
+            withTimeout(30_000) { source.sent[0].await() }
             val key = stateFiles.records().single().getValue("key").jsonPrimitive.content
             val record = manager.registry.recordsFor(key).single()
             val round = checkNotNull(streams.find(record))
@@ -32,9 +35,10 @@ internal class CodeModeTerminalCutTest : CodeModeStatementStreamSupport() {
                 withTimeout(30_000) { source.terminalSent.await() }
             }
             round.cancel()
-            return streams.takeCuts(watched, emptyList()).also { source.terminalGate?.complete(Unit) }
+            streams.takeCuts(watched, emptyList()).also { source.terminalGate?.complete(Unit) }
         } finally {
             source.terminalGate?.complete(Unit)
+            step.cancel()
             manager.onHeadStop()
         }
     }

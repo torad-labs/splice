@@ -2,10 +2,12 @@ package splice.provider.codex
 
 import kotlinx.coroutines.async
 import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.yield
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
 import org.junit.jupiter.api.Assertions.assertEquals
+import org.junit.jupiter.api.Assertions.assertFalse
 import org.junit.jupiter.api.Assertions.assertNull
 import org.junit.jupiter.api.Assertions.assertThrows
 import org.junit.jupiter.api.Assertions.assertTrue
@@ -15,7 +17,6 @@ import splice.core.reasoning.ReasoningReplay
 import splice.provider.codex.stream.CodeModeSourceBuffer
 import splice.provider.codex.stream.CodeModeSwitchingSink
 import splice.upstream.codemode.CodeModeLimits
-import splice.upstream.codemode.CodeModeSealedSource
 import splice.upstream.codemode.CodeModeSourcePart
 import splice.upstream.sse.WireSink
 
@@ -27,10 +28,10 @@ class CodeModeStreamPortsTest : CodeModeBridgeTestSupport() {
         val buffer = CodeModeSourceBuffer()
         val first = buffer.view()
         val retry = buffer.view()
-        assertTrue(retry !is CodeModeSealedSource)
         buffer.publish("prefix")
-        assertNull(first.readAvailable())
         val waiting = async { first.read() }
+        yield()
+        assertFalse(waiting.isCompleted, "a streamed prefix reaches no cursor")
         buffer.complete("prefix-suffix")
         assertEquals(CodeModeSourcePart.Complete("prefix-suffix"), waiting.await())
         assertEquals(CodeModeSourcePart.Complete("prefix-suffix"), retry.read())

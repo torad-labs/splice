@@ -21,8 +21,6 @@ import splice.codemode.host.PoolLimits
 import splice.codemode.wire.CodeModeFrames
 import splice.upstream.codemode.CodeModeCall
 import splice.upstream.codemode.CodeModeResult
-import splice.upstream.codemode.CodeModeSource
-import splice.upstream.codemode.CodeModeSourcePart
 import splice.upstream.codemode.CodeModeStep
 import splice.upstream.failure.CodeModeInfrastructureCategory
 import splice.upstream.failure.CodeModeInfrastructureClass
@@ -615,20 +613,6 @@ class CodeModeStopRaceTest {
         val cell = resultCell(channel)
         assertTrue(cell.advance() is CodeModeStep.Calls)
         assertStoppedExchange(cell, channel, listOf(CodeModeResult("1", "result")))
-    }
-
-    @Test
-    @Timeout(10)
-    fun `stop after reading source but during its exchange remains worker loss`() = runBlocking {
-        val channel = PausedCellChannel()
-        val cell = JvmCodeModeCell(
-            channel,
-            WorkerReply(null, null, null, waitingForInput = true),
-            emptySet(),
-            ReleaseCodeModeCell {},
-            CodeModeSource { CodeModeSourcePart.Delta("text('source');") },
-        )
-        assertStoppedExchange(cell, channel, emptyList())
     }
 
     @Test

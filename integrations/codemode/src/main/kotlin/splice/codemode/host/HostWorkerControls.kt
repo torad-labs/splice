@@ -7,7 +7,6 @@ import splice.codemode.CodeModeHeap
 import splice.codemode.CodeModeWire
 import splice.codemode.HostFrame
 import splice.codemode.HostProtocol
-import splice.codemode.StreamingCodeModeWire
 import splice.upstream.failure.CodeModeInfrastructureCategory
 import splice.upstream.failure.CodeModeInfrastructureClass
 import java.io.DataOutputStream
@@ -29,7 +28,7 @@ internal class HostWorkerControls(
 
     fun execute(frame: HostFrame, type: String, command: Runnable) {
         val lane = when (type) {
-            "session-open", "start", StreamingCodeModeWire.START -> openings
+            "session-open", "start" -> openings
             "session-close" -> closings
             else -> controls
         }

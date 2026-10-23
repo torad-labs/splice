@@ -7,8 +7,6 @@ import org.junit.jupiter.api.Test
 import splice.codemode.host.HostLaunch
 import splice.upstream.codemode.CodeModeCall
 import splice.upstream.codemode.CodeModeResult
-import splice.upstream.codemode.CodeModeSource
-import splice.upstream.codemode.CodeModeSourcePart
 import splice.upstream.codemode.CodeModeStep
 
 class CodeModeIncrementalRuntimeTest {
@@ -24,38 +22,13 @@ class CodeModeIncrementalRuntimeTest {
     }
 
     @Test
-    fun `streaming source completion is consumed once while Promise all waits`() = runBlocking {
+    fun `a race dispatches its follow-up while the sibling callback remains pending`() = runBlocking {
         runtime().use { host ->
-            val sourceParts = mutableListOf(
-                CodeModeSourcePart.Delta(
-                    "await Promise.all([tools.call('Read', {file: 'a'}), tools.call('Read', {file: 'b'})]);",
-                ),
-                CodeModeSourcePart.Complete(),
-            ).iterator()
-            val cell = host.startStreaming(
-                source = CodeModeSource { check(sourceParts.hasNext()); sourceParts.next() },
-                tools = setOf("Read"),
-            )
-            assertEquals(listOf("1", "2"), calls(cell.advance()).map(CodeModeCall::id))
-            assertEquals(CodeModeStep.WaitingForResults(null), cell.advance(listOf(CodeModeResult("1", "a"))))
-            assertTrue(cell.advance(listOf(CodeModeResult("2", "b"))) is CodeModeStep.Completed)
-            assertTrue(!sourceParts.hasNext())
-        }
-    }
-
-    @Test
-    fun `streaming race dispatches followup while sibling callback remains pending`() = runBlocking {
-        runtime().use { host ->
-            val sourceParts = mutableListOf(
-                CodeModeSourcePart.Delta(
-                    "const winner = await Promise.race([" +
-                        "tools.call('Read', {file: 'fast'}), tools.call('Read', {file: 'slow'})]);",
-                ),
-                CodeModeSourcePart.Complete("const follow = await tools.call('Read', {file: winner});"),
-            ).iterator()
-            val cell = host.startStreaming(
-                source = CodeModeSource { check(sourceParts.hasNext()); sourceParts.next() },
-                tools = setOf("Read"),
+            val cell = host.start(
+                "const winner = await Promise.race([" +
+                    "tools.call('Read', {file: 'fast'}), tools.call('Read', {file: 'slow'})]);\n" +
+                    "const follow = await tools.call('Read', {file: winner});",
+                setOf("Read"),
             )
             assertEquals(listOf("1", "2"), calls(cell.advance()).map(CodeModeCall::id))
             val follow = calls(cell.advance(listOf(CodeModeResult("1", "fast-value"))))

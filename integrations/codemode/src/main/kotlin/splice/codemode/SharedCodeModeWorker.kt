@@ -53,7 +53,7 @@ internal class HostWorkerDispatcher(
         } else if (type in CONTROL_FRAMES) {
             controls.execute(frame, type) { respond(frame, control(frame, type)) }
         } else if (!dispatchGuest(frame, type)) {
-            if (type == "start" || type == StreamingCodeModeWire.START) {
+            if (type == "start") {
                 // Raw-host starts still open their engine, but never wait on another open's lane.
                 open(frame, type)
             } else {
@@ -111,9 +111,7 @@ internal class HostWorkerDispatcher(
         writes.withLock { CodeModeWire.write(output, HostProtocol.reply(frame, reply)) }
     }
 
-    private fun selectCell(id: Long, owner: Long, type: String): HostWorkerCell? = if (
-        type == "start" || type == StreamingCodeModeWire.START
-    ) {
+    private fun selectCell(id: Long, owner: Long, type: String): HostWorkerCell? = if (type == "start") {
         val engine = sessions.engine(owner) ?: return null
         val created = HostWorkerCell(engine, owner)
         if (cells.putIfAbsent(id, created) == null) created else null
@@ -161,29 +159,25 @@ private class HostWorkerCell(private val engine: Engine, val owner: Long) : Auto
         }
     }
 
-    /** The reply to [frame]. One whose source parse overflowed still answers, inside the frame that retires it. */
     private fun answer(frame: JsonObject): JsonObject {
         if (CodeModeFields.requiredString(frame, "type") == "results_part") {
             return step(checkNotNull(session).advance(CodeModeFrames.parseResultsPart(frame)))
         }
-        val reply = step(execute(frame))
-        return session?.overflow?.let { CodeModeFatalFrame.died(it, reply) } ?: reply
+        return step(execute(frame))
     }
 
     private fun step(reply: WorkerReply): JsonObject = when {
-        reply.waitingForInput -> StreamingCodeModeWire.waitingFrame()
         reply.waitingForResults -> CodeModeWire.waitingResultsFrame(reply.output, reply.error)
         reply.calls != null -> CodeModeWire.callsFrame(reply.calls, reply.output, reply.error)
         else -> CodeModeWire.completedFrame(checkNotNull(reply.output), reply.error)
     }
 
     private fun execute(frame: JsonObject): WorkerReply = when (CodeModeFields.requiredString(frame, "type")) {
-        "start", StreamingCodeModeWire.START -> {
+        "start" -> {
             val current = WorkerSession(engine).also { session = it }
             if (closed.get()) current.close()
             current.start(CodeModeFrames.parseStart(frame))
         }
-        StreamingCodeModeWire.SOURCE_INPUT_FRAME -> checkNotNull(session).input(frame)
         else -> checkNotNull(session).advance(CodeModeFrames.parseResults(frame))
     }
 

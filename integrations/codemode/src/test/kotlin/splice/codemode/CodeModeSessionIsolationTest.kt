@@ -88,16 +88,16 @@ class CodeModeSessionIsolationTest {
     }
 
     @Test
-    fun `a streamed program starts in a session whose older program is parked and whose newer one was closed`() =
+    fun `an exec item starts in a session whose older program is parked and whose newer one was closed`() =
         runBlocking {
             JvmCodeModeRuntime(launch = HostLaunch(classpath = testClasspath)).use { runtime ->
-                val older = runtime.startStreamingSession("session-a", streamed("return 'older';"), setOf("Write"))
+                val older = runtime.startStreamingSession("session-a", item("return 'older';"), setOf("Write"))
                 assertTrue(older.advance() is CodeModeStep.Calls)
-                val newer = runtime.startStreamingSession("session-a", streamed("return 'newer';"), setOf("Write"))
+                val newer = runtime.startStreamingSession("session-a", item("return 'newer';"), setOf("Write"))
                 assertTrue(newer.advance() is CodeModeStep.Calls)
                 newer.close()
                 val next = withTimeout(START_BOUND_MS) {
-                    runtime.startStreamingSession("session-a", streamed("return 'next';", call = false), setOf("Write"))
+                    runtime.startStreamingSession("session-a", item("return 'next';", call = false), setOf("Write"))
                 }
                 val step = withTimeout(START_BOUND_MS) { next.advance() }
                 assertEquals("started\nnext", (step as CodeModeStep.Completed).output)
@@ -106,15 +106,9 @@ class CodeModeSessionIsolationTest {
             }
         }
 
-    /** A source that streams one statement and then completes, as an upstream exec round does. */
-    private fun streamed(ending: String, call: Boolean = true): CodeModeSource {
-        val parts = ArrayDeque(
-            listOf(
-                CodeModeSourcePart.Delta(if (call) "await tools.Write({});\n" else "text('started');\n"),
-                CodeModeSourcePart.Complete(ending),
-            ),
-        )
-        return CodeModeSource { parts.removeFirst() }
+    /** An exec item's source, handed over whole once the item has arrived, as the codex provider hands it. */
+    private fun item(ending: String, call: Boolean = true): CodeModeSource = CodeModeSource {
+        CodeModeSourcePart.Complete((if (call) "await tools.Write({});\n" else "text('started');\n") + ending)
     }
 
     @Test

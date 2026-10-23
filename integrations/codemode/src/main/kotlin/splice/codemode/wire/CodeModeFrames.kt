@@ -19,7 +19,6 @@ import splice.codemode.FIELD_OUTPUT
 import splice.codemode.FIELD_RESULTS
 import splice.codemode.FIELD_SOURCE
 import splice.codemode.FIELD_TOOLS
-import splice.codemode.StreamingCodeModeWire
 import splice.codemode.TOO_MANY_TOOLS
 import splice.codemode.TYPE_CALLS
 import splice.codemode.TYPE_COMPLETED
@@ -49,11 +48,8 @@ internal object CodeModeFrames {
     }
 
     fun parseStart(frame: JsonObject): WorkerStart {
-        val sealField = StreamingCodeModeWire.SOURCE_SCOPE_SEAL
-        val fields = setOf(FIELD_TYPE, FIELD_SOURCE, FIELD_TOOLS, FIELD_DESCRIPTIONS)
-        CodeModeFields.requireKeys(frame, if (sealField in frame) fields + sealField else fields)
-        val type = CodeModeFields.requiredString(frame, FIELD_TYPE)
-        require(type == TYPE_START || type == StreamingCodeModeWire.START) { "Expected a code-mode start frame" }
+        CodeModeFields.requireKeys(frame, setOf(FIELD_TYPE, FIELD_SOURCE, FIELD_TOOLS, FIELD_DESCRIPTIONS))
+        require(CodeModeFields.requiredString(frame, FIELD_TYPE) == TYPE_START) { "Expected a code-mode start frame" }
         val source = CodeModeFields.requiredString(frame, FIELD_SOURCE).also { requireText(it, FIELD_SOURCE) }
         val rawTools = CodeModeFields.requiredArray(frame, FIELD_TOOLS)
         require(rawTools.size <= CodeModeWire.maxToolCatalog) { TOO_MANY_TOOLS }
@@ -68,13 +64,7 @@ internal object CodeModeFrames {
             "Code-mode protocol field $FIELD_DESCRIPTIONS must be an object",
         )
         val descriptions = rawDescriptions.keys.associateWith { CodeModeFields.requiredString(rawDescriptions, it) }
-        return WorkerStart(
-            source,
-            tools,
-            descriptions,
-            streaming = type == StreamingCodeModeWire.START,
-            sealedGlobals = if (sealField in frame) StreamingCodeModeWire.parseSeal(frame) else emptySet(),
-        )
+        return WorkerStart(source, tools, descriptions)
     }
 
     fun parseResults(frame: JsonObject): List<CodeModeResult> {
@@ -107,7 +97,6 @@ internal object CodeModeFrames {
             TYPE_CALLS -> parseCalls(frame, tools, nextId)
             TYPE_COMPLETED -> parseCompleted(frame)
             TYPE_WAITING_RESULTS -> parseWaitingResults(frame)
-            StreamingCodeModeWire.SOURCE_WAIT_FRAME -> StreamingCodeModeWire.parseWaiting(frame)
             CODE_MODE_FATAL_FRAME_TYPE -> CodeModeFatalFrame.parse(frame)
             else -> throw IOException("Code-mode worker sent an unknown reply type")
         }

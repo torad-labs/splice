@@ -14,9 +14,6 @@ public object CodeModeManual {
     /** codex-rs code-mode-protocol PUBLIC_TOOL_NAME. */
     public const val TOOL_NAME: String = "exec"
 
-    /** Producer commitment for native intrinsics that may execute before the source finishes. */
-    public val streamingSealedGlobals: Set<String> = setOf("String", "Number", "Boolean", "Promise")
-
     /** codex-rs execute_spec.rs CODE_MODE_FREEFORM_GRAMMAR, byte for byte. */
     public const val GRAMMAR: String = "\nstart: pragma_source | plain_source\n" +
         "pragma_source: PRAGMA_LINE NEWLINE SOURCE\nplain_source: SOURCE\n\n" +

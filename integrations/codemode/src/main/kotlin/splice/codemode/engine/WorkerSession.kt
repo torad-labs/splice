@@ -1,27 +1,14 @@
-// NEW: one guest context owns callbacks and statement state inside its session's native engine.
+// NEW: one guest context owns a whole script and its callbacks inside its session's native engine.
 package splice.codemode.engine
 
-import kotlinx.serialization.json.JsonArray
-import kotlinx.serialization.json.JsonObject
-import kotlinx.serialization.json.JsonPrimitive
 import org.graalvm.polyglot.Context
 import org.graalvm.polyglot.Engine
 import org.graalvm.polyglot.HostAccess
 import org.graalvm.polyglot.PolyglotAccess
-import org.graalvm.polyglot.PolyglotException
-import org.graalvm.polyglot.Source
 import org.graalvm.polyglot.Value
 import org.graalvm.polyglot.io.IOAccess
-import org.graalvm.polyglot.proxy.ProxyExecutable
 import splice.codemode.CodeModeCellLauncher
-import splice.codemode.CodeModeEvalProjection
 import splice.codemode.CodeModeHeap
-import splice.codemode.CodeModeScopeSeal
-import splice.codemode.CodeModeStatementParser
-import splice.codemode.CodeModeStatementSyntax
-import splice.codemode.StatementInput
-import splice.codemode.StreamingCodeModeWire
-import splice.codemode.StreamingWorkerSession
 import splice.codemode.WorkerBridge
 import splice.codemode.WorkerReply
 import splice.codemode.WorkerStart
@@ -59,35 +46,11 @@ internal class WorkerSession(
     private var bridge: WorkerBridge? = null
     private var settle: Value? = null
     private var pendingCalls: List<CodeModeCall> = emptyList()
-    private var streaming: StreamingWorkerSession? = null
-
-    /** The stack overflow that parsing the streamed source raised, if any. */
-    val overflow: StackOverflowError? get() = streaming?.overflow
 
     fun start(start: WorkerStart): WorkerReply {
         val bridge = WorkerBridge(start.tools).also { this.bridge = it }
-        scopeViolation(start)?.let { return WorkerReply(null, "", it) }
-        val evalProjection = ProxyExecutable { values ->
-            CodeModeEvalProjection.compile(values[0].asString(), values[1].asString(), values[2].asString())
-        }
-        val control = launcher.execute(
-            if (start.streaming) null else start.source,
-            CodeModeToolCatalog.render(start),
-            bridge.host,
-            evalProjection,
-            JsonArray(start.sealedGlobals.sorted().map(::JsonPrimitive)).toString(),
-        )
+        val control = launcher.execute(start.source, CodeModeToolCatalog.render(start), bridge.host)
         settle = control.getMember("settle")
-        if (start.streaming) {
-            streaming = StreamingWorkerSession(
-                control.getMember("stream"),
-                bridge,
-                CodeModeStatementSyntax(::validStatement),
-                start.sealedGlobals,
-            ).also {
-                it.append(start.source, complete = false, error = null)
-            }
-        }
         return reply()
     }
 
@@ -100,29 +63,6 @@ internal class WorkerSession(
             checkNotNull(settle).execute(result.id, result.output, result.isError)
             bridge.settleCall(result.id)
         }
-        streaming?.drain()
-        return reply()
-    }
-
-    private fun scopeViolation(start: WorkerStart): String? {
-        if (start.streaming || start.sealedGlobals.isEmpty()) return null
-        val parser = CodeModeStatementParser(CodeModeStatementSyntax(::validStatement))
-        parser.append(start.source, finished = true, error = null)
-        val program = parser.next() as? StatementInput.Program ?: return null
-        return CodeModeScopeSeal.violation(program.bindings, start.sealedGlobals)
-    }
-
-    private fun validStatement(source: String): Boolean = try {
-        val wrapped = "\"use strict\"; (async () => {\n$source\n})"
-        context.parse(Source.newBuilder("js", wrapped, "splice-statement").cached(false).build())
-        true
-    } catch (error: PolyglotException) {
-        if (!error.isSyntaxError) throw error
-        false
-    }
-
-    fun input(frame: JsonObject): WorkerReply {
-        StreamingCodeModeWire.append(frame, checkNotNull(streaming))
         return reply()
     }
 
@@ -145,7 +85,6 @@ internal class WorkerSession(
                 error = completion?.error,
                 waitingForResults = true,
             )
-            streaming != null -> WorkerReply(null, null, null, waitingForInput = true)
             else -> WorkerReply(calls = null, output = "", error = IDLE_FAILURE)
         }
     }

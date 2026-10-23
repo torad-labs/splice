@@ -5,6 +5,7 @@ import kotlinx.coroutines.async
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.test.advanceTimeBy
 import kotlinx.coroutines.test.runTest
+import kotlinx.coroutines.yield
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertFalse
 import org.junit.jupiter.api.Assertions.assertThrows
@@ -22,23 +23,22 @@ import java.io.IOException
 
 class CodeModeSourceCursorCertificationTest {
     @Test
-    fun `available reads wait for terminal certification after item completion`() = runBlocking {
+    fun `a completed item waits for terminal certification before its cursor reads it`() = runBlocking {
         val committed = mutableListOf<String>()
         val source = CodeModeSourceBuffer(CodeModeSourceCommit { committed += it })
         source.publish("synthetic prefix")
         val cursor = source.view()
 
         source.seal()
+        val read = async { cursor.read() }
+        yield()
 
-        assertEquals(null, cursor.readAvailable())
+        assertFalse(read.isCompleted, "a completed item is not yet certified by its response terminal")
         assertTrue(committed.isEmpty())
 
         source.complete("synthetic prefix and certified suffix")
 
-        assertEquals(
-            CodeModeSourcePart.Complete("synthetic prefix and certified suffix"),
-            cursor.readAvailable(),
-        )
+        assertEquals(CodeModeSourcePart.Complete("synthetic prefix and certified suffix"), read.await())
         assertEquals(listOf("synthetic prefix and certified suffix"), committed)
     }
 

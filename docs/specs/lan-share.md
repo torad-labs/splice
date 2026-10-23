@@ -87,7 +87,7 @@ claudex ─▶ head :3099 (anthropic-passthrough) ──TLS, pinned──▶ sha
   row records it, so the Requests page says where the turn came from.
 - Discovery (phase 1): the client asks every address of each private IPv4 network it is on (a /24 around
   itself on a network wider than /22) for `/share/v1/info` on the share port, all at once under one deadline.
-  No multicast and no new dependency; mDNS advertising replaces this in phase 2.
+  No multicast and no new dependency. Since phase 2 it is one of three sources (milestone 5 below).
 
 ### Client: `splice remote`
 
@@ -210,6 +210,23 @@ Built on `feat/lan-share`, merged into `feat/v0.4.0` through the gate. Milestone
    The last three run `splice remote`'s own classes and change which commands splice runs, so each answers
    `restart: true` and the page offers the console's own restart. `[share]` is a live key: the daemon
    (`ShareListener`) opens, moves or closes the listener whenever the file changes.
-5. **Discovery**: mDNS (`_splice._tcp`), Tailscale peers, the subnet probe as fallback.
+5. **Discovery** (landed): `splice remote` and the Sharing page's Find machines look in three places at once, and each
+   machine one names is asked for `/share/v1/info` the moment it is named, all under the scan's one deadline
+   (`RemoteDiscovery`):
+   - **mDNS.** While it listens, a sharing machine advertises `_splice._tcp` under its name at its own port, and stops
+     when the listener closes (`ShareAdvert`). On Linux and elsewhere through JmDNS (Apache-2.0, approved 2026-10-22).
+     On a Mac through the system's mDNSResponder (`dns-sd -R` to advertise, `dns-sd -Z` to browse): macOS gives a
+     process of ours no multicast at all, from a terminal or from launchd (a send to 224.0.0.251 answers "no route to
+     host"), while `dns-sd` works from both. A small shell around the advert ends it when the daemon is gone.
+   - **The subnet.** Every address on this machine's private networks, as in phase 1: what still finds a machine where
+     multicast is blocked.
+   - **Tailscale.** Each online peer `tailscale status --json` lists, at its Tailscale IPv4 address: the machines on
+     another network. The CLI is found on the PATH or where it installs outside one (the Mac app included).
+
+   One machine reached two ways is one entry, at the address of the first source that found it (mDNS, then the subnet,
+   then Tailscale, so the network path is kept). Machines are told apart by the certificate each serves; one that states
+   none (phase 1) by its name. The certificate's fingerprint is that stable identity, so `/share/v1/info` gains no
+   separate install id. A source that cannot look, and an address that has not answered by the deadline, leave the
+   other machines found.
 6. **Sessions across machines**: each machine's live sessions mirrored on the other, so ListAgents and SendMessage
    reach `<name>@<machine>`.

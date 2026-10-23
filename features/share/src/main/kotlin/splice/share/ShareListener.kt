@@ -3,7 +3,8 @@
 // console's Sharing page hands its write here at once, and the daemon's re-read of splice.toml (TopologyWindows) hands
 // any other edit, `splice share on|off` and an edit by hand included. So sharing turns on and off, and changes the
 // commands it offers, without a daemon restart. A table that moved closes the listener and opens it again with the new
-// one; the machines that joined and their activity are one book across those reopenings.
+// one; the machines that joined and their activity are one book across those reopenings. Since milestone 5, while it
+// listens it advertises itself on this machine's networks (ShareAdvert), and it stops when the listener closes.
 package splice.share
 
 import kotlinx.coroutines.runInterruptible
@@ -23,6 +24,7 @@ public class ShareListener(
     private val log: LogSink,
 ) {
     private val mutex = Mutex()
+    private val advert = SystemMdns().advert(log)
 
     /** The machines that joined this one, and when each was last heard from. */
     public val clients: ShareClients = ShareClients(ShareState(statePaths).clientsFile)
@@ -52,10 +54,15 @@ public class ShareListener(
         followed = when (val opened = opener.open(share, clients, running, quotas)) {
             is ShareOpen.Listening -> {
                 server = opened.server
+                advert.on(ShareHostName().short(), share.port)
                 ShareListening(share, listening = true, opened.server.fingerprint, opened.server.offered)
             }
-            is ShareOpen.Refused -> ShareListening(share, listening = false, why = opened.why)
+            is ShareOpen.Refused -> {
+                advert.off()
+                ShareListening(share, listening = false, why = opened.why)
+            }
             ShareOpen.Off -> {
+                advert.off()
                 if (open != null) log("[share] sharing is off: the listener on :${was.share.port} closed\n")
                 ShareListening(share, listening = false)
             }
@@ -67,6 +74,7 @@ public class ShareListener(
     public suspend fun stop() {
         mutex.withLock {
             runInterruptible(ProcessDispatchers().io()) { server?.stop() }
+            advert.off()
             server = null
             followed = followed.copy(listening = false, offered = emptyList())
         }

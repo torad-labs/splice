@@ -1,7 +1,8 @@
 // NEW: LAN share, phase 2, milestone 4 (docs/specs/lan-share.md). The Sharing page's rows for this machine THROUGH A
 // REAL ControlServer over HTTP with the mgmt key: GET /api/share as the file holds it, PUT /api/share turning the real
 // share listener on and off with no restart, the offered commands stored as the page chose them, and the refusals in
-// words. splice.toml, the state folder and the certificate live in a temp folder the routes reach through the daemon's
+// words. Milestone 5: a machine that turns sharing on is found by one looking on the network, over real multicast DNS
+// and the real TLS probe, and is not found once it turns it off. splice.toml, the state folder and the certificate live in a temp folder the routes reach through the daemon's
 // environment (SharingParts.env), so nothing here reads or writes the machine's own.
 package splice.app.control
 
@@ -34,10 +35,16 @@ import splice.core.config.MgmtKey
 import splice.core.config.StatePaths
 import splice.core.testing.TestPorts
 import splice.core.util.EnvReader
+import splice.share.ShareHostName
 import splice.share.ShareListener
 import splice.share.ShareStart
 import splice.share.SharedCatalogs
 import splice.share.SharedQuotas
+import splice.share.remote.MdnsMachines
+import splice.share.remote.RemoteDiscovery
+import splice.share.remote.RemoteFound
+import splice.share.remote.RemoteHttp
+import splice.share.remote.RemoteTrust
 import splice.topology.TopologyLoader
 import java.net.Socket
 import java.nio.file.Files
@@ -174,6 +181,17 @@ class SharingRoutesTest {
 
     private fun answers(port: Int): Boolean = runCatching { Socket("127.0.0.1", port).close() }.isSuccess
 
+    /** What a machine looking for sharing machines over multicast DNS finds at [port], scanning until [wanted] says
+     *  the answer is the one awaited. */
+    private suspend fun looked(port: Int, wanted: (RemoteFound?) -> Boolean): RemoteFound? {
+        val looking = RemoteDiscovery(RemoteHttp(RemoteTrust(null, "a sharing machine")), listOf(MdnsMachines()))
+        while (true) {
+            val found = looking.scan(port).firstOrNull { it.port == port }
+            if (wanted(found)) return found
+            delay(SHARE_POLL_MS)
+        }
+    }
+
     @Test
     fun `the read is guarded and says the file's sharing, each command, and why one cannot be offered`() {
         serve { call ->
@@ -215,6 +233,22 @@ class SharingRoutesTest {
             assertFalse(listening(off), off.toString())
             assertFalse(answers(port), "the listener closed")
             assertFalse(TopologyLoader.parse(Files.readString(file)).share.enabled)
+        }
+    }
+
+    @Test
+    fun `a machine sharing is found on its network at its port and certificate, and not once it stops`() {
+        val port = TestPorts.reserve()
+        serve { call ->
+            val on = put(call, "{\"enabled\":true,\"port\":$port}")
+            val sharing = on.getValue("share").jsonObject.getValue("sharing").jsonObject
+            val pin = sharing.getValue("fingerprint").jsonPrimitive
+            val found = looked(port) { it != null }
+            assertEquals(ShareHostName().short(), found?.info?.server)
+            assertEquals(pin.content, found?.info?.fingerprint, "the certificate met is the one the page shows")
+
+            put(call, "{\"enabled\":false}")
+            assertNull(looked(port) { it == null }, "a machine that stopped sharing is no longer advertised")
         }
     }
 

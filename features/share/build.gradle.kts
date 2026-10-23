@@ -14,6 +14,7 @@ dependencies {
     implementation(libs.ktor.server.netty)
     implementation(libs.ktor.network.tls.certificates)
     implementation(libs.kotlinx.serialization.json)
+    implementation(libs.jmdns)
     testImplementation(libs.ktor.server.test.host) {
         // As in features/turns: the test host drags in ktor-client-apache5, an engine no test here uses.
         exclude(group = "io.ktor", module = "ktor-client-apache5")

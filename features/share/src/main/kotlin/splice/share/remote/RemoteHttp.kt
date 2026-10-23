@@ -21,7 +21,7 @@ import java.time.Duration
 import java.util.concurrent.CompletableFuture
 import java.util.concurrent.CompletionException
 
-public class RemoteHttp(private val trust: RemoteTrust) {
+public class RemoteHttp(private val trust: RemoteTrust) : RemoteInfoProbe {
     private val json = Json { ignoreUnknownKeys = true }
     private val http: HttpClient = HttpClient.newBuilder()
         .version(HttpClient.Version.HTTP_1_1)
@@ -31,7 +31,7 @@ public class RemoteHttp(private val trust: RemoteTrust) {
 
     /** What the machine at [host]:[port] offers; completes with null when nothing there answers as splice, and
      *  exceptionally when its certificate is not the one [trust] pinned, which [refusal] then words. */
-    public fun info(host: String, port: Int): CompletableFuture<ShareInfo?> {
+    override fun info(host: String, port: Int): CompletableFuture<ShareInfo?> {
         val request = HttpRequest.newBuilder(url(host, port, SHARE_INFO_PATH))
             .timeout(Duration.ofMillis(REMOTE_REQUEST_TIMEOUT_MS))
             .GET()

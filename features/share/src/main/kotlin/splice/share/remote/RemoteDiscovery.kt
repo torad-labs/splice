@@ -1,18 +1,21 @@
-// NEW: LAN share, phase 1 (docs/specs/lan-share.md). Finding the machines that share heads: every address
-// on each private IPv4 network this machine is on is asked for /share/v1/info on the share port, all at
-// once, under one deadline. No multicast and no new dependency; a network bigger than a /22 is probed only
-// in the /24 around this machine's own address. mDNS advertising replaces this in phase 2.
+// NEW: LAN share, phase 1 (docs/specs/lan-share.md). Finding the machines that share heads. Since phase 2, milestone 5,
+// from every source at once: the machines that advertise themselves over mDNS (MdnsMachines), the peers on his tailnet
+// (TailscalePeers), and every address on this machine's private networks (SubnetSource), which still finds a machine
+// where multicast is blocked. Each source looks in parallel, each machine it names is asked for /share/v1/info the
+// moment it names it, and every wait takes what is left of one deadline. One machine reached two ways is one entry, at
+// the address the first source gave: machines are told apart by the certificate each serves, by name only when one
+// states none.
 package splice.share.remote
 
 import splice.core.util.Cancellables
 import splice.share.ShareInfo
-import java.net.Inet4Address
 import java.net.InetAddress
-import java.net.InterfaceAddress
-import java.net.NetworkInterface
-import java.nio.ByteBuffer
 import java.util.concurrent.CompletableFuture
+import java.util.concurrent.ConcurrentHashMap
+import java.util.concurrent.ExecutionException
+import java.util.concurrent.Executor
 import java.util.concurrent.TimeUnit
+import java.util.concurrent.TimeoutException
 
 /** A machine that answered: the [address] it answered on, and what it offers. */
 public data class RemoteFound(public val address: String, public val port: Int, public val info: ShareInfo) {
@@ -32,55 +35,66 @@ public data class RemoteFound(public val address: String, public val port: Int, 
     }
 }
 
-public class RemoteDiscovery(private val http: RemoteHttp) {
+/** An address and port where a source thinks a sharing machine may answer. */
+public data class RemoteCandidate(public val host: String, public val port: Int)
+
+/** One place sharing machines are found: names where to ask, given the default share [port]. A source that throws
+ *  finds nothing, and the others still look. */
+public fun interface RemoteSource {
+    public fun candidates(port: Int): List<RemoteCandidate>
+}
+
+/** Asks one address what it offers: null when nothing there answers as splice (RemoteHttp). */
+public fun interface RemoteInfoProbe {
+    public fun info(host: String, port: Int): CompletableFuture<ShareInfo?>
+}
+
+public class RemoteDiscovery(
+    private val probe: RemoteInfoProbe,
+    /** Where to look, in the order the address kept is chosen: by default everywhere a sharing machine can be, the
+     *  network path first (what advertises itself here, every address on these networks), then the peers on his
+     *  tailnet, which reach a machine on another network. */
+    private val sources: List<RemoteSource> = listOf(MdnsMachines(), SubnetSource(), TailscalePeers(TailscaleCli())),
+) {
+    private val looker = Executor { Thread.ofVirtual().name("splice-remote-scan").start(it) }
 
     public fun scan(port: Int): List<RemoteFound> {
-        val networks = NetworkInterface.networkInterfaces().toList()
-            .filter { it.isUp && !it.isLoopback && !it.isVirtual }
-            .flatMap { it.interfaceAddresses }
-            .filter { it.address is Inet4Address && it.address.isSiteLocalAddress }
-        val own = networks.map { it.address.hostAddress }.toSet()
-        val asked = networks.flatMap(::hosts).distinct().filterNot { it in own }
-            .map { host -> host to http.info(host, port) }
-        // Every probe is already in flight; each wait takes what is left of one shared deadline, and whatever has not
-        // answered by then is an address where nothing listens.
         val deadline = System.nanoTime() + TimeUnit.MILLISECONDS.toNanos(SCAN_DEADLINE_MS)
-        return asked.mapNotNull { (host, reply) ->
-            answered(reply, (deadline - System.nanoTime()).coerceAtLeast(0))?.let { RemoteFound(host, port, it) }
-        }.distinctBy { it.info.server }
+        val asked = ConcurrentHashMap<RemoteCandidate, CompletableFuture<ShareInfo?>>()
+        val looking = sources.map { source ->
+            CompletableFuture.supplyAsync({ source.candidates(port) }, looker).thenApply { named ->
+                named.map { one ->
+                    one to asked.computeIfAbsent(one) { candidate -> probe.info(candidate.host, candidate.port) }
+                }
+            }
+        }
+        // In source order, so the first source's address is the one kept; whatever has not answered by the deadline is
+        // an address where nothing listens.
+        return looking.flatMap { waited(it, deadline).orEmpty() }
+            .mapNotNull { (candidate, reply) ->
+                waited(reply, deadline)?.let { RemoteFound(candidate.host, candidate.port, it) }
+            }
+            .distinctBy(::machine)
     }
 
-    private fun answered(reply: CompletableFuture<ShareInfo?>, leftNanos: Long): ShareInfo? =
-        Cancellables.runCatchingCancellable { reply.get(leftNanos, TimeUnit.NANOSECONDS) }
-            .fold(onSuccess = { it }, onFailure = { null })
+    /** Which machine answered: the certificate it serves, or its name when it states none. */
+    private fun machine(found: RemoteFound): String =
+        found.info.fingerprint?.let { "certificate $it" } ?: "name ${found.info.server}"
 
-    /** Every host address of [network], or of the /24 around this machine when the network is larger. The
-     *  address is read as one Int, so its 32 bits are [Int.SIZE_BITS]. */
-    private fun hosts(network: InterfaceAddress): List<String> {
-        val declared = network.networkPrefixLength.toInt()
-        val prefix = if (declared < MIN_PREFIX) AROUND_PREFIX else declared.coerceAtMost(MAX_PREFIX)
-        val self = ByteBuffer.wrap(network.address.address).int
-        val mask = -1 shl (Int.SIZE_BITS - prefix)
-        val base = self and mask
-        val size = 1 shl (Int.SIZE_BITS - prefix)
-        return (1 until size - 1).map { offset -> dotted(base + offset) }
-    }
-
-    /** An address as `a.b.c.d`; four raw bytes, so no name is looked up. */
-    private fun dotted(address: Int): String =
-        InetAddress.getByAddress(ByteBuffer.allocate(Int.SIZE_BYTES).putInt(address).array()).hostAddress
+    /** What [future] holds by [deadline]: null when it is still out then (nothing listens there, and the ask is
+     *  dropped) or when it failed (a source that could not look, an address that refused). */
+    private fun <T> waited(future: CompletableFuture<T>, deadline: Long): T? =
+        try {
+            future.get((deadline - System.nanoTime()).coerceAtLeast(0), TimeUnit.NANOSECONDS)
+        } catch (_: TimeoutException) {
+            future.cancel(true)
+            null
+        } catch (_: ExecutionException) {
+            null
+        }
 }
 
 // why: one deadline for the whole scan: a machine on the same network answers /share/v1/info in milliseconds, so
-// two and a half seconds leaves room for a slow Wi-Fi peer while `splice remote` still answers within three.
+// two and a half seconds leaves room for a slow Wi-Fi peer and an mDNS browse while `splice remote` still answers
+// within three.
 private const val SCAN_DEADLINE_MS = 2_500L
-
-// why: a /22 is 1022 hosts, the most one scan asks; anything wider is narrowed to the /24 this machine is in.
-private const val MIN_PREFIX = 22
-
-// why: the network a wider one is narrowed to: the /24 around this machine, 254 hosts, a home network's usual size.
-private const val AROUND_PREFIX = 24
-
-// why: a /31 or /32 (a point-to-point link, a VPN's own address) has no host range of its own, so it is probed as
-// the /30 around it, the two hosts beside this machine.
-private const val MAX_PREFIX = 30

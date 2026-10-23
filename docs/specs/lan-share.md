@@ -264,5 +264,7 @@ Built on `feat/lan-share`, merged into `feat/v0.4.0` through the gate. Milestone
      its record, never kept as ended. On the Sharing page each machine's card says how many of its sessions are listed
      here and how many of this machine's it was last shown ("Sessions: 2 of its listed here · 1 of this machine's listed
      there"); one that has not looked yet says so, and one no session crosses with says nothing.
-   - **Not yet.** A receipt to a sender in `/tmp/cc-socks` on a Mac, where `/tmp` is a link the receipt path refuses
-     (`PeerNoteSocket.inOwnFolder`, as for peers). A message refused on the far side of the outbox reaches no one.
+   - **Not yet.** A message refused on the far side of the outbox reaches no one.
+   - **Receipts on a Mac.** A Mac's Claude Code names its socket `/tmp/cc-socks/<pid>.sock`, and `/tmp` there is a
+     link to `/private/tmp`. `PeerNoteSocket.inOwnFolder` allows a link above the sender's sockets folder, since it
+     moves the folder and the socket together, and still refuses a link at the socket, a `..` or another folder.

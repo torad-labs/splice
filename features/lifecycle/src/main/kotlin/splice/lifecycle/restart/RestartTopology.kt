@@ -8,8 +8,6 @@ import splice.core.util.Cancellables
 import splice.core.util.EnvReader
 import splice.core.util.SafeFailureText
 import splice.core.util.TopologyRefusal
-import splice.daemonclient.DaemonProbe
-import splice.daemonclient.DaemonSettings
 import splice.topology.LocalRowFindings
 import splice.topology.TopologyLoader
 import java.nio.file.Path
@@ -24,39 +22,40 @@ public fun interface ConfigRepair {
 internal class RestartTopology(
     private val output: TerminalOutput,
     private val env: EnvReader,
-    private val settings: DaemonSettings,
     private val repair: ConfigRepair,
     private val runtimes: LocalRowFindings,
 ) {
-    /** The topology, as a Result that holds null when the file could not be read but a running daemon can still answer
-     *  for the head ports; null when the restart must not proceed at all. A splice.toml this build refuses is the
-     *  second case: nothing is stopped, every finding is printed, and on a terminal the fix session is offered and the
-     *  file read again, so `splice restart` repairs and proceeds in one go. */
-    fun read(): Result<Topology?>? {
+    /** The topology, or null when the restart must not proceed. The daemon that comes back reads this same file
+     *  before it boots, so a file this CLI cannot read is one no successor can boot on: nothing is stopped. A
+     *  splice.toml this build refuses prints every finding and, on a terminal, offers the fix session and reads the
+     *  file again, so `splice restart` repairs and proceeds in one go. A missing file is no failure: the read writes
+     *  the starter, as boot does. */
+    fun read(): Topology? {
         val path = TopologyLoader.configPath(env)
-        val read = Cancellables.runCatchingCancellable { TopologyLoader.loadForBoot(path, runtimes).topology }
-        val failure = read.exceptionOrNull() ?: return read
-        output.line("splice: ${SafeFailureText.render(failure)}")
-        return if (failure is TopologyRefusal) repaired(path) else withRunningDaemon(path)
+        return Cancellables.runCatchingCancellable { TopologyLoader.loadForBoot(path, runtimes).topology }.fold(
+            onSuccess = { it },
+            onFailure = { failure ->
+                output.line("splice: ${SafeFailureText.render(failure)}")
+                if (failure is TopologyRefusal) repaired(path) else unreadable(path)
+            },
+        )
     }
 
     /** A splice.toml this build refuses: nothing is stopped, and on a terminal the fix session is offered and the file
      *  read again, so one `splice restart` repairs and proceeds. Null when the restart must not go on. */
-    private fun repaired(path: Path): Result<Topology?>? {
+    private fun repaired(path: Path): Topology? {
         output.line("splice: nothing was stopped and $path is unchanged")
         if (!repair.offer()) return null
-        val again = Cancellables.runCatchingCancellable { TopologyLoader.loadForBoot(path, runtimes).topology }
+        return Cancellables.runCatchingCancellable { TopologyLoader.loadForBoot(path, runtimes).topology }
             .onFailure { output.line("splice: ${SafeFailureText.render(it)}") }
-        return if (again.isFailure) null else again
+            .getOrNull()
     }
 
-    /** An unreadable file is not a refusal: a daemon that is up still answers for the head ports. */
-    private fun withRunningDaemon(path: Path): Result<Topology?>? {
-        if (DaemonProbe.healthVersion(settings.controlPort(null, env)) != null) {
-            output.line("splice: falling back to the running daemon for head ports")
-            return Result.success(null)
-        }
-        output.line("splice: cannot start the daemon until $path is fixed")
+    /** A splice.toml that exists but cannot be read (its permissions, a dangling link): the running daemon could still
+     *  name its head ports, but the daemon started after it reads this file first and would not boot, so stopping the
+     *  one that serves would leave every head down. */
+    private fun unreadable(path: Path): Topology? {
+        output.line("splice: nothing was stopped: the daemon reads $path before it boots, so fix that file and retry")
         return null
     }
 }

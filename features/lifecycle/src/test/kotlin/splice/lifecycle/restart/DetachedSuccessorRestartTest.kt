@@ -104,6 +104,26 @@ class DetachedSuccessorRestartTest {
     }
 
     @Test
+    fun `a config that exists but cannot be read stops nothing and names the file`(@TempDir home: Path) {
+        val config = Files.createSymbolicLink(home.resolve("splice.toml"), home.resolve("moved-away.toml"))
+        val lines = mutableListOf<String>()
+        val output = TerminalOutput { lines += it }
+        val port = TestPorts.reserve()
+        val env = EnvReader { key ->
+            when (key) {
+                "SPLICE_CONFIG" -> config.toString()
+                "SPLICE_CONTROL_PORT" -> port.toString()
+                else -> null
+            }
+        }
+        val command = RestartCommand(output, output, env, RunningJar { null })
+        assertEquals(false, command.restart(waitForCompactions = false))
+        assertTrue(lines.any { it.contains("nothing was stopped") && it.contains(config.toString()) }, lines.toString())
+        assertTrue(lines.none { it.contains("falling back to the running daemon") }, lines.toString())
+        assertTrue(Files.isSymbolicLink(config) && !Files.exists(config), "the starter must not be written through")
+    }
+
+    @Test
     fun `successor JVM flags keep the browser guard and home without multiplying on restart`() {
         val home = Path.of("/synthetic/home")
         val successor = DetachedDaemonSuccessor(

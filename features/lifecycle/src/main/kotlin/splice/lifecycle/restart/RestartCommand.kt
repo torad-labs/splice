@@ -40,7 +40,7 @@ public class RestartCommand(
      *  diagnostic goes to [errors], because stdout belongs to the verb. */
     private val settings = DaemonSettings(errors)
 
-    private val topologyRead = RestartTopology(output, env, settings, repair, runtimes)
+    private val topologyRead = RestartTopology(output, env, repair, runtimes)
 
     /** [expectedVersion] is what the restarted daemon must report: this CLI's own, or the release an
      *  upgrade just activated (the old CLI running `splice upgrade` is not the version coming up).
@@ -48,18 +48,16 @@ public class RestartCommand(
     public fun restart(expectedVersion: String = GATEWAY_VERSION, waitForCompactions: Boolean = true): Boolean {
         // Load topology once: controlPort AND the FALLBACK head ports come from it. The head ports feed
         // the stop check so a restart never declares success while a head port is still bound (F3).
-        // Silence here re-opened F3: a null topology made headPorts empty, `none {}` went vacuously
-        // true, and the stop check silently degraded to control-port-only — the exact defect this
-        // range closed. Say it out loud, and name the failure; the live enumeration below usually
-        // covers for it anyway.
+        // A file that cannot serve stops the verb here, before anything is stopped: the daemon that
+        // comes back reads the same file before it boots.
         val topology = topologyRead.read() ?: return false
-        val port = settings.controlPort(topology.getOrNull(), env)
+        val port = settings.controlPort(topology, env)
 
         // V4-395: before any stop or unit verb. A unit that is another home's is never this verb's to touch.
         val refusal = coldStart.foreignUnitRefusal(port)
         return if (refusal == null) {
             restartOwn(
-                topology.getOrNull()?.heads?.values?.map { it.port }.orEmpty(),
+                topology.heads.values.map { it.port },
                 port,
                 expectedVersion,
                 waitForCompactions,
@@ -158,7 +156,7 @@ public class RestartCommand(
         val ports = ((live as? Reading.Answered)?.value.orEmpty() + tomlPorts).distinct()
         val unseen = when {
             live is Reading.Malformed -> "/api/heads answered with a list this CLI cannot read"
-            ports.isEmpty() -> "config unreadable and /api/heads unreachable"
+            ports.isEmpty() -> "splice.toml names no head and /api/heads named none or was unreachable"
             else -> null
         }
         return StopScope(ports, unseen)
@@ -170,7 +168,7 @@ public class RestartCommand(
  *  The union is deliberate: the running daemon's own list is authoritative, and the toml's ports are
  *  kept alongside it so a head the daemon failed to start — and therefore never lists — is still
  *  checked. Extra ports only ever make the stop check stricter. [unseen] names why the list cannot be
- *  trusted: both sources failed, where an empty list makes `headPorts.none {}` vacuously true, or the
+ *  trusted: neither source named a port, where an empty list makes `headPorts.none {}` vacuously true, or the
  *  daemon answered with a list it could not read. The caller announces the weakened check rather than
  *  let it pass as a clean stop. */
 internal data class StopScope(val ports: List<Int>, val unseen: String?) {

@@ -66,7 +66,6 @@ internal class ShareNetwork(
         val bytes = (ip as? Inet6Address)?.address ?: return false
         return bytes[0].toInt() and ULA_MASK == ULA_PREFIX
     }
-
 }
 
 private const val BYTE_MASK = 0xff

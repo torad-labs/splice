@@ -45,20 +45,26 @@ internal class CodeModeSourceBuffer(
     @Volatile var startupRejected: Boolean = false
         private set
 
-    fun publish(text: String) {
+    /** A failed source is final: a delta its reader parsed while a disposal, cut or cancel was failing it is dropped,
+     *  never dispatched, and is not the upstream's protocol fault (it raced the round's own end, outside its lock).
+     *  False when it was dropped. */
+    fun publish(text: String): Boolean {
+        var kept = true
         state.update { previous ->
-            check(previous.terminal == null) { "source already ended" }
+            check(previous.terminal !is CodeModeSourcePart.Complete) { "source already ended" }
             check(!previous.itemComplete) { "source item already completed" }
             check(text.startsWith(previous.text)) { "dispatched source changed" }
-            SourceSnapshot(text)
+            kept = previous.terminal == null
+            if (kept) SourceSnapshot(text) else previous
         }
+        return kept
     }
 
     /** Item completion freezes unread statements until the response terminal certifies their source. */
     fun seal() {
         state.update { previous ->
-            check(previous.terminal == null) { "source already ended" }
-            previous.copy(itemComplete = true)
+            check(previous.terminal !is CodeModeSourcePart.Complete) { "source already ended" }
+            if (previous.terminal != null) previous else previous.copy(itemComplete = true)
         }
     }
 

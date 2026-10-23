@@ -82,7 +82,9 @@ internal class CodeModeSourceCapture(
         check(completedCall == null) { "exec source continued after item completion" }
         val appended = source.text + event.text
         checkSource(appended)
-        source.publish(appended)
+        if (!source.publish(appended)) {
+            config.log("[code-mode] a streamed exec delta arrived after its source failed; dropped")
+        }
     }
 
     private fun checkIdentity(call: GatewayCustomCall, expected: GatewayCustomCall) {

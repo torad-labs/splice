@@ -68,7 +68,11 @@ private const val BLOCK_MS = 2_000L
 private const val MIN_PACE = 0.5
 private const val CLIENT_TIMEOUT_MS = 15_000
 private const val UPSTREAM_INTERVAL_MS = 10L
-private const val UPSTREAM_DELTAS = 350
+
+// The stub's stream lasts this long by the clock, a delta every interval or as often as the host's timers allow. A Mac
+// session under a detached tmux has its timers coalesced, so a 10 ms wait takes about 40: counted waits (350 of them)
+// stretched each stream to 14 s, past the client timeout, and 65 released preparations further still.
+private const val UPSTREAM_SPAN_MS = 3_500L
 private const val WARM_DELTAS = 5
 private const val BLOCKED_PREPARATIONS = 65
 
@@ -496,11 +500,10 @@ private class DispatchUpstream : AutoCloseable {
                     output.flush()
                 }
                 event("""{"type":"response.output_item.added","output_index":0,"item":{"type":"message"}}""")
-                repeat(UPSTREAM_DELTAS) {
-                    if (!closed.get()) {
-                        event("""{"type":"response.output_text.delta","output_index":0,"delta":"x"}""")
-                        CountDownLatch(1).await(UPSTREAM_INTERVAL_MS, TimeUnit.MILLISECONDS)
-                    }
+                val ends = System.nanoTime() + TimeUnit.MILLISECONDS.toNanos(UPSTREAM_SPAN_MS)
+                while (!closed.get() && System.nanoTime() < ends) {
+                    event("""{"type":"response.output_text.delta","output_index":0,"delta":"x"}""")
+                    CountDownLatch(1).await(UPSTREAM_INTERVAL_MS, TimeUnit.MILLISECONDS)
                 }
                 event("""{"type":"response.output_item.done","output_index":0}""")
                 event(

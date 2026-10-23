@@ -52,7 +52,7 @@ public class RemoteLinks(topology: Topology, private val store: RemotesStore) {
     /** Each joined machine as the last check found it, by name; empty before the first check. */
     public fun reach(): Map<String, RemoteReach> = reach.toSortedMap()
 
-    /** Each head here whose machine did not answer the last check, or said that head is not running there, with that
+    /** Each head here whose machine did not answer the last check, or does not serve that head there, with that
      *  machine's name: what the heads route reads as "Not answering". */
     public fun notAnswering(): Map<String, String> = relayed.mapNotNull { (key, to) ->
         val found = reach[to.remote] ?: return@mapNotNull null
@@ -76,7 +76,9 @@ public class RemoteLinks(topology: Topology, private val store: RemotesStore) {
             val now = Instant.now().toString()
             val found = Cancellables.runCatchingCancellable { api(name).health(remote.url) }.fold(
                 onSuccess = { health ->
-                    RemoteReach(true, now, down = health.heads.filterNot { it.running }.map { it.key }.toSet())
+                    val running = health.heads.filter { it.running }.map { it.key }.toSet()
+                    val relayedThere = relayed.values.filter { it.remote == name }.map { it.head }
+                    RemoteReach(true, now, down = (health.heads.map { it.key } + relayedThere).toSet() - running)
                 },
                 onFailure = { RemoteReach(false, now, why = said(it)) },
             )
@@ -96,7 +98,9 @@ public class RemoteLinks(topology: Topology, private val store: RemotesStore) {
 }
 
 /** One joined machine as the last check found it: [reachable] since [since] (an ISO instant, when it last changed),
- *  [why] it is not, in words, and [down], the keys of the heads it offers that it said are not running. */
+ *  [why] it is not, in words, and [down], the keys of the heads there that it offers or this machine relays to and that
+ *  it does not list as running. A head that failed at its start, or that it no longer offers, is missing from its
+ *  health, and every turn relayed to it is refused, so it is down too. */
 public data class RemoteReach(
     public val reachable: Boolean,
     public val since: String,

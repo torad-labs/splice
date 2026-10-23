@@ -52,7 +52,9 @@ class SessionContinueTest {
                     if (it) afterExit()
                 }
 
-                override suspend fun stopped(session: String, seconds: Long): Boolean = stops
+                // A stop that lands reads in the registry, the one RegistryHandover.stopped watches.
+                override suspend fun stopped(session: String, seconds: Long): Boolean =
+                    stops.also { if (it) leadIdle() }
 
                 override suspend fun cameOn(session: String, head: String, seconds: Long): Boolean {
                     cameOn += session to head
@@ -92,6 +94,11 @@ class SessionContinueTest {
     private fun leadWorking() {
         val file = rig.tmp.resolve("sessions/1.json")
         Files.writeString(file, Files.readString(file).replace("{", """{"status":"busy","""))
+    }
+
+    private fun leadIdle() {
+        val file = rig.tmp.resolve("sessions/1.json")
+        Files.writeString(file, Files.readString(file).replace(""""status":"busy",""", ""))
     }
 
     @Test

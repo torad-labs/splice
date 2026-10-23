@@ -53,8 +53,11 @@ class TopologyWriterOwnerOnlyTest {
 
     private fun mode(path: Path): String = PosixFilePermissions.toString(Files.getPosixFilePermissions(path))
 
-    private fun names(dir: Path): List<String> = Files.list(dir).use { paths ->
-        paths.map { it.fileName.toString() }.sorted().toList()
+    /** What [dir] holds; a directory never made holds nothing, as when a save fails at its lock before a backup. */
+    private fun names(dir: Path): List<String> = if (!Files.isDirectory(dir)) {
+        emptyList()
+    } else {
+        Files.list(dir).use { paths -> paths.map { it.fileName.toString() }.sorted().toList() }
     }
 
     @Test

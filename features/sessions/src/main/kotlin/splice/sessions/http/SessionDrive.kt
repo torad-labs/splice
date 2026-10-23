@@ -34,6 +34,7 @@ import splice.sessions.http.Refusal.CLOSED
 import splice.sessions.http.Refusal.REFUSED
 import splice.sessions.prompt.ScreenChoices
 import splice.sessions.prompt.ScreenOffer
+import splice.sessions.registry.PidAlive
 import java.util.concurrent.ConcurrentHashMap
 
 internal const val NO_TERMINAL_TO_DRIVE = "splice has no terminal to drive sessions in yet"
@@ -290,8 +291,7 @@ public class SessionDrive(
  *  but that session's own End or move is typed there until its client is seen gone. */
 internal class PaneTurns(
     /** Whether a client process still runs: the operating system's answer, read for a pane whose exit wait ran out. */
-    private val alive: ClientAlive =
-        ClientAlive { pid -> ProcessHandle.of(pid).map(ProcessHandle::isAlive).orElse(false) },
+    private val alive: PidAlive = PidAlive { pid -> pid > 0 && ProcessHandle.of(pid).map { it.isAlive }.orElse(false) },
 ) {
     /** Each monitor serializes the terminal calls it wraps and guards no state. */
     private val monitors = List(PANE_TURNS) { Any() }
@@ -371,11 +371,6 @@ internal class PaneTurns(
     /** What an act types once its pane's turn is held: the refusal that stopped it, or null once its keys went. */
     fun interface InTurn {
         operator fun invoke(): JsonReply?
-    }
-
-    /** Whether the client process [pid] still runs. */
-    fun interface ClientAlive {
-        operator fun invoke(pid: Long): Boolean
     }
 
     /** What End and Continue on type to end a client, in the order [leave] runs it. */

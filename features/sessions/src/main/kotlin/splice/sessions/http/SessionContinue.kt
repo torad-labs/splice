@@ -183,7 +183,8 @@ public class SessionContinue(
                     "it was given something while the move waited its turn, so nothing was started on ${move.head}",
                     Refusal.WORKING,
                 )
-                // a turn the move did not stop: one the person started in the terminal itself, past splice's count
+                // working now, on a turn the move did not stop: one the person started in the terminal itself, which
+                // splice's count does not see. A turn the move stopped already reads stopped here (RegistryHandover).
                 registry?.read().orEmpty().any { it.sessionId == move.session && it.status.state in busy } ->
                     Refusals.reply(
                         HttpStatusCode.Conflict,

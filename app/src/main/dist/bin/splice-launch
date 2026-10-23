@@ -206,11 +206,11 @@ terminal_pane() {
 # record_launch HEAD BASE_URL KIND — ownership by this process's pid, which exec keeps.
 record_launch() {
   if terminal_pane && [ "$3" = session ]; then
-    SPLICE_STATE_DIR=$STATE_DIR java -Djdk.console=java.base "-Duser.home=$SHIM_HOME" -jar "$JAR" record-launch "$$" \
+    SPLICE_STATE_DIR=$STATE_DIR "$JAVA" -Djdk.console=java.base "-Duser.home=$SHIM_HOME" -jar "$JAR" record-launch "$$" \
       "$1" "$2" "$3" "$([ "${SPLICE_LOGIN_ORIGIN-}" = hook ] && echo hook || echo other)" "$TMUX_PANE" "${TMUX%%,*}" \
       >/dev/null 2>&1 </dev/null
   else
-    SPLICE_STATE_DIR=$STATE_DIR java -Djdk.console=java.base "-Duser.home=$SHIM_HOME" -jar "$JAR" record-launch "$$" \
+    SPLICE_STATE_DIR=$STATE_DIR "$JAVA" -Djdk.console=java.base "-Duser.home=$SHIM_HOME" -jar "$JAR" record-launch "$$" \
       "$1" "$2" "$3" "$([ "${SPLICE_LOGIN_ORIGIN-}" = hook ] && echo hook || echo other)" \
       >/dev/null 2>&1 </dev/null
   fi || warn "splice: launch ownership could not be recorded; this session may have an unknown head on macOS"
@@ -307,6 +307,9 @@ CONTROL_PORT_FROM_ENV=${CONTROL_PORT:-}
 CONTROL_PORT=$(control_port_for "$SHIM_HOME" "$STATE_DIR" "${SPLICE_CONFIG-}" "${XDG_CONFIG_HOME-}" "${SPLICE_CONTROL_PORT-}" "${CONTROL_PROXY_PORT-}")
 CONTROL="http://127.0.0.1:$CONTROL_PORT"
 JAR=${SPLICE_JAR:-${SPLICE_SHARE_DIR:-$SHIM_HOME/.local/share/splice}/splice.jar}
+# shim-22: the java splice runs on. SPLICE_JAVA names one for a machine whose java on PATH is older than 21 for its own
+# work (an Android toolchain on 17); only splice's own JVM uses it, and the Claude Code this launcher execs keeps PATH.
+JAVA=${SPLICE_JAVA:-java}
 # The daemon's JVM options, in ONE place: every daemon start runs `splice daemon` through this file (the user unit's
 # ExecStart, the cold start below, and the CLI's raw spawn in DaemonLaunch.kt), so this line is what every install
 # runs. Override with SPLICE_JVM_OPTS.
@@ -351,7 +354,7 @@ exec_cli() {
   else
     set -- -Djdk.console=java.base "-Duser.home=$SHIM_HOME" -jar "$JAR" "$@"
   fi
-  exec_argv java "$@"
+  exec_argv "$JAVA" "$@"
 }
 
 # ---- the admin command, and sign-in ------------------------------------------------------------------------
@@ -376,7 +379,7 @@ head_login() {
   shift
   record_launch "$HEAD" "" login
   set -- -Djdk.console=java.base "-Duser.home=$SHIM_HOME" -jar "$JAR" login "$HEAD" "$@"
-  exec_argv java "$@"
+  exec_argv "$JAVA" "$@"
 }
 if [ "${1-}" = login ] && [ "$HEAD" != claude ]; then head_login "$@"; fi
 
@@ -423,9 +426,9 @@ wait_for_health() {
 CONFIG_REFUSED_EXIT=3
 refuse_unbootable_config() {
   if command -v timeout >/dev/null 2>&1; then
-    ruc_out=$(timeout 60 java "-Duser.home=$SHIM_HOME" -jar "$JAR" check-config 2>/dev/null </dev/null)
+    ruc_out=$(timeout 60 "$JAVA" "-Duser.home=$SHIM_HOME" -jar "$JAR" check-config 2>/dev/null </dev/null)
   else
-    ruc_out=$(java "-Duser.home=$SHIM_HOME" -jar "$JAR" check-config 2>/dev/null </dev/null)
+    ruc_out=$("$JAVA" "-Duser.home=$SHIM_HOME" -jar "$JAR" check-config 2>/dev/null </dev/null)
   fi
   ruc_rc=$?
   [ "$ruc_rc" -eq 0 ] && return 0
@@ -576,7 +579,7 @@ cold_start() {
     cs_log=/dev/null
     cs_flag=""
   fi
-  if ! command -v java >/dev/null 2>&1; then
+  if ! command -v "$JAVA" >/dev/null 2>&1; then
     # A java that cannot be run leaves no JVM output, so the boot log says so itself (nohup used to): the handshake
     # below shows the tail, and this line is what it has to show.
     printf "splice: failed to run command 'java': not found on PATH\n" >>"$cs_log" 2>/dev/null || true
@@ -597,9 +600,9 @@ cold_start_java() {
     "-XX:HeapDumpPath=$STATE_DIR/splice-oom.hprof" ${csj_gc:+"$csj_gc"} -jar "$JAR" daemon ${csj_flag:+"$csj_flag"}
   set +f
   if command -v setsid >/dev/null 2>&1; then
-    setsid nohup java "$@" >>"$csj_log" 2>&1 </dev/null &
+    setsid nohup "$JAVA" "$@" >>"$csj_log" 2>&1 </dev/null &
   else
-    nohup java "$@" >>"$csj_log" 2>&1 </dev/null &
+    nohup "$JAVA" "$@" >>"$csj_log" 2>&1 </dev/null &
   fi
 }
 

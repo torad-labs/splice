@@ -118,6 +118,9 @@ internal data class AddModelPolicy(
     val listAuthoritative: Boolean = true,
     /** The endpoint supplies the serving roster; declared rows supply only pinned models and tiers. */
     val discoverRoster: Boolean = false,
+    /** The head serves every declared row at its own window and maps tiers in a `model_slots` table, so one model
+     *  may fill several tiers (LAN share: a head regenerated from another machine's, which may do exactly that). */
+    val tierTable: Boolean = false,
 )
 
 public class AddProfiles {
@@ -181,21 +184,22 @@ public class AddProfiles {
             "port = $port",
             "discovery_prefix = \"claude-$key--\"",
             "pinned_model = \"${pinned.id}\"",
-        ) + headExtras(mappings, pinned.contextWindow, profile.policy.discoverRoster) + listOf(
+        ) + headExtras(mappings, pinned.contextWindow, profile.policy) + listOf(
             "[heads.$key.claude]",
             "command = \"${profile.head.command}\"",
         )
         return (provider + head).joinToString("\n") + "\n"
     }
 
-    /** Discovery profiles keep row windows and map tiers separately. Other profiles keep their
+    /** Discovery and tier-table profiles keep row windows and map tiers separately. Other profiles keep their
      *  pinned window and their existing serving allowlist when they declare tiers. */
     private fun headExtras(
         mappings: List<Pair<String, String>>,
         pinnedWindow: Long,
-        discoverRoster: Boolean,
+        policy: AddModelPolicy,
     ): List<String> {
-        if (discoverRoster) {
+        if (policy.discoverRoster || policy.tierTable) {
+            if (mappings.isEmpty()) return emptyList()
             return listOf("model_slots = {" + mappings.joinToString { (id, slot) -> "$slot = \"$id\"" } + "}")
         }
         val window = listOf("context_window = $pinnedWindow")

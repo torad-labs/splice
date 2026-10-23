@@ -83,8 +83,9 @@ internal class RemoteHeadAdd(
         ),
         head = AddHeadSpec(key = head.key, command = head.command),
         labels = AddLabels(summary = "${head.remoteKey} on ${head.server}", origin = "splice remote"),
-        // A splice head leaves its pinned model out of /v1/models, so its list cannot decide the rows.
-        policy = AddModelPolicy(listAuthoritative = false),
+        // A splice head leaves its pinned model out of /v1/models, so its list cannot decide the rows. Tiers go in a
+        // model_slots table: the sharing head may put one model behind several tiers, which a models list refuses.
+        policy = AddModelPolicy(listAuthoritative = false, tierTable = true),
         models = head.models.map { AddModel(it.id, it.label, it.contextWindow, slots = it.slots) },
     )
 }

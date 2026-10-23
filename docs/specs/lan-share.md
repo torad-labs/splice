@@ -251,8 +251,10 @@ Built on `feat/lan-share`, merged into `feat/v0.4.0` through the gate. Milestone
      delivers it from its own mirror of the sender, so the envelope's `from` and `from-name` (`<machine>/<sender>`)
      are a mirror there and a reply comes back the same way. A message for the joining machine's sessions waits in its
      outbox on the sharing machine until the joining machine collects it with a held request
-     (`GET .../outbox?wait=25`), so the joining machine takes no connection in. A refusal goes back to the sender as a
-     receipt, in words.
+     (`GET .../outbox?wait=25`), so the joining machine takes no connection in. A note leaves the outbox only once a
+     later collection acknowledges it (`&box=<outbox>&after=<seq>`): a collection cut on the way, because the machine
+     slept, restarted its daemon or lost its network, takes nothing with it, and a change to `[share]` keeps what waits.
+     A restart of the sharing daemon loses what its outbox held. A refusal goes back to the sender as a receipt, in words.
    - **Bounds.** Every route needs a joined machine's token, and the link names the machine, never the request. Any
      machine on the network may join and each mirror is a process, so a daemon hosts at most 256. A mirror's name is
      what ListAgents shows and an envelope carries (`[A-Za-z0-9._-]`, 64 characters), and two sessions of one name are

@@ -13,7 +13,6 @@ import splice.core.topology.Topology
 import splice.core.util.Cancellables
 import splice.core.util.LogSink
 import splice.core.util.SafeFailureText
-import splice.sessions.mirror.SessionMirrors
 import splice.upstream.codemode.ProcessDispatchers
 import java.net.InetAddress
 import java.nio.file.Path
@@ -27,14 +26,14 @@ public class ShareStart(
     private val log: LogSink,
 ) {
     /** The listener [share] asks for, with [clients] as its book of joined machines, or why there is none. [running]
-     *  and [quotas] read the daemon's heads as they are at each request; [mirrors] hosts a joined machine's sessions.
-     *  Blocking: it binds a port. */
+     *  and [quotas] read the daemon's heads as they are at each request; [sessions] hosts a joined machine's sessions
+     *  and holds what sessions here write to them. Blocking: it binds a port. */
     internal fun open(
         share: ShareConfig,
         clients: ShareClients,
         running: SharedCatalogs,
         quotas: SharedQuotas,
-        mirrors: SessionMirrors?,
+        sessions: ShareSessionParts,
     ): ShareOpen {
         if (!share.enabled) return ShareOpen.Off
         val host = ShareHostName()
@@ -52,7 +51,7 @@ public class ShareStart(
             ShareHeads(topology.copy(share = share), running, host.short(), tls.fingerprint, quotas),
             clients,
             relay,
-            ShareSessionHost(mirrors, relay, ShareErrors(), io),
+            ShareSessionHost(sessions, relay, ShareErrors(), io),
             io,
             log,
         )

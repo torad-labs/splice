@@ -21,7 +21,7 @@ import splice.share.ShareHealth
 import splice.share.ShareNote
 import splice.share.ShareNoteAnswer
 import splice.share.ShareOutbox
-import splice.share.ShareOutboxNote
+import splice.share.ShareOutboxAck
 import splice.share.ShareSession
 import splice.share.ShareSessions
 import splice.share.SharedHead
@@ -78,12 +78,14 @@ public class RemoteApi internal constructor(
         return json.decodeFromString(ShareNoteAnswer.serializer(), answer)
     }
 
-    /** The notes the machine at [url] holds for this one, waiting there up to [OUTBOX_MAX_WAIT_S] for the first. */
-    internal fun outbox(url: String): List<ShareOutboxNote> {
-        val waited = sessionsAt(url) + "/outbox?wait=" + OUTBOX_MAX_WAIT_S
+    /** The notes the machine at [url] holds for this one, waiting there up to [OUTBOX_MAX_WAIT_S] for the first, once it
+     *  lets go of those [ack] says this one delivered. */
+    internal fun outbox(url: String, ack: ShareOutboxAck?): ShareOutbox {
+        val acked = ack?.let { "&box=" + URLEncoder.encode(it.box, Charsets.UTF_8) + "&after=" + it.after }.orEmpty()
+        val waited = sessionsAt(url) + "/outbox?wait=" + OUTBOX_MAX_WAIT_S + acked
         val waitMs = Duration.ofSeconds(OUTBOX_MAX_WAIT_S).toMillis()
         val answer = send(waited, waitMs + REMOTE_API_REQUEST_MS, "GET", HttpRequest.BodyPublishers.noBody())
-        return json.decodeFromString(ShareOutbox.serializer(), answer).notes
+        return json.decodeFromString(ShareOutbox.serializer(), answer)
     }
 
     private fun sessionsAt(url: String): String = url.trimEnd('/') + SHARE_SESSIONS_PATH

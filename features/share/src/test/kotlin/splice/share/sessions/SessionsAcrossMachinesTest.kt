@@ -40,6 +40,7 @@ import splice.sessions.registry.SessionRegistry
 import splice.sessions.registry.SessionRoute
 import splice.share.ShareInfo
 import splice.share.ShareListener
+import splice.share.ShareSession
 import splice.share.ShareStart
 import splice.share.SharedCatalogs
 import splice.share.SharedQuotas
@@ -60,10 +61,14 @@ import java.nio.file.Files
 import java.nio.file.Path
 import java.nio.file.attribute.PosixFilePermissions
 import java.util.UUID
+import javax.net.ssl.SSLSocket
 import kotlin.random.Random
 
 // why: how often the link looks in this test; the daemon's own cadence is what the goal's ten seconds rest on.
 private const val LOOK_MS = 200L
+
+// why: a look slow enough that the mirrors one offer makes last the whole test: three looks, capped at a minute.
+private const val SLOW_LOOK_MS = 20_000L
 
 // why: how often a test reads the registry while it waits for the next look.
 private const val POLL_MS = 50L
@@ -161,14 +166,49 @@ class SessionsAcrossMachinesTest {
 
     /** mini joins torad as `splice remote` does, keeps the token and the pin, and its daemon starts the link, which
      *  it answers. */
-    private fun join(): Job {
-        val (info, joined) = joined()
+    private fun join(): Job = link(links(joined().second))
+
+    /** mini's links once it kept [joined]'s token and pin, as `splice remote` keeps them. */
+    private fun links(joined: RemoteJoined.Joined): RemoteLinks {
         val store = RemotesStore(mini.paths.stateDir.resolve("share").resolve("remotes.json"))
         store.save(toradName, joined.token)
         val remotes = mapOf(toradName to RemoteConfig(joined.http.base("127.0.0.1", port), joined.pin))
-        val links = RemoteLinks(Topology(remotes = remotes), store)
-        return checkNotNull(RemoteSessions(links, mini.mirrors, { }, LOOK_MS).start(scope))
+        return RemoteLinks(Topology(remotes = remotes), store)
     }
+
+    /** mini's daemon starting its session link over [links]. */
+    private fun link(links: RemoteLinks): Job =
+        checkNotNull(RemoteSessions(links, mini.mirrors, { }, LOOK_MS).start(scope))
+
+    /** mini offers torad its running sessions once, as a look does, with a look slow enough that torad keeps their
+     *  mirrors through the test without another. */
+    private fun offered(links: RemoteLinks) {
+        val ours = mini.mirrors.local().map { ShareSession(it.id, it.name, it.heardAt) }
+        links.api(toradName).offer(checkNotNull(links.url(toradName)), ours, SLOW_LOOK_MS)
+    }
+
+    /** A collection of mini's outbox that torad takes in and starts to hold, and whose connection then goes, as when
+     *  mini sleeps, its daemon restarts or its Wi-Fi drops. */
+    private fun cutCollection(info: ShareInfo, joined: RemoteJoined.Joined) {
+        val before = heardFrom(MINI)
+        val factory = RemoteTrust(info.fingerprint, "torad").context.socketFactory
+        (factory.createSocket("127.0.0.1", port) as SSLSocket).use { socket ->
+            val asked = "GET /share/v1/sessions/outbox?wait=25 HTTP/1.1\r\nHost: 127.0.0.1:$port\r\n" +
+                "Authorization: Bearer ${joined.token}\r\n\r\n"
+            socket.outputStream.write(asked.toByteArray())
+            socket.outputStream.flush()
+            val heard = runBlocking {
+                val until = System.currentTimeMillis() + SETTLE_MS
+                while (heardFrom(MINI) == before && System.currentTimeMillis() < until) delay(POLL_MS)
+                heardFrom(MINI) != before
+            }
+            assertTrue(heard, "torad took the collection in before its connection went")
+        }
+    }
+
+    /** When torad last heard from [name], as its Sharing page reads it. */
+    private fun heardFrom(name: String): String? =
+        listener.clients.activity.now().firstOrNull { it.name == name }?.lastSeen
 
     /** torad's description, and mini's join there. */
     private fun joined(): Pair<ShareInfo, RemoteJoined.Joined> {
@@ -268,6 +308,42 @@ class SessionsAcrossMachinesTest {
         val back = checkNotNull(splice.heard(SETTLE_MS / 1_000)) { "the reply reached mini's session" }
         assertEquals("hello back", back.text)
         assertEquals("$toradName/rig-lead", back.fromName)
+    }
+
+    @Test
+    fun `a note written while the joined machine's collection is cut reaches it at its next collection`() {
+        val rig = torad.session("rig-lead")
+        val splice = mini.session("splice")
+        val (info, joined) = joined()
+        val links = links(joined)
+        offered(links)
+        listed(rig) { "$MINI/splice" in it }
+
+        cutCollection(info, joined)
+        rig.send("$MINI/splice", "while mini was away")
+        link(links)
+        val got = checkNotNull(splice.heard(SETTLE_MS / 1_000)) { "mini's session took the note" }
+        assertEquals("while mini was away", got.text)
+        assertEquals("$toradName/rig-lead", got.fromName)
+    }
+
+    @Test
+    fun `a note waiting for the joined machine outlasts a change to what this machine shares`() {
+        val rig = torad.session("rig-lead")
+        val splice = mini.session("splice")
+        val links = links(joined().second)
+        offered(links)
+        listed(rig) { "$MINI/splice" in it }
+
+        rig.send("$MINI/splice", "before the change")
+        // A collection mini makes and never acknowledges, as one whose deliveries a restart cut short: it returns as
+        // soon as the note waits, and leaves it there.
+        val waiting = links.api(toradName).outbox(checkNotNull(links.url(toradName)), null)
+        assertEquals(listOf("before the change"), waiting.notes.map { it.text }, "the note waits for mini")
+        runBlocking { listener.follow(ShareConfig(enabled = true, port = port, hostnames = listOf("torad.lan"))) }
+        link(links)
+        val got = checkNotNull(splice.heard(SETTLE_MS / 1_000)) { "mini's session took the note" }
+        assertEquals("before the change", got.text)
     }
 
     @Test

@@ -6,6 +6,7 @@
 // session mirrored here until it does.
 package splice.share.remote
 
+import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.currentCoroutineContext
@@ -23,6 +24,7 @@ import splice.sessions.mirror.MirroredSession
 import splice.sessions.mirror.SessionMirrors
 import splice.sessions.peer.DeliveryStatus
 import splice.share.ShareNote
+import splice.share.ShareOutboxAck
 import splice.share.ShareOutboxNote
 import splice.share.ShareSession
 import splice.upstream.Ticker
@@ -45,15 +47,22 @@ public class RemoteSessions(
         if (joined.isEmpty()) return null
         return scope.launch {
             for ((name, url) in joined) {
-                launch { look(name, url) }
-                launch { collect(name, url) }
+                // A note is delivered from the mirror of its sender, which only a look makes: collecting before the
+                // first look would refuse every note waiting there, and acknowledge it gone.
+                val first = CompletableDeferred<Unit>()
+                launch { look(name, url, first) }
+                launch {
+                    first.await()
+                    collect(name, url)
+                }
             }
         }
     }
 
-    /** Mirrors [name]'s sessions here and offers this machine's there, every [lookMs]. A machine that does not answer
-     *  has its mirrors withdrawn, which is said once, and so is its coming back. */
-    private suspend fun look(name: String, url: String) {
+    /** Mirrors [name]'s sessions here and offers this machine's there, every [lookMs], and completes [first] at the first
+     *  that does. A machine that does not answer has its mirrors withdrawn, which is said once, and so is its coming
+     *  back. */
+    private suspend fun look(name: String, url: String, first: CompletableDeferred<Unit>) {
         val carrier = carrierTo(name, url)
         var failing = false
         do {
@@ -79,17 +88,23 @@ public class RemoteSessions(
                     withContext(io) { mirrors.withdraw(name) }
                 },
             )
+            if (looked.isSuccess) first.complete(Unit)
         } while (currentCoroutineContext().isActive && ticker.awaitTick(lookMs))
     }
 
-    /** Delivers what [name]'s sessions write to this machine's, as it arrives. A collection that fails waits for the
-     *  next look before it tries again; the look says why the machine does not answer. */
+    /** Delivers what [name]'s sessions write to this machine's, as it arrives, and acknowledges it with the next
+     *  collection, so [name] holds a note until it knows it arrived. A collection that fails waits for the next look
+     *  before it tries again; the look says why the machine does not answer. */
     private suspend fun collect(name: String, url: String) {
+        var ack: ShareOutboxAck? = null
         do {
-            val collected = Cancellables.runCatchingCancellable { runInterruptible(io) { links.api(name).outbox(url) } }
-            val notes = collected.fold(onSuccess = { it }, onFailure = { null })
-            notes?.forEach { deliver(name, it) }
-            val again = notes != null || ticker.awaitTick(lookMs)
+            val collected = Cancellables.runCatchingCancellable {
+                runInterruptible(io) { links.api(name).outbox(url, ack) }
+            }
+            val answer = collected.fold(onSuccess = { it }, onFailure = { null })
+            answer?.notes?.forEach { deliver(name, it) }
+            ack = answer?.acknowledging() ?: ack
+            val again = answer != null || ticker.awaitTick(lookMs)
         } while (currentCoroutineContext().isActive && again)
     }
 

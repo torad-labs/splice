@@ -32,6 +32,9 @@ public class ShareListener(
     /** The machines that joined this one, and when each was last heard from. */
     public val clients: ShareClients = ShareClients(ShareState(statePaths).clientsFile)
 
+    /** The session routes' mirrors, and what sessions here wrote to them: one across reopenings, as [clients] is. */
+    private val sessions = ShareSessionParts(mirrors)
+
     @Volatile
     private var server: ShareServer? = null
 
@@ -54,7 +57,7 @@ public class ShareListener(
         val open = server
         open?.stop()
         server = null
-        followed = when (val opened = opener.open(share, clients, running, quotas, mirrors)) {
+        followed = when (val opened = opener.open(share, clients, running, quotas, sessions)) {
             is ShareOpen.Listening -> {
                 server = opened.server
                 advert.on(ShareHostName().short(), share.port)

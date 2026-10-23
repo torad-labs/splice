@@ -66,7 +66,6 @@ import splice.core.util.SecureFile
 import splice.core.util.WallClock
 import java.nio.channels.FileChannel
 import java.nio.channels.FileLock
-import java.nio.channels.OverlappingFileLockException
 import java.nio.file.FileSystemException
 import java.nio.file.Files
 import java.nio.file.LinkOption
@@ -78,6 +77,7 @@ import java.time.ZoneOffset
 import java.time.format.DateTimeFormatter
 import java.util.HexFormat
 import java.util.concurrent.TimeUnit
+import java.util.concurrent.locks.ReentrantLock
 
 // why: 12 hex characters of the file's SHA-256, carried as the write's precondition token. Long
 // enough that two concurrent edits cannot collide by accident, short enough to pass in a header.
@@ -115,10 +115,31 @@ public object TopologyFileTarget {
  *  that read the same bytes both passed the staleness check, and the later rename discarded the earlier edit
  *  while both reported success. The lock is an empty `.<name>.lock` beside the file's real target, the one place
  *  every writer of that file agrees on whatever folder it started from. It is never removed, so a waiting
- *  process locks the same inode as the holder, and a holder past [TOPOLOGY_LOCK_WAIT_MS] fails the save. */
+ *  process locks the same inode as the holder, and a holder past [TOPOLOGY_LOCK_WAIT_MS] fails the save.
+ *
+ *  Round 6: this process's saves also take [inProcess] around the lock file's whole channel, from open to close,
+ *  as KeyStore's writes do. A POSIX record lock belongs to the process, and closing any descriptor of the file
+ *  drops it: a save closing its channel after another save here had locked through its own would have let a
+ *  third process in mid-rename. */
 public object TopologyFileLock {
-    public inline fun <T> held(configured: Path, write: () -> T): T =
-        open(configured).use { channel -> acquire(channel, configured).use { write() } }
+    @PublishedApi
+    internal val inProcess: ReentrantLock = ReentrantLock()
+
+    public inline fun <T> held(configured: Path, write: () -> T): T {
+        enter(configured)
+        try {
+            return open(configured).use { channel -> acquire(channel, configured).use { write() } }
+        } finally {
+            inProcess.unlock()
+        }
+    }
+
+    @PublishedApi
+    internal fun enter(configured: Path) {
+        if (!inProcess.tryLock(TOPOLOGY_LOCK_WAIT_MS, TimeUnit.MILLISECONDS)) {
+            throw FileSystemException("$configured", null, "another save of this file in this process is still running")
+        }
+    }
 
     @PublishedApi
     internal fun open(configured: Path): FileChannel {
@@ -131,17 +152,12 @@ public object TopologyFileLock {
         return FileChannel.open(lock, StandardOpenOption.CREATE, StandardOpenOption.WRITE, LinkOption.NOFOLLOW_LINKS)
     }
 
+    /** Only another process can hold the file lock here: this one's saves already wait on [inProcess]. */
     @PublishedApi
     internal fun acquire(channel: FileChannel, configured: Path): FileLock {
         val deadline = System.nanoTime() + TimeUnit.MILLISECONDS.toNanos(TOPOLOGY_LOCK_WAIT_MS)
         while (true) {
-            // Another thread of this process holding it is the same wait as another process holding it.
-            val lock = try {
-                channel.tryLock()
-            } catch (_: OverlappingFileLockException) {
-                null
-            }
-            if (lock != null) return lock
+            channel.tryLock()?.let { return it }
             if (System.nanoTime() >= deadline) {
                 throw FileSystemException("$configured", null, "another save of this file is still running")
             }

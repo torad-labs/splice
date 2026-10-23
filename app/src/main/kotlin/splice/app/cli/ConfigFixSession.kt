@@ -52,9 +52,14 @@ internal class ConfigFixSession(
     private var backedUp = false
     private val skipped = mutableSetOf<String>()
 
+    /** The bytes the findings on offer were read from: an edit lands only on these, since its line and key were
+     *  found in them (PR #247's sixth review). */
+    private var checked = ""
+
     /** True when the file ends with no finding. */
     fun run(): Boolean {
-        var findings = check(Files.readString(file))
+        checked = Files.readString(file)
+        var findings = check(checked)
         while (findings.isNotEmpty()) {
             val finding = findings.firstOrNull { it.text() !in skipped }
             if (finding == null) {
@@ -65,7 +70,10 @@ internal class ConfigFixSession(
             output.line("")
             output.line("${findings.size} finding(s) left. Fixing: ${finding.text()}")
             val changed = fix(finding) ?: return false
-            if (changed) findings = check(Files.readString(file))
+            if (changed) {
+                checked = Files.readString(file)
+                findings = check(checked)
+            }
         }
         return true
     }
@@ -140,13 +148,20 @@ internal class ConfigFixSession(
         return opened
     }
 
-    /** [change] applied to the file as it is now, read and written under the lock the console's and
-     *  `splice add`'s saves take: an edit one of them saved during the fix is kept, and one they had
-     *  prepared from the older bytes is refused at its re-read instead of writing over this one. */
+    /** [change] applied to the file under the lock the console's and `splice add`'s saves take, and only while the
+     *  file still holds the bytes the finding came from: a save that moved a line while he typed would put this
+     *  edit on another setting, so nothing is written, and the findings are read again from what is there now. An
+     *  edit one of them had prepared from the older bytes is refused at its own re-read instead. */
     private inline fun rewrite(change: (List<String>) -> List<String>) {
         backupOnce()
         TopologyFileLock.held(file) {
-            SecureFile.writeAtomic0600(file, change(Files.readAllLines(file)).joinToString("\n", postfix = "\n"))
+            val now = Files.readString(file)
+            if (now != checked) {
+                output.line("${file.fileName} changed meanwhile; nothing was written, and its findings are read again")
+            } else {
+                val lines = now.lines().let { if (now.endsWith("\n")) it.dropLast(1) else it }
+                SecureFile.writeAtomic0600(file, change(lines).joinToString("\n", postfix = "\n"))
+            }
         }
     }
 

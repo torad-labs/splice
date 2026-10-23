@@ -27,6 +27,7 @@ import splice.provider.codex.state.CodeModeStartupAdmissions
 import splice.provider.codex.state.CodeModeTurnStart
 import splice.provider.codex.state.collection.CodeModeRecordList
 import splice.provider.codex.state.query.CodeModeRecordQueries
+import splice.provider.codex.state.query.CodeModeResultOwners
 import splice.provider.codex.state.save.CodeModeStateWrite
 import splice.provider.codex.stream.CodeModeClientContexts
 import splice.provider.codex.stream.CodeModeSourceEnds
@@ -37,11 +38,6 @@ import splice.upstream.memory.JvmHeap
 import java.util.concurrent.locks.ReentrantLock
 import kotlin.concurrent.withLock
 import kotlin.time.Duration
-
-internal data class CodeModeResultOwners(
-    val foreign: CodeModeRecord?,
-    val unknown: Set<String>,
-)
 
 internal class CodexCodeModeRegistry(
     private val config: CodeModeBridgeConfig,
@@ -77,7 +73,8 @@ internal class CodexCodeModeRegistry(
         ).also(CodeModeNativeChain::link)
         history = CodeModeExpiredHistory(loaded.expired.toMutableList(), config.retention.records, heap)
     }
-    private val retention = CodeModeRecordRetention(config.retention, json, config.log, config.cellLease.sessionAlive)
+    private val retention =
+        CodeModeRecordRetention(config.retention, json, config.log, config.cellLease.sessionAlive, closeSession)
     private val cells = mutableMapOf<String, CodeModeCell>()
     val startup = CodeModeStartupAdmissions(access, records, history, store, config.clock, cells)
 
@@ -196,8 +193,7 @@ internal class CodexCodeModeRegistry(
         private fun plan(): AdmissionPlan? {
             // A session id is shared by subagents. Only equal conversation identities prove supersession.
             // Busy keys cannot be retired, even if a completed sibling record also names their engine.
-            val busyKeys = records.filter { it.id in admissions || retainedCells.running(it) }
-                .mapTo(mutableSetOf(), CodeModeRecord::key)
+            val busyKeys = sweeper.busyKeys()
             val previous = records.filter {
                 it.key != record.key && it.key !in busyKeys &&
                     record.conversationId != null && it.conversationId == record.conversationId
@@ -294,6 +290,23 @@ internal class CodexCodeModeRegistry(
                     val changed = sweeper.sweep(key)
                     store.save(records, history.entries, retryOnly = !changed, dirtyKeys = setOf(key))
                 }
+            }
+            withinBounds()
+        }
+
+        /** The head's bounds hold on the timer too: finished conversations past them go within one sweep of
+         *  losing their protection, under the same protections an admission keeps. A key whose lock is
+         *  taken is passed over this sweep. */
+        private fun withinBounds() {
+            val passed = mutableSetOf<String>()
+            while (true) {
+                val key = monitor.withLock { retention.overBound(records, sweeper.busyKeys() + passed) } ?: return
+                var went = false
+                access.tryKey(key) {
+                    went = retention.letGoOver(records, history, key, sweeper.busyKeys(), config.clock.millis())
+                    if (went) store.save(records, history.entries, dirtyKeys = setOf(key))
+                }
+                if (!went) passed += key
             }
         }
     }

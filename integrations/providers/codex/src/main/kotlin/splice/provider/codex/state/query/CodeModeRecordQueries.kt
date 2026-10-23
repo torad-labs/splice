@@ -4,11 +4,16 @@ package splice.provider.codex.state.query
 import splice.provider.codex.CODE_MODE_CLIENT_ID_PREFIX
 import splice.provider.codex.CodeModePhase
 import splice.provider.codex.CodeModeRecord
-import splice.provider.codex.CodeModeResultOwners
 import splice.provider.codex.state.CodeModeExpiredHistory
 import splice.provider.codex.state.CodeModeNativeChain
 import splice.provider.codex.state.CodeModeRegistryAccess
 import splice.provider.codex.state.collection.CodeModeRecordKeys
+
+/** Who owns a result's ids: a record of another conversation that claims one, and the ids no record knows. */
+internal data class CodeModeResultOwners(
+    val foreign: CodeModeRecord?,
+    val unknown: Set<String>,
+)
 
 /** The one conversation whose query is about to read live or durable owners. */
 internal fun interface CodeModeQueryPreparation {

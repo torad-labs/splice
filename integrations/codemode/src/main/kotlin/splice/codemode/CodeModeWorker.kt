@@ -15,8 +15,7 @@ private const val EXECUTION_FAILURE: String = "Code execution failed"
 
 internal object CodeModeCellLauncher {
     private val compiled: Source by lazy {
-        val source = "((makeStream) => ($LAUNCHER))(($STREAMING_CODE_MODE_LAUNCHER))"
-        Source.newBuilder("js", source, "splice-code-mode").build()
+        Source.newBuilder("js", "($LAUNCHER)", "splice-code-mode").build()
     }
 
     fun source(): Source = compiled
@@ -175,7 +174,7 @@ internal class WorkerBridge(private val allowedTools: Set<String>) {
 internal data class WorkerCompletion(val output: String, val error: String?)
 
 private const val LAUNCHER: String = """
-(source, catalogJson, host, evalProjection, scopeSeal) => {
+(source, catalogJson, host) => {
   const catalog = JSON.parse(catalogJson);
   const allowed = new Set(catalog.allowed);
   const pending = new Map();
@@ -243,8 +242,7 @@ private const val LAUNCHER: String = """
     const message = error instanceof SyntaxError ? String(error.message).split("\n")[0] : String(error.message);
     return String(error.name || "Error") + ": " + message;
   };
-  const stream = source === null ? makeStream({tools, console, text, exit, ALL_TOOLS}, host, EXIT, describe, evalProjection, scopeSeal) : null;
-  if (source !== null) try {
+  try {
     const program = new Function(
       "tools", "console", "text", "exit", "ALL_TOOLS",
       "\"use strict\"; return (async () => {\n" + source + "\n})()"
@@ -257,7 +255,6 @@ private const val LAUNCHER: String = """
     host.complete(describe(error), true);
   }
   return Object.freeze({
-    stream,
     settle(id, output, isError) {
       const callback = pending.get(id);
       if (!callback) throw new Error("Unknown code-mode call id");

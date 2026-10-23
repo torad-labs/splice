@@ -3,6 +3,8 @@
 // waits, with a deadline, for the client to read a keepalive from the head's response before it sends the next. A head
 // that stops keeping the stream alive while a long script is written lets the deadline pass, so that delta is recorded
 // as late. Reasoning summaries are pinned in the stream tests; here the client's wire must carry no script text.
+// Oct 23, 2026: exec runs once its whole item has arrived, as Codex runs it, so the script's tool call reaches the client
+// after the round completes, and the rest of the script runs when its result comes back.
 package splice.app.provider
 
 import com.sun.net.httpserver.HttpExchange
@@ -80,15 +82,9 @@ private const val LIVE_BOUND_MS = 4_000L
 // why: the head writes its keepalive as an SSE comment line starting with this prefix.
 private const val KEEPALIVE_PREFIX = ": ping"
 
-// why: of the script chunks after the first, the one at this index dispatches the tool call and is not timed.
-private const val DISPATCH_CHUNK = 3
 private const val NANOS_PER_MS = 1_000_000L
 private const val LATE = -1L
-private const val RESUME_BOUND_MS = 30_000L
-private const val STALL_PROBE_MS = 1_500L
-private const val STALL_FRAMES = 5
 private const val LOG_CHARS = 7000
-private const val STACK_CHARS = 4000
 private const val SEEN_CHARS = 900
 
 class CodeModeLiveScriptTest {
@@ -117,15 +113,12 @@ class CodeModeLiveScriptTest {
         val client = HttpClient(CIO) { engine { requestTimeout = TimeUnit.SECONDS.toMillis(LIVE_TEST_SECONDS) } }
         try {
             head.start()
-            val booted = launch {
-                withTimeout(WORKER_BOUND_MS) { runtime.started.await() }
-                upstream.workerReady.countDown()
-            }
+            val booted = launch { withTimeout(WORKER_BOUND_MS) { runtime.started.await() } }
             val url = "http://127.0.0.1:${head.port}/v1/messages"
-            val assistant = checkNotNull(reader(client, url, REQUEST, upstream.beforeDispatch) { }) {
+            val assistant = checkNotNull(reader(client, url, REQUEST, upstream.keepalives)) {
                 "the script's tool call never reached the client"
             }
-            reader(client, url, resumedRequest(assistant), upstream.afterResume) { upstream.resumed.countDown() }
+            reader(client, url, resumedRequest(assistant), upstream.keepalives)
             booted.join()
             upstream.scriptDone.await(WORKER_BOUND_MS, TimeUnit.MILLISECONDS)
             val lateness = upstream.timedLateness.toList()
@@ -197,20 +190,17 @@ class CodeModeLiveScriptTest {
             "${lateness.size} timed deltas (ms, -1 late): $lateness; ${upstream.scriptEnd}; " +
             "script finished: $finished; calls: ${runtime.calls.size}; " +
             "upstream trail: ${upstream.trail.joinToString(" ")}; " +
-            "stalled threads: ${upstream.stack.take(STACK_CHARS)}; " +
             "client saw: ${seen.joinToString(" || ").take(SEEN_CHARS)}; " +
             "log: ${logs.joinToString(" | ").take(LOG_CHARS)}"
     }
 
     /** Reads one response as it streams, releasing a permit per keepalive for the upstream. Answers the assistant
-     *  message the client would replay, as its tool_use blocks end it, or null when the response ended without a call.
-     *  [onStart] runs once the response is open. */
+     *  message the client would replay, as its tool_use blocks end it, or null when the response ended without a call. */
     private suspend fun reader(
         client: HttpClient,
         url: String,
         request: String,
         sawThinking: Semaphore,
-        onStart: () -> Unit,
     ): JsonArray? {
         val replay = ReplayedBlocks()
         client.preparePost(url) {
@@ -218,7 +208,6 @@ class CodeModeLiveScriptTest {
             headers.append("x-claude-code-session-id", "live-script-session")
             setBody(request)
         }.execute { response ->
-            onStart()
             val channel = response.bodyAsChannel()
             var line = channel.readLine()
             while (line != null) {
@@ -314,23 +303,17 @@ private const val REQUEST =
         "messages":[{"role":"user","content":"go"}],
         "tools":[{"name":"Read","description":"Read a synthetic fixture","input_schema":{"type":"object"}}]}"""
 
-/** An upstream whose exec script streams one delta at a time. The first leaves at once, so the code-mode worker can
- *  boot. Once the test says the worker is ready, more leave, each only after the client has read a
- *  keepalive for the one before it, or after [LIVE_BOUND_MS] without one. Then the round completes. */
+/** An upstream whose exec script streams one delta at a time. The first leaves at once; each after it leaves only
+ *  after the client has read a keepalive for the one before it, or after [LIVE_BOUND_MS] without one. Then the round
+ *  completes, and the head runs the whole script. */
 private class TimedScriptUpstream {
-    val workerReady = CountDownLatch(1)
-
-    /** Released when the client's result request is open: the script continues in that response. */
-    val resumed = CountDownLatch(1)
-
     /** Counted down when the scripted response has left the upstream, written or not. */
     val scriptDone = CountDownLatch(1)
 
     @Volatile var scriptEnd: String = "script completed"
 
-    /** One permit per keepalive the client read from the first response, and from the resumed one. */
-    val beforeDispatch = Semaphore(0)
-    val afterResume = Semaphore(0)
+    /** One permit per keepalive the client read. */
+    val keepalives = Semaphore(0)
 
     /** For each timed delta, ms from its flush to the client's next keepalive; null when none came in time. */
     val timedLateness = ConcurrentLinkedQueue<Long>()
@@ -339,18 +322,6 @@ private class TimedScriptUpstream {
     private var posts = 0
     private val startedNanos = System.nanoTime()
     val trail = ConcurrentLinkedQueue<String>()
-
-    @Volatile var stack: String = ""
-
-    /** Where the head's threads stand when the resumed response has not opened after [STALL_PROBE_MS]. */
-    private fun stallDump() {
-        if (resumed.await(STALL_PROBE_MS, TimeUnit.MILLISECONDS)) return
-        stack = Thread.getAllStackTraces().filter { (_, frames) -> frames.any { it.className.startsWith("splice.") } }
-            .values.joinToString(" ## ") { frames ->
-                frames.filter { it.className.startsWith("splice.") }.take(STALL_FRAMES)
-                    .joinToString(" < ") { "${it.className.substringAfterLast('.')}.${it.methodName}:${it.lineNumber}" }
-            }
-    }
 
     fun elapsed(): Long = (System.nanoTime() - startedNanos) / NANOS_PER_MS
 
@@ -388,7 +359,6 @@ private class TimedScriptUpstream {
             """{"type":"response.output_item.added","output_index":0,"item":{
                 "type":"custom_tool_call","id":"script-item","call_id":"script-call","name":"exec","input":""}}""",
         )
-        // Certification needs a closed token after the statement that dispatches, so that chunk ends inside the next.
         val chunks = listOf(
             "text ('piece 0');\n",
             "text ('piece 1');\n",
@@ -401,16 +371,10 @@ private class TimedScriptUpstream {
         )
         delta(output, chunks.first())
         mark("first")
-        workerReady.await(WORKER_BOUND_MS, TimeUnit.MILLISECONDS)
-        mark("workerReady")
         chunks.drop(1).forEachIndexed { index, chunk ->
-            // The client is running its tool: the rest of the script is sent once its next step has opened.
-            if (index == DISPATCH_CHUNK + 1) stepOpens()
             delta(output, chunk)
             mark("c${index + 1}")
-            if (index != DISPATCH_CHUNK) {
-                timedLateness += awaitClient(if (index < DISPATCH_CHUNK) beforeDispatch else afterResume)
-            }
+            timedLateness += awaitClient(keepalives)
         }
         event(
             output,
@@ -419,12 +383,6 @@ private class TimedScriptUpstream {
                 "type":"custom_tool_call","id":"script-item","call_id":"script-call","name":"exec",
                 "input":${JsonPrimitive(chunks.joinToString(""))}}]}}""",
         )
-    }
-
-    /** The client's next response must open within [RESUME_BOUND_MS] of the tool result. */
-    private fun stepOpens() {
-        pool.submit { stallDump() }
-        mark(if (resumed.await(RESUME_BOUND_MS, TimeUnit.MILLISECONDS)) "resumed" else "resumeTimedOut")
     }
 
     private fun awaitClient(sawThinking: Semaphore): Long {
@@ -461,8 +419,6 @@ private class TimedScriptUpstream {
     }
 
     fun close() {
-        workerReady.countDown()
-        resumed.countDown()
         scriptDone.countDown()
         server.stop(0)
         pool.shutdownNow()

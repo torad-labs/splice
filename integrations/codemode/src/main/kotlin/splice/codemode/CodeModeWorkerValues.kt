@@ -15,14 +15,11 @@ internal data class WorkerStart(
     val source: String,
     val tools: Set<String>,
     val descriptions: Map<String, String> = emptyMap(),
-    val streaming: Boolean = false,
-    val sealedGlobals: Set<String> = emptySet(),
 )
 
 internal data class WorkerReply(
     val calls: List<CodeModeCall>?,
     val output: String?,
     val error: String?,
-    val waitingForInput: Boolean = false,
     val waitingForResults: Boolean = false,
 )

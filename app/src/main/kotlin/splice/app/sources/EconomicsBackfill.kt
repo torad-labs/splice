@@ -9,10 +9,11 @@
 // on disk do. On this machine the day that happened the figures read: 8.0 days of hourly buckets, 15
 // days of archived request records. The month view was drawn over the shorter one.
 //
-// AN HOUR IS BUILT ONLY WHEN IT CAN BE EXACT (Marlin). Three refusals, each for a reason a person
+// AN HOUR IS BUILT ONLY WHEN IT CAN BE EXACT (Marlin). Four refusals, each for a reason a person
 // would recognise as "then don't show me a number":
-//  · the read was not whole — a read error, or any row the reader could not parse — so no hour in it
-//    can be trusted to hold all its turns. Nothing is backfilled, and the next read tries again.
+//  · the read was not whole — a read error — so no hour in it can be trusted to hold all its turns.
+//    Nothing is backfilled, and the next read tries again.
+//  · an hour that a line the reader could not parse may belong to (TORN LINES, below).
 //  · the OLDEST hour the rows reach. A generation may begin mid-hour, because the rotation before the
 //    archive existed discarded what came earlier, so that hour's sums would be a part read as a whole.
 //  · an hour the rollup already has. It was summed from each turn's own usage as the turn finished,
@@ -22,14 +23,25 @@
 // file, so the next read is the file and not a scan of every archived generation in the window. It
 // remembers the edge it closed the gap down to rather than that it ran: widening the window moves
 // that edge back and opens a new gap, which is scanned when it opens and not at the next restart. A
-// refused pass remembers nothing and is retried, because the refusal may be a write that had not
-// settled yet.
+// pass that could not read whole remembers nothing and is retried, because the read error may be a
+// write that had not settled yet.
 //
 // ACROSS RESTARTS (Oct 22, 2026). The edge lived only in memory, and the rollup can never reach the window's edge by
 // itself: the oldest, partial hour of the records is dropped, and the records reach back less far than the window
 // (claudex 20.6 days of 35). So every boot decoded every in-window request record again (1.10 GB / 1.02 M rows for
 // claudex, 1.34 GB / 0.85 M for claude-splice), taking live heap from 0.7 to 2.0 GB and committed heap to 4.9 GB in
 // the 30 s after the 2:21 PM and 6:01 PM CT boots. The edge is now kept on disk ([BackfillEdgeFile]).
+//
+// TORN LINES (Oct 23, 2026). One unparseable line anywhere in the window refused the whole pass, and the refusal lapsed
+// whenever the set of files changed. So after every rotation, about once a day per head, the next read decoded the
+// whole window again to find the same tears: 1.10 GB for claudex, 1.35 GB for claude-splice, whose committed heap went
+// from 1.57 to 2.56 GB at 8:56 PM CT on Oct 22. Archives are never rewritten, so a tear stays for the whole window and
+// no edge was ever kept. Now a tear leaves out only the hours it could belong to, and the pass succeeds and keeps its
+// edge. A tear with a leading ts costs its own hour. One with none costs the hours its row can lie in: from the newest
+// row ahead of it in its file, less an hour for a row appended late, up to its archive's rotation second, or with no
+// end in `.1` or the live file, whose names bound no row. A hard stop tears the live file's last line, so that costs
+// the latest hours, which the rollup already holds. The probe check, the reprice and the shared read take the same rule
+// (PerfTear.mayHold), so a tear the backfill reaches back past costs them the same hours and not the whole history.
 package splice.app.sources
 
 import kotlinx.serialization.Serializable
@@ -58,8 +70,18 @@ internal class EconomicsBackfill(
     plans: AccountOnPlan = NoPlans,
 ) {
     private val rows = EconomicsFromRows(price, plans)
-    private val refusal = PerfRefusal(perf.files, perf.files.refusalFile("backfill"))
     private val saved = BackfillEdgeFile(perf.files.stateFile("backfill-edge"))
+
+    init {
+        // Until Oct 23, 2026 a pass refused for a torn row was kept in this file, so a boot did not read the log again.
+        // No pass is refused for a tear now (TORN LINES, above), and the file left with its old time would read as a
+        // refusal still standing to whoever looks at the head's state.
+        try {
+            Files.deleteIfExists(perf.files.stateFile("backfill-refusal"))
+        } catch (_: IOException) {
+            // Nothing reads it; a later start removes it.
+        }
+    }
 
     /** The earliest cutoff a pass has already covered, or null when none has, kept across restarts. A moment and not
      *  a flag: a pass closes the gap down to the window's edge AS IT STOOD, and widening the window moves that edge
@@ -81,16 +103,10 @@ internal class EconomicsBackfill(
         return added
     }
 
-    /** The evidence from [from] when the log reads whole. A log refused for a torn row stays refused while its files are
-     *  only appended to, so it is not read again. */
-    private fun exact(from: Long): EconomicsPerfEvidence? {
-        if (refusal.stands(from)) return null
-        val before = perf.files.stamp()
-        val evidence = perf.economicsEvidence(from)
-        val tore = evidence.work.readError == null && evidence.work.skipped != 0
-        refusal.note(before, from, tore)
-        return evidence.takeIf { it.work.readError == null && !tore }
-    }
+    /** The evidence from [from], or null when the read was not whole. A torn line does not refuse it: [built] leaves
+     *  out the hours that line could belong to. */
+    private fun exact(from: Long): EconomicsPerfEvidence? =
+        perf.economicsEvidence(from).takeIf { it.work.readError == null }
 
     /**
      * Whether a pass at [from] has nothing left to find.
@@ -121,7 +137,7 @@ internal class EconomicsBackfill(
      *  when no kept edge covers [from], so its edge replaces the kept one. A rollup with no hours at all vouches for
      *  nothing, so no edge is kept and the next read scans again. */
     private fun cover(from: Long, reach: Long?) {
-        val next = reach?.let { BackfillEdge(from, it) }
+        val next = reach?.let { BackfillEdge(from, it, TEAR_RULE) }
         edge = next
         if (next != null) saved.save(next) else saved.clear()
     }
@@ -142,22 +158,32 @@ internal class EconomicsBackfill(
         val partial = byHour.keys.minOrNull()
         return byHour
             .filterKeys { hour -> hour != partial && hour >= from && (oldestHeld == null || hour < oldestHeld) }
+            .filterKeys { hour -> !torn(evidence, hour) }
             .map { (hour, hourRows) -> rows.bucket(hour, hourRows) }
             .sortedBy { it.hour }
     }
+
+    /** Whether a line the read could not parse may belong to [hour], so its rows may not be all its turns: a tear whose
+     *  leading ts is in it, or one with no ts whose row can lie in it. */
+    private fun torn(evidence: EconomicsPerfEvidence, hour: Long): Boolean =
+        evidence.tears.any { it.mayHold(hour, perf.files) }
 }
 
-/** A covered edge as it is kept on disk: the window edge a pass closed the gap down to, and the oldest hour the
- *  rollup held once that pass's hours were written into it. */
+/** A covered edge as it is kept on disk: the window edge a pass closed the gap down to, the oldest hour the rollup
+ *  held once that pass's hours were written into it, and the [TEAR_RULE] the pass left torn hours out under (null
+ *  before 2). */
 @Serializable
-internal data class BackfillEdge(val from: Long, val reach: Long)
+internal data class BackfillEdge(val from: Long, val reach: Long, val tearRule: Int? = null)
 
-/** The covered edge across restarts. An unreadable or missing file is no edge, so the next read decides again. */
+/** The covered edge across restarts. An unreadable or missing file is no edge, so the next read decides again, and
+ *  so is an edge kept under an older tear rule: the hours that pass left out as torn are never built while the edge
+ *  stands, and under rule 1 that was the hour after the oldest one for any head with an old torn line before the
+ *  window, such as claude-grok's NUL line of Jul 20 (round 14 of #247). */
 internal class BackfillEdgeFile(private val path: Path) {
     private val json = Json { ignoreUnknownKeys = true }
 
     fun load(): BackfillEdge? = try {
-        json.decodeFromString(BackfillEdge.serializer(), Files.readString(path))
+        json.decodeFromString(BackfillEdge.serializer(), Files.readString(path)).takeIf { it.tearRule == TEAR_RULE }
     } catch (_: IOException) {
         null
     } catch (_: SerializationException) {

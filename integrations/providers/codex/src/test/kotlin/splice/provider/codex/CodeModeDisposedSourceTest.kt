@@ -12,6 +12,7 @@ import kotlinx.serialization.json.Json
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertFalse
 import org.junit.jupiter.api.Assertions.assertNull
+import org.junit.jupiter.api.Assertions.assertSame
 import org.junit.jupiter.api.Assertions.assertThrows
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
@@ -23,6 +24,8 @@ import splice.core.turn.RoundHandoffs
 import splice.core.turn.TurnOutcome
 import splice.core.turn.Usage
 import splice.core.turn.UsageOrigin
+import splice.provider.codex.state.lease.CodeModeCellLease
+import splice.provider.codex.state.lease.CodeModeSessionAlive
 import splice.provider.codex.state.save.CodeModeStateWrite
 import splice.provider.codex.stream.CodeModeLiveRound
 import splice.provider.codex.stream.CodeModeRedirectablePost
@@ -30,6 +33,7 @@ import splice.provider.codex.stream.CodeModeRuntimeRun
 import splice.provider.codex.stream.CodeModeRuntimeStarter
 import splice.provider.codex.stream.CodeModeSourceCapture
 import splice.provider.codex.stream.CodeModeSourceInterruptedException
+import splice.provider.codex.stream.CodeModeSourceLease
 import splice.provider.codex.stream.CodeModeStreamAdmission
 import splice.provider.codex.stream.CodeModeStreamingCell
 import splice.provider.codex.stream.CodeModeStreams
@@ -47,6 +51,7 @@ import splice.upstream.failure.CodeModeStartException
 import splice.upstream.sse.CustomToolSource
 import splice.upstream.sse.WireSink
 import java.io.IOException
+import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.Executors
 import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicInteger
@@ -214,6 +219,59 @@ class CodeModeDisposedSourceTest : CodeModeBridgeTestSupport() {
         }
     }
 
+    /** Rounds 14 and 15 of #247: reclaiming the cell of a session that ended cancelled the round its posting step's row
+     *  waited on, first by ending its lease and then by closing the cell, so the row was released with a cut and none
+     *  of the round's usage, and Usage read low for that hour. Reclaiming is no client's cut: the round runs to its
+     *  terminal, and the row carries what that terminal reported. */
+    @OptIn(ExperimentalCoroutinesApi::class)
+    @Test
+    fun `a cell reclaimed from an ended session lets its owed round bill the posting row`() = runTest {
+        val state = SourceState(lease = CodeModeCellLease(sessionAlive = CodeModeSessionAlive { false }))
+        state.record.sessionId = "synthetic-ended-session"
+        val round = CodeModeLiveRound(
+            state.config,
+            state.registry,
+            state.wire,
+            CodeModeStreamAdmission { state.record },
+            RecordingSink(),
+        )
+        val terminal = CompletableDeferred<TurnOutcome>()
+        val released = CompletableDeferred<Usage?>()
+        val post = object : RedirectableRoundPost {
+            override val postingRow = PostingTurnRow { RowRelease { released.complete(it) } }
+            override suspend fun invoke(bodyJson: String): RoundResult = error("redirected post required")
+            override suspend fun into(bodyJson: String, sink: WireSink): RoundResult {
+                sink.customToolSource(CustomToolSource.Started(outer(state.record.origin.outerCallId, source = "")))
+                return RoundResult.Outcome(terminal.await())
+            }
+        }
+        val guest = object : CodeModeCell {
+            override suspend fun advance(results: List<CodeModeResult>): CodeModeStep =
+                CodeModeStep.Completed("synthetic parked guest")
+            override fun close() = Unit
+        }
+        assertTrue(state.registry.attach(state.record, CodeModeStreamingCell(guest, state.record, round)))
+        val scope = LifecycleScope(StandardTestDispatcher(testScheduler))
+        try {
+            round.start(scope, CodeModeRedirectablePost(post, state.wire), state.wire.body(RoundBody.Text("{}"))) {}
+            val localStep = Usage(origin = UsageOrigin(localStep = true))
+            assertNull(round.billing.claim(state.record, TurnOutcome.Success(true, false, localStep)))
+            state.record.sourceEnd = CodeModeSourceLease(state.record.id, round, ConcurrentHashMap())
+            state.registry.retainedCells.release(state.record)
+            assertSame(state.record, state.registry.evictIdleCell(), "the ended session's parked cell is reclaimed")
+            runCurrent()
+            terminal.complete(state.outcome)
+            runCurrent()
+            val usage = checkNotNull(released.await()) { "the posting row is released with the round's usage" }
+            assertEquals(1_400L, usage.inputTokens)
+            assertEquals(12L, usage.outputTokens)
+            assertEquals(1_100L, usage.cachedTokens)
+            assertEquals(0L, usage.cutRounds, "reclaiming the cell cut nothing")
+        } finally {
+            scope.cancel()
+        }
+    }
+
     @Test
     fun `disposal does not swallow identity prefix or source size validation`() {
         val state = SourceState()
@@ -265,8 +323,11 @@ class CodeModeDisposedSourceTest : CodeModeBridgeTestSupport() {
         assertTrue(stateFiles.records().isEmpty())
     }
 
-    private inner class SourceState(writer: CodeModeStateWrite? = null) {
-        val config = CodeModeBridgeConfig({ error("no runtime needed") }, stateLocation())
+    private inner class SourceState(
+        writer: CodeModeStateWrite? = null,
+        lease: CodeModeCellLease = CodeModeCellLease(),
+    ) {
+        val config = CodeModeBridgeConfig({ error("no runtime needed") }, stateLocation(), cellLease = lease)
         val registry = CodexCodeModeRegistry(config, Json, 1.hours, writer)
         val wire = CodexCodeModeWire(Json, {})
         val record = CodeModeRecords.of("synthetic-disposal-key", 0, config.clock.millis()).also {

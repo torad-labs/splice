@@ -1,7 +1,6 @@
 // NEW: a worker task that dies of a JVM error answers its turn, retires its worker process and logs one line.
 package splice.codemode
 
-import kotlinx.coroutines.future.await
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.withTimeout
 import kotlinx.serialization.json.JsonObject
@@ -23,31 +22,21 @@ import java.util.concurrent.ConcurrentLinkedQueue
 // why: GraalJS's parser recurses about eight frames per parenthesis; 300 levels parse, 1,000 overflow a worker thread.
 private const val OVERFLOWING_DEPTH = 3_000
 
-// why: GraalJS parses a member chain in a loop, but the worker's compiler walks the tree it builds recursively:
-// on a 1 MiB stack 4,000 accesses compile, and 8,000 overflow the compiler or the engine's own parse or run, wherever
-// the stack and JIT state run out first (CI run 37234377673).
+// why: 8,000 accesses overflowed a worker's stack on most workers, in the parse or at run time (CI run 37234377673).
 private const val OVERFLOWING_CHAIN = 8_000
 
 // why: the chain is sized to a stack, so the worker's is pinned to x86_64 Linux's default. An arm64 Mac's default
-// is 2 MiB, where 8,000 accesses compile and run, and its JVM spawns the worker with that default.
+// is 2 MiB, where 8,000 accesses parse and run, and its JVM spawns the worker with that default.
 private const val CHAIN_WORKER_STACK = "-Xss1m"
 
-/** A member chain too long for the worker's stack ends with the program's own error from whichever side overflows:
- *  splice's compiler (CodeModeStatementCompilerTest pins that side on a fixed stack) or the engine at run time. */
-private val PROGRAM_STACK_ERRORS = setOf(
-    "SyntaxError: program nesting too deep to parse",
-    "RangeError: Maximum call stack size exceeded",
-)
+/** A program too deep for the worker's stack ends with the program's own error, from whichever side overflows: the
+ *  engine's parse of the whole program, or its run. Either is the script's error, never a lost worker. */
+private val PROGRAM_STACK_ERRORS = listOf("SyntaxError: ", "RangeError: ")
 
 // why: a warm worker answers in well under a second; the stall this replaces waited 900 s for the progress timeout.
 // The bound is on the ANSWER, so it starts after [warm]: a cold worker JVM can take longer than this alone on a host
 // busy with a whole gate, and a bound that includes the spawn fails there for a reason this test does not pin.
 private const val ANSWER_BOUND_MS = 5_000L
-
-private val DEATH_LINE = Regex(
-    """\[code-mode] worker task died: StackOverflowError in [A-Za-z0-9_$]+\.[A-Za-z0-9_$<>-]+; """ +
-        "worker process retired",
-)
 
 /** Oct 4: a worker task that died of a JVM error wrote no reply, so its turn waited 900 s for the progress timeout. */
 @Timeout(90)
@@ -61,10 +50,9 @@ class CodeModeWorkerTaskDeathTest {
     fun `a program nested too deep to parse ends with its own error, as a syntax error does`() = runBlocking {
         runtime().use { runtime ->
             warm(runtime)
-            val step = withTimeout(ANSWER_BOUND_MS) { run(runtime, "text('before');\n$deep", "text('after');") }
+            val step = withTimeout(ANSWER_BOUND_MS) { run(runtime, "text('before');\n$deep") }
             val completed = step as CodeModeStep.Completed
-            assertEquals("SyntaxError: program nesting too deep to parse", completed.error, completed.toString())
-            assertEquals("before", completed.output)
+            assertTrue(PROGRAM_STACK_ERRORS.any { completed.error.orEmpty().startsWith(it) }, completed.toString())
         }
     }
 
@@ -74,38 +62,11 @@ class CodeModeWorkerTaskDeathTest {
             runtime(CHAIN_WORKER_STACK).use { runtime ->
                 val chain = "const a = {}; a.a = a; const v = " + "a.".repeat(OVERFLOWING_CHAIN) + "a;\n"
                 warm(runtime)
-                val step = withTimeout(ANSWER_BOUND_MS) { run(runtime, chain, "") }
+                val step = withTimeout(ANSWER_BOUND_MS) { run(runtime, chain) }
                 val completed = step as CodeModeStep.Completed
-                assertTrue(completed.error in PROGRAM_STACK_ERRORS, completed.toString())
+                assertTrue(PROGRAM_STACK_ERRORS.any { completed.error.orEmpty().startsWith(it) }, completed.toString())
             }
         }
-
-    @Test
-    fun `the worker whose parse overflowed is retired, and the next program runs on a fresh one`() = runBlocking {
-        runtime().use { runtime ->
-            warm(runtime)
-            withTimeout(ANSWER_BOUND_MS) { run(runtime, deep, "") }
-            val overflowed = spawned.single()
-            withTimeout(ANSWER_BOUND_MS) { overflowed.onExit().await() }
-            // Replacement boot uses the runtime's start deadline, not the warm-answer bound.
-            warm(runtime)
-            val next = withTimeout(ANSWER_BOUND_MS) { run(runtime, "text('fresh');\n", "") }
-            assertEquals("fresh", (next as CodeModeStep.Completed).output, next.toString())
-            assertEquals(2, spawned.size)
-        }
-    }
-
-    @Test
-    fun `a task death is logged once by its throwable and frame, with no source text`() = runBlocking {
-        runtime().use { runtime ->
-            warm(runtime)
-            withTimeout(ANSWER_BOUND_MS) { run(runtime, deep, "") }
-            HostLifecycleAwait.ended(messages)
-            val deaths = messages.filter { "worker task died" in it }
-            assertEquals(1, deaths.size, messages.toString())
-            assertTrue(DEATH_LINE.matches(deaths.single()), deaths.single())
-        }
-    }
 
     @Test
     fun `a task that dies of a JVM error with no program cause ends as a lost worker and retires its process`() =
@@ -126,7 +87,7 @@ class CodeModeWorkerTaskDeathTest {
                 assertFalse(processes.single().isAlive, "the worker whose task died must be retired")
                 assertEquals(
                     listOf(
-                        "[code-mode] worker task died: OutOfMemoryError in CodeModeStatementParser.tokens; " +
+                        "[code-mode] worker task died: OutOfMemoryError in WorkerSession.start; " +
                             "worker process retired",
                     ),
                     messages.filter { "worker task died" in it },
@@ -147,18 +108,15 @@ class CodeModeWorkerTaskDeathTest {
 
     /** Boots the worker under its start deadline and checks its first program before timing a warm answer. */
     private suspend fun warm(runtime: JvmCodeModeRuntime) {
-        val completed = run(runtime, "text('warm');", "") as CodeModeStep.Completed
+        val completed = run(runtime, "text('warm');") as CodeModeStep.Completed
         assertEquals("warm", completed.output, completed.toString())
         assertEquals(null, completed.error, completed.toString())
     }
 
-    /** Streams [first] as a part of its own, then completes the source with [last], and runs to the first step. */
-    private suspend fun run(runtime: JvmCodeModeRuntime, first: String, last: String): CodeModeStep {
-        val parts = ArrayDeque<CodeModeSourcePart>(
-            listOf(CodeModeSourcePart.Delta(first), CodeModeSourcePart.Complete(last)),
-        )
-        return runtime.startStreamingSession("session", CodeModeSource { parts.removeFirst() }, emptySet()).advance()
-    }
+    /** Hands [source] over as one whole item, as a model's exec item arrives, and runs to the first step. */
+    private suspend fun run(runtime: JvmCodeModeRuntime, source: String): CodeModeStep =
+        runtime.startStreamingSession("session", CodeModeSource { CodeModeSourcePart.Complete(source) }, emptySet())
+            .advance()
 
     /** The fatal frame a worker writes when a task dies of an OutOfMemoryError: class and frame names only. */
     private fun died(): JsonObject = buildJsonObject {
@@ -166,6 +124,6 @@ class CodeModeWorkerTaskDeathTest {
         put("category", "HOST")
         put("faultClass", "RUNTIME")
         put("throwable", "OutOfMemoryError")
-        put("at", "CodeModeStatementParser.tokens")
+        put("at", "WorkerSession.start")
     }
 }

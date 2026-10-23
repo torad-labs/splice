@@ -6,7 +6,6 @@ import splice.codemode.JvmCodeModeCell
 import splice.codemode.ReleaseCodeModeCell
 import splice.codemode.wire.CodeModeFrames
 import splice.upstream.codemode.CodeModeCell
-import splice.upstream.codemode.CodeModeSource
 import splice.upstream.failure.CodeModeWorkerLostException
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.atomic.AtomicBoolean
@@ -17,12 +16,7 @@ internal class CodeModeCellStarts(
 ) {
     private val cells: MutableSet<JvmCodeModeCell> = ConcurrentHashMap.newKeySet()
 
-    suspend fun start(
-        lease: CodeModePoolLease,
-        frame: JsonObject,
-        tools: Set<String>,
-        source: CodeModeSource?,
-    ): CodeModeCell {
+    suspend fun start(lease: CodeModePoolLease, frame: JsonObject, tools: Set<String>): CodeModeCell {
         val pipe = lease.pipe
         var started = false
         try {
@@ -35,7 +29,6 @@ internal class CodeModeCellStarts(
                     pool.release(lease)
                     cells.remove(cell)
                 },
-                source,
             )
             cells.add(cell)
             pipe.afterExit { cell.stop() }

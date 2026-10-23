@@ -73,6 +73,21 @@ internal class CodeModeSourceLease(
     /** Publish before a retained cell closes, even when actual cancellation waits for registry unlock. */
     fun retire() = round.cut.retire()
 
+    /** A posting step's row still waits for this round's terminal: ending the lease now cancels the round and releases
+     *  that row with none of the round's usage, only a cut. */
+    val owed: Boolean get() = round.billing.owes
+
+    /** The round's reader is still running, so a row may yet be owed its usage. */
+    val reading: Boolean get() = !round.readerSettled
+
+    /** Lets the round go without cutting it: no record or step reaches it again, and its reader runs to the terminal,
+     *  which still bills the row it is owed ([CodeModeRoundBilling.reported] when its record is gone). A head stop still
+     *  stops it. Closing the retained cell after this cuts nothing (round 15 of #247). */
+    fun release() {
+        round.cut.release()
+        rounds.remove(id, round)
+    }
+
     fun ended() {
         retire()
         beforeEnd?.run()

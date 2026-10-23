@@ -22,7 +22,7 @@ public interface CodeModeRuntime : AutoCloseable {
         descriptions: Map<String, String> = emptyMap(),
     ): CodeModeCell = start(source, tools, descriptions)
 
-    /** Incremental source retains the same session identity through every callback and result. */
+    /** A model item's source, started once its whole item has arrived, under the session's identity. */
     public suspend fun startStreamingSession(
         sessionKey: String,
         source: CodeModeSource,
@@ -33,25 +33,14 @@ public interface CodeModeRuntime : AutoCloseable {
     /** Release the session-owned engine when the provider expires its retained code-mode state. */
     public fun closeSession(sessionKey: String): Unit = Unit
 
-    /** Incremental-capable runtimes dispatch complete statements before the source item completes. */
+    /** Waits for the whole item, then starts it as [start] does. A source that failed starts nothing. */
     public suspend fun startStreaming(
         source: CodeModeSource,
         tools: Set<String>,
         descriptions: Map<String, String> = emptyMap(),
-    ): CodeModeCell {
-        val buffered = StringBuilder()
-        while (true) {
-            when (val part = source.read()) {
-                is CodeModeSourcePart.Delta -> buffered.append(part.text)
-                is CodeModeSourcePart.Complete -> return start(
-                    buffered.append(part.text).toString(),
-                    tools,
-                    descriptions,
-                )
-                is CodeModeSourcePart.Failed -> throw java.io.IOException(part.error)
-            }
-            require(CodeModeLimits.fitsText(buffered.toString())) { "Code-mode source exceeds its text budget" }
-        }
+    ): CodeModeCell = when (val whole = source.read()) {
+        is CodeModeSourcePart.Complete -> start(whole.text, tools, descriptions)
+        is CodeModeSourcePart.Failed -> throw java.io.IOException(whole.error)
     }
 }
 

@@ -1,4 +1,15 @@
 // NEW: a bounded captured source offers a fresh cursor only for proven pre-dispatch retries.
+//
+// WHOLE ITEMS ONLY (Oct 23, 2026). A cursor hands the worker nothing until the response terminal certifies the
+// exec item, then the whole item in one part, as Codex dispatches exec only on its completed item (codex-rs
+// turn.rs:2903-3014). Statements used to run as they streamed: a script's first client
+// tool calls went out before its upstream round ended, so one round outlived the client response that carried
+// them, and the detached reader, switching attachments, cut claims and split billing that followed were the
+// most-fixed code-mode family since Sep 1 (77 commits). The model never opens a second exec while one runs, and
+// its sources are short (661 chars at p50), so the overlap this gives up is a fraction of a script's generation.
+// The buffer kept the streamed path's item seal and statement certification until round 11 of #247 found them
+// unreachable: a cell starts only after the cursor read the terminal, which no later failure replaces, and the capture
+// already refuses a delta after its item completed.
 package splice.provider.codex.stream
 
 import kotlinx.coroutines.NonCancellable
@@ -12,8 +23,6 @@ import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.selects.select
 import kotlinx.coroutines.withContext
 import splice.upstream.codemode.CodeModeCell
-import splice.upstream.codemode.CodeModeManual
-import splice.upstream.codemode.CodeModeSealedSource
 import splice.upstream.codemode.CodeModeSource
 import splice.upstream.codemode.CodeModeSourcePart
 import java.io.IOException
@@ -22,7 +31,6 @@ import java.util.concurrent.atomic.AtomicReference
 private data class SourceSnapshot(
     val text: String,
     val terminal: CodeModeSourcePart? = null,
-    val itemComplete: Boolean = false,
 )
 
 /** Joins an accumulated prefix to the conversation batch before a cursor hands it to the worker. */
@@ -52,26 +60,11 @@ internal class CodeModeSourceBuffer(
         var kept = true
         state.update { previous ->
             check(previous.terminal !is CodeModeSourcePart.Complete) { "source already ended" }
-            check(!previous.itemComplete) { "source item already completed" }
             check(text.startsWith(previous.text)) { "dispatched source changed" }
             kept = previous.terminal == null
             if (kept) SourceSnapshot(text) else previous
         }
         return kept
-    }
-
-    /** Item completion freezes unread statements until the response terminal certifies their source. */
-    fun seal() {
-        state.update { previous ->
-            check(previous.terminal !is CodeModeSourcePart.Complete) { "source already ended" }
-            if (previous.terminal != null) previous else previous.copy(itemComplete = true)
-        }
-    }
-
-    /** A statement selected just before item completion still cannot escape as a client call afterward. */
-    suspend fun awaitCertification() {
-        val next = state.first { !it.itemComplete || it.terminal != null }
-        (next.terminal as? CodeModeSourcePart.Failed)?.let { throw IOException(it.error) }
     }
 
     fun complete(text: String) {
@@ -116,47 +109,19 @@ internal class CodeModeSourceBuffer(
         throw IOException(failure.error)
     }
 
+    /** A cursor over the source: it waits for the response terminal, then reads the whole item as one
+     *  [CodeModeSourcePart.Complete], or the failure that ended it. A later read gets the empty remainder. */
     fun view(): CodeModeSource {
         var position = 0
-        return object : CodeModeSealedSource {
-            override val sealedGlobals: Set<String> = CodeModeManual.streamingSealedGlobals
+        return object : CodeModeSource {
+            override suspend fun read(): CodeModeSourcePart = part(state.first { it.terminal != null })
 
-            override suspend fun read(): CodeModeSourcePart {
-                while (true) {
-                    val next = state.first { it.terminal != null || (!it.itemComplete && it.text.length > position) }
-                    commitAndReadPart(next)?.let { return it }
-                }
-            }
-
-            override suspend fun readAvailable(): CodeModeSourcePart? {
-                val next = state.value
-                if (!hasAvailablePart(next, position)) return null
-                return commitAndReadPart(next)
-            }
-
-            private fun commitAndReadPart(next: SourceSnapshot): CodeModeSourcePart? {
-                (next.terminal as? CodeModeSourcePart.Failed)?.let { return it }
-                beforeRead.commit(next.text)
-                val latest = state.value
-                if (newerPartFinished(latest, next)) return null
-                val remainder = next.text.substring(position)
-                position = next.text.length
-                return if (next.terminal is CodeModeSourcePart.Complete) {
-                    CodeModeSourcePart.Complete(remainder)
-                } else {
-                    CodeModeSourcePart.Delta(remainder)
-                }
-            }
-
-            private fun hasAvailablePart(snapshot: SourceSnapshot, offset: Int): Boolean {
-                if (snapshot.terminal != null) return true
-                if (snapshot.itemComplete) return false
-                return snapshot.text.length > offset
-            }
-
-            private fun newerPartFinished(latest: SourceSnapshot, next: SourceSnapshot): Boolean {
-                if (latest === next) return false
-                return latest.itemComplete || latest.terminal != null
+            private fun part(ended: SourceSnapshot): CodeModeSourcePart {
+                (ended.terminal as? CodeModeSourcePart.Failed)?.let { return it }
+                beforeRead.commit(ended.text)
+                val remainder = ended.text.substring(position)
+                position = ended.text.length
+                return CodeModeSourcePart.Complete(remainder)
             }
         }
     }

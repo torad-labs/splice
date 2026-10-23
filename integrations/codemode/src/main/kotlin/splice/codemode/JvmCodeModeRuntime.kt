@@ -7,7 +7,6 @@ import kotlinx.coroutines.cancel
 import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.withTimeoutOrNull
-import kotlinx.serialization.json.JsonObject
 import splice.codemode.host.CodeModeCellStarts
 import splice.codemode.host.CodeModeHostLauncher
 import splice.codemode.host.CodeModeHostPool
@@ -100,7 +99,7 @@ public class JvmCodeModeRuntime(
         source: String,
         tools: Set<String>,
         descriptions: Map<String, String>,
-    ): CodeModeCell = create(sessionKey, CodeModeWire.startFrame(source, tools, descriptions), tools, null)
+    ): CodeModeCell = cells.start(openCell(sessionKey), CodeModeWire.startFrame(source, tools, descriptions), tools)
 
     override suspend fun startStreaming(
         source: CodeModeSource,
@@ -113,35 +112,10 @@ public class JvmCodeModeRuntime(
         source: CodeModeSource,
         tools: Set<String>,
         descriptions: Map<String, String>,
-    ): CodeModeCell = when (val first = source.read()) {
-        is CodeModeSourcePart.Complete -> {
-            val sealed = CodeModeScopeSeal.names(source)
-            if (sealed.isEmpty()) {
-                startSession(sessionKey, first.text, tools, descriptions)
-            } else {
-                create(
-                    sessionKey,
-                    StreamingCodeModeWire.completeFrame(first.text, tools, descriptions, sealed),
-                    tools,
-                    null,
-                )
-            }
-        }
-        is CodeModeSourcePart.Failed -> throw IOException(first.error)
-        is CodeModeSourcePart.Delta -> create(
-            sessionKey,
-            StreamingCodeModeWire.startFrame(first.text, tools, descriptions, CodeModeScopeSeal.names(source)),
-            tools,
-            source,
-        )
+    ): CodeModeCell = when (val whole = source.read()) {
+        is CodeModeSourcePart.Complete -> startSession(sessionKey, whole.text, tools, descriptions)
+        is CodeModeSourcePart.Failed -> throw IOException(whole.error)
     }
-
-    private suspend fun create(
-        sessionKey: String,
-        frame: JsonObject,
-        tools: Set<String>,
-        source: CodeModeSource?,
-    ): CodeModeCell = cells.start(openCell(sessionKey), frame, tools, source)
 
     // This boundary ends before source exchange: only these failures prove source was never dispatched.
     private suspend fun openCell(sessionKey: String): CodeModePoolLease = Cancellables.runCatchingBestEffort {

@@ -30,7 +30,6 @@ internal class EconomicsReprice(
     plans: AccountOnPlan = NoPlans,
 ) {
     private val rows = EconomicsFromRows(price, plans)
-    private val refusal = PerfRefusal(perf.files)
 
     // WHICH rows an hour is made of is not answered here. The reconciliation this must agree with and the
     // backfill it grades beside both take it from EconomicsRows, which says why it cannot be two answers;
@@ -114,16 +113,12 @@ internal class EconomicsReprice(
         return answers
     }
 
-    /** The evidence from [from] when the log reads whole. A log refused for a torn row stays refused while its files are
-     *  only appended to, so it is not read again. */
-    private fun exact(from: Long): EconomicsPerfEvidence? {
-        if (refusal.stands(from)) return null
-        val before = perf.files.stamp()
-        val evidence = perf.economicsEvidenceSince(from)
-        val tore = evidence.work.readError == null && evidence.probeTears.any { it == null }
-        refusal.note(before, from, tore)
-        return evidence.takeIf { it.work.readError == null && !tore }
-    }
+    /** The evidence from [from] when the log reads whole. A torn line does not refuse it. The probe check leaves unread
+     *  the hours a probe-like tear may belong to, and a torn work row leaves its hour's rows short of its turns, so
+     *  [repriced] keeps that hour's own figure. Until Oct 23, 2026 a torn line with no time
+     *  refused the whole pass for the run, and each boot read the log again to find it. */
+    private fun exact(from: Long): EconomicsPerfEvidence? =
+        perf.economicsEvidenceSince(from).takeIf { it.work.readError == null }
 
     /** The hour's cost from its own rows, or null when the rows are not the turns it counted. */
     private fun repriced(bucket: EconomicsBucket, hourRows: List<PerfRow>): BucketCost? {

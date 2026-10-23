@@ -26,7 +26,6 @@ internal class CodeModeStreamingCell(
         checkSource()
         return try {
             val step = cell.advance(results)
-            if (step !is CodeModeStep.WaitingForResults) round.source.awaitCertification()
             checkSource()
             if (step is CodeModeStep.Calls) deliveredText = round.switching.detach()
             step
@@ -62,8 +61,10 @@ internal class CodeModeStreamingCell(
         }
     }
 
+    /** A round its lease let go ([CodeModeCutClaim.released]) runs on to its terminal, which bills the row it is owed:
+     *  closing its cell frees only the engine. */
     override fun close() {
         cell.close()
-        if (record.sourceState?.complete != true) round.cancel()
+        if (record.sourceState?.complete != true && !round.cut.released) round.cancel()
     }
 }

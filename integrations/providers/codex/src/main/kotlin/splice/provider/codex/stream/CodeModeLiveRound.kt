@@ -51,6 +51,10 @@ internal class CodeModeLiveRound(
     internal var finished: Deferred<TurnOutcome>? = null
         private set
     private val settled = CompletableDeferred<Unit>()
+
+    /** The reader ended and its last billing settled: any row it was owed is released, and its usage is consumed or
+     *  waits in the record's source state for the step that takes the outcome. */
+    val readerSettled: Boolean get() = settled.isCompleted
     private val completion = CodeModeRoundCompletion(
         config.log,
         settled,

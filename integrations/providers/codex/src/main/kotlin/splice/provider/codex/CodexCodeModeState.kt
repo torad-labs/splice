@@ -12,6 +12,7 @@ import splice.core.memory.HeapReservations
 import splice.provider.codex.state.CodeModeAccepted
 import splice.provider.codex.state.CodeModeRecordSnapshots
 import splice.provider.codex.state.CodeModeReplayAnchors
+import splice.provider.codex.stream.CodeModeSourceEnds
 import splice.provider.codex.stream.CodeModeSourceLease
 import splice.provider.codex.stream.CodeModeSourceState
 import splice.upstream.codemode.CodeModeResult
@@ -65,6 +66,12 @@ internal data class CodeModeRecord(
 
     fun stampCellStart(now: Long) {
         if (cellStartedAt == null) cellStartedAt = now
+    }
+
+    /** Hands the round's upstream lease to its ending, once, as the record leaves the head. */
+    fun endSource() {
+        CodeModeSourceEnds.defer(sourceEnd)
+        sourceEnd = null
     }
 
     fun visiblePending(): List<CodeModePending> = progress.pending.filter { pending ->

@@ -15,6 +15,12 @@ internal class CodeModeCutClaim {
     @Volatile private var cancelled = false
     val client: Boolean get() = cancelled && owner.get() == SourceCutOwner.CLIENT
 
+    /** The round's lease let it go to its terminal ([CodeModeSourceLease.release]): no record or step reaches it again,
+     *  and closing the cell it fed cuts nothing, so its terminal still bills the row it is owed (round 15 of #247). A
+     *  head stop still stops it. Set once, never cleared. */
+    @Volatile var released = false
+        private set
+
     fun claimClient() {
         owner.compareAndSet(SourceCutOwner.UNCLAIMED, SourceCutOwner.CLIENT)
     }
@@ -29,6 +35,11 @@ internal class CodeModeCutClaim {
 
     fun retire() {
         owner.compareAndSet(SourceCutOwner.UNCLAIMED, SourceCutOwner.RETIREMENT)
+    }
+
+    fun release() {
+        retire()
+        released = true
     }
 
     fun take(): Boolean = client && counted.compareAndSet(false, true)

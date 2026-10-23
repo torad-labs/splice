@@ -1,10 +1,6 @@
 package splice.provider.codex
 
-import kotlinx.coroutines.CompletableDeferred
-import kotlinx.coroutines.async
 import kotlinx.coroutines.runBlocking
-import kotlinx.coroutines.withTimeout
-import kotlinx.coroutines.yield
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
@@ -16,7 +12,6 @@ import org.junit.jupiter.api.Assertions.assertThrows
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.Timeout
-import splice.core.index.WireBlockIndex
 import splice.core.turn.GatewayCustomCall
 import splice.core.turn.RoundHandoffs
 import splice.core.turn.TurnOutcome
@@ -33,11 +28,8 @@ import splice.provider.codex.stream.CodeModeSourceCapture
 import splice.provider.codex.stream.CodeModeSourceRecords
 import splice.provider.codex.stream.CodeModeSourceState
 import splice.provider.codex.stream.CodeModeStreamAdmission
-import splice.upstream.RedirectableRoundPost
-import splice.upstream.RoundResult
 import splice.upstream.codemode.CodeModeSourcePart
 import splice.upstream.sse.CustomToolSource
-import splice.upstream.sse.WireSink
 import java.io.IOException
 import java.lang.ref.Reference
 import java.lang.ref.WeakReference
@@ -84,98 +76,6 @@ class CodeModeStreamDurabilityTest : CodeModeStatementStreamSupport() {
             if (body.get() == null) return true
         }
         return false
-    }
-
-    @Test
-    @Timeout(20)
-    fun `the bridge recovers completed raw usage after its durable claim fails without rerunning source`() =
-        runBlocking {
-            val runtime = IncrementalRuntime()
-            val manager = bridge(runtime)
-            val sink = StepSink()
-            val post = GatedPost(sink)
-            try {
-                manager.interceptor(turn(), disableParallel = false).intercept(BASE_REQUEST, sink, post)
-                val first = sink.callback.await()
-                post.gates.drop(1).forEach { it.complete(Unit) }
-                post.complete.complete(Unit)
-                withTimeout(30_000) { post.stopped.await() }
-                val registry = manager.registry
-                val key = stateFiles.records().single().getValue("key").jsonPrimitive.content
-                val record = registry.recordsFor(key).single()
-                // The mock post's finally precedes capture.finish; only stored terminal usage
-                // certifies this precondition.
-                withTimeout(30_000) {
-                    while (registry.recordsFor(key).single().sourceState?.usage == null) yield()
-                }
-                registry.complete(record, "done")
-                stateFiles.block()
-                try {
-                    assertThrows(CodeModePersistenceException::class.java) { registry.source.consume(record) }
-                    assertFalse(record.sourceState?.consumed == true)
-                } finally {
-                    stateFiles.unblock()
-                }
-                val recovered = manager.interceptor(turn(first.id, "result-0"), disableParallel = false)
-                    .intercept(history(listOf(first)), StepSink(), post).turn() as TurnOutcome.Success
-                assertBilling(recovered.usage)
-                assertTrue(record.sourceState?.consumed == true)
-                assertFinalIdentity(post, recovered)
-                val repeated = manager.interceptor(turn(first.id, "result-0"), disableParallel = false)
-                    .intercept(history(listOf(first)), StepSink(), post).turn() as TurnOutcome.Success
-                assertEquals(5L, repeated.usage.outputTokens, "terminal usage is claimed once")
-                assertEquals(1, runtime.starts)
-                assertEquals(3, post.posts, "only the initial source and two ordinary continuations were posted")
-            } finally {
-                manager.onHeadStop()
-            }
-        }
-
-    @Test
-    @Timeout(20)
-    fun `a failed durable usage claim returns a zero usage step after its raw round reported tokens`() = runBlocking {
-        val runtime = IncrementalRuntime()
-        val manager = bridge(runtime)
-        val calls = StepSink()
-        val rawUsage = CompletableDeferred<Usage>()
-        var blocked = false
-        val sink = object : WireSink by calls {
-            override suspend fun closeBlock(index: WireBlockIndex) {
-                calls.closeBlock(index)
-                if (calls.sealed && !blocked) {
-                    stateFiles.block()
-                    blocked = true
-                }
-            }
-        }
-        val upstream = GatedPost(calls).apply { complete.complete(Unit) }
-        val observed = object : RedirectableRoundPost by upstream {
-            override suspend fun into(bodyJson: String, sink: WireSink): RoundResult {
-                val raw = upstream.into(bodyJson, sink)
-                rawUsage.complete(((raw as RoundResult.Outcome).outcome as TurnOutcome.Success).usage)
-                return raw
-            }
-        }
-        try {
-            val pending = async {
-                manager.interceptor(turn(), disableParallel = false).intercept(BASE_REQUEST, sink, observed)
-            }
-            withTimeout(30_000) { runtime.firstRead.await() }
-            assertTrue(runtime.firstReads.single() is CodeModeSourcePart.Delta)
-            upstream.gates.drop(1).forEach { it.complete(Unit) }
-            val outcome = pending.await().turn() as TurnOutcome.Success
-            assertTrue(calls.callback.isCompleted, "the script's client call already left")
-            assertTrue(blocked, "refusal starts only after durable client-call issuance")
-            assertEquals(100L, rawUsage.await().inputTokens, "the posting round's independent witness survives")
-            assertEquals(7L, rawUsage.await().outputTokens)
-            assertEquals(0L, outcome.usage.inputTokens, "a refused durable claim returns the local machine step")
-            assertEquals(0L, outcome.usage.outputTokens)
-            assertEquals(1, upstream.posts)
-            assertEquals(1, runtime.starts, "the source is never rerun to recover its bill")
-        } finally {
-            if (blocked) stateFiles.unblock()
-            manager.onHeadStop()
-        }
     }
 
     private inner class SourceRound(
@@ -235,16 +135,14 @@ class CodeModeStreamDurabilityTest : CodeModeStatementStreamSupport() {
     }
 
     @Test
+    @Timeout(20)
     fun `two hundred buffered producer deltas remain staged until a client boundary`() = runBlocking {
         val state = SourceRound()
         state.begin()
         repeat(200) { state.append("x") }
-        val reader = state.capture.source.view()
-        assertEquals(CodeModeSourcePart.Delta("x".repeat(200)), reader.read())
-        assertEquals("", stateFiles.records().single().getValue("source").jsonPrimitive.content)
         state.finish("x".repeat(200))
-        assertEquals(CodeModeSourcePart.Complete(), reader.read())
         assertEquals(CodeModeSourcePart.Complete("x".repeat(200)), state.capture.source.view().read())
+        assertEquals("", stateFiles.records().single().getValue("source").jsonPrimitive.content)
         assertEquals(1, state.forcedWrites, "only the no-rerun admission is durable before visibility")
         state.clientBoundary()
         assertEquals("x".repeat(200), stateFiles.records().single().getValue("source").jsonPrimitive.content)
@@ -252,46 +150,14 @@ class CodeModeStreamDurabilityTest : CodeModeStatementStreamSupport() {
     }
 
     @Test
-    fun `source read granularity does not change the client-boundary batch count`() = runBlocking {
-        val statement = listOf("await ", "tools.", "Read(", "{}", ");", "\n")
-        val batched = SourceRound("statement-schedule")
-        batched.begin()
-        val reader = batched.capture.source.view()
-        repeat(20) {
-            statement.forEach { fragment -> batched.append(fragment) }
-            assertEquals(CodeModeSourcePart.Delta(statement.joinToString("")), reader.read())
-            batched.clientBoundary()
-        }
-        batched.finish(statement.joinToString("").repeat(20))
-        assertEquals(CodeModeSourcePart.Complete(), reader.read())
-        assertEquals(21, batched.forcedWrites, "admission and twenty client-visible batches")
-
-        val location = stateLocation()
-        val eagerLocation = CodeModeStateLocation(
-            location.dir.resolveSibling("eager-schedule"),
-            location.legacyFile.resolveSibling("eager-schedule.json"),
-        )
-        val eager = SourceRound("eager-schedule", eagerLocation)
-        eager.begin()
-        val eagerReader = eager.capture.source.view()
-        repeat(200) { index ->
-            eager.append("x")
-            assertEquals(CodeModeSourcePart.Delta("x"), eagerReader.read())
-            if ((index + 1) % 10 == 0) eager.clientBoundary()
-        }
-        eager.finish("x".repeat(200))
-        assertEquals(CodeModeSourcePart.Complete(), eagerReader.read())
-        assertEquals(21, eager.forcedWrites, "extra source reads never add durability boundaries")
-    }
-
-    @Test
+    @Timeout(20)
     fun `a refused client boundary keeps staged source out of durable client state`() = runBlocking {
         val state = SourceRound()
         state.begin()
         state.refuseWrites = true
         state.append("await tools.Read({});")
-        val reader = state.capture.source.view()
-        assertEquals(CodeModeSourcePart.Delta("await tools.Read({});"), reader.read())
+        state.finish("await tools.Read({});")
+        assertEquals(CodeModeSourcePart.Complete("await tools.Read({});"), state.capture.source.view().read())
         assertThrows(CodeModePersistenceException::class.java) { state.clientBoundary() }
         assertEquals("", stateFiles.records().single().getValue("source").jsonPrimitive.content)
         state.refuseWrites = false

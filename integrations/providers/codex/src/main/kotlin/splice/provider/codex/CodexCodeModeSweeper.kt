@@ -20,7 +20,6 @@ import splice.provider.codex.state.CodeModeExpiredHistory
 import splice.provider.codex.state.CodeModeSessionEnd
 import splice.provider.codex.state.collection.CodeModeRecordKeys
 import splice.provider.codex.state.lease.CodeModeSessionAlive
-import splice.provider.codex.stream.CodeModeSourceEnds
 import splice.upstream.codemode.CodeModeCell
 import java.util.concurrent.Executors
 import java.util.concurrent.ScheduledFuture
@@ -134,6 +133,10 @@ internal class CodexCodeModeSweeper(
     fun sweep(key: String? = null, protectedKey: String? = null): Boolean =
         expireRecords(key) or retainedCells.sweep(key, protectedKey) or expireMarkers(key)
 
+    /** The keys neither an admission nor a sweep may retire: one being admitted, or one with a running cell. */
+    fun busyKeys(): Set<String> = records.filter { it.id in admissions || retainedCells.running(it) }
+        .mapTo(mutableSetOf(), CodeModeRecord::key)
+
     /** Without an explicit count bound, old expiry evidence is bounded by the same configured lifetime. */
     private fun expireMarkers(key: String?): Boolean {
         val cutoff = config.clock.millis() - config.retention.ttl.inWholeMilliseconds
@@ -156,8 +159,7 @@ internal class CodexCodeModeSweeper(
         if (stale.isEmpty()) return false
         stale.forEach { record ->
             admissions.remove(record.id)
-            CodeModeSourceEnds.defer(record.sourceEnd)
-            record.sourceEnd = null
+            record.endSource()
             cells.remove(record.id)?.close()
             history.remember(record, config.clock.millis())
         }
@@ -182,6 +184,7 @@ internal class CodeModeRecordRetention(
     private val json: Json,
     private val log: LogSink,
     private val sessionAlive: CodeModeSessionAlive = CodeModeSessionAlive { null },
+    private val closeSession: CodeModeSessionEnd = CodeModeSessionEnd {},
 ) {
 
     /** At the start of conversation [key]'s turn: its finished records go together when it reached
@@ -261,6 +264,71 @@ internal class CodeModeRecordRetention(
         return records.size != before
     }
 
+    /** On the timed sweep, where scripts may be running: the least recently used idle conversation outside
+     *  [busy] while the head is past its bounds, or null when it is within them or none qualifies. Before this
+     *  the bounds held only at an admission and at the start, so a head past them stayed past them until the
+     *  next script, however long that took (Oct 22: 94.6 MB over the bound from a boot to its first script). */
+    fun overBound(records: List<CodeModeRecord>, busy: Set<String>): String? =
+        if (exceedsHeadCount(records.size) || records.sumOf(::bytesOf) > bounds.bytes) {
+            idle(records, busy + lost(records))
+        } else {
+            null
+        }
+
+    /** The conversations holding a LOST record. A LOST record still needs a result or an exact retry
+     *  (CodexCodeModeRegistry.owner), so the timed sweep leaves its conversation to its expiry and never to the
+     *  bound: round 11 of #247 found the sweep letting it go, since a LOST record carries an error and so reads as
+     *  finished. An admission, which needs the room now, may still let it go. */
+    private fun lost(records: List<CodeModeRecord>): Set<String> =
+        records.filter { it.phase == CodeModePhase.LOST }.mapTo(HashSet(), CodeModeRecord::key)
+
+    /** Under [key]'s lock: [key]'s finished records go together when the head is still past its bounds and
+     *  [key] is still idle and outside [busy]. True when any went. */
+    fun letGoOver(
+        records: MutableList<CodeModeRecord>,
+        expired: CodeModeExpiredHistory,
+        key: String,
+        busy: Set<String>,
+        now: Long,
+    ): Boolean {
+        val own = CodeModeRecordKeys.of(records, key)
+        val stays = key in busy || !idle(own) || own.any { it.phase == CodeModePhase.LOST || mayBill(it) }
+        if (stays || overBound(records, busy) == null) return false
+        Gone(records, expired, now).finished(key, "the head is past its bounds at the timed sweep") ?: return false
+        // Every lease left here guards a round that already ended, so ending it cancels nothing, and no lease is left
+        // held by a record the head let go (round 12 of #247).
+        own.forEach(CodeModeRecord::endSource)
+        // The session its scripts ran in goes too, or its engine and host lease stay held after the head let it go
+        // (round 11 of #247).
+        closeSession(key)
+        return true
+    }
+
+    /** Whether [record]'s round may still bill a row. While its reader runs, the row its posting step wrote may be owed
+     *  the round's usage (CodeModeStreams.billFinished), and ending the lease would cancel the round (round 13 of
+     *  #247). Once it settled, its usage may wait in the record for the turn that takes its outcome. Otherwise the
+     *  lease guards nothing, and keeping its conversation to expiry held it past the bounds for 24 hours (round 14). */
+    private fun mayBill(record: CodeModeRecord): Boolean {
+        val lease = record.sourceEnd ?: return false
+        return lease.reading || record.sourceState?.let { it.usage != null && !it.consumed } == true
+    }
+
+    /** The least recently used conversation outside [except] whose records are all finished and whose
+     *  session is not known alive; one whose session may be alive goes after every one known gone. */
+    private fun idle(records: List<CodeModeRecord>, except: Set<String>): String? =
+        records.groupBy(CodeModeRecord::key)
+            .filter { (key, kept) -> key !in except && idle(kept) }
+            .minWithOrNull(
+                compareBy<Map.Entry<String, List<CodeModeRecord>>>(
+                    { (_, kept) -> kept.any { it.sessionId?.let(sessionAlive::invoke) != false } },
+                    { (_, kept) -> kept.maxOf { it.progress.updatedAt } },
+                ),
+            )
+            ?.key
+
+    private fun idle(kept: List<CodeModeRecord>): Boolean = kept.isNotEmpty() &&
+        kept.all(CodeModeRecord::terminal) && kept.none { it.sessionId?.let(sessionAlive::invoke) == true }
+
     private fun exceedsHeadCount(count: Int): Boolean = bounds.records?.let { count > it } == true
 
     private fun overOwnBound(records: List<CodeModeRecord>, key: String): Boolean {
@@ -277,19 +345,8 @@ internal class CodeModeRecordRetention(
     ) {
         /** The least recently used conversation other than [except] whose records are all finished, whole.
          *  The bytes freed, or null when there is none. */
-        fun leastRecent(except: String?, why: String): Long? {
-            val idle = records.groupBy(CodeModeRecord::key)
-                .filter { (key, kept) -> key != except && kept.all(CodeModeRecord::terminal) }
-                .filterValues { kept -> kept.none { it.sessionId?.let(sessionAlive::invoke) == true } }
-                .minWithOrNull(
-                    compareBy<Map.Entry<String, List<CodeModeRecord>>>(
-                        { (_, kept) -> kept.any { it.sessionId?.let(sessionAlive::invoke) != false } },
-                        { (_, kept) -> kept.maxOf { it.progress.updatedAt } },
-                    ),
-                )
-                ?: return null
-            return finished(idle.key, "least recently used, and $why")
-        }
+        fun leastRecent(except: String?, why: String): Long? =
+            idle(records, setOfNotNull(except))?.let { finished(it, "least recently used, and $why") }
 
         /** Every finished record of conversation [key], together. The bytes freed, or null when it has none. */
         fun finished(key: String, why: String): Long? {

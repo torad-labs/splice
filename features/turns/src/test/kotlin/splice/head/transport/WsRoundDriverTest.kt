@@ -702,7 +702,9 @@ class WsCompletionTest(@param:TempDir private val tmp: Path) {
     }
 
     @ParameterizedTest
-    @ValueSource(strings = ["completed", "eof", "worker-wait", "startup-wait"])
+    // Oct 23, 2026: "worker-wait", a worker reading the script while its item still streamed, is gone with streamed
+    // execution: exec runs once its whole item has arrived, so no worker reads an unfinished item.
+    @ValueSource(strings = ["completed", "eof", "startup-wait"])
     fun `custom source ending releases the intercepted WS turn`(ending: String) = runBlocking {
         val runtime = SourceRuntime(ending)
         val state = CodeModeStateLocation(tmp.resolve("source-$ending"), tmp.resolve("legacy-$ending.json"))
@@ -712,7 +714,7 @@ class WsCompletionTest(@param:TempDir private val tmp: Path) {
             customSource(ending),
             afterFirstSource = when (ending) {
                 "startup-wait" -> runtime.starting
-                "eof", "worker-wait" -> runtime.advancing
+                "eof" -> runtime.advancing
                 else -> null
             },
         )
@@ -754,9 +756,7 @@ class WsCompletionTest(@param:TempDir private val tmp: Path) {
                     """"output_index":0,"delta":"synthetic source;"}""",
             )
         }
-        if (ending != "worker-wait") {
-            add("""{"type":"response.output_item.done","output_index":0,"item":$prefix"$source"}}""")
-        }
+        add("""{"type":"response.output_item.done","output_index":0,"item":$prefix"$source"}}""")
         if (ending == "completed") {
             add(
                 """{"type":"response.completed","response":{"status":"completed","output":[""" +
@@ -790,21 +790,12 @@ class WsCompletionTest(@param:TempDir private val tmp: Path) {
             }
             return object : CodeModeCell {
                 override suspend fun advance(results: List<CodeModeResult>): CodeModeStep {
-                    if (mode == "worker-wait") {
-                        check(source.read() is CodeModeSourcePart.Delta)
-                        advancing.complete(Unit)
-                        closed.await()
-                        throw IOException("synthetic worker closed")
-                    }
                     advancing.complete(Unit)
-                    while (true) {
-                        when (val part = source.read()) {
-                            is CodeModeSourcePart.Delta -> Unit
-                            is CodeModeSourcePart.Failed -> throw IOException(part.error)
-                            is CodeModeSourcePart.Complete -> return CodeModeStep.Calls(
-                                listOf(CodeModeCall("synthetic-runtime-call", "SyntheticTool", buildJsonObject {})),
-                            )
-                        }
+                    return when (val part = source.read()) {
+                        is CodeModeSourcePart.Failed -> throw IOException(part.error)
+                        is CodeModeSourcePart.Complete -> CodeModeStep.Calls(
+                            listOf(CodeModeCall("synthetic-runtime-call", "SyntheticTool", buildJsonObject {})),
+                        )
                     }
                 }
 

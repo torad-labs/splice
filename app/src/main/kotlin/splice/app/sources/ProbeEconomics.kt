@@ -36,9 +36,11 @@ internal sealed class ProbeDeduction {
 /** Each hour is judged on its own evidence. An hour the request log covers whole, with no torn line in it, whose rollup
  *  agrees with that log, shows its figure with the legacy probes taken off. Any other hour is not read: lost, torn or
  *  mismatched evidence makes that hour unavailable, never falsely clean. The one exception is an hour after the log's
- *  first and after the newest probe the log holds: there is nothing to take off, so the rollup's count stands. A line that
- *  cannot be placed in an hour makes every hour unavailable. New probes cannot dispatch, so a settled hour stays judged
- *  while the log is only appended to and the rollup for that hour is as it was. */
+ *  first and after the newest probe the log holds: there is nothing to take off, so the rollup's count stands. A torn
+ *  line that could be a probe makes unavailable only the hours its row can lie in ([PerfTear.mayHold]). One with no
+ *  time made every hour unavailable until Oct 23, 2026, and claudex's whole history with it once the backfill reached
+ *  back past such a line in its Oct 1 archive. New probes cannot dispatch, so a settled hour stays judged while the log is
+ *  only appended to and the rollup for that hour is as it was. */
 internal class ProbeEconomics(private val perf: PerfRowsFileSource) {
     /** The answers kept across restarts, so a start does not judge every hour again (ProbeJudgments says why). */
     private val kept = ProbeJudgments(perf.files)
@@ -60,10 +62,6 @@ internal class ProbeEconomics(private val perf: PerfRowsFileSource) {
     // hours this reconciliation then grades. EconomicsRows says why it cannot be two answers.
     private val rows = EconomicsRows()
 
-    /** A request log refused for a line that has no place stays refused while its files are only appended to, so it is
-     *  not read again (that read took 17 to 45 s on a live command, at every request). */
-    private val refusal = PerfRefusal(perf.files)
-
     fun withoutProbes(buckets: List<EconomicsBucket>): ProbeDeduction = synchronized(this) {
         if (buckets.isEmpty()) return@synchronized ProbeDeduction.Done(buckets)
         val answers = judge(buckets) ?: return@synchronized ProbeDeduction.Unavailable(ProbeGap.UNREADABLE)
@@ -78,13 +76,11 @@ internal class ProbeEconomics(private val perf: PerfRowsFileSource) {
         ProbeDeduction.Done(shown.filter { it.turns != 0L || it.localSteps != 0L }, unread.map { it.hour })
     }
 
-    /** An answer for every hour of [buckets], or null when the log cannot be read or holds a line with no place. */
+    /** An answer for every hour of [buckets], or null when the log cannot be read. */
     private fun judge(buckets: List<EconomicsBucket>): Map<Long, ProbeJudged>? {
         val before = perf.files.stamp()
         val was = HashMap(judged)
-        // A settled hour that was read stays read, whatever happens to the files: its probes are retired and its rows were
-        // judged. An hour that was not read is judged again once the files are rewritten, which may have mended it.
-        if (judgedStamp?.let { !perf.files.unchanged(it) } == true) judged.values.removeIf { it.gap != null }
+        judgedStamp?.let(::forgetMended)
         val signatures = buckets.associate { it.hour to signature(listOf(it)) }
         val fresh = buckets.filter { judged[it.hour]?.signature != signatures[it.hour] }
         val now = if (fresh.isEmpty()) emptyMap() else judgeFresh(fresh, signatures, before)
@@ -92,18 +88,27 @@ internal class ProbeEconomics(private val perf: PerfRowsFileSource) {
         return now?.let { answers -> buckets.associate { it.hour to (answers[it.hour] ?: judged.getValue(it.hour)) } }
     }
 
+    /** A settled hour that was read stays read, whatever happens to the files: its probes are retired and its rows were
+     *  judged. An hour that was not read is judged again once the files may have mended it: a file it was read from was
+     *  rewritten, or a file came with rows it was never read with, such as a restored archive, which can mend any hour
+     *  but one a torn line may hold. A rotation does neither ([PerfReadFiles.since]), and until Oct 23, 2026 one judged
+     *  claudex's torn hours again at each, reading its log from the Oct 1 archive on. */
+    private fun forgetMended(stamp: PerfSourceStamp) {
+        when (perf.files.since(stamp)) {
+            PerfFilesSince.REWRITTEN -> judged.values.removeIf { it.gap != null }
+            PerfFilesSince.ADDED -> judged.values.removeIf { it.gap != null && it.gap != ProbeGap.UNREADABLE }
+            PerfFilesSince.KEPT -> Unit
+        }
+    }
+
     private fun judgeFresh(
         fresh: List<EconomicsBucket>,
         signatures: Map<Long, List<Long>>,
         before: PerfSourceStamp?,
     ): Map<Long, ProbeJudged>? {
-        val since = fresh.minOf { it.hour }
-        if (refusal.stands(since)) return null
-        val read = perf.economicsEvidenceSince(since)
-        val unplaced = read.work.readError == null && read.probeTears.any { it == null }
-        refusal.note(before, since, unplaced)
-        if (read.work.readError != null || unplaced) return null
-        val log = LogHours(read)
+        val read = perf.economicsEvidenceSince(fresh.minOf { it.hour })
+        if (read.work.readError != null) return null
+        val log = LogHours(read, fresh.map { it.hour })
         val now = HashMap<Long, ProbeJudged>()
         for (bucket in fresh) {
             val gap = log.gap(bucket)
@@ -120,28 +125,36 @@ internal class ProbeEconomics(private val perf: PerfRowsFileSource) {
         return now
     }
 
-    /** What one read of the log says about each hour: the rows it holds, its probes, where it ends, and the hours that
-     *  hold a line that could be a probe and cannot be read. An hour the log does not reach holds more turns in the rollup
-     *  than rows here, so grading it finds that without a rule of its own. */
-    private inner class LogHours(read: EconomicsPerfEvidence) {
+    /** What one read of the log says about each of [hours]: the rows it holds, its probes, where it ends, and which
+     *  of them a line that could be a probe and cannot be read may belong to. An hour the log does not reach holds more
+     *  turns in the rollup than rows here, so grading it finds that without a rule of its own. */
+    private inner class LogHours(read: EconomicsPerfEvidence, hours: List<Long>) {
         private val all = summarize(rows.recorded(read))
         val probes = summarize(read.probes)
-        private val torn = read.probeTears.filterNotNull().map { it / PROBE_BUCKET_MS * PROBE_BUCKET_MS }.toSet()
+        private val probeLike = read.probeLike
+        private val torn = hours.filter { hour -> probeLike.any { it.mayHold(hour, perf.files) } }.toSet()
+        private val open = hours.filter { hour -> probeLike.any { it.open && it.mayHold(hour, perf.files) } }.toSet()
         private val newest = read.work.rows.maxOfOrNull { it.ts }
 
         /** A torn line is not mended by later rows and no new probe is ever written, so an hour that holds either is settled
-         *  at once; any other hour waits for the log to move on. */
+         *  at once; any other hour waits for the log to move on, and so does one a line with nothing after it may hold,
+         *  since the next row bounds that line ([PerfTear.open]). That row can carry a time hours before the line, when
+         *  its round was held past the late-row margin, which is not a bound, so it can free an hour the rollup already
+         *  holds (round 14 of #247). */
         fun settled(hour: Long): Boolean =
-            hour in torn || hour in probes || newest != null && hour + SETTLED_AFTER_MS <= newest
+            hour in torn && hour !in open || hour in probes || newest != null && hour + SETTLED_AFTER_MS <= newest
 
         // Probes were dispatched only until they were retired, and none is written now. An hour more than one past the newest probe row or
-        // probe-like torn line the log holds, and after the one the log begins in, has no probe to take off: the log's only
+        // the newest hour a probe-like torn line can lie in, and after the one the log begins in, has no probe to take off: the log's only
         // work there is to subtract probes from the rollup, so the rollup's own count stands even when it is ahead of the log,
         // as it is when a hard stop tore log lines the rollup had already counted (live, Oct 11: claudex and claude-splice at
         // 3 AM CT; claude-splice archives hold probes on Oct 1, which held every later hour). A probe on the edge of an hour is
         // counted in the next one by the rollup, so that next hour is kept out too. The hour the log begins in is
         // partial, an older one is not in the log at all, and an hour at or before a probe may hide one, so none is vouched for.
-        private val newestProbe = (probes.keys + torn).maxOrNull()
+        // A torn line with no time and no row after it in `.1` or the live file has no newest hour, so no hour graded here
+        // is vouched for.
+        private val newestProbe =
+            (probes.keys + probeLike.mapNotNull { it.latestHour(perf.files) ?: hours.maxOrNull() }).maxOrNull()
         private val beginsIn = read.work.oldestHeldTs?.let { it / PROBE_BUCKET_MS * PROBE_BUCKET_MS }
 
         fun gap(bucket: EconomicsBucket): ProbeGap? {

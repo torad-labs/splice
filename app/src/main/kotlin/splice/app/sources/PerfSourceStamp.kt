@@ -1,13 +1,12 @@
 // NEW: what a perf source's files held at one moment, so a later look can tell appended files from replaced or rewritten ones.
+// Oct 23, 2026: [PerfReadFiles.opens] tells the backfill from which hours a read opens the archive a torn line lies in,
+// and [PerfReadFiles.since] tells a rotation from a rewrite or an added file, so the probe check keeps its torn hours across one.
 package splice.app.sources
 
 import kotlinx.serialization.Serializable
-import kotlinx.serialization.SerializationException
-import kotlinx.serialization.json.Json
 import splice.core.perf.PerfArchiveName
 import splice.core.util.Cancellables
 import splice.core.util.SafeFailureText
-import splice.core.util.SecureFile
 import java.io.IOException
 import java.nio.ByteBuffer
 import java.nio.channels.FileChannel
@@ -54,6 +53,10 @@ internal class PerfFileMarks {
     }
 }
 
+/** What became of a stamp's files: nothing that can mend an hour, a file came with rows the stamp never saw, or one
+ *  of them was rewritten. */
+internal enum class PerfFilesSince { KEPT, ADDED, REWRITTEN }
+
 /** The files of one perf source (both live generations and every archive) at one moment, and which of them may grow. */
 internal class PerfSourceStamp(
     internal val marks: List<PerfFileMark>,
@@ -76,6 +79,60 @@ internal class PerfSourceStamp(
 
     /** Whether [files] are the files this stamp was taken of, none added and none gone. */
     fun covers(files: List<Path>): Boolean = files.toSet() == marks.map { it.path }.toSet()
+
+    /** What became of this stamp's files among [files], or null when one went while they were looked at. A marked file
+     *  whose name is still there and whose bytes begin no file was REWRITTEN. A file other than the live one that
+     *  [brings] rows no marked file held, such as a restored archive, was ADDED. A rotation does neither: it renames
+     *  the live file to `.1` (grown by appends), copies `.1` whole into the archive ([rotatedOver] when that copy
+     *  failed) and deletes archives past the window. */
+    fun since(files: List<Path>): PerfFilesSince? {
+        val now = files.map { reader.of(it) ?: return null }
+        return try {
+            when {
+                marks.any { mark -> rewritten(mark, now) } -> PerfFilesSince.REWRITTEN
+                now.any { file -> file.path != growing && brings(file, now) } -> PerfFilesSince.ADDED
+                else -> PerfFilesSince.KEPT
+            }
+        } catch (_: NoSuchFileException) {
+            null
+        } catch (_: IOException) {
+            PerfFilesSince.REWRITTEN
+        }
+    }
+
+    /** Whether [mark]'s name is still among [now] and no file begins with its bytes, and no rotation explains it. Each
+     *  file is tried against the one of its own name first, which holds it unless a rotation moved it. The rotation
+     *  is tried last: it reads the file's bytes, where an unchanged file is answered from its stored marks
+     *  (round 15 of #247). */
+    private fun rewritten(mark: PerfFileMark, now: List<PerfFileMark>): Boolean =
+        now.any { it.path == mark.path } &&
+            now.sortedBy { it.path != mark.path }.none { carries(it, mark) } && !rotatedOver(mark, now)
+
+    /** Whether a rotation renamed the live file over [mark]'s name: the file there now begins with the live file's
+     *  marked bytes. [mark]'s rows went to the archive, or were lost when that copy failed, which PerfStats.archiveRolled
+     *  allows in silence (a full disk, an archive directory that cannot be written, or none at all). Rows that are gone
+     *  mend no hour, so a lost copy is no rewrite (round 14 of #247). An empty live mark begins every file, so it
+     *  vouches for none. */
+    private fun rotatedOver(mark: PerfFileMark, now: List<PerfFileMark>): Boolean {
+        if (mark.path == growing) return false
+        val live = marks.firstOrNull { it.path == growing }?.takeIf { it.size > 0 } ?: return false
+        return now.firstOrNull { it.path == mark.path }?.let { carries(it, live) } == true
+    }
+
+    /** Whether [file] holds rows no marked file held: it begins with no mark's bytes, and no marked file still among
+     *  [now] begins with its bytes, as `.1` does while a rotation is still copying it into the archive. */
+    private fun brings(file: PerfFileMark, now: List<PerfFileMark>): Boolean =
+        marks.sortedBy { it.path != file.path }.none { mark ->
+            carries(file, mark) ||
+                now.firstOrNull { it.path == mark.path && it.path != file.path }?.let { carries(it, file) } == true
+        }
+
+    /** Whether [file] begins with the bytes [mark] was taken of. */
+    private fun carries(file: PerfFileMark, mark: PerfFileMark): Boolean = when {
+        file.size == mark.size -> file.checksum == mark.checksum
+        file.size > mark.size -> reader.checksum(file.path, mark.size) == mark.checksum
+        else -> false
+    }
 }
 
 /** The files one perf source reads: every archive, then the live generations that exist. */
@@ -105,9 +162,6 @@ internal class PerfReadFiles(
     /** A stamp taken earlier, from its [marks], judged against this source's live file. */
     fun stampOf(marks: List<PerfFileMark>): PerfSourceStamp = PerfSourceStamp(marks, live, reader)
 
-    /** Where a refusal named [purpose] is kept across restarts: beside the live file, under a name no archive matches. */
-    fun refusalFile(purpose: String): Path = stateFile("$purpose-refusal")
-
     /** Where state named [name] is kept across restarts: beside the live file, under a name no archive matches. */
     fun stateFile(name: String): Path =
         live.resolveSibling("${live.fileName.toString().removeSuffix(".jsonl")}-$name.json")
@@ -118,15 +172,21 @@ internal class PerfReadFiles(
         return PerfSourceStamp(marks, live, reader)
     }
 
-    /** Whether a read from [later] takes in every archive of [stamp] that a read from [earlier] took in: an archive leaves
-     *  the read only once all its rows are older than the edge (the reader's own test). */
-    fun readsSame(stamp: PerfSourceStamp, earlier: Long, later: Long): Boolean = stamp.marks.none { mark ->
-        val rotated = archiveName.rotatedAt(mark.path.fileName.toString()) ?: return@none false
-        !archiveName.endsBefore(rotated, earlier) && archiveName.endsBefore(rotated, later)
-    }
+    /** Whether a read from [from] opens the generation archived at [rotatedAt], by the reader's own test for skipping
+     *  an archive unopened. A live generation (null) is opened by every read. */
+    fun opens(rotatedAt: Long?, from: Long): Boolean = rotatedAt == null || !archiveName.endsBefore(rotatedAt, from)
 
     /** Whether the files are the ones [stamp] was taken of, none added or gone, only the live one grown by appends. */
     fun unchanged(stamp: PerfSourceStamp): Boolean = stamp.covers(list().orEmpty()) && stamp.holds()
+
+    /** What became of [stamp]'s files. A file that went while they were looked at was moved by a rotation in flight, so
+     *  they are looked at once more; files that cannot be listed count as rewritten, so nothing judged from them stays. */
+    fun since(stamp: PerfSourceStamp): PerfFilesSince = look(stamp) ?: look(stamp) ?: PerfFilesSince.REWRITTEN
+
+    private fun look(stamp: PerfSourceStamp): PerfFilesSince? {
+        val files = list() ?: return PerfFilesSince.REWRITTEN
+        return stamp.since(files)
+    }
 
     /** The archived generations with their rotation seconds, oldest first. No archive directory is quiet (nothing has
      *  rotated out yet, or the archive is off); any other failure to list it goes to [errors] as a read error, because
@@ -149,71 +209,6 @@ internal class PerfReadFiles(
     }
 }
 
-/** One file mark as a refusal keeps it on disk. */
+/** One file mark as a stamp is kept on disk (ProbeJudgments). */
 @Serializable
 internal data class SavedPerfMark(val path: String, val fileKey: String? = null, val size: Long, val checksum: Long)
-
-/** A refusal as it is kept on disk: the earliest hour its read covered and the files it read. */
-@Serializable
-internal data class SavedPerfRefusal(val since: Long, val marks: List<SavedPerfMark>)
-
-/** A read the request log refused for a row it could not parse, and the earliest hour that read covered. A torn row is
- *  not mended by what is appended after it, so while the files are only appended to the refusal stands. With a
- *  [saved] file it also stands across a restart: a torn row in an archive refused the economics backfill on every boot,
- *  and each boot decoded every archived generation of every head again to find it (about 30 GB of allocation in the
- *  first 40 s of the Oct 19, 2026 boot), so the daemon grew its heap to tens of GB before its first minute. */
-internal class PerfRefusal(private val files: PerfReadFiles, private val saved: Path? = null) {
-    private var stamp: PerfSourceStamp? = null
-    private var since = 0L
-    private val json = Json { ignoreUnknownKeys = true }
-
-    init {
-        saved?.let(::load)
-    }
-
-    /** Whether the refusal noted earlier still holds for a read from [from]: no file changed, and the read still takes in
-     *  every file the refused one did. The edge is an hour and moves forward every hour; a later edge that drops no
-     *  archive reads the same torn files, so it is refused too. Requiring the edge itself to stay put let the refusal
-     *  lapse at every hour, and the next keep-warm pass decoded every archived generation again: about 3.9 GB of
-     *  allocation in 50 s on the live daemon at 02:04 CT, Oct 20. */
-    fun stands(from: Long): Boolean =
-        stamp?.let { files.unchanged(it) && (from <= since || files.readsSame(it, since, from)) } == true
-
-    /** Notes a read begun when the files were as [before]: a refusal for a torn row ([tore]) stands, any other answer clears it. */
-    fun note(before: PerfSourceStamp?, from: Long, tore: Boolean) {
-        stamp = before.takeIf { tore }
-        since = from
-        saved?.let(::save)
-    }
-
-    /** A refusal a previous run kept; an unreadable or missing file is no refusal, so the next read decides again. */
-    private fun load(path: Path) {
-        val kept = try {
-            json.decodeFromString(SavedPerfRefusal.serializer(), Files.readString(path))
-        } catch (_: IOException) {
-            return
-        } catch (_: SerializationException) {
-            return
-        } catch (_: IllegalArgumentException) {
-            return
-        }
-        stamp = files.stampOf(kept.marks.map { PerfFileMark(Path.of(it.path), it.fileKey, it.size, it.checksum) })
-        since = kept.since
-    }
-
-    /** Best effort: a refusal that cannot be kept is decided again after the next restart, as before. */
-    private fun save(path: Path) {
-        try {
-            val held = stamp
-            if (held == null) {
-                Files.deleteIfExists(path)
-                return
-            }
-            val marks = held.marks.map { SavedPerfMark(it.path.toString(), it.fileKey, it.size, it.checksum) }
-            val text = json.encodeToString(SavedPerfRefusal.serializer(), SavedPerfRefusal(since, marks))
-            SecureFile.writeAtomic0600(path, text)
-        } catch (_: IOException) {
-            // The refusal still stands in memory for this run.
-        }
-    }
-}

@@ -112,8 +112,11 @@ public class Daemon(
 
     /** LAN share: the machines this one joined (`[remotes]`), each with its pinned certificate and kept token. ONE
      *  instance for the relay's upstream trust, the roster refresh, the quota polls and the reachability check. */
-    private val remotes =
-        RemoteLinks(topology, RemotesStore(ShareState(statePaths).remotesFile), SessionsSwitch(ShareState(statePaths)))
+    private val remotes = RemoteLinks(
+        topology,
+        RemotesStore(ShareState(statePaths).remotesFile),
+        SessionsSwitch(ShareState(statePaths), topology.remotes.keys),
+    )
 
     /** LAN share, milestone 6: the mirrors of other machines' sessions, and the link to each machine this one joined. */
     private val sharedSessions = SharedSessions(EnvReader(System::getenv), statePaths, log)

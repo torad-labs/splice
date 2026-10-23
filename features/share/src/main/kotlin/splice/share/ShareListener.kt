@@ -34,7 +34,7 @@ public class ShareListener(
 
     /** Each machine's one Sessions switch, read through this machine's two books (the clients above, and the
      *  machines it joined): what the Sharing page reads and turns, and what the session routes let in by. */
-    public val switch: SessionsSwitch = SessionsSwitch(ShareState(statePaths))
+    public val switch: SessionsSwitch = SessionsSwitch(ShareState(statePaths), opener.used())
 
     /** The session routes' mirrors, and what sessions here wrote to them: one across reopenings, as [clients] is. */
     private val sessions = ShareSessionParts(mirrors, switch)

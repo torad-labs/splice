@@ -5,6 +5,8 @@
 // withdraws them.
 package splice.app.daemon
 
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.runBlocking
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.jsonObject
@@ -26,6 +28,15 @@ import kotlin.io.path.listDirectoryEntries
 
 // why: longer than any test here runs, so the mirror ends by the daemon's stop and never by its time.
 private const val MIRRORS_LAST_MS = 3_600_000L
+
+// why: a machine's time short enough that the daemon's sweep, once a second, ends it within the test.
+private const val MIRRORS_BRIEF_MS = 500L
+
+// why: past the brief time and several sweeps, however loaded the machine running the test is.
+private const val MIRRORS_GONE_MS = 15_000L
+
+// why: how often the test reads the registry while it waits.
+private const val MIRRORS_POLL_MS = 100L
 
 class SharedSessionsTest {
 
@@ -70,5 +81,30 @@ class SharedSessionsTest {
     fun `with no runtime folder a mirror listens in cc-socks under tmp, where Claude Code puts its own`() {
         val (record, _) = mirrored(env())
         assertEquals(Paths.get("/tmp", "cc-socks"), socketFolder(record))
+    }
+
+    // The round-4 review: the daemon's own mirrors end by time, as SessionMirrors' rule says, with no stop. A machine
+    // that stopped looking leaves the registry once the time its last look gave its mirrors is past.
+    @Test
+    fun `the daemon withdraws a machine's mirrors once their time is past, with no stop`() {
+        val vars = env("XDG_RUNTIME_DIR" to Files.createDirectories(tmp.resolve("run")).toString())
+        val reader = EnvReader { vars[it] }
+        val shared = SharedSessions(reader, StatePaths(envReader = reader)) { }
+        val registry = Path.of(vars.getValue("HOME"), ".claude", "sessions")
+        try {
+            val link = MirrorLink(MirrorCarrier { _, _, _ -> MirrorCarried(null) }, MIRRORS_BRIEF_MS)
+            shared.mirrors.mirror("far", listOf(MirroredSession("id-1", "rig-lead")), link)
+            assertEquals(1, registry.listDirectoryEntries("*.json").size, "far's session is mirrored")
+            val gone = runBlocking {
+                val until = System.currentTimeMillis() + MIRRORS_GONE_MS
+                while (registry.listDirectoryEntries("*.json").isNotEmpty() && System.currentTimeMillis() < until) {
+                    delay(MIRRORS_POLL_MS)
+                }
+                registry.listDirectoryEntries("*.json").isEmpty()
+            }
+            assertTrue(gone, "and withdrawn once its time is past, while the daemon runs")
+        } finally {
+            shared.stop()
+        }
     }
 }

@@ -129,9 +129,10 @@ internal class SessionsSwitchAcrossMachinesTest : TwoMachinesTest() {
         val splice = mini.session("splice")
         val spliceId = mini.mirrors.local().single { it.name == "splice" }.id
         val miniPort = TestPorts.reserve()
-        val miniSharing = sharing(mini, miniPort)
+        val toTorad = joined().second
+        links(toTorad)
+        val miniSharing = sharing(mini, miniPort, joinedTo(toradName, toTorad, port))
         opened += AutoCloseable { runBlocking { miniSharing.stop() } }
-        links(joined().second)
         val miniInfo = described(miniPort)
         val posing = RemoteJoin(toradName).join(RemoteFound("127.0.0.1", miniPort, miniInfo)) as RemoteJoined.Joined
 
@@ -140,6 +141,19 @@ internal class SessionsSwitchAcrossMachinesTest : TwoMachinesTest() {
         assertEquals(List(4) { 403 }, answered.map { it.statusCode() }, answered.map { it.body() }.toString())
         assertTrue(splice.agents().none { it.startsWith("$toradName/") }, "its offer made no mirror on mini")
         assertEquals(null, splice.heard(0), "its note reached no session")
+    }
+
+    // The round-4 review: a token kept for a machine that splice.toml's `[remotes]` no longer lists, after a hand edit
+    // or a `splice remote remove` that could not delete it, is no machine this one joined. No card shows it and no link
+    // reads it, so it holds back no machine that joins under its name once that machine's own card is on.
+    @Test
+    fun `a token kept for a machine no longer in remotes holds back no machine that joins under its name`() {
+        torad.session("rig-lead")
+        val rigId = torad.mirrors.local().single { it.name == "rig-lead" }.id
+        store(torad).save(MINI, "a token kept from before")
+        val (info, joined) = joined()
+        val answered = answers(info, joined.token, rigId)
+        assertEquals(List(4) { 200 }, answered.map { it.statusCode() }, answered.map { it.body() }.toString())
     }
 
     /** Waits until [splice] on mini lists none of torad's sessions and [rig] on torad none of mini's, then [looks]
@@ -163,9 +177,9 @@ internal class SessionsSwitchAcrossMachinesTest : TwoMachinesTest() {
         val rig = torad.session("rig-lead")
         val splice = mini.session("splice")
         val miniPort = TestPorts.reserve()
-        val miniSharing = sharing(mini, miniPort)
-        opened += AutoCloseable { runBlocking { miniSharing.stop() } }
         val (toradInfo, joined) = joined()
+        val miniSharing = sharing(mini, miniPort, joinedTo(toradName, joined, port))
+        opened += AutoCloseable { runBlocking { miniSharing.stop() } }
         val back = RemoteJoin(toradInfo.server).join(RemoteFound("127.0.0.1", miniPort, described(miniPort)))
         val toradLinks = links(torad, MINI, back as RemoteJoined.Joined, miniPort)
         assertTrue(miniSharing.clients.allowSessions(toradName, true), "torad joined mini")

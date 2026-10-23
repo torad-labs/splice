@@ -4,7 +4,8 @@
 // other (deliver, to a session running here, from the mirror of its sender, so a reply finds its way back). A mirror
 // is never offered on: this machine's sessions are the ones Claude Code itself registered. Any machine on the network
 // may join, and each mirror is a process, so one daemon hosts at most [MIRRORS_AT_MOST] of them. A machine's mirrors
-// end here, whatever made them, once nothing has come from it for the time its last look, offer or note gave them.
+// end here, whatever made them, once their time is past: a look or an offer from it moves that time later, and a note
+// gives one only to a machine that has none.
 package splice.sessions.mirror
 
 import kotlinx.coroutines.CoroutineDispatcher
@@ -89,8 +90,8 @@ public class SessionMirrors(
     /** The machines that offered more sessions than there was room for, said once until they fit again. */
     private val overfull = mutableSetOf<String>()
 
-    /** When each machine's mirrors end, by [clock], unless a look, an offer or a note from it comes first. Every mirror
-     *  is made under one, so none outlasts its machine's last word. */
+    /** When each machine's mirrors end, by [clock]. A look or an offer from it moves that later, and a note sets one
+     *  only where none is held. Every mirror is made under one, so none outlasts the time its machine was given. */
     private val ends = mutableMapOf<String, Long>()
 
     init {
@@ -130,7 +131,7 @@ public class SessionMirrors(
         }
     }
 
-    /** Withdraws each machine whose mirrors' time is past: nothing came from it for as long as its last word gave them. */
+    /** Withdraws each machine whose mirrors' time is past. */
     public fun expire() {
         synchronized(lock) {
             val now = clock()

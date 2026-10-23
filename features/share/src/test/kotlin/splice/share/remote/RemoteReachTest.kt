@@ -115,7 +115,7 @@ class RemoteReachTest {
             heads = mapOf("torad-one" to head("torad-one", 3911), "torad-two" to head("torad-two", 3912)),
             remotes = mapOf(toradName to RemoteConfig(url, joined.pin)),
         )
-        val links = RemoteLinks(mini, store, SessionsSwitch(ShareState(paths("m"))))
+        val links = RemoteLinks(mini, store, SessionsSwitch(ShareState(paths("m")), mini.remotes.keys))
 
         links.check { }
 

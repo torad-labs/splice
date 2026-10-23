@@ -3,21 +3,24 @@
 // (RemotesStore): two links cross sessions with it, its own into this machine and this machine's into it, and an Off on
 // either of its cards on the Sharing page must stop both. So sessions cross with it only while every book that holds it
 // has its switch on. But anyone on the network may join under any name, so the machine on one card may not be the one
-// on the other: each card turns only its own book, and an On lets in only the machine its card shows.
+// on the other: each card turns only its own book, and an On lets in only the machine its card shows. A machine this
+// one joined is one in the `[remotes]` the daemon booted with (the round-4 review): the ones its link reaches and the
+// page draws a card for, so a token kept for a name `[remotes]` no longer lists holds no machine back.
 package splice.share
 
 import splice.share.remote.RemotesStore
 
-/** Read at each call, so a switch the page turns, or a re-join turns off, takes effect with no restart. */
-public class SessionsSwitch(state: ShareState) {
+/** Read at each call, so a switch the page turns, or a re-join turns off, takes effect with no restart. [used] are the
+ *  machines this one joined, as the `[remotes]` the daemon booted with names them. */
+public class SessionsSwitch(state: ShareState, private val used: Set<String>) {
     private val clients = ShareClients(state.clientsFile)
     private val remotes = RemotesStore(state.remotesFile)
 
     /** Whether sessions cross with [name]: a book holds it, and each book that does has its switch on. */
     public fun on(name: String): Boolean {
         val joined = clients.all().firstOrNull { it.name == name }
-        val used = name in remotes.names()
-        return (joined != null || used) && joined?.sessions != false && (!used || remotes.sessions(name))
+        val linked = name in used
+        return (joined != null || linked) && joined?.sessions != false && (!linked || remotes.sessions(name))
     }
 
     /** Turns [on] or off the switch on the card of [name] as a machine that joined this one, in that book alone; false
@@ -25,7 +28,7 @@ public class SessionsSwitch(state: ShareState) {
     public fun turnJoined(name: String, on: Boolean): Boolean = clients.allowSessions(name, on)
 
     /** Turns [on] or off the switch on the card of [name] as a machine this one joined, in that book alone, where this
-     *  machine's link reads it; false when this machine joined none of that name. Throws IOException, as
+     *  machine's link reads it; false when this machine joined none of that name, in [used]. Throws IOException, as
      *  [turnJoined] does. */
-    public fun turnUsed(name: String, on: Boolean): Boolean = remotes.allowSessions(name, on)
+    public fun turnUsed(name: String, on: Boolean): Boolean = name in used && remotes.allowSessions(name, on)
 }

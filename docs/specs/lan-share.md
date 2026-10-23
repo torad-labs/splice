@@ -275,13 +275,15 @@ Built on `feat/lan-share`, merged into `feat/v0.4.0` through the gate. Milestone
      with it only while each card that names it is on (`SessionsSwitch`), so an Off on either stops both links (the
      round-2 review). Each card turns its own book alone (the round-3 review): anyone on the network may join under any
      name, so the machine on one card may not be the one on the other, and only the card that shows where a machine
-     joined from lets it in. Under trust the LAN, a device that joins under a machine's name takes that machine's place
+     joined from lets it in. A machine this one joined is one in the `[remotes]` the daemon booted with, the ones its
+     link reaches and the page draws a card for, so a token kept for a name `[remotes]` no longer lists holds no machine
+     back (the round-4 review). Under trust the LAN, a device that joins under a machine's name takes that machine's place
      in the book of joined machines, as any re-join does, so it holds the machine's sessions off until the machine
      joins again and Marcos turns that card on.
      A switch turned off ends the crossing at the link's next look, and each look while it is off withdraws what a
      collection already under way made since. Every mirror, whatever made it (a look, an offer or a note), ends once
-     nothing has come from its machine for the time its last word gave it (`SessionMirrors`): three looks for a look or
-     an offer, a minute for a note from a machine that never offered; and a listener that closes withdraws every machine
+     its machine's time is past (`SessionMirrors`): a look or an offer gives three looks from then, and a note gives a
+     minute to a machine that has none; and a listener that closes withdraws every machine
      it mirrored. Any machine on the network may join and each mirror is a process, so a daemon hosts at most 256, and a
      note past that is refused with that reason. Each mirror's inbox waits on a virtual thread, so however many there
      are, none holds a thread the rest of the daemon needs (at 64 they once stalled it). A mirror's name is

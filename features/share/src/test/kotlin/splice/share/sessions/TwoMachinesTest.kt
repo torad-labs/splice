@@ -151,11 +151,11 @@ internal abstract class TwoMachinesTest {
         listener = sharing(torad, port)
     }
 
-    /** [machine] sharing on [at], as its daemon opens the listener. */
-    protected fun sharing(machine: Machine, at: Int): ShareListener {
+    /** [machine] sharing on [at], as its daemon opens the listener over the splice.toml it booted, [topology]. */
+    protected fun sharing(machine: Machine, at: Int, topology: Topology = Topology()): ShareListener {
         val paths = machine.paths
         val sharing = ShareListener(
-            ShareStart(Topology(), paths, MgmtKey(paths), ConfigService(paths)) { },
+            ShareStart(topology, paths, MgmtKey(paths), ConfigService(paths)) { },
             SharedCatalogs { null },
             SharedQuotas { null },
             paths,
@@ -197,9 +197,14 @@ internal abstract class TwoMachinesTest {
         val store = store(machine)
         store.save(name, joined.token)
         if (sessions) store.allowSessions(name, true)
-        val remotes = mapOf(name to RemoteConfig(joined.http.base("127.0.0.1", at), joined.pin))
-        return RemoteLinks(Topology(remotes = remotes), store, SessionsSwitch(ShareState(machine.paths)))
+        val booted = joinedTo(name, joined, at)
+        return RemoteLinks(booted, store, SessionsSwitch(ShareState(machine.paths), booted.remotes.keys))
     }
+
+    /** The splice.toml of a machine that joined [name], which shares on [at], as `splice remote` writes it: its
+     *  `[remotes]` entry, with [joined]'s address and pin. */
+    protected fun joinedTo(name: String, joined: RemoteJoined.Joined, at: Int): Topology =
+        Topology(remotes = mapOf(name to RemoteConfig(joined.http.base("127.0.0.1", at), joined.pin)))
 
     /** [machine]'s own tokens on the machines it joined, and their Sessions switches, as its Sharing page turns them. */
     protected fun store(machine: Machine) =

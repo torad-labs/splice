@@ -25,6 +25,9 @@ public class ShareStart(
     private val config: ConfigService,
     private val log: LogSink,
 ) {
+    /** The machines this one joined, as the `[remotes]` it booted with names them. */
+    internal fun used(): Set<String> = topology.remotes.keys
+
     /** The listener [share] asks for, with [clients] as its book of joined machines, or why there is none. [running]
      *  and [quotas] read the daemon's heads as they are at each request; [sessions] hosts a joined machine's sessions
      *  and holds what sessions here write to them. Blocking: it binds a port. */

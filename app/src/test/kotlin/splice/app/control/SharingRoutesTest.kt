@@ -147,7 +147,7 @@ class SharingRoutesTest {
             auth = ControlAuth(mgmtKey = mgmt, log = { }),
         )
         val listener = ShareListener(
-            ShareStart(TopologyLoader.parse(SHARE_FILE), paths, mgmt, config) { },
+            ShareStart(TopologyLoader.parse(Files.readString(file)), paths, mgmt, config) { },
             SharedCatalogs { null },
             SharedQuotas { null },
             paths,
@@ -304,6 +304,7 @@ class SharingRoutesTest {
                 """"joined_at":"2026-10-23T12:00:00Z"}]}""",
         )
         RemotesStore(state.remotesFile).save("far", "far-token")
+        RemotesStore(state.remotesFile).save("ghost", "a token kept from before")
         serve { call ->
             assertEquals(listOf(false, false), switches(read(call)), "off on both sides until the page turns it on")
             val unkeyed = call(HttpMethod.Put, "/api/share/machines/mini/sessions", "{\"on\":true}", false)
@@ -320,7 +321,14 @@ class SharingRoutesTest {
             assertEquals(listOf(false, false), switches(read(call)), "and both off again")
 
             // Each card turns its own book: a name only the other book holds is a machine this card does not know.
-            val elsewhere = listOf("share/machines/nobody", "share/machines/far", "remotes/nobody", "remotes/mini")
+            // Nor is a name whose token outlived its `[remotes]` entry a machine this one joined (the round-4 review).
+            val elsewhere = listOf(
+                "share/machines/nobody",
+                "share/machines/far",
+                "remotes/nobody",
+                "remotes/mini",
+                "remotes/ghost",
+            )
             for (path in elsewhere.map { "/api/$it/sessions" }) {
                 val refused = switched(call, path, true)
                 assertFalse(refused.getValue("ok").jsonPrimitive.boolean, path)

@@ -4,6 +4,7 @@
 package splice.configuration.add
 
 import splice.core.terminal.TerminalOutput
+import splice.core.topology.Topology
 import splice.core.util.EnvReader
 import splice.terminal.MultiSelectPrompt
 import splice.terminal.SelectPrompt
@@ -33,7 +34,8 @@ public class AddVerb(
     public suspend fun addRemote(head: RemoteHead, env: EnvReader): Boolean = remote.add(head, env)
 
     /** `splice remote` again: a head imported before keeps its row and takes the newly issued token. */
-    public fun renewRemote(key: String, token: String, env: EnvReader): Boolean = remote.renew(key, token, env)
+    public fun renewRemote(topology: Topology, head: String, token: String, env: EnvReader): Boolean =
+        remote.renew(topology, head, token, env)
 }
 
 /** `splice add-model`: OpenRouter catalog rows picked through [select] and [multi]. */

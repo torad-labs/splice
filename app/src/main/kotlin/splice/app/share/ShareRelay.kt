@@ -86,18 +86,22 @@ internal class ShareRelay(
         answer(call, response)
     }
 
-    /** The client's body, or null once it is refused with what [head]'s own admission answers: 413 for a body
-     *  declared or read past its maxRequestBytes, 408 for one still arriving after its requestReadTimeoutMs or torn
-     *  (AdmissionGate.materializeBodyOrRespond, same status, same envelope, same words). */
+    /** The client's body under [head]'s own maxRequestBytes and requestReadTimeoutMs, as the head reads it. */
     private suspend fun bounded(call: ApplicationCall, head: String): ByteArray? {
         val limits = config.getConfig(head)
-        val cap = limits.maxRequestBytes
+        return body(call, limits.maxRequestBytes, limits.requestReadTimeoutMs)
+    }
+
+    /** [call]'s body, or null once it is refused the way a head's own admission refuses one: 413 for a body declared
+     *  or read past [cap], 408 for one still arriving after [readTimeoutMs] or torn (AdmissionGate's
+     *  materializeBodyOrRespond: same status, same envelope, same words). The join route reads its body here too. */
+    suspend fun body(call: ApplicationCall, cap: Int, readTimeoutMs: Long): ByteArray? {
         val declared = call.request.headers[HttpHeaders.ContentLength]?.toLongOrNull()?.takeIf { it >= 0L }
         val refusal = try {
             val body = if (declared != null && declared > cap) {
                 null
             } else {
-                withTimeout(limits.requestReadTimeoutMs) { capped(call.receiveChannel(), cap) }
+                withTimeout(readTimeoutMs) { capped(call.receiveChannel(), cap) }
             }
             if (body != null) return body
             HttpStatusCode(HttpStatus.CONTENT_TOO_LARGE, "Content Too Large") to "request body exceeds $cap bytes"

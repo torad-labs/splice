@@ -30,6 +30,7 @@ import splice.terminal.ConfirmPrompt
 import splice.terminal.ConsoleConfirm
 import splice.topology.TopologyLoader
 import java.net.InetAddress
+import java.net.URI
 import java.util.concurrent.TimeUnit
 
 internal const val REMOTE_USAGE = "[scan] | add <host[:port]> | list"
@@ -68,19 +69,32 @@ internal class RemoteCommand(
     }
 
     private suspend fun addHost(target: String): Int {
-        val host = target.substringBeforeLast(':').takeIf { ':' in target && !target.endsWith("]") } ?: target
-        val port = target.substringAfterLast(':', "").toIntOrNull()?.takeIf { host != target } ?: DEFAULT_SHARE_PORT
+        val (host, port) = authority(target) ?: return usage()
         val info = Cancellables.runCatchingCancellable { http.info(host, port).get(ANSWER_WAIT_S, TimeUnit.SECONDS) }
             .fold(onSuccess = { it }, onFailure = { null })
         if (info == null) {
             val hint = "is ${CYAN}splice share on$RESET there?"
-            err.line("splice remote: nothing at $host:$port answers as a sharing splice ($hint)")
+            val at = http.url(host, port, "").authority
+            err.line("splice remote: nothing at $at answers as a sharing splice ($hint)")
             return PeerExit.REFUSED
         }
         val machine = RemoteFound(host, port, info)
         describe(machine)
         val imported = confirm("Use ${info.server}'s heads here?", true) && import(machine)
         return if (imported) PeerExit.DONE else PeerExit.REFUSED
+    }
+
+    /** [target] as the host and port to ask: `host`, `host:port`, `[v6]`, `[v6]:port`, or a bare IPv6 address, whose
+     *  colons are all its own, read as a URI's authority. The host comes back without brackets, which RemoteHttp.url
+     *  puts back once (PR #247's fourth review: `[fd00::1]:3097` was bracketed twice). Null for any other target. */
+    private fun authority(target: String): Pair<String, Int>? {
+        val bare = target.count { it == ':' } > 1 && !target.startsWith("[")
+        // A target that is no URI authority at all is answered with the usage, as one with a path or a bad port is.
+        val uri = Cancellables.runCatchingCancellable { URI("http://${if (bare) "[$target]" else target}") }
+            .fold(onSuccess = { it }, onFailure = { null })
+        val host = uri?.takeIf { it.rawPath.isEmpty() }?.host?.removeSurrounding("[", "]")
+        val port = uri?.port?.takeIf { it != -1 } ?: DEFAULT_SHARE_PORT
+        return host?.takeIf { it.isNotBlank() && port in 1..UShort.MAX_VALUE.toInt() }?.let { it to port }
     }
 
     private fun describe(machine: RemoteFound) {
@@ -112,7 +126,7 @@ internal class RemoteCommand(
                 topology.providers[head.provider]?.baseUrl == baseUrl
             }
             if (already != null) {
-                if (verb.renewRemote(already.key, joined.token, env)) {
+                if (verb.renewRemote(topology, already.key, joined.token, env)) {
                     out.line("$GREEN✓$RESET ${already.key}: already here; its token on $server is renewed")
                     ready = true
                 }
@@ -127,7 +141,7 @@ internal class RemoteCommand(
                 baseUrl = baseUrl,
                 token = joined.token,
                 models = shared.models.map {
-                    RemoteModel(it.id, it.label, it.contextWindow, it.slots, it.compactionReserve)
+                    RemoteModel(it.id, it.label, it.contextWindow, it.slots, it.compactionReserve, it.rates)
                 },
             )
             if (verb.addRemote(head, env)) {

@@ -64,9 +64,15 @@ internal class AddCommand(
     private suspend fun added(candidate: AddCandidate, env: EnvReader, beside: AddSideWrite? = null): Boolean {
         val title = "$BOLD${candidate.resolved.origin}$RESET"
         output.line("$title$DIM: '${candidate.key}' as $CYAN${candidate.command}$RESET")
-        val ok = authenticate(candidate, env) && verified(candidate, env) && save(candidate)
+        // The side write is kept only once the file is saved: a refusal, a throw or a cancellation on the way takes
+        // it back, so a later add is not refused over a key nothing was written for (PR #247's fourth review).
+        var ok = false
+        try {
+            ok = authenticate(candidate, env) && verified(candidate, env) && save(candidate)
+        } finally {
+            if (!ok) beside?.release()
+        }
         if (!ok) {
-            beside?.release()
             output.line("${YELLOW}nothing written$RESET: ${candidate.file.path} is unchanged")
             return false
         }

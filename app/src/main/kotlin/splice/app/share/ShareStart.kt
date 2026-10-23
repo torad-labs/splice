@@ -28,12 +28,14 @@ internal class ShareStart(
         val share = topology.share
         if (!share.enabled) return null
         val host = ShareHostName()
+        val io = ProcessDispatchers().io()
         val server = ShareServer(
             share.port,
             ShareHeads(topology, running, host.short()),
             ShareClients(ShareState(statePaths).clientsFile),
             ShareNetwork(host.full(), share.hostnames),
-            ShareRelay(TurnKey(mgmtKey), config, ProcessDispatchers().io(), log),
+            ShareRelay(TurnKey(mgmtKey), config, io, log),
+            io,
             log,
         )
         return Cancellables.runCatchingCancellable { server.also(ShareServer::start) }.fold(

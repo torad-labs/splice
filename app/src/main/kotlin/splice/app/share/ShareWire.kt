@@ -10,6 +10,8 @@ import kotlinx.serialization.Serializable
 import splice.app.control.ManagedHead
 import splice.core.GATEWAY_VERSION
 import splice.core.model.CompactionBudgets
+import splice.core.model.ModelRates
+import splice.core.model.TurnPrice
 import splice.core.topology.Topology
 
 /** `GET /share/v1/info`: who this machine is and the heads it offers, as their pickers show them now. */
@@ -29,7 +31,8 @@ internal data class SharedHead(
     val models: List<SharedModel>,
 )
 
-/** One picker row: the wire id, its label, its window in force now, and the Claude tiers that name it. */
+/** One picker row: the wire id, its label, its window in force now (an `extra_windows` entry over the row's own),
+ *  the Claude tiers that name it, and the card it is priced at. */
 @Serializable
 internal data class SharedModel(
     val id: String,
@@ -40,6 +43,11 @@ internal data class SharedModel(
      *  override or the provider's calibration), null for none. The client's head scales the relayed counts, which
      *  arrive raw, so it mirrors this as the row's `compaction_reserve_tokens`. */
     @SerialName("compaction_reserve_tokens") val compactionReserve: Long? = null,
+    /** The card this head prices the row at, its own or the one its vendor publishes (TurnPrice), null for none.
+     *  The client's head reaches the vendor only through this machine, so no published card is keyed on its URL:
+     *  it mirrors this one onto the row, and its statusline and accounting price the turns as this machine does.
+     *  A card's peak hours do not travel, as splice.toml has no spelling for them. */
+    val rates: ModelRates? = null,
 )
 
 /** The heads this machine offers, described from what each running head serves NOW: its live catalog (rows,
@@ -64,10 +72,17 @@ internal class ShareHeads(
         val served = running[key]?.let { it.statusline.catalog } ?: return null
         val catalog = served.live()
         val slots = catalog.client.tierModels.entries.groupBy({ it.value }, { it.key })
+        val price = TurnPrice(served)
         val rows = catalog.models.map { row ->
-            val reserve = CompactionBudgets.forRow(served, row.id)?.totalTokens
-            val label = row.label.ifBlank { row.id }
-            SharedModel(row.id, label, row.contextWindow, slots[row.id].orEmpty().sorted(), reserve)
+            SharedModel(
+                id = row.id,
+                label = row.label.ifBlank { row.id },
+                // The window this head scales and compacts by, which an extra_windows entry can set below the row's.
+                contextWindow = catalog.contextWindowFor(row.id),
+                slots = slots[row.id].orEmpty().sorted(),
+                compactionReserve = CompactionBudgets.forRow(served, row.id)?.totalTokens,
+                rates = price.cardOf(row.id),
+            )
         }
         val pinned = rows.firstOrNull { it.id == catalog.pinnedModel }
         val command = topology.heads[key]?.let { it.claude.command } ?: key

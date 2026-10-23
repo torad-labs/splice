@@ -20,13 +20,14 @@ import io.ktor.server.netty.Netty
 import io.ktor.server.netty.NettyApplicationEngine
 import io.ktor.server.plugins.origin
 import io.ktor.server.request.queryString
-import io.ktor.server.request.receiveText
 import io.ktor.server.response.respondText
 import io.ktor.server.routing.Route
 import io.ktor.server.routing.get
 import io.ktor.server.routing.post
 import io.ktor.server.routing.route
 import io.ktor.server.routing.routing
+import kotlinx.coroutines.CoroutineDispatcher
+import kotlinx.coroutines.withContext
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonPrimitive
 import splice.core.auth.BearerScheme
@@ -42,6 +43,9 @@ internal class ShareServer(
     private val clients: ShareClients,
     private val network: ShareNetwork,
     private val relay: ShareRelay,
+    /** The client book's lock wait and file I/O block, so they run here, off the listener's two call threads
+     *  (HttpListenerThreads), which every shared turn and info request needs free. */
+    private val io: CoroutineDispatcher,
     private val log: LogSink,
 ) {
     private val json = Json { ignoreUnknownKeys = true }
@@ -105,15 +109,17 @@ internal class ShareServer(
     /** True for a joined machine's token; anything else is answered here, with a 401 in words, and is false. */
     private suspend fun guarded(call: ApplicationCall): Boolean {
         val bearer = BearerScheme.bearerToken(call.request.headers[HttpHeaders.Authorization])
-        if (clients.holder(bearer) != null) return true
+        if (withContext(io) { clients.holder(bearer) } != null) return true
         refuse(call, HttpStatus.UNAUTHORIZED, "this machine has not joined, or was revoked; run `splice remote` again")
         return false
     }
 
-    /** Trust the LAN (Marcos, 2026-10-22): a private-network machine that asks is accepted with no code. */
+    /** Trust the LAN (Marcos, 2026-10-22): a private-network machine that asks is accepted with no code. Its body is
+     *  one short name, read under a cap and a deadline of its own (PR #247's fourth review), never held whole first. */
     private suspend fun join(call: ApplicationCall) {
+        val body = relay.body(call, SHARE_JOIN_BODY_MAX_BYTES, SHARE_JOIN_READ_MS) ?: return
         val asked = Cancellables.runCatchingCancellable {
-            json.decodeFromString(ShareJoin.serializer(), call.receiveText())
+            json.decodeFromString(ShareJoin.serializer(), body.decodeToString())
         }.fold(onSuccess = { it.client.trim() }, onFailure = { "" })
         if (!clientName.matches(asked)) {
             refuse(call, HttpStatus.BAD_REQUEST, "name the joining machine: {\"client\": \"<host name>\"}")
@@ -121,7 +127,8 @@ internal class ShareServer(
         }
         val address = call.request.origin.remoteAddress
         // A book this machine cannot read or lock refuses the join and is left as it is (ShareClients.edited).
-        val token = Cancellables.runCatchingCancellable { clients.join(asked, address) }.getOrElse { failure ->
+        val issued = withContext(io) { Cancellables.runCatchingCancellable { clients.join(asked, address) } }
+        val token = issued.getOrElse { failure ->
             log("[share] '$asked' could not join from $address: ${SafeFailureText.render(failure)}\n")
             val why = "this machine could not update its list of joined machines; its log says why"
             refuse(call, HttpStatus.SERVICE_UNAVAILABLE, why)
@@ -163,3 +170,11 @@ private const val SHARE_STOP_GRACE_MS = 1_000L
 
 // why: the most a daemon stop waits on this listener in all, so a relay stuck on a head cannot hold up a restart.
 private const val SHARE_STOP_TIMEOUT_MS = 5_000L
+
+// why: a join's body is {"client": "<name>"} with a name of at most 64 characters; 4 KiB holds that with any JSON
+// spacing, and nothing larger is read before it is refused.
+private const val SHARE_JOIN_BODY_MAX_BYTES = 4_096
+
+// why: a name that short arrives in one packet on a LAN; a join still unfinished after five seconds is refused
+// instead of holding the listener open.
+private const val SHARE_JOIN_READ_MS = 5_000L

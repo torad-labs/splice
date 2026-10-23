@@ -8,9 +8,11 @@ package splice.configuration.add
 
 import splice.core.config.KeyStore
 import splice.core.config.KeyStorePath
+import splice.core.model.ModelRates
 import splice.core.terminal.TerminalOutput
 import splice.core.topology.Dialect
 import splice.core.topology.DialectWires
+import splice.core.topology.Topology
 import splice.core.util.Cancellables
 import splice.core.util.EnvReader
 import splice.core.util.SafeFailureText
@@ -31,7 +33,7 @@ public data class RemoteHead(
     public val models: List<RemoteModel>,
 )
 
-/** One of a shared head's picker rows: its wire id, label, window in force and the Claude tiers naming it. */
+/** One of a shared head's picker rows: its wire id, label, window in force, the Claude tiers naming it and its card. */
 public data class RemoteModel(
     public val id: String,
     public val label: String,
@@ -40,6 +42,8 @@ public data class RemoteModel(
     /** The context the sharing head holds back below [contextWindow] when it places the client's compaction, null
      *  when it holds none. This machine's head scales the relayed raw counts, so it needs the same reserve. */
     public val compactionReserve: Long? = null,
+    /** The card the sharing head prices this row at, written on the row so turns here are priced the same. */
+    public val rates: ModelRates? = null,
 )
 
 internal class RemoteHeadAdd(
@@ -54,12 +58,33 @@ internal class RemoteHeadAdd(
         command.addDescribed(profile(head), env, TokenClaim(head.token, profiles.apiKeyEnv(head.key), env))
 
     /** A head imported before only needs its new token: a machine that joins again gets a fresh one, and the
-     *  old one stops working on the sharing machine. */
-    fun renew(key: String, token: String, env: EnvReader): Boolean = storeToken(key, token, env)
+     *  old one stops working on the sharing machine. The token goes where [head]'s provider reads its key, and only
+     *  when no other provider reads that name too: a renewal never replaces another provider's key (PR #247's fourth
+     *  review). */
+    fun renew(topology: Topology, head: String, token: String, env: EnvReader): Boolean {
+        val providerKey = topology.heads[head]?.provider
+        val auth = providerKey?.let { topology.providers[it] }?.auth?.takeIf { it.isApiKey }
+        if (providerKey == null || auth == null) {
+            output.line("  '$head' does not read a key here, so its token was not renewed")
+            return false
+        }
+        val envVar = auth.effectiveApiKeyEnv(providerKey)
+        val other = otherReader(topology, providerKey, envVar)
+        if (other != null) {
+            output.line("  [providers.$other] also reads $envVar, so '$head' kept its old token; give each its own env")
+            return false
+        }
+        return storeToken(envVar, token, env)
+    }
 
-    private fun storeToken(key: String, token: String, env: EnvReader): Boolean {
+    /** A provider other than [self] that reads its key from [envVar], whose key a write there would replace. */
+    private fun otherReader(topology: Topology, self: String, envVar: String): String? =
+        topology.providers.entries.firstOrNull { (key, provider) ->
+            key != self && provider.auth.isApiKey && provider.auth.effectiveApiKeyEnv(key) == envVar
+        }?.key
+
+    private fun storeToken(envVar: String, token: String, env: EnvReader): Boolean {
         val store = KeyStore(KeyStorePath.defaultPath(env))
-        val envVar = profiles.apiKeyEnv(key)
         return Cancellables.runCatchingCancellable { store.write(envVar, token) }.fold(
             onSuccess = { true },
             onFailure = {
@@ -89,7 +114,14 @@ internal class RemoteHeadAdd(
         // model_slots table: the sharing head may put one model behind several tiers, which a models list refuses.
         policy = AddModelPolicy(listAuthoritative = false, tierTable = true),
         models = head.models.map {
-            AddModel(it.id, it.label, it.contextWindow, slots = it.slots, compactionReserve = it.compactionReserve)
+            AddModel(
+                it.id,
+                it.label,
+                it.contextWindow,
+                slots = it.slots,
+                rates = it.rates,
+                compactionReserve = it.compactionReserve,
+            )
         },
     )
 
@@ -105,10 +137,7 @@ internal class RemoteHeadAdd(
         private var claimed = false
 
         override fun claim(candidate: AddCandidate): Boolean {
-            val reader = candidate.topology.providers.entries.firstOrNull { (key, provider) ->
-                val auth = provider.auth
-                key != candidate.providerKey && auth.isApiKey && auth.effectiveApiKeyEnv(key) == envVar
-            }?.key
+            val reader = otherReader(candidate.topology, candidate.providerKey, envVar)
             if (reader != null) {
                 output.line("  [providers.$reader] already reads $envVar; import this head under another name")
                 return false

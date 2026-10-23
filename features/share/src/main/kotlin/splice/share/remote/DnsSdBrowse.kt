@@ -13,7 +13,7 @@ import java.util.concurrent.Executor
 import java.util.concurrent.TimeUnit
 import java.util.concurrent.TimeoutException
 
-public class DnsSdBrowse : MdnsBrowse {
+internal class DnsSdBrowse : MdnsBrowse {
     private val runner = Executor { Thread.ofVirtual().name("splice-dns-sd").start(it) }
 
     override fun services(): List<MdnsService> = DnsSdRecords().targets(listing().orEmpty())
@@ -56,7 +56,8 @@ internal class DnsSdRecords {
     fun targets(listing: String): List<RemoteCandidate> = listing.lineSequence()
         .mapNotNull { line -> srv.find(line) }
         .mapNotNull { match ->
-            val port = match.groupValues[1].toIntOrNull()?.takeIf { it in 1..MAX_PORT }
+            // A TCP port is sixteen bits, and none listens at 0.
+            val port = match.groupValues[1].toIntOrNull()?.takeIf { it in 1..UShort.MAX_VALUE.toInt() }
             port?.let { RemoteCandidate(match.groupValues[2], it) }
         }
         .distinct()
@@ -75,6 +76,3 @@ private const val DNS_SD_BROWSE_MS = 1_000L
 
 // why: a `.local` name the system resolver cannot answer in half a second belongs to a machine that is gone.
 private const val DNS_SD_RESOLVE_MS = 500L
-
-// why: the highest TCP port.
-private const val MAX_PORT = 65_535

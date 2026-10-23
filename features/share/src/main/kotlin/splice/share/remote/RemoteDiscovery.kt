@@ -54,7 +54,7 @@ public class RemoteDiscovery(
     /** Where to look, in the order the address kept is chosen: by default everywhere a sharing machine can be, the
      *  network path first (what advertises itself here, every address on these networks), then the peers on his
      *  tailnet, which reach a machine on another network. */
-    private val sources: List<RemoteSource> = listOf(MdnsMachines(), SubnetSource(), TailscalePeers(TailscaleCli())),
+    private val sources: List<RemoteSource> = listOf(MdnsMachines(), SubnetSource(), TailscalePeers()),
 ) {
     private val looker = Executor { Thread.ofVirtual().name("splice-remote-scan").start(it) }
 

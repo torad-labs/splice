@@ -6,14 +6,14 @@ package splice.share.remote
 import splice.share.SystemMdns
 
 /** One `_splice._tcp` service this machine saw: the [addresses] it resolved to and the [port] it advertised. */
-public data class MdnsService(public val addresses: List<String>, public val port: Int)
+internal data class MdnsService(val addresses: List<String>, val port: Int)
 
 /** The `_splice._tcp` services seen on this network now (JmdnsBrowse, DnsSdBrowse). */
-public fun interface MdnsBrowse {
-    public fun services(): List<MdnsService>
+internal fun interface MdnsBrowse {
+    fun services(): List<MdnsService>
 }
 
-public class MdnsMachines(
+internal class MdnsMachines(
     /** By default through the system's mDNSResponder on a Mac, which gives a process of ours no multicast, and through
      *  JmDNS everywhere else. */
     private val browse: MdnsBrowse = if (SystemMdns().mac) DnsSdBrowse() else JmdnsBrowse(),

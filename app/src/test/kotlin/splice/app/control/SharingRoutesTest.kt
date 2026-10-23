@@ -40,7 +40,6 @@ import splice.share.ShareListener
 import splice.share.ShareStart
 import splice.share.SharedCatalogs
 import splice.share.SharedQuotas
-import splice.share.remote.MdnsMachines
 import splice.share.remote.RemoteDiscovery
 import splice.share.remote.RemoteFound
 import splice.share.remote.RemoteHttp
@@ -181,10 +180,11 @@ class SharingRoutesTest {
 
     private fun answers(port: Int): Boolean = runCatching { Socket("127.0.0.1", port).close() }.isSuccess
 
-    /** What a machine looking for sharing machines over multicast DNS finds at [port], scanning until [wanted] says
-     *  the answer is the one awaited. */
+    /** What a machine looking for sharing machines finds at [port], scanning as `splice remote` does until [wanted]
+     *  says the answer is the one awaited. Of its sources only multicast DNS can name this machine: the subnet and the
+     *  tailnet leave out the machine looking. */
     private suspend fun looked(port: Int, wanted: (RemoteFound?) -> Boolean): RemoteFound? {
-        val looking = RemoteDiscovery(RemoteHttp(RemoteTrust(null, "a sharing machine")), listOf(MdnsMachines()))
+        val looking = RemoteDiscovery(RemoteHttp(RemoteTrust(null, "a sharing machine")))
         while (true) {
             val found = looking.scan(port).firstOrNull { it.port == port }
             if (wanted(found)) return found

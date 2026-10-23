@@ -13,14 +13,15 @@ import java.util.concurrent.Executor
 import java.util.concurrent.TimeUnit
 import java.util.concurrent.TimeoutException
 
-public class TailscaleCli(
+internal class TailscaleCli(
     private val env: EnvReader = EnvReader(System::getenv),
     /** Where tailscale installs outside a PATH, asked after it. */
     private val places: List<String> = listOf(TAILSCALE_USR_LOCAL, TAILSCALE_HOMEBREW, TAILSCALE_MAC_APP),
-) : TailscaleStatus {
+) {
     private val reader = Executor { Thread.ofVirtual().name("splice-tailscale-status").start(it) }
 
-    override fun json(): String? {
+    /** What `tailscale status --json` printed, or null when there is nothing to read. */
+    fun json(): String? {
         val process = binary()?.let(::started) ?: return null
         val printed = CompletableFuture.supplyAsync({ process.inputReader().use { it.readText() } }, reader)
         val done = process.waitFor(TAILSCALE_STATUS_MS, TimeUnit.MILLISECONDS)

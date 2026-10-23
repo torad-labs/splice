@@ -9,7 +9,7 @@ import java.net.InetAddress
 import java.net.InterfaceAddress
 import java.nio.ByteBuffer
 
-public class SubnetSource : RemoteSource {
+internal class SubnetSource : RemoteSource {
 
     override fun candidates(port: Int): List<RemoteCandidate> {
         val networks = LocalNetworks().siteLocal()

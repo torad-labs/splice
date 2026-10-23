@@ -1,10 +1,13 @@
-// NEW: LAN share, phase 2, milestone 5 (docs/specs/lan-share.md). The machines on his tailnet, from what
-// `tailscale status --json` says: each online peer is asked at its Tailscale IPv4 address, never this machine and never
+// NEW: LAN share, phase 2, milestone 5 (docs/specs/lan-share.md). The machines on his tailnet, from what a real
+// `tailscale status --json` run prints (a tailscale on the PATH that prints a captured status): each online peer is asked at its Tailscale IPv4 address, never this machine and never
 // one that is offline. A Mac with no Tailscale, or a status that does not parse, finds none.
 package splice.share.remote
 
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Test
+import org.junit.jupiter.api.io.TempDir
+import splice.core.util.EnvReader
+import java.io.File
 
 // why: the default share port, which each peer is asked at.
 private const val PORT = 3097
@@ -25,7 +28,20 @@ private val STATUS = """
 
 class TailscalePeersTest {
 
-    private fun hosts(status: String?) = TailscalePeers { status }.candidates(PORT).map { it.host to it.port }
+    @TempDir
+    lateinit var dir: File
+
+    /** What the source asks, when the tailscale on the PATH prints [status], or fails when it is null. */
+    private fun hosts(status: String?): List<Pair<String, Int>> {
+        val bin = dir.resolve("bin").apply { mkdirs() }
+        val script = if (status == null) "exit 1" else "cat <<'STATUS'\n$status\nSTATUS"
+        bin.resolve("tailscale").apply {
+            writeText("#!/bin/sh\n$script\n")
+            setExecutable(true)
+        }
+        val path = EnvReader { name -> bin.path.takeIf { name == "PATH" } }
+        return TailscalePeers(TailscaleCli(path, emptyList())).candidates(PORT).map { it.host to it.port }
+    }
 
     @Test
     fun `each online peer is asked at its Tailscale IPv4 address, never this machine or one offline`() {
@@ -33,7 +49,7 @@ class TailscalePeersTest {
     }
 
     @Test
-    fun `no tailscale here, or a status that does not parse, finds no peer`() {
+    fun `a tailscale that fails, or a status that does not parse, finds no peer`() {
         assertEquals(emptyList<Pair<String, Int>>(), hosts(null))
         assertEquals(emptyList<Pair<String, Int>>(), hosts("tailscale: not running"))
         assertEquals(emptyList<Pair<String, Int>>(), hosts("{\"Self\": {}}"))

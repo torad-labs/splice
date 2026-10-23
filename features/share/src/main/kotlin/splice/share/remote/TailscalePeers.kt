@@ -8,16 +8,11 @@ import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.Json
 import splice.core.util.Cancellables
 
-/** What `tailscale status --json` printed, or null when there is nothing to read (TailscaleCli). */
-public fun interface TailscaleStatus {
-    public fun json(): String?
-}
-
-public class TailscalePeers(private val status: TailscaleStatus) : RemoteSource {
+internal class TailscalePeers(private val tailscale: TailscaleCli = TailscaleCli()) : RemoteSource {
     private val json = Json { ignoreUnknownKeys = true }
 
     override fun candidates(port: Int): List<RemoteCandidate> {
-        val text = status.json() ?: return emptyList()
+        val text = tailscale.json() ?: return emptyList()
         val tailnet = Cancellables.runCatchingCancellable { json.decodeFromString<Tailnet>(text) }
             .fold(onSuccess = { it }, onFailure = { null })
         return tailnet?.peers.orEmpty().values.filter { it.online }

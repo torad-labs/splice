@@ -12,7 +12,7 @@ import java.util.concurrent.CompletableFuture
 import java.util.concurrent.Executor
 import javax.jmdns.JmDNS
 
-public class JmdnsBrowse : MdnsBrowse {
+internal class JmdnsBrowse : MdnsBrowse {
     private val browser = Executor { Thread.ofVirtual().name("splice-mdns-browse").start(it) }
 
     override fun services(): List<MdnsService> = LocalNetworks().multicast()

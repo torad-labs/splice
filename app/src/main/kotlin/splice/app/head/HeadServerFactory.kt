@@ -135,6 +135,7 @@ internal class HeadServerFactory(
                         maxQueued = { config.getConfig(key).maxQueued },
                     ),
                     liveTurns = liveTurnsFor(key),
+                    forwardClientIdentity = ctx.providerCfg.quirks.forwardClientIdentity,
                 ),
                 log = log,
             ),

@@ -126,7 +126,14 @@ public data class HeadDeps(
         /** The watchdog budget as the live knobs (firstByteTimeoutMs, stallReanchorMs) say it is now: a turn asks it
          *  when it starts. Null is no live knob: the budget the provider was built with. */
         val watchdog: LiveWatchdogBudget? = null,
+        /** `forward_client_identity` (LAN share): the client's wire knobs and identity ride upstream with each turn,
+         *  its credential never does. Moot on a head that forwards client auth, which sends all of it. */
+        val forwardClientIdentity: Boolean = false,
     )
+
+    /** Whether a turn carries the client's own headers upstream: all of them on a client-auth head, all but the
+     *  credential on one set to forward the client's identity. */
+    internal val forwardsClientHeaders: Boolean get() = policy.forwardClientAuth || traffic.forwardClientIdentity
 
     /** Where the head writes what it observes. Grouped by ROLE — a bundle is a boundary, not a bag. */
     public data class HeadStores(

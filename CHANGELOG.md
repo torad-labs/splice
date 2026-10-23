@@ -155,6 +155,16 @@ origin.
   the header names that plan. An Anthropic Console API-key login is billed through that API.
 
 ### Added
+- **Use one machine's heads from another.** `splice share on` offers this machine's heads to your other machines
+  on a private network; `splice remote` on another machine finds it, asks, and writes the same commands there
+  (`claudex`, `claude-grok`, …) with the same models and tiers. Every turn is relayed to the sharing machine and runs
+  on its logins, so no credential is copied and each account keeps one concurrency limit, cooldown and usage meter.
+  Sharing is off until turned on, answers private addresses only, and gives each joined machine its own token:
+  `splice share status` lists them and `splice share revoke <machine>` cuts one off. `splice remote add <host>`
+  reaches a machine across Tailscale. Phase 1 is plain HTTP on the LAN; see `docs/specs/lan-share.md`.
+- **A wrapped `claude` never depends on splice being up.** When the launcher cannot get a launch for plain `claude`
+  (no daemon, a failed handshake, no recipe), it runs Claude Code directly on your own login and says so once.
+  Named heads still stop with the reason, since they have no direct path.
 - **Named peers any Claude Code session can message.** `splice peer register <name>` creates a peer that every
   session on the machine sees in ListAgents and can SendMessage to, with no session behind it. A small helper
   process per peer journals each message with a delivery receipt, labels each sender `registered` or

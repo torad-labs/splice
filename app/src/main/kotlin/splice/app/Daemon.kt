@@ -31,6 +31,8 @@ import splice.app.head.LaunchSpecFactory
 import splice.app.head.ManagedHeadFactory
 import splice.app.head.QuotaPollSeams
 import splice.app.probe.LocalWindowRefresh
+import splice.app.share.ShareServer
+import splice.app.share.ShareStart
 import splice.client.mcp.McpShareChoice
 import splice.client.resume.originals.TranscriptOriginals
 import splice.codemode.WorkerArtifacts
@@ -203,6 +205,7 @@ public class Daemon(
     )
 
     private val heads = LinkedHashMap<String, ManagedHead>()
+    private var share: ShareServer? = null
     private val stopLock = Mutex()
     private var stopped = false
 
@@ -270,6 +273,8 @@ public class Daemon(
         ) ?: return
         // MCP hub step 6: each installed Claude Code version's --plugin-dir-no-mcp verdict, checked in the background.
         controlPlane.pluginFlagChecks.request()
+        // LAN share (docs/specs/lan-share.md): opened last, over the heads that started; null when [share] is off.
+        share = ShareStart(topology, statePaths, mgmtKey, log).start(heads)
         val degraded = if (failed.isEmpty()) "" else " DEGRADED=${failed.keys}"
         log("[daemon] up: control :$controlPort, heads ${heads.keys}$degraded\n")
     }
@@ -281,6 +286,9 @@ public class Daemon(
             // at the END, so a pass that was cut short is finished by the next call, never taken for done.
             headProbes.fenceStarts()
             controlPlane.ownership.fence()
+            // Other machines' turns stop arriving before the heads drain the ones already running.
+            share?.stop()
+            share = null
 
             // Heads stop in PARALLEL under a phase DEADLINE, then control stops — see
             // [HeadShutdown.stopHeads]. The supervisor scope + stopFailureHandler live there so an

@@ -14,7 +14,7 @@
 
 # Hand-paired with splice.core.SHIM_VERSION (core/src/main/kotlin/splice/core/Versions.kt)
 # — bump both together whenever this shim's behavior changes. No code generation.
-SPLICE_SHIM_VERSION="shim-21"
+SPLICE_SHIM_VERSION="shim-22"
 # Hand-paired with splice.core.GATEWAY_VERSION. Release acceptance verifies the marker.
 SPLICE_GATEWAY_VERSION="0.4.0"
 
@@ -23,7 +23,32 @@ NL='
 
 fail() {
   printf '%s\n' "$1" >&2
+  [ "$CLAUDE_DIRECT" = 1 ] && claude_direct
   exit 1
+}
+
+# shim-22 (Marcos, 2026-10-22): the wrapped plain `claude` must never be left unusable by splice. While main() is
+# getting a launch for it, any failure (no daemon, a failed handshake, no recipe) runs Claude Code directly on its own
+# login instead, as it would unwrapped, and says so once. Named heads keep failing in words: they have no direct path.
+CLAUDE_DIRECT=0
+CLAUDE_DIRECT_ARGS=""
+claude_direct() {
+  CLAUDE_DIRECT=0 # a failure below ends the launch instead of coming back here
+  cd_file=$STATE_DIR/claude-head-wrap.json
+  cd_binary=""
+  [ -r "$cd_file" ] && cd_binary=$(json_string real_binary_path "$cd_file")
+  case $cd_binary in /*) ;; *) return 0 ;; esac
+  { [ -x "$cd_binary" ] && [ -f "$cd_binary" ] && ! [ "$cd_binary" -ef "$SELF" ]; } || return 0
+  warn "splice: not reachable; running Claude Code directly on your own login (this session does not go through splice)"
+  eval "set -- $CLAUDE_DIRECT_ARGS"
+  exec "$cd_binary" "$@"
+}
+
+# One shell word per argument, so claude_direct can rebuild the caller's words exactly.
+quote_words() {
+  for qw_word in "$@"; do
+    printf "'%s' " "$(printf '%s' "$qw_word" | sed "s/'/'\\\\''/g")"
+  done
 }
 warn() {
   printf '%s\n' "$1" >&2
@@ -606,6 +631,7 @@ handshake() {
     warn "splice: last boot output ($BOOT_LOG):"
     warn "$hs_boot"
   fi
+  [ "$CLAUDE_DIRECT" = 1 ] && claude_direct
   exit 1
 }
 
@@ -822,6 +848,11 @@ launcher_under_home() {
 }
 
 main() {
+  # From here to the recipe, a wrapped plain `claude` that cannot get a launch runs Claude Code directly (shim-22).
+  if [ "$HEAD" = claude ] && [ "${1-}" != login ]; then
+    CLAUDE_DIRECT_ARGS=$(quote_words "$@")
+    CLAUDE_DIRECT=1
+  fi
   if read_launcher_owner; then has_owner=1; else has_owner=0; fi
   if [ "$has_owner" = 1 ] && [ "$HEAD" = claude ] && ! same_home "$OWNER_HOME"; then
     unwrapped_claude "$OWNER_HOME" "$OWNER_STATE_DIR" "" "$@"

@@ -19,6 +19,7 @@ public class AddVerb(
 ) {
     private val command = AddCommand(output, errors, AddChecks(output, localRows = localRows), ports)
     private val runtime = RuntimeHeadAdd(output, command)
+    private val remote = RemoteHeadAdd(output, command)
 
     /** True when the head was saved and is reachable as printed; false leaves splice.toml unchanged
      *  or names the restart that is still owed. */
@@ -27,6 +28,12 @@ public class AddVerb(
     /** `splice setup`'s local-model step: the head a runtime described, through the same checks, save
      *  and restart as [add], with the placeholder key its unauthenticated endpoint needs. Same answer. */
     public suspend fun addRuntime(head: RuntimeHead, env: EnvReader): Boolean = runtime.add(head, env)
+
+    /** `splice remote`: a head another of the person's machines shares, regenerated here (RemoteHeadAdd). */
+    public suspend fun addRemote(head: RemoteHead, env: EnvReader): Boolean = remote.add(head, env)
+
+    /** `splice remote` again: a head imported before keeps its row and takes the newly issued token. */
+    public fun renewRemote(key: String, token: String, env: EnvReader): Boolean = remote.renew(key, token, env)
 }
 
 /** `splice add-model`: OpenRouter catalog rows picked through [select] and [multi]. */

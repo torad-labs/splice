@@ -46,6 +46,8 @@ public data class Topology(
     val heads: Map<String, HeadConfig> = emptyMap(),
     /** V4-124: per-repo standing prompts, keyed by the project root path. Absent = today's bytes. */
     val projects: Map<String, ProjectConfig> = emptyMap(),
+    /** LAN share (docs/specs/lan-share.md): this machine's heads offered to the person's other machines. Absent = off. */
+    val share: ShareConfig = ShareConfig(),
 ) {
     /** Resolve a user-supplied head name — the topology key or the installed wrapper command
      *  (starter: head `openrouter`, command `claude-openrouter`) — to matching topology keys. A topology-KEY
@@ -77,7 +79,8 @@ public data class Topology(
      *  the same behaviour as before this check existed. */
     public fun portCollisions(): Map<Int, List<String>> {
         val controlPort = daemon.controlPort ?: Knob.CONTROL_PORT.count().toInt()
-        val declared = heads.entries.map { it.value.port to it.key } + (controlPort to CONTROL_PLANE_OWNER)
+        val declared = heads.entries.map { it.value.port to it.key } + (controlPort to CONTROL_PLANE_OWNER) +
+            listOfNotNull((share.port to SHARE_PORT_OWNER).takeIf { share.enabled })
         return declared.groupBy({ it.first }, { it.second }).filterValues { it.size > 1 }
     }
 

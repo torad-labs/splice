@@ -266,7 +266,7 @@ private class TopologyChecks(
 
     fun findings(): List<TopologyFinding> =
         references() + auth() + ports() + (if (withRosters) rosters() else statics()) + knobs() + prompts() +
-            compaction() + channel()
+            compaction() + channel() + topology.share.findings(topology)
 
     /** An auth kind its provider's dialect cannot carry, asked the way head assembly asks it ([AuthCompatibility]), so
      *  the pairing refuses boot with every other finding instead of skipping that head behind a running daemon. */
@@ -358,7 +358,11 @@ private class TopologyChecks(
         }
         val shared = topology.portCollisions().flatMap { (port, owners) ->
             owners.map { owner ->
-                val at = if (owner in topology.heads) "heads.$owner.port" else "daemon.control_port"
+                val at = when (owner) {
+                    in topology.heads -> "heads.$owner.port"
+                    SHARE_PORT_OWNER -> SHARE_PORT_OWNER
+                    else -> "daemon.control_port"
+                }
                 TopologyFinding(at, "port $port is shared by ${owners.joinToString(", ")}; give each its own port")
             }
         }

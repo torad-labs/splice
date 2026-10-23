@@ -57,6 +57,16 @@ public sealed class Command {
         override suspend fun run(): Int = splice.app.cli.peer.PeerCommand().run(args)
     }
 
+    /** `splice share <verb>`: offer this machine's heads to the person's other machines (docs/specs/lan-share.md). */
+    public data class Share(val args: List<String>) : Command() {
+        override suspend fun run(): Int = splice.app.cli.share.ShareCommand().run(args)
+    }
+
+    /** `splice remote [<verb>]`: use the heads another of the person's machines shares (docs/specs/lan-share.md). */
+    public data class Remote(val args: List<String>) : Command() {
+        override suspend fun run(): Int = splice.app.cli.share.RemoteCommand().run(args)
+    }
+
     /** The boot findings pass of this build against the person's splice.toml (ConfigPreflight). */
     public data object CheckConfig : Command() {
         override suspend fun run(): Int = ConfigPreflight(EnvReader(System::getenv)).check()

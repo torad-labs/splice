@@ -69,13 +69,13 @@ claudex ─▶ head :3099 (anthropic-passthrough) ──HTTP──▶ share list
   The head's own admission, inflight gate, account selection and honest-failure paths run unchanged.
 - Client tokens: 32 random bytes, stored hashed with name, address, first and last seen in
   `<state>/share/clients.json` through `SecureFile.writeAtomic0600`. Never the management or turn key.
-- mDNS: advertise `_splice._tcp.local.` (instance = host name, TXT `v=<version>`, `id=<install id>`)
-  through JmDNS while sharing is on.
+- Discovery (phase 1): the client asks every address of each private IPv4 network it is on (a /24 around
+  itself on a network wider than /22) for `/share/v1/info` on the share port, all at once under one deadline.
+  No multicast and no new dependency; mDNS advertising replaces this in phase 2.
 
 ### Client: `splice remote`
 
-- `splice remote` browses `_splice._tcp` for 3 s, fetches `/share/v1/info` from each server found,
-  lists servers with their heads and asks per server. `splice remote add <host[:port]>` skips discovery
+- `splice remote` finds the sharing machines (above), lists each with its heads and asks per machine. `splice remote add <host[:port]>` skips discovery
   (multicast blocked, Tailscale). `splice remote list`, `splice remote remove <server>`.
 - Import of one server:
   1. `POST /share/v1/join` → token, saved in the key store (`splice key`) as
@@ -114,8 +114,10 @@ claudex ─▶ head :3099 (anthropic-passthrough) ──HTTP──▶ share list
   with this decision cited. Every other `embeddedServer` stays loopback-only.
 - CLI: `share` and `remote` verbs in `app/.../cli/CommandParser.kt` / `Command.kt`; prompts through
   the existing `AddPrompter` / `confirm`; key through `KeyStore`.
-- Dependency: `org.jmdns:jmdns` in `gradle/libs.versions.toml`, recorded in
-  `gradle/verification-metadata.xml`.
+- Turn path: a provider quirk `forward_client_identity` (QuirksConfig) makes a head on its own key send the
+  client's session id, wire knobs and identity upstream, never its credential (ClientAuth.forwardedClientHeaders);
+  imported heads set it, so the sharing head keeps a session on one account and one prompt-cache key.
+- No new dependency: JDK HTTP for the relay and the client, the existing Ktor Netty for the listener.
 
 ## Phase 1 trade-offs, stated
 

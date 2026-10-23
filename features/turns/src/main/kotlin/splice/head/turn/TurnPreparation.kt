@@ -235,8 +235,9 @@ internal class TurnPreparation(
         // Per-turn headers already outrank the provider's own in TurnDriver's merge, so a forwarded
         // value REPLACES a configured default (e.g. the caller's anthropic-version wins over the
         // provider's), and UpstreamClient folds the casing.
-        val built = if (deps.policy.forwardClientAuth) {
-            prepared.copy(extraHeaders = prepared.extraHeaders + clientAuth.forwardedClientHeaders(call))
+        val built = if (deps.forwardsClientHeaders) {
+            val forwarded = clientAuth.forwardedClientHeaders(call, credential = deps.policy.forwardClientAuth)
+            prepared.copy(extraHeaders = prepared.extraHeaders + forwarded)
         } else {
             prepared
         }

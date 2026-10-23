@@ -32,12 +32,6 @@ internal class SharingView(private val parts: SharingParts, private val file: To
             .fold(onSuccess = { it }, onFailure = { emptySet() })
     }
 
-    /** The machines this one joined whose Sessions switch is on here; none when the store cannot be read. */
-    private val crossing: Set<String> by lazy {
-        Cancellables.runCatchingCancellable { tokens.filter(store::sessions).toSet() }
-            .fold(onSuccess = { it }, onFailure = { emptySet() })
-    }
-
     fun json(): JsonObject = buildJsonObject {
         put("machine", ShareHostName().short())
         put("sharing", sharing())
@@ -83,7 +77,7 @@ internal class SharingView(private val parts: SharingParts, private val file: To
                 put("name", machine.name)
                 put("address", machine.address)
                 put("joined_at", machine.joinedAt)
-                put("sessions", machine.sessions)
+                put("sessions", parts.listener.switch.on(machine.name))
                 seen[machine.name]?.let {
                     put("last_seen", it.lastSeen)
                     put("turns_today", it.turnsOn(today))
@@ -112,7 +106,7 @@ internal class SharingView(private val parts: SharingParts, private val file: To
             put("url", remote.url)
             remote.fingerprint?.let { put("fingerprint", it) }
             put("token", name in tokens)
-            put("sessions", name in crossing)
+            put("sessions", parts.listener.switch.on(name))
             crossing(name, this)
             reach?.let { found ->
                 put("reachable", found.reachable)

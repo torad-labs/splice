@@ -32,8 +32,12 @@ public class ShareListener(
     /** The machines that joined this one, and when each was last heard from. */
     public val clients: ShareClients = ShareClients(ShareState(statePaths).clientsFile)
 
+    /** Each machine's one Sessions switch, read through this machine's two books (the clients above, and the
+     *  machines it joined): what the Sharing page reads and turns, and what the session routes let in by. */
+    public val switch: SessionsSwitch = SessionsSwitch(ShareState(statePaths))
+
     /** The session routes' mirrors, and what sessions here wrote to them: one across reopenings, as [clients] is. */
-    private val sessions = ShareSessionParts(mirrors)
+    private val sessions = ShareSessionParts(mirrors, switch)
 
     @Volatile
     private var server: ShareServer? = null

@@ -76,9 +76,14 @@ internal data class ShareOutbox(val notes: List<ShareOutboxNote>, val box: Strin
 /** What a collection acknowledges: every note of outbox [box] up to [after], delivered on the collecting machine. */
 internal data class ShareOutboxAck(val box: String, val after: Long)
 
-/** What the session routes keep across the listener's reopenings: the daemon's [mirrors], null where it hosts none, and
- *  the [outboxes] of notes waiting for each joined machine, so a change to `[share]` keeps them. */
-internal data class ShareSessionParts(val mirrors: SessionMirrors?, val outboxes: ShareOutboxes = ShareOutboxes())
+/** What the session routes keep across the listener's reopenings: the daemon's [mirrors], null where it hosts none, each
+ *  machine's Sessions [switch], and the [outboxes] of notes waiting for each joined machine, so a change to `[share]`
+ *  keeps them. */
+internal data class ShareSessionParts(
+    val mirrors: SessionMirrors?,
+    val switch: SessionsSwitch,
+    val outboxes: ShareOutboxes = ShareOutboxes(),
+)
 
 /** The session routes' answers, over [parts]' mirrors; when this daemon hosts none, every route says so. */
 internal class ShareSessionHost(
@@ -92,6 +97,9 @@ internal class ShareSessionHost(
 
     /** When each machine's mirrors here end, in epoch ms, unless it offers its sessions again before. */
     private val leases = ConcurrentHashMap<String, Long>()
+
+    /** Whether [client] may list, write into and read from this machine's sessions: its one Sessions switch is on. */
+    fun crossing(client: String): Boolean = parts.switch.on(client)
 
     /** This machine's running sessions, as [client] is shown them. */
     suspend fun list(call: ApplicationCall, client: String) {
@@ -116,7 +124,7 @@ internal class ShareSessionHost(
         val hosting = hosted(call) ?: return
         val note = read(call, ShareNote.serializer(), NOTE_BODY_MAX_BYTES) ?: return
         val to = call.parameters["id"].orEmpty()
-        val carried = hosting.deliver(to, client, mirrored(note.from), note.text)
+        val carried = hosting.deliver(to, client, mirrored(note.from), note.text, parts.outboxes.carrier(client))
         respond(call, ShareNoteAnswer.serializer(), ShareNoteAnswer(carried.status?.wire, carried.detail))
     }
 

@@ -17,13 +17,19 @@ import splice.core.topology.Topology
 import splice.core.util.Cancellables
 import splice.core.util.LogSink
 import splice.core.util.SafeFailureText
+import splice.share.SessionsSwitch
 import splice.upstream.Ticker
 import splice.upstream.codemode.ProcessDispatchers
 import splice.upstream.codemode.ProcessTicker
 import java.time.Instant
 import java.util.concurrent.ConcurrentHashMap
 
-public class RemoteLinks(topology: Topology, private val store: RemotesStore) {
+public class RemoteLinks(
+    topology: Topology,
+    private val store: RemotesStore,
+    /** Each machine's one Sessions switch, read through both of this machine's books. */
+    private val switch: SessionsSwitch,
+) {
     private val remotes: Map<String, RemoteConfig> = topology.remotes
 
     /** Each head here that relays to a joined machine, by key: that machine, and the head's key there (the last
@@ -39,9 +45,9 @@ public class RemoteLinks(topology: Topology, private val store: RemotesStore) {
 
     public fun names(): Set<String> = remotes.keys
 
-    /** Whether [name]'s Sessions switch is on here, read from the store at each call, so the Sharing page turns it with
-     *  no restart. */
-    public fun sessions(name: String): Boolean = store.sessions(name)
+    /** Whether sessions cross with [name]: its one Sessions switch here, read at each call, so the Sharing page turns
+     *  it with no restart, on both its cards where it also joined this machine. */
+    public fun sessions(name: String): Boolean = switch.on(name)
 
     /** Where [name]'s listener answers, as `[remotes]` keeps it; null for a machine not joined. */
     public fun url(name: String): String? = remotes[name]?.url

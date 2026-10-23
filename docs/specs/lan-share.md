@@ -258,6 +258,9 @@ Built on `feat/lan-share`, merged into `feat/v0.4.0` through the gate. Milestone
      (`GET .../outbox?wait=25`), so the joining machine takes no connection in. A note leaves the outbox only once a
      later collection acknowledges it (`&box=<outbox>&after=<seq>`): a collection cut on the way, because the machine
      slept, restarted its daemon or lost its network, takes nothing with it, and a change to `[share]` keeps what waits.
+     A note whose sender has no mirror left on the machine it reaches (withdrawn since that machine's last look, by a
+     look that failed, a switch turned off and on, or the end of its offers) is delivered from one made then with the
+     carrier it came by, so it is never refused for the want of one and acknowledged gone.
      A restart of the sharing daemon loses what its outbox held. A refusal goes back to the sender as a receipt, in words.
    - **Bounds.** Every route needs a joined machine's token, and the link names the machine, never the request. A
      machine is booked under its `[remotes]` spelling (`RemoteNames`), so two machines that each joined the other
@@ -268,6 +271,9 @@ Built on `feat/lan-share`, merged into `feat/v0.4.0` through the gate. Milestone
      again when the machine joins again: on a machine that joined this one it gates the four session routes, which
      answer 403 in words while it is off; on a machine this one joined it gates this machine's link, which then neither
      looks, offers nor collects, and withdraws that machine's mirrors here. Sessions cross only while both ends are on.
+     Two machines that each joined the other run two links, and each holds the other in both its books; it is one
+     machine with one switch (`SessionsSwitch`), on only while each book that holds it has it on, so an Off on either
+     of its cards stops both links, and either card turns it in both books (the round-2 review).
      A switch turned off ends the crossing at the link's next look; the mirrors made before it last at most their
      lease. Any machine on the network may join and each mirror is a process, so a daemon hosts at most 256. A mirror's name is
      what ListAgents shows and an envelope carries (`[A-Za-z0-9._-]`, 64 characters), and two sessions of one name are

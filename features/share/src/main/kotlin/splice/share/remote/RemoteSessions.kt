@@ -2,12 +2,12 @@
 // each machine this one joined, a look every few seconds reads that machine's running sessions, mirrors them here as
 // `<machine>/<name>` (SessionMirrors), and offers this machine's own there, so each side lists the other's. A message a
 // session here writes to a mirror goes to that machine at once; one its sessions write to this machine's mirrors there
-// waits in its outbox, which a collection held open here picks up and delivers. A machine that does not answer has no
-// session mirrored here until it does. Nothing crosses with a machine whose Sessions switch is off here (RemotesStore):
-// its link neither looks, offers nor collects, and turning the switch off withdraws its mirrors at the next look.
+// waits in its outbox, which a collection held open here picks up and delivers from a mirror of its sender, made then
+// if none is left. A machine that does not answer has no session mirrored here until it does. Nothing crosses with a
+// machine whose Sessions switch is off here (SessionsSwitch): its link neither looks, offers nor collects, and turning
+// the switch off withdraws its mirrors at the next look.
 package splice.share.remote
 
-import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.currentCoroutineContext
@@ -49,23 +49,17 @@ public class RemoteSessions(
         if (joined.isEmpty()) return null
         return scope.launch {
             for ((name, url) in joined) {
-                // A note is delivered from the mirror of its sender, which only a look makes: collecting before the
-                // first look would refuse every note waiting there, and acknowledge it gone.
-                val first = CompletableDeferred<Unit>()
-                launch { look(name, url, first) }
-                launch {
-                    first.await()
-                    collect(name, url)
-                }
+                val carrier = carrierTo(name, url)
+                launch { look(name, url, carrier) }
+                launch { collect(name, url, carrier) }
             }
         }
     }
 
-    /** Mirrors [name]'s sessions here and offers this machine's there, every [lookMs], and completes [first] at the first
-     *  that does. A machine that does not answer has its mirrors withdrawn, which is said once, and so is its coming
+    /** Mirrors [name]'s sessions here, each carrying a message by [carrier], and offers this machine's there, every
+     *  [lookMs]. A machine that does not answer has its mirrors withdrawn, which is said once, and so is its coming
      *  back. */
-    private suspend fun look(name: String, url: String, first: CompletableDeferred<Unit>) {
-        val carrier = carrierTo(name, url)
+    private suspend fun look(name: String, url: String, carrier: MirrorCarrier) {
         var failing = false
         var off = false
         do {
@@ -101,20 +95,21 @@ public class RemoteSessions(
                     withContext(io) { mirrors.withdraw(name) }
                 },
             )
-            if (looked.isSuccess) first.complete(Unit)
         } while (currentCoroutineContext().isActive && ticker.awaitTick(lookMs))
     }
 
     /** Delivers what [name]'s sessions write to this machine's, as it arrives, and acknowledges it with the next
      *  collection, so [name] holds a note until it knows it arrived. A collection that fails waits for the next look
      *  before it tries again; the look says why the machine does not answer. While [name]'s Sessions switch is off it
-     *  collects nothing, and a collection the switch went off under delivers nothing: its notes wait there. */
-    private suspend fun collect(name: String, url: String) {
+     *  collects nothing, and a collection the switch went off under delivers nothing: its notes wait there. A note
+     *  whose sender has no mirror here, made by none of [name]'s looks since a withdraw, is delivered from one made
+     *  with [carrier], so a reply goes back the same way. */
+    private suspend fun collect(name: String, url: String, carrier: MirrorCarrier) {
         var ack: ShareOutboxAck? = null
         do {
             val answer = if (links.sessions(name)) collected(name, url, ack) else null
             val delivered = answer?.takeIf { links.sessions(name) }
-            delivered?.notes?.forEach { deliver(name, it) }
+            delivered?.notes?.forEach { deliver(name, it, carrier) }
             ack = delivered?.acknowledging() ?: ack
             val again = answer != null || ticker.awaitTick(lookMs)
         } while (currentCoroutineContext().isActive && again)
@@ -125,16 +120,16 @@ public class RemoteSessions(
         Cancellables.runCatchingCancellable { runInterruptible(io) { links.api(name).outbox(url, ack) } }
             .fold(onSuccess = { it }, onFailure = { null })
 
-    private suspend fun deliver(name: String, note: ShareOutboxNote) {
+    private suspend fun deliver(name: String, note: ShareOutboxNote, carrier: MirrorCarrier) {
         val from = MirroredSession(note.from.id, note.from.name)
-        val carried = mirrors.deliver(note.to.id, name, from, note.text)
+        val carried = mirrors.deliver(note.to.id, name, from, note.text, carrier)
         carried.detail?.let { why ->
             log("[remote $name] a note from ${LogSafe.str(from.name)} was not delivered: ${LogSafe.str(why)}\n")
         }
     }
 
     /** What a mirror of one of [name]'s sessions hands a message to: a note to that session there, now. */
-    private fun carrierTo(name: String, url: String) = MirrorCarrier { to, from, text ->
+    private fun carrierTo(name: String, url: String): MirrorCarrier = MirrorCarrier { to, from, text ->
         val note = ShareNote(ShareSession(from.id, from.name), text)
         val answered = Cancellables.runCatchingCancellable {
             runInterruptible(io) { links.api(name).note(url, to.id, note) }

@@ -156,7 +156,7 @@ internal class ShareServer(
         val refused = when {
             holder == null ->
                 HttpStatus.UNAUTHORIZED to "this machine has not joined, or was revoked; run `splice remote` again"
-            crossing && !holder.sessions ->
+            crossing && !withContext(io) { sessions.crossing(holder.name) } ->
                 HttpStatus.FORBIDDEN to "${heads.server} does not share its sessions with '${holder.name}': turn " +
                     "Sessions on for it on ${heads.server}'s Sharing page"
             else -> null

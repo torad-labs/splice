@@ -144,10 +144,16 @@ public class SessionMirrors(
 
     /** Delivers [text] from [from], a session on [machine], to the session here whose id is [to]. It goes from the
      *  mirror of [from], made now when there is none yet, so a reply to it travels back. */
-    public suspend fun deliver(to: String, machine: String, from: MirroredSession, text: String): MirrorCarried {
+    public suspend fun deliver(
+        to: String,
+        machine: String,
+        from: MirroredSession,
+        text: String,
+        carrier: MirrorCarrier,
+    ): MirrorCarried {
         val target = ownRecords().singleOrNull { it.sessionId == to }
             ?: return MirrorCarried(DeliveryStatus.REFUSED, "no session here has the id $to")
-        val sender = senderOf(machine, from)
+        val sender = senderOf(machine, from, carrier)
             ?: return MirrorCarried(DeliveryStatus.REFUSED, "$machine has not offered its sessions here")
         return when (val sent = parts.outbox.send(target, text, sender.from)) {
             is SendOutcome.Submitted -> MirrorCarried(DeliveryStatus.DELIVERED)
@@ -166,11 +172,14 @@ public class SessionMirrors(
         parts.helperLog.flush()
     }
 
-    private fun senderOf(machine: String, from: MirroredSession): Mirror? = synchronized(lock) {
+    /** The mirror here of [from], made with [machine]'s carrier when there is none, or with [carrier], the one the
+     *  note came by, when nothing [machine] offered or showed is left here: mirrors withdrawn since its last look, by a
+     *  look that failed, its Sessions switch turned off and on, or its offers ending, take no note with them. */
+    private fun senderOf(machine: String, from: MirroredSession, carrier: MirrorCarrier): Mirror? = synchronized(lock) {
         val held = byMachine[machine]?.get(from.id)
         if (held != null && held.alive()) return@synchronized held
         held?.close()
-        val carrier = carriers[machine] ?: return@synchronized null
+        val carrier = carriers[machine] ?: carrier
         if (byMachine.values.sumOf { it.size } >= MIRRORS_AT_MOST) return@synchronized null
         val others = byMachine[machine]?.values?.map { it.session }.orEmpty()
         val named = MirrorNames.of(others + from).last()

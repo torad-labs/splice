@@ -45,6 +45,7 @@ import splice.sessions.mirror.MirrorCarrier
 import splice.sessions.mirror.MirrorPlace
 import splice.sessions.mirror.MirroredSession
 import splice.sessions.mirror.SessionMirrors
+import splice.share.ShareClients
 import splice.share.ShareHostName
 import splice.share.ShareListener
 import splice.share.ShareStart
@@ -318,6 +319,36 @@ class SharingRoutesTest {
             }
             val unread = call(HttpMethod.Put, "/api/share/machines/mini/sessions", "on", true)
             assertEquals(400, unread.status.value, "a body the route cannot read is told what to send")
+        }
+    }
+
+    @Test
+    fun `a machine that joined this one and that this one joined has one Sessions switch, on both its cards`() {
+        Files.writeString(file, Files.readString(file) + "\n[remotes.both]\nurl = \"https://both.lan:3097\"\n")
+        val state = ShareState(StatePaths(envReader = env))
+        Files.createDirectories(state.clientsFile.parent)
+        Files.writeString(
+            state.clientsFile,
+            """{"clients":[{"name":"both","token_sha256":"00","address":"10.0.0.3",""" +
+                """"joined_at":"2026-10-23T12:00:00Z"}]}""",
+        )
+        RemotesStore(state.remotesFile).save("both", "both-token")
+        val clients = ShareClients(state.clientsFile)
+        serve { call ->
+            assertTrue(switched(call, "/api/share/machines/both/sessions", true).getValue("ok").jsonPrimitive.boolean)
+            assertEquals(listOf(true, true), switches(read(call)), "one card turns the machine's one switch")
+            assertTrue(RemotesStore(state.remotesFile).sessions("both"), "in the book its link reads")
+
+            // A re-join turns the switch off in the book it writes, and the machine reads off on both cards.
+            assertTrue(clients.allowSessions("both", false))
+            assertEquals(listOf(false, false), switches(read(call)), "off on one card is off on both")
+
+            switched(call, "/api/remotes/both/sessions", true)
+            assertEquals(listOf(true, true), switches(read(call)), "the other card turns it on in both books")
+            assertTrue(clients.all().single().sessions, "the joined machine's book too")
+            switched(call, "/api/remotes/both/sessions", false)
+            assertEquals(listOf(false, false), switches(read(call)))
+            assertFalse(clients.all().single().sessions, "and off in both")
         }
     }
 

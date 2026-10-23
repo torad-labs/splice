@@ -25,8 +25,10 @@ import splice.core.topology.RemoteConfig
 import splice.core.topology.ShareConfig
 import splice.core.topology.Topology
 import splice.core.util.EnvReader
+import splice.share.SessionsSwitch
 import splice.share.ShareListener
 import splice.share.ShareStart
+import splice.share.ShareState
 import splice.share.SharedCatalogs
 import splice.share.SharedQuotas
 import java.nio.file.Path
@@ -113,7 +115,7 @@ class RemoteReachTest {
             heads = mapOf("torad-one" to head("torad-one", 3911), "torad-two" to head("torad-two", 3912)),
             remotes = mapOf(toradName to RemoteConfig(url, joined.pin)),
         )
-        val links = RemoteLinks(mini, store)
+        val links = RemoteLinks(mini, store, SessionsSwitch(ShareState(paths("m"))))
 
         links.check { }
 

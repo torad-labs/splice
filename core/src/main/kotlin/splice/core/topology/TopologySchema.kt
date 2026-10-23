@@ -105,10 +105,18 @@ public data class ShareConfig(
     val hostnames: List<String> = emptyList(),
 ) {
     /** The heads this machine offers. A client-auth head forwards the caller's own Claude login and holds
-     *  nothing to share, so it is never offered, named or not. */
+     *  nothing to share, and a splice-remote head relays to the machine it came from, which offers it itself, so
+     *  neither is ever offered, named or not. */
     public fun sharedHeads(topology: Topology): List<String> =
         (heads ?: topology.heads.keys.toList())
-            .filter { key -> key in topology.heads && !forwardsCaller(topology, key) }
+            .filter { key -> key in topology.heads && unshareable(topology, key) == null }
+
+    /** Why [key] cannot be offered, in words, or null when it can. */
+    public fun unshareable(topology: Topology, key: String): String? = when (authOf(topology, key)) {
+        AuthKind.Client.wire -> "it forwards the caller's own Claude login, so there is nothing to share"
+        AuthKind.SpliceRemote.wire -> "it relays to another machine, which shares it itself"
+        else -> null
+    }
 
     /** What boot refuses about this table, all at once like every other finding. */
     internal fun findings(topology: Topology): List<TopologyFinding> {
@@ -122,20 +130,14 @@ public data class ShareConfig(
             when {
                 key !in topology.heads ->
                     TopologyFinding("share.heads", "'$key' is not a head in [heads]; name one that is")
-                forwardsCaller(topology, key) -> TopologyFinding(
-                    "share.heads",
-                    "'$key' forwards the caller's own Claude login, so there is nothing to share; remove it",
-                )
-                else -> null
+                else -> unshareable(topology, key)?.let { TopologyFinding("share.heads", "'$key': $it; remove it") }
             }
         }
         return range + named
     }
 
-    private fun forwardsCaller(topology: Topology, key: String): Boolean {
-        val provider = topology.heads[key]?.provider?.let { topology.providers[it] } ?: return false
-        return provider.auth.kind == AuthKind.Client.wire
-    }
+    private fun authOf(topology: Topology, key: String): String? =
+        topology.heads[key]?.provider?.let { topology.providers[it] }?.auth?.kind
 }
 
 /** `[remotes.<name>]`: another of the person's machines this one joined (`splice remote`), whose heads this

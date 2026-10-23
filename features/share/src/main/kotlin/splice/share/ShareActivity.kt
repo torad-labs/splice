@@ -52,6 +52,9 @@ public class ShareActivity(private val file: Path) {
             .fold(onSuccess = { it.clients }, onFailure = { emptyList() })
     }
 
+    /** Every machine's activity as the daemon holds it now, ahead of the minute's write: what its Sharing page shows. */
+    public fun now(): List<ShareSeen> = seen.values.sortedBy { it.name }
+
     /** [name] was heard from now; [turn] counts it as a relayed turn. Blocks on the disk at most once a minute. */
     internal fun heard(name: String, turn: Boolean) {
         val now = Instant.now()

@@ -69,6 +69,9 @@ internal object ConsolePortsWiring {
         // accounts".
         srv.ports.accounts = ConsoleAccountsImpl()
 
+        // LAN share: the Sharing page reads and turns the listener the daemon built; unassigned, its rows answer 503.
+        srv.ports.sharing = topology.sharing?.let { SharingParts(it, topology.remotes) }
+
         // V4-220 item 3: the SAME keys.toml every api-key head reads (ApiKeyAuthProvider's default is
         // KeyStorePath.defaultPath() over this process's environment), so a console PUT lands in the
         // file those heads read on their next request. Its unreadable-store line goes to the daemon log.

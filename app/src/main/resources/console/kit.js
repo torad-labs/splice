@@ -426,7 +426,8 @@ const sideBySide = () => {
 // A LINK IS HERE ONLY ONCE ITS PAGE IS (Marlin, Oct 10, 2026). The control plane serves what is packaged under
 // console/ and nothing else can resolve, and builder2's walk of the installed build found seven of eight links
 // leading to a 404 with an empty body, which a first-time reader cannot tell from a slow page. 0.4.0 ships
-// eight pages in this order: Accounts, Sessions, Teams, Requests, Usage, Models, Compare models, Settings. A
+// eight pages in this order: Accounts, Sessions, Teams, Requests, Usage, Models, Compare models, Settings, and
+// Sharing joins them as a ninth, after Settings, because Marcos asked for a Sharing tab (2026-10-22, LAN share). A
 // page joins this list in the commit that brings it, and until then its link does not exist. THIS LIST IS THE
 // ONE PLACE: a page that hand-wrote its own nav could disagree with every other page's, and seven of them did.
 // The seat that lands a page adds ITS OWN line here in the same commit, because a line added early is the
@@ -440,6 +441,7 @@ const PAGES = [
   ["models.html", "Models"],
   ["compare.html", "Compare models"],
   ["settings.html", "Settings"],
+  ["sharing.html", "Sharing"],
 ];
 // THE THEME HOLDS ACROSS PAGES AND LOADS: the toggle saves it, and every page applies the saved one as kit.js loads.
 // A page with nothing saved keeps the night its HTML opens in.

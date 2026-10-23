@@ -40,7 +40,7 @@ import splice.core.util.SafeFailureText
 import splice.core.wire.HttpStatus
 import splice.http.listen.HttpListenerThreads
 
-public class ShareServer internal constructor(
+internal class ShareServer(
     /** Where it listens and the certificate it serves: TLS only, since phase 2. */
     private val endpoint: ShareEndpoint,
     private val heads: ShareHeads,
@@ -56,6 +56,10 @@ public class ShareServer internal constructor(
     private val errors = ShareErrors()
     private val clientName = Regex("^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$")
     private var engine: EmbeddedServer<NettyApplicationEngine, NettyApplicationEngine.Configuration>? = null
+
+    /** The heads it offers, and the fingerprint of the certificate it serves: what the Sharing page shows. */
+    internal val offered: List<String> get() = heads.keys()
+    internal val fingerprint: String get() = endpoint.tls.fingerprint
 
     internal fun start() {
         val server = embeddedServer(
@@ -86,7 +90,7 @@ public class ShareServer internal constructor(
         log("[share] offering $offered to this machine's private networks\n")
     }
 
-    public fun stop() {
+    fun stop() {
         engine?.stop(SHARE_STOP_GRACE_MS, SHARE_STOP_TIMEOUT_MS)
         engine = null
         Cancellables.runCatchingCancellable { clients.activity.flush() }

@@ -190,7 +190,26 @@ Built on `feat/lan-share`, merged into `feat/v0.4.0` through the gate. Milestone
    stopped local runtime is; `/health` names each machine's state under `remotes`, and doctor shows one row per
    machine. `splice models` says a remote head lists its models on its own machine. On the sharing machine:
    last seen and turns today per joined machine, and the machine's name on each relayed turn's perf row.
-4. **Console**: a Sharing tab for both sides.
+4. **Console** (landed): a Sharing page, the console's ninth (Marcos asked for a Sharing tab; the 0.4.0 spec records
+   eight pages, and his later words hold). Left, this machine: sharing on or off, the port, the certificate's pin, which
+   commands are offered ("Shared" or "Only here", or why one cannot be), and the machines that joined, each with last
+   seen, turns today and a two-press Revoke. Right, the other machines: each one used here, whether it answers and its
+   commands, with Update models and a two-press Remove; Find machines and the machines found; and a field for a name or
+   address the scan cannot see. Its rows, all behind the management door (`SharingMount`):
+
+   | route | does |
+   |---|---|
+   | `GET /api/share` | this machine's sharing, its joined machines, and the machines it uses (`SharingView`) |
+   | `PUT /api/share` | `{enabled?, port?, heads?}` written to `[share]`; the listener follows it at once, with no restart |
+   | `DELETE /api/share/machines/{name}` | revoke a joined machine |
+   | `POST /api/remotes/scan` | the sharing machines found, each marked when already used here |
+   | `POST /api/remotes` | `{host, port?}`: import one, as `splice remote add` does |
+   | `POST /api/remotes/{name}/sync` | its commands as it serves them now |
+   | `DELETE /api/remotes/{name}` | drop it, its commands and its token |
+
+   The last three run `splice remote`'s own classes and change which commands splice runs, so each answers
+   `restart: true` and the page offers the console's own restart. `[share]` is a live key: the daemon
+   (`ShareListener`) opens, moves or closes the listener whenever the file changes.
 5. **Discovery**: mDNS (`_splice._tcp`), Tailscale peers, the subnet probe as fallback.
 6. **Sessions across machines**: each machine's live sessions mirrored on the other, so ListAgents and SendMessage
    reach `<name>@<machine>`.

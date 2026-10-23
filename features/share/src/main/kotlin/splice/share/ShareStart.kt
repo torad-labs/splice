@@ -1,12 +1,14 @@
-// NEW: LAN share, phase 1 (docs/specs/lan-share.md). What the daemon calls once its heads and control plane
-// are up: nothing when `[share]` is off, else the share listener over the heads that started. A port that
-// will not bind is logged and sharing stays off; the daemon and every local session carry on.
+// NEW: LAN share, phase 1 (docs/specs/lan-share.md). Opens the share listener a `[share]` table asks for, over the
+// heads that started: nothing when it is off. A port that will not bind, or a certificate that cannot be served, is
+// logged and answered as why; sharing stays off and the daemon and every local session carry on. Since milestone 4
+// ShareListener calls it for each version of the table, so the listener follows the file without a daemon restart.
 package splice.share
 
 import splice.core.config.ConfigService
 import splice.core.config.MgmtKey
 import splice.core.config.StatePaths
 import splice.core.config.TurnKey
+import splice.core.topology.ShareConfig
 import splice.core.topology.Topology
 import splice.core.util.Cancellables
 import splice.core.util.LogSink
@@ -23,48 +25,60 @@ public class ShareStart(
     private val config: ConfigService,
     private val log: LogSink,
 ) {
-    /** The running listener, or null when `[share]` is off or its port would not open. [running] and [quotas] read
-     *  the daemon's heads as they are at each request. */
-    public fun start(running: SharedCatalogs, quotas: SharedQuotas): ShareServer? {
-        val share = topology.share
-        if (!share.enabled) return null
+    /** The listener [share] asks for, with [clients] as its book of joined machines, or why there is none. [running]
+     *  and [quotas] read the daemon's heads as they are at each request. Blocking: it binds a port. */
+    internal fun open(
+        share: ShareConfig,
+        clients: ShareClients,
+        running: SharedCatalogs,
+        quotas: SharedQuotas,
+    ): ShareOpen {
+        if (!share.enabled) return ShareOpen.Off
         val host = ShareHostName()
-        val tls = certificate(host, share.hostnames) ?: return null
+        val tls = certificate(host, share.hostnames).getOrElse { failure ->
+            val file = ShareState(statePaths).certificateFile
+            val fix = "move it away to mint a new one, and every joined machine then runs `splice remote add` again"
+            val why = "$file is not a certificate this machine can serve (${SafeFailureText.render(failure)}); $fix"
+            log("[share] not sharing: $why\n")
+            return ShareOpen.Refused(why)
+        }
         val io = ProcessDispatchers().io()
         val server = ShareServer(
             ShareEndpoint(share.port, tls),
-            ShareHeads(topology, running, host.short(), tls.fingerprint, quotas),
-            ShareClients(ShareState(statePaths).clientsFile),
+            ShareHeads(topology.copy(share = share), running, host.short(), tls.fingerprint, quotas),
+            clients,
             ShareNetwork(host.full(), share.hostnames),
             ShareRelay(TurnKey(mgmtKey), config, io, log),
             io,
             log,
         )
         return Cancellables.runCatchingCancellable { server.also(ShareServer::start) }.fold(
-            onSuccess = { it },
+            onSuccess = { ShareOpen.Listening(it) },
             onFailure = { failure ->
-                log("[share] not sharing: :${share.port} did not open: ${SafeFailureText.render(failure)}\n")
-                null
+                val why = "port ${share.port} did not open: ${SafeFailureText.render(failure)}"
+                log("[share] not sharing: $why\n")
+                ShareOpen.Refused(why)
             },
         )
     }
 
-    /** The listener's certificate, minted on the first start; null, said, when the file holds none it can serve. A
-     *  new one is never minted over it: every joined machine pinned the old one. */
-    private fun certificate(host: ShareHostName, hostnames: List<String>): ShareTls? {
+    /** The listener's certificate, minted on the first start, or the failure of a file that holds none it can serve.
+     *  A new one is never minted over it: every joined machine pinned the old one. */
+    private fun certificate(host: ShareHostName, hostnames: List<String>): Result<ShareTls> {
         val file = ShareState(statePaths).certificateFile
         val names = (listOf(host.short(), host.full(), "${host.short()}.local", "${host.short()}.lan") + hostnames)
             .distinct()
-        return Cancellables.runCatchingCancellable { ShareCertificate(file).load(names) }.fold(
-            onSuccess = { it },
-            onFailure = { failure ->
-                val why = SafeFailureText.render(failure)
-                val fix = "move it away to mint a new one, and every joined machine then runs `splice remote add` again"
-                log("[share] not sharing: $file is not a certificate this machine can serve ($why); $fix\n")
-                null
-            },
-        )
+        return Cancellables.runCatchingCancellable { ShareCertificate(file).load(names) }
     }
+}
+
+/** What opening the listener came to: [Off] when `[share]` is off, else [Listening] or [Refused] with why, in words. */
+internal sealed class ShareOpen {
+    data object Off : ShareOpen()
+
+    data class Listening(val server: ShareServer) : ShareOpen()
+
+    data class Refused(val why: String) : ShareOpen()
 }
 
 /** Where sharing keeps its state, for the daemon and the `splice share` and `splice remote` verbs alike: the machines

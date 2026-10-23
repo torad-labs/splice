@@ -51,7 +51,7 @@ import splice.lifecycle.restart.ShutdownDaemon
 import splice.models.roster.DeclaredHead
 import splice.models.roster.DeclaredHeads
 import splice.oauth.codex.CodexRefresh
-import splice.share.ShareServer
+import splice.share.ShareListener
 import splice.share.ShareStart
 import splice.share.ShareState
 import splice.share.SharedCatalogs
@@ -111,6 +111,16 @@ public class Daemon(
      *  instance for the relay's upstream trust, the roster refresh, the quota polls and the reachability check. */
     private val remotes = RemoteLinks(topology, RemotesStore(ShareState(statePaths).remotesFile))
 
+    /** LAN share (docs/specs/lan-share.md): the listener as `[share]` says it now. Opened last in [start], over the
+     *  heads that started, and following the file from then on (TopologyWindows, the console's Sharing page). */
+    private val sharing = ShareListener(
+        ShareStart(topology, statePaths, mgmtKey, config, log),
+        SharedCatalogs { key -> heads[key]?.let { it.statusline.catalog } },
+        SharedQuotas { key -> heads[key]?.sources?.usage?.quota() },
+        statePaths,
+        log,
+    )
+
     /** V4-162: the context windows splice.toml declares, re-read while the daemon runs, and the
      *  version the control plane publishes as running. Hoisted above [controlPlane], which reports
      *  it; its catalogs resolve through [buildInputs] at re-read time, after start() built the heads. */
@@ -147,6 +157,7 @@ public class Daemon(
             },
             running = topologyWindows,
             remotes = remotes,
+            sharing = sharing,
         ),
         refreshCall,
         mcpHosting = McpHostingSettings(share = McpShareChoice { topologyWindows.mcpShare }).with(topology.daemon),
@@ -217,7 +228,6 @@ public class Daemon(
     )
 
     private val heads = LinkedHashMap<String, ManagedHead>()
-    private var share: ShareServer? = null
     private val stopLock = Mutex()
     private var stopped = false
 
@@ -287,11 +297,9 @@ public class Daemon(
         ) ?: return
         // MCP hub step 6: each installed Claude Code version's --plugin-dir-no-mcp verdict, checked in the background.
         controlPlane.pluginFlagChecks.request()
-        // LAN share (docs/specs/lan-share.md): opened last, over the heads that started; null when [share] is off.
-        share = ShareStart(topology, statePaths, mgmtKey, config, log).start(
-            SharedCatalogs { key -> heads[key]?.let { it.statusline.catalog } },
-            SharedQuotas { key -> heads[key]?.sources?.usage?.quota() },
-        )
+        // LAN share (docs/specs/lan-share.md): opened last, over the heads that started; closed while [share] is off.
+        sharing.follow(topology.share)
+        topologyWindows.sharing = sharing
         val degraded = if (failed.isEmpty()) "" else " DEGRADED=${failed.keys}"
         log("[daemon] up: control :$controlPort, heads ${heads.keys}$degraded\n")
     }
@@ -304,8 +312,7 @@ public class Daemon(
             headProbes.fenceStarts()
             controlPlane.ownership.fence()
             // Other machines' turns stop arriving before the heads drain the ones already running.
-            share?.stop()
-            share = null
+            sharing.stop()
 
             // Heads stop in PARALLEL under a phase DEADLINE, then control stops — see
             // [HeadShutdown.stopHeads]. The supervisor scope + stopFailureHandler live there so an

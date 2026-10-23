@@ -4,11 +4,10 @@
 // its token. Both restart a running daemon once, which then serves what the file says.
 package splice.app.cli.share
 
-import splice.app.LifecycleWiring
-import splice.app.cli.AdminSupport
 import splice.app.cli.peer.PeerExit
 import splice.app.head.WrapperBinSource
 import splice.app.head.WrapperLinks
+import splice.configuration.add.DaemonRestart
 import splice.core.config.StatePaths
 import splice.core.terminal.BOLD
 import splice.core.terminal.CYAN
@@ -36,6 +35,7 @@ internal class RemoteMachines(
     private val out: TerminalOutput,
     private val err: TerminalOutput,
     private val env: EnvReader,
+    private val restart: DaemonRestart = CliRestart(env, err),
 ) {
     private val firstContact = RemoteHttp(RemoteTrust(null, "a sharing machine"))
     private val file = ShareTopologyFile(err, REMOTE_VERB, env)
@@ -128,12 +128,7 @@ internal class RemoteMachines(
         return restartIfUp()
     }
 
-    private fun restartIfUp(): Int {
-        if (!AdminSupport.daemonUp(AdminSupport.controlPort(env))) return PeerExit.DONE
-        if (LifecycleWiring.restart()) return PeerExit.DONE
-        err.line("$REMOTE_VERB: the restart failed; run ${CYAN}splice restart$RESET")
-        return PeerExit.REFUSED
-    }
+    private fun restartIfUp(): Int = if (restart()) PeerExit.DONE else PeerExit.REFUSED
 
     /** A url findings refuse at every write and start, said here too for a file edited by hand since. */
     private fun remoteUri(url: String): URI? = Cancellables.runCatchingCancellable { URI(url) }.fold(

@@ -16,7 +16,11 @@ import splice.topology.TopologyLoader
 import java.nio.file.Files
 
 /** [verb] prefixes every line said on [err] (`splice share`, `splice remote`). */
-internal class ShareTopologyFile(private val err: TerminalOutput, private val verb: String, env: EnvReader) {
+internal class ShareTopologyFile(
+    private val err: TerminalOutput,
+    private val verb: String,
+    private val env: EnvReader,
+) {
     val path = TopologyLoader.configPath(env)
 
     /** The file as it is now, or null, said, when it does not load. */
@@ -30,7 +34,8 @@ internal class ShareTopologyFile(private val err: TerminalOutput, private val ve
 
     /** True when [wanted] is what the file now says; a refusal is said finding by finding. */
     fun saved(wanted: Topology): Boolean {
-        val writer = TopologyWriter(path, StatePaths().configBackupsDir, TopologyParse(TopologyLoader::parse))
+        val backups = StatePaths(envReader = env).configBackupsDir
+        val writer = TopologyWriter(path, backups, TopologyParse(TopologyLoader::parse))
         val result = Cancellables.runCatchingCancellable { writer.write(wanted) }.getOrElse { failure ->
             err.line("$verb: $path was not changed: ${SafeFailureText.render(failure)}")
             return false

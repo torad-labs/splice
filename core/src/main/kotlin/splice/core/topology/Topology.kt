@@ -110,6 +110,7 @@ public data class Topology(
         withoutWindows().copy(
             compaction = CompactionConfig(),
             daemon = daemon.copy(mcpShare = null, updateChannel = null, autoUpdate = null),
+            share = ShareConfig(),
         )
 }
 

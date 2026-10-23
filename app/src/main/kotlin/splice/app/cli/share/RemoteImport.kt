@@ -2,7 +2,7 @@
 // issues in this machine's share store (RemotesStore, never keys.toml), write `[remotes.<name>]`, move any phase-1
 // imports from it onto that entry (their per-head keys leave keys.toml), refresh the rows of heads already here,
 // and regenerate the others through `splice add`'s own path (AddVerb.addRemote), one line each. One restart and one
-// checkup at the end, not one per head.
+// checkup at the end, not one per head. The console's Sharing page imports through this same class, with its own restart.
 package splice.app.cli.share
 
 import splice.app.AddWiring
@@ -44,6 +44,7 @@ internal class RemoteImport(
     private val err: TerminalOutput,
     private val env: EnvReader,
     private val confirm: ConfirmPrompt,
+    private val restart: DaemonRestart = CliRestart(env, err),
 ) {
     private val store = RemotesStore(ShareState(StatePaths()).remotesFile)
     private val file = ShareTopologyFile(err, REMOTE_VERB, env)
@@ -154,14 +155,22 @@ internal class RemoteImport(
 
     /** One restart for every head the import wrote, and one checkup when it added any. */
     private fun settle(changed: Boolean, checkup: Boolean) {
-        if (changed && AdminSupport.daemonUp(AdminSupport.controlPort(env))) {
-            val restarted = LifecycleWiring.restart()
-            if (!restarted) err.line("$REMOTE_VERB: the restart failed; run ${CYAN}splice restart$RESET")
-        }
+        if (changed) restart()
         if (checkup) out.line("  checkup     ${CYAN}splice doctor$RESET")
     }
 
     private fun commandOf(topology: Topology, key: String): String = topology.heads[key]?.claude?.command ?: key
+}
+
+/** `splice remote`'s restart once an import, a sync or a removal changed splice.toml's heads, which a daemon reads only
+ *  at start: a running daemon restarts once, and one that is down follows the file at its next start. The console's
+ *  Sharing page passes its own instead, which marks the restart due and takes the console's restart. */
+internal class CliRestart(private val env: EnvReader, private val err: TerminalOutput) : DaemonRestart {
+    override fun invoke(): Boolean {
+        if (!AdminSupport.daemonUp(AdminSupport.controlPort(env)) || LifecycleWiring.restart()) return true
+        err.line("$REMOTE_VERB: the restart failed; run ${CYAN}splice restart$RESET")
+        return false
+    }
 }
 
 /** The machine a head is imported from: its `[remotes]` [name], relay [url], own [server] name and the join. */

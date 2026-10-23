@@ -4,8 +4,7 @@
 // A self-served head is a local runtime (llama-server here): its chat template renders each earlier assistant turn's
 // reasoning_content inside that turn's think block, so sending it back is how the model reads the history it wrote.
 // A hosted vendor on this dialect keeps its request unchanged, because some refuse reasoning_content in input
-// messages. `local` is the topology's own reading (LocalProviderRule plus the local= override), and the TOML knob
-// wins either way, as V4-163's usage frames do.
+// messages. `local` is the topology's own reading (LocalProviderRule plus the local= override).
 package splice.app.provider
 
 import org.junit.jupiter.api.Assertions.assertEquals
@@ -13,7 +12,6 @@ import org.junit.jupiter.api.Test
 import splice.core.topology.AuthConfig
 import splice.core.topology.Dialect
 import splice.core.topology.ProviderConfig
-import splice.core.topology.QuirksConfig
 
 class LocalReasoningReplayTest {
 
@@ -23,13 +21,11 @@ class LocalReasoningReplayTest {
         baseUrl: String,
         authKind: String = "api-key",
         local: Boolean? = null,
-        quirks: QuirksConfig = QuirksConfig(),
     ): Boolean = overlay.chatQuirks(
         ProviderConfig(
             dialect = Dialect.OPENAI_CHAT,
             baseUrl = baseUrl,
             auth = AuthConfig(authKind),
-            quirks = quirks,
             local = local,
         ),
         key = "head",
@@ -47,12 +43,6 @@ class LocalReasoningReplayTest {
         assertEquals(false, replays("https://api.example.com/v1"))
         assertEquals(false, replays("https://openrouter.ai/api/v1", authKind = "custom"))
         assertEquals(false, replays("https://api.x.ai/v1", authKind = "grok-oauth"))
-    }
-
-    @Test
-    fun `the TOML knob overrides the default either way`() {
-        assertEquals(false, replays("http://127.0.0.1:8102/v1", quirks = QuirksConfig(replayReasoning = false)))
-        assertEquals(true, replays("https://api.example.com/v1", quirks = QuirksConfig(replayReasoning = true)))
     }
 
     @Test

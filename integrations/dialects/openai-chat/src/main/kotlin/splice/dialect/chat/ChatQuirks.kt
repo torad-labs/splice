@@ -3,9 +3,14 @@
 // builder reads it), not builder state. The dialect package owns the profile.
 package splice.dialect.chat
 
+import splice.core.turn.SpliceNotice
 import splice.core.wire.ContentBlock
 import splice.core.wire.DocumentBlock
 import splice.core.wire.ImageBlock
+import splice.core.wire.ThinkingBlock
+
+/** The role word of an assistant message, the one role whose reasoning is replayed. */
+private const val ASSISTANT: String = "assistant"
 
 /** What the vendor accepts on the wire: tools, images, and the image-edge floor. */
 public data class ChatCapabilityQuirks(
@@ -34,7 +39,7 @@ public data class ChatReasoningQuirks(
     /** Opt-in client effort aliases. null preserves the existing thinking-budget tiers. */
     val effortVocabulary: ChatEffortVocabulary? = null,
     /** Send each earlier assistant turn's thinking back as its `reasoning_content`, which llama-server hands the
-     *  model's chat template. Off unless the provider is a local runtime or opts in (`replay_reasoning`). */
+     *  model's chat template. On for a local runtime (the app's QuirksOverlay), off for a hosted vendor. */
     val replayReasoning: Boolean = false,
 )
 
@@ -63,10 +68,25 @@ public data class ChatQuirks(
     public fun withStreamUsageToml(streamUsage: Boolean?): ChatQuirks =
         copy(emitUsageInStream = streamUsage ?: this.emitUsageInStream)
 
-    /** Overlay `[providers.*.quirks].replay_reasoning`, or a caller's own default for a provider kind (on for a local
-     *  runtime), onto the profile. null keeps this profile's own value, which keeps every unopted head's request bytes. */
-    public fun withReplayReasoningToml(replayReasoning: Boolean?): ChatQuirks =
+    /** Overlay a provider kind's own default (on for a local runtime) onto the profile. null keeps this profile's own
+     *  value, which keeps every hosted head's request bytes. */
+    public fun withReplayReasoning(replayReasoning: Boolean?): ChatQuirks =
         copy(reasoning = reasoning.copy(replayReasoning = replayReasoning ?: reasoning.replayReasoning))
+
+    /**
+     * The reasoning an earlier assistant turn carried, for a profile that replays it (a self-served runtime, whose
+     * chat template renders it inside that turn's think block): the turn's thinking blocks in order with nothing added
+     * between, which is the one reasoning run the chat stream wrote as consecutive deltas. Splice's own wait notice is
+     * a thinking block on the client's history too, and never the model's reasoning, so it is left out. Null when the
+     * profile does not replay or the turn holds none, so a missing reasoning stays missing on the wire.
+     */
+    internal fun replayedReasoning(role: String, content: List<ContentBlock>): String? {
+        if (!reasoning.replayReasoning || role != ASSISTANT) return null
+        return content.filterIsInstance<ThinkingBlock>()
+            .filter { it.signature != SpliceNotice.SIGNATURE }
+            .joinToString("") { it.thinking }
+            .ifEmpty { null }
+    }
 
     /** Honest markers for content this dialect cannot carry: documents always; images when the
      *  vendor has no vision. An image-only message still yields a marker — silently dropping the

@@ -141,7 +141,6 @@ providers.*.quirks.parallel_tool_calls
 providers.*.quirks.reanchor_prefill	
 providers.*.quirks.reasoning_cache	
 providers.*.quirks.reasoning_effort	
-providers.*.quirks.replay_reasoning	
 providers.*.quirks.slot_affinity	
 providers.*.quirks.store	
 providers.*.quirks.stream_usage	

@@ -19,12 +19,10 @@ import kotlinx.serialization.json.buildJsonArray
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
 import splice.core.media.ImageFloor
-import splice.core.turn.SpliceNotice
 import splice.core.wire.AnthropicRequest
 import splice.core.wire.ImageBlock
 import splice.core.wire.MediaSource
 import splice.core.wire.TextBlock
-import splice.core.wire.ThinkingBlock
 import splice.core.wire.ToolResultBlock
 import splice.core.wire.ToolUseBlock
 import splice.core.wire.UnknownBlock
@@ -88,7 +86,7 @@ internal class ChatWireMapper(private val quirks: ChatQuirks) {
         val sourceMarkers = unreadableSourceMarkers(mappable.size - images.size) + floorMarkers(undersized)
         val textsRaw = content.filterIsInstance<TextBlock>().joinToString("\n") { it.text }
         val texts = (listOf(textsRaw) + markers + sourceMarkers).filter { it.isNotEmpty() }.joinToString("\n")
-        val reasoning = replayedReasoning(role, content)
+        val reasoning = quirks.replayedReasoning(role, content)
 
         if (toolUses.isNotEmpty()) {
             appendAssistantToolCalls(sink, toolUses, texts, reasoning)
@@ -98,28 +96,12 @@ internal class ChatWireMapper(private val quirks: ChatQuirks) {
         // tool results BEFORE any sibling user text/images — an interposed `user` message is a 400
         // on strict OpenAI-compatible validators (and reorders the turn semantically everywhere).
         appendToolResults(sink, toolResults)
-        val hasUserPayload = texts.isNotEmpty() || images.isNotEmpty()
         // A turn that only reasoned (cut off before it answered) is still a turn the model took, so with its
         // reasoning replayed it keeps its place instead of leaving the gap ChatAlternation closes.
-        val hasMessage = hasUserPayload || reasoning != null
-        if (toolUses.isEmpty() && hasMessage) {
+        val hasPayload = texts.isNotEmpty() || images.isNotEmpty() || reasoning != null
+        if (toolUses.isEmpty() && hasPayload) {
             appendUserContent(sink, role, texts, images, reasoning)
         }
-    }
-
-    /**
-     * The reasoning an earlier assistant turn carried, for a provider that replays it (a self-served runtime, whose
-     * chat template renders it inside that turn's think block): the turn's thinking blocks in order with nothing added
-     * between, which is the one reasoning run the chat stream wrote as consecutive deltas. Splice's own wait notice is
-     * a thinking block on the client's history too, and never the model's reasoning, so it is left out. Null when the
-     * provider does not replay or the turn holds none, so a missing reasoning stays missing on the wire.
-     */
-    private fun replayedReasoning(role: String, content: List<splice.core.wire.ContentBlock>): String? {
-        if (!quirks.reasoning.replayReasoning || role != ASSISTANT_ROLE) return null
-        return content.filterIsInstance<ThinkingBlock>()
-            .filter { it.signature != SpliceNotice.SIGNATURE }
-            .joinToString("") { it.thinking }
-            .ifEmpty { null }
     }
 
     fun appendAssistantToolCalls(
@@ -273,7 +255,6 @@ internal class ChatWireMapper(private val quirks: ChatQuirks) {
 
 // Chat wire field names — repeated across the message/tool/image mappings.
 private const val ROLE = "role"
-private const val ASSISTANT_ROLE = "assistant"
 internal const val CONTENT = "content" // V4-170: shared with ChatSystemPrompt, the one declaration on this wire
 
 /** An assistant message's reasoning as llama-server reads it from a request (common/chat.cpp). */

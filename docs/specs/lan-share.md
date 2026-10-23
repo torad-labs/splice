@@ -233,6 +233,8 @@ Built on `feat/lan-share`, merged into `feat/v0.4.0` through the gate. Milestone
    `<machine>/<name>` (`torad-server/rig-lead`), so ListAgents lists them and SendMessage reaches them, both ways.
    Not `<name>@<machine>`, as first planned: ListAgents lists that name, but SendMessage refuses any `to` with an `@`
    as a teammate's team ("to must be a bare teammate name", Claude Code 2.1.309, Oct 23), and delivers to the `/` form.
+   A mirror record whose `updatedAt` is three hours old is still listed and still takes SendMessage (the same probe), so
+   a session idle on the other machine stays reachable while its mirror reads stale.
    - **Mirrors.** A session of the other machine is a mirror here: a registry record and key file in this machine's
      Claude Code sessions folder, and a socket in its sockets folder (`$XDG_RUNTIME_DIR/cc-socks`, else
      `/tmp/cc-socks`), served by the daemon with the peers' inbox loop (this user's processes only, the key file's

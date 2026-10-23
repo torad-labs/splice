@@ -292,14 +292,15 @@ internal class CodeModeRecordRetention(
         now: Long,
     ): Boolean {
         val own = CodeModeRecordKeys.of(records, key)
-        val stays = key in busy || !idle(own) || own.any { it.phase == CodeModePhase.LOST }
+        // A record still holding its round's upstream lease has a turn yet to take that round's outcome, and the row the
+        // turn posts may be owed the round's usage (CodeModeStreams.billFinished). Ending the lease cancels the round, so
+        // its conversation stays (round 13 of #247), and no lease is left held by a record the head let go (round 12).
+        // Expiry ends it after its 24 hours if no turn ever takes it.
+        val stays = key in busy || !idle(own) || own.any { it.phase == CodeModePhase.LOST || it.sourceEnd != null }
         if (stays || overBound(records, busy) == null) return false
         Gone(records, expired, now).finished(key, "the head is past its bounds at the timed sweep") ?: return false
-        // As an expiry and an admission do, every one of [own], all finished and all gone, ends its round's upstream lease
-        // (round 12 of #247: one completed before its outcome was taken still held it), and the session its scripts ran
-        // in goes too, or its engine and host lease stay held after the head let it go (round 11). Nothing can take a
-        // lease once its record is gone. An admission's plan ends its own at publishEvictions, once published.
-        own.forEach(CodeModeRecord::endSource)
+        // The session its scripts ran in goes too, or its engine and host lease stay held after the head let it go
+        // (round 11 of #247).
         closeSession(key)
         return true
     }

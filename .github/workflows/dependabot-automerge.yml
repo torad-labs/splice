@@ -22,14 +22,38 @@
 # base branch's required checks pass. On a repo with NO required checks that is
 # effectively an immediate merge — which is why the operator asserts branch
 # protection fleet-wide and the org ruleset supplies gates that apply everywhere.
+#
+# WHO MERGES: the App, never GITHUB_TOKEN. GitHub performs the eventual merge
+# as the actor that enabled auto-merge (the PR's merged_by is that actor), and
+# "events triggered by the GITHUB_TOKEN ... will not create a new workflow run"
+# (docs.github.com, GITHUB_TOKEN). Arming with it meant every bot and sync
+# merge landed on main with NO push CI: none of 105 github-actions[bot] merges
+# sampled across eight repos had a push run on main (113 of 135 merges by a
+# person did), and kandibuddy's main sat broken from 2026-08-13 unseen.
+# An App installation token is GitHub's documented way to let a workflow's
+# actions trigger workflows, so a merge the App arms runs push CI like anyone's.
+#
+# PREREQUISITES. Without them the mint fails loudly; there is deliberately no
+# fallback to GITHUB_TOKEN, because that fallback IS the silent failure above.
+#   * torad-review grants Contents, Pull requests and Workflows write. Enabling
+#     auto-merge on a PR that changes .github/workflows (every github-actions
+#     bump, every template sync) is refused to an App without `workflows`.
+#   * REVIEW_APP_ID and REVIEW_APP_PRIVATE_KEY exist as org DEPENDABOT secrets.
+#     A run Dependabot triggers sees Dependabot secrets only, never Actions ones.
 name: automerge
 
 on: pull_request
 
 permissions: {}
 
+# One queue per PR for Dependabot's own pushes, and another for everyone else's,
+# split by the same test that gates the automerge job below. A queue holds one
+# pending run, and a newer run replaces it, so with one queue a maintainer's push
+# (a no-op here) could cancel Dependabot's pending run, the one that disarms a
+# major the App armed for an earlier head. Split, Dependabot's newest run always
+# runs, classifies its own head, and disarms.
 concurrency:
-  group: dependabot-automerge-${{ github.event.pull_request.number }}
+  group: dependabot-automerge-${{ github.event.pull_request.number }}-${{ github.event.pull_request.user.login == 'dependabot[bot]' && github.event.sender.login == 'dependabot[bot]' && 'dependabot' || 'other' }}
   cancel-in-progress: false
 
 jobs:
@@ -85,13 +109,24 @@ jobs:
     # it, at a third of ubuntu-latest's rate, on every PR in every repo.
     runs-on: ubuntu-slim
     timeout-minutes: 5
-    permissions:
-      contents: write
-      pull-requests: write
+    # GITHUB_TOKEN does nothing in this job: the App token below arms the merge.
+    permissions: {}
     steps:
+      - name: Mint the App token that arms the merge
+        id: app
+        uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1 # v3.2.0
+        with:
+          app-id: ${{ secrets.REVIEW_APP_ID }}
+          private-key: ${{ secrets.REVIEW_APP_PRIVATE_KEY }}
+          owner: ${{ github.repository_owner }}
+          repositories: ${{ github.event.repository.name }}
+          permission-contents: write # the merge itself
+          permission-pull-requests: write # enabling auto-merge
+          permission-workflows: write # PRs that change .github/workflows
+
       - name: Arm auto-merge
         env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_TOKEN: ${{ steps.app.outputs.token }}
           PR_URL: ${{ github.event.pull_request.html_url }}
         run: |
           set -euo pipefail
@@ -100,57 +135,237 @@ jobs:
 
   automerge:
     # Gate on the ACTOR, not the branch name: a branch called
-    # `dependabot/anything` can be pushed by anyone, and this job holds
-    # contents: write.
-    if: github.event.pull_request.user.login == 'dependabot[bot]'
+    # `dependabot/anything` can be pushed by anyone, and the jobs below act on it.
+    # Only Dependabot's own push to its own PR is decided here. Anyone else's push,
+    # a maintainer's commit or a merge-style "Update branch", is a no-op: an arm it
+    # finds stays, and the human who touched the PR arms or disarms it. That
+    # matters because fetch-metadata verifies only the PR's first commit, so a head
+    # holding someone else's commit can still classify.
+    if: github.event.pull_request.user.login == 'dependabot[bot]' && github.event.sender.login == 'dependabot[bot]'
     # ubuntu-slim: 1 vCPU, no Docker, a 15-minute cap; one gh call needs none of
     # it, at a third of ubuntu-latest's rate, on every PR in every repo.
     runs-on: ubuntu-slim
     timeout-minutes: 5
+    # Read only. The App token arms; GITHUB_TOKEN only feeds fetch-metadata, and
+    # the disarm runs in its own job so fetch-metadata never holds write access.
     permissions:
-      contents: write # gh pr merge --auto
-      pull-requests: write
+      contents: read # fetch-metadata reads the PR's commits
+      pull-requests: read # ...and the PR itself
+    outputs:
+      do: ${{ steps.plan.outputs.do }}
+      classified: ${{ steps.plan.outputs.classified }}
+      update-type: ${{ steps.meta.outputs.update-type }}
     steps:
-      # A maintainer pushing to a Dependabot branch (rebase, checksum repin, dist
-      # regeneration) replaces Dependabot's signed commits, and fetch-metadata then
-      # refuses with "PR is not from Dependabot, nothing to do" — exit 1, a red X on
-      # every hand-fixed Dependabot PR (splice#90/#91). That refusal IS this job's
-      # no-op, not a failure: arming stays reserved for verified, untouched Dependabot
-      # heads, and a touched PR is armed by the human who touched it.
+      # fetch-metadata refuses a PR whose first commit isn't Dependabot's, signed:
+      # "PR is not from Dependabot, nothing to do" — exit 1, a red X on every
+      # hand-fixed Dependabot PR (splice#90/#91) before this job ran only for
+      # Dependabot's own pushes. Its refusal here is a push of Dependabot's own it
+      # could not read, which the plan disarms.
       - uses: dependabot/fetch-metadata@25dd0e34f4fe68f24cc83900b1fe3fe149efef98 # v3.1.0
         id: meta
         continue-on-error: true
         with:
           github-token: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Enable auto-merge for patch and minor updates
-        # Majors are excluded deliberately: a grouped bump resolves to the highest
-        # semver change in the group, so a "stuck" green Dependabot PR is usually
-        # a major waiting for a decision, not a broken gate.
-        if: >-
-          steps.meta.outcome == 'success' &&
-          steps.meta.outputs.update-type != 'version-update:semver-major'
+      # One decision, made once, that every later step and the disarm job read.
+      # Classified means fetch-metadata read the first commit and Dependabot wrote
+      # the head too, so the entries describe the head this run would arm.
+      #   arm      classified, and every update is a patch or a minor, named
+      #            explicitly. Each entry of
+      #            updated-dependencies-json is read, not update-type: that is the
+      #            highest type among the entries and skips one with no type, such
+      #            as a requirement bump with no "from" version (torad#23 read as
+      #            semver-minor with two such entries). A Docker digest bump has
+      #            no type either, and is not armed.
+      #   disarm   anything else: a major above all, an entry with no type, and a
+      #            push of Dependabot's own that is not classified, which may be a
+      #            major too (see the disarm job below).
+      - name: Decide whether to arm or disarm this head
+        id: plan
         env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_TOKEN: ${{ github.token }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+          READ: ${{ steps.meta.outcome == 'success' }}
+          UPDATES: ${{ steps.meta.outputs.updated-dependencies-json }}
+          EVERY_PATCH_OR_MINOR: >-
+            if type == "array" and length > 0
+            then all(.[]; .updateType == "version-update:semver-patch" or .updateType == "version-update:semver-minor")
+            else false end
+        run: |
+          set -euo pipefail
+          author="$(gh api "repos/$GITHUB_REPOSITORY/commits/$HEAD_SHA" --jq '.author.login // ""')" || author=""
+          classified=false
+          if [ "$READ" = "true" ] && [ "$author" = "dependabot[bot]" ]; then classified=true; fi
+          every="$(jq -r "$EVERY_PATCH_OR_MINOR" <<<"${UPDATES:-null}" 2>/dev/null)" || every=false
+          if [ "$classified" = "true" ] && [ "$every" = "true" ]; then plan=arm; else plan=disarm; fi
+          echo "classified=$classified" >> "$GITHUB_OUTPUT"
+          echo "do=$plan" >> "$GITHUB_OUTPUT"
+
+      # This run was triggered by Dependabot, so `secrets` holds DEPENDABOT
+      # secrets here. Say so at the point of failure instead of letting the mint
+      # fail with a bare "app-id is required".
+      - name: Require the App credentials as Dependabot secrets
+        if: steps.plan.outputs.do == 'arm'
+        env:
+          APP_ID: ${{ secrets.REVIEW_APP_ID }}
+        run: |
+          if [ -z "$APP_ID" ]; then
+            echo "::error::REVIEW_APP_ID is empty: runs Dependabot triggers see only Dependabot secrets. Add REVIEW_APP_ID and REVIEW_APP_PRIVATE_KEY at org Settings → Secrets and variables → Dependabot."
+            exit 1
+          fi
+
+      - name: Mint the App token that arms the merge
+        id: app
+        if: steps.plan.outputs.do == 'arm'
+        uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1 # v3.2.0
+        with:
+          app-id: ${{ secrets.REVIEW_APP_ID }}
+          private-key: ${{ secrets.REVIEW_APP_PRIVATE_KEY }}
+          owner: ${{ github.repository_owner }}
+          repositories: ${{ github.event.repository.name }}
+          permission-contents: write # the merge itself
+          permission-pull-requests: write # enabling auto-merge
+          permission-workflows: write # github-actions bumps change .github/workflows
+
+      # Grouped bumps resolve to the highest semver change in the group, so a
+      # "stuck" green Dependabot PR is usually a major waiting for a decision, not
+      # a broken gate. The arm names the head it classified, so a push that lands
+      # between the event and the arm is not armed in its place.
+      - name: Enable auto-merge for patch and minor updates
+        if: steps.plan.outputs.do == 'arm'
+        env:
+          GH_TOKEN: ${{ steps.app.outputs.token }}
           PR_URL: ${{ github.event.pull_request.html_url }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
           UPDATE_TYPE: ${{ steps.meta.outputs.update-type }}
         run: |
           set -euo pipefail
-          gh pr merge --auto --squash "$PR_URL"
+          gh pr merge --auto --squash --match-head-commit "$HEAD_SHA" "$PR_URL"
           echo "Auto-merge armed (${UPDATE_TYPE}); GitHub merges once required checks pass." \
             >> "$GITHUB_STEP_SUMMARY"
 
-      - name: Explain why a major was left alone
-        if: >-
-          steps.meta.outcome == 'success' &&
-          steps.meta.outputs.update-type == 'version-update:semver-major'
+  # A PR's update-type is not fixed. When Dependabot rebases a stale PR it
+  # re-resolves to whatever is latest NOW, so one armed as a patch can come
+  # back a major: torad#196 opened as togetherai 2.0.53 -> 2.0.55 and was
+  # rebased into 2.0.53 -> 3.0.15, and #197 and #199 did the same. Those stayed
+  # armed and would have merged a major on green CI with no human, so a major
+  # is disarmed on the way back up, not only left unarmed on the way down.
+  # A push of Dependabot's own that could not be classified may be such a major
+  # too, so it is disarmed the same way, and the job goes red to say
+  # it could not tell.
+  #
+  # What is disarmed: an auto-merge automation enabled (this App, or
+  # github-actions[bot] in copies from before the App armed), and one a person
+  # enabled before this push, which they armed for a head that is gone. A person
+  # who armed this head, after the push, made a decision, and it stands.
+  #
+  # Its own job, so the write access disablePullRequestAutoMerge needs is never
+  # held by fetch-metadata. GITHUB_TOKEN is refused that mutation without
+  # contents: write ("Resource not accessible by integration"), and turning
+  # auto-merge off merges nothing, so the disarm needs no App and no mint that
+  # could fail before it.
+  #
+  # This job is not a required check, so a red X does not stop GitHub merging
+  # what is armed. The lookup and the disable are retried through a transient
+  # 5xx or rate limit, and the job ends on a re-read: still armed by what it
+  # disarms, or unreadable, fails. A PR that merged is judged by the arm that was
+  # on when it merged, the last auto-merge event in its timeline. `gh pr merge
+  # --auto --squash` writes an AutoSquashEnabledEvent, so every kind of arm is
+  # read. A merge on an arm this job turns off fails, whoever enabled it. GitHub
+  # merges an auto-merge as its enabler, so a person other than the enabler
+  # merged by hand: that stands, with a note, as does a merge with no arm on, or
+  # on a person's arm made after this push.
+  disarm:
+    needs: automerge
+    if: ${{ !cancelled() && needs.automerge.outputs.do == 'disarm' }}
+    runs-on: ubuntu-slim
+    timeout-minutes: 5
+    permissions:
+      contents: write # disablePullRequestAutoMerge refuses GITHUB_TOKEN without it
+      pull-requests: write # turning auto-merge off
+    steps:
+      - name: Disarm a major, or a Dependabot push that could not be read, and leave it for a human
         env:
-          UPDATE_TYPE: ${{ steps.meta.outputs.update-type }}
+          GH_TOKEN: ${{ github.token }}
+          PR_URL: ${{ github.event.pull_request.html_url }}
+          ORG: ${{ github.repository_owner }}
+          REPO: ${{ github.event.repository.name }}
+          NUMBER: ${{ github.event.pull_request.number }}
+          PUSHED_AT: ${{ github.event.pull_request.updated_at }}
+          CLASSIFIED: ${{ needs.automerge.outputs.classified }}
+          UPDATE_TYPE: ${{ needs.automerge.outputs.update-type }}
+          ARMED_BY: >-
+            query($owner: String!, $name: String!, $number: Int!) {
+              repository(owner: $owner, name: $name) {
+                pullRequest(number: $number) {
+                  merged mergedBy { __typename login }
+                  autoMergeRequest { enabledAt enabledBy { __typename } }
+                  timelineItems(last: 100, itemTypes: [AUTO_MERGE_ENABLED_EVENT, AUTO_SQUASH_ENABLED_EVENT, AUTO_REBASE_ENABLED_EVENT, AUTO_MERGE_DISABLED_EVENT]) {
+                    nodes {
+                      __typename
+                      ... on AutoMergeEnabledEvent { createdAt actor { __typename login } }
+                      ... on AutoSquashEnabledEvent { createdAt actor { __typename login } }
+                      ... on AutoRebaseEnabledEvent { createdAt actor { __typename login } }
+                      ... on AutoMergeDisabledEvent { createdAt }
+                    }
+                  }
+                }
+              }
+            }
+          # merged-stale or merged-kept (too late to turn off, so the last auto-merge
+          # event says what was on when it merged, judged by the rule below, unless a
+          # person other than its enabler merged it by hand); nobody;
+          # stale (automation, an enabler GitHub no longer names, or a person before
+          # this push); or person (a person, after this push).
+          WHO: >-
+            .data.repository.pullRequest
+            | if .merged then
+                (.timelineItems.nodes | last) as $last
+                | if $last == null or $last.__typename == "AutoMergeDisabledEvent" then "merged-kept"
+                  elif .mergedBy.__typename == "User" and $last.actor != null and .mergedBy.login != $last.actor.login then "merged-kept"
+                  elif $last.actor == null or $last.actor.__typename == "Bot" or $last.createdAt <= $ENV.PUSHED_AT then "merged-stale"
+                  else "merged-kept" end
+              elif .autoMergeRequest == null then "nobody"
+              elif .autoMergeRequest.enabledBy == null or .autoMergeRequest.enabledBy.__typename == "Bot" then "stale"
+              elif .autoMergeRequest.enabledAt > $ENV.PUSHED_AT then "person"
+              else "stale" end
         run: |
-          echo "Left for a human: ${UPDATE_TYPE} is a major update." >> "$GITHUB_STEP_SUMMARY"
-
-      - name: Explain the no-op on a maintainer-touched head
-        if: steps.meta.outcome != 'success'
-        run: |
-          echo "No-op: the head no longer verifies as Dependabot's (a maintainer pushed to the branch). Arm auto-merge manually if wanted." \
-            >> "$GITHUB_STEP_SUMMARY"
+          set -euo pipefail
+          armed_by() {
+            gh api graphql -f owner="$ORG" -f name="$REPO" -F number="$NUMBER" -f query="$ARMED_BY" --jq "$WHO"
+          }
+          revoked=no
+          for attempt in 1 2 3 4 5; do
+            who="$(armed_by)" || who=unknown
+            case "$who" in merged-* | nobody | person) break ;; esac
+            if [ "$who" = "stale" ] && gh pr merge --disable-auto "$PR_URL"; then
+              revoked=yes
+              continue
+            fi
+            sleep $((attempt * 5))
+          done
+          who="$(armed_by)" || who=unknown
+          if [ "$who" = "merged-stale" ]; then
+            echo "::error::This PR merged on an auto-merge this job turns off before it could turn it off, so ${UPDATE_TYPE:-an update this workflow does not arm} reached the default branch unreviewed. A person reviews that merge and reverts it if it is wrong: $PR_URL"
+            exit 1
+          fi
+          if [ "$who" = "merged-kept" ]; then
+            echo "This PR merged by hand, or on a person's auto-merge made after this push, and that decision stands." >> "$GITHUB_STEP_SUMMARY"
+            exit 0
+          fi
+          if [ "$who" != "nobody" ] && [ "$who" != "person" ]; then
+            echo "::error::Auto-merge is still on, or could not be read, after five attempts. Turn it off by hand: gh pr merge --disable-auto $PR_URL"
+            exit 1
+          fi
+          if [ "$revoked" = "yes" ]; then
+            echo "Auto-merge revoked on this PR." >> "$GITHUB_STEP_SUMMARY"
+          fi
+          if [ "$who" = "person" ]; then
+            echo "Auto-merge stays on: a person turned it on for this head, and that decision stands." >> "$GITHUB_STEP_SUMMARY"
+          fi
+          if [ "$CLASSIFIED" = "true" ]; then
+            echo "Left for a human: not every update in it is a patch or a minor (the highest fetch-metadata read: ${UPDATE_TYPE:-none})." >> "$GITHUB_STEP_SUMMARY"
+          else
+            echo "::error::Dependabot's own push could not be classified: fetch-metadata could not read it, or its head is not Dependabot's commit, so its update type is unknown. Only a person's auto-merge on this head is left on; a human decides."
+            exit 1
+          fi

@@ -186,6 +186,7 @@ internal class CodeModeRecordRetention(
     private val json: Json,
     private val log: LogSink,
     private val sessionAlive: CodeModeSessionAlive = CodeModeSessionAlive { null },
+    private val closeSession: CodeModeSessionEnd = CodeModeSessionEnd {},
 ) {
 
     /** At the start of conversation [key]'s turn: its finished records go together when it reached
@@ -270,7 +271,18 @@ internal class CodeModeRecordRetention(
      *  the bounds held only at an admission and at the start, so a head past them stayed past them until the
      *  next script, however long that took (Oct 22: 94.6 MB over the bound from a boot to its first script). */
     fun overBound(records: List<CodeModeRecord>, busy: Set<String>): String? =
-        if (exceedsHeadCount(records.size) || records.sumOf(::bytesOf) > bounds.bytes) idle(records, busy) else null
+        if (exceedsHeadCount(records.size) || records.sumOf(::bytesOf) > bounds.bytes) {
+            idle(records, busy + lost(records))
+        } else {
+            null
+        }
+
+    /** The conversations holding a LOST record. A LOST record still needs a result or an exact retry
+     *  (CodexCodeModeRegistry.owner), so the timed sweep leaves its conversation to its expiry and never to the
+     *  bound: round 11 of #247 found the sweep letting it go, since a LOST record carries an error and so reads as
+     *  finished. An admission, which needs the room now, may still let it go. */
+    private fun lost(records: List<CodeModeRecord>): Set<String> =
+        records.filter { it.phase == CodeModePhase.LOST }.mapTo(HashSet(), CodeModeRecord::key)
 
     /** Under [key]'s lock: [key]'s finished records go together when the head is still past its bounds and
      *  [key] is still idle and outside [busy]. True when any went. */
@@ -281,9 +293,14 @@ internal class CodeModeRecordRetention(
         busy: Set<String>,
         now: Long,
     ): Boolean {
-        if (key in busy || !idle(CodeModeRecordKeys.of(records, key))) return false
-        if (overBound(records, busy) == null) return false
-        return Gone(records, expired, now).finished(key, "the head is past its bounds at the timed sweep") != null
+        val own = CodeModeRecordKeys.of(records, key)
+        val stays = key in busy || !idle(own) || own.any { it.phase == CodeModePhase.LOST }
+        if (stays || overBound(records, busy) == null) return false
+        Gone(records, expired, now).finished(key, "the head is past its bounds at the timed sweep") ?: return false
+        // As an expiry and an admission do: the session its scripts ran in goes with its last record, or its engine and
+        // host lease stay held after the head let it go (round 11 of #247).
+        if (own.none { it in records }) closeSession(key)
+        return true
     }
 
     /** The least recently used conversation outside [except] whose records are all finished and whose

@@ -296,6 +296,7 @@ internal class CodexCodeModeStore(
     private fun published(key: String, indexed: CodeModeKeptState) {
         // Remove the downgrade-visible copy only after the new checkpoint and rename are durable.
         if (Files.deleteIfExists(files.olderPath(key))) {
+            Files.deleteIfExists(files.olderLockPath(key))
             FileChannel.open(dir, StandardOpenOption.READ).use { it.force(true) }
         }
         kept[key] = indexed
@@ -306,6 +307,7 @@ internal class CodexCodeModeStore(
         Files.deleteIfExists(files.olderPath(key))
         // This key's writes run one at a time through its save, so no append to it is in flight here.
         Files.deleteIfExists(files.lockPath(key))
+        Files.deleteIfExists(files.olderLockPath(key))
         if (Files.exists(dir)) FileChannel.open(dir, StandardOpenOption.READ).use { it.force(true) }
         kept.remove(key)
     }

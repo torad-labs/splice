@@ -69,6 +69,10 @@ internal class CodeModeStateDirectory(
     /** The lock file JsonlSink.appendLine keeps beside [path]: the journal's name plus ".lock". */
     fun lockPath(key: String): Path = path(key).let { it.resolveSibling("${it.fileName}.lock") }
 
+    /** The lock file a jar before .jsonl kept beside [olderPath]. Nothing takes it now, so it goes with that
+     *  journal. */
+    fun olderLockPath(key: String): Path = olderPath(key).let { it.resolveSibling("${it.fileName}.lock") }
+
     /** Until Oct 23 a removed conversation left its journal's lock file behind: 11,103 empty ones on one
      *  machine, back to Oct 1. A lock whose journal is gone guards nothing, and nothing appends while the
      *  registry loads, so each one goes here, as does a lock left beside a pre-.jsonl ".json" journal that is

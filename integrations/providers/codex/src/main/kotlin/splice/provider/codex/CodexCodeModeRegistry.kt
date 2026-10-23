@@ -73,7 +73,8 @@ internal class CodexCodeModeRegistry(
         ).also(CodeModeNativeChain::link)
         history = CodeModeExpiredHistory(loaded.expired.toMutableList(), config.retention.records, heap)
     }
-    private val retention = CodeModeRecordRetention(config.retention, json, config.log, config.cellLease.sessionAlive)
+    private val retention =
+        CodeModeRecordRetention(config.retention, json, config.log, config.cellLease.sessionAlive, closeSession)
     private val cells = mutableMapOf<String, CodeModeCell>()
     val startup = CodeModeStartupAdmissions(access, records, history, store, config.clock, cells)
 

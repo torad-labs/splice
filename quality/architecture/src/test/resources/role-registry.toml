@@ -80,6 +80,12 @@ dated = "2026-10-19"
 names = ["Wait", "Waiter"]
 reason = """Waiter pauses an upstream retry or probe loop for a number of milliseconds, inside integrations-upstream. Wait pauses the peer webhook pusher between two attempts of one push, from 5 seconds to 30 minutes, and the peer helper wires it to its own Waiter at the one place it builds the pusher. Both only suspend the caller, so the shape is the same and this sentence says why there are two types: features-sessions has no dependency on integrations-upstream and cannot import Waiter, so the pusher names the pause it needs as its own port."""
 
+[[groups]]
+signature = "suspend (Long)->Boolean"
+dated = "2026-10-23"
+names = ["MirrorSweep", "Ticker"]
+reason = """Ticker paces a loop inside integrations-upstream and the modules above it: it suspends for the interval and answers false when the loop should end, so a fake stops the loop cleanly. MirrorSweep paces one loop in features-sessions, the mirrors' look for machines whose time is past (SessionMirrors), and the daemon wires it to its own ProcessTicker at the one place it builds the mirrors (SharedSessions). Both only pace a loop, so the shape is the same and this sentence says why there are two types: features-sessions has no dependency on integrations-upstream and cannot import Ticker, so the mirrors name the pace they need as their own port, as the peer pusher's Wait does for Waiter."""
+
 # ── Nullary effects, () -> Unit ───────────────────────────────────────────────────────────────────
 [[groups]]
 signature = "()->Unit"

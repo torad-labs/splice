@@ -44,24 +44,6 @@ public data class MirroredSession(val id: String, val name: String, val heardAt:
  *  was last shown (null until it is, and again once its link goes quiet). */
 public data class MirrorCounts(val here: Int, val there: Int?)
 
-/** What became of a message a mirror carried on: its [status] there, or null when it is on its way. */
-public data class MirrorCarried(val status: DeliveryStatus?, val detail: String? = null)
-
-/** Carries a message a session here wrote to the mirror of [to] on to that session, from [from], the sender here. */
-public fun interface MirrorCarrier {
-    public suspend fun carry(to: MirroredSession, from: MirroredSession, text: String): MirrorCarried
-}
-
-/** How a machine's mirrors here reach it, by [carrier], and how long a look, an offer or a note that came from it keeps
- *  them with no other word from it. */
-public data class MirrorLink(val carrier: MirrorCarrier, val lastsMs: Long)
-
-/** How the mirrors wait between two looks for ended ones: [awaitNext] suspends for the time it is given, and answers
- *  false when the looking should stop. */
-public fun interface MirrorSweep {
-    public suspend fun awaitNext(intervalMs: Long): Boolean
-}
-
 /** What every mirror serves with: the folders, the registry's files and reader, the outbox a message and a receipt go
  *  out through, the log of its inbox, and the scope its inbox is served in, on [inboxes]: each inbox waits in a
  *  blocking accept, so on [io], the daemon's one pool for blocking work, 64 mirrors would hold every thread it has and

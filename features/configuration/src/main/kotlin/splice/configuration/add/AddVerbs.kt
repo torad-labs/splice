@@ -7,17 +7,23 @@ import splice.core.terminal.TerminalOutput
 import splice.core.util.EnvReader
 import splice.terminal.MultiSelectPrompt
 import splice.terminal.SelectPrompt
+import java.net.http.HttpClient
 import java.nio.file.Path
+import javax.net.ssl.SSLContext
 
 /** `splice add <profile>`. [output] takes every line the verb prints; [errors] only what resolving the
- *  control port says about a splice.toml that does not load. */
+ *  control port says about a splice.toml that does not load. [tls] is the trust the checks reach the endpoint with:
+ *  `splice remote` passes the sharing machine's pinned certificate, so the base url check proves the name the head
+ *  will use answers with that one. Null keeps the platform's. */
 public class AddVerb(
     output: TerminalOutput,
     errors: TerminalOutput,
     ports: AddPorts,
     localRows: LocalRuntimeRows = LocalRuntimeRows { _, _ -> LocalRowsAnswer() },
+    tls: SSLContext? = null,
 ) {
-    private val command = AddCommand(output, errors, AddChecks(output, localRows = localRows), ports)
+    private val http = tls?.let { HttpClient.newBuilder().sslContext(it).build() } ?: HttpClient.newHttpClient()
+    private val command = AddCommand(output, errors, AddChecks(output, JdkAddHttp(http), localRows), ports)
     private val runtime = RuntimeHeadAdd(output, command)
     private val remote = RemoteHeadAdd(command)
 

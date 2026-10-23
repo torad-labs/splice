@@ -1,6 +1,8 @@
 // NEW: LAN share, phase 1 (docs/specs/lan-share.md). The two calls `splice remote` makes on a sharing machine:
 // what it offers (GET /share/v1/info) and joining it (POST /share/v1/join). JDK HTTP, like the share relay;
-// short timeouts, because a probe across a subnet asks hundreds of addresses where nothing listens.
+// short timeouts, because a probe across a subnet asks hundreds of addresses where nothing listens. Since phase 2
+// over TLS only, trusting through [trust]: a first contact to read what a machine offers, and the join pinned to the
+// certificate that machine stated (RemoteTrust).
 package splice.share.remote
 
 import kotlinx.serialization.json.Json
@@ -15,25 +17,31 @@ import java.net.URI
 import java.net.http.HttpClient
 import java.net.http.HttpRequest
 import java.net.http.HttpResponse
+import java.security.cert.CertificateException
 import java.time.Duration
 import java.util.concurrent.CompletableFuture
+import java.util.concurrent.CompletionException
 
-public class RemoteHttp {
+public class RemoteHttp(private val trust: RemoteTrust) {
     private val json = Json { ignoreUnknownKeys = true }
     private val http: HttpClient = HttpClient.newBuilder()
         .version(HttpClient.Version.HTTP_1_1)
         .connectTimeout(Duration.ofMillis(REMOTE_CONNECT_TIMEOUT_MS))
+        .sslContext(trust.context)
         .build()
 
-    /** What the machine at [host]:[port] offers; completes with null when nothing there answers as splice. */
+    /** What the machine at [host]:[port] offers; completes with null when nothing there answers as splice, and
+     *  exceptionally when its certificate is not the one [trust] pinned, which [refusal] then words. */
     public fun info(host: String, port: Int): CompletableFuture<ShareInfo?> {
         val request = HttpRequest.newBuilder(url(host, port, SHARE_INFO_PATH))
             .timeout(Duration.ofMillis(REMOTE_REQUEST_TIMEOUT_MS))
             .GET()
             .build()
         return http.sendAsync(request, HttpResponse.BodyHandlers.ofString())
-            .thenApply { response -> response.takeIf { it.statusCode() == HttpStatus.OK }?.body()?.let(::parsed) }
-            .exceptionally { null }
+            .handle { response, failure ->
+                if (refusal(failure) != null) throw CompletionException(failure)
+                response?.takeIf { it.statusCode() == HttpStatus.OK }?.body()?.let(::parsed)
+            }
     }
 
     /** Joins [host] as [client]. Throws with the sharing machine's own words when it refuses. */
@@ -49,8 +57,13 @@ public class RemoteHttp {
         return json.decodeFromString(ShareJoined.serializer(), response.body())
     }
 
+    /** [trust]'s own words when [failure] is a certificate it refused, else null: what a person is told instead of a
+     *  handshake error. */
+    public fun refusal(failure: Throwable?): String? =
+        generateSequence(failure) { it.cause }.filterIsInstance<CertificateException>().firstOrNull()?.message
+
     /** What a remote's `[remotes]` entry keeps: scheme, host and port, with no path. */
-    public fun base(host: String, port: Int): String = "http://${if (':' in host) "[$host]" else host}:$port"
+    public fun base(host: String, port: Int): String = "https://${if (':' in host) "[$host]" else host}:$port"
 
     public fun url(host: String, port: Int, path: String): URI = URI.create(base(host, port) + path)
 

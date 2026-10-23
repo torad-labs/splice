@@ -14,8 +14,8 @@ import io.ktor.server.application.ApplicationCallPipeline
 import io.ktor.server.application.call
 import io.ktor.server.application.serverConfig
 import io.ktor.server.engine.EmbeddedServer
-import io.ktor.server.engine.connector
 import io.ktor.server.engine.embeddedServer
+import io.ktor.server.engine.sslConnector
 import io.ktor.server.netty.Netty
 import io.ktor.server.netty.NettyApplicationEngine
 import io.ktor.server.plugins.origin
@@ -38,7 +38,8 @@ import splice.core.wire.HttpStatus
 import splice.http.listen.HttpListenerThreads
 
 public class ShareServer internal constructor(
-    private val port: Int,
+    /** Where it listens and the certificate it serves: TLS only, since phase 2. */
+    private val endpoint: ShareEndpoint,
     private val heads: ShareHeads,
     private val clients: ShareClients,
     private val network: ShareNetwork,
@@ -64,15 +65,22 @@ public class ShareServer internal constructor(
             },
         ) {
             HttpListenerThreads.configure(this)
-            connector {
+            val tls = endpoint.tls
+            sslConnector(tls.keyStore, SHARE_TLS_ALIAS, { tls.password }, { tls.password }) {
                 host = SHARE_BIND_HOST
-                port = this@ShareServer.port
+                port = endpoint.port
             }
+            // A phase-1 client still speaking plain HTTP is answered in words before the TLS handler sees its bytes.
+            // HTTP/1.1 only: with HTTP/2 on, Netty builds this pipeline after the ALPN handshake, so a plain request
+            // never met the guard (checked 2026-10-23: an empty reply). Every share client speaks HTTP/1.1 to it.
+            enableHttp2 = false
+            channelPipelineConfig = { addFirst(SHARE_PLAIN_HANDLER, ShareTlsOnly(errors.body(PLAIN_REFUSAL))) }
             shutdownGracePeriod = SHARE_STOP_GRACE_MS
         }
         server.start(wait = false)
         engine = server
-        log("[share] offering ${heads.keys()} on :$port to this machine's private networks\n")
+        val offered = "${heads.keys()} on :${endpoint.port} over TLS (${endpoint.tls.fingerprint})"
+        log("[share] offering $offered to this machine's private networks\n")
     }
 
     public fun stop() {
@@ -155,6 +163,9 @@ public class ShareServer internal constructor(
     }
 }
 
+/** The share listener's [port] and the certificate it serves there (ShareCertificate). */
+internal data class ShareEndpoint(val port: Int, val tls: ShareTls)
+
 /** Errors in the Anthropic shape, so Claude Code on the client prints the message instead of a bare status. */
 internal class ShareErrors {
     fun body(message: String): String =
@@ -165,6 +176,11 @@ internal class ShareErrors {
 // clients reach it too: on a host with IPv6 the JDK opens an IPv6 socket and binds this wildcard as `::`, so `ss`
 // shows `*:<port>` and `http://[::1]:<port>/share/v1/info` answers (PR #247's fifth review, checked on Linux).
 private const val SHARE_BIND_HOST = "0.0.0.0"
+
+// What a phase-1 client, which reached this listener over plain HTTP, is told: its machine moves onto TLS by importing
+// this one again, which also moves its heads.
+private const val PLAIN_REFUSAL =
+    "this machine now shares over TLS only; run `splice remote` on the machine you are on to move its heads onto it"
 
 // why: a stop lets requests already in the listener finish for a second before it closes; a relayed turn still
 // streaming is cut, and the other machine's client retries it as it retries any cut turn.

@@ -16,6 +16,7 @@ import splice.core.config.KeyStore
 import splice.core.config.KeyStorePath
 import splice.core.config.StatePaths
 import splice.core.terminal.CYAN
+import splice.core.terminal.DIM
 import splice.core.terminal.GREEN
 import splice.core.terminal.RESET
 import splice.core.terminal.TerminalOutput
@@ -28,12 +29,15 @@ import splice.share.ShareHostName
 import splice.share.ShareState
 import splice.share.SharedHead
 import splice.share.remote.RemoteFound
-import splice.share.remote.RemoteHttp
+import splice.share.remote.RemoteJoin
+import splice.share.remote.RemoteJoined
+import splice.share.remote.RemoteJoined.Joined
+import splice.share.remote.RemoteNames
+import splice.share.remote.RemoteTrust
 import splice.share.remote.RemoteRelay
 import splice.share.remote.RemoteTopology
 import splice.share.remote.RemotesStore
 import splice.terminal.ConfirmPrompt
-import java.net.InetAddress
 
 internal class RemoteImport(
     private val out: TerminalOutput,
@@ -41,37 +45,31 @@ internal class RemoteImport(
     private val env: EnvReader,
     private val confirm: ConfirmPrompt,
 ) {
-    private val http = RemoteHttp()
     private val store = RemotesStore(ShareState(StatePaths()).remotesFile)
     private val file = ShareTopologyFile(err, REMOTE_VERB, env)
     private val held = mutableListOf<String>()
-    private val verb = AddWiring.add(
-        restart = DaemonRestart { true },
-        doctor = AddDoctor { true },
-        output = TerminalOutput { held += it },
-    )
 
-    /** True when at least one of [machine]'s heads is usable here afterwards. */
+    /** True when at least one of [machine]'s heads is usable here afterwards. The join goes only to the certificate
+     *  [machine] stated, which is pinned from then on (trust on first contact, RemoteJoin). */
     suspend fun import(machine: RemoteFound): Boolean {
         val name = RemoteNames.of(machine.info.server)
-        val joined = Cancellables.runCatchingCancellable { http.join(machine.address, machine.port, self()) }
-            .getOrElse { failure ->
-                val why = SafeFailureText.render(failure)
-                err.line("$REMOTE_VERB: ${machine.info.server} did not let this machine join: $why")
-                return false
-            }
+        val joined = RemoteJoin(ShareHostName().short()).join(machine)
+        if (joined is RemoteJoined.Refused) err.line("$REMOTE_VERB: ${joined.why}")
+        val ok = joined as? RemoteJoined.Joined ?: return false
+        out.line("$GREEN✓$RESET joined ${machine.info.server}, certificate $DIM${ok.pin}$RESET pinned")
         // The token goes first: a provider that names the machine finds it on its first turn.
-        val current = file.loaded()?.takeIf { kept(name, joined.token) } ?: return false
-        return imported(machine, name, current)
+        val current = file.loaded()?.takeIf { kept(name, ok.token) } ?: return false
+        return imported(machine, name, current, ok)
     }
 
-    private suspend fun imported(machine: RemoteFound, name: String, current: Topology): Boolean {
+    private suspend fun imported(machine: RemoteFound, name: String, current: Topology, joined: Joined): Boolean {
         val server = machine.info.server
-        val host = reachableName(machine)
-        val url = http.base(host, machine.port)
+        val host = machine.reachable()
+        val url = joined.http.base(host, machine.port)
         val spellings = setOf(machine.address, host, server, "$server.local", "$server.lan")
         val legacy = RemoteTopology(current).phaseOne(spellings)
-        val moved = RemoteTopology(RemoteTopology(current).joined(name, url, null)).migrated(legacy, name, url)
+        val pinned = RemoteTopology(current).joined(name, url, joined.pin)
+        val moved = RemoteTopology(pinned).migrated(legacy, name, url)
         val here = machine.info.heads.mapNotNull { shared ->
             RemoteTopology(moved).headFor(name, shared.key)?.let { it to shared }
         }
@@ -80,7 +78,7 @@ internal class RemoteImport(
         forgetKeys(current, legacy.keys)
         here.forEach { (key, _) -> out.line("$GREEN✓$RESET ${commandOf(wanted, key)}: already here, rows refreshed") }
         val added = machine.info.heads.filter { shared -> here.none { it.second == shared } }
-            .count { shared -> added(name, url, server, shared) }
+            .count { shared -> added(RemoteTarget(name, url, server, joined), shared) }
         settle(changed = wanted != current || added > 0, checkup = added > 0)
         return here.isNotEmpty() || added > 0
     }
@@ -105,21 +103,29 @@ internal class RemoteImport(
         if (providers.isNotEmpty()) out.line("$GREEN✓$RESET moved ${providers.joinToString(", ")} onto the remote")
     }
 
-    private suspend fun added(name: String, url: String, server: String, shared: SharedHead): Boolean {
+    private suspend fun added(target: RemoteTarget, shared: SharedHead): Boolean {
+        val server = target.server
         val topology = file.loaded() ?: return false
         val (key, command) = localNames(topology, shared.key, shared.command, server) ?: return false
         val head = RemoteHead(
-            remote = name,
+            remote = target.name,
             remoteKey = shared.key,
             key = key,
             command = command,
-            baseUrl = RemoteRelay.url(url, shared.key),
+            baseUrl = RemoteRelay.url(target.url, shared.key),
             models = shared.models.map {
                 RemoteModel(it.id, it.label, it.contextWindow, it.slots, it.compactionReserve, it.rates)
             },
             family = shared.family,
         )
         held.clear()
+        // The add's checks reach the relay over the certificate this machine just pinned, the one its head will trust.
+        val verb = AddWiring.add(
+            restart = DaemonRestart { true },
+            doctor = AddDoctor { true },
+            output = TerminalOutput { held += it },
+            tls = RemoteTrust(target.joined.pin, server).context,
+        )
         val ok = verb.addRemote(head, env)
         if (ok) {
             out.line("$GREEN✓$RESET $command: ${shared.models.firstOrNull()?.label.orEmpty()} on $server")
@@ -146,20 +152,6 @@ internal class RemoteImport(
         }
     }
 
-    /** The server's own name when it resolves here to the address that answered (a DHCP move then follows the
-     *  name), else that address. */
-    private fun reachableName(machine: RemoteFound): String {
-        if (machine.address.none { it.isLetter() } || ':' in machine.address) {
-            val server = machine.info.server
-            return listOf("$server.local", "$server.lan", server).firstOrNull { name ->
-                Cancellables.runCatchingCancellable {
-                    InetAddress.getAllByName(name).any { it.hostAddress == machine.address }
-                }.fold(onSuccess = { it }, onFailure = { false })
-            } ?: machine.address
-        }
-        return machine.address
-    }
-
     /** One restart for every head the import wrote, and one checkup when it added any. */
     private fun settle(changed: Boolean, checkup: Boolean) {
         if (changed && AdminSupport.daemonUp(AdminSupport.controlPort(env))) {
@@ -170,15 +162,9 @@ internal class RemoteImport(
     }
 
     private fun commandOf(topology: Topology, key: String): String = topology.heads[key]?.claude?.command ?: key
-
-    private fun self(): String = ShareHostName().short()
 }
 
-/** A machine's name as a `[remotes]` key and a command suffix: lower case, anything but letters, digits and dashes as
- *  a dash. */
-internal object RemoteNames {
-    fun of(server: String): String =
-        server.lowercase().replace(Regex("[^a-z0-9-]"), "-").trim('-').ifEmpty { "remote" }
-}
+/** The machine a head is imported from: its `[remotes]` [name], relay [url], own [server] name and the join. */
+private data class RemoteTarget(val name: String, val url: String, val server: String, val joined: Joined)
 
 internal const val REMOTE_VERB = "splice remote"

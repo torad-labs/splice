@@ -15,7 +15,22 @@ import java.util.concurrent.CompletableFuture
 import java.util.concurrent.TimeUnit
 
 /** A machine that answered: the [address] it answered on, and what it offers. */
-public data class RemoteFound(public val address: String, public val port: Int, public val info: ShareInfo)
+public data class RemoteFound(public val address: String, public val port: Int, public val info: ShareInfo) {
+
+    /** The name to keep for it: its own, when that resolves here to the address that answered (a DHCP move then
+     *  follows the name), else that address. */
+    public fun reachable(): String {
+        if (address.none { it.isLetter() } || ':' in address) {
+            val server = info.server
+            return listOf("$server.local", "$server.lan", server).firstOrNull { name ->
+                Cancellables.runCatchingCancellable {
+                    InetAddress.getAllByName(name).any { it.hostAddress == address }
+                }.fold(onSuccess = { it }, onFailure = { false })
+            } ?: address
+        }
+        return address
+    }
+}
 
 public class RemoteDiscovery(private val http: RemoteHttp) {
 

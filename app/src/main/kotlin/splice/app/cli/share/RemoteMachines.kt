@@ -26,6 +26,7 @@ import splice.core.util.SafeFailureText
 import splice.share.ShareInfo
 import splice.share.ShareState
 import splice.share.remote.RemoteHttp
+import splice.share.remote.RemoteTrust
 import splice.share.remote.RemoteTopology
 import splice.share.remote.RemotesStore
 import java.net.URI
@@ -36,18 +37,20 @@ internal class RemoteMachines(
     private val err: TerminalOutput,
     private val env: EnvReader,
 ) {
-    private val http = RemoteHttp()
+    private val firstContact = RemoteHttp(RemoteTrust(null, "a sharing machine"))
     private val file = ShareTopologyFile(err, REMOTE_VERB, env)
     private val store = RemotesStore(ShareState(StatePaths()).remotesFile)
 
-    /** What [host]:[port] offers, or null, said, when nothing there answers as a sharing splice. */
-    fun info(host: String, port: Int): ShareInfo? {
-        val info = Cancellables.runCatchingCancellable { http.info(host, port).get(ANSWER_WAIT_S, TimeUnit.SECONDS) }
-            .fold(onSuccess = { it }, onFailure = { null })
+    /** What [host]:[port] offers, asked through [http] (a first contact unless the machine is pinned), or null,
+     *  said, when nothing there answers as a sharing splice or its certificate is not the pinned one. */
+    fun info(host: String, port: Int, http: RemoteHttp = firstContact): ShareInfo? {
+        val asked = Cancellables.runCatchingCancellable { http.info(host, port).get(ANSWER_WAIT_S, TimeUnit.SECONDS) }
+        val info = asked.fold(onSuccess = { it }, onFailure = { null })
         if (info == null) {
             val hint = "is ${CYAN}splice share on$RESET there?"
             val at = http.url(host, port, "").authority
-            err.line("$REMOTE_VERB: nothing at $at answers as a sharing splice ($hint)")
+            val refused = asked.exceptionOrNull()?.let(http::refusal)
+            err.line("$REMOTE_VERB: ${refused ?: "nothing at $at answers as a sharing splice ($hint)"}")
         }
         return info
     }
@@ -85,8 +88,11 @@ internal class RemoteMachines(
 
     /** [topology] with [name]'s heads as it serves them now; unchanged when it does not answer. */
     private fun synced(topology: Topology, name: String): Topology {
-        val url = remoteUri(topology.remotes.getValue(name).url) ?: return topology
-        val info = info(url.host.trim('[', ']'), url.port.takeIf { it > 0 } ?: DEFAULT_SHARE_PORT) ?: return topology
+        val remote = topology.remotes.getValue(name)
+        val url = remoteUri(remote.url) ?: return topology
+        val pinned = RemoteHttp(RemoteTrust(remote.fingerprint.orEmpty(), name))
+        val port = url.port.takeIf { it > 0 } ?: DEFAULT_SHARE_PORT
+        val info = info(url.host.trim('[', ']'), port, pinned) ?: return topology
         val edits = RemoteTopology(topology)
         val add = "${CYAN}splice remote add ${url.host}$RESET"
         info.heads.filter { edits.headFor(name, it.key) == null }

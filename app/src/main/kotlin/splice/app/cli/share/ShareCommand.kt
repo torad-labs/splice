@@ -17,6 +17,7 @@ import splice.core.topology.Topology
 import splice.core.util.Cancellables
 import splice.core.util.EnvReader
 import splice.core.util.SafeFailureText
+import splice.share.ShareCertificate
 import splice.share.ShareClients
 import splice.share.ShareState
 import java.net.InetSocketAddress
@@ -29,7 +30,8 @@ internal class ShareCommand(
     private val err: TerminalOutput = TerminalOutput(System.err::println),
     private val env: EnvReader = EnvReader(System::getenv),
 ) {
-    private val clients = ShareClients(ShareState(StatePaths()).clientsFile)
+    private val files = ShareState(StatePaths())
+    private val clients = ShareClients(files.clientsFile)
     private val file = ShareTopologyFile(err, "splice share", env)
     private val path = file.path
 
@@ -83,6 +85,9 @@ internal class ShareCommand(
             val state = if (listening(share.port)) "${GREEN}listening$RESET" else "not listening (is the daemon up?)"
             out.line("sharing is on, port ${share.port}: $state")
             out.line("  heads     ${share.sharedHeads(topology).joinToString(", ").ifEmpty { "none" }}")
+            // What a joining machine printed as pinned, for anyone who wants to compare the two.
+            val pin = ShareCertificate(files.certificateFile).fingerprint() ?: "minted at the daemon's next start"
+            out.line("  tls       $DIM$pin$RESET")
         } else {
             out.line("sharing is off. ${CYAN}splice share on$RESET offers this machine's heads to your other machines.")
         }

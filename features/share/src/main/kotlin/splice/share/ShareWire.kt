@@ -21,6 +21,9 @@ public data class ShareInfo(
     public val server: String,
     public val version: String,
     public val heads: List<SharedHead>,
+    /** The SHA-256 of the certificate this listener serves (ShareFingerprint). A client pins it at the join, which
+     *  only goes ahead over a connection showing that certificate; null from a phase-1 machine. */
+    public val fingerprint: String? = null,
 )
 
 /** One offered head: what a client needs to regenerate the same command against it. The pinned model is
@@ -62,6 +65,8 @@ internal class ShareHeads(
     private val running: SharedCatalogs,
     /** This machine's name as clients are told it. */
     val server: String,
+    /** The fingerprint of the certificate the listener serves. */
+    private val fingerprint: String,
 ) {
     private val offered: List<String> = topology.share.sharedHeads(topology).filter { running.of(it) != null }
 
@@ -70,7 +75,7 @@ internal class ShareHeads(
     /** The loopback port of an offered head, or null for any other name. */
     fun port(key: String): Int? = key.takeIf { it in offered }?.let { topology.heads[it]?.port }
 
-    fun info(): ShareInfo = ShareInfo(server, GATEWAY_VERSION, offered.mapNotNull(::described))
+    fun info(): ShareInfo = ShareInfo(server, GATEWAY_VERSION, offered.mapNotNull(::described), fingerprint)
 
     private fun described(key: String): SharedHead? {
         val served = running.of(key) ?: return null

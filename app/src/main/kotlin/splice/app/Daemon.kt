@@ -187,6 +187,7 @@ public class Daemon(
         ).also {
             it.credentialAccountNames = controlPlane.credentialAccountNames
             it.sentCredentials = controlPlane.sentCredentials
+            it.remotes = topology.remotes
         }
     private val managedHeadFactory = ManagedHeadFactory(
         statePaths = statePaths,

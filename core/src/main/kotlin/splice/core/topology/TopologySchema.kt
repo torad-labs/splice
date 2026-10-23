@@ -146,7 +146,7 @@ public data class RemoteConfig(
     /** Where its share listener answers, `https://torad-server.lan:3097`. */
     val url: String,
     /** The SHA-256 of the certificate it presented when this machine joined, `sha256:<64 hex>`. A relay that meets any
-     *  other certificate is refused. Absent only for a machine joined over phase 1's plain HTTP. */
+     *  other certificate is refused. Required: boot refuses an entry without one (RemoteFindings). */
     val fingerprint: String? = null,
 )
 
@@ -159,13 +159,20 @@ internal class RemoteFindings(private val topology: Topology) {
     private fun remotes(): List<TopologyFinding> = topology.remotes.flatMap { (name, remote) ->
         // A url that does not parse is the finding itself, so its failure is answered here rather than logged.
         val uri = Cancellables.runCatchingCancellable { URI(remote.url) }.fold(onSuccess = { it }, onFailure = { null })
-        val url = if (uri?.scheme in setOf("http", "https") && !uri?.host.isNullOrBlank()) {
+        // Shares are TLS only since phase 2, and every relay trusts the one certificate pinned here.
+        val url = if (uri?.scheme == "https" && !uri.host.isNullOrBlank()) {
             null
         } else {
-            TopologyFinding("remotes.$name.url", "not an http(s) address with a host; run `splice remote` again")
+            TopologyFinding("remotes.$name.url", "not an https address with a host; run `splice remote` again")
         }
-        val pin = remote.fingerprint?.takeUnless { fingerprintShape.matches(it) }?.let {
-            TopologyFinding("remotes.$name.fingerprint", "not `sha256:` and 64 hex digits; run `splice remote` again")
+        val pin = when {
+            remote.fingerprint == null ->
+                TopologyFinding("remotes.$name.fingerprint", "no certificate is pinned; run `splice remote` again")
+            !fingerprintShape.matches(remote.fingerprint) -> TopologyFinding(
+                "remotes.$name.fingerprint",
+                "not `sha256:` and 64 hex digits; run `splice remote` again",
+            )
+            else -> null
         }
         listOfNotNull(url, pin)
     }

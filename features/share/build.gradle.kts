@@ -12,6 +12,7 @@ dependencies {
     implementation(project(":features-turns"))
     implementation(libs.ktor.server.core)
     implementation(libs.ktor.server.netty)
+    implementation(libs.ktor.network.tls.certificates)
     implementation(libs.kotlinx.serialization.json)
     testImplementation(libs.ktor.server.test.host) {
         // As in features/turns: the test host drags in ktor-client-apache5, an engine no test here uses.

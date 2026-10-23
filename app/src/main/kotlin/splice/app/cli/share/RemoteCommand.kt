@@ -18,6 +18,7 @@ import splice.share.ShareHostName
 import splice.share.remote.RemoteDiscovery
 import splice.share.remote.RemoteFound
 import splice.share.remote.RemoteHttp
+import splice.share.remote.RemoteTrust
 import splice.terminal.ConfirmPrompt
 import splice.terminal.ConsoleConfirm
 import java.net.URI
@@ -30,7 +31,8 @@ internal class RemoteCommand(
     private val env: EnvReader = EnvReader(System::getenv),
     private val confirm: ConfirmPrompt = ConsoleConfirm(),
 ) {
-    private val http = RemoteHttp()
+    // A first contact: discovery reads what each machine offers before any is pinned (RemoteTrust).
+    private val http = RemoteHttp(RemoteTrust(null, "a sharing machine"))
     private val machines = RemoteMachines(out, err, env)
 
     /** How many arguments each verb takes after its name. */

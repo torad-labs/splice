@@ -33,8 +33,8 @@ login is asked for.
 
 ```
 Mac                                          torad-server
-claudex ─▶ head :3099 (anthropic-passthrough) ──HTTP──▶ share listener :3097 ─▶ head :3099 (codex) ─▶ ChatGPT
-            auth api-key = client token                  checks token, swaps   turn key, loopback
+claudex ─▶ head :3099 (anthropic-passthrough) ──TLS, pinned──▶ share listener :3097 ─▶ head :3099 (codex) ─▶ ChatGPT
+            auth splice-remote = client token                    checks token, swaps   turn key, loopback
 ```
 
 ### Server: `[share]` and the share listener
@@ -50,11 +50,19 @@ claudex ─▶ head :3099 (anthropic-passthrough) ──HTTP──▶ share list
 
   Boot findings (fail-closed, same list as today): port range and collision, unknown head in `heads`,
   a client-auth head in `heads` (it forwards the caller's own Claude login; relaying it is meaningless).
-- One extra Netty listener, started by the daemon only when `enabled`, bound on all interfaces. Routes:
+- One extra Netty listener, started by the daemon only when `enabled`, bound on all interfaces, TLS only (phase 2).
+  Its certificate is minted at the first start with sharing on: an EC P-256 key and a self-signed certificate for the
+  machine's names (`<host>`, `<host>.local`, `<host>.lan`, `share.hostnames`), valid ten years, kept in
+  `<state>/share/tls.pem` (0600, `ShareCertificate`). It is never minted again over a file that is there: every
+  joined machine pinned it, so a file that will not load stops sharing, said in the log. `splice share status` shows
+  its fingerprint (`sha256:<hex>`, the same as `openssl x509 -in tls.pem -noout -fingerprint -sha256`). A phase-1
+  client still on plain HTTP gets a 426 in the Anthropic error shape naming the one command that moves it
+  (`ShareTlsOnly`). The listener speaks HTTP/1.1 only: with HTTP/2 on, Netty builds the pipeline after the ALPN
+  handshake, and a plain request never reached that guard. Routes:
 
   | route | auth | purpose |
   |---|---|---|
-  | `GET /share/v1/info` | none | server name, splice version, and for each shared head: key, command, pinned model, model rows (id, label, window, slot, rates) |
+  | `GET /share/v1/info` | none | server name, splice version, the certificate's fingerprint, and for each shared head: key, command, pinned model, model rows (id, label, window, slot, rates) |
   | `POST /share/v1/join` | none | `{ "client": "<hostname>" }` → a new per-client token (shown once) |
   | `POST /share/v1/heads/{head}/v1/messages` | client token | relay, streamed |
   | `POST /share/v1/heads/{head}/v1/messages/count_tokens` | client token | relay |
@@ -80,19 +88,22 @@ claudex ─▶ head :3099 (anthropic-passthrough) ──HTTP──▶ share list
   commands; `splice remote sync [<machine>]` rewrites each imported head's rows, pin and tiers as its machine serves
   them now; `splice remote remove <machine>` drops the machine, its heads, their command links and its token.
 - Import of one machine (`RemoteImport`):
-  1. `POST /share/v1/join` → this machine's token there, kept in `<state>/share/remotes.json` (0600, one per machine,
-     `RemotesStore`), never in `keys.toml`. splice.toml names the machine, never the token.
-  2. `[remotes.<name>]` with the address that answered (the machine's own name when it resolves there).
+  1. `POST /share/v1/join`, over a connection that must show the certificate the machine's info stated (trust on
+     first contact, `RemoteJoin`) → this machine's token there, kept in `<state>/share/remotes.json` (0600, one per
+     machine, `RemotesStore`), never in `keys.toml`. splice.toml names the machine, never the token.
+  2. `[remotes.<name>]` with the address that answered (the machine's own name when it resolves there) and the
+     certificate's fingerprint, pinned from then on.
   3. Each shared head written through the `splice add` path (`AddVerb.addRemote`: the same refusals, checks, atomic
      save, port choice and wrapper link), one line per command and one restart at the end:
 
      ```toml
      [remotes.torad-server]
-     url = "http://torad-server.lan:3097"
+     url = "https://torad-server.lan:3097"
+     fingerprint = "sha256:4f1c…"   # the certificate it showed at the join
 
      [providers.claudex]
      dialect = "anthropic-passthrough"
-     base_url = "http://torad-server.lan:3097/share/v1/heads/claudex"
+     base_url = "https://torad-server.lan:3097/share/v1/heads/claudex"
      auth = { kind = "splice-remote", remote = "torad-server" }
      quirks = { forward_client_identity = true }
      [[providers.claudex.models]]   # the sharing head's rows: id, label, window in force, compaction reserve
@@ -108,7 +119,13 @@ claudex ─▶ head :3099 (anthropic-passthrough) ──HTTP──▶ share list
   4. Heads imported before are refreshed in place; phase-1 imports from the same machine (api-key providers on a
      share relay) move onto `[remotes.<name>]` and their per-head keys leave `keys.toml`.
 - `splice-remote` is a registered auth kind (anthropic-passthrough only): the provider presents the machine's token
-  as its bearer, read from the token store on every request, so a re-join lands with no restart.
+  as its bearer, read from the token store on every request, so a re-join lands with no restart. Its turns count as
+  the sharing machine's plan ("on your plan"), never as API spend.
+- Trust (`RemoteTrust`): every client path to a machine (`RemoteHttp` for info, join and sync; the relay's upstream
+  client, through `UpstreamTrust`) trusts exactly the pinned certificate, by its SHA-256, with no CA and no name check:
+  the pin is the stronger claim, and the machine keeps it at a new address. A changed certificate is refused in words
+  naming the old and new fingerprints and `splice remote add`, which pins the new one. Boot refuses a
+  `[remotes.*]` without an `https` url or a fingerprint.
 
 ## Code map
 
@@ -128,8 +145,11 @@ claudex ─▶ head :3099 (anthropic-passthrough) ──HTTP──▶ share list
 ## Phase 1 trade-offs, stated
 
 - **Plain HTTP on the LAN.** Under trust-the-LAN any LAN host can join anyway, so TLS would protect
-  prompt content in transit, not access. It comes in phase 2 with a pinned self-signed certificate.
+  prompt content in transit, not access. Phase 2 replaced it with a pinned self-signed certificate.
 - **The server must be up.** A Mac turn with torad-server down fails in words, like any upstream outage.
+- **A changed certificate is retried like any TLS failure.** The turn ends with the refusal's words, what to run
+  first, but through the generic bounded retry and as an overloaded error, which Claude Code retries too. Naming it
+  a permanent failure is a change to the shared retry plan, left for its owner.
 - **Server-side only:** usage bars, account pools and plan windows live on the server. The Mac's
   status line shows the relay head's own counts; dollar estimates come from the mirrored rates.
 - **No cross-machine `ListAgents`.** Sessions on the two machines do not see each other yet.
@@ -152,7 +172,7 @@ Built on `feat/lan-share`, merged into `feat/v0.4.0` through the gate. Milestone
 
 1. **Module and model** (landed): `features/share`, the `splice-remote` auth kind, `[remotes]`, the token store,
    one-line imports, `remote list | sync | remove`, phase-1 migration.
-2. **TLS and pinning**: a self-signed certificate minted at the first `share on`, the listener on TLS only, and the
+2. **TLS and pinning** (landed): a self-signed certificate minted at the first `share on`, the listener on TLS only, and the
    certificate's SHA-256 pinned in `[remotes.<name>] fingerprint` at join, on every client path.
 3. **Fidelity**: roster, usage and health routes on the listener; the using machine's plan bars, live rows and
    reachability come from them; turns carry the joined machine's name; last seen per joined machine.

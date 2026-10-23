@@ -35,9 +35,8 @@ class SharedSessionsTest {
         val shared = SharedSessions(reader, StatePaths(envReader = reader)) { }
         val registry = Path.of(env.getValue("HOME"), ".claude", "sessions")
         val record = try {
-            shared.mirrors.mirror("far", listOf(MirroredSession("id-1", "rig-lead")), MirrorCarrier { _, _, _ ->
-                MirrorCarried(null)
-            })
+            val carrier = MirrorCarrier { _, _, _ -> MirrorCarried(null) }
+            shared.mirrors.mirror("far", listOf(MirroredSession("id-1", "rig-lead")), carrier)
             Json.parseToJsonElement(Files.readString(registry.listDirectoryEntries("*.json").single())).jsonObject
         } finally {
             shared.stop()

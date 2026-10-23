@@ -398,11 +398,11 @@ internal class PaneTurns(
     }
 
     /** Whether [client] has gone: its pid no longer runs, or another process runs under that pid now, told by the
-     *  kernel start time the client registered (PR #247's eighth review). One with no pid known never goes here. */
+     *  start times the client registered as the registry tells them (PidIdentity.reused; PR #247's eighth and ninth
+     *  reviews). One with no pid known never goes here. */
     private fun gone(client: SessionProcess?): Boolean {
         val pid = client?.pid ?: return false
-        val start = client.procStart
-        return !alive(pid) || start != null && identity.procStart(pid)?.let { it != start } == true
+        return !alive(pid) || identity.reused(pid, client.procStart, client.startedAt)
     }
 
     /** A pane's `/exit` mark: the session it was typed for, and its client's process when the record knew one. */

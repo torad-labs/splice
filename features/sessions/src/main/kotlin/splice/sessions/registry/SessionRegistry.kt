@@ -122,6 +122,16 @@ public interface PidIdentity {
 
     /** When [pid] started (epoch ms). */
     public fun startedAt(pid: Long): Long?
+
+    /** Whether [pid] now runs a process other than the client registered as started at [procStart] (the kernel's
+     *  spelling) or [startedAt] (epoch ms): the kernel start decides when both sides know it; else the wall-clock
+     *  start, past [PID_REUSE_TOLERANCE_MS]. The registry judges registrations by it, and a pane's exit mark its
+     *  client (PR #247's ninth review). False when neither start is known. */
+    public fun reused(pid: Long, procStart: String?, startedAt: Long?): Boolean {
+        val start = procStart?.let { this.procStart(pid) }
+        if (procStart != null && start != null) return procStart != start
+        return startedAt != null && (this.startedAt(pid) ?: 0L) > startedAt + PID_REUSE_TOLERANCE_MS
+    }
 }
 
 /** When this daemon last heard from each session id (epoch ms): now while a turn of it is live,
@@ -243,9 +253,7 @@ public class SessionRegistry(
         val hostDomain = identity.hostDomain()
         val judged = domain != null && hostDomain != null
         if (judged && domain != hostDomain) return true
-        val start = procStart?.let { identity.procStart(pid) }
-        if (procStart != null && start != null) return procStart != start
-        return startedAt != null && (identity.startedAt(pid) ?: 0L) > startedAt + PID_REUSE_TOLERANCE_MS
+        return identity.reused(pid, procStart, startedAt)
     }
 
     private fun gone(pid: Long, domain: String?, procStart: String?, startedAt: Long?): Boolean =

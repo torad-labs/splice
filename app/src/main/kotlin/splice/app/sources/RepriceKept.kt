@@ -22,6 +22,18 @@ import java.nio.file.Files
 import java.nio.file.LinkOption
 import java.nio.file.Path
 import java.security.MessageDigest
+import java.util.jar.JarFile
+
+// The classes a repriced hour's figures come from: the cards and bills, the perf row shapes, the bucket arithmetic and
+// this package's rebuild of an hour from its rows. A change to any of them prices every kept hour again.
+private val PRICING_CLASSES = listOf(
+    "splice/core/model/",
+    "splice/core/perf/",
+    "splice/head/usage/",
+    "splice/usage/perf/",
+    "splice/app/sources/Economics",
+    "splice/app/sources/Reprice",
+)
 
 /** One settled hour: the rollup figures it answered, and its repriced cost (null when its rows are not its turns). */
 internal data class RepriceSettled(val recorded: List<Long>, val cost: BucketCost?)
@@ -59,11 +71,37 @@ internal data class SavedReprice(
     val hours: List<SavedRepriceHour>,
 )
 
-/** The build this daemon runs: each class path entry's identity, size and time, so every install reads as a new one. */
+/** The build this daemon runs, as far as a price depends on it. For a jar, a digest of the classes that turn request
+ *  rows into a priced hour ([PRICING_CLASSES]), so an install that changes none of them keeps its prices: keying on the
+ *  jar file's own identity, size and time dropped them at every install (four on Oct 22), and each boot after one
+ *  repriced about 1 GB of request records for claudex and 1.35 GB for claude-splice, 14 s and 21 s of their starts. A
+ *  class directory, as tests run, keeps each entry's identity, size and time. */
 internal class RunningBuild {
     fun id(): String = System.getProperty("java.class.path").orEmpty().split(File.pathSeparator)
         .filter(String::isNotEmpty)
-        .joinToString("|") { entry -> "$entry:${mark(Path.of(entry))}" }
+        .joinToString("|") { entry -> "$entry:${of(Path.of(entry))}" }
+
+    private fun of(path: Path): String =
+        path.takeIf { it.fileName?.toString()?.endsWith(".jar") == true }?.let(::pricing) ?: mark(path)
+
+    /** The digest of the pricing classes in the jar at [path], names and bytes in name order; null when unreadable. */
+    private fun pricing(path: Path): String? = try {
+        JarFile(path.toFile()).use(::digest)
+    } catch (_: IOException) {
+        null
+    }
+
+    private fun digest(jar: JarFile): String {
+        val digest = MessageDigest.getInstance("SHA-256")
+        jar.entries().asSequence()
+            .filter { entry -> entry.name.endsWith(".class") && PRICING_CLASSES.any(entry.name::startsWith) }
+            .sortedBy { it.name }
+            .forEach { entry ->
+                digest.update(entry.name.toByteArray(StandardCharsets.UTF_8))
+                jar.getInputStream(entry).use { digest.update(it.readBytes()) }
+            }
+        return "pricing:" + digest.digest().joinToString("") { "%02x".format(it) }
+    }
 
     private fun mark(path: Path): String = try {
         val key = Files.getAttribute(path, "fileKey", LinkOption.NOFOLLOW_LINKS)

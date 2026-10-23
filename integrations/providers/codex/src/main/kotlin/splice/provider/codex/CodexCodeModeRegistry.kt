@@ -27,6 +27,7 @@ import splice.provider.codex.state.CodeModeStartupAdmissions
 import splice.provider.codex.state.CodeModeTurnStart
 import splice.provider.codex.state.collection.CodeModeRecordList
 import splice.provider.codex.state.query.CodeModeRecordQueries
+import splice.provider.codex.state.query.CodeModeResultOwners
 import splice.provider.codex.state.save.CodeModeStateWrite
 import splice.provider.codex.stream.CodeModeClientContexts
 import splice.provider.codex.stream.CodeModeSourceEnds
@@ -37,11 +38,6 @@ import splice.upstream.memory.JvmHeap
 import java.util.concurrent.locks.ReentrantLock
 import kotlin.concurrent.withLock
 import kotlin.time.Duration
-
-internal data class CodeModeResultOwners(
-    val foreign: CodeModeRecord?,
-    val unknown: Set<String>,
-)
 
 internal class CodexCodeModeRegistry(
     private val config: CodeModeBridgeConfig,
@@ -196,8 +192,7 @@ internal class CodexCodeModeRegistry(
         private fun plan(): AdmissionPlan? {
             // A session id is shared by subagents. Only equal conversation identities prove supersession.
             // Busy keys cannot be retired, even if a completed sibling record also names their engine.
-            val busyKeys = records.filter { it.id in admissions || retainedCells.running(it) }
-                .mapTo(mutableSetOf(), CodeModeRecord::key)
+            val busyKeys = sweeper.busyKeys()
             val previous = records.filter {
                 it.key != record.key && it.key !in busyKeys &&
                     record.conversationId != null && it.conversationId == record.conversationId
@@ -304,19 +299,15 @@ internal class CodexCodeModeRegistry(
         private fun withinBounds() {
             val passed = mutableSetOf<String>()
             while (true) {
-                val key = monitor.withLock { retention.overBound(records, busy() + passed) } ?: return
+                val key = monitor.withLock { retention.overBound(records, sweeper.busyKeys() + passed) } ?: return
                 var went = false
                 access.tryKey(key) {
-                    went = retention.letGoOver(records, history, key, busy(), config.clock.millis())
+                    went = retention.letGoOver(records, history, key, sweeper.busyKeys(), config.clock.millis())
                     if (went) store.save(records, history.entries, dirtyKeys = setOf(key))
                 }
                 if (!went) passed += key
             }
         }
-
-        /** The keys an admission may not retire: one being admitted, or one with a running cell. */
-        private fun busy(): Set<String> = records.filter { it.id in admissions || retainedCells.running(it) }
-            .mapTo(mutableSetOf(), CodeModeRecord::key)
     }
 
     /** V4-179: [media] holds the follow-up items rendered for each supplied result; see [CodeModeAccepted.accept]. */

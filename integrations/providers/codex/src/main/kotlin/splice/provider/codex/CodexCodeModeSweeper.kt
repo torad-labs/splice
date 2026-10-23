@@ -134,6 +134,10 @@ internal class CodexCodeModeSweeper(
     fun sweep(key: String? = null, protectedKey: String? = null): Boolean =
         expireRecords(key) or retainedCells.sweep(key, protectedKey) or expireMarkers(key)
 
+    /** The keys neither an admission nor a sweep may retire: one being admitted, or one with a running cell. */
+    fun busyKeys(): Set<String> = records.filter { it.id in admissions || retainedCells.running(it) }
+        .mapTo(mutableSetOf(), CodeModeRecord::key)
+
     /** Without an explicit count bound, old expiry evidence is bounded by the same configured lifetime. */
     private fun expireMarkers(key: String?): Boolean {
         val cutoff = config.clock.millis() - config.retention.ttl.inWholeMilliseconds

@@ -1,13 +1,12 @@
 // NEW: what a perf source's files held at one moment, so a later look can tell appended files from replaced or rewritten ones.
+// Oct 23, 2026: a refusal lasts one run (PerfRefusal says why), and [PerfReadFiles.opens] tells the backfill from which
+// hours a read opens the archive a torn line lies in.
 package splice.app.sources
 
 import kotlinx.serialization.Serializable
-import kotlinx.serialization.SerializationException
-import kotlinx.serialization.json.Json
 import splice.core.perf.PerfArchiveName
 import splice.core.util.Cancellables
 import splice.core.util.SafeFailureText
-import splice.core.util.SecureFile
 import java.io.IOException
 import java.nio.ByteBuffer
 import java.nio.channels.FileChannel
@@ -105,9 +104,6 @@ internal class PerfReadFiles(
     /** A stamp taken earlier, from its [marks], judged against this source's live file. */
     fun stampOf(marks: List<PerfFileMark>): PerfSourceStamp = PerfSourceStamp(marks, live, reader)
 
-    /** Where a refusal named [purpose] is kept across restarts: beside the live file, under a name no archive matches. */
-    fun refusalFile(purpose: String): Path = stateFile("$purpose-refusal")
-
     /** Where state named [name] is kept across restarts: beside the live file, under a name no archive matches. */
     fun stateFile(name: String): Path =
         live.resolveSibling("${live.fileName.toString().removeSuffix(".jsonl")}-$name.json")
@@ -124,6 +120,10 @@ internal class PerfReadFiles(
         val rotated = archiveName.rotatedAt(mark.path.fileName.toString()) ?: return@none false
         !archiveName.endsBefore(rotated, earlier) && archiveName.endsBefore(rotated, later)
     }
+
+    /** Whether a read from [from] opens the generation archived at [rotatedAt], by the reader's own test for skipping
+     *  an archive unopened. A live generation (null) is opened by every read. */
+    fun opens(rotatedAt: Long?, from: Long): Boolean = rotatedAt == null || !archiveName.endsBefore(rotatedAt, from)
 
     /** Whether the files are the ones [stamp] was taken of, none added or gone, only the live one grown by appends. */
     fun unchanged(stamp: PerfSourceStamp): Boolean = stamp.covers(list().orEmpty()) && stamp.holds()
@@ -149,27 +149,19 @@ internal class PerfReadFiles(
     }
 }
 
-/** One file mark as a refusal keeps it on disk. */
+/** One file mark as a stamp is kept on disk (ProbeJudgments). */
 @Serializable
 internal data class SavedPerfMark(val path: String, val fileKey: String? = null, val size: Long, val checksum: Long)
 
-/** A refusal as it is kept on disk: the earliest hour its read covered and the files it read. */
-@Serializable
-internal data class SavedPerfRefusal(val since: Long, val marks: List<SavedPerfMark>)
-
-/** A read the request log refused for a row it could not parse, and the earliest hour that read covered. A torn row is
- *  not mended by what is appended after it, so while the files are only appended to the refusal stands. With a
- *  [saved] file it also stands across a restart: a torn row in an archive refused the economics backfill on every boot,
- *  and each boot decoded every archived generation of every head again to find it (about 30 GB of allocation in the
- *  first 40 s of the Oct 19, 2026 boot), so the daemon grew its heap to tens of GB before its first minute. */
-internal class PerfRefusal(private val files: PerfReadFiles, private val saved: Path? = null) {
+/** A read the request log refused for a line it could not place, and the earliest hour that read covered. A torn line
+ *  is not mended by what is appended after it, so while the files are only appended to the refusal stands. It lasts
+ *  for one run. The one refusal kept on disk was the economics backfill's, from Oct 19, 2026: a torn row in an
+ *  archive refused the backfill at every boot, and each boot decoded every archived generation of every head again
+ *  (about 30 GB of allocation in its first 40 s). Since Oct 23 the backfill leaves out the hours a tear could belong
+ *  to instead of refusing (EconomicsBackfill says why), so no refusal outlives a restart. */
+internal class PerfRefusal(private val files: PerfReadFiles) {
     private var stamp: PerfSourceStamp? = null
     private var since = 0L
-    private val json = Json { ignoreUnknownKeys = true }
-
-    init {
-        saved?.let(::load)
-    }
 
     /** Whether the refusal noted earlier still holds for a read from [from]: no file changed, and the read still takes in
      *  every file the refused one did. The edge is an hour and moves forward every hour; a later edge that drops no
@@ -183,37 +175,5 @@ internal class PerfRefusal(private val files: PerfReadFiles, private val saved: 
     fun note(before: PerfSourceStamp?, from: Long, tore: Boolean) {
         stamp = before.takeIf { tore }
         since = from
-        saved?.let(::save)
-    }
-
-    /** A refusal a previous run kept; an unreadable or missing file is no refusal, so the next read decides again. */
-    private fun load(path: Path) {
-        val kept = try {
-            json.decodeFromString(SavedPerfRefusal.serializer(), Files.readString(path))
-        } catch (_: IOException) {
-            return
-        } catch (_: SerializationException) {
-            return
-        } catch (_: IllegalArgumentException) {
-            return
-        }
-        stamp = files.stampOf(kept.marks.map { PerfFileMark(Path.of(it.path), it.fileKey, it.size, it.checksum) })
-        since = kept.since
-    }
-
-    /** Best effort: a refusal that cannot be kept is decided again after the next restart, as before. */
-    private fun save(path: Path) {
-        try {
-            val held = stamp
-            if (held == null) {
-                Files.deleteIfExists(path)
-                return
-            }
-            val marks = held.marks.map { SavedPerfMark(it.path.toString(), it.fileKey, it.size, it.checksum) }
-            val text = json.encodeToString(SavedPerfRefusal.serializer(), SavedPerfRefusal(since, marks))
-            SecureFile.writeAtomic0600(path, text)
-        } catch (_: IOException) {
-            // The refusal still stands in memory for this run.
-        }
     }
 }

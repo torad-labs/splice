@@ -14,6 +14,7 @@ import splice.core.model.ModelRates
 import splice.core.model.TurnPrice
 import splice.core.perf.HistoryWindow
 import splice.core.perf.KeptHistory
+import splice.core.perf.PerfArchiveName
 import splice.core.turn.UsageHistory
 import splice.core.util.WallClock
 import splice.head.usage.EconomicsStore
@@ -52,21 +53,22 @@ class EconomicsBackfillTest {
         defaultContextWindow = 1000,
     )
 
+    /** Oct 23, 2026: a torn row used to refuse every hour of the pass, and the refusal lapsed at each rotation, so the
+     *  whole window was decoded again about once a day per head. Now it costs only the hour it was written in. */
     @Test
-    fun `a torn log is not read again at every call while its files are only appended to`(@TempDir dir: Path) {
+    fun `a torn row leaves out only the hour it was written in`(@TempDir dir: Path) {
         val perf = dir.resolve("head-perf.jsonl")
-        val torn = rowAt(6 * HOUR_MS).dropLast(1)
-        Files.writeString(perf, rowAt(5 * HOUR_MS) + "\n" + torn + "\n" + rowAt(NOW_MS) + "\n")
-        val log = PerfRowsFileSource(perf)
-        val kept = KeptHistory { HistoryWindow(35) }
-        val backfill = EconomicsBackfill(log, TurnPrice(card), kept, WallClock { NOW_MS })
-        assertEquals(emptyList<Any>(), backfill.missing(emptyList()))
-        val parsed = log.parsedLines
-        assertTrue(parsed > 0)
-        assertEquals(emptyList<Any>(), backfill.missing(emptyList()))
-        Files.writeString(perf, rowAt(NOW_MS + 1) + "\n", java.nio.file.StandardOpenOption.APPEND)
-        assertEquals(emptyList<Any>(), backfill.missing(emptyList()))
-        assertEquals(parsed, log.parsedLines, "a refused log is not read again until it is rewritten")
+        val torn = rowAt(7 * HOUR_MS + 60_000).dropLast(1)
+        val lines = listOf(rowAt(5 * HOUR_MS), rowAt(6 * HOUR_MS), rowAt(7 * HOUR_MS), torn, rowAt(8 * HOUR_MS))
+        Files.writeString(perf, (lines + rowAt(NOW_MS)).joinToString("\n", postfix = "\n"))
+        val store = store(dir)
+        store.record(work())
+
+        assertEquals(
+            listOf(6 * HOUR_MS, 8 * HOUR_MS, 10 * HOUR_MS),
+            source(store, perf).rows().map { it.hour },
+            "the hours around the torn row are built; its own hour may be missing that turn, so it is left out",
+        )
     }
 
     @Test
@@ -111,28 +113,37 @@ class EconomicsBackfillTest {
         assertEquals(5L, rows.last().tokens.inTokens, "the hour summed from the turns as they ran is the authority")
     }
 
+    /** The line claudex's September archive holds: 944 NUL bytes and no time (Oct 13, 2026). It may be in any hour up
+     *  to that archive's rotation, and an hour built before it would be graded by a read that opens the archive, finds
+     *  a line it cannot place and hides the head's whole hourly history. */
     @Test
-    fun `a record splice cannot read leaves every hour alone, and the next read tries again`(@TempDir dir: Path) {
+    fun `a torn line with no time leaves out every hour up to its archive's rotation, and the history still reads`(
+        @TempDir dir: Path,
+    ) {
         val perf = dir.resolve("head-perf.jsonl")
+        val archives = Files.createDirectories(dir.resolve("archive"))
+        val rotated = 7 * HOUR_MS + 1_800_000
+        val archived = listOf(rowAt(5 * HOUR_MS), rowAt(6 * HOUR_MS), "\u0000".repeat(944), rowAt(7 * HOUR_MS))
         Files.writeString(
-            perf,
-            rowAt(5 * HOUR_MS) + "\n" + rowAt(6 * HOUR_MS) + "\n" +
-                "{\"ts\":21600001,\"model\"\u0000torn\n" + rowAt(NOW_MS) + "\n",
+            archives.resolve(PerfArchiveName(perf.fileName.toString()).of(rotated)),
+            archived.joinToString("\n", postfix = "\n"),
         )
+        val live = listOf(8 * HOUR_MS, 9 * HOUR_MS, NOW_MS).map { rowAt(it) }
+        Files.writeString(perf, live.joinToString("\n", postfix = "\n"))
         val store = store(dir)
         store.record(work())
-        val reader = source(store, perf)
-
-        assertEquals(listOf(10 * HOUR_MS), reader.rows().map { it.hour }, "a torn record means no hour is known whole")
-
-        Files.writeString(
-            perf,
-            listOf(5 * HOUR_MS, 6 * HOUR_MS, NOW_MS).joinToString("\n") { rowAt(it) } + "\n",
+        val reader = EconomicsStoreSource(
+            store,
+            PerfRowsFileSource(perf, archives),
+            TurnPrice(card),
+            kept = KeptHistory { HistoryWindow(1) },
+            clock = WallClock { NOW_MS },
         )
+
         assertEquals(
-            listOf(6 * HOUR_MS, 10 * HOUR_MS),
+            listOf(8 * HOUR_MS, 9 * HOUR_MS, 10 * HOUR_MS),
             reader.rows().map { it.hour },
-            "the refusal is not remembered: once the records read whole, the gap is filled",
+            "the hours the line could be in are left out, the ones after its archive are built, and nothing is hidden",
         )
     }
 

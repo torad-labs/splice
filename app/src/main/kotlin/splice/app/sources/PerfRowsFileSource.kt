@@ -16,6 +16,10 @@
 // never pays for months of archive. A skipped generation still counts as retention evidence: the
 // files provably reach back to its rotation second, which is all the coverage check needs to tell
 // "quiet" from "rotated away".
+//
+// A TORN LINE KEEPS ITS PLACE (Oct 23, 2026): each line skipped inside the window reaches the hourly totals with
+// its leading ts and the rotation second of the archive it lies in (PerfTear), not only the ones that could be
+// probes, so the backfill leaves out the hours a tear could belong to instead of refusing every hour.
 package splice.app.sources
 
 import kotlinx.serialization.json.Json
@@ -33,6 +37,10 @@ import splice.usage.perf.PerfRowsWindow
 import splice.usage.perf.ProjectedPerfRowsSource
 import java.nio.file.NoSuchFileException
 import java.nio.file.Path
+
+// why: a row held for a streaming round is appended after newer ones with the time its turn ended (PerfStats.record);
+// an hour covers that lag, so a torn line's own row is not older than the newest row ahead of it less this.
+private const val LATE_ROW_MS = 3_600_000L
 
 public class PerfRowsFileSource internal constructor(
     private val file: Path,
@@ -120,7 +128,7 @@ public class PerfRowsFileSource internal constructor(
     internal fun economicsEvidence(sinceMs: Long): EconomicsPerfEvidence {
         val stamp = files.stamp()
         val scan = settledRead(sinceMs, PerfSelection.ECONOMICS, compact)
-        val evidence = EconomicsPerfEvidence(scan.window(), scan.probes, scan.probeTears)
+        val evidence = EconomicsPerfEvidence(scan.window(), scan.probes, scan.tears)
         share.keep(sinceMs, stamp, evidence)
         return evidence
     }
@@ -162,10 +170,12 @@ public class PerfRowsFileSource internal constructor(
             if (archiveName.endsBefore(rotatedAt, sinceMs)) {
                 scan.heldBack(rotatedAt)
             } else {
+                scan.enter(rotatedAt)
                 read(scan, generation, priority)
             }
         }
         generations.forEachIndexed { priority, generation ->
+            scan.enter(null)
             read(scan, generation, archives.size + priority)
         }
         return scan
@@ -196,7 +206,16 @@ public class PerfRowsFileSource internal constructor(
         /** Where each of [rows] lies on disk, in step with it; null for a row a whole cache read. */
         val spots = ArrayList<PerfLineSpot?>()
         val probes = ArrayList<PerfRow>()
-        val probeTears = ArrayList<Long?>()
+
+        /** Every line inside the window this scan could not read as a row, with where it lies. */
+        val tears = ArrayList<PerfTear>()
+
+        /** The rotation second of the archived generation being read, or null while a live one is. */
+        private var rotatedAt: Long? = null
+
+        /** The newest row time ahead of this point in the generation being read. Each line is appended after the
+         *  ones ahead of it, and a row's ts is when its turn ended, before its line was written. */
+        private var newestAhead: Long? = null
         val errors = ArrayList<String>()
         private var skipped = 0
         private var afterInWindowRow = false
@@ -216,8 +235,15 @@ public class PerfRowsFileSource internal constructor(
         override fun canSkip(minimum: Long, maximum: Long): Boolean =
             !afterInWindowRow && (oldest?.let { minimum >= it && maximum < sinceMs } ?: false)
 
+        /** Starts reading the generation archived at [rotated], or a live one when null. */
+        fun enter(rotated: Long?) {
+            rotatedAt = rotated
+            newestAhead = null
+        }
+
         override fun knownSpan(minimum: Long, maximum: Long) {
             oldest = minOf(oldest ?: minimum, minimum)
+            newestAhead = maxOf(newestAhead ?: maximum, maximum)
             if (maximum < sinceMs) afterInWindowRow = false
         }
 
@@ -241,6 +267,7 @@ public class PerfRowsFileSource internal constructor(
                 return
             }
             afterInWindowRow = row.ts >= sinceMs
+            newestAhead = maxOf(newestAhead ?: row.ts, row.ts)
             if (skipBefore(line)) return
             oldest = minOf(oldest ?: row.ts, row.ts)
             held.cutoffSample(line.drops.count, row.ts < sinceMs, rows.isNotEmpty())
@@ -258,7 +285,11 @@ public class PerfRowsFileSource internal constructor(
             // Preserve the original baseline and economics proof, without giving this line a row time.
             if (!skipBefore(line)) {
                 skipped++
-                if (line.model != PerfModelHint.NAMED) probeTears += line.leadingTs
+                tears += PerfTear(
+                    line.leadingTs,
+                    line.model == PerfModelHint.NAMED,
+                    PerfTearSpan(newestAhead?.minus(LATE_ROW_MS), rotatedAt),
+                )
             }
         }
 

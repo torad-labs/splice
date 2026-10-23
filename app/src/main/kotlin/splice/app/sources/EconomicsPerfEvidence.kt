@@ -1,5 +1,7 @@
 // NEW: Oct 12, 2026 — what one perf read hands the hourly totals, moved out of PerfRowsFileSource so the source holds
 // the reading and this the shape (the push of 8ab63f4c1: PerfRowsFileSource.kt in the concentration band HIGH).
+// Oct 23, 2026: every line the read could not parse is handed on with where it lies ([PerfTear]), not only the ones
+// that could be probes, so the backfill leaves out the hours a tear could belong to instead of refusing the whole pass.
 package splice.app.sources
 
 import splice.usage.perf.PerfRow
@@ -8,14 +10,26 @@ import splice.usage.perf.PerfRowsWindow
 /** Which rows a scan keeps: the work rows alone, or the work rows with the probes the hourly totals subtract. */
 internal enum class PerfSelection { WORK, ECONOMICS }
 
-/** One settled scan supplies the work and probe sides of historical economics reconciliation. [probeTears] holds, for
- *  each line the scan could not read as a row that might still be a legacy liveness probe, its leading timestamp (null
- *  where it names none): a line whose readable start does not show a model, since every probe row carries an empty one. */
+/** One line inside the window that a scan could not read as a row: its leading timestamp, or null where its readable
+ *  start names none; whether that start names a model, which no legacy probe row does; and when its row can lie. */
+internal data class PerfTear(val ts: Long?, val namedModel: Boolean, val span: PerfTearSpan = PerfTearSpan())
+
+/** When a torn line's row can lie, from where the line sits. [notBefore] is the newest row time ahead of it in its
+ *  file, less the lag of a row appended late, or null when no row comes ahead of it. [rotatedAt] is the rotation second
+ *  of the archived generation it lies in, or null in `.1` or the live file, whose names bound no row. */
+internal data class PerfTearSpan(val notBefore: Long? = null, val rotatedAt: Long? = null)
+
+/** One settled scan supplies the work and probe sides of historical economics reconciliation, and every line inside
+ *  the window it could not read as a row ([tears]). */
 internal data class EconomicsPerfEvidence(
     val work: PerfRowsWindow,
     val probes: List<PerfRow>,
-    val probeTears: List<Long?>,
-)
+    val tears: List<PerfTear>,
+) {
+    /** For each tear that might still be a legacy liveness probe, its leading timestamp (null where it names none): a
+     *  line whose readable start does not show a model, since every probe row carries an empty one. */
+    val probeTears: List<Long?> get() = tears.filterNot { it.namedModel }.map { it.ts }
+}
 
 /** One hourly-totals read's evidence, lent to the asks after it inside that read. One read asked the log three
  *  times (backfill, probe check, reprice), each from its own oldest hour, and a week of whole rows outgrows the full
@@ -52,7 +66,7 @@ internal class EconomicsEvidenceShare(private val files: PerfReadFiles) {
         if (sinceMs > earlier.sinceMs && read.probeTears.any { it == null }) return null
         return read.copy(
             probes = read.probes.filter { it.ts >= sinceMs },
-            probeTears = read.probeTears.filter { it == null || it >= sinceMs },
+            tears = read.tears.filter { tear -> tear.ts.let { it == null || it >= sinceMs } },
         )
     }
 

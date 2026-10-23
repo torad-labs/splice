@@ -1,7 +1,8 @@
 // NEW: Oct 13, 2026 (gaps 461/462) — which dialect reads each [providers.X.quirks] key, so Models offers a command only
 // the quirks its dialect reads. QuirksConfig declares the keys for every dialect at once (its header says why it lives in
 // :core); the reading is split by QuirksOverlay into each dialect's profile and by the provider arms behind the dialect
-// switch. A key config rejects (effort_ceiling or compact_effort) is in no list, so no page offers it.
+// switch. A key no live code reads (the ignored effort_ceiling, the refused compact_effort) is in no list, so no
+// page offers it.
 package splice.core.topology
 
 /** The dialects that read each quirk, by its splice.toml name. */

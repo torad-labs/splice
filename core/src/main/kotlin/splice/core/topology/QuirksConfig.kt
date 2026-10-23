@@ -26,7 +26,10 @@ public data class QuirksConfig(
     @SerialName("account_id_header") val accountIdHeader: Boolean = false,
     @SerialName("cache_key") val cacheKey: String = "first-message-hash",
     /** RETIRED 2026-10-21: each Responses provider applies its verified model ceiling. This generic
-     *  setting never reached that policy, so accepting it promised a cap it could not enforce. */
+     *  setting never reached that policy, in 0.3.2 or since, so no value of it changes a turn. It is
+     *  still read, and ignored, because 0.3.2's published example config sets it: refusing it made
+     *  every upgrade from that config roll back (Oct 22), and an upgrade keeps the operator's config
+     *  as written (v0.4.0 spec §5). */
     @SerialName("effort_ceiling") val effortCeiling: String? = null,
     @SerialName("summary_field") val summaryField: Boolean = true,
     /** RETIRED 2026-09-05 (operator law): a compaction is built exactly like a turn and inherits
@@ -149,17 +152,19 @@ public data class QuirksConfig(
     internal fun codeModeEnabled(default: Boolean): Boolean = codeMode ?: default
 
     init {
-        require(codeModeMemoryMb == null || codeModeMemoryMb > 0) {
-            "[providers.*.quirks] code_mode_memory_mb must be positive"
+        if (codeModeMemoryMb != null && codeModeMemoryMb <= 0) {
+            throw TopologyRuleViolation(
+                "code_mode_memory_mb",
+                "[providers.*.quirks] code_mode_memory_mb must be positive",
+            )
         }
-        require(effortCeiling == null) {
-            "[providers.*.quirks] effort_ceiling is retired: each provider applies its verified model ceiling; " +
-                "remove the key"
-        }
-        require(compactEffort == null) {
-            "[providers.*.quirks] compact_effort = '$compactEffort' is retired: a compaction is built " +
-                "exactly like a turn and inherits the session's model and effort (any pin misses the " +
-                "prompt cache on the whole transcript); remove the key"
+        if (compactEffort != null) {
+            throw TopologyRuleViolation(
+                "compact_effort",
+                "[providers.*.quirks] compact_effort is retired: a compaction is built exactly like a turn and " +
+                    "inherits the session's model and effort (any pin misses the prompt cache on the whole " +
+                    "transcript); remove the key",
+            )
         }
     }
 }

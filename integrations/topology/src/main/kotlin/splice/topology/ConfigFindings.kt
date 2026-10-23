@@ -12,6 +12,7 @@ import splice.core.model.HeadDiscoveredModels
 import splice.core.topology.Topology
 import splice.core.topology.TopologyFinding
 import splice.core.topology.TopologyFindings
+import splice.core.topology.TopologyRuleViolation
 import splice.core.util.SafeFailureText
 import splice.core.util.TopologyTypeFailure
 import java.nio.file.Path
@@ -93,12 +94,23 @@ public object ConfigFindings {
     private fun undecodable(text: String, broken: Throwable): List<TopologyFinding> {
         val scanned = TopologyTypeMismatch.all(text)
         val syntax = syntaxFinding(broken)
+        val rule = ruleFinding(text, broken)
         return when {
+            rule != null -> scanned + rule
             syntax != null -> scanned + syntax
             scanned.isNotEmpty() -> scanned
             else -> listOf(TopologyFinding(FINDING_FILE, WITHHELD))
         }
     }
+
+    /** A table's own rule, which the decoder may wrap: its key, splice's sentence, and the first line assigning it. */
+    private fun ruleFinding(text: String, broken: Throwable): TopologyFinding? =
+        generateSequence(broken) { it.cause }.take(MAX_CAUSES).filterIsInstance<TopologyRuleViolation>().firstOrNull()
+            ?.let { rule ->
+                val assigns = Regex("(^|[{,\\s])${Regex.escape(rule.key)}\\s*=")
+                val line = text.lineSequence().indexOfFirst { assigns.containsMatchIn(it.substringBefore('#')) }
+                TopologyFinding(FINDING_FILE, rule.message.orEmpty(), (line + 1).takeIf { line >= 0 })
+            }
 
     /** The parser's own "Line N:" prefix is the only part of its message read, and only its digits: the rest can quote
      *  the value on that line. */
@@ -155,6 +167,7 @@ public object ConfigFindings {
         "the parser cannot read this line; check it for a missing =, quote or bracket, or a value the setting rejects"
     private const val WITHHELD =
         "the file cannot be decoded and the parser's text is withheld because it can quote values; check the last edit"
+    private const val MAX_CAUSES = 8
     private val PARSER_LINE = Regex("^Line (\\d+):")
     private val STRUCTURE_LINE = Regex(" \\(line (\\d+)\\)")
 }

@@ -39,6 +39,7 @@ auth = { kind = "chatgpt-oauth" }
 store = false
 account_id_header = true
 cache_key = "first-message-hash"
+effort_ceiling = "max"
 summary_field = true
 # websocket (default false in code): serve rounds over the Responses WebSocket with
 # previous_response_id chaining, so a continuation turn sends ONLY the new items instead of the
@@ -132,7 +133,7 @@ auth = { kind = "grok-oauth" }  # browser login: `claude-grok login`
 # Raw reasoning items stay encrypted by xAI; public form is summary/reasoning_text only.
 # reasoning_cache = false documented here because xai returns no encrypted reasoning envelopes —
 # the cache would only widen the request's include[] for nothing (it defaults on for codex).
-quirks = { cache_key = "session-id", summary_field = true, tool_choice = true, reasoning_cache = false }
+quirks = { cache_key = "session-id", effort_ceiling = "high", summary_field = true, tool_choice = true, reasoning_cache = false }
 [[providers.xai.models]]
 id = "grok-4.6"
 label = "Grok 4.6"

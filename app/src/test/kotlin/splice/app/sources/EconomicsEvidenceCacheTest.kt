@@ -53,25 +53,25 @@ class EconomicsEvidenceCacheTest {
     }
 
     @Test
-    fun `a log refused for a torn row is not read again while its files are only appended to`(@TempDir dir: Path) {
+    fun `the hour a torn row is in stays not read while its log is only appended to`(@TempDir dir: Path) {
         val file = dir.resolve("synthetic-perf.jsonl")
         write(file)
         val source = PerfRowsFileSource(file, cache = PerfRowsCache(32_768))
         val economics = ProbeEconomics(source)
         val buckets = listOf(EconomicsBucket(0L))
         assertEquals(ProbeGap.UNREADABLE, (economics.withoutProbes(buckets) as ProbeDeduction.Unavailable).gap)
-        val parsed = source.parsedLines
-        assertTrue(parsed > 0)
         assertEquals(ProbeGap.UNREADABLE, (economics.withoutProbes(buckets) as ProbeDeduction.Unavailable).gap)
-        assertEquals(parsed, source.parsedLines, "an unchanged log is not read again")
         val appended = """{"ts":103,"outcome":"ok","model":"synthetic","in_tokens":7}""" + "\n"
         Files.writeString(file, appended, StandardOpenOption.APPEND)
-        assertEquals(ProbeGap.UNREADABLE, (economics.withoutProbes(buckets) as ProbeDeduction.Unavailable).gap)
-        assertEquals(parsed, source.parsedLines, "an appended row does not mend a torn one, so it is not read again")
+        assertEquals(
+            ProbeGap.UNREADABLE,
+            (economics.withoutProbes(buckets) as ProbeDeduction.Unavailable).gap,
+            "an appended row does not mend a torn one",
+        )
     }
 
     @Test
-    fun `a log rewritten without its torn row is read again and no longer refused`(@TempDir dir: Path) {
+    fun `a log rewritten without its torn row no longer holds its hour back`(@TempDir dir: Path) {
         val file = dir.resolve("synthetic-perf.jsonl")
         write(file)
         val source = PerfRowsFileSource(file, cache = PerfRowsCache(32_768))
@@ -82,7 +82,7 @@ class EconomicsEvidenceCacheTest {
         Files.writeString(file, mended.joinToString("\n", postfix = "\n"))
         val again = economics.withoutProbes(buckets)
         val refused = (again as? ProbeDeduction.Unavailable)?.gap == ProbeGap.UNREADABLE
-        assertTrue(!refused, "a mended log is not refused for the old tear")
+        assertTrue(!refused, "a mended log does not hold the hour back for the old tear")
     }
 
     /** The evidence as the hourly totals read it: a row's time is its own, so the compact cache keeps no `ts` among

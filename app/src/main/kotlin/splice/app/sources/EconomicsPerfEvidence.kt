@@ -5,7 +5,8 @@
 // Later that day the probe check, the reprice and the shared read took the same rule ([PerfTear.mayHold]): one
 // probe-like line with no time in claudex's Oct 1 archive made its whole hourly history Unavailable once the backfill
 // reached back past it, and the refusal lasted one run, so every boot read 23 days again (15.6 s at both boots of
-// 34d505416).
+// 34d505416). A line with no time is also bounded by the first row after it ([PerfTearSpan.notAfter]), so one in the
+// live file costs the hours up to that row, not every hour until it is archived.
 package splice.app.sources
 
 import splice.usage.perf.PerfRow
@@ -20,31 +21,52 @@ internal enum class PerfSelection { WORK, ECONOMICS }
 /** One line inside the window that a scan could not read as a row: its leading timestamp, or null where its readable
  *  start names none; whether that start names a model, which no legacy probe row does; and when its row can lie. */
 internal data class PerfTear(val ts: Long?, val namedModel: Boolean, val span: PerfTearSpan = PerfTearSpan()) {
-    /** Whether this line's row may belong to the hour starting at [hour], so that hour's rows may not be all its turns:
-     *  its leading ts is in it, or it has none, [hour] ends after the earliest time its row can carry, and a read from
-     *  [hour] opens its file. */
-    fun mayHold(hour: Long, files: PerfReadFiles): Boolean = ts?.let { hourOf(it) == hour }
-        ?: ((span.notBefore ?: hour) < hour + TEAR_HOUR_MS && files.opens(span.rotatedAt, hour))
+    /** Whether nothing yet bounds this line's row from above: it has no ts, no row comes after it and its file is
+     *  `.1` or the live one. The next row appended bounds it, so the hours it may hold are not settled. */
+    val open: Boolean get() = ts == null && span.notAfter == null && span.rotatedAt == null
 
-    /** The newest hour this line's row can belong to, or null when nothing bounds it: no ts, in `.1` or the live file.
-     *  An archive's rotation second bounds its rows to within a second past it, which may reach the next hour. */
-    fun latestHour(files: PerfReadFiles): Long? = ts?.let { hourOf(it) } ?: span.rotatedAt?.let { rotated ->
-        val next = hourOf(rotated) + TEAR_HOUR_MS
-        if (files.opens(rotated, next)) next else hourOf(rotated)
-    }
+    /** Whether this line's row may belong to the hour starting at [hour], so that hour's rows may not be all its turns:
+     *  its leading ts is in it, or it has none, [hour] ends after the earliest time its row can carry, starts no later
+     *  than the latest, and a read from [hour] opens its file. */
+    fun mayHold(hour: Long, files: PerfReadFiles): Boolean =
+        ts?.let { hourOf(it) == hour } ?: (span.reaches(hour) && files.opens(span.rotatedAt, hour))
+
+    /** The newest hour this line's row can belong to, or null when nothing bounds it ([open]). The first row after it
+     *  bounds it, and an archive's rotation second bounds its rows to within a second past it, which may reach the
+     *  next hour. */
+    fun latestHour(files: PerfReadFiles): Long? = ts?.let { hourOf(it) } ?: listOfNotNull(
+        span.notAfter?.let { hourOf(it) },
+        span.rotatedAt?.let { rotated ->
+            val next = hourOf(rotated) + TEAR_HOUR_MS
+            if (files.opens(rotated, next)) next else hourOf(rotated)
+        },
+    ).minOrNull()
 
     /** Whether a read from [sinceMs] meets this line: its ts is not before it, or it has none and the read opens its
-     *  file, where a line with no ts is met whatever the cutoff. */
+     *  file, where a line with no ts is met whatever the cutoff, as a fresh read from [sinceMs] would meet it. */
     fun metFrom(sinceMs: Long, files: PerfReadFiles): Boolean =
         ts?.let { it >= sinceMs } ?: files.opens(span.rotatedAt, sinceMs)
+
+    /** This line with its row bounded by [latest], the latest time the first row after it allows. */
+    fun before(latest: Long): PerfTear = copy(span = span.copy(notAfter = latest))
 
     private fun hourOf(ms: Long): Long = ms / TEAR_HOUR_MS * TEAR_HOUR_MS
 }
 
 /** When a torn line's row can lie, from where the line sits. [notBefore] is the newest row time ahead of it in its
- *  file, less the lag of a row appended late, or null when no row comes ahead of it. [rotatedAt] is the rotation second
- *  of the archived generation it lies in, or null in `.1` or the live file, whose names bound no row. */
-internal data class PerfTearSpan(val notBefore: Long? = null, val rotatedAt: Long? = null)
+ *  file, less the lag of a row appended late, or null when no row comes ahead of it. [notAfter] is the time of the
+ *  first row after it in the read, plus that lag, or null when no row comes after it: that row's line was written
+ *  after this one, and a row's ts is when its turn ended, before its line was written. [rotatedAt] is the rotation
+ *  second of the archived generation it lies in, or null in `.1` or the live file, whose names bound no row. */
+internal data class PerfTearSpan(
+    val notBefore: Long? = null,
+    val rotatedAt: Long? = null,
+    val notAfter: Long? = null,
+) {
+    /** Whether the hour starting at [hour] ends after the earliest time the row can carry and starts no later than the
+     *  latest. */
+    fun reaches(hour: Long): Boolean = (notBefore ?: hour) < hour + TEAR_HOUR_MS && (notAfter ?: hour) >= hour
+}
 
 /** One settled scan supplies the work and probe sides of historical economics reconciliation, and every line inside
  *  the window it could not read as a row ([tears]). */

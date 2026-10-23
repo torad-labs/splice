@@ -1,6 +1,6 @@
 // NEW: what a perf source's files held at one moment, so a later look can tell appended files from replaced or rewritten ones.
-// Oct 23, 2026: a refusal lasts one run (PerfRefusal says why), and [PerfReadFiles.opens] tells the backfill from which
-// hours a read opens the archive a torn line lies in.
+// Oct 23, 2026: [PerfReadFiles.opens] tells the backfill from which hours a read opens the archive a torn line lies in,
+// and [PerfSourceStamp.rewroteNone] tells a rotation from a rewrite, so the probe check keeps its torn hours across one.
 package splice.app.sources
 
 import kotlinx.serialization.Serializable
@@ -75,6 +75,27 @@ internal class PerfSourceStamp(
 
     /** Whether [files] are the files this stamp was taken of, none added and none gone. */
     fun covers(files: List<Path>): Boolean = files.toSet() == marks.map { it.path }.toSet()
+
+    /** Whether no file this stamp was taken of was rewritten: each one's bytes still begin a file among [files], or its
+     *  name is gone. A rotation rewrites nothing: it renames the live file to `.1` (grown by appends), copies `.1` whole
+     *  into the archive, and deletes archives past the window. */
+    fun rewroteNone(files: List<Path>): Boolean {
+        val now = files.map { reader.of(it) ?: return false }
+        return try {
+            marks.all { mark ->
+                now.none { it.path == mark.path } || now.sortedBy { it.path != mark.path }.any { carries(it, mark) }
+            }
+        } catch (_: IOException) {
+            false
+        }
+    }
+
+    /** Whether [file] begins with the bytes [mark] was taken of. */
+    private fun carries(file: PerfFileMark, mark: PerfFileMark): Boolean = when {
+        file.size == mark.size -> file.checksum == mark.checksum
+        file.size > mark.size -> reader.checksum(file.path, mark.size) == mark.checksum
+        else -> false
+    }
 }
 
 /** The files one perf source reads: every archive, then the live generations that exist. */
@@ -120,6 +141,9 @@ internal class PerfReadFiles(
 
     /** Whether the files are the ones [stamp] was taken of, none added or gone, only the live one grown by appends. */
     fun unchanged(stamp: PerfSourceStamp): Boolean = stamp.covers(list().orEmpty()) && stamp.holds()
+
+    /** Whether every file [stamp] was taken of still holds the bytes it held then, under any name, or is gone. */
+    fun rewroteNone(stamp: PerfSourceStamp): Boolean = list()?.let { stamp.rewroteNone(it) } ?: false
 
     /** The archived generations with their rotation seconds, oldest first. No archive directory is quiet (nothing has
      *  rotated out yet, or the archive is off); any other failure to list it goes to [errors] as a read error, because

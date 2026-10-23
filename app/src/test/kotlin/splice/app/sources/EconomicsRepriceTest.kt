@@ -72,6 +72,35 @@ class EconomicsRepriceTest {
     // Live, Oct 10: claudex's 03:00 CT hour held 256 side queries beside its 577 turns and read $0.00 with
     // every turn unpriced, because the hour rebuilt from the rows carried 714 local steps where the rollup
     // recorded 458. A row the rollup never counted cannot be what makes an hour a different hour.
+    // Until Oct 23, 2026 a torn line with no time refused the whole reprice, so claudex's unpriced hours read unpriced
+    // though its log held their turns. Now only the hours that line's row can lie in go unread.
+    @Test
+    fun `an unpriced hour beside a torn line with no time reads at the card splice holds now`(@TempDir dir: Path) {
+        val file = dir.resolve("head-perf.jsonl")
+        val lines = listOf(3, 5).map { WORK_ROW.replace("3600123", "${it * REPRICE_HOUR + 123}") }
+        Files.writeString(
+            file,
+            listOf(WORK_ROW, lines[0], "\u0000".repeat(944), lines[1]).joinToString("\n", postfix = "\n"),
+        )
+        var now = REPRICE_HOUR + 123
+        val uncarded = EconomicsStore(dir.resolve("economics.json"), TurnPrice(null), WallClock { now }, log = { })
+        uncarded.record(work())
+        now = 4 * REPRICE_HOUR + 123
+        uncarded.record(work())
+        val carded = store(dir.resolve("carded"), TurnPrice(card))
+        carded.record(work())
+        val expected = EconomicsStoreSource(carded).rows().single()
+
+        val read = assertInstanceOf(
+            EconomicsRead.Rows::class.java,
+            EconomicsStoreSource(uncarded, PerfRowsFileSource(file), TurnPrice(card)).read(),
+        )
+
+        assertEquals(listOf(REPRICE_HOUR), read.rows.map { it.hour }, "the hour away from the torn line is shown")
+        assertEquals(expected.cost, read.rows.single().cost, "at the card splice holds now")
+        assertEquals(listOf(4 * REPRICE_HOUR), read.notRead, "the hour the torn line's row may be in is not read")
+    }
+
     @Test
     fun `an hour that answered an activity side query is still the turns it counted`(@TempDir dir: Path) {
         val file = dir.resolve("head-perf.jsonl")

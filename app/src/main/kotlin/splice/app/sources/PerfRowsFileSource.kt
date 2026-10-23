@@ -39,8 +39,9 @@ import java.nio.file.NoSuchFileException
 import java.nio.file.Path
 
 // why: a row held for a streaming round is appended after newer ones with the time its turn ended (PerfStats.record);
-// an hour covers that lag, so a torn line's own row is not older than the newest row ahead of it less this. It is a
-// margin, not a bound: nothing caps the hold while the round keeps making progress (Watchdog caps only a silent one).
+// an hour covers that lag, so a torn line's own row is not older than the newest row ahead of it less this, nor newer
+// than the first row after it plus this. It is a margin, not a bound: nothing caps the hold while the round keeps
+// making progress (Watchdog caps only a silent one).
 // The latest any row landed across 1.05 M rows of claudex and claude-muse was 11.4 min after its time (Oct 23, 2026).
 private const val LATE_ROW_MS = 3_600_000L
 
@@ -212,6 +213,9 @@ public class PerfRowsFileSource internal constructor(
         /** Every line inside the window this scan could not read as a row, with where it lies. */
         val tears = ArrayList<PerfTear>()
 
+        /** Where the tears no row has come after yet begin in [tears], across generations, oldest first. */
+        private var unbounded = 0
+
         /** The rotation second of the archived generation being read, or null while a live one is. */
         private var rotatedAt: Long? = null
 
@@ -270,6 +274,7 @@ public class PerfRowsFileSource internal constructor(
             }
             afterInWindowRow = row.ts >= sinceMs
             newestAhead = maxOf(newestAhead ?: row.ts, row.ts)
+            boundTears(row.ts)
             if (skipBefore(line)) return
             oldest = minOf(oldest ?: row.ts, row.ts)
             held.cutoffSample(line.drops.count, row.ts < sinceMs, rows.isNotEmpty())
@@ -281,6 +286,12 @@ public class PerfRowsFileSource internal constructor(
                 rows += row
                 spots += line.spot
             }
+        }
+
+        /** The first row after a torn line, at [rowTs], bounds that line's row, which was written before it. */
+        private fun boundTears(rowTs: Long) {
+            for (at in unbounded until tears.size) tears[at] = tears[at].before(rowTs + LATE_ROW_MS)
+            unbounded = tears.size
         }
 
         private fun rejected(line: PerfCachedLine) {

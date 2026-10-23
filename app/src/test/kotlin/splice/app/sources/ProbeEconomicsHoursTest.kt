@@ -129,4 +129,33 @@ class ProbeEconomicsHoursTest {
         val named = payload.jsonObject.getValue("heads").jsonArray.single().jsonObject.getValue("not_read_hours")
         assertEquals(listOf(21 * PROBE_HOUR), named.jsonArray.map { it.jsonPrimitive.long }, "the route names them")
     }
+
+    // A power loss leaves NUL bytes in the live file, and the next start appends after them. The row that line held was
+    // written before the first row after it, so every hour after that row's is read, not every hour since the crash.
+    @Test
+    fun `a torn line with no time in the live file costs only the hours up to the row written after it`(
+        @TempDir dir: Path,
+    ) {
+        val file = dir.resolve("head-perf.jsonl")
+        Files.writeString(
+            file,
+            atHour(20 * PROBE_HOUR + 123, MODELED_WORK_ROW, LOCAL_WORK_ROW) + "\u0000".repeat(944) + "\n" +
+                atHour(21 * PROBE_HOUR + 123, MODELED_WORK_ROW, LOCAL_WORK_ROW) +
+                atHour(24 * PROBE_HOUR + 123, MODELED_WORK_ROW, LOCAL_WORK_ROW),
+        )
+        var now = 20 * PROBE_HOUR + 123
+        val store = store(dir, WallClock { now })
+        recordWork(store)
+        now = 21 * PROBE_HOUR + 123
+        recordWork(store)
+        now = 24 * PROBE_HOUR + 123
+        recordWork(store)
+        val read = shown(store, file)
+        assertEquals(listOf(24 * PROBE_HOUR), read.rows.map { it.hour }, "the hour after them is read")
+        assertEquals(
+            listOf(20 * PROBE_HOUR, 21 * PROBE_HOUR),
+            read.notRead,
+            "the hours from the row before the line to the row after it are not read",
+        )
+    }
 }

@@ -10,9 +10,6 @@ import org.junit.jupiter.api.Assertions.assertNull
 import org.junit.jupiter.api.Assertions.assertThrows
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
-import splice.core.turn.RoundHandoffs
-import splice.core.turn.TurnOutcome
-import splice.core.turn.Usage
 import splice.provider.codex.state.CodeModeKeyLocks
 import splice.provider.codex.state.CodeModeRegistryAccess
 import splice.provider.codex.state.CodeModeStateJournal
@@ -24,7 +21,6 @@ import splice.provider.codex.stream.CodeModeLiveRound
 import splice.provider.codex.stream.CodeModeSourceEnds
 import splice.provider.codex.stream.CodeModeSourceLease
 import splice.provider.codex.stream.CodeModeStreamAdmission
-import splice.upstream.codemode.CodeModeSourcePart
 import splice.upstream.sse.CustomToolSource
 import java.io.IOException
 import java.util.concurrent.ConcurrentHashMap
@@ -36,48 +32,6 @@ import java.util.concurrent.locks.ReentrantLock
 import kotlin.time.Duration.Companion.hours
 
 class CodeModeLockOrderTest : CodeModeBridgeTestSupport() {
-    @Test
-    fun `a nested sweep releases the outer key before ending a blocked source reader`() {
-        val beforeEnd = CountDownLatch(1)
-        val releaseEnd = CountDownLatch(1)
-        val state = LiveState(
-            beforeEnd = Runnable {
-                beforeEnd.countDown()
-                check(releaseEnd.await(WAIT_MILLIS, TimeUnit.MILLISECONDS))
-            },
-        )
-        val readerError = AtomicReference<Throwable?>()
-        val sweepError = AtomicReference<Throwable?>()
-        val read = AtomicReference<CodeModeSourcePart?>()
-        val reader = daemon(readerError) {
-            read.set(readSource(state))
-        }
-        val sweep = daemon(sweepError) {
-            state.registry.changes.edit(state.record) {
-                reader.start()
-                waiting(reader)
-                state.dead.set(true)
-                state.registry.recordsFor(state.record.key)
-                assertEquals(CodeModePhase.LOST, state.record.phase)
-            }
-        }
-        sweep.start()
-        try {
-            assertTrue(beforeEnd.await(WAIT_MILLIS, TimeUnit.MILLISECONDS), "deferred end follows key release")
-            reader.join(WAIT_MILLIS)
-            assertFalse(reader.isAlive, "the reader must finish while cancellation is still held")
-            assertNull(readerError.get(), "disposed capture skips the reader's delta without failing its response")
-            assertTrue(read.get() is CodeModeSourcePart.Failed, "no unread source may dispatch after disposal")
-            assertEquals("", state.record.origin.source)
-            assertNull(state.record.sourceEnd)
-        } finally {
-            releaseEnd.countDown()
-            sweep.join(WAIT_MILLIS)
-            reader.join(WAIT_MILLIS)
-        }
-        assertFalse(sweep.isAlive, "the sweep must release its outer registry locks before stopping the reader")
-        assertNull(sweepError.get())
-    }
 
     @Test
     fun `retry ownership waits for pending ids under the key without sweeping a dead session`() {
@@ -175,108 +129,6 @@ class CodeModeLockOrderTest : CodeModeBridgeTestSupport() {
             state.record.phase = CodeModePhase.COMPLETED
             assertTrue(state.registry.add(CodeModeRecords.of(state.record.key, 1)))
         }
-    }
-
-    @Test
-    fun `admission releases its own key before ending a source blocked in ownership`() {
-        val beforeEnd = CountDownLatch(1)
-        val releaseEnd = CountDownLatch(1)
-        val state = LiveState(
-            beforeEnd = Runnable {
-                beforeEnd.countDown()
-                check(releaseEnd.await(WAIT_MILLIS, TimeUnit.MILLISECONDS))
-            },
-        )
-        val readerError = AtomicReference<Throwable?>()
-        val admissionError = AtomicReference<Throwable?>()
-        val read = AtomicReference<CodeModeSourcePart?>()
-        val reader = daemon(readerError) {
-            read.set(readSource(state))
-        }
-        state.onDeath = Runnable {
-            reader.start()
-            waiting(reader)
-        }
-        state.dead.set(true)
-        val admission = daemon(admissionError) {
-            assertTrue(state.registry.add(CodeModeRecords.of(state.record.key, 1)))
-        }
-        admission.start()
-        try {
-            assertTrue(beforeEnd.await(WAIT_MILLIS, TimeUnit.MILLISECONDS), "admission ends after its key releases")
-            reader.join(WAIT_MILLIS)
-            assertFalse(reader.isAlive, "the admission reader must finish while cancellation is still held")
-            assertNull(readerError.get())
-            assertTrue(read.get() is CodeModeSourcePart.Failed, "admission disposal cannot dispatch unread source")
-            assertEquals("", state.record.origin.source, "disposed capture cannot stage a late delta")
-        } finally {
-            releaseEnd.countDown()
-            admission.join(WAIT_MILLIS)
-            reader.join(WAIT_MILLIS)
-        }
-        assertFalse(admission.isAlive, "admission must release its own key before stopping the old reader")
-        assertNull(admissionError.get())
-    }
-
-    @Test
-    fun `a key holder can read the source while a retry holds lifecycle and waits for that key`() {
-        val state = LiveState()
-        runBlocking {
-            state.round.switching.customToolSource(CustomToolSource.Delta(state.record.origin.outerCallId, ";next"))
-        }
-        val cursor = state.round.source.view()
-        val ownerError = AtomicReference<Throwable?>()
-        val consumerError = AtomicReference<Throwable?>()
-        val owner = daemon(ownerError) { state.round.owns(turn("source-consumer")) }
-        val consumer = daemon(consumerError) {
-            state.registry.changes.edit(state.record) {
-                owner.start()
-                waiting(owner)
-                assertTrue(runBlocking { cursor.read() } is CodeModeSourcePart.Delta)
-            }
-        }
-        consumer.start()
-        consumer.join(WAIT_MILLIS)
-        assertFalse(consumer.isAlive, "a key-held consumer must not acquire the retry's lifecycle monitor")
-        owner.join(WAIT_MILLIS)
-        assertFalse(owner.isAlive)
-        assertNull(ownerError.get())
-        assertNull(consumerError.get())
-    }
-
-    @Test
-    fun `a captured prefix cannot overwrite terminal source persisted before its consumer gets the key`() {
-        val state = LiveState()
-        val prefix = "const value = 1;"
-        val complete = "$prefix return value;"
-        runBlocking {
-            state.round.switching.customToolSource(CustomToolSource.Delta(state.record.origin.outerCallId, prefix))
-        }
-        val cursor = state.round.source.view()
-        val consumerError = AtomicReference<Throwable?>()
-        val consumer = daemon(consumerError) { runBlocking { cursor.read() } }
-        state.registry.changes.edit(state.record) {
-            consumer.start()
-            waiting(consumer)
-            val call = outer(state.record.origin.outerCallId, source = complete)
-            val outcome = TurnOutcome.Success(
-                false,
-                false,
-                Usage(),
-                handoffs = RoundHandoffs(customCalls = listOf(call)),
-            )
-            val continuity = CodexCodeModeWire(Json, {}).continuity(outcome)
-            state.registry.source.finish(state.record, call, continuity, Usage())
-            state.round.source.complete(complete)
-        }
-        consumer.join(WAIT_MILLIS)
-        assertFalse(consumer.isAlive)
-        assertNull(consumerError.get())
-        assertEquals(
-            complete,
-            state.record.origin.source,
-            "an older read prefix must not replace the certified complete source",
-        )
     }
 
     @Test

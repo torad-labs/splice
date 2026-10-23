@@ -113,9 +113,11 @@ class EconomicsBackfillTest {
         assertEquals(5L, rows.last().tokens.inTokens, "the hour summed from the turns as they ran is the authority")
     }
 
-    /** The line claudex's September archive holds: 944 NUL bytes and no time (Oct 13, 2026). It may be in any hour up
-     *  to that archive's rotation, and an hour built before it would be graded by a read that opens the archive, finds
-     *  a line it cannot place and hides the head's whole hourly history. */
+    /** The line claudex's September archive holds: 944 NUL bytes and no time (Oct 13, 2026). Its row may be in
+     *  any hour from the newest row ahead of it, less an hour, up to that archive's rotation. The hours built before
+     *  it are graded by a read that opens the archive. Until Oct 23 that read refused the head's whole hourly
+     *  history for the run, so every boot read the log again: claudex, 15.6 s at both boots of 34d505416, once its
+     *  backfill reached Aug 24. */
     @Test
     fun `a torn line with no time leaves out every hour up to its archive's rotation, and the history still reads`(
         @TempDir dir: Path,
@@ -123,7 +125,8 @@ class EconomicsBackfillTest {
         val perf = dir.resolve("head-perf.jsonl")
         val archives = Files.createDirectories(dir.resolve("archive"))
         val rotated = 7 * HOUR_MS + 1_800_000
-        val archived = listOf(rowAt(5 * HOUR_MS), rowAt(6 * HOUR_MS), "\u0000".repeat(944), rowAt(7 * HOUR_MS))
+        val before = listOf(2, 3, 4, 6).map { rowAt(it * HOUR_MS) }
+        val archived = before + "\u0000".repeat(944) + rowAt(7 * HOUR_MS)
         Files.writeString(
             archives.resolve(PerfArchiveName(perf.fileName.toString()).of(rotated)),
             archived.joinToString("\n", postfix = "\n"),
@@ -140,11 +143,21 @@ class EconomicsBackfillTest {
             clock = WallClock { NOW_MS },
         )
 
+        val shown = listOf(3, 4, 8, 9, 10).map { it * HOUR_MS }
         assertEquals(
-            listOf(8 * HOUR_MS, 9 * HOUR_MS, 10 * HOUR_MS),
+            shown,
             reader.rows().map { it.hour },
-            "the hours the line could be in are left out, the ones after its archive are built, and nothing is hidden",
+            "the hours the line could be in are left out, the ones on both sides are built, and nothing is hidden",
         )
+        store.flushNow()
+        val restarted = EconomicsStoreSource(
+            store(dir),
+            PerfRowsFileSource(perf, archives),
+            TurnPrice(card),
+            kept = KeptHistory { HistoryWindow(1) },
+            clock = WallClock { NOW_MS },
+        )
+        assertEquals(shown, restarted.rows().map { it.hour }, "a restart shows the same history")
     }
 
     @Test

@@ -114,13 +114,6 @@ internal class PerfReadFiles(
         return PerfSourceStamp(marks, live, reader)
     }
 
-    /** Whether a read from [later] takes in every archive of [stamp] that a read from [earlier] took in: an archive leaves
-     *  the read only once all its rows are older than the edge (the reader's own test). */
-    fun readsSame(stamp: PerfSourceStamp, earlier: Long, later: Long): Boolean = stamp.marks.none { mark ->
-        val rotated = archiveName.rotatedAt(mark.path.fileName.toString()) ?: return@none false
-        !archiveName.endsBefore(rotated, earlier) && archiveName.endsBefore(rotated, later)
-    }
-
     /** Whether a read from [from] opens the generation archived at [rotatedAt], by the reader's own test for skipping
      *  an archive unopened. A live generation (null) is opened by every read. */
     fun opens(rotatedAt: Long?, from: Long): Boolean = rotatedAt == null || !archiveName.endsBefore(rotatedAt, from)
@@ -152,28 +145,3 @@ internal class PerfReadFiles(
 /** One file mark as a stamp is kept on disk (ProbeJudgments). */
 @Serializable
 internal data class SavedPerfMark(val path: String, val fileKey: String? = null, val size: Long, val checksum: Long)
-
-/** A read the request log refused for a line it could not place, and the earliest hour that read covered. A torn line
- *  is not mended by what is appended after it, so while the files are only appended to the refusal stands. It lasts
- *  for one run. The one refusal kept on disk was the economics backfill's, from Oct 19, 2026: a torn row in an
- *  archive refused the backfill at every boot, and each boot decoded every archived generation of every head again
- *  (about 30 GB of allocation in its first 40 s). Since Oct 23 the backfill leaves out the hours a tear could belong
- *  to instead of refusing (EconomicsBackfill says why), so no refusal outlives a restart. */
-internal class PerfRefusal(private val files: PerfReadFiles) {
-    private var stamp: PerfSourceStamp? = null
-    private var since = 0L
-
-    /** Whether the refusal noted earlier still holds for a read from [from]: no file changed, and the read still takes in
-     *  every file the refused one did. The edge is an hour and moves forward every hour; a later edge that drops no
-     *  archive reads the same torn files, so it is refused too. Requiring the edge itself to stay put let the refusal
-     *  lapse at every hour, and the next keep-warm pass decoded every archived generation again: about 3.9 GB of
-     *  allocation in 50 s on the live daemon at 02:04 CT, Oct 20. */
-    fun stands(from: Long): Boolean =
-        stamp?.let { files.unchanged(it) && (from <= since || files.readsSame(it, since, from)) } == true
-
-    /** Notes a read begun when the files were as [before]: a refusal for a torn row ([tore]) stands, any other answer clears it. */
-    fun note(before: PerfSourceStamp?, from: Long, tore: Boolean) {
-        stamp = before.takeIf { tore }
-        since = from
-    }
-}

@@ -39,7 +39,9 @@ import java.nio.file.NoSuchFileException
 import java.nio.file.Path
 
 // why: a row held for a streaming round is appended after newer ones with the time its turn ended (PerfStats.record);
-// an hour covers that lag, so a torn line's own row is not older than the newest row ahead of it less this.
+// an hour covers that lag, so a torn line's own row is not older than the newest row ahead of it less this. It is a
+// margin, not a bound: nothing caps the hold while the round keeps making progress (Watchdog caps only a silent one).
+// The latest any row landed across 1.05 M rows of claudex and claude-muse was 11.4 min after its time (Oct 23, 2026).
 private const val LATE_ROW_MS = 3_600_000L
 
 public class PerfRowsFileSource internal constructor(

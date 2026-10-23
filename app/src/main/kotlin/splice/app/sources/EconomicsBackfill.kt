@@ -40,9 +40,8 @@
 // edge. A tear with a leading ts costs its own hour. One with none costs the hours its row can lie in: from the newest
 // row ahead of it in its file, less an hour for a row appended late, up to its archive's rotation second, or with no
 // end in `.1` or the live file, whose names bound no row. A hard stop tears the live file's last line, so that costs
-// the latest hours, which the rollup already holds. ProbeEconomics needs the archive bound. It reads from the oldest
-// hour it grades, and a read that opens the file finds a line it cannot place, so the head's whole hourly history goes
-// Unavailable (claudex, Oct 13: 944 NUL bytes in its September archive).
+// the latest hours, which the rollup already holds. The probe check, the reprice and the shared read take the same rule
+// (PerfTear.mayHold), so a tear the backfill reaches back past costs them the same hours and not the whole history.
 package splice.app.sources
 
 import kotlinx.serialization.Serializable
@@ -166,13 +165,8 @@ internal class EconomicsBackfill(
 
     /** Whether a line the read could not parse may belong to [hour], so its rows may not be all its turns: a tear whose
      *  leading ts is in it, or one with no ts whose row can lie in it. */
-    private fun torn(evidence: EconomicsPerfEvidence, hour: Long): Boolean = evidence.tears.any { tear ->
-        tear.ts?.let { it / BACKFILL_HOUR_MS * BACKFILL_HOUR_MS == hour } ?: mayHold(tear.span, hour)
-    }
-
-    /** Whether [hour] ends after the earliest time a row torn in [span] can carry, and a read from it opens it. */
-    private fun mayHold(span: PerfTearSpan, hour: Long): Boolean =
-        (span.notBefore ?: hour) < hour + BACKFILL_HOUR_MS && perf.files.opens(span.rotatedAt, hour)
+    private fun torn(evidence: EconomicsPerfEvidence, hour: Long): Boolean =
+        evidence.tears.any { it.mayHold(hour, perf.files) }
 }
 
 /** A covered edge as it is kept on disk: the window edge a pass closed the gap down to, and the oldest hour the

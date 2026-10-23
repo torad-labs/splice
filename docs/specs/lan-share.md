@@ -75,49 +75,55 @@ claudex ─▶ head :3099 (anthropic-passthrough) ──HTTP──▶ share list
 
 ### Client: `splice remote`
 
-- `splice remote` finds the sharing machines (above), lists each with its heads and asks per machine. `splice remote add <host[:port]>` skips discovery
-  (multicast blocked, Tailscale). `splice remote list`, `splice remote remove <server>`.
-- Import of one server:
-  1. `POST /share/v1/join` → token, saved in the key store (`splice key`) as
-     `SPLICE_REMOTE_<SERVER>_KEY`.
-  2. For each shared head, a provider and a head written through the `splice add` path (`AddWrite`,
-     `AddPortChoice`, `AddWrapperLink`, the add finish with its restart prompt):
+- `splice remote` finds the sharing machines (above), lists each with its heads and asks per machine. `splice remote add <host[:port]>`
+  skips discovery (multicast blocked, Tailscale). `splice remote list` shows the machines joined here and their
+  commands; `splice remote sync [<machine>]` rewrites each imported head's rows, pin and tiers as its machine serves
+  them now; `splice remote remove <machine>` drops the machine, its heads, their command links and its token.
+- Import of one machine (`RemoteImport`):
+  1. `POST /share/v1/join` → this machine's token there, kept in `<state>/share/remotes.json` (0600, one per machine,
+     `RemotesStore`), never in `keys.toml`. splice.toml names the machine, never the token.
+  2. `[remotes.<name>]` with the address that answered (the machine's own name when it resolves there).
+  3. Each shared head written through the `splice add` path (`AddVerb.addRemote`: the same refusals, checks, atomic
+     save, port choice and wrapper link), one line per command and one restart at the end:
 
      ```toml
-     [providers.torad-server-claudex]
+     [remotes.torad-server]
+     url = "http://torad-server.lan:3097"
+
+     [providers.claudex]
      dialect = "anthropic-passthrough"
-     base_url = "http://torad-server.local:3097/share/v1/heads/claudex"
-     auth = { kind = "api-key", env = "SPLICE_REMOTE_TORAD_SERVER_KEY" }
-     [[providers.torad-server-claudex.models]]   # mirrored rows: id, label, context_window, rates
+     base_url = "http://torad-server.lan:3097/share/v1/heads/claudex"
+     auth = { kind = "splice-remote", remote = "torad-server" }
+     quirks = { forward_client_identity = true }
+     [[providers.claudex.models]]   # the sharing head's rows: id, label, window in force, compaction reserve
      ...
-     [heads.claudex]                              # same key, command, pinned model and slots
-     provider = "torad-server-claudex"
-     port = <AddPortChoice>
+     [providers.claudex.discovery]
+     family = "openai"              # the sharing machine's family for it, so the console colours it the same
+
+     [heads.claudex]                # same key, command and pinned model; tiers in model_slots
      ...
      ```
 
-     A head key or command already taken on this machine is asked about: replace, or import as
-     `<key>-<server>`.
-  3. Restart, then `splice doctor`.
-- This reuses an existing schema (anthropic-passthrough + api-key): the relay itself needs no new
-  dialect and no new auth kind on the client.
+     A head key or command already taken here is asked about: import it as `<key>-<machine>`, or skip it.
+  4. Heads imported before are refreshed in place; phase-1 imports from the same machine (api-key providers on a
+     share relay) move onto `[remotes.<name>]` and their per-head keys leave `keys.toml`.
+- `splice-remote` is a registered auth kind (anthropic-passthrough only): the provider presents the machine's token
+  as its bearer, read from the token store on every request, so a re-join lands with no restart.
 
 ## Code map
 
-- Topology: `core/.../topology/Topology.kt` (root table), new `ShareConfig`; findings in
-  `TopologyChecks.findings()` (`core/.../topology/TopologyWriter.kt`).
-- Listener and relay: `app/.../share/` in phase 1 (no module-law change), wired in `app/.../Daemon.kt`
-  beside `ControlPlane`; it moves to its own `features/share` module with the phase 2 console tab.
-  Ktor Netty as `HeadEngine.kt` and `ControlServer.kt` use it; relay upstream on OkHttp as
-  `integrations/upstream` does.
+- Topology: `core/.../topology/Topology.kt` (`share`, `remotes`), `ShareConfig` and `RemoteConfig`; findings in
+  `TopologyChecks.findings()` (`core/.../topology/TopologyWriter.kt`) with `RemoteFindings` (`TopologySchema.kt`).
+- Module `features/share` (`:features-share`): the listener, relay, client book and network rules (`splice.share`),
+  and the client side (`splice.share.remote`): discovery, remote HTTP, the token store and `RemoteAuthProvider`, and
+  `RemoteTopology`, the splice.toml edits a join, sync, removal and migration make. app wires it: `Daemon.kt` starts
+  the listener (`ShareStart`), `PassthroughArm` builds a `splice-remote` provider, and the CLI verbs live in
+  `app/.../cli/share/` (`ShareCommand`, `RemoteCommand`, `RemoteImport`, `RemoteMachines`).
 - Wall: `quality/rules/kotlin/kt-embedded-server-loopback.yml` exempts the one share listener file,
   with this decision cited. Every other `embeddedServer` stays loopback-only.
-- CLI: `share` and `remote` verbs in `app/.../cli/CommandParser.kt` / `Command.kt`; prompts through
-  the existing `AddPrompter` / `confirm`; key through `KeyStore`.
 - Turn path: a provider quirk `forward_client_identity` (QuirksConfig) makes a head on its own key send the
   client's session id, wire knobs and identity upstream, never its credential (ClientAuth.forwardedClientHeaders);
   imported heads set it, so the sharing head keeps a session on one account and one prompt-cache key.
-- No new dependency: JDK HTTP for the relay and the client, the existing Ktor Netty for the listener.
 
 ## Phase 1 trade-offs, stated
 
@@ -140,8 +146,17 @@ claudex ─▶ head :3099 (anthropic-passthrough) ──HTTP──▶ share list
 5. torad-server: `splice share revoke <mac>`; the next Mac turn fails with a clear 401 message.
 6. A request from a public source address and one with a foreign Host are refused with 403.
 
-## Phase 2 (after phase 1 works for us)
+## Phase 2 (Marcos, 2026-10-22: "make this a proper feature")
 
-Console tab (sharing on/off, clients with last seen and revoke, discovered servers with import),
-TLS with a pinned certificate, usage and plan windows proxied from the server, refresh of the
-mirrored model rows, and cross-machine session visibility.
+Built on `feat/lan-share`, merged into `feat/v0.4.0` through the gate. Milestones:
+
+1. **Module and model** (landed): `features/share`, the `splice-remote` auth kind, `[remotes]`, the token store,
+   one-line imports, `remote list | sync | remove`, phase-1 migration.
+2. **TLS and pinning**: a self-signed certificate minted at the first `share on`, the listener on TLS only, and the
+   certificate's SHA-256 pinned in `[remotes.<name>] fingerprint` at join, on every client path.
+3. **Fidelity**: roster, usage and health routes on the listener; the using machine's plan bars, live rows and
+   reachability come from them; turns carry the joined machine's name; last seen per joined machine.
+4. **Console**: a Sharing tab for both sides.
+5. **Discovery**: mDNS (`_splice._tcp`), Tailscale peers, the subnet probe as fallback.
+6. **Sessions across machines**: each machine's live sessions mirrored on the other, so ListAgents and SendMessage
+   reach `<name>@<machine>`.

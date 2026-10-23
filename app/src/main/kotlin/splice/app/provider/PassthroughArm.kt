@@ -4,10 +4,13 @@
 package splice.app.provider
 
 import splice.core.auth.ClientAuthProvider
+import splice.core.topology.AuthKind
 import splice.dialect.anthropic.PassthroughQuirks
 import splice.dialect.anthropic.PassthroughRequestQuirks
 import splice.dialect.anthropic.PassthroughThinkingQuirks
 import splice.provider.openai.ApiKeyAuthProvider
+import splice.share.remote.RemoteAuthProvider
+import splice.share.remote.RemotesStore
 import splice.topology.TopologyLoader
 import java.nio.file.Paths
 
@@ -15,6 +18,8 @@ internal class PassthroughArm(
     private val passthroughAssembly: PassthroughAssembly,
     private val claudeAccounts: ClaudeAccountWiring,
     private val changes: splice.app.auth.claude.ClaudePoolChanges = splice.app.auth.claude.ClaudePoolChanges(),
+    /** This machine's tokens on the machines it joined, for `splice-remote` providers (LAN share). */
+    private val remotes: RemotesStore? = null,
 ) {
     // CLIENT uses Anthropic's signature verification and eager custom-tool input streaming.
     // It has no Moonshot deformations, headers, or device identity. Unregistered API-key/custom
@@ -46,6 +51,11 @@ internal class PassthroughArm(
                 accounts,
                 changes.view(key, accounts),
             )
+        }
+        if (providerCfg.auth.kind == AuthKind.SpliceRemote.wire && remotes != null) {
+            // LAN share: the sharing machine's head runs the turn; this machine relays it with the token it was given.
+            val remote = RemoteAuthProvider(remotes, providerCfg.auth.remote.orEmpty())
+            return Wired(passthroughAssembly.passthroughProviderFor(ctx, label, remote, PassthroughQuirks(key)), remote)
         }
         val auth = ApiKeyAuthProvider(
             envVar = providerCfg.auth.effectiveApiKeyEnv(key),

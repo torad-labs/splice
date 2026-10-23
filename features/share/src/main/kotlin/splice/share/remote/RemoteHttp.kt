@@ -1,16 +1,16 @@
 // NEW: LAN share, phase 1 (docs/specs/lan-share.md). The two calls `splice remote` makes on a sharing machine:
 // what it offers (GET /share/v1/info) and joining it (POST /share/v1/join). JDK HTTP, like the share relay;
 // short timeouts, because a probe across a subnet asks hundreds of addresses where nothing listens.
-package splice.app.cli.share
+package splice.share.remote
 
 import kotlinx.serialization.json.Json
-import splice.app.share.SHARE_INFO_PATH
-import splice.app.share.SHARE_JOIN_PATH
-import splice.app.share.ShareInfo
-import splice.app.share.ShareJoin
-import splice.app.share.ShareJoined
 import splice.core.util.Cancellables
 import splice.core.wire.HttpStatus
+import splice.share.SHARE_INFO_PATH
+import splice.share.SHARE_JOIN_PATH
+import splice.share.ShareInfo
+import splice.share.ShareJoin
+import splice.share.ShareJoined
 import java.net.URI
 import java.net.http.HttpClient
 import java.net.http.HttpRequest
@@ -18,7 +18,7 @@ import java.net.http.HttpResponse
 import java.time.Duration
 import java.util.concurrent.CompletableFuture
 
-internal class RemoteHttp {
+public class RemoteHttp {
     private val json = Json { ignoreUnknownKeys = true }
     private val http: HttpClient = HttpClient.newBuilder()
         .version(HttpClient.Version.HTTP_1_1)
@@ -26,7 +26,7 @@ internal class RemoteHttp {
         .build()
 
     /** What the machine at [host]:[port] offers; completes with null when nothing there answers as splice. */
-    fun info(host: String, port: Int): CompletableFuture<ShareInfo?> {
+    public fun info(host: String, port: Int): CompletableFuture<ShareInfo?> {
         val request = HttpRequest.newBuilder(url(host, port, SHARE_INFO_PATH))
             .timeout(Duration.ofMillis(REMOTE_REQUEST_TIMEOUT_MS))
             .GET()
@@ -37,7 +37,7 @@ internal class RemoteHttp {
     }
 
     /** Joins [host] as [client]. Throws with the sharing machine's own words when it refuses. */
-    fun join(host: String, port: Int, client: String): ShareJoined {
+    public fun join(host: String, port: Int, client: String): ShareJoined {
         val body = json.encodeToString(ShareJoin.serializer(), ShareJoin(client))
         val request = HttpRequest.newBuilder(url(host, port, SHARE_JOIN_PATH))
             .timeout(Duration.ofMillis(REMOTE_REQUEST_TIMEOUT_MS))
@@ -49,8 +49,10 @@ internal class RemoteHttp {
         return json.decodeFromString(ShareJoined.serializer(), response.body())
     }
 
-    fun url(host: String, port: Int, path: String): URI =
-        URI.create("http://${if (':' in host) "[$host]" else host}:$port$path")
+    /** What a remote's `[remotes]` entry keeps: scheme, host and port, with no path. */
+    public fun base(host: String, port: Int): String = "http://${if (':' in host) "[$host]" else host}:$port"
+
+    public fun url(host: String, port: Int, path: String): URI = URI.create(base(host, port) + path)
 
     private fun parsed(body: String): ShareInfo? =
         Cancellables.runCatchingCancellable { json.decodeFromString(ShareInfo.serializer(), body) }

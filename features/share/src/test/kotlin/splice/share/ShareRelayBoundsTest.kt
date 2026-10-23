@@ -1,7 +1,7 @@
 // NEW: PR 247 review, finding "the relay buffers uploads before the head's size and read-time limits can apply".
 // What a joined machine hears when its body is past the offered head's own maxRequestBytes: the head's own 413,
 // word for word, answered by the sharing listener before the body is held whole or reaches the head.
-package splice.app.share
+package splice.share
 
 import io.ktor.client.request.post
 import io.ktor.client.request.setBody

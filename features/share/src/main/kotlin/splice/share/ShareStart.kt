@@ -1,9 +1,8 @@
 // NEW: LAN share, phase 1 (docs/specs/lan-share.md). What the daemon calls once its heads and control plane
 // are up: nothing when `[share]` is off, else the share listener over the heads that started. A port that
 // will not bind is logged and sharing stays off; the daemon and every local session carry on.
-package splice.app.share
+package splice.share
 
-import splice.app.control.ManagedHead
 import splice.core.config.ConfigService
 import splice.core.config.MgmtKey
 import splice.core.config.StatePaths
@@ -16,7 +15,7 @@ import splice.upstream.codemode.ProcessDispatchers
 import java.net.InetAddress
 import java.nio.file.Path
 
-internal class ShareStart(
+public class ShareStart(
     private val topology: Topology,
     private val statePaths: StatePaths,
     private val mgmtKey: MgmtKey,
@@ -24,7 +23,8 @@ internal class ShareStart(
     private val config: ConfigService,
     private val log: LogSink,
 ) {
-    fun start(running: Map<String, ManagedHead>): ShareServer? {
+    /** The running listener, or null when `[share]` is off or its port would not open. */
+    public fun start(running: SharedCatalogs): ShareServer? {
         val share = topology.share
         if (!share.enabled) return null
         val host = ShareHostName()
@@ -48,21 +48,24 @@ internal class ShareStart(
     }
 }
 
-/** Where sharing keeps its state, for the daemon and the `splice share` verb alike. */
-internal class ShareState(statePaths: StatePaths) {
-    val clientsFile: Path = statePaths.stateDir.resolve("share").resolve("clients.json")
+/** Where sharing keeps its state, for the daemon and the `splice share` and `splice remote` verbs alike: the machines
+ *  that joined this one, and this machine's own tokens on the machines it joined. */
+public class ShareState(statePaths: StatePaths) {
+    public val clientsFile: Path = statePaths.stateDir.resolve("share").resolve("clients.json")
+    public val remotesFile: Path = statePaths.stateDir.resolve("share").resolve("remotes.json")
 }
 
 /** This machine's name: [full] as the OS reports it, [short] up to the first dot, as clients are told it. */
-internal class ShareHostName {
+public class ShareHostName {
     private val name: String by lazy {
         Cancellables.runCatchingCancellable { InetAddress.getLocalHost().hostName }
             .fold(onSuccess = { it.ifBlank { UNNAMED } }, onFailure = { UNNAMED })
     }
 
-    fun full(): String = name
+    public fun full(): String = name
 
-    fun short(): String = name.substringBefore('.')
+    public fun short(): String = name.substringBefore('.')
 }
 
+// why: the name a machine goes by when the OS reports none, so a join and a listing still have something to show.
 private const val UNNAMED = "splice"

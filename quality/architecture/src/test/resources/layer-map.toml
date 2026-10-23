@@ -50,6 +50,7 @@ modules = [
     ":integrations-mcp",
     ":features-accounts",
     ":features-configuration",
+    ":features-share",
     ":features-diagnostics",
     ":features-heads",
     ":features-launch",

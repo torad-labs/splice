@@ -50,9 +50,14 @@ private const val LIVE_EXIT_WAIT_SECONDS = 2L
 internal object AddWiring {
 
     /** [restart] is the plain `splice restart` unless a caller owns the restart itself: setup adds its
-     *  ticked heads and restarts once at the end. */
-    fun add(restart: DaemonRestart = DaemonRestart { LifecycleWiring.restart() }): AddVerb = AddVerb(
-        output = TerminalOutput(::println),
+     *  ticked heads and restarts once at the end. [doctor] and [output] likewise: `splice remote` adds several
+     *  heads, says one line for each, and runs one checkup after them all. */
+    fun add(
+        restart: DaemonRestart = DaemonRestart { LifecycleWiring.restart() },
+        doctor: AddDoctor = AddDoctor { env -> DoctorWiring.command().doctor(emptyList(), env) },
+        output: TerminalOutput = TerminalOutput(::println),
+    ): AddVerb = AddVerb(
+        output = output,
         errors = TerminalOutput(System.err::println),
         ports = AddPorts(
             login = AddLogin { key, provider, topology -> LoginCommand().runLoginFlow(key, provider, topology) },
@@ -61,7 +66,7 @@ internal object AddWiring {
             daemonUp = DaemonUpProbe { port -> AdminSupport.daemonUp(port) },
             prompt = ConsolePrompter(),
             liveTurn = CommandLiveTurn(),
-            doctor = AddDoctor { env -> DoctorWiring.command().doctor(emptyList(), env) },
+            doctor = doctor,
         ),
         localRows = RuntimeRows(),
     )

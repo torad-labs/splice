@@ -144,7 +144,7 @@ public class AddConsole(
         val kind = s.candidate.provider.auth.kind
         when {
             s.isSaved() -> AddSignInOutcome.AlreadySaved
-            kind == AuthKind.Client.wire -> AddSignInOutcome.NoSignIn
+            kind == AuthKind.Client.wire || kind == AuthKind.SpliceRemote.wire -> AddSignInOutcome.NoSignIn
             kind == API_KEY && !s.candidate.resolved.provider.requiresKey -> AddSignInOutcome.NoKeyRequired
             !AuthKindRegistry.isOAuth(kind) -> AddSignInOutcome.ByKey(keyEnv(s))
             else -> AddSignInOutcome.Started(running(s) ?: started(s))

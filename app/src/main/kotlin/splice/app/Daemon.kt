@@ -31,8 +31,6 @@ import splice.app.head.LaunchSpecFactory
 import splice.app.head.ManagedHeadFactory
 import splice.app.head.QuotaPollSeams
 import splice.app.probe.LocalWindowRefresh
-import splice.app.share.ShareServer
-import splice.app.share.ShareStart
 import splice.client.mcp.McpShareChoice
 import splice.client.resume.originals.TranscriptOriginals
 import splice.codemode.WorkerArtifacts
@@ -53,6 +51,9 @@ import splice.lifecycle.restart.ShutdownDaemon
 import splice.models.roster.DeclaredHead
 import splice.models.roster.DeclaredHeads
 import splice.oauth.codex.CodexRefresh
+import splice.share.ShareServer
+import splice.share.ShareStart
+import splice.share.SharedCatalogs
 import splice.topology.TopologyLoader
 import splice.usage.quota.ClientUserAgent
 import java.nio.file.Path
@@ -274,7 +275,8 @@ public class Daemon(
         // MCP hub step 6: each installed Claude Code version's --plugin-dir-no-mcp verdict, checked in the background.
         controlPlane.pluginFlagChecks.request()
         // LAN share (docs/specs/lan-share.md): opened last, over the heads that started; null when [share] is off.
-        share = ShareStart(topology, statePaths, mgmtKey, config, log).start(heads)
+        share = ShareStart(topology, statePaths, mgmtKey, config, log)
+            .start(SharedCatalogs { key -> heads[key]?.let { it.statusline.catalog } })
         val degraded = if (failed.isEmpty()) "" else " DEGRADED=${failed.keys}"
         log("[daemon] up: control :$controlPort, heads ${heads.keys}$degraded\n")
     }

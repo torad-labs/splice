@@ -3,7 +3,7 @@
 // Tailscale hands out) or fc00::/7. The Host must be an IP literal or one of this machine's own names, the
 // share listener's counterpart of LoopbackHost: a page whose DNS was rebound onto this address arrives with
 // its own name in Host and is refused, so a browser on the LAN cannot be turned into a client.
-package splice.app.share
+package splice.share
 
 import splice.core.util.Cancellables
 import java.net.Inet4Address

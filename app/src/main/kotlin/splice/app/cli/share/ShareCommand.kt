@@ -7,8 +7,6 @@ package splice.app.cli.share
 import splice.app.LifecycleWiring
 import splice.app.cli.AdminSupport
 import splice.app.cli.peer.PeerExit
-import splice.app.share.ShareClients
-import splice.app.share.ShareState
 import splice.core.config.StatePaths
 import splice.core.terminal.CYAN
 import splice.core.terminal.DIM
@@ -16,16 +14,13 @@ import splice.core.terminal.GREEN
 import splice.core.terminal.RESET
 import splice.core.terminal.TerminalOutput
 import splice.core.topology.Topology
-import splice.core.topology.TopologyParse
-import splice.core.topology.TopologyWriteResult
-import splice.core.topology.TopologyWriter
 import splice.core.util.Cancellables
 import splice.core.util.EnvReader
 import splice.core.util.SafeFailureText
-import splice.topology.TopologyLoader
+import splice.share.ShareClients
+import splice.share.ShareState
 import java.net.InetSocketAddress
 import java.net.Socket
-import java.nio.file.Files
 
 internal const val SHARE_USAGE = "on [--port N] | off | status | revoke <machine>"
 
@@ -35,7 +30,8 @@ internal class ShareCommand(
     private val env: EnvReader = EnvReader(System::getenv),
 ) {
     private val clients = ShareClients(ShareState(StatePaths()).clientsFile)
-    private val path = TopologyLoader.configPath(env)
+    private val file = ShareTopologyFile(err, "splice share", env)
+    private val path = file.path
 
     fun run(args: List<String>): Int {
         val rest = args.drop(1)
@@ -62,24 +58,9 @@ internal class ShareCommand(
         return restarted(current.copy(share = share))
     }
 
-    private fun loaded(): Topology? =
-        Cancellables.runCatchingCancellable { TopologyLoader.parse(Files.readString(path)) }.fold(
-            onSuccess = { it },
-            onFailure = { failure ->
-                err.line("splice share: $path does not load: ${SafeFailureText.render(failure)}")
-                null
-            },
-        )
+    private fun loaded(): Topology? = file.loaded()
 
-    private fun saved(wanted: Topology): Boolean {
-        val writer = TopologyWriter(path, StatePaths().configBackupsDir, TopologyParse(TopologyLoader::parse))
-        val result = Cancellables.runCatchingCancellable { writer.write(wanted) }.getOrElse { failure ->
-            err.line("splice share: $path was not changed: ${SafeFailureText.render(failure)}")
-            return false
-        }
-        if (result is TopologyWriteResult.Refused) result.findings.forEach { err.line("splice share: ${it.text()}") }
-        return result !is TopologyWriteResult.Refused
-    }
+    private fun saved(wanted: Topology): Boolean = file.saved(wanted)
 
     /** The listener opens and closes with the daemon, so a running one restarts to follow the file. */
     private fun restarted(topology: Topology): Int {

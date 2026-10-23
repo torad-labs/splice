@@ -146,7 +146,8 @@ internal class AddViews {
     }
 
     private fun signInBy(kind: String, requiresKey: Boolean): String = when {
-        kind == AuthKind.Client.wire || kind == API_KEY && !requiresKey -> SIGN_IN_NONE
+        kind == AuthKind.Client.wire || kind == AuthKind.SpliceRemote.wire || kind == API_KEY && !requiresKey ->
+            SIGN_IN_NONE
         AuthKindRegistry.isOAuth(kind) -> SIGN_IN_LOGIN
         else -> SIGN_IN_KEY
     }

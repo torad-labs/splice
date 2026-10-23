@@ -2,10 +2,10 @@
 // on each private IPv4 network this machine is on is asked for /share/v1/info on the share port, all at
 // once, under one deadline. No multicast and no new dependency; a network bigger than a /22 is probed only
 // in the /24 around this machine's own address. mDNS advertising replaces this in phase 2.
-package splice.app.cli.share
+package splice.share.remote
 
-import splice.app.share.ShareInfo
 import splice.core.util.Cancellables
+import splice.share.ShareInfo
 import java.net.Inet4Address
 import java.net.InetAddress
 import java.net.InterfaceAddress
@@ -15,11 +15,11 @@ import java.util.concurrent.CompletableFuture
 import java.util.concurrent.TimeUnit
 
 /** A machine that answered: the [address] it answered on, and what it offers. */
-internal data class RemoteFound(val address: String, val port: Int, val info: ShareInfo)
+public data class RemoteFound(public val address: String, public val port: Int, public val info: ShareInfo)
 
-internal class RemoteDiscovery(private val http: RemoteHttp) {
+public class RemoteDiscovery(private val http: RemoteHttp) {
 
-    fun scan(port: Int): List<RemoteFound> {
+    public fun scan(port: Int): List<RemoteFound> {
         val networks = NetworkInterface.networkInterfaces().toList()
             .filter { it.isUp && !it.isLoopback && !it.isVirtual }
             .flatMap { it.interfaceAddresses }

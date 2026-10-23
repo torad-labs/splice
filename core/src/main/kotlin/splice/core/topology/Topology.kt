@@ -48,6 +48,8 @@ public data class Topology(
     val projects: Map<String, ProjectConfig> = emptyMap(),
     /** LAN share (docs/specs/lan-share.md): this machine's heads offered to the person's other machines. Absent = off. */
     val share: ShareConfig = ShareConfig(),
+    /** LAN share: the person's other machines this one joined, by name; `splice-remote` providers relay to them. */
+    val remotes: Map<String, RemoteConfig> = emptyMap(),
 ) {
     /** Resolve a user-supplied head name — the topology key or the installed wrapper command
      *  (starter: head `openrouter`, command `claude-openrouter`) — to matching topology keys. A topology-KEY

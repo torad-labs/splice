@@ -7,6 +7,9 @@ package splice.core.topology
 // why: the family of a runtime on the operator's own machine, the one family no registry row names.
 private const val LOCAL_FAMILY = "local"
 
+// why: the family of a head another of the person's machines runs, when that machine names none for it (LAN share).
+private const val REMOTE_FAMILY = "remote"
+
 /**
  * The family a provider belongs to, or null when splice cannot name one.
  *
@@ -27,6 +30,8 @@ public class ProviderFamilyRule {
             AuthKind.KimiOAuth -> "moonshot"
             AuthKind.MuseOAuth -> "meta"
             AuthKind.Client -> "anthropic"
+            // The sharing machine's family, written as `family` by `splice remote`, wins above; this is for none named.
+            AuthKind.SpliceRemote -> REMOTE_FAMILY
             null -> keyed(key, provider)
         }
 

@@ -7,7 +7,7 @@
 // is read under that head's own limits (its maxRequestBytes and requestReadTimeoutMs, read live per request as the
 // head reads them), so a body the head would refuse is refused here with the head's own 413 or 408, before this
 // listener holds more of it than the head would.
-package splice.app.share
+package splice.share
 
 import io.ktor.http.ContentType
 import io.ktor.http.HttpHeaders

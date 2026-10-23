@@ -83,6 +83,7 @@ providers.*.auth
 providers.*.auth.env	
 providers.*.auth.file	
 providers.*.auth.kind	
+providers.*.auth.remote	
 providers.*.base_url	
 providers.*.default_context_window	
 providers.*.dialect	openai-responses,openai-chat,anthropic-passthrough
@@ -165,6 +166,9 @@ providers.*.quirks.zstd_request_body
 providers.*.window_rules	
 providers.*.window_rules[].context_window	
 providers.*.window_rules[].prefix	
+remotes	
+remotes.*.fingerprint	
+remotes.*.url	
 share	
 share.enabled	
 share.heads	

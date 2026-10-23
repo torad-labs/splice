@@ -68,6 +68,7 @@
 # the daemon's knobs and splice.toml, read and written as data, and `splice add`, which appends a
 # provider and a head to it after the operator signs in and the checks pass.
 :features-configuration -> :core :integrations-http :integrations-topology :integrations-terminal :integrations-oauth :integrations-daemon-client :features-accounts
+:features-share -> :core :integrations-http :integrations-upstream :features-turns
 :quality-architecture ->
 # :quality-compiler-plugin is a Kotlin-compiler plugin: zero project deps in main (it talks to the compiler,
 # not our modules), wired into every build only via the -Xplugin classpath (see gateway/build.gradle.kts).

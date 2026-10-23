@@ -4,7 +4,7 @@
 // need a joined machine's token ([guarded]) and are relayed to the head on loopback (ShareRelay). It never
 // serves a management route, the console, or any head that `[share]` does not offer. Open by decision:
 // what this machine offers (info) and joining it (trust the LAN, Marcos, 2026-10-22).
-package splice.app.share
+package splice.share
 
 import io.ktor.http.ContentType
 import io.ktor.http.HttpHeaders
@@ -37,7 +37,7 @@ import splice.core.util.SafeFailureText
 import splice.core.wire.HttpStatus
 import splice.http.listen.HttpListenerThreads
 
-internal class ShareServer(
+public class ShareServer internal constructor(
     private val port: Int,
     private val heads: ShareHeads,
     private val clients: ShareClients,
@@ -53,7 +53,7 @@ internal class ShareServer(
     private val clientName = Regex("^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$")
     private var engine: EmbeddedServer<NettyApplicationEngine, NettyApplicationEngine.Configuration>? = null
 
-    fun start() {
+    internal fun start() {
         val server = embeddedServer(
             Netty,
             serverConfig {
@@ -75,7 +75,7 @@ internal class ShareServer(
         log("[share] offering ${heads.keys()} on :$port to this machine's private networks\n")
     }
 
-    fun stop() {
+    public fun stop() {
         engine?.stop(SHARE_STOP_GRACE_MS, SHARE_STOP_TIMEOUT_MS)
         engine = null
     }

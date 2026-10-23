@@ -4,7 +4,6 @@
 package splice.configuration.add
 
 import splice.core.terminal.TerminalOutput
-import splice.core.topology.Topology
 import splice.core.util.EnvReader
 import splice.terminal.MultiSelectPrompt
 import splice.terminal.SelectPrompt
@@ -20,7 +19,7 @@ public class AddVerb(
 ) {
     private val command = AddCommand(output, errors, AddChecks(output, localRows = localRows), ports)
     private val runtime = RuntimeHeadAdd(output, command)
-    private val remote = RemoteHeadAdd(output, command)
+    private val remote = RemoteHeadAdd(command)
 
     /** True when the head was saved and is reachable as printed; false leaves splice.toml unchanged
      *  or names the restart that is still owed. */
@@ -32,16 +31,6 @@ public class AddVerb(
 
     /** `splice remote`: a head another of the person's machines shares, regenerated here (RemoteHeadAdd). */
     public suspend fun addRemote(head: RemoteHead, env: EnvReader): Boolean = remote.add(head, env)
-
-    /** `splice remote` again: a head imported before keeps its row and takes the newly issued token, which the
-     *  server's other heads under [serverHeads], its relay prefix, may read too. */
-    public fun renewRemote(
-        topology: Topology,
-        head: String,
-        token: String,
-        env: EnvReader,
-        serverHeads: String,
-    ): Boolean = remote.renew(topology, head, token, env, serverHeads)
 }
 
 /** `splice add-model`: OpenRouter catalog rows picked through [select] and [multi]. */

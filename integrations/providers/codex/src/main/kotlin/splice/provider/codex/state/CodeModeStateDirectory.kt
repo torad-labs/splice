@@ -36,12 +36,14 @@ internal class CodeModeStateDirectory(
 
     fun load(): Map<String, Loaded> {
         if (!Files.isDirectory(dir)) return emptyMap()
-        val files = try {
-            Files.list(dir).use { entries -> entries.filter { FILE_NAME.matches(it.fileName.toString()) }.toList() }
+        val listed = try {
+            Files.list(dir).use { entries -> entries.toList() }
         } catch (failure: IOException) {
             log("[code-mode] $dir not listed (${SafeFailureText.render(failure)}): its conversations are not restored")
             return emptyMap()
         }
+        dropOrphanLocks(listed)
+        val files = listed.filter { FILE_NAME.matches(it.fileName.toString()) }
         return files.mapNotNull(::read).groupBy(OnDisk::key).mapValues { (key, versions) ->
             // A downgraded jar can create newer .json state beside the .jsonl it cannot discover.
             val identical = versions.zipWithNext().all { (left, right) -> sameState(left.state, right.state) }
@@ -63,6 +65,31 @@ internal class CodeModeStateDirectory(
     fun path(key: String): Path = named(key, ".jsonl")
 
     fun olderPath(key: String): Path = named(key, ".json")
+
+    /** The lock file JsonlSink.appendLine keeps beside [path]: the journal's name plus ".lock". */
+    fun lockPath(key: String): Path = path(key).let { it.resolveSibling("${it.fileName}.lock") }
+
+    /** Until Oct 23 a removed conversation left its journal's lock file behind: 11,103 empty ones on one
+     *  machine, back to Oct 1. A lock whose journal is gone guards nothing, and nothing appends while the
+     *  registry loads, so each one goes here. One that cannot be removed stays for the next start. */
+    private fun dropOrphanLocks(listed: List<Path>) {
+        val names = listed.mapTo(mutableSetOf()) { it.fileName.toString() }
+        val orphans = listed.filter { file ->
+            val name = file.fileName.toString()
+            LOCK_NAME.matches(name) && name.removeSuffix(".lock") !in names
+        }
+        val stayed = orphans.count { lock ->
+            try {
+                Files.deleteIfExists(lock)
+                false
+            } catch (_: IOException) {
+                true
+            }
+        }
+        if (orphans.isNotEmpty()) {
+            log("[code-mode] ${orphans.size - stayed} lock file(s) with no conversation removed, $stayed stayed")
+        }
+    }
 
     private fun named(key: String, suffix: String): Path {
         val digest = MessageDigest.getInstance("SHA-256").digest(key.toByteArray(Charsets.UTF_8))
@@ -101,3 +128,4 @@ internal class CodeModeStateDirectory(
 }
 
 private val FILE_NAME = Regex("[0-9a-f]{64}\\.jsonl?")
+private val LOCK_NAME = Regex("[0-9a-f]{64}\\.jsonl\\.lock")

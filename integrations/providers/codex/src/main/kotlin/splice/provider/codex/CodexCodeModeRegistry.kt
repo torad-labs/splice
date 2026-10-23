@@ -295,7 +295,28 @@ internal class CodexCodeModeRegistry(
                     store.save(records, history.entries, retryOnly = !changed, dirtyKeys = setOf(key))
                 }
             }
+            withinBounds()
         }
+
+        /** The head's bounds hold on the timer too: finished conversations past them go within one sweep of
+         *  losing their protection, under the same protections an admission keeps. A key whose lock is
+         *  taken is passed over this sweep. */
+        private fun withinBounds() {
+            val passed = mutableSetOf<String>()
+            while (true) {
+                val key = monitor.withLock { retention.overBound(records, busy() + passed) } ?: return
+                var went = false
+                access.tryKey(key) {
+                    went = retention.letGoOver(records, history, key, busy(), config.clock.millis())
+                    if (went) store.save(records, history.entries, dirtyKeys = setOf(key))
+                }
+                if (!went) passed += key
+            }
+        }
+
+        /** The keys an admission may not retire: one being admitted, or one with a running cell. */
+        private fun busy(): Set<String> = records.filter { it.id in admissions || retainedCells.running(it) }
+            .mapTo(mutableSetOf(), CodeModeRecord::key)
     }
 
     /** V4-179: [media] holds the follow-up items rendered for each supplied result; see [CodeModeAccepted.accept]. */

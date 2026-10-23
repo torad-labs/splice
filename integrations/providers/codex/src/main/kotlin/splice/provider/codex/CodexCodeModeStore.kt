@@ -304,6 +304,8 @@ internal class CodexCodeModeStore(
     private fun remove(key: String) {
         Files.deleteIfExists(files.path(key))
         Files.deleteIfExists(files.olderPath(key))
+        // This key's writes run one at a time through its save, so no append to it is in flight here.
+        Files.deleteIfExists(files.lockPath(key))
         if (Files.exists(dir)) FileChannel.open(dir, StandardOpenOption.READ).use { it.force(true) }
         kept.remove(key)
     }

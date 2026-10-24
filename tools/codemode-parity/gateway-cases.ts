@@ -11,6 +11,15 @@ const native = (nonce: string) => [
   assistant("Same words. "), assistant("Same words."),
 ];
 const nextModel = (nonce: string) => [user(`begin-${nonce}`), ...native(nonce), user(`next-${nonce}`)];
+function validateAccepted(observed: any, nonce: string): void {
+  const issued = observed.records[0].issued.flatMap((step: any) => step.calls);
+  assert.deepEqual(issued.map((call: any) => call.clientId), observed.callbackIds ?? [observed.callbackId]);
+  assert.deepEqual(observed.accepted, issued.map((call: any) => ({ id: call.runtimeId, output: `accepted-client-result-${nonce}`, isError: false })));
+  for (const call of issued) {
+    assert.equal(observed.records[0].results[call.clientId].output, `accepted-client-result-${nonce}`);
+    assert.equal(observed.records[0].results[call.clientId].isError, false);
+  }
+}
 function validateHistory(observed: any, nonce: string): void {
   assert.deepEqual(observed.initialClient, [user(`begin-${nonce}`)]);
   assert.deepEqual(observed.nativeResponse, native(nonce));
@@ -21,11 +30,17 @@ const drivers: Array<{ id: CaseId; phases: string[]; fullFamily: boolean; valida
   { id: "history.append-only", phases: ["single"], fullFamily: true, validate(values, nonce) { validateHistory(values[0]!.observed, nonce); } },
   { id: "history.replay-is-not-steering", phases: ["single"], fullFamily: true, validate(values, nonce) {
     const observed = values[0]!.observed;
-    assert.deepEqual(observed.accepted, [{ id: observed.callbackId, output: `accepted-client-result-${nonce}`, isError: false }]);
+    assert.equal(observed.callbackIds?.length, 2, "captured replay shape must own both concurrent callbacks");
+    validateAccepted(observed, nonce);
     assert.ok(observed.postedInput.some((item: any) => item.id === `rs-${nonce}` && item.encrypted_content === `opaque-${nonce}`));
     assert.ok(observed.postedInput.some((item: any) => item.type === "custom_tool_call" && item.call_id === `outer-${nonce}`));
     assert.ok(observed.postedInput.some((item: any) => item.type === "custom_tool_call_output" && JSON.stringify(item).includes(`accepted-native-output-${nonce}`)));
-    assert.equal(observed.postedInput.some((item: any) => item.call_id === observed.callbackId), false);
+    assert.equal(observed.postedInput.some((item: any) => observed.callbackIds.includes(item.call_id)), false);
+    assert.ok(observed.callbackOnlyPreparedInput.some((item: any) => item.role === "assistant" && item.content === "Same words. Same words."));
+    assert.equal(observed.callbackOnlyPreparedInput.some((item: any) => item.id === `rs-prior-${nonce}`), false);
+    assert.ok(observed.postedInput.some((item: any) => item.id === `rs-prior-${nonce}` && item.encrypted_content === `opaque-prior-${nonce}`));
+    assert.ok(observed.postedInput.some((item: any) => item.role === "assistant" && item.content === "Same words. "));
+    assert.ok(observed.postedInput.some((item: any) => item.role === "assistant" && item.content === "Same words."));
     assert.equal(JSON.stringify(observed.postedInput).includes("Script terminated"), false);
     assert.equal(observed.records.length, 1); assert.equal(observed.records[0].phase, "COMPLETED");
   } },
@@ -67,14 +82,15 @@ const drivers: Array<{ id: CaseId; phases: string[]; fullFamily: boolean; valida
     assert.ok(observed.canonical.some((item: any) => item.type === "custom_tool_call_output" && JSON.stringify(item).includes(`accepted-native-output-${nonce}`)));
     assert.equal(observed.postedInput.some((item: any) => item.call_id === observed.callbackId), false);
     assert.equal(JSON.stringify(observed.postedInput).includes("[Old tool result content cleared]"), false);
-    assert.deepEqual(observed.accepted, [{ id: observed.callbackId, output: `accepted-client-result-${nonce}`, isError: false }]);
+    validateAccepted(observed, nonce);
   } },
 ];
 async function stateArtifacts(directory: string): Promise<string[]> {
   const paths: string[] = [];
   for (const entry of await readdir(directory, { withFileTypes: true })) {
     const path = resolve(directory, entry.name);
-    if (entry.isDirectory()) paths.push(...await stateArtifacts(path)); else if (entry.isFile()) paths.push(path);
+    if (entry.isDirectory()) paths.push(...await stateArtifacts(path));
+    else if (entry.isFile() && !entry.name.endsWith(".lock")) paths.push(path);
   }
   return paths;
 }

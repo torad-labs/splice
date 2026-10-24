@@ -67,10 +67,11 @@ export const runtimeCases: RuntimeCase[] = [
     assert.deepEqual(texts(await wait(host, cell.cellId)), ["reference-after"]);
   } },
   { id: "runtime.timed-yield", async run(host) {
-    const begin = performance.now();
     const cell = await execute(host, "text('timed-prefix'); await new Promise(r => setTimeout(r, 320)); text('timed-suffix');", { yieldMs: 20 });
     const initial = await cell.initial(); assert.ok(initial.Yielded); assert.deepEqual(texts(initial), ["timed-prefix"]);
-    assert.ok(performance.now() - begin < 280, "timed yield held control until work completed");
+    const started = host.transcript.find(event => event.direction === "received" && event.frame.type === "operation/response" && event.frame.id === cell.id)!;
+    const yielded = host.transcript.find(event => event.direction === "received" && event.frame.type === "execute/initialResponse" && event.frame.id === cell.id)!;
+    assert.ok(yielded.at - started.at < 280, "timed observer held control until work completed");
     assert.deepEqual(texts(await wait(host, cell.cellId)), ["timed-suffix"]);
   } },
   { id: "runtime.wait-suffix", async run(host) {

@@ -18,16 +18,17 @@ import splice.upstream.BuiltTurn
 
 internal class CodeModeGatewayBridgeRequests(private val fixture: CodeModeGatewayProbeSupport) {
     private val model = "fixture-model"
+    var earlierReply: Boolean = false
     fun prepare(
         manager: CodexCodeModeBridge,
-        id: String? = null,
+        ids: List<String> = emptyList(),
         result: String = "",
         tail: String? = null,
         prefix: CodeModeGatewayPrefix = CodeModeGatewayPrefix.ORIGINAL,
     ): BuiltTurn {
         val initial = initial(prefix)
         val messages = initial.toMutableList()
-        if (id != null) messages += callbacks(id, result)
+        ids.forEach { messages += callbacks(it, result) }
         tail?.let { messages += fixture.user(it) }
         val body = AnthropicParse.parseAnthropicBody(
             buildJsonObject {
@@ -44,7 +45,7 @@ internal class CodeModeGatewayBridgeRequests(private val fixture: CodeModeGatewa
         val built = built(prefix)
         val input = built.requestBody.getValue("input").jsonArray.map { it.jsonObject }.toMutableList()
         input += initial
-        id?.let { input += fixture.callback(it).first().jsonObject }
+        ids.forEach { input += fixture.callback(it).first().jsonObject }
         builder.toolResults(body).forEach { value ->
             input += buildJsonObject {
                 put("type", "function_call_output"); put("call_id", value.id); put("output", value.output)
@@ -100,7 +101,14 @@ internal class CodeModeGatewayBridgeRequests(private val fixture: CodeModeGatewa
         CodeModeGatewayPrefix.ORIGINAL -> listOf(
             fixture.user("start-${fixture.nonce}"),
             fixture.user("branch-${fixture.nonce}"),
-        )
+        ) + if (earlierReply) {
+            listOf(
+                fixture.assistant("Same words. Same words."),
+                fixture.user("continue-before-source-${fixture.nonce}"),
+            )
+        } else {
+            emptyList()
+        }
         CodeModeGatewayPrefix.REWOUND -> listOf(fixture.user("start-${fixture.nonce}"))
         CodeModeGatewayPrefix.COMPACTED -> listOf(
             fixture.user("You have been tasked with summarizing conversations. Summary-${fixture.nonce}"),

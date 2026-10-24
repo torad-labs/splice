@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
-import { readFile, writeFile } from "node:fs/promises";
-import { resolve } from "node:path";
+import { readFile, writeFile, readlink, realpath } from "node:fs/promises";
+import { resolve, basename } from "node:path";
+import { homedir } from "node:os";
 import { artifact, sha256, type Receipt } from "./qualification";
 
 export async function runInstalledCase(receipt: Receipt, options: Map<string, string>, evidence: string): Promise<void> {
@@ -19,8 +20,14 @@ export async function runInstalledCase(receipt: Receipt, options: Map<string, st
     const hostExeSha256 = sha256(await readFile(`/proc/${hostPid}/exe`));
     const command = await readFile(`/proc/${pid}/cmdline`);
     const arguments_ = command.toString().split("\0");
-    assert.ok(arguments_.some(value => value.includes("splice")) && !arguments_.some(value => value.includes("CodeModeParityProbe")),
-      "installed identity must address a Splice daemon, not its diagnostic adapter");
+    const installedPath = await realpath(resolve(homedir(), ".local/share/splice/splice.jar"));
+    const descriptorPath = (await readlink(jarFd)).replace(/ \(deleted\)$/, "");
+    assert.equal(descriptorPath, installedPath, "open jar belongs to a fixture or another installation path");
+    assert.equal(sha256(await readFile(installedPath)), receipt.candidateJar.sha256, "installed artifact path differs from the qualified candidate");
+    assert.equal(basename(await readlink(`/proc/${pid}/exe`)), "java", "installed daemon must be the actual JVM");
+    const jarArgument = arguments_.indexOf("-jar");
+    assert.ok((jarArgument >= 0 && resolve(arguments_[jarArgument + 1]!) === installedPath || arguments_.includes("splice.app.MainKt")) &&
+      !arguments_.some(value => value.includes("CodeModeParityProbe")), "installed identity must address the installed Splice daemon");
     const ancestry: number[] = [];
     let ancestor = hostPid;
     while (ancestor !== pid && ancestor > 1 && ancestry.length < 12) {
@@ -30,7 +37,7 @@ export async function runInstalledCase(receipt: Receipt, options: Map<string, st
     }
     assert.equal(ancestor, pid, "native host is not owned by the installed daemon");
     receipt.installed = { pid, hostPid, jarFd, jarSha256, hostExeSha256 };
-    observation = { ...receipt.installed, commandSha256: sha256(command), ancestry, observedAt: new Date().toISOString() };
+    observation = { ...receipt.installed, installedPath, descriptorPath, commandSha256: sha256(command), ancestry, observedAt: new Date().toISOString() };
     assert.equal(jarSha256, receipt.candidateJar.sha256, "installed open jar is not the qualified candidate");
     assert.equal(hostExeSha256, receipt.candidateNativeHost.sha256, "installed native executable is not the qualified candidate");
   } catch (error) { family.findings.push(error instanceof Error ? error.message : String(error)); }

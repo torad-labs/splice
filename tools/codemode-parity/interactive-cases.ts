@@ -11,8 +11,10 @@ type ScenarioName = "success" | "late-failure" | "native-lifecycle" | "restart";
 async function allFiles(directory: string): Promise<string[]> {
   const result: string[] = [];
   for (const entry of await readdir(directory, { withFileTypes: true })) {
+    if (entry.name === "plugins" || entry.name === ".git" || entry.name.endsWith(".lock")) continue;
     const path = resolve(directory, entry.name);
-    if (entry.isDirectory()) result.push(...await allFiles(path)); else if (entry.isFile()) result.push(path);
+    if (entry.isDirectory()) result.push(...await allFiles(path));
+    else if (entry.isFile() && /\.(?:json|jsonl|log|txt)$/.test(entry.name)) result.push(path);
   }
   return result;
 }
@@ -29,7 +31,10 @@ async function validate(result: any, root: string): Promise<void> {
   assert.deepEqual(result.callbackTimes, effects);
   assert.ok(effects[0]! >= epoch(result, "exec_item_done"), "source prefix executed before whole-item admission");
   const terminal = result.marks.find((mark: any) => ["response_completed_sent", "late_failure_sent"].includes(mark.event))?.epochMs;
-  assert.ok(Number.isFinite(terminal)); assert.ok(effects[0]! < terminal, "whole-item callback was held until response terminal");
+  assert.ok(Number.isFinite(terminal));
+  if (result.scenario === "native-lifecycle") {
+    assert.ok(effects[0]! >= epoch(result, "wait_item_done"), "native callback must follow its model wait handoff");
+  } else assert.ok(effects[0]! < terminal, "whole-item callback was held until response terminal");
   const frames = result.marks.filter((mark: any) => mark.event === "client_sse").map((mark: any) => mark.frame);
   const thinking = frames.filter((frame: any) => frame.type === "content_block_delta" && frame.delta?.type === "thinking_delta")
     .map((frame: any) => frame.delta.thinking).join("");

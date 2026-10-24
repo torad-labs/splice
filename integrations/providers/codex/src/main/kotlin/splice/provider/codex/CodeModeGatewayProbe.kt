@@ -14,7 +14,7 @@ public object CodeModeGatewayProbe {
         val observed = when (id) {
             "history.append-only" -> CodeModeGatewayProbeHistory(support).append()
             "history.restart" -> CodeModeGatewayProbeHistory(support).restart(phase)
-            "history.replay-is-not-steering" -> CodeModeGatewayBridgeProbe(support).replay()
+            "history.replay-is-not-steering" -> CodeModeGatewayBridgeProbe(support, parallelCallbacks = true).replay()
             "history.real-steering" -> CodeModeGatewayBridgeSteering(support).run()
             "history.cleared-results" -> CodeModeGatewayBridgeProbe(support).cleared()
             else -> error("unsupported gateway probe $id")

@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { writeFile } from "node:fs/promises";
-import { dirname, resolve } from "node:path";
+import { dirname, resolve, basename } from "node:path";
 import { gunzipSync } from "node:zlib";
 import { zipEntry } from "../release/src/lib/zip";
 import { artifact, sha256, type CaseEvidence } from "./qualification";
@@ -41,6 +41,9 @@ export async function runPackagingCase(java: string, jar: string, nativeHostSha2
     assert.equal(entries.length, observations.filter(value => value.shipped).length * 2, "unknown native target or payload entry");
     const runtime = cases.find(item => item.id === "runtime.module-semantics")!;
     assert.equal(runtime.state, "executed", "packaging needs independently inspected production adapter native-child identity");
+    const trace = await Bun.file(runtime.artifacts.find(value => value.path.endsWith(".candidate.json"))!.path).json();
+    assert.ok(basename(dirname(trace.observedIdentity.nativeExePath)).startsWith("splice-native-"),
+      "production runtime used a local Codex installation instead of extracting the bundled pinned payload");
     family.artifacts.push(...runtime.artifacts);
   } catch (error) { family.findings.push(error instanceof Error ? error.message : String(error)); }
   const path = resolve(evidence, `${runId}.packaging.native-host.json`);

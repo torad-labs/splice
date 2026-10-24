@@ -1,5 +1,5 @@
 import { randomBytes } from "node:crypto";
-import { readFile, writeFile, mkdir, readdir, stat } from "node:fs/promises";
+import { readFile, writeFile, mkdir, readdir, stat, readlink } from "node:fs/promises";
 import { resolve } from "node:path";
 import { NativeReference } from "./native-reference";
 import { runtimeCases, runRuntimeCase } from "./runtime-cases";
@@ -80,14 +80,21 @@ async function productionIdentity(host: NativeReference, jarHash: string, native
     catch { /* A pipe or descriptor may close while inspected. */ }
   }
   if (!jarFds.length) throw new Error("production diagnostic is not holding the exact candidate jar open");
-  const children = (await readFile(`/proc/${host.pid}/task/${host.pid}/children`, "utf8")).trim().split(/\s+/).filter(Boolean).map(Number);
+  const children = new Set<number>();
+  for (const task of await readdir(`/proc/${host.pid}/task`)) {
+    try {
+      const found = (await readFile(`/proc/${host.pid}/task/${task}/children`, "utf8")).trim().split(/\s+/).filter(Boolean).map(Number);
+      found.forEach(pid => children.add(pid));
+    } catch { /* JVM worker threads may exit during the census. */ }
+  }
   let nativePid: number | undefined;
   for (const pid of children) {
     try { if (sha256(await readFile(`/proc/${pid}/exe`)) === nativeHash) nativePid = pid; }
     catch { /* Exited children do not establish identity. */ }
   }
   if (!nativePid) throw new Error("production adapter has no live child matching the candidate native executable");
-  return { adapterPid: host.pid, jarFds, jarSha256: jarHash, nativePid, nativeExeSha256: nativeHash };
+  return { adapterPid: host.pid, jarFds, jarSha256: jarHash, nativePid,
+    nativeExePath: await readlink(`/proc/${nativePid}/exe`), nativeExeSha256: nativeHash };
 }
 async function qualify(): Promise<void> {
   const required = (name: string) => { const value = options.get(name); if (!value) throw new Error(`qualify requires ${name}`); return value; };

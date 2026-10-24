@@ -2,6 +2,7 @@ package splice.provider.codex
 
 import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.jsonArray
 import kotlinx.serialization.json.jsonObject
@@ -19,13 +20,17 @@ import splice.upstream.codemode.CodeModeCall
 import splice.upstream.codemode.CodeModeStep
 
 /** Drives typed Claude callback input through the actual turn builder and bridge interceptor. */
-internal class CodeModeGatewayBridgeProbe(private val fixture: CodeModeGatewayProbeSupport) {
+internal class CodeModeGatewayBridgeProbe(
+    private val fixture: CodeModeGatewayProbeSupport,
+    private val parallelCallbacks: Boolean = false,
+) {
     private val requests = CodeModeGatewayBridgeRequests(fixture)
+    private val acceptedResult = "accepted-client-result-${fixture.nonce}"
     private val runtime = CodeModeGatewayBridgeRuntime(
         ArrayDeque(
             listOf(
                 CodeModeStep.Notified("native-progress-${fixture.nonce}"),
-                CodeModeStep.Calls(listOf(CodeModeCall("read", "Read", JsonObject(emptyMap())))),
+                CodeModeStep.Calls(calls()),
                 CodeModeStep.Completed("accepted-native-output-${fixture.nonce}", content = typedContent()),
             ),
         ),
@@ -34,10 +39,17 @@ internal class CodeModeGatewayBridgeProbe(private val fixture: CodeModeGatewayPr
 
     suspend fun replay(): JsonObject {
         try {
-            val callback = issue()
-            val resumed = resume(callback)
+            if (parallelCallbacks) CodeModeGatewayBridgeSeed(fixture, requests).run(manager)
+            val callbacks = issueMany()
+            val request = requests.prepare(
+                manager,
+                callbacks,
+                acceptedResult,
+            )
+            val resumed = postRequest(request)
             return buildJsonObject {
-                put("callbackId", callback)
+                put("callbackIds", JsonArray(callbacks.map { JsonPrimitive(it) }))
+                put("callbackOnlyPreparedInput", request.requestBody.getValue(CODE_MODE_FIELD_INPUT))
                 put("postedInput", JsonArray(resumed))
                 put("accepted", accepted())
                 put("records", snapshots(manager))
@@ -69,15 +81,15 @@ internal class CodeModeGatewayBridgeProbe(private val fixture: CodeModeGatewayPr
             val request = when (kind) {
                 "newUser" -> requests.prepare(
                     manager,
-                    callback,
-                    "accepted-client-result-${fixture.nonce}",
+                    listOf(callback),
+                    acceptedResult,
                     "steer-${fixture.nonce}",
                 )
                 "editedOldResult" -> {
                     resume(callback)
                     requests.prepare(
                         manager,
-                        callback,
+                        listOf(callback),
                         "edited-client-result-${fixture.nonce}",
                         "continue-${fixture.nonce}",
                     )
@@ -89,7 +101,7 @@ internal class CodeModeGatewayBridgeProbe(private val fixture: CodeModeGatewayPr
             val sent = postRequest(request)
             return buildJsonObject {
                 put("callbackId", callback)
-                put("clientPreparedInput", request.requestBody.getValue("input"))
+                put("clientPreparedInput", request.requestBody.getValue(CODE_MODE_FIELD_INPUT))
                 put("compaction", request.meta.compact)
                 put("postedInput", JsonArray(sent))
                 put("records", snapshots(manager))
@@ -98,17 +110,19 @@ internal class CodeModeGatewayBridgeProbe(private val fixture: CodeModeGatewayPr
         } finally { manager.onProviderStop() }
     }
 
-    private suspend fun issue(): String {
+    private suspend fun issue(): String = issueMany().single()
+
+    private suspend fun issueMany(): List<String> {
         val first = requests.prepare(manager)
         val sink = CodeModeGatewayBridgeSink()
         checkNotNull(first.roundInterceptor).intercept(JsonWire.string(first.requestBody), sink) {
             RoundResult.Outcome(sourceOutcome())
         }
-        return sink.callbackIds.single()
+        return sink.callbackIds.toList()
     }
 
     private suspend fun resume(callback: String): List<JsonObject> =
-        posted(manager, callback, "accepted-client-result-${fixture.nonce}")
+        posted(manager, callback, acceptedResult)
 
     private suspend fun posted(
         bridge: CodexCodeModeBridge,
@@ -116,7 +130,7 @@ internal class CodeModeGatewayBridgeProbe(private val fixture: CodeModeGatewayPr
         result: String,
         tail: String? = null,
     ): List<JsonObject> {
-        val request = requests.prepare(bridge, callback, result, tail)
+        val request = requests.prepare(bridge, listOf(callback), result, tail)
         return postRequest(request)
     }
 
@@ -130,18 +144,23 @@ internal class CodeModeGatewayBridgeProbe(private val fixture: CodeModeGatewayPr
                 TurnOutcome.Success(false, false, noRequestUsage, shape = ResponseShape(messageClosed = true)),
             )
         }
-        return fixture.json.parseToJsonElement(checkNotNull(posted)).jsonObject.getValue("input")
+        return fixture.json.parseToJsonElement(checkNotNull(posted)).jsonObject.getValue(CODE_MODE_FIELD_INPUT)
             .jsonArray.map { it.jsonObject }
     }
 
     private fun sourceOutcome(): TurnOutcome.Success {
-        val source = "notify('native-progress-${fixture.nonce}'); await tools.Read({}); " +
+        val callback = if (parallelCallbacks) {
+            "await Promise.all([tools.Read({}),tools.Read({})]);"
+        } else {
+            "await tools.Read({});"
+        }
+        val source = "notify('native-progress-${fixture.nonce}'); $callback " +
             "text('accepted-native-output-${fixture.nonce}'); " +
             "image({image_url:'data:image/png;base64,aGVsbG8=',detail:'original'}); " +
             "audio({audio_url:'data:audio/wav;base64,aGVsbG8='});"
         val outer = buildJsonObject {
             put("type", "custom_tool_call"); put("call_id", "outer-${fixture.nonce}")
-            put("name", CODE_MODE_TOOL_NAME); put("input", source)
+            put("name", CODE_MODE_TOOL_NAME); put(CODE_MODE_FIELD_INPUT, source)
         }
         val reasoning = checkNotNull(ReasoningReplay.encodeReasoningEnvelope(fixture.native.first().jsonObject))
         return TurnOutcome.Success(
@@ -170,6 +189,18 @@ internal class CodeModeGatewayBridgeProbe(private val fixture: CodeModeGatewayPr
             fixture.json.encodeToJsonElement(CodeModeRecordSnapshot.serializer(), it.snapshot())
         },
     )
+
+    private fun calls(): List<CodeModeCall> = (
+        if (parallelCallbacks) {
+            listOf(
+                "read-one",
+                "read-two",
+            )
+        } else {
+            listOf("read")
+        }
+        )
+        .map { CodeModeCall(it, "Read", JsonObject(emptyMap())) }
 
     private fun typedContent(): List<JsonObject> = listOf(
         buildJsonObject { put("type", "input_text"); put("text", "accepted-native-output-${fixture.nonce}") },

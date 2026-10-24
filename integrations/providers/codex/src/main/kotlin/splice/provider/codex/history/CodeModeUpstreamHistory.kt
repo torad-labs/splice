@@ -234,4 +234,5 @@ internal class CodeModeUpstreamHistory(
 // A byte refusal is observable and fails closed; cache eviction never discards model authority.
 private const val HISTORY_MAX_BYTES: Long = 256L * 1024 * 1024
 
+// Limit diagnostic keys to a short non-content correlation prefix.
 private const val HISTORY_LOG_KEY_CHARS = 8

@@ -13,25 +13,23 @@ internal class CodeModeRegistrySweep(
     private val config: CodeModeBridgeConfig,
     private val nativeSessions: CodeModeNativeSessions,
     private val access: CodeModeRegistryAccess,
-    state: CodeModeSweepRecords,
+    private val state: CodeModeSweepRecords,
     private val store: CodexCodeModeStore,
     private val sweeper: CodexCodeModeSweeper,
     private val retention: CodeModeRecordRetention,
 ) : Runnable {
-    private val records = state.records
-    private val history = state.history
     override fun run() {
         nativeSessions.ended().forEach { key ->
             access.tryKey(key) { nativeSessions.closeSession(key) }
         }
         val keys = access.monitor.withLock {
-            records.map(CodeModeRecord::key).toSet() +
-                history.entries.map(CodeModeExpiredSnapshot::key) + store.pendingKeys
+            state.records.map(CodeModeRecord::key).toSet() +
+                state.history.entries.map(CodeModeExpiredSnapshot::key) + store.pendingKeys
         }
         keys.forEach { key ->
             access.tryKey(key) {
                 val changed = sweeper.sweep(key)
-                store.save(records, history.entries, retryOnly = !changed, dirtyKeys = setOf(key))
+                store.save(state.records, state.history.entries, retryOnly = !changed, dirtyKeys = setOf(key))
             }
         }
         withinBounds()
@@ -43,11 +41,16 @@ internal class CodeModeRegistrySweep(
     private fun withinBounds() {
         val passed = mutableSetOf<String>()
         while (true) {
-            val key = access.monitor.withLock { retention.overBound(records, sweeper.busyKeys() + passed) } ?: return
+            val key = access.monitor.withLock {
+                retention.overBound(
+                    state.records,
+                    sweeper.busyKeys() + passed,
+                )
+            } ?: return
             var went = false
             access.tryKey(key) {
-                went = retention.letGoOver(records, history, key, sweeper.busyKeys(), config.clock.millis())
-                if (went) store.save(records, history.entries, dirtyKeys = setOf(key))
+                went = retention.letGoOver(state.records, state.history, key, sweeper.busyKeys(), config.clock.millis())
+                if (went) store.save(state.records, state.history.entries, dirtyKeys = setOf(key))
             }
             if (!went) passed += key
         }

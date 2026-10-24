@@ -43,4 +43,5 @@ internal class CodeModeHistoryReplay(private val key: String, private val heap: 
     )
 }
 
+// Reserve encoded text and decoded JSON expansion together before serialization.
 internal const val HISTORY_DECODE_FACTOR = 16L

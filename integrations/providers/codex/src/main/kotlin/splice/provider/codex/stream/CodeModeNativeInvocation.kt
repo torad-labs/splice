@@ -62,6 +62,11 @@ internal object CodeModeNativeInvocations {
     }
 }
 
+// Pinned native exec and wait observation default is ten seconds.
 private const val NATIVE_DEFAULT_YIELD_MS = 10_000L
+
+// Pinned native formatter defaults to ten thousand output tokens.
 private const val NATIVE_DEFAULT_OUTPUT_TOKENS = 10_000L
+
+// JavaScript integer values must remain exactly representable across JSON and native parsing.
 private const val MAX_NATIVE_SAFE_INTEGER = 9_007_199_254_740_991L

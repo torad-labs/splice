@@ -93,7 +93,14 @@ internal class CodeModeUpstreamLedger(
     }
 }
 
+// Hot-cache count only; every branch remains in the durable journal.
 private const val LEDGER_CONVERSATIONS = 32
+
+// Initial map allocation stays small before the cache grows.
 private const val LEDGER_INITIAL = 16
+
+// Standard hash load factor balances collisions against hot metadata overhead.
 private const val LEDGER_LOAD = 0.75f
+
+// Default hot graph budget; durable authority survives every cache eviction.
 private const val LEDGER_CACHE_BYTES = 256L * 1024 * 1024

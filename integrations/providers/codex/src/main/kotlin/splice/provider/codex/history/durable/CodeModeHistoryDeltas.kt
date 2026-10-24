@@ -131,6 +131,11 @@ internal object CodeModeHistoryDeltas {
     }
 }
 
+// Reserve fixed revision, collection and serializer metadata before encoding.
 private const val DELTA_METADATA_BYTES = 512L
+
+// Conservatively charge new immutable tree nodes at each copied level.
 private const val DELTA_TREE_LEVEL_BYTES = 128L
+
+// Covered and sent histories each own a persistent item tree.
 private const val DELTA_ITEM_TREES = 2

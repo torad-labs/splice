@@ -27,7 +27,8 @@ export async function runInstalledCase(receipt: Receipt, options: Map<string, st
     assert.equal(basename(await readlink(`/proc/${pid}/exe`)), "java", "installed daemon must be the actual JVM");
     const jarArgument = arguments_.indexOf("-jar");
     assert.ok((jarArgument >= 0 && resolve(arguments_[jarArgument + 1]!) === installedPath || arguments_.includes("splice.app.MainKt")) &&
-      !arguments_.some(value => value.includes("CodeModeParityProbe")), "installed identity must address the installed Splice daemon");
+      !arguments_.some(value => value.includes("CodeModeParityProbe") || value === "--internal-code-mode-parity"),
+      "installed identity must address the installed Splice daemon");
     const ancestry: number[] = [];
     let ancestor = hostPid;
     while (ancestor !== pid && ancestor > 1 && ancestry.length < 12) {

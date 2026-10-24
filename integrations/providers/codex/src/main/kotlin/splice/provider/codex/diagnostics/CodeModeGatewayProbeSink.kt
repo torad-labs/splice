@@ -1,4 +1,4 @@
-package splice.provider.codex
+package splice.provider.codex.diagnostics
 
 import splice.core.index.WireBlockIndex
 import splice.upstream.sse.WireSink

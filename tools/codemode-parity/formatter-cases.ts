@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import { readFile, writeFile, mkdir } from "node:fs/promises";
 import { resolve } from "node:path";
 import { artifact, sha256, type CaseEvidence } from "./qualification";
+import { candidateCommand } from "./candidate-command";
 
 const sourceRoot = "/home/marcos/Documents/dev/infra/coding/codex";
 const revision = "17a9df60e420b58e3edc55efb1bb052e39492bbc";
@@ -88,7 +89,7 @@ export async function runFormatterCases(java: string, jar: string, evidence: str
     const expected = decode(native.stdout);
     const candidateInputs = vectors.map(vector => ({ kind: "completed", wallMillis: 0, supportsOriginal: true, ...vector }));
     const candidateInput = candidateInputs.map(value => JSON.stringify(value)).join("\n") + "\n";
-    const candidate = await command([java, "-cp", jar, "splice.app.diagnostics.CodeModeParityProbe", "--format-fixture", runId], candidateInput);
+    const candidate = await command(candidateCommand(java, jar, "--format-fixture", runId), candidateInput);
     const path = resolve(directory, "comparison.json");
     await writeFile(path, JSON.stringify({ schema: 1, runId, sourceRevision: revision, binaryToStandaloneLinkage: "unproven",
       sourcePolicy: "Exact upstream algorithms and policy methods; protocol data types only are shimmed. Audio fixture uses invalid-URL byte-count fallback.",

@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import { mkdir, readdir, writeFile } from "node:fs/promises";
 import { resolve } from "node:path";
 import { artifact, type CaseEvidence, type CaseId } from "./qualification";
+import { candidateCommand } from "./candidate-command";
 
 type Observation = { schema: number; caseId: string; nonce: string; phase: string; pid: number; scope: string; observed: any };
 const user = (content: string) => ({ role: "user", content });
@@ -103,7 +104,7 @@ export async function runGatewayCases(java: string, jar: string, evidence: strin
     const values: Observation[] = [];
     try {
       for (const phase of driver.phases) {
-        const command = [java, "-cp", jar, "splice.app.diagnostics.CodeModeParityProbe", "--gateway-fixture", driver.id, runId, stateDirectory, phase];
+        const command = candidateCommand(java, jar, "--gateway-fixture", driver.id, runId, stateDirectory, phase);
         const started = performance.now();
         const child = Bun.spawn(command, { stdout: "pipe", stderr: "pipe" });
         const timer = setTimeout(() => child.kill("SIGKILL"), 15_000);

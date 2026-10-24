@@ -51,4 +51,5 @@ internal object CodeModeParityFormat {
     }
 }
 
+// Codex's default model-visible exec output budget when the fixture supplies no override.
 private const val DEFAULT_FORMAT_TOKENS = 10_000L

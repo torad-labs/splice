@@ -1,4 +1,4 @@
-package splice.provider.codex
+package splice.provider.codex.diagnostics
 
 import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonObject

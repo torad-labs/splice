@@ -15,6 +15,7 @@ import { runInteractiveCases } from "./interactive-cases";
 import { runAudioCases } from "./audio-cases";
 import { runInstalledCase } from "./installed-case";
 import { runNativeGatewayCases } from "./native-gateway-cases";
+import { candidateCommand } from "./candidate-command";
 
 const directory = import.meta.dir;
 const repo = resolve(directory, "../..");
@@ -118,7 +119,7 @@ async function qualify(): Promise<void> {
     item.findings = [];
     for (const side of ["reference", "candidate"] as const) {
       const host = side === "reference" ? new NativeReference(reference.path) :
-        new NativeReference(java, ["-cp", candidateJar.path, "splice.app.diagnostics.CodeModeParityProbe", candidateNativeHost.path]);
+        new NativeReference(java, candidateCommand(java, candidateJar.path, candidateNativeHost.path).slice(1));
       let failure: string | null = null, observedIdentity: any = null;
       if (side === "candidate") host.crashNativeHost = async () => {
         observedIdentity = await productionIdentity(host, candidateJar.sha256, candidateNativeHost.sha256);

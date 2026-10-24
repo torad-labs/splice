@@ -3,6 +3,7 @@ import { spawn } from "node:child_process";
 import { mkdir, writeFile } from "node:fs/promises";
 import { resolve } from "node:path";
 import { artifact, type CaseEvidence } from "./qualification";
+import { candidateCommand } from "./candidate-command";
 
 const families = ["runtime.session-store", "runtime.wait-suffix"] as const;
 function output(post: any[], callId: string): any[] {
@@ -21,7 +22,7 @@ export async function runNativeGatewayCases(java: string, jar: string, host: str
     const family = cases.find(item => item.id === id)!;
     const directory = resolve(evidence, `${runId}.${id}.native-gateway`);
     await mkdir(directory, { recursive: true });
-    const argv = [java, "-cp", jar, "splice.app.diagnostics.CodeModeParityProbe", "--native-gateway-fixture", id, runId, directory, host];
+    const argv = candidateCommand(java, jar, "--native-gateway-fixture", id, runId, directory, host);
     const child = spawn(java, argv.slice(1), { stdio: ["ignore", "pipe", "pipe"] });
     let stdout = "", stderr = "";
     child.stdout.on("data", bytes => { stdout += bytes.toString(); }); child.stderr.on("data", bytes => { stderr += bytes.toString(); });

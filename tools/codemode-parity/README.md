@@ -35,7 +35,7 @@ bun tools/codemode-parity qualify \
   --evidence /absolute/artifacts
 ```
 
-The adapter is `splice.app.diagnostics.CodeModeParityProbe` in the candidate jar.
+The adapter runs through `splice.app.MainKt --internal-code-mode-parity` in the candidate jar.
 It speaks host protocol V1 over little-endian length-prefixed JSON and exercises
 the production runtime. Its first argument is the expected native executable;
 the production packaged resolver chooses the actual executable. The harness

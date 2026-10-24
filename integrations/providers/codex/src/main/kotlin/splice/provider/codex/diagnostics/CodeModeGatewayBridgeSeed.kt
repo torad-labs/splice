@@ -1,4 +1,4 @@
-package splice.provider.codex
+package splice.provider.codex.diagnostics
 
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
@@ -7,6 +7,7 @@ import splice.core.turn.RoundHandoffs
 import splice.core.turn.TurnOutcome
 import splice.core.turn.noRequestUsage
 import splice.core.util.JsonWire
+import splice.provider.codex.CodexCodeModeBridge
 import splice.upstream.RoundResult
 
 /** Establishes native authority whose model boundaries differ from the client's merged display. */

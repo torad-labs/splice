@@ -1,4 +1,4 @@
-package splice.provider.codex
+package splice.provider.codex.diagnostics
 
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonArray
@@ -9,6 +9,22 @@ import kotlinx.serialization.json.put
 import splice.core.perf.InputDigest
 import splice.core.perf.InputItemDigests
 import splice.core.util.LogSink
+import splice.provider.codex.CODE_MODE_METADATA_VERSION
+import splice.provider.codex.CodeModeBaseline
+import splice.provider.codex.CodeModeBody
+import splice.provider.codex.CodeModeIssuedStep
+import splice.provider.codex.CodeModeNativeContinuity
+import splice.provider.codex.CodeModeNativeSegment
+import splice.provider.codex.CodeModeOrigin
+import splice.provider.codex.CodeModePending
+import splice.provider.codex.CodeModePhase
+import splice.provider.codex.CodeModeProgress
+import splice.provider.codex.CodeModeRecord
+import splice.provider.codex.CodeModeRoundLink
+import splice.provider.codex.CodeModeRunContext
+import splice.provider.codex.CodeModeStateLocation
+import splice.provider.codex.CodexCodeModeBridge
+import splice.provider.codex.CodexCodeModeWire
 import splice.provider.codex.history.CodeModeClientPrefix
 import splice.provider.codex.state.CodeModeHistoryAnchor
 import splice.provider.codex.state.CodeModeReplayAnchors

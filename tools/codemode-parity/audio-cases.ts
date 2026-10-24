@@ -3,6 +3,7 @@ import { readFile, writeFile, mkdir } from "node:fs/promises";
 import { resolve } from "node:path";
 import { spawn } from "node:child_process";
 import { artifact, type CaseEvidence } from "./qualification";
+import { candidateCommand } from "./candidate-command";
 
 const sourceRoot = "/home/marcos/Documents/dev/infra/coding/codex";
 const revision = "17a9df60e420b58e3edc55efb1bb052e39492bbc";
@@ -98,7 +99,7 @@ export async function runAudioCases(java: string, jar: string, evidence: string,
           content: [{ type: "input_audio", audio_url: urls[index] }] });
       }
     }
-    const candidate = await command([java, "-cp", jar, "splice.app.diagnostics.CodeModeParityProbe", "--format-fixture", runId], inputs.map(input => JSON.stringify(input)).join("\n") + "\n");
+    const candidate = await command(candidateCommand(java, jar, "--format-fixture", runId), inputs.map(input => JSON.stringify(input)).join("\n") + "\n");
     await writeFile(resolve(directory, "comparison.json"), JSON.stringify({ schema: 1, runId, revision, samples: observations, native, inputs, candidate }, null, 2) + "\n");
     assert.equal(candidate.exitCode, 0, candidate.stderr);
     const rows = candidate.stdout.trim().split("\n").map((line: string) => JSON.parse(line)); assert.equal(rows.length, inputs.length);

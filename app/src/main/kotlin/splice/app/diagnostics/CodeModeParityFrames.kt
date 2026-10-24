@@ -3,6 +3,7 @@ package splice.app.diagnostics
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.jsonObject
+import splice.core.util.JsonWire
 import java.io.BufferedInputStream
 import java.io.BufferedOutputStream
 import java.io.EOFException
@@ -27,7 +28,7 @@ internal class CodeModeParityFrames {
 
     @Synchronized
     fun send(frame: JsonObject) {
-        val payload = frame.toString().encodeToByteArray()
+        val payload = JsonWire.string(frame).encodeToByteArray()
         require(payload.size <= MAX_PARITY_FRAME_BYTES) { "Parity response exceeds frame limit" }
         output.write(ByteBuffer.allocate(Int.SIZE_BYTES).order(ByteOrder.LITTLE_ENDIAN).putInt(payload.size).array())
         output.write(payload)
@@ -35,4 +36,5 @@ internal class CodeModeParityFrames {
     }
 }
 
+// The pinned native V1 transport bounds each serialized frame to 64 MiB.
 private const val MAX_PARITY_FRAME_BYTES = 64 * 1024 * 1024

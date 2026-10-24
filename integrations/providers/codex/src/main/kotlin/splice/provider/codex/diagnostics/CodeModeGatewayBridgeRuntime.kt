@@ -1,4 +1,4 @@
-package splice.provider.codex
+package splice.provider.codex.diagnostics
 
 import splice.upstream.codemode.CodeModeCell
 import splice.upstream.codemode.CodeModeResult

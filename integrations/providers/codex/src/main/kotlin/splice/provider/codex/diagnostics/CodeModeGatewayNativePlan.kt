@@ -1,4 +1,4 @@
-package splice.provider.codex
+package splice.provider.codex.diagnostics
 
 import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonObject
@@ -7,6 +7,7 @@ import kotlinx.serialization.json.put
 import splice.core.turn.GatewayCustomCall
 import splice.core.util.JsonScalars
 import splice.core.util.JsonWire
+import splice.provider.codex.CODE_MODE_FIELD_INPUT
 
 /** Model-free FIFO responses; every next source is chosen only after its preceding native output arrives. */
 internal class CodeModeGatewayNativePlan(private val family: String, private val nonce: String) {

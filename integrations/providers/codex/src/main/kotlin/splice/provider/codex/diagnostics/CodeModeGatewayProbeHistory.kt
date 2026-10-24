@@ -1,4 +1,4 @@
-package splice.provider.codex
+package splice.provider.codex.diagnostics
 
 import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonObject
@@ -8,6 +8,9 @@ import kotlinx.serialization.json.put
 import splice.core.turn.RoundHandoffs
 import splice.core.turn.TurnOutcome
 import splice.core.turn.noRequestUsage
+import splice.provider.codex.CodeModeBridgeConfig
+import splice.provider.codex.CodeModeRecordSnapshot
+import splice.provider.codex.CodexCodeModeRegistry
 import splice.provider.codex.history.CodeModeUpstreamHistory
 import java.time.Clock
 import java.time.Instant

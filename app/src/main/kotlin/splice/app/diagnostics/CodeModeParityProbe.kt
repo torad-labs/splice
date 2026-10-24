@@ -1,38 +1,18 @@
 package splice.app.diagnostics
 
-import kotlinx.coroutines.cancel
 import kotlinx.coroutines.coroutineScope
-import kotlinx.coroutines.launch
 import splice.codemode.NativeCodeModeRuntime
 import splice.codemode.WorkerSpawn
 import splice.core.util.JsonWire
-import splice.provider.codex.CodeModeGatewayNativeProbe
-import splice.provider.codex.CodeModeGatewayProbe
-import splice.upstream.LifecycleScope
-import splice.upstream.codemode.ProcessDispatchers
+import splice.provider.codex.diagnostics.CodeModeGatewayNativeProbe
+import splice.provider.codex.diagnostics.CodeModeGatewayProbe
 import java.nio.file.Files
 import java.nio.file.Path
 import java.security.MessageDigest
-import java.util.concurrent.CompletableFuture
 
-/** Model-free diagnostic entry point exercising the production runtime and its bundled host. */
-public object CodeModeParityProbe {
-    @JvmStatic
-    public fun main(args: Array<String>) {
-        val scope = LifecycleScope(ProcessDispatchers().io())
-        val done = CompletableFuture<Unit>()
-        val job = scope.launch { run(args) }
-        job.invokeOnCompletion { error ->
-            if (error == null) done.complete(Unit) else done.completeExceptionally(error)
-        }
-        try {
-            done.get()
-        } finally {
-            scope.cancel()
-        }
-    }
-
-    private suspend fun run(args: Array<String>) {
+/** Internal model-free runner; Main owns the only process entry and dispatches this explicit fixture mode. */
+internal object CodeModeParityProbe {
+    suspend fun run(args: Array<String>) {
         if (args.firstOrNull() == "--native-gateway-fixture") {
             nativeGateway(args)
             return
@@ -89,4 +69,7 @@ public object CodeModeParityProbe {
     }
 }
 
+// One mode selector plus case, nonce, state path and phase (or expected host identity).
 private const val GATEWAY_PROBE_ARGUMENTS = 5
+
+internal const val CODE_MODE_PARITY_COMMAND = "--internal-code-mode-parity"

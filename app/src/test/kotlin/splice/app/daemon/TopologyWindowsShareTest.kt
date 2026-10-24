@@ -2,7 +2,8 @@
 // the file hands its `[share]` table to the listener off the read's thread, and those jobs may run in any order; the
 // listener ends up serving the table of the latest read whatever order they ran in. A dispatcher that holds the jobs
 // and runs the newest first stands in for a busy pool, over the real listener and a real re-read of a temp file. Round
-// 13 added a table boot would refuse: sharing stays as it is, and the log says why, as boot would say it.
+// 13 added a table boot would refuse: sharing stays as it is, and the log says why, as boot would say it. Round 18
+// added a read during the daemon's start, before the listener first opens: it opens on what that read saw.
 package splice.app.daemon
 
 import kotlinx.coroutines.CoroutineDispatcher
@@ -82,9 +83,9 @@ class TopologyWindowsShareTest {
         )
     }
 
-    /** The daemon's re-read of splice.toml, handing each `[share]` table to [listener] by a job in [scope], and saying
-     *  what it says in [log]. */
-    private fun windows(listener: ShareListener, scope: CoroutineScope, log: (String) -> Unit = { }): TopologyWindows {
+    /** The daemon's re-read of splice.toml, handing each `[share]` table to [listener] by a job in [scope], once it is
+     *  handed one, and saying what it says in [log]. */
+    private fun windows(listener: ShareListener?, scope: CoroutineScope, log: (String) -> Unit = { }): TopologyWindows {
         val windows = TopologyWindows(
             file,
             TopologyLoader.parse(""),
@@ -94,8 +95,32 @@ class TopologyWindowsShareTest {
             LocalWindowCheck { _, _, _ -> emptyList() },
             scope,
         )
-        windows.sharing = listener
+        listener?.let { windows.sharing = it }
         return windows
+    }
+
+    // The daemon hands the listener over at the end of its start, once its heads bound and its control port opened, and
+    // a turn or a console read re-reads splice.toml from the moment a head binds. The edit such a read saw is what the
+    // listener opens on, never the table the daemon booted with.
+    @Test
+    fun `a share edit read while the daemon starts is what sharing opens on`() {
+        val listener = listener()
+        val scope = CoroutineScope(SupervisorJob())
+        val windows = windows(null, scope)
+        val port = TestPorts.reserve()
+        try {
+            save("[share]\nenabled = true\nport = $port\n")
+            assertFalse(windows.stale(), "a turn during the daemon's start reads sharing turned on")
+
+            windows.sharing = listener
+            runBlocking { listener.followAsked() }
+
+            assertTrue(listener.state().listening, "sharing opened as the file says: ${listener.state()}")
+            assertEquals(port, listener.state().share.port, "on the port it says")
+        } finally {
+            scope.cancel()
+            runBlocking { listener.stop() }
+        }
     }
 
     @Test

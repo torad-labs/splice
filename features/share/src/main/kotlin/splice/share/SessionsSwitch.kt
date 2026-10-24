@@ -61,6 +61,9 @@ public class SessionsSwitch(state: ShareState, private val used: MachinesJoined)
      *  change does. */
     public fun turnJoined(name: String, on: Boolean, joined: String): Boolean = clients.allowSessions(name, on, joined)
 
+    /** When the machine booked under [name] now joined this one, or null when none is. */
+    internal fun booked(name: String): String? = clients.all().firstOrNull { it.named(name) }?.joinedAt
+
     /** Whether a machine of [name] joined this one, whenever it did. */
     public fun joined(name: String): Boolean = clients.all().any { it.named(name) }
 

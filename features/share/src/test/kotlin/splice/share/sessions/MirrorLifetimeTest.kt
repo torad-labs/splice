@@ -2,8 +2,9 @@
 // listed here only while that machine is heard from, whatever made its mirror (a look, an offer, or a note that came
 // from it), and never once sessions stop crossing with it, by a switch turned off or by this machine no longer sharing.
 // Round 14 of PR #419's review added the daemon's stop, after which a request still on its way makes no mirror, and an
-// offer that fails part way, whose mirrors made before the failure still end with their time. The machines are
-// TwoMachinesTest's.
+// offer that fails part way, whose mirrors made before the failure still end with their time. Round 18 added the
+// moment between a way's time running out and the sweep that withdraws it: a note that lands then gives its sender's
+// way the note's time from its arrival, as one landing after the sweep would. The machines are TwoMachinesTest's.
 package splice.share.sessions
 
 import kotlinx.coroutines.Dispatchers
@@ -87,8 +88,9 @@ internal class MirrorLifetimeTest : TwoMachinesTest() {
 
     // The class the round-3 review named: several writers each kept their own rule for when a mirror ends. The
     // property: whatever made a machine's mirrors (a look, an offer, or a note from one of its sessions), they are
-    // withdrawn once the time its last look or offer gave them, or the note that found none of them, is past, and not
-    // before; and a withdraw ends only that machine's. A model of each machine's sessions and end, over generated runs.
+    // withdrawn once the time its last look, offer or note gave them is past, and not before, however late the sweep
+    // that withdraws them runs; and a withdraw ends only that machine's. A model of each machine's sessions and end,
+    // over generated runs.
     @Test
     fun `no mirror outlasts the time its machine's last look, offer or note gave it, and none ends before`() {
         torad.session("rig-lead")
@@ -189,8 +191,8 @@ internal class MirrorLifetimeTest : TwoMachinesTest() {
 }
 
 /** One generated run against [mirrors], whose clock is [now]: each step a look or an offer, a note to the session here
- *  whose id is [to], a withdraw, or the clock moving on and the mirrors' time checked; and each machine's mirrors as
- *  they should then be, the sessions mirrored and when they end. */
+ *  whose id is [to], a withdraw, the clock moving on, or the sweep that checks the mirrors' time; and each machine's
+ *  mirrors as they should then be, the sessions mirrored and when they end. */
 private class LifetimeRun(
     private val mirrors: SessionMirrors,
     private val now: AtomicLong,
@@ -205,15 +207,16 @@ private class LifetimeRun(
     fun step() {
         val machine = LIFETIME_MACHINES.random(random)
         val link = MirrorLink(carrier, random.nextLong(1, LIFETIME_SPAN_MS), MirrorWay.LOOK)
-        when (random.nextInt(4)) {
+        when (random.nextInt(5)) {
             0 -> looked(machine, link)
             1 -> noted(machine, link)
             2 -> {
                 mirrors.withdraw(machine, MirrorWay.LOOK)
                 forget(machine)
             }
+            // The clock moves on, and the sweep, which runs each second, has not run since.
+            3 -> now.addAndGet(random.nextLong(0, LIFETIME_SPAN_MS))
             else -> {
-                now.addAndGet(random.nextLong(0, LIFETIME_SPAN_MS))
                 mirrors.expire()
                 ends.filterValues { it < now.get() }.keys.forEach(::forget)
             }
@@ -231,11 +234,12 @@ private class LifetimeRun(
         held[machine] = ids
     }
 
-    /** A note from one of [machine]'s sessions: its sender is mirrored, and a machine with none left gets [link]'s time. */
+    /** A note from one of [machine]'s sessions: its sender is mirrored, and [machine] lasts at least [link]'s time from
+     *  now, whether its time had run out before the sweep or not. */
     private fun noted(machine: String, link: MirrorLink) {
         val id = LIFETIME_IDS.random(random)
         runBlocking { mirrors.deliver(to, machine, MirroredSession(id, "n-$id"), "hello", link) }
-        ends.putIfAbsent(machine, now.get() + link.lastsMs)
+        ends[machine] = maxOf(ends[machine] ?: 0L, now.get() + link.lastsMs)
         held[machine] = held[machine].orEmpty() + id
     }
 

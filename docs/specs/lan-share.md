@@ -239,6 +239,9 @@ Built on `feat/lan-share`, merged into `feat/v0.4.0` through the gate. Milestone
    machine. A command the sharing machine offers is served whenever its head runs, read at each request: one that
    failed at the daemon's start and came up later, or went down and came back, is in the description, its picker and
    the health with no restart and no edit to `[share]`, and one not running is in the health as down (round 17).
+   A machine that does not answer is said in words that name the wait that ran out: the connection's, 3 s, for one
+   that is off, asleep or gone from the network, and the request's own for one that took the connection and said
+   nothing, which for a collection of notes is 35 s (round 18).
    `splice models` says a remote head lists its models on its own machine. On the sharing machine:
    last seen and turns today per joined machine, and the machine's name on each relayed turn's perf row. Last seen is
    written about once a minute; a write the disk refuses is said in the log and fails no request.
@@ -263,7 +266,9 @@ Built on `feat/lan-share`, merged into `feat/v0.4.0` through the gate. Milestone
 
    The last three run `splice remote`'s own classes and change which commands splice runs, so each answers
    `restart: true` and the page offers the console's own restart. `[share]` is a live key: the daemon
-   (`ShareListener`) opens, moves or closes the listener whenever the file changes. A table boot would refuse (a port
+   (`ShareListener`) opens, moves or closes the listener whenever the file changes, an edit read while the daemon
+   starts included: the listener opens on the table the file said last, not the one the daemon booted with (round
+   18). A table boot would refuse (a port
    outside 1-65535, a head that is not one or cannot be shared) leaves sharing as it is, and the log says why as boot
    would (round 13). While splice.toml does not load, `GET /api/share` answers its refusal, and the page says the
    daemon's lines with nothing that acts on the file, then shows sharing again once the file loads, reading every
@@ -340,7 +345,10 @@ Built on `feat/lan-share`, merged into `feat/v0.4.0` through the gate. Milestone
      made after either has an id of its own, so an acknowledgement of the one before drops nothing of it. Each box is
      one join's, named by when the machine joined: a machine that joins under a revoked one's name collects a box of
      its own whichever comes first of the revoke, a note to the revoked machine and its own collection, and the revoked
-     machine's mirrors carry nothing more, refused in words (round 14). A note refused where its sender wrote it, or by the
+     machine's mirrors carry nothing more, refused in words (round 14). A machine that joins again with no revoke, as
+     `splice remote` run again does, has a box of its new join: a note carried for the join booked now is held in it,
+     whichever comes first of the note and that join's first collection, and what waited for the earlier join goes
+     (round 18). A note refused where its sender wrote it, or by the
      machine it was posted to (a session gone there, a switch off on either side, a machine revoked), goes back to the
      sender as a receipt, in words; one refused after it waited in an outbox is the "Not yet" below. A status the
      machine it was posted to names that this build has no word for, as a newer or an older build may, goes back as a
@@ -377,7 +385,9 @@ Built on `feat/lan-share`, merged into `feat/v0.4.0` through the gate. Milestone
      mirrors withdrawn as it asks, so neither waits for the mirrors' time to end (round 14). Each look while it is off
      withdraws what a collection already under way made since. Every mirror, whatever made it (a look, an offer or a note), ends once
      the time of every way that names its session is past (`SessionMirrors`): a look or an offer gives three looks
-     from then, and a note gives a minute to a way that names none; and a listener that closes withdraws every machine
+     from then, and a note gives its way at least its own time from when it arrived (a minute on the sharing
+     machine), one whose time ran out before the sweep withdrew it included (round 18); and a listener that closes
+     withdraws every machine
      it mirrored. A session is mirrored once, whichever ways name it: two machines that each joined the other reach each
      other by this machine's look and by the other's offers and notes, and a machine keyed twice (`b` and `b-2`)
      names its sessions under both keys. A way going quiet (a look that fails, a revoke, its offers ending) leaves what

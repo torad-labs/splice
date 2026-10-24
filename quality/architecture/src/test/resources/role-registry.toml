@@ -462,6 +462,7 @@ names = [
     "EnvReader",
     "HeadOfSession",
     "HistoryWindowStore",
+    "JoinsBooked",
     "QuotaHeaderRead",
     "SessionAddress",
     "SessionServedOf",
@@ -511,7 +512,13 @@ SessionServedOf (Oct 11, 2026) is a SIXTH source: a session id to the MODEL spli
 model a later Continue on move put it on, from the daemon's own perf rows and move records. Its miss means \
 "splice has served this session nothing and never moved it". Its answer is a model id, which Continue on \
 compares against its menu and keeps as a move's "from" model. Served by HeadOfSession it would put a head \
-key where a model id is compared, and the menu would offer back the very model the session is on."""
+key where a model id is compared, and the menu would offer back the very model the session is on. \
+JoinsBooked (round 18 of PR #419's review) is a SEVENTH source: a joined machine's name to WHEN the machine \
+booked under it now joined this one, from the LAN share's book of joined machines. Its miss means "no machine \
+is booked under that name", a revoke. Its answer is a join's timestamp, which the share outbox compares \
+with the join a mirror was made under, to hold a note or refuse it. Served by EnvReader or SessionServedOf it \
+would compare a join against a config value or a model id, and every note would be refused or, worse, held for \
+a machine revoked since."""
 
 # ── 5 names, () -> T ──────────────────────────────────────────────────────────────────────────────
 [[groups]]

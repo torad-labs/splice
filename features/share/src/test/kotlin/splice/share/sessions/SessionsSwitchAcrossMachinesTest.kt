@@ -9,6 +9,7 @@ package splice.share.sessions
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.runBlocking
 import org.junit.jupiter.api.Assertions.assertEquals
+import org.junit.jupiter.api.Assertions.assertNull
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 import splice.core.testing.TestPorts
@@ -69,6 +70,36 @@ internal class SessionsSwitchAcrossMachinesTest : TwoMachinesTest() {
         assertTrue(listener.clients.allowSessions(MINI, false))
         val off = answers(info, joined.token, rigId).map { it.statusCode() }
         assertEquals(List(4) { 403 }, off, "a switch turned off refuses it again")
+    }
+
+    /** What torad hands the machine holding [token] at one collection of its outbox, waiting up to [waitS] seconds
+     *  for a note. */
+    private fun collected(info: ShareInfo, token: String, waitS: Long = 0): HttpResponse<String> {
+        val http = HttpClient.newBuilder().sslContext(RemoteTrust(info.fingerprint, "torad").context).build()
+        val outbox = URI.create("https://127.0.0.1:$port/share/v1/sessions/outbox?wait=$waitS")
+        val asked = HttpRequest.newBuilder(outbox).header("Authorization", "Bearer $token").GET().build()
+        return http.send(asked, HttpResponse.BodyHandlers.ofString())
+    }
+
+    // Round 18 of PR #419's review: a machine that joins again is a new join here, and the outbox its earlier join
+    // collected from stays until a collection of the new one replaces it. Once its switch is on and it offers its
+    // sessions, a reply to one of them is held for it, whichever of its looks and collections comes first, and reaches
+    // it at its first collection: never refused as if the session were mirrored before the re-join.
+    @Test
+    fun `a reply to a machine that joined again is held for it, whatever outbox its earlier join left here`() {
+        val rig = torad.session("rig-lead")
+        val (info, first) = joined()
+        assertEquals(200, collected(info, first.token).statusCode(), "its earlier join collected, so its outbox stands")
+        val again = joined()
+        assertEquals(200, offer(listOf("s-mini" to "splice"), again), "the machine that joined again offers")
+        assertTrue("$MINI/splice" in listed(rig) { "$MINI/splice" in it }, "torad lists its session")
+
+        // Its look came first: the reply reaches torad's mirror before any collection of the new join.
+        rig.send("$MINI/splice", "the reply")
+        assertNull(rig.receipt(1), "the session that wrote it is told nothing went wrong")
+        val answer = collected(info, again.second.token, SETTLE_MS / 1_000)
+        assertEquals(200, answer.statusCode(), answer.body())
+        assertTrue("the reply" in answer.body(), "its first collection is handed the reply: ${answer.body()}")
     }
 
     @Test

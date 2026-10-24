@@ -84,7 +84,7 @@ internal data class ShareOutboxAck(val box: String, val after: Long)
 internal data class ShareSessionParts(
     val mirrors: SessionMirrors?,
     val switch: SessionsSwitch,
-    val outboxes: ShareOutboxes = ShareOutboxes(),
+    val outboxes: ShareOutboxes = ShareOutboxes(JoinsBooked { switch.booked(it) }),
 ) {
     /** What [client]'s mirrors, made under its join of [joined], hand a note to: its outbox while its Sessions switch is
      *  on here, and a refusal in words from the moment it is off, or [client] was revoked, by the Sharing page or by
@@ -210,8 +210,8 @@ internal class ShareSessionHost(
  *  acknowledgement of the one it replaced, so a collection still carrying one drops nothing of the new. Each box is one
  *  join's, named by when the machine joined: a machine that joins under a revoked one's name collects a box of its own,
  *  whichever comes first of the revoke, a note to the revoked machine and the new machine's collection, and a note
- *  carried for the revoked one after that is refused. */
-internal class ShareOutboxes {
+ *  carried for the revoked one after that is refused. [books] tells which join is booked under each name now. */
+internal class ShareOutboxes(private val books: JoinsBooked) {
     private val boxes = ConcurrentHashMap<String, Box>()
 
     /** One machine's notes, for its join of [owner], oldest first, the place of the last one held, which wakes a held
@@ -235,13 +235,17 @@ internal class ShareOutboxes {
     }
 
     /** What [client]'s mirrors, made under its join of [joined], hand a note to: its outbox, which a full one refuses as
-     *  dropped, and one of a later join refuses. The note is put in the box while the box is the one [client] has, so a
-     *  revoke or a collection of a later join that replaces it at that moment lets go of the note with it. */
+     *  dropped. While [joined] is the join booked now, the note is held in that join's box, which takes the place of
+     *  one an earlier join left (round 18 of PR #419's review); once a revoke or a later join took its place, it is
+     *  refused. The book is read and the note put in the box while the box is the one [client] has, so a revoke or a
+     *  collection of a later join that replaces it at that moment lets go of the note with it. */
     fun carrier(client: String, joined: String) = MirrorCarrier { to, from, text ->
-        var carried = MirrorCarried(DeliveryStatus.REFUSED, "$client joined again here since this session was mirrored")
+        val since = "$client was revoked or joined again here since this session was mirrored"
+        var carried = MirrorCarried(DeliveryStatus.REFUSED, since)
         boxes.compute(client) { _, had ->
-            (had ?: Box(joined)).also { box ->
-                if (box.owner == joined) carried = box.hold(client, ShareOutboxNote(spelled(to), spelled(from), text))
+            if (books.joinedAt(client) != joined) return@compute had
+            (had?.takeIf { it.owner == joined } ?: Box(joined)).also { box ->
+                carried = box.hold(client, ShareOutboxNote(spelled(to), spelled(from), text))
             }
         }
         carried
@@ -272,6 +276,12 @@ internal class ShareOutboxes {
     private fun waiting(box: Box): List<ShareOutboxNote> = synchronized(box) { box.held.take(OUTBOX_NOTES_AT_ONCE) }
 
     private fun spelled(session: MirroredSession) = ShareSession(session.id, session.name, session.heardAt)
+}
+
+/** When the machine booked under a name now joined, or null while none is: what tells a note carried for the join
+ *  booked now from one carried for a join a revoke or a later join took the place of. Blocking: it reads the book. */
+internal fun interface JoinsBooked {
+    fun joinedAt(client: String): String?
 }
 
 internal const val SHARE_SESSIONS_PATH: String = "/share/v1/sessions"

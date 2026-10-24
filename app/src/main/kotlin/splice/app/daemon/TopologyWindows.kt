@@ -37,6 +37,7 @@ import splice.core.model.LiveWindows
 import splice.core.model.ModelCatalog
 import splice.core.topology.HeadConfig
 import splice.core.topology.ProviderConfig
+import splice.core.topology.ShareConfig
 import splice.core.topology.Topology
 import splice.core.util.Cancellables
 import splice.core.util.EnvReader
@@ -115,9 +116,20 @@ internal class TopologyWindows(
     var compaction: CompactionInstructions? = null
 
     /** LAN share: the listener, handed each `[share]` table the file says (ShareListener.follow), so sharing follows
-     *  the file without a restart. Assigned by the daemon once the listener first opened; null in a rig. */
+     *  the file without a restart. The daemon assigns it before the listener first opens, and assigning it asks it for
+     *  the table the file said last, boot's unless a read since said another, so the read of an edit made during the
+     *  daemon's start is what it opens on (round 18 of PR #419's review). Null in a rig. */
     @Volatile
     var sharing: ShareListener? = null
+        set(listener) {
+            synchronized(lock) {
+                listener?.ask(said)
+                field = listener
+            }
+        }
+
+    /** `[share]` as the file said it last in a table boot would take, under [lock]: what [sharing] is asked first. */
+    private var said: ShareConfig = boot.share
 
     /** `[daemon] mcp_share` as the file says it now (MCP hub step 3); null while the file never said it. */
     @Volatile
@@ -210,16 +222,18 @@ internal class TopologyWindows(
         }
         share = declared.daemon.mcpShare
         // The listener reopens off this read's thread: a read sits on a turn's path, and a bind takes a moment. The
-        // table is asked for here, in the order of the reads, so the jobs serve the latest whatever order they run in.
-        // A table boot would refuse leaves sharing as it is, and says why as boot would (round 13 of PR #419's review).
+        // table is asked for here, in the order of the reads, so the jobs serve the latest whatever order they run in,
+        // and kept for a listener not handed over yet. A table boot would refuse leaves sharing as it is, and says why
+        // as boot would (round 13 of PR #419's review).
         val refused = declared.share.findings(declared)
-        sharing?.let { listener ->
-            if (refused.isEmpty()) {
-                listener.ask(declared.share)
-                scope.launch { listener.followAsked() }
-            } else {
-                log("[share] unchanged until splice.toml is fixed: ${refused.joinToString("; ") { it.text() }}\n")
+        if (refused.isEmpty()) {
+            val listener = synchronized(lock) {
+                said = declared.share
+                sharing?.also { it.ask(declared.share) }
             }
+            listener?.let { scope.launch { it.followAsked() } }
+        } else {
+            log("[share] unchanged until splice.toml is fixed: ${refused.joinToString("; ") { it.text() }}\n")
         }
         // A table that breaks a rule leaves the rules in force and says why.
         compaction?.let { rules ->

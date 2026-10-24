@@ -318,8 +318,10 @@ public class Daemon(
         // MCP hub step 6: each installed Claude Code version's --plugin-dir-no-mcp verdict, checked in the background.
         controlPlane.pluginFlagChecks.request()
         // LAN share (docs/specs/lan-share.md): opened last, over the heads that started; closed while [share] is off.
-        sharing.follow(topology.share)
+        // Handed to the re-read of splice.toml first, which asks it for the table the file said last, so an edit a
+        // read saw since the heads bound is what it opens on.
         topologyWindows.sharing = sharing
+        sharing.followAsked()
         val degraded = if (failed.isEmpty()) "" else " DEGRADED=${failed.keys}"
         log("[daemon] up: control :$controlPort, heads ${heads.keys}$degraded\n")
     }

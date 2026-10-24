@@ -8,6 +8,9 @@
 // added the collecting machine's own restart: what it acknowledged is kept where its daemon keeps it (RemoteAcks), so
 // what it was handed before the restart is never handed again. Round 14 made each join a machine of its own: what the
 // mirrors of a revoked machine carry never reaches the machine that joins next under its name, whichever comes first.
+// Round 18 added a machine that joins again with no revoke, as `splice remote` run again does: what waited for its
+// earlier join goes, and every note carried for the join booked now is held, whichever comes first of the note and
+// the new join's first collection.
 package splice.share
 
 import kotlinx.coroutines.runBlocking
@@ -19,6 +22,7 @@ import splice.sessions.mirror.MirroredSession
 import splice.sessions.peer.DeliveryStatus
 import splice.share.remote.RemoteAcks
 import java.nio.file.Path
+import java.util.concurrent.atomic.AtomicReference
 import kotlin.random.Random
 
 // why: the joined machine whose notes these are.
@@ -39,14 +43,15 @@ private const val RUNS = 300
 // why: the most actions in one run, kept under the outbox's capacity of 256 so no note is refused as dropped.
 private const val ACTIONS_AT_MOST = 200
 
-// why: the share of each action in a draw of twelve: a note, a cut collection, a delivered one, a restart of the sharing
-// machine, a restart of the collecting one, a revoke.
-private const val DRAWS = 12
+// why: the share of each action in a draw of thirteen: a note, a cut collection, a delivered one, a restart of the
+// sharing machine, a restart of the collecting one, a revoke and a join again, a join again with no revoke.
+private const val DRAWS = 13
 private const val NOTE_UNDER = 5
 private const val CUT_UNDER = 7
 private const val DELIVERED_UNDER = 9
 private const val RESTART_UNDER = 10
 private const val COLLECTOR_RESTART_UNDER = 11
+private const val REVOKE_UNDER = 12
 
 class ShareOutboxesTest {
     @TempDir
@@ -74,10 +79,11 @@ class ShareOutboxesTest {
     fun `every note held for a machine reaches it once and in order, whatever collections are cut on the way`() {
         val random = Random(SEED)
         repeat(RUNS) { run ->
-            var outboxes = ShareOutboxes()
+            var joined = JOINED
+            val books = JoinsBooked { joined }
+            var outboxes = ShareOutboxes(books)
             val acks = tmp.resolve("acks-$run.json")
             var collector = Collector(RemoteAcks(acks) { })
-            var joined = JOINED
             val expected = mutableListOf<String>()
             repeat(random.nextInt(1, ACTIONS_AT_MOST)) { step ->
                 val draw = random.nextInt(DRAWS)
@@ -94,7 +100,7 @@ class ShareOutboxesTest {
                     // The sharing machine's daemon restarts: what it held in memory is gone, and the collecting
                     // machine still carries its acknowledgement of the old outbox.
                     draw < RESTART_UNDER -> {
-                        outboxes = ShareOutboxes()
+                        outboxes = ShareOutboxes(books)
                         expected.retainAll(collector.delivered.toSet())
                     }
                     // The collecting machine's daemon restarts: what it held in memory is gone, and what its sessions
@@ -102,9 +108,15 @@ class ShareOutboxesTest {
                     draw < COLLECTOR_RESTART_UNDER -> collector = Collector(RemoteAcks(acks) { }, collector.delivered)
                     // Marcos revokes the collecting machine on the Sharing page and it joins again: the notes waiting
                     // for it go, and its collections carry on with the acknowledgement they held.
-                    else -> {
+                    draw < REVOKE_UNDER -> {
                         outboxes.drop(MINI)
                         joined = "$JOINED_AGAIN, step $step"
+                        expected.retainAll(collector.delivered.toSet())
+                    }
+                    // The collecting machine joins again with no revoke: what waited for its earlier join goes, and
+                    // its collections carry on with the acknowledgement they held.
+                    else -> {
+                        joined = "$JOINED_AGAIN, joined again at step $step"
                         expected.retainAll(collector.delivered.toSet())
                     }
                 }
@@ -123,20 +135,32 @@ class ShareOutboxesTest {
     // once that machine collects is refused in words.
     @Test
     fun `a note written for a revoked machine never reaches the machine that joins next under its name`() {
-        val orders = mapOf<String, (ShareOutboxes) -> Unit>(
-            "carried, then revoked on the page" to { outboxes ->
+        // The book of joined machines as the test turns it: the join booked under mini's name now, or none.
+        val orders = mapOf<String, (ShareOutboxes, AtomicReference<String?>) -> Unit>(
+            "carried, then revoked on the page" to { outboxes, book ->
                 outboxes.carriedBy(JOINED, "for mini")
                 outboxes.drop(MINI)
+                book.set(null)
             },
-            "revoked on the page, then carried" to { outboxes ->
+            "revoked on the page, then carried" to { outboxes, book ->
                 outboxes.drop(MINI)
+                book.set(null)
                 outboxes.carriedBy(JOINED, "for mini")
             },
-            "revoked by the CLI, then carried" to { outboxes -> outboxes.carriedBy(JOINED, "for mini") },
+            "carried, then revoked by the CLI" to { outboxes, book ->
+                outboxes.carriedBy(JOINED, "for mini")
+                book.set(null)
+            },
+            "revoked by the CLI, then carried" to { outboxes, book ->
+                book.set(null)
+                outboxes.carriedBy(JOINED, "for mini")
+            },
         )
         for ((order, revoked) in orders) {
-            val outboxes = ShareOutboxes()
-            revoked(outboxes)
+            val book = AtomicReference<String?>(JOINED)
+            val outboxes = ShareOutboxes(JoinsBooked { book.get() })
+            revoked(outboxes, book)
+            book.set(JOINED_AGAIN)
             val next = runBlocking { outboxes.collect(MINI, JOINED_AGAIN, null, 0) }
             assertEquals(emptyList<String>(), next.notes.map { it.text }, "$order: the next machine is handed none")
 

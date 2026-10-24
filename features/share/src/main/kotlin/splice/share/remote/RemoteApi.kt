@@ -32,6 +32,7 @@ import java.net.URI
 import java.net.URLEncoder
 import java.net.UnknownHostException
 import java.net.http.HttpClient
+import java.net.http.HttpConnectTimeoutException
 import java.net.http.HttpRequest
 import java.net.http.HttpResponse
 import java.net.http.HttpTimeoutException
@@ -105,18 +106,24 @@ public class RemoteApi internal constructor(
             .method(method, body)
             .build()
         val response = Cancellables.runCatchingCancellable { http.send(request, HttpResponse.BodyHandlers.ofString()) }
-            .getOrElse { failure -> throw RemoteUnanswered("$name did not answer: ${why(failure)}", failure) }
+            .getOrElse { failure ->
+                throw RemoteUnanswered("$name did not answer: ${why(failure, timeoutMs)}", failure)
+            }
         if (response.statusCode() != HttpStatus.OK) {
             throw RemoteUnanswered("$name answered ${response.statusCode()}: ${RemoteSaid.of(json, response.body())}")
         }
         return response.body()
     }
 
-    /** Why a request found nothing to talk to, in words: the pin's own refusal first, then the connection's. */
-    private fun why(failure: Throwable): String = CertificateRefusal.of(failure) ?: when (failure) {
+    /** Why a request found nothing to talk to, in words: the pin's own refusal first, then the connection's, naming the
+     *  wait that ran out: the connection's, or the request's own [timeoutMs] for its answer (round 18 of PR #419's
+     *  review). */
+    private fun why(failure: Throwable, timeoutMs: Long): String = CertificateRefusal.of(failure) ?: when (failure) {
         is ConnectException -> "nothing listens on its share port (is splice running there, with sharing on?)"
         is UnknownHostException -> "its name does not resolve on this network"
-        is HttpTimeoutException -> "no answer within ${Duration.ofMillis(REMOTE_API_REQUEST_MS).toSeconds()} s"
+        is HttpConnectTimeoutException ->
+            "no connection within ${Duration.ofMillis(REMOTE_API_CONNECT_MS).toSeconds()} s (is it on this network?)"
+        is HttpTimeoutException -> "no answer within ${Duration.ofMillis(timeoutMs).toSeconds()} s"
         else -> SafeFailureText.render(failure)
     }
 

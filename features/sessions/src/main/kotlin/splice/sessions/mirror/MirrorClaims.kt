@@ -26,11 +26,13 @@ internal class MirrorClaims {
     }
 
     /** [machine] names [from] by [link]'s way too, as a note from it does: a way that names nothing yet takes [link]'s
-     *  carrier and time from [now], and one that does keeps its own. */
+     *  carrier, and one that does keeps its own; either lasts at least [link]'s time from [now], one whose time ran
+     *  out before the sweep withdrew it included (round 18 of PR #419's review). */
     fun add(machine: String, from: MirroredSession, link: MirrorLink, now: Long) {
         val key = machine to link.way
-        val claim = claims[key] ?: MirrorClaim(machine, emptyMap(), link.carrier, now + link.lastsMs, ++namings)
-        claims[key] = claim.copy(sessions = claim.sessions + (from.id to from))
+        val ends = now + link.lastsMs
+        val claim = claims[key] ?: MirrorClaim(machine, emptyMap(), link.carrier, ends, ++namings)
+        claims[key] = claim.copy(sessions = claim.sessions + (from.id to from), ends = maxOf(claim.ends, ends))
     }
 
     /** [machine]'s [way] names nothing any more. */

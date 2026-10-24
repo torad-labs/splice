@@ -1,4 +1,5 @@
 import { createReadStream, existsSync, readFileSync, writeFileSync } from "node:fs";
+import { createHash } from "node:crypto";
 import { createInterface } from "node:readline";
 import { join, resolve } from "node:path";
 
@@ -7,6 +8,7 @@ type Event = { at: number; data: Row };
 type Exchange = {
   connection: number; requestAt: number; generate: boolean; inputReasoning: number; events: Event[];
   model: string | null; reasoning: { effort: unknown; summary: unknown; context: unknown }; continued: boolean;
+  route: string | null; transport: string | null; responses: boolean;
 };
 
 /** Assign an SSE event the receipt time of the chunk that completes it. Preserve UTF-8 and frame boundaries. */
@@ -43,12 +45,15 @@ async function exchanges(file: string, client: boolean): Promise<Exchange[]> {
       try { body = JSON.parse(row.text); } catch { continue; }
       body = body.type === "response.create" && body.response ? { ...body.response, type: body.type, generate: body.generate ?? body.response.generate } : body;
       if (client ? !Array.isArray(body.messages) : !(Array.isArray(body.input) || body.type === "response.create")) continue;
+      const route = typeof row.path === "string" ? row.path.replace(/\?.*$/, "") : null;
       const exchange: Exchange = {
         connection: row.connection, requestAt: row.at_ms, generate: body.generate !== false,
         inputReasoning: (body.input ?? []).filter((item: Row) => item.type === "reasoning").length, events: [],
         model: typeof body.model === "string" ? body.model : null,
         reasoning: { effort: body.reasoning?.effort ?? null, summary: body.reasoning?.summary ?? null, context: body.reasoning?.context ?? null },
         continued: typeof body.previous_response_id === "string",
+        route, transport: typeof row.transport === "string" ? row.transport : null,
+        responses: route !== null && route.endsWith("/responses"),
       };
       current.set(row.connection, exchange);
       streams.set(row.connection, new EventStream());
@@ -74,6 +79,8 @@ function modelFacts(exchange: Exchange) {
   const rawReasoning = exchange.events.filter(event => event.data.type === "response.reasoning_text.delta");
   return {
     request_at_ms: exchange.requestAt,
+    route: exchange.route,
+    transport: exchange.transport,
     model: exchange.model,
     requested_reasoning: exchange.reasoning,
     continued_request: exchange.continued,
@@ -119,7 +126,12 @@ const results: Row[] = JSON.parse(readFileSync(join(run, "results.json"), "utf8"
 const trials: Row[] = [];
 for (const result of results) {
   const dir = join(run, result.task, `${result.repetition}-${result.arm}`, "requests");
-  const generated = (await exchanges(join(dir, `${result.arm === "codex" ? "native" : "upstream"}.jsonl`), false)).filter(exchange => exchange.generate).map(modelFacts);
+  const upstream = await exchanges(join(dir, `${result.arm === "codex" ? "native" : "upstream"}.jsonl`), false);
+  const generated = upstream.filter(exchange => exchange.generate && exchange.responses).map(modelFacts);
+  const excluded = upstream.filter(exchange => exchange.generate && !exchange.responses).map(exchange => ({
+    request_at_ms: exchange.requestAt, route: exchange.route, transport: exchange.transport,
+    classification: exchange.route === null ? "unknown route" : "auxiliary route, not Responses generation",
+  }));
   const clients = result.arm === "splice" ? (await exchanges(join(dir, "client.jsonl"), true)).map(clientFacts) : [];
   const tools = clients.flatMap(client => client.tools).sort((a, b) => a.at_ms - b.at_ms);
   const dispatch = generated.flatMap((exchange, index) => exchange.exec_items.map(item => {
@@ -127,14 +139,16 @@ for (const result of results) {
     const tool = tools.find(tool => tool.at_ms >= item.item_done_at_ms && tool.at_ms <= nextRequest);
     return { ...item, first_tool_after_item_ms: tool ? tool.at_ms - item.item_done_at_ms : null, first_tool_before_response_terminal: tool && exchange.terminal_at_ms !== null ? tool.at_ms < exchange.terminal_at_ms : null };
   }));
-  trials.push({ task: result.task, arm: result.arm, repetition: result.repetition, verified: result.verified, duration_ms: result.duration_ms, generated, clients, dispatch });
+  trials.push({ task: result.task, arm: result.arm, repetition: result.repetition, verified: result.verified, duration_ms: result.duration_ms, generated, excluded, clients, dispatch });
 }
 const report = {
+  format_version: 2,
+  analyzer_sha256: createHash("sha256").update(readFileSync(import.meta.filename)).digest("hex"),
   run, jar_sha256: manifest.jar_sha256, replay_reasoning: manifest.replay_reasoning ?? false,
   model: manifest.config.model, effort: manifest.config.effort,
-  limits: "Capture-relay receipt times, not runtime start or UI paint. First later client callback is associated by time window, not call identity. HTTP event time is the completing chunk time; WebSocket event time is frame receipt. No content or credentials are copied. Missing captures remain unknown.",
+  limits: "Capture-relay receipt times, not runtime start or UI paint. First later client callback is associated by time window, not call identity. HTTP event time is the completing chunk time; WebSocket event time is frame receipt. Only explicit /responses routes enter generation counts; auxiliary and unknown routes are retained separately. No content or credentials are copied. Missing captures remain unknown.",
   trials,
 };
 const target = process.argv[3] ? resolve(process.argv[3]) : join(run, "delivery-comparison.json");
-writeFileSync(target, JSON.stringify(report, null, 2) + "\n", { mode: 0o600 });
+writeFileSync(target, JSON.stringify(report, null, 2) + "\n", { mode: 0o600, flag: "wx" });
 console.log(JSON.stringify({ report: target, trials: trials.length, opaque_blocks: trials.reduce((count, trial) => count + trial.clients.reduce((n: number, client: Row) => n + client.opaque_thinking_blocks, 0), 0), exec_items: trials.reduce((count, trial) => count + trial.dispatch.length, 0) }));

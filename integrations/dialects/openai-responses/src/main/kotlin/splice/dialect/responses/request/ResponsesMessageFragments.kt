@@ -39,17 +39,17 @@ internal class ResponsesMessageFragments(
         val history = ResponsesHistoryInput(opts)
         return buildJsonArray {
             for (msg in body.messages) {
+                history.inject(this)
                 // Tool calls/decrypted reasoning have live lookups and per-request inject-once state.
-                if (history.active) {
-                    inputBuilder.appendMessage(this, msg, opts, declareByName, history)
-                } else if (msg.content.any { it is ToolUseBlock || it is RedactedThinkingBlock }) {
-                    inputBuilder.appendMessage(this, msg, opts, declareByName)
-                } else {
+                val dynamic = msg.content.any { it is ToolUseBlock || it is RedactedThinkingBlock }
+                if (!dynamic && history.advanceUnchanged(msg)) {
                     fragments.message(context, msg) {
                         buildJsonArray { inputBuilder.appendMessage(this, msg, opts, declareByName) }
                     }.forEach { add(it) }
+                } else {
+                    inputBuilder.appendMessage(this, msg, opts, declareByName, history)
                 }
-                if (!history.active) msg.content.forEach { history.cursor.append(msg.role, it) }
+                history.inject(this)
             }
             history.inject(this)
             history.promote()

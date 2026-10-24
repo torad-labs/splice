@@ -17,14 +17,25 @@ import splice.core.wire.UnknownBlock
 internal class ResponsesHistoryCursor(
     val history: ReasoningHistory = ReasoningHistory(),
     private val proofs: Map<String, String?> = emptyMap(),
+    private val legacy: ReasoningHistory = ReasoningHistory(),
 ) {
-    private val legacy = ReasoningHistory()
     val legacyKey: String get() = legacy.key
     val pendingProofs: MutableMap<String, String?> = linkedMapOf()
 
     fun text(role: String, text: String) {
         history.text(role, text)
         legacy.text(role, text)
+    }
+
+    /** A speculative message walk owns only its new proofs, never a copy of the cumulative proof table. */
+    fun fork(): ResponsesHistoryCursor = ResponsesHistoryCursor(history.copy(), proofs, legacy.copy())
+
+    fun adopt(other: ResponsesHistoryCursor) {
+        history.restore(other.history)
+        legacy.restore(other.legacy)
+        other.pendingProofs.forEach { (key, digest) ->
+            pendingProofs[key] = if (pendingProofs.containsKey(key) && pendingProofs[key] != digest) null else digest
+        }
     }
 
     fun append(role: String, block: ContentBlock) {

@@ -16,6 +16,7 @@ public class ReasoningHistory {
     private var characters = 0L
     private var role = ""
     private var inText = false
+    private val encoding = ByteArray(HISTORY_ENCODING_BYTES)
 
     public val offset: Long get() = characters
 
@@ -39,10 +40,18 @@ public class ReasoningHistory {
         inText = true
         // Grammar: a text code unit is 0 + big-endian UTF-16; a token starts with 1 and its length.
         // This is independent of text-block boundaries and cannot confuse text with a role/tool token.
-        text.forEach { character ->
-            digest.update(0.toByte())
-            digest.update((character.code ushr Byte.SIZE_BITS).toByte())
-            digest.update(character.code.toByte())
+        var start = 0
+        while (start < text.length) {
+            val count = minOf(text.length - start, encoding.size / TEXT_UNIT_BYTES)
+            for (index in 0 until count) {
+                val code = text[start + index].code
+                val at = index * TEXT_UNIT_BYTES
+                encoding[at] = 0
+                encoding[at + 1] = (code ushr Byte.SIZE_BITS).toByte()
+                encoding[at + 2] = code.toByte()
+            }
+            digest.update(encoding, 0, count * TEXT_UNIT_BYTES)
+            start += count
         }
         characters += text.length
     }
@@ -63,12 +72,18 @@ public class ReasoningHistory {
     }
 
     private fun token(value: String) {
-        digest.update(1.toByte())
-        for (shift in LENGTH_SHIFTS) digest.update((value.length ushr shift).toByte())
+        encoding[0] = 1
+        LENGTH_SHIFTS.forEachIndexed { index, shift -> encoding[index + 1] = (value.length ushr shift).toByte() }
+        var used = 1 + Int.SIZE_BYTES
         value.forEach { character ->
-            digest.update((character.code ushr Byte.SIZE_BITS).toByte())
-            digest.update(character.code.toByte())
+            if (used + Char.SIZE_BYTES > encoding.size) {
+                digest.update(encoding, 0, used)
+                used = 0
+            }
+            encoding[used++] = (character.code ushr Byte.SIZE_BITS).toByte()
+            encoding[used++] = character.code.toByte()
         }
+        digest.update(encoding, 0, used)
     }
 
     /** Iterative canonical JSON: argument key order is irrelevant; changed values remain different. */
@@ -101,3 +116,5 @@ public class ReasoningHistory {
 /** Private cache indexes use this namespace; these are never upstream function_call ids. */
 public const val HISTORY_POSITION_PREFIX: String = "splice-reasoning-at:"
 private val LENGTH_SHIFTS = IntArray(Int.SIZE_BYTES) { (Int.SIZE_BYTES - 1 - it) * Byte.SIZE_BITS }
+private const val HISTORY_ENCODING_BYTES = 4096
+private const val TEXT_UNIT_BYTES = 3

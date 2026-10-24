@@ -32,7 +32,7 @@ public const val REASONING_ENVELOPE_VERSION: Int = 1
 
 /** Between the envelopes of one block. Standard base64 writes only A-Z, a-z, 0-9, + and / and =, so no envelope
  *  holds it, and a joined block reads as no envelope to a build that knows only v1 (it drops the block). */
-public const val REASONING_RUN_SEPARATOR: String = "."
+private const val REASONING_RUN_SEPARATOR: String = "."
 
 // envelope field names are the wire contract — named once, referenced everywhere so encode/decode
 // can never drift apart.

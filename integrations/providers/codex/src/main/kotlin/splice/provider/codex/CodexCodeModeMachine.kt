@@ -9,7 +9,6 @@ import splice.core.turn.TurnOutcome
 import splice.core.turn.UsageField
 import splice.core.turn.noRequestUsage
 import splice.core.util.JsonWire
-import splice.core.util.SafeFailureText
 import splice.provider.codex.callbacks.CodeModeCallIssuanceGuard
 import splice.provider.codex.callbacks.CodeModeCallIssuerEmitter
 import splice.provider.codex.callbacks.CodeModeCallIssuerPoison
@@ -17,7 +16,6 @@ import splice.provider.codex.callbacks.CodeModeCallIssuerRetry
 import splice.provider.codex.callbacks.CodexCodeModeCallIssuer
 import splice.provider.codex.callbacks.CodexCodeModeCallIssuerActions
 import splice.provider.codex.callbacks.CodexCodeModeIncrementalOutcomes
-import splice.provider.codex.state.CodeModeWorkerRecovery
 import splice.provider.codex.stream.CodeModeLiveRound
 import splice.provider.codex.stream.CodeModeLocalOutcome
 import splice.provider.codex.stream.CodeModeNativeObservation
@@ -25,6 +23,7 @@ import splice.provider.codex.stream.CodeModeNativeSteps
 import splice.provider.codex.stream.CodeModeNativeWallTime
 import splice.provider.codex.stream.CodeModeOversizedCalls
 import splice.provider.codex.stream.CodeModeRecoveryHistory
+import splice.provider.codex.stream.CodeModeRuntimeFailures
 import splice.provider.codex.stream.CodeModeSourceInterruptedException
 import splice.provider.codex.stream.CodeModeStreamingCell
 import splice.upstream.codemode.CodeModeCell
@@ -32,7 +31,6 @@ import splice.upstream.codemode.CodeModeResult
 import splice.upstream.codemode.CodeModeStep
 import splice.upstream.failure.CodeModeInfrastructureException
 import splice.upstream.failure.CodeModeTimeoutException
-import splice.upstream.failure.CodeModeWorkerLostException
 import splice.upstream.sse.WireSink
 import java.io.IOException
 
@@ -54,7 +52,7 @@ internal class CodexCodeModeMachine(
     private val validation: CodexCodeModeValidation,
 ) {
     private val nativeSteps = CodeModeNativeSteps(registry, CodeModeNativeWallTime(::wallMillis))
-    private val workerRecovery = CodeModeWorkerRecovery(registry)
+    private val failures = CodeModeRuntimeFailures(registry)
 
     private val oversized = CodeModeOversizedCalls(config, validation)
     private val callIssuer = CodexCodeModeCallIssuer(
@@ -96,7 +94,7 @@ internal class CodexCodeModeMachine(
                     }
                     // The round closed this live cell and removed it before the step could take it.
                     source?.closedLiveCell == true ->
-                        ioFailure(record, CodeModeSourceInterruptedException(source.permanentEnding))
+                        failures.ioFailure(record, CodeModeSourceInterruptedException(source.permanentEnding))
                     else -> poison(record, "code-mode cell is unavailable: ${lostMessage(record)}")
                 }
         }
@@ -183,20 +181,9 @@ internal class CodexCodeModeMachine(
         return now - began
     }
 
-    fun poison(record: CodeModeRecord, message: String): TurnOutcome.Failure {
-        record.cellStartedAt = null
-        registry.lose(record, message)
-        return TurnOutcome.Failure(
-            message,
-            traits = FailureTraits(deterministic = true),
-            salvagedUsage = noRequestUsage,
-            cause = FailureCause.CODE_MODE_PROTOCOL,
-            phase = FailurePhase.MID_OUTPUT,
-        )
-    }
+    fun poison(record: CodeModeRecord, message: String): TurnOutcome.Failure = failures.poison(record, message)
 
-    fun lostMessage(record: CodeModeRecord): String =
-        "completed client call ids=${record.results.keys}; source was not rerun"
+    fun lostMessage(record: CodeModeRecord): String = failures.lostMessage(record)
 
     private suspend fun advanceCell(request: CodeModeAdvanceRequest, cell: CodeModeCell): TurnOutcome = try {
         registry.changes.edit(request.record) { it.progress.rounds++ }
@@ -215,35 +202,17 @@ internal class CodexCodeModeMachine(
             "code-mode infrastructure failure ${error.category}/${error.faultClass}; ${lostMessage(request.record)}",
         )
     } catch (error: IOException) {
-        ioFailure(request.record, error)
+        failures.ioFailure(request.record, error)
     } catch (error: IllegalStateException) {
-        poison(request.record, runtimeFailure(error, request.record))
+        poison(request.record, failures.runtimeFailure(error, request.record))
     } catch (error: IllegalArgumentException) {
-        poison(request.record, runtimeFailure(error, request.record))
+        poison(request.record, failures.runtimeFailure(error, request.record))
     } catch (_: RuntimeException) {
         poison(
             request.record,
             "code-mode runtime failed: RuntimeException: message withheld; " +
                 "accepted results=${request.record.results.size}; source was not rerun",
         )
-    }
-
-    private fun ioFailure(record: CodeModeRecord, error: IOException): TurnOutcome.Failure = when (error) {
-        is CodeModeSourceInterruptedException -> {
-            record.cellStartedAt = null
-            val message = "upstream code-mode source interrupted; ${lostMessage(record)}"
-            registry.lose(record, message)
-            error.verdict ?: TurnOutcome.Failure(
-                message,
-                cause = FailureCause.UPSTREAM_CONN_RESET,
-                phase = FailurePhase.MID_OUTPUT,
-            )
-        }
-        is CodeModeWorkerLostException -> {
-            record.cellStartedAt = null
-            workerRecovery.lost(record)
-        }
-        else -> poison(record, runtimeFailure(error, record))
     }
 
     private suspend fun dispatchStep(
@@ -270,16 +239,6 @@ internal class CodexCodeModeMachine(
         is CodeModeStep.Notified -> error("Native notification escaped its delivery loop")
         is CodeModeStep.Yielded -> nativeSteps.yielded(request, cell, step)
         is CodeModeStep.Completed -> complete(request.record, step, nativeSteps.observation(cell))
-    }
-
-    /** Throwable messages may quote script or tool bytes. Only audited operational text is safe
-     * for daemon.log; every other message keeps its concrete exception class and splice throw site
-     * but not its content. */
-    private fun runtimeFailure(error: Throwable, record: CodeModeRecord): String {
-        val firstLine = error.message?.lineSequence()?.firstOrNull()?.trim()
-        val detail = if (firstLine == "worker pool exhausted") firstLine else "message withheld"
-        return "code-mode runtime failed: ${error::class.simpleName}: $detail${SafeFailureText.site(error)}; " +
-            "accepted results=${record.results.size}; source was not rerun"
     }
 
     private fun checkIssuable(record: CodeModeRecord, cell: CodeModeCell?) {

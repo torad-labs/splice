@@ -1,5 +1,5 @@
 // NEW: appends bundled orchestration guidance without shifting Lite history or overriding client parallel policy.
-package splice.provider.codex
+package splice.provider.codex.request
 
 import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonObject
@@ -26,7 +26,10 @@ internal object CodexCodeModeInstructions {
         return JsonObject(request + ("input" to JsonArray(augmented)))
     }
 
-    private fun resource(name: String): String = checkNotNull(javaClass.getResourceAsStream(name)) {
-        "missing bundled code-mode orchestration instructions: $name"
-    }.bufferedReader(Charsets.UTF_8).use { it.readText().trimEnd() }
+    private fun resource(name: String): String {
+        val path = "/splice/provider/codex/$name"
+        return checkNotNull(javaClass.getResourceAsStream(path)) {
+            "missing bundled code-mode orchestration instructions: $name"
+        }.bufferedReader(Charsets.UTF_8).use { it.readText().trimEnd() }
+    }
 }

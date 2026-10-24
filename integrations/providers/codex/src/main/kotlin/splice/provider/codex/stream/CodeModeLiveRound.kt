@@ -8,8 +8,6 @@ import kotlinx.coroutines.CoroutineStart
 import kotlinx.coroutines.Deferred
 import kotlinx.coroutines.async
 import splice.core.perf.TurnPerf
-import splice.core.turn.FailureCause
-import splice.core.turn.FailurePhase
 import splice.core.turn.HeadStopSignal
 import splice.core.turn.TurnOutcome
 import splice.core.util.Cancellables
@@ -21,7 +19,6 @@ import splice.provider.codex.CodexCodeModeBridge
 import splice.provider.codex.CodexCodeModeRegistry
 import splice.provider.codex.CodexCodeModeWire
 import splice.provider.codex.state.CodeModeTurnIdentity
-import splice.provider.codex.stream.CodeModeReaderFailures.SOURCE_FAILED
 import splice.provider.codex.stream.source.CodeModeSourceCapture
 import splice.upstream.RoundResult
 import splice.upstream.TurnEnd
@@ -53,6 +50,7 @@ internal class CodeModeLiveRound(
     internal var finished: Deferred<TurnOutcome>? = null
         private set
     private val settled = CompletableDeferred<Unit>()
+    private val readerOutcomes = CodeModeReaderOutcomes(config.log, capture, lifecycle, billing)
 
     /** The reader ended and its last billing settled: any row it was owed is released, and its usage is consumed or
      *  waits in the record's source state for the step that takes the outcome. */
@@ -62,19 +60,20 @@ internal class CodeModeLiveRound(
         settled,
         CodeModeReaderDeath { cause ->
             try {
-                died(cause)
+                readerOutcomes.died(cause)
             } finally {
                 billing.settle(readerEnd = true, clientCut = cut.client)
             }
         },
     )
 
-    @Volatile var unexpectedDeath: Boolean = false
-        private set
+    val unexpectedDeath: Boolean get() = readerOutcomes.unexpectedDeath
 
     private val stoppedByHead: Boolean get() = lifecycle.stoppedByHead
 
-    @Volatile internal var upstreamEnded = false
+    internal var upstreamEnded: Boolean
+        get() = readerOutcomes.upstreamEnded
+        set(value) { readerOutcomes.upstreamEnded = value }
 
     /** The upstream delivered the round's terminal; its outcome has not reached [settleRead] yet. A client step that
      *  fails in that gap cuts nothing: the source finished. */
@@ -96,8 +95,7 @@ internal class CodeModeLiveRound(
 
     /** The permanent upstream failure that ended this round before its exec source completed. A client step whose cell
      *  that loss closed ends with it as it is, since no retry can change it. */
-    @Volatile var permanentEnding: TurnOutcome.Failure? = null
-        private set
+    val permanentEnding: TurnOutcome.Failure? get() = readerOutcomes.permanentEnding
 
     /** The perf of the turn that posted this source, which counts its upstream tries. */
     @Volatile var sourcePerf: TurnPerf? = null
@@ -112,17 +110,17 @@ internal class CodeModeLiveRound(
             try {
                 settleRead(post.into(body, switching))
             } catch (error: CancellationException) {
-                cancelled(error)
+                readerOutcomes.cancelled(error)
                 throw error
             } catch (error: IOException) {
                 lifecycle.delivered(switching.confirmedText())
-                failed(error)
+                readerOutcomes.failed(error)
             } catch (error: CodeModePersistenceException) {
-                failed(error)
+                readerOutcomes.failed(error)
             } catch (error: IllegalStateException) {
-                failed(error)
+                readerOutcomes.failed(error)
             } catch (error: IllegalArgumentException) {
-                failed(error)
+                readerOutcomes.failed(error)
             } finally {
                 if (!ready.isCompleted) ready.complete(null)
             }
@@ -137,93 +135,16 @@ internal class CodeModeLiveRound(
         is RoundResult.Outcome -> {
             upstreamEnded = true
             lifecycle.delivered(switching.confirmedText())
-            val result = finish(posted.outcome)
+            val result = readerOutcomes.finish(posted.outcome)
             beforeSettle?.run()
             billing.settle(readerEnd = false, clientCut = cut.client)
             result
         }
     }
 
-    /** The reader ended on a throwable none of [start]'s catches names (Oct 2: a ConcurrentModificationException
-     *  out of the record's save). Its source had no terminal, so the cell reading it waited forever and nothing
-     *  was logged. The source fails, the record is lost as [failed] loses it, and the throwable's class is named. */
-    private fun died(cause: Throwable?) {
-        val unnamed = CodeModeReaderFailures.unexpected(cause) ?: return
-        upstreamEnded = true
-        unexpectedDeath = !capture.itemComplete
-        config.log("[code-mode] upstream source reader died (${unnamed::class.simpleName}): $SOURCE_FAILED")
-        source.fail(SOURCE_FAILED)
-        synchronized(lifecycle) {
-            if (stoppedByHead) return
-            Cancellables.runCatchingBestEffort { capture.interrupted(SOURCE_FAILED) }.onFailure { failure ->
-                config.log("[code-mode] the dead reader's record was not saved as lost (${failure::class.simpleName})")
-            }
-        }
-    }
-
-    private fun finish(outcome: TurnOutcome) = synchronized(lifecycle) {
-        billing.reported(outcome)
-        if (stoppedByHead) throw CancellationException(HEAD_STOPPED)
-        localFailure?.let { return@synchronized it }
-        if (capture.unavailable) {
-            lifecycle.executionLost = true
-            source.fail(SOURCE_DISPOSED)
-            return@synchronized outcome
-        }
-        lifecycle.sourceInterrupted = capture.unfinished &&
-            (outcome as? TurnOutcome.Failure)?.cause in SOURCE_TEAR_CAUSES
-        // The capture loses a source its terminal does not certify, which closes the cell a client step may still be
-        // advancing. Set first, so that step ends as a torn source's step does, or with a permanent failure as it is.
-        lifecycle.executionLost = !sourceInterrupted && capture.rejects(outcome)
-        permanentEnding = (outcome as? TurnOutcome.Failure)?.takeIf { sourceLost && it.traits.permanent }
-        Cancellables.runCatchingBestEffort { capture.finish(outcome) }
-            .getOrElse { return@synchronized lifecycle.reject(it) }
-        if (sourceInterrupted && outcome is TurnOutcome.Failure) {
-            outcome.copy(
-                cause = FailureCause.UPSTREAM_CONN_RESET,
-                phase = FailurePhase.MID_OUTPUT,
-                traits = outcome.traits.copy(deterministic = false),
-                partial = null,
-            )
-        } else {
-            outcome
-        }
-    }
-
-    private fun cancelled(error: CancellationException) {
-        upstreamEnded = true
-        source.fail("splice code-mode source reader cancelled; source was not rerun")
-        synchronized(lifecycle) {
-            if (stoppedByHead) return
-            capture.interrupted("splice code-mode source reader cancelled; source was not rerun", error)
-        }
-    }
-
-    private fun failed(error: Exception): TurnOutcome.Failure = synchronized(lifecycle) {
-        upstreamEnded = true
-        if (stoppedByHead) {
-            source.fail(SOURCE_FAILED)
-            throw CancellationException(HEAD_STOPPED, error)
-        }
-        localFailure?.let { return@synchronized it }
-        val detail = SOURCE_FAILED
-        if (error is CodeModePersistenceException) {
-            source.fail(detail)
-            if (!ready.isCompleted) ready.completeExceptionally(error)
-            throw error
-        }
-        lifecycle.sourceInterrupted = capture.unfinished && error is IOException
-        // Splice's own non-IO fault loses the record below and closes the cell a client step may be advancing, as an
-        // uncertified source does. Set before the source fails, so that step ends as a torn source's step does.
-        lifecycle.executionLost = !sourceInterrupted && capture.unfinished
-        source.fail(detail)
-        capture.interrupted(detail)
-        CodeModeReaderFailures.outcome(error, admitted = record != null)
-    }
-
     /** The upstream ended the source post without an outcome (the retry loop gave up on it, it had no credentials, it
      *  tore, or sent a frame over the limit). That ending is the client turn's ending, classified where a plain turn's
-     *  is, so [outcome] hands it to whichever turn reads this round. Oct 4: a refusal reached [died] as an unnamed
+     *  is, so [outcome] hands it to whichever turn reads this round. Oct 4: a refusal reached the death handler as an unnamed
      *  throwable, ended the round as an internal fault, and Claude Code retried a refused request as an overload for
      *  36 minutes. */
     private fun ended(ending: UpstreamEnding): TurnOutcome.Failure = synchronized(lifecycle) {
@@ -248,7 +169,7 @@ internal class CodeModeLiveRound(
         turn.toolResults.any { it.id in ids }
     }
 
-    /** A reader that died on an unnamed throwable ends the round as a torn transport does, with [failed]'s
+    /** A reader that died on an unnamed throwable ends the round as a torn transport does, with the classified failure's
      *  outcome, never by throwing its throwable through the next client step. */
     suspend fun outcome(): TurnOutcome = completion.outcome(checkNotNull(finished))
 
@@ -300,10 +221,5 @@ internal class CodeModeLiveRound(
 
 // why: a disposed execution cannot retain its response reader or dispatch unread source.
 internal const val SOURCE_DISPOSED = "code-mode execution disposed; source was not rerun"
-private const val HEAD_STOPPED = "code-mode head stopped"
+internal const val HEAD_STOPPED = "code-mode head stopped"
 private const val SOURCE_REFUSED = "upstream refused the source request; source was not rerun"
-private val SOURCE_TEAR_CAUSES = setOf(
-    FailureCause.UPSTREAM_CONN_RESET,
-    FailureCause.UPSTREAM_TRUNCATED,
-    FailureCause.UPSTREAM_STALLED,
-)

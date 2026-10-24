@@ -36,23 +36,27 @@ internal class ResponsesMessageFragments(
         val directives = if (quirks.roundTrip.loopGuard) LoopGuard.analyze(body.messages) else emptyMap()
         val inputBuilder = ResponsesInputBuilder(quirks, directives, toolNames)
         val context = context(body, raw, opts, directives, effort)
-        val history = ResponsesHistoryInput(opts)
+        val history = if (opts.handoff.replay.v || quirks.roundTrip.reasoningCache) {
+            ResponsesHistoryInput(opts)
+        } else {
+            null
+        }
         return buildJsonArray {
             for (msg in body.messages) {
-                history.inject(this)
+                history?.inject(this)
                 // Tool calls/decrypted reasoning have live lookups and per-request inject-once state.
                 val dynamic = msg.content.any { it is ToolUseBlock || it is RedactedThinkingBlock }
-                if (!dynamic && history.advanceUnchanged(msg)) {
+                if (!dynamic && history?.advanceUnchanged(msg) != false) {
                     fragments.message(context, msg) {
                         buildJsonArray { inputBuilder.appendMessage(this, msg, opts, declareByName) }
                     }.forEach { add(it) }
                 } else {
                     inputBuilder.appendMessage(this, msg, opts, declareByName, history)
                 }
-                history.inject(this)
+                history?.inject(this)
             }
-            history.inject(this)
-            history.promote()
+            history?.inject(this)
+            history?.promote()
         }
     }
 

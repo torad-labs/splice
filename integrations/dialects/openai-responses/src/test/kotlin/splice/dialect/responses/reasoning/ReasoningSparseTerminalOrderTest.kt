@@ -1,9 +1,12 @@
 package splice.dialect.responses.reasoning
 
+import kotlinx.serialization.json.JsonArray
+import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Test
+import splice.core.perf.InputDigest
 import splice.core.reasoning.ReasoningHistory
 import splice.core.reasoning.ReasoningReplay
 import splice.core.util.JsonScalars
@@ -36,7 +39,21 @@ class ReasoningSparseTerminalOrderTest {
         assertEquals(listOf("rs_C", "rs_A", "rs_B", "rs_D", "rs_E"), replayed(cache))
     }
 
+    @Test
+    fun `different sparse terminal batches cannot collectively invent a complete order`() {
+        val cache = ReasoningCache()
+        retain(cache, listOf("rs_A", "rs_B", "rs_C"), terminal = false)
+        retain(cache, listOf("rs_C", "rs_A"), terminal = true)
+        retain(cache, listOf("rs_B"), terminal = true)
+        assertEquals(listOf("rs_A", "rs_B", "rs_C"), replayed(cache))
+        retain(cache, listOf("rs_C", "rs_B", "rs_A"), terminal = true)
+        assertEquals(listOf("rs_C", "rs_B", "rs_A"), replayed(cache))
+        retain(cache, listOf("rs_B"), terminal = true)
+        assertEquals(listOf("rs_C", "rs_B", "rs_A"), replayed(cache))
+    }
+
     private fun retain(cache: ReasoningCache, ids: List<String>, terminal: Boolean, round: String = "first-round") {
+        val batch = if (terminal) InputDigest.hex(JsonArray(ids.map(::JsonPrimitive))) else null
         ids.forEachIndexed { index, id ->
             val envelope = checkNotNull(
                 ReasoningReplay.encodeReasoningEnvelope(
@@ -49,7 +66,13 @@ class ReasoningSparseTerminalOrderTest {
             )
             cache.put(
                 "fixture-conversation",
-                listOf(indexes.index(position, envelope, ReasoningItemOrder(round, index, terminal, id))),
+                listOf(
+                    indexes.index(
+                        position,
+                        envelope,
+                        ReasoningItemOrder(round, index, terminal, id, terminalBatch = batch),
+                    ),
+                ),
                 listOf(envelope),
             )
         }

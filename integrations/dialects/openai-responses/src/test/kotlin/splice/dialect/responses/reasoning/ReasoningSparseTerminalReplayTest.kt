@@ -102,6 +102,29 @@ class ReasoningSparseTerminalReplayTest(@param:TempDir private val state: Path) 
     }
 
     @Test
+    fun `cached same round sparse retries never combine into an invented terminal order`() = runTest {
+        val expected = listOf("rs_A", "rs_B", "rs_C")
+        drive(SparseOrderProvider(state), listOf("A", "B", "C"), emptyList())
+        val firstRetry = SparseOrderProvider(state)
+        drive(firstRetry, listOf("A"), listOf("C", "A"))
+        assertEquals(expected, ids(input(firstRetry)))
+        assertEquals(expected, ids(input(SparseOrderProvider(state))))
+        val secondRetry = SparseOrderProvider(state)
+        drive(secondRetry, listOf("A"), listOf("B"))
+        assertEquals(expected, ids(input(secondRetry)))
+        assertEquals(expected, ids(input(SparseOrderProvider(state))))
+        val completeRetry = SparseOrderProvider(state)
+        drive(completeRetry, listOf("A"), listOf("C", "B", "A"))
+        val authoritative = listOf("rs_C", "rs_B", "rs_A")
+        assertEquals(authoritative, ids(input(completeRetry)))
+        assertEquals(authoritative, ids(input(SparseOrderProvider(state))))
+        val laterSparse = SparseOrderProvider(state)
+        drive(laterSparse, listOf("A"), listOf("B"))
+        assertEquals(authoritative, ids(input(laterSparse)))
+        assertEquals(authoritative, ids(input(SparseOrderProvider(state))))
+    }
+
+    @Test
     fun `off off warm fragments preserve input bytes and config without replaying captured reasoning`() = runTest {
         val off = SparseOrderProvider(state.resolve("off"), cache = false, replay = false)
         val capture = SparseOrderProvider(state.resolve("capture"), cache = true, replay = false)

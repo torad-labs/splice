@@ -3,6 +3,7 @@ package splice.dialect.responses.reasoning
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonObject
+import splice.core.perf.InputDigest
 import splice.core.reasoning.ReasoningHistory
 import splice.core.util.JsonScalars
 import splice.core.wire.ToolUseBlock
@@ -26,6 +27,7 @@ internal class ResponsesReasoningReplay(
     private var roundId: String? = null
     private var streamedItems = 0
     private var positionsProven = true
+    private var terminalBatch: String? = null
 
     init {
         state.nativePrefix = ResponsesNativePrefix(state.textBuf)
@@ -68,6 +70,7 @@ internal class ResponsesReasoningReplay(
         val output = state.finalResponse?.get("output") as? JsonArray ?: return
         state.nativePrefix?.finish(output)
         if (output.isEmpty()) return
+        terminalBatch = InputDigest.hex(output)
         val at = initial?.copy()
         val source = terminalSource(output)
         val bounds = TerminalHistoryBounds(output, initial, cursor.takeIf { positionsProven }, streamedCalls)
@@ -134,7 +137,7 @@ internal class ResponsesReasoningReplay(
             ctx.reasoningCapture.onTurn.positioned(
                 it.key,
                 envelope,
-                ReasoningItemOrder(round, outputIndex, terminal, id),
+                ReasoningItemOrder(round, outputIndex, terminal, id, terminalBatch = terminalBatch.takeIf { terminal }),
             )
         }
     }

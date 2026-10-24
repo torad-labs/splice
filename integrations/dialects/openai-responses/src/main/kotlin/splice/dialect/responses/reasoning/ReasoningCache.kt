@@ -93,7 +93,7 @@ internal class ReasoningCache(
                 val normalized = positions.normalized(recorded)
                 normalized.forEach { round ->
                     val rk = "r${seq++}"
-                    val bytes = round.envelopes.sumOf { it.length.toLong() }
+                    val bytes = round.envelopes.sumOf { it.length.toLong() } + round.ids.sumOf(positions::metadataBytes)
                     convo.rounds[rk] = ReasoningCacheRound(round.ids, round.envelopes, bytes, clock())
                     round.ids.forEach { convo.byToolId[it] = rk }
                     positions.admitted(convo, rk, convo.rounds.getValue(rk))
@@ -113,7 +113,7 @@ internal class ReasoningCache(
     fun put(conversationKey: String?, toolIds: List<String>, envelopes: List<String>) {
         if (toolIds.isEmpty() || envelopes.isEmpty()) return
         restored.value
-        val bytes = envelopes.sumOf { it.length.toLong() }
+        val bytes = envelopes.sumOf { it.length.toLong() } + toolIds.sumOf(positions::metadataBytes)
         synchronized(lock) {
             sweepLocked()
             if (conversationKey == null) {
@@ -245,9 +245,10 @@ internal class ReasoningCache(
 
     private fun putConvoLocked(key: String, toolIds: List<String>, envelopes: List<String>, bytes: Long) {
         val convo = touchLocked(key) ?: ReasoningCacheConvo().also { convos[key] = it }
-        val updated = positions.update(convo, toolIds)
+        val updated = positions.update(convo, toolIds, maxTotalBytes - totalBytes)
         if (updated != null) {
-            if (updated) totalBytes += persistence.rewrite(key, convo)
+            totalBytes += updated.bytes
+            if (updated.changed) totalBytes += persistence.rewrite(key, convo)
             return
         }
         if (convo.frozen) return // admission frozen; admitted rounds keep serving

@@ -7,8 +7,6 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.CoroutineStart
 import kotlinx.coroutines.Deferred
 import kotlinx.coroutines.async
-import kotlinx.coroutines.currentCoroutineContext
-import kotlinx.coroutines.ensureActive
 import splice.core.perf.TurnPerf
 import splice.core.turn.FailureCause
 import splice.core.turn.FailurePhase
@@ -90,9 +88,6 @@ internal class CodeModeLiveRound(
 
     @Volatile var localFailure: TurnOutcome.Failure? = null
         private set
-
-    /** The ending the upstream gave the source post, when it gave no outcome. Set once, before the reader completes. */
-    @Volatile private var ending: UpstreamEnding? = null
 
     /** The round lost the record and closed its cell without a transport tear: its terminal did not certify the
      *  admitted source, or its reader failed on splice's own non-IO fault. Only the step that was advancing that cell
@@ -241,8 +236,7 @@ internal class CodeModeLiveRound(
         // A record's next client step reads the source's outcome, as a torn source's does.
         sourceInterrupted = capture.unfinished
         capture.interrupted(SOURCE_REFUSED)
-        this.ending = ending
-        CodeModeEndings.placeholder()
+        completion.ended(ending)
     }
 
     fun owns(turn: CodexCodeModeBridge.Turn): Boolean = synchronized(lifecycle) {
@@ -258,23 +252,7 @@ internal class CodeModeLiveRound(
 
     /** A reader that died on an unnamed throwable ends the round as a torn transport does, with [failed]'s
      *  outcome, never by throwing its throwable through the next client step. */
-    suspend fun outcome(): TurnOutcome {
-        val reader = checkNotNull(finished)
-        val awaited = try {
-            Cancellables.runCatchingBestEffort { reader.await() }
-        } catch (error: CancellationException) {
-            // Reader cancellation is its failed response; cancellation of this client step still propagates.
-            currentCoroutineContext().ensureActive()
-            Result.failure(error)
-        }
-        // Deferred completion precedes died()'s registry write. Never continue before that cleanup settles.
-        settled.await()
-        // The reading turn, not the reader, is the one the ending ends: its slot is in this call's context.
-        ending?.let { CodeModeEndings.settle(it) }
-        val failure = awaited.exceptionOrNull() ?: return awaited.getOrThrow()
-        if (failure is CodeModePersistenceException) throw failure
-        return CodeModeReaderFailures.outcome()
-    }
+    suspend fun outcome(): TurnOutcome = completion.outcome(checkNotNull(finished))
 
     /** Disposal cancels the already-posted reader so its stream and admission slot are freed. */
     fun cancel() {

@@ -17,10 +17,10 @@ internal class ResponsesBufferBudget {
             toolIndexCount = if (includeBlockCount) state.blocks.size else 0,
             pendingArgsLen = minOf(Int.MAX_VALUE.toLong(), retained).toInt(),
         )
-        if (exceeded) failure = RUNAWAY_GUARD_MESSAGE
+        if (exceeded) failure = RESPONSES_BUFFER_CAPACITY_MESSAGE
         return !exceeded
     }
 }
 
 // why: every budget check reports the same local runaway verdict; numeric caps remain solely in BufferCapacity.
-private const val RUNAWAY_GUARD_MESSAGE = "upstream: response exceeded max buffered size; aborting"
+private const val RESPONSES_BUFFER_CAPACITY_MESSAGE = "upstream: response exceeded max buffered size; aborting"

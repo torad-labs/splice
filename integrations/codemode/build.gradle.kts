@@ -7,6 +7,20 @@ plugins {
     `java-test-fixtures`
 }
 
+val nativeHostResources = tasks.register<splice.release.NativeCodeModeHost>("stageNativeCodeModeHost") {
+    artifacts.set(layout.projectDirectory.dir("native"))
+    platforms.set(
+        IsolatePlatforms.shipped(
+            allPlatforms = providers.gradleProperty("splice.allPlatforms").orNull?.toBooleanStrictOrNull(),
+            hosted = providers.environmentVariable("CI").isPresent,
+            os = providers.systemProperty("os.name").get(),
+            arch = providers.systemProperty("os.arch").get(),
+        ),
+    )
+    destination.set(layout.buildDirectory.dir("generated/resources/native-code-mode-host"))
+}
+sourceSets.main { resources.srcDir(nativeHostResources.flatMap { it.destination }) }
+
 dependencies {
     implementation(project(":core"))
     // JvmCodeModeRuntime implements the upstream-owned CodeModeRuntime port, so the port is API.

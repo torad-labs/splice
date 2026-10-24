@@ -73,6 +73,7 @@ internal class ReasoningCache(
     private val lock = Any()
     private val writes = ReasoningCacheWrites(files)
     private val positions = ReasoningCachePositions()
+    private val persistence = ReasoningRoundPersistence(writes, positions)
     private val proofs = ReasoningCacheProofs()
 
     // What the last process left on disk, published once before any read or write sees the maps: a
@@ -220,7 +221,8 @@ internal class ReasoningCache(
             if (moved || admitted.changed) {
                 convos[conversationKey] = conversation
                 totalBytes += admitted.bytes
-                writes.replace(conversationKey, positions.stored(conversation))
+                // A client-only proof cannot recreate a rejected conversation's file.
+                if (conversation.rounds.isNotEmpty()) writes.replace(conversationKey, positions.stored(conversation))
             }
         }
         writes.flush()
@@ -254,8 +256,9 @@ internal class ReasoningCache(
         evictToBoundLocked(writing = key, writer = convo, offered = rk)
         // Written only once it survived the bound: a round the freeze rejected was never served.
         if (rk in convo.rounds) {
-            positions.admitted(convo, rk, convo.rounds.getValue(rk))
-            writes.append(key, toolIds, envelopes)
+            val admitted = convo.rounds.getValue(rk)
+            positions.admitted(convo, rk, admitted)
+            persistence.enqueue(key, convo, admitted)
         }
     }
 
@@ -328,6 +331,21 @@ internal class ReasoningCache(
         round.toolIds.forEach { toolId -> if (nullByToolId[toolId] == roundKey) nullByToolId.remove(toolId) }
         totalBytes -= round.bytes
         roundCount--
+    }
+}
+
+/** The first reasoning record makes pending proofs durable; later records append without rewriting history. */
+private class ReasoningRoundPersistence(
+    private val writes: ReasoningCacheWrites,
+    private val positions: ReasoningCachePositions,
+) {
+    fun enqueue(key: String, conversation: ReasoningCacheConvo, round: ReasoningCacheRound) {
+        val firstWithProofs = conversation.rounds.size == 1 && conversation.resultProofs.isNotEmpty()
+        if (firstWithProofs) {
+            writes.replace(key, positions.stored(conversation))
+        } else {
+            writes.append(key, round.toolIds, round.envelopes)
+        }
     }
 }
 

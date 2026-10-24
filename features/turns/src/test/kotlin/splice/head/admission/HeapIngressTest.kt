@@ -1,11 +1,6 @@
 // NEW: real HTTP/1 ingress controls, including refusals before continue and ordered SSE tails.
 package splice.head.admission
 
-import io.ktor.server.application.Application
-import io.ktor.server.application.serverConfig
-import io.ktor.server.engine.connector
-import io.ktor.server.engine.embeddedServer
-import io.ktor.server.netty.Netty
 import io.ktor.server.request.receiveText
 import io.ktor.server.response.respondText
 import io.ktor.server.response.respondTextWriter
@@ -32,34 +27,8 @@ import java.net.http.HttpResponse
 import java.util.concurrent.CompletableFuture
 import java.util.concurrent.TimeUnit
 
-/** The staged close's grace, stretched past the wait below so only the client's FIN can win the race. */
-private const val GRACE_FAR_MS = 60_000L
-private const val CLOSE_WAIT_SECONDS = 15L
-
 class HeapIngressTest {
-    private fun testServer(
-        ingress: HeapIngress,
-        channel: CompletableFuture<Channel>? = null,
-        routes: Application.() -> Unit,
-    ) =
-        embeddedServer(
-            Netty,
-            serverConfig {
-                module {
-                    ingress.install(this)
-                    routes()
-                }
-            },
-        ) {
-            connector {
-                host = "127.0.0.1"
-                port = 0
-            }
-            channelPipelineConfig = { pipeline ->
-                ingress.install(pipeline)
-                val _ = channel?.complete(pipeline.channel())
-            }
-        }
+    private val testServer = HeapIngressTestServer()
 
     private fun heldServer(
         ingress: HeapIngress,

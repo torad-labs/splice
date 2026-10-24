@@ -53,7 +53,11 @@ internal class IngressOwnership(private val connectionLease: HeapLease?) {
      */
     fun announceClose(): Boolean = synchronized(lock) {
         val entry = responses.firstOrNull() ?: return@synchronized false
-        if (!entry.arrived && !entry.small) entry.closeAnnounced = true
+        if (!entry.arrived && !entry.small) {
+            entry.closeAnnounced = true
+            // The response can finish before application cleanup: its close must already be staged.
+            halted.set(true)
+        }
         entry.closeAnnounced
     }
 

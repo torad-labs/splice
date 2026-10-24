@@ -34,7 +34,8 @@ internal data class CodeModeCanonicalPlacement(
 ) {
     val logicalSize: Int
         get() = source.logicalItems.size + source.afterExec.logicalItems.size + when (emission) {
-            CodeModeCanonicalEmission.SCRIPT -> 2 + record.accepted.durableMedia().size
+            CodeModeCanonicalEmission.SCRIPT ->
+                2 + record.accepted.durableMedia().size + record.progress.nativeNotifications.size
             CodeModeCanonicalEmission.CONTINUITY -> 0
         }
 }
@@ -141,7 +142,8 @@ internal class CodeModeCanonicalHistory(private val codec: CodexCodeModeHistoryC
                     index.payloads.token(CodeModeCallReplay.item(record)),
                 ) ->
                     "code-mode opaque call was edited"
-                type == TYPE_CUSTOM_OUTPUT && item != codec.customOutput(record) -> "code-mode opaque output was edited"
+                type == TYPE_CUSTOM_OUTPUT && item != codec.customOutput(record) &&
+                    item !in record.progress.nativeNotifications -> "code-mode opaque output was edited"
                 else -> null
             }
         }

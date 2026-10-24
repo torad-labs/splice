@@ -124,9 +124,7 @@ internal class CodeModeScriptFold(
         val end = minOf(index + 1 + media.size, items.size)
         if (media.isNotEmpty() && items.subList(index + 1, end) == media) followUps += (index + 1 until end)
         if (closes) {
-            out += record.progress.nativeNotifications
-            out += codec.customOutput(record)
-            out += record.accepted.durableMedia()
+            out += CodeModeScriptOutputs.items(record, codec)
             out += between
             between.clear()
             open = null

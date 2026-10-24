@@ -6,6 +6,7 @@ import splice.dialect.responses.request.ResponsesCodeModeReplay
 import splice.provider.codex.CodeModeCallReplay
 import splice.provider.codex.CodeModeContinuity
 import splice.provider.codex.CodexCodeModeHistoryCodec
+import splice.provider.codex.history.CodeModeScriptOutputs
 import splice.provider.codex.state.CodeModeCanonicalEmission
 import splice.provider.codex.state.CodeModeCanonicalPlacement
 import splice.provider.codex.state.CodeModeNativeChain
@@ -64,9 +65,7 @@ internal class CodeModeCanonicalEmitter(private val codec: CodexCodeModeHistoryC
         appendAfter(placement.source, logical, replay, order)
         when (placement.emission) {
             CodeModeCanonicalEmission.SCRIPT -> {
-                logical += record.progress.nativeNotifications
-                logical += codec.customOutput(record)
-                logical += record.accepted.durableMedia()
+                logical += CodeModeScriptOutputs.items(record, codec)
             }
             CodeModeCanonicalEmission.CONTINUITY -> Unit
         }

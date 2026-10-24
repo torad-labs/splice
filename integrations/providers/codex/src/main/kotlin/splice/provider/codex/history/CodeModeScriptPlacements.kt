@@ -69,7 +69,7 @@ internal class CodeModeScriptPlacements(private val codec: CodexCodeModeHistoryC
 
     fun placement(record: CodeModeRecord): List<JsonElement> =
         listOf(CodeModeCallReplay.item(record)) + record.carry.nativeAfterExec.orEmpty() +
-            record.progress.nativeNotifications + codec.customOutput(record) + record.accepted.durableMedia()
+            CodeModeScriptOutputs.items(record, codec)
 
     /** The echo of [continuity] starting at [at] in [items], or null when the items there are not it. Reasoning and
      *  calls come back as they were given and prose as text, each in the order GPT gave it, but merged in the order
@@ -165,4 +165,10 @@ private const val REASONING_ID = "id"
 internal object CodeModeScriptDelivery {
     fun items(record: CodeModeRecord, scripts: CodeModeScriptPlacements): List<JsonElement> =
         scripts.continuity(record) + record.deliveredOnly
+}
+
+/** Native notify enqueues pending input; core records the tool result before draining that queue next step. */
+internal object CodeModeScriptOutputs {
+    fun items(record: CodeModeRecord, codec: CodexCodeModeHistoryCodec): List<JsonElement> =
+        listOf(codec.customOutput(record)) + record.accepted.durableMedia() + record.progress.nativeNotifications
 }

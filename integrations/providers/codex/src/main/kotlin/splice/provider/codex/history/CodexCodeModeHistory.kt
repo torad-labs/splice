@@ -167,9 +167,7 @@ internal class CodexCodeModeHistory(private val json: Json) {
         // continuation or a later turn's replay of the same record.
         val canonical = record.carry.continuity + CodeModeCallReplay.item(
             record,
-        ) + record.progress.nativeNotifications +
-            codec.customOutput(record) +
-            record.accepted.durableMedia()
+        ) + CodeModeScriptOutputs.items(record, codec)
         val logical = input.logicalItems.filterIndexed { index, _ -> index in retained }.toMutableList()
         logical.addAll(boundary, canonical)
         val continuityReplay = record.carry.replay.map {
@@ -247,8 +245,8 @@ internal class CodexCodeModeHistory(private val json: Json) {
         val found = items.filter { ownership.isOpaque(it, record.origin.outerCallId) }
         if (found.isEmpty()) return null
         val output = codec.customOutput(record)
-        val replayed = listOf(CodeModeCallReplay.item(record), output)
-        val initial = listOf(record.origin.outer, output)
+        val replayed = listOf(CodeModeCallReplay.item(record), output) + record.progress.nativeNotifications
+        val initial = listOf(record.origin.outer, output) + record.progress.nativeNotifications
         return if (found == replayed || found == initial) {
             null
         } else {

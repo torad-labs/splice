@@ -87,12 +87,17 @@ class CodeModeNativeLifecycleTest : CodeModeBridgeTestSupport() {
     }
 
     @Test
-    fun `native notifications remain exact canonical tool outputs before final execution output`() = runTest {
+    fun `native queued notifications follow the final execution output in canonical model history`() = runTest {
         val cell = NativeCell(ArrayDeque(listOf(CodeModeStep.Notified("progress"), CodeModeStep.Completed("done"))))
         val runtime = NativeRuntime(ArrayDeque(listOf(cell)))
         val bridge = bridge(runtime)
         var finalInput = JsonArray(emptyList())
-        val replies = ArrayDeque(listOf(outcome(outer("exec")), completedOutcome()))
+        val suffix = buildJsonObject {
+            put("type", "reasoning"); put("id", "late-model-item"); put("encrypted_content", "opaque")
+        }
+        val call = outcome(outer("exec"))
+        val response = call.copy(handoffs = call.handoffs.copy(nativeAfterExec = listOf(suffix)))
+        val replies = ArrayDeque(listOf(response, completedOutcome()))
         bridge.interceptor(turn(), disableParallel = false).intercept(BASE_REQUEST, RecordingSink()) { body ->
             finalInput = Json.parseToJsonElement(body).jsonObject.getValue("input").jsonArray
             RoundResult.Outcome(replies.removeFirst())
@@ -100,9 +105,11 @@ class CodeModeNativeLifecycleTest : CodeModeBridgeTestSupport() {
         val outputs = finalInput.filterIsInstance<JsonObject>().filter {
             JsonScalars.str(it, "type") == "custom_tool_call_output"
         }
-        assertEquals("progress", JsonScalars.str(outputs.first(), "output"))
+        assertEquals(suffix, finalInput[finalInput.size - 3])
+        assertEquals(outputs, finalInput.takeLast(2))
+        assertEquals("progress", JsonScalars.str(outputs.last(), "output"))
         assertEquals("exec", JsonScalars.str(outputs.first(), "call_id"))
-        assertTrue(outputs.last().toString().contains("Script completed"))
+        assertTrue(outputs.first().toString().contains("Script completed"))
         assertFalse(
             finalInput.any {
                 (it as? JsonObject)?.let { item -> JsonScalars.str(item, "role") == "assistant" } == true

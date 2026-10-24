@@ -206,7 +206,9 @@ claudex ─▶ head :3099 (anthropic-passthrough) ──TLS, pinned──▶ sha
 Built on `feat/lan-share`, merged into `feat/v0.4.0` through the gate. Milestones:
 
 1. **Module and model** (landed): `features/share`, the `splice-remote` auth kind, `[remotes]`, the token store,
-   one-line imports, `remote list | sync | remove`, phase-1 migration.
+   one-line imports, `remote list | sync | remove`, phase-1 migration. An import writes the commands the other machine
+   describes and nothing else: a family or a tier name that would end its line in splice.toml (a quote, a line break,
+   a tier name that is not a bare key) is refused, and the file is left as it was (round 13 of PR #419's review).
 2. **TLS and pinning** (landed): a self-signed certificate minted at the first `share on`, the listener on TLS only, and the
    certificate's SHA-256 pinned in `[remotes.<name>] fingerprint` at join, on every client path.
 3. **Fidelity** (landed): roster, usage and health routes on the listener. On the using machine one `RemoteLinks`
@@ -216,7 +218,8 @@ Built on `feat/lan-share`, merged into `feat/v0.4.0` through the gate. Milestone
    A head whose machine did not answer, or whose head there is not running, is "Not answering" in the console as a
    stopped local runtime is; `/health` names each machine's state under `remotes`, and doctor shows one row per
    machine. `splice models` says a remote head lists its models on its own machine. On the sharing machine:
-   last seen and turns today per joined machine, and the machine's name on each relayed turn's perf row.
+   last seen and turns today per joined machine, and the machine's name on each relayed turn's perf row. Last seen is
+   written about once a minute; a write the disk refuses is said in the log and fails no request.
 4. **Console** (landed): a Sharing page, the console's ninth (Marcos asked for a Sharing tab; the 0.4.0 spec records
    eight pages, and his later words hold). Left, this machine: sharing on or off, the port, the certificate's pin, which
    commands are offered ("Shared" or "Only here", or why one cannot be), and the machines that joined, each with last
@@ -238,7 +241,9 @@ Built on `feat/lan-share`, merged into `feat/v0.4.0` through the gate. Milestone
 
    The last three run `splice remote`'s own classes and change which commands splice runs, so each answers
    `restart: true` and the page offers the console's own restart. `[share]` is a live key: the daemon
-   (`ShareListener`) opens, moves or closes the listener whenever the file changes.
+   (`ShareListener`) opens, moves or closes the listener whenever the file changes. A table boot would refuse (a port
+   outside 1-65535, a head that is not one or cannot be shared) leaves sharing as it is, and the log says why as boot
+   would (round 13).
 5. **Discovery** (landed): `splice remote` and the Sharing page's Find machines look in three places at once, and each
    machine one names is asked for `/share/v1/info` the moment it is named, all under the scan's one deadline
    (`RemoteDiscovery`):
@@ -255,7 +260,8 @@ Built on `feat/lan-share`, merged into `feat/v0.4.0` through the gate. Milestone
    One machine reached two ways is one entry, at the address of the first source that found it (mDNS, then the subnet,
    then Tailscale, so the network path is kept). Machines are told apart by the certificate each serves; one that states
    none (phase 1) by its name. The certificate's fingerprint is that stable identity, so `/share/v1/info` gains no
-   separate install id. A source that cannot look, and an address that has not answered by the deadline, leave the
+   separate install id. A machine is kept by its name when that name resolves here to the address that answered, and an
+   IPv6 address is compared as an address, however short each side writes it (round 13). A source that cannot look, and an address that has not answered by the deadline, leave the
    other machines found.
 6. **Sessions across machines** (landed): each machine's running sessions are Claude Code peers on the other, as
    `<machine>/<name>` (`torad-server/rig-lead`), so ListAgents lists them and SendMessage reaches them, both ways.
@@ -271,6 +277,8 @@ Built on `feat/lan-share`, merged into `feat/v0.4.0` through the gate. Milestone
      are never listed; one named for a child process's pid lists and takes SendMessage while the daemon holds the
      socket). So each mirror holds a pid of its own: `/bin/cat` reading a pipe from the daemon, which ends when the
      daemon does, however it ends. Its record says `kind: "splice-mirror"`, so a machine never offers a mirror back.
+     Two running records under one session id, as `claude --resume` leaves while the first process still runs, are one
+     session, the one heard from last: it is offered once and takes the notes (round 13).
    - **The link.** Every 5 s the joining machine reads each machine it joined (`GET /share/v1/sessions`, its running
      sessions, mirrors left out), mirrors them, and offers its own (`PUT`, with how often it looks). The sharing
      machine keeps those mirrors for three looks past the last offer (from 1 s to a minute) and withdraws them when its
@@ -283,6 +291,10 @@ Built on `feat/lan-share`, merged into `feat/v0.4.0` through the gate. Milestone
      (`GET .../outbox?wait=25`), so the joining machine takes no connection in. A note leaves the outbox only once a
      later collection acknowledges it (`&box=<outbox>&after=<seq>`): a collection cut on the way, because the machine
      slept, restarted its daemon or lost its network, takes nothing with it, and a change to `[share]` keeps what waits.
+     The joining machine keeps what it acknowledged in `<state>/share/acks.json` (`RemoteAcks`), so a restart of its
+     daemon hands no note over twice. A look or a collection that fails in a way nothing foresaw is said in the log and
+     starts again a look later, and a note whose handing fails that way is said as a refused one is, so no one failure
+     ends a machine's link (round 13).
      A note whose sender has no mirror left on the machine it reaches (withdrawn since that machine's last look, by a
      look that failed, a switch turned off and on, or the end of its offers) is delivered from one made then with the
      carrier it came by, so it is never refused for the want of one and acknowledged gone.

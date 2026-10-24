@@ -4,13 +4,18 @@
 // the outbox only once a later collection acknowledges it. Checked against a model over generated runs, since no list
 // of examples covers the orders in which notes, cut collections and acknowledged ones can come. Round 12 of PR #419's
 // review added a revoke on the Sharing page followed by a re-join: what waited at the revoke goes, and every note after
-// it arrives, though the collecting machine still carries its acknowledgement of the box the revoke threw away.
+// it arrives, though the collecting machine still carries its acknowledgement of the box the revoke threw away. Round 13
+// added the collecting machine's own restart: what it acknowledged is kept where its daemon keeps it (RemoteAcks), so
+// what it was handed before the restart is never handed again.
 package splice.share
 
 import kotlinx.coroutines.runBlocking
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Test
+import org.junit.jupiter.api.io.TempDir
 import splice.sessions.mirror.MirroredSession
+import splice.share.remote.RemoteAcks
+import java.nio.file.Path
 import kotlin.random.Random
 
 // why: the joined machine whose notes these are.
@@ -25,27 +30,31 @@ private const val RUNS = 300
 // why: the most actions in one run, kept under the outbox's capacity of 256 so no note is refused as dropped.
 private const val ACTIONS_AT_MOST = 200
 
-// why: the share of each action in a draw of eleven: a note, a cut collection, a delivered one, a restart, a revoke.
-private const val DRAWS = 11
+// why: the share of each action in a draw of twelve: a note, a cut collection, a delivered one, a restart of the sharing
+// machine, a restart of the collecting one, a revoke.
+private const val DRAWS = 12
 private const val NOTE_UNDER = 5
 private const val CUT_UNDER = 7
 private const val DELIVERED_UNDER = 9
 private const val RESTART_UNDER = 10
+private const val COLLECTOR_RESTART_UNDER = 11
 
 class ShareOutboxesTest {
+    @TempDir
+    lateinit var tmp: Path
+
     private val to = MirroredSession("s-mini", "splice")
     private val from = MirroredSession("s-torad", "rig-lead")
 
-    /** The collecting machine: the acknowledgement its next collection carries, and what its sessions were handed. */
-    private class Collector {
-        var ack: ShareOutboxAck? = null
-        val delivered = mutableListOf<String>()
+    /** The collecting machine's daemon: the acknowledgement its next collection carries, kept in [acks] as the daemon
+     *  keeps it, and what its sessions were handed, [delivered], which outlives the daemon. */
+    private class Collector(private val acks: RemoteAcks, val delivered: MutableList<String> = mutableListOf()) {
+        val ack: ShareOutboxAck? get() = acks.of(MINI)
 
         /** Delivers [answer]'s notes, and acknowledges them with its next collection. */
         fun took(answer: ShareOutbox) {
             answer.notes.forEach { delivered += it.text }
-            val last = answer.notes.lastOrNull() ?: return
-            ack = ShareOutboxAck(checkNotNull(answer.box) { "an answer with notes names its outbox" }, last.seq)
+            answer.acknowledging()?.let { acks.delivered(MINI, it) }
         }
     }
 
@@ -57,7 +66,8 @@ class ShareOutboxesTest {
         val random = Random(SEED)
         repeat(RUNS) { run ->
             var outboxes = ShareOutboxes()
-            val collector = Collector()
+            val acks = tmp.resolve("acks-$run.json")
+            var collector = Collector(RemoteAcks(acks) { })
             val expected = mutableListOf<String>()
             repeat(random.nextInt(1, ACTIONS_AT_MOST)) { step ->
                 val draw = random.nextInt(DRAWS)
@@ -77,6 +87,9 @@ class ShareOutboxesTest {
                         outboxes = ShareOutboxes()
                         expected.retainAll(collector.delivered.toSet())
                     }
+                    // The collecting machine's daemon restarts: what it held in memory is gone, and what its sessions
+                    // were handed stays handed.
+                    draw < COLLECTOR_RESTART_UNDER -> collector = Collector(RemoteAcks(acks) { }, collector.delivered)
                     // Marcos revokes the collecting machine on the Sharing page and it joins again: the notes waiting
                     // for it go, and its collections carry on with the acknowledgement they held.
                     else -> {

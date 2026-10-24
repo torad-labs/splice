@@ -2,8 +2,9 @@
 // and a switch turned off. The goal: the listener keeps answering turns and joins whatever a look at sessions waits on;
 // a session another machine writes from is named here as that machine's looks name it, so a reply to that name reaches
 // it; a machine revoked here leaves the listing at once, and a note written to it after is refused in words; and a
-// machine whose Sessions switch goes off takes no note from this one from that moment. Two machines in one JVM, the rig
-// in TwoMachinesTest.
+// machine whose Sessions switch goes off takes no note from this one from that moment. Round 13 added a session resumed
+// while its first process still runs: one session, listed once, and a note reaches the one resumed. Two machines in one
+// JVM, the rig in TwoMachinesTest.
 package splice.share.sessions
 
 import kotlinx.coroutines.delay
@@ -28,12 +29,16 @@ import java.net.http.HttpResponse
 import java.nio.file.Files
 import java.nio.file.Path
 import java.time.Duration
+import java.util.UUID
 import java.util.concurrent.CompletableFuture
 import java.util.concurrent.TimeUnit
 import kotlin.io.path.listDirectoryEntries
 
 // why: an answer the listener gives at once, given generous room on a loaded machine.
 private const val ANSWER_S = 5L
+
+// why: how long before the second process the first was last heard from: a minute, well inside live.
+private const val RESUMED_AFTER_MS = 60_000L
 
 internal class SessionsEdgesAcrossMachinesTest : TwoMachinesTest() {
 
@@ -152,7 +157,7 @@ internal class SessionsEdgesAcrossMachinesTest : TwoMachinesTest() {
         val rig = torad.session("rig-lead")
         val splice = mini.session("splice")
         // A link whose next look is past the test's wait: the mirror its first look made stays up after the switch.
-        checkNotNull(RemoteSessions(links(joined().second), mini.mirrors, { }, SLOW_LOOK_MS).start(scope))
+        checkNotNull(RemoteSessions(links(joined().second), mini.mirrors, mini.acks, { }, SLOW_LOOK_MS).start(scope))
         listed(splice) { "$toradName/rig-lead" in it }
 
         store(mini).allowSessions(toradName, false)
@@ -162,5 +167,22 @@ internal class SessionsEdgesAcrossMachinesTest : TwoMachinesTest() {
         assertEquals(DeliveryStatus.REFUSED.wire, receipt.status, "$receipt")
         assertTrue("Sessions" in receipt.detail.orEmpty(), "it says the Sessions switch is off: $receipt")
         assertNull(rig.heard(1), "and nothing reached torad's session")
+    }
+
+    @Test
+    fun `a note to a session resumed while its first process still runs reaches the one resumed, listed once`() {
+        val rig = torad.session("rig-lead")
+        val id = UUID.randomUUID().toString()
+        val now = System.currentTimeMillis()
+        mini.session("splice", now - RESUMED_AFTER_MS, id)
+        val resumed = mini.session("splice", now, id)
+        join()
+
+        val onTorad = listed(rig) { "$MINI/splice" in it }
+        assertEquals(setOf("$MINI/splice"), onTorad, "one session, under its own name")
+        rig.send("$MINI/splice", "to the one resumed")
+
+        val got = checkNotNull(resumed.heard(SETTLE_MS / 1_000)) { "the resumed session took the note" }
+        assertEquals("to the one resumed", got.text)
     }
 }

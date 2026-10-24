@@ -21,13 +21,15 @@ import java.util.concurrent.TimeoutException
 public data class RemoteFound(public val address: String, public val port: Int, public val info: ShareInfo) {
 
     /** The name to keep for it: its own, when that resolves here to the address that answered (a DHCP move then
-     *  follows the name), else that address. */
+     *  follows the name), else that address. An IPv6 address is written many ways (`fd7a::1` in an advert,
+     *  `fd7a:0:0:0:0:0:0:1` from the resolver), so the two are compared as addresses, never as text. */
     public fun reachable(): String {
         if (address.none { it.isLetter() } || ':' in address) {
             val server = info.server
             return listOf("$server.local", "$server.lan", server).firstOrNull { name ->
                 Cancellables.runCatchingCancellable {
-                    InetAddress.getAllByName(name).any { it.hostAddress == address }
+                    val answered = InetAddress.getByName(address)
+                    InetAddress.getAllByName(name).any { it == answered }
                 }.fold(onSuccess = { it }, onFailure = { false })
             } ?: address
         }

@@ -88,7 +88,7 @@ internal class SessionsSwitchAcrossMachinesTest : TwoMachinesTest() {
         val links = links(joined().second, sessions = false)
         val looks = AtomicInteger()
         val counted = Ticker { ms -> ProcessTicker().awaitTick(ms).also { looks.incrementAndGet() } }
-        checkNotNull(RemoteSessions(links, mini.mirrors, { }, LOOK_MS, counted).start(scope))
+        checkNotNull(RemoteSessions(links, mini.mirrors, mini.acks, { }, LOOK_MS, counted).start(scope))
         val looked = runBlocking {
             val until = System.currentTimeMillis() + SETTLE_MS
             while (looks.get() < LOOKS_OFF && System.currentTimeMillis() < until) delay(POLL_MS)
@@ -185,8 +185,8 @@ internal class SessionsSwitchAcrossMachinesTest : TwoMachinesTest() {
         assertTrue(miniSharing.clients.allowSessions(toradName, true), "torad joined mini")
         val looks = AtomicInteger()
         val counted = Ticker { ms -> ProcessTicker().awaitTick(ms).also { looks.incrementAndGet() } }
-        checkNotNull(RemoteSessions(links(joined), mini.mirrors, { }, LOOK_MS, counted).start(scope))
-        checkNotNull(RemoteSessions(toradLinks, torad.mirrors, { }, LOOK_MS, counted).start(scope))
+        checkNotNull(RemoteSessions(links(joined), mini.mirrors, mini.acks, { }, LOOK_MS, counted).start(scope))
+        checkNotNull(RemoteSessions(toradLinks, torad.mirrors, torad.acks, { }, LOOK_MS, counted).start(scope))
         listed(splice) { "$toradName/rig-lead" in it }
         listed(rig) { "$MINI/splice" in it }
 

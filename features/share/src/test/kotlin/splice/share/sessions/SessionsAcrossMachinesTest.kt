@@ -157,7 +157,7 @@ internal class SessionsAcrossMachinesTest : TwoMachinesTest() {
         val rig = torad.session("rig-lead")
         val splice = mini.session("splice")
         // A link whose next look is past the test's wait: until then, what reaches mini comes through its collection.
-        checkNotNull(RemoteSessions(links(joined().second), mini.mirrors, { }, SLOW_LOOK_MS).start(scope))
+        checkNotNull(RemoteSessions(links(joined().second), mini.mirrors, mini.acks, { }, SLOW_LOOK_MS).start(scope))
         listed(splice) { "$toradName/rig-lead" in it }
         listed(rig) { "$MINI/splice" in it }
 

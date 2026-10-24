@@ -95,13 +95,17 @@ internal sealed class ShareOpen {
 }
 
 /** Where sharing keeps its state, for the daemon and the `splice share` and `splice remote` verbs alike: the machines
- *  that joined this one, this machine's own tokens on the machines it joined, the listener's certificate, and the
- *  mirrors' log. */
+ *  that joined this one, this machine's own tokens on the machines it joined, what it acknowledged of their outboxes,
+ *  the listener's certificate, and the mirrors' log. */
 public class ShareState(statePaths: StatePaths) {
     private val dir: Path = statePaths.stateDir.resolve("share")
 
     public val clientsFile: Path = dir.resolve("clients.json")
     public val remotesFile: Path = dir.resolve("remotes.json")
+
+    /** What this machine last acknowledged of each joined machine's outbox (RemoteAcks), so a restart hands no note
+     *  over twice. */
+    public val acksFile: Path = dir.resolve("acks.json")
 
     /** The listener's key and certificate (ShareCertificate). */
     public val certificateFile: Path = dir.resolve("tls.pem")

@@ -27,7 +27,7 @@ private const val CLIENT_TMP = "/tmp"
 // why: the name of Claude Code's sockets folder, under the runtime folder or CLIENT_TMP.
 private const val CLIENT_SOCKETS = "cc-socks"
 
-internal class SharedSessions(env: EnvReader, statePaths: StatePaths, private val log: LogSink) {
+internal class SharedSessions(env: EnvReader, private val statePaths: StatePaths, private val log: LogSink) {
     private val scope = LifecycleScope(ProcessDispatchers().io())
 
     /** The mirrors this daemon hosts: a joined machine's, which the share listener keeps, and those of each machine
@@ -46,7 +46,7 @@ internal class SharedSessions(env: EnvReader, statePaths: StatePaths, private va
 
     /** Links each machine in [remotes] to this one's sessions; nothing when this one joined none. */
     fun start(remotes: RemoteLinks) {
-        RemoteSessions(remotes, mirrors, log).start(scope)
+        RemoteSessions(remotes, mirrors, ShareState(statePaths).acksFile, log).start(scope)
     }
 
     /** Ends every link and withdraws every mirror. */

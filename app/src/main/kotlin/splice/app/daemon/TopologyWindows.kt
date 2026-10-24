@@ -211,9 +211,15 @@ internal class TopologyWindows(
         share = declared.daemon.mcpShare
         // The listener reopens off this read's thread: a read sits on a turn's path, and a bind takes a moment. The
         // table is asked for here, in the order of the reads, so the jobs serve the latest whatever order they run in.
+        // A table boot would refuse leaves sharing as it is, and says why as boot would (round 13 of PR #419's review).
+        val refused = declared.share.findings(declared)
         sharing?.let { listener ->
-            listener.ask(declared.share)
-            scope.launch { listener.followAsked() }
+            if (refused.isEmpty()) {
+                listener.ask(declared.share)
+                scope.launch { listener.followAsked() }
+            } else {
+                log("[share] unchanged until splice.toml is fixed: ${refused.joinToString("; ") { it.text() }}\n")
+            }
         }
         // A table that breaks a rule leaves the rules in force and says why.
         compaction?.let { rules ->

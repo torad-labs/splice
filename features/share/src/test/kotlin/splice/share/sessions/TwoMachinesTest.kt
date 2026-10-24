@@ -61,6 +61,7 @@ import java.net.http.HttpResponse
 import java.nio.file.Files
 import java.nio.file.Path
 import java.nio.file.attribute.PosixFilePermissions
+import java.util.UUID
 import javax.net.ssl.SSLSocket
 import kotlin.random.Random
 
@@ -119,6 +120,9 @@ internal abstract class TwoMachinesTest {
             "HOME" to home.toString(),
         )
         val paths = StatePaths(envReader = EnvReader { env[it] })
+
+        /** Where its daemon keeps what it acknowledged of each machine's outbox. */
+        val acks: Path = ShareState(paths).acksFile
         private val place = MirrorPlace(registry, sockets, home.resolve("m.log"))
         private val sweep = MirrorSweep { ProcessTicker().awaitTick(it) }
         val mirrors = if (anchor == null) {
@@ -127,8 +131,8 @@ internal abstract class TwoMachinesTest {
             SessionMirrors(place, scope, Dispatchers.IO, { }, sweep, anchor = anchor)
         }
 
-        fun session(name: String, heardAt: Long? = null) =
-            ClaudeCodeSession(registry, sockets, name, heardAt).also(opened::add)
+        fun session(name: String, heardAt: Long? = null, id: String = UUID.randomUUID().toString()) =
+            ClaudeCodeSession(registry, sockets, name, heardAt, id).also(opened::add)
 
         /** How splice's Sessions page here reads the session named [name] at [now]: null when it is not listed. */
         fun availability(name: String, now: Long): SessionAvailability? =
@@ -217,7 +221,7 @@ internal abstract class TwoMachinesTest {
 
     /** [machine]'s daemon starting its session link over [links]. */
     protected fun link(links: RemoteLinks, machine: Machine = mini): Job =
-        checkNotNull(RemoteSessions(links, machine.mirrors, { }, LOOK_MS).start(scope))
+        checkNotNull(RemoteSessions(links, machine.mirrors, machine.acks, { }, LOOK_MS).start(scope))
 
     /** mini offers torad its running sessions once, as a look does, with a look slow enough that torad keeps their
      *  mirrors through the test without another. */

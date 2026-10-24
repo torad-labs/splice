@@ -119,7 +119,7 @@ internal class MirrorLifetimeTest : TwoMachinesTest() {
         val links = links(joined().second, sessions = false)
         val looks = AtomicInteger()
         val counted = Ticker { ms -> ProcessTicker().awaitTick(ms).also { looks.incrementAndGet() } }
-        checkNotNull(RemoteSessions(links, mini.mirrors, { }, LOOK_MS, counted).start(scope))
+        checkNotNull(RemoteSessions(links, mini.mirrors, mini.acks, { }, LOOK_MS, counted).start(scope))
         val looked = runBlocking {
             val until = System.currentTimeMillis() + SETTLE_MS
             while (looks.get() < LOOKS_OFF && System.currentTimeMillis() < until) delay(POLL_MS)

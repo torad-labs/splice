@@ -118,8 +118,9 @@ public data class ShareConfig(
         else -> null
     }
 
-    /** What boot refuses about this table, all at once like every other finding. */
-    internal fun findings(topology: Topology): List<TopologyFinding> {
+    /** What boot refuses about this table, all at once like every other finding; the daemon's re-read of splice.toml
+     *  leaves sharing as it is on any of them. */
+    public fun findings(topology: Topology): List<TopologyFinding> {
         if (!enabled) return emptyList()
         val range = if (port in validPortRange) {
             emptyList()

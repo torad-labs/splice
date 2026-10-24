@@ -266,8 +266,7 @@ internal class AddPrepare(
         return when {
             profile.baseUrl.isNullOrEmpty() -> AddRefusal.BaseUrlRequired(profile.name)
             rows != null -> AddRefusal.Models(rows)
-            !addValuePattern.matches(profile.baseUrl) || !addValuePattern.matches(profile.head.command) ->
-                AddRefusal.QuotedValue
+            profile.quoted -> AddRefusal.QuotedValue
             else -> null
         }
     }

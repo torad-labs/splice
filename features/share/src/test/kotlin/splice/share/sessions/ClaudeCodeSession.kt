@@ -43,6 +43,8 @@ internal class ClaudeCodeSession(
     val name: String,
     /** When the session was last heard from, as its record's updatedAt says: now, unless a test says it is idle. */
     heardAt: Long? = null,
+    /** Its session id: its own, unless a test resumes another's, as `claude --resume` does while the first runs. */
+    id: String = UUID.randomUUID().toString(),
 ) : AutoCloseable {
     private val process: Process = ProcessBuilder("sleep", "600").start()
     val pid: Long = process.pid()
@@ -64,7 +66,7 @@ internal class ClaudeCodeSession(
         Files.writeString(keyFile(registry, pid, socket), key)
         val record = buildJsonObject {
             put("pid", pid)
-            put("sessionId", UUID.randomUUID().toString())
+            put("sessionId", id)
             put("cwd", registry.toString())
             put("startedAt", now)
             put("procStart", start)

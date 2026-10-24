@@ -306,6 +306,8 @@ private val SHIPPED_SITES: Map<String, Map<String, Int>> = mapOf(
     "features/share/src/main/kotlin/splice/share/remote/RemoteCredentials.kt" to mapOf("writeAtomic0600(" to 1),
     // When each joined machine was last heard from and its turns today, in the share/activity.json row.
     "features/share/src/main/kotlin/splice/share/ShareActivity.kt" to mapOf("writeAtomic0600(" to 1),
+    // What this machine acknowledged of each joined machine's outbox, in the share/acks.json row.
+    "features/share/src/main/kotlin/splice/share/remote/RemoteAcks.kt" to mapOf("writeAtomic0600(" to 1),
     // Registration replacement and its content-addressed backup are owned by the extracted registration writer.
     "app/src/main/kotlin/splice/app/cli/mcp/McpServiceRegistration.kt" to mapOf("writeAtomic0600(" to 2),
     "app/src/main/kotlin/splice/app/head/HeadTraceStores.kt" to mapOf("ActivityDays(" to 1),

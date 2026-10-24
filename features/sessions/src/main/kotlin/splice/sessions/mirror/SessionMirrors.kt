@@ -5,7 +5,8 @@
 // is never offered on: this machine's sessions are the ones Claude Code itself registered. Any machine on the network
 // may join, and each mirror is a process, so one daemon hosts at most [MIRRORS_AT_MOST] of them. A machine's mirrors
 // end here, whatever made them, once their time is past: a look or an offer from it moves that time later, and a note
-// gives one only to a machine that has none.
+// gives one only to a machine that has none. Two running records under one session id, as `claude --resume` leaves
+// while the first process still runs, are one session here, the one heard from last (round 13 of PR #419's review).
 package splice.sessions.mirror
 
 import kotlinx.coroutines.CoroutineDispatcher
@@ -124,12 +125,9 @@ public class SessionMirrors(
     }
 
     /** This machine's own running sessions, as another machine is shown them: every one Claude Code registered here
-     *  whose process runs, mirrors left out. */
-    public fun local(): List<MirroredSession> = ownRecords().mapNotNull { record ->
-        record.sessionId?.let { id ->
-            val heardAt = listOfNotNull(record.process.updatedAt, record.status.updatedAt).maxOrNull()
-            MirroredSession(id, record.name ?: id.take(SHORT_ID_CHARS), heardAt)
-        }
+     *  whose process runs, mirrors left out, once each. */
+    public fun local(): List<MirroredSession> = ownSessions().map { (id, own) ->
+        MirroredSession(id, own.record.name ?: id.take(SHORT_ID_CHARS), own.heardAt)
     }
 
     /** How sessions cross with [machine], as the Sharing page shows it. */
@@ -203,7 +201,7 @@ public class SessionMirrors(
         text: String,
         link: MirrorLink,
     ): MirrorCarried {
-        val target = ownRecords().singleOrNull { it.sessionId == to }
+        val target = ownSessions()[to]?.record
             ?: return MirrorCarried(DeliveryStatus.REFUSED, "no session here has the id $to")
         val (sender, refused) = senderOf(machine, from, link)
         sender ?: return MirrorCarried(DeliveryStatus.REFUSED, refused)
@@ -280,10 +278,20 @@ public class SessionMirrors(
         return null to refused
     }
 
-    private fun ownRecords(): List<SessionRecord> = parts.registry.read().filter {
-        it.availability != SessionAvailability.GONE && it.client.kind != MIRROR_KIND
-    }
+    /** This machine's own running sessions by id, mirrors left out: of two records under one id, as `claude --resume`
+     *  leaves while the first process still runs, the one heard from last. */
+    private fun ownSessions(): Map<String, OwnSession> = parts.registry.read()
+        .filter { it.availability != SessionAvailability.GONE && it.client.kind != MIRROR_KIND }
+        .mapNotNull { record ->
+            val heardAt = listOfNotNull(record.process.updatedAt, record.status.updatedAt).maxOrNull()
+            record.sessionId?.let { id -> id to OwnSession(record, heardAt) }
+        }
+        .groupBy({ it.first }, { it.second })
+        .mapValues { (_, records) -> records.maxBy { it.heardAt ?: Long.MIN_VALUE } }
 }
+
+/** One of this machine's own sessions: its registry [record], and when it was last heard from, by its record. */
+private data class OwnSession(val record: SessionRecord, val heardAt: Long?)
 
 // why: the anchor holds a pid and nothing else; cat reads its pipe from the daemon and exits at its end, which comes
 // when the daemon exits, however it exits.

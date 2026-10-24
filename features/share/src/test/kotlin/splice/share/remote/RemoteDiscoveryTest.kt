@@ -3,9 +3,12 @@
 // sources is one entry, at the first source's address; machines are told apart by the certificate each serves, so two
 // with one name stay two; a machine is kept at the port its source found it on; a source that fails leaves the others'
 // machines found. Scanning is concurrent, so the rule is also held as a property over generated sources and answers.
+// Round 13 of PR #419's review added a machine found at an IPv6 address, written short as an advert writes it: it is
+// kept by its name, as one found at an IPv4 address is.
 package splice.share.remote
 
 import org.junit.jupiter.api.Assertions.assertEquals
+import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 import splice.share.ShareInfo
 import java.io.IOException
@@ -144,5 +147,13 @@ class RemoteDiscoveryTest {
                 it.info.server
             },
         )
+    }
+
+    @Test
+    fun `a machine that answered at an IPv6 address written short is kept by its name`() {
+        // `::1` as an advert writes it; this machine's resolver spells the same address 0:0:0:0:0:0:0:1.
+        val kept = RemoteFound("::1", PORT, info("localhost", null)).reachable()
+
+        assertTrue(kept in setOf("localhost.local", "localhost.lan", "localhost"), "kept by a name: $kept")
     }
 }

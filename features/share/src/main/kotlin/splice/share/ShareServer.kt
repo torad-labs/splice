@@ -154,7 +154,7 @@ internal class ShareServer(
      *  LAN for commands, not for sessions); one whose switch is off is answered with a 403 in words, and is null. */
     private suspend fun guarded(call: ApplicationCall, turn: Boolean = false, crossing: Boolean = false): String? {
         val bearer = BearerScheme.bearerToken(call.request.headers[HttpHeaders.Authorization])
-        val holder = withContext(io) { clients.holder(bearer)?.also { clients.activity.heard(it.name, turn) } }
+        val holder = withContext(io) { clients.holder(bearer)?.also { heard(it.name, turn) } }
         val refused = when {
             holder == null ->
                 HttpStatus.UNAUTHORIZED to "this machine has not joined, or was revoked; run `splice remote` again"
@@ -165,6 +165,13 @@ internal class ShareServer(
         }
         refused?.let { (status, why) -> refuse(call, status, why) }
         return holder?.name?.takeIf { refused == null }
+    }
+
+    /** Counts [name] as heard from, as [guarded] does. A last seen the disk will not take, at most one write a minute, is
+     *  said in the log, and the request goes on as if it had been written (round 13 of PR #419's review). */
+    private fun heard(name: String, turn: Boolean) {
+        Cancellables.runCatchingCancellable { clients.activity.heard(name, turn) }
+            .onFailure { log("[share] last seen was not written: ${SafeFailureText.render(it)}\n") }
     }
 
     private suspend fun roster(call: ApplicationCall) {

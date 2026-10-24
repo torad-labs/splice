@@ -7,6 +7,9 @@
 // machine whose Sessions switch is off here (SessionsSwitch): its link neither looks, offers nor collects, and each of
 // its looks while the switch is off withdraws its mirrors, so one a collection made as the switch went off goes too.
 // Each look gives a machine's mirrors three looks more (SessionMirrors ends them), as its offers do on the other side.
+// Since round 13 of PR #419's review, what this machine acknowledged of each outbox is kept on disk (RemoteAcks), so a
+// restart hands no note over twice, and a look or a collection that fails in a way nothing foresaw starts again a look
+// later, so no one failure ends a machine's link.
 package splice.share.remote
 
 import kotlinx.coroutines.CoroutineExceptionHandler
@@ -39,22 +42,27 @@ import splice.share.ShareSession
 import splice.upstream.Ticker
 import splice.upstream.codemode.ProcessDispatchers
 import splice.upstream.codemode.ProcessTicker
+import java.nio.file.Path
 
 public class RemoteSessions(
     private val links: RemoteLinks,
     private val mirrors: SessionMirrors,
+    /** Where what this machine acknowledged of each joined machine's outbox is kept: ShareState's acksFile. */
+    acks: Path,
     private val log: LogSink,
     /** How often each joined machine's sessions are looked at: how soon one that starts or ends shows on the other. */
     private val lookMs: Long = REMOTE_LOOK_MS,
     private val ticker: Ticker = ProcessTicker(),
 ) {
     private val io = ProcessDispatchers().io()
+    private val acks = RemoteAcks(acks, log)
 
     /** How long a machine's mirrors here last without another look that answers: three looks, as on the other side. */
     private val lasts = (lookMs * LEASE_LOOKS).coerceIn(LEASE_MIN_MS, LEASE_MAX_MS)
 
     /** Looks at and collects from every joined machine until [scope] ends. Null when this one joined none. Each loop
-     *  runs on its own: one that fails ends itself, said in the log, and never another machine's or its other loop. */
+     *  runs on its own: one that fails is said in the log and starts again a look later, and never stops another
+     *  machine's or its other loop. */
     public fun start(scope: CoroutineScope): Job? {
         val joined = links.names().mapNotNull { name -> links.url(name)?.let { name to it } }
         if (joined.isEmpty()) return null
@@ -65,11 +73,21 @@ public class RemoteSessions(
             supervisorScope {
                 for ((name, url) in joined) {
                     val link = MirrorLink(carrierTo(name, url), lasts)
-                    launch { look(name, url, link) }
-                    launch { collect(name, url, link) }
+                    launch { carryOn(name, "look", LinkLoop { look(name, url, link) }) }
+                    launch { carryOn(name, "collection", LinkLoop { collect(name, url, link) }) }
                 }
             }
         }
+    }
+
+    /** Runs [loop], [name]'s look or its collection, for as long as the link runs: one that fails in a way nothing in
+     *  it foresaw is said in the log and starts again a look later, so no one failure ends a machine's link. */
+    private suspend fun carryOn(name: String, what: String, loop: LinkLoop) {
+        do {
+            val failed = Cancellables.runCatchingBestEffort { loop.run() }
+                .fold(onSuccess = { null }, onFailure = { it }) ?: return
+            log("[remote $name] its $what failed, and starts again: ${SafeFailureText.render(failed)}\n")
+        } while (currentCoroutineContext().isActive && ticker.awaitTick(lookMs))
     }
 
     /** Mirrors [name]'s sessions here, each carrying a message by [link]'s carrier, and offers this machine's there,
@@ -117,14 +135,14 @@ public class RemoteSessions(
      *  before it tries again; the look says why the machine does not answer. While [name]'s Sessions switch is off it
      *  collects nothing, and a collection the switch went off under delivers nothing: its notes wait there. A note
      *  whose sender has no mirror here, made by none of [name]'s looks since a withdraw, is delivered from one made
-     *  with [link], so a reply goes back the same way. */
+     *  with [link], so a reply goes back the same way. What was handed over is acknowledged on disk (RemoteAcks), so
+     *  the collection after a restart here acknowledges it too. */
     private suspend fun collect(name: String, url: String, link: MirrorLink) {
-        var ack: ShareOutboxAck? = null
         do {
-            val answer = if (links.sessions(name)) collected(name, url, ack) else null
+            val answer = if (links.sessions(name)) collected(name, url, acks.of(name)) else null
             val delivered = answer?.takeIf { links.sessions(name) }
             delivered?.notes?.forEach { deliver(name, it, link) }
-            ack = delivered?.acknowledging() ?: ack
+            delivered?.acknowledging()?.let { withContext(io) { acks.delivered(name, it) } }
             val again = answer != null || ticker.awaitTick(lookMs)
         } while (currentCoroutineContext().isActive && again)
     }
@@ -134,10 +152,13 @@ public class RemoteSessions(
         Cancellables.runCatchingCancellable { runInterruptible(io) { links.api(name).outbox(url, ack) } }
             .fold(onSuccess = { it }, onFailure = { null })
 
+    /** Hands [note] to its session here. One whose handing fails in a way nothing foresaw is not delivered, said as a
+     *  refused one is, and the notes after it still are: the collection that brought it acknowledges it either way. */
     private suspend fun deliver(name: String, note: ShareOutboxNote, link: MirrorLink) {
         val from = MirroredSession(note.from.id, note.from.name)
-        val carried = mirrors.deliver(note.to.id, name, from, note.text, link)
-        carried.detail?.let { why ->
+        val failed = Cancellables.runCatchingBestEffort { mirrors.deliver(note.to.id, name, from, note.text, link) }
+            .fold(onSuccess = { it.detail }, onFailure = { SafeFailureText.render(it) })
+        failed?.let { why ->
             log("[remote $name] a note from ${LogSafe.str(from.name)} was not delivered: ${LogSafe.str(why)}\n")
         }
     }
@@ -162,6 +183,11 @@ public class RemoteSessions(
 
     private fun said(failure: Throwable): String =
         (failure as? RemoteUnanswered)?.said ?: SafeFailureText.render(failure)
+}
+
+/** One of a joined machine's two loops, its look or its collection, which runs until the link ends. */
+private fun interface LinkLoop {
+    suspend fun run()
 }
 
 // why: a session that starts or ends shows on the other machine within ten seconds, the goal's bound, and a look is two

@@ -71,6 +71,16 @@ public data class AddProfile internal constructor(
     /** What added the row, named in its TOML comment and the verb's title. */
     internal val origin: String get() = labels.origin ?: "splice add $name"
 
+    /** Whether a value would end its line in splice.toml and start another: the base URL, the command and the family,
+     *  each written inside quotes, with a quote, a backslash or a control character, or a tier name, written as a key,
+     *  that is not a bare one. On an import the family and the tiers are what another machine described (round 13 of
+     *  PR #419's review). */
+    internal val quoted: Boolean get() {
+        val values = listOfNotNull(baseUrl, head.command, provider.family)
+        val tiers = models.flatMap { it.slots }
+        return values.any { !addValuePattern.matches(it) } || tiers.any { !addKeyPattern.matches(it) }
+    }
+
     /** The models this profile writes by default, as a picker offers them (setup, spec section 1). */
     public val modelChoices: List<AddModelChoice>
         get() = models.map { AddModelChoice(it.id, it.label, it.contextWindow) }

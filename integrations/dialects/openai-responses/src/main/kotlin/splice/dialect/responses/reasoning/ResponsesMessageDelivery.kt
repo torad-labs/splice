@@ -1,42 +1,34 @@
 package splice.dialect.responses.reasoning
 
-import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonObject
-import kotlinx.serialization.json.JsonPrimitive
 import splice.core.util.JsonScalars
-
-/** Reads native message text without copying a single existing text part. */
-internal object ResponsesMessageText {
-    fun parts(item: JsonObject): List<String> = when (val content = item["content"]) {
-        is JsonArray -> content.mapNotNull { JsonScalars.str(it as? JsonObject, "text") }.filter { it.isNotEmpty() }
-        is JsonPrimitive -> listOfNotNull(JsonScalars.str(content)).filter { it.isNotEmpty() }
-        is JsonObject, null -> emptyList()
-    }
-
-    fun text(item: JsonObject): String {
-        val parts = parts(item)
-        return if (parts.size == 1) parts.single() else parts.joinToString("")
-    }
-}
 
 /** Completion can precede the final deltas. Their observed stream frontier remains separate from delivery. */
 internal class ResponsesMessageDelivery {
     private val current = mutableMapOf<Int, MessageFrontier>()
-    private val completed = mutableMapOf<String, MessageFrontier>()
+    private val identified = mutableMapOf<String, IndexedValue<MessageFrontier>>()
+
+    /** Explicit source indexes win; an existing item identity precedes any synthetic fallback. */
+    fun index(id: String?, offered: Int?): Int? = offered ?: id?.let { identified[it]?.index }
 
     fun added(item: JsonObject, index: Int) {
         current.remove(index)
         if (JsonScalars.str(item, "type") == NATIVE_MESSAGE_TYPE) {
             val id = JsonScalars.str(item, "id")
-            current[index] = if (id == null) MessageFrontier(null) else completed[id] ?: MessageFrontier(id)
+            val frontier = id?.let { identified[it]?.value } ?: MessageFrontier(id)
+            current[index] = frontier
+            if (id != null) identified.putIfAbsent(id, IndexedValue(index, frontier))
         }
     }
 
     fun delta(event: JsonObject, index: Int, text: String): String {
         val id = JsonScalars.str(event, "item_id")
         var frontier = current[index]
-        if (id != null) frontier = completed[id] ?: frontier?.takeIf { it.id == id }
-        if (frontier == null) frontier = MessageFrontier(id).also { current[index] = it }
+        if (id != null) frontier = identified[id]?.value ?: frontier?.takeIf { it.id == id }
+        if (frontier == null) {
+            frontier = MessageFrontier(id).also { current[index] = it }
+            if (id != null) identified[id] = IndexedValue(index, frontier)
+        }
         if (id == null && frontier.finished) frontier = MessageFrontier(null).also { current[index] = it }
         return frontier.observe(text)
     }
@@ -51,7 +43,7 @@ internal class ResponsesMessageDelivery {
         val frontier = current[index]?.takeIf { it.id == null || it.id == id } ?: MessageFrontier(id)
         frontier.complete(parts)
         current[index] = frontier
-        if (id != null) completed.putIfAbsent(id, frontier)
+        if (id != null) identified.putIfAbsent(id, IndexedValue(index, frontier))
     }
 }
 
@@ -72,8 +64,14 @@ private class MessageFrontier(val id: String?) {
     }
 
     fun observe(text: String): String {
-        observed += text.length
-        val parts = expected ?: return text
+        val parts = expected ?: run {
+            observed += text.length
+            return text
+        }
+        if (finished) {
+            part = 0
+            offset = 0
+        }
         var at = 0
         while (at < text.length) {
             require(part < parts.size) { "upstream: text delta exceeds its completed message" }

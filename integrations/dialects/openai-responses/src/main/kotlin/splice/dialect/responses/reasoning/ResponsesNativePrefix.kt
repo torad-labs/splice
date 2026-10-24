@@ -16,6 +16,7 @@ internal class ResponsesNativePrefix(body: CharSequence) {
     val textOwner = ResponsesTextOwner(body)
     val ownership = ResponsesNativeOwnership(textOwner)
     val delivered = ResponsesDeliveredHistory(textOwner)
+    private val terminalTail = ResponsesNativeTail()
     private val items = mutableListOf<NativePrefixItem>()
     private val completedIds = hashSetOf<String>()
     private val pending = sortedMapOf<Int, ResponsesTextRanges>()
@@ -82,6 +83,7 @@ internal class ResponsesNativePrefix(body: CharSequence) {
             val last = listOfNotNull(lastCompleted, lastPending).maxOrNull()
             boundary = index ?: last?.plus(1) ?: 0
             sealed = snapshot()
+            terminalTail.seal(call.raw)
         }
         delivered.call(call.raw)
     }
@@ -96,13 +98,18 @@ internal class ResponsesNativePrefix(body: CharSequence) {
         val known = before.associateBy(::identity)
         val anonymous = anonymousMatches(before, terminal)
         val matched = terminal.mapNotNull { known[identity(it)] ?: anonymous[it] }
-        if (matched != before) return
-        val reconciled = terminal.map { candidate -> known[identity(candidate)] ?: candidate }
-        val added = terminal.filter { identity(it) !in known }
-        added.forEachIndexed { index, item -> ownership.retain(item, index, null) }
-        checkCapacity()
-        boundary = boundary ?: callAt
-        sealed = reconciled
+        if (matched == before) {
+            val reconciled = terminal.map { candidate -> known[identity(candidate)] ?: candidate }
+            val added = terminal.filter { identity(it) !in known }
+            added.forEachIndexed { index, item -> ownership.retain(item, index, null) }
+            checkCapacity()
+            boundary = boundary ?: callAt
+            sealed = reconciled
+        }
+        terminalTail.reconcile(complete, delivered.terminalTail(), snapshot())?.let { update ->
+            update.added.forEach { (index, item) -> retain(item, index) }
+            delivered.completeTail(update.items)
+        }
     }
 
     /** Exact text is an anchor only when unique on both sides; known anchors must retain their order. */

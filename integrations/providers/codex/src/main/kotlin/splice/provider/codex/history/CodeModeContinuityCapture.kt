@@ -8,6 +8,7 @@ import kotlinx.serialization.json.JsonPrimitive
 import splice.core.reasoning.ReasoningReplay
 import splice.core.turn.TurnOutcome
 import splice.core.util.JsonScalars
+import splice.dialect.responses.reasoning.ResponsesMessageText
 import splice.dialect.responses.request.AssistantPhase
 import splice.dialect.responses.request.ResponsesAssistantText
 import splice.dialect.responses.request.ResponsesCodeModeProjection
@@ -73,9 +74,9 @@ internal object CodeModeContinuityCapture {
         }
     }
 
-    private fun messageText(item: JsonObject): String = when (val content = item["content"]) {
-        is JsonArray -> content.joinToString("") { JsonScalars.str(it as? JsonObject, "text").orEmpty() }
-        is JsonPrimitive -> content.content.takeIf { content.isString }.orEmpty()
-        is JsonObject, null -> ""
+    private fun messageText(item: JsonObject): String {
+        val content = item["content"]
+        if (content is JsonPrimitive && !content.isString) return ""
+        return ResponsesMessageText.text(item)
     }
 }

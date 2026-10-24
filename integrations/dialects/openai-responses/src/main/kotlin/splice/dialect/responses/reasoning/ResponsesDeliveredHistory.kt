@@ -68,6 +68,18 @@ internal class ResponsesDeliveredHistory(private val owner: ResponsesTextOwner) 
         snapshot(start, verifiedEnd ?: entries.size)
     }
 
+    /** A truncated or conflicting message cannot establish positions for newly harvested reasoning. */
+    fun terminalTail(): List<JsonObject>? = if (proven) afterExec() else null
+
+    fun completeTail(items: List<JsonObject>) {
+        val start = prefixEnd ?: return
+        if (!proven) return
+        entries.subList(start, entries.size).clear()
+        entries.addAll(items.map(::DeliveredItem))
+        open.clear()
+        fragmented.clear()
+    }
+
     private fun snapshot(start: Int, end: Int): List<JsonObject> = entries.subList(
         start,
         maxOf(start, end),

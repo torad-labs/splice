@@ -39,7 +39,10 @@ internal class ResponsesItemFold(
     suspend fun onItemAdded(evt: JsonObject, sink: WireSink) {
         val item = evt["item"] as? JsonObject ?: return
         state.streamedItemTypes.add(JsonScalars.strOrEmpty(item["type"]).ifEmpty { "?" })
-        val oi = frames.intOr(evt[OUTPUT_INDEX]) ?: frames.intOr(item["index"]) ?: state.blocks.size
+        val oi = messages.index(
+            JsonScalars.str(item, "id"),
+            frames.intOr(evt[OUTPUT_INDEX]) ?: frames.intOr(item["index"]),
+        ) ?: state.blocks.size
         messages.added(item, oi)
         state.nativePrefix?.delivered?.added(oi)
         execProgress.added(item, oi, sink)
@@ -74,7 +77,10 @@ internal class ResponsesItemFold(
     // member — see closeOpenBlocks / ResponsesReasoningReplay.collect).
     suspend fun onItemDone(evt: JsonObject, sink: WireSink) {
         val item = evt["item"] as? JsonObject
-        val oi = frames.intOr(evt[OUTPUT_INDEX]) ?: frames.intOr(item?.get("index"))
+        val oi = messages.index(
+            JsonScalars.str(item, "id"),
+            frames.intOr(evt[OUTPUT_INDEX]) ?: frames.intOr(item?.get("index")),
+        )
         // codex parity: OutputItemDone takes the active item — a summary done-event arriving
         // between items (or after a later item started) is stale and must not render.
         state.activeItemId = null
@@ -193,7 +199,7 @@ internal class ResponsesItemFold(
     suspend fun onTextDelta(evt: JsonObject, sink: WireSink) {
         val offered = JsonScalars.strOrEmpty(evt[DELTA])
         if (offered.isEmpty()) return
-        val key = frames.intOr(evt[OUTPUT_INDEX]) ?: 0
+        val key = messages.index(JsonScalars.str(evt, "item_id"), frames.intOr(evt[OUTPUT_INDEX])) ?: 0
         val existing = state.blocks[key]
         // DR-108: an output_index does not cross block TYPES — a text delta aimed at an open
         // function_call block would emit text_delta INSIDE tool_use on the wire (protocol-

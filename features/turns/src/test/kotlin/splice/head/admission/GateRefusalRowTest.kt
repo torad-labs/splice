@@ -37,6 +37,7 @@ import org.junit.jupiter.api.io.TempDir
 import splice.core.auth.AuthDescription
 import splice.core.auth.Credentials
 import splice.core.auth.RefreshableAuthProvider
+import splice.core.client.SESSION_HEADER
 import splice.core.model.ModelCatalog
 import splice.core.model.ModelEntry
 import splice.core.perf.OutcomeTag
@@ -49,7 +50,6 @@ import splice.head.TestResponsesProvider
 import splice.head.headDeps
 import splice.head.headStores
 import splice.head.perf.PerfStats
-import splice.head.turn.SESSION_HEADER
 import splice.upstream.ProviderLocations
 import splice.upstream.ProviderName
 import splice.upstream.ProviderTuning

@@ -15,6 +15,7 @@ import splice.core.wire.HttpStatus
 import splice.launch.LaunchModels
 import splice.launch.LaunchSpec
 import splice.launch.ModelTiers
+import splice.launch.PICKER_VALUE
 
 /** One command's launch, as this machine hands it to another: the [machine] it runs on, the [command] and [head] it
  *  is there, its [models], Claude Code's request timeout for it, and where its logins are signed in. */
@@ -127,6 +128,3 @@ internal class SharedLaunches(private val machine: String) {
         models.discoveryPrefix,
     )
 }
-
-// The key a /model picker row names its model under (LaunchSpec's own rows).
-private const val PICKER_VALUE = "value"

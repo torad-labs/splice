@@ -13,6 +13,8 @@ import splice.core.topology.RemoteAddress
 import splice.core.topology.RemoteAddressRead
 import splice.core.topology.RemoteAddresses
 import splice.core.topology.RemoteConfig
+import splice.core.topology.SHARE_AUTH_PARAM
+import splice.core.topology.SHARE_MODELS_PARAM
 import splice.core.wire.HttpStatus
 import splice.launch.HeadTrees
 import splice.launch.LaunchGateway
@@ -88,8 +90,8 @@ public class RemoteLaunches(
 
     private fun launchUri(address: RemoteAddress): URI {
         val params = listOfNotNull(
-            address.auth?.let { "$AUTH_PARAM=${encoded(it)}" },
-            address.models.takeIf { it.isNotEmpty() }?.let { "$MODELS_PARAM=${encoded(it.joinToString(","))}" },
+            address.auth?.let { "$SHARE_AUTH_PARAM=${encoded(it)}" },
+            address.models.takeIf { it.isNotEmpty() }?.let { "$SHARE_MODELS_PARAM=${encoded(it.joinToString(","))}" },
         )
         val query = if (params.isEmpty()) "" else params.joinToString("&", prefix = "?")
         return URI.create("${address.server}/${address.head}/launch$query")

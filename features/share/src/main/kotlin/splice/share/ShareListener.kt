@@ -18,7 +18,6 @@ package splice.share
 import io.ktor.http.ContentType
 import io.ktor.http.HttpHeaders
 import io.ktor.http.HttpMethod
-import io.ktor.http.HttpStatusCode
 import io.ktor.server.application.ApplicationCall
 import io.ktor.server.application.ApplicationCallPipeline
 import io.ktor.server.application.call
@@ -36,9 +35,11 @@ import io.ktor.server.response.respondText
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.withContext
 import kotlinx.serialization.Serializable
-import kotlinx.serialization.builtins.serializer
 import kotlinx.serialization.json.Json
+import splice.core.client.SESSION_HEADER
 import splice.core.config.TurnKey
+import splice.core.topology.SHARE_AUTH_PARAM
+import splice.core.topology.SHARE_MODELS_PARAM
 import splice.core.topology.ShareConfig
 import splice.core.util.LogSink
 import splice.core.wire.HttpStatus
@@ -106,7 +107,7 @@ public class ShareListener(
         val path = if (login != null) rest.drop(1) else rest
         when {
             path.firstOrNull() == API_ROOT -> turn(call, head, login, path)
-            login == null && path == listOf(LAUNCH) -> launch(call, head)
+            login == null && path == listOf(LAUNCH_ROUTE) -> launch(call, head)
             login == null && path == listOf(STATUSLINE) -> relay.statusline(call, head)
             else -> ShareErrors.refuse(call, HttpStatus.NOT_FOUND, "no such path on ${heads.machine}")
         }
@@ -133,7 +134,7 @@ public class ShareListener(
     private suspend fun launch(call: ApplicationCall, head: SharedHead) {
         if (!head.running()) return notRunning(call, head)
         val params = call.request.queryParameters
-        val read = withContext(io) { launches.of(head, params[AUTH_PARAM], params[MODELS_PARAM]) }
+        val read = withContext(io) { launches.of(head, params[SHARE_AUTH_PARAM], params[SHARE_MODELS_PARAM]) }
         when (read) {
             is SharedLaunchRead.Read -> {
                 val body = json.encodeToString(SharedLaunch.serializer(), read.launch)
@@ -176,27 +177,6 @@ public class ShareListener(
     }
 }
 
-/** Errors in the Anthropic shape, so Claude Code on the other machine prints the message instead of a bare status. The
- *  type follows the status as Anthropic's own does, and is never `overloaded_error`: a head that can't take a turn is
- *  said as that, never as a busy server worth retrying in silence. */
-internal object ShareErrors {
-    fun body(status: Int, message: String): String {
-        val type = when (status) {
-            HttpStatus.BAD_REQUEST, HttpStatus.REQUEST_TIMEOUT -> "invalid_request_error"
-            HttpStatus.FORBIDDEN -> "permission_error"
-            HttpStatus.NOT_FOUND -> "not_found_error"
-            HttpStatus.CONTENT_TOO_LARGE -> "request_too_large"
-            else -> "api_error"
-        }
-        val said = Json.encodeToString(String.serializer(), "splice share: $message")
-        return """{"type":"error","error":{"type":"$type","message":$said}}"""
-    }
-
-    suspend fun refuse(call: ApplicationCall, status: Int, message: String) {
-        call.respondText(body(status, message), ContentType.Application.Json, HttpStatusCode.fromValue(status))
-    }
-}
-
 /** What `GET /` answers: this machine and the commands it offers. */
 @Serializable
 public data class ShareInfo(val machine: String, val commands: List<ShareOffer>)
@@ -218,13 +198,8 @@ private const val SHARE_BIND_HOST = "0.0.0.0"
 // The path segment that marks the login a turn runs on (`/claudex/@work/v1/messages`), and the API's own root.
 private const val LOGIN_MARK = "@"
 private const val API_ROOT = "v1"
-private const val LAUNCH = "launch"
+private const val LAUNCH_ROUTE = "launch"
 private const val STATUSLINE = "statusline"
-internal const val AUTH_PARAM = "auth"
-internal const val MODELS_PARAM = "models"
-
-// Claude Code's own name for the session a turn belongs to, the one a pin is kept under.
-private const val SESSION_HEADER = "x-claude-code-session-id"
 
 // why: a stop lets requests already in the listener finish for a second before it closes; a relayed turn still
 // streaming is cut, and the other machine's Claude Code retries it as it retries any cut turn.

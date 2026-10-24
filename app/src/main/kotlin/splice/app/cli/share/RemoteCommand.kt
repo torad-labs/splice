@@ -126,6 +126,6 @@ internal const val REMOTE_VERB = "splice remote"
 // why: `add <address> --as <command>` is three words after the verb.
 private const val AS_ARGS = 3
 
-// why: the command column of `splice remote`: `claude-` and a head name of up to eleven characters line their
-// addresses up, and a longer command pushes only its own row.
-private const val COMMAND_PAD = 18
+// why: the command column of `splice remote` and `splice share status`: `claude-` and a head name of up to eleven
+// characters line their addresses up, and a longer command pushes only its own row.
+internal const val COMMAND_PAD = 18

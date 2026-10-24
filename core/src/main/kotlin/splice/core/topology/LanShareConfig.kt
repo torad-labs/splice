@@ -69,7 +69,7 @@ public object RemoteAddresses {
         uri.scheme?.lowercase() !in setOf("http", "https") -> "it must start with http:// or https://"
         uri.isOpaque || uri.host == null -> "it names no server"
         uri.rawUserInfo != null -> "it must not carry a user or a password"
-        uri.port != -1 && uri.port !in MIN_PORT..MAX_PORT -> "its port is outside 1-65535"
+        uri.port != -1 && uri.port !in validPortRange -> "its port is outside 1-65535"
         else -> null
     }
 
@@ -83,10 +83,11 @@ public object RemoteAddresses {
     /** What is wrong with the query's [params], or null when nothing is. */
     private fun queryProblem(params: Map<String, List<String>>): String? {
         val repeated = params.filterValues { it.size > 1 }.keys.firstOrNull()
-        val auth = params[AUTH]?.firstOrNull()
-        val models = params[MODELS]?.firstOrNull()?.split(',')
+        val unknown = params.keys - setOf(SHARE_AUTH_PARAM, SHARE_MODELS_PARAM)
+        val auth = params[SHARE_AUTH_PARAM]?.firstOrNull()
+        val models = params[SHARE_MODELS_PARAM]?.firstOrNull()?.split(',')
         return when {
-            (params.keys - setOf(AUTH, MODELS)).isNotEmpty() -> "only auth= and models= may follow the command"
+            unknown.isNotEmpty() -> "only auth= and models= may follow the command"
             repeated != null -> "it names $repeated= more than once"
             auth != null && !loginLabel.matches(auth) -> "auth= must name one of the server's logins"
             models != null && !models.all(modelId::matches) -> "models= must list model ids, separated by commas"
@@ -96,8 +97,9 @@ public object RemoteAddresses {
 
     /** [uri] read, once neither check found a problem. */
     private fun address(uri: URI, params: Map<String, List<String>>): RemoteAddress {
-        val models = params[MODELS]?.single()?.split(',')?.distinct().orEmpty()
-        return RemoteAddress("${uri.scheme}://${uri.rawAuthority}", head(uri), params[AUTH]?.single(), models)
+        val models = params[SHARE_MODELS_PARAM]?.single()?.split(',')?.distinct().orEmpty()
+        val auth = params[SHARE_AUTH_PARAM]?.single()
+        return RemoteAddress("${uri.scheme}://${uri.rawAuthority}", head(uri), auth, models)
     }
 
     private fun head(uri: URI): String = uri.rawPath.orEmpty().removePrefix("/")
@@ -112,11 +114,13 @@ public object RemoteAddresses {
     private fun refused(why: String): RemoteAddressRead = RemoteAddressRead.Refused(why)
 }
 
-private const val AUTH = "auth"
-private const val MODELS = "models"
+/** The query param a remote command's address names the server's login in: `?auth=work`. */
+public const val SHARE_AUTH_PARAM: String = "auth"
+
+/** The query param a remote command's address lists the models it shows in: `?models=gpt-5.5,gpt-5.4`. */
+public const val SHARE_MODELS_PARAM: String = "models"
+
 private const val EXAMPLE = "http://torad-server.lan:3097/claudex"
-private const val MIN_PORT = 1
-private const val MAX_PORT = 65535
 
 /** The port `[share]` listens on when the file names none. */
-public const val SHARE_DEFAULT_PORT: Int = 3097
+internal const val SHARE_DEFAULT_PORT: Int = 3097

@@ -47,7 +47,7 @@ internal class ShareHttp(private val io: CoroutineDispatcher) {
      *  a short note when it sent none. */
     fun said(body: String): String {
         val error = JsonScalars.objectOrNull(json, body)?.get("error") as? JsonObject
-        return JsonScalars.str(error, "message")?.removePrefix(ERROR_PREFIX) ?: "it gave no reason"
+        return JsonScalars.str(error, "message")?.removePrefix(SHARE_ERROR_PREFIX) ?: "it gave no reason"
     }
 
     /** [body] decoded as [T], or null when it is not one: a sharing machine's answer from another build, or not a
@@ -64,9 +64,6 @@ internal class ShareHttp(private val io: CoroutineDispatcher) {
     /** The host [server] names (`torad-server.lan`, `192.168.1.236`), as said to the person. */
     fun hostOf(server: String): String = URI.create(server).host?.removeSurrounding("[", "]") ?: server
 }
-
-// What ShareErrors puts before every message, which the asking machine's own words already say.
-private const val ERROR_PREFIX = "splice share: "
 
 // why: a machine on the same LAN accepts in milliseconds; three seconds covers a sleeping Wi-Fi radio waking, and a
 // machine that is off is said that soon, before Claude Code starts.

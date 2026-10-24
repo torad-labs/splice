@@ -11,13 +11,13 @@ import io.ktor.server.application.ApplicationCall
 import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.TimeoutCancellationException
 import kotlinx.coroutines.withContext
+import splice.core.client.SESSION_HEADER
 import splice.core.memory.HeapLease
 import splice.core.perf.OutcomeTag
 import splice.head.CompactionPreflight
 import splice.head.HeadDeps
 import splice.head.turn.Materialized
 import splice.head.turn.MaterializedRequest
-import splice.head.turn.SESSION_HEADER
 import splice.upstream.Provider
 import splice.upstream.TurnEnd
 import splice.upstream.failure.SseSpuriousWakeupException

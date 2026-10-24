@@ -503,5 +503,5 @@ private class TopologyChecks(
     }
 }
 
-/** Claude Code's own command, which a remote command may not take: `claude` stays plain Claude Code. */
-private const val CLAUDE_COMMAND = "claude"
+/** Claude Code's own command: splice's wrapper takes its place on PATH, and a remote command may not take it. */
+public const val CLAUDE_COMMAND: String = "claude"

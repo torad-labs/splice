@@ -26,6 +26,7 @@ import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.io.TempDir
 import splice.core.auth.ClientAuthProvider
 import splice.core.auth.CredentialKey
+import splice.core.client.SESSION_HEADER
 import splice.core.model.ModelCatalog
 import splice.core.model.ModelEntry
 import splice.core.turn.WatchdogBudget
@@ -37,7 +38,6 @@ import splice.head.HeadDeps
 import splice.head.HeadServer
 import splice.head.headDeps
 import splice.head.noQuota
-import splice.head.turn.SESSION_HEADER
 import splice.upstream.ProviderLocations
 import splice.upstream.ProviderName
 import splice.upstream.ProviderTuning

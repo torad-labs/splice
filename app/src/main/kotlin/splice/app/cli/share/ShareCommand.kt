@@ -106,7 +106,3 @@ internal class ShareCommand(
 }
 
 private const val SHARE_VERB = "splice share"
-
-// why: the command column of `splice share status`: `claude-` and a head name of up to eleven characters line their
-// addresses up, and a longer command pushes only its own row.
-private const val COMMAND_PAD = 18

@@ -20,7 +20,9 @@ import splice.core.model.ModelCatalog
 import splice.core.util.JsonScalars
 import java.nio.file.Path
 
-private const val PICKER_VALUE = "value"
+/** The key a /model picker row names its model under. */
+public const val PICKER_VALUE: String = "value"
+
 private const val PICKER_LABEL = "label"
 
 /** The transcript trees one launch may look at (V4-115): the head's OWN CLAUDE_CONFIG_DIR and every

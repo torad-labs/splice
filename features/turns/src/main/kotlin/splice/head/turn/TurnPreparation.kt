@@ -34,6 +34,7 @@ import io.ktor.http.HttpHeaders
 import io.ktor.server.application.ApplicationCall
 import io.ktor.server.request.httpMethod
 import io.ktor.server.request.uri
+import splice.core.client.SESSION_HEADER
 import splice.core.parse.AnthropicTurnBody
 import splice.core.perf.PerfKeys
 import splice.core.perf.TurnPerf
@@ -297,5 +298,3 @@ internal class TurnPreparation(
     // enough to identify it — a reader comparing the two would see two different tags for one turn.
     private fun who(sessionId: String?): String = sessionId?.let { "session ${it.take(SESSION_TAG_CHARS)}, " } ?: ""
 }
-
-internal const val SESSION_HEADER = "x-claude-code-session-id"

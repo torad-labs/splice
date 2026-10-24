@@ -55,7 +55,7 @@ internal class CodexCodeModeDriver(
             validation.outer(call.copy(input = call.input.ifBlank { "source pending" }))?.let { error(it) }
             context.scripts++
             val pending = TurnOutcome.Success(false, false, noRequestUsage)
-            val record = checkNotNull(factory.create(context, call, body, pending))
+            val record = checkNotNull(factory.create(context, call, body, pending, sent.clientStart(context)))
             record.postedOn = sent.newest(context.key)
             record.sourceState = CodeModeSourceState()
             check(registry.add(record)) { "code-mode registry capacity reached" }
@@ -225,7 +225,7 @@ internal class CodexCodeModeDriver(
         outcome: TurnOutcome.Success,
     ): Pair<CodeModeRecord?, TurnOutcome> {
         validation.outer(outer)?.let { return null to failure(it) }
-        val record = factory.create(context, outer, body, outcome)
+        val record = factory.create(context, outer, body, outcome, sent.clientStart(context))
             ?: return null to failure("code mode requires a Responses input array")
         record.postedOn = sent.newest(context.key)
         return if (!registry.add(record)) {

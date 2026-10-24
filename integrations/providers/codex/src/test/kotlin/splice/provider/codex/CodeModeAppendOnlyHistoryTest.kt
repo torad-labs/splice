@@ -6,8 +6,10 @@
 // zero to three client steps, reasoning GPT returns and the client replays before the calls of the same message,
 // a preface said before a script, which the client may join in one message with the prose GPT says after it when
 // nothing came between them (a reanchored round streams into the text block the client already had), and plain
-// answers followed by a new user message. A rewound conversation cuts the client's history back to an
-// earlier user message and edits it: that falls back to the client's history once and then only extends again.
+// answers followed by a new user message. Prefaces repeat, and a plain answer may open with the same words, so a
+// script is told from the prose around it only by where it ran. A rewound conversation cuts the client's history back to an
+// earlier user message and edits it: that falls back to the client's history once and then only extends again, and
+// GPT is still shown every script that ran before the cut, in the order it ran, whatever the client kept of it.
 package splice.provider.codex
 
 import kotlinx.coroutines.test.runTest
@@ -33,6 +35,9 @@ import splice.upstream.codemode.CodeModeStep
 import kotlin.random.Random
 
 private const val RUNS = 120
+
+/** Seeds a wider run once broke, kept so they stay fixed. */
+private val KEPT = listOf(249, 505, 908)
 private const val REQUESTS = 128
 private const val DEVELOPER = """{"role":"developer","content":"s"}"""
 private const val TYPE = "type"
@@ -46,14 +51,14 @@ class CodeModeAppendOnlyHistoryTest : CodeModeBridgeTestSupport() {
 
     @Test
     fun `an append-only conversation keeps every script and only ever extends what GPT was sent`() = runTest {
-        val failures = (0 until RUNS).mapNotNull { seed -> Conversation(seed, rewinds = false).broke() }
-        assertTrue(failures.isEmpty(), "${failures.size} of $RUNS conversations broke:\n" + failures.joinToString("\n"))
+        val failures = ((0 until RUNS) + KEPT).mapNotNull { seed -> Conversation(seed, rewinds = false).broke() }
+        assertTrue(failures.isEmpty(), "${failures.size} conversations broke:\n" + failures.joinToString("\n"))
     }
 
     @Test
     fun `a rewound conversation falls back once, keeps every script, and then only extends again`() = runTest {
-        val failures = (0 until RUNS).mapNotNull { seed -> Conversation(seed, rewinds = true).broke() }
-        assertTrue(failures.isEmpty(), "${failures.size} of $RUNS conversations broke:\n" + failures.joinToString("\n"))
+        val failures = ((0 until RUNS) + KEPT).mapNotNull { seed -> Conversation(seed, rewinds = true).broke() }
+        assertTrue(failures.isEmpty(), "${failures.size} conversations broke:\n" + failures.joinToString("\n"))
     }
 
     /** One generated conversation, driven request by request the way Claude Code drives splice. */
@@ -65,7 +70,11 @@ class CodeModeAppendOnlyHistoryTest : CodeModeBridgeTestSupport() {
         private val manager = bridge(runtime, retention = CodeModeRetention(records = 64))
         private val logStart = logLines.size
         private val client = mutableListOf(DEVELOPER, Wire.user("Task $seed."))
+
+        /** Every script GPT must be shown, in the order it ran, and the last item of [client] it ran after: the
+         *  last of its reasoning and preface, or the item before it when it gave none. */
         private val outers = mutableListOf<String>()
+        private val ranAfter = HashMap<String, Int>()
         private val upstreamTurns = if (rewinds) 4 + random.nextInt(6) else 2 + random.nextInt(7)
 
         /** The post GPT answers in plain text and after which the client rewinds, or -1. */
@@ -122,12 +131,15 @@ class CodeModeAppendOnlyHistoryTest : CodeModeBridgeTestSupport() {
         private fun post(post: Int, exchange: Pair<List<JsonElement>, Reply>): String? {
             val (sent, answered) = exchange
             val broke = previous?.let { prefixBreak(seed, post, it, sent) }
-                ?: codexShape(seed, post, sent, outers.takeUnless { rewound })
+                ?: codexShape(seed, post, sent, outers)
             if (broke != null) return broke
             previous = sent
-            answered.outer?.let(outers::add)
             client += answered.reasoning.map(Wire::reasoning)
             (answered.preface ?: answered.text)?.let { said(it, joins = answered.reasoning.isEmpty()) }
+            answered.outer?.let {
+                outers += it
+                ranAfter[it] = client.lastIndex
+            }
             answered.text?.let { client += Wire.user("$NEXT$post.") }
             return null
         }
@@ -145,12 +157,13 @@ class CodeModeAppendOnlyHistoryTest : CodeModeBridgeTestSupport() {
         }
 
         /** Cuts the client's history back to one of its user messages after the first and edits it. GPT's next post
-         *  cannot extend the last one, so its prefix is not compared, and the order of exec calls is no longer
-         *  the order they ran in. */
+         *  cannot extend the last one, so its prefix is not compared. A script that ran after an item the client
+         *  kept ran in the history it kept, so GPT is still shown it; one that ran after the cut is gone. */
         private fun rewind() {
             val nexts = client.indices.filter { NEXT in client[it] }
             val cut = nexts[random.nextInt(nexts.size)]
             client.subList(cut, client.size).clear()
+            outers.retainAll { ranAfter.getValue(it) < cut }
             client += Wire.user("Edited $seed.")
             rewound = true
             previous = null
@@ -161,7 +174,7 @@ class CodeModeAppendOnlyHistoryTest : CodeModeBridgeTestSupport() {
             val reasoning = (0 until random.nextInt(4)).map { "rs-$seed-$posts-$it" }
             val envelopes = reasoning.map(Wire::envelope)
             if (last || random.nextInt(10) < 3) {
-                val text = "Answer $posts."
+                val text = "${preface().takeIf { random.nextInt(3) == 0 }.orEmpty()}Answer $posts."
                 return Reply(
                     TurnOutcome.Success(
                         false,
@@ -184,12 +197,14 @@ class CodeModeAppendOnlyHistoryTest : CodeModeBridgeTestSupport() {
             }
             scripts += ArrayDeque<CodeModeStep>(steps + CodeModeStep.Completed("script $posts done"))
             stepCounts += steps.size + 1
-            val preface = "Preface $posts. ".takeIf { random.nextBoolean() }
+            val preface = preface().takeIf { random.nextBoolean() }
             val outer = outerOutcome("outer-$seed-$posts")
             val handoffs = outer.handoffs.copy(reasoningEnvelopes = envelopes)
             val said = preface?.let { RoundText(bodyText = it, emittedText = true) } ?: outer.text
             return Reply(outer.copy(handoffs = handoffs, text = said), reasoning, null, "outer-$seed-$posts", preface)
         }
+
+        private fun preface() = "Preface ${random.nextInt(2)}. "
     }
 
     /** GPT's answer: the outcome splice is given, the reasoning and prose the client replays, and the exec call. */
@@ -209,10 +224,11 @@ class CodeModeAppendOnlyHistoryTest : CodeModeBridgeTestSupport() {
     }
 
     /** What Codex would show GPT: no call a script made through the client, each reasoning item once, and each exec
-     *  call followed by its output, once each; with [outers], every script started so far, in the order it ran. */
-    private fun codexShape(seed: Int, post: Int, sent: List<JsonElement>, outers: List<String>?): String? {
+     *  call followed by its output, once each, for every one of the [outers], in the order they ran, between the
+     *  client's messages it ran between. */
+    private fun codexShape(seed: Int, post: Int, sent: List<JsonElement>, outers: List<String>): String? {
         val items = sent.map { it.jsonObject }
-        val problem = nestedCall(items) ?: execPairs(items, outers) ?: repeatedReasoning(items)
+        val problem = nestedCall(items) ?: execPairs(items, outers) ?: misplaced(items) ?: repeatedReasoning(items)
         return problem?.let { "seed $seed, post $post: $it" }
     }
 
@@ -220,11 +236,11 @@ class CodeModeAppendOnlyHistoryTest : CodeModeBridgeTestSupport() {
         items.firstOrNull { it.text(CALL_ID).startsWith(CODE_MODE_CLIENT_ID_PREFIX) }
             ?.let { "GPT was sent a client call a script made: $it" }
 
-    private fun execPairs(items: List<JsonObject>, outers: List<String>?): String? {
+    private fun execPairs(items: List<JsonObject>, outers: List<String>): String? {
         val calls = ids(items, EXEC_CALL)
         val outputs = ids(items, EXEC_OUTPUT)
         return when {
-            outers != null && calls != outers -> "exec calls $calls, expected $outers"
+            calls != outers -> "exec calls $calls, expected $outers"
             outputs != calls || calls.size != calls.toSet().size -> "exec calls $calls with outputs $outputs"
             else -> lateOutput(items, calls)
         }
@@ -234,6 +250,22 @@ class CodeModeAppendOnlyHistoryTest : CodeModeBridgeTestSupport() {
         fun at(type: String, id: String) = items.indexOfFirst { it.text(TYPE) == type && it.text(CALL_ID) == id }
         val late = calls.firstOrNull { at(EXEC_OUTPUT, it) < at(EXEC_CALL, it) } ?: return null
         return "the output of $late comes before its call"
+    }
+
+    /** The first exec call or user message GPT is sent after one from a later post, or null when the posts they
+     *  came from only increase: a script ran after every message the client sent before it and before every one
+     *  it sent after. */
+    private fun misplaced(items: List<JsonObject>): String? {
+        val posts = items.mapNotNull { item ->
+            val said = item.text("content").takeIf { item.text("role") == "user" && it.startsWith(NEXT) }
+            when {
+                item.text(TYPE) == EXEC_CALL -> item.text(CALL_ID).substringAfterLast('-').toInt() to item.text(CALL_ID)
+                said != null -> said.removePrefix(NEXT).removeSuffix(".").toInt() to said
+                else -> null
+            }
+        }
+        val (before, after) = posts.zipWithNext().firstOrNull { (a, b) -> b.first <= a.first } ?: return null
+        return "${after.second} was sent after ${before.second}"
     }
 
     private fun ids(items: List<JsonObject>, type: String) =

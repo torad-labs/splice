@@ -8,6 +8,7 @@ import kotlinx.serialization.json.JsonObject
 import splice.core.turn.TurnOutcome
 import splice.provider.codex.CODE_MODE_FIELD_INPUT
 import splice.provider.codex.CodeModeBody
+import splice.provider.codex.CodeModeClientStart
 import splice.provider.codex.CodeModeRecord
 import splice.provider.codex.CodeModeRunContext
 import splice.provider.codex.CodexCodeModeHistoryCodec
@@ -41,7 +42,7 @@ internal class CodeModeUpstreamHistory(private val json: Json) {
         val media = context.turn.rendering.media
         val changed = records.filter { it.id in context.conflicts || replaysOtherMedia(it, media) }
         val calls = changed.mapTo(HashSet()) { it.origin.outerCallId }
-        return extend(context.key, client, request, records - changed.toSet(), calls)
+        return extend(context, client, request, records - changed.toSet(), calls)
     }
 
     /** Whether a result [record] captured media for comes back with other media (one it never
@@ -50,10 +51,12 @@ internal class CodeModeUpstreamHistory(private val json: Json) {
         media.any { (id, replayed) -> record.accepted.media(id)?.let { it != replayed } == true }
 
     /** A script that finished without a client call follows the post it started on: none of it is in the client's
-     *  history, so its reasoning and preface go first and the client replays them next ([CodeModeBody.echoes]). An
+     *  history, so its reasoning and preface go first and the client replays them next ([CodeModeBody.echoes]).
+     *  Folded from nothing, one the client has none of goes last only when it ran in the very request the client
+     *  sends again (its reply was lost): a baseline anchor alone also matches a history the client edited. An
      *  unchanged history is the body the client sent, as it arrived. */
     private fun extend(
-        key: String,
+        context: CodeModeRunContext,
         client: CodeModeBody,
         request: Pair<JsonObject, JsonArray>,
         records: List<CodeModeRecord>,
@@ -62,12 +65,18 @@ internal class CodeModeUpstreamHistory(private val json: Json) {
         val (root, input) = request
         val preamble = input.subList(0, preambleCount(input))
         val conversation = input.subList(preamble.size, input.size)
-        val (entry, tail) = extended(key, conversation, records, changed)
+        val (entry, tail) = extended(context.key, conversation, records, changed)
         val fresh = conversation.size > entry.covered.size
-        val echoed = scripts.silent(records, entry.sent)
-        val folded = entry.sent + CodeModeScriptFold(codec, owners(records), echoed, scripts).fold(tail)
+        val quiet = if (entry === nothing) {
+            scripts.measured(records, preamble + conversation, conversation, client.digests)
+        } else {
+            scripts.since(records, entry)
+        }
+        val folded = entry.sent + CodeModeScriptFold(codec, owners(records), quiet, scripts).fold(tail)
         val due = if (entry === nothing) {
-            CodeModeScriptDue { record, prior -> scripts.startedOn(record, preamble + prior) }
+            CodeModeScriptDue { record, prior ->
+                record.progress.lastDigest == context.digest && scripts.startedOn(record, preamble + prior)
+            }
         } else {
             CodeModeScriptDue { record, _ -> record.postedOn == entry.id }
         }
@@ -80,6 +89,13 @@ internal class CodeModeUpstreamHistory(private val json: Json) {
             val rebuilt = JsonObject(root + (CODE_MODE_FIELD_INPUT to JsonArray(items)))
             CodeModeBody(RoundBody.Tree(rebuilt), json, digests = client.digests, echoes = echoes)
         }
+    }
+
+    /** Where a script started now in [context]'s client history: after all of it, preamble aside. */
+    fun clientStart(context: CodeModeRunContext): CodeModeClientStart? {
+        val client = context.client ?: return null
+        val input = client.request?.second ?: return null
+        return CodeModeClientPrefix(input.subList(preambleCount(input), input.size), client.digests).start()
     }
 
     /** Keeps [body] as what [context]'s conversation last sent, as it is posted. */

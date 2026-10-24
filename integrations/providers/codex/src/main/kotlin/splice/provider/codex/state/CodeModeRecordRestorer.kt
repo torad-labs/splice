@@ -59,6 +59,7 @@ internal class CodeModeRecordRestorer {
                 logicalCount = saved.baselineLogicalCount,
                 logicalDigest = saved.baselineLogicalDigest,
                 metadataVersion = saved.metadataVersion,
+                client = saved.baselineClient,
             ),
         ),
         progress = CodeModeProgress(
@@ -99,6 +100,7 @@ internal object CodeModeRecordSnapshots {
         nativeSegments = record.carry.segments,
         continuity = record.carry.continuity,
         continuityReplay = record.carry.replay,
+        baselineClient = record.origin.baseline.client,
     ).also {
         it.completionError = record.progress.completionError
         it.issued = record.issued.toList()

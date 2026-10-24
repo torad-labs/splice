@@ -114,14 +114,22 @@ internal data class CodeModeOrigin(
 )
 
 /** What the client's input looked like when the record was created: the whole input and its logical (client-visible)
- *  part, each counted and digested, and the metadata version that wrote them. */
+ *  part, each counted and digested, and the metadata version that wrote them. The counts are of the request GPT was
+ *  sent; [client] is where the script started in the client's own history, null for a record saved before it. */
 internal data class CodeModeBaseline(
     val inputCount: Int,
     val inputDigest: String,
     val logicalCount: Int,
     val logicalDigest: String,
     val metadataVersion: Int,
+    val client: CodeModeClientStart? = null,
 )
+
+/** Where a script started in the client's own history: the [count] of items, preamble aside, the client's request
+ *  held, and their [digest]. The script ran right after them, so a later history that starts with them still holds
+ *  the history it ran on, and one that does not was cut or edited before it. */
+@Serializable
+internal data class CodeModeClientStart(val count: Int, val digest: String)
 
 /** What the script is waiting on and how far it has run: its client calls still [pending], the [output] it has
  *  produced, the calls and rounds it has used, and when and under which request digest it last moved. */

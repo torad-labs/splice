@@ -315,6 +315,7 @@ class CodeModeJournalRecoveryTest {
               "baselineInputDigest":"changed input","metadataVersion":75,"baselineLogicalCount":76,
               "baselineLogicalDigest":"changed logical","nativeSegments":[{"logicalOffset":77,"items":["native"]}],
               "continuity":["logical"],"continuityReplay":[{"logicalOffset":78,"items":["replay"]}],
+              "baselineClient":{"count":80,"digest":"changed client"},
               "issued":[{"requestDigest":"issued digest","calls":[]}],"sessionId":"synthetic session",
               "conversationId":"synthetic conversation","nativeBaseId":"synthetic parent","replayAnchors":{"baseline":{"itemDigest":"anchor","occurrence":79},
               "native":{}},"sourceState":{"complete":true,"consumed":true}

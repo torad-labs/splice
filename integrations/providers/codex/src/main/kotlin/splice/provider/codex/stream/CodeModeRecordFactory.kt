@@ -7,6 +7,7 @@ import splice.provider.codex.CODE_MODE_METADATA_VERSION
 import splice.provider.codex.CodeModeBaseline
 import splice.provider.codex.CodeModeBody
 import splice.provider.codex.CodeModeBridgeConfig
+import splice.provider.codex.CodeModeClientStart
 import splice.provider.codex.CodeModeNativeContinuity
 import splice.provider.codex.CodeModeOrigin
 import splice.provider.codex.CodeModePhase
@@ -28,6 +29,7 @@ internal class CodeModeRecordFactory(private val config: CodeModeBridgeConfig, p
         outer: GatewayCustomCall,
         body: CodeModeBody,
         outcome: TurnOutcome.Success,
+        client: CodeModeClientStart?,
     ): CodeModeRecord? {
         val recovery = context.recovery
         val upstream = recovery?.upstream(context.completed) ?: context.completed
@@ -54,6 +56,7 @@ internal class CodeModeRecordFactory(private val config: CodeModeBridgeConfig, p
                     logicalCount = boundary.logicalCount,
                     logicalDigest = boundary.logicalDigest,
                     metadataVersion = CODE_MODE_METADATA_VERSION,
+                    client = client,
                 ),
             ),
             progress = CodeModeProgress(updatedAt = config.clock.millis(), lastDigest = context.digest),

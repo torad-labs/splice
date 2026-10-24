@@ -52,6 +52,7 @@ internal data class CodeModeRecordSnapshot(
     val nativeSegments: List<CodeModeNativeSegment> = emptyList(),
     val continuity: List<JsonElement> = emptyList(),
     val continuityReplay: List<CodeModeNativeSegment> = emptyList(),
+    val baselineClient: CodeModeClientStart? = null,
 ) {
     /** Kept outside the already-wide constructor; the store compares it explicitly on save. */
     var completionError: String? = null

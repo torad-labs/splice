@@ -72,6 +72,22 @@ internal class ReasoningPositionIndex {
         }
     }
 
+    /** Optional hashes yield before reasoning; a complete cohort keeps its proven order as stable indexes. */
+    fun withoutMetadata(indexes: List<String>, wholeCohort: Boolean = true): Map<String, String> {
+        val records = indexes.mapNotNull { index -> record(index)?.let { index to it } }
+        val complete = if (wholeCohort) {
+            records.map { it.second }.groupBy { it.round }.filterValues(::completeBatch).keys
+        } else {
+            emptySet()
+        }
+        return records.filter { it.second.batch != null }.associate { (index, value) ->
+            val authoritative = value.round in complete
+            val offset = if (authoritative) value.terminalIndex else value.liveIndex ?: value.terminalIndex
+            val mode = if (authoritative || value.liveIndex != null) "l" else "u"
+            index to "${value.position}:${value.round}.$mode.$offset.${value.id}"
+        }
+    }
+
     private fun record(index: String): PositionRecord? = index.takeIf { it.startsWith(HISTORY_POSITION_PREFIX) }?.let {
         PositionRecord(it.substringBeforeLast(':'), it.substringAfterLast(':'), emptyList())
     }
@@ -126,7 +142,7 @@ private data class PositionRecord(val position: String, val suffix: String, val 
         else -> null
     }
     val terminalIndex = when (parts.getOrNull(1)) {
-        "t" -> parts.getOrNull(2)?.toIntOrNull()
+        "t", "u" -> parts.getOrNull(2)?.toIntOrNull()
         "b" -> parts.getOrNull(POSITION_TERMINAL_INDEX_PART)?.toIntOrNull()
         else -> null
     }

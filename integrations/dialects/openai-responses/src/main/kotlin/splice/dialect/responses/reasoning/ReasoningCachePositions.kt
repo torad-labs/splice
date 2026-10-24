@@ -43,16 +43,35 @@ internal class ReasoningCachePositions {
         }
     }
 
-    private fun stabilize(conversation: ReasoningCacheConvo, incoming: String): Long {
-        val aliases = indexes.stableBefore(
-            conversation.rounds.values.mapNotNull { it.toolIds.singleOrNull() },
-            incoming,
-        )
-        return conversation.rounds.entries.sumOf { (key, round) ->
+    /** Reclaim only optional ordering metadata, preserving the complete cohort's accepted native order. */
+    fun releaseMetadata(conversation: ReasoningCacheConvo): Long = applyAliases(
+        conversation,
+        indexes.withoutMetadata(conversation.rounds.values.mapNotNull { it.toolIds.singleOrNull() }),
+    )
+
+    /** Optional offered proof bytes cannot crowd out the round's retained reasoning payload. */
+    fun admission(round: ReasoningCacheRound, availableBytes: Long): ReasoningCacheRound {
+        if (round.bytes <= availableBytes) return round
+        val ids = payloadIndexes(round.toolIds)
+        val bytes = round.bytes - round.toolIds.sumOf(indexes::metadataBytes) + ids.sumOf(indexes::metadataBytes)
+        return round.copy(toolIds = ids, bytes = bytes)
+    }
+
+    private fun payloadIndexes(ids: List<String>): List<String> {
+        val aliases = indexes.withoutMetadata(ids, wholeCohort = false)
+        return ids.map { aliases[it] ?: it }
+    }
+
+    private fun stabilize(conversation: ReasoningCacheConvo, incoming: String): Long = applyAliases(
+        conversation,
+        indexes.stableBefore(conversation.rounds.values.mapNotNull { it.toolIds.singleOrNull() }, incoming),
+    )
+
+    private fun applyAliases(conversation: ReasoningCacheConvo, aliases: Map<String, String>): Long =
+        conversation.rounds.entries.sumOf { (key, round) ->
             val after = round.toolIds.singleOrNull()?.let(aliases::get)
             if (after == null) 0L else replaceIndex(conversation, key, after)
         }
-    }
 
     private fun replaceIndex(conversation: ReasoningCacheConvo, key: String, index: String): Long {
         val before = conversation.rounds.getValue(key)

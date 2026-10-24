@@ -256,11 +256,16 @@ internal class ReasoningCache(
         // it again would orphan the old round, which still counts against the bound (review
         // finding 2's accelerator) — refresh (the touch above) and return instead.
         if (toolIds.any { it in convo.byToolId }) return
+        totalBytes += persistence.reclaimOrderMetadata(key, convo, bytes, maxTotalBytes - totalBytes)
+        val offered = positions.admission(
+            ReasoningCacheRound(toolIds, envelopes, bytes, clock()),
+            maxTotalBytes - totalBytes,
+        )
         val rk = "r${seq++}"
-        convo.rounds[rk] = ReasoningCacheRound(toolIds, envelopes, bytes, clock())
-        toolIds.forEach { convo.byToolId[it] = rk }
-        convo.bytes += bytes
-        totalBytes += bytes
+        convo.rounds[rk] = offered
+        offered.toolIds.forEach { convo.byToolId[it] = rk }
+        convo.bytes += offered.bytes
+        totalBytes += offered.bytes
         roundCount++
         evictToBoundLocked(writing = key, writer = convo, offered = rk)
         // Written only once it survived the bound: a round the freeze rejected was never served.
@@ -355,6 +360,17 @@ private class ReasoningRoundPersistence(
             writes.append(key, emptyList(), emptyList(), conversation.resultProofs.toMap())
         }
         writes.append(key, round.toolIds, round.envelopes)
+    }
+
+    fun reclaimOrderMetadata(
+        key: String,
+        conversation: ReasoningCacheConvo,
+        offeredBytes: Long,
+        availableBytes: Long,
+    ): Long {
+        if (offeredBytes <= availableBytes) return 0L
+        val released = positions.releaseMetadata(conversation)
+        return released + if (released != 0L) rewrite(key, conversation) else 0L
     }
 
     fun rewrite(key: String, conversation: ReasoningCacheConvo): Long {

@@ -63,7 +63,7 @@ internal object CodeModeContinuityCapture {
         val text = when (val content = item["content"]) {
             is JsonArray -> content.joinToString("") { JsonScalars.str(it as? JsonObject, "text").orEmpty() }
             is JsonPrimitive -> content.content.takeIf { content.isString }.orEmpty()
-            else -> ""
+            is JsonObject, null -> ""
         }
         return text.takeIf(String::isNotEmpty)?.let { ResponsesAssistantText.item(it, AssistantPhase.COMMENTARY) }
     }

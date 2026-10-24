@@ -43,7 +43,7 @@ internal class CodeModeScriptPlacements(private val codec: CodexCodeModeHistoryC
         input: List<JsonElement>,
         conversation: List<JsonElement>,
         digests: InputItemDigests,
-    ): List<CodeModeQuiet> = CodeModeQuietMeasure(codec, this, input, conversation, digests).measure(records)
+    ): List<CodeModeQuiet> = CodeModeQuietMeasure(codec, this, input, conversation, digests, records).measure()
 
     /** The scripts to send after [folded], in the order they ran: each [due] on the history before it. */
     fun appended(
@@ -79,16 +79,28 @@ internal class CodeModeScriptPlacements(private val codec: CodexCodeModeHistoryC
     fun echo(items: List<JsonElement>, at: Int, continuity: List<JsonElement>, skip: Int = 0): CodeModeEcho? =
         CodeModeEchoMatch(codec, this, continuity).from(items, at, skip)
 
-    /** Where the copy of [continuity] starts in [items] from [at]: there, or further on past the copies other
-     *  scripts streamed in the same reply ahead of it (one whose record is gone or was lost), never past an item
-     *  GPT did not stream, such as a message the client added. Null when the client holds no copy there. */
-    fun copyStart(items: List<JsonElement>, at: Int, continuity: List<JsonElement>): Int? =
-        (at until items.size).asSequence().takeWhile { it == at || streamed(items[it - 1]) }
-            .firstOrNull { echo(items, it, continuity) != null }
+    /** The client's copy of [continuity] in [items] from [at]: there, or further on past the copies other scripts
+     *  streamed in the same reply ahead of it (one whose record is gone or was lost): only past reasoning or prose
+     *  GPT streamed, which the client keeps as it came, never past a message the client added, nor past one that
+     *  [another] script's copy holds. Null when the client holds no copy there. */
+    fun copyStart(
+        items: List<JsonElement>,
+        at: Int,
+        continuity: List<JsonElement>,
+        another: CodeModeOtherCopy,
+    ): CodeModeCopy? = (at until items.size).asSequence()
+        .takeWhile { start ->
+            val item = items.getOrNull(start - 1)
+            start == at || item != null && (text(item) != null || reasoning(item) != null) && !another.holds(item)
+        }
+        .firstNotNullOfOrNull { start -> echo(items, start, continuity)?.let { CodeModeCopy(start, it) } }
 
-    /** Whether [item] is reasoning or prose GPT streamed, which the client keeps as it came. */
-    private fun streamed(item: JsonElement): Boolean =
-        text(item) != null || codec.string(item as? JsonObject, CODE_MODE_FIELD_TYPE) == CODE_MODE_TYPE_REASONING
+    /** [item]'s id when it is reasoning, else null. */
+    fun reasoning(item: JsonElement?): String? {
+        val given = item as? JsonObject ?: return null
+        if (codec.string(given, CODE_MODE_FIELD_TYPE) != CODE_MODE_TYPE_REASONING) return null
+        return codec.string(given, REASONING_ID)
+    }
 
     /** [items] with the message [echo] ends inside cut in two where it ends, each part keeping the message's other
      *  fields: the script's preface, then what GPT said after it. */
@@ -130,6 +142,15 @@ internal class CodeModeScriptPlacements(private val codec: CodexCodeModeHistoryC
 /** A finished script that made no client call, the reasoning and preface it [replay]s, and how many of the items
  *  folded the history it ran on ends [at]. */
 internal data class CodeModeQuiet(val record: CodeModeRecord, val replay: List<JsonElement>, val at: Int)
+
+/** Where the client's copy of a script's reasoning and preface starts, and its [echo]. */
+internal data class CodeModeCopy(val start: Int, val echo: CodeModeEcho)
+
+/** Whether an item of the client's history is in the copy of a script other than the one being placed, which that
+ *  script's copy search does not go past. */
+internal fun interface CodeModeOtherCopy {
+    fun holds(item: JsonElement): Boolean
+}
 
 /** Whether a script that made no client call is sent right after [prior], the history GPT is sent ahead of it. */
 internal fun interface CodeModeScriptDue {
@@ -182,26 +203,49 @@ internal class CodeModeScriptFold(
         var start = -1
         var from = 0
         var added = 0
-        quiet.forEach { script ->
+        quiet.forEachIndexed { index, script ->
             if (script.at != start) {
                 start = script.at
                 from = script.at + added
             }
-            val copy = scripts.copyStart(cut, from, script.replay)
-            val echo = copy?.let { scripts.echo(cut, it, script.replay) }
-            if (copy == null || echo == null) {
+            val copy = scripts.copyStart(cut, from, script.replay) { item -> another(index, item) }
+            if (copy == null) {
                 if (from < cut.size) placements.getOrPut(from - 1) { mutableListOf() } += script.record
-                return@forEach
+                return@forEachIndexed
             }
+            val echo = copy.echo
             if (echo.split != 0) {
                 cut = split(cut, echo)
                 added++
             }
-            echoed += copy..echo.last
+            echoed += copy.start..echo.last
             placements.getOrPut(echo.last) { mutableListOf() } += script.record
             from = echo.last + 1
         }
         return cut
+    }
+
+    /** The reasoning and preface of each script whose copy the client may hold: the [quiet] ones in their order, then
+     *  those that made client calls, whose copies end at their first call. */
+    private val copies: List<List<JsonElement>> by lazy {
+        quiet.map(CodeModeQuiet::replay) + owners.values.distinct().map(scripts::continuity)
+    }
+
+    /** Whether [item] is in the copy of a script other than the quiet one at [index]: its reasoning, or a message
+     *  that opens with the prose it said or that its prose opens with. */
+    private fun another(index: Int, item: JsonElement): Boolean {
+        val id = scripts.reasoning(item)
+        val text = scripts.text(item)?.takeIf { it.isNotEmpty() }
+        return copies.indices.any { other ->
+            other != index && copies[other].let { replay ->
+                if (id != null) {
+                    replay.any { scripts.reasoning(it) == id }
+                } else {
+                    val said = replay.mapNotNull(scripts::text).joinToString("")
+                    text != null && said.isNotEmpty() && (text.startsWith(said) || said.startsWith(text))
+                }
+            }
+        }
     }
 
     /** [items] with the message [echo] ends inside cut in two, and every script placed from there on moved one on. */
@@ -243,3 +287,4 @@ private const val TYPE_CALL = "function_call"
 private const val TYPE_RESULT = "function_call_output"
 private const val ECHO_ROLE = "assistant"
 private const val ECHO_TEXT = "content"
+private const val REASONING_ID = "id"

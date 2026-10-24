@@ -43,8 +43,13 @@ import kotlin.random.Random
 
 private const val RUNS = 120
 
-/** Seeds a wider run once broke, kept so they stay fixed. */
-private val KEPT = listOf(168, 209, 249, 258, 505, 908)
+/** Seeds a wider run broke under the draws below, kept so they stay fixed. A draw moved or added in a stream moves
+ *  every seed after it to another conversation, so a new decision draws only in runs that did not exist before. */
+private val KEPT = listOf(168, 209, 505)
+
+/** Seeds a run of 2,000 broke on a store this build wrote, and on one a rollback wrote in part. */
+private val KEPT_OWN = listOf(234, 505, 701)
+private val KEPT_ROLLED_BACK = listOf(234, 471, 505, 701)
 private const val REQUESTS = 128
 private const val DEVELOPER = """{"role":"developer","content":"s"}"""
 private const val TYPE = "type"
@@ -73,8 +78,44 @@ class CodeModeAppendOnlyHistoryTest : CodeModeBridgeTestSupport() {
         assertTrue(failures.isEmpty(), "${failures.size} conversations broke:\n" + failures.joinToString("\n"))
     }
 
+    @Test
+    fun `a conversation restarting on its own build's store keeps every script and only extends what GPT was sent`() =
+        runTest {
+            val failures = ((0 until RUNS) + KEPT_OWN).mapNotNull { seed ->
+                Conversation(seed, seed % 2 == 1, Store.OWN).broke()
+            }
+            assertTrue(failures.isEmpty(), "${failures.size} conversations broke:\n" + failures.joinToString("\n"))
+        }
+
+    @Test
+    fun `a conversation restarting after a rollback keeps every script and only extends what GPT was sent`() =
+        runTest {
+            val failures = ((0 until RUNS) + KEPT_ROLLED_BACK).mapNotNull { seed ->
+                Conversation(seed, seed % 2 == 1, Store.ROLLED_BACK).broke()
+            }
+            assertTrue(failures.isEmpty(), "${failures.size} conversations broke:\n" + failures.joinToString("\n"))
+        }
+
+    /** Which build saved the state each restart starts on. */
+    private enum class Store {
+        /** At the first restart that cut no reply, a release's: its records kept no client start. */
+        UPGRADED,
+
+        /** Always this build's. A reply a restart cut may also be retried as it was, as Claude Code retries a
+         *  stream that broke, with no user message after it. */
+        OWN,
+
+        /** This build's, but the records made between the first and the second restart were saved by a release the
+         *  operator rolled back to, so the records of one conversation keep their client start or not by turns. */
+        ROLLED_BACK,
+    }
+
     /** One generated conversation, driven request by request the way Claude Code drives splice. */
-    private inner class Conversation(private val seed: Int, private val rewinds: Boolean) {
+    private inner class Conversation(
+        private val seed: Int,
+        private val rewinds: Boolean,
+        private val store: Store = Store.UPGRADED,
+    ) {
         private val random = Random(seed)
 
         /** What the client adds and when splice restarts, drawn apart so a seed's conversation stays the same. */
@@ -94,6 +135,11 @@ class CodeModeAppendOnlyHistoryTest : CodeModeBridgeTestSupport() {
          *  last of its reasoning and preface, or the item before it when it gave none. */
         private val outers = mutableListOf<String>()
         private val ranAfter = HashMap<String, Int>()
+
+        /** Every script that ran, a rewind or not, and how many had when splice first restarted. */
+        private val started = mutableListOf<String>()
+        private var restarts = 0
+        private var startedBeforeRestart = 0
 
         /** Each script the user steered, with the results it was given, which its exec output must carry. */
         private val steered = HashMap<String, List<String>>()
@@ -197,7 +243,11 @@ class CodeModeAppendOnlyHistoryTest : CodeModeBridgeTestSupport() {
             cut = true
             client.subList(spoken, client.size).clear()
             outers.drop(ran).forEach { ranAfter[it] = spoken - 1 }
-            client += Wire.user("Continue $requests.")
+            if (store == Store.UPGRADED || faults.nextBoolean()) {
+                client += Wire.user("Continue $requests.")
+            } else {
+                trace += "retried $requests"
+            }
             restart()
         }
 
@@ -212,6 +262,7 @@ class CodeModeAppendOnlyHistoryTest : CodeModeBridgeTestSupport() {
             keep(answered)
             answered.outer?.let {
                 outers += it
+                started += it
                 ranAfter[it] = client.lastIndex
             }
             answered.text?.let { client += Wire.user("$NEXT$post.") }
@@ -260,23 +311,45 @@ class CodeModeAppendOnlyHistoryTest : CodeModeBridgeTestSupport() {
 
         /** Stops splice and starts it again on the state it saved, as an install does, a script perhaps waiting on
          *  the client: what it kept in memory of GPT's posts is gone, and the next post still extends the last one.
-         *  At its first restart, the build it starts is newer than the one that saved the state, whose records kept
-         *  no client start, as at an upgrade from a release. Not after a cut reply: with no start kept, a script the
+         *  The [store] says which build saved it: after an upgrade, at the first restart the build it starts is newer
+         *  than the one that saved the state, whose records kept no client start, as at an upgrade from a release;
+         *  after a rollback, so is the build that ran between the first and second restart. Not after a cut reply:
+         *  with no start kept, a script the
          *  client holds no copy of is left out (the older build had already left it out of what GPT was sent), a gap
          *  the goal names. The old splice ends as a process does, which a head stop alone does not: its timed sweep
          *  would keep it and all it loaded. */
         private fun restart() {
             trace += "restart $requests"
             manager.onProviderStop()
-            if (!cut && !aged) {
+            if (++restarts == 1) startedBeforeRestart = started.size
+            if (ages()) {
                 aged = true
                 trace += "older build"
+                // Every record an upgrade starts on is the release's; after a rollback, only those made while it ran.
+                val since = started.drop(startedBeforeRestart)
                 stateFiles.rewriteRecords { record ->
-                    val anchors = record[ANCHORS] as? JsonObject ?: return@rewriteRecords record
-                    JsonObject(record + (ANCHORS to JsonObject(anchors - CLIENT_START)))
+                    if (store == Store.UPGRADED || record.ran(since)) unstarted(record) else record
                 }
             }
             manager = bridge(runtime, retention = CodeModeRetention(records = 64))
+        }
+
+        /** Whether this restart starts on a store an older build wrote. */
+        private fun ages(): Boolean = when (store) {
+            Store.UPGRADED -> !cut && !aged
+            Store.OWN -> false
+            Store.ROLLED_BACK -> !cut && restarts == 2
+        }
+
+        /** Whether [this] is the record of one of the scripts [outers]. */
+        private fun JsonObject.ran(outers: List<String>): Boolean = toString().let { saved ->
+            outers.any { "\"$it\"" in saved }
+        }
+
+        /** [record] as a build that keeps no client start saved it. */
+        private fun unstarted(record: JsonObject): JsonObject {
+            val anchors = record[ANCHORS] as? JsonObject ?: return record
+            return JsonObject(record + (ANCHORS to JsonObject(anchors - CLIENT_START)))
         }
 
         /** Cuts the client's history back to one of its user messages after the first and edits it. GPT's next post

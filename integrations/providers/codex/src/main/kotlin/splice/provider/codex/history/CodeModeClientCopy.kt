@@ -4,44 +4,60 @@ package splice.provider.codex.history
 import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonElement
 import splice.core.perf.InputItemDigests
+import splice.provider.codex.CODE_MODE_METADATA_VERSION
 import splice.provider.codex.CodeModeRecord
 import splice.provider.codex.CodexCodeModeHistoryCodec
+import splice.provider.codex.state.CodeModeHistoryIndex
 import java.util.Collections
 import java.util.IdentityHashMap
 
 /** Where each finished script that made no client call ran in the client's [conversation], in the order they ran.
  *  One whose record keeps its client start ran right after that prefix. One an older build saved kept none, so it
  *  goes between the scripts around it: not before where the one ahead of it ends in the client's items (its floor),
- *  and not after where the next one whose place is known starts (its ceiling). [input] is the whole request. */
+ *  and not after where the next one whose place is known starts (its ceiling). [input] is the whole request, and
+ *  [records] every script of the conversation, in the order they ran. */
 internal class CodeModeQuietMeasure(
     private val codec: CodexCodeModeHistoryCodec,
     private val scripts: CodeModeScriptPlacements,
     input: List<JsonElement>,
     private val conversation: List<JsonElement>,
     digests: InputItemDigests,
+    private val records: List<CodeModeRecord>,
 ) {
     private val prefix = CodeModeClientPrefix(conversation, digests)
-    private val legacy by lazy { CodeModeLegacyStart(codec, scripts, input, conversation) }
+    private val legacy by lazy { CodeModeLegacyStart(codec, scripts, input, conversation, records) }
 
     /** Where each record starts in [conversation] when that is known without its neighbours, else null. */
     private val starts = HashMap<Int, Int?>()
 
-    fun measure(records: List<CodeModeRecord>): List<CodeModeQuiet> {
+    fun measure(): List<CodeModeQuiet> {
         // Only a record an older build saved reads a floor, so none is measured past the last of them.
         val floored = records.indexOfLast { scripts.quiet(it) && it.replayAnchors?.client == null }
         var floor: CodeModeFloor? = null
         return records.mapIndexedNotNull { index, record ->
-            val placed = if (scripts.quiet(record)) placed(records, index, floor) else null
+            val placed = if (scripts.quiet(record)) placed(records, index, floor, index < floored) else null
             if (index < floored) floor = placed?.floor ?: called(record)?.let(::CodeModeFloor) ?: floor
             placed?.let { CodeModeQuiet(record, scripts.continuity(record), it.at) }
         }.sortedBy(CodeModeQuiet::at)
     }
 
-    private fun placed(records: List<CodeModeRecord>, index: Int, floor: CodeModeFloor?): CodeModePlaced? {
+    private fun placed(
+        records: List<CodeModeRecord>,
+        index: Int,
+        floor: CodeModeFloor?,
+        floors: Boolean,
+    ): CodeModePlaced? {
         val record = records[index]
         val start = record.replayAnchors?.client
             ?: return legacy.at(record, scripts.continuity(record), floor, ceiling(records, index))
-        return prefix.at(start)?.let { CodeModePlaced(it, CodeModeFloor(it)) }
+        return prefix.at(start)?.let { at -> started(record, at, floors) }
+    }
+
+    /** The place of [record], whose client start is at [at]. When a record an older build saved comes after it
+     *  ([floors]), that one starts no earlier than where this one's copy ends, so the floor it leaves is there. */
+    private fun started(record: CodeModeRecord, at: Int, floors: Boolean): CodeModePlaced {
+        val copy = if (floors) scripts.echo(conversation, at, scripts.continuity(record)) else null
+        return copy?.let { legacy.placed(at, it) } ?: CodeModePlaced(at, CodeModeFloor(at))
     }
 
     /** Where the first record after [index] whose place is known starts in the client's items, if any is. */
@@ -64,11 +80,26 @@ internal class CodeModeQuietMeasure(
         }
     }
 
-    /** Where the copy that ends at [first] starts: the first start up to it whose copy of [replay] ends right there. */
-    private fun copied(first: Int, replay: List<JsonElement>): Int =
-        ((first - replay.size).coerceAtLeast(0)..first).firstOrNull { at ->
+    /** Where the copy that ends at [first] starts: the first start up to it whose copy of [replay] ends right there,
+     *  else, when the client holds only part of it (it was never shown the reasoning), the first of the items right
+     *  before [first] that are wholly the script's. */
+    private fun copied(first: Int, replay: List<JsonElement>): Int {
+        val earliest = (first - replay.size).coerceAtLeast(0)
+        return (earliest..first).firstOrNull { at ->
             scripts.echo(conversation, at, replay)?.let { it.end == first && it.split == 0 } == true
-        } ?: first
+        } ?: (first downTo earliest + 1).firstOrNull { at -> !owns(replay, conversation[at - 1]) } ?: earliest
+    }
+
+    /** Whether [item] is wholly [replay]'s: one of its reasoning items, or prose it said. */
+    private fun owns(replay: List<JsonElement>, item: JsonElement): Boolean {
+        val id = scripts.reasoning(item)
+        val text = scripts.text(item)?.takeIf { it.isNotEmpty() }
+        return when {
+            id != null -> replay.any { scripts.reasoning(it) == id }
+            text != null -> text in replay.mapNotNull(scripts::text).joinToString("")
+            else -> false
+        }
+    }
 
     private fun first(record: CodeModeRecord): Int? {
         val ids = record.clientIds()
@@ -97,24 +128,46 @@ internal class CodeModeLegacyStart(
     private val scripts: CodeModeScriptPlacements,
     input: List<JsonElement>,
     private val conversation: List<JsonElement>,
+    records: List<CodeModeRecord>,
 ) {
     private val logical = codec.conversation(codec.projection.project(JsonArray(input))).body.logicalItems
     private val kept = Collections.newSetFromMap(IdentityHashMap<JsonElement, Boolean>()).apply { addAll(logical) }
+    private val index by lazy { CodeModeHistoryIndex(logical, codec) }
+
+    /** The reasoning and prose of every script's copy, which the client may hold. */
+    private val copies by lazy { records.flatMap(scripts::continuity) }
+    private val reasoned by lazy { copies.mapNotNullTo(HashSet(), scripts::reasoning) }
+    private val said by lazy { copies.mapNotNullTo(HashSet(), scripts::text) }
 
     fun at(record: CodeModeRecord, replay: List<JsonElement>, floor: CodeModeFloor?, ceiling: Int?): CodeModePlaced? {
         val after = after(record)
         val low = floor?.next ?: 0
-        val high = ceiling?.takeIf { it >= low } ?: conversation.size
+        val high = ceiling?.coerceAtLeast(low) ?: conversation.size
         if (replay.isEmpty()) return bare(after, floor, high)
-        return joined(replay, floor) ?: copied(replay, after, floor, low..high)
+        // The next script starts at the ceiling, so a copy that starts there is its.
+        return joined(replay, floor) ?: copied(replay, after, floor, low until high)
             ?: after?.takeIf { it == conversation.size && it == high }?.let { CodeModePlaced(it, CodeModeFloor(it)) }
     }
 
     /** Where the client's items the baseline anchor names end, or null when it names none the client holds. */
     private fun after(record: CodeModeRecord): Int? =
-        codec.baselineBoundary(logical, record)?.takeIf { it > 0 }?.let { boundary ->
-            conversation.indexOfFirst { it === logical[boundary - 1] }.takeIf { it >= 0 }?.plus(1)
-        }
+        codec.baselineBoundary(logical, record)?.let { counted -> held(record, counted) }?.takeIf { it > 0 }
+            ?.let { boundary -> conversation.indexOfFirst { it === logical[boundary - 1] }.takeIf { it >= 0 }?.plus(1) }
+
+    /** Where the anchor's count of [record]'s history ends among the client's items, given it ends at [counted] when
+     *  every item it counts is there. The anchor names the last item GPT was sent that no script made, then counts
+     *  the items scripts made after it: their copies, which the client may hold, and the exec calls and outputs splice
+     *  made, which it never does. So the count stops at the first of the client's items that is no script's copy. */
+    private fun held(record: CodeModeRecord, counted: Int): Int {
+        val anchor = record.replayAnchors?.baseline?.takeIf { it.logicalTail > 0 }
+            ?.takeIf { record.origin.baseline.metadataVersion == CODE_MODE_METADATA_VERSION }
+        val prior = anchor?.let { index.resolve(it.copy(logicalTail = 0)) } ?: return counted
+        return (prior until counted).firstOrNull { !copied(logical[it]) } ?: counted
+    }
+
+    /** Whether [item] is in some script's copy: its reasoning, or prose it said. */
+    private fun copied(item: JsonElement): Boolean =
+        scripts.reasoning(item)?.let { it in reasoned } ?: (scripts.text(item)?.let { it in said } == true)
 
     /** The copy of [replay] in the rest of the message the script before it ends inside, if it is there. */
     private fun joined(replay: List<JsonElement>, floor: CodeModeFloor?): CodeModePlaced? {
@@ -149,7 +202,7 @@ internal class CodeModeLegacyStart(
 
     /** The place of a script whose copy [echo] ends, among the scripts placed at [at]. A copy that ends inside a
      *  message leaves the rest of it to the next script, which then goes with them. */
-    private fun placed(at: Int, echo: CodeModeEcho): CodeModePlaced {
+    fun placed(at: Int, echo: CodeModeEcho): CodeModePlaced {
         val joined = CodeModeJoin(echo.end, echo.split, at).takeIf { echo.split > 0 }
         return CodeModePlaced(at, CodeModeFloor(if (joined == null) echo.end else echo.end + 1, joined))
     }

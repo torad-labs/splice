@@ -68,6 +68,28 @@ class ResponsesNativeWaitTest {
     }
 
     @Test
+    fun `completed native items retain arrival order when stream slots finish out of order`() = runTest {
+        val second = JsonObject(
+            wait + buildJsonObject {
+                put("id", "second-wait-item")
+                put("call_id", "second-wait-call")
+            },
+        )
+        val result = ResponsesStreamTranslator(context(true)).driveTurn(
+            flow {
+                emit(event("response.output_item.added", wait, 0))
+                emit(event("response.output_item.added", second, 1))
+                emit(event("response.output_item.done", second, 1))
+                emit(event("response.output_item.done", wait, 0))
+                emit(terminal(listOf(wait, second)))
+            },
+            RecordingSink(),
+        ) as TurnOutcome.Success
+        assertEquals(listOf("second-wait-call", "wait-call"), result.handoffs.customCalls.map { it.callId })
+        assertEquals(listOf(second, wait), result.handoffs.nativeOutput)
+    }
+
+    @Test
     fun `sparse terminal retains encrypted reasoning and exact final message`() = runTest {
         val reasoning = buildJsonObject {
             put("type", "reasoning")

@@ -27,15 +27,10 @@ internal class ResponsesCompletedOutput {
 
     fun snapshot(terminal: JsonObject?): List<JsonObject> {
         val output = (terminal?.get("output") as? JsonArray)?.filterIsInstance<JsonObject>().orEmpty()
-        val observed = items.sortedBy { it.index }.map { it.value }
+        // Native Core records OutputItemDone as it arrives; a stream slot can finish after a later slot.
+        val observed = items.map { it.value }
         if (output.isEmpty()) return observed
-        val identities = observed.map(::identity)
-        val retained = output.filter { identity(it) in identities }
-        // A complete terminal is allowed to fill missing items only while preserving observed order.
-        if (retained.map(::identity) == identities && identities.none { it == null }) {
-            val completed = observed.associateBy(::identity)
-            return output.map { completed[identity(it)] ?: it }
-        }
+        // Terminal-only fallbacks append; an indexed terminal array cannot move completed history.
         return observed + output.filter { identity(it)?.let(positions::containsKey) != true && it !in observed }
     }
 

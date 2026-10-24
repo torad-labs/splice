@@ -150,6 +150,8 @@ internal class StatementGatewayRuntime(
                     when (step) {
                         is CodeModeStep.Calls -> calls.addAll(step.calls)
                         is CodeModeStep.WaitingForResults -> Unit
+                        is CodeModeStep.Notified -> Unit
+                        is CodeModeStep.Yielded -> Unit
                         is CodeModeStep.Completed -> completed.complete(step)
                     }
                 }

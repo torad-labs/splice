@@ -28,10 +28,14 @@ import splice.core.turn.ReasoningDisplay
 import splice.core.turn.TurnOutcome
 import splice.core.turn.WatchdogBudget
 import splice.core.wire.ContentBlock
+import splice.core.wire.DocumentBlock
+import splice.core.wire.ImageBlock
 import splice.core.wire.RedactedThinkingBlock
 import splice.core.wire.TextBlock
 import splice.core.wire.ThinkingBlock
+import splice.core.wire.ToolResultBlock
 import splice.core.wire.ToolUseBlock
+import splice.core.wire.UnknownBlock
 import splice.dialect.responses.ReasoningSettings
 import splice.dialect.responses.ResponsesLiteQuirks
 import splice.dialect.responses.ResponsesProvider
@@ -169,6 +173,58 @@ class ReasoningReplayRequestRegressionTest(@param:TempDir private val state: Pat
     }
 
     @Test
+    fun `changed text under the same tool call id does not replay later reasoning`() = runTest {
+        changedResultDropsReasoning(result("call_1", "first contents"), result("call_1", "different contents"), "text")
+    }
+
+    @Test
+    fun `changed pixels under the same tool call id and caption do not replay later reasoning`() = runTest {
+        changedResultDropsReasoning(imageResult("AA=="), imageResult("BB=="), "image")
+    }
+
+    @Test
+    fun `clearing one result does not excuse changing another result in the same history`() = runTest {
+        val provider = ReplayRequestProvider(state, cache = true)
+        drive(provider, request(opening), reasoning("rs_initial") + call("call_1"))
+        val first = "$opening,${assistant(tool("call_1"))},${result("call_1", "first contents")}"
+        drive(provider, request(first), call("call_2"))
+        val second = "$first,${assistant(tool("call_2"))},${result("call_2", "second contents")}"
+        drive(provider, request(second), reasoning("rs_after_results") + prose("Checked."))
+        val tail = ",${assistant(text("Checked."))}," +
+            """{"role":"user","content":"Continue the inspection."}"""
+        val expected = listOf("rs_initial", "rs_after_results")
+        assertEquals(expected, reasoningIds(input(provider, request(second + tail))))
+        val cleared = "$opening,${assistant(tool("call_1"))}," +
+            result("call_1", "[Old tool result content cleared]")
+        val clearedOnly = "$cleared,${assistant(tool("call_2"))},${result("call_2", "second contents")}"
+        assertEquals(expected, reasoningIds(input(provider, request(clearedOnly + tail))))
+        val changed = "$cleared,${assistant(tool("call_2"))},${result("call_2", "different second contents")}"
+        assertEquals(
+            listOf("rs_initial"),
+            reasoningIds(input(provider, request(changed + tail))),
+            "one explicit clearing marker cannot validate another tool result's changed payload",
+        )
+    }
+
+    private suspend fun changedResultDropsReasoning(original: String, changed: String, scope: String) {
+        val provider = ReplayRequestProvider(state.resolve(scope), cache = true)
+        drive(provider, request(opening), reasoning("rs_initial") + call("call_1"))
+        val prefix = "$opening,${assistant(tool("call_1"))},"
+        drive(provider, request(prefix + original), reasoning("rs_after_result") + prose("Checked."))
+        val tail = ",${assistant(text("Checked."))}," +
+            """{"role":"user","content":"Continue the inspection."}"""
+        assertEquals(
+            listOf("rs_initial", "rs_after_result"),
+            reasoningIds(input(provider, request(prefix + original + tail))),
+        )
+        assertEquals(
+            listOf("rs_initial"),
+            reasoningIds(input(provider, request(prefix + changed + tail))),
+            "a different non-cleared result payload is a different history even when the call id is unchanged",
+        )
+    }
+
+    @Test
     fun `persisted full-result positions replay on upgrade and survive later clearing after a verified lookup`() {
         val firstHistory = "$opening,${assistant(tool("call_1"))},${result("call_1", "original file contents")}"
         val prefix = request("$firstHistory,${assistant(text("Reviewed. "))}")
@@ -234,9 +290,14 @@ class ReasoningReplayRequestRegressionTest(@param:TempDir private val state: Pat
                 when (block) {
                     is TextBlock -> history.text(message.role, block.text)
                     is ThinkingBlock, is RedactedThinkingBlock -> Unit
-                    else -> history.block(
+                    is ToolUseBlock -> history.block(
                         message.role,
-                        if (block is ToolUseBlock) "tool_use" else "content",
+                        "tool_use",
+                        Json.encodeToJsonElement(ContentBlock.serializer(), block),
+                    )
+                    is ImageBlock, is DocumentBlock, is ToolResultBlock, is UnknownBlock -> history.block(
+                        message.role,
+                        "content",
                         Json.encodeToJsonElement(ContentBlock.serializer(), block),
                     )
                 }
@@ -297,5 +358,11 @@ class ReasoningReplayRequestRegressionTest(@param:TempDir private val state: Pat
     private fun assistant(blocks: String): String = """{"role":"assistant","content":[$blocks]}"""
     private fun result(id: String, value: String): String =
         """{"role":"user","content":[{"type":"tool_result","tool_use_id":"$id","content":"$value"}]}"""
+
+    private fun imageResult(data: String): String =
+        """{"role":"user","content":[{"type":"tool_result","tool_use_id":"call_1","content":[
+            {"type":"text","text":"same caption"},
+            {"type":"image","source":{"type":"base64","media_type":"image/png","data":"$data"}}]}]}"""
+
     private fun event(value: String): JsonObject = Json.parseToJsonElement(value).jsonObject
 }

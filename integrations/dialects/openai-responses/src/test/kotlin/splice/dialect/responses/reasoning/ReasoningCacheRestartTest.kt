@@ -300,7 +300,7 @@ class ReasoningPositionRestartTest(@param:TempDir private val state: Path) {
         val initial = RestartProbe(state, replay = true).buildTurn(opening, false, "session")
         val scope = initial.meta.scope
         val key = checkNotNull(ReasoningCachePolicy().conversationKey(scope.sessionId, scope.reasoningStorageKey))
-        val position = scope.reasoningHistory.key
+        val position = checkNotNull(scope.reasoningHistory).key
         // f940 wrote two records per item. Its 8192-entry bound is full here, although only 4096 items exist.
         val retained = (0 until 4096).flatMap { number ->
             val id = "rs_legacy_$number"

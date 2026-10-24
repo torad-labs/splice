@@ -4,6 +4,8 @@ package splice.dialect.responses.reasoning
 internal class ReasoningCachePositions {
     private val indexes = ReasoningPositionIndex()
 
+    fun metadataBytes(index: String): Long = indexes.metadataBytes(index)
+
     /** Reconcile installed live/terminal duplicates before they consume restore budgets. */
     fun normalized(rounds: List<StoredRound>): List<StoredRound> {
         val keyed = linkedMapOf<String, StoredRound>()

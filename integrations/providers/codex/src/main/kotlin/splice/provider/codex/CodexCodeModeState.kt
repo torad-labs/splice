@@ -114,15 +114,13 @@ internal data class CodeModeOrigin(
 )
 
 /** What the client's input looked like when the record was created: the whole input and its logical (client-visible)
- *  part, each counted and digested, and the metadata version that wrote them. The counts are of the request GPT was
- *  sent; [client] is where the script started in the client's own history, null for a record saved before it. */
+ *  part, each counted and digested, and the metadata version that wrote them. */
 internal data class CodeModeBaseline(
     val inputCount: Int,
     val inputDigest: String,
     val logicalCount: Int,
     val logicalDigest: String,
     val metadataVersion: Int,
-    val client: CodeModeClientStart? = null,
 )
 
 /** Where a script started in the client's own history: the [count] of items, preamble aside, the client's request

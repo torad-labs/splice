@@ -91,9 +91,11 @@ internal class CodeModeUpstreamHistory(private val json: Json) {
         }
     }
 
-    /** Where a script started now in [context]'s client history: after all of it, preamble aside. */
+    /** Where a script started now in [context]'s client history: after all of it, preamble aside. A recovery posts
+     *  the torn round's partial and a private marker after it, which the client never holds: its script started after
+     *  the request the client sent. */
     fun clientStart(context: CodeModeRunContext): CodeModeClientStart? {
-        val client = context.client ?: return null
+        val client = context.recovery?.baseline ?: context.client ?: return null
         val input = client.request?.second ?: return null
         return CodeModeClientPrefix(input.subList(preambleCount(input), input.size), client.digests).start()
     }

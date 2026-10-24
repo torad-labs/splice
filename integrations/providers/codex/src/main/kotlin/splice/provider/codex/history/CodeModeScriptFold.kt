@@ -15,6 +15,8 @@ import splice.provider.codex.CodeModeCallReplay
 import splice.provider.codex.CodeModePhase
 import splice.provider.codex.CodeModeRecord
 import splice.provider.codex.CodexCodeModeHistoryCodec
+import java.util.Collections
+import java.util.IdentityHashMap
 
 /**
  * Where a finished script that made no client call goes, since nothing of it is in the client's history but the
@@ -45,11 +47,12 @@ internal class CodeModeScriptPlacements(private val codec: CodexCodeModeHistoryC
         digests: InputItemDigests,
     ): List<CodeModeQuiet> {
         val prefix = CodeModeClientPrefix(conversation, digests)
-        val legacy by lazy { CodeModeLegacyStart(codec, input, conversation) }
+        val legacy by lazy { CodeModeLegacyStart(codec, this, input, conversation) }
         return records.filter(::quiet).mapNotNull { record ->
-            val start = record.origin.baseline.client
-            val at = if (start == null) legacy.at(record) else prefix.at(start)
-            at?.let { CodeModeQuiet(record, continuity(record), it) }
+            val replay = continuity(record)
+            val start = record.replayAnchors?.client
+            val at = if (start == null) legacy.at(record, replay) else prefix.at(start)
+            at?.let { CodeModeQuiet(record, replay, it) }
         }.sortedBy(CodeModeQuiet::at)
     }
 
@@ -110,18 +113,6 @@ internal class CodeModeScriptPlacements(private val codec: CodexCodeModeHistoryC
         return CodeModeEcho(end, split)
     }
 
-    /** The echo of [continuity] at [from] in [items], or past the reasoning the client replays there before it,
-     *  which came with the history the script was measured on; never past any other item. */
-    fun echoFrom(items: List<JsonElement>, from: Int, continuity: List<JsonElement>): CodeModeEcho? {
-        var at = from
-        while (true) {
-            echo(items, at, continuity)?.let { return it }
-            val item = items.getOrNull(at) as? JsonObject
-            if (codec.string(item, CODE_MODE_FIELD_TYPE) != TYPE_REASONING) return null
-            at++
-        }
-    }
-
     /** [items] with the message [echo] ends inside cut in two where it ends, each part keeping the message's other
      *  fields: the script's preface, then what GPT said after it. */
     fun cut(items: List<JsonElement>, echo: CodeModeEcho): List<JsonElement> {
@@ -164,17 +155,23 @@ internal class CodeModeScriptPlacements(private val codec: CodexCodeModeHistoryC
 internal data class CodeModeQuiet(val record: CodeModeRecord, val replay: List<JsonElement>, val at: Int)
 
 /** Where a script saved before records kept their client start started in the client's items: after the item its
- *  baseline anchor names, which counts what GPT was sent, so it can name a later item than the one it ran after. */
+ *  baseline anchor names, which counts what GPT was sent, so it can name a later item than the one it ran after. The
+ *  anchor counts only logical items, so the script's echo may start past the reasoning the client replays there. */
 private class CodeModeLegacyStart(
     private val codec: CodexCodeModeHistoryCodec,
+    private val scripts: CodeModeScriptPlacements,
     input: List<JsonElement>,
     private val conversation: List<JsonElement>,
 ) {
     private val logical = codec.conversation(codec.projection.project(JsonArray(input))).body.logicalItems
+    private val kept = Collections.newSetFromMap(IdentityHashMap<JsonElement, Boolean>()).apply { addAll(logical) }
 
-    fun at(record: CodeModeRecord): Int? {
+    fun at(record: CodeModeRecord, replay: List<JsonElement>): Int? {
         val boundary = codec.baselineBoundary(logical, record)?.takeIf { it > 0 } ?: return null
-        return conversation.indexOfFirst { it === logical[boundary - 1] }.takeIf { it >= 0 }?.plus(1)
+        val after = conversation.indexOfFirst { it === logical[boundary - 1] }.takeIf { it >= 0 }?.plus(1)
+            ?: return null
+        val starts = (after..conversation.size).takeWhile { it == after || conversation[it - 1] !in kept }
+        return starts.firstOrNull { scripts.echo(conversation, it, replay) != null } ?: after
     }
 }
 
@@ -188,8 +185,9 @@ internal fun interface CodeModeScriptDue {
 }
 
 /** One pass over the client's new items, folding each finished script's calls into its exec call and output, and
- *  sending each [quiet] script right after the history it was measured on and the reasoning and preface the client
- *  replays for it there. */
+ *  sending each [quiet] script right after the history it ran on, its reasoning and preface as GPT gave them in place
+ *  of the copy the client replays there: the bytes GPT was sent when the script finished, so a history folded again
+ *  (a restart, a reanchor) starts with what GPT was last sent. */
 internal class CodeModeScriptFold(
     private val codec: CodexCodeModeHistoryCodec,
     private val owners: Map<String, CodeModeRecord>,
@@ -200,22 +198,23 @@ internal class CodeModeScriptFold(
     private val between = mutableListOf<JsonElement>()
     private val opened = mutableSetOf<String>()
     private val followUps = mutableSetOf<Int>()
+    private val echoed = mutableSetOf<Int>()
     private val placements = HashMap<Int, MutableList<CodeModeRecord>>()
     private var open: CodeModeRecord? = null
 
     fun fold(client: List<JsonElement>): List<JsonElement> {
         val items = placed(client)
-        placements[-1]?.forEach { out += scripts.placement(it) }
+        placements[-1]?.forEach { out += scripts.continuity(it) + scripts.placement(it) }
         val last = HashMap<String, Int>()
         items.forEachIndexed { index, item -> owner(item)?.let { last[it.id] = index } }
         items.forEachIndexed { index, item ->
             val record = owner(item)
             when {
-                index in followUps -> Unit
+                index in followUps || index in echoed -> Unit
                 record != null -> callback(items, index, record, last[record.id] == index)
                 else -> into() += item
             }
-            placements[index]?.forEach { into() += scripts.placement(it) }
+            placements[index]?.forEach { into() += scripts.continuity(it) + scripts.placement(it) }
         }
         return out + between
     }
@@ -234,7 +233,7 @@ internal class CodeModeScriptFold(
                 start = script.at
                 from = script.at + added
             }
-            val echo = scripts.echoFrom(cut, from, script.replay) ?: return@forEach
+            val echo = scripts.echo(cut, from, script.replay) ?: return@forEach
             if (echo.split != 0) {
                 cut = scripts.cut(cut, echo)
                 added++
@@ -242,6 +241,7 @@ internal class CodeModeScriptFold(
                 moved.forEach { placements[it + 1] = checkNotNull(placements.remove(it)) }
             }
             val lastItem = if (echo.split == 0) echo.end - 1 else echo.end
+            echoed += from..lastItem
             placements.getOrPut(lastItem) { mutableListOf() } += script.record
             from = lastItem + 1
         }
@@ -278,6 +278,5 @@ internal class CodeModeScriptFold(
 
 private const val TYPE_CALL = "function_call"
 private const val TYPE_RESULT = "function_call_output"
-private const val TYPE_REASONING = "reasoning"
 private const val ECHO_ROLE = "assistant"
 private const val ECHO_TEXT = "content"

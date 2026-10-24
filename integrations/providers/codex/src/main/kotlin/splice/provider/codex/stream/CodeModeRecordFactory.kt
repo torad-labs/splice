@@ -56,13 +56,12 @@ internal class CodeModeRecordFactory(private val config: CodeModeBridgeConfig, p
                     logicalCount = boundary.logicalCount,
                     logicalDigest = boundary.logicalDigest,
                     metadataVersion = CODE_MODE_METADATA_VERSION,
-                    client = client,
                 ),
             ),
             progress = CodeModeProgress(updatedAt = config.clock.millis(), lastDigest = context.digest),
             carry = CodeModeNativeContinuity(native.segments, continuity.logicalItems, continuity.replayItems),
         ).also {
-            it.replayAnchors = boundary.replayAnchors
+            it.replayAnchors = boundary.replayAnchors?.copy(client = client)
             it.sessionId = context.turn.sessionId
             it.conversationId = CodeModeTurnIdentity().conversationId(context.turn)
             it.nativeBaseId = native.parent?.id

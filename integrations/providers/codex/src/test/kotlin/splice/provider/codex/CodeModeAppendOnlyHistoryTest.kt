@@ -7,9 +7,13 @@
 // a preface said before a script, which the client may join in one message with the prose GPT says after it when
 // nothing came between them (a reanchored round streams into the text block the client already had), and plain
 // answers followed by a new user message. Prefaces repeat, and a plain answer may open with the same words, so a
-// script is told from the prose around it only by where it ran. A rewound conversation cuts the client's history back to an
-// earlier user message and edits it: that falls back to the client's history once and then only extends again, and
-// GPT is still shown every script that ran before the cut, in the order it ran, whatever the client kept of it.
+// script is told from the prose around it only by where it ran. After a running script's results the client may
+// add a system notice, which the script runs on past, or the user may steer, which stops the script with the
+// results it was given; either reaches GPT after the script's output. Between two requests splice may restart on
+// the state it saved, as an install does, and GPT's next post still extends the last. A rewound conversation cuts the client's
+// history back to an earlier user message and edits it: that falls back to the client's history once and then only
+// extends again, and GPT is still shown every script that ran before the cut, in the order it ran, whatever the
+// client kept of it.
 package splice.provider.codex
 
 import kotlinx.coroutines.test.runTest
@@ -45,6 +49,8 @@ private const val CALL_ID = "call_id"
 private const val EXEC_CALL = "custom_tool_call"
 private const val EXEC_OUTPUT = "custom_tool_call_output"
 private const val NEXT = "Next "
+private const val STEER = "Steer "
+private const val NOTICE = "Notice "
 private val THROWN_AWAY = listOf("abandoned record", "history rewrite skipped")
 
 class CodeModeAppendOnlyHistoryTest : CodeModeBridgeTestSupport() {
@@ -64,10 +70,13 @@ class CodeModeAppendOnlyHistoryTest : CodeModeBridgeTestSupport() {
     /** One generated conversation, driven request by request the way Claude Code drives splice. */
     private inner class Conversation(private val seed: Int, private val rewinds: Boolean) {
         private val random = Random(seed)
+
+        /** What the client adds and when splice restarts, drawn apart so a seed's conversation stays the same. */
+        private val extras = Random(seed.inv())
         private val scripts = ArrayDeque<ArrayDeque<CodeModeStep>>()
         private val stepCounts = mutableListOf<Int>()
         private val runtime = QueuedRuntime(scripts)
-        private val manager = bridge(runtime, retention = CodeModeRetention(records = 64))
+        private var manager = bridge(runtime, retention = CodeModeRetention(records = 64))
         private val logStart = logLines.size
         private val client = mutableListOf(DEVELOPER, Wire.user("Task $seed."))
 
@@ -75,6 +84,11 @@ class CodeModeAppendOnlyHistoryTest : CodeModeBridgeTestSupport() {
          *  last of its reasoning and preface, or the item before it when it gave none. */
         private val outers = mutableListOf<String>()
         private val ranAfter = HashMap<String, Int>()
+
+        /** Each script the user steered, with the results it was given, which its exec output must carry. */
+        private val steered = HashMap<String, List<String>>()
+        private val stopped = mutableSetOf<Int>()
+        private var interjections = 0
         private val upstreamTurns = if (rewinds) 4 + random.nextInt(6) else 2 + random.nextInt(7)
 
         /** The post GPT answers in plain text and after which the client rewinds, or -1. */
@@ -95,7 +109,7 @@ class CodeModeAppendOnlyHistoryTest : CodeModeBridgeTestSupport() {
                 request()?.let { return it }
             }
             val thrown = logLines.drop(logStart).filter { line -> THROWN_AWAY.any { it in line } }
-            val short = runtime.cells.indices.filter { runtime.cells[it].advances < stepCounts[it] }
+            val short = runtime.cells.indices.filter { it !in stopped && runtime.cells[it].advances < stepCounts[it] }
             return when {
                 thrown.isNotEmpty() -> "seed $seed threw a script's history away: ${thrown.first().take(240)}"
                 short.isNotEmpty() -> "seed $seed: scripts $short never got all their results"
@@ -118,13 +132,25 @@ class CodeModeAppendOnlyHistoryTest : CodeModeBridgeTestSupport() {
             spoken = client.size
             val broke = exchanges.withIndex()
                 .firstNotNullOfOrNull { (index, exchange) -> post(first + index, exchange) }
-            results = sink.tools.map { CodeModeResult(it.id, "out-${it.id}") }
-            client += sink.tools.map { Wire.functionCall(it.id, it.name) }
-            client += results.map { Wire.output(it.id, it.output) }
-            val rewindNow = rewinds && !rewound && posts > rewindAt && sink.tools.isEmpty()
-            if (rewindNow) rewind()
+            if (broke != null) return broke
+            afterwards(sink.tools)
             val stalled = exchanges.isEmpty() && sink.tools.isEmpty()
-            return broke ?: "seed $seed: request $requests went nowhere".takeIf { stalled }
+            return "seed $seed: request $requests went nowhere".takeIf { stalled }
+        }
+
+        /** What follows splice's answer before the client's next request: the client runs the [tools] it was given
+         *  and may add a notice or steer; with none to run it may rewind, and splice may restart. */
+        private fun afterwards(tools: List<SeenTool>) {
+            results = tools.map { CodeModeResult(it.id, "out-${it.id}") }
+            client += tools.map { Wire.functionCall(it.id, it.name) }
+            client += results.map { Wire.output(it.id, it.output) }
+            if (tools.isNotEmpty()) {
+                interject()
+                return
+            }
+            val rewindNow = rewinds && !rewound && posts > rewindAt
+            if (rewindNow) rewind()
+            if (extras.nextInt(4) == 0) restart()
         }
 
         /** Checks one post against the one before it, then gives the client GPT's answer to it. */
@@ -132,6 +158,7 @@ class CodeModeAppendOnlyHistoryTest : CodeModeBridgeTestSupport() {
             val (sent, answered) = exchange
             val broke = previous?.let { prefixBreak(seed, post, it, sent) }
                 ?: codexShape(seed, post, sent, outers)
+                ?: unstopped(seed, post, sent, steered)
             if (broke != null) return broke
             previous = sent
             client += answered.reasoning.map(Wire::reasoning)
@@ -154,6 +181,27 @@ class CodeModeAppendOnlyHistoryTest : CodeModeBridgeTestSupport() {
             } else {
                 client[client.lastIndex] = Wire.assistant(before.text("content") + text)
             }
+        }
+
+        /** What the client may add after a running script's results: a system notice, or the user steering, which
+         *  stops the script with the results it was given. Either comes before GPT's next post, which may come after
+         *  more of the script's steps, so each is numbered by that post and by how many came before it. */
+        private fun interject() {
+            when (extras.nextInt(8)) {
+                0 -> client += Wire.notice("$NOTICE$posts-${interjections++}.")
+                1 -> {
+                    steered[outers.last()] = results.map(CodeModeResult::output)
+                    stopped += stepCounts.lastIndex
+                    client += Wire.user("$STEER$posts-${interjections++}.")
+                }
+            }
+        }
+
+        /** Stops splice and starts it again on the state it saved, as an install does, with no script running: what
+         *  it kept in memory of GPT's posts is gone, and the next post still extends the last one. */
+        private fun restart() {
+            manager.onHeadStop()
+            manager = bridge(runtime, retention = CodeModeRetention(records = 64))
         }
 
         /** Cuts the client's history back to one of its user messages after the first and edits it. GPT's next post
@@ -252,20 +300,36 @@ class CodeModeAppendOnlyHistoryTest : CodeModeBridgeTestSupport() {
         return "the output of $late comes before its call"
     }
 
-    /** The first exec call or user message GPT is sent after one from a later post, or null when the posts they
-     *  came from only increase: a script ran after every message the client sent before it and before every one
-     *  it sent after. */
+    /** The first exec call or client message GPT is sent after one from later in the conversation, or null when
+     *  they only go forward: a script ran after every message the client sent before it and before every one it
+     *  sent after. Post n's exec call stands at 2n; a user message after post n's plain answer at 2n + 1; a
+     *  notice or a steer the client added before post n at 2n - 1, in the order the client added them. */
     private fun misplaced(items: List<JsonObject>): String? {
-        val posts = items.mapNotNull { item ->
-            val said = item.text("content").takeIf { item.text("role") == "user" && it.startsWith(NEXT) }
-            when {
-                item.text(TYPE) == EXEC_CALL -> item.text(CALL_ID).substringAfterLast('-').toInt() to item.text(CALL_ID)
-                said != null -> said.removePrefix(NEXT).removeSuffix(".").toInt() to said
-                else -> null
+        val ranks = items.mapNotNull { item ->
+            val said = item.text("content")
+            fun at(prefix: String) = said.takeIf { it.startsWith(prefix) }?.removePrefix(prefix)?.removeSuffix(".")
+            val added = at(STEER) ?: at(NOTICE)
+            val rank = when {
+                item.text(TYPE) == EXEC_CALL -> 2 * item.text(CALL_ID).substringAfterLast('-').toInt() to 0
+                added != null -> 2 * added.substringBefore('-').toInt() - 1 to added.substringAfter('-').toInt()
+                else -> at(NEXT)?.let { 2 * it.toInt() + 1 to 0 }
             }
+            rank?.let { it to (item.text(CALL_ID).ifEmpty { said }) }
         }
-        val (before, after) = posts.zipWithNext().firstOrNull { (a, b) -> b.first <= a.first } ?: return null
+        val order = compareBy<Pair<Int, Int>>({ it.first }, { it.second })
+        val (before, after) = ranks.zipWithNext().firstOrNull { (a, b) -> order.compare(b.first, a.first) <= 0 }
+            ?: return null
         return "${after.second} was sent after ${before.second}"
+    }
+
+    /** The first steered script whose exec output, once GPT is sent it, lacks a result the script was given. */
+    private fun unstopped(seed: Int, post: Int, sent: List<JsonElement>, steered: Map<String, List<String>>): String? {
+        val outputs = sent.map { it.jsonObject }.filter { it.text(TYPE) == EXEC_OUTPUT }
+            .associate { it.text(CALL_ID) to it.text("output") }
+        return steered.firstNotNullOfOrNull { (outer, given) ->
+            val output = outputs[outer] ?: return@firstNotNullOfOrNull null
+            given.firstOrNull { it !in output }?.let { "seed $seed, post $post: $outer stopped without $it" }
+        }
     }
 
     private fun ids(items: List<JsonObject>, type: String) =
@@ -295,6 +359,9 @@ class CodeModeAppendOnlyHistoryTest : CodeModeBridgeTestSupport() {
         fun user(text: String) = """{"role":"user","content":"$text"}"""
 
         fun assistant(text: String) = """{"role":"assistant","content":"$text"}"""
+
+        /** A peer's message, a task notification or hook output, as a lite turn sends it. */
+        fun notice(text: String) = """{"type":"message","role":"developer","content":"$text"}"""
 
         fun reasoning(id: String) = """{"type":"reasoning","id":"$id","summary":[],"encrypted_content":"e-$id"}"""
 

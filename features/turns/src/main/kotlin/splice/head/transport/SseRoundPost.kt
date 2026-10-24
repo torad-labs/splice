@@ -12,7 +12,6 @@ import splice.core.turn.noRequestUsage
 import splice.head.admission.TurnQuota
 import splice.head.usage.TurnProviderAnswers
 import splice.head.usage.UsageStore
-import splice.head.wire.RetryProgress
 import splice.upstream.Provider
 import splice.upstream.RetryNotice
 import splice.upstream.RoundResult

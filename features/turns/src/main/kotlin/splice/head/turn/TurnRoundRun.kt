@@ -11,8 +11,8 @@ import splice.head.round.RoundInterception
 import splice.head.round.RoundRunners
 import splice.head.round.RoundStrategy
 import splice.head.transport.IndependentSourcePost
+import splice.head.transport.RetryProgress
 import splice.head.transport.SseRoundDriver
-import splice.head.wire.RetryProgress
 import splice.head.wire.WireTap
 import splice.upstream.Provider
 import splice.upstream.RetryBackoff

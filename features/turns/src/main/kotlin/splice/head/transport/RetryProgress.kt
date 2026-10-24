@@ -1,6 +1,8 @@
-package splice.head.wire
+package splice.head.transport
 
 import splice.head.pipeline.FailureRenderer
+import splice.head.wire.ProgressLine
+import splice.head.wire.TurnTerminal
 import splice.upstream.RetryNotice
 
 /** The retry's reason reaches the client as signed proxy status, never through the model's write port. */

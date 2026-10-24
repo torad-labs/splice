@@ -102,6 +102,8 @@ internal class CodeModeCellEncoding(
 
         // The scalar kinds CodeModeRecordSnapshot reaches. Any other kind falls through to kotlinx's encodeValue,
         // which throws SerializationException, so an unsupported field fails loudly instead of encoding wrong.
+        override fun encodeBoolean(value: Boolean) = scalar(value, JsonPrimitive(value))
+
         override fun encodeInt(value: Int) = scalar(value, JsonPrimitive(value))
 
         override fun encodeLong(value: Long) = scalar(value, JsonPrimitive(value))

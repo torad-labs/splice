@@ -3,7 +3,7 @@
 // once instead of beside the emitter and both post shapes, and the runners are built here.
 package splice.head.round
 
-import splice.core.util.LogSink
+import splice.core.perf.TurnPerf
 import splice.upstream.ReanchorPolicy
 import splice.upstream.RetryBackoff
 import splice.upstream.RetryNotice
@@ -16,7 +16,7 @@ import splice.upstream.transport.UpstreamEnding
  *  read, [finish] for the one terminal outcome, and the tool-search policy when the head has one. */
 internal class RoundRunners(
     private val key: String,
-    log: LogSink,
+    log: RetryNotice,
     private val signals: RunnerSignals,
     private val finish: FinishTurn,
     /** The head's configured retry curve: the fold and re-anchor runners sleep their restarts on it, as the
@@ -24,11 +24,15 @@ internal class RoundRunners(
     private val backoff: RetryBackoff,
     private val toolSearch: ToolSearchPolicy? = null,
 ) {
-    private val notice = RetryNotice { log(it) }
+    private val notice = log
     private val rounds = RoundSplice()
 
     /** Whether the head searches tools, which keeps a turn off the single-round path. */
     fun searchesTools(): Boolean = toolSearch != null
+
+    /** The one empty-answer recovery uses the same client-facing notice as the other runners. */
+    fun emptyRetry(perf: TurnPerf?, reanchor: ReanchorPolicy?): EmptyAnswerRetry =
+        EmptyAnswerRetry(perf, reanchor, notice)
 
     /** The runner for a fold-eligible turn. */
     fun fold(emitter: WireSink, post: PostRoundToSink, reanchor: ReanchorPolicy?): FoldRunner =

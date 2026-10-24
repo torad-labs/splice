@@ -33,8 +33,13 @@ internal class FoldRounds(
         rounds.withFailureSalvage(outcome, summed)
 
     /** The fold re-anchor line: round [attempt] (zero-based) died mid-stream and is being retried. */
-    fun noteReanchor(attempt: Int, failure: TurnOutcome.Failure) =
+    suspend fun noteReanchor(attempt: Int, failure: TurnOutcome.Failure) {
         log("[$key] fold re-anchor ${attempt + 1}: ${failure.type.wireName} mid-round; retrying\n")
+        log.retry(
+            "[$key] fold re-anchor ${attempt + 1}: ${failure.type.wireName} mid-round; retrying",
+            failure.message,
+        )
+    }
 
     /** Health for the rounds this fold absorbed, once the turn ends on something other than a failure. */
     fun reportAbsorbed(failures: List<TurnOutcome.Failure>) = failures.forEach(signals.onRoundFailure::invoke)

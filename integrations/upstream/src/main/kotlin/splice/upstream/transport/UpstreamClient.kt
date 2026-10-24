@@ -201,6 +201,7 @@ public class UpstreamClient(
         auth: AttemptCredentials,
     ): LoopStep<T> {
         val t0 = state.t0
+        state.announce(ctx)
         ctx.markAttempt()
         val recorder = state.recorderFor(ctx, body, clock)
         var streamHandedOff = false
@@ -286,6 +287,12 @@ public class UpstreamClient(
         if (!budget.backoffFits(ctx, t0, plannedDelayMs)) return state.gaveUp(ctx, state.rules)
         ctx.timedBackoff { pacing.pause(state.attempt, plan.minDelayMs) }
         state.pendingRetry = RetryKind.ORDINARY
+        state.lastErr?.let { failure ->
+            state.pendingNotice = RetryMessage(
+                "retrying upstream ${failure.status}, attempt ${state.attempt + 2}/${state.maxRetries}",
+                failure.text,
+            )
+        }
         state.attempt += 1
         return LoopStep.Continue
     }
@@ -311,7 +318,13 @@ public class UpstreamClient(
         state.refreshedOnce = plan.refreshedOnce
         state.countWait(ctx, outcome, plan)
         return when (plan.decision) {
-            RetryDecision.RETRY -> LoopStep.Continue // refresh succeeded — no attempt spent
+            RetryDecision.RETRY -> {
+                state.pendingNotice = RetryMessage(
+                    "credentials refreshed after upstream ${outcome.status}, retrying",
+                    outcome.text,
+                )
+                LoopStep.Continue // refresh succeeded; no attempt spent
+            }
             RetryDecision.BACKOFF -> applyBackoff(ctx, plan, state, t0)
             RetryDecision.GIVE_UP -> state.gaveUp(ctx, state.rules)
         }

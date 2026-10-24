@@ -21,6 +21,7 @@ dependencies {
         // the advisories leave the graph instead of chasing it.
         exclude(group = "io.ktor", module = "ktor-client-apache5")
     }
+    testImplementation(testFixtures(project(":core"))) // Reserved closed ports for transport-failure probes
     testImplementation(libs.ktor.client.cio)
     testImplementation(libs.ktor.client.okhttp) // V4-456: delayed real upstream writes through the production engine
     testImplementation(project(":integrations-dialects-openai-responses"))

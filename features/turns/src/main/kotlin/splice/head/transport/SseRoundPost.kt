@@ -12,6 +12,7 @@ import splice.core.turn.noRequestUsage
 import splice.head.admission.TurnQuota
 import splice.head.usage.TurnProviderAnswers
 import splice.head.usage.UsageStore
+import splice.head.wire.RetryProgress
 import splice.upstream.Provider
 import splice.upstream.RetryNotice
 import splice.upstream.RoundResult
@@ -95,7 +96,7 @@ internal class SseRoundPost(
                 url = provider.upstreamUrl,
                 auth = sender,
                 extraHeaders = { creds -> sendHeaders(inputs, answers, creds) },
-                onRetry = onRetry,
+                onRetry = RetryProgress(onRetry, drive.emitter),
                 observers = PostObservers(
                     perf = drive.perf,
                     // V4-174: the trace hears every send of this round from inside the retry loop.

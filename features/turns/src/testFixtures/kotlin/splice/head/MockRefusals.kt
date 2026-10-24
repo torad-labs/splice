@@ -37,13 +37,23 @@ internal class MockRefusals(private val bodies: List<Pair<String, String>>) {
         // the G19 login-hint path.
         scenario == "authfail" ->
             Refusal(HTTP_UNAUTHORIZED, """{"error":{"message":"invalid_api_key: Unauthorized"}}""")
-        scenario == "overflow_http" ->
+        else -> overflow(scenario) ?: capacityStatus(scenario)?.let { Refusal(it, CAPACITY_BODY) }
+    }
+
+    private fun overflow(scenario: String): Refusal? = when (scenario) {
+        "retry_overflow" ->
+            if (bodies.count { it.first == scenario } == 1) {
+                Refusal(HTTP_UNAVAILABLE, CAPACITY_BODY)
+            } else {
+                Refusal(HTTP_BAD_REQUEST, """{"error":{"message":"prompt is too long"}}""")
+            }
+        "overflow_http" ->
             Refusal(
                 HTTP_BAD_REQUEST,
                 """{"error":{"code":"context_length_exceeded",""" +
                     """"message":"prompt is too long: 210000 tokens > 200000 maximum"}}""",
             )
-        else -> capacityStatus(scenario)?.let { Refusal(it, CAPACITY_BODY) }
+        else -> null
     }
 
     // The ChatGPT backend's capacity signal in its PRE-STREAM shape (PR #115 classifies the code by shape):

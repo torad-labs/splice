@@ -32,8 +32,7 @@ internal class SseEmitterFactory {
         // ONE index sequence, two writers: see WireBlockWriter's nextBlockIndex. The turn's writer
         // ends the pinger's notice at its own block boundaries, so the pinger's wire comes first.
         val indexes = AtomicInteger(0)
-        val progressFrames = SseFrameWriter(streaming.progressTo(write))
-        val progress = ProgressWire(progressFrames, WireBlockWriter(progressFrames, start, indexes))
+        val progress = ProgressWire(streaming.progressTo(write), streaming.retryTo(write), start, indexes)
         val blocks = WireBlockWriter(frames, start, indexes, notice = progress, facts = streaming.facts)
         return SseEmitter(frames, start, blocks, progress, usagePayload, streaming.contentReached)
     }
@@ -54,7 +53,11 @@ internal class StreamWiring(
     val contentReached: ContentReached = ContentReached { true },
     /** What the client has been shown, kept for the live listing (the turn's writer fills it). */
     val facts: WireFacts? = null,
+    private val retryWrite: FrameWrite? = null,
 ) {
     /** The port the pinger's frames go through for an emitter that writes to [write]. */
     fun progressTo(write: FrameWrite): FrameWrite = progressWrite ?: write
+
+    /** Retries share progress accounting, but do not choose HTTP success before the upstream answers. */
+    fun retryTo(write: FrameWrite): FrameWrite = retryWrite ?: progressTo(write)
 }

@@ -12,9 +12,11 @@ import splice.head.round.RoundRunners
 import splice.head.round.RoundStrategy
 import splice.head.transport.IndependentSourcePost
 import splice.head.transport.SseRoundDriver
+import splice.head.wire.RetryProgress
 import splice.head.wire.WireTap
 import splice.upstream.Provider
 import splice.upstream.RetryBackoff
+import splice.upstream.RetryNotice
 import splice.upstream.RoundBody
 import splice.upstream.transport.UpstreamEnding
 
@@ -47,7 +49,7 @@ internal class TurnRoundRun(
             emitter = drive.emitter,
             runners = RoundRunners(
                 key = provider.key,
-                log = log,
+                log = RetryProgress(RetryNotice { log(it.trimEnd('\n') + "\n") }, drive.emitter),
                 signals = drive.signals,
                 finish = { outcome -> turnFinish.finishTurn(drive, outcome) },
                 backoff = backoff,

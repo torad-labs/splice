@@ -25,12 +25,20 @@ import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import splice.core.index.WireBlockIndex
 import splice.core.turn.SpliceNotice
+import java.util.concurrent.atomic.AtomicInteger
 
 /** The pinger's frame writer and block writer, and the one notice block they may hold open. */
 internal class ProgressWire(
-    private val frames: SseFrameWriter,
-    private val blocks: WireBlockWriter,
+    private val ordinaryWrite: FrameWrite,
+    private val retryWrite: FrameWrite,
+    start: MessageStart,
+    indexes: AtomicInteger,
 ) {
+    // All access, including the temporary retry route, is under lock.
+    private var activeWrite = ordinaryWrite
+    private val frames = SseFrameWriter { activeWrite(it) }
+    private val blocks = WireBlockWriter(frames, start, indexes)
+
     /** Guards both writers and [notice]. SseEmitter holds it to re-read its seal before a pinger
      *  write; the turn takes it to end the notice. */
     val lock = Mutex()
@@ -49,8 +57,13 @@ internal class ProgressWire(
      *  (TurnTerminal.progress); a null line writes nothing. */
     suspend fun writeNoticeLocked(line: ProgressLine) {
         val text = line(notice == null) ?: return
-        val index = notice ?: blocks.openThinking().also { notice = it }
-        blocks.thinkingDelta(index, text)
+        activeWrite = if (line.mayCommitResponse) ordinaryWrite else retryWrite
+        try {
+            val index = notice ?: blocks.openThinking().also { notice = it }
+            blocks.thinkingDelta(index, text)
+        } finally {
+            activeWrite = ordinaryWrite
+        }
     }
 
     /** The turn writer's form of [endNotice], run at each of its block boundaries: one volatile read

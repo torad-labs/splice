@@ -34,6 +34,9 @@ internal fun interface UsagePayloadBuilder {
  *  a plain lambda. */
 internal fun interface ProgressLine {
     public operator fun invoke(fresh: Boolean): String?
+
+    /** Retry status must not pre-empt a native refusal before the response has been selected. */
+    public val mayCommitResponse: Boolean get() = true
 }
 
 internal interface TurnTerminal : WireSink {

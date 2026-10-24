@@ -11,13 +11,21 @@ internal class MockFailureScenarios(private val wire: MockSseWire) {
     /** Plays [scenario] when it is a failing one, and says whether it was. */
     fun play(scenario: String): Boolean {
         when (scenario) {
-            "failed" -> wire.sse(e.failed("server_error", "boom upstream"))
             "overload_sse", "overflow_sse" -> inStreamRefusal(scenario)
             "overflow_after_content" -> overflowAfterContent()
             "oversized_sse" -> oversizedFrame()
             "oversized_after_content" -> oversizedAfterContent()
             "truncated" -> truncated()
             "zero_event_auth", "zero_event_overflow", "zero_event_empty" -> zeroEvents(scenario)
+            else -> return terminal(scenario)
+        }
+        return true
+    }
+
+    private fun terminal(scenario: String): Boolean {
+        when (scenario) {
+            "failed" -> wire.sse(e.failed("server_error", "boom upstream"))
+            "empty_completed" -> wire.sse(e.completed("empty", 0, 0))
             else -> return false
         }
         return true

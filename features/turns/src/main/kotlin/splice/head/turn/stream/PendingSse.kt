@@ -59,6 +59,13 @@ internal class PendingSse(
         output.writeProgress(frame)
     }
 
+    /** Stage retry reasons without choosing HTTP 200 over a later size or native quota refusal. */
+    suspend fun retryProgress(frame: String) {
+        if (output.stageProgress(frame)) return
+        if (choice.await() !is Decision.Stream) return
+        output.writeProgress(frame)
+    }
+
     /** A successful upstream HTTP response permits liveness progress without hiding a native refusal. */
     fun accepted() {
         progressAccepted = true

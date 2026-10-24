@@ -8,6 +8,7 @@ import splice.core.turn.RoundText
 import splice.core.turn.TurnOutcome
 import splice.core.turn.Usage
 import splice.upstream.ReanchorPolicy
+import splice.upstream.RetryNotice
 import splice.upstream.RoundBody
 import splice.upstream.RoundResult
 
@@ -30,7 +31,11 @@ import splice.upstream.RoundResult
  * dialect reads as a closed message ([splice.core.turn.ResponseShape.endedInReasoning]), so such a round is offered to
  * the rule first and ends silent, as before, when the rule has no continuation or the request asked for silence.
  */
-internal class EmptyAnswerRetry(private val perf: TurnPerf?, private val reanchor: ReanchorPolicy? = null) {
+internal class EmptyAnswerRetry(
+    private val perf: TurnPerf?,
+    private val reanchor: ReanchorPolicy? = null,
+    private val notice: RetryNotice = RetryNotice {},
+) {
     suspend fun post(body: RoundBody, direct: PostRound): RoundResult {
         val framesBefore = contentFrames()
         val first = direct(body)
@@ -39,6 +44,10 @@ internal class EmptyAnswerRetry(private val perf: TurnPerf?, private val reancho
         val carried = continuation(body, emptied)
         // reasoning alone is the model's finished silence unless the rule carries it on: never re-sent identically
         if (carried == null && emptied.shape.endedInReasoning) return first
+        notice.retry(
+            if (carried != null) "continuing after an empty answer" else "retrying an empty answer once",
+            "the upstream completed with no answer content",
+        )
         perf?.add(if (carried != null) PerfKeys.EMPTY_CONTINUES else PerfKeys.EMPTY_RETRIES, 1)
         return billed(emptied.usage, direct(carried?.let { RoundBody.Tree(it) } ?: body))
     }

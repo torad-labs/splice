@@ -96,6 +96,10 @@ internal class ReanchorRunner(
             // reason, a stall's cap); the wire type alone read "overloaded_error" for all of them.
             val why = "${failure.type.wireName} mid-stream (${failure.message})"
             log("[$key] re-anchor ${attempt + 1}: $why; $restarted\n")
+            log.retry(
+                "[$key] re-anchor ${attempt + 1}: ${failure.type.wireName} mid-stream; $restarted",
+                failure.message,
+            )
             // V4-116 (5): the continuation is SPENT here — right where the loop commits to another
             // POST and the counter that names it moves. Stamped at the same point as [attempt] on
             // purpose: a number that could disagree with the loop's own count is worse than no

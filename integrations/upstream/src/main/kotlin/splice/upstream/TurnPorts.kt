@@ -79,15 +79,16 @@ public fun interface ClientFrameEmitted {
 }
 
 /**
- * Reports that the upstream call is being retried, and why, in one operator-readable sentence.
- *
- * A NOTICE, not a decision: the retry has already been decided when this is called, and whatever
- * is wired here cannot veto it. Production wires the head log; the strings are the only account an
- * operator gets of a 429 cooldown, a deadline give-up or a stream re-issue, which is why the
- * failure text is built at the call site rather than by the sink.
+ * Retry diagnostics and ordered client status. Neither method decides whether to retry.
+ * [invoke] also carries log-only decisions, such as giving up or omitting a malformed header.
  */
 public fun interface RetryNotice {
     public operator fun invoke(message: String)
+
+    /** Optional client status for an actual retry, separate from the existing diagnostic log.
+     * The raw failure lets the client sink render JSON as prose. Delivery is awaited before the
+     * next attempt, never launched in an unowned coroutine. Log-only sinks need not implement it. */
+    public suspend fun retry(action: String, reason: String) {}
 }
 
 /**

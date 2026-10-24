@@ -63,6 +63,12 @@ internal data class CodeModeRecord(
      *  no client call is sent after that post and nowhere else. Persisted with its authoritative ledger identity. */
     @Volatile var postedOn: Long? = null
 
+    /** Identity only; native V8 continuations are never serialized or rerun after restart. */
+    var nativeCellId: String? = null
+
+    /** Exact display receipts, distinct from canonical native notification tool outputs. */
+    var deliveredOnly: List<JsonElement> = emptyList()
+
     @Volatile var retainedBytes: Long? = null
     var heapLease: HeapLease? = null
 

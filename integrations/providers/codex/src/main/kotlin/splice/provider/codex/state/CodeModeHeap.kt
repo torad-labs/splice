@@ -162,7 +162,9 @@ internal enum class CodeModeWeight {
                     SNAPSHOT_ENTRY_BYTES + text(start.digest) + (
                         start.acknowledgement?.let { acknowledgement ->
                             acknowledgement.items.sumOf { item ->
-                                SNAPSHOT_ENTRY_BYTES + text(item.digest) + (item.callbackId?.let(::text) ?: 0L)
+                                SNAPSHOT_ENTRY_BYTES + text(
+                                    item.digest,
+                                ) + (item.callbackId?.let(::text) ?: 0L) + (item.mediaCallbackId?.let(::text) ?: 0L)
                             } +
                                 acknowledgement.native.sumOf(::text)
                         } ?: 0L

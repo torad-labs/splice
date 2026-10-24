@@ -11,7 +11,11 @@ import java.util.HexFormat
 /** The client's [conversation], preamble aside, read as the prefix each script started after. Each item is digested
  *  once through the request's [digests], and each prefix once however many scripts started after it. One running
  *  digest goes forward through the items, so prefixes asked for in order cost one pass over them. */
-internal class CodeModeClientPrefix(private val conversation: List<JsonElement>, digests: InputItemDigests) {
+internal class CodeModeClientPrefix(
+    private val conversation: List<JsonElement>,
+    digests: InputItemDigests,
+    private val media: Map<String, List<JsonElement>> = emptyMap(),
+) {
     private val hexes by lazy { digests.hexItems(conversation) }
     private val prefixes = HashMap<Int, String>()
     private val running = MessageDigest.getInstance(PREFIX_DIGEST)
@@ -21,7 +25,7 @@ internal class CodeModeClientPrefix(private val conversation: List<JsonElement>,
     fun start(): CodeModeClientStart = CodeModeClientStart(
         conversation.size,
         digest(conversation.size),
-        CodeModeClientAcknowledgements.capture(conversation),
+        CodeModeClientAcknowledgements.capture(conversation, media),
     )
 
     /** How many of [conversation]'s items the history [start] names is, or null when [conversation] does not start

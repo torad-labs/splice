@@ -31,10 +31,16 @@ internal data class CodeModeClientAcknowledgement(
 internal object CodeModeClientAcknowledgements {
     private val projection = ResponsesCodeModeProjection()
 
-    fun capture(items: List<JsonElement>): CodeModeClientAcknowledgement =
-        capture(projection.project(JsonArray(items)))
+    fun capture(
+        items: List<JsonElement>,
+        media: Map<String, List<JsonElement>> = emptyMap(),
+    ): CodeModeClientAcknowledgement = capture(projection.project(JsonArray(items)), media)
 
-    fun capture(input: ResponsesCodeModeInput): CodeModeClientAcknowledgement {
+    fun capture(
+        input: ResponsesCodeModeInput,
+        media: Map<String, List<JsonElement>> = emptyMap(),
+    ): CodeModeClientAcknowledgement {
+        val owners = CodeModeAcknowledgedMedia.indexes(input.logicalItems, media)
         val items = mutableListOf<CodeModeAcknowledgedItem>()
         var at = 0
         while (at < input.logicalItems.size) {
@@ -47,7 +53,11 @@ internal object CodeModeClientAcknowledgements {
                 } else {
                     null
                 }
-                items += CodeModeAcknowledgedItem(InputDigest.hex(item), callbackId = callback)
+                items += CodeModeAcknowledgedItem(
+                    InputDigest.hex(item),
+                    callbackId = callback,
+                    mediaCallbackId = owners[at - 1],
+                )
             } else {
                 val text = StringBuilder(first)
                 at++
@@ -76,6 +86,22 @@ internal data class CodeModeAcknowledgedItem(
     val digest: String,
     val characters: Int? = null,
     val callbackId: String? = null,
+    val mediaCallbackId: String? = null,
 )
 
 internal data class CodeModeClientCursor(val item: Int, val characters: Int = 0)
+
+internal object CodeModeAcknowledgedMedia {
+    fun indexes(items: List<JsonElement>, media: Map<String, List<JsonElement>>): Map<Int, String> = buildMap {
+        items.forEachIndexed { index, element ->
+            val item = element as? JsonObject
+            val id = JsonScalars.str(item, "call_id")
+            val expected = media[id].orEmpty()
+            val output = JsonScalars.str(item, "type") == "function_call_output"
+            val captured = output && expected.isNotEmpty() && items.drop(index + 1).take(expected.size) == expected
+            if (captured) {
+                expected.indices.forEach { put(index + 1 + it, checkNotNull(id)) }
+            }
+        }
+    }
+}

@@ -33,6 +33,7 @@ internal class CodexCodeModeResume(
         context: CodeModeRunContext,
         body: CodeModeBody,
     ): TurnOutcome {
+        driver.sent.acknowledgeCleared(context)
         val borrowed = registry.retainedCells.acquire(record)
         try {
             val source = driver.streams.find(record)

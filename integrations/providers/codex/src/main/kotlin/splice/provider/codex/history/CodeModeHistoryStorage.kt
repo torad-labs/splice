@@ -2,25 +2,22 @@ package splice.provider.codex.history
 
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.SerializationException
+import kotlinx.serialization.Transient
 import kotlinx.serialization.json.Json
-import splice.core.memory.HeapCapacityException
-import splice.core.memory.HeapCategory
-import splice.core.memory.HeapOwners
 import splice.core.memory.HeapReservations
 import splice.core.memory.HeapText
 import splice.core.perf.InputDigest
-import splice.core.util.SecureFile
+import splice.core.util.LogSink
 import splice.provider.codex.CodeModePersistenceException
 import splice.provider.codex.CodeModeStateLocation
-import splice.provider.codex.state.CodeModeStateText
-import splice.provider.codex.state.CodeModeWeight
 import splice.upstream.memory.JvmHeap
 import java.io.IOException
 import java.nio.channels.FileChannel
 import java.nio.file.Files
-import java.nio.file.NoSuchFileException
 import java.nio.file.Path
+import java.nio.file.StandardCopyOption
 import java.nio.file.StandardOpenOption
+import java.util.concurrent.ConcurrentHashMap
 
 @Serializable
 internal data class CodeModeHistoryState(
@@ -28,82 +25,124 @@ internal data class CodeModeHistoryState(
     val posts: List<CodeModeLedgerEntry>,
     val nextId: Long,
     val version: Int = 1,
+    val revision: Long = 0,
+    @Transient val memoryBytes: Long = 0,
 )
 
-/** A missing file is a legacy conversation. An unreadable authority is an error, never permission to reconstruct. */
+/** Exact history is a journal of shared-prefix deltas, independent of execution-record count and TTL. */
 internal class CodeModeHistoryStorage(
     private val location: CodeModeStateLocation,
     private val json: Json,
-    private val maxBytes: Long,
+    maxBytes: Long,
     private val heap: HeapReservations = JvmHeap.budget,
+    private val log: LogSink = LogSink {},
 ) {
     private val dir = location.dir.resolve("history")
+    private val journal = CodeModeHistoryJournal(json, heap, maxBytes, log)
+    private val written = ConcurrentHashMap<String, Long>()
+    private val offsets = ConcurrentHashMap<String, Long>()
+    private val latest = ConcurrentHashMap<String, String>()
+    private val pending = ConcurrentHashMap<String, MutableList<CodeModeHistoryPrepared>>()
+    val durableEnabled: Boolean get() = location.journaling.now()
 
     fun read(key: String): CodeModeHistoryState? = guarded {
         val file = path(key)
+        val state = when {
+            Files.exists(file) -> {
+                val replay = journal.read(file, key)
+                offsets[key] = replay.committedBytes
+                replay.lastDigest?.let { latest[key] = it }
+                replay.finish()
+            }
+            Files.exists(legacy(key)) -> migrate(key)
+            else -> null
+        }
+        written[key] = state?.revision ?: 0L
+        state
+    }
+
+    fun write(prepared: CodeModeHistoryPrepared) = guarded {
+        CodeModeHistoryDeltas.own(prepared, heap)
+        val key = prepared.delta.key
+        if (!durableEnabled) {
+            pending.getOrPut(key) { mutableListOf() }.add(prepared)
+        } else {
+            val queued = pending[key].orEmpty() + prepared
+            queued.forEach(::append)
+            pending.remove(key)
+        }
+    }
+
+    private fun append(prepared: CodeModeHistoryPrepared) {
+        val delta = prepared.delta
+        val prior = written[delta.key] ?: read(delta.key)?.revision ?: 0L
+        if (delta.revision == prior) {
+            require(
+                latest[delta.key] == journal.digest(delta),
+            ) { "An uncertain history revision conflicts with durable authority" }
+            return
+        }
+        if (delta.revision < prior) return
+        require(delta.revision == prior + 1L) { "Authoritative history append is missing a parent revision" }
         try {
-            if (Files.size(file) > maxBytes) throw IOException("authoritative code-mode history exceeds its byte bound")
-            HeapText.Reader.read(file, heap).use { stage ->
-                val state = json.decodeFromString<CodeModeHistoryState>(stage.text)
-                validate(state, key)
-                stage.retain(state)
-                state.posts.forEach(stage::retain)
-                state
-            }
-        } catch (_: NoSuchFileException) {
-            null
+            val committed = journal.append(path(delta.key), delta, offsets[delta.key] ?: 0L)
+            offsets[delta.key] = committed.bytes
+            latest[delta.key] = committed.digest
+            written[delta.key] = delta.revision
+        } catch (failure: IOException) {
+            written.remove(delta.key)
+            offsets.remove(delta.key)
+            throw failure
         }
     }
 
-    private fun validate(state: CodeModeHistoryState, key: String) {
-        val identity = state.key == key && state.version == 1
-        val ids = state.posts.map { it.id }
-        val ordered = ids.all { it > 0L } && state.nextId > (ids.maxOrNull() ?: 0L)
-        val unique = ids.distinct().size == ids.size
-        val valid = identity && ordered && unique
-        if (!valid) {
-            throw IOException("authoritative code-mode history has invalid identity")
+    /** An intermediate full-snapshot authority is forced to a staging journal before its name becomes live. */
+    private fun migrate(key: String): CodeModeHistoryState {
+        val old = legacy(key)
+        val staging = path(key).resolveSibling("${path(key).fileName}.migrating")
+        val state = HeapText.Reader.read(old, heap).use { stage ->
+            val legacy = json.decodeFromString<CodeModeHistoryState>(stage.text)
+            require(legacy.key == key && legacy.version == 1) { "Legacy authoritative history identity is invalid" }
+            migrateEntries(legacy, staging)
         }
+        Files.move(staging, path(key), StandardCopyOption.REPLACE_EXISTING, StandardCopyOption.ATOMIC_MOVE)
+        FileChannel.open(dir, StandardOpenOption.READ).use { it.force(true) }
+        Files.deleteIfExists(old)
+        Files.deleteIfExists(staging.resolveSibling("${staging.fileName}.lock"))
+        log("[code-mode] authoritative history migrated posts=${state.posts.size}")
+        return state
     }
 
-    /** Force the replacement before publishing it to the ledger. The journal toggle is an explicit memory mode. */
-    fun write(state: CodeModeHistoryState) = guarded {
-        val weight = state.posts.sumOf { entry ->
-            entry.covered.sumOf(CodeModeWeight.STORED::json) + entry.sent.sumOf(CodeModeWeight.STORED::json) +
-                entry.echoes.sumOf(CodeModeWeight.STORED::json)
-        } + HISTORY_METADATA_BYTES
-        val lease = HeapOwners.charge(state, heap, weight, HeapCategory.CODE_MODE)
-        state.posts.forEach { HeapOwners.keep(it, lease.share()) }
-        if (location.journaling.now()) {
-            val stage = heap.reserve(weight * ENCODING_EXPANSION) ?: throw HeapCapacityException()
-            stage.use {
-                val text = json.encodeToString(CodeModeHistoryState.serializer(), state)
-                if (CodeModeStateText(text).bytes > maxBytes) {
-                    throw IOException("authoritative code-mode history exceeds its byte bound")
-                }
-                val open = SecureFile.ownerOnlyDirectory(dir)
-                if (open != null) throw IOException("authoritative code-mode history directory is not owner-only")
-                SecureFile.writeAtomic0600(path(state.key), text)
-                FileChannel.open(dir, StandardOpenOption.READ).use { it.force(true) }
-            }
+    private fun migrateEntries(old: CodeModeHistoryState, staging: Path): CodeModeHistoryState {
+        Files.deleteIfExists(staging)
+        var state = CodeModeHistoryState(old.key, emptyList(), old.nextId)
+        var bytes = 0L
+        old.posts.sortedBy { it.id }.forEach { entry ->
+            val next = state.copy(revision = state.revision + 1L)
+            val prepared = CodeModeHistoryDeltas.prepare(next, entry, state.posts.firstOrNull())
+            CodeModeHistoryDeltas.own(prepared, heap)
+            val committed = journal.append(staging, prepared.delta, bytes)
+            bytes = committed.bytes
+            latest[old.key] = committed.digest
+            state = next.copy(
+                posts = listOf(prepared.entry) + state.posts,
+                memoryBytes = state.memoryBytes + CodeModeHistoryDeltas.weight(prepared.delta),
+            )
         }
-        // The owner retains this reservation; the reference makes the intended ownership explicit.
-        check(lease.bytes >= weight)
+        offsets[old.key] = bytes
+        return state
     }
 
-    private fun path(key: String): Path = dir.resolve(InputDigest.hex(key) + ".json")
+    private fun path(key: String): Path = dir.resolve(InputDigest.hex(key) + ".jsonl")
+    private fun legacy(key: String): Path = dir.resolve(InputDigest.hex(key) + ".json")
 
     private inline fun <T> guarded(operation: () -> T): T = try {
         operation()
     } catch (error: SerializationException) {
-        throw CodeModePersistenceException(
-            IOException("authoritative code-mode history cannot be decoded", error),
-            false,
-        )
+        throw CodeModePersistenceException(IOException("authoritative history cannot be decoded", error), false)
+    } catch (error: IllegalArgumentException) {
+        throw CodeModePersistenceException(IOException("authoritative history revision is invalid", error), false)
     } catch (error: IOException) {
         throw CodeModePersistenceException(error, false)
     }
 }
-
-private const val HISTORY_METADATA_BYTES = 256L
-private const val ENCODING_EXPANSION = 4L

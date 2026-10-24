@@ -14,8 +14,14 @@ internal class CodeModeClientDelta(private val codec: CodexCodeModeHistoryCodec)
         entry: CodeModeLedgerEntry,
         conversation: List<JsonElement>,
         clearedCallbacks: Set<String> = emptySet(),
+    ): List<JsonElement>? = after(entry, conversation, CodeModeCallbackProof(verified = clearedCallbacks))
+
+    fun after(
+        entry: CodeModeLedgerEntry,
+        conversation: List<JsonElement>,
+        proof: CodeModeCallbackProof,
     ): List<JsonElement>? {
-        val normalized = CodeModeClearedHistory.restore(conversation, entry.covered, clearedCallbacks)
+        val normalized = normalized(entry, conversation, proof)
         val input = codec.projection.project(JsonArray(normalized))
         val covered = CodeModeClientAcknowledgements.capture(entry.covered)
         val cursor = covered.consume(input) ?: return null
@@ -24,10 +30,19 @@ internal class CodeModeClientDelta(private val codec: CodexCodeModeHistoryCodec)
         return if (tail.logicalItems.isEmpty() && tail.replayItems.isEmpty()) emptyList() else echoed(entry, tail)
     }
 
+    fun normalized(
+        entry: CodeModeLedgerEntry,
+        conversation: List<JsonElement>,
+        proof: CodeModeCallbackProof,
+    ): List<JsonElement> = CodeModeClearedHistory.restore(conversation, entry, proof)
+
     private fun echoed(entry: CodeModeLedgerEntry, tail: ResponsesCodeModeInput): List<JsonElement>? {
         val expected = codec.projection.project(JsonArray(entry.echoes))
-        val echoed = CodeModeClientAcknowledgements.capture(expected).consume(tail) ?: return null
-        return codec.projection.rebuild(suffix(tail, echoed, entry.sent + entry.echoes)).toList()
+        val echoed = CodeModeClientAcknowledgements.capture(expected).consume(tail)
+        val suppliedCopy = CodeModeClientAcknowledgements.assistantText(tail.logicalItems.firstOrNull()) != null
+        if (echoed == null && suppliedCopy) return null
+        val cursor = echoed ?: CodeModeClientCursor(0)
+        return codec.projection.rebuild(suffix(tail, cursor, entry.sent + entry.echoes)).toList()
     }
 
     private fun unknownHistory(

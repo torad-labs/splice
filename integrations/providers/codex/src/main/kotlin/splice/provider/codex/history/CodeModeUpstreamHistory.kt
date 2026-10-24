@@ -30,11 +30,15 @@ internal class CodeModeUpstreamHistory(
     private val json: Json,
     location: CodeModeStateLocation? = null,
     private val log: LogSink = LogSink { },
-    maxBytes: Long = HISTORY_MAX_BYTES,
+    cacheBytes: Long = HISTORY_MAX_BYTES,
 ) {
     private val codec = CodexCodeModeHistoryCodec(json)
-    private val ledger = CodeModeUpstreamLedger(storage = location?.let { CodeModeHistoryStorage(it, json, maxBytes) })
+    private val ledger = CodeModeUpstreamLedger(
+        storage = location?.let { CodeModeHistoryStorage(it, json, HISTORY_MAX_BYTES, log = log) },
+        cacheBytes = cacheBytes,
+    )
     private val clientDelta = CodeModeClientDelta(codec)
+    private val durableClears = CodeModeDurableClears(ledger, clientDelta)
     private val scripts = CodeModeScriptPlacements(codec)
 
     /** No post at all: what a conversation that extends none is folded from. */
@@ -74,7 +78,7 @@ internal class CodeModeUpstreamHistory(
         val (root, input) = request
         val preamble = input.subList(0, preambleCount(input))
         val conversation = input.subList(preamble.size, input.size)
-        val cleared = context.turn.rendering.verifiedCleared.values.flatten().toSet()
+        val cleared = CodeModeCallbackReceipts.proof(context)
         val (entry, tail) = extended(context.key, conversation, records, changed, cleared)
         val fresh = conversation.size > entry.covered.size
         val quiet = if (entry === nothing) {
@@ -111,13 +115,13 @@ internal class CodeModeUpstreamHistory(
     fun clientStart(context: CodeModeRunContext): CodeModeClientStart? {
         val client = context.recovery?.baseline ?: context.client ?: return null
         return started?.takeIf { it.first.get() === client }?.second
-            ?: read(client)?.also { started = WeakReference(client) to it }
+            ?: read(client, context.turn.rendering.replayMedia)?.also { started = WeakReference(client) to it }
     }
 
     /** Where a script starting now starts in [client]'s history, or null when it is not a Responses input. */
-    private fun read(client: CodeModeBody): CodeModeClientStart? {
+    private fun read(client: CodeModeBody, media: Map<String, List<JsonElement>>): CodeModeClientStart? {
         val input = client.request?.second ?: return null
-        return CodeModeClientPrefix(input.subList(preambleCount(input), input.size), client.digests).start()
+        return CodeModeClientPrefix(input.subList(preambleCount(input), input.size), client.digests, media).start()
     }
 
     /** The body the last start was read from, and that start: every script one request starts reads it once. */
@@ -131,9 +135,23 @@ internal class CodeModeUpstreamHistory(
             ledger.forget(context.key)
             return
         }
-        val covered = client.subList(preambleCount(client), client.size)
+        val observed = client.subList(preambleCount(client), client.size)
+        val proof = CodeModeCallbackReceipts.proof(context)
+        val prior = ledger.entries(context.key).firstOrNull { clientDelta.after(it, observed, proof) != null }
+        val covered = prior?.let { clientDelta.normalized(it, observed, proof) } ?: observed
         val conversation = posted.subList(preambleCount(posted), posted.size)
-        ledger.record(context.key, CodeModeLedgerEntry(covered, conversation, body.echoes))
+        val callbacks = CodeModeCallbackReceipts.capture(context, covered, prior?.callbacks.orEmpty())
+        ledger.record(
+            context.key,
+            CodeModeLedgerEntry(covered, conversation, body.echoes, callbacks = callbacks),
+            prior?.id,
+        )
+    }
+
+    /** Durable callback receipts can verify a clear after its execution record was retired. */
+    fun acknowledgeCleared(context: CodeModeRunContext) {
+        val client = context.client?.request?.second ?: return
+        durableClears.acknowledge(context, client.drop(preambleCount(client)))
     }
 
     /** The newest kept post of a script started now: what [CodeModeRecord.postedOn] holds. */
@@ -167,14 +185,18 @@ internal class CodeModeUpstreamHistory(
         conversation: List<JsonElement>,
         records: List<CodeModeRecord>,
         changed: Set<String>,
-        cleared: Set<String>,
+        cleared: CodeModeCallbackProof,
     ): Pair<CodeModeLedgerEntry, List<JsonElement>> {
         val posts = ledger.entries(key)
         posts.forEachIndexed { index, entry ->
             if (entry.sent.any { codec.callId(it) in changed }) return@forEachIndexed
             val tail = clientDelta.after(entry, conversation, cleared) ?: return@forEachIndexed
             val newer = posts.subList(0, index).map(CodeModeLedgerEntry::id).toSet()
-            return if (records.none { it.postedOn in newer }) entry to tail else nothing to conversation
+            val presented = tail.mapNotNullTo(mutableSetOf(), codec::callId)
+            val needsNewer = records.any { record ->
+                record.postedOn in newer && (record.clientIds() + record.origin.outerCallId).any { it in presented }
+            }
+            return if (needsNewer) nothing to conversation else entry to tail
         }
         if (posts.isEmpty()) {
             log("[code-mode] authoritative history seeded origin=legacy key=${key.take(HISTORY_LOG_KEY_CHARS)}")

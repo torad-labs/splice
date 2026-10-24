@@ -21,7 +21,12 @@ internal class CodeModeAcknowledgedPrefix(
     }
 
     private fun ordinary(item: CodeModeAcknowledgedItem): CodeModeClientCursor? {
-        val actual = input.getOrNull(cursor.item) ?: return null
+        val actual = input.getOrNull(cursor.item)
+        if (item.mediaCallbackId != null && item.mediaCallbackId in clearedCallbacks) {
+            val consumed = if (actual != null && InputDigest.hex(actual) == item.digest) 1 else 0
+            return CodeModeClientCursor(cursor.item + consumed)
+        }
+        if (actual == null) return null
         val matched = cleared(item, actual as? JsonObject) || InputDigest.hex(actual) == item.digest
         return CodeModeClientCursor(cursor.item + 1).takeIf { matched }
     }

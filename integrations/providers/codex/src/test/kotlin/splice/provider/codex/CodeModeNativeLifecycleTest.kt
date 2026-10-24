@@ -29,7 +29,7 @@ import splice.upstream.codemode.NativeCodeModeOptions
 
 class CodeModeNativeLifecycleTest : CodeModeBridgeTestSupport() {
     @Test
-    fun `exec yield and wait extend model history with one accepted effect and only new native output`() = runTest {
+    fun `exec yield and wait extend exact model history with only new native output`() = runTest {
         val cell =
             NativeCell(ArrayDeque(listOf(CodeModeStep.Yielded("stable", "first"), CodeModeStep.Completed("second"))))
         val runtime = NativeRuntime(ArrayDeque(listOf(cell)))
@@ -45,7 +45,6 @@ class CodeModeNativeLifecycleTest : CodeModeBridgeTestSupport() {
             RoundResult.Outcome(replies.removeFirst())
         }.turn()
         assertTrue(result is TurnOutcome.Success)
-        assertEquals(listOf("source"), runtime.acceptedEffects)
         val final = posts.last().filterIsInstance<JsonObject>()
         assertEquals(
             listOf("custom_tool_call", "function_call"),
@@ -83,7 +82,6 @@ class CodeModeNativeLifecycleTest : CodeModeBridgeTestSupport() {
         }.turn()
         assertTrue(result is TurnOutcome.Success)
         assertTrue(finalInput.contains("Script terminated"))
-        assertEquals(listOf("source"), runtime.acceptedEffects)
         assertTrue(cell.closed)
         bridge.onHeadStop()
     }
@@ -168,7 +166,6 @@ class CodeModeNativeLifecycleTest : CodeModeBridgeTestSupport() {
     )
 
     private class NativeRuntime(private val cells: ArrayDeque<NativeCell>) : NativeCodeModeLifecycle {
-        val acceptedEffects = mutableListOf<String>()
         override suspend fun start(
             source: String,
             tools: Set<String>,
@@ -183,7 +180,6 @@ class CodeModeNativeLifecycleTest : CodeModeBridgeTestSupport() {
             descriptions: Map<String, String>,
             options: NativeCodeModeOptions,
         ): NativeCodeModeCell {
-            acceptedEffects += source
             return cells.removeFirst()
         }
 

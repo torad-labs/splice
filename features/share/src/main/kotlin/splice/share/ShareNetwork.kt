@@ -115,8 +115,8 @@ internal class HostPrefixes(private val log: LogSink) : AttachedPrefixes {
                 .map { SharePrefix(it.address, it.networkPrefixLength.toInt()) }
                 .toList()
         }.onFailure { failure ->
-            log("[share] this machine's own networks could not be read (${SafeFailureText.render(failure)}); " +
-                "only loopback, RFC 1918, link-local, 100.64/10 and fc00::/7 are admitted\n")
+            val why = SafeFailureText.render(failure)
+            log("[share] this machine's own networks could not be read ($why); only the private ranges are admitted\n")
         }.getOrDefault(emptyList())
 }
 

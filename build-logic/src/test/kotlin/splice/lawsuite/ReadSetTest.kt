@@ -161,15 +161,19 @@ class ReadSetTest {
     @Test
     fun `RED two tracked names that differ by an invalid byte do not collapse into one lossy name`() {
         repo()
-        Files.createDirectories(dir.resolve(".dev"))
-        // odd<FF>.sh is not UTF-8; odd<EF BF BD>.sh is the replacement character a lossy decode would turn it into.
-        val script = """printf x > "$(printf '.dev/odd\377.sh')"; printf x > "$(printf '.dev/odd\357\277\275.sh')""""
+        // odd<FF>.sh is not UTF-8; odd<EF BF BD>.sh is the replacement character a lossy decode would turn it into. Both
+        // go straight into git's index: macOS's file system stores the first under another, valid name (odd%FF.sh), so
+        // only the index holds the name git hands ReadSet byte for byte on every machine.
+        val name = """$(printf '.dev/odd\377.sh')"""
+        val replaced = """$(printf '.dev/odd\357\277\275.sh')"""
+        val blob = """$(git hash-object -w --stdin </dev/null)"""
+        val script = """git update-index --add --cacheinfo "100644,$blob,$name" && """ +
+            """git update-index --add --cacheinfo "100644,$blob,$replaced""""
         val made = ProcessBuilder("sh", "-c", script)
             .directory(dir.toFile())
             .start()
             .waitFor()
         check(made == 0) { "could not create the fixture names" }
-        git("add", "--", ".dev")
 
         val thrown = assertThrows(IllegalStateException::class.java) { ReadSet.git(dir.toFile(), listOf(".dev")) }
 

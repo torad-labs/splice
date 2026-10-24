@@ -1,5 +1,5 @@
 // NEW: item completion seals executable source; response completion independently settles continuity and usage.
-package splice.provider.codex.stream
+package splice.provider.codex.stream.source
 
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CompletableDeferred
@@ -13,6 +13,11 @@ import splice.provider.codex.CodeModeRecord
 import splice.provider.codex.CodexCodeModeRegistry
 import splice.provider.codex.CodexCodeModeValidation
 import splice.provider.codex.CodexCodeModeWire
+import splice.provider.codex.stream.CodeModeRecoveryHistory
+import splice.provider.codex.stream.CodeModeSourceBuffer
+import splice.provider.codex.stream.CodeModeSourceCommit
+import splice.provider.codex.stream.CodeModeStreamAdmission
+import splice.provider.codex.stream.SOURCE_DISPOSED
 import splice.upstream.sse.CustomToolSource
 
 internal class CodeModeSourceCapture(

@@ -1,4 +1,4 @@
-package splice.provider.codex.stream
+package splice.provider.codex.stream.source
 
 import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonObject

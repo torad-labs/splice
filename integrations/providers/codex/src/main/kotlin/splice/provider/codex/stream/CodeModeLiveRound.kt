@@ -22,6 +22,7 @@ import splice.provider.codex.CodexCodeModeRegistry
 import splice.provider.codex.CodexCodeModeWire
 import splice.provider.codex.state.CodeModeTurnIdentity
 import splice.provider.codex.stream.CodeModeReaderFailures.SOURCE_FAILED
+import splice.provider.codex.stream.source.CodeModeSourceCapture
 import splice.upstream.RoundResult
 import splice.upstream.TurnEnd
 import splice.upstream.sse.CustomToolSource

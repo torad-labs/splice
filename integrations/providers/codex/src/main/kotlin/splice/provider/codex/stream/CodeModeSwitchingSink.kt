@@ -9,6 +9,7 @@ import kotlinx.serialization.json.JsonObject
 import splice.core.index.WireBlockIndex
 import splice.core.reasoning.ReasoningReplay
 import splice.core.util.JsonWire
+import splice.provider.codex.stream.source.CodeModeDeliveredText
 import splice.upstream.codemode.CodeModeLimits
 import splice.upstream.sse.BlockDeltas
 import splice.upstream.sse.BlockEnding

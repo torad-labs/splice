@@ -25,10 +25,10 @@ import splice.provider.codex.state.CodeModeStateJournal
 import splice.provider.codex.state.save.CodeModeStateWrite
 import splice.provider.codex.stream.CodeModeClientContexts
 import splice.provider.codex.stream.CodeModeLiveRound
-import splice.provider.codex.stream.CodeModeSourceCapture
-import splice.provider.codex.stream.CodeModeSourceRecords
 import splice.provider.codex.stream.CodeModeSourceState
 import splice.provider.codex.stream.CodeModeStreamAdmission
+import splice.provider.codex.stream.source.CodeModeSourceCapture
+import splice.provider.codex.stream.source.CodeModeSourceRecords
 import splice.upstream.codemode.CodeModeSourcePart
 import splice.upstream.sse.CustomToolSource
 import java.io.IOException

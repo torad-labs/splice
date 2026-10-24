@@ -31,12 +31,12 @@ import splice.provider.codex.stream.CodeModeLiveRound
 import splice.provider.codex.stream.CodeModeRedirectablePost
 import splice.provider.codex.stream.CodeModeRuntimeRun
 import splice.provider.codex.stream.CodeModeRuntimeStarter
-import splice.provider.codex.stream.CodeModeSourceCapture
 import splice.provider.codex.stream.CodeModeSourceInterruptedException
 import splice.provider.codex.stream.CodeModeSourceLease
 import splice.provider.codex.stream.CodeModeStreamAdmission
 import splice.provider.codex.stream.CodeModeStreamingCell
 import splice.provider.codex.stream.CodeModeStreams
+import splice.provider.codex.stream.source.CodeModeSourceCapture
 import splice.upstream.LifecycleScope
 import splice.upstream.PostingTurnRow
 import splice.upstream.RedirectableRoundPost

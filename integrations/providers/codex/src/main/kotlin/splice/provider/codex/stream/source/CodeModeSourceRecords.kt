@@ -1,5 +1,5 @@
 // NEW: source staging and billing commits share the callback and result transition conversation key.
-package splice.provider.codex.stream
+package splice.provider.codex.stream.source
 
 import splice.core.turn.GatewayCustomCall
 import splice.core.turn.Usage
@@ -12,6 +12,9 @@ import splice.provider.codex.state.CodeModeExpiredHistory
 import splice.provider.codex.state.CodeModeHeap
 import splice.provider.codex.state.CodeModeRegistryAccess
 import splice.provider.codex.state.CodeModeWeight.STORED
+import splice.provider.codex.stream.CodeModeClientContexts
+import splice.provider.codex.stream.CodeModeSourceState
+import splice.provider.codex.stream.CodeModeSourceUsage
 
 internal class CodeModeSourceRecords(
     private val access: CodeModeRegistryAccess,

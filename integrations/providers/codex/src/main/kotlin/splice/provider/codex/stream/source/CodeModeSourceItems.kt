@@ -1,4 +1,4 @@
-package splice.provider.codex.stream
+package splice.provider.codex.stream.source
 
 import splice.core.turn.GatewayCustomCall
 import splice.provider.codex.CodeModeBridgeConfig

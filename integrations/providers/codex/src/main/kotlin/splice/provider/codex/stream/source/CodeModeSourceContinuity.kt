@@ -1,11 +1,12 @@
 // NEW: an item-sealed native prefix survives a terminal that supplies only the legacy flat receipt.
-package splice.provider.codex.stream
+package splice.provider.codex.stream.source
 
 import kotlinx.serialization.json.JsonObject
 import splice.core.turn.TurnOutcome
 import splice.provider.codex.CodeModeContinuity
 import splice.provider.codex.CodexCodeModeWire
 import splice.provider.codex.history.CodeModeContinuityCapture
+import splice.provider.codex.stream.CodeModeRecoveryHistory
 
 internal class CodeModeSourceContinuity(private val wire: CodexCodeModeWire) {
     private var sealedPrefix: List<JsonObject>? = null

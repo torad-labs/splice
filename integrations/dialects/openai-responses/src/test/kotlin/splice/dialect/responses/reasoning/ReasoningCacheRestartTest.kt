@@ -295,6 +295,56 @@ class ReasoningCacheRestartTest(@param:TempDir private val state: Path) {
 /** The visible transcript contains no opaque carriers. Its exact positions restore server-owned reasoning. */
 class ReasoningPositionRestartTest(@param:TempDir private val state: Path) {
     @Test
+    fun `a sparse reasoning terminal preserves the streamed prose boundary warm and after restart`() = runTest {
+        val daemon = RestartProbe(state, replay = true)
+        val item = reasoning("rs_sparse").single().getValue("item")
+        val sparse = ev("""{"type":"response.completed","response":{"status":"completed","output":[$item]}}""")
+        drive(daemon, "session", prose("Already said.") + reasoning("rs_sparse") + sparse)
+
+        val request = proseFollowup("Already said.")
+        for (provider in listOf(daemon, RestartProbe(state, replay = true))) {
+            val replay = provider.buildTurn(request, false, "session").requestBody.getValue("input")
+                .jsonArray.map { it.jsonObject }
+            assertEquals(listOf("user", "assistant", "rs_sparse", "user"), replayOrder(replay))
+        }
+    }
+
+    @Test
+    fun `overlapping message text is replayed once before the following reasoning`() = runTest {
+        val first = ev(
+            """{"type":"message","id":"msg_a","role":"assistant","content":[{"type":"output_text","text":"Left"}]}""",
+        )
+        val second = ev(
+            """{"type":"message","id":"msg_b","role":"assistant","content":[{"type":"output_text","text":"Right"}]}""",
+        )
+        val frames = listOf(
+            ev("""{"type":"response.output_item.added","output_index":0,"item":$first}"""),
+            ev("""{"type":"response.output_item.added","output_index":1,"item":$second}"""),
+            ev("""{"type":"response.output_text.delta","output_index":0,"delta":"Left"}"""),
+            ev("""{"type":"response.output_text.delta","output_index":1,"delta":"Right"}"""),
+            ev("""{"type":"response.output_item.done","output_index":0,"item":$first}"""),
+            ev("""{"type":"response.output_item.done","output_index":1,"item":$second}"""),
+        ) + reasoning("rs_after_messages") + terminal
+        drive(RestartProbe(state, replay = true), "session", frames)
+
+        val replay = input(proseFollowup("LeftRight"))
+        assertEquals(listOf("user", "assistant", "rs_after_messages", "user"), replayOrder(replay))
+        assertEquals(
+            "LeftRight",
+            replay.single { it["role"]?.jsonPrimitive?.content == "assistant" }["content"]?.jsonPrimitive?.content,
+        )
+    }
+
+    private fun proseFollowup(text: String): splice.core.parse.AnthropicTurnBody = AnthropicParse.parseAnthropicBody(
+        """{"model":"gpt-5.6-sol","messages":[{"role":"user","content":"$OPENING"},
+            {"role":"assistant","content":"$text"},{"role":"user","content":"Continue."}],$TOOLS}""",
+    )
+
+    private fun replayOrder(items: List<JsonObject>): List<String?> = items.map {
+        it["id"]?.jsonPrimitive?.content ?: it["role"]?.jsonPrimitive?.content ?: it["type"]?.jsonPrimitive?.content
+    }
+
+    @Test
     fun `a stale reasoning item before prose is removed from the next request and from restart history`() = runTest {
         val daemon = RestartProbe(state, replay = true)
         drive(daemon, "session", reasoning("rs_stale") + prose("Done.") + terminal)

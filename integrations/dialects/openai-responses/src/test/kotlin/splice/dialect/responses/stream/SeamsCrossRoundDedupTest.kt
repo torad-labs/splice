@@ -9,12 +9,16 @@ import kotlinx.coroutines.flow.asFlow
 import kotlinx.coroutines.test.runTest
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.jsonArray
 import kotlinx.serialization.json.jsonObject
+import kotlinx.serialization.json.jsonPrimitive
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Test
 import splice.core.index.WireBlockIndex
 import splice.core.model.ModelCatalog
 import splice.core.model.ModelEntry
+import splice.core.parse.AnthropicParse
+import splice.core.reasoning.ReasoningReplay
 import splice.core.turn.ReasoningDisplay
 import splice.core.turn.TurnMeta
 import splice.core.turn.TurnReasoning
@@ -26,6 +30,7 @@ import splice.dialect.responses.ReasoningSettings
 import splice.dialect.responses.ResponsesLiteQuirks
 import splice.dialect.responses.ResponsesQuirks
 import splice.dialect.responses.ResponsesReasoningQuirks
+import splice.dialect.responses.ResponsesRoundTripQuirks
 import splice.dialect.responses.ResponsesToolQuirks
 import splice.dialect.responses.ResponsesTurnOptions
 import splice.dialect.responses.ResponsesTurnSeams
@@ -33,8 +38,17 @@ import splice.dialect.responses.ResponsesTurnSeamsDeps
 import splice.dialect.responses.RoundCarry
 import splice.dialect.responses.TranslatorServices
 import splice.dialect.responses.WatchdogCaps
+import splice.dialect.responses.reasoning.InjectPriorReasoning
 import splice.dialect.responses.reasoning.ReasoningCache
 import splice.dialect.responses.reasoning.ReasoningCachePolicy
+import splice.dialect.responses.reasoning.ReasoningEnvelopeDecoder
+import splice.dialect.responses.reasoning.ReasoningHistoryLookup
+import splice.dialect.responses.reasoning.ReasoningPositionIndex
+import splice.dialect.responses.request.BuildOptions
+import splice.dialect.responses.request.ModelIds
+import splice.dialect.responses.request.ReasoningHandoff
+import splice.dialect.responses.request.RequestedReasoning
+import splice.dialect.responses.request.ResponsesRequestBuilder
 import splice.dialect.responses.request.ResponsesStableIds
 import splice.dialect.responses.tools.ToolSurfaceLatch
 import splice.upstream.TurnSignals
@@ -79,20 +93,24 @@ private fun round(id: String, vararg parts: String): List<JsonObject> = buildLis
     add(completed)
 }
 
-private fun codexSeams(log: LogSink = LogSink {}): ResponsesTurnSeams {
+private fun codexSeams(
+    log: LogSink = LogSink {},
+    reasoningCache: ReasoningCache = ReasoningCache(),
+    cacheOn: Boolean = false,
+): ResponsesTurnSeams {
     val quirks = ResponsesQuirks(
         lite = ResponsesLiteQuirks(),
         providerTag = "claudex",
         reasoning = ResponsesReasoningQuirks(
             summaryDelivery = "sequential_cutoff",
         ),
+        roundTrip = ResponsesRoundTripQuirks(reasoningCache = cacheOn),
         tools = ResponsesToolQuirks(
             forceStrictFalse = true,
         ),
     )
     val cachePolicy = ReasoningCachePolicy()
     val ids = ResponsesStableIds()
-    val reasoningCache = ReasoningCache()
     val continuity = ReasoningContinuity(reasoningCache, cachePolicy, ids)
     return ResponsesTurnSeams(
         ResponsesTurnSeamsDeps(
@@ -136,6 +154,55 @@ private fun testMeta(): TurnMeta = TurnMeta(
 )
 
 class SeamsCrossRoundDedupTest {
+
+    @Test
+    fun `live and terminal copies leave entry and byte capacity for the next reasoning item`() = runTest {
+        val first = ev("""{"type":"reasoning","id":"rs_one","encrypted_content":"cipher-one","summary":[]}""")
+        val second = ev("""{"type":"reasoning","id":"rs_two","encrypted_content":"cipher-two","summary":[]}""")
+        val bytes = listOf(first, second).sumOf {
+            checkNotNull(ReasoningReplay.encodeReasoningEnvelope(it)).length.toLong()
+        }
+        for (cache in listOf(ReasoningCache(maxEntries = 2), ReasoningCache(maxTotalBytes = bytes))) {
+            val body = AnthropicParse.parseAnthropicBody(
+                """{"model":"gpt-5.6-luna","messages":[{"role":"user","content":"Opening"}]}""",
+            )
+            val options = BuildOptions(
+                compact = false,
+                models = ModelIds("gpt-5.6-luna", "gpt-5.6-luna"),
+                reasoning = RequestedReasoning(null, null, ReasoningDisplay.TEXT),
+                sessionId = "session",
+                handoff = ReasoningHandoff(
+                    replay = InjectPriorReasoning(true),
+                    decode = ReasoningEnvelopeDecoder { ReasoningReplay.decodeReasoningEnvelope(it) },
+                    history = ReasoningHistoryLookup {
+                        val key = ReasoningCachePolicy().conversationKey(
+                            "session",
+                            ResponsesStableIds().reasoningStorageKey(body.typed),
+                        )
+                        ReasoningPositionIndex().positions(cache.snapshot(key))
+                    },
+                ),
+            )
+            val builder = ResponsesRequestBuilder(ResponsesQuirks(lite = ResponsesLiteQuirks()))
+            val meta = builder.build(body.typed, body.raw, options).meta
+            val seams = codexSeams(reasoningCache = cache, cacheOn = true)
+            val signals = TurnSignals(clientGone = { false }, watchdogFired = { null })
+            val firstRound = listOf(
+                ev("""{"type":"response.output_item.done","output_index":0,"item":$first}"""),
+                ev("""{"type":"response.completed","response":{"status":"completed","output":[$first]}}"""),
+            )
+            seams.streamTranslator(meta, signals).driveTurn(firstRound.asFlow(), SeamsSink())
+            val nextRound = listOf(
+                ev("""{"type":"response.output_item.done","output_index":0,"item":$second}"""),
+                ev("""{"type":"response.completed","response":{"status":"completed","output":[]}}"""),
+            )
+            seams.streamTranslator(meta, signals).driveTurn(nextRound.asFlow(), SeamsSink())
+
+            val replay = builder.build(body.typed, body.raw, options.copy()).req.getValue("input").jsonArray
+                .map { it.jsonObject }.filter { it["type"]?.jsonPrimitive?.content == "reasoning" }
+            assertEquals(listOf("rs_one", "rs_two"), replay.map { it.getValue("id").jsonPrimitive.content })
+        }
+    }
 
     @Test
     fun `round 2's restatement of round 1 is suppressed through the real seams`() = runTest {

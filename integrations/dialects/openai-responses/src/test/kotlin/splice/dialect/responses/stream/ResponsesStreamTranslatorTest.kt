@@ -394,9 +394,9 @@ class ResponsesStreamTranslatorTest {
     }
 
     @Test
-    fun `replay emits redacted thinking in position when gated on`() = runTest {
+    fun `replay stays off the visible wire while the complete summary precedes its tool`() = runTest {
         val sink = RecordingSink()
-        ResponsesStreamTranslator(ctx(emit = true)).driveTurn(
+        val outcome = ResponsesStreamTranslator(ctx(emit = true)).driveTurn(
             listOf(
                 ev("""{"type":"response.reasoning_summary_text.delta","output_index":0,"delta":"sum"}"""),
                 ev(
@@ -411,11 +411,10 @@ class ResponsesStreamTranslatorTest {
             ).asFlow(),
             sink,
         )
-        val redactedAt = sink.calls.indexOfFirst { it.startsWith("redacted:") }
-        val toolAt = sink.calls.indexOfFirst { it.startsWith("openTool") }
-        assertTrue(
-            redactedAt in 1 until toolAt,
-            "replay block must land after summary close, before tool: ${sink.calls}",
+        assertEquals("sum", (outcome as TurnOutcome.Success).text.thinkingText)
+        assertEquals(
+            listOf("openThinking#0", "think#0:sum", "close#0", "openTool#1(t1,run)", "closeAll"),
+            sink.calls,
         )
     }
 

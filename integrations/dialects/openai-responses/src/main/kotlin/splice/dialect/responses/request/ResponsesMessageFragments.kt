@@ -13,6 +13,7 @@ import splice.core.wire.RedactedThinkingBlock
 import splice.core.wire.ToolDefinition
 import splice.core.wire.ToolUseBlock
 import splice.dialect.responses.ResponsesQuirks
+import splice.dialect.responses.reasoning.ResponsesHistoryInput
 import splice.dialect.responses.stream.LoopGuard
 import splice.upstream.ToolNameShortener
 import splice.upstream.memory.MessageFragmentContext
@@ -35,17 +36,22 @@ internal class ResponsesMessageFragments(
         val directives = if (quirks.roundTrip.loopGuard) LoopGuard.analyze(body.messages) else emptyMap()
         val inputBuilder = ResponsesInputBuilder(quirks, directives, toolNames)
         val context = context(body, raw, opts, directives, effort)
+        val history = ResponsesHistoryInput(opts)
         return buildJsonArray {
             for (msg in body.messages) {
                 // Tool calls/decrypted reasoning have live lookups and per-request inject-once state.
-                if (msg.content.any { it is ToolUseBlock || it is RedactedThinkingBlock }) {
+                if (history.active) {
+                    inputBuilder.appendMessage(this, msg, opts, declareByName, history)
+                } else if (msg.content.any { it is ToolUseBlock || it is RedactedThinkingBlock }) {
                     inputBuilder.appendMessage(this, msg, opts, declareByName)
                 } else {
                     fragments.message(context, msg) {
                         buildJsonArray { inputBuilder.appendMessage(this, msg, opts, declareByName) }
                     }.forEach { add(it) }
                 }
+                if (!history.active) msg.content.forEach { history.cursor.append(msg.role, it) }
             }
+            history.inject(this)
         }
     }
 

@@ -3,6 +3,7 @@
 package splice.dialect.responses.stream
 
 import kotlinx.serialization.json.JsonObject
+import splice.core.turn.TurnOutcome
 import splice.core.util.JsonScalars
 import splice.dialect.responses.ResponsesTurnState
 import splice.dialect.responses.reasoning.ResponsesReasoningFold
@@ -12,12 +13,18 @@ import splice.dialect.responses.tools.ResponsesToolSearchParse
 import splice.upstream.ToolNameShortener
 import splice.upstream.sse.WireSink
 
+/** Captures accumulated history immediately before a completed custom item can dispatch. */
+internal fun interface CompletedItemSnapshot {
+    public operator fun invoke(): TurnOutcome.Success
+}
+
 internal class ResponsesItemFold(
     private val state: ResponsesTurnState,
     private val reasoningFold: ResponsesReasoningFold,
     private val replay: ResponsesReasoningReplay,
     private val names: ToolNameShortener = ToolNameShortener(),
     private val outputToolName: String? = null,
+    private val snapshot: CompletedItemSnapshot? = null,
 ) {
 
     val execProgress = ResponsesExecProgress()
@@ -28,8 +35,6 @@ internal class ResponsesItemFold(
 
     suspend fun onItemAdded(evt: JsonObject, sink: WireSink) {
         val item = evt["item"] as? JsonObject ?: return
-        // The reasoning GPT gave before this item reaches Claude Code as one block, ahead of it.
-        replay.before(item, sink)
         state.streamedItemTypes.add(JsonScalars.strOrEmpty(item["type"]).ifEmpty { "?" })
         val oi = frames.intOr(evt[OUTPUT_INDEX]) ?: frames.intOr(item["index"]) ?: state.blocks.size
         execProgress.added(item, oi, sink)
@@ -77,7 +82,7 @@ internal class ResponsesItemFold(
         if (item != null) {
             customCalls.parse(item)?.let { call ->
                 state.customCalls.add(call)
-                sink.customToolSource(splice.upstream.sse.CustomToolSource.Completed(call))
+                sink.customToolSource(splice.upstream.sse.CustomToolSource.Completed(call, snapshot?.invoke()))
             }
         }
         val oi = frames.intOr(evt[OUTPUT_INDEX]) ?: frames.intOr(item?.get("index"))
@@ -90,7 +95,7 @@ internal class ResponsesItemFold(
         if (item != null && JsonScalars.strOrEmpty(item["type"]) == "message") state.messageClosed = true
         closeOpenBlocks(oi, sink)
         if (item == null) return
-        replay.collect(item)
+        replay.collect(item, oi)
     }
 
     /** DR-77: a backend may close a function_call via output_item.done ALONE — no arguments.delta,
@@ -160,9 +165,7 @@ internal class ResponsesItemFold(
         if (mistargeted) return
         state.textBuf.append(delta)
         if (outputToolName != null) return // Validated schema JSON is emitted as tool input at completion, not prose.
-        // A backend that sends no output_item.added for its message still shows the reasoning before the text.
         val b = existing ?: run {
-            replay.flush(sink)
             BlockState(sink.openText(), sawDelta = false).also { state.blocks[key] = it }
         }
         state.emittedText = true

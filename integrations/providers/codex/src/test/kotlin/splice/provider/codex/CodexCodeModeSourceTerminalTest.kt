@@ -37,55 +37,6 @@ class CodexCodeModeSourceTerminalTest : CodeModeStatementStreamSupport() {
         assertEquals(FailureCause.CODE_MODE_PROTOCOL, outcome.cause)
     }
 
-    @Test
-    @Timeout(20)
-    fun `item completion before response completion cannot finalize source or upstream billing`() = runBlocking<Unit> {
-        val runtime = IncrementalRuntime()
-        val manager = bridge(runtime)
-        val sink = StepSink()
-        val post = GatedPost(sink)
-        try {
-            val request = async {
-                manager.interceptor(turn(), disableParallel = false).intercept(BASE_REQUEST, sink, post)
-            }
-            post.gates.drop(1).forEach { it.complete(Unit) }
-            withTimeout(30_000) { post.itemDone.await() }
-            assertSourcePending()
-            assertFalse(post.stopped.isCompleted)
-            assertFalse(request.isCompleted, "the step waits for the response terminal, not the item")
-            post.complete.complete(Unit)
-            withTimeout(30_000) { post.stopped.await() }
-            withTimeout(30_000) { request.await() }
-        } finally {
-            manager.onHeadStop()
-        }
-    }
-
-    @Test
-    @Timeout(20)
-    fun `whole source with no early statement stays gated until the real response terminal`() = runBlocking {
-        val runtime = IncrementalRuntime()
-        val manager = bridge(runtime)
-        val sink = StepSink()
-        val post = GatedPost(sink)
-        post.wholeOnly = true
-        try {
-            val request = async {
-                manager.interceptor(turn(), disableParallel = false).intercept(BASE_REQUEST, sink, post)
-            }
-            withTimeout(30_000) { post.itemDone.await() }
-            assertFalse(request.isCompleted)
-            assertFalse(sink.callback.isCompleted)
-            post.complete.complete(Unit)
-            val outcome = withTimeout(30_000) { request.await() }.turn() as TurnOutcome.Success
-            assertBilling(outcome.usage)
-            assertEquals(1, runtime.starts)
-            assertEquals(2, post.posts)
-        } finally {
-            manager.onHeadStop()
-        }
-    }
-
     @ParameterizedTest
     @ValueSource(strings = ["reader-wait", "blocked-write"])
     @Timeout(20)

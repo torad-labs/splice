@@ -62,6 +62,7 @@ internal class ReasoningCachePolicy {
         val walk = StaleReasoningWalk(cache)
         val kept = buildJsonArray { base.input.forEach { walk.visit(this, it) } }
         if (walk.dropped == 0) return null
+        cache.evictByReasoningIds(walk.reasoningIds)
         val next = base.copy(input = kept)
         return responsesRequestJson.encodeToJsonElement(ResponsesRequest.serializer(), next).let(JsonWire::string)
     }
@@ -72,12 +73,14 @@ internal class ReasoningCachePolicy {
  *  dropped item. (The cache widens each eviction to the whole conversation; see evictByToolId.) */
 private class StaleReasoningWalk(private val cache: ReasoningCache) {
     var dropped = 0
+    val reasoningIds = mutableSetOf<String>()
     private var inDroppedRound = false
 
     fun visit(sink: JsonArrayBuilder, el: JsonElement) {
         val item = el as? JsonObject
         when (JsonScalars.str(item?.get(WALK_FIELD_TYPE))) {
             "reasoning" -> {
+                JsonScalars.str(item, "id")?.let(reasoningIds::add)
                 dropped++
                 inDroppedRound = true
             }

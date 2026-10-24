@@ -167,6 +167,7 @@ internal class CodeModeScriptFold(
     private val quiet: List<CodeModeQuiet>,
     private val scripts: CodeModeScriptPlacements,
 ) {
+    private val reasoning = CodeModeReasoningRestore(codec, scripts)
     private val out = mutableListOf<JsonElement>()
     private val between = mutableListOf<JsonElement>()
     private val opened = mutableSetOf<String>()
@@ -260,6 +261,7 @@ internal class CodeModeScriptFold(
 
     private fun callback(items: List<JsonElement>, index: Int, record: CodeModeRecord, closes: Boolean) {
         if (opened.add(record.id)) {
+            reasoning.restore(out, record)
             out += CodeModeCallReplay.item(record)
             open = record
         }

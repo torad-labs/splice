@@ -106,8 +106,15 @@ internal class ResponsesStreamTranslator(
         state: ResponsesTurnState,
     ): TurnOutcome {
         val reasoningFold = ResponsesReasoningFold(ctx, state, summaryParts)
-        val replay = ResponsesReasoningReplay(ctx, state)
-        val itemFold = ResponsesItemFold(state, reasoningFold, replay, names, outputToolName)
+        val replay = ResponsesReasoningReplay(ctx, state, names)
+        val itemFold = ResponsesItemFold(
+            state,
+            reasoningFold,
+            replay,
+            names,
+            outputToolName,
+            snapshot = CompletedItemSnapshot { ResponsesOutcomePayload(ctx).successOutcome(state) },
+        )
         val reducer = ResponsesEventReducer(state, itemFold, reasoningFold)
         // Stream read errors surface via the terminal decision, never a crash; only a genuine
         // cancellation (no watchdog fire) is allowed to propagate.
@@ -157,7 +164,8 @@ internal class ResponsesStreamTranslator(
             // pre-content throw would starve every one of them, and would also lose the
             // conn-reset provenance SseRoundDriver.tearOutcome and TurnConnEnd exist to carry —
             // which is what a first pass at this arm did, and what its tests caught.
-            if (!clientSawContent(state)) throw ignored
+            // Completed encrypted items are recoverable progress even when the model supplied no display text.
+            if (!hasRecoverableProgress(state)) throw ignored
             unexpected = ignored
         } finally {
             // Forget the exec items even when the upstream omits item-done or the turn aborts.
@@ -168,15 +176,24 @@ internal class ResponsesStreamTranslator(
         }
 
         // A parsed terminal owns real usage. Late reader cancellation cannot interrupt its cleanup or accounting.
-        return if (!terminalSeen(state)) {
-            finishRound(state, sink, replay)
-        } else {
-            withContext(NonCancellable) { finishRound(state, sink, replay) }
-        }
+        return finishPreservingTerminal(state, sink, replay)
+    }
+
+    private suspend fun finishPreservingTerminal(
+        state: ResponsesTurnState,
+        sink: WireSink,
+        replay: ResponsesReasoningReplay,
+    ): TurnOutcome = if (terminalSeen(state)) {
+        withContext(NonCancellable) { finishRound(state, sink, replay) }
+    } else {
+        finishRound(state, sink, replay)
     }
 
     private fun terminalSeen(state: ResponsesTurnState): Boolean =
         state.finalResponse != null || state.upstreamFailure != null
+
+    private fun hasRecoverableProgress(state: ResponsesTurnState): Boolean =
+        clientSawContent(state) || state.reasoningEnvelopes.isNotEmpty()
 
     private fun cancellationMustEscape(state: ResponsesTurnState): Boolean =
         ctx.signals.watchdogFired() == null && !terminalSeen(state)
@@ -217,8 +234,7 @@ internal class ResponsesStreamTranslator(
         latchSweptToolBlocks(state)
         ResponsesTerminalBackfill().harvestFallback(state)
         sink.closeAll()
-        // The reasoning GPT ended the round on: nothing came after it to show it ahead of.
-        replay.flush(sink)
+        replay.finish()
         ResponsesSchemaOutput(outputToolName).emit(state, sink)
         val outcome = billedOutcome(state)
         state.ending?.let { log("upstream round ended on $it") }
@@ -288,6 +304,7 @@ internal class ResponsesStreamTranslator(
         if (outcome !is TurnOutcome.Success) return
         when {
             ctx.compact -> ctx.reasoningCapture.onTurn.compacted()
+            ctx.reasoningCapture.history != null -> Unit // Exact positions supersede the old tool-only placement.
             !outcome.hasToolUse -> Unit
             state.turnToolIds.isNotEmpty() && state.reasoningEnvelopes.isNotEmpty() ->
                 ctx.reasoningCapture.onTurn(state.turnToolIds.toList(), state.reasoningEnvelopes.toList())

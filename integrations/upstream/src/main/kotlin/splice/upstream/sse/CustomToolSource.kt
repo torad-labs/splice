@@ -3,12 +3,17 @@ package splice.upstream.sse
 
 import kotlinx.coroutines.CoroutineScope
 import splice.core.turn.GatewayCustomCall
+import splice.core.turn.TurnOutcome
 
 /** Added and completed carriers are identity-bearing; a delta can only extend its admitted item. */
 public sealed class CustomToolSource {
     public data class Started(val call: GatewayCustomCall) : CustomToolSource()
     public data class Delta(val callId: String, val text: String) : CustomToolSource()
-    public data class Completed(val call: GatewayCustomCall) : CustomToolSource()
+    public data class Completed(
+        val call: GatewayCustomCall,
+        /** Accumulated history, independent of client blocks. Usage is provisional until the response ends. */
+        val snapshot: TurnOutcome.Success? = null,
+    ) : CustomToolSource()
 
     /** The round's terminal was parsed: the source is whole, whatever cancels the reader after this. */
     public data object Terminal : CustomToolSource()

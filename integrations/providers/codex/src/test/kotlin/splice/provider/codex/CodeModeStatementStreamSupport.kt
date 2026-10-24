@@ -241,7 +241,7 @@ abstract class CodeModeStatementStreamSupport : CodeModeBridgeTestSupport() {
         }
     }
 
-    /** Runs a model's exec item as the runtime receives it: whole, once the response terminal certified it. */
+    /** Runs a model's exec item as the runtime receives it: whole, once the item is durably sealed. */
     protected inner class IncrementalRuntime : CodeModeRuntime {
         var starts = 0
         override suspend fun start(

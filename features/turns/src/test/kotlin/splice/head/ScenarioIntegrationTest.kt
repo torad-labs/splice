@@ -112,15 +112,17 @@ class ScenarioIntegrationTest {
     }
 
     @Test
-    fun `replaystream - redacted block emitted in position when replay on`() {
+    fun `replaystream - readable reasoning stays visible without opaque carriers`() {
         val (outcome, sink) = drive("replaystream", replay = true)
-        assertTrue(outcome is TurnOutcome.Success)
-        assertEquals(listOf("env:rs_stream"), sink.redacted)
-        assertTrue(sink.opens.contains("thinking") && sink.opens.contains("text"))
+        val success = outcome as TurnOutcome.Success
+        assertEquals("Long enough reasoning summary to mirror into text.", success.text.thinkingText)
+        assertEquals("answer", success.text.bodyText)
+        assertTrue(sink.redacted.isEmpty())
+        assertEquals(listOf("thinking", "text"), sink.opens)
     }
 
     @Test
-    fun `replaystream - no redacted block when replay off (the measured default)`() {
+    fun `replaystream - opaque carriers stay hidden with legacy emission disabled`() {
         val (outcome, sink) = drive("replaystream", replay = false)
         assertTrue(outcome is TurnOutcome.Success)
         assertTrue(sink.redacted.isEmpty())

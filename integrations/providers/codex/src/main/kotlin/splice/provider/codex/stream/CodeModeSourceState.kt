@@ -9,9 +9,12 @@ import splice.core.turn.UsageOrigin
 
 @Serializable
 internal data class CodeModeSourceState(
+    /** The response reader settled; its usage, when present, can be claimed independently of execution. */
     val complete: Boolean = false,
     val usage: CodeModeSourceUsage? = null,
     val consumed: Boolean = false,
+    /** Old complete records already held a whole item. A sealed item alone never proves a failed boot. */
+    val itemComplete: Boolean = complete,
 )
 
 @Serializable

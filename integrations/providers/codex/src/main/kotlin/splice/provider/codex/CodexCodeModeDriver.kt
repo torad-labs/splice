@@ -108,24 +108,19 @@ internal class CodexCodeModeDriver(
         val generated = streams.takeOutcome(record)
         context.recovery?.generated(generated)
         if (context.completed.none { it.id == record.id }) context.completed += record
+        // The item may already have executed when its response failed. Keep its saved output for a retry's
+        // canonical history, but this turn must still expose the failed or incomplete response terminal.
+        val terminal = when (generated) {
+            is TurnOutcome.Success -> generated.takeIf { it.incomplete }
+            is TurnOutcome.Failure, is TurnOutcome.ClientAbandoned -> generated
+            null -> null
+        }
+        if (terminal != null) return terminal
         val rewritten = continuation(context, record, body)
         rewritten.error?.let { return failure(it) }
         val outcome = post(context, null, checkNotNull(rewritten.body))
         val accumulated = CodeModeOutcomeAccumulator()
-        when (generated) {
-            is TurnOutcome.Success -> accumulated.absorb(generated)
-            is TurnOutcome.Failure -> accumulated.absorb(
-                TurnOutcome.Success(
-                    false,
-                    false,
-                    (generated.partial?.usage ?: noRequestUsage) + generated.salvagedUsage,
-                ),
-            )
-            is TurnOutcome.ClientAbandoned -> accumulated.absorb(
-                TurnOutcome.Success(false, false, generated.salvagedUsage),
-            )
-            null -> Unit
-        }
+        if (generated is TurnOutcome.Success) accumulated.absorb(generated)
         return accumulated.finish(outcome)
     }
 
@@ -239,7 +234,7 @@ internal class CodexCodeModeDriver(
     suspend fun retryStart(record: CodeModeRecord, context: CodeModeRunContext, body: CodeModeBody): TurnOutcome {
         check(registry.add(record)) { "Code-mode record cannot restart" }
         val stream = streams.find(record)
-        if (stream == null && record.sourceState?.complete == false) {
+        if (stream == null && record.sourceState?.itemComplete == false) {
             registry.lose(record, "upstream source state was lost; source was not rerun")
             return failure(record.error.orEmpty())
         }

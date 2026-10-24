@@ -5,9 +5,12 @@
 // idiom) makes JSON-null and absent the same no-envelope / dropped answer on BOTH paired sides.
 package splice.core.reasoning
 
+import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonNull
 import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.buildJsonObject
+import kotlinx.serialization.json.jsonObject
+import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertNotNull
 import org.junit.jupiter.api.Assertions.assertNull
 import org.junit.jupiter.api.Test
@@ -15,6 +18,17 @@ import splice.core.util.LogSink
 import java.util.Base64
 
 class ReasoningReplayEnvelopeTest {
+
+    @Test
+    fun `readable reasoning content survives encrypted envelope roundtrip without changing v1`() {
+        val item = Json.parseToJsonElement(
+            """{"type":"reasoning","id":"rs_content","encrypted_content":"cipher",
+            "summary":[{"type":"summary_text","text":"model summary"}],
+            "content":[{"type":"reasoning_text","text":"model readable content"}]}""",
+        ).jsonObject
+        val encoded = ReasoningReplay.encodeReasoningEnvelope(item)
+        assertEquals(item, ReasoningReplay.decodeReasoningEnvelope(encoded))
+    }
 
     @Test
     fun `a JSON-null encrypted_content mints no envelope - DR-76`() {

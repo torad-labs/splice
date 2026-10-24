@@ -5,6 +5,7 @@ import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.ensureActive
 import splice.provider.codex.CodeModePersistenceException
+import splice.provider.codex.CodeModePhase
 import splice.provider.codex.CodeModeRecord
 import splice.upstream.codemode.CodeModeCell
 import splice.upstream.codemode.CodeModeResult
@@ -65,6 +66,9 @@ internal class CodeModeStreamingCell(
      *  closing its cell frees only the engine. */
     override fun close() {
         cell.close()
-        if (record.sourceState?.complete != true && !round.cut.released) round.cancel()
+        if (record.phase == CodeModePhase.COMPLETED) return
+        if (record.sourceState?.complete != true && !round.cut.released) {
+            round.cancel()
+        }
     }
 }

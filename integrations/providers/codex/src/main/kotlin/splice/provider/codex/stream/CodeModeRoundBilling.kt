@@ -44,7 +44,12 @@ internal class CodeModeRoundBilling(
 
     /** A parsed terminal still belongs to its posting row when disposal prevented source staging. */
     fun reported(outcome: TurnOutcome) = synchronized(lifecycle) {
-        reported = (outcome as? TurnOutcome.Success)?.usage
+        reported = when (outcome) {
+            is TurnOutcome.Success -> outcome.usage
+            is TurnOutcome.Failure -> ((outcome.partial?.usage ?: noRequestUsage) + outcome.salvagedUsage)
+                .takeIf { it.reported.isNotEmpty() }
+            is TurnOutcome.ClientAbandoned -> outcome.salvagedUsage.takeIf { it.reported.isNotEmpty() }
+        }
     }
 
     private fun consume(current: CodeModeRecord): Usage? {

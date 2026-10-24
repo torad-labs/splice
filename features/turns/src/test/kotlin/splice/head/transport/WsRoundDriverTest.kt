@@ -74,7 +74,10 @@ import splice.core.turn.Usage
 import splice.core.turn.WatchdogBudget
 import splice.core.util.AsyncFileIo
 import splice.core.util.ElapsedClock
+import splice.core.util.JsonScalars
 import splice.core.util.WallClock
+import splice.core.wire.TextBlock
+import splice.core.wire.ToolResultBlock
 import splice.dialect.responses.ReasoningSettings
 import splice.head.HeadDeps
 import splice.head.HeadServer
@@ -360,6 +363,13 @@ private class ScriptedWsProvider(
             "synthetic-ws-conversation",
             built.meta.route.upstreamModel,
             setOf("SyntheticTool"),
+            toolResults = body.typed.messages.flatMap { it.content }.filterIsInstance<ToolResultBlock>().map { result ->
+                CodeModeResult(
+                    result.toolUseId,
+                    result.content.filterIsInstance<TextBlock>().joinToString("") { it.text },
+                    result.isError == true,
+                )
+            },
         )
         return built.copy(roundInterceptor = manager.interceptor(turn, disableParallel = false))
     }
@@ -642,11 +652,14 @@ class WsCompletionTest(@param:TempDir private val tmp: Path) {
         )
     }
 
-    private suspend fun boundedTurn(port: Int): String = withTimeout(5_000L) {
+    private suspend fun boundedTurn(
+        port: Int,
+        messages: String = """[{"role":"user","content":"synthetic burst"}]""",
+    ): String = withTimeout(5_000L) {
         client.post("http://127.0.0.1:$port/v1/messages") {
             setBody(
                 """{"model":"claude-codex--gpt-5.6-sol","stream":true,"max_tokens":100,
-                    "messages":[{"role":"user","content":"synthetic burst"}]}""",
+                    "messages":$messages}""",
             )
         }.bodyAsText()
     }
@@ -702,8 +715,8 @@ class WsCompletionTest(@param:TempDir private val tmp: Path) {
     }
 
     @ParameterizedTest
-    // Oct 23, 2026: "worker-wait", a worker reading the script while its item still streamed, is gone with streamed
-    // execution: exec runs once its whole item has arrived, so no worker reads an unfinished item.
+    // A completed item can issue a callback before EOF. Its result must settle before consuming the failed response;
+    // a boot that never took the source or returned a cell can be rejected without waiting for that boot to finish.
     @ValueSource(strings = ["completed", "eof", "startup-wait"])
     fun `custom source ending releases the intercepted WS turn`(ending: String) = runBlocking {
         val runtime = SourceRuntime(ending)
@@ -721,7 +734,8 @@ class WsCompletionTest(@param:TempDir private val tmp: Path) {
         val h = head(runner, bridge)
         h.start()
         try {
-            val body = boundedTurn(h.port)
+            val first = boundedTurn(h.port)
+            val body = if (ending == "eof") completeSourceCallback(h.port, first) else first
             assertEquals(1, runtime.starts, "the request must traverse the real interceptor")
             assertEquals(1, runner.attempts)
             val rejected = runner.perf?.snapshot()?.counters?.get(PerfKeys.CODE_MODE_START_REJECTED)
@@ -735,13 +749,33 @@ class WsCompletionTest(@param:TempDir private val tmp: Path) {
                 assertTrue(body.contains("SyntheticTool"))
                 assertFalse(body.contains("event: error"))
             } else {
-                assertTrue(body.contains("event: error"), "torn custom source must fail without replay")
+                assertTrue(body.contains("event: error"), "torn custom source must fail without replay: $body")
+                assertFalse(body.contains("event: message_stop"), "a failed source cannot end the turn cleanly")
+                assertFalse(body.contains("SyntheticTool"), "a failed source cannot repeat its callback")
                 assertEquals(1, runner.endedNotOk)
             }
         } finally {
             burstAggregate("custom-$ending", runner)
             h.stop()
         }
+    }
+
+    private suspend fun completeSourceCallback(port: Int, first: String): String {
+        assertTrue(first.contains("SyntheticTool"), "item completion must expose its callback: $first")
+        assertFalse(first.contains("event: error"), "the valid callback is delivered before the later failure")
+        val tool = first.lineSequence().filter { it.startsWith("data: ") }
+            .map { ev(it.removePrefix("data: ")) }
+            .mapNotNull { it["content_block"] as? JsonObject }
+            .single { JsonScalars.str(it, "type") == "tool_use" }
+        val id = checkNotNull(JsonScalars.str(tool, "id"))
+        return boundedTurn(
+            port,
+            """[{"role":"user","content":"synthetic burst"},
+                {"role":"assistant","content":[{"type":"tool_use","id":"$id",
+                    "name":"SyntheticTool","input":{}}]},
+                {"role":"user","content":[{"type":"tool_result","tool_use_id":"$id",
+                    "content":"synthetic effect applied"}]}]""",
+        )
     }
 
     private fun customSource(ending: String): List<String> = buildList {
@@ -790,6 +824,7 @@ class WsCompletionTest(@param:TempDir private val tmp: Path) {
             }
             return object : CodeModeCell {
                 override suspend fun advance(results: List<CodeModeResult>): CodeModeStep {
+                    if (results.isNotEmpty()) return CodeModeStep.Completed(results.single().output)
                     advancing.complete(Unit)
                     return when (val part = source.read()) {
                         is CodeModeSourcePart.Failed -> throw IOException(part.error)

@@ -4,7 +4,9 @@
 // mirror-duplication invariant this file makes structurally unreachable rather than merely avoided).
 package splice.dialect.responses.reasoning
 
+import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.JsonPrimitive
 import splice.core.turn.SharedSummaryParts
 import splice.core.util.JsonScalars
 import splice.dialect.responses.ResponsesTurnState
@@ -16,6 +18,7 @@ import splice.dialect.responses.stream.ResponsesFrameParse
 import splice.dialect.responses.stream.ResponsesHarvest
 import splice.dialect.responses.stream.SummaryDedup
 import splice.upstream.sse.WireSink
+import splice.upstream.transport.BufferCapacity
 
 private const val PART_SEPARATOR = "\n\n"
 
@@ -42,6 +45,7 @@ internal class ResponsesReasoningFold(
     // Live summary delivery (every mode but cutoff): a header-only part is a status line, rendered
     // once per round per distinct text (V4-450).
     private val statusHeaders = SummaryStatusHeaders()
+    private val leadingText = HashMap<Int, StringBuilder>()
 
     // sequential_cutoff mode (codex-rs parity, ported verbatim from session/turn.rs 2026-08-26):
     // the backend streams MULTIPLE reasoning items CONCURRENTLY, and each item's summary stream
@@ -97,25 +101,38 @@ internal class ResponsesReasoningFold(
             render(oi, statusHeaders.done(frames.reasoningKey(oi), text), sink)
             return
         }
-        if (!renderableSummaryDone(evt, text)) return
+        if (!renderableSummaryDone(evt, text) || !statusHeaders.admitsLate(text)) return
         // codex emits a section break for summary_index > 0; block-non-empty is the same boundary
         // without ever leading an empty block with a separator (the first RENDERED part of an
         // item can sit at summary_index > 0 when its restated prefix was dropped).
-        render(oi, SummaryRelease(text, startsPart = true), sink)
+        render(oi, SummaryRelease(text, startsPart = true, complete = true), sink)
     }
 
     /** Write [release] into the item's thinking block, opening it on first use; a part's first text
      *  takes the paragraph break when the block already holds text. */
     private suspend fun render(oi: Int, release: SummaryRelease?, sink: WireSink) {
         if (release == null || release.text.isEmpty()) return
+        val key = frames.reasoningKey(oi)
+        val text = if (state.blocks[key]?.sawDelta == true) {
+            release.text
+        } else {
+            val held = leadingText.getOrPut(oi) { StringBuilder() }
+            require(held.length.toLong() + release.text.length <= BufferCapacity.MAX_BUFFERED_CHARS) {
+                "reasoning prefix exceeds buffer capacity"
+            }
+            held.append(release.text)
+            if (!release.canRender(held.toString())) return
+            leadingText.remove(oi)
+            held.toString()
+        }
         val b = ensureThinkingBlock(oi, sink)
         if (release.startsPart && b.sawDelta) {
             state.thinkingBuf.append(PART_SEPARATOR)
             sink.thinkingDelta(b.index, PART_SEPARATOR)
         }
         b.sawDelta = true
-        state.thinkingBuf.append(release.text)
-        sink.thinkingDelta(b.index, release.text)
+        state.thinkingBuf.append(text)
+        sink.thinkingDelta(b.index, text)
     }
 
     /** Two filters, one decision. First codex's (session/turn.rs ReasoningSummaryDone arm): the
@@ -154,6 +171,7 @@ internal class ResponsesReasoningFold(
     suspend fun maybeEmitLateReasoning(item: JsonObject?, oi: Int?, sink: WireSink) {
         if (item == null || oi == null) return
         if (JsonScalars.strOrEmpty(item["type"]) != "reasoning") return
+        finishLeadingText(item, oi, sink)
         // cutoff mode: the done-event path is the complete render surface (codex renders nothing
         // from completed items in this mode — a completed item that never went active is a
         // restatement carrier, and re-rendering it is the staircase this port kills).
@@ -167,6 +185,25 @@ internal class ResponsesReasoningFold(
             emitReasoningItemText(item, oi, sink)
         }
     }
+
+    /** Raw deltas may end on a literal '<'. A completed raw snapshot is authoritative when present;
+     * otherwise settle the held prefix itself. Removing it first prevents carry-over into the next item. */
+    private suspend fun finishLeadingText(item: JsonObject, oi: Int, sink: WireSink) {
+        val held = leadingText.remove(oi)?.toString() ?: return
+        val text = if (hasRawSnapshot(item)) harvest.reasoningReadableText(item) else held
+        if (!ReadableReasoning.hasText(text)) return
+        render(oi, SummaryRelease(text, startsPart = false, complete = true), sink)
+    }
+
+    private fun hasRawSnapshot(item: JsonObject): Boolean =
+        listOf("content", "text", "reasoning", "reasoning_content").any { key ->
+            when (val value = item[key]) {
+                is JsonArray -> value.isNotEmpty()
+                is JsonObject -> value.isNotEmpty()
+                is JsonPrimitive -> JsonScalars.strOrEmpty(value).isNotEmpty()
+                null -> false
+            }
+        }
 
     /**
      * If the completed reasoning item carries human-readable text we have not already streamed

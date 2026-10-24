@@ -1,48 +1,120 @@
-// PORT-OF: ResponsesStreamTranslator.kt @ f875801 — invariants unchanged: the encrypted-envelope
-// replay path — the only code that touches ctx.encodeReasoningEnvelope / emitEncryptedReasoning; it
-// emits an opaque handle, never text, and is called from onItemDone, not the thinking-delta path.
-// 2026-10-23: the reasoning GPT gives in a row reaches Claude Code as one block, written before the next item that
-// is not reasoning or at the round's end. Claude Code draws each block as an empty "Thinking…" row.
 package splice.dialect.responses.reasoning
 
+import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonObject
-import splice.core.reasoning.ReasoningReplay
+import splice.core.reasoning.ReasoningHistory
 import splice.core.util.JsonScalars
+import splice.core.wire.ToolUseBlock
 import splice.dialect.responses.ResponsesTurnState
 import splice.dialect.responses.StreamTurnContext
-import splice.upstream.sse.WireSink
+import splice.upstream.ToolNameShortener
 
-/** onItemDone's replay half: hold the encrypted reasoning for Claude Code (gated) and collect its envelope for
- *  fold/re-anchor replay; the run it holds is shown before what GPT gave next. */
-internal class ResponsesReasoningReplay(private val ctx: StreamTurnContext, private val state: ResponsesTurnState) {
+/** Completed reasoning is server history, independent of readable reasoning and terminal accounting.
+ * No encrypted envelope is a client content block. Missing readable model text stays missing. */
+internal class ResponsesReasoningReplay(
+    private val ctx: StreamTurnContext,
+    private val state: ResponsesTurnState,
+    private val names: ToolNameShortener,
+) {
+    private val cursor = ctx.reasoningCapture.history
+    private val initial = cursor?.copy()
+    private val captured = linkedMapOf<String, String>()
+    private var textChars = 0
+    private var roundId: String? = null
+    private var streamedItems = 0
 
-    /** The envelopes of the reasoning GPT gave since Claude Code was last shown something that is not reasoning. */
-    private val run = mutableListOf<String>()
+    fun collect(item: JsonObject, outputIndex: Int?) {
+        collectAt(item, cursor, streamedText = true, outputIndex = outputIndex ?: streamedItems, terminal = false)
+        streamedItems++
+    }
 
-    fun collect(item: JsonObject) {
+    /** Terminal-only backends carry the same ordered output array. Revisit it from the request cursor;
+     * already captured ids are skipped, and streamed positions never depend on the terminal arriving. */
+    fun finish() {
+        val output = state.finalResponse?.get("output") as? JsonArray ?: return
+        if (output.isEmpty()) return
+        val at = initial?.copy()
+        output.forEachIndexed { index, value ->
+            (value as? JsonObject)?.let {
+                collectAt(
+                    it,
+                    at,
+                    streamedText = false,
+                    outputIndex = index,
+                    terminal = true,
+                )
+            }
+        }
+        publishCursor(at)
+        reconcileEnvelopes(output)
+    }
+
+    private fun collectAt(
+        item: JsonObject,
+        at: ReasoningHistory?,
+        streamedText: Boolean,
+        outputIndex: Int,
+        terminal: Boolean,
+    ) {
+        when (JsonScalars.str(item, "type")) {
+            "reasoning" -> capture(item, at, outputIndex, terminal)
+            "message" -> advanceMessage(item, at, streamedText)
+            "function_call" -> advanceTool(item, at)
+        }
+    }
+
+    private fun capture(item: JsonObject, at: ReasoningHistory?, outputIndex: Int, terminal: Boolean) {
+        val id = JsonScalars.str(item, "id") ?: return
         val envelope = ctx.encodeReasoningEnvelope(item) ?: return
-        if (shouldEmitReasoning(item)) run += envelope
-        if (ctx.reasoningCapture.collectEnvelopes) state.reasoningEnvelopes.add(envelope)
+        val fresh = rememberEnvelope(id, envelope)
+        if (!fresh && !terminal) return
+        val round = roundId ?: id.also { roundId = it }
+        at?.let {
+            ctx.reasoningCapture.onTurn.positioned(
+                it.key,
+                envelope,
+                ReasoningItemOrder(round, outputIndex, terminal, id),
+            )
+        }
     }
 
-    /** Shows Claude Code the run of reasoning ahead of [item], which GPT gave next, unless it is reasoning too. */
-    suspend fun before(item: JsonObject, sink: WireSink) {
-        if (JsonScalars.strOrEmpty(item["type"]) != "reasoning") flush(sink)
+    private fun rememberEnvelope(id: String, envelope: String): Boolean {
+        val fresh = captured.putIfAbsent(id, envelope) == null
+        if (fresh && ctx.reasoningCapture.collectEnvelopes) state.reasoningEnvelopes.add(envelope)
+        return fresh
     }
 
-    /** Shows Claude Code the run of reasoning as one redacted_thinking block, however many items it holds. */
-    suspend fun flush(sink: WireSink) {
-        if (run.isEmpty()) return
-        sink.addRedactedThinking(ReasoningReplay.joinReasoningEnvelopes(run))
-        run.clear()
-        // CX-09: the redacted block reached the sink too — without this flag an
-        // encrypted-reasoning-ONLY turn reads as empty and earns a false empty_model api_error.
-        state.emittedThinking = true
+    private fun advanceMessage(item: JsonObject, at: ReasoningHistory?, streamedText: Boolean) {
+        val text = if (streamedText) state.textBuf.substring(textChars) else messageText(item)
+        at?.text("assistant", text.ifEmpty { messageText(item) })
+        if (streamedText) textChars = state.textBuf.length
     }
 
-    /** Gated encrypted-reasoning EMISSION predicate — kept out of the caller so its condition stays flat. */
-    private fun shouldEmitReasoning(item: JsonObject): Boolean =
-        ctx.emitEncryptedReasoning.v && !ctx.compact &&
-            JsonScalars.strOrEmpty(item["type"]) == "reasoning" &&
-            JsonScalars.strOrEmpty(item["encrypted_content"]).isNotEmpty()
+    private fun advanceTool(item: JsonObject, at: ReasoningHistory?) {
+        val id = JsonScalars.str(item, "call_id") ?: return
+        val arguments = JsonScalars.str(item, "arguments") ?: return
+        val input = JsonScalars.objectOrNull(Json, arguments) ?: return
+        val name = names.restore(JsonScalars.str(item, "name").orEmpty())
+        if (at != null) ResponsesHistoryCursor(at).append("assistant", ToolUseBlock(id, name, input))
+    }
+
+    private fun reconcileEnvelopes(output: JsonArray) {
+        if (!ctx.reasoningCapture.collectEnvelopes) return
+        val ids = output.mapNotNull { JsonScalars.str(it as? JsonObject, "id") }.filter { it in captured }.toSet()
+        val ordered = ids.mapNotNull { captured[it] } + captured.filterKeys { it !in ids }.values
+        state.reasoningEnvelopes.clear()
+        state.reasoningEnvelopes.addAll(ordered)
+    }
+
+    private fun publishCursor(at: ReasoningHistory?) {
+        val position = at ?: return
+        val current = cursor ?: return
+        // A sparse final output can add missing items, but cannot rewind visible items already streamed.
+        if (position.offset >= current.offset) current.restore(position)
+    }
+
+    private fun messageText(item: JsonObject): String = (item["content"] as? JsonArray).orEmpty().joinToString("") {
+        JsonScalars.str(it as? JsonObject, "text").orEmpty()
+    }
 }

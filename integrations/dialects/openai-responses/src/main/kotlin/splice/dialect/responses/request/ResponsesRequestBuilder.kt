@@ -118,6 +118,8 @@ internal class ResponsesRequestBuilder(
                 // lookup closure uses, so capture (which only sees TurnMeta) and injection agree.
                 conversationKey = conversationKey,
                 sessionId = opts.sessionId,
+                reasoningHistory = opts.reasoningHistory.copy(),
+                reasoningStorageKey = ids.reasoningStorageKey(body),
                 // summaryParts is NOT passed: TurnScope's default constructs the turn's one instance.
                 // Every continuation round reuses this meta object (continuationRequest bypasses
                 // build()), so the dedup state it carries is genuinely turn-scoped.

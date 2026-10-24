@@ -1,15 +1,7 @@
 // NEW: a bounded captured source offers a fresh cursor only for proven pre-dispatch retries.
 //
-// WHOLE ITEMS ONLY (Oct 23, 2026). A cursor hands the worker nothing until the response terminal certifies the
-// exec item, then the whole item in one part, as Codex dispatches exec only on its completed item (codex-rs
-// turn.rs:2903-3014). Statements used to run as they streamed: a script's first client
-// tool calls went out before its upstream round ended, so one round outlived the client response that carried
-// them, and the detached reader, switching attachments, cut claims and split billing that followed were the
-// most-fixed code-mode family since Sep 1 (77 commits). The model never opens a second exec while one runs, and
-// its sources are short (661 chars at p50), so the overlap this gives up is a fraction of a script's generation.
-// The buffer kept the streamed path's item seal and statement certification until round 11 of #247 found them
-// unreachable: a cell starts only after the cursor read the terminal, which no later failure replaces, and the capture
-// already refuses a delta after its item completed.
+// A cursor receives one whole, durably sealed item at output_item.done. Response usage and transport failure
+// settle separately; neither can replace source that a worker may already have executed.
 package splice.provider.codex.stream
 
 import kotlinx.coroutines.NonCancellable
@@ -31,6 +23,9 @@ import java.util.concurrent.atomic.AtomicReference
 private data class SourceSnapshot(
     val text: String,
     val terminal: CodeModeSourcePart? = null,
+    val rejected: CodeModeSourcePart.Failed? = null,
+    val owned: Boolean = false,
+    val responseFailure: CodeModeSourcePart.Failed? = null,
 )
 
 /** Joins an accumulated prefix to the conversation batch before a cursor hands it to the worker. */
@@ -61,8 +56,8 @@ internal class CodeModeSourceBuffer(
         state.update { previous ->
             check(previous.terminal !is CodeModeSourcePart.Complete) { "source already ended" }
             check(text.startsWith(previous.text)) { "dispatched source changed" }
-            kept = previous.terminal == null
-            if (kept) SourceSnapshot(text) else previous
+            kept = previous.terminal == null && previous.rejected == null
+            if (kept) previous.copy(text = text) else previous
         }
         return kept
     }
@@ -70,29 +65,50 @@ internal class CodeModeSourceBuffer(
     fun complete(text: String) {
         state.update { previous ->
             check(previous.terminal == null) { "source already ended" }
+            check(previous.rejected == null) { "source was disposed" }
             check(text.startsWith(previous.text)) { "dispatched source changed" }
-            SourceSnapshot(text, CodeModeSourcePart.Complete())
+            previous.copy(text = text, terminal = CodeModeSourcePart.Complete())
         }
     }
 
     fun fail(error: String) {
         state.update { previous ->
-            if (previous.terminal == null) previous.copy(terminal = CodeModeSourcePart.Failed(error)) else previous
+            val failure = previous.responseFailure ?: CodeModeSourcePart.Failed(error)
+            when (previous.terminal) {
+                null -> previous.copy(terminal = failure)
+                is CodeModeSourcePart.Complete -> previous.copy(
+                    responseFailure = failure,
+                    rejected = previous.rejected ?: failure.takeUnless { previous.owned },
+                )
+                is CodeModeSourcePart.Failed -> previous
+            }
         }
     }
 
-    /** Failed source cancels a pending boot. Certified source imposes no execution deadline. */
+    /** Explicit disposal revokes a pending startup even after sealing. A late response failure only calls [fail]. */
+    fun dispose(error: String) {
+        state.update { previous -> previous.copy(rejected = previous.rejected ?: CodeModeSourcePart.Failed(error)) }
+    }
+
+    /** A response failure releases a boot that never took the source or returned a cell. Ownership preserves effects. */
     suspend fun whileStarting(work: CodeModeSourceStart): CodeModeCell = coroutineScope {
+        // A fresh attempt is admitted only after a typed failure proved the previous boot never dispatched source.
+        state.update { it.copy(owned = false, rejected = it.rejected ?: it.responseFailure) }
         val produced = AtomicReference<CodeModeCell?>()
-        val rejected = async { state.mapNotNull { it.terminal as? CodeModeSourcePart.Failed }.first() }
-        val running = async { work().also(produced::set) }
+        val rejected = async { state.mapNotNull { it.rejected ?: it.terminal as? CodeModeSourcePart.Failed }.first() }
+        val running = async {
+            work().also {
+                produced.set(it)
+                state.update { snapshot -> snapshot.copy(owned = true) }
+            }
+        }
         var adopted = false
         try {
             val cell = select {
                 rejected.onAwait { rejectStartup(it) }
                 running.onAwait { it }
             }
-            (state.value.terminal as? CodeModeSourcePart.Failed)?.let(::rejectStartup)
+            (state.value.rejected ?: state.value.terminal as? CodeModeSourcePart.Failed)?.let(::rejectStartup)
             adopted = true
             cell
         } finally {
@@ -109,16 +125,20 @@ internal class CodeModeSourceBuffer(
         throw IOException(failure.error)
     }
 
-    /** A cursor over the source: it waits for the response terminal, then reads the whole item as one
+    /** A cursor over the source: it waits for item completion, then reads the whole item as one
      *  [CodeModeSourcePart.Complete], or the failure that ended it. A later read gets the empty remainder. */
     fun view(): CodeModeSource {
         var position = 0
         return object : CodeModeSource {
-            override suspend fun read(): CodeModeSourcePart = part(state.first { it.terminal != null })
+            override suspend fun read(): CodeModeSourcePart =
+                part(state.first { it.terminal != null || it.rejected != null })
 
             private fun part(ended: SourceSnapshot): CodeModeSourcePart {
-                (ended.terminal as? CodeModeSourcePart.Failed)?.let { return it }
+                (ended.rejected ?: ended.terminal as? CodeModeSourcePart.Failed)?.let { return it }
                 beforeRead.commit(ended.text)
+                // This claim races failure under the same state CAS: either bytes leave once, or startup is rejected.
+                state.update { it.copy(owned = true) }
+                state.value.rejected?.let { return it }
                 val remainder = ended.text.substring(position)
                 position = ended.text.length
                 return CodeModeSourcePart.Complete(remainder)

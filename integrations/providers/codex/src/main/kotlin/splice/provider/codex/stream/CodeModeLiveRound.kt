@@ -1,4 +1,4 @@
-// NEW: the terminal upstream outcome owns final source identity and continuity, not a client step.
+// NEW: a sealed exec item owns execution; the upstream reader separately owns its response terminal and billing.
 package splice.provider.codex.stream
 
 import kotlinx.coroutines.CancellationException
@@ -21,6 +21,7 @@ import splice.provider.codex.CodexCodeModeBridge
 import splice.provider.codex.CodexCodeModeRegistry
 import splice.provider.codex.CodexCodeModeWire
 import splice.provider.codex.state.CodeModeTurnIdentity
+import splice.provider.codex.stream.CodeModeReaderFailures.SOURCE_FAILED
 import splice.upstream.RoundResult
 import splice.upstream.TurnEnd
 import splice.upstream.sse.CustomToolSource
@@ -88,9 +89,6 @@ internal class CodeModeLiveRound(
     @Volatile var localFailure: TurnOutcome.Failure? = null
         private set
 
-    /** The ending the upstream gave the source post, when it gave no outcome. Set once, before the reader completes. */
-    @Volatile private var ending: UpstreamEnding? = null
-
     /** The round lost the record and closed its cell without a transport tear: its terminal did not certify the
      *  admitted source, or its reader failed on splice's own non-IO fault. Only the step that was advancing that cell
      *  reads it; a later step continues on the client's history. */
@@ -152,17 +150,14 @@ internal class CodeModeLiveRound(
      *  out of the record's save). Its source had no terminal, so the cell reading it waited forever and nothing
      *  was logged. The source fails, the record is lost as [failed] loses it, and the throwable's class is named. */
     private fun died(cause: Throwable?) {
-        val unnamed = cause?.takeUnless {
-            it is CancellationException || it is CodeModePersistenceException
-        } ?: return
+        val unnamed = CodeModeReaderFailures.unexpected(cause) ?: return
         upstreamEnded = true
-        unexpectedDeath = true
+        unexpectedDeath = !capture.itemComplete
         config.log("[code-mode] upstream source reader died (${unnamed::class.simpleName}): $SOURCE_FAILED")
         source.fail(SOURCE_FAILED)
         synchronized(lifecycle) {
             if (stoppedByHead) return
-            val current = record?.takeUnless(CodeModeRecord::terminal) ?: return
-            Cancellables.runCatchingBestEffort { registry.lose(current, SOURCE_FAILED) }.onFailure { failure ->
+            Cancellables.runCatchingBestEffort { capture.interrupted(SOURCE_FAILED) }.onFailure { failure ->
                 config.log("[code-mode] the dead reader's record was not saved as lost (${failure::class.simpleName})")
             }
         }
@@ -172,15 +167,16 @@ internal class CodeModeLiveRound(
         billing.reported(outcome)
         if (stoppedByHead) throw CancellationException(HEAD_STOPPED)
         localFailure?.let { return@synchronized it }
-        if (record?.terminal() == true) {
+        if (capture.unavailable) {
             executionLost = true
             source.fail(SOURCE_DISPOSED)
             return@synchronized outcome
         }
-        sourceInterrupted = record != null && (outcome as? TurnOutcome.Failure)?.cause in SOURCE_TEAR_CAUSES
+        sourceInterrupted = capture.unfinished &&
+            (outcome as? TurnOutcome.Failure)?.cause in SOURCE_TEAR_CAUSES
         // The capture loses a source its terminal does not certify, which closes the cell a client step may still be
         // advancing. Set first, so that step ends as a torn source's step does, or with a permanent failure as it is.
-        executionLost = !sourceInterrupted && capture.uncertified(outcome) != null
+        executionLost = !sourceInterrupted && capture.rejects(outcome)
         permanentEnding = (outcome as? TurnOutcome.Failure)?.takeIf { sourceLost && it.traits.permanent }
         Cancellables.runCatchingBestEffort { capture.finish(outcome) }
             .getOrElse { return@synchronized reject(it) }
@@ -200,10 +196,8 @@ internal class CodeModeLiveRound(
         upstreamEnded = true
         source.fail("splice code-mode source reader cancelled; source was not rerun")
         synchronized(lifecycle) {
-            if (!stoppedByHead) {
-                record?.takeUnless(CodeModeRecord::terminal)
-                    ?.let { registry.lose(it, "splice code-mode source reader cancelled; source was not rerun", error) }
-            }
+            if (stoppedByHead) return
+            capture.interrupted("splice code-mode source reader cancelled; source was not rerun", error)
         }
     }
 
@@ -220,17 +214,13 @@ internal class CodeModeLiveRound(
             if (!ready.isCompleted) ready.completeExceptionally(error)
             throw error
         }
-        sourceInterrupted = record != null && error is IOException
+        sourceInterrupted = capture.unfinished && error is IOException
         // Splice's own non-IO fault loses the record below and closes the cell a client step may be advancing, as an
         // uncertified source does. Set before the source fails, so that step ends as a torn source's step does.
-        executionLost = !sourceInterrupted && record?.terminal() == false
+        executionLost = !sourceInterrupted && capture.unfinished
         source.fail(detail)
-        record?.takeUnless(CodeModeRecord::terminal)?.let { registry.lose(it, detail) }
-        TurnOutcome.Failure(
-            detail,
-            cause = if (sourceInterrupted) FailureCause.UPSTREAM_CONN_RESET else FailureCause.INTERNAL,
-            phase = FailurePhase.MID_OUTPUT,
-        )
+        capture.interrupted(detail)
+        CodeModeReaderFailures.outcome(error, admitted = record != null)
     }
 
     /** The upstream ended the source post without an outcome (the retry loop gave up on it, it had no credentials, it
@@ -244,10 +234,9 @@ internal class CodeModeLiveRound(
         if (stoppedByHead) throw CancellationException(HEAD_STOPPED)
         localFailure?.let { return@synchronized it }
         // A record's next client step reads the source's outcome, as a torn source's does.
-        sourceInterrupted = record != null
-        record?.takeUnless(CodeModeRecord::terminal)?.let { registry.lose(it, SOURCE_REFUSED) }
-        this.ending = ending
-        CodeModeEndings.placeholder()
+        sourceInterrupted = capture.unfinished
+        capture.interrupted(SOURCE_REFUSED)
+        completion.ended(ending)
     }
 
     fun owns(turn: CodexCodeModeBridge.Turn): Boolean = synchronized(lifecycle) {
@@ -263,17 +252,7 @@ internal class CodeModeLiveRound(
 
     /** A reader that died on an unnamed throwable ends the round as a torn transport does, with [failed]'s
      *  outcome, never by throwing its throwable through the next client step. */
-    suspend fun outcome(): TurnOutcome {
-        val reader = checkNotNull(finished)
-        val awaited = Cancellables.runCatchingBestEffort { reader.await() }
-        // Deferred completion precedes died()'s registry write. Never continue before that cleanup settles.
-        settled.await()
-        // The reading turn, not the reader, is the one the ending ends: its slot is in this call's context.
-        ending?.let { CodeModeEndings.settle(it) }
-        val failure = awaited.exceptionOrNull() ?: return awaited.getOrThrow()
-        if (failure is CodeModePersistenceException) throw failure
-        return TurnOutcome.Failure(SOURCE_FAILED, cause = FailureCause.INTERNAL, phase = FailurePhase.MID_OUTPUT)
-    }
+    suspend fun outcome(): TurnOutcome = completion.outcome(checkNotNull(finished))
 
     /** Disposal cancels the already-posted reader so its stream and admission slot are freed. */
     fun cancel() {
@@ -281,7 +260,7 @@ internal class CodeModeLiveRound(
         val reader = finished
         cut.cancel(reader, stoppedByHead, terminalSeen)
         executionLost = true
-        source.fail(SOURCE_DISPOSED)
+        source.dispose(SOURCE_DISPOSED)
         reader?.cancel()
     }
 
@@ -322,7 +301,13 @@ internal class CodeModeLiveRound(
         sourceInterrupted = false
         source.fail(rejected.message)
         try {
-            localFailure = CodeModeRejection.lose(record, rejected, registry)
+            if (capture.itemComplete) {
+                Cancellables.runCatchingBestEffort { capture.interrupted() }.onFailure { failure ->
+                    config.log("[code-mode] rejected response accounting was not saved (${failure::class.simpleName})")
+                }
+            } else {
+                localFailure = CodeModeRejection.lose(record, rejected, registry)
+            }
         } finally {
             ready.complete(null)
         }
@@ -332,7 +317,6 @@ internal class CodeModeLiveRound(
 
 // why: a disposed execution cannot retain its response reader or dispatch unread source.
 internal const val SOURCE_DISPOSED = "code-mode execution disposed; source was not rerun"
-private const val SOURCE_FAILED = "upstream source failed; source was not rerun"
 private const val HEAD_STOPPED = "code-mode head stopped"
 private const val SOURCE_REFUSED = "upstream refused the source request; source was not rerun"
 private val SOURCE_TEAR_CAUSES = setOf(

@@ -26,6 +26,8 @@ import splice.core.wire.ToolUseBlock
 import splice.core.wire.UnknownBlock
 import splice.dialect.responses.ResponsesLiteShape
 import splice.dialect.responses.ResponsesQuirks
+import splice.dialect.responses.reasoning.ReasoningTextEmitter
+import splice.dialect.responses.reasoning.ResponsesHistoryInput
 import splice.dialect.responses.reasoning.ResponsesReasoningInject
 import splice.upstream.ToolNameShortener
 
@@ -45,20 +47,27 @@ internal class ResponsesInputBuilder(
         msg: AnthropicMessage,
         opts: BuildOptions,
         declareByName: Map<String, ToolDefinition>,
+        history: ResponsesHistoryInput? = null,
     ) {
         val context = msg.role == ResponsesContextMessage.CLIENT_ROLE && liteShape.isLite(opts)
         msg.content.forEachIndexed { at, block ->
+            history?.inject(sink)
             if (block is TextBlock) {
-                sink.add(
-                    if (context) {
-                        ResponsesContextMessage.item(block.text)
-                    } else {
-                        parts.roleText(msg.role, block.text, phaseOf(msg, at, opts))
-                    },
-                )
+                val emit = ReasoningTextEmitter { text ->
+                    sink.add(
+                        if (context) {
+                            ResponsesContextMessage.item(text)
+                        } else {
+                            parts.roleText(msg.role, text, phaseOf(msg, at, opts))
+                        },
+                    )
+                }
+                if (history == null) emit(block.text) else history.text(sink, msg.role, block.text, emit)
             } else {
                 appendBlock(sink, block, opts, declareByName)
+                history?.cursor?.append(msg.role, block)
             }
+            history?.inject(sink)
         }
     }
 

@@ -54,9 +54,11 @@ fixtures — `npm run oracle:replay`). Do not weaken either.
   guidance (2026-09-21: dropping `splice_exec` on compaction cost the whole
   transcript's cache on every compaction, `cached_tokens=0`).
 - Mirror wire format: `\n[reasoning summary]\n<text>\n` (`mirrorWireText`).
-- Reasoning replay envelope (`reasoning/replay.mjs`): encrypted reasoning rides
-  as a `redacted_thinking` block tagged `splice-reasoning` v1; encode/decode
-  stay paired (a tag/version bump strands in-flight transcripts).
+- Legacy reasoning replay envelope (`reasoning/replay.mjs`): accept
+  `redacted_thinking` blocks tagged `splice-reasoning` v1; encode/decode stay
+  paired (a tag/version bump strands in-flight transcripts). New Responses
+  turns retain encrypted reasoning in ordered server-owned history and emit
+  only readable reasoning, so replay does not create empty client Thinking rows.
 - `prompt_cache_key`: `splice-<sha256(first user message)[:32]>`, stable per
   conversation. Changing the derivation cold-starts every live session's cache.
 

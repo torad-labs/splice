@@ -7,6 +7,8 @@ import splice.core.reasoning.ReasoningReplay
 import splice.core.turn.TurnMeta
 import splice.core.util.LogSink
 import splice.dialect.responses.reasoning.EmitEncryptedReasoning
+import splice.dialect.responses.reasoning.ReasoningItemOrder
+import splice.dialect.responses.reasoning.ReasoningPositionIndex
 import splice.dialect.responses.reasoning.ResponsesReanchorPolicy
 import splice.dialect.responses.reasoning.TurnReasoningSink
 import splice.dialect.responses.request.AssistantPhase
@@ -41,18 +43,9 @@ internal class ResponsesTurnSeams(private val deps: ResponsesTurnSeamsDeps) {
             ResponsesStreamTranslator(
                 StreamTurnContext(
                     compact = meta.compact,
-                    // STREAM-side emission of redacted_thinking wire blocks (so Claude Code stores the
-                    // handle for the NEXT turn's replay). COUPLED to replayReasoning (2026-07-20): a
-                    // handle the gateway will never inject back is pure cost — each redacted_thinking
-                    // block is a content_block_start with NO thinking_delta, which Claude Code renders as
-                    // a permanent empty "✳ Thinking…" spinner; a deep turn emits dozens (the "walls of
-                    // Thinking" report). With replay OFF (default) the whole transcript-replay loop is off
-                    // end-to-end: no empty spinners, and reasoning is re-derived fresh (deeper) each turn.
-                    // The live summary thinking blocks (reasoning_summary_text deltas) are a SEPARATE path
-                    // and still display. Fold's own intra-turn reasoning replay is independent of this.
-                    emitEncryptedReasoning = EmitEncryptedReasoning(
-                        deps.turnOptions.emitsHandle(),
-                    ),
+                    // Storage and readable presentation are independent. The legacy flag stays in the
+                    // context for source compatibility; the replay fold never writes opaque wire blocks.
+                    emitEncryptedReasoning = EmitEncryptedReasoning(false),
                     encodeReasoningEnvelope = { ReasoningReplay.encodeReasoningEnvelope(it) },
                     signals = signals,
                     caps = deps.caps,
@@ -73,6 +66,9 @@ internal class ResponsesTurnSeams(private val deps: ResponsesTurnSeamsDeps) {
                         collectEnvelopes = !meta.compact ||
                             deps.continuity.policy.reasoningCacheActive(deps.quirks, meta.compact),
                         onTurn = reasoningSink(meta),
+                        history = meta.scope.reasoningHistory.takeIf {
+                            !meta.scope.sessionId.isNullOrEmpty() && meta.scope.reasoningStorageKey != null
+                        },
                     ),
                 ),
                 deps.services.toolNames,
@@ -86,6 +82,9 @@ internal class ResponsesTurnSeams(private val deps: ResponsesTurnSeamsDeps) {
      *  conversation out (V4-334). Both only where the quirk runs the cache. */
     private fun reasoningSink(meta: TurnMeta): TurnReasoningSink {
         val conversation = deps.continuity.policy.conversationKey(meta.scope.sessionId, meta.scope.conversationKey)
+        val positioned = meta.scope.sessionId?.takeIf { it.isNotEmpty() }?.let {
+            deps.continuity.policy.conversationKey(it, meta.scope.reasoningStorageKey)
+        }
         return object : TurnReasoningSink {
             override fun invoke(toolIds: List<String>, envelopes: List<String>) {
                 if (deps.continuity.policy.reasoningCacheActive(deps.quirks, meta.compact)) {
@@ -94,7 +93,19 @@ internal class ResponsesTurnSeams(private val deps: ResponsesTurnSeamsDeps) {
             }
 
             override fun compacted() {
-                if (deps.quirks.roundTrip.reasoningCache) deps.continuity.cache.dropConversation(conversation)
+                if (deps.quirks.roundTrip.reasoningCache) {
+                    deps.continuity.cache.dropConversation(conversation)
+                    deps.continuity.cache.dropConversation(positioned)
+                }
+            }
+
+            override fun positioned(position: String, envelope: String, order: ReasoningItemOrder?) {
+                if (positioned == null) return
+                if (!deps.continuity.policy.reasoningCacheActive(deps.quirks, meta.compact)) return
+                // Private cache index, not a synthetic upstream call id. The envelope digest makes retries
+                // idempotent while distinct reasoning-only rounds may share the same visible boundary.
+                val index = ReasoningPositionIndex().index(position, envelope, order)
+                deps.continuity.cache.put(positioned, listOf(index), listOf(envelope))
             }
         }
     }

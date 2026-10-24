@@ -42,7 +42,7 @@ internal class CodeModeRecordRestorer {
 
     private fun lost(saved: CodeModeRecordSnapshot): Boolean =
         saved.phase != CodeModePhase.COMPLETED &&
-            (saved.phase == CodeModePhase.ACTIVE || saved.sourceState?.complete == false)
+            (saved.phase == CodeModePhase.ACTIVE || saved.sourceState?.itemComplete == false)
 
     private fun record(saved: CodeModeRecordSnapshot, phase: CodeModePhase, error: String?) = CodeModeRecord(
         id = saved.id,

@@ -1,8 +1,8 @@
 import { describe, expect, test } from "bun:test";
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { associateCallbacks, auditNative, classifyRequest, compareSegments, decodeSse, gatewayEvidence, inspectTrial, sourceEvidence } from "./analyze-delivery-v3.ts";
+import { associateCallbacks, auditNative, classifyRequest, compareSegments, decodeSse, gatewayEvidence, inspectTrial, main, sourceEvidence } from "./analyze-delivery-v3.ts";
 
 const context = { model: "sol", sessionId: "session-one", userTexts: ["inspect the fixture"] };
 const title = () => ({ model: "sol", input: [{ role: "developer", content: "You are naming a coding session. Return a title." }], text: { format: { type: "json_schema", name: "structured_output", schema: { properties: { title: { type: "string" } } } } } });
@@ -11,6 +11,119 @@ const jsonl = (...rows: unknown[]) => rows.map(r => JSON.stringify(r)).join("\n"
 const claude = (uuid: string, content: unknown[], stop = "end_turn") => ({ type: "assistant", uuid, sessionId: "session-one", message: { id: uuid, role: "assistant", content, stop_reason: stop } });
 const r = (text: string) => ({ kind: "reasoning" as const, text });
 const a = (text: string) => ({ kind: "prose" as const, text });
+const profile = { effort: "high", summary: "detailed", context: "all_turns" };
+type FixtureRow = Record<string, any>;
+function protocolTrial() {
+  const dir = mkdtempSync(join(tmpdir(), "analysis-v3-r2-"));
+  mkdirSync(join(dir, "requests")); mkdirSync(join(dir, "control"));
+  const source = join(dir, "control", "native.jsonl");
+  const native = jsonl(
+    { type: "user", uuid: "u", sessionId: "session-one", message: { role: "user", content: "inspect the fixture" } },
+    claude("a", [{ type: "thinking", thinking: "R" }, { type: "text", text: "done" }]),
+  );
+  writeFileSync(source, native); writeFileSync(join(dir, "events.jsonl"), native);
+  writeFileSync(join(dir, "interactive-session.json"), JSON.stringify({ invocation_mode: "interactive-pty-v1", completed: true, timedOut: false, exit: 0, completion: { sessionId: "session-one", sourceFiles: [source] } }));
+  const req = (at: number, connection: number, path: string, body?: unknown): FixtureRow => ({ kind: "request", at_ms: at, connection, method: body === undefined ? "GET" : "POST", path, transport: "http", text: body === undefined ? "" : JSON.stringify(body) });
+  const frame = (at: number, data: unknown): FixtureRow => ({ kind: "response_frame", at_ms: at, connection: 1, text: JSON.stringify(data) });
+  const chunk = (at: number, connection: number, text: string): FixtureRow => ({ kind: "response_chunk", at_ms: at, connection, raw_base64: Buffer.from(text).toString("base64") });
+  const sse = (at: number, data: unknown) => chunk(at, 1, `data: ${JSON.stringify(data)}\n\n`);
+  const upstream: FixtureRow[] = [req(0, 1, "/responses", task()),
+    frame(10, { type: "response.output_item.done", output_index: 0, item: { type: "reasoning", id: "r", summary: [{ type: "summary_text", text: "R" }] } }),
+    frame(20, { type: "response.output_item.done", output_index: 1, item: { type: "message", id: "m", content: [{ type: "output_text", text: "done" }] } }),
+    frame(30, { type: "response.completed", response: { id: "root", output: [] } }),
+  ];
+  const client: FixtureRow[] = [req(0, 1, "/v1/messages", { model: "claude-codex--sol", messages: [{ role: "user", content: "inspect the fixture" }] }),
+    { kind: "response", at_ms: 1, connection: 1, status: 200, content_type: "text/event-stream" },
+    sse(2, { type: "message_start" }), sse(10, { type: "content_block_start", index: 0, content_block: { type: "thinking", thinking: "R" } }),
+    sse(11, { type: "content_block_stop", index: 0 }), sse(20, { type: "content_block_start", index: 1, content_block: { type: "text", text: "done" } }),
+    sse(21, { type: "content_block_stop", index: 1 }), sse(30, { type: "message_stop" }),
+  ];
+  const save = () => { writeFileSync(join(dir, "requests/upstream.jsonl"), jsonl(...upstream)); writeFileSync(join(dir, "requests/client.jsonl"), jsonl(...client)); };
+  return { dir, upstream, client, req, frame, chunk, save, close: () => rmSync(dir, { recursive: true, force: true }) };
+}
+
+describe("r2 protocol and explicit profile regressions", () => {
+  test("CLI refuses a partial bench.json expectation and requires explicit three-field profile", async () => {
+    const run = mkdtempSync(join(tmpdir(), "analysis-v3-cli-"));
+    try {
+      writeFileSync(join(run, "manifest.json"), JSON.stringify({ config: { model: "sol", effort: "high" } }));
+      writeFileSync(join(run, "results.json"), "[]");
+      const missing = join(run, "no-profile.json"), declared = join(run, "explicit-profile.json");
+      expect(await main([run, missing])).toBe(2); expect(existsSync(missing)).toBe(false);
+      expect(await main([run, declared, "--expected-profile", "high-detailed-all_turns-v1"])).toBe(1);
+      expect((await Bun.file(declared).json()).expected_reasoning_profile).toEqual(profile);
+    } finally { rmSync(run, { recursive: true, force: true }); }
+  });
+  test("two valid GET/models JSON responses are auxiliary, not truncated SSE", async () => {
+    const f = protocolTrial();
+    try {
+      for (const connection of [10, 11]) for (const rows of [f.upstream, f.client]) rows.unshift(
+        f.req(-30 + connection, connection, "/models"),
+        { kind: "response", at_ms: -19 + connection, connection, status: 200, content_type: "application/json" },
+        f.chunk(-18 + connection, connection, '{"data":[{"id":"sol"}]}'),
+      );
+      f.save(); const report = await inspectTrial(f.dir, "splice", "sol", profile);
+      expect(report.captureDiagnostics.model.truncatedFrames).toBe(0);
+      expect(report.captureDiagnostics.gateway?.truncatedFrames).toBe(0);
+      expect(report.totals.phases.inventory).toBe(2); expect(report.qualified).toBe(true);
+    } finally { f.close(); }
+  });
+  test("strict JSON titles are separated from task gateway text, unknown downstream requests block", async () => {
+    const f = protocolTrial();
+    try {
+      for (const rows of [f.upstream, f.client]) rows.push(f.req(40, 9, "/responses", { ...title(), stream: false }),
+        { kind: "response", at_ms: 41, connection: 9, status: 200, content_type: "application/json" },
+        f.chunk(42, 9, '{"id":"title","output":[{"type":"message","content":[{"type":"output_text","text":"auxiliary title"}]}]}'));
+      f.upstream.push(f.req(43, 12, "/responses", { ...title(), stream: true }),
+        { kind: "response", at_ms: 44, connection: 12, status: 200, content_type: "text/event-stream" },
+        f.chunk(45, 12, 'data: {"type":"response.completed","response":{"id":"stream-title","output":[{"type":"message","id":"title-m","content":[{"type":"output_text","text":"auxiliary SSE title"}]}]}}\n\n'));
+      f.client.push(f.req(43, 12, "/responses", { ...title(), stream: true }),
+        { kind: "response", at_ms: 44, connection: 12, status: 200, content_type: "text/event-stream" },
+        f.chunk(45, 12, [{ type: "message_start" }, { type: "content_block_start", index: 0, content_block: { type: "text", text: "auxiliary SSE title" } }, { type: "content_block_stop", index: 0 }, { type: "message_stop" }].map(e => `data: ${JSON.stringify(e)}\n\n`).join("")));
+      f.save(); let report = await inspectTrial(f.dir, "splice", "sol", profile);
+      expect(report.qualified).toBe(true); expect(report.sourceToGateway?.equal).toBe(true);
+      f.client.push(f.req(50, 15, "/v1/messages", { messages: [{ role: "user", content: "unrelated request" }] }),
+        { kind: "response", at_ms: 51, connection: 15, status: 200, content_type: "application/json" }, f.chunk(52, 15, '{"content":[]}'));
+      f.save(); report = await inspectTrial(f.dir, "splice", "sol", profile);
+      expect(report.qualified).toBe(false); expect(report.checks.noUnknownDownstreamRequests).toBe(false);
+    } finally { f.close(); }
+  });
+  test("invalid inventory JSON and explicitly truncated SSE still fail", async () => {
+    const f = protocolTrial();
+    try {
+      f.upstream.push(f.req(40, 9, "/models"), { kind: "response", at_ms: 41, connection: 9, status: 200, content_type: "application/json" }, f.chunk(42, 9, '{"data":'));
+      f.save(); const invalid = await inspectTrial(f.dir, "splice", "sol", profile);
+      expect(invalid.captureDiagnostics.model.malformedJson).toBe(1); expect(invalid.qualified).toBe(false);
+      f.upstream.splice(-3, 3, f.req(40, 9, "/responses", task()), { kind: "response", at_ms: 41, connection: 9, status: 200, content_type: "text/event-stream" }, f.chunk(42, 9, 'data: {"type":"response.created"}'));
+      f.save(); const report = await inspectTrial(f.dir, "splice", "sol", profile);
+      expect(report.captureDiagnostics.model.truncatedFrames).toBe(1); expect(report.qualified).toBe(false);
+      f.upstream[f.upstream.length - 3]!.path = "/unrecognized";
+      f.save(); const unknown = await inspectTrial(f.dir, "splice", "sol", profile);
+      expect(unknown.totals.phases.unknown).toBe(1); expect(unknown.captureDiagnostics.model.truncatedFrames).toBe(1);
+      expect(unknown.qualified).toBe(false);
+    } finally { f.close(); }
+  });
+  test("missing expected profile or missing actual summary/context cannot vacuously agree", async () => {
+    const f = protocolTrial();
+    try {
+      f.save(); expect((await inspectTrial(f.dir, "splice", "sol")).qualified).toBe(false);
+      expect((await inspectTrial(f.dir, "splice", "sol", { effort: "high" })).qualified).toBe(false);
+      f.upstream[0]!.text = JSON.stringify({ ...task(), reasoning: { effort: "high" } });
+      f.save(); expect((await inspectTrial(f.dir, "splice", "sol", profile)).qualified).toBe(false);
+    } finally { f.close(); }
+  });
+  test("only a captured known parent can prove inherited effective reasoning", async () => {
+    const f = protocolTrial();
+    try {
+      const message = f.upstream.splice(2, 1)[0]!;
+      f.upstream.push(f.req(40, 2, "/responses", { model: "sol", input: [], previous_response_id: "root" }), { ...message, connection: 2, at_ms: 45 },
+        { ...f.frame(50, { type: "response.completed", response: { id: "child", output: [] } }), connection: 2 });
+      f.save(); expect((await inspectTrial(f.dir, "splice", "sol", profile)).qualified).toBe(true);
+      f.upstream[3]!.text = JSON.stringify({ ...task(), reasoning: {}, previous_response_id: "uncaptured" });
+      f.save(); expect((await inspectTrial(f.dir, "splice", "sol", profile)).qualified).toBe(false);
+    } finally { f.close(); }
+  });
+});
 
 describe("strict phases", () => {
   test("only the full known title signature is auxiliary, including response.create wrapper", () => {
@@ -191,23 +304,24 @@ describe("exact readable evidence", () => {
         frame(120, 1, { type: "response.completed", response: { id: "task-two", output: [] } }),
       ));
       const sse = (at: number, connection: number, data: unknown) => ({ kind: "response_chunk", at_ms: at, connection, raw_base64: Buffer.from(`data: ${JSON.stringify(data)}\n\n`).toString("base64") });
+      const clientReq = (at: number, connection: number) => ({ ...req(at, connection, { model: "claude-codex--sol", messages: [{ role: "user", content: "inspect the fixture" }] }), path: "/v1/messages", transport: "http" });
       writeFileSync(join(dir, "requests/client.jsonl"), jsonl(
-        req(0, 1, { messages: [] }), sse(1, 1, { type: "message_start" }),
+        clientReq(0, 1), sse(1, 1, { type: "message_start" }),
         sse(10, 1, { type: "content_block_start", index: 0, content_block: { type: "thinking", thinking: "R" } }), sse(11, 1, { type: "content_block_stop", index: 0 }),
         sse(70, 1, { type: "content_block_start", index: 1, content_block: { type: "tool_use", id: "c", name: "Read" } }), sse(71, 1, { type: "content_block_stop", index: 1 }), sse(72, 1, { type: "message_stop" }),
-        req(100, 2, { messages: [] }), sse(101, 2, { type: "message_start" }),
+        clientReq(100, 2), sse(101, 2, { type: "message_start" }),
         sse(110, 2, { type: "content_block_start", index: 0, content_block: { type: "text", text: "done" } }), sse(111, 2, { type: "content_block_stop", index: 0 }), sse(120, 2, { type: "message_stop" }),
       ));
-      const report = await inspectTrial(dir, "splice", "sol");
+      const report = await inspectTrial(dir, "splice", "sol", profile);
       expect(report.totals.phases.title).toBe(1); expect(report.totals.taskSummaryDenominator).toBe(2);
       expect(report.dispatch[0]!.firstToolAfterItemMs).toBe(50);
       expect(report.sourceToNative.equal).toBe(true); expect(report.sourceToGateway?.equal).toBe(true);
       expect(report.qualified).toBe(true);
       writeFileSync(join(dir, "interactive-session.json"), JSON.stringify({ ...session, exit: 1 }));
-      expect((await inspectTrial(dir, "splice", "sol")).qualified).toBe(false);
+      expect((await inspectTrial(dir, "splice", "sol", profile)).qualified).toBe(false);
       writeFileSync(join(dir, "interactive-session.json"), JSON.stringify(session));
       writeFileSync(nativeFile, "different source bytes\n");
-      expect((await inspectTrial(dir, "splice", "sol")).qualified).toBe(false);
+      expect((await inspectTrial(dir, "splice", "sol", profile)).qualified).toBe(false);
     } finally { rmSync(dir, { recursive: true, force: true }); }
   });
 });

@@ -10,6 +10,34 @@ export { auditNative, compareSegments, decodeSse, gatewayEvidence, sourceEvidenc
 type Context = { model: string; sessionId?: string; userTexts: string[]; knownResponseIds?: Set<string> };
 const unwrap = (b: Row): Row => b.type === "response.create" && b.response ? { ...b.response, generate: b.generate ?? b.response.generate } : b;
 const textOf = (content: unknown): string => typeof content === "string" ? content : Array.isArray(content) ? content.filter((p: Row) => ["text", "input_text"].includes(p.type)).map((p: Row) => p.text ?? "").join("") : "";
+const REASONING_FIELDS = ["effort", "summary", "context"] as const;
+type EffectiveReasoning = { values: Record<string, string | null>; provenance: Record<string, string>; unknown: number };
+const EXPECTED_PROFILE = { effort: "high", summary: "detailed", context: "all_turns" };
+function cliExpectedProfile(args: string[]): Row | null {
+  if (args.length === 2 && args[0] === "--expected-profile" && args[1] === "high-detailed-all_turns-v1") return { ...EXPECTED_PROFILE };
+  if (args.length !== 6) return null;
+  const values: Row = {};
+  for (let i = 0; i < args.length; i += 2) {
+    const key = args[i]?.replace(/^--expected-/, "");
+    if (!key || !REASONING_FIELDS.includes(key as typeof REASONING_FIELDS[number]) || Object.hasOwn(values, key)) return null;
+    values[key] = args[i + 1];
+  }
+  return REASONING_FIELDS.every(k => values[k] === EXPECTED_PROFILE[k]) ? values : null;
+}
+function effectiveReasoning(body: Row, parent?: EffectiveReasoning): EffectiveReasoning {
+  const values: Record<string, string | null> = {}, provenance: Record<string, string> = {};
+  const object = body.reasoning && typeof body.reasoning === "object" && !Array.isArray(body.reasoning) ? body.reasoning : null;
+  const reset = Object.hasOwn(body, "reasoning") && !object;
+  for (const key of REASONING_FIELDS) {
+    if (object && Object.hasOwn(object, key)) {
+      values[key] = typeof object[key] === "string" && object[key].length ? object[key] : null;
+      provenance[key] = values[key] === null ? "unknown explicit value" : "explicit wire parameter";
+    } else if (!reset && typeof parent?.values[key] === "string") {
+      values[key] = parent.values[key]!; provenance[key] = "captured previous_response_id parent";
+    } else { values[key] = null; provenance[key] = "unknown; no captured effective parameter"; }
+  }
+  return { values, provenance, unknown: REASONING_FIELDS.filter(k => values[k] === null).length };
+}
 export function classifyRequest(raw: Row, route: string | null, context: Context) {
   const b = unwrap(raw), format = b.text?.format, properties = format?.schema?.properties;
   const titleEvidence = {
@@ -38,6 +66,19 @@ export function classifyRequest(raw: Row, route: string | null, context: Context
   return { phase, reason, evidence };
 }
 
+function classifyDownstream(x: Exchange, context: Context) {
+  if (x.route?.endsWith("/messages") && Array.isArray(x.body.messages)) {
+    const input = [...(x.body.system ? [{ role: "developer", content: x.body.system }] : []), ...x.body.messages];
+    const projected = { ...x.body, input };
+    const result = classifyRequest(projected, "/responses", context);
+    // Claude model selectors are not upstream model IDs. Attribute this layer by actual native task/session only.
+    const matched = !result.evidence.sessionConflict && (result.evidence.matchingSession || result.evidence.matchingUser);
+    const phase = result.phase === "title" ? "title" : matched && !x.body.output_format && !x.body.output_config?.format ? "task" : "unknown";
+    return { ...result, phase, reason: phase === "task" ? "Claude request matches the actual native task/session; upstream model checked separately" : result.reason };
+  }
+  return classifyRequest(x.body, x.route, context);
+}
+
 type Dispatch = { requestAt: number; itemDoneAt: number; terminalAt: number | null; callId?: string; nextTaskRequestAt?: number };
 type Callback = { at: number; id: string; name: string; outerCallId?: string };
 export function associateCallbacks(tasks: Dispatch[], callbacks: Callback[], unknownRequests: number[]) {
@@ -57,19 +98,32 @@ export function associateCallbacks(tasks: Dispatch[], callbacks: Callback[], unk
   });
 }
 
-type Exchange = { connection: number; requestAt: number; route: string | null; transport: string | null; body: Row; events: TimedEvent[]; incomplete: boolean };
+type Exchange = { connection: number; requestAt: number; route: string | null; transport: string | null; body: Row; events: TimedEvent[]; incomplete: boolean;
+  responseFormat: "sse" | "json" | "ws" | "unknown"; responseAt: number | null; status: number | null; jsonValid: boolean; jsonBody?: Row };
 async function fileSha(path: string): Promise<string> {
   const h = createHash("sha256");
   for await (const chunk of createReadStream(path)) h.update(chunk);
   return h.digest("hex");
 }
 async function capture(path: string) {
-  const exchanges: Exchange[] = [], current = new Map<number, Exchange>(), streams = new Map<number, SseReader>();
-  const diagnostics = { malformedRows: 0, invalidRows: 0, unparsedRequests: 0, orphanEvents: 0, malformedEvents: 0, truncatedFrames: 0, invalidUtf8: 0, overlappingRequests: 0 };
+  const exchanges: Exchange[] = [], current = new Map<number, Exchange>();
+  const streams = new Map<number, { sse: SseReader; decoder: TextDecoder; json: string; chunks: number; format: Exchange["responseFormat"] }>();
+  const diagnostics = { malformedRows: 0, invalidRows: 0, unparsedRequests: 0, orphanEvents: 0, malformedEvents: 0, truncatedFrames: 0, invalidUtf8: 0, overlappingRequests: 0, malformedJson: 0, unknownResponseFormats: 0 };
   if (!existsSync(path)) return { exchanges, diagnostics, sha256: null };
+  const ended = (x: Exchange) => x.jsonValid || x.events.some(e => ["response.completed", "response.failed", "response.incomplete", "message_stop"].includes(e.data.type));
   const finishStream = (connection: number) => {
     const stream = streams.get(connection); if (!stream) return;
-    const end = stream.finish(); diagnostics.malformedEvents += end.malformed; diagnostics.truncatedFrames += end.truncated; diagnostics.invalidUtf8 += end.invalidUtf8;
+    const exchange = current.get(connection)!;
+    if (stream.format === "sse") {
+      const end = stream.sse.finish(); diagnostics.malformedEvents += end.malformed; diagnostics.truncatedFrames += end.truncated; diagnostics.invalidUtf8 += end.invalidUtf8;
+    } else if (stream.format === "json") {
+      try {
+        stream.json += stream.decoder.decode();
+        const value = JSON.parse(stream.json);
+        if (!value || typeof value !== "object") throw Error("non-object JSON response");
+        exchange.jsonBody = value; exchange.jsonValid = true;
+      } catch { diagnostics.malformedJson++; }
+    } else if (stream.format === "unknown") diagnostics.unknownResponseFormats++;
     streams.delete(connection);
   };
   for await (const line of createInterface({ input: createReadStream(path), crlfDelay: Infinity })) {
@@ -78,25 +132,49 @@ async function capture(path: string) {
     if (!row || !Number.isFinite(row.at_ms) || !Number.isFinite(row.connection)) { diagnostics.invalidRows++; continue; }
     if (row.kind === "request") {
       const old = current.get(row.connection);
-      if (old && !old.events.some(e => ["response.completed", "response.failed", "response.incomplete", "message_stop"].includes(e.data.type))) { old.incomplete = true; diagnostics.overlappingRequests++; }
       finishStream(row.connection);
+      if (old && !ended(old)) { old.incomplete = true; diagnostics.overlappingRequests++; }
       const route = typeof row.path === "string" ? row.path.replace(/\?.*$/, "") : null;
       let body: Row;
       try { body = row.method === "GET" && !row.text ? {} : JSON.parse(row.text); if (!body || typeof body !== "object" || Array.isArray(body)) throw Error("request"); }
       catch { diagnostics.unparsedRequests++; current.delete(row.connection); continue; }
+      const parsed = unwrap(body);
+      const auxiliary = classifyRequest(parsed, route, { model: "", userTexts: [] }).phase;
+      const format: Exchange["responseFormat"] = row.transport === "ws" ? "ws" : ["inventory", "search"].includes(auxiliary) || parsed.stream === false || (auxiliary === "title" && parsed.stream !== true) ? "json" : "sse";
       const exchange: Exchange = { connection: row.connection, requestAt: row.at_ms, route,
-        transport: row.transport ?? null, body: unwrap(body), events: [], incomplete: false };
-      exchanges.push(exchange); current.set(row.connection, exchange); streams.set(row.connection, new SseReader());
+        transport: row.transport ?? null, body: parsed, events: [], incomplete: false,
+        responseFormat: format, responseAt: null, status: null, jsonValid: false };
+      exchanges.push(exchange); current.set(row.connection, exchange);
+      streams.set(row.connection, { sse: new SseReader(), decoder: new TextDecoder("utf-8", { fatal: true }), json: "", chunks: 0, format });
+    } else if (row.kind === "response") {
+      const exchange = current.get(row.connection), stream = streams.get(row.connection);
+      if (!exchange || !stream) { diagnostics.orphanEvents++; continue; }
+      exchange.status = typeof row.status === "number" ? row.status : null;
+      const contentType = typeof row.content_type === "string" ? row.content_type : Object.entries(row.headers ?? {}).find(([k]) => k.toLowerCase() === "content-type")?.[1];
+      if (typeof contentType === "string") {
+        const media = contentType.split(";")[0]!.trim().toLowerCase();
+        const format = media === "text/event-stream" ? "sse" : /^application\/(?:[a-z0-9.+-]+\+)?json$/.test(media) ? "json" : "unknown";
+        if (stream.chunks && format !== stream.format) diagnostics.invalidRows++;
+        else { stream.format = format; exchange.responseFormat = format; }
+      }
     } else if (["response_frame", "response_chunk"].includes(row.kind)) {
       const exchange = current.get(row.connection); if (!exchange) { diagnostics.orphanEvents++; continue; }
+      exchange.responseAt = row.at_ms;
       if (row.kind === "response_frame") {
+        exchange.responseFormat = "ws";
         try { const data = JSON.parse(row.text); if (!data || typeof data !== "object") throw Error("event"); exchange.events.push({ at: row.at_ms, data }); }
         catch { diagnostics.malformedEvents++; }
-      } else exchange.events.push(...streams.get(row.connection)!.push(typeof row.raw_base64 === "string" ? Buffer.from(row.raw_base64, "base64") : Buffer.from(row.text ?? ""), row.at_ms));
+      } else {
+        const stream = streams.get(row.connection)!; stream.chunks++;
+        const bytes = typeof row.raw_base64 === "string" ? Buffer.from(row.raw_base64, "base64") : Buffer.from(row.text ?? "");
+        if (stream.format === "sse") exchange.events.push(...stream.sse.push(bytes, row.at_ms));
+        else if (stream.format === "json") try { stream.json += stream.decoder.decode(bytes, { stream: true }); } catch { diagnostics.invalidUtf8++; }
+        else if (stream.format === "ws") { diagnostics.unknownResponseFormats++; }
+      }
     }
   }
   for (const connection of streams.keys()) finishStream(connection);
-  for (const exchange of exchanges) if (!exchange.events.some(e => ["response.completed", "response.failed", "response.incomplete", "message_stop"].includes(e.data.type))) exchange.incomplete = true;
+  for (const exchange of exchanges) if (!ended(exchange)) exchange.incomplete = true;
   // Hash the exact captured bytes rather than JSON reserialization.
   return { exchanges, diagnostics, sha256: await fileSha(path) };
 }
@@ -128,21 +206,31 @@ export async function inspectTrial(dir: string, arm: "splice" | "codex", model: 
   const input = await capture(join(dir, `requests/${arm === "splice" ? "upstream" : "native"}.jsonl`));
   const downstream = arm === "splice" ? await capture(join(dir, "requests/client.jsonl")) : null;
   const context: Context = { model, sessionId: native.sessionIds.length === 1 ? native.sessionIds[0] : undefined, userTexts: native.userTexts, knownResponseIds: new Set() };
+  const parents = new Map<string, { at: number; profile: EffectiveReasoning }>();
   const classified = input.exchanges.map(exchange => {
+    context.knownResponseIds = new Set([...parents].filter(([, parent]) => parent.at <= exchange.requestAt).map(([id]) => id));
     const classification = classifyRequest(exchange.body, exchange.route, context);
+    const candidateParent = typeof exchange.body.previous_response_id === "string" ? parents.get(exchange.body.previous_response_id) : undefined;
+    const parent = candidateParent && candidateParent.at <= exchange.requestAt ? candidateParent.profile : undefined;
+    const effective = effectiveReasoning(exchange.body, parent);
     const attributedPreparation = classification.phase === "preparation" && classification.evidence.matchingModel && !classification.evidence.sessionConflict && (classification.evidence.matchingUser || classification.evidence.matchingSession || classification.evidence.knownChain);
-    if (classification.phase === "task" || attributedPreparation) for (const e of exchange.events) if (typeof e.data.response?.id === "string") context.knownResponseIds!.add(e.data.response.id);
-    return { exchange, classification };
+    if (classification.phase === "task" || attributedPreparation) for (const e of exchange.events) {
+      const id = e.data.response?.id;
+      if (typeof id === "string" && (!parents.has(id) || parents.get(id)!.at > e.at)) parents.set(id, { at: e.at, profile: effective });
+    }
+    return { exchange, classification, effective };
   });
   const taskExchanges = classified.filter(x => x.classification.phase === "task").map(x => x.exchange);
   const unknownAt = classified.filter(x => x.classification.phase === "unknown").map(x => x.exchange.requestAt);
-  const generated = classified.map(({ exchange: x, classification }) => {
+  const generated = classified.map(({ exchange: x, classification, effective }) => {
     const terminal = x.events.find(e => ["response.completed", "response.failed", "response.incomplete"].includes(e.data.type));
     const source = sourceEvidence(x.events);
     return { requestAt: x.requestAt, route: x.route, transport: x.transport, ...classification,
       model: x.body.model ?? null, requestedReasoning: { effort: x.body.reasoning?.effort ?? null, summary: x.body.reasoning?.summary ?? null, context: x.body.reasoning?.context ?? null },
+      effectiveReasoning: effective.values, reasoningProvenance: effective.provenance, unknownReasoningParameters: effective.unknown,
+      responseFormat: x.responseFormat, jsonValid: x.jsonValid, httpStatus: x.status,
       inputReasoningItems: Array.isArray(x.body.input) ? x.body.input.filter((i: Row) => i.type === "reasoning").length : 0,
-      terminalAt: terminal?.at ?? null, terminalType: terminal?.data.type ?? null, usage: terminal?.data.response?.usage ?? null,
+      terminalAt: terminal?.at ?? (x.jsonValid ? x.responseAt : null), terminalType: terminal?.data.type ?? (x.jsonValid ? "captured JSON response" : null), usage: terminal?.data.response?.usage ?? x.jsonBody?.usage ?? null,
       summaryParts: source.readableParts, summaryCharacters: source.segments.filter(s => s.kind === "reasoning").reduce((n, s) => n + s.text.length, 0),
       sourceConsistencyErrors: source.inconsistencies, unclosedReadableParts: source.unclosedReadableParts,
       unmodeledReadableEvents: source.unmodeledReadableEvents, rawReasoningCharacters: source.rawReasoningCharacters,
@@ -150,18 +238,22 @@ export async function inspectTrial(dir: string, arm: "splice" | "codex", model: 
       incomplete: x.incomplete };
   });
   const sourceParts = taskExchanges.flatMap(x => sourceEvidence(x.events).segments);
-  const wire = gatewayEvidence(downstream?.exchanges.flatMap(x => x.events) ?? []);
+  const downstreamClassified = (downstream?.exchanges ?? []).map(exchange => ({ exchange, classification: classifyDownstream(exchange, context) }));
+  const taskClient = downstreamClassified.filter(x => x.classification.phase === "task").map(x => x.exchange);
+  const wire = gatewayEvidence(taskClient.flatMap(x => x.events));
+  const downstreamUnknown = downstreamClassified.filter(x => x.classification.phase === "unknown");
   const dispatch = associateCallbacks(taskExchanges.flatMap((x, index) => {
     const terminal = x.events.find(e => ["response.completed", "response.failed", "response.incomplete"].includes(e.data.type));
     return x.events.filter(e => e.data.type === "response.output_item.done" && e.data.item?.type === "custom_tool_call")
       .map(e => ({ requestAt: x.requestAt, itemDoneAt: e.at, terminalAt: terminal?.at ?? null, callId: e.data.item.call_id,
         nextTaskRequestAt: taskExchanges[index + 1]?.requestAt ?? Infinity }));
-  }), wire.tools, unknownAt);
+  }), wire.tools, [...unknownAt, ...downstreamUnknown.map(x => x.exchange.requestAt)]);
   const taskRows = generated.filter(x => x.phase === "task");
-  const taskSettings = taskRows.map(x => ({ model: x.model, reasoning: x.requestedReasoning }));
+  const taskSettings = taskRows.map(x => ({ model: x.model, reasoning: x.effectiveReasoning }));
   const uniqueSettings = [...new Set(taskSettings.map(x => JSON.stringify(x)))];
   const declaredSettings = Object.fromEntries(Object.entries(expectedReasoning).filter(([k, v]) => ["effort", "summary", "context"].includes(k) && v !== undefined && v !== null));
-  const matchesDeclaredSettings = taskRows.every(x => Object.entries(declaredSettings).every(([k, v]) => x.requestedReasoning[k as keyof typeof x.requestedReasoning] === v));
+  const expectedProfileComplete = REASONING_FIELDS.every(k => typeof declaredSettings[k] === "string" && (declaredSettings[k] as string).length > 0);
+  const matchesDeclaredSettings = expectedProfileComplete && taskRows.length > 0 && taskRows.every(x => REASONING_FIELDS.every(k => x.effectiveReasoning[k] === declaredSettings[k]));
   const sourceToNative = compareSegments(sourceParts, native.segments);
   const sourceToGateway = downstream ? compareSegments(sourceParts, wire.segments) : null;
   const diagnosticTotal = Object.values(input.diagnostics).reduce((a, b) => a + b, 0) + (downstream ? Object.values(downstream.diagnostics).reduce((a, b) => a + b, 0) : 0);
@@ -174,10 +266,13 @@ export async function inspectTrial(dir: string, arm: "splice" | "codex", model: 
     supervisorCompleted: meta.completed === true && meta.timedOut === false,
     realClientExitedSuccessfully: exitCode === 0,
     noUnknownRequests: unknownAt.length === 0, taskAttributed: taskExchanges.length > 0,
+    noUnknownDownstreamRequests: downstreamUnknown.length === 0,
     capturesWellFormed: diagnosticTotal === 0, sourceSnapshotsConsistent: taskRows.every(x => x.sourceConsistencyErrors === 0),
     sourceReadableCoverageComplete: taskRows.every(x => x.unclosedReadableParts === 0 && x.unmodeledReadableEvents === 0),
     taskResponsesComplete: taskRows.every(x => !x.incomplete && x.terminalType === "response.completed"),
     taskSettingsConsistent: uniqueSettings.length === 1,
+    expectedReasoningProfileComplete: expectedProfileComplete,
+    effectiveTaskReasoningKnown: taskRows.every(x => x.unknownReasoningParameters === 0),
     taskSettingsMatchExplicitDeclaration: matchesDeclaredSettings,
     noOpaqueNative: native.opaqueBlocks === 0, noEmptyNativeThinking: native.emptyThinkingBlocks === 0,
     sourceMatchesNative: sourceToNative.equal,
@@ -196,14 +291,20 @@ export async function inspectTrial(dir: string, arm: "splice" | "codex", model: 
     captureDiagnostics: { model: input.diagnostics, gateway: downstream?.diagnostics ?? null },
     totals: { allRequests: input.exchanges.length + input.diagnostics.unparsedRequests, unknownUnparsedRequests: input.diagnostics.unparsedRequests,
       allResponsesGenerations: classified.filter(x => x.exchange.route?.endsWith("/responses") && x.exchange.body.generate !== false).length, phases: phaseCounts,
-      taskSummaryDenominator: taskRows.length, taskWithReadableSummary: taskRows.filter(x => x.summaryCharacters > 0).length },
-    generated, taskSettings, settingsAgreement: { internallyConsistent: uniqueSettings.length === 1, declaredSettings, matchesDeclaredSettings, absentDeclarationIsNotAgreementEvidence: Object.keys(declaredSettings).length === 0 },
+      taskSummaryDenominator: taskRows.length, taskWithReadableSummary: taskRows.filter(x => x.summaryCharacters > 0).length,
+      taskExplicitReasoningParameters: taskRows.reduce((n, x) => n + Object.values(x.reasoningProvenance).filter(v => v === "explicit wire parameter").length, 0),
+      taskInheritedReasoningParameters: taskRows.reduce((n, x) => n + Object.values(x.reasoningProvenance).filter(v => v === "captured previous_response_id parent").length, 0),
+      taskUnknownReasoningParameters: taskRows.reduce((n, x) => n + x.unknownReasoningParameters, 0) },
+    generated, taskSettings, settingsAgreement: { internallyConsistent: uniqueSettings.length === 1, declaredSettings, expectedProfileComplete, matchesDeclaredSettings, absentDeclarationIsNotAgreementEvidence: !expectedProfileComplete },
+    downstreamRequests: downstreamClassified.map(({ exchange: x, classification }) => ({ requestAt: x.requestAt, route: x.route, ...classification,
+      clientModel: x.body.model ?? null, responseFormat: x.responseFormat, jsonValid: x.jsonValid, httpStatus: x.status })),
     gateway: { opaqueBlocks: wire.opaqueBlocks, emptyThinkingBlocks: wire.emptyThinkingBlocks, duplicateBlocks: wire.duplicateBlocks, messages: wire.messages, completeMessages: wire.completed },
     sourceToNative, sourceToGateway, dispatch };
 }
 
 export async function main(argv: string[]): Promise<number> {
-  if (!argv[0] || !argv[1]) { console.error("Usage: bun analyze-delivery-v3.ts RUN_DIR NEW_OUTPUT.json"); return 2; }
+  const expectedProfile = cliExpectedProfile(argv.slice(2));
+  if (!argv[0] || !argv[1] || !expectedProfile) { console.error("Usage: bun analyze-delivery-v3.ts RUN_DIR NEW_OUTPUT.json --expected-profile high-detailed-all_turns-v1 (or --expected-effort high --expected-summary detailed --expected-context all_turns). Manifest omissions never supply defaults."); return 2; }
   const run = resolve(argv[0]), out = resolve(argv[1]);
   if (existsSync(out)) throw new Error("exclusive output already exists");
   const manifest = JSON.parse(readFileSync(join(run, "manifest.json"), "utf8"));
@@ -212,13 +313,10 @@ export async function main(argv: string[]): Promise<number> {
   for (const result of results) {
     if (!["codex", "splice"].includes(result.arm)) { trials.push({ task: result.task, arm: result.arm, qualified: false, error: "unknown arm; modes not pooled" }); continue; }
     trials.push({ task: result.task, repetition: result.repetition, verified: result.verified,
-      ...await inspectTrial(join(run, result.task, `${result.repetition}-${result.arm}`), result.arm, manifest.config.model, {
-        effort: manifest.config.reasoning?.effort ?? manifest.config.effort,
-        summary: manifest.config.reasoning?.summary ?? manifest.config.summary,
-        context: manifest.config.reasoning?.context ?? manifest.config.context,
-      }) });
+      ...await inspectTrial(join(run, result.task, `${result.repetition}-${result.arm}`), result.arm, manifest.config.model, expectedProfile) });
   }
-  const report = { format_version: 3, classifier: "interactive-delivery-v3 / strict-session-title-auxiliary-v1",
+  const report = { format_version: 3, analysis_revision: 2, classifier: "interactive-delivery-v3 / strict-session-title-auxiliary-v1",
+    expected_reasoning_profile: expectedProfile, expected_profile_source: "explicit CLI declaration; no manifest/default inference",
     analyzer_sha256: digest(readFileSync(fileURLToPath(import.meta.url))), classifier_sha256: digest(readFileSync(fileURLToPath(import.meta.url))),
     evidence_sha256: digest(readFileSync(join(import.meta.dir, "analyze-delivery-v3-evidence.ts"))),
     manifest_sha256: digest(readFileSync(join(run, "manifest.json"))), results_sha256: digest(readFileSync(join(run, "results.json"))),
@@ -228,6 +326,6 @@ export async function main(argv: string[]): Promise<number> {
     trials };
   writeFileSync(out, JSON.stringify(report, null, 2) + "\n", { flag: "wx", mode: 0o600 });
   console.log(JSON.stringify({ out, trials: trials.length, qualified: trials.filter(t => t.qualified).length }));
-  return trials.every(t => t.qualified) ? 0 : 1;
+  return trials.length > 0 && trials.every(t => t.qualified) ? 0 : 1;
 }
 if (import.meta.main) process.exitCode = await main(process.argv.slice(2));

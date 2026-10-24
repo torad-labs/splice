@@ -13,6 +13,7 @@ import splice.provider.codex.CodeModeRecord
 import splice.provider.codex.CodeModeRunContext
 import splice.provider.codex.CodexCodeModeHistoryCodec
 import splice.upstream.RoundBody
+import java.lang.ref.WeakReference
 
 /**
  * GPT's history in code mode is Codex's: each exec call with its output, and none of the client calls a script
@@ -52,8 +53,8 @@ internal class CodeModeUpstreamHistory(private val json: Json) {
 
     /** A script that finished without a client call follows the post it started on: none of it is in the client's
      *  history, so its reasoning and preface go first and the client replays them next ([CodeModeBody.echoes]).
-     *  Folded from nothing, one the client has none of goes last only when it ran in the very request the client
-     *  sends again (its reply was lost): a baseline anchor alone also matches a history the client edited. An
+     *  Folded from nothing, one the client has none of goes last only when it ran after all of the client's history
+     *  (its reply was lost and the client sends that history again), whatever else of the request changed. An
      *  unchanged history is the body the client sent, as it arrived. */
     private fun extend(
         context: CodeModeRunContext,
@@ -74,9 +75,8 @@ internal class CodeModeUpstreamHistory(private val json: Json) {
         }
         val folded = entry.sent + CodeModeScriptFold(codec, owners(records), quiet, scripts).fold(tail)
         val due = if (entry === nothing) {
-            CodeModeScriptDue { record, prior ->
-                record.progress.lastDigest == context.digest && scripts.startedOn(record, preamble + prior)
-            }
+            val last = quiet.filter { it.at == conversation.size }.mapTo(HashSet()) { it.record.id }
+            CodeModeScriptDue { record, _ -> record.id in last }
         } else {
             CodeModeScriptDue { record, _ -> record.postedOn == entry.id }
         }
@@ -96,9 +96,18 @@ internal class CodeModeUpstreamHistory(private val json: Json) {
      *  the request the client sent. */
     fun clientStart(context: CodeModeRunContext): CodeModeClientStart? {
         val client = context.recovery?.baseline ?: context.client ?: return null
+        return started?.takeIf { it.first.get() === client }?.second
+            ?: read(client)?.also { started = WeakReference(client) to it }
+    }
+
+    /** Where a script starting now starts in [client]'s history, or null when it is not a Responses input. */
+    private fun read(client: CodeModeBody): CodeModeClientStart? {
         val input = client.request?.second ?: return null
         return CodeModeClientPrefix(input.subList(preambleCount(input), input.size), client.digests).start()
     }
+
+    /** The body the last start was read from, and that start: every script one request starts reads it once. */
+    @Volatile private var started: Pair<WeakReference<CodeModeBody>, CodeModeClientStart>? = null
 
     /** Keeps [body] as what [context]'s conversation last sent, as it is posted. */
     fun sent(context: CodeModeRunContext, body: CodeModeBody) {

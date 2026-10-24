@@ -70,11 +70,13 @@ class CodeModeStateFiles(val dir: Path) {
         if (Files.isDirectory(held())) Files.move(held(), dir)
     }
 
-    /** What an older daemon wrote: each saved record replaced by [edit] of it, in the file it is in. */
+    /** What an older daemon wrote: each saved record replaced by [edit] of it, in the file it is in. A file that
+     *  holds no records (only expiry markers) is left as it is. */
     fun rewriteRecords(edit: (JsonObject) -> JsonObject) = files().forEach { file ->
         val restored = CodeModeStateJournal.read(file, Json)
         val conversation = Json.parseToJsonElement(json.encodeToString(restored)).jsonObject
-        val records = conversation.getValue("records").jsonArray.map { edit(it.jsonObject) }
+        val saved = conversation["records"]?.jsonArray ?: return@forEach
+        val records = saved.map { edit(it.jsonObject) }
         Files.writeString(file, JsonObject(conversation + ("records" to JsonArray(records))).toString())
     }
 

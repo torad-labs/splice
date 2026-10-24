@@ -213,11 +213,35 @@ internal class CodeModeExtraContent(
     ): Boolean {
         val allowed = CodeModeNativeChain.allowed(record)
         val delivered = deliveredReplay(projected, record, digests)
+        val streamed = streamedContinuity(projected, record, boundary)
         return projected.replayItems.any { replay ->
             val slot = replay.logicalOffset to replay.items
-            val expected = slot in allowed
+            val expected = slot in allowed || replay in streamed
             replay.logicalOffset >= boundary && !expected &&
                 replay !in delivered && replay.callbackId !in owned
         }
+    }
+
+    /** The client's copy of the reasoning GPT gave before the script's call, when GPT streamed some of it after the
+     *  preface: the client keeps that order, so the copy is split across the slots from [boundary] to the script's
+     *  first client call, each in GPT's order. Empty unless those slots hold exactly that reasoning. */
+    private fun streamedContinuity(
+        projected: ResponsesCodeModeInput,
+        record: CodeModeRecord,
+        boundary: Int,
+    ): Set<ResponsesCodeModeReplay> {
+        val given = record.carry.replay.flatMap { it.items }
+        if (given.isEmpty()) return emptySet()
+        val call = record.issued.firstOrNull()?.calls?.firstOrNull()?.clientId
+        val callback = call?.let { codec.projection.functionCallIndex(projected.logicalItems, it) }
+            ?.takeIf { it >= boundary } ?: projected.logicalItems.size
+        val copy = mutableListOf<ResponsesCodeModeReplay>()
+        var held = 0
+        for (replay in projected.replayItems.filter { it.logicalOffset in boundary..callback }) {
+            if (held >= given.size) break
+            copy += replay
+            held += replay.items.size
+        }
+        return copy.toSet().takeIf { copy.flatMap(ResponsesCodeModeReplay::items) == given }.orEmpty()
     }
 }

@@ -10,10 +10,13 @@
 // script is told from the prose around it only by where it ran. After a running script's results the client may
 // add a system notice, which the script runs on past, or the user may steer, which stops the script with the
 // results it was given; either reaches GPT after the script's output. Between two requests splice may restart on
-// the state it saved, as an install does, and GPT's next post still extends the last. A rewound conversation cuts the client's
-// history back to an earlier user message and edits it: that falls back to the client's history once and then only
-// extends again, and GPT is still shown every script that ran before the cut, in the order it ran, whatever the
-// client kept of it.
+// the state it saved, as an install does, while a script waits on the client or not, and on a store an older build
+// wrote, and GPT's next post still extends the last. A restart may also cut a reply the client never kept, and the
+// user asks to go on: GPT is still shown the scripts that reply ran. The client keeps reasoning GPT gave after its
+// preface in the order GPT streamed it, while GPT was sent its reasoning first. A rewound conversation cuts the
+// client's history back to an earlier user message and edits it: that falls back to the client's history once and
+// then only extends again, and GPT is still shown every script that ran before the cut, in the order it ran,
+// whatever the client kept of it.
 package splice.provider.codex
 
 import kotlinx.coroutines.test.runTest
@@ -41,7 +44,7 @@ import kotlin.random.Random
 private const val RUNS = 120
 
 /** Seeds a wider run once broke, kept so they stay fixed. */
-private val KEPT = listOf(249, 505, 908)
+private val KEPT = listOf(249, 258, 505, 908)
 private const val REQUESTS = 128
 private const val DEVELOPER = """{"role":"developer","content":"s"}"""
 private const val TYPE = "type"
@@ -52,6 +55,9 @@ private const val NEXT = "Next "
 private const val STEER = "Steer "
 private const val NOTICE = "Notice "
 private val THROWN_AWAY = listOf("abandoned record", "history rewrite skipped")
+private const val FAULTS = 0x5EED
+private const val ANCHORS = "replayAnchors"
+private const val CLIENT_START = "client"
 
 class CodeModeAppendOnlyHistoryTest : CodeModeBridgeTestSupport() {
 
@@ -73,6 +79,10 @@ class CodeModeAppendOnlyHistoryTest : CodeModeBridgeTestSupport() {
 
         /** What the client adds and when splice restarts, drawn apart so a seed's conversation stays the same. */
         private val extras = Random(seed.inv())
+
+        /** What goes wrong around a request: a restart while a script waits, a reply the client never kept, a store
+         *  an older build wrote, a reply the client kept in the order GPT streamed it. Drawn apart again. */
+        private val faults = Random(seed xor FAULTS)
         private val scripts = ArrayDeque<ArrayDeque<CodeModeStep>>()
         private val stepCounts = mutableListOf<Int>()
         private val runtime = QueuedRuntime(scripts)
@@ -89,6 +99,9 @@ class CodeModeAppendOnlyHistoryTest : CodeModeBridgeTestSupport() {
         private val steered = HashMap<String, List<String>>()
         private val stopped = mutableSetOf<Int>()
         private var interjections = 0
+
+        /** What happened between requests, by request, for a failure to name. */
+        private val trace = mutableListOf<String>()
         private val upstreamTurns = if (rewinds) 4 + random.nextInt(6) else 2 + random.nextInt(7)
 
         /** The post GPT answers in plain text and after which the client rewinds, or -1. */
@@ -96,6 +109,10 @@ class CodeModeAppendOnlyHistoryTest : CodeModeBridgeTestSupport() {
         private var results = emptyList<CodeModeResult>()
         private var previous: List<JsonElement>? = null
         private var rewound = false
+
+        /** Whether a reply was ever cut off, and whether the state was once saved by an older build. */
+        private var cut = false
+        private var aged = false
         private var posts = 0
         private var requests = 0
 
@@ -112,7 +129,7 @@ class CodeModeAppendOnlyHistoryTest : CodeModeBridgeTestSupport() {
             val short = runtime.cells.indices.filter { it !in stopped && runtime.cells[it].advances < stepCounts[it] }
             return when {
                 thrown.isNotEmpty() -> "seed $seed threw a script's history away: ${thrown.first().take(240)}"
-                short.isNotEmpty() -> "seed $seed: scripts $short never got all their results"
+                short.isNotEmpty() -> "seed $seed: scripts $short never got all their results (${trace.joinToString()})"
                 else -> null
             }
         }
@@ -130,27 +147,52 @@ class CodeModeAppendOnlyHistoryTest : CodeModeBridgeTestSupport() {
             }
             val first = posts - exchanges.size
             spoken = client.size
+            val ran = outers.size
             val broke = exchanges.withIndex()
                 .firstNotNullOfOrNull { (index, exchange) -> post(first + index, exchange) }
-            if (broke != null) return broke
-            afterwards(sink.tools)
+            if (broke != null) return "$broke (${trace.joinToString()})"
+            afterwards(sink.tools, ran)
             val stalled = exchanges.isEmpty() && sink.tools.isEmpty()
             return "seed $seed: request $requests went nowhere".takeIf { stalled }
         }
 
         /** What follows splice's answer before the client's next request: the client runs the [tools] it was given
-         *  and may add a notice or steer; with none to run it may rewind, and splice may restart. */
-        private fun afterwards(tools: List<SeenTool>) {
+         *  and may add a notice or steer, and splice may restart while the script waits on them; with none to run
+         *  the client may never have kept the reply, or rewind, and splice may restart. */
+        private fun afterwards(tools: List<SeenTool>, ran: Int) {
             results = tools.map { CodeModeResult(it.id, "out-${it.id}") }
             client += tools.map { Wire.functionCall(it.id, it.name) }
             client += results.map { Wire.output(it.id, it.output) }
             if (tools.isNotEmpty()) {
                 interject()
+                if (faults.nextInt(4) == 0) {
+                    // The script's process goes with splice: it stops with the results the client gives it, as a
+                    // steered one does ("code-mode process state was lost; source was not rerun").
+                    steered[outers.last()] = results.map(CodeModeResult::output)
+                    stopped += stepCounts.lastIndex
+                    trace += "waiting $requests"
+                    restart()
+                }
+                return
+            }
+            if (posts < upstreamTurns && faults.nextInt(5) == 0) {
+                lost(ran)
                 return
             }
             val rewindNow = rewinds && !rewound && posts > rewindAt
             if (rewindNow) rewind()
             if (extras.nextInt(4) == 0) restart()
+        }
+
+        /** splice restarted while it streamed this request's reply, so the client kept none of it, and the user
+         *  asks to go on. The scripts it ran from [ran] on still ran, right after the history the client sent. */
+        private fun lost(ran: Int) {
+            trace += "lost $requests"
+            cut = true
+            client.subList(spoken, client.size).clear()
+            outers.drop(ran).forEach { ranAfter[it] = spoken - 1 }
+            client += Wire.user("Continue $requests.")
+            restart()
         }
 
         /** Checks one post against the one before it, then gives the client GPT's answer to it. */
@@ -161,14 +203,27 @@ class CodeModeAppendOnlyHistoryTest : CodeModeBridgeTestSupport() {
                 ?: unstopped(seed, post, sent, steered)
             if (broke != null) return broke
             previous = sent
-            client += answered.reasoning.map(Wire::reasoning)
-            (answered.preface ?: answered.text)?.let { said(it, joins = answered.reasoning.isEmpty()) }
+            keep(answered)
             answered.outer?.let {
                 outers += it
                 ranAfter[it] = client.lastIndex
             }
             answered.text?.let { client += Wire.user("$NEXT$post.") }
             return null
+        }
+
+        /** What the client keeps of GPT's [answered] reasoning and prose: the reasoning first, or, about half the
+         *  times GPT reasoned, said a script's preface, and reasoned again before the call, the order it streamed. */
+        private fun keep(answered: Reply) {
+            val streamed = answered.outer != null && answered.preface != null && answered.reasoning.size > 1
+            if (streamed && faults.nextBoolean()) {
+                client += Wire.reasoning(answered.reasoning.first())
+                said(checkNotNull(answered.preface), joins = false)
+                client += answered.reasoning.drop(1).map(Wire::reasoning)
+            } else {
+                client += answered.reasoning.map(Wire::reasoning)
+                (answered.preface ?: answered.text)?.let { said(it, joins = answered.reasoning.isEmpty()) }
+            }
         }
 
         /** GPT's prose as the client keeps it: a message of its own, or, when it [joins] prose said earlier in this
@@ -197,10 +252,23 @@ class CodeModeAppendOnlyHistoryTest : CodeModeBridgeTestSupport() {
             }
         }
 
-        /** Stops splice and starts it again on the state it saved, as an install does, with no script running: what
-         *  it kept in memory of GPT's posts is gone, and the next post still extends the last one. */
+        /** Stops splice and starts it again on the state it saved, as an install does, a script perhaps waiting on
+         *  the client: what it kept in memory of GPT's posts is gone, and the next post still extends the last one.
+         *  Once, the build it starts may be newer than the one that saved the state, whose records kept no client
+         *  start. Not after a cut reply: with no start kept, a script the client holds no copy of is left out (the
+         *  older build had already left it out of what GPT was sent), a gap the goal names. */
         private fun restart() {
+            trace += "restart $requests"
             manager.onHeadStop()
+            val newer = !cut && !aged
+            if (newer && faults.nextInt(3) == 0) {
+                aged = true
+                trace += "older build"
+                stateFiles.rewriteRecords { record ->
+                    val anchors = record[ANCHORS] as? JsonObject ?: return@rewriteRecords record
+                    JsonObject(record + (ANCHORS to JsonObject(anchors - CLIENT_START)))
+                }
+            }
             manager = bridge(runtime, retention = CodeModeRetention(records = 64))
         }
 
@@ -208,6 +276,7 @@ class CodeModeAppendOnlyHistoryTest : CodeModeBridgeTestSupport() {
          *  cannot extend the last one, so its prefix is not compared. A script that ran after an item the client
          *  kept ran in the history it kept, so GPT is still shown it; one that ran after the cut is gone. */
         private fun rewind() {
+            trace += "rewind $requests"
             val nexts = client.indices.filter { NEXT in client[it] }
             val cut = nexts[random.nextInt(nexts.size)]
             client.subList(cut, client.size).clear()

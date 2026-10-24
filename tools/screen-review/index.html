@@ -1,0 +1,55 @@
+<!-- NEW: local review chrome leaves the mock full-width and positions feedback beside its pin. -->
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="dark light">
+  <title>Screen review</title>
+  <link rel="stylesheet" href="/style.css">
+  <script type="module" src="/app.js"></script>
+</head>
+<body>
+  <div class="shell">
+    <header class="header">
+      <h1>Screen review</h1>
+      <details class="screen-switcher" id="switcher">
+        <summary>Screens <span id="progress">Loading</span></summary>
+        <nav aria-label="Proposed screens"><ol id="screen-list"></ol></nav>
+      </details>
+      <div class="save-state"><span class="local-dot"></span><span id="save-status" role="status">Local feedback</span><button id="retry" hidden>Retry save</button><button id="theme" aria-label="Change color theme">Light mode</button></div>
+    </header>
+    <main class="workspace" aria-labelledby="screen-title">
+      <div class="screen-heading"><div><h2 id="screen-title">Loading screens</h2><p id="screen-position"></p></div><div class="navigation"><button id="previous" aria-label="Previous screen">Previous</button><button id="next" aria-label="Next screen">Next</button></div></div>
+      <div id="empty" hidden><h3>No ready screens</h3></div>
+      <aside class="justification" id="inspector" aria-label="Screen justification">
+        <div><h3>Why proposed</h3><p id="why"></p></div>
+        <div><h3>Value to you</h3><p id="value"></p></div>
+        <div><h3>Dashboard fit</h3><p id="dashboard"></p></div>
+      </aside>
+      <section id="review" aria-label="Mock and feedback">
+        <div class="canvas-wrap">
+          <div class="canvas-window" id="screen-canvas">
+            <div class="screen-page" id="screen-page">
+              <iframe id="mock" title="Proposed screen" sandbox="allow-scripts"></iframe>
+              <div id="pin-layer" tabindex="0" role="button" aria-label="Add a feedback pin to this screen"></div>
+            </div>
+          </div>
+          <div id="editor" class="pin-editor" hidden>
+            <div class="editor-heading"><label id="pin-label" for="note">Pin feedback</label><button id="close-note" aria-label="Close pin editor">Close</button></div>
+            <textarea id="note" rows="5" maxlength="20000" placeholder="What should change?"></textarea>
+            <div class="editor-foot"><button id="delete-pin">Delete pin</button></div>
+          </div>
+        </div>
+        <section class="feedback" id="feedback" aria-label="Saved pins" hidden>
+          <div class="notes-heading"><h2>Feedback</h2><span id="pin-count">No pins</span></div>
+          <ul id="notes"></ul>
+        </section>
+      </section>
+      <p id="error" role="alert" hidden></p>
+    </main>
+    <footer class="footer" id="mockups" hidden><span>Mockups</span><code>captures/screen-review/feedback.json</code></footer>
+    <div class="verdict-row" id="verdict-bar" hidden><p id="verdict-label">Not reviewed</p><div class="canvas-caption"><span>Tap to pin</span><div><button id="zoom" aria-pressed="false">Fit width</button><button id="add-pin">Add a pin</button></div></div><div class="verdict-actions"><button id="decline" class="decline">Decline</button><button id="approve" class="approve">Approve</button></div></div>
+  </div>
+</body>
+</html>

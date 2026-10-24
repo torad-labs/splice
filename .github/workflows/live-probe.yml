@@ -100,7 +100,7 @@ jobs:
       - name: Run tier-1 live probe
         id: tier1
         if: steps.gate.outputs.should_skip == 'false'
-        run: checks/e2e/heads-e2e.sh --tier 1
+        run: bun tools/e2e heads --tier 1
       - name: Update live-probe issue
         if: always() && steps.gate.outputs.should_skip == 'false'
         env:

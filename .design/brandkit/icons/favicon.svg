@@ -1,0 +1,4 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 32 32" role="img" aria-label="splice">
+  <title>splice</title>
+  <rect x="1" y="1" width="30" height="30" rx="6.5" fill="#382E25" stroke="#07050A" stroke-width="2"/><path transform="translate(-0.5 -0.5) scale(0.26)" d="M 86 38 C 74 26, 40 26, 40 46 C 40 64, 80 60, 80 80 C 80 98, 48 100, 34 86" fill="none" stroke="#EFE2C6" stroke-width="20.3" stroke-linecap="round"/><circle cx="21.86" cy="9.38" r="2.9" fill="#FFD79A"/><circle cx="8.34" cy="21.86" r="2.9" fill="#FFD79A"/>
+</svg>

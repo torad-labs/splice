@@ -1,0 +1,10 @@
+[Unit]
+Description=Persistent loopback listener for the Splice MCP hub
+
+[Socket]
+ListenStream=127.0.0.1:3095
+Accept=no
+Service=splice-mcp-front.service
+
+[Install]
+WantedBy=sockets.target

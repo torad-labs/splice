@@ -1,0 +1,8 @@
+sealed interface Node
+class Leaf : Node
+class Branch : Node
+
+fun name(n: Node): Int = when (n) {
+    is Leaf -> 1
+    else -> 2
+}

@@ -1,0 +1,13 @@
+Run JavaScript code to orchestrate/compose tool calls
+- Evaluates the provided JavaScript code in a fresh V8 isolate as an async module.
+- All nested tools are available on the global `tools` object, for example `await tools.Bash(...)`. Tool names are exposed as normalized JavaScript identifiers, for example `await tools.mcp__ologs__get_profile(...)`.
+- Nested tool methods take an object as their input argument.
+- Nested tools return the tool's output as a string.
+- Runs raw JavaScript -- no Node, no file system, no network access, no console.
+- Accepts raw JavaScript source text, not JSON, quoted strings, or markdown code fences.
+- When the JS code is fully evaluated, the isolate's lifetime ends and unawaited promises are silently discarded.
+
+- Global helpers:
+- `exit()`: Immediately ends the current script successfully (like an early return from the top level).
+- `text(value: string | number | boolean | undefined | null)`: Appends a text item. Non-string values are stringified with `JSON.stringify(...)` when possible.
+- `ALL_TOOLS`: metadata for the enabled nested tools as `{ name, description }` entries.

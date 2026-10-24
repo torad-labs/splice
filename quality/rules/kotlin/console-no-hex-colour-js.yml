@@ -1,0 +1,11 @@
+# The console's no-hex-colour law (see console-no-hex-colour-css.yml) for its JavaScript.
+id: console-no-hex-colour-js
+language: javascript
+severity: error
+message: A hex colour in the console JS is a second palette.
+note: Read the colour from a token with getComputedStyle, or give the element a class and let the CSS use var(--splice-...).
+files:
+  - app/src/main/resources/console/*.js
+rule:
+  kind: string_fragment
+  regex: '^#(?:[0-9a-fA-F]{3,4}|[0-9a-fA-F]{6}|[0-9a-fA-F]{8})$'

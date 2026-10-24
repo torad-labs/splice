@@ -1,0 +1,434 @@
+/* Sessions, in the Accounts language (console.css): every agent on every model as a one-line row in its project's block,
+   its state as the lamp at the row's left, and the open session beside the list. Where both don't fit, the open
+   session takes the page and Close brings the list back. Teams, Models, Requests, Settings, Usage and Compare load this
+   sheet too: the rules not scoped to .sessions (the lamp, .meta, .list, .fold, the pane and its transcript) are theirs
+   as much as this page's. */
+
+.page { container-type: inline-size; }
+.search { display: flex; align-items: center; gap: .6rem; width: 22rem; position: relative; }
+.search svg { position: absolute; left: .75rem; width: 1.05rem; height: 1.05rem; color: var(--text-mute); pointer-events: none; }
+.search .field { padding-left: 2.3rem; font-family: var(--font-name); font-size: .95rem; }
+
+.sessions { display: block; }
+.list { display: flex; flex-direction: column; gap: var(--gap-card); padding-left: 2.7rem; min-width: 0; }
+.pane { display: none; }
+/* taking the page below side by side, the open session's foot stops above the page's composer too */
+.sessions .pane { height: calc(100vh - var(--bar-h) - 12.5rem); }
+/* THE LIST FLOWS IN COLUMNS (Marcos, Oct 15: sessions per project, denser): each project is one block, and the blocks
+   run down as many 52rem columns as the list has room for, in the groups' order, a short block filling in under the
+   one before it, so his width shows every project at once instead of one tall column: two at 1440 with the page to
+   itself, two at 3394 and three at 3828 beside the open session. Headers, folds and notes span the columns. */
+.sessions .list { display: block; columns: 52rem; column-gap: 1.4rem; padding-left: 0; }
+.sessions .list > * { margin: 0 0 1.1rem; }
+.sessions .list > :not(.pgroup) { column-span: all; }
+.sessions .list > .fold { display: flex; width: fit-content; }
+.sessions .pgroup { break-inside: avoid; }
+.sessions.open .list { display: none; }
+.sessions.open .pane { display: flex; }
+/* the other pages that load this sheet put their list beside the open item from 104rem, unless their own sheet says */
+@container (min-width: 104rem) { :not(.sessions) > .pane .close { display: none; } }
+/* SESSIONS SITS SIDE BY SIDE FROM 122rem, so a row keeps its name and words whole: below it (1440, 115rem) the list has
+   the page in two columns and an open session takes the page, with Close. kit.js sideBySide() reads the same number. */
+.page:has(> #sessions) { --side-by-side: 122; }
+@container (min-width: 122rem) {
+  .sessions, .sessions.open { display: flex; align-items: flex-start; gap: var(--gap-col); }
+  .sessions .list, .sessions.open .list { display: block; flex: 1 1 0; min-width: 0; }
+  /* the open session keeps a reading width and the list takes the rest: two columns at 3394, three at 3828. From its
+     top (sessions.js fitPane: under the tiles, or pinned under the top bar) it reaches to 1rem off the bottom; the
+     page's composer steps aside for a pane on the right */
+  .sessions .pane, .sessions.open .pane {
+    display: flex; flex: 0 0 clamp(52rem, 100cqi - 54rem, 78rem);
+    position: sticky; top: calc(var(--bar-h) + 1rem); height: calc(100vh - max(var(--pane-top, 0px), var(--bar-h) + 1rem) - 1rem);
+  }
+  .sessions .pane .close { display: none; }
+}
+
+/* ---------- the lamp: the session's state as an element, in the socket at the card's left ---------- */
+.lamp {
+  position: absolute; left: -2.7rem; top: 1.1rem; width: 2rem; height: 2rem; border-radius: 50%;
+  display: grid; place-items: center; color: var(--text-mute);
+  background: var(--socket); box-shadow: 0 0 0 var(--ink-w) var(--ink), inset 0 0 0 .15rem var(--rail);
+}
+/* the socket is dark in both themes, so what is lit in it keeps night's ink in day: day's dark green and greys sank into
+   it (Working's trace near-invisible, walk ea3eeff67). The open seat in Teams is a light socket and keeps day's. */
+[data-theme="day"] .lamp:not(.open) { --live: var(--splice-live-on-night); --limit: var(--splice-limit-on-night); --text-body: var(--splice-cream-body); --text-mute: var(--splice-cream-mute); --track-line: var(--splice-track-line-on-night); }
+.lamp svg { width: 1.2rem; height: 1.2rem; fill: none; stroke: currentColor; stroke-width: 2.4; stroke-linecap: round; stroke-linejoin: round; }
+.lamp i { width: .62rem; height: .62rem; border-radius: 50%; background: currentColor; }
+/* Working: a trace that runs, small and slow, because it repeats on every working card */
+.lamp.working { color: var(--live); }
+/* Continuing on: the wait ring in the live colour while a move runs (hitstop 899cb2e) */
+.lamp.moving { color: var(--live); }
+.lamp.moving .wait { width: 1.25rem; height: 1.25rem; }
+.lamp.moving .wait circle { stroke: var(--live); }
+/* Not running: Needs you's ring and glow around an empty socket, since nothing runs on either command (hitstop cd2bf9c) */
+.lamp.notrunning i { background: transparent; box-shadow: inset 0 0 0 .14rem currentColor; }
+.lamp svg.wave { width: 1.5rem; height: 1.5rem; stroke-width: 3.6; }
+.lamp.working .base { opacity: .32; }
+.lamp.working .beat { stroke-dasharray: 16 64; animation: trace 2.2s linear infinite; }
+@keyframes trace { from { stroke-dashoffset: 80; } to { stroke-dashoffset: 0; } }
+/* Needs you: the amber ring, the key light of the film, around a glyph for what it asks */
+.lamp.needs { color: var(--key-light); box-shadow: 0 0 0 var(--ink-w) var(--ink), inset 0 0 0 .18rem var(--key-light), 0 0 1.1rem .12rem rgba(255, 215, 154, .4); }
+.lamp.needs svg { width: 1.05rem; height: 1.05rem; }
+/* Stalled: the element names the signal, in the limit's colour; a silent model is the trace gone flat */
+.lamp.stalled { color: var(--limit); }
+.lamp.idle i { background: var(--text-mute); }
+.lamp.stopped i { border-radius: .15rem; background: var(--text-body); width: .58rem; height: .58rem; }
+.lamp.ended i { background: transparent; box-shadow: inset 0 0 0 .12rem var(--track-line); }
+
+/* ---------- a session: one card ---------- */
+.s { cursor: pointer; }
+.s:hover { background: var(--obj-high); }
+.s.needs { background: color-mix(in oklab, var(--obj) 86%, var(--key-light)); }
+.s[aria-current="true"] { border-color: var(--key-ink); }
+.s .top { display: flex; align-items: center; gap: .8rem; min-height: 2.2rem; }
+.s .name { font: 500 1.1rem/1.15 var(--font-name); color: var(--text); min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; background: none; border: 0; padding: 0; cursor: pointer; text-align: left; }
+.wt { display: inline-flex; align-items: center; gap: .35rem; font: 500 .9rem/1 var(--font-data); color: var(--text-mute); white-space: nowrap; }
+.wt svg, .team svg, .where svg { width: 1rem; height: 1rem; flex: none; }
+.s .top .chip { margin-left: auto; }
+.s .top .state { margin-left: auto; }  /* "unknown head" takes the chip's place at the right edge (hitstop) */
+.meta { display: flex; align-items: center; flex-wrap: wrap; gap: .4rem 1rem; margin-top: .3rem; font: 500 .95rem/1 var(--font-data); color: var(--text-mute); }
+.meta .word.stalled, .meta .word.limit { color: var(--limit); }
+.meta .word.needs { color: var(--key-ink); }
+.meta .detail.retried { color: var(--key-ink); }
+[data-theme="day"] .meta .word.needs { color: var(--key-ink); }
+.meta .detail { font: 500 .95rem/1 var(--font-data); color: var(--limit); display: inline-flex; align-items: center; gap: .35rem; }
+.meta .detail svg { width: 1rem; height: 1rem; }
+.meta .detail.resumes { color: var(--live); }  /* splice has it: the working colour, not the stalled one (fin) */
+.meta .detail.noresume { color: var(--limit); flex: none; white-space: nowrap; }  /* nothing will re-send it: the stalled colour, words only (hitstop) */
+.meta a.detail.fix { text-decoration: underline; text-underline-offset: .2em; }  /* Signed out's way back: a link to Accounts */
+.watch .hand { transform-origin: 12px 13.5px; transform-box: view-box; }  /* a duration: the hand runs with its seconds */
+.meta .team, .meta .where { display: inline-flex; align-items: center; gap: .35rem; }
+.meta .when { margin-left: auto; min-width: 0; font-size: .95rem; color: var(--text-mute); }
+/* today's use under the open session's name: one tap opens its requests from midnight (Marlin's walk, Oct 10) */
+.today { display: flex; align-items: center; gap: .45rem; margin-top: .45rem; min-width: 0; font: 400 1rem/1.35 var(--font-name); color: var(--text-mute); text-decoration: none; }
+.today .words { min-width: 0; overflow-wrap: anywhere; }
+.today .num { font: 500 .95rem/1 var(--font-data); color: var(--text-body); white-space: nowrap; }
+.today .go { flex: none; white-space: nowrap; color: var(--text-body); }
+.today svg { flex: none; width: 1rem; height: 1rem; transition: transform var(--t-snap) var(--e-out); }
+.today:hover, .today:hover .num, .today:hover .go { color: var(--text); }
+.today:hover svg { transform: translate(.1rem, -.1rem); }
+/* the login the open session is on, its last switch and why, and Use / Unpin for this session alone (spec section 11) */
+.acctline { display: flex; flex-wrap: wrap; align-items: center; gap: .35rem .8rem; margin-top: .45rem; min-width: 0; font: 400 1rem/1.35 var(--font-name); color: var(--text-mute); }
+.acctline .lbl { flex: none; color: var(--text-mute); }
+.acctline .who-login { font-weight: 500; color: var(--text-body); }
+.acctline .why { min-width: 0; overflow-wrap: anywhere; }
+.acctline .acts { display: inline-flex; flex-wrap: wrap; gap: .4rem; margin-left: auto; }
+.acctline .state svg { width: 1rem; height: 1rem; vertical-align: -.15rem; margin-right: .3rem; }
+.last { margin: .45rem 0 0; font: 400 1rem/1.4 var(--font-name); color: var(--text-body); overflow: hidden; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; }
+/* the last line is its last tool call: the transcript's chip, still, because on the card it opens the session, not the result */
+.last.tool { display: block; width: fit-content; max-width: 100%; cursor: inherit; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.last.tool b, .ask .tname { font-weight: 600; color: var(--text); margin-right: .55rem; }
+
+/* what it waits on, verbatim, with an act for every answer it takes */
+.ask { margin-top: .75rem; }
+.ask .q { margin: 0; font: 500 1rem/1.4 var(--font-name); color: var(--text); }
+.ask .cmd, .unmoved .cmd { white-space: pre-wrap; margin: 0; font: 500 .95rem/1.4 var(--font-data); color: var(--text); background: var(--obj-sunk); border: .12rem solid var(--ink); border-radius: var(--r-in); padding: .55rem .75rem; overflow-wrap: anywhere; }
+.ask .why { margin: .45rem 0 0; font: 400 .95rem/1.4 var(--font-name); color: var(--text-body); }
+.answers { display: flex; flex-wrap: wrap; gap: .6rem; margin-top: .8rem; }
+.answers .act[aria-pressed="true"] { background: var(--limit); color: var(--on-limit); }
+.scope { font: 500 .88rem/1 var(--font-data); color: var(--text-body); background: var(--obj-sunk); border-radius: .3rem; padding: .3rem .45rem; }
+.act.primary .scope { background: rgba(36, 29, 20, .14); color: var(--splice-ink-day); }
+
+/* ---------- ended: folded at the bottom ---------- */
+.fold { align-self: flex-start; display: inline-flex; align-items: center; gap: .45rem; font: 500 .95rem/1 var(--font-name); }
+.fold .caret { width: .85rem; height: .85rem; color: var(--text-mute); transition: transform var(--t-snap) var(--e-out); }
+.fold[aria-expanded="true"] .caret { transform: rotate(90deg); }
+div.ended { display: flex; flex-direction: column; gap: .7rem; }
+.ended .lamp { top: .55rem; }
+.ended .meta { margin-top: .3rem; }
+
+/* ---------- the list on Sessions: a project is one block, a session one line in it (Marcos, Oct 15) ----------
+   The Temple's agent rows are the reference: a header with the project's name and a lamp and count per live state,
+   then one 3rem line per session, its state as the lamp and the row's fill rather than as words. A block is one cel
+   object with the hard shadow; its rows are lines in it, so forty sessions read as one project and not forty cards. */
+.sessions .pgroup, .sessions .rows, .sessions div.ended {
+  display: flex; flex-direction: column; gap: 0; min-width: 0; overflow: clip;
+  background: var(--obj); border: var(--ink-w) solid var(--ink); border-radius: var(--r-obj);
+  box-shadow: .3rem .3rem 0 var(--wall-low), .3rem .3rem 0 var(--ink-w) var(--ink);
+}
+/* a list with no groups, a picked project and the loose ended rows are one block whose rows run in columns */
+.sessions .rows, .sessions div.ended { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(52rem, 100%), 1fr)); column-gap: 1.4rem; }
+.sessions .rows > :not(.s), .sessions div.ended > :not(.s) { grid-column: 1 / -1; }
+.sessions .rows > .rested { display: grid; grid-template-columns: subgrid; }
+
+.sessions .s {
+  display: grid; grid-template-columns: 2rem minmax(0, 1fr); column-gap: .75rem; align-items: center;
+  min-height: 3rem; padding: .5rem .9rem; box-sizing: border-box;
+  background: transparent; border: 0; border-radius: 0; box-shadow: inset 0 -.08rem 0 var(--track-line);
+}
+.sessions .s:hover { top: 0; left: 0; background: var(--obj-high); }  /* a line stays in its block: no lift */
+.sessions .s.needs { background: color-mix(in oklab, var(--obj) 84%, var(--key-light)); }
+.sessions .s[aria-current="true"] { background: var(--obj-high); box-shadow: inset .25rem 0 0 var(--key-light), inset 0 -.08rem 0 var(--track-line); }
+.sessions .s > :not(.lamp) { grid-column: 2; }
+.sessions .s > .lamp { position: static; grid-column: 1; grid-row: 1; }
+
+/* the line: name, state, what it last said, its tags, the command and the time; what runs out of room goes from the tags'
+   end, whole, then the words shorten, then the name */
+.sessions .s .top { position: static; display: flex; align-items: center; gap: .75rem; min-width: 0; min-height: 2rem; }
+.sessions .s .name { flex: none; max-width: min(16rem, 34%); font: 500 1.05rem/1.2 var(--font-name); }  /* the name is who it is: the tags go first */
+.sessions .s .wt { flex: 0 1 auto; min-width: 0; max-width: 9rem; overflow: hidden; font-size: .85rem; }
+.sessions .s .top .meta { flex: none; display: inline-flex; flex-wrap: nowrap; align-items: center; gap: .45rem; margin: 0; font: 500 .88rem/1 var(--font-data); }
+.sessions .s .top .meta > * { flex: none; white-space: nowrap; }
+.sessions .s .top .meta .detail { font-size: .88rem; }
+.sessions .s .top .last {
+  flex: 1 1 14rem; min-width: 5rem; margin: 0; display: block; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  font: 400 .95rem/1.3 var(--font-name); color: var(--text-body); -webkit-line-clamp: none;
+}
+.sessions .s .top .last:empty { flex: 1 1 0; min-width: 0; }  /* nothing said: its room goes to the tags */
+.sessions .s .top .last.tool { width: auto; max-width: none; padding: 0; border: 0; background: none; box-shadow: none; font: 400 .88rem/1.3 var(--font-data); }
+.sessions .s .top .last.tool b { margin-right: .45rem; }
+.sessions .s .top .parts {
+  flex: 0 1 auto; min-width: 0; height: 1.3rem; overflow: hidden; display: flex; flex-wrap: wrap; align-items: center; gap: 0 .9rem;
+  font: 500 .88rem/1 var(--font-data); color: var(--text-mute);
+}
+.sessions .s .top .parts > * { flex: none; white-space: nowrap; height: 1.3rem; display: inline-flex; align-items: center; gap: .35rem; }
+/* an empty first slot, so even the first tag wraps away whole when it alone does not fit ("Starte" at 1440) */
+.sessions .s .top .parts::before { content: ""; flex: none; width: 0; height: 1.3rem; margin-right: -.9rem; }
+.sessions .s .top .parts:empty { display: none; }
+.sessions .s .top .chip, .sessions .s .top .state { flex: none; margin-left: 0; }
+.sessions .s .top .when { flex: none; min-width: 4.4rem; text-align: right; font: 500 .88rem/1 var(--font-data); color: var(--text-mute); white-space: nowrap; }
+/* Stop sits over the time and shows while the pointer or focus is on the row; on a touch screen it keeps its own place
+   at the line's end, since nothing hovers there */
+.sessions .s .top > .act { flex: none; }
+@media (hover: hover) {
+  .sessions .s .top > .act { position: absolute; right: .9rem; top: .5rem; background: var(--obj-high); }
+  .sessions .s .top > .act[data-act="stop"] { opacity: 0; transition: opacity var(--t-snap) var(--e-out); }
+  .sessions .s:hover .top > .act[data-act="stop"], .sessions .s:focus-within .top > .act[data-act="stop"] { opacity: 1; }
+  .sessions .s:is(:hover, :focus-within) .top:has(> .act[data-act="stop"]) > .when, .sessions .s .top:has(> .stopping) > .when { visibility: hidden; }
+}
+/* what a needs-you row asks opens under its line, with its answers */
+.sessions .s .ask { margin: .4rem 0 .25rem; }
+.sessions .s .ask .q { font-size: .98rem; }
+.sessions .s .answers { margin-top: .55rem; gap: .5rem; }
+.sessions .s .armed.end, .sessions .s > .why { margin: .4rem 0 .2rem; }
+/* a row whose state changed rings once, inside its block */
+.sessions .s.changed { animation: rowring 1.1s var(--e-out) 1; }
+@keyframes rowring { from { box-shadow: inset 0 0 0 .2rem var(--key-light); } to { box-shadow: inset 0 0 0 .2rem transparent; } }
+/* while the first read is out, the rows are drawn hollow */
+.sessions .s.ghosted .top { gap: 1.1rem; }
+
+/* ---------- the open session ---------- */
+.pane {
+  --c: var(--text-mute); flex-direction: column; min-width: 0; height: calc(100vh - 12rem); overflow: hidden;
+  background: var(--obj); border: var(--ink-w) solid var(--ink); border-radius: var(--r-obj);
+  box-shadow: var(--cast) var(--cast) 0 var(--c), var(--cast) var(--cast) 0 var(--ink-w) var(--ink);
+}
+.pane > header { display: flex; align-items: flex-start; gap: .85rem; padding: 1rem 1.2rem .9rem; background: var(--obj-high); border-bottom: var(--ink-w) solid var(--ink); }
+.pane > header .lamp { position: static; flex: none; }
+.pane > header .who { min-width: 0; flex: 1; }
+.pane > header .top { display: flex; align-items: center; gap: .8rem; min-height: 2.4rem; }
+.pane > header .name { font: 400 1.3rem/1.1 var(--font-lead); color: var(--text); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.pane > header .acts { display: flex; align-items: center; gap: .6rem; position: relative; padding-top: .1rem; }
+.act svg { width: 1rem; height: 1rem; }
+
+.log { flex: 1; overflow-y: auto; padding: 1.2rem 1.2rem 1.1rem; display: flex; flex-direction: column; gap: .9rem; scroll-behavior: auto; }
+/* a refusal from an act in the pane (Stop, Continue on), read where the conversation starts */
+.pane > .why { margin: 0; padding: .75rem 1.2rem 0; }
+.sessions .pane > .why { padding: .9rem 1.7rem 0; }
+/* a move that did not happen: the state line, the attempt's last lines while reading is on (the evidence), then the way
+   forward: the resume command with Copy beside it when even the way back failed, then Try again (hitstop 899cb2e) */
+.pane > .unmoved { display: grid; justify-items: start; gap: .75rem; padding: .75rem 1.2rem 0; }
+.sessions .pane > .unmoved { padding: .9rem 1.7rem 0; }
+.why.unline { margin: .6rem 0 0; color: var(--limit); display: flex; flex-wrap: wrap; align-items: center; gap: .3rem .5rem; font: 400 .95rem/1.4 var(--font-name); }
+.why.unline .chip { color: var(--text); }
+.unmoved .why.unline { margin: 0; }
+.unmoved .screen { margin: 0; justify-self: stretch; max-height: 12rem; overflow: auto; white-space: pre-wrap; font: 400 .9rem/1.45 var(--font-data); color: var(--text-body); background: var(--obj-sunk); border-radius: var(--r-in); padding: .6rem .8rem; }
+.unmoved .runline { justify-self: start; max-width: 100%; display: flex; align-items: flex-start; gap: .8rem; }
+.unmoved .runline .cmd { flex: 0 1 auto; min-width: 0; }
+.log > * { max-width: 62rem; width: 100%; }
+.log .note { align-self: center; width: auto; font: 500 .9rem/1 var(--font-data); color: var(--text-mute); }
+.log .note time { margin-left: .5rem; }
+/* a teammate's message: who sent it, above its words */
+.log .cutoff { align-self: flex-end; display: inline-flex; align-items: center; gap: .5rem; width: auto; margin: 0; font: 500 .95rem/1 var(--font-name); color: var(--text-mute); }
+.log .cutoff svg { width: .85rem; height: .85rem; fill: currentColor; stroke: none; }
+.log .cutoff time { margin-left: .3rem; font: 500 .85rem/1 var(--font-data); }
+.msg.peer { align-self: flex-start; align-items: flex-start; max-width: 44rem; width: auto; }
+.msg.peer .from { display: inline-flex; align-items: center; gap: .45rem; margin: 0; font: 500 .95rem/1 var(--font-name); color: var(--text-body); }
+.msg.peer .from i { width: .7rem; height: .7rem; border-radius: 50%; background: var(--c); box-shadow: 0 0 0 .1rem var(--ink); }
+.msg.peer .body { background: var(--obj-high); border: var(--ink-w) solid var(--ink); border-radius: var(--r-obj); padding: .75rem 1rem; box-shadow: .3rem .3rem 0 var(--c), .3rem .3rem 0 var(--ink-w) var(--ink); }
+.log .earlier { align-self: center; width: auto; }
+.log .empty { margin: auto; width: auto; font: 500 1.1rem/1 var(--font-name); color: var(--text-mute); }
+/* his messages are objects he put on the table; the agent's words are the page */
+.msg { display: flex; flex-direction: column; gap: .35rem; }
+.msg .body { font: 400 1.05rem/1.55 var(--font-name); color: var(--text); overflow-wrap: anywhere; }
+.msg .body p { margin: 0 0 .55rem; }
+.msg .body p:last-child { margin-bottom: 0; }
+.msg .body ul { margin: .2rem 0 .55rem; padding-left: 1.2rem; }
+.msg .body code { font: 500 .95em/1 var(--font-data); background: var(--obj-sunk); border-radius: .25rem; padding: .12rem .3rem; }
+.msg time { font: 500 .85rem/1 var(--font-data); color: var(--text-mute); }
+.msg.his { align-self: flex-end; align-items: flex-end; max-width: 44rem; width: auto; }
+.msg.his .body { background: var(--obj-high); border: var(--ink-w) solid var(--ink); border-radius: var(--r-obj); padding: .75rem .9rem; box-shadow: .3rem .3rem 0 var(--key-light), .3rem .3rem 0 var(--ink-w) var(--ink); }
+.msg.his .unsent { display: flex; align-items: center; gap: .8rem; }
+.msg.his.failed .body { box-shadow: .3rem .3rem 0 var(--limit), .3rem .3rem 0 var(--ink-w) var(--ink); }
+.msg.agent { align-self: flex-start; max-width: 58rem; }
+
+/* a tool call: its name and a line, and the result folded under it */
+.tool {
+  align-self: flex-start; display: inline-flex; align-items: center; gap: .6rem; max-width: 100%; cursor: pointer;
+  font: 500 .95rem/1 var(--font-data); color: var(--text-body); background: var(--obj-sunk);
+  border: .12rem solid var(--ink); border-radius: var(--r-in); padding: .45rem .75rem; box-shadow: .16rem .16rem 0 var(--c);
+}
+.tool .tname { font-weight: 600; color: var(--text); }
+.tool .tsum { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
+.tool i { width: .65rem; height: .65rem; border-radius: 50%; background: var(--live); box-shadow: 0 0 .45rem var(--live); flex: none; }
+.tool .caret { width: .8rem; height: .8rem; flex: none; transition: transform var(--t-snap) var(--e-out); }
+.tool:disabled { cursor: default; }
+.tool[aria-expanded="true"] .caret { transform: rotate(90deg); }
+.call { display: flex; flex-direction: column; align-items: flex-start; gap: .5rem; }
+.result {
+  margin: 0; width: 100%; max-height: 18rem; overflow: auto; white-space: pre-wrap; font: 400 .92rem/1.45 var(--font-data);
+  color: var(--text-body); background: var(--obj-sunk); border-left: .22rem solid var(--track-line); border-radius: 0 .35rem .35rem 0; padding: .65rem .85rem;
+}
+
+/* the joint where a conversation moved to another model: the rail, crossing, with the new command on it */
+.joint { position: relative; display: flex; align-items: center; justify-content: center; min-height: 2.4rem; font: 500 .92rem/1 var(--font-data); color: var(--text-body); }  /* no gap: the words' padding spaces the run, so the rail stops at its ends */
+.joint::before { content: ""; position: absolute; left: 0; right: 0; top: 50%; height: .5rem; transform: translateY(-50%); background: var(--rail); border-radius: .3rem; box-shadow: 0 0 0 var(--ink-w) var(--ink); }
+.joint > * { position: relative; }
+.joint .model { background: var(--obj); padding: .3rem .8rem; border-radius: .3rem; }
+[data-theme="day"] .joint::before { background: var(--obj-sunk); box-shadow: none; }  /* a quiet divider in day: night's dark rail and ink read as a weight on the light card (Marlin, p176; hitstop 9dd0f95) */
+/* the move's time under its line, where a message's time sits, with what didn't come along beside it (hitstop f38853e) */
+.log > .jwrap { display: flex; flex-direction: column; align-items: center; gap: .45rem; align-self: stretch; max-width: none; }  /* the divider crosses the whole conversation */
+.jwrap > .joint { align-self: stretch; }
+.jat { margin: 0; font: 500 .85rem/1 var(--font-data); color: var(--text-mute); }
+.jat time { font: inherit; }
+
+/* what it waits on, at the foot of the conversation */
+.pane .askbox { padding: .9rem 1.2rem 1rem; border-top: var(--ink-w) solid var(--ink); background: color-mix(in oklab, var(--obj) 86%, var(--key-light)); }
+.pane .askbox .ask { margin-top: 0; max-width: 62rem; }
+
+/* the Message field at the open session's foot; scoped to the pane, since the page's own composer is another element */
+.pane .composer { display: flex; align-items: center; gap: .7rem; padding: .75rem 1.2rem .95rem; border-top: var(--ink-w) solid var(--ink); background: var(--obj-high); }
+.pane .composer .field { font: 400 1.05rem/1.3 var(--font-name); padding: .7rem .85rem; }
+.send { width: 2.5rem; height: 2.5rem; padding: 0; flex: none; display: grid; place-items: center; cursor: pointer; border-radius: var(--r-obj); background: var(--key-light); color: var(--splice-ink-day); border: var(--ink-w) solid var(--ink); box-shadow: .2rem .2rem 0 var(--ink); }
+.send svg { width: 1.15rem; height: 1.15rem; }
+.pane .composer .act.deny { background: var(--limit); color: var(--on-limit); padding: .7rem 1rem; flex: none; }  /* while a permission waits, sending denies it */
+.nomatch { display: flex; align-items: center; gap: .8rem; min-height: 3.4rem; padding: .75rem 1.1rem; border: var(--ink-w) dashed var(--track-line); border-radius: var(--r-obj); }
+.list:has(> .nomatch)::before { content: none; }  /* nothing to dock: no rail beside an empty search */
+.send:active { transform: translate(.18rem, .18rem); box-shadow: .04rem .04rem 0 var(--ink); }
+
+/* Continue on: the model names he has, a row per provider */
+/* Continue on: model, the plan it runs on, that plan's room; one column each, so the lines read down as a table */
+.menu.models { right: 0; top: calc(100% + .6rem); min-width: 0; padding: .6rem; width: max-content; max-width: 70rem; max-height: calc(100vh - 16rem); overflow-y: auto;
+  display: grid; grid-template-columns: auto auto auto auto; }
+.menu.models .line { grid-column: 1 / -1; display: grid; grid-template-columns: subgrid; align-items: center; column-gap: 1rem; padding: .6rem .75rem; font-size: 1rem; }
+.menu.models .line.plan { margin-top: .35rem; box-shadow: 0 -.1rem 0 var(--track-line); border-radius: 0 0 .35rem .35rem; }
+.menu.models .blot { width: .9rem; height: .9rem; border-radius: 50%; background: var(--c); box-shadow: 0 0 0 .12rem var(--ink); margin-left: .2rem; }
+.menu.models .acct { display: inline-flex; align-items: baseline; gap: .45rem; font: 500 1rem/1.15 var(--font-name); color: var(--text); }
+.menu.models .acct .var { font: 500 .95rem/1.15 var(--font-data); letter-spacing: .01em; }
+.menu.models .acct .pv { font-size: .95rem; color: var(--text-mute); }
+.menu.models .room { display: inline-flex; align-items: center; gap: .6rem; justify-self: end; }
+.menu.models .room .bar { display: block; width: 5rem; }  /* Accounts' small bar (.bar.sub) */
+.menu.models .room .pct { min-width: 3rem; font-size: .95rem; }
+.menu.models .room.out { font: 500 .95rem/1 var(--font-data); color: var(--limit); gap: .35rem; }
+.menu.models .room.out svg { width: 1rem; height: 1rem; }
+.menu.models .line:disabled { cursor: default; color: var(--text-mute); }
+.menu.models .line:disabled .acct { color: var(--text-mute); }
+.menu.models .line:disabled:hover { background: none; }
+
+.pane .close { flex: none; }
+
+/* ---------- room (Marcos, Oct 8: "it feels busy"): air in the transcript, every element kept, on the Oct 15 scale.
+   Scoped to the Sessions page, since Teams, Models and Requests load this sheet too. ---------- */
+.sessions .pane > header { padding: 1.1rem 1.4rem 1rem; }
+.sessions .log { padding: 1.4rem 1.7rem 1.6rem; gap: 1.3rem; }
+.sessions .msg { gap: .5rem; }
+.sessions .msg .body { line-height: 1.6; }
+.sessions .msg .body p { margin-bottom: .65rem; }
+.sessions .msg .body p:last-child { margin-bottom: 0; }
+.sessions .msg .body ul { margin: .3rem 0 .65rem; }
+.sessions .msg.his .body { padding: .8rem 1rem; }
+.sessions .call { gap: .55rem; }
+.sessions .result { line-height: 1.55; padding: .75rem .95rem; }
+.sessions .pane .askbox { padding: 1rem 1.4rem 1.1rem; }
+.sessions .pane .composer { padding: .85rem 1.4rem 1rem; }
+.sessions .log > .call + .call { margin-top: -.65rem; }  /* a run of tool calls stays one group; the turns get the air */
+/* At limit names the plan that ran out as Compare and Accounts head it: the account, then its provider and plan dimmed */
+.meta .word svg { width: 1rem; height: 1rem; flex: none; }  /* .word's own gap sets it off */
+.meta .acct { display: inline-flex; align-items: baseline; gap: .45rem; color: var(--text); white-space: nowrap; }
+.meta .acct .pv { color: var(--text-mute); }
+.joint .model .left { margin-left: .8rem; color: var(--text-mute); }  /* what didn't come along, dimmed after the move */
+
+.act.stopping, .act.stopping:disabled { cursor: default; opacity: 1; color: var(--text-body); gap: .5rem; }
+.act.stopping .wait { width: 1.1rem; height: 1.1rem; --c: var(--text-body); }
+
+/* a card whose state changed rings once in the key light, where it stands (hitstop 9e95ae4) */
+.s.changed { animation: ring 1.1s var(--e-out) 1; }
+@keyframes ring { from { outline: .25rem solid var(--key-ink); outline-offset: .15rem; } to { outline: .25rem solid transparent; outline-offset: .55rem; } }
+.result.empty { font-family: var(--font-name); color: var(--text-mute); white-space: normal; }
+.answers .act.answering, .answers .act.answering:disabled { cursor: default; opacity: 1; gap: .5rem; }
+.answers .act.answering .wait { width: 1.1rem; height: 1.1rem; --c: currentColor; }
+/* his message Claude Code took back when he stopped it before any answer: marked in place, never drawn as sent
+   (hitstop 0298d62) */
+.msg.his.takenback .body { background: transparent; border-style: dashed; border-color: var(--text-mute); box-shadow: none; color: var(--text-body); }
+.msg .taken { align-self: flex-end; display: inline-flex; align-items: center; gap: .5rem; margin: 0; font: 500 .95rem/1 var(--font-name); color: var(--text-mute); }
+.msg .taken svg { width: .85rem; height: .85rem; fill: currentColor; stroke: none; }
+.msg .taken time { margin-left: .3rem; font: 500 .85rem/1 var(--font-data); }
+/* words already in the prompt, shown before his message goes, cleared only on his say-so (Marlin). A first draft for
+   hitstop to draw. */
+/* a draft he left in the terminal hangs over Send like a menu (hitstop 0704658): a zero-height anchor on the composer's
+   top edge, so the composer never moves; right is the composer's right padding, so the card's edge lines up over Send */
+.inprompt { position: relative; height: 0; }
+.inprompt-card {
+  position: absolute; right: 1.4rem; bottom: .8rem; z-index: 6; width: 32rem; max-width: calc(100% - 2.8rem);
+  display: flex; flex-direction: column; gap: .65rem; padding: .85rem 1rem .95rem;
+  background: var(--obj-high); border: var(--ink-w) solid var(--ink); border-radius: var(--r-obj); box-shadow: .35rem .35rem 0 var(--ink);
+}
+.inprompt .lbl { margin: 0; font: 500 .95rem/1 var(--font-name); color: var(--text-mute); }
+.inprompt .words { margin: 0; min-width: 0; max-height: 14rem; overflow: auto; font: 500 1rem/1.4 var(--font-data); color: var(--text); background: var(--obj-sunk); border: .12rem solid var(--ink); border-radius: var(--r-in); padding: .55rem .75rem; white-space: pre-wrap; overflow-wrap: anywhere; }
+.inprompt .acts { display: flex; justify-content: flex-end; gap: .6rem; }
+
+/* the same card, hung under Continue on where the models menu was, so his answer appears where he pressed (hitstop 605ab5c) */
+.pane > header .acts > .inprompt.onmove { position: absolute; right: 0; top: calc(100% + .6rem); z-index: 6; height: auto; }
+.pane > header .acts > .inprompt.onmove .inprompt-card { position: static; }
+
+/* ---------- by project (Marlin and fin, Oct 11; hitstop's rail, mock a8d639f; one block per project, Oct 15) ----------
+   A group's header reads at a glance: the fold, the name at the section-title size, then one lamp and its count for each
+   live state present, then the muted total. No state words: the lamps are the words, and Idle and Ended are in the
+   total. Its foot line holds the folds for what rests: its idle sessions past a handful, and its ended ones. */
+.pgroup { display: flex; flex-direction: column; gap: var(--gap-card); }
+.phead { display: flex; align-items: center; gap: .9rem; min-width: 0; min-height: 3rem; padding: .5rem .9rem; box-sizing: border-box; background: var(--obj-high); box-shadow: inset 0 calc(-1 * var(--ink-w)) 0 var(--ink); }
+.pgroup.shut > .phead:last-child { box-shadow: none; }
+.pfold { display: inline-flex; align-items: center; gap: .6rem; min-width: 0; background: none; border: 0; padding: 0; cursor: pointer; color: var(--text); }
+.pfold .caret { flex: none; width: 1.7rem; height: 1.7rem; padding: .5rem; box-sizing: border-box; color: var(--text-body); background: var(--obj); border-radius: 50%; box-shadow: 0 0 0 .12rem var(--ink); transform: rotate(90deg); transition: transform var(--t-snap) var(--e-out); }
+.pgroup.shut .pfold .caret { transform: none; }
+.phead .pname { font: 400 1.4rem/1.1 var(--font-lead); letter-spacing: -.01em; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.pcounts { display: inline-flex; align-items: center; gap: .75rem; flex: none; font: 600 .95rem/1 var(--font-data); }
+/* a count at a small lamp: the socket stands in the line */
+.pc.big { display: inline-flex; align-items: center; gap: .4rem; }
+.pc.big .lamp { position: static; flex: none; }
+.pcounts .lamp { width: 1.5rem; height: 1.5rem; box-shadow: 0 0 0 .12rem var(--ink), inset 0 0 0 .12rem var(--rail); }
+.pcounts .lamp.needs { box-shadow: 0 0 0 .12rem var(--ink), inset 0 0 0 .15rem var(--key-light), 0 0 .7rem .05rem rgba(255, 215, 154, .4); }
+.pcounts .lamp svg { width: .95rem; height: .95rem; }
+.pcounts .lamp svg.wave { width: 1.15rem; height: 1.15rem; }
+.pcounts .lamp.needs svg { width: .85rem; height: .85rem; }
+.ptotal { font: 500 1.35rem/1 var(--font-data); color: var(--text-mute); }
+.pcounts .ptotal { font-size: .95rem; }
+.pgo { margin-left: auto; flex: none; display: inline-flex; align-items: center; gap: .4rem; font: 500 .88rem/1 var(--font-name); color: var(--text-body); text-decoration: none; }
+.pgo:hover { color: var(--text); }
+.pgo svg { width: .9rem; height: .9rem; }
+.pgroup > .note { margin: 0; padding: .45rem .9rem; font: 500 .88rem/1.3 var(--font-data); color: var(--text-mute); box-shadow: inset 0 -.08rem 0 var(--track-line); }
+.pfoot { display: flex; flex-wrap: wrap; align-items: center; gap: .4rem .8rem; min-height: 2.6rem; padding: .35rem .9rem; box-sizing: border-box; }
+.pfoot .fold { font-size: .88rem; padding: .35rem .6rem; }
+.rested { display: flex; flex-direction: column; box-shadow: inset 0 .08rem 0 var(--track-line); }
+.rested .s .name, .sessions div.ended .s .name { color: var(--text-body); }
+
+/* End armed in the pane: what ending would lose, then the danger End and Keep running (fin, Marlin p218) */
+.pane .armed.end { display: flex; flex-wrap: wrap; align-items: center; gap: .6rem; padding: .6rem 1.4rem; border-bottom: var(--ink-w) solid var(--ink); }
+.pane .armed.end .said { display: inline-flex; align-items: center; gap: .4rem; font: 500 .95rem/1 var(--font-name); color: var(--text-body); }
+.pane .armed.end .said svg { width: 1rem; height: 1rem; }
+.pane .armed.end .unsent { font: 400 .95rem/1.4 var(--font-data); color: var(--text-mute); overflow-wrap: anywhere; flex: 1 1 18rem; min-width: 0; }
+.pane .act.danger { background: var(--limit); color: var(--on-limit); }
+/* the empty list says why a claude -p run is not here, quietly beside No sessions (spec §4) */
+.nomatch .why { font-size: .95rem; color: var(--text-mute); }
+/* under the cards, the same word: headless runs never register, so the list says so rather than count them (spec §4) */
+.list > .headless { margin: .3rem 0 0; font-size: .88rem; color: var(--text-mute); }
+/* what another session types to reach this one, with Copy: one quiet strip over the composer (spec §4) */
+.sendto { display: flex; align-items: center; gap: .8rem; padding: .6rem 1.4rem; border-top: var(--ink-w) solid var(--ink); background: var(--obj-high); }
+.sendto .lbl { flex: none; font-size: .95rem; color: var(--text-mute); }
+.sendto .cmd { flex: 0 1 auto; min-width: 0; margin: 0; font: 500 .95rem/1.35 var(--font-data); color: var(--text); background: var(--obj-sunk); border: .12rem solid var(--ink); border-radius: var(--r-in); padding: .35rem .7rem; overflow-wrap: anywhere; }
+.sendto .cmd + .act { flex: none; }
+/* a note handed over: said beside the field until it clears, since the client gives no receipt */
+.pane .composer .noted { flex: none; font-size: .95rem; color: var(--text-mute); }
+/* the grouping switch says what it does: Project, Command and Team alone read as filters (splice-usage's walk, Oct 13) */
+.lhead .by { display: inline-flex; align-items: center; gap: .4rem; }
+.lhead .by .what { margin-right: .3rem; font: 500 .95rem/1 var(--font-name); color: var(--text-mute); }

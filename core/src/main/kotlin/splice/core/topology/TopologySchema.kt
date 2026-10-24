@@ -1,0 +1,142 @@
+// NEW: the TOML dialect/auth/wrapper schema types, and the `[share]` table (2026-10-22). Split from Topology.kt
+// so the graph file is not billed for the leaf DTOs (concentration, 2026-08-19).
+// Same-package FQCNs are unchanged.
+package splice.core.topology
+
+import kotlinx.serialization.SerialName
+import kotlinx.serialization.Serializable
+import splice.core.prompt.SystemPromptMode
+
+/** V4-124: a `[projects."ROOT"]` table — standing instructions for every session whose working
+ *  directory is ROOT or below it, whatever head serves it. The same three keys as a head's
+ *  (`system_prompt`, `system_prompt_file`, `system_prompt_mode`); a relative `system_prompt_file`
+ *  resolves against ROOT, so the prompt can live in the repo it governs. [heads] narrows a further
+ *  layer to one head inside this project. Resolution and composition: SystemPromptLayers. */
+@Serializable
+public data class ProjectConfig(
+    @SerialName("system_prompt") val systemPrompt: String? = null,
+    @SerialName("system_prompt_file") val systemPromptFile: String? = null,
+    @SerialName("system_prompt_mode") val systemPromptMode: SystemPromptMode? = null,
+    val heads: Map<String, ProjectHeadPrompt> = emptyMap(),
+)
+
+/** V4-124: a `[projects."ROOT".heads.KEY]` table — the project layer for ONE head of that project. */
+@Serializable
+public data class ProjectHeadPrompt(
+    @SerialName("system_prompt") val systemPrompt: String? = null,
+    @SerialName("system_prompt_file") val systemPromptFile: String? = null,
+    @SerialName("system_prompt_mode") val systemPromptMode: SystemPromptMode? = null,
+)
+
+@Serializable
+public enum class Dialect {
+    @SerialName("openai-responses")
+    OPENAI_RESPONSES,
+
+    @SerialName("openai-chat")
+    OPENAI_CHAT,
+
+    @SerialName("anthropic-passthrough")
+    ANTHROPIC_PASSTHROUGH,
+}
+
+/** Wire spelling of [Dialect]: the @SerialName on the enum, not a second table. */
+public object DialectWires {
+    public fun name(dialect: Dialect): String =
+        Dialect.serializer().descriptor.getElementName(dialect.ordinal)
+}
+
+@Serializable
+public data class AuthConfig(
+    val kind: String,
+    val file: String? = null,
+    val env: String? = null,
+) {
+    /** True for the api-key scheme — [API_KEY_WIRE], declared once beside the registered kinds. */
+    public val isApiKey: Boolean get() = kind == API_KEY_WIRE
+
+    /** The api-key env var a head actually reads: the explicit [env], else the derived
+     *  `<KEY>_API_KEY` default the daemon synthesizes. One source for daemon wiring AND the CLI so a
+     *  head on the derived default never reads as "not signed in" while the daemon serves it fine. */
+    public fun effectiveApiKeyEnv(key: String): String = env ?: "${key.uppercase()}_API_KEY"
+}
+
+/** Per-head Claude Code wrapper policy: command name, config dir, share/isolate per item. */
+@Serializable
+public data class ClaudeWrapperConfig(
+    val command: String? = null,
+    @SerialName("config_dir") val configDir: String? = null,
+    val isolate: List<String> = emptyList(),
+)
+
+@Serializable
+public data class ClaudeSharingDefaults(
+    val share: List<String> = listOf(
+        "settings",
+        "mcps",
+        "skills",
+        "hooks",
+        "agents",
+        "commands",
+        "plugins",
+        "claude_md",
+        "sessions",
+        "projects",
+    ),
+)
+
+/** LAN share, phase 1 (docs/specs/lan-share.md; Marcos, 2026-10-22). `[share]` in splice.toml: this machine serves its
+ *  heads to the person's other machines on a private network, through ONE listener the daemon opens only when
+ *  [enabled]. Turns are relayed to the head itself, so every credential, its refresh, its account pool and its
+ *  cooldowns stay on this machine. Absent table = off, today's bytes. Moved here from its own file on 2026-10-22
+ *  (concentration): a leaf DTO of the schema like the tables above, and a file of its own thinned this package's
+ *  median under its neighbours. */
+@Serializable
+public data class ShareConfig(
+    val enabled: Boolean = false,
+    val port: Int = DEFAULT_SHARE_PORT,
+    /** The heads offered, by topology key. Absent: every head that holds its own credential. */
+    val heads: List<String>? = null,
+    /** Names a client may reach this machine by besides its own host name (a Tailscale name, say). */
+    val hostnames: List<String> = emptyList(),
+) {
+    /** The heads this machine offers. A client-auth head forwards the caller's own Claude login and holds
+     *  nothing to share, so it is never offered, named or not. */
+    public fun sharedHeads(topology: Topology): List<String> =
+        (heads ?: topology.heads.keys.toList())
+            .filter { key -> key in topology.heads && !forwardsCaller(topology, key) }
+
+    /** What boot refuses about this table, all at once like every other finding. */
+    internal fun findings(topology: Topology): List<TopologyFinding> {
+        if (!enabled) return emptyList()
+        val range = if (port in validPortRange) {
+            emptyList()
+        } else {
+            listOf(TopologyFinding(SHARE_PORT_OWNER, "port $port is outside $validPortRange; use a port in that range"))
+        }
+        val named = heads.orEmpty().mapNotNull { key ->
+            when {
+                key !in topology.heads ->
+                    TopologyFinding("share.heads", "'$key' is not a head in [heads]; name one that is")
+                forwardsCaller(topology, key) -> TopologyFinding(
+                    "share.heads",
+                    "'$key' forwards the caller's own Claude login, so there is nothing to share; remove it",
+                )
+                else -> null
+            }
+        }
+        return range + named
+    }
+
+    private fun forwardsCaller(topology: Topology, key: String): Boolean {
+        val provider = topology.heads[key]?.provider?.let { topology.providers[it] } ?: return false
+        return provider.auth.kind == AuthKind.Client.wire
+    }
+}
+
+/** The share listener's port when `[share]` names none: between the control plane (3096) and the first port
+ *  `splice add` gives a head (3098 and up). */
+public const val DEFAULT_SHARE_PORT: Int = 3097
+
+/** How the share listener appears in a port collision: the key path an operator fixes. */
+internal const val SHARE_PORT_OWNER: String = "share.port"

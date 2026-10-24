@@ -17,7 +17,7 @@ SCRIPT_SOURCE="${BASH_SOURCE[0]-}"
 REPO_ROOT=""
 if [ -n "$SCRIPT_SOURCE" ]; then
   SOURCE_ROOT="$(cd "$(dirname "$SCRIPT_SOURCE")" && pwd)"
-  if [ -f "${SOURCE_ROOT}/gateway/settings.gradle.kts" ]; then
+  if [ -f "${SOURCE_ROOT}/settings.gradle.kts" ]; then
     REPO_ROOT="$SOURCE_ROOT"
   fi
 fi
@@ -123,20 +123,22 @@ check_runtime() {
     RUNTIME_GAPS=$((RUNTIME_GAPS + 1))
   fi
 }
-check_runtime curl "the launch shim's health checks and this installer's downloads need it" \
+check_runtime curl "this installer's release downloads need it" \
   "$(runtime_fix curl https://curl.se)"
-check_runtime python3 "the launch shim parses the daemon's JSON launch recipe with it" \
-  "$(runtime_fix python3 https://python.org)"
-check_runtime node "Claude Code's runtime (Node 24 recommended)" \
-  "$(runtime_fix nodejs https://nodejs.org)"
 check_runtime claude "splice wraps Claude Code — install it before launching a head" \
-  "npm install -g @anthropic-ai/claude-code"
+  "curl -fsSL https://claude.ai/install.sh | bash"
 if [ "$RUNTIME_GAPS" -gt 0 ]; then
   echo "splice: $RUNTIME_GAPS runtime dependency gap(s) noted — the install continues; fix them"
   echo "splice: before launching (splice doctor re-checks everything and prints each fix)."
 fi
 JAR_DST="${SHARE_DIR}/splice.jar"
-SHIM_SRC="${REPO_ROOT:+${REPO_ROOT}/bin/splice-launch}"
+SHIM_SRC="${REPO_ROOT:+${REPO_ROOT}/app/src/main/dist/bin/splice-launch}"
+# The MCP hub's holder and front (docs/specs/mcp-hub.md) run under systemd --user, so they ship for Linux
+# x86_64 only. They are optional: with no pair beside the jar the daemon keeps its in-process MCP path.
+HUB_PLATFORM=0
+if [ "$(uname -s)" = Linux ] && [ "$(uname -m)" = x86_64 ]; then HUB_PLATFORM=1; fi
+HUB_TMP_DIR=""
+HUB_INSTALLED=0
 
 mkdir -p "$SHARE_DIR" "$BIN_DIR"
 JAR_TMP="$(mktemp "${SHARE_DIR}/.splice.jar.XXXXXX")"
@@ -145,8 +147,13 @@ JAR_BACKUP="$(mktemp "${SHARE_DIR}/.splice.jar.backup.XXXXXX")"
 SHIM_BACKUP="$(mktemp "${SHARE_DIR}/.splice-launch.backup.XXXXXX")"
 rm -f "$JAR_BACKUP" "$SHIM_BACKUP"
 SUMS_TMP=""
+# Set by roll_back when the previous installation could not be put back: the backups are then the
+# only copy of it, so the EXIT trap leaves them for the operator (V4-299).
+KEEP_BACKUPS=0
 cleanup() {
-  rm -f "$JAR_TMP" "$SHIM_TMP" "$JAR_BACKUP" "$SHIM_BACKUP"
+  rm -f "$JAR_TMP" "$SHIM_TMP"
+  [ "$KEEP_BACKUPS" = 1 ] || rm -f "$JAR_BACKUP" "$SHIM_BACKUP"
+  [ -z "$HUB_TMP_DIR" ] || [ "$KEEP_BACKUPS" = 1 ] || rm -rf "$HUB_TMP_DIR"
   [ -z "$SUMS_TMP" ] || rm -f "$SUMS_TMP"
 }
 trap cleanup EXIT
@@ -176,53 +183,90 @@ verify_sum() {
   echo "${name}: OK"
 }
 
-# require_authed_gh <release-base> — remote release artifacts are verified against GitHub build
-# provenance, which needs a PRESENT and AUTHENTICATED gh. Local file:// mirrors are acceptance
-# fixtures assembled from the current checkout and never touch gh. Called before every curl of a
-# remote release base, so a missing/unauthenticated gh aborts before anything is downloaded.
-require_authed_gh() {
-  local release_base="$1" authed=1
-  case "$release_base" in
-    file://*) return 0 ;;
-  esac
-  if ! command -v gh >/dev/null 2>&1; then
-    echo "splice: GitHub CLI (gh) is required to verify release provenance — aborting" >&2
-    echo "splice: install gh from https://cli.github.com/ and retry" >&2
-    exit 1
-  fi
-  if command -v timeout >/dev/null 2>&1; then
-    if ! timeout 20 gh auth status >/dev/null 2>&1; then
-      authed=0
-    fi
-  elif ! gh auth status >/dev/null 2>&1; then
-    authed=0
-  fi
-  if [ "$authed" = 0 ]; then
-    echo "splice: gh is installed but not authenticated — provenance verification will fail" >&2
-    echo "splice: run: gh auth login   then re-run this installer" >&2
-    exit 1
-  fi
+# shim_marker <launcher> — the launcher's SPLICE_SHIM_VERSION, the version it shares with the jar's
+# `shim-version` (InstallShim.kt reads the same line; a 0.3.x bash launcher spells it without
+# `const`). Empty when the file is missing or carries none.
+shim_marker() {
+  [ -f "$1" ] || return 0
+  sed -nE '/^(const )?SPLICE_SHIM_VERSION ?= ?"[^"]*";?$/{s/^[^"]*"([^"]*)".*$/\1/p;q;}' "$1"
 }
 
-# verify_attestation <file> <asset-name> <release-base> — remote release artifacts must
-# be bound to this repository's GitHub Actions build provenance. Local file:// mirrors are
-# acceptance fixtures assembled from the current checkout and cannot have a GitHub attestation.
+# release_marker <launcher> — the launcher's SPLICE_GATEWAY_VERSION, the release its handshake demands of
+# the daemon, character for character. Two releases can share a shim generation (0.4.0-beta.2 and 0.4.0
+# are both shim-21), so the shim marker alone does not make a pair. Empty when missing or unmarked.
+release_marker() {
+  [ -f "$1" ] || return 0
+  sed -nE '/^(const )?SPLICE_GATEWAY_VERSION ?= ?"[^"]*";?$/{s/^[^"]*"([^"]*)".*$/\1/p;q;}' "$1"
+}
+
+# jar_release <jar> — the release the jar's daemon reports (its `version` verb: `splice <release>`).
+# Empty when the jar cannot say.
+jar_release() {
+  local said
+  if said="$(java -jar "$1" version 2>/dev/null)"; then printf '%s\n' "$said" | awk '/^splice / { print $2; exit }'; fi
+}
+
+# jar_shim <jar> — the launcher version the jar needs (its `shim-version` verb). Empty when the jar
+# cannot say, which no launcher pairs with: the check before the commit refuses it by name.
+jar_shim() {
+  local named
+  if named="$(java -jar "$1" shim-version 2>/dev/null)"; then printf '%s' "$named"; fi
+}
+
+# gh_attestation_gap — empty when gh can verify a build provenance attestation (installed and
+# signed in), else why not: "is not installed", "is not signed in", or "did not answer gh auth
+# status within 20 s" when the check timed out (timeout exits 124), which says nothing about
+# sign-in. Asked once per run.
+GH_GAP_KNOWN=0
+GH_GAP=""
+gh_attestation_gap() {
+  if [ "$GH_GAP_KNOWN" = 0 ]; then
+    GH_GAP_KNOWN=1
+    if ! command -v gh >/dev/null 2>&1; then
+      GH_GAP="is not installed"
+    elif command -v timeout >/dev/null 2>&1; then
+      local rc=0
+      timeout 20 gh auth status >/dev/null 2>&1 || rc=$?
+      case $rc in
+        0) ;;
+        124) GH_GAP="did not answer gh auth status within 20 s" ;;
+        *) GH_GAP="is not signed in" ;;
+      esac
+    else
+      gh auth status >/dev/null 2>&1 || GH_GAP="is not signed in"
+    fi
+  fi
+  printf '%s' "$GH_GAP"
+}
+
+# verify_attestation <file> <asset-name> <release-base> — binds a remote release artifact to this
+# repository's GitHub Actions build provenance whenever gh can check it, and refuses when the check
+# fails. Without a signed-in gh the install continues on the sha256 match alone (V4-217: a first
+# install needs no GitHub account) and the end of the run prints the command that verifies it later.
+# The attestation cannot guard `curl … | bash` on its own anyway: install.sh comes from the same
+# release, so whoever could swap the jar could swap the check. Local file:// mirrors are acceptance
+# fixtures assembled from the current checkout and cannot have a GitHub attestation.
+PROVENANCE_DEFERRED=""
 verify_attestation() {
-  local file="$1" name="$2" release_base="$3"
+  local file="$1" name="$2" release_base="$3" gap
   case "$release_base" in
     file://*)
       echo "splice: local release base — skipping Sigstore attestation for ${name} (dev/acceptance artifact)" >&2
-      ;;
-    *)
-      require_authed_gh "$release_base"
-      echo "splice: verifying build provenance attestation for ${name}"
-      if ! gh attestation verify "$file" --repo torad-labs/splice; then
-        echo "splice: attestation verification FAILED for ${name} — aborting" >&2
-        exit 1
-      fi
-      echo "${name} attestation: OK"
+      return 0
       ;;
   esac
+  gap="$(gh_attestation_gap)"
+  if [ -n "$gap" ]; then
+    echo "splice: ${name}: build provenance not checked here, gh ${gap}"
+    PROVENANCE_DEFERRED="$gap"
+    return 0
+  fi
+  echo "splice: verifying build provenance attestation for ${name}"
+  if ! gh attestation verify "$file" --repo torad-labs/splice; then
+    echo "splice: attestation verification FAILED for ${name} — aborting" >&2
+    exit 1
+  fi
+  echo "${name} attestation: OK"
 }
 
 # 1. Obtain the jar. Prefer an explicit SPLICE_JAR, else build from the checkout, else (release
@@ -232,15 +276,33 @@ if [ -n "${SPLICE_JAR:-}" ]; then
   cp "$SPLICE_JAR" "$JAR_TMP"
   if [ -n "${SPLICE_SHIM:-}" ]; then
     SHIM_SRC="$SPLICE_SHIM"
-  elif [ -f "$(dirname "$SPLICE_JAR")/splice-launch" ]; then
-    SHIM_SRC="$(dirname "$SPLICE_JAR")/splice-launch"
-  elif [ -x "${SHARE_DIR}/splice-launch" ]; then
-    SHIM_SRC="${SHARE_DIR}/splice-launch"
+  else
+    # The first launcher at hand that pairs with this jar: the bundle's own, the checkout's, the one
+    # already installed. None pairs → empty, and the release's own launcher is fetched below. The
+    # installed one was once reused unchecked, which put a newer jar beside an older launcher. A pair
+    # shares both the shim generation and the release: the launcher's handshake refuses any daemon
+    # whose release is not its own.
+    WANT_SHIM="$(jar_shim "$JAR_TMP")"
+    WANT_RELEASE="$(jar_release "$JAR_TMP")"
+    PAIRED=""
+    for candidate in "$(dirname "$SPLICE_JAR")/splice-launch" "$SHIM_SRC" "${SHARE_DIR}/splice-launch"; do
+      if [ -n "$WANT_SHIM" ] && [ -n "$WANT_RELEASE" ] && [ "$(shim_marker "$candidate")" = "$WANT_SHIM" ] \
+        && [ "$(release_marker "$candidate")" = "$WANT_RELEASE" ]; then
+        PAIRED="$candidate"
+        break
+      fi
+    done
+    SHIM_SRC="$PAIRED"
   fi
 elif [ -n "$REPO_ROOT" ]; then
   echo "splice: building the fat jar (./gradlew :app:shadowJar)…"
-  ( cd "${REPO_ROOT}/gateway" && ./gradlew -q :app:shadowJar )
-  BUILT="${REPO_ROOT}/gateway/app/build/libs/app-all.jar"
+  if [ "$HUB_PLATFORM" = 1 ] && [ -d "${REPO_ROOT}/integrations/mcp-hub" ]; then
+    ( cd "${REPO_ROOT}" && ./gradlew -q :app:shadowJar \
+      :integrations-mcp-hub:linkHolderReleaseExecutableLinuxX64 :integrations-mcp-hub:linkFrontReleaseExecutableLinuxX64 )
+  else
+    ( cd "${REPO_ROOT}" && ./gradlew -q :app:shadowJar )
+  fi
+  BUILT="${REPO_ROOT}/app/build/libs/app-all.jar"
   [ -f "$BUILT" ] || { echo "splice: build produced no fat jar at $BUILT" >&2; exit 1; }
   cp "$BUILT" "$JAR_TMP"
 else
@@ -252,9 +314,6 @@ else
   else
     RELEASE_BASE="https://github.com/${REPO}/releases/latest/download"
   fi
-  # Preflight BEFORE any download: catching the two common gh gaps here beats aborting
-  # after the jar has already been fetched.
-  require_authed_gh "$RELEASE_BASE"
   JAR_URL="${RELEASE_BASE}/splice.jar"
   SUMS_URL="${RELEASE_BASE}/sha256sums.txt"
   echo "splice: downloading $JAR_URL"
@@ -279,11 +338,10 @@ fi
 
 # A standalone prebuilt JAR can bootstrap its matching release shim when it has no sibling.
 if [ ! -f "$SHIM_SRC" ]; then
-  JAR_VERSION="$(java -jar "$JAR_TMP" version | awk '/^splice / { print $2 }')"
+  JAR_VERSION="$(jar_release "$JAR_TMP")"
   [ -n "$JAR_VERSION" ] || { echo "splice: prebuilt jar has no readable splice version" >&2; exit 1; }
   REPO="torad-labs/splice"
   RELEASE_BASE="${SPLICE_RELEASE_BASE_URL:-https://github.com/${REPO}/releases/download/v${JAR_VERSION}}"
-  require_authed_gh "$RELEASE_BASE"
   SUMS_TMP="$(mktemp)"
   curl -fsSL "${RELEASE_BASE}/sha256sums.txt" -o "$SUMS_TMP"
   curl -fsSL "${RELEASE_BASE}/splice-launch" -o "$SHIM_TMP"
@@ -292,11 +350,47 @@ if [ ! -f "$SHIM_SRC" ]; then
   SHIM_SRC="$SHIM_TMP"
 fi
 
+# 1b. The MCP hub's pair, from wherever the jar came from: the jar's siblings, the checkout's build, or the
+#     release, verified like the jar. Half a pair is no pair: the front and holder ship and run together.
+if [ "$HUB_PLATFORM" = 1 ]; then
+  HUB_TMP_DIR="$(mktemp -d "${SHARE_DIR}/.splice-mcp.XXXXXX")"
+  for asset in splice-mcp-holder splice-mcp-front; do
+    if [ -n "${SPLICE_JAR:-}" ]; then
+      hub_src="$(dirname "$SPLICE_JAR")/$asset"
+      [ ! -f "$hub_src" ] || cp "$hub_src" "$HUB_TMP_DIR/$asset"
+    elif [ -n "$REPO_ROOT" ]; then
+      hub_src="${REPO_ROOT}/integrations/mcp-hub/build/bin/linuxX64/${asset#splice-mcp-}ReleaseExecutable/${asset}.kexe"
+      [ ! -f "$hub_src" ] || cp "$hub_src" "$HUB_TMP_DIR/$asset"
+    elif [ -n "$SUMS_TMP" ] && grep -Eq "[[:space:]]${asset}\$" "$SUMS_TMP"; then
+      curl -fsSL "${RELEASE_BASE}/${asset}" -o "$HUB_TMP_DIR/$asset"
+      verify_sum "$HUB_TMP_DIR/$asset" "$SUMS_TMP" "$asset"
+      verify_attestation "$HUB_TMP_DIR/$asset" "$asset" "$RELEASE_BASE"
+    fi
+  done
+  if [ ! -f "$HUB_TMP_DIR/splice-mcp-holder" ] || [ ! -f "$HUB_TMP_DIR/splice-mcp-front" ]; then
+    rm -f "$HUB_TMP_DIR/splice-mcp-holder" "$HUB_TMP_DIR/splice-mcp-front"
+  fi
+fi
+
 JAR_VERSION_OUTPUT="$(java -jar "$JAR_TMP" version)"
 case "$JAR_VERSION_OUTPUT" in
   "splice "*) ;;
   *) echo "splice: candidate jar failed validation: ${JAR_VERSION_OUTPUT:-<empty>}" >&2; exit 1 ;;
 esac
+
+# The launcher and the jar are version-locked (the launcher refuses a daemon whose release is not its
+# own, and one that serves an older shim generation), so a pair that does not match on both is refused
+# here, before anything goes live, rather than found at the first launch.
+WANT_SHIM="$(jar_shim "$JAR_TMP")"
+HAVE_SHIM="$(shim_marker "$SHIM_SRC")"
+WANT_RELEASE="$(jar_release "$JAR_TMP")"
+HAVE_RELEASE="$(release_marker "$SHIM_SRC")"
+if [ -z "$WANT_SHIM" ] || [ "$HAVE_SHIM" != "$WANT_SHIM" ] || [ -z "$WANT_RELEASE" ] || [ "$HAVE_RELEASE" != "$WANT_RELEASE" ]; then
+  echo "splice: the launcher $SHIM_SRC is ${HAVE_SHIM:-unmarked} for release ${HAVE_RELEASE:-<unmarked>}," \
+    "but this jar needs ${WANT_SHIM:-a launcher it did not name} for release ${WANT_RELEASE:-<unnamed>};" \
+    "install the launcher built with this jar (SPLICE_SHIM=<path>)" >&2
+  exit 1
+fi
 
 # 2. Atomically replace each live artifact only after every download/validation succeeded.
 # A failed install leaves the previous working jar and shim untouched.
@@ -318,93 +412,198 @@ if [ -f "$SHIM_DST" ]; then
   HAD_SHIM=1
 fi
 
+# restore_previous_artifacts — put the previous jar and shim back, or remove the candidates when there
+# were none. Every move and removal is checked (V4-299): under `set -e` the first failed move ended the
+# script with no line of its own, and the EXIT trap then deleted the backups. Each step that fails is
+# added to RESTORE_BY_HAND, one command per line, and the function returns non-zero.
+RESTORE_BY_HAND=""
 restore_previous_artifacts() {
+  RESTORE_BY_HAND=""
   if [ "$HAD_JAR" = 1 ]; then
-    mv -f "$JAR_BACKUP" "$JAR_DST"
+    mv -f "$JAR_BACKUP" "$JAR_DST" || RESTORE_BY_HAND="${RESTORE_BY_HAND}  mv -f '$JAR_BACKUP' '$JAR_DST'
+"
   else
-    rm -f "$JAR_DST"
+    rm -f "$JAR_DST" || RESTORE_BY_HAND="${RESTORE_BY_HAND}  rm -f '$JAR_DST'
+"
   fi
   if [ "$HAD_SHIM" = 1 ]; then
-    mv -f "$SHIM_BACKUP" "$SHIM_DST"
+    mv -f "$SHIM_BACKUP" "$SHIM_DST" || RESTORE_BY_HAND="${RESTORE_BY_HAND}  mv -f '$SHIM_BACKUP' '$SHIM_DST'
+"
   else
-    rm -f "$SHIM_DST"
+    rm -f "$SHIM_DST" || RESTORE_BY_HAND="${RESTORE_BY_HAND}  rm -f '$SHIM_DST'
+"
   fi
+  # The hub pair goes back with the jar it was installed beside, from the copies step 2b kept.
+  if [ "$HUB_INSTALLED" = 1 ]; then
+    for asset in splice-mcp-holder splice-mcp-front; do
+      if [ -f "$HUB_TMP_DIR/$asset.previous" ]; then
+        mv -f "$HUB_TMP_DIR/$asset.previous" "$SHARE_DIR/$asset" ||
+          RESTORE_BY_HAND="${RESTORE_BY_HAND}  mv -f '$HUB_TMP_DIR/$asset.previous' '$SHARE_DIR/$asset'
+"
+      else
+        rm -f "$SHARE_DIR/$asset" || RESTORE_BY_HAND="${RESTORE_BY_HAND}  rm -f '$SHARE_DIR/$asset'
+"
+      fi
+    done
+  fi
+  [ -z "$RESTORE_BY_HAND" ]
+}
+
+# roll_back <what failed> — restore the previous installation, say which outcome actually happened,
+# and exit 1. A restore that failed keeps the backups and names the commands that finish it by hand.
+roll_back() {
+  if restore_previous_artifacts; then
+    echo "splice: $1; previous installation restored" >&2
+  else
+    KEEP_BACKUPS=1
+    echo "splice: $1; the previous installation could NOT be restored. Finish it by hand:" >&2
+    printf '%s' "$RESTORE_BY_HAND" >&2
+  fi
+  exit 1
 }
 
 if ! mv -f "$JAR_TMP" "$JAR_DST" || ! mv -f "$SHIM_TMP" "$SHIM_DST"; then
-  restore_previous_artifacts
-  echo "splice: failed to commit candidate artifacts; previous installation restored" >&2
-  exit 1
+  roll_back "failed to commit candidate artifacts"
 fi
+
+# 2b. The hub pair, when there is one, moved in like the jar after the installed pair is copied aside. A pair
+#     that cannot go in leaves none, so the daemon takes its in-process MCP path rather than run an older pair
+#     beside this jar. A running front or holder keeps its own file through the move.
+if [ -n "$HUB_TMP_DIR" ] && [ -f "$HUB_TMP_DIR/splice-mcp-holder" ]; then
+  for asset in splice-mcp-holder splice-mcp-front; do
+    chmod 0755 "$HUB_TMP_DIR/$asset"
+    [ ! -f "$SHARE_DIR/$asset" ] || cp -p "$SHARE_DIR/$asset" "$HUB_TMP_DIR/$asset.previous"
+  done
+  HUB_INSTALLED=1
+  if ! mv -f "$HUB_TMP_DIR/splice-mcp-holder" "$SHARE_DIR/splice-mcp-holder" ||
+    ! mv -f "$HUB_TMP_DIR/splice-mcp-front" "$SHARE_DIR/splice-mcp-front"; then
+    rm -f "$SHARE_DIR/splice-mcp-holder" "$SHARE_DIR/splice-mcp-front"
+    HUB_INSTALLED=0
+    echo "splice: warning: the MCP hub's binaries could not be installed; splice runs MCP servers in-process" >&2
+  fi
+fi
+
+# run_jar <jar> <args…> — the jar's verbs that touch an install, in THIS script's home and dirs. The
+# jar resolves its dirs from the JVM's user.home, which the JDK reads from the passwd entry rather
+# than $HOME, so under a HOME of its own (a container, a CI job, a demo home) `init` and `install
+# --all` wrote into the passwd home while step 4 checked $BIN_DIR, and doctor checked that other
+# install (V4-231, 2026-09-25). `version` reads only the jar, so it runs bare.
+run_jar() {
+  SPLICE_BIN_DIR="$BIN_DIR" SPLICE_SHARE_DIR="$SHARE_DIR" java -Duser.home="$HOME" -jar "$@"
+}
 
 # 3. Materialize the topology + atomically link the wrapper commands (+ the `splice` command).
 # A CLI/preflight failure rolls the jar and shim back as one installation generation.
-if ! java -jar "$JAR_DST" init ||
-  ! SPLICE_JAR="$JAR_DST" java -jar "$JAR_DST" install --all; then
-  restore_previous_artifacts
-  echo "splice: command installation failed; previous jar and shim restored" >&2
-  exit 1
+if ! run_jar "$JAR_DST" init ||
+  ! SPLICE_JAR="$JAR_DST" run_jar "$JAR_DST" install --all; then
+  roll_back "command installation failed"
+fi
+
+# 3b. A running hub front takes the new binary by reload (USR2), never a restart, which would drop every session's
+#     MCP connection (the host supervisor's contract, Oct 12). `splice init` above already wrote its settings file.
+if [ "$HUB_INSTALLED" = 1 ] && command -v systemctl >/dev/null 2>&1 &&
+  systemctl --user is-active --quiet splice-mcp-front.service 2>/dev/null; then
+  systemctl --user reload splice-mcp-front.service ||
+    echo "splice: warning: splice-mcp-front.service did not reload; it keeps its old binary until it next starts" >&2
 fi
 
 # 4. Fail loudly rather than report success when nothing actually landed. `install --all`
 #    always links the `splice` admin command itself, so its absence means the install failed
 #    (counting arbitrary symlinks would false-pass on unrelated tools already in BIN_DIR).
 if [ ! -L "$BIN_DIR/splice" ] || [ ! -e "$BIN_DIR/splice" ]; then
-  restore_previous_artifacts
-  echo "splice: install failed — $BIN_DIR/splice missing or dangling" >&2
-  exit 1
+  roll_back "install failed — $BIN_DIR/splice missing or dangling"
+fi
+# 4a. The managed-install marker (UpgradeLayout's MANAGED_MARKER): this script laid the install down, so the daemon's
+#     updater may replace it when [daemon] auto_update = true. A jar copied into place by hand never carries it.
+printf 'install.sh\n' > "${SHARE_DIR}/managed-install" ||
+  echo "splice: warning: could not write ${SHARE_DIR}/managed-install; auto-update leaves this install alone" >&2
+# 4b. Keep a PRISTINE copy of this release under releases/<version>/ for `splice upgrade`: it is
+#     what rollback repoints at, and what the upgrade compares the live launch shim against so a
+#     local edit (a host that patches the launcher does so AFTER this script) is kept rather than
+#     overwritten. Best effort: an install never fails for want of its own archive copy.
+JAR_VERSION="${JAR_VERSION_OUTPUT#splice }"
+RELEASE_DIR="${SHARE_DIR}/releases/${JAR_VERSION}"
+CURRENT_LINK="${SHARE_DIR}/releases/current"
+# The release that was current becomes `previous`, so the first `splice upgrade --rollback` after
+# an install.sh run has somewhere to go instead of skipping a version (review 2026-09-14).
+# `ln -sfn` into a REAL directory named previous succeeds by linking inside it, so the link is
+# read back: a pointer that did not land is said, and the archive stays best effort (review 2026-09-14).
+link_previous() {
+  ln -sfn "$1" "${SHARE_DIR}/releases/previous" || true
+  if [ "$(readlink "${SHARE_DIR}/releases/previous" 2>/dev/null)" != "$1" ]; then
+    echo "splice: warning: ${SHARE_DIR}/releases/previous is not a link to $1 (something else is in its way);" \
+      "splice upgrade --rollback has no target until it is removed" >&2
+    return 1
+  fi
+}
+if [ -L "$CURRENT_LINK" ] && [ "$(readlink "$CURRENT_LINK")" != "$JAR_VERSION" ]; then
+  link_previous "$(readlink "$CURRENT_LINK")" || true
+elif [ ! -L "$CURRENT_LINK" ] && [ "$HAD_JAR" = 1 ]; then
+  # A flat install (before 0.4.0) is being replaced: its jar and shim are still in hand as the
+  # backups, so record them under their version and make them `previous` — otherwise the first
+  # install.sh run that introduces releases/ leaves nothing to roll back to (review 2026-09-14).
+  OLD_VERSION="$(java -jar "$JAR_BACKUP" version 2>/dev/null | sed -n 's/^splice //p' | head -1)"
+  if [ -n "$OLD_VERSION" ] && [ "$OLD_VERSION" != "$JAR_VERSION" ] &&
+    grep -Eq '^(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)([-+][0-9A-Za-z.-]+)?$' <<<"$OLD_VERSION"; then
+    OLD_DIR="${SHARE_DIR}/releases/${OLD_VERSION}"
+    if mkdir -p "$OLD_DIR" && cp -p "$JAR_BACKUP" "$OLD_DIR/splice.jar" &&
+      { [ "$HAD_SHIM" != 1 ] || cp -p "$SHIM_BACKUP" "$OLD_DIR/splice-launch"; } &&
+      link_previous "$OLD_VERSION"; then
+      echo "splice: previous release $OLD_VERSION kept at $OLD_DIR (splice upgrade --rollback target)"
+    fi
+  fi
+fi
+if mkdir -p "$RELEASE_DIR" &&
+  cp -p "$JAR_DST" "$RELEASE_DIR/splice.jar" &&
+  cp -p "$SHIM_DST" "$RELEASE_DIR/splice-launch" &&
+  { [ "$HUB_INSTALLED" != 1 ] || { cp -p "$SHARE_DIR/splice-mcp-holder" "$SHARE_DIR/splice-mcp-front" "$RELEASE_DIR/"; }; } &&
+  ln -sfn "$JAR_VERSION" "$CURRENT_LINK"; then
+  echo "splice: release copy kept at $RELEASE_DIR (splice upgrade --rollback target)"
+else
+  echo "splice: WARNING — could not keep a release copy under $RELEASE_DIR; splice upgrade will record the live copy" >&2
 fi
 rm -f "$JAR_BACKUP" "$SHIM_BACKUP"
 
+if [ "$HAD_JAR" = 1 ]; then
+  echo "splice: a splice that is already running keeps the old build until it restarts; run:  splice restart"
+fi
+
 echo
 echo "splice: installed  (jar: $JAR_DST)"
+if [ -n "$PROVENANCE_DEFERRED" ]; then
+  echo "splice: sha256 matched the release's sha256sums.txt; build provenance was not checked (gh ${PROVENANCE_DEFERRED})."
+  echo "splice: to verify it later, with gh installed and signed in:"
+  echo "  gh attestation verify $JAR_DST --repo torad-labs/splice"
+  echo "  gh attestation verify $SHIM_DST --repo torad-labs/splice"
+  if [ "$HUB_INSTALLED" = 1 ]; then
+    echo "  gh attestation verify $SHARE_DIR/splice-mcp-holder --repo torad-labs/splice"
+    echo "  gh attestation verify $SHARE_DIR/splice-mcp-front --repo torad-labs/splice"
+  fi
+fi
 
 # 5. Verify, don't assume: run the same checkup a user would. Its findings are NEXT STEPS
-#    (a missing API key is expected before `splice setup`), never an installer failure —
+#    (a missing API key is expected before `splice add openrouter`), never an installer failure —
 #    everything above already validated the artifacts that this script is responsible for.
 echo
 echo "splice: verifying the install (splice doctor)…"
-if SPLICE_JAR="$JAR_DST" java -jar "$JAR_DST" doctor; then
+if SPLICE_JAR="$JAR_DST" run_jar "$JAR_DST" doctor; then
   :
 else
   echo
   echo "splice: the ✗/! checks above are next steps with their fixes — the install itself landed."
 fi
 
-# Migration notice for the claudeor -> claude-openrouter rename. `install --all` links the
-# topology's commands but never PRUNES one whose name disappeared, so an upgrading user keeps a
-# `claudeor` symlink that resolves to no head. Deleting it here is not our call — this bin dir
-# holds links we did not create — so detect it and print the one command that clears it. Scoped to
-# a symlink pointing at OUR launch shim: a user's unrelated `claudeor` script is never mentioned.
-# FAIL CLOSED (review of #81): BSD readlink (macOS, which install.sh supports — see the platform
-# gate above) has no -f. With errors suppressed BOTH substitutions became empty strings, which
-# compare EQUAL, so the notice fired for ANY claudeor symlink — including one the user made
-# themselves. Resolving to nothing must mean "say nothing", never "assume it is ours".
-resolve_link() {
-  _r="$(readlink -f "$1" 2>/dev/null)" || return 1
-  [ -n "$_r" ] || return 1
-  printf '%s\n' "$_r"
-}
-stale_claudeor=""
-if [ -L "$BIN_DIR/claudeor" ]; then
-  _old="$(resolve_link "$BIN_DIR/claudeor")" || _old=""
-  _shim="$(resolve_link "$SHARE_DIR/splice-launch")" || _shim=""
-  [ -n "$_old" ] && [ -n "$_shim" ] && [ "$_old" = "$_shim" ] && stale_claudeor=1
-fi
-if [ -n "$stale_claudeor" ]; then
-  echo
-  echo "splice: the OpenRouter head's command is now 'claude-openrouter' (was 'claudeor')."
-  echo "        The old link is stale — it no longer resolves to a head. Remove it with:"
-  echo "            rm $BIN_DIR/claudeor"
-fi
+# A command left linked to the shim after its head was renamed or removed (`install --all` links
+# the topology's commands and never prunes one) is doctor's row above, with the rm that clears it:
+# only the topology knows whether a head still claims a name. The hardcoded claudeor notice that
+# stood here told an operator whose topology names `command = "claudeor"` to delete a working
+# head (2026-09-23).
 
 case ":$PATH:" in
   *":$BIN_DIR:"*)
     echo
-    echo "Next:  export OPENROUTER_API_KEY=…   # create one at https://openrouter.ai/keys"
-    echo "       splice setup      # install the supported API-key starter"
-    echo "       claude-openrouter          # Claude Code through OpenRouter"
-    echo "       splice doctor     # if anything misbehaves — every check prints its fix"
+    echo "Next:  splice setup     # connect the plan you pay for"
+    echo "       (splice doctor checks the install and prints the fix for anything wrong)"
     ;;
   *)
     echo

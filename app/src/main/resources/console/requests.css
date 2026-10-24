@@ -1,0 +1,169 @@
+/* Requests, in the Sessions language (console.css, sessions.css): each request a cel slip docked on the time rail, its
+   outcome the lamp in the socket, the hour marked on the rail where it turns. The open request sits beside the list with
+   its sends on one time rail, its tokens and cost, and both bodies. Built for 3828 first; where both don't fit, the
+   open request takes the page and Close brings the list back. Class names checked against the shared sheets:
+   .failed shakes (console.css), .send, .fold and .s are Sessions' own. */
+
+.head .search { width: 30rem; }
+
+/* ---------- the filters: what /api/perf/turns takes, one button each ---------- */
+.filters-row { margin: -.9rem 0 1.4rem 2.6rem; }
+/* the pick on its own line above the filters (PROJECTS.md): the picker where the filters start, the tiles page-wide */
+.pickline:not(:empty) { margin: -.9rem 0 1rem; }
+.pickline .lhead { margin-left: 2.6rem; }
+.pickline:not(:empty) + .filters-row { margin-top: 0; }
+/* the tiles run from the page's edge, so the filters under them start there too (Marlin, 3828) */
+.pickline:has(> .ptiles) + .filters-row { margin-left: 0; }
+.filters { display: flex; flex-wrap: wrap; align-items: center; gap: .8rem; }
+.fwrap { position: relative; display: inline-flex; }
+.fbtn {
+  display: inline-flex; align-items: center; gap: .55rem; font: 500 .92rem/1 var(--font-name); color: var(--text-body); white-space: nowrap;
+  background: var(--obj-sunk); border: .12rem solid var(--track-line); border-radius: var(--r-in); padding: .55rem .8rem; cursor: pointer;
+}
+.fbtn:hover { color: var(--text); border-color: var(--text-mute); }
+.fbtn .down { width: .95rem; height: .95rem; color: var(--text-mute); }
+.fbtn.on { color: var(--text); border-color: var(--key-ink); padding-right: 2.4rem; }
+.fbtn.on .down { display: none; }
+.fclear {
+  position: absolute; right: .3rem; top: 50%; transform: translateY(-50%); width: 1.7rem; height: 1.7rem; display: grid; place-items: center;
+  border: 0; background: none; color: var(--text-body); border-radius: .3rem; cursor: pointer;
+}
+.fclear:hover { background: var(--track); color: var(--text); }
+.fclear svg { width: .95rem; height: .95rem; }
+.filters .blot, .fmenu .blot { display: inline-block; flex: none; width: .8rem; height: .8rem; border-radius: 50%; background: var(--c); box-shadow: 0 0 0 .1rem var(--ink); }
+.fmenu { left: 0; right: auto; top: calc(100% + .5rem); max-height: 34rem; overflow-y: auto; }
+.fmenu button { display: flex; align-items: center; gap: .7rem; position: relative; }
+.fmenu button[aria-checked="true"]::before { content: ""; position: absolute; left: -.4rem; top: .5rem; bottom: .5rem; width: .22rem; background: var(--key-light); border-radius: 0 .15rem .15rem 0; }
+.fmenu .blots { display: inline-flex; gap: .25rem; width: 1.6rem; flex: none; }
+.fmenu .sname { flex: 1; }
+.fmenu .aname { display: flex; flex-direction: column; gap: .3rem; white-space: nowrap; }  /* an account, with its provider under it */
+.fmenu .aprov { font: 500 .88rem/1 var(--font-data); color: var(--text-mute); }
+/* A READ THAT REFUSED SAYS SO WHERE IT HAPPENED: the command and one word, above the rows it is missing from, or under
+   the rows for a search; the reason goes to the browser's log (fin). One command that cannot answer is not an empty day. */
+.list > :not(.list-wait) + .list-wait { margin-top: .75rem; }
+.list-wait { display: flex; align-items: center; gap: .55rem; margin: 0 0 .75rem 0; font: 500 .92rem/1.45 var(--font-data); color: var(--text-mute); }
+.list-wait .wait { --c: var(--text-mute); width: 1.1rem; height: 1.1rem; }
+.list-wait.unread { color: var(--limit); }
+.list-wait:has(+ .list-wait) { margin-bottom: .35rem; }
+
+/* what the list holds against what the window counted, and how far back a search read */
+.list .foot { margin: .8rem 0 .2rem 0; font: 500 .88rem/1.4 var(--font-data); color: var(--text-mute); }
+.fmenu .mfoot { margin: .35rem .2rem .1rem; font: 500 .88rem/1.3 var(--font-data); color: var(--text-mute); }
+.fmenu .swhen { font: 500 .88rem/1 var(--font-data); color: var(--text-mute); margin-left: 1.2rem; }
+/* Up to: a day and time to list the requests up to, under the windows it chooses between (Marlin, desk c, Oct 12) */
+.fmenu .goto { display: flex; align-items: center; gap: .6rem; margin: .45rem .2rem .15rem; padding-top: .55rem; border-top: .08rem solid var(--track-line); }
+.fmenu .goto label { font: 500 .88rem/1 var(--font-name); color: var(--text-mute); white-space: nowrap; }
+.fmenu .goto input { font: 500 .92rem/1 var(--font-data); color: inherit; background: var(--track); border: .08rem solid var(--track-line); border-radius: var(--r-in); padding: .4rem .55rem; }
+/* the field types and steps with the arrow keys; its calendar button is gone, because a pick there never reached the
+   field (Marlin, p225) and the week's days below are one press each */
+.fmenu .goto input::-webkit-calendar-picker-indicator { display: none; }
+.fmenu .days { display: flex; flex-wrap: wrap; gap: .2rem .3rem; margin: .35rem 0 .1rem; max-width: 20rem; }
+.fmenu .days button { flex: none; padding: .5rem .6rem; }
+.fmenu .days button[aria-checked="true"]::before { left: .5rem; right: .5rem; top: auto; bottom: .1rem; width: auto; height: .2rem; border-radius: .1rem; }  /* in a row the picked day is underlined, not barred on its left */
+.ftog {
+  display: inline-flex; align-items: center; gap: .55rem; font: 500 .92rem/1 var(--font-name); color: var(--text-mute); white-space: nowrap;
+  background: none; border: .12rem dashed var(--track-line); border-radius: var(--r-in); padding: .55rem .8rem; cursor: pointer;
+}
+.ftog svg { width: 1.1rem; height: 1.1rem; flex: none; fill: none; stroke: var(--key-ink); stroke-width: 2.4; stroke-linecap: round; stroke-linejoin: round; }  /* the rows' own marks, drawn as the lamp draws them */
+.ftog i.tick { width: .22rem; height: 1.1rem; margin: 0 .3rem; border-radius: .1rem; background: var(--key-ink); flex: none; }
+.ftog:hover { color: var(--text); }
+.ftog[aria-pressed="true"] { color: var(--text); border-style: solid; border-color: var(--key-ink); }
+
+/* ---------- the list and the open request, side by side when both fit ---------- */
+.requests { display: block; }
+.requests .list { position: relative; display: flex; flex-direction: column; gap: .8rem; padding-left: 2.6rem; min-width: 0; }
+.requests .list::before {                 /* the time rail the requests dock into */
+  content: ""; position: absolute; left: .7rem; top: .8rem; bottom: .8rem; width: .6rem;
+  background: var(--rail); border-radius: .3rem; box-shadow: 0 0 0 var(--ink-w) var(--ink);
+}
+.requests.open .list { display: none; }
+.requests.open .pane { display: flex; }
+.page { --side-by-side: 120; } /* kit.js sideBySide() reads this: the same 120rem as the container query below */
+@container (min-width: 120rem) {
+  .requests, .requests.open { display: flex; align-items: flex-start; gap: var(--gap-col); }
+  .requests .list, .requests.open .list { display: flex; flex: 0 0 58rem; }
+  .requests.open .pane { flex: 1 1 0; max-width: 112rem; position: sticky; top: calc(var(--bar-h) + 1rem); height: calc(100vh - 11rem - var(--bar-h)); overflow: hidden; }
+  .requests.open .rqpane .scroll { overflow-y: auto; }
+}
+/* A WIDER SCREEN MUST NOT GIVE THE LIST LESS THAN A NARROW ONE. The column is a fraction of a 3828-wide screen while
+   the page keeps tens of rem unused, so his widest screen was the one width where a row's meta line ran out of room
+   and wrapped (splice-lead, Oct 11). The step is where it can be paid for: from 160rem the list takes 64rem and the
+   open request still holds more than it has at the breakpoint above. 64rem is what a row needs at this scale — a
+   command, a model name, his plan account's whole email address and both token figures on one line — so from here
+   the list is never narrower than it is at 1440, where that line already fits. */
+@container (min-width: 160rem) {
+  .requests .list, .requests.open .list { flex: 0 0 64rem; }
+}
+/* where the open request takes the page, it grows with what it holds and the page scrolls */
+.requests .rqpane { height: auto; overflow: visible; }
+.requests .rqpane .scroll { overflow: visible; }
+.requests .rqpane > header { border-radius: calc(var(--r-obj) - .12rem) calc(var(--r-obj) - .12rem) 0 0; }
+.requests .list:has(.nomatch)::before { content: none; }
+
+/* ---------- a request: one slip ---------- */
+.rq { cursor: pointer; padding: .6rem .95rem .65rem; box-shadow: .3rem .3rem 0 var(--c), .3rem .3rem 0 var(--ink-w) var(--ink); }
+.rq:hover { background: var(--obj-high); }
+.rq[aria-current="true"] { border-color: var(--key-ink); }
+.rq .lamp { top: .45rem; left: -2.65rem; width: 2rem; height: 2rem; }
+.rq .top { gap: .8rem; min-height: 1.7rem; }
+.rq time { font: 500 .95rem/1 var(--font-data); color: var(--text-mute); font-variant-numeric: tabular-nums; width: 6.8rem; flex: none; }
+.rq .name { font: 500 1rem/1.15 var(--font-name); color: var(--text); background: none; border: 0; padding: 0; cursor: pointer; text-align: left; flex: 0 1 auto; }
+.rq .dur { margin-left: auto; font: 500 .95rem/1 var(--font-data); color: var(--text-body); font-variant-numeric: tabular-nums; white-space: nowrap; }
+.rq .cost { font: 500 .95rem/1 var(--font-data); color: var(--text); min-width: 5.6rem; text-align: right; white-space: nowrap; }
+.rq .cost.gap { font: 500 .95rem/1 var(--font-name); color: var(--text-mute); }
+.rq .meta { margin-top: .35rem; padding-left: 7.6rem; gap: .35rem .9rem; font-size: .88rem; }
+.tok em { font-style: normal; color: var(--text-mute); margin-left: .4rem; }
+/* NOTHING BREAKS MID-NAME. The meta line wraps where it must, as its row gap is there for; what it must not do is
+   break a model name or an account across two lines ("Claude Opus" over "5"), which is what a flex line does to a
+   span it is allowed to squeeze. Live, Oct 10: a plan account is his whole email address and a model name is three
+   words, so this line was a few characters over its width on most rows at the narrow column — which is why the
+   column is wider from 160rem up (above). Each piece stays whole and the line wraps between pieces. A session's
+   name is as long as he made it, so that one ends in an ellipsis rather than pushing the duration and the cost
+   off the row; the open request shows it whole. */
+.rq .meta > * { white-space: nowrap; }
+/* and the two token figures are ONE piece: a line that must wrap breaks before the pair, never between them, so
+   no row is left with "4 out" alone under a neighbour that kept both (requests.js, rowHtml) */
+.rq .meta .toks { display: inline-flex; align-items: center; gap: .4rem .9rem; white-space: nowrap; }
+.rq .name { min-width: 4rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.tok { color: var(--text-body); }
+.tok.quiet { color: var(--text-mute); }
+.rq .meta .door { background: none; border: 0; padding: 0; font: inherit; cursor: pointer; text-decoration: underline dotted; text-underline-offset: .2em; }
+.rq.fail { box-shadow: .3rem .3rem 0 var(--limit), .3rem .3rem 0 var(--ink-w) var(--ink); }  /* a failure keeps its edge in the limit's colour */
+/* what the search found, in the body it was found in */
+.match { margin: .45rem 0 0 7.6rem; font: 500 .9rem/1.35 var(--font-data); color: var(--text-body); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.match .where { font: 500 .88rem/1 var(--font-name); color: var(--text-mute); margin-right: .6rem; }
+
+
+/* the hour, on the rail where it turns */
+.hour { position: relative; margin: .7rem 0 -.1rem -2.6rem; height: 1.8rem; display: flex; align-items: center; }
+.hour:first-child { margin-top: 0; }
+.hour .act { margin-left: auto; }  /* the day before, at the right end of the new day's heading */
+.hour span {
+  font: 600 .88rem/1 var(--font-data); color: var(--splice-cream); background: var(--socket); padding: .4rem .55rem; border-radius: .35rem;  /* the socket is dark in both themes */
+  box-shadow: 0 0 0 var(--ink-w) var(--ink), inset 0 0 0 .14rem var(--rail);
+}
+.list .more { display: flex; align-items: center; gap: .9rem; margin-top: .75rem; }
+.list .more .count { font: 500 .92rem/1 var(--font-data); color: var(--text-mute); }
+
+
+/* the search sits where the head holds its tools */
+.head .tools { position: relative; display: flex; align-items: center; gap: .8rem; }
+.filters > .switch.order { margin-left: auto; } /* the order is not a filter: it sits apart, at the row's end */
+/* in Highest price, a plan row's worth sits on the top line before "On your plan": the meta line's pieces are all whole,
+   so the top line, where the session name already gives way, is what makes room (hitstop baa64db, Oct 12) */
+.rq .top .worth { font: 500 .85rem/1 var(--font-data); color: var(--text-mute); white-space: nowrap; }
+
+/* ---------- reading: the list's own shape, hollow (Marcos, Oct 12); the bars themselves are console.css's .ghost ---------- */
+.ghost.nm { height: 1rem; }
+.ghost.end { margin-left: auto; }
+.rq .meta .ghost.chip { height: 1.4rem; box-shadow: 0 0 0 .1rem var(--ink); }
+.ghost-rq { --c: var(--track); }
+.ghost-rq .meta { display: flex; align-items: center; }
+a.acct { color: inherit; text-decoration: none; }  /* the login opens its Accounts card; it reads as the same words, underlined only under the pointer */
+a.acct:hover { text-decoration: underline; }
+/* a request that answered after a retry, or slower than all but 5% of its model on its command here: the key light,
+   apart from a failure's red and a clean answer's plain (requests.js, slowLines) */
+.word.marked { color: var(--key-ink); }
+.lamp.retried { color: var(--key-light); }
+.lamp.retried svg { width: 1.1rem; height: 1.1rem; }
+.rq .dur.slow { color: var(--key-ink); }

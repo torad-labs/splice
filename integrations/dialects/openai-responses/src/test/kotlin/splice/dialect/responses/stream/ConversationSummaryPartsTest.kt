@@ -1,0 +1,134 @@
+// NEW: the conversation-lifetime dedup registry (cross-turn recap staircase, 2026-08-26).
+package splice.dialect.responses.stream
+
+import kotlinx.coroutines.CompletableDeferred
+import kotlinx.coroutines.ExperimentalCoroutinesApi
+import kotlinx.coroutines.async
+import kotlinx.coroutines.test.runCurrent
+import kotlinx.coroutines.test.runTest
+import org.junit.jupiter.api.Assertions.assertEquals
+import org.junit.jupiter.api.Assertions.assertFalse
+import org.junit.jupiter.api.Assertions.assertNotEquals
+import org.junit.jupiter.api.Assertions.assertTrue
+import org.junit.jupiter.api.Test
+import splice.core.turn.SharedSummaryParts
+import splice.core.util.ElapsedClock
+import splice.dialect.responses.SummaryRoundScope
+import splice.dialect.responses.websocket.ResponsesConversationIdentity
+
+class ConversationSummaryPartsTest {
+
+    @Test
+    fun `candidate tracking stops at the live count bound and later items display`() {
+        val shared = SharedSummaryParts(maxParts = 2)
+        val repeated = "one retained paragraph shared by many active items"
+        shared.beginRound()
+        shared.markEmitted(0, repeated)
+        shared.endRound()
+        shared.beginRound()
+        val dedup = SummaryDedup(active = true, shared)
+
+        assertTrue(dedup.suppress(0, repeated))
+        assertTrue(dedup.suppress(1, repeated))
+        assertFalse(dedup.suppress(2, repeated), "the over-bound item must display without allocating candidates")
+        shared.endRound()
+    }
+
+    @Test
+    @OptIn(ExperimentalCoroutinesApi::class)
+    fun `one scope serializes the complete round rather than individual events`() = runTest {
+        val scope = SummaryRoundScope(SharedSummaryParts())
+        val firstEntered = CompletableDeferred<Unit>()
+        val releaseFirst = CompletableDeferred<Unit>()
+        var secondEntered = false
+        val first = async {
+            scope.withRound { parts ->
+                parts.markEmitted(0, "first round begins with this paragraph")
+                firstEntered.complete(Unit)
+                releaseFirst.await()
+                parts.markEmitted(0, "first round ends with this paragraph")
+            }
+        }
+        firstEntered.await()
+        val second = async {
+            scope.withRound { parts ->
+                secondEntered = true
+                parts.markEmitted(0, "second round paragraph")
+            }
+        }
+        runCurrent()
+        assertFalse(secondEntered, "the second round entered before the first completed")
+        releaseFirst.complete(Unit)
+        first.await()
+        second.await()
+        assertTrue(secondEntered)
+    }
+
+    @Test
+    @OptIn(ExperimentalCoroutinesApi::class)
+    fun `TTL cannot replace a scope while its round is active`() = runTest {
+        var now = 0L
+        val registry = ConversationSummaryParts(ttlMs = 10, clock = ElapsedClock { now })
+        val entered = CompletableDeferred<Unit>()
+        val release = CompletableDeferred<Unit>()
+        var overlap = false
+        val first = async {
+            registry.ownerForConversation("s", "c")!!.withRound {
+                entered.complete(Unit)
+                release.await()
+            }
+        }
+        entered.await()
+        now = 11
+        val second = async {
+            registry.ownerForConversation("s", "c")!!.withRound { overlap = true }
+        }
+        runCurrent()
+        assertFalse(overlap, "TTL created a second scope beside the active one")
+        release.complete(Unit)
+        first.await()
+        second.await()
+        assertTrue(overlap)
+    }
+
+    @Test
+    @OptIn(ExperimentalCoroutinesApi::class)
+    fun `LRU pressure cannot replace a scope while its round is active`() = runTest {
+        val registry = ConversationSummaryParts(maxConversations = 1)
+        val entered = CompletableDeferred<Unit>()
+        val release = CompletableDeferred<Unit>()
+        var overlap = false
+        val first = async {
+            registry.ownerForConversation("s", "active")!!.withRound {
+                entered.complete(Unit)
+                release.await()
+            }
+        }
+        entered.await()
+        registry.ownerForConversation("s", "neighbor")!!.withRound { }
+        val second = async {
+            registry.ownerForConversation("s", "active")!!.withRound { overlap = true }
+        }
+        runCurrent()
+        assertFalse(overlap, "LRU pressure created a second scope beside the active one")
+        release.complete(Unit)
+        first.await()
+        second.await()
+        assertTrue(overlap)
+    }
+
+    @Test
+    fun `shared composite identity is injective across ambiguous concatenations`() {
+        assertNotEquals(
+            ResponsesConversationIdentity.chainKey("a", "bc"),
+            ResponsesConversationIdentity.chainKey("ab", "c"),
+        )
+    }
+
+    @Test
+    fun `shared composite identity is injective when values contain the legacy delimiter`() {
+        val encoded = ResponsesConversationIdentity.chainKey("a", "\u0000b")
+        assertEquals("1:a2:\u0000b", encoded)
+        assertNotEquals(encoded, ResponsesConversationIdentity.chainKey("a\u0000", "b"))
+    }
+}

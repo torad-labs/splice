@@ -1,0 +1,3 @@
+// The repo's Claude Code hook orchestrator and modules: bun scripts held to tools/gate's standard,
+// typechecked by the gate's typecheck leg (bun tools/gate typecheck).
+{ "extends": "../../tools/gate/tsconfig.json", "include": ["**/*.ts"] }

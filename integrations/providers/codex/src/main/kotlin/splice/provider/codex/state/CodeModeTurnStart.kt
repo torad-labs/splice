@@ -2,10 +2,9 @@
 package splice.provider.codex.state
 
 import splice.provider.codex.CodeModeRecord
-import splice.provider.codex.CodeModeRecordRetention
 import splice.provider.codex.CodexCodeModeStore
+import splice.provider.codex.state.retention.CodeModeRecordRetention
 import java.time.Clock
-
 internal fun interface CodeModeSessionEnd {
     operator fun invoke(key: String)
 }

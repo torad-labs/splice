@@ -2,25 +2,19 @@
 // reads what else the client sent while a script was parked.
 package splice.provider.codex
 
-import kotlinx.serialization.json.JsonElement
 import splice.core.turn.FailureCause
 import splice.core.turn.FailurePhase
 import splice.core.turn.FailureTraits
 import splice.core.turn.TurnOutcome
 import splice.core.turn.noRequestUsage
 import splice.provider.codex.branch.CodeModeClientOutputDigests
+import splice.provider.codex.callbacks.CodeModeResumeResults
 import splice.provider.codex.callbacks.CodexCodeModeIncrementalOutcomes
 import splice.provider.codex.stream.CodeModeLiveRound
 import splice.provider.codex.stream.CodeModeSourceReset
 import splice.upstream.codemode.CodeModeResult
 import splice.upstream.codemode.CodeModeStep
 import splice.upstream.sse.WireSink
-
-private data class CodeModeResultBatch(
-    val results: Map<String, CodeModeResult>,
-    val error: String?,
-)
-
 internal class CodexCodeModeResume(
     private val registry: CodexCodeModeRegistry,
     private val wire: CodexCodeModeWire,
@@ -28,6 +22,8 @@ internal class CodexCodeModeResume(
     private val machine: CodexCodeModeMachine,
     private val driver: CodexCodeModeDriver,
 ) {
+    private val results = CodeModeResumeResults(validation)
+
     suspend fun active(
         record: CodeModeRecord,
         context: CodeModeRunContext,
@@ -86,7 +82,7 @@ internal class CodexCodeModeResume(
         body: CodeModeBody,
     ): TurnOutcome {
         val detail = record.error ?: "code-mode process state was lost; source was not rerun"
-        val supplied = suppliedResults(record, context.turn, mode = CodeModeResultMode.INTERRUPT)
+        val supplied = results.supplied(record, context.turn, mode = CodeModeResultMode.INTERRUPT)
         supplied.error?.let { return failure(it) }
         registry.acceptResults(
             record,
@@ -111,12 +107,12 @@ internal class CodexCodeModeResume(
         val extra = wire.extraContent(
             CodeModeClientHistory.of(context, body),
             record,
-            candidateMedia(record, context.turn),
+            results.media(record, context.turn),
             clearedCallbacks = context.turn.rendering.verifiedCleared.values.flatten().toSet(),
         )
         val hasExtraContent = extra != CodeModeExtra.NONE
         val mode = if (hasExtraContent) CodeModeResultMode.INTERRUPT else CodeModeResultMode.RESUME
-        val supplied = suppliedResults(record, context.turn, mode)
+        val supplied = results.supplied(record, context.turn, mode)
         supplied.error?.let { return failure(it) }
         registry.acceptResults(
             record,
@@ -153,11 +149,11 @@ internal class CodexCodeModeResume(
         extra: CodeModeExtra,
         supplied: Map<String, CodeModeResult>,
     ): TurnOutcome = when {
-        interrupts(extra, record) -> {
+        results.interrupts(extra, record) -> {
             wire.extraContent(
                 CodeModeClientHistory.of(context, body),
                 record,
-                candidateMedia(record, context.turn),
+                results.media(record, context.turn),
                 report = extra,
                 clearedCallbacks = context.turn.rendering.verifiedCleared.values.flatten().toSet(),
             )
@@ -167,7 +163,7 @@ internal class CodexCodeModeResume(
             exposeNext(record, supplied, context.link.sink)
         }
         else -> {
-            val batch = runtimeResults(record)
+            val batch = results.runtime(record)
             if (batch.isEmpty() && record.progress.pending.isNotEmpty()) {
                 CodexCodeModeIncrementalOutcomes.waitingForResults(
                     registry,
@@ -225,51 +221,6 @@ internal class CodexCodeModeResume(
         }
         return machine.emit(record, pending, sink)
     }
-
-    private fun suppliedResults(
-        record: CodeModeRecord,
-        turn: CodexCodeModeBridge.Turn,
-        mode: CodeModeResultMode = CodeModeResultMode.RESUME,
-    ): CodeModeResultBatch {
-        val exposed = record.visiblePending().map(CodeModePending::clientId).toSet()
-        val current = turn.toolResults.filter { it.id in exposed && it.id !in record.results }
-            .associateBy(CodeModeResult::id)
-        return CodeModeResultBatch(
-            results = current,
-            error = validation.results(record, turn, exposed, current, mode),
-        )
-    }
-
-    /** V4-179: the follow-ups of results this record has NOT accepted yet. A result already in the
-     *  record without a media entry is legacy and stays that way — it never gains media here. */
-    private fun candidateMedia(
-        record: CodeModeRecord,
-        turn: CodexCodeModeBridge.Turn,
-    ): Map<String, List<JsonElement>> = turn.rendering.media.filterKeys { it !in record.results }
-
-    /**
-     * V4-336: whether what the client added stops the script. Role=system content (a peer's message,
-     * a task notification, a hook's output) waits for the script's output once every call the script
-     * issued has its result, and the rewrite keeps it after the record's canonical output: live, 85 of
-     * the 86 records cut by "additional client content arrived" had every result back, and the model
-     * re-issued the batch. It still stops a script with a call unanswered, or one a sequential batch has
-     * not exposed yet. Steering (anything the operator's side gave) stops the script as it always did.
-     */
-    private fun interrupts(extra: CodeModeExtra, record: CodeModeRecord): Boolean = when (extra) {
-        CodeModeExtra.NONE -> false
-        CodeModeExtra.SYSTEM -> !answered(record)
-        CodeModeExtra.STEERING -> true
-    }
-
-    private fun answered(record: CodeModeRecord): Boolean =
-        record.progress.pending.all { it.clientId in record.results }
-
-    private fun runtimeResults(record: CodeModeRecord): List<CodeModeResult> = record.progress.pending
-        .filter { it.clientId in record.results }
-        .map { pending ->
-            val result = record.results.getValue(pending.clientId)
-            CodeModeResult(pending.runtimeId, result.output, result.isError)
-        }
 
     private fun failure(message: String): TurnOutcome.Failure =
         TurnOutcome.Failure(

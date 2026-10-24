@@ -12,29 +12,20 @@ import splice.core.turn.HeadStopSignal
 import splice.core.turn.TurnOutcome
 import splice.core.turn.noRequestUsage
 import splice.core.util.LogSink
+import splice.provider.codex.branch.CodeModeOwnerPlacement
+import splice.provider.codex.branch.CodeModePlacedOwner
 import splice.provider.codex.branch.CodexCodeModeBranch
 import splice.provider.codex.state.CodeModeTurnIdentity
 import splice.provider.codex.state.CodeModeTurnLocks
 import splice.provider.codex.state.CodeModeTurnNotes
-import splice.provider.codex.state.diagnostics.CodeModeHistoryLog
 import splice.provider.codex.state.diagnostics.CodeModeNativeRejection
 import splice.provider.codex.stream.CodeModeLiveRound
 import splice.provider.codex.stream.CodeModeRecoveryHistory
+import splice.provider.codex.stream.CodeModeRunInput
 import splice.provider.codex.stream.CodeModeUpstreamPost
 import splice.provider.codex.stream.batch.CodeModeBatchHistory
 import splice.upstream.codemode.CodeModeResult
 import splice.upstream.sse.WireSink
-
-internal data class CodeModeRunInput(
-    val turn: CodexCodeModeBridge.Turn,
-    val initialOuter: GatewayCustomCall?,
-    val disableParallel: Boolean,
-    val body: CodeModeBody,
-    val sink: WireSink,
-    val post: CodeModeUpstreamPost,
-    val recovery: CodeModeRecoveryHistory? = null,
-)
-
 internal data class CodeModeRunContext(
     val turn: CodexCodeModeBridge.Turn,
     val disableParallel: Boolean,
@@ -90,7 +81,7 @@ internal class CodexCodeModeTurn(
     private val branch = CodexCodeModeBranch(registry, driver, machine, validation, log)
     private val locks = CodeModeTurnLocks()
 
-    private data class PlacedOwner(val record: CodeModeRecord, val body: CodeModeBody)
+    private val placement = CodeModeOwnerPlacement(registry, wire, machine, log)
 
     suspend fun run(input: CodeModeRunInput): TurnOutcome {
         val key = identity.turnKey(input.turn)
@@ -157,7 +148,7 @@ internal class CodexCodeModeTurn(
         completedHistory.error?.let { return failure(it) }
         val canonicalBody = checkNotNull(completedHistory.body)
         reconcile(context, canonicalBody)
-        return decide(context, initialOuter, canonicalBody, placedOwner(context, canonicalBody))
+        return decide(context, initialOuter, canonicalBody, placement.find(context, canonicalBody))
     }
 
     /** A request built from the conversation's kept posts, or from its whole history once when it extends none:
@@ -171,7 +162,7 @@ internal class CodexCodeModeTurn(
         reconcile(context, body)
         val resultIds = context.turn.toolResults.map(CodeModeResult::id).toSet()
         val owner = registry.owner(context.key, context.digest, resultIds, wire.callbackIds(body), context.conflicts)
-        return decide(context, initialOuter, body, owner?.let { PlacedOwner(it, body) })
+        return decide(context, initialOuter, body, owner?.let { CodeModePlacedOwner(it, body) })
     }
 
     /** What [body] is sent as: a script's generated reply, a running script resumed, or a post. A fork's history is
@@ -180,7 +171,7 @@ internal class CodexCodeModeTurn(
         context: CodeModeRunContext,
         initialOuter: GatewayCustomCall?,
         body: CodeModeBody,
-        owner: PlacedOwner?,
+        owner: CodeModePlacedOwner?,
     ): TurnOutcome {
         val completed = context.completed
         val terminal = completed.lastOrNull(CodeModeBatchHistory::unclaimed)
@@ -207,21 +198,7 @@ internal class CodexCodeModeTurn(
         registry.turnStart.begin(context.key, context.digest, continued)
     }
 
-    /** The active or lost owner whose baseline still places in this history, with that history
-     *  restored around it — or null when there is none, or when the one there was is abandoned. */
-    private fun placedOwner(context: CodeModeRunContext, canonicalBody: CodeModeBody): PlacedOwner? {
-        val resultIds = context.turn.toolResults.map(CodeModeResult::id).toSet()
-        val callbackIds = wire.callbackIds(canonicalBody)
-        val owner = registry.owner(context.key, context.digest, resultIds, callbackIds, context.conflicts)
-            ?: return null
-        val restored = wire.restoreBaseline(canonicalBody, owner)
-        val error = restored.error ?: return PlacedOwner(owner, checkNotNull(restored.body))
-        context.abandonedSources += owner
-        abandon(owner, error, restored.nativeRejection)
-        return null
-    }
-
-    private suspend fun resumeOwner(placed: PlacedOwner, context: CodeModeRunContext): TurnOutcome =
+    private suspend fun resumeOwner(placed: CodeModePlacedOwner, context: CodeModeRunContext): TurnOutcome =
         when (placed.record.phase) {
             CodeModePhase.STARTING -> driver.retryStart(placed.record, context, placed.body)
             CodeModePhase.ACTIVE -> resume.active(placed.record, context, placed.body)
@@ -229,21 +206,8 @@ internal class CodexCodeModeTurn(
             CodeModePhase.COMPLETED -> error("A completed record cannot own a pending turn")
         }
 
-    /** A running script whose history moved underneath it is abandoned: cell closed, evidence kept
-     *  on the LOST record, and the turn continues upstream on the client's own history. */
-    internal fun abandon(owner: CodeModeRecord, error: String, rejection: CodeModeNativeRejection?) {
-        val detail = "$CODE_MODE_ABANDONED: $error; source was not rerun"
-        registry.lose(owner, detail)
-        // History only grows, so a record that no longer places never will again: it retires with its
-        // evidence now. Left LOST it was found by its client ids and abandoned again on every later
-        // turn of the conversation (82 identical lines for one record on 2026-09-20).
-        machine.interrupt(owner, detail)
-        log(
-            "[code-mode] abandoned record ${owner.id.take(CODE_MODE_RECORD_LOG_CHARS)} " +
-                "(outer ${owner.origin.outerCallId}): " +
-                "$error; continuing upstream on the client's history; ${CodeModeHistoryLog.context(owner, rejection)}",
-        )
-    }
+    internal fun abandon(owner: CodeModeRecord, error: String, rejection: CodeModeNativeRejection?) =
+        placement.abandon(owner, error, rejection)
 
     private fun failure(message: String): TurnOutcome.Failure =
         TurnOutcome.Failure(

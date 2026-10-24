@@ -15,6 +15,7 @@ import splice.provider.codex.CodeModePending
 import splice.provider.codex.CodeModeRecord
 import splice.provider.codex.CodeModeRewrite
 import splice.provider.codex.CodexCodeModeHistoryCodec
+import splice.provider.codex.history.validation.CodeModeReplayValidation
 import splice.provider.codex.state.CodeModeExtraContent
 import splice.provider.codex.state.CodeModeExtraProof
 import splice.provider.codex.state.CodeModeHistoryIndex
@@ -26,13 +27,12 @@ import splice.provider.codex.state.native.CodeModeCanonicalRequests
 import splice.provider.codex.state.native.CodeModeLegacyCanonicalization
 import splice.upstream.RoundBody
 import splice.provider.codex.state.diagnostics.CodeModeProjectedRewrite as ProjectedRewrite
-
 internal class CodexCodeModeHistory(private val json: Json) {
     private val codec = CodexCodeModeHistoryCodec(json)
     private val canonicalizer = CodeModeCanonicalRequests(codec)
-    private val nativeReplayValidator = NativeReplayValidator()
     private val metadata = CodeModeMetadataValidator()
     private val ownership = CodeModeOwnership(codec)
+    private val nativeReplayValidator = CodeModeReplayValidation(codec, ownership)
     private val extras = CodeModeExtraContent(codec, ownership)
 
     fun anchoredBoundary(body: CodeModeBody, completed: List<CodeModeRecord>): CodeModeInputBoundary? =
@@ -144,15 +144,8 @@ internal class CodexCodeModeHistory(private val json: Json) {
             ?: "code-mode logical history does not match its persisted baseline".takeUnless {
                 codec.validPrefix(input.logicalItems, record)
             }
-            ?: replayedMediaProblem(record, replayMedia)
+            ?: nativeReplayValidator.mediaProblem(record, replayMedia)
         return problem?.let { ProjectedRewrite(null, it) } ?: rewriteRecord(input, record)
-    }
-
-    private fun replayedMediaProblem(record: CodeModeRecord, replayMedia: Map<String, List<JsonElement>>): String? {
-        val changed = replayMedia.keys.firstOrNull { id ->
-            record.accepted.media(id)?.let { captured -> captured != replayMedia.getValue(id) } == true
-        } ?: return null
-        return "code-mode result '$changed' is replayed with media that differ from what its record captured"
     }
 
     private fun rewriteRecord(input: ResponsesCodeModeInput, record: CodeModeRecord): ProjectedRewrite {
@@ -160,7 +153,9 @@ internal class CodexCodeModeHistory(private val json: Json) {
         val continuity = extras.replayIndexes(input.logicalItems, boundary, record)
         val retained = ownership.retained(input.logicalItems, record, continuity)
             ?: return ProjectedRewrite(null, "code-mode owned history appears before its persisted boundary")
-        opaqueProblem(input.logicalItems.drop(boundary), record)?.let { return ProjectedRewrite(null, it) }
+        nativeReplayValidator.opaqueProblem(input.logicalItems.drop(boundary), record)?.let {
+            return ProjectedRewrite(null, it)
+        }
         // V4-179: the record's follow-ups (each accepted result's images, in acceptance order) ride
         // ONCE, right after the canonical custom output — the same place the ordinary path puts a
         // tool_result's images, after its function_call_output — whether this is the live
@@ -239,37 +234,6 @@ internal class CodexCodeModeHistory(private val json: Json) {
             if (!present) merged += ResponsesCodeModeReplay(offset, null, items)
         }
         return ReplayRewrite(merged.sortedBy(ResponsesCodeModeReplay::logicalOffset))
-    }
-
-    private fun opaqueProblem(items: List<JsonElement>, record: CodeModeRecord): String? {
-        val found = items.filter { ownership.isOpaque(it, record.origin.outerCallId) }
-        if (found.isEmpty()) return null
-        val output = codec.customOutput(record)
-        val replayed = listOf(CodeModeCallReplay.item(record), output) + record.progress.nativeNotifications
-        val initial = listOf(record.origin.outer, output) + record.progress.nativeNotifications
-        return if (found == replayed || found == initial) {
-            null
-        } else {
-            "code-mode opaque history conflicts with its persisted result"
-        }
-    }
-}
-
-private class NativeReplayValidator {
-    fun conflictsWithBaseline(
-        segment: ResponsesCodeModeReplay,
-        boundary: Int,
-        allowed: Set<Pair<Int, List<JsonElement>>>,
-        expectedOffsets: Set<Int>,
-        sameId: Boolean,
-    ): Boolean {
-        val sameOffset = segment.logicalOffset in expectedOffsets
-        val unexpected = (segment.logicalOffset to segment.items) !in allowed
-        val precedesBoundary = segment.logicalOffset < boundary
-        val targetsBaseline = segment.callbackId == null && unexpected
-        val collides = sameId || sameOffset
-        val invalidPosition = collides || precedesBoundary
-        return targetsBaseline && invalidPosition
     }
 }
 

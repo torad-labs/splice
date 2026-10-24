@@ -10,7 +10,6 @@ import splice.core.turn.TurnOutcome
 import splice.provider.codex.CodeModeBody
 import splice.provider.codex.CodeModeRecord
 import splice.provider.codex.CodeModeRewrite
-import splice.provider.codex.CodeModeRunInput
 import splice.provider.codex.CodexCodeModeBridge
 import splice.provider.codex.CodexCodeModeTurn
 import splice.provider.codex.CodexCodeModeWire
@@ -110,3 +109,14 @@ internal class CodeModeRedirectablePost(
         return if (target is RoundBodyPost) target.postInto(posted, sink) else target.into(posted.text, sink)
     }
 }
+
+/** The complete client step handed to the serial turn coordinator. */
+internal data class CodeModeRunInput(
+    val turn: CodexCodeModeBridge.Turn,
+    val initialOuter: GatewayCustomCall?,
+    val disableParallel: Boolean,
+    val body: CodeModeBody,
+    val sink: WireSink,
+    val post: CodeModeUpstreamPost,
+    val recovery: CodeModeRecoveryHistory? = null,
+)

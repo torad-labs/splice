@@ -35,7 +35,6 @@ import java.nio.file.StandardOpenOption
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.atomic.AtomicInteger
 import splice.provider.codex.state.save.CodeModeSaveSnapshots.Cell as PreparedCell
-
 /**
  * V4-340: a head's code-mode state is one owner-only file per conversation in [dir], so a save writes the
  * conversations that changed and never the others. The single file every older daemon wrote,

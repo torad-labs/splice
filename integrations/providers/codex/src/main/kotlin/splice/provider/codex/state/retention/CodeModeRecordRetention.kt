@@ -1,170 +1,15 @@
-// NEW: closes parked cells — aged out, or evicted at capacity — so a client that never returned
-// cannot hold a worker slot for the rest of the day.
-//
-// V4-287: records expire 24 hours (the config's ttl) after their last use, on a timer. The sweep ran
-// only when the registry was built or a code-mode turn touched it, so a head that ran one script and
-// went idle kept the record, with the model's reasoning summaries in plaintext, for as long as the
-// daemon stayed up. Parking a cell is splice's own act, not a use, so it keeps the record's time.
-//
-// V4-337: the 24 hours run from the last use of the record's CONVERSATION, and what the head keeps
-// past its bounds goes a conversation at a time ([CodeModeRecordRetention]). A record that expired
-// alone took every later record of its conversation with it: they place on top of it.
-package splice.provider.codex
+package splice.provider.codex.state.retention
 
 import kotlinx.serialization.json.Json
-import splice.core.util.Cancellables
 import splice.core.util.LogSink
-import splice.core.util.SafeFailureText
-import splice.provider.codex.state.CodeModeCellRetention
+import splice.provider.codex.CodeModePhase
+import splice.provider.codex.CodeModeRecord
+import splice.provider.codex.CodeModeRecordSnapshot
+import splice.provider.codex.CodeModeRetention
 import splice.provider.codex.state.CodeModeExpiredHistory
 import splice.provider.codex.state.CodeModeSessionEnd
 import splice.provider.codex.state.collection.CodeModeRecordKeys
 import splice.provider.codex.state.lease.CodeModeSessionAlive
-import splice.provider.codex.state.retention.CodeModeRecordExpiry
-import splice.upstream.codemode.CodeModeCell
-import java.util.concurrent.Executors
-import java.util.concurrent.ScheduledFuture
-import java.util.concurrent.ScheduledThreadPoolExecutor
-import java.util.concurrent.TimeUnit
-import java.util.concurrent.locks.ReentrantLock
-import kotlin.concurrent.withLock
-import kotlin.time.Duration
-
-/** V4-287: the timer every code-mode registry sweeps on, one named daemon thread for all heads. */
-internal object CodeModeSweeps {
-    // The platform factory, as AsyncFileIo's lane: this timer owns only its name and daemon-ness.
-    private val threads = Executors.defaultThreadFactory()
-    private val timer = ScheduledThreadPoolExecutor(1) { task ->
-        threads.newThread(task).apply {
-            name = "splice-code-mode-sweep"
-            isDaemon = true
-        }
-    }.apply { removeOnCancelPolicy = true }
-
-    /** Runs [sweep] every [interval] until the returned future is cancelled. [sweep] must not throw:
-     *  an exception ends a periodic task in silence. */
-    fun every(interval: Duration, sweep: Runnable): ScheduledFuture<*> {
-        val ms = interval.inWholeMilliseconds
-        return timer.scheduleWithFixedDelay(sweep, ms, ms, TimeUnit.MILLISECONDS)
-    }
-}
-
-/** V4-287: one registry's sweep on [CodeModeSweeps]' timer, running while the registry keeps any
- *  record. It holds the registry's [monitor] for each sweep; [save] writes the registry's state. */
-internal class CodeModeTimedSweep(
-    private val monitor: ReentrantLock,
-    private val records: MutableList<CodeModeRecord>,
-    private val history: CodeModeExpiredHistory,
-    private val save: Runnable,
-    private val store: CodexCodeModeStore,
-    private val config: CodeModeBridgeConfig,
-    private val interval: Duration,
-) {
-    private val lifecycle = Any()
-    internal var running: ScheduledFuture<*>? = null
-        private set
-    private var terminal: Runnable? = null
-    private var released = false
-    internal var nativeOwned: CodeModeSweepOwnership? = null
-
-    /** A sweep changed the records and could not save them yet; the next sweep saves again. */
-    private var unsaved = false
-
-    /** Terminal retries save the final state without further TTL mutation, then release hot ownership. */
-    fun finish(settle: Runnable) = synchronized(lifecycle) {
-        if (released || terminal != null) return@synchronized
-        terminal = settle
-        sweep()
-        monitor.withLock { arm() }
-    }
-
-    /** Under [monitor]: starts the sweeps when a record is kept and none run. */
-    fun arm() {
-        val retained = records.isNotEmpty() || history.entries.isNotEmpty() || terminal != null ||
-            nativeOwned?.retained() == true
-        if (released) return
-        if (running == null && retained) running = CodeModeSweeps.every(interval) { sweep() }
-    }
-
-    private fun saveFinal() = monitor.withLock {
-        store.save(records, history.entries)
-        if (store.release()) {
-            records.clear()
-            history.entries.clear()
-        }
-    }
-
-    private fun empty(): Boolean = records.isEmpty() && history.entries.isEmpty() && nativeOwned?.retained() != true
-
-    /** One sweep: what the sweeper changed is saved, a save that fails is logged and made again at the
-     *  next sweep, and the sweeps stop once no record or expiry marker is kept. Never throws: a throw would end the
-     *  periodic task in silence. */
-    internal fun sweep() = synchronized(lifecycle) {
-        if (released) return@synchronized
-        Cancellables.runCatchingBestEffort {
-            unsaved = true
-            (terminal ?: save).run()
-            if (terminal != null) saveFinal()
-            unsaved = false
-        }.exceptionOrNull()?.let { failure ->
-            config.log(
-                "[code-mode] the timed sweep could not save into ${config.state.dir} " +
-                    "(${SafeFailureText.render(failure)}); it saves again at the next sweep",
-            )
-        }
-        monitor.withLock {
-            val clean = !unsaved && store.settled
-            val empty = empty()
-            if (empty && clean) {
-                running?.cancel(false)
-                running = null
-                released = terminal != null
-            }
-        }
-    }
-}
-
-/** Runs under the registry's monitor; it mutates the registry's own collections in place. */
-internal class CodexCodeModeSweeper(
-    private val config: CodeModeBridgeConfig,
-    private val records: MutableList<CodeModeRecord>,
-    private val cells: MutableMap<String, CodeModeCell>,
-    private val admissions: MutableMap<String, Long>,
-    private val history: CodeModeExpiredHistory,
-    private val closeSession: CodeModeSessionEnd,
-    private val retainedCells: CodeModeCellRetention,
-) {
-    private val expiry = CodeModeRecordExpiry(
-        config,
-        records,
-        cells,
-        admissions,
-        history,
-        closeSession,
-        retainedCells,
-    )
-
-    /** Expires records and reaps dead or over-age unknown parked cells; true when anything changed. */
-    fun sweep(key: String? = null, protectedKey: String? = null): Boolean =
-        expiry.expire(key) or retainedCells.sweep(key, protectedKey) or expireMarkers(key)
-
-    /** The keys neither an admission nor a sweep may retire: one being admitted, or one with a running cell. */
-    fun busyKeys(): Set<String> = records.filter {
-        it.id in admissions || retainedCells.running(
-            it,
-            splice.provider.codex.state.CodeModeCellProtection.SESSION_OWNED,
-        )
-    }
-        .mapTo(mutableSetOf(), CodeModeRecord::key)
-
-    /** Without an explicit count bound, old expiry evidence is bounded by the same configured lifetime. */
-    private fun expireMarkers(key: String?): Boolean {
-        val cutoff = config.clock.millis() - config.retention.ttl.inWholeMilliseconds
-        // why: every query runs this; the age test goes first because almost no marker is old enough, and it costs
-        // a long comparison where the key test costs a string comparison per marker.
-        return history.entries.removeAll { it.expiredAt < cutoff && (key == null || it.key == key) }
-    }
-}
 
 /** V4-337: which records the head keeps within [bounds], a conversation at a time. Runs under the
  *  registry's monitor; each record that goes is remembered in the expired history, as an expired one is.
@@ -366,7 +211,3 @@ internal class CodeModeRecordRetention(
 }
 
 private const val RECORD_ID_LOG_CHARS: Int = 8
-
-internal fun interface CodeModeSweepOwnership {
-    fun retained(): Boolean
-}

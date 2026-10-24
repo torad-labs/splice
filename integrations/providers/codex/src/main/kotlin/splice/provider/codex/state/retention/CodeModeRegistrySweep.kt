@@ -3,9 +3,7 @@ package splice.provider.codex.state.retention
 import splice.provider.codex.CodeModeBridgeConfig
 import splice.provider.codex.CodeModeExpiredSnapshot
 import splice.provider.codex.CodeModeRecord
-import splice.provider.codex.CodeModeRecordRetention
 import splice.provider.codex.CodexCodeModeStore
-import splice.provider.codex.CodexCodeModeSweeper
 import splice.provider.codex.state.CodeModeExpiredHistory
 import splice.provider.codex.state.CodeModeRegistryAccess
 import splice.provider.codex.stream.CodeModeNativeSessions

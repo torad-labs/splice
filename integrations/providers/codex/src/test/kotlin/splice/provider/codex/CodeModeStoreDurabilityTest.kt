@@ -11,6 +11,7 @@ import org.junit.jupiter.api.io.TempDir
 import splice.provider.codex.state.CodeModeExpiredHistory
 import splice.provider.codex.state.CodeModeStateDelta
 import splice.provider.codex.state.CodeModeStateJournal
+import splice.provider.codex.state.retention.CodeModeTimedSweep
 import splice.provider.codex.state.save.CodeModeStateWrite
 import java.io.IOException
 import java.nio.file.Files
@@ -28,7 +29,6 @@ import java.util.concurrent.locks.ReentrantLock
 import kotlin.concurrent.withLock
 import kotlin.time.Duration.Companion.hours
 import kotlin.time.Duration.Companion.milliseconds
-
 class CodeModeStoreDurabilityTest {
     @TempDir
     lateinit var dir: Path

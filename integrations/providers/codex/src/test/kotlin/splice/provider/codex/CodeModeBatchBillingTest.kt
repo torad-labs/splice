@@ -42,7 +42,12 @@ class CodeModeBatchBillingTest : CodeModeResponseBatchSupport() {
         val host = Host(callback = false, secondCallback = true)
         val manager = bridge(host)
         val terminal = CompletableDeferred<Unit>()
-        val ending = TurnOutcome.Failure("synthetic", cause = FailureCause.UPSTREAM_CONN_RESET, salvagedUsage = usage())
+        val ending = TurnOutcome.Failure(
+            "synthetic",
+            cause = FailureCause.UPSTREAM_CONN_RESET,
+            phase = FailurePhase.MID_OUTPUT,
+            salvagedUsage = usage(),
+        )
         val post = BatchPost(host, terminalGate = terminal, ending = ending)
         val sink = RecordingSink()
         manager.interceptor(turn(), disableParallel = false).intercept(BASE_REQUEST, sink, post).turn()

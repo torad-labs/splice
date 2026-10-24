@@ -84,7 +84,7 @@ internal class CodexCodeModeDriver(
             ?: return drive(context, initialOuter, body, sent.settled(context, context.link.post(body)))
         val admissionBody = CodeModeAdmissionBodies(wire).compact(context, body)
         val clientStart = sent.clientStart(context)
-        val round = streams.begin(context, body, post) { call ->
+        val round = streams.begin(context, admissionBody, post) { call ->
             driveProblem(context, listOf(call), call)?.let { error(it) }
             validation.outer(
                 call.copy(

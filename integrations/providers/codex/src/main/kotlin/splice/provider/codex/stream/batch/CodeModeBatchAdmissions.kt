@@ -3,12 +3,12 @@ package splice.provider.codex.stream.batch
 import kotlinx.serialization.json.JsonObject
 import splice.core.turn.GatewayCustomCall
 import splice.core.turn.TurnOutcome
-import splice.core.util.JsonScalars
 import splice.provider.codex.CodeModeContinuity
 import splice.provider.codex.CodeModeRecord
 import splice.provider.codex.CodexCodeModeRegistry
 import splice.provider.codex.state.CodeModeWeight
 import splice.provider.codex.stream.CodeModeStreamAdmission
+import splice.provider.codex.stream.source.CodeModeItemPrefix
 import splice.provider.codex.stream.source.CodeModeItemSeal
 
 /** Every queued item has a durable unstarted proof before its source cursor can become executable. */
@@ -64,13 +64,5 @@ internal class CodeModeBatchAdmissions(
         }
     }
 
-    private fun modelItems(outcome: TurnOutcome.Success): List<JsonObject> {
-        outcome.handoffs.nativeOutput?.let { return it }
-        val calls = outcome.handoffs.customCalls
-        val first = calls.firstOrNull() ?: return emptyList()
-        val after = outcome.handoffs.nativeAfterExec.orEmpty().filterIsInstance<JsonObject>()
-        val known = after.mapNotNull { item -> JsonScalars.str(item, "call_id")?.takeIf(String::isNotBlank) }.toSet()
-        return outcome.handoffs.nativePrefix.orEmpty() + first.raw + after +
-            calls.drop(1).filter { it.callId !in known }.map(GatewayCustomCall::raw)
-    }
+    private fun modelItems(outcome: TurnOutcome.Success): List<JsonObject> = CodeModeItemPrefix.items(outcome)
 }

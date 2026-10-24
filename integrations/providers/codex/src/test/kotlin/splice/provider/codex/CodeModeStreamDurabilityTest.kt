@@ -41,35 +41,41 @@ class CodeModeStreamDurabilityTest : CodeModeStatementStreamSupport() {
     @Test
     @Timeout(20)
     fun `an admitted retained round releases the raw body captured by admission`() {
-        val (round, body) = admittedRound()
+        val (round, body, manager) = admittedRound()
         try {
             assertTrue(round.ready.isCompleted, "the source is admitted but its round stays retained")
+            assertTrue(round.finished?.isActive == true, "the upstream reader must still own its admission factory")
             assertTrue(collected(body), "retained round still reaches its one-use admission request body")
-            assertTrue(round.ready.isCompleted, "collection must not require releasing the retained round")
+            assertTrue(round.finished?.isActive == true, "collection must not require ending the live reader")
         } finally {
             Reference.reachabilityFence(round)
+            Reference.reachabilityFence(manager)
+            manager.onHeadStop()
         }
     }
 
-    private fun admittedRound(): Pair<CodeModeLiveRound, WeakReference<String>> {
-        val body = "synthetic request body ".repeat(400_000)
+    private fun admittedRound(): RetainedAdmission = runBlocking {
+        // Large valid JSON whitespace exercises raw request retention without duplicating prompt data in the ledger.
+        val body = " ".repeat(RAW_BODY_PADDING_CHARS) + BASE_REQUEST
         val weak = WeakReference(body)
-        val config = CodeModeBridgeConfig({ error("runtime is not used by admission") }, stateLocation())
-        val registry = CodexCodeModeRegistry(config, Json, 1.hours)
-        val record = CodeModeRecords.of("admission-heap", 0).also { it.sourceState = CodeModeSourceState() }
-        val round = CodeModeLiveRound(
-            config,
-            registry,
-            CodexCodeModeWire(Json, {}),
-            CodeModeStreamAdmission {
-                check(body.length == 9_200_000)
-                record
-            },
+        val manager = bridge(CodeModeRawBodyFixture.runtime())
+        val outcome = manager.interceptor(turn(), disableParallel = false).intercept(
+            body,
             StepSink(),
-        )
-        runBlocking { round.switching.customToolSource(CustomToolSource.Started(outer(source = ""))) }
-        return round to weak
+            CodeModeRawBodyFixture.post(outer(source = "await tools.Read({});")),
+        ).turn()
+        assertTrue(outcome is TurnOutcome.Success && outcome.hasToolUse)
+        val key = stateFiles.records().first().getValue("key").jsonPrimitive.content
+        val record = manager.registry.recordsFor(key).single()
+        val round = checkNotNull(manager.driver.streams.find(record))
+        RetainedAdmission(round, weak, manager)
     }
+
+    private data class RetainedAdmission(
+        val round: CodeModeLiveRound,
+        val body: WeakReference<String>,
+        val manager: CodexCodeModeBridge,
+    )
 
     private fun collected(body: WeakReference<String>): Boolean {
         repeat(20) {
@@ -107,7 +113,19 @@ class CodeModeStreamDurabilityTest : CodeModeStatementStreamSupport() {
                 record
             },
         )
-        private val call = GatewayCustomCall(record.origin.outerCallId, CODE_MODE_TOOL_NAME, "", record.origin.outer)
+        private val call = GatewayCustomCall(
+            record.origin.outerCallId,
+            CODE_MODE_TOOL_NAME,
+            "",
+            JsonObject(
+                mapOf(
+                    "type" to JsonPrimitive("custom_tool_call"),
+                    "call_id" to JsonPrimitive(record.origin.outerCallId),
+                    "name" to JsonPrimitive(CODE_MODE_TOOL_NAME),
+                    "input" to JsonPrimitive(""),
+                ),
+            ),
+        )
 
         suspend fun begin() {
             capture.observe(CustomToolSource.Started(call))
@@ -123,7 +141,11 @@ class CodeModeStreamDurabilityTest : CodeModeStatementStreamSupport() {
                     false,
                     false,
                     Usage(),
-                    handoffs = RoundHandoffs(customCalls = listOf(call.copy(input = text))),
+                    handoffs = RoundHandoffs(
+                        customCalls = listOf(
+                            call.copy(input = text, raw = JsonObject(call.raw + ("input" to JsonPrimitive(text)))),
+                        ),
+                    ),
                 ),
             )
         }
@@ -257,3 +279,6 @@ class CodeModeStreamDurabilityTest : CodeModeStatementStreamSupport() {
         assertEquals(usage, restored.sourceState?.usage?.value())
     }
 }
+
+// The original admission regression retained a 9.2 MB request while its response reader stayed live.
+private const val RAW_BODY_PADDING_CHARS = 9_200_000

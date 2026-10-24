@@ -57,12 +57,15 @@ internal class CodeModeNativeObservation(
         cell.submitResults(results)
         if (initial && invocation.terminate) {
             initial = false
-            return cell.terminate().also { retained.completed(key, cellId, notificationCallId) }
+            return observed(cell.terminate())
         }
         initial = false
         val queued = deferred
         deferred = null
-        val step = queued ?: cell.observe(invocation.options.yieldTimeMs)
+        return observed(queued ?: cell.observe(invocation.options.yieldTimeMs))
+    }
+
+    private fun observed(step: CodeModeStep): CodeModeStep {
         if (step is CodeModeStep.Completed) retained.completed(key, cellId, notificationCallId)
         return step
     }

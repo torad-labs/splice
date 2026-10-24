@@ -46,6 +46,33 @@ class SessionsRoutesTest {
         assertEquals("gone", bare["availability"]?.jsonPrimitive?.content)
     }
 
+    // LAN share, milestone 6: a mirror of another machine's session is that session, named by its machine. Its
+    // record's cwd is "/" only because Claude Code wants one; the session's folder is on the other machine.
+    @Test
+    fun `a mirror of another machine's session is a row that names its machine and no folder here`(@TempDir dir: Path) {
+        Files.writeString(
+            dir.resolve("21.json"),
+            """{"pid":21,"sessionId":"s-21","name":"torad-server/rig-lead","kind":"splice-mirror",""" +
+                """"version":"splice-mirror/0.4.0","cwd":"/","updatedAt":${now - 5_000},""" +
+                """"messagingSocketPath":"/run/user/1000/cc-socks/21.sock"}""",
+        )
+        Files.writeString(
+            dir.resolve("22.json"),
+            """{"pid":22,"sessionId":"s-22","name":"tax-rounding","cwd":"/w/a","updatedAt":${now - 5_000}}""",
+        )
+        val registry =
+            SessionRegistry(sessionsDir = dir, routeOf = { SessionRoute.Unknown }, pidAlive = { true }, clock = { now })
+        val body = Json.parseToJsonElement(SessionsRoutes(registry, TestTranscripts()).sessionsJson()).jsonObject
+        val rows = body["sessions"]!!.jsonArray.map { it.jsonObject }
+            .associateBy { it["session_id"]?.jsonPrimitive?.content }
+        val mirror = rows.getValue("s-21")
+        assertEquals("torad-server", mirror["machine"]?.jsonPrimitive?.content)
+        assertEquals("torad-server/rig-lead", mirror["name"]?.jsonPrimitive?.content, "named as ListAgents names it")
+        assertEquals(JsonNull, mirror["cwd"], "its folder is on torad-server")
+        assertTrue("repo" !in mirror && mirror["project"].let { it == null || it == JsonNull }, "no project here")
+        assertEquals(null, rows.getValue("s-22")["machine"], "a session running here names no machine")
+    }
+
     @Test
     fun `sessions json names the listed versions a note is sent to, by peerProtocol 1 and 2-1-282 or later`(
         @TempDir dir: Path,

@@ -25,7 +25,7 @@ files:
   - "**/src/main/**/*.kt"
   - "**/src/main/**/*.kts"
 ignores:
-  - "app/src/main/kotlin/splice/app/share/ShareServer.kt"
+  - "features/share/src/main/kotlin/splice/share/ShareServer.kt"
 rule:
   pattern: embeddedServer($$$ARGS)
   not:

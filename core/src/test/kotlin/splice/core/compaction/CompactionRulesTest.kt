@@ -20,7 +20,11 @@ private const val MODEL_TEXT = "model instructions"
 private const val PROJECT_TEXT = "project instructions"
 private const val PROJECT_MODEL_TEXT = "project model instructions"
 
-class CompactionRulesTest(@param:TempDir private val dir: Path) {
+class CompactionRulesTest(@TempDir temp: Path) {
+
+    // why: a rule names its project by real path, as a session's cwd is. A Mac's temp folder is under /var, a link
+    // to /private/var, so the projects sit in the real path the way a configured one would be read.
+    private val dir: Path = temp.toRealPath()
 
     private val projectA: Path = Files.createDirectories(dir.resolve("work/alpha"))
     private val projectB: Path = Files.createDirectories(dir.resolve("work/beta"))

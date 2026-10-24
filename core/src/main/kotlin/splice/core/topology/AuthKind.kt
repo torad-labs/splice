@@ -100,6 +100,18 @@ public sealed class AuthKind(
         "Claude (client's own login)",
         codeModeDialect = null,
     )
+
+    /** LAN share (docs/specs/lan-share.md): a head another of the person's machines offers, relayed to that machine,
+     *  where it runs on that machine's login. This machine holds only the token it was given when it joined, in
+     *  `<state>/share/remotes.json`, named by `auth.remote`; `splice remote` joins, so there is no sign-in here and
+     *  nothing to refresh. */
+    public data object SpliceRemote : AuthKind(
+        "splice-remote",
+        null,
+        isOAuth = false,
+        "Another of your machines (splice remote)",
+        codeModeDialect = null,
+    )
 }
 
 /** Api-key heads stay unregistered on AuthKind. [ApiKeyProviderRow.id] and
@@ -150,6 +162,7 @@ public object AuthKindRegistry {
         AuthKind.KimiOAuth,
         AuthKind.MuseOAuth,
         AuthKind.Client,
+        AuthKind.SpliceRemote,
     )
 
     /** The registered schemes. Exposed so compatibility matrices derive their denominator from the
@@ -187,6 +200,7 @@ public object AuthCompatibility {
         AuthKind.KimiOAuth -> dialect == Dialect.ANTHROPIC_PASSTHROUGH && provider == "kimi"
         AuthKind.MuseOAuth -> museDialectAllowed(dialect, provider)
         AuthKind.Client -> dialect == Dialect.ANTHROPIC_PASSTHROUGH
+        AuthKind.SpliceRemote -> dialect == Dialect.ANTHROPIC_PASSTHROUGH
     }
 
     private fun museDialectAllowed(dialect: Dialect, provider: String): Boolean =

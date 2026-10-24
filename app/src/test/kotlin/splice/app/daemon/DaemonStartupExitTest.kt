@@ -17,7 +17,6 @@ import org.junit.jupiter.api.io.TempDir
 import splice.app.STOP_DEADLINE_MS
 import splice.app.TEARDOWN_TAIL_GRACE_MS
 import splice.core.testing.TestPorts
-import java.net.ServerSocket
 import java.nio.file.Path
 import java.util.concurrent.TimeUnit
 
@@ -90,5 +89,5 @@ class DaemonStartupExitTest {
         }
     }
 
-    private fun portIsFree(port: Int): Boolean = runCatching { ServerSocket(port).close() }.isSuccess
+    private fun portIsFree(port: Int): Boolean = !TestPorts.listening(port)
 }

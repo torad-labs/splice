@@ -30,9 +30,15 @@ internal fun interface HeadPortBindable {
     fun on(port: Int): Boolean
 }
 
+// why: the JDK opens a ServerSocket with SO_REUSEADDR on, and on a Mac (BSD rules) that lets a bind to 127.0.0.1
+// succeed beside another program's listener on the wildcard address, whose loopback traffic the head would then
+// take. With it off, any listener a head's 127.0.0.1 would overlap refuses the bind, on Linux and on a Mac.
 internal val jdkPortBindable = HeadPortBindable { port ->
     try {
-        ServerSocket().use { socket -> socket.bind(InetSocketAddress("127.0.0.1", port)) }
+        ServerSocket().use { socket ->
+            socket.reuseAddress = false
+            socket.bind(InetSocketAddress("127.0.0.1", port))
+        }
         true
     } catch (_: java.io.IOException) {
         false
@@ -260,8 +266,7 @@ internal class AddPrepare(
         return when {
             profile.baseUrl.isNullOrEmpty() -> AddRefusal.BaseUrlRequired(profile.name)
             rows != null -> AddRefusal.Models(rows)
-            !addValuePattern.matches(profile.baseUrl) || !addValuePattern.matches(profile.head.command) ->
-                AddRefusal.QuotedValue
+            profile.quoted -> AddRefusal.QuotedValue
             else -> null
         }
     }

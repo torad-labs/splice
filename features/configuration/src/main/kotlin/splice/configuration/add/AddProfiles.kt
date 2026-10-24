@@ -71,6 +71,16 @@ public data class AddProfile internal constructor(
     /** What added the row, named in its TOML comment and the verb's title. */
     internal val origin: String get() = labels.origin ?: "splice add $name"
 
+    /** Whether a value would end its line in splice.toml and start another: the base URL, the command and the family,
+     *  each written inside quotes, with a quote, a backslash or a control character, or a tier name, written as a key,
+     *  that is not a bare one. On an import the family and the tiers are what another machine described (round 13 of
+     *  PR #419's review). */
+    internal val quoted: Boolean get() {
+        val values = listOfNotNull(baseUrl, head.command, provider.family)
+        val tiers = models.flatMap { it.slots }
+        return values.any { !addValuePattern.matches(it) } || tiers.any { !addKeyPattern.matches(it) }
+    }
+
     /** The models this profile writes by default, as a picker offers them (setup, spec section 1). */
     public val modelChoices: List<AddModelChoice>
         get() = models.map { AddModelChoice(it.id, it.label, it.contextWindow) }
@@ -90,6 +100,10 @@ public data class AddProviderSpec internal constructor(
     internal val requiresKey: Boolean = authKind == API_KEY,
     /** Extra provider lines, already valid TOML (a default vendor header, for one). */
     internal val extra: List<String> = emptyList(),
+    /** A `splice-remote` provider's machine: the `[remotes]` key its `auth.remote` names. */
+    internal val authRemote: String? = null,
+    /** The family the provider is written with, for one whose own auth names none (a head another machine shares). */
+    internal val family: String? = null,
 )
 
 /** The head a profile adds: the [key] it is known by (provider AND head key) and the wrapper [command] that
@@ -155,11 +169,8 @@ public class AddProfiles {
         family: String? = null,
     ): String {
         val models = profile.models
-        val auth = if (profile.provider.authKind == API_KEY) {
-            """auth = { kind = "api-key", env = "${apiKeyEnv(key)}" }"""
-        } else {
-            """auth = { kind = "${profile.provider.authKind}" }"""
-        }
+        val spec = profile.provider
+        val auth = authLine(spec, key)
         val on = shared?.let { ", a command on [providers.$it]" }.orEmpty()
         val origin = listOf("", "# Added by `${profile.origin}`$on.")
         val tables = listOf(
@@ -176,7 +187,7 @@ public class AddProfiles {
             ) + m.clientModel?.let { listOf("client_model = \"$it\"") }.orEmpty() +
                 m.compactionReserve?.let { listOf("compaction_reserve_tokens = $it") }.orEmpty() + m.ratesLine()
         }
-        val kin = family?.let { listOf("[providers.$key.discovery]", "family = \"$it\"") }.orEmpty()
+        val kin = (family ?: spec.family)?.let { listOf("[providers.$key.discovery]", "family = \"$it\"") }.orEmpty()
         val provider = origin + (tables + kin).takeIf { shared == null }.orEmpty()
         val mappings = models.flatMap { m -> m.slots.map { slot -> m.id to slot } }
         val pinned = models.first()
@@ -192,6 +203,13 @@ public class AddProfiles {
             "command = \"${profile.head.command}\"",
         )
         return (provider + head).joinToString("\n") + "\n"
+    }
+
+    /** The provider's `auth` line: an api-key provider's env var, a remote's machine, else the kind alone. */
+    private fun authLine(spec: AddProviderSpec, key: String): String = when {
+        spec.authKind == API_KEY -> """auth = { kind = "api-key", env = "${apiKeyEnv(key)}" }"""
+        spec.authRemote != null -> """auth = { kind = "${spec.authKind}", remote = "${spec.authRemote}" }"""
+        else -> """auth = { kind = "${spec.authKind}" }"""
     }
 
     /** Discovery and tier-table profiles keep row windows and map tiers separately. Other profiles keep their

@@ -13,6 +13,8 @@
 // <head>`, is not ours. argv[0] is caller-supplied and is not consulted. pgrep only pre-filters.
 // The liveness re-check is the same identity read, so a zombie (empty cmdline) counts as gone.
 // On macOS a narrow CLI helper inspects ProcessHandle argv and validates launcher ownership records.
+// It is splice's own CLI, so it runs on the java the shim runs splice on (SPLICE_JAVA, else java on PATH),
+// and is told the same resolved jar to match, ahead of the heads.
 // An unknown origin is foreign, never permission to cancel. A failed helper refuses a duplicate login.
 //
 // ORIGIN: the hook cancels only what a hook started. Every login the hook spawns carries
@@ -113,7 +115,7 @@ internal object LoginHookPending {
           if [ "$d(uname -s)" = Darwin ]; then
             restarted=''
             jar="$d{SPLICE_JAR:-$d{SPLICE_SHARE_DIR:-${d}HOME/.local/share/splice}/splice.jar}"
-            pending="$d(java -jar "${d}jar" pending-login $heads)" || pending=Stuck
+            pending="$d("$d{SPLICE_JAVA:-java}" -jar "${d}jar" pending-login "${d}jar" $heads)" || pending=Stuck
             case "${d}pending" in
               Clear) ;;
               Restarted) restarted=1 ;;

@@ -42,13 +42,20 @@ internal class ModelsProbe(
 
     fun probe(key: String, provider: ProviderConfig, env: EnvReader): ProbedProvider {
         val url = provider.rosterUrl
-        if (provider.auth.kind == AuthKind.Client.wire) {
-            val why = "this provider forwards your own Claude login, so splice holds no credential to ask $url with"
-            return unpublished(key, provider, url, why)
-        }
+        unasked(provider, url)?.let { return unpublished(key, provider, url, it) }
         val bearer = credentials.bearer(provider, key, env)
         val answer = http(url, headers(provider, bearer))
         return ProbedProvider(key, provider, url, read(answer, url, provider, key, bearer != null))
+    }
+
+    /** Why [provider] is not asked for its list from here, or null when it is. */
+    private fun unasked(provider: ProviderConfig, url: String): String? = when (provider.auth.kind) {
+        AuthKind.Client.wire ->
+            "this provider forwards your own Claude login, so splice holds no credential to ask $url with"
+        AuthKind.SpliceRemote.wire ->
+            "this provider relays to ${provider.auth.remote}, whose head lists its models; the daemon reads them " +
+                "from there every hour, and `splice remote sync` rewrites them here"
+        else -> null
     }
 
     private fun unpublished(key: String, provider: ProviderConfig, url: String, why: String) =

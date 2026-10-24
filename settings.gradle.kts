@@ -51,6 +51,7 @@ include(
     ":features-diagnostics",
     ":features-launch",
     ":features-configuration",
+    ":features-share",
     ":app",
     ":quality-architecture",
     ":quality-compiler-plugin",
@@ -89,6 +90,7 @@ project(":features-lifecycle").projectDir = file("features/lifecycle")
 project(":features-diagnostics").projectDir = file("features/diagnostics")
 project(":features-launch").projectDir = file("features/launch")
 project(":features-configuration").projectDir = file("features/configuration")
+project(":features-share").projectDir = file("features/share")
 project(":app").projectDir = file("app")
 project(":quality-architecture").projectDir = file("quality/architecture")
 project(":quality-compiler-plugin").projectDir = file("quality/compiler-plugin")

@@ -29,6 +29,7 @@ import splice.head.compaction.CompactionTail
 import splice.head.compaction.SessionProjectLookup
 import splice.head.turn.LiveTurns
 import splice.head.wire.WireTap
+import splice.share.remote.RemoteLinks
 import splice.upstream.Provider
 import splice.upstream.retry.InflightGate
 import splice.usage.budgets.BudgetPlans
@@ -60,6 +61,10 @@ internal class HeadServerFactory(
     /** Assigned beside [credentialAccountNames]: hears each head's sent credential digests under that head's key and
      *  the session each request named. */
     internal var sentCredentials: HeadSentCredentials = HeadSentCredentials { _, _, _ -> }
+
+    /** LAN share: the machines this one joined (`[remotes]`), assigned beside the two above; a `splice-remote` head's
+     *  upstream trusts only the certificate its machine's entry pins (UpstreamFactory). */
+    internal var remotes: RemoteLinks? = null
 
     // v0.4.0: what a launched session holds, derived from the management key (see [TurnKey]).
     private val turnKey = TurnKey(mgmtKey)
@@ -124,7 +129,7 @@ internal class HeadServerFactory(
                 ),
                 traffic = HeadDeps.HeadTraffic(
                     watchdog = ctx.faultPlan.liveWatchdog,
-                    upstream = upstreamFactory.upstreamFor(ctx, cfg, log, stores.providerHold),
+                    upstream = upstreamFactory.upstreamFor(ctx, cfg, log, stores.providerHold, remotes),
                     // Re-read per head on EVERY admission (still hot-resizable): the ceiling belongs to
                     // the upstream ACCOUNT, not the gateway. One shared value meant a workflow fan-out
                     // admitted 100 concurrent streams into a single account, 429'd, and armed the shared

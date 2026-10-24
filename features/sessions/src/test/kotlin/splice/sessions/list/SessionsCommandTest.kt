@@ -315,6 +315,29 @@ class SessionsCommandTest {
         assertFalse(beta.contains("pinned"), beta)
     }
 
+    // LAN share, round 14 of PR #419's review: a session of another machine, mirrored here so ListAgents lists it and
+    // SendMessage reaches it, is listed as that machine's, never as one running here: no head, no folder of this
+    // machine's, and the pid of the process that holds its record is not named as a session's.
+    @Test
+    fun `another machine's session is listed as that machine's, with its address, and nothing of this one's`(
+        @TempDir dir: Path,
+    ) {
+        Files.writeString(
+            dir.resolve("31.json"),
+            """{"pid":31,"sessionId":"s-far","name":"torad-server/rig-lead","kind":"splice-mirror","status":"idle",""" +
+                """"updatedAt":$now,"cwd":"/anchor/folder","messagingSocketPath":"/tmp/cc-socks/31.sock"}""",
+        )
+        val registry = SessionRegistry(dir, { SessionRoute.Unknown }, pidAlive = { true }, clock = { now })
+
+        val lines = capture { sessionsCommand().sessions({ null }, registry) { now } }.lines()
+
+        val row = lines.first { "torad-server/rig-lead" in it && "SendMessage" !in it }
+        assertTrue("runs on torad-server" in row, row)
+        assertFalse("unknown head" in row, row)
+        assertFalse("/anchor/folder" in row, row)
+        assertTrue(lines.any { "SendMessage(to=\"torad-server/rig-lead\")" in it }, "it can be messaged: $lines")
+    }
+
     private fun sessionsCommand() = SessionsCommand(TerminalOutput(::println), TerminalOutput(System.err::println))
 
     private fun capture(block: () -> Boolean): String {

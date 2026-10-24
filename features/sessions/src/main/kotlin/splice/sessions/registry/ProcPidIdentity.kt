@@ -29,8 +29,9 @@ internal class ProcPidIdentity(
     private val startedAtOf: PidStartedAt = PidStartedAt { pid ->
         ProcessHandle.of(pid).flatMap { it.info().startInstant() }.map { it.toEpochMilli() }.orElse(null)
     },
+    /** The Mac's ps; a test of a Linux tree passes one that is not here, so its tree decides on a Mac too. */
+    private val darwin: DarwinPs = DarwinPs(),
 ) : PidIdentity {
-    private val darwin = DarwinPs()
 
     private val domain: String? by lazy {
         val machineId = read(machineIdFile)?.trim()?.takeIf { it.isNotEmpty() }
@@ -39,6 +40,8 @@ internal class ProcPidIdentity(
     }
 
     override fun hostDomain(): String? = domain ?: darwin.domain()
+
+    override fun hosts(domain: String): Boolean = domain == hostDomain() || this.domain == null && darwin.spells(domain)
 
     override fun procStart(pid: Long): String? {
         if (darwin.here) return darwin.lstart(pid)

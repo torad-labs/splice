@@ -23,12 +23,17 @@ class ConfiguredSliceTest {
     private val log = StringBuilder()
     private val sink = LogSink { synchronized(log) { log.append(it) } }
 
+    // why: a slice is the Linux host's, where systemd answers the cap. McpContainment picks the macOS bound by the
+    // os.name it runs under, so the host is named here, and the suite asserts the same thing on a Mac.
+    private fun containment(cap: SliceMemoryCap) =
+        McpContainment(sink, slice = "my-mcp.slice", cap = cap, darwin = null)
+
     // Mutant: keep reading the constant inside McpContainment. The operator sets the knob, the
     // console shows it set, and every child still lands in a slice nobody declared — a configured
     // value that changes nothing is worse than no knob, because it reads as done.
     @Test
     fun `the configured slice is the one the child is spawned into`() {
-        val placed = McpContainment(sink, slice = "my-mcp.slice", cap = { "8589934592" }).placed(COMMAND)
+        val placed = containment { "8589934592" }.placed(COMMAND)
 
         assertEquals(
             listOf("systemd-run", "--user", "--scope", "--quiet", "--slice=my-mcp.slice", "--") + COMMAND,
@@ -52,7 +57,7 @@ class ConfiguredSliceTest {
     // buy the containment claim that the ceiling buys.
     @Test
     fun `naming a slice does not make it containment`() {
-        val placed = McpContainment(sink, slice = "my-mcp.slice", cap = { "infinity" }).placed(COMMAND)
+        val placed = containment { "infinity" }.placed(COMMAND)
 
         assertEquals(COMMAND, placed, "an uncapped slice must leave the command unplaced")
         assertTrue(log.toString().contains("my-mcp.slice declares no memory ceiling"), log.toString())

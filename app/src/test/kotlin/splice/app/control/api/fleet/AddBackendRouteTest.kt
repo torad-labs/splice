@@ -63,6 +63,7 @@ import splice.core.head.GateSlot
 import splice.core.head.Head
 import splice.core.head.HeadHealth
 import splice.core.terminal.TerminalOutput
+import splice.core.testing.TestPorts
 import splice.core.topology.ProviderConfig
 import splice.core.topology.Topology
 import splice.core.util.EnvReader
@@ -74,7 +75,6 @@ import splice.usage.quota.HeadUsageSource
 import splice.usage.quota.RateLimitView
 import splice.usage.quota.UsageView
 import java.net.InetSocketAddress
-import java.net.ServerSocket
 import java.nio.file.Files
 import java.nio.file.Path
 import java.util.concurrent.ConcurrentHashMap
@@ -509,7 +509,7 @@ class AddBackendRouteTest {
     private suspend fun awaitPort() {
         val deadline = System.nanoTime() + TIMEOUT_MS * 1_000_000
         while (System.nanoTime() < deadline) {
-            if (runCatching { ServerSocket(control.listeningPort).close() }.isFailure) return
+            if (TestPorts.listening(control.listeningPort)) return
             delay(POLL_MS)
         }
         error("the control server never bound :${control.listeningPort}")

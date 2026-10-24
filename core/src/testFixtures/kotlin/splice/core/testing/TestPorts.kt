@@ -24,6 +24,7 @@ import java.io.File
 import java.net.InetAddress
 import java.net.InetSocketAddress
 import java.net.ServerSocket
+import java.net.Socket
 import java.nio.channels.FileChannel
 import java.nio.file.Files
 import java.nio.file.Path
@@ -46,6 +47,9 @@ object TestPorts {
     private const val MIN_RANGE = 1_000
 
     private const val ATTEMPTS = 200
+
+    /** A loopback connect is answered or refused at once; this bounds only a machine too loaded to answer. */
+    private const val CONNECT_TIMEOUT_MS = 1_000
 
     private val EPHEMERAL_RANGE_FILE = File("/proc/sys/net/ipv4/ip_local_port_range")
 
@@ -116,9 +120,21 @@ object TestPorts {
     fun lockFile(port: Int): Path = lockDir.resolve("$port.lock")
 
     /** Whether [port] binds on loopback, where every splice server listens. A plain bind with no
-     *  connection leaves nothing in TIME_WAIT, so the port is free again the moment this returns. */
+     *  connection leaves nothing in TIME_WAIT, so the port is free again the moment this returns. SO_REUSEADDR
+     *  is off because the JDK turns it on, and on a Mac (BSD rules) it lets this bind succeed beside another
+     *  program's listener on the wildcard address, which would then answer the test's loopback calls. */
     private fun bindable(port: Int): Boolean = runCatching {
-        ServerSocket().use { it.bind(InetSocketAddress(InetAddress.getLoopbackAddress(), port)) }
+        ServerSocket().use { socket ->
+            socket.reuseAddress = false
+            socket.bind(InetSocketAddress(InetAddress.getLoopbackAddress(), port))
+        }
+    }.isSuccess
+
+    /** Whether a server accepts connections on loopback [port]: what a test waits on before it calls a
+     *  server it started, and after one stops. Asked by connecting, never by binding: on a Mac a wildcard
+     *  bind succeeds beside a listener on 127.0.0.1, so a bind that fails or succeeds proves nothing there. */
+    fun listening(port: Int): Boolean = runCatching {
+        Socket().use { it.connect(InetSocketAddress(InetAddress.getLoopbackAddress(), port), CONNECT_TIMEOUT_MS) }
     }.isSuccess
 
     /** The ephemeral range's start, refusing a machine that leaves too few test ports below it. */

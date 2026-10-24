@@ -55,6 +55,13 @@ ktor-server-netty = { module = "io.ktor:ktor-server-netty", version.ref = "ktor"
 # inherited descriptor, and the classifier is linux-x86_64 because socket activation is systemd, so Linux, only.
 netty-transport-native-epoll = { module = "io.netty:netty-transport-native-epoll", version.ref = "netty" }
 ktor-server-sse = { module = "io.ktor:ktor-server-sse", version.ref = "ktor" }
+# LAN share (docs/specs/lan-share.md, milestone 2): mints the share listener's self-signed EC certificate with the JDK's
+# own crypto, no BouncyCastle. Apache-2.0, as all of ktor; its jar and module are in verification-metadata.xml.
+ktor-network-tls-certificates = { module = "io.ktor:ktor-network-tls-certificates", version.ref = "ktor" }
+# LAN share (docs/specs/lan-share.md, milestone 5): advertises `_splice._tcp` while this machine shares, and browses for
+# it in `splice remote` and the Sharing page. Pure Java multicast DNS, Apache-2.0 (Marcos approved it 2026-10-22); its one
+# runtime dependency, slf4j-api, already arrives under ktor. Its jar and POM are in verification-metadata.xml.
+jmdns = { module = "org.jmdns:jmdns", version = "3.6.4" }
 ktor-server-test-host = { module = "io.ktor:ktor-server-test-host", version.ref = "ktor" }
 ktor-client-core = { module = "io.ktor:ktor-client-core", version.ref = "ktor" }
 ktor-client-cio = { module = "io.ktor:ktor-client-cio", version.ref = "ktor" }

@@ -19,6 +19,8 @@ import splice.lifecycle.upgrade.AutoUpdateSettings
 import splice.lifecycle.upgrade.ConsoleUpgradeStatus
 import splice.lifecycle.upgrade.UpgradeChecks
 import splice.lifecycle.upgrade.UpgradeStatus
+import splice.share.ShareListener
+import splice.share.remote.RemoteLinks
 import splice.topology.TopologyLoader
 import java.nio.file.Path
 
@@ -69,6 +71,9 @@ internal object ConsolePortsWiring {
         // accounts".
         srv.ports.accounts = ConsoleAccountsImpl()
 
+        // LAN share: the Sharing page reads and turns the listener the daemon built; unassigned, its rows answer 503.
+        srv.ports.sharing = topology.sharing?.let { SharingParts(it, topology.remotes, booted = topology.path) }
+
         // V4-220 item 3: the SAME keys.toml every api-key head reads (ApiKeyAuthProvider's default is
         // KeyStorePath.defaultPath() over this process's environment), so a console PUT lands in the
         // file those heads read on their next request. Its unreadable-store line goes to the daemon log.
@@ -85,3 +90,20 @@ internal object ConsolePortsWiring {
         topology.path?.let { LifecycleWiring.autoUpdate(upgradeRuns, it, log).start() }
     }
 }
+
+/** This machine's share listener, and the machines it joined (null where no daemon built them): what the Sharing page's
+ *  rows read and turn (LAN share, milestone 4), a port of ConsolePorts assigned after the server is built. [env] is the
+ *  daemon's: where the state folder is, and splice.toml where the daemon booted none. [booted] is the splice.toml the
+ *  daemon booted, whatever file [env] names (round 14 of PR #419's review): the one its links and switches read. */
+internal data class SharingParts(
+    val listener: ShareListener,
+    val remotes: RemoteLinks?,
+    val env: EnvReader = EnvReader(System::getenv),
+    val booted: Path? = null,
+) {
+    /** [env] naming [booted] as splice.toml: where every row reads and writes the file and the state folder. */
+    val daemonEnv: EnvReader = booted?.let { path -> EnvReader { if (it == CONFIG_VAR) "$path" else env(it) } } ?: env
+}
+
+// why: the variable splice.toml's path is read from (TopologyLoader.configPath), set to the file the daemon booted.
+private const val CONFIG_VAR = "SPLICE_CONFIG"

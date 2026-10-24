@@ -23,7 +23,7 @@ import splice.sessions.note.PeerTargets
 import splice.sessions.note.PeerWire
 import splice.sessions.peer.InboundFrame
 import splice.sessions.peer.InboxHandler
-import splice.sessions.peer.journal.PeerInbox
+import splice.sessions.peer.PeerConnections
 import java.io.ByteArrayOutputStream
 import java.nio.ByteBuffer
 import java.nio.channels.ServerSocketChannel
@@ -49,7 +49,7 @@ private enum class ConnectionAuth { TOKEN, NONE, BAD }
 public class PeerInboxServer(
     private val server: ServerSocketChannel,
     private val token: String,
-    private val inbox: PeerInbox,
+    private val inbox: PeerConnections,
     private val targets: PeerTargets,
     private val log: HelperLog,
     private val io: CoroutineDispatcher,

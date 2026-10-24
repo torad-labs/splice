@@ -337,7 +337,7 @@ private class TopologyChecks(
 
     fun findings(): List<TopologyFinding> =
         references() + auth() + ports() + (if (withRosters) rosters() else statics()) + knobs() + prompts() +
-            compaction() + channel() + topology.share.findings(topology)
+            compaction() + channel() + topology.share.findings(topology) + RemoteFindings(topology).all()
 
     /** An auth kind its provider's dialect cannot carry, asked the way head assembly asks it ([AuthCompatibility]), so
      *  the pairing refuses boot with every other finding instead of skipping that head behind a running daemon. */

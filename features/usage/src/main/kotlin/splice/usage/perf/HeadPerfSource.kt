@@ -125,6 +125,9 @@ public data class PerfTranscriptLink(
     /** The hash of the request's messages (LiveTurns' MessagesHash): a request splice cut when it restarted and the
      *  client's re-send of it carry the same one in the same session, which is how Requests links the two. */
     val messagesHash: String? = null,
+    /** LAN share: the joined machine that relayed the turn here, which holds that transcript; null for a turn sent
+     *  on this machine. */
+    val from: String? = null,
 )
 
 /** What one coherent read of the perf files yields for a window (v0.4.0, FEATURES.md §3). */

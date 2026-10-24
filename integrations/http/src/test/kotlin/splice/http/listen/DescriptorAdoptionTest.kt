@@ -23,6 +23,8 @@ import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.Timeout
 import org.junit.jupiter.api.assertInstanceOf
 import org.junit.jupiter.api.assertThrows
+import org.junit.jupiter.api.condition.EnabledOnOs
+import org.junit.jupiter.api.condition.OS
 import splice.core.memory.HeapBudget
 import splice.http.ingress.HeapIngress
 import splice.http.ingress.IngressErrorBody
@@ -38,6 +40,9 @@ private const val GRACE_MS = 100L
 private const val TIMEOUT_MS = 15_000L
 private const val QUIET_MS = 1_500
 
+// why: the handover is systemd's and runs on epoll, so it exists on Linux alone. A Mac has neither, and refusing it
+// there in words is ListenerInventoryTest's case.
+@EnabledOnOs(OS.LINUX)
 @Timeout(60)
 class DescriptorAdoptionTest {
 

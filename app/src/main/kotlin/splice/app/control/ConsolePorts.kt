@@ -52,6 +52,10 @@ import java.nio.file.Path
  *  A DEFAULT INSTANCE IS NOT AVAILABLE for any of these: the one time one was, a fresh event bus here meant the
  *  route streamed a daemon that looked quiet forever while every head reported to a different bus. */
 public class ConsolePorts {
+    /** LAN share: the share listener and the machines this one joined, for the Sharing page (SharingRoutes). Null in
+     *  a daemon that built no listener, and every Sharing row then answers a named 503. */
+    internal var sharing: SharingParts? = null
+
     /** Optional local tool callbacks. Unwired keeps the existing unknown or stale session policy. */
     public var foreground: ForegroundToolActivity? = null
 

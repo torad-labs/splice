@@ -20,6 +20,12 @@ import kotlin.concurrent.withLock
 
 private val CONTROL_FRAMES = setOf("session-open", "session-close", "close")
 
+// why: the isolate reports a stack overflow it cannot raise as a RangeError, such as one in its own parse of a long
+// member chain, as an exhausted resource with this message; a guest heap past its cap says "Garbage-collected heap
+// size exceeded" instead (both measured Oct 23). The overflow is the program's, so it ends as the engine's stack error.
+private const val ENGINE_STACK_OVERFLOW = "Resource exhausted: Stack overflow"
+private const val GUEST_STACK_ERROR = "RangeError: Maximum call stack size exceeded"
+
 internal object SharedCodeModeWorker {
     fun run(input: DataInputStream, output: DataOutputStream) {
         HostWorkerDispatcher(output).use { host ->
@@ -146,17 +152,22 @@ private class HostWorkerCell(private val engine: Engine, val owner: Long) : Auto
         } catch (_: IllegalArgumentException) {
             CodeModeFatalFrame.create(CodeModeInfrastructureCategory.PROTOCOL, CodeModeInfrastructureClass.RUNTIME)
         } catch (error: PolyglotException) {
-            if (error.isResourceExhausted) {
-                CodeModeWire.completedFrame("", "Code-mode guest heap exhausted")
-            } else {
-                CodeModeFatalFrame.create(CodeModeInfrastructureCategory.HOST, CodeModeInfrastructureClass.RUNTIME)
-            }
+            engineFailure(error)
         } catch (_: RuntimeException) {
             CodeModeFatalFrame.create(CodeModeInfrastructureCategory.HOST, CodeModeInfrastructureClass.RUNTIME)
         } catch (failure: VirtualMachineError) {
             // An uncaught error would end the task with no reply and leave the host waiting on this request.
             CodeModeFatalFrame.died(failure)
         }
+    }
+
+    /** An exhausted resource ends the program: a stack overflow as the engine's stack error, anything else as its
+     *  heap. Any other engine failure is the host's. */
+    private fun engineFailure(error: PolyglotException): JsonObject = when {
+        !error.isResourceExhausted ->
+            CodeModeFatalFrame.create(CodeModeInfrastructureCategory.HOST, CodeModeInfrastructureClass.RUNTIME)
+        error.message == ENGINE_STACK_OVERFLOW -> CodeModeWire.completedFrame("", GUEST_STACK_ERROR)
+        else -> CodeModeWire.completedFrame("", "Code-mode guest heap exhausted")
     }
 
     private fun answer(frame: JsonObject): JsonObject {

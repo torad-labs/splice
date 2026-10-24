@@ -62,13 +62,13 @@ import splice.core.config.MgmtKey
 import splice.core.config.StatePaths
 import splice.core.head.Head
 import splice.core.head.HeadHealth
+import splice.core.testing.TestPorts
 import splice.diagnostics.logs.HeadLogSource
 import splice.head.compact.CompactView
 import splice.head.compact.HeadCompactSource
 import splice.usage.quota.HeadUsageSource
 import splice.usage.quota.RateLimitView
 import splice.usage.quota.UsageView
-import java.net.ServerSocket
 import java.nio.file.Path
 import java.util.concurrent.atomic.AtomicReference
 
@@ -523,7 +523,7 @@ class AuthAndAccountsRoutesTest {
     private suspend fun awaitPort() {
         val deadline = System.nanoTime() + TIMEOUT_MS * 1_000_000
         while (System.nanoTime() < deadline) {
-            if (runCatching { ServerSocket(port).close() }.isFailure) return
+            if (TestPorts.listening(port)) return
             delay(POLL_MS)
         }
         error("the control server never bound :$port")

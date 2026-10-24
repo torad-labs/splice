@@ -42,6 +42,7 @@ import splice.core.util.Cancellables
 import splice.core.util.EnvReader
 import splice.core.util.LogSink
 import splice.core.util.SafeFailureText
+import splice.share.ShareListener
 import splice.topology.TopologyLoader
 import splice.upstream.LifecycleScope
 import splice.upstream.codemode.ProcessDispatchers
@@ -112,6 +113,11 @@ internal class TopologyWindows(
      *  compaction (§7, Oct 12). Assigned by the daemon after construction; null in a rig. */
     @Volatile
     var compaction: CompactionInstructions? = null
+
+    /** LAN share: the listener, handed each `[share]` table the file says (ShareListener.follow), so sharing follows
+     *  the file without a restart. Assigned by the daemon once the listener first opened; null in a rig. */
+    @Volatile
+    var sharing: ShareListener? = null
 
     /** `[daemon] mcp_share` as the file says it now (MCP hub step 3); null while the file never said it. */
     @Volatile
@@ -203,6 +209,18 @@ internal class TopologyWindows(
             return
         }
         share = declared.daemon.mcpShare
+        // The listener reopens off this read's thread: a read sits on a turn's path, and a bind takes a moment. The
+        // table is asked for here, in the order of the reads, so the jobs serve the latest whatever order they run in.
+        // A table boot would refuse leaves sharing as it is, and says why as boot would (round 13 of PR #419's review).
+        val refused = declared.share.findings(declared)
+        sharing?.let { listener ->
+            if (refused.isEmpty()) {
+                listener.ask(declared.share)
+                scope.launch { listener.followAsked() }
+            } else {
+                log("[share] unchanged until splice.toml is fixed: ${refused.joinToString("; ") { it.text() }}\n")
+            }
+        }
         // A table that breaks a rule leaves the rules in force and says why.
         compaction?.let { rules ->
             Cancellables.discard(

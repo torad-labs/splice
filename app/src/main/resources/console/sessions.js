@@ -103,10 +103,13 @@ async function readScreens() {
   state.screens = next;
 }
 const ANSWER_HOLD_MS = 30_000;
-const drivable = (s) => s.state !== "ended" && Boolean(state.screens[s.id]);
+// ANOTHER MACHINE'S SESSION (LAN share, milestone 6): its row names the machine it runs on, and nothing here acts on it.
+// Its pane offers the SendMessage line another session reaches it by; Stop, End, a move, a note and the Message field are
+// that machine's to offer.
+const drivable = (s) => !s.machine && s.state !== "ended" && Boolean(state.screens[s.id]);
 // A SESSION SPLICE DID NOT OPEN TAKES A NOTE (V4-444): a message from another session on its own socket, never his typing,
 // so it cannot approve or run anything. Only a running client of a version the note is known to reach is offered one.
-const notable = (s) => s.state !== "ended" && !drivable(s) && Boolean(s.row.address) && state.noteVersions?.has(s.row.version);
+const notable = (s) => !s.machine && s.state !== "ended" && !drivable(s) && Boolean(s.row.address) && state.noteVersions?.has(s.row.version);
 /** What another session types to reach this one (the spec's copyable SendMessage, §4): its name, else its socket. */
 const sendTo = (s) => (s.row.availability !== "live" ? null : s.row.name?.trim() || s.row.address || null);
 const sendLine = (s) => `SendMessage(to="${sendTo(s).replace(/\\/g, "\\\\").replace(/"/g, '\\"')}")`;
@@ -121,7 +124,9 @@ const DIRECT = "direct";
 const QUIET = new Set([UNPLACED, DIRECT]);
 const commandOf = (head) => (state.heads.find((h) => h.key === head) ?? state.retired.find((h) => h.key === head))?.command
   ?? (head === UNPLACED ? head : null);
-const cmdOf = (row) => (row.route === DIRECT ? DIRECT : commandOf(row.head));
+const cmdOf = (row) => (row.machine ? null : row.route === DIRECT ? DIRECT : commandOf(row.head));
+/** Where a command would be named: the machine another machine's session runs on, never a command of this one's. */
+const machineHtml = (s) => `<span class="machine" title="Runs on ${esc(s.machine)}">${esc(s.machine)}</span>`;
 const folderOf = (row) => (row.repo?.root || row.cwd || "").split("/").filter(Boolean).pop() || "";
 
 /** A signed-out session's way back: Accounts on its command, in Accounts' own word for that kind of credential. */
@@ -136,7 +141,10 @@ function sessionOf(row) {
   const { state: st, stall } = rowLook(row, turn, state.heads.find((h) => h.key === turn?.head));
   return {
     // a linked worktree is named by its own folder, never its whole path, which ran past the card's edge (splice-usage, Oct 13)
-    id: row.session_id, row, name: row.name || null, first: row.title || null, repo: folderOf(row), wt: row.repo?.worktree?.split("/").filter(Boolean).pop() || null,
+    // another machine's session is named here as there; its machine is the badge, and the pane's SendMessage line
+    // carries the whole name, `<machine>/<name>`
+    machine: row.machine ?? null,
+    id: row.session_id, row, name: (row.machine && row.name?.startsWith(`${row.machine}/`) ? row.name.slice(row.machine.length + 1) : row.name) || null, first: row.title || null, repo: folderOf(row), wt: row.repo?.worktree?.split("/").filter(Boolean).pop() || null,
     project: row.project ?? null, // as the daemon resolved it (ProjectWire); absent is "No project", never a guess here
     head: row.head, cmd: cmdOf(row), provider: state.providerOf[row.head] ?? null,
     model: modelName(state.modelLabel, turn?.model ?? row.model ?? row.served_model), // a running turn's model is the one in use now; reading off: what splice served it
@@ -161,7 +169,8 @@ const NOT_READ = "Not read";
 // messages, tool results whole, on every 5 s read of a live session (splice-sessions, Oct 13).
 const LOG_PAGE = 50;
 /** The conversation, from its newest messages; Show earlier reads the page before. */
-const readLog = (s, before = "end") => alone(`log ${s.id} ${before}`, () => readLogNow(s, before));
+// another machine's session keeps its conversation there (logHtml says where), so nothing is read for it here
+const readLog = (s, before = "end") => (s.machine ? null : alone(`log ${s.id} ${before}`, () => readLogNow(s, before)));
 async function readLogNow(s, before) {
   const res = await API.get(`/api/sessions/${encodeURIComponent(s.id)}/transcript?before=${encodeURIComponent(before)}&limit=${LOG_PAGE}`);
   const held = state.logs[s.id];
@@ -237,7 +246,7 @@ function whereHtml(s, inPane) {
   return inPane || ui.grouped ? `<span class="where">${FOLDER}${esc(place)}</span>` : s.name ? `<span>${esc(place)}</span>` : "";
 }
 function metaHtml(s, L, inPane) {
-  const chip = inPane && QUIET.has(s.cmd) ? `<span class="state mute">${s.cmd}</span>` : inPane && s.cmd ? `<span class="chip" style="--c:${color(s)}">${s.live ? "<i></i>" : ""}${esc(s.cmd)}</span>` : "";
+  const chip = inPane && s.machine ? machineHtml(s) : inPane && QUIET.has(s.cmd) ? `<span class="state mute">${s.cmd}</span>` : inPane && s.cmd ? `<span class="chip" style="--c:${color(s)}">${s.live ? "<i></i>" : ""}${esc(s.cmd)}</span>` : "";
   const team = s.team ? `<span class="team">${ICON.team}${esc(s.team)}</span>` : "";
   const model = s.model && !ui.moving.has(s.id) ? `<span>${esc(s.model)}</span>` : ""; // a move in flight names its target model in the word (hitstop)
   const repo = whereHtml(s, inPane);
@@ -248,7 +257,8 @@ function metaHtml(s, L, inPane) {
   // its age, off the registration's start (§4: identity, head/model, age, activity); the open pane has room for it
   const started = s.row.started_at ? `<span>Started ${backWord(new Date(s.row.started_at))}</span>` : "";
   // the Claude Code version the session registered with (SessionsRoutes `version`); the pane has room for it
-  const version = inPane && s.row.version ? `<span>Claude Code ${esc(s.row.version)}</span>` : "";
+  // another machine's session registered here through splice's mirror, whose version is not Claude Code's
+  const version = inPane && s.row.version && !s.machine ? `<span>Claude Code ${esc(s.row.version)}</span>` : "";
   const word = `<span class="word ${L.cls}">${L.word}</span>${L.detail || ""}${quiet}`;
   if (inPane) return `<div class="meta">${chip}${word}${L.paneDetail || ""}${team}${model}${repo}${started}${version}</div>`;
   // A LIST ROW IS ONE LINE (Marcos, Oct 15: sessions per project, denser, the Temple's agent rows): the state whole, then
@@ -308,7 +318,7 @@ const lastOf = (s) => s.row.last;
 const stopHtml = (s, cls, icon) => ui.armedStop.has(s.id) && canStop(s) ? "" : ui.stopping.has(s.id)
   ? `<button class="${cls} stopping" disabled>${ICON.wait}Stopping</button>`
   : canStop(s) ? `<button class="${cls}" data-act="stop" data-s="${esc(s.id)}">${icon}Stop</button>` : "";
-const canStop = (s) => s.state === "working" && (s.live || drivable(s));
+const canStop = (s) => !s.machine && s.state === "working" && (s.live || drivable(s));
 // Stop armed, End's pattern (Marlin, Oct 13): the first press names the turn it would end, from what the session last
 // did, and only the second press stops it; Keep running, Escape or the turn ending on its own disarms it.
 function armedStopHtml(s, small) {
@@ -336,7 +346,7 @@ function cardHtml(s) {
   return `<article class="card s ${L.cls}${was && was !== L.cls ? " changed" : ""}" style="--c:${color(s)}" data-key="s:${esc(s.id)}" data-open="${esc(s.id)}" aria-current="${ui.open === s.id}">`
     + `<span class="lamp ${L.cls}" aria-hidden="true">${L.lamp}</span>`
     + `<div class="top"><button class="name" data-open="${esc(s.id)}">${esc(title(s))}</button>${wt}${word}${said}${tags}`
-    + `${QUIET.has(s.cmd) ? `<span class="state mute">${s.cmd}</span>` : s.cmd ? `<span class="chip">${s.live ? "<i></i>" : ""}${esc(s.cmd)}</span>` : ""}${when}${stop}</div>`
+    + `${s.machine ? machineHtml(s) : QUIET.has(s.cmd) ? `<span class="state mute">${s.cmd}</span>` : s.cmd ? `<span class="chip">${s.live ? "<i></i>" : ""}${esc(s.cmd)}</span>` : ""}${when}${stop}</div>`
     + `${s.state === "needs" ? askHtml(s) : ""}${armedStopHtml(s, true)}${failedHtml(s, failed, false)}</article>`;
 }
 
@@ -371,9 +381,10 @@ const projName = (s) => s.project?.label || s.project?.name || "No project";
 // under one grouping never folds a group of another.
 const BY = ["project", "head", "team"];
 const BY_WORDS = { project: "Project", head: "Command", team: "Team" };
-const groupKey = (s) => (ui.by === "head" ? (s.head ? `h:${s.head}` : NO_PROJECT)
+// another machine's session has no project or command here: grouped by either, it sits under its machine's name
+const groupKey = (s) => (s.machine && ui.by !== "team" ? `m:${s.machine}` : ui.by === "head" ? (s.head ? `h:${s.head}` : NO_PROJECT)
   : ui.by === "team" ? (s.team ? `t:${s.team}` : NO_PROJECT) : projKey(s));
-const groupName = (s) => (ui.by === "head" ? (s.head ? s.cmd || s.head : "No command")
+const groupName = (s) => (s.machine && ui.by !== "team" ? s.machine : ui.by === "head" ? (s.head ? s.cmd || s.head : "No command")
   : ui.by === "team" ? s.team || "No team" : projName(s));
 const byHtml = () => `<span class="by" role="group" aria-label="Group by"><span class="what" aria-hidden="true">Group by</span>${BY.map((b) => `<button class="act quiet small${ui.by === b ? " on" : ""}" data-act="by" data-by="${b}" aria-pressed="${ui.by === b}">${BY_WORDS[b]}</button>`).join("")}</span>`;
 /** Two groups is what makes a list a grouped list: a first-time user with one project keeps the flat page. Read off
@@ -384,7 +395,7 @@ const grouped = () => new Set(state.rows.filter((s) => s.state !== "ended" || st
 // first-time user with one project never meets it, and a pick left over from another page's desk filters nothing here
 // until there are two. A picked project that has gone keeps its pick: the list says "No sessions" and the doors stay.
 const picked = () => (grouped() && ui.by === "project" ? ui.project : null);
-const inPick = (s) => picked() == null || projKey(s) === picked();
+const inPick = (s) => picked() == null || groupKey(s) === picked();
 /** By each group's most urgent card in the cards' own rank, then its last activity, ties by name, No project last.
  *  While his pointer is in the list the groups hold the order they were last drawn in, as the cards do. */
 function groupsOf(list) {
@@ -431,7 +442,8 @@ function rowsHtml(key, g, ended) {
 /** COLLAPSED, A GROUP STILL SHOWS ITS NEEDS-YOU CARDS (Marlin): nothing waiting on him is ever hidden by a fold. */
 function groupHtml([key, g], ended) {
   const shut = ui.shut.has(key) && !ui.q, counts = countsOf(g), total = g.length + ended.length;
-  const go = key === NO_PROJECT || ui.by !== "project" ? ""
+  // another machine's turns are on its own Requests page, not this one's
+  const go = key === NO_PROJECT || g[0].machine || ui.by !== "project" ? ""
     : `<a class="pgo" href="requests.html?project=${encodeURIComponent(key)}">${ICON.door}<span>Open on Requests</span></a>`;
   return `<section class="pgroup${shut ? " shut" : ""}" data-key="g:${esc(key)}" aria-label="${esc(`${groupName(g[0])}, ${countWords(counts, total, "session")}`)}">`
     + `<header class="phead"><button class="pfold" data-act="fold" data-p="${esc(key)}" aria-expanded="${!shut}">${ICON.caret}<span class="pname">${esc(groupName(g[0]))}</span></button>`
@@ -449,8 +461,8 @@ function pickOptions() {
   const live = state.rows.filter((s) => s.state !== "ended" || stranded(s));
   const groups = groupsOf(live);
   return {
-    projects: groups.map(([k, g]) => [k, projName(g[0]), projTotal(k, g)]),
-    doors: groups.map(([k, g]) => [k, projName(g[0]), g.filter((s) => RANK(s) === 0).length]),
+    projects: groups.map(([k, g]) => [k, groupName(g[0]), projTotal(k, g)]),
+    doors: groups.map(([k, g]) => [k, groupName(g[0]), g.filter((s) => RANK(s) === 0).length]),
   };
 }
 /** A project's sessions with its ended ones, which is what its header's total and its tile say. */
@@ -477,7 +489,7 @@ function sessionTiles() {
   const live = state.rows.filter((s) => s.state !== "ended" || stranded(s));
   const items = groupsOf(live).map(([k, g]) => {
     const counts = countsOf(g), total = projTotal(k, g);
-    return [k, projName(g[0]), counts, total, countWords(counts, total, "session")];
+    return [k, groupName(g[0]), counts, total, countWords(counts, total, "session")];
   });
   const every = sumCounts(items.map((x) => x[2])), all = state.rows.length;
   return tilesHtml([["", "Every project", every, all, countWords(every, all, "session")], ...items], picked());
@@ -546,6 +558,7 @@ function takenBack(s, m) {
   return m === msgs.at(-1) && s.state !== "working" && inPrompt(s) !== "" && inPrompt(s) === (m.text || "").trim();
 }
 function logHtml(s) {
+  if (s.machine) return `<div class="log"><p class="empty">Its conversation is on ${esc(s.machine)}</p></div>`;
   const held = state.logs[s.id];
   if (!held) return `<div class="log"><p class="empty">Reading</p></div>`;
   if (held.off) return `<div class="log"><p class="empty"><a class="door" href="settings.html#data">Reading off${ICON.door}</a></p></div>`;
@@ -772,8 +785,8 @@ function open(id) {
   render();
   const s = find(id);
   if (s && !(id in state.logs)) readLog(s); // null: a read at a moment is on its way
-  if (s && s.state !== "ended" && !state.screens[id]) readScreen(s);
-  if (s && !(id in state.usage)) readUsage(s);
+  if (s && !s.machine && s.state !== "ended" && !state.screens[id]) readScreen(s); // its screen and turns are there
+  if (s && !s.machine && !(id in state.usage)) readUsage(s);
   if (s?.head && !(s.head in ui.logins)) readLogins(s.head);
 }
 
@@ -924,7 +937,7 @@ async function endSession(s, confirm) {
 // as it was (the President's ruling on V4-169), and on the same command as itself (POST .../continue,
 // SessionContinue). A session waiting on an answer can't move, since the move types into its prompt; one splice can't
 // reach can't either, except one whose client already exited, which goes on in a new terminal.
-const movable = (s) => s.state !== "needs" && (s.state === "ended" || drivable(s)) && state.heads.some((h) => h.key !== s.head);
+const movable = (s) => !s.machine && s.state !== "needs" && (s.state === "ended" || drivable(s)) && state.heads.some((h) => h.key !== s.head);
 
 /** One line per model on each other command, on the account that command would send as now (its pool's next pick,
  *  else its one account), with that account's nearest-full window as Accounts draws it (the mock's choicesOf, fin).
@@ -1211,7 +1224,7 @@ async function reload() {
     if (held?.messages && !held.at) readNewer(s);
     else if (!held?.extended) readLog(s);
   }
-  if (s && s.state !== "ended" && Date.now() - (usageAt.get(s.id) ?? 0) >= USAGE_EVERY_MS) readUsage(s);
+  if (s && !s.machine && s.state !== "ended" && Date.now() - (usageAt.get(s.id) ?? 0) >= USAGE_EVERY_MS) readUsage(s);
 }
 
 // the door's session is taken before the first draw, which writes the address from what is open (nothing yet)

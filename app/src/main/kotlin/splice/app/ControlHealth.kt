@@ -30,7 +30,8 @@ internal class ControlHealth(
     fun signals(heads: Map<String, ManagedHead>, sessions: SessionSource, probes: HeadProbeReadings) =
         HeadSignals(
             heads,
-            RuntimeNotAnswering { probes.runtimeNotAnswering() },
+            // A head relaying to a machine this one joined does not answer while that machine is down (RemoteLinks).
+            RuntimeNotAnswering { probes.runtimeNotAnswering() + topology.remotes?.notAnswering().orEmpty() },
             sessions,
             RuntimeUnread { probes.runtimeUnread() },
         )
@@ -54,6 +55,7 @@ internal class ControlHealth(
                 ?: TopologyStaleness.probe(topology.path, topology.digest),
             clientVersions = clientVersions,
             mcpHub = mcp.hub,
+            remotes = topology.remotes,
         )
     }
 }

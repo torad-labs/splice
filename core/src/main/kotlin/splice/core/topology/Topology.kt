@@ -48,6 +48,8 @@ public data class Topology(
     val projects: Map<String, ProjectConfig> = emptyMap(),
     /** LAN share (docs/specs/lan-share.md): this machine's heads offered to the person's other machines. Absent = off. */
     val share: ShareConfig = ShareConfig(),
+    /** LAN share: the person's other machines this one joined, by name; `splice-remote` providers relay to them. */
+    val remotes: Map<String, RemoteConfig> = emptyMap(),
 ) {
     /** Resolve a user-supplied head name — the topology key or the installed wrapper command
      *  (starter: head `openrouter`, command `claude-openrouter`) — to matching topology keys. A topology-KEY
@@ -108,6 +110,7 @@ public data class Topology(
         withoutWindows().copy(
             compaction = CompactionConfig(),
             daemon = daemon.copy(mcpShare = null, updateChannel = null, autoUpdate = null),
+            share = ShareConfig(),
         )
 }
 
@@ -188,6 +191,8 @@ public data class ProviderConfig(
             modelsUrl?.takeIf { it.isNotBlank() }?.let { return it }
             val base = baseUrl.trimEnd('/')
             return when {
+                // LAN share: the relayed head's picker on the machine this one joined (its share route).
+                auth.kind == AuthKind.SpliceRemote.wire -> "$base/roster"
                 dialect == Dialect.ANTHROPIC_PASSTHROUGH -> "$base/v1/models"
                 dialect == Dialect.OPENAI_RESPONSES && auth.kind == AuthKind.ChatgptOAuth.wire ->
                     "$base/models?client_version=$CODEX_LIST_CLIENT_VERSION"

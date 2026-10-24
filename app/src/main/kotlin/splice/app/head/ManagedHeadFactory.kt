@@ -48,6 +48,7 @@ import splice.head.usage.UsageStore
 import splice.oauth.AuthHttpClientFactory
 import splice.provider.codex.CodexQuotaHeaderFamily
 import splice.provider.openai.ApiKeyAuthProvider
+import splice.share.remote.RemoteLinks
 import splice.upstream.codemode.ProcessDispatchers
 import splice.upstream.credentials.AccountEvidenceLoads
 import splice.upstream.credentials.AccountPool
@@ -100,6 +101,9 @@ internal class QuotaPollSeams(
     private val clientUserAgent: ClientUserAgent = ClientUserAgent { null },
     /** The daemon's record of failed limits reads, which /api/accounts reads beside each login. */
     private val readFailures: QuotaReadFailures = QuotaReadFailures(),
+    /** LAN share: the machines this one joined, whose `splice-remote` heads are polled for the plan windows their
+     *  own head holds there (HeadQuotaPolling). Null where no daemon built them. */
+    private val remotes: RemoteLinks? = null,
 ) {
     fun primaryWired(tracker: QuotaTracker) {
         onPrimaryQuota(tracker)
@@ -126,7 +130,8 @@ internal class QuotaPollSeams(
         ctx: ProviderBuild,
         probes: QuotaProbes,
         orders: AccountOrderStore,
-    ): HeadQuotaPolling = HeadQuotaPolling(ctx, probes, startQuotaPoller, clientUserAgent, orders, readFailures)
+    ): HeadQuotaPolling =
+        HeadQuotaPolling(ctx, probes, startQuotaPoller, clientUserAgent, orders, readFailures, remotes)
 }
 
 /** The head server factory and the Playground registry a head is bound into once it is built. */

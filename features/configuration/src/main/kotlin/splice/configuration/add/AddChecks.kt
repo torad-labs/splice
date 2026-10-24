@@ -79,6 +79,9 @@ internal class AddChecks(
     private val credentialFile = AddCredentialFile(json)
     private val credentials = StoredCredential(json)
 
+    /** Kinds whose credential is not a key or file of this provider's: nothing for the add to find. */
+    private val heldElsewhere = setOf(AuthKind.Client.wire, AuthKind.SpliceRemote.wire)
+
     /** Every check an add runs before it writes, in the order they print; [live] adds the one turn.
      *  V4-220: one list for the CLI and the console, so neither can save past a check the other runs. */
     fun all(c: AddCandidate, live: Boolean, env: EnvReader): List<AddCheck> {
@@ -130,7 +133,8 @@ internal class AddChecks(
     fun credential(key: String, provider: ProviderConfig, env: EnvReader): AddCheck {
         val kind = provider.auth.kind
         val problem = when {
-            kind == AuthKind.Client.wire -> null
+            // The client's own login is forwarded; a remote's token was kept when `splice remote` joined it.
+            kind in heldElsewhere -> null
             !presence.configured(key, provider, env) -> "no credential for '$key' ($kind)"
             AuthKindRegistry.isOAuth(kind) -> oauthPath(provider)?.let { credentialFile.problem(it, kind) }
             else -> null
@@ -159,6 +163,8 @@ internal class AddChecks(
      *  openai-responses it does not stop the add. */
     fun listedModels(provider: ProviderConfig, key: String, env: EnvReader): ListedModels {
         val passthrough = provider.dialect == Dialect.ANTHROPIC_PASSTHROUGH
+        // The rows come from the sharing machine itself (splice remote), which is the list there is to check.
+        if (provider.auth.kind == AuthKind.SpliceRemote.wire) return ListedModels.Absent
         if (passthrough && provider.auth.kind != API_KEY) return ListedModels.NoCredential
         // A server with no model list is normal, and the person typed the models themselves, so a missing or
         // unreadable list never stops an add (Marlin's walk, Oct 12). Only a key the server refuses on an openai-chat

@@ -70,7 +70,7 @@ class WrappedHeadTest {
         assertEquals(rig.realBinary.toString(), state.shadowedSymlinkTarget)
         assertEquals(rig.realBinary.toString(), state.realBinaryPath)
         assertEquals(
-            """{"home":"$home","state_dir":"${home.resolve("state")}"}""",
+            """{"home":"${rig.home}","state_dir":"${rig.home.resolve("state")}"}""",
             rig.share.resolve("splice-launch-owner.json").readText().trim(),
         )
         assertEquals(
@@ -95,7 +95,7 @@ class WrappedHeadTest {
         assertEquals(state, rig.stateStore.read())
         assertEquals(rig.shim.toRealPath(), rig.cmd.toRealPath())
         assertEquals(
-            """{"home":"$home","state_dir":"${home.resolve("state")}"}""",
+            """{"home":"${rig.home}","state_dir":"${rig.home.resolve("state")}"}""",
             owner.readText().trim(),
         )
         Files.setPosixFilePermissions(owner, java.nio.file.attribute.PosixFilePermissions.fromString("rw-rw-rw-"))

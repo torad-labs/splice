@@ -1,41 +1,32 @@
-// NEW: LAN share, phase 1 (docs/specs/lan-share.md; Marcos, 2026-10-22). A head another of the person's
-// machines offers, regenerated here by `splice remote`: the same command, models and tiers, written through
-// AddCommand like every other add (the same refusals, checks, atomic save, link and restart). Its provider
-// is an existing schema, anthropic-passthrough on a key, pointed at the sharing machine's relay for that
-// head; the key is this machine's own share token, and `forward_client_identity` carries the session id and
-// wire knobs the sharing head needs. Turns run on the sharing machine's login; nothing is copied here.
+// NEW: LAN share (docs/specs/lan-share.md; Marcos, 2026-10-22). A head another of the person's machines offers,
+// regenerated here by `splice remote`: the same command, models and tiers, written through AddCommand like every
+// other add (the same refusals, checks, atomic save, link and restart). Since phase 2 its provider is a `splice-remote`
+// one: anthropic-passthrough to the sharing machine's relay for that head, `auth.remote` naming the `[remotes]`
+// machine whose token (in this machine's share store, never keys.toml) it presents, and `forward_client_identity`
+// carrying the session id and wire knobs the sharing head needs. Turns run on the sharing machine's login; nothing is
+// copied here.
 package splice.configuration.add
 
-import splice.core.auth.ApiKeyFile
-import splice.core.config.KeyStore
-import splice.core.config.KeyStorePath
 import splice.core.model.ModelRates
-import splice.core.terminal.TerminalOutput
-import splice.core.topology.AuthConfig
+import splice.core.topology.AuthKind
 import splice.core.topology.Dialect
 import splice.core.topology.DialectWires
-import splice.core.topology.Topology
-import splice.core.util.Cancellables
 import splice.core.util.EnvReader
-import splice.core.util.SafeFailureText
-import splice.topology.TopologyLoader
-import java.nio.file.Files
-import java.nio.file.Path
 
 /** One head as the sharing machine described it, with the local [key] and [command] it is written under. */
 public data class RemoteHead(
-    /** The sharing machine's name, for the row's comment and the verb's title. */
-    public val server: String,
+    /** The sharing machine's `[remotes]` key, which the provider's `auth.remote` names. */
+    public val remote: String,
     /** The head's key on the sharing machine. */
     public val remoteKey: String,
     public val key: String,
     public val command: String,
-    /** The relay for this head: `http://<server>:<port>/share/v1/heads/<remoteKey>`. */
+    /** The relay for this head: `<remote url>/share/v1/heads/<remoteKey>`. */
     public val baseUrl: String,
-    /** This machine's share token on [server]. */
-    public val token: String,
     /** Pinned model first, as the sharing machine pins it. */
     public val models: List<RemoteModel>,
+    /** The vendor family of the sharing machine's provider for this head; null where it names none. */
+    public val family: String? = null,
 )
 
 /** One of a shared head's picker rows: its wire id, label, window in force, the Claude tiers naming it and its card. */
@@ -51,97 +42,25 @@ public data class RemoteModel(
     public val rates: ModelRates? = null,
 )
 
-internal class RemoteHeadAdd(
-    private val output: TerminalOutput,
-    private val command: AddCommand,
-) {
-    private val profiles = AddProfiles()
-
-    /** The token is stored once the add's refusals have passed and before its checks, so the credential check
-     *  finds it; AddCommand's answer is returned. */
-    suspend fun add(head: RemoteHead, env: EnvReader): Boolean =
-        command.addDescribed(profile(head), env, TokenClaim(head.token, profiles.apiKeyEnv(head.key), env))
-
-    /** A head imported before only needs its new token: a machine that joins again gets a fresh one, and the
-     *  old one stops working on the sharing machine. The token goes where [head]'s provider reads its key, and only
-     *  when no other provider reads that name too: a renewal never replaces another provider's key (PR #247's fourth
-     *  review). Providers for the same sharing server's heads, under [serverHeads], read its one token, so they may
-     *  share the name. True only when the key store, where the token goes, is where the provider reads it. */
-    fun renew(topology: Topology, head: String, token: String, env: EnvReader, serverHeads: String): Boolean {
-        val providerKey = topology.heads[head]?.provider
-        val auth = providerKey?.let { topology.providers[it] }?.auth?.takeIf { it.isApiKey }
-        if (providerKey == null || auth == null) {
-            output.line("  '$head' does not read a key here, so its token was not renewed")
-            return false
-        }
-        val envVar = auth.effectiveApiKeyEnv(providerKey)
-        val other = otherReader(topology, providerKey, envVar, serverHeads)
-        if (other != null) {
-            output.line("  [providers.$other] also reads $envVar, so '$head' kept its old token; give each its own env")
-            return false
-        }
-        return storeToken(envVar, token, env) && applies(head, auth, envVar, env)
-    }
-
-    /** Whether the key store is where [head]'s provider finds its key: a value of [envVar] in the environment and a
-     *  key file that yields a key come before it (ApiKeyAuthProvider), and would keep the revoked token in use. The
-     *  renewal then says where the new one has to go instead of reporting it renewed (PR #247's fifth review). A file
-     *  that cannot be read, or holds no key, is passed over for the store, as the provider passes it over (sixth). The
-     *  file is opened only once the environment is known not to come first, in the provider's order (seventh). */
-    private fun applies(head: String, auth: AuthConfig, envVar: String, env: EnvReader): Boolean {
-        val file = auth.file
-        val ahead = when {
-            env(envVar)?.isNotEmpty() == true -> "$envVar is set in this environment; unset it where splice starts"
-            file != null && yieldsKey(file) ->
-                "its provider reads $file first; put the token there, or drop that file from its auth"
-            else -> return true
-        }
-        output.line("  '$head': the new token is in the key store, but $ahead, then restart splice")
-        return false
-    }
-
-    /** Whether the key file at [file] yields a key as the provider reads it (ApiKeyFile). */
-    private fun yieldsKey(file: String): Boolean = Cancellables.runCatchingCancellable {
-        ApiKeyFile.key(Files.readString(Path.of(TopologyLoader.expandHome(file))))
-    }.fold({ it != null }, { false })
-
-    /** A provider other than [self] that reads its key from [envVar], whose key a write there would replace. One
-     *  for another head of the same sharing server, under [serverHeads], reads that server's token by design
-     *  (docs/specs/lan-share.md, the import), so it is not another reader. */
-    private fun otherReader(topology: Topology, self: String, envVar: String, serverHeads: String? = null): String? =
-        topology.providers.entries
-            .filter { (key, provider) -> key != self && serverHeads?.let { provider.baseUrl.startsWith(it) } != true }
-            .filter { (_, provider) -> provider.auth.isApiKey }
-            .firstOrNull { (key, provider) -> provider.auth.effectiveApiKeyEnv(key) == envVar }
-            ?.key
-
-    private fun storeToken(envVar: String, token: String, env: EnvReader): Boolean {
-        val store = KeyStore(KeyStorePath.defaultPath(env))
-        return Cancellables.runCatchingCancellable { store.write(envVar, token) }.fold(
-            onSuccess = { true },
-            onFailure = {
-                output.line("  could not store $envVar in ${store.path}: ${SafeFailureText.render(it)}")
-                false
-            },
-        )
-    }
+internal class RemoteHeadAdd(private val command: AddCommand) {
+    /** AddCommand's answer: true when the head was saved and is reachable as printed. */
+    suspend fun add(head: RemoteHead, env: EnvReader): Boolean = command.addDescribed(profile(head), env)
 
     private fun profile(head: RemoteHead): AddProfile = AddProfile(
         name = head.key,
         baseUrl = head.baseUrl,
         provider = AddProviderSpec(
             dialect = DialectWires.name(Dialect.ANTHROPIC_PASSTHROUGH),
-            authKind = API_KEY,
-            // A real key, stored before the add runs: the checks present it, never the local-runtime placeholder.
-            requiresKey = true,
+            authKind = AuthKind.SpliceRemote.wire,
             extra = listOf(
-                "# Relayed to '${head.remoteKey}' on ${head.server}, which runs every turn on its own login.",
-                "# The key is this machine's share token there; `splice remote` renews it.",
+                "# Relayed to '${head.remoteKey}' on ${head.remote}, which runs every turn on its own login.",
                 "quirks = { forward_client_identity = true }",
             ),
+            authRemote = head.remote,
+            family = head.family,
         ),
         head = AddHeadSpec(key = head.key, command = head.command),
-        labels = AddLabels(summary = "${head.remoteKey} on ${head.server}", origin = "splice remote"),
+        labels = AddLabels(summary = "${head.remoteKey} on ${head.remote}", origin = "splice remote"),
         // A splice head leaves its pinned model out of /v1/models, so its list cannot decide the rows. Tiers go in a
         // model_slots table: the sharing head may put one model behind several tiers, which a models list refuses.
         policy = AddModelPolicy(listAuthoritative = false, tierTable = true),
@@ -156,42 +75,4 @@ internal class RemoteHeadAdd(
             )
         },
     )
-
-    /** A new head's token, written only under a name nothing else here uses: no other provider reads [envVar] and
-     *  the key store holds nothing under it, so an import never replaces a key it did not write. Taken back when
-     *  the add writes nothing, unless a `splice key set` replaced it in between. */
-    private inner class TokenClaim(
-        private val token: String,
-        private val envVar: String,
-        env: EnvReader,
-    ) : AddSideWrite {
-        private val store = KeyStore(KeyStorePath.defaultPath(env))
-        private var claimed = false
-
-        override fun claim(candidate: AddCandidate): Boolean {
-            val reader = otherReader(candidate.topology, candidate.providerKey, envVar)
-            if (reader != null) {
-                output.line("  [providers.$reader] already reads $envVar; import this head under another name")
-                return false
-            }
-            claimed = Cancellables.runCatchingCancellable { store.placeholders.writeIfAbsent(envVar, token) }.fold(
-                onSuccess = { it },
-                onFailure = {
-                    output.line("  could not store $envVar in ${store.path}: ${SafeFailureText.render(it)}")
-                    return false
-                },
-            )
-            if (!claimed) {
-                val fix = "import this head under another name, or free the name with: splice key unset $envVar"
-                output.line("  $envVar already holds a key in ${store.path}, which an import never replaces; $fix")
-            }
-            return claimed
-        }
-
-        override fun release() {
-            if (!claimed) return
-            Cancellables.runCatchingCancellable { store.placeholders.unsetIfValue(envVar, token) }
-                .onFailure { output.line("  $envVar left in ${store.path}: ${SafeFailureText.render(it)}") }
-        }
-    }
 }

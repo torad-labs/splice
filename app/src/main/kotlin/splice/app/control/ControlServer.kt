@@ -38,6 +38,7 @@ import splice.app.control.api.ControlAudit
 import splice.app.control.api.ControlHealthReport
 import splice.app.control.api.HeadResolver
 import splice.app.control.api.HeadSignals
+import splice.app.control.api.share.SharingMount
 import splice.app.control.mount.AccountsMount
 import splice.app.control.mount.AddMount
 import splice.app.control.mount.BoundResource
@@ -187,6 +188,9 @@ internal class ControlServer(
     // Oct 16, 2026: what `splice console <action>` hands the open console to do, and the page's answer (ConsolePilot).
     private val consolePilot = ConsolePilotMount(guard)
 
+    // Oct 23, 2026: the Sharing page, what this machine shares and the machines it joined (docs/specs/lan-share.md).
+    private val sharing = SharingMount(ports, guard)
+
     // The order the rows register in: MCP last, and only when the daemon hosts MCP at all (null keeps the control
     // plane exactly as before). The MCP host is the one bound resource: the server starts it after the bind.
     private val mcp: McpMount? = runtime.mcpHost?.let { host ->
@@ -219,6 +223,7 @@ internal class ControlServer(
         ControlMount(models::register),
         ControlMount(launch::register),
         ControlMount(consolePilot::register),
+        ControlMount(sharing::register),
         ControlMount(console::register),
     ) + listOfNotNull(peers?.let { ControlMount(it::register) }, mcp)
     private val resources: List<BoundResource> = listOfNotNull(mcp)

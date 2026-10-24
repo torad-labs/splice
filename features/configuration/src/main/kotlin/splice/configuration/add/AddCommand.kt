@@ -24,15 +24,6 @@ import splice.daemonclient.DaemonSettings
 
 internal const val ADD_PAD = 11
 
-/** What a described add writes beside its rows, such as a remote head's token in the key store. [claim] runs after
- *  the add's refusals and before its checks, which may need what it wrote; false stops the add. [release] takes the
- *  write back when the add then saves nothing. */
-internal interface AddSideWrite {
-    fun claim(candidate: AddCandidate): Boolean
-
-    fun release()
-}
-
 /** [output] is every line the verb prints; [errors] takes only what resolving the control port says
  *  about a broken splice.toml. */
 internal class AddCommand(
@@ -53,25 +44,16 @@ internal class AddCommand(
     }
 
     /** A head a local runtime or another machine described (RuntimeHeadAdd, RemoteHeadAdd): no command line, the
-     *  same everything else. [beside] is written only once every refusal has passed, and taken back when the add
-     *  writes nothing, so a refused add leaves the key store as it found it. */
-    suspend fun addDescribed(profile: AddProfile, env: EnvReader, beside: AddSideWrite? = null): Boolean {
+     *  same everything else. */
+    suspend fun addDescribed(profile: AddProfile, env: EnvReader): Boolean {
         val candidate = prepare.described(profile, env) ?: return false
-        if (beside != null && !beside.claim(candidate)) return false
-        return added(candidate, env, beside)
+        return added(candidate, env)
     }
 
-    private suspend fun added(candidate: AddCandidate, env: EnvReader, beside: AddSideWrite? = null): Boolean {
+    private suspend fun added(candidate: AddCandidate, env: EnvReader): Boolean {
         val title = "$BOLD${candidate.resolved.origin}$RESET"
         output.line("$title$DIM: '${candidate.key}' as $CYAN${candidate.command}$RESET")
-        // The side write is kept only once the file is saved: a refusal, a throw or a cancellation on the way takes
-        // it back, so a later add is not refused over a key nothing was written for (PR #247's fourth review).
-        var ok = false
-        try {
-            ok = authenticate(candidate, env) && verified(candidate, env) && save(candidate)
-        } finally {
-            if (!ok) beside?.release()
-        }
+        val ok = authenticate(candidate, env) && verified(candidate, env) && save(candidate)
         if (!ok) {
             output.line("${YELLOW}nothing written$RESET: ${candidate.file.path} is unchanged")
             return false
@@ -83,13 +65,19 @@ internal class AddCommand(
     }
 
     private suspend fun authenticate(c: AddCandidate, env: EnvReader): Boolean = when {
-        c.provider.auth.kind == AuthKind.Client.wire ->
-            true.also { output.line("  ${"auth".padEnd(ADD_PAD)} your own Claude login is forwarded at launch") }
+        signedInElsewhere(c) != null -> true.also { output.line("  ${"auth".padEnd(ADD_PAD)} ${signedInElsewhere(c)}") }
         checks.credential(c.providerKey, c.provider, env).ok ->
             true.also { output.line("  ${"auth".padEnd(ADD_PAD)} credential already present") }
         c.args.options.yes || confirm("Sign in to '${c.key}' now?", default = true) ->
             ports.login(c.key, c.provider, c.topology)
         else -> false.also { output.line("  ${"auth".padEnd(ADD_PAD)} sign-in is required to add '${c.key}'") }
+    }
+
+    /** What signs a head in that splice holds no login for here, or null when it is the add's to sign in. */
+    private fun signedInElsewhere(c: AddCandidate): String? = when (c.provider.auth.kind) {
+        AuthKind.Client.wire -> "your own Claude login is forwarded at launch"
+        AuthKind.SpliceRemote.wire -> "relayed to ${c.provider.auth.remote}, which runs it on its login"
+        else -> null
     }
 
     private fun verified(c: AddCandidate, env: EnvReader): Boolean {

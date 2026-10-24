@@ -26,7 +26,9 @@ class McpContainmentTest {
     private val sink = LogSink { synchronized(log) { log.append(it) } }
     private fun logged() = synchronized(log) { log.toString() }
 
-    private fun containment(cap: SliceMemoryCap) = McpContainment(sink, cap = cap)
+    // why: these arms are the Linux host, where systemd answers [cap]. McpContainment picks the macOS bound by the
+    // os.name it runs under, so the host is named here, and the suite asserts the same thing on a Mac.
+    private fun containment(cap: SliceMemoryCap) = McpContainment(sink, cap = cap, darwin = null)
 
     // Mutant: treat a slice that EXISTS as containment. systemd answers LoadState=loaded for a slice
     // nobody declared, so every child would be reported contained while running uncapped.
@@ -68,6 +70,15 @@ class McpContainmentTest {
             placed.toString(),
         )
         assertFalse(logged().contains("not capped"), logged())
+    }
+
+    // On macOS there is no slice: the command is spawned as it stands, whatever a cap would say, and no slice is named.
+    @Test
+    fun `on macOS the child is spawned as it stands and no slice is spoken of`() {
+        val placed = McpContainment(sink, cap = { "8589934592" }, darwin = McpDarwinBound(sink)).placed(COMMAND)
+
+        assertEquals(COMMAND, placed)
+        assertFalse(logged().contains(APP_MCP_SLICE), logged())
     }
 
     // Mutants, both required by the row: (1) protect() writes nothing, so the child keeps splice's

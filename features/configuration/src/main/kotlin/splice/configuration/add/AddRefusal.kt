@@ -61,7 +61,8 @@ internal class AddRefusalText {
         is AddRefusal.Unparseable -> "the candidate topology does not parse: ${r.detail}"
         is AddRefusal.NameRequired -> "--name is required for '${r.profile}' (lowercase letters, digits, dashes)"
         is AddRefusal.BaseUrlRequired -> "--base-url is required for '${r.profile}'"
-        AddRefusal.QuotedValue -> "values must not contain quotes"
+        AddRefusal.QuotedValue ->
+            "values must not contain quotes or line breaks; tier names are letters, digits and dashes"
         is AddRefusal.KeyUnanswered ->
             "'${r.key}' can send with ${r.provider}'s key or a new key of its own; pass --key provider or --key new"
         is AddRefusal.PortUnavailable, is AddRefusal.Models -> error("handled by cli: ${r::class.simpleName}")
@@ -94,7 +95,9 @@ internal class AddRefusalText {
         is AddRefusal.Unparseable -> "The new head does not parse together with your splice.toml: ${r.detail}"
         is AddRefusal.NameRequired -> "'${r.profile}' needs a name: lowercase letters, digits and dashes."
         is AddRefusal.BaseUrlRequired -> "'${r.profile}' needs a base URL."
-        AddRefusal.QuotedValue -> "The base URL and the command must not contain quotes."
+        AddRefusal.QuotedValue ->
+            "The base URL, the command and the family must not contain quotes or line breaks, and tier names are " +
+                "letters, digits and dashes."
         is AddRefusal.KeyUnanswered -> "Pick whose key '${r.key}' sends with: ${r.provider}'s or a new one."
         is AddRefusal.PortUnavailable, is AddRefusal.Models -> error("handled by console: ${r::class.simpleName}")
     }

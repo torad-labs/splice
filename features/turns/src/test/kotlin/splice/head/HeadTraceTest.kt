@@ -57,6 +57,11 @@ import kotlin.time.Duration.Companion.seconds
 private const val MGMT_KEY = "mgmt-key-for-the-trace-test"
 private const val UPSTREAM_SECRET = "splice-held-upstream-secret"
 
+// why: the held writer sleeps five seconds from its start, and the test waits for it to end only after both turns. A
+// wait of five seconds from there raced the sleep: on a Mac a five-second sleep can end later than two fast turns
+// take, and the wait ran out first (7981ecd0b's pre-push). The wait is the cleanup, so it outlasts the sleep with room.
+private const val HELD_WRITER_END_S = 30L
+
 /** An Anthropic-shaped upstream that records every request BODY, append-only. */
 private class TraceRecordingUpstream {
     val bodies = CopyOnWriteArrayList<String>()
@@ -263,7 +268,7 @@ class HeadTraceTest {
                 assertEquals(1L, released.count, "the writer remained gated throughout both responses")
             }
         } finally {
-            assertTrue(released.await(5, TimeUnit.SECONDS))
+            assertTrue(released.await(HELD_WRITER_END_S, TimeUnit.SECONDS), "the held writer ends")
             assertTrue(AsyncFileIo.drain())
         }
         assertEquals(4, records(port).size, "both deferred traces were actually written")

@@ -38,6 +38,9 @@ internal class SignInPlanner {
         return when (val kind = AuthKindRegistry.from(providerCfg.auth.kind)) {
             is AuthKind.OAuth -> oauthSignIn(wrapper, kind.signInLabel)
             AuthKind.Client -> SignInPlan("", kind.signInLabel, false, tokenCapture = null, credentialFix = "")
+            // A machine joined over the LAN signs in by joining again: its token comes from the sharing machine.
+            AuthKind.SpliceRemote ->
+                SignInPlan("", kind.signInLabel, false, tokenCapture = null, credentialFix = "splice remote")
             null -> if (providerCfg.auth.kind == API_KEY) {
                 apiKeySignIn(providerCfg, head, command, key)
             } else {

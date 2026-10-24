@@ -316,6 +316,24 @@ describe("r4 completion snapshots with delayed matching deltas", () => {
       expect(result.segments).toEqual([a("Hello world")]);
       expect(result.inconsistencies).toBe(0);
     });
+    for (const replay of [["Hello"], ["He", "llo"], ["H", "e", "l", "l", "o"]]) {
+      test(`${completion} fully observed completion validates ${replay.length} known replay chunks without duplicating output`, () => {
+        const result = evidence([delta("Hello"), snapshot("Hello"), ...replay.map(delta)]);
+        expect(result.segments).toEqual([a("Hello")]);
+        expect(result.inconsistencies).toBe(0);
+        expect(result.items[0]!.parts[0]!.snapshotChars).toBe(5);
+      });
+    }
+    test(`${completion} replay reset still rejects contradictory bytes`, () => {
+      const result = evidence([delta("Hello"), snapshot("Hello"), delta("He"), delta("wrong")]);
+      expect(result.segments).toEqual([a("Hello")]);
+      expect(result.inconsistencies).toBeGreaterThan(0);
+    });
+    test(`${completion} completed replay does not admit a following unknown byte`, () => {
+      const result = evidence([delta("Hello"), snapshot("Hello"), delta("He"), delta("llo"), delta("!")]);
+      expect(result.segments).toEqual([a("Hello")]);
+      expect(result.inconsistencies).toBeGreaterThan(0);
+    });
     test(`${completion} snapshot rejects an incompatible observed prefix`, () => {
       const result = evidence([delta("Hallo"), snapshot("Hello world")]);
       expect(result.segments).toEqual([a("Hello world")]);
@@ -336,6 +354,20 @@ describe("r4 completion snapshots with delayed matching deltas", () => {
       expect(result.inconsistencies).toBeGreaterThan(0);
     });
   }
+  test("distinct completed message identities at a reused output index retain both canonical texts", () => {
+    const events = [
+      { type: "response.output_text.delta", output_index: 0, item_id: "first", delta: "Hello" },
+      { type: "response.output_item.done", output_index: 0, item: { type: "message", id: "first", content: [{ type: "output_text", text: "Hello" }] } },
+      { type: "response.output_item.added", output_index: 0, item: { type: "message", id: "second", content: [] } },
+      { type: "response.output_text.delta", output_index: 0, item_id: "second", delta: "Wor" },
+      { type: "response.output_item.done", output_index: 0, item: { type: "message", id: "second", content: [{ type: "output_text", text: "World" }] } },
+      { type: "response.output_text.delta", output_index: 0, item_id: "second", delta: "ld" },
+      { type: "response.completed", response: { output: [] } },
+    ].map((data, at) => ({ at, data }));
+    const result = sourceEvidence(events);
+    expect(result.segments).toEqual([a("Hello"), a("World")]);
+    expect(result.inconsistencies).toBe(0);
+  });
 });
 
 describe("exact readable evidence", () => {

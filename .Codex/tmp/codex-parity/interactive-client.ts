@@ -3,6 +3,27 @@ import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 
 type Obj = Record<string, any>;
+const TERM_GRACE_MS = 250;
+const KILL_REAP_MS = 1000;
+
+async function exitedWithin(proc: Bun.Subprocess, timeoutMs: number): Promise<boolean> {
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  try {
+    return await Promise.race([
+      proc.exited.then(() => true),
+      new Promise<boolean>(resolve => { timer = setTimeout(() => resolve(false), timeoutMs); }),
+    ]);
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+async function forceReap(proc: Bun.Subprocess): Promise<void> {
+  if (proc.exitCode !== null) return;
+  proc.kill("SIGKILL");
+  if (!await exitedWithin(proc, KILL_REAP_MS)) throw new Error("interactive child did not exit after SIGKILL");
+}
+
 export type InteractiveClientResult = {
   exitCode: number | null;
   thinking: string;
@@ -84,12 +105,18 @@ export async function interactiveClient(options: {
       }
       await Bun.sleep(100);
     }
-    if (proc.exitCode === null) { timedOut = true; proc.kill("SIGTERM"); }
-    await proc.exited;
+    if (proc.exitCode === null) {
+      timedOut = true;
+      proc.kill("SIGTERM");
+      if (!await exitedWithin(proc, TERM_GRACE_MS)) await forceReap(proc);
+    }
     await readTranscript();
   } finally {
-    if (proc.exitCode === null) proc.kill("SIGKILL");
-    proc.terminal?.close();
+    try {
+      await forceReap(proc);
+    } finally {
+      proc.terminal?.close();
+    }
   }
   const content = blocks();
   return {

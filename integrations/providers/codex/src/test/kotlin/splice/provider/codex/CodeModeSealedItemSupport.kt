@@ -1,12 +1,15 @@
 package splice.provider.codex
 
 import kotlinx.coroutines.CompletableDeferred
+import kotlinx.coroutines.flow.flow
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
+import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.jsonArray
 import kotlinx.serialization.json.jsonObject
+import kotlinx.serialization.json.put
 import splice.core.index.WireBlockIndex
 import splice.core.reasoning.ReasoningReplay
 import splice.core.turn.RoundHandoffs
@@ -16,6 +19,7 @@ import splice.core.turn.Usage
 import splice.core.turn.noRequestUsage
 import splice.dialect.responses.request.AssistantPhase
 import splice.dialect.responses.request.ResponsesAssistantText
+import splice.dialect.responses.responsesTestTranslator
 import splice.upstream.RedirectableRoundPost
 import splice.upstream.RoundResult
 import splice.upstream.sse.CustomToolSource
@@ -44,6 +48,7 @@ abstract class CodeModeSealedItemSupport : CodeModeItemCompletionSupport() {
         status: String? = null,
         val suffix: String = "",
         private val ending: String = "success",
+        val followingReasoning: Boolean = false,
     ) : RedirectableRoundPost {
         val itemRelease = CompletableDeferred<Unit>()
         val itemHandled = CompletableDeferred<Unit>()
@@ -58,6 +63,11 @@ abstract class CodeModeSealedItemSupport : CodeModeItemCompletionSupport() {
         val reason = Json.parseToJsonElement(
             """{"type":"reasoning","id":"sealed-reason","encrypted_content":"synthetic-sealed"}""",
         ).jsonObject
+        val followingReason = Json.parseToJsonElement(
+            """{"type":"reasoning","id":"after-exec-reason","status":"completed",
+                "encrypted_content":"synthetic-after","summary":[],"content":[]}""",
+        ).jsonObject
+        val followingMessage = message("after-exec-message", suffix)
         private val preface = JsonObject(
             ResponsesAssistantText.item("A", AssistantPhase.COMMENTARY) +
                 mapOf("type" to JsonPrimitive("message"), "id" to JsonPrimitive("preface-item")),
@@ -84,6 +94,7 @@ abstract class CodeModeSealedItemSupport : CodeModeItemCompletionSupport() {
             }
             first = false
             try {
+                if (followingReasoning) return nativeSource(sink)
                 sink.addTextBlock("A")
                 sink.customToolSource(CustomToolSource.Started(outer(source = "")))
                 sink.customToolSource(CustomToolSource.Delta(completed.callId, "await tools.Read({});"))
@@ -106,6 +117,75 @@ abstract class CodeModeSealedItemSupport : CodeModeItemCompletionSupport() {
             incomplete = incomplete,
             text = snapshot.text.copy(bodyText = "A" + suffix),
             usage = Usage(inputTokens = 19, outputTokens = 3),
+        )
+
+        /** This variant drives the real Responses reducer; neither raw post-call item is a client carrier. */
+        private suspend fun nativeSource(sink: WireSink): RoundResult {
+            val preface = message("native-preface", "A")
+            val added =
+                JsonObject(
+                    completed.raw + mapOf("input" to JsonPrimitive(""), "status" to JsonPrimitive("in_progress")),
+                )
+            val frames = flow {
+                emit(event("response.output_item.done", 0, reason))
+                prose(1, preface, "A").forEach { emit(it) }
+                emit(event("response.output_item.added", 2, added))
+                itemRelease.await()
+                emit(event("response.output_item.done", 2, completed.raw))
+                itemHandled.complete(Unit)
+                emit(event("response.output_item.done", 3, followingReason))
+                prose(4, followingMessage, suffix).forEach { emit(it) }
+                tailSent.complete(Unit)
+                terminalRelease.await()
+                emit(
+                    buildJsonObject {
+                        put("type", "response.completed")
+                        put(
+                            "response",
+                            buildJsonObject {
+                                put("status", "completed")
+                                put(
+                                    "output",
+                                    JsonArray(
+                                        listOf(reason, preface, completed.raw, followingReason, followingMessage),
+                                    ),
+                                )
+                            },
+                        )
+                    },
+                )
+            }
+            val reader =
+                responsesTestTranslator(
+                    collectReasoningEnvelopes = true,
+                    encode = ReasoningReplay::encodeReasoningEnvelope,
+                )
+            return RoundResult.Outcome(reader.driveTurn(frames, sink))
+        }
+
+        private fun message(id: String, text: String): JsonObject = buildJsonObject {
+            put("type", "message")
+            put("id", id)
+            put("role", "assistant")
+            put("phase", "commentary")
+            put("content", JsonArray(listOf(buildJsonObject { put("type", "output_text"); put("text", text) })))
+        }
+
+        private fun event(type: String, index: Int, item: JsonObject): JsonObject = buildJsonObject {
+            put("type", type)
+            put("output_index", index)
+            put("item", item)
+        }
+
+        private fun prose(index: Int, item: JsonObject, text: String): List<JsonObject> = listOf(
+            event("response.output_item.added", index, item),
+            buildJsonObject {
+                put("type", "response.output_text.delta")
+                put("output_index", index)
+                put("item_id", item.getValue("id"))
+                put("delta", text)
+            },
+            event("response.output_item.done", index, item),
         )
     }
 

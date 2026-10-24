@@ -13,7 +13,7 @@ import org.junit.jupiter.api.Assertions.assertFalse
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Timeout
 import org.junit.jupiter.params.ParameterizedTest
-import org.junit.jupiter.params.provider.ValueSource
+import org.junit.jupiter.params.provider.CsvSource
 import splice.core.turn.TurnOutcome
 import splice.core.util.JsonScalars
 import splice.dialect.responses.request.AssistantPhase
@@ -25,14 +25,15 @@ import kotlin.time.Duration.Companion.seconds
 @Timeout(25)
 class CodeModePostCallProseTest : CodeModeSealedItemSupport() {
     @ParameterizedTest
-    @ValueSource(booleans = [false, true])
+    @CsvSource("false,false", "true,false", "false,true", "true,true")
     fun `prose delivered after exec stays between its raw call and output warm and after restart`(
         restart: Boolean,
+        nativeFollowing: Boolean,
     ) = runTest(timeout = 20.seconds) {
         val effects = tempDir.resolve("effects")
         val attach = CompletableDeferred<Unit>()
         var manager = bridge(EffectRuntime(effects, attach))
-        val post = SealedPost("completed", suffix = "B")
+        val post = SealedPost("completed", suffix = "B", followingReasoning = nativeFollowing)
         val sink = SourceSink()
         try {
             val first = async {
@@ -85,13 +86,16 @@ class CodeModePostCallProseTest : CodeModeSealedItemSupport() {
         assertEquals(listOf("custom_tool_call", "custom_tool_call_output"), calls.map { JsonScalars.str(it, "type") })
         val at = input.indexOf(calls.first())
         assertTrue(at >= 2, input.toString())
+        val following = if (post.followingReasoning) {
+            listOf(post.followingReason, post.followingMessage)
+        } else {
+            listOf(ResponsesAssistantText.item("B", AssistantPhase.COMMENTARY))
+        }
         val expected = listOf(
             post.reason,
             ResponsesAssistantText.item("A", AssistantPhase.COMMENTARY),
             post.completed.raw,
-            ResponsesAssistantText.item("B", AssistantPhase.COMMENTARY),
-            calls.last(),
-        )
+        ) + following + calls.last()
         assertEquals(
             JsonArray(expected),
             JsonArray(input.drop(at - 2).take(expected.size)),
@@ -99,8 +103,15 @@ class CodeModePostCallProseTest : CodeModeSealedItemSupport() {
         )
         assertTrue(JsonScalars.str(calls.last(), "output").orEmpty().trimEnd().endsWith("saved-result:result-1"))
         assertEquals(1, input.count { it == post.reason })
-        listOf("A", "B").forEach { text ->
-            assertEquals(1, input.count { JsonScalars.str(it as? JsonObject, "content") == text })
+        if (post.followingReasoning) assertEquals(1, input.count { it == post.followingReason })
+        assertEquals(listOf("A", "B"), input.mapNotNull(::assistantText), "every delivered prose byte appears once")
+    }
+
+    private fun assistantText(item: kotlinx.serialization.json.JsonElement): String? {
+        val message = item as? JsonObject ?: return null
+        if (JsonScalars.str(message, "role") != "assistant") return null
+        return JsonScalars.str(message, "content") ?: (message["content"] as? JsonArray).orEmpty().joinToString("") {
+            JsonScalars.str(it as? JsonObject, "text").orEmpty()
         }
     }
 }

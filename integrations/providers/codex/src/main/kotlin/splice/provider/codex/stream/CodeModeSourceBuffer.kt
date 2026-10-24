@@ -1,7 +1,7 @@
 // NEW: a bounded captured source offers a fresh cursor only for proven pre-dispatch retries.
 //
 // A cursor receives one whole, durably sealed item at output_item.done. Response usage and transport failure
-// settle separately; neither can replace source that a worker may already have executed.
+// settle separately; neither can revoke an accepted item while its worker is waiting to claim it.
 package splice.provider.codex.stream
 
 import kotlinx.coroutines.NonCancellable
@@ -24,8 +24,6 @@ private data class SourceSnapshot(
     val text: String,
     val terminal: CodeModeSourcePart? = null,
     val rejected: CodeModeSourcePart.Failed? = null,
-    val owned: Boolean = false,
-    val responseFailure: CodeModeSourcePart.Failed? = null,
 )
 
 /** Joins an accumulated prefix to the conversation batch before a cursor hands it to the worker. */
@@ -71,15 +69,12 @@ internal class CodeModeSourceBuffer(
         }
     }
 
+    /** Failure ends an incomplete source. A sealed item stays accepted independently of worker scheduling. */
     fun fail(error: String) {
         state.update { previous ->
-            val failure = previous.responseFailure ?: CodeModeSourcePart.Failed(error)
             when (previous.terminal) {
-                null -> previous.copy(terminal = failure)
-                is CodeModeSourcePart.Complete -> previous.copy(
-                    responseFailure = failure,
-                    rejected = previous.rejected ?: failure.takeUnless { previous.owned },
-                )
+                null -> previous.copy(terminal = CodeModeSourcePart.Failed(error))
+                is CodeModeSourcePart.Complete -> previous
                 is CodeModeSourcePart.Failed -> previous
             }
         }
@@ -90,16 +85,13 @@ internal class CodeModeSourceBuffer(
         state.update { previous -> previous.copy(rejected = previous.rejected ?: CodeModeSourcePart.Failed(error)) }
     }
 
-    /** A response failure releases a boot that never took the source or returned a cell. Ownership preserves effects. */
+    /** Incomplete-source failure or explicit disposal releases startup; sealing survives a late response failure. */
     suspend fun whileStarting(work: CodeModeSourceStart): CodeModeCell = coroutineScope {
-        // A fresh attempt is admitted only after a typed failure proved the previous boot never dispatched source.
-        state.update { it.copy(owned = false, rejected = it.rejected ?: it.responseFailure) }
         val produced = AtomicReference<CodeModeCell?>()
         val rejected = async { state.mapNotNull { it.rejected ?: it.terminal as? CodeModeSourcePart.Failed }.first() }
         val running = async {
             work().also {
                 produced.set(it)
-                state.update { snapshot -> snapshot.copy(owned = true) }
             }
         }
         var adopted = false
@@ -136,8 +128,7 @@ internal class CodeModeSourceBuffer(
             private fun part(ended: SourceSnapshot): CodeModeSourcePart {
                 (ended.rejected ?: ended.terminal as? CodeModeSourcePart.Failed)?.let { return it }
                 beforeRead.commit(ended.text)
-                // This claim races failure under the same state CAS: either bytes leave once, or startup is rejected.
-                state.update { it.copy(owned = true) }
+                // Durable admission can explicitly dispose the item while the cursor commits its bytes.
                 state.value.rejected?.let { return it }
                 val remainder = ended.text.substring(position)
                 position = ended.text.length

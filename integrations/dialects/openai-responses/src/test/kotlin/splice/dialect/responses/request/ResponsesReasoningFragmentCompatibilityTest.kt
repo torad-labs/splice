@@ -108,11 +108,12 @@ class ResponsesReasoningFragmentCompatibilityTest(@param:TempDir private val sta
         return when (val type = JsonScalars.str(item, "type")) {
             "reasoning" -> "reasoning:${JsonScalars.str(item, "id") }"
             "function_call", "function_call_output" -> "$type:${JsonScalars.str(item, "call_id") }"
-            else -> "${JsonScalars.str(item, "role") }:" + item.getValue("content").jsonArray.joinToString("") {
-                it.jsonObject.getValue("text").jsonPrimitive.content
-            }
+            else -> "${JsonScalars.str(item, "role") }:" + messageText(item)
         }
     }
+
+    private fun messageText(item: JsonObject): String = JsonScalars.str(item, "content")
+        ?: item.getValue("content").jsonArray.joinToString("") { it.jsonObject.getValue("text").jsonPrimitive.content }
 }
 
 private const val FRAGMENT_CONVERSATION = "splice-fragment-compatibility"

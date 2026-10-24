@@ -183,7 +183,8 @@ class SeamsCrossRoundDedupTest {
                     },
                 ),
             )
-            val builder = ResponsesRequestBuilder(ResponsesQuirks(lite = ResponsesLiteQuirks()))
+            val builder =
+                ResponsesRequestBuilder(ResponsesQuirks(providerTag = "claudex", lite = ResponsesLiteQuirks()))
             val meta = builder.build(body.typed, body.raw, options).meta
             val seams = codexSeams(reasoningCache = cache, cacheOn = true)
             val signals = TurnSignals(clientGone = { false }, watchdogFired = { null })

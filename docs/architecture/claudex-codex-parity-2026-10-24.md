@@ -1,10 +1,31 @@
 # Code mode and reasoning verification, 2026-10-24
 
-## Result
+## Current repair and verification
 
-Completed-item dispatch and ordered reasoning replay are repaired and installed from `f94016cfaf78bf41a215437ec4b78eec7f8f8475`. The full gate, unchanged real-client probe, four smoke trials, all 48 paired benchmark trials and six fixed diagnostic trials passed. Readable model text is preserved; opaque replay blocks stay off the client stream. End-to-end timings vary by task, as recorded below.
+Runtime source: `51f24dfee45c8220334e313f9212ee2968de74f6`. Normal local pre-push gate: PASS (235.1 seconds; all scoped module checks, architecture/law checks and required direct legs). Frozen interactive client fixture: PASS for completion and late provider failure on the same jar. Workflow-pinned secret scan: [recorded in the current verification status](https://github.com/torad-labs/splice/pull/420#issuecomment-6383599545).
 
-## Behavior
+Qualified jar SHA-256: `98cef130907dd6fbec1aac5e33e459986b31805c6a1960646044409fffb3d585`. Both interactive scenarios delivered the exact 89 fixture characters once on the wire and in native client thinking blocks, with zero opaque blocks, one effect and normal exit 0.
+
+| Interactive scenario | Effect after item.done | Effect before terminal |
+|---|---:|---:|
+| Completion | 615 ms | 1,386 ms |
+| Late provider failure | 654 ms | 1,346 ms |
+
+The repair starts a validated whole exec item at item completion, preserves accepted source through late provider failure, and retains readable reasoning once while keeping encrypted items in native server history. Ordered prefaces and reasoning survive callbacks, restart and re-anchor. Sparse terminal arrays and reused output indexes retain source boundaries. Native torn and recovered message boundaries are preserved, with complete prefix bytes replayed once.
+
+Optional cache persistence can be disabled while replay remains available in bounded memory. Old duplicate live/terminal records are reconciled before admission accounting. Ordinary tool-result text and image changes invalidate later reasoning; only the exact cleared-result marker can reuse a unique, branch-scoped proof of the original full result. Proofs contain hashes, consume no reasoning-entry slots, and share the existing byte limit. A corrupt cache remains removed until actual reasoning is available to persist. Previously cleared legacy hashes without a verifiable original prefix cannot be reconstructed; those lookups miss safely.
+
+Version 3 uses the actual Claude Code 2.1.310 interactive TUI, isolated loopback fixtures, the unchanged two-second held terminal, one unguarded filesystem effect, exact wire/client reasoning, zero opaque blocks and normal interactive exits. Probe source SHA-256: `eb28389468371aeb1291652e22f5facb44db66761708a74e9f464a78dfa475f9`; PTY helper: `a814c0feeef2e6ec8d82cc50c2db5439c45ae558c5b11ab61296b8c21b9245f3`. See [the fixture contract](../../.Codex/tmp/codex-parity/probe-client.md).
+
+The final paired evaluation uses 30 micro and 18 public trials with both pinned clients in interactive PTYs. The [runner patch and controls](../../.Codex/tmp/codex-parity/interactive-benchmark/README.md) and [fixed plan](../../.Codex/tmp/codex-parity/interactive-benchmark/interactive-evaluation-plan.md) are included for review. Analyzer v3 revision 3 explicitly checks high/detailed/all_turns settings, separates known auxiliary requests, validates genuine client session artifacts and blocks unknown or malformed evidence. Its 28 model-free cases passed. The [current verification and evaluation status](https://github.com/torad-labs/splice/pull/420#issuecomment-6383599545) records current same-binary verification and final evaluation results. The final interactive comparison is evaluated independently of the historical first pass below.
+
+All measurements below describe the earlier print-mode first pass. They are retained for provenance and are not pooled with the final interactive comparison. GitHub Actions could not start because of an account billing restriction; local validation is reported explicitly. This work targets the feature branch and does not cut a release.
+
+## Historical first pass: f94016c, print mode
+
+The first pass improved completed-item dispatch and server-owned reasoning delivery, and was installed from `f94016cfaf78bf41a215437ec4b78eec7f8f8475`. Later review found the edge cases addressed by the current repair above. The full gate, unchanged real-client probe, four smoke trials, all 48 paired benchmark trials and six fixed diagnostic trials passed. Readable model text is preserved; opaque replay blocks stay off the client stream. End-to-end timings vary by task, as recorded below.
+
+## Execution boundary
 
 Splice admits an exec program at `response.output_item.done` after validating the complete item and its native identity. The response reader continues independently to collect the terminal status and usage. Sequential awaited tools advance with their results; explicit parallel groups retain their batching behavior. Partial programs do not execute.
 
@@ -20,19 +41,19 @@ flowchart LR
   T --> B[Settle status and usage]
 ```
 
-An admitted program retains its execution identity and accepted results after a late upstream failure. Recovery uses saved evidence and does not rerun the source. Startup ownership is released when no execution has claimed the source, and explicit disposal prevents a pending startup from reviving it.
+An admitted program retains its execution identity and accepted results after a late upstream failure. Recovery uses saved evidence and does not rerun the source. Uncertified source endings release pending startup. A valid sealed item retains its acceptance independently of worker scheduling; explicit disposal still prevents a pending startup from reviving it.
 
 Encrypted reasoning remains in ordered server history. Claude Code receives readable reasoning supplied by the model without new opaque replay blocks that render as empty Thinking rows. Existing v1 replay envelopes still decode. Replay stays ordered through prose, callback and restart boundaries. Compaction requests preserve the existing history prefix; subsequent turns use the compacted history. The input-cache key derivation is unchanged. Replay remains enabled and mirroring remains disabled.
 
 The reference is Codex source at `970111f6cb62cc02fe36a82ea7d71b37a2889c97`: its ordinary [completed-item handler](https://github.com/openai/codex/blob/970111f6cb62cc02fe36a82ea7d71b37a2889c97/codex-rs/core/src/session/turn.rs#L2913), [eager tool dispatch](https://github.com/openai/codex/blob/970111f6cb62cc02fe36a82ea7d71b37a2889c97/codex-rs/core/src/stream_events_utils.rs#L348), and [whole-program execution](https://github.com/openai/codex/blob/970111f6cb62cc02fe36a82ea7d71b37a2889c97/codex-rs/core/src/tools/code_mode/execute_handler.rs#L40). This work aligns that execution boundary and the separation between model history and client presentation. Codex can also defer dispatch for synchronous post-model hooks and mailbox drains.
 
-## Reproducible scheduling and delivery probe
+## Historical print-mode probe
 
 The frozen probe SHA-256 is `3253aed2bed031701a4d8c9c7cf2eb2a0e4ffa8af1051fce6cf45659c38b5ec8`. It uses the actual Claude Code 2.1.310 executable, an isolated Splice jar and a synthetic Responses server. There are no paid model calls. The server sends readable reasoning and a complete exec item, then holds the terminal for two seconds. A second scenario fails the response after the item is complete.
 
 The same probe checks callbacks before the terminal, one unguarded filesystem effect per program, the exact readable text once in both the wire and real client partial events, zero opaque blocks, retained reasoning on the following request, and a successful final client answer. Final client snapshots are excluded from delta counts.
 
-Final candidate source: `f94016cfaf78bf41a215437ec4b78eec7f8f8475`. Clean pre-push jar SHA-256: `c581cfbb7431765b7b06437d4b1844d14285eff69c6f717a4407a3ef0883b6fa`. The unchanged probe passed both scenarios with exit 0:
+First-pass candidate source: `f94016cfaf78bf41a215437ec4b78eec7f8f8475`. Clean pre-push jar SHA-256: `c581cfbb7431765b7b06437d4b1844d14285eff69c6f717a4407a3ef0883b6fa`. The unchanged probe passed both scenarios with exit 0:
 
 | Scenario | Callback after item.done | Callback before terminal | Effects | Opaque blocks |
 |---|---:|---:|---:|---:|
@@ -43,15 +64,15 @@ Each delivered the exact 89 readable fixture characters once on both channels. S
 
 The task-start installed jar (`ce731c711f944d807f7980fce934feeb982735f9d1008ca44971f178a43bf56a`) waited until after the terminal in the success scenario and did not execute the completed item in the late-failure scenario. The recovered Oct 22 jar (`31ffb8de2dc7968803be5e0198f5203701d72152c4c37392af8ac6014c11afaf`) also fails these bounded scheduling checks under the current replay-on controls. That does not invalidate its earlier successful real sessions or equate it with the broken task-start installation.
 
-## Checks
+## Historical first-pass checks
 
-The normal pre-push gate passed on the committed `f94016cfa` tree in 6m52s, including every scoped module check, architecture and concentration laws, coverage, structural rules, strict TypeScript checks, 11/11 byte-exact oracle scenarios, 63/63 conformance cases and packaged code-mode mocks. SSH push exited 0; the remote fix branch resolves to the exact candidate commit. No concentration limits, failure assertions, timeout limits or task verifiers were relaxed.
+The normal pre-push gate passed on the committed `f94016cfa` tree in 6m52s, including every scoped module check, architecture and concentration laws, coverage, structural rules, strict TypeScript checks, 11/11 byte-exact oracle scenarios, 63/63 conformance cases and packaged code-mode mocks. SSH push exited 0 and verified the remote fix branch at that candidate commit. No concentration limits, failure assertions, timeout limits or task verifiers were relaxed.
 
 Earlier failures are retained in the local evidence: source-ownership/recovery and native-history defects were corrected; obsolete opaque-wire expectations were replaced by exact readable output; the strengthened ancestor expectation was corrected to the existing output wrapper. A shutdown-drain test failed in one earlier run, then passed unchanged in both subsequent full runs. No speculative shutdown modification was made.
 
 The replaystream oracle's intentional wire change is reconstructed by removing one opaque redacted block and closing its index gap. All other client bytes and all upstream request bytes remain identical. The other oracle pins, including compactish, remain unchanged.
 
-## Paired benchmarks
+## Historical print-mode paired benchmarks
 
 Controls: GPT `gpt-6.1-sol`, high effort, pinned Codex 0.159.1 and Claude Code 2.1.299, replay on, mirroring off, WebSocket and prefill on, detailed reasoning requests, focused-exploration guidance, repository-tools profile, request/instruction capture. Three repetitions per task and client; serial execution with alternating client order. The newer-client probe above is a separate compatibility check.
 
@@ -99,7 +120,7 @@ Native returned 6 readable summary parts/2,721 characters across 92 Responses re
 
 Independent reconstruction also matched all 21 prose parts/3,373 characters in combined stream order, with 121 message stops for 121 client messages, no empty/unclosed/unmapped blocks and no boundary inversions. All 14 reasoning followups retained their response chain. Six encrypted-only items had no readable source text and correctly produced no empty client row. Stale-write retries followed the expected rejected-write, fresh-read, corrected-write sequence.
 
-The parallel-read difference was investigated. Candidate reads retain six-way concurrency and finish in about 0.75 seconds, matching the baseline. Two inspected candidates add checks using unavailable Python interpreters (exit 127), then recover with Node, producing extra model rounds. Native history, results and reasoning remain ordered and unique; response parents and cache keys are valid. Time outside upstream responses stays comparable. A fixed six-trial old-jar/new-jar comparison is planned after the public suite, with unchanged image, guidance and verifiers.
+The parallel-read difference was investigated. Candidate reads retain six-way concurrency and finish in about 0.75 seconds, matching the baseline. Two inspected candidates add checks using unavailable Python interpreters (exit 127), then recover with Node, producing extra model rounds. Native history, results and reasoning remain ordered and unique; response parents and cache keys are valid. Time outside upstream responses stays comparable. The fixed six-trial old-jar/new-jar comparison reported below used unchanged image, guidance and verifiers.
 
 Full public receipt: `2026-10-24T08-08-45-538Z-candidate-f94016c-replaytrue-public`. All 18 trials verified with complete captures and matching controls. Splice completed 41 clean records and 74 callbacks, with zero journal errors, lost/abandoned records or unresolved calls. The actual public manifests match the same 18 control fields as the micro comparison.
 
@@ -132,15 +153,15 @@ All six readable-text comparisons passed. Two original old-jar combined “exact
 
 All original captures, flagged audits, outliers and diagnostic classifications are retained locally. The pre-change installation already wins several task means, so those wins cannot be credited to this patch.
 
-## Interpretation
+## Historical measurement interpretation
 
 Task verification, script/callback health, reasoning delivery and elapsed time are separate measurements. A missing readable vendor summary cannot be recovered from encrypted history. Captures establish what the vendor supplied and what the client received; they do not measure terminal painting or disclose private model reasoning. Three repetitions give directional timing evidence and cannot establish universal speed superiority.
 
-The probe checks the real client stream without a TTY. Historical Oct 14 benchmark receipts use replay off and cannot be treated as a controlled jar-only comparison with the current replay-on evaluation. Analyzer v2 excludes auxiliary native `/alpha/search` requests from Responses-generation denominators, retaining their metadata separately. All 62 native and 57 Splice public baseline Responses requests explicitly used high/detailed/all_turns settings; the original captures and analyses remain unchanged.
+This historical version-2 probe checked the real client stream without a TTY. It is retained as evidence and is superseded by the interactive version-3 fixture. Historical Oct 14 benchmark receipts use replay off and cannot be treated as a controlled jar-only comparison with the current replay-on evaluation. Analyzer v2 excludes auxiliary native `/alpha/search` requests from Responses-generation denominators, retaining their metadata separately. All 62 native and 57 Splice public baseline Responses requests explicitly used high/detailed/all_turns settings; the original captures and analyses remain unchanged.
 
 Splice retains its GraalJS runtime and Claude permission handlers. Codex has a broader helper API, including explicit yield/wait, cross-exec store/load and media forwarding; those features are outside this execution/reasoning repair. Benchmark results assess the stated repository-tool tasks and cannot establish parity across every native helper.
 
-## Installation
+## Historical first-pass installation
 
 The pushed candidate `f94016cfaf78bf41a215437ec4b78eec7f8f8475` was installed after validation. Jar SHA-256 is `c581cfbb7431765b7b06437d4b1844d14285eff69c6f717a4407a3ef0883b6fa`; launcher SHA-256 is `36e84897eb800f982d13b1a8dec79de07b37b4b4c51029b3d271bb3482d3cb39`.
 

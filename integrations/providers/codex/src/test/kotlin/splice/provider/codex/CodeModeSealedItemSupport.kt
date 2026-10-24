@@ -31,6 +31,8 @@ abstract class CodeModeSealedItemSupport : CodeModeItemCompletionSupport() {
     protected class SourceSink : WireSink by RecordingSink() {
         val text = StringBuilder()
         val callback = CompletableDeferred<SeenTool>()
+        var opaqueBlocks = 0
+            private set
 
         override suspend fun addTextBlock(text: String) {
             this.text.append(text)
@@ -46,6 +48,10 @@ abstract class CodeModeSealedItemSupport : CodeModeItemCompletionSupport() {
         }
 
         override suspend fun inputJsonDelta(index: WireBlockIndex, partialJson: String) = Unit
+
+        override suspend fun addRedactedThinking(data: String) {
+            opaqueBlocks++
+        }
     }
 
     protected inner class SealedPost(
@@ -53,6 +59,8 @@ abstract class CodeModeSealedItemSupport : CodeModeItemCompletionSupport() {
         val suffix: String = "",
         private val ending: String = "success",
         val followingReasoning: Boolean = false,
+        private val terminalReasoningOnly: Boolean = false,
+        private val terminalExecAnchor: Boolean = true,
     ) : RedirectableRoundPost {
         val itemRelease = CompletableDeferred<Unit>()
         val itemHandled = CompletableDeferred<Unit>()
@@ -72,6 +80,7 @@ abstract class CodeModeSealedItemSupport : CodeModeItemCompletionSupport() {
                 "encrypted_content":"synthetic-after","summary":[],"content":[]}""",
         ).jsonObject
         val followingMessage = message("after-exec-message", suffix)
+        private val nativePreface = message("native-preface", "A")
         private val preface = JsonObject(
             ResponsesAssistantText.item("A", AssistantPhase.COMMENTARY) +
                 mapOf("type" to JsonPrimitive("message"), "id" to JsonPrimitive("preface-item")),
@@ -125,20 +134,19 @@ abstract class CodeModeSealedItemSupport : CodeModeItemCompletionSupport() {
 
         /** This variant drives the real Responses reducer; neither raw post-call item is a client carrier. */
         private suspend fun nativeSource(sink: WireSink): RoundResult {
-            val preface = message("native-preface", "A")
             val added =
                 JsonObject(
                     completed.raw + mapOf("input" to JsonPrimitive(""), "status" to JsonPrimitive("in_progress")),
                 )
             val frames = flow {
                 emit(event("response.output_item.done", 0, reason))
-                prose(1, preface, "A").forEach { emit(it) }
+                prose(1, nativePreface, "A").forEach { emit(it) }
                 emit(event("response.output_item.added", 2, added))
                 itemRelease.await()
                 emit(event("response.output_item.done", 2, completed.raw))
                 itemHandled.complete(Unit)
-                emit(event("response.output_item.done", 3, followingReason))
-                prose(4, followingMessage, suffix).forEach { emit(it) }
+                if (!terminalReasoningOnly) emit(event("response.output_item.done", 3, followingReason))
+                if (suffix.isNotEmpty()) prose(4, followingMessage, suffix).forEach { emit(it) }
                 tailSent.complete(Unit)
                 terminalRelease.await()
                 emit(
@@ -151,7 +159,7 @@ abstract class CodeModeSealedItemSupport : CodeModeItemCompletionSupport() {
                                 put(
                                     "output",
                                     JsonArray(
-                                        listOf(reason, preface, completed.raw, followingReason, followingMessage),
+                                        terminalItems(),
                                     ),
                                 )
                             },
@@ -165,6 +173,13 @@ abstract class CodeModeSealedItemSupport : CodeModeItemCompletionSupport() {
                     encode = ReasoningReplay::encodeReasoningEnvelope,
                 )
             return RoundResult.Outcome(reader.driveTurn(frames, sink))
+        }
+
+        private fun terminalItems(): List<JsonObject> = if (terminalExecAnchor) {
+            listOf(reason, nativePreface, completed.raw, followingReason) +
+                listOfNotNull(followingMessage.takeIf { suffix.isNotEmpty() })
+        } else {
+            listOf(followingReason)
         }
 
         private fun message(id: String, text: String): JsonObject = buildJsonObject {

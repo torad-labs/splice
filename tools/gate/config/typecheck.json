@@ -3,6 +3,7 @@
   "compiler": "node_modules/@typescript/native/bin/tsc",
   "programs": [
     "tools/gate/tsconfig.json",
+    "tools/codemode-parity/tsconfig.json",
     "tools/release/tsconfig.json",
     "tools/e2e/tsconfig.json",
     ".Codex/tmp/codex-parity/tsconfig.json",

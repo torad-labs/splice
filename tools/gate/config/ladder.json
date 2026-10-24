@@ -2,6 +2,12 @@
   "about": "The gate ladder: every leg of the gate of record that is not yet a Gradle task of its own. build-logic/src/main/kotlin/splice.gate-ladder.gradle.kts registers one Exec task per row under `gateOfRecord` (entered through `bun tools/gate run`), and tools/gate/test/run.test.ts reads the same rows WITHOUT Gradle to prove each one is a real leg: a unique task, a reason, and an argv whose target exists — it caught two legs still pointing into checks/ on 2026-09-21, after the move. The concentration leg's own routing check retired with the checker it routed; configguard.ts:11-13 records why. Each row declares `inputs`, the path globs its leg reads: pre-push scopes a push by them (tools/gate/src/lib/prepush-scope.ts), and run.test.ts fails a row that declares none. A row is data, not code: it is present or absent, and its argv is an array Gradle hands to the process without a shell. `why` is the leg's reason for existing — keep it when you move the leg.",
   "legs": [
     {
+      "task": "codeModeQualificationGuards",
+      "inputs": ["tools/codemode-parity/**", "package.json"],
+      "why": "Negative probes prevent a smoke subset, removed/duplicate/skipped case, mismatched executable, stale evidence, edited raw artifact or asserted PASS from becoming full code-mode qualification. This validates the qualification mechanism; actual product parity remains the separate all-family post-install readiness command, which also checks the running daemon's open jar and native executable.",
+      "command": ["bun", "test", "tools/codemode-parity/qualification.test.ts"]
+    },
+    {
       "task": "gateRules",
       "inputs": ["**"],
       "commit": ["sgconfig.yml","quality/rules/**"],

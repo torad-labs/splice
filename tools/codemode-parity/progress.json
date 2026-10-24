@@ -1,0 +1,42 @@
+{
+  "schema": 1,
+  "status": "UNQUALIFIED",
+  "productQualified": false,
+  "updatedAt": "2026-10-24T20:55:34.129Z",
+  "contractSha256": "40166b486e43a0023a32f03e90cc71ae2fd54b5d383703e5c4f70c317380723f",
+  "harnessSha256": "9410be5ffb099f083fb8c7d9e883a38fe2de345cb497e4ffdd52ea67dabd3d2e",
+  "requiredFamilies": 24,
+  "executedFamilies": [],
+  "remainingFamilies": [
+    "runtime.module-semantics",
+    "runtime.item-boundary",
+    "runtime.sequential-callbacks",
+    "runtime.partial-parallel-results",
+    "runtime.explicit-yield",
+    "runtime.timed-yield",
+    "runtime.wait-suffix",
+    "runtime.terminate",
+    "runtime.notifications",
+    "runtime.timers",
+    "runtime.session-store",
+    "runtime.output-content",
+    "runtime.errors-and-cancellation",
+    "history.append-only",
+    "history.restart",
+    "history.replay-is-not-steering",
+    "history.real-steering",
+    "history.cleared-results",
+    "delivery.readable-reasoning",
+    "delivery.interactive-cadence",
+    "delivery.late-failure-recovery",
+    "packaging.native-host",
+    "evidence.failing-baseline",
+    "evidence.installed-identity"
+  ],
+  "findings": [
+    "ENOENT: no such file or directory, open '/home/marcos/Documents/dev/projects/splice/artifacts/codemode-burst-2026-10-24/qualification/receipt.json'"
+  ],
+  "receiptPath": null,
+  "referenceSourceLinkage": "unproven",
+  "scope": "A green harness test suite or native reference subset never qualifies the product."
+}

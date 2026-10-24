@@ -120,7 +120,13 @@ class CodeModeAppendOnlyHistoryTest : CodeModeBridgeTestSupport() {
         private var spoken = 0
 
         /** Null when the conversation held, else what broke first. */
-        suspend fun broke(): String? {
+        suspend fun broke(): String? = try {
+            held()
+        } finally {
+            manager.onProviderStop()
+        }
+
+        private suspend fun held(): String? {
             while (posts < upstreamTurns) {
                 check(requests++ < REQUESTS) { "seed $seed never finished" }
                 request()?.let { return it }
@@ -256,10 +262,11 @@ class CodeModeAppendOnlyHistoryTest : CodeModeBridgeTestSupport() {
          *  the client: what it kept in memory of GPT's posts is gone, and the next post still extends the last one.
          *  Once, the build it starts may be newer than the one that saved the state, whose records kept no client
          *  start. Not after a cut reply: with no start kept, a script the client holds no copy of is left out (the
-         *  older build had already left it out of what GPT was sent), a gap the goal names. */
+         *  older build had already left it out of what GPT was sent), a gap the goal names. The old splice ends as a
+         *  process does, which a head stop alone does not: its timed sweep would keep it and all it loaded. */
         private fun restart() {
             trace += "restart $requests"
-            manager.onHeadStop()
+            manager.onProviderStop()
             val newer = !cut && !aged
             if (newer && faults.nextInt(3) == 0) {
                 aged = true

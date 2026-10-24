@@ -2,7 +2,9 @@ import { describe, test, expect } from "bun:test";
 import { requiredCaseIds, contractFindings, structuralFindings, sealReceipt, artifact, rawArtifactFindings, type Receipt } from "./qualification";
 import { verifiers } from "./verifiers";
 import { assertNativeTypedMedia } from "./interactive-output";
-import { assertNativeBatch } from "./interactive-batch";
+import { assertNativeBatch, assertNativeRestartBatch } from "./interactive-batch";
+import { assertCandidateWorkerLoss } from "./candidate-loss";
+import type { TraceEvent } from "./native-reference";
 import { mkdtemp, writeFile, rm } from "node:fs/promises";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
@@ -135,9 +137,11 @@ function batchObservation() {
     { type: "input_text", text: "Script completed\nWall time 0.1 seconds\nOutput:\n" },
     { type: "input_text", text: index === 0 ? "native-batch-first" : "native-batch-second" },
   ] }));
+  outputs[1]!.output.push({ type: "input_text", text: "native-batch-second-epoch:1200" });
   return { scriptAttempts: 1, callbackTimes: [1100], marks: [
-    ...originals.map(item => ({ event: "upstream_sse", frame: { type: "response.output_item.done", item } })),
-    { event: "batch_items_done", epochMs: 1000 }, { event: "response_completed_sent", epochMs: 3000 },
+    ...originals.map(item => ({ event: "upstream_sse", epochMs: 1000, frame: { type: "response.output_item.done", item } })),
+    { event: "batch_items_done", epochMs: 1000 }, { event: "client_callback_result_received", epochMs: 1150 },
+    { event: "response_completed_sent", epochMs: 3000 },
   ], upstreamRequests: [{ nativeInput: [...originals, ...outputs] as any[] }] };
 }
 describe("qualification multi-item admission guard (not product parity)", () => {
@@ -159,6 +163,12 @@ describe("qualification multi-item admission guard (not product parity)", () => 
     const duplicate = batchObservation(); duplicate.upstreamRequests[0]!.nativeInput.push(duplicate.upstreamRequests[0]!.nativeInput[1]);
     expect(() => assertNativeBatch(duplicate)).toThrow();
   });
+  test("rejects second execution held until terminal and a late first callback result", () => {
+    const held = batchObservation(); held.upstreamRequests[0]!.nativeInput[3].output[2].text = "native-batch-second-epoch:3001";
+    expect(() => assertNativeBatch(held)).toThrow();
+    const late = batchObservation(); late.marks[late.marks.length - 2] = { event: "client_callback_result_received", epochMs: 3001 };
+    expect(() => assertNativeBatch(late)).toThrow();
+  });
   test("rejects retried sources, a short hold, or an effect after terminal", () => {
     const retried = batchObservation(); retried.scriptAttempts = 2;
     expect(() => assertNativeBatch(retried)).toThrow();
@@ -166,5 +176,60 @@ describe("qualification multi-item admission guard (not product parity)", () => 
     expect(() => assertNativeBatch(early)).toThrow();
     const late = batchObservation(); late.callbackTimes = [3001];
     expect(() => assertNativeBatch(late)).toThrow();
+  });
+});
+
+function workerLossTrace(): TraceEvent[] {
+  return [
+    { at: 1, direction: "harness", frame: { type: "harness/native-host-kill", pid: 123, signal: "SIGKILL" } },
+    { at: 2, direction: "sent", frame: { type: "operation/request", id: 7, request: { method: "session/wait" } } },
+    { at: 3, direction: "received", frame: { type: "operation/response", id: 7, result: { status: "error",
+      errorType: "splice.upstream.failure.CodeModeWorkerLostException", message: "Code-mode worker was stopped; source was not rerun" } } },
+  ];
+}
+describe("qualification worker-loss guard (not product parity)", () => {
+  test("requires the actual typed operation error after killing the candidate child", () => {
+    expect(() => assertCandidateWorkerLoss(workerLossTrace())).not.toThrow();
+  });
+  test("rejects a hung adapter or a generic worker-looking error", () => {
+    const missing = workerLossTrace(); missing.pop();
+    expect(() => assertCandidateWorkerLoss(missing)).toThrow();
+    const untyped = workerLossTrace(); delete untyped[2]!.frame.result.errorType;
+    expect(() => assertCandidateWorkerLoss(untyped)).toThrow();
+  });
+  test("rejects success and unmatched operation replies", () => {
+    const success = workerLossTrace(); success[2]!.frame.result.status = "ok";
+    expect(() => assertCandidateWorkerLoss(success)).toThrow();
+    const unmatched = workerLossTrace(); unmatched[2]!.frame.id = 8;
+    expect(() => assertCandidateWorkerLoss(unmatched)).toThrow();
+  });
+});
+
+function restartBatchObservation() {
+  const value = batchObservation();
+  value.marks.push({ event: "client_sse", frame: { type: "content_block_start", content_block: {
+    type: "tool_use", id: "callback-once", name: "Bash",
+  } } } as any);
+  value.upstreamRequests[0]!.nativeInput[2].output = "Script terminated\nWall time 0.0 seconds\nOutput:\n" + JSON.stringify({
+    status: "interrupted", sourceRerun: false, results: [{ id: "callback-once", output: "(Bash completed with no output)", isError: false }], unresolved: [],
+  });
+  return value;
+}
+describe("qualification queued-source restart guard (not product parity)", () => {
+  test("requires honest first-source loss plus completed queued-source output", () => {
+    expect(() => assertNativeRestartBatch(restartBatchObservation())).not.toThrow();
+    expect(() => assertNativeRestartBatch(batchObservation())).toThrow();
+  });
+  test("rejects a rerun declaration or missing accepted callback evidence", () => {
+    const rerun = restartBatchObservation();
+    rerun.upstreamRequests[0]!.nativeInput[2].output = rerun.upstreamRequests[0]!.nativeInput[2].output.replace('"sourceRerun":false', '"sourceRerun":true');
+    expect(() => assertNativeRestartBatch(rerun)).toThrow();
+    const missing = restartBatchObservation();
+    missing.upstreamRequests[0]!.nativeInput[2].output = missing.upstreamRequests[0]!.nativeInput[2].output.replace('"callback-once"', '"different-callback"');
+    expect(() => assertNativeRestartBatch(missing)).toThrow();
+  });
+  test("rejects a queued sibling that did not produce its real completed output", () => {
+    const value = restartBatchObservation(); value.upstreamRequests[0]!.nativeInput[3].output[1].text = "native-batch-first";
+    expect(() => assertNativeRestartBatch(value)).toThrow();
   });
 });

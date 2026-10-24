@@ -47,9 +47,10 @@ internal object CodeModeParityPayload {
         put("value", value)
     }
 
-    fun failure(message: String): JsonObject = buildJsonObject {
+    fun failure(message: String, errorType: String? = null): JsonObject = buildJsonObject {
         put("status", "error")
         put("message", message)
+        if (errorType != null) put("errorType", errorType)
     }
 
     fun number(value: JsonObject, key: String, fallback: Long): Long =

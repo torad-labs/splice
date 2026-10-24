@@ -16,6 +16,7 @@ import { runAudioCases } from "./audio-cases";
 import { runInstalledCase } from "./installed-case";
 import { runNativeGatewayCases } from "./native-gateway-cases";
 import { candidateCommand } from "./candidate-command";
+import { assertCandidateWorkerLoss } from "./candidate-loss";
 
 const directory = import.meta.dir;
 const repo = resolve(directory, "../..");
@@ -128,6 +129,7 @@ async function qualify(): Promise<void> {
       };
       try {
         await runRuntimeCase(host, test);
+        if (side === "candidate" && test.destroysHost) assertCandidateWorkerLoss(host.transcript);
         if (side === "candidate" && !test.destroysHost) observedIdentity = await productionIdentity(host, candidateJar.sha256, candidateNativeHost.sha256);
       } catch (error) { failure = error instanceof Error ? error.stack ?? error.message : String(error); item.findings.push(`${side}: ${failure.split("\n")[0]}`); }
       finally { await host.stop(); }

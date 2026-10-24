@@ -9,6 +9,8 @@ import kotlinx.serialization.json.jsonObject
 import splice.core.util.JsonScalars
 import splice.upstream.codemode.NativeCodeModeLifecycle
 import splice.upstream.codemode.ProcessDispatchers
+import splice.upstream.failure.CodeModeInfrastructureException
+import splice.upstream.failure.CodeModeWorkerLostException
 
 /** Dispatch is independent of observations so callback replies and termination can release a live cell. */
 internal class CodeModeParityProtocol(
@@ -41,17 +43,21 @@ internal class CodeModeParityProtocol(
                 val id = frame.getValue("id")
                 try {
                     operation(id, frame.getValue("request").jsonObject)
+                } catch (error: CodeModeWorkerLostException) {
+                    failed(id, error.message.orEmpty(), "splice.upstream.failure.CodeModeWorkerLostException")
+                } catch (error: CodeModeInfrastructureException) {
+                    failed(id, error.message.orEmpty(), "splice.upstream.failure.CodeModeInfrastructureException")
                 } catch (error: IllegalArgumentException) {
-                    frames.send(
-                        CodeModeParityMessages.response(id, CodeModeParityPayload.failure(error.message.orEmpty())),
-                    )
+                    failed(id, error.message.orEmpty())
                 } catch (error: IllegalStateException) {
-                    frames.send(
-                        CodeModeParityMessages.response(id, CodeModeParityPayload.failure(error.message.orEmpty())),
-                    )
+                    failed(id, error.message.orEmpty())
                 }
             }
         }
+    }
+
+    private fun failed(id: JsonElement, message: String, errorType: String? = null) {
+        frames.send(CodeModeParityMessages.response(id, CodeModeParityPayload.failure(message, errorType)))
     }
 
     private suspend fun operation(id: JsonElement, request: JsonObject) {

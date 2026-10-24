@@ -9,7 +9,7 @@ import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { interactiveClient } from "./interactive-client";
-import { assertNativeBatch } from "./interactive-batch";
+import { assertNativeBatch, assertNativeRestartBatch } from "./interactive-batch";
 
 const CLIENT = "/home/marcos/.local/share/claude/versions/2.1.310";
 const MODEL = "gpt-6.1-sol";
@@ -17,9 +17,9 @@ const SUMMARY = "PROBE_READABLE_REASONING: inspect the callback file, then run t
 const ENVELOPE = "synthetic-probe-reasoning-envelope-not-a-real-credential";
 const FINAL = "PROBE_FINISHED";
 const HOLD_MS = 2000;
-const PROBE_VERSION = 5;
+const PROBE_VERSION = 6;
 type Obj = Record<string, any>;
-type Scenario = "success" | "late-failure" | "native-lifecycle" | "restart" | "native-batch";
+type Scenario = "success" | "late-failure" | "native-lifecycle" | "restart" | "native-batch" | "native-batch-restart";
 type Mark = { event: string; epochMs: number; elapsedMs: number; [key: string]: unknown };
 
 function safeEnv(home: string): Record<string, string> {
@@ -74,6 +74,8 @@ export function declaredTools(description: string): string[] {
 }
 
 export async function interactiveScenario(jar: string, name: Scenario, root: string): Promise<Obj> {
+  const batch = name === "native-batch" || name === "native-batch-restart";
+  const restart = name === "restart" || name === "native-batch-restart";
   const home = join(root, name); const task = join(home, "task");
   for (const d of [home, task, join(home, "tmp"), join(home, "claude"), join(home, "state")]) mkdirSync(d, { recursive: true, mode: 0o700 });
   const effects = join(task, "effects.txt");
@@ -201,7 +203,7 @@ export async function interactiveScenario(jar: string, name: Scenario, root: str
     const callback = `text(await tools.Bash(${JSON.stringify({ command: `date +%s%3N >> ${quoted}`, description: "Record deterministic probe callback timestamp", timeout: 10000 })}));`;
     const script = name === "native-lifecycle"
       ? `text('native-prefix'); notify('native-progress'); yield_control(); await new Promise(r => setTimeout(r, 80)); ${callback} text('native-suffix'); image({ image_url: 'data:image/png;base64,aGVsbG8=', detail: 'original' }); audio({ audio_url: 'data:audio/wav;base64,aGVsbG8=' }); generatedImage({ image_url: 'data:image/png;base64,d29ybGQ=', output_hint: 'native-generated' });`
-      : name === "native-batch" ? `${callback} text('native-batch-first');` : callback;
+      : batch ? `${callback} text('native-batch-first');` : callback;
     const item: Obj = { type: "custom_tool_call", id: "exec_probe", call_id: "call_probe", name: "exec", input: script, status: "completed" };
     if (exec.namespace) item.namespace = exec.namespace;
     emit({ type: "response.output_item.added", output_index: 1, item: { ...item, input: "", status: "in_progress" } });
@@ -212,9 +214,9 @@ export async function interactiveScenario(jar: string, name: Scenario, root: str
     emit({ type: "response.custom_tool_call_input.done", output_index: 1, item_id: item.id, input: script });
     emit({ type: "response.output_item.done", output_index: 1, item }); mark("exec_item_done", { attempt: scripts });
     const responseItems = [reasoning, item];
-    if (name === "native-batch") {
+    if (batch) {
       const second: Obj = { type: "custom_tool_call", id: "exec_probe_second", call_id: "call_probe_second",
-        name: "exec", input: "text('native-batch-second');", status: "completed" };
+        name: "exec", input: "text('native-batch-second'); text('native-batch-second-epoch:' + Date.now());", status: "completed" };
       if (exec.namespace) second.namespace = exec.namespace;
       emit({ type: "response.output_item.added", output_index: 2, item: { ...second, input: "", status: "in_progress" } });
       emit({ type: "response.custom_tool_call_input.delta", output_index: 2, item_id: second.id, delta: second.input });
@@ -293,15 +295,20 @@ export async function interactiveScenario(jar: string, name: Scenario, root: str
     headers.set("authorization", `Bearer ${readFileSync(join(home, "state/mgmt-key"), "utf8").trim()}`);
     headers.delete("x-api-key");
     const requestBody = req.method === "GET" ? undefined : await req.arrayBuffer();
-    if (name === "restart" && !restarted && requestBody && path === "/v1/messages") {
+    if (requestBody && path === "/v1/messages") {
       const client = JSON.parse(Buffer.from(requestBody).toString());
-      if (client.messages?.some((m: Obj) => Array.isArray(m.content) && m.content.some((c: Obj) => c.type === "tool_result"))) {
-        restarted = true;
-        await firstTerminal;
-        mark("restart_before_callback_delivery", { pid: daemon?.pid });
-        await stop(daemon);
-        await boot();
-        mark("callback_delivered_after_restart", { pid: daemon?.pid });
+      const results = (client.messages ?? []).flatMap((message: Obj) => Array.isArray(message.content) ? message.content : [])
+        .filter((content: Obj) => content.type === "tool_result");
+      if (results.length) {
+        mark("client_callback_result_received", { results });
+        if (restart && !restarted) {
+          restarted = true;
+          await firstTerminal;
+          mark("restart_before_callback_delivery", { pid: daemon?.pid });
+          await stop(daemon);
+          await boot();
+          mark("callback_delivered_after_restart", { pid: daemon?.pid });
+        }
       }
     }
     const response = await fetch(`http://127.0.0.1:${headPort}${path}`, { method: req.method, headers,
@@ -362,8 +369,9 @@ export async function interactiveScenario(jar: string, name: Scenario, root: str
   const terminal = marks.find(m => m.event === "response_completed_sent" || m.event === "late_failure_sent")?.epochMs;
   const effect = callbackTimes[0];
   const batchFindings: string[] = [];
-  if (name === "native-batch") try {
-    assertNativeBatch({ marks, upstreamRequests: requests, scriptAttempts: scripts, callbackTimes });
+  if (batch) try {
+    const observed = { marks, upstreamRequests: requests, scriptAttempts: scripts, callbackTimes };
+    if (name === "native-batch-restart") assertNativeRestartBatch(observed); else assertNativeBatch(observed);
   } catch (error) { batchFindings.push(error instanceof Error ? error.message : String(error)); }
   const checks = {
     nativeBatchPreserved: batchFindings.length === 0,
@@ -390,7 +398,7 @@ export async function interactiveScenario(jar: string, name: Scenario, root: str
       !i.output.some((part: Obj) => part.type === "input_text" && part.text === "native-prefix"))),
     nativeNotificationPreserved: name !== "native-lifecycle" || requests.some(r => r.nativeInput?.some((i: Obj) =>
       i.type === "custom_tool_call_output" && i.call_id === "call_probe" && i.output === "native-progress")),
-    restartedBeforeCallbackDelivery: name !== "restart" || restarted,
+    restartedBeforeCallbackDelivery: !restart || restarted,
     noInfrastructureErrors: errors.length === 0,
   };
   return { scenario: name, passed: Object.values(checks).every(Boolean), checks, errors, taskDir: task,
@@ -405,7 +413,7 @@ export async function interactiveScenario(jar: string, name: Scenario, root: str
       itemDoneAt: done ?? null, terminalAt: terminal ?? null,
       callbackMinusItemDoneMs: effect !== undefined && done !== undefined ? effect - done : null,
       terminalMinusCallbackMs: effect !== undefined && terminal !== undefined ? terminal - effect : null }, marks,
-    coverage: "Real interactive PTY; completed item admission before response terminal; late response failure; native yield/wait; two serial outer exec items in one response; daemon restart before real callback-result delivery; persisted client blocks and terminal observations. No paint-latency claim." };
+    coverage: "Real interactive PTY; completed item admission before response terminal; late response failure; native yield/wait; two serial outer exec items in one response including queued-source restart; daemon restart before real callback-result delivery; persisted client blocks and terminal observations. No paint-latency claim." };
 }
 
 export async function main(argv: string[]): Promise<number> {
@@ -431,7 +439,7 @@ export async function main(argv: string[]): Promise<number> {
   mkdirSync(dirname(out), { recursive: true });
   const save = () => writeFileSync(out, JSON.stringify(receipt, null, 2) + "\n", { mode: 0o600 });
   save();
-  for (const name of ["success", "late-failure", "native-lifecycle", "restart", "native-batch"] as const) {
+  for (const name of ["success", "late-failure", "native-lifecycle", "restart", "native-batch", "native-batch-restart"] as const) {
     const result = await interactiveScenario(jar, name, root); receipt.scenarios.push(result); save();
     console.log(`${name}: ${result.passed ? "PASS" : "FAIL"} (${Object.entries(result.checks).filter(([, ok]) => !ok).map(([key]) => key).join(", ") || "all checks"})`);
   }

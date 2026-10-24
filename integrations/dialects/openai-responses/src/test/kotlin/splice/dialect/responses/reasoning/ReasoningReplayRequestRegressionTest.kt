@@ -16,19 +16,28 @@ import org.junit.jupiter.api.io.TempDir
 import splice.core.auth.AuthDescription
 import splice.core.auth.Credentials
 import splice.core.auth.RefreshableAuthProvider
+import splice.core.config.REASONING_DIR
 import splice.core.index.WireBlockIndex
 import splice.core.model.ModelCatalog
 import splice.core.model.ModelEntry
 import splice.core.parse.AnthropicParse
 import splice.core.parse.AnthropicTurnBody
+import splice.core.reasoning.ReasoningHistory
+import splice.core.reasoning.ReasoningReplay
 import splice.core.turn.ReasoningDisplay
 import splice.core.turn.TurnOutcome
 import splice.core.turn.WatchdogBudget
+import splice.core.wire.ContentBlock
+import splice.core.wire.RedactedThinkingBlock
+import splice.core.wire.TextBlock
+import splice.core.wire.ThinkingBlock
+import splice.core.wire.ToolUseBlock
 import splice.dialect.responses.ReasoningSettings
 import splice.dialect.responses.ResponsesLiteQuirks
 import splice.dialect.responses.ResponsesProvider
 import splice.dialect.responses.ResponsesQuirks
 import splice.dialect.responses.ResponsesRoundTripQuirks
+import splice.dialect.responses.request.ResponsesStableIds
 import splice.upstream.ProviderLocations
 import splice.upstream.ProviderName
 import splice.upstream.ProviderTuning
@@ -157,6 +166,82 @@ class ReasoningReplayRequestRegressionTest(@param:TempDir private val state: Pat
             resultAt < afterResultAt && afterResultAt < prefaceAt &&
                 prefaceAt < afterPrefaceAt && afterPrefaceAt < callAt,
         )
+    }
+
+    @Test
+    fun `persisted full-result positions replay on upgrade and survive later clearing after a verified lookup`() {
+        val firstHistory = "$opening,${assistant(tool("call_1"))},${result("call_1", "original file contents")}"
+        val prefix = request("$firstHistory,${assistant(text("Reviewed. "))}")
+        persistLegacyReasoning(prefix)
+        val suffix = ",${assistant(text("Reviewed. More."))}," +
+            """{"role":"user","content":"Continue the inspection."}"""
+        val clearedHistory = "$opening,${assistant(tool("call_1"))}," +
+            result("call_1", "[Old tool result content cleared]")
+        val provider = ReplayRequestProvider(state, cache = true)
+        assertTrue(
+            reasoningIds(input(provider, request(clearedHistory + suffix))).isEmpty(),
+            "an old payload hash cannot recover already-cleared history before an exact original-prefix lookup",
+        )
+        assertEquals(
+            listOf("rs_legacy"),
+            reasoningIds(input(provider, request(firstHistory + suffix))),
+            "an upgraded provider must read unchanged history from an existing full-result cache",
+        )
+        val restarted = ReplayRequestProvider(state, cache = true)
+        val cleared = input(restarted, request(clearedHistory + suffix))
+        assertEquals(
+            listOf("rs_legacy"),
+            reasoningIds(cleared),
+            "a verified old-prefix match must persist a stable alias before later clearing and restart",
+        )
+        assertEquals(
+            "[Old tool result content cleared]",
+            cleared.single { it["type"]?.jsonPrimitive?.content == "function_call_output" }
+                .getValue("output").jsonPrimitive.content,
+        )
+        val changedCall = "$opening,${assistant(
+            tool("different_call"),
+        )}," + result("different_call", "original file contents")
+        assertTrue(reasoningIds(input(restarted, request(changedCall + suffix))).isEmpty())
+    }
+
+    /** Persist the pre-upgrade format with the complete tool-result payload in its history digest. */
+    private fun persistLegacyReasoning(prefix: AnthropicTurnBody) {
+        val item = event(
+            """{"type":"reasoning","id":"rs_legacy","encrypted_content":"fixture-legacy","summary":[]}""",
+        )
+        val envelope = checkNotNull(ReasoningReplay.encodeReasoningEnvelope(item))
+        val key = checkNotNull(
+            ReasoningCachePolicy().conversationKey(
+                "fixture-session",
+                ResponsesStableIds().reasoningStorageKey(prefix.typed),
+            ),
+        )
+        val index = ReasoningPositionIndex().index(
+            legacyHistory(prefix).key,
+            envelope,
+            ReasoningItemOrder("legacy-round", 0, true, "rs_legacy"),
+        )
+        ReasoningCache(
+            files = ReasoningCacheFiles(state.resolve(REASONING_DIR)) {},
+        ).put(key, listOf(index), listOf(envelope))
+    }
+
+    /** The f940 cursor grammar, independent of the new stable-result cursor. */
+    private fun legacyHistory(body: AnthropicTurnBody): ReasoningHistory = ReasoningHistory().also { history ->
+        body.typed.messages.forEach { message ->
+            message.content.forEach { block ->
+                when (block) {
+                    is TextBlock -> history.text(message.role, block.text)
+                    is ThinkingBlock, is RedactedThinkingBlock -> Unit
+                    else -> history.block(
+                        message.role,
+                        if (block is ToolUseBlock) "tool_use" else "content",
+                        Json.encodeToJsonElement(ContentBlock.serializer(), block),
+                    )
+                }
+            }
+        }
     }
 
     private suspend fun drive(

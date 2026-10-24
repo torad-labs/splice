@@ -119,6 +119,51 @@ private fun replayedProse(provider: ResponsesProvider): JsonObject {
 
 class ResponsesReanchorPolicyTest {
 
+    @Test
+    fun `a lite recovery posts ordered native reasoning and unfinished prose before its marker`() = runTest {
+        val provider = ReanchorProbe(lite = true)
+        val built = provider.buildTurn(
+            AnthropicParse.parseAnthropicBody(
+                """{"model":"gpt-5.6-sol","messages":[{"role":"user","content":"hi"}]}""",
+            ),
+            compact = false,
+            sessionId = "session",
+        )
+        val frames = listOf(
+            ev(
+                """{"type":"response.output_item.done","output_index":0,""" +
+                    """"item":{"type":"reasoning","id":"rs_first","encrypted_content":"cipher-first"}}""",
+            ),
+            ev("""{"type":"response.output_text.delta","output_index":1,"delta":"A"}"""),
+            ev(
+                """{"type":"response.output_item.done","output_index":1,""" +
+                    """"item":{"type":"message","id":"msg_a","role":"assistant",""" +
+                    """"content":[{"type":"output_text","text":"A"}]}}""",
+            ),
+            ev(
+                """{"type":"response.output_item.done","output_index":2,""" +
+                    """"item":{"type":"reasoning","id":"rs_second","encrypted_content":"cipher-second"}}""",
+            ),
+            ev("""{"type":"response.output_text.delta","output_index":3,"delta":"B"}"""),
+            failedEv(),
+        )
+        val failure = provider.streamTranslator(
+            built.meta,
+            TurnSignals(watchdogFired = { null }, clientGone = { false }),
+        )
+            .driveTurn(frames.asFlow(), NullSink()) as TurnOutcome.Failure
+        val next = checkNotNull(provider.reanchorPolicy(built.meta))
+            .continuationForFailure(ReanchorRound(built.requestBody, failure, 0))
+        val added = checkNotNull(next).getValue("input").jsonArray.takeLast(5).map { it.jsonObject }
+
+        assertEquals(
+            listOf("rs_first", "A", "rs_second", "B"),
+            added.take(4).map { it["id"]?.jsonPrimitive?.content ?: it.getValue("content").jsonPrimitive.content },
+        )
+        assertTrue(listOf(added[1], added[3], added[4]).all { it["phase"]?.jsonPrimitive?.content == "commentary" })
+        assertTrue(added.last().getValue("content").jsonPrimitive.content.contains("interrupted"))
+    }
+
     // V4-339: the partial prose the client already saw was said mid-turn, so by V4-335's rule it is
     // commentary on a lite turn; replayed bare, it read to the model as the turn's final answer.
     @Test

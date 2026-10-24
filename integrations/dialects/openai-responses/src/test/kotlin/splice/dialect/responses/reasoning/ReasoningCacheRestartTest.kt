@@ -28,6 +28,7 @@ import splice.core.parse.AnthropicParse
 import splice.core.turn.ReasoningDisplay
 import splice.core.turn.TurnOutcome
 import splice.core.turn.WatchdogBudget
+import splice.core.util.SecureFile
 import splice.dialect.responses.ReasoningSettings
 import splice.dialect.responses.ResponsesLiteQuirks
 import splice.dialect.responses.ResponsesProvider
@@ -294,6 +295,40 @@ class ReasoningCacheRestartTest(@param:TempDir private val state: Path) {
 
 /** The visible transcript contains no opaque carriers. Its exact positions restore server-owned reasoning. */
 class ReasoningPositionRestartTest(@param:TempDir private val state: Path) {
+    @Test
+    fun `installed duplicate records leave capacity after restart for the next reasoning item`() = runTest {
+        val initial = RestartProbe(state, replay = true).buildTurn(opening, false, "session")
+        val scope = initial.meta.scope
+        val key = checkNotNull(ReasoningCachePolicy().conversationKey(scope.sessionId, scope.reasoningStorageKey))
+        val position = scope.reasoningHistory.key
+        // f940 wrote two records per item. Its 8192-entry bound is full here, although only 4096 items exist.
+        val retained = (0 until 4096).flatMap { number ->
+            val id = "rs_legacy_$number"
+            val item = reasoning(id).single().getValue("item").jsonObject
+            val envelope = checkNotNull(splice.core.reasoning.ReasoningReplay.encodeReasoningEnvelope(item))
+            listOf(false, true).map { terminalCopy ->
+                val index = ReasoningPositionIndex().index(
+                    position,
+                    envelope,
+                    ReasoningItemOrder(id, 0, terminalCopy, id),
+                )
+                Json.encodeToString(StoredRound.serializer(), StoredRound(listOf(index), listOf(envelope)))
+            }
+        }
+        SecureFile.writeAtomic0600(
+            state.resolve("reasoning").resolve("$key.jsonl"),
+            retained.joinToString("\n", postfix = "\n"),
+        )
+
+        val restarted = RestartProbe(state, replay = true)
+        drive(restarted, "session", reasoning("rs_after_upgrade") + terminal)
+        val replay = restarted.buildTurn(opening, false, "session").requestBody.getValue("input")
+            .jsonArray.map { it.jsonObject }
+        val restoredIds = ids(replay)
+        assertTrue("rs_after_upgrade" in restoredIds, "legacy duplicate accounting froze new reasoning admission")
+        assertEquals((0 until 4096).map { "rs_legacy_$it" } + "rs_after_upgrade", restoredIds)
+    }
+
     @Test
     fun `a sparse reasoning terminal preserves the streamed prose boundary warm and after restart`() = runTest {
         val daemon = RestartProbe(state, replay = true)

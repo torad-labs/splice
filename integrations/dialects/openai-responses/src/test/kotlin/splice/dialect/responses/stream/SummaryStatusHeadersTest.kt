@@ -2,8 +2,10 @@
 package splice.dialect.responses.stream
 
 import kotlinx.coroutines.flow.asFlow
+import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.test.runTest
 import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.jsonObject
@@ -12,6 +14,7 @@ import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 import splice.core.turn.TurnOutcome
+import splice.core.util.JsonScalars
 
 // The nine headers of one gpt-6-sol round in the Oct 1 trace, and the order its 63 reasoning items
 // carried them in (one header-only summary part per item), as indices into the list.
@@ -61,7 +64,81 @@ private fun itemDone(oi: Int, summary: String?): JsonObject {
 /** A header split mid-word, the way the backend's deltas cut it. */
 private fun split(header: String): List<String> = listOf(header.take(header.length / 2), header.drop(header.length / 2))
 
+private fun rawItem(oi: Int, delta: String, whole: String? = null): List<JsonObject> {
+    val item = buildJsonObject {
+        put("type", "reasoning")
+        put("id", "rs_$oi")
+        whole?.let { text ->
+            val part = buildJsonObject {
+                put("type", "reasoning_text")
+                put("text", text)
+            }
+            put("content", JsonArray(listOf(part)))
+        }
+    }
+    return listOf(
+        ev("""{"type":"response.output_item.added","output_index":$oi,"item":{"type":"reasoning","id":"rs_$oi"}}"""),
+        event("response.reasoning_text.delta", oi, mapOf("delta" to delta)),
+        buildJsonObject {
+            put("type", "response.output_item.done")
+            put("output_index", oi)
+            put("item", item)
+        },
+    )
+}
+
 class SummaryStatusHeadersTest {
+
+    @Test
+    fun `incomplete comment prefixes are literal at summary completion or item completion`() = runTest {
+        for (literal in listOf("<", "<!", "<!-")) {
+            val sink = RecordingSink()
+            val first = liveItem(0, listOf(literal), summaryOnDone = literal)
+            val omitted = setOf("response.reasoning_summary_text.done", "response.reasoning_summary_part.done")
+            val upstream = flow {
+                first.take(3).forEach { emit(it) }
+                assertTrue(sink.calls.none { it.startsWith("openThinking") }, "a live prefix must stay held")
+                first.drop(3).forEach { emit(it) }
+                liveItem(1, listOf(literal), summaryOnDone = literal)
+                    .filter { JsonScalars.str(it, "type") !in omitted }.forEach { emit(it) }
+                emit(completed)
+            }
+            val outcome = ResponsesStreamTranslator(ctx()).driveTurn(upstream, sink) as TurnOutcome.Success
+            assertEquals(
+                listOf(literal, literal),
+                sink.calls.filter { it.startsWith("think#") }.map { it.substringAfter(':') },
+            )
+            assertEquals("$literal\n\n$literal", outcome.text.thinkingText)
+        }
+    }
+
+    @Test
+    fun `raw prefix completion emits once and cannot carry into a later item`() = runTest {
+        val cases = listOf(
+            Triple("<", null, "<"),
+            Triple("<!", null, "<!"),
+            Triple("<!-", null, "<!-"),
+            Triple("<", "<!-", "<!-"),
+            Triple("<", "<!-- -->", ""),
+            Triple("<!-- -->", null, ""),
+            Triple("  ", null, ""),
+        )
+        for ((delta, whole, expected) in cases) {
+            val sink = RecordingSink()
+            val first = rawItem(0, delta, whole)
+            val upstream = flow {
+                first.take(2).forEach { emit(it) }
+                assertTrue(sink.calls.none { it.startsWith("openThinking") }, "a live prefix must stay held")
+                first.drop(2).forEach { emit(it) }
+                rawItem(1, "Later.").forEach { emit(it) }
+                emit(completed)
+            }
+            val outcome = ResponsesStreamTranslator(ctx()).driveTurn(upstream, sink) as TurnOutcome.Success
+            val parts = listOfNotNull(expected.takeIf { it.isNotEmpty() }, "Later.")
+            assertEquals(parts, sink.calls.filter { it.startsWith("think#") }.map { it.substringAfter(':') })
+            assertEquals(parts.joinToString("\n\n"), outcome.text.thinkingText)
+        }
+    }
 
     @Test
     fun `blank and comment-only summary parts never open thinking blocks`() = runTest {

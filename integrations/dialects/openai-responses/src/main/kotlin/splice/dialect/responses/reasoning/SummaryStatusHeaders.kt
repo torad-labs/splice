@@ -14,7 +14,11 @@ private const val MAX_HEADER_CHARS = 200
 
 /** Summary text the fold renders now. [startsPart] marks a part's first rendered text, which takes
  *  the paragraph break when its thinking block already holds text. */
-internal data class SummaryRelease(val text: String, val startsPart: Boolean)
+internal data class SummaryRelease(val text: String, val startsPart: Boolean, val complete: Boolean = false) {
+    /** A completed literal prefix cannot still become a comment placeholder. */
+    fun canRender(held: String): Boolean =
+        if (complete) ReadableReasoning.hasText(held) else !ReadableReasoning.mayBeEmpty(held)
+}
 
 /** One round's header decisions, keyed by the fold's reasoning keys. Each item's current summary part
  *  is held only while it can still turn out to be a bare header; the first character of a body
@@ -78,7 +82,7 @@ internal class SummaryStatusHeaders {
     private fun decide(text: String): SummaryRelease? = when {
         !ReadableReasoning.hasText(text) -> null
         HeaderShape.isHeaderOnly(text) && !shown.add(text.trim()) -> null
-        else -> SummaryRelease(text, startsPart = true)
+        else -> SummaryRelease(text, startsPart = true, complete = true)
     }
 }
 

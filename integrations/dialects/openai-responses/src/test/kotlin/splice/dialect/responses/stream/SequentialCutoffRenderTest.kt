@@ -7,6 +7,7 @@
 package splice.dialect.responses.stream
 
 import kotlinx.coroutines.flow.asFlow
+import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.test.runTest
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonObject
@@ -88,6 +89,27 @@ private fun delta(id: String, oi: Int, text: String): JsonObject =
     )
 
 class SequentialCutoffRenderTest {
+
+    @Test
+    fun `completed cutoff parts keep literal comment openers and omit empty placeholders`() = runTest {
+        for (literal in listOf("<", "<!", "<!-", "<!-- -->", " ")) {
+            val expected = if (literal == "<!-- -->" || literal.isBlank()) emptyList() else listOf(literal)
+            val sink = CutoffSink()
+            val upstream = flow {
+                emit(added("rs_literal", 0))
+                emit(delta("rs_literal", 0, literal))
+                assertTrue(sink.out.isEmpty(), "cutoff deltas remain held until the completed part")
+                emit(summaryDone("rs_literal", 0, 0, literal))
+                assertEquals(expected, sink.out, "completed model text must be delivered immediately")
+                emit(itemDone("rs_literal", 0))
+                emit(completed)
+            }
+            val outcome = ResponsesStreamTranslator(cutoffCtx()).driveTurn(upstream, sink) as TurnOutcome.Success
+            assertEquals(expected, sink.out)
+            assertEquals(expected.joinToString(""), outcome.text.thinkingText)
+            assertEquals(expected.isNotEmpty(), outcome.text.emittedThinking)
+        }
+    }
 
     // Mirror of codex's items.rs pin: deltas ignored, done parts of the active item render
     // atomically with a separator, a done arriving after the next item started is stale.

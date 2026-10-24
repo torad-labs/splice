@@ -4,7 +4,9 @@
 // mirror-duplication invariant this file makes structurally unreachable rather than merely avoided).
 package splice.dialect.responses.reasoning
 
+import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.JsonPrimitive
 import splice.core.turn.SharedSummaryParts
 import splice.core.util.JsonScalars
 import splice.dialect.responses.ResponsesTurnState
@@ -103,7 +105,7 @@ internal class ResponsesReasoningFold(
         // codex emits a section break for summary_index > 0; block-non-empty is the same boundary
         // without ever leading an empty block with a separator (the first RENDERED part of an
         // item can sit at summary_index > 0 when its restated prefix was dropped).
-        render(oi, SummaryRelease(text, startsPart = true), sink)
+        render(oi, SummaryRelease(text, startsPart = true, complete = true), sink)
     }
 
     /** Write [release] into the item's thinking block, opening it on first use; a part's first text
@@ -119,7 +121,7 @@ internal class ResponsesReasoningFold(
                 "reasoning prefix exceeds buffer capacity"
             }
             held.append(release.text)
-            if (ReadableReasoning.mayBeEmpty(held.toString())) return
+            if (!release.canRender(held.toString())) return
             leadingText.remove(oi)
             held.toString()
         }
@@ -169,7 +171,7 @@ internal class ResponsesReasoningFold(
     suspend fun maybeEmitLateReasoning(item: JsonObject?, oi: Int?, sink: WireSink) {
         if (item == null || oi == null) return
         if (JsonScalars.strOrEmpty(item["type"]) != "reasoning") return
-        leadingText.remove(oi) // An empty/comment-only raw prefix belongs only to the item that ended.
+        finishLeadingText(item, oi, sink)
         // cutoff mode: the done-event path is the complete render surface (codex renders nothing
         // from completed items in this mode — a completed item that never went active is a
         // restatement carrier, and re-rendering it is the staircase this port kills).
@@ -183,6 +185,25 @@ internal class ResponsesReasoningFold(
             emitReasoningItemText(item, oi, sink)
         }
     }
+
+    /** Raw deltas may end on a literal '<'. A completed raw snapshot is authoritative when present;
+     * otherwise settle the held prefix itself. Removing it first prevents carry-over into the next item. */
+    private suspend fun finishLeadingText(item: JsonObject, oi: Int, sink: WireSink) {
+        val held = leadingText.remove(oi)?.toString() ?: return
+        val text = if (hasRawSnapshot(item)) harvest.reasoningReadableText(item) else held
+        if (!ReadableReasoning.hasText(text)) return
+        render(oi, SummaryRelease(text, startsPart = false, complete = true), sink)
+    }
+
+    private fun hasRawSnapshot(item: JsonObject): Boolean =
+        listOf("content", "text", "reasoning", "reasoning_content").any { key ->
+            when (val value = item[key]) {
+                is JsonArray -> value.isNotEmpty()
+                is JsonObject -> value.isNotEmpty()
+                is JsonPrimitive -> JsonScalars.strOrEmpty(value).isNotEmpty()
+                null -> false
+            }
+        }
 
     /**
      * If the completed reasoning item carries human-readable text we have not already streamed

@@ -7,6 +7,7 @@ package splice.dialect.responses.request
 import splice.core.util.Utf8Wire
 import splice.core.wire.AnthropicRequest
 import splice.core.wire.TextBlock
+import splice.dialect.responses.reasoning.ResponsesHistoryCursor
 import java.io.OutputStream
 import java.security.DigestOutputStream
 import java.security.MessageDigest
@@ -17,6 +18,14 @@ import java.security.MessageDigest
  * argument list, so a call site only gained a receiver.
  */
 internal class ResponsesStableIds {
+
+    /** Storage ignores text block seams and includes image-only openers. It never changes prompt_cache_key. */
+    fun reasoningStorageKey(body: AnthropicRequest): String? {
+        val first = body.messages.firstOrNull { it.role == "user" } ?: return null
+        val cursor = ResponsesHistoryCursor()
+        first.content.forEach { cursor.append(first.role, it) }
+        return cursor.history.key.takeIf { cursor.history.offset > 0 }?.substringAfterLast(':')?.let { "splice-r-$it" }
+    }
 
     /** Codex-parity cache key: sha256 of the FIRST user message's text, stable per conversation. */
     public fun stablePromptCacheKey(body: AnthropicRequest): String? {

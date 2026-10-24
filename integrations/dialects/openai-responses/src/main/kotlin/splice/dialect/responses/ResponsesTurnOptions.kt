@@ -5,12 +5,15 @@ package splice.dialect.responses
 
 import splice.core.model.ModelCatalog
 import splice.core.parse.AnthropicTurnBody
+import splice.core.reasoning.HISTORY_POSITION_PREFIX
 import splice.core.reasoning.ReasoningReplay
 import splice.core.util.LogSink
 import splice.dialect.responses.reasoning.InjectPriorReasoning
 import splice.dialect.responses.reasoning.ReasoningCache
 import splice.dialect.responses.reasoning.ReasoningCachePolicy
+import splice.dialect.responses.reasoning.ReasoningHistoryLookup
 import splice.dialect.responses.reasoning.ReasoningLookup
+import splice.dialect.responses.reasoning.ReasoningPositionIndex
 import splice.dialect.responses.reasoning.RequestEncryptedReasoning
 import splice.dialect.responses.request.BuildOptions
 import splice.dialect.responses.request.ModelIds
@@ -28,12 +31,13 @@ internal class ReasoningContinuity(
 ) {
     /** The lookup for [body], keyed within [sessionId] as the capture keys it (ResponsesTurnSeams). Lazy, so a
      *  build with no tool_use blocks never touches the cache at all. */
-    fun lookupFor(body: AnthropicTurnBody, sessionId: String?): ReasoningLookup {
-        val snapshot = lazy {
-            val opening = ids.stablePromptCacheKey(body.typed)
-            cache.snapshot(policy.conversationKey(sessionId, opening))
+    fun snapshotFor(body: AnthropicTurnBody, sessionId: String?): Lazy<Map<String, List<String>>> = lazy {
+        val legacy = policy.conversationKey(sessionId, ids.stablePromptCacheKey(body.typed))
+        val scoped = sessionId?.takeIf { it.isNotEmpty() }?.let {
+            policy.conversationKey(it, ids.reasoningStorageKey(body.typed))
         }
-        return ReasoningLookup { id -> snapshot.value[id] }
+        val snapshot = cache.snapshot(scoped ?: legacy, legacy)
+        if (scoped == null) snapshot.filterKeys { !it.startsWith(HISTORY_POSITION_PREFIX) } else snapshot
     }
 }
 
@@ -57,6 +61,14 @@ internal class ResponsesTurnOptions(
         // idiom as PassthroughStreamTranslator.unmappedIndexLogged); scoped to this call's local
         // var, not an instance field, since the provider itself is long-lived across many turns.
         var reasoningEnvelopeDropLogged = false
+        val cached = if (quirks.roundTrip.reasoningCache) {
+            continuity.snapshotFor(
+                body,
+                sessionId,
+            )
+        } else {
+            lazy { emptyMap() }
+        }
         return BuildOptions(
             compact = compact,
             models = ModelIds(
@@ -70,8 +82,7 @@ internal class ResponsesTurnOptions(
                 display = now.display,
             ),
             handoff = ReasoningHandoff(
-                // LEGACY client-round-trip replay (redacted_thinking through Claude Code) —
-                // operator opt-in only; superseded by the gateway-held reasoning cache below.
+                // Replay controls model history, independently of client presentation.
                 replay = InjectPriorReasoning(now.replay),
                 // Ask for the opaque encrypted handle whenever reasoning is visible OR the
                 // reasoning cache needs it (RC-5: the cache can only hold what the server returns).
@@ -95,10 +106,9 @@ internal class ResponsesTurnOptions(
                 // Lazy so a build with no tool_use blocks never touches the cache at all. Wired on a
                 // compaction too: the session's turns carry these reasoning items in their input, so
                 // a compaction built without them shares no prefix with them (2026-09-05).
-                lookup = if (!quirks.roundTrip.reasoningCache) {
-                    ReasoningLookup { null }
-                } else {
-                    continuity.lookupFor(body, sessionId)
+                lookup = ReasoningLookup { cached.value[it] },
+                history = ReasoningHistoryLookup {
+                    if (sessionId.isNullOrEmpty()) emptyMap() else ReasoningPositionIndex().positions(cached.value)
                 },
             ),
             sessionId = sessionId,
@@ -109,8 +119,4 @@ internal class ResponsesTurnOptions(
     }
 
     fun showOn(): Boolean = reasoning.now().visible()
-
-    /** Whether the stream hands the client an encrypted reasoning handle to replay: only while reasoning is shown AND
-     *  the operator opted into replay, read together so a PATCH of either reaches the next turn. */
-    fun emitsHandle(): Boolean = reasoning.now().let { it.visible() && it.replay }
 }

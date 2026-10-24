@@ -91,6 +91,7 @@ internal class ResponsesEventReducer(
     private fun endedInReasoning(resp: JsonObject): Boolean {
         if (JsonScalars.strOrEmpty(resp["status"]) != "completed") return false
         val output = (resp["output"] as? JsonArray)?.map { (it as? JsonObject)?.get("type") }.orEmpty()
+        // Retained stream history is not a completed message or proof of a finished silent answer.
         return output.isNotEmpty() && output.all { JsonScalars.strOrEmpty(it) == REASONING_ITEM }
     }
 

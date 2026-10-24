@@ -10,6 +10,7 @@ import kotlinx.coroutines.test.runTest
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.jsonObject
+import org.junit.jupiter.api.Assertions.assertFalse
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 import splice.core.index.WireBlockIndex
@@ -78,7 +79,7 @@ private fun ctx(emit: Boolean) = StreamTurnContext(
         upstreamTimeoutMs = 900_000,
     ),
     reasoningCapture = ReasoningCapture(
-        collectEnvelopes = false,
+        collectEnvelopes = true,
         onTurn = { _, _ -> },
     ),
     summary = SummaryHandling(
@@ -96,12 +97,8 @@ private val completed = ev(
 class ResponsesRedactedEmissionTest {
 
     @Test
-    fun `redacted-reasoning-only turn is not empty - emittedThinking set on the redacted path`() = runTest {
-        // CX-09 follow-up (review #94 F141): emitReplayedReasoning writes a client-visible
-        // redacted_thinking block, so a turn whose ONLY wire output is an encrypted reasoning
-        // envelope put real content on the wire. TurnPipeline.nothingReachesTheClient reads
-        // emittedThinking FIRST — without it this turn is misclassified empty and the client
-        // gets an empty_model api_error for a turn that worked.
+    fun `encrypted-only history is retained without claiming the client saw thinking`() = runTest {
+        val sink = RecordingWireSink()
         val outcome = ResponsesStreamTranslator(ctx(emit = true)).driveTurn(
             listOf(
                 ev(
@@ -110,12 +107,16 @@ class ResponsesRedactedEmissionTest {
                 ),
                 completed,
             ).asFlow(),
-            RecordingWireSink(),
+            sink,
         )
-        assertTrue(
+        assertFalse(
             (outcome as TurnOutcome.Success).text.emittedThinking,
-            "a redacted block reached the sink — the turn is not empty",
+            "encrypted history is not readable thinking",
         )
+        assertTrue(outcome.handoffs.reasoningEnvelopes.isNotEmpty())
+        assertFalse(outcome.shape.messageClosed, "stored reasoning cannot claim that a message completed")
+        assertFalse(outcome.shape.endedInReasoning, "an empty terminal remains subject to the empty-answer policy")
+        assertFalse(sink.calls.any { it.startsWith("redacted:") || it.startsWith("openThinking") })
     }
 
     // CX-18/CX-09 retirement (2026-09-21): the two arms below were MISSING, found by mutation

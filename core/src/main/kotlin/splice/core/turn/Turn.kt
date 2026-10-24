@@ -67,6 +67,10 @@ public data class TurnScope(
     /** The hash of the request's messages (MessagesHash) when it named a session, streaming or not: its perf row
      *  carries it, so a re-send of a cut stream (Claude Code re-sends it with stream=false) links to the row it cut. */
     val messagesHash: String? = null,
+    /** Visible-history position for server-owned reasoning. A stream copies it before advancing it. */
+    val reasoningHistory: splice.core.reasoning.ReasoningHistory? = null,
+    /** Canonical opener identity for server history; independent of the established upstream prompt cache key. */
+    val reasoningStorageKey: String? = null,
 )
 
 /** Tool-surface partition sizes for THIS turn's request; both null when deferral was not in play.

@@ -1,5 +1,6 @@
 package splice.provider.codex
 
+import kotlinx.coroutines.async
 import kotlinx.coroutines.runBlocking
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonObject
@@ -82,7 +83,6 @@ class CodeModeStreamDurabilityTest : CodeModeStatementStreamSupport() {
         key: String = "source-cost",
         location: CodeModeStateLocation = stateLocation(),
     ) {
-        var forcedWrites = 0
         var refuseWrites = false
         val record = CodeModeRecords.of(key, 0).also {
             it.origin.source = ""
@@ -96,7 +96,6 @@ class CodeModeStreamDurabilityTest : CodeModeStatementStreamSupport() {
             writer = CodeModeStateWrite { path, text ->
                 if (refuseWrites) throw IOException("synthetic refused source write")
                 CodeModeStateJournal.write(path, text)
-                forcedWrites++
             },
         )
         val capture = CodeModeSourceCapture(
@@ -128,40 +127,36 @@ class CodeModeStreamDurabilityTest : CodeModeStatementStreamSupport() {
                 ),
             )
         }
-
-        fun clientBoundary() {
-            registry.changes.save(record) {}
-        }
     }
 
     @Test
     @Timeout(20)
-    fun `two hundred buffered producer deltas remain staged until a client boundary`() = runBlocking {
+    fun `producer deltas stay unexecutable until the whole item is durable`() = runBlocking {
         val state = SourceRound()
         state.begin()
         repeat(200) { state.append("x") }
+        assertEquals("", stateFiles.records().single().getValue("source").jsonPrimitive.content)
         state.finish("x".repeat(200))
         assertEquals(CodeModeSourcePart.Complete("x".repeat(200)), state.capture.source.view().read())
-        assertEquals("", stateFiles.records().single().getValue("source").jsonPrimitive.content)
-        assertEquals(1, state.forcedWrites, "only the no-rerun admission is durable before visibility")
-        state.clientBoundary()
         assertEquals("x".repeat(200), stateFiles.records().single().getValue("source").jsonPrimitive.content)
-        assertEquals(2, state.forcedWrites, "one admission and one complete conversation batch")
     }
 
     @Test
     @Timeout(20)
-    fun `a refused client boundary keeps staged source out of durable client state`() = runBlocking {
+    fun `a refused whole item save keeps source unexecutable until its durable retry`() = runBlocking {
         val state = SourceRound()
         state.begin()
         state.refuseWrites = true
         state.append("await tools.Read({});")
+        assertThrows(CodeModePersistenceException::class.java) { state.finish("await tools.Read({});") }
+        assertEquals("", stateFiles.records().single().getValue("source").jsonPrimitive.content)
+        val waiting = async { state.capture.source.view().read() }
+        kotlinx.coroutines.yield()
+        assertFalse(waiting.isCompleted, "source rejected by the journal never reaches a worker")
+        waiting.cancel()
+        state.refuseWrites = false
         state.finish("await tools.Read({});")
         assertEquals(CodeModeSourcePart.Complete("await tools.Read({});"), state.capture.source.view().read())
-        assertThrows(CodeModePersistenceException::class.java) { state.clientBoundary() }
-        assertEquals("", stateFiles.records().single().getValue("source").jsonPrimitive.content)
-        state.refuseWrites = false
-        state.clientBoundary()
         assertEquals("await tools.Read({});", stateFiles.records().single().getValue("source").jsonPrimitive.content)
     }
 

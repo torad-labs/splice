@@ -16,7 +16,7 @@ internal class ResponsesOutcomePayload(private val ctx: StreamTurnContext) {
     private val harvest = ResponsesHarvest()
     private val customCalls = ResponsesCustomCallParse()
 
-    fun successOutcome(state: ResponsesTurnState): TurnOutcome = TurnOutcome.Success(
+    fun successOutcome(state: ResponsesTurnState): TurnOutcome.Success = TurnOutcome.Success(
         hasToolUse = state.hasToolUse,
         incomplete = state.incomplete,
         usage = Usage(

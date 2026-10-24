@@ -22,9 +22,9 @@ import splice.upstream.sse.WireSink
 
 class CodeModeStreamPortsTest : CodeModeBridgeTestSupport() {
     /** A script runs only once its whole item arrived (Oct 23): a streamed prefix reaches no cursor, and the
-     *  terminal hands each cursor the whole source in one part. */
+     *  item completion hands each cursor the whole source in one part. */
     @Test
-    fun `a source cursor gets nothing while the item streams and the whole item at the terminal`() = runBlocking {
+    fun `a source cursor gets nothing while the item streams and the whole item on completion`() = runBlocking {
         val buffer = CodeModeSourceBuffer()
         val first = buffer.view()
         val retry = buffer.view()

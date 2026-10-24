@@ -35,36 +35,61 @@ internal class CodeModeSourceRecords(
         true
     }
 
-    /** Item completion alone is not response completion. Only the terminal round finalizes these values. */
+    /** Persist the exact completed item before any worker can execute it, under the admission's no-rerun identity. */
+    fun seal(record: CodeModeRecord, call: GatewayCustomCall, continuity: CodeModeContinuity? = null): Boolean =
+        access.withKey(record.key) {
+            if (record !in records || record.error != null) return@withKey false
+            stage(record, call, continuity ?: CodeModeContinuity(record.carry.continuity, record.carry.replay))
+            record.sourceState = (record.sourceState ?: CodeModeSourceState()).copy(itemComplete = true)
+            store.save(records, history.entries, dirtyKeys = setOf(record.key), changedRecord = record)
+            true
+        }
+
+    /** Response accounting can arrive after the cell completed; keep its sealed identity and issuance history. */
     fun finish(record: CodeModeRecord, call: GatewayCustomCall, continuity: CodeModeContinuity, usage: Usage): Boolean =
         access.withKey(record.key) {
             if (record !in records || record.error != null) return@withKey false
-            val next = STORED.json(call.raw) + STORED.text(call.input) +
-                continuity.logicalItems.sumOf(STORED::json) + continuity.replayItems.sumOf(STORED::segment)
-            val before = STORED.json(record.origin.outer) + STORED.text(record.origin.source) +
-                record.carry.continuity.sumOf(STORED::json) + record.carry.replay.sumOf(STORED::segment)
-            CodeModeHeap.grow(record, (next - before).coerceAtLeast(0L)) { kept -> replaced(kept, record) }
-            record.origin.outer = call.raw
-            record.origin.source = call.input
-            record.carry.continuity = continuity.logicalItems
-            record.carry.replay = continuity.replayItems
+            stage(record, call, continuity)
             record.sourceState = CodeModeSourceState(
                 complete = true,
-                usage = CodeModeSourceUsage(
-                    usage.inputTokens,
-                    usage.outputTokens,
-                    usage.cachedTokens,
-                    usage.reasoningTokens,
-                    usage.cacheWriteTokens,
-                    usage.origin.recordedOutputTokens,
-                    reported = usage.reported,
-                    cacheWriteHourlyTokens = usage.cacheWriteHourlyTokens,
-                ),
+                usage = sourceUsage(usage),
             )
             // A round that finishes after its client turn ended is still the conversation's newest context.
             contexts.note(record.key, usage)
             true
         }
+
+    /** A late reader failure ends accounting without revoking the completed item or its live cell. */
+    fun interrupted(record: CodeModeRecord, usage: Usage? = null) = access.withKey(record.key) {
+        if (record !in records || record.error != null) return@withKey
+        val state = record.sourceState?.takeIf { it.itemComplete } ?: return@withKey
+        record.sourceState = state.copy(complete = true, usage = usage?.let(::sourceUsage) ?: state.usage)
+        if (usage != null) contexts.note(record.key, usage)
+        store.save(records, history.entries, dirtyKeys = setOf(record.key), changedRecord = record)
+    }
+
+    private fun stage(record: CodeModeRecord, call: GatewayCustomCall, continuity: CodeModeContinuity) {
+        val next = STORED.json(call.raw) + STORED.text(call.input) +
+            continuity.logicalItems.sumOf(STORED::json) + continuity.replayItems.sumOf(STORED::segment)
+        val before = STORED.json(record.origin.outer) + STORED.text(record.origin.source) +
+            record.carry.continuity.sumOf(STORED::json) + record.carry.replay.sumOf(STORED::segment)
+        CodeModeHeap.grow(record, (next - before).coerceAtLeast(0L)) { kept -> replaced(kept, record) }
+        record.origin.outer = call.raw
+        record.origin.source = call.input
+        record.carry.continuity = continuity.logicalItems
+        record.carry.replay = continuity.replayItems
+    }
+
+    private fun sourceUsage(usage: Usage): CodeModeSourceUsage = CodeModeSourceUsage(
+        inputTokens = usage.inputTokens,
+        outputTokens = usage.outputTokens,
+        cachedTokens = usage.cachedTokens,
+        reasoningTokens = usage.reasoningTokens,
+        cacheWriteTokens = usage.cacheWriteTokens,
+        recordedOutputTokens = usage.origin.recordedOutputTokens,
+        reported = usage.reported,
+        cacheWriteHourlyTokens = usage.cacheWriteHourlyTokens,
+    )
 
     /** Saves a finished source no billing claim saved, so an exact retry after a hard stop still finds it complete.
      *  Its usage stays unconsumed for its eventual owner; a removed or lost record is never written back. */

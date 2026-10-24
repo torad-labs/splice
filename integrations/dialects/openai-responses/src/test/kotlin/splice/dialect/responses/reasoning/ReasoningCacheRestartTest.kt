@@ -58,6 +58,7 @@ private class RestartProbe(
     stateDir: Path?,
     logs: MutableList<String> = mutableListOf(),
     cacheOn: Boolean = true,
+    replay: Boolean = false,
 ) : ResponsesProvider(
     tuning = ProviderTuning(
         name = ProviderName(key = "claudex", label = "claudex"),
@@ -74,7 +75,7 @@ private class RestartProbe(
         ),
         watchdog = WatchdogBudget(5.seconds, 3.seconds, 30.seconds),
     ),
-    reasoning = ReasoningSettings(ReasoningDisplay.TEXT, false, null, null),
+    reasoning = ReasoningSettings(ReasoningDisplay.TEXT, replay, null, null),
     quirks = ResponsesQuirks(
         lite = ResponsesLiteQuirks(),
         providerTag = "claudex",
@@ -288,6 +289,206 @@ class ReasoningCacheRestartTest(@param:TempDir private val state: Path) {
 
         assertEquals("cipher-1", reasoningBefore(daemon, "session-1", "call_1"))
         assertEquals(null, reasoningBefore(RestartProbe(stateDir = null), "session-1", "call_1"))
+    }
+}
+
+/** The visible transcript contains no opaque carriers. Its exact positions restore server-owned reasoning. */
+class ReasoningPositionRestartTest(@param:TempDir private val state: Path) {
+    @Test
+    fun `a stale reasoning item before prose is removed from the next request and from restart history`() = runTest {
+        val daemon = RestartProbe(state, replay = true)
+        drive(daemon, "session", reasoning("rs_stale") + prose("Done.") + terminal)
+        val request = AnthropicParse.parseAnthropicBody(
+            """{"model":"gpt-5.6-sol","messages":[{"role":"user","content":"$OPENING"},
+                {"role":"assistant","content":"Done."},{"role":"user","content":"Next."}],$TOOLS}""",
+        )
+        val built = daemon.buildTurn(request, false, "session")
+        assertEquals(listOf("rs_stale"), ids(input(request)))
+        val amended = daemon.amendBodyOnFailure(400, "invalid_encrypted_content", built.requestBody.toString())
+        assertTrue(amended != null)
+        assertTrue(
+            ids(
+                daemon.buildTurn(request, false, "session").requestBody.getValue("input").jsonArray.map {
+                    it.jsonObject
+                },
+            ).isEmpty(),
+        )
+        assertTrue(ids(input(request)).isEmpty(), "restart restored stale position-only reasoning")
+    }
+
+    private fun reasoning(id: String): List<JsonObject> = listOf(
+        ev(
+            """{"type":"response.output_item.done","output_index":0,"item":
+            {"type":"reasoning","id":"$id","encrypted_content":"cipher-$id","summary":[]}}""",
+        ),
+    )
+
+    private fun prose(text: String): List<JsonObject> = summaryAnswer.dropLast(1).map { frame ->
+        if (frame["type"]?.jsonPrimitive?.content == "response.output_text.delta") {
+            kotlinx.serialization.json.JsonObject(frame + ("delta" to kotlinx.serialization.json.JsonPrimitive(text)))
+        } else {
+            frame
+        }
+    }
+
+    private fun call(arguments: String = "{}"): List<JsonObject> {
+        val encoded = kotlinx.serialization.json.JsonPrimitive(arguments)
+        val item = """{"type":"function_call","call_id":"call_1","name":"run","arguments":$encoded}"""
+        return listOf(
+            ev("""{"type":"response.output_item.added","output_index":1,"item":$item}"""),
+            ev("""{"type":"response.output_item.done","output_index":1,"item":$item}"""),
+        )
+    }
+
+    private fun history(assistant: String, prompt: String = ""): splice.core.parse.AnthropicTurnBody =
+        AnthropicParse.parseAnthropicBody(
+            """{"model":"gpt-5.6-sol","messages":[{"role":"user","content":"$OPENING"}$prompt,
+                {"role":"assistant","content":[$assistant]},
+                {"role":"user","content":[{"type":"tool_result","tool_use_id":"call_1","content":"ok"}]}],$TOOLS}""",
+        )
+
+    private val tool = """{"type":"tool_use","id":"call_1","name":"run","input":{}}"""
+    private val terminal = ev("""{"type":"response.completed","response":{"status":"completed","output":[]}}""")
+
+    private fun input(
+        body: splice.core.parse.AnthropicTurnBody,
+        replay: Boolean = true,
+        session: String? = "session",
+    ): List<JsonObject> =
+        RestartProbe(state, replay = replay).buildTurn(body, false, session)
+            .requestBody.getValue("input").jsonArray.map { it.jsonObject }
+
+    private fun ids(items: List<JsonObject>): List<String> = items.filter {
+        it["type"]?.jsonPrimitive?.content == "reasoning"
+    }.map { it.getValue("id").jsonPrimitive.content }
+
+    @Test
+    fun `image-only opening reasoning belongs only to its session including after restart`() = runTest {
+        val image = AnthropicParse.parseAnthropicBody(
+            """{"model":"gpt-5.6-sol","messages":[{"role":"user","content":[{"type":"image",
+                "source":{"type":"base64","media_type":"image/png","data":"AA=="}}]}],$TOOLS}""",
+        )
+        drive(RestartProbe(state, replay = true), "image-a", reasoning("rs_image") + terminal, body = image)
+        assertEquals(listOf("rs_image"), ids(input(image, session = "image-a")))
+        assertTrue(ids(input(image, session = "image-b")).isEmpty())
+        assertTrue(ids(input(image, session = null)).isEmpty())
+    }
+
+    @Test
+    fun `coalescing opener text retains history without rewriting the established prompt cache key`() = runTest {
+        val split = AnthropicParse.parseAnthropicBody(
+            """{"model":"gpt-5.6-sol","messages":[{"role":"user","content":[
+                {"type":"text","text":"ab"},{"type":"text","text":"cd"}]}],$TOOLS}""",
+        )
+        val coalesced = AnthropicParse.parseAnthropicBody(
+            """{"model":"gpt-5.6-sol","messages":[{"role":"user","content":"abcd"}],$TOOLS}""",
+        )
+        val daemon = RestartProbe(state, replay = true)
+        val splitKey = daemon.buildTurn(split, false, "session").requestBody["prompt_cache_key"]
+        drive(daemon, "session", reasoning("rs_opening") + terminal, body = split)
+        val joinedKey = daemon.buildTurn(coalesced, false, "session").requestBody["prompt_cache_key"]
+        assertTrue(splitKey != joinedKey, "upstream cache keys retain their established block-sensitive derivation")
+        assertEquals(listOf("rs_opening"), ids(input(coalesced)))
+    }
+
+    @Test
+    fun `terminal backfill orders reasoning and advances continuation past final-only prose`() = runTest {
+        val daemon = RestartProbe(state, replay = true)
+        val built = daemon.buildTurn(opening, false, "session")
+        val r1 = reasoning("rs_first").single().getValue("item")
+        val r2 = reasoning("rs_second").single().getValue("item")
+        val message = ev("""{"type":"message","role":"assistant","content":[{"type":"output_text","text":"Done."}]}""")
+        val final =
+            ev("""{"type":"response.completed","response":{"status":"completed","output":[$r1,$r2,$message]}}""")
+        val result = daemon.streamTranslator(built.meta, signals)
+            .driveTurn((reasoning("rs_second") + final).asFlow(), QuietSink) as TurnOutcome.Success
+        val decoded = result.handoffs.reasoningEnvelopes.mapNotNull {
+            splice.core.reasoning.ReasoningReplay.decodeReasoningEnvelope(it)
+        }
+        assertEquals(listOf("rs_first", "rs_second"), ids(decoded))
+        daemon.streamTranslator(built.meta, signals).driveTurn((reasoning("rs_next") + terminal).asFlow(), QuietSink)
+        val next = AnthropicParse.parseAnthropicBody(
+            """{"model":"gpt-5.6-sol","messages":[{"role":"user","content":"$OPENING"},
+                {"role":"assistant","content":"Done."},{"role":"user","content":"Continue."}],$TOOLS}""",
+        )
+        val replay = input(next)
+        assertEquals(listOf("rs_first", "rs_second", "rs_next"), ids(replay))
+        val answerAt = replay.indexOfFirst { it["role"]?.jsonPrimitive?.content == "assistant" }
+        val nextAt = replay.indexOfFirst { it["id"]?.jsonPrimitive?.content == "rs_next" }
+        assertTrue(nextAt > answerAt, "terminal-only prose did not advance the continuation cursor")
+        val kept = reasoning("rs_kept").single().getValue("item")
+        val partialFinal = ev("""{"type":"response.completed","response":{"status":"completed","output":[$kept]}}""")
+        val partial = drive(
+            daemon,
+            "partial",
+            reasoning("rs_kept") + reasoning("rs_omitted") + partialFinal,
+        ) as TurnOutcome.Success
+        val partialIds = partial.handoffs.reasoningEnvelopes.mapNotNull {
+            splice.core.reasoning.ReasoningReplay.decodeReasoningEnvelope(it)
+        }
+        assertEquals(listOf("rs_kept", "rs_omitted"), ids(partialIds))
+        assertEquals(listOf("rs_kept", "rs_omitted"), ids(input(opening, session = "partial")))
+    }
+
+    @Test
+    fun `restart restores reasoning around coalesced prose and both sides of a tool`() = runTest {
+        val frames = reasoning("rs_1") + prose("Looking. ") + reasoning("rs_2") + prose("Then act.") +
+            reasoning("rs_3") + call() + reasoning("rs_4") + terminal
+        drive(RestartProbe(state, replay = true), "session", frames)
+        val request = history("""{"type":"text","text":"Looking. Then act."},$tool""")
+        val replay = input(request)
+        val order = replay.map {
+            when (it["type"]?.jsonPrimitive?.content) {
+                "reasoning" -> it.getValue("id").jsonPrimitive.content
+                "function_call", "function_call_output" -> it.getValue("type").jsonPrimitive.content
+                else -> it["role"]?.jsonPrimitive?.content
+            }
+        }
+        assertEquals(
+            listOf(
+                "user", "rs_1", "assistant", "rs_2", "assistant", "rs_3",
+                "function_call", "rs_4", "function_call_output",
+            ),
+            order,
+        )
+        // A changed prose prefix cannot inherit the following reasoning; no old tool-only fallback moves it.
+        assertEquals(listOf("rs_1"), ids(input(history("""{"type":"text","text":"Changed prose."},$tool"""))))
+    }
+
+    @Test
+    fun `changed tool arguments miss later reasoning and a missing store injects nothing`() = runTest {
+        drive(
+            RestartProbe(state, replay = true),
+            "session",
+            call("""{"path":"a","line":1}""") + reasoning("rs_after") + terminal,
+        )
+        val same = history("""{"type":"tool_use","id":"call_1","name":"run","input":{"line":1,"path":"a"}}""")
+        val changed = history("""{"type":"tool_use","id":"call_1","name":"run","input":{"path":"b","line":1}}""")
+        assertEquals(listOf("rs_after"), ids(input(same)))
+        assertTrue(ids(input(changed)).isEmpty())
+        Files.walk(state).use { paths ->
+            paths.filter {
+                it.fileName.toString().endsWith(".jsonl")
+            }.forEach { Files.delete(it) }
+        }
+        assertTrue(ids(input(same)).isEmpty())
+    }
+
+    @Test
+    fun `reasoning-only history survives restart and replay off cuts only before the latest prompt`() = runTest {
+        val daemon = RestartProbe(state, replay = true)
+        val outcome = drive(daemon, "session", reasoning("rs_old") + terminal) as TurnOutcome.Success
+        assertFalse(outcome.text.emittedThinking)
+        assertEquals("", outcome.text.thinkingText)
+        val current = AnthropicParse.parseAnthropicBody(
+            """{"model":"gpt-5.6-sol","messages":[{"role":"user","content":"$OPENING"},
+                {"role":"user","content":"Next."}],$TOOLS}""",
+        )
+        assertEquals(listOf("rs_old"), ids(input(current)))
+        drive(daemon, "session", reasoning("rs_current") + call() + terminal, body = current)
+        val next = history(tool, """,{"role":"user","content":"Next."}""")
+        assertEquals(listOf("rs_old", "rs_current"), ids(input(next)))
+        assertEquals(listOf("rs_current"), ids(input(next, replay = false)))
     }
 }
 

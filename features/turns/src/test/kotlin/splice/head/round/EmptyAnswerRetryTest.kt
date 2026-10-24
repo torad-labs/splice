@@ -1,18 +1,24 @@
 // An empty answer is re-sent once with the same body (empty_model class); a second empty ends as before.
 package splice.head.round
 
+import kotlinx.coroutines.flow.asFlow
 import kotlinx.coroutines.test.runTest
+import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.jsonObject
+import kotlinx.serialization.json.jsonPrimitive
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertSame
 import org.junit.jupiter.api.Test
 import splice.core.index.WireBlockIndex
 import splice.core.perf.PerfKeys
 import splice.core.perf.TurnPerf
+import splice.core.reasoning.ReasoningReplay
 import splice.core.turn.ResponseShape
 import splice.core.turn.RoundText
 import splice.core.turn.TurnOutcome
 import splice.core.turn.Usage
+import splice.dialect.responses.responsesTestTranslator
 import splice.upstream.RetryBackoff
 import splice.upstream.RoundResult
 import splice.upstream.sse.WireSink
@@ -20,6 +26,29 @@ import splice.upstream.sse.WireSink
 class EmptyAnswerRetryTest {
     private val empty = success(RoundText(), usage = Usage(200_000, 0, 0))
     private val answered = success(RoundText(bodyText = "hello", emittedText = true))
+
+    @Test
+    fun `retained encrypted reasoning with an empty terminal still retries without a thinking placeholder`() = runTest {
+        val frames = listOf(
+            """{"type":"response.output_item.added","output_index":0,"item":{"type":"reasoning"}}""",
+            """{"type":"response.output_item.done","output_index":0,"item":
+                {"type":"reasoning","id":"rs_hidden","encrypted_content":"ciphertext","summary":[]}}""",
+            """{"type":"response.completed","response":{"id":"empty","usage":{"input_tokens":9,"output_tokens":3}}}""",
+        ).map { Json.parseToJsonElement(it).jsonObject }
+        val hidden = responsesTestTranslator(
+            emitEncryptedReasoning = true,
+            collectReasoningEnvelopes = true,
+            encode = { ReasoningReplay.encodeReasoningEnvelope(it) },
+        ).driveTurn(frames.asFlow(), QuietSink()) as TurnOutcome.Success
+        val envelope = ReasoningReplay.decodeReasoningEnvelope(hidden.handoffs.reasoningEnvelopes.single())
+        assertEquals("ciphertext", envelope?.get("encrypted_content")?.jsonPrimitive?.content)
+        assertEquals(RoundText(), hidden.text)
+        assertEquals(false, hidden.shape.messageClosed)
+        assertEquals(false, hidden.shape.endedInReasoning)
+        val run = drive(TurnPerf(), listOf(hidden, hidden, answered))
+        assertEquals(listOf(BODY, BODY), run.bodies)
+        assertEquals(RoundText(), (run.finished.single() as TurnOutcome.Success).text)
+    }
 
     @Test
     fun `an upstream that answers empty once and then with content ends on the content`() = runTest {

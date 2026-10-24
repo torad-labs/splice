@@ -21,7 +21,7 @@ import java.io.IOException
 
 class CodeModeSourceCursorCertificationTest {
     @Test
-    fun `a cursor commits and reads the item only once its response terminal certifies it`() = runBlocking {
+    fun `a cursor reads only a completed whole item`() = runBlocking {
         val committed = mutableListOf<String>()
         val source = CodeModeSourceBuffer(CodeModeSourceCommit { committed += it })
         source.publish("synthetic prefix")
@@ -30,7 +30,7 @@ class CodeModeSourceCursorCertificationTest {
         val read = async { cursor.read() }
         yield()
 
-        assertFalse(read.isCompleted, "an item is not certified until its response terminal")
+        assertFalse(read.isCompleted, "a partial item is never executable")
         assertTrue(committed.isEmpty())
 
         source.complete("synthetic prefix and certified suffix")

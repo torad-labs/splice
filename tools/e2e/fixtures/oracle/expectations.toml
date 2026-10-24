@@ -140,15 +140,15 @@ covers = "assistant-prefill request shaping"
 [[scenario]]
 name = "replaystream"
 status = "sanctioned"
-authority = "22a0744: codex-rs sequential_cutoff parity; PR #99 operator lock: mirror_reasoning=false"
+authority = "Codex parity plan (Marcos, 2026-10-24): keep encrypted replay on the server and remove empty client Thinking rows; then 22a0744: codex-rs sequential_cutoff parity; PR #99 operator lock: mirror_reasoning=false"
 pin_upstream = "fixture"
-pinned_sha256 = "429edee0651e3ef935797f8a60ddbc6818521f45431c9d21a379a313f4e5dc79"
+pinned_sha256 = "18a407c406d2e585699d18ed7437557ad7e9294a9638b41ac1845584f292f2b8"
 replay_note = """
-The encrypted reasoning envelope and answer remain byte-pinned. sequential_cutoff drops the mock's legacy summary carrier, and mirror_reasoning=false removes its duplicate text projection.
+2026-10-24: encrypted continuity is server-owned and opaque client carriers are removed. Reconstructed the candidate bytes by removing exactly one redacted_thinking block from the prior pinned stream and closing the content-block index gap; every other client byte and every upstream request remain identical. Proof: .Codex/tmp/codex-parity/opaque-wire-proof.json (prior pin 429edee0651e3ef935797f8a60ddbc6818521f45431c9d21a379a313f4e5dc79; new pin 18a407c406d2e585699d18ed7437557ad7e9294a9638b41ac1845584f292f2b8). Frozen Node recordings, mock and canonicalization are unchanged. The sequential_cutoff fixture still suppresses its legacy summary carrier; ordinary answer text remains byte-pinned.
 2026-09-05 (c6629094, then d29c17f2): re-pinned with authority "7e84b89a: one constant client window — the usage payload reports context_window 1000000 with counts scaled by 1e6/declared so a TOML window edit reaches running sessions; then 22a0744: codex-rs sequential_cutoff parity; PR #99 operator lock: mirror_reasoning=false", pinned_sha256 = 8353c020fecfc235d5a7936d9c6b9919925bf160c7df869317f9416a6cd6892e: The encrypted reasoning envelope and answer remain byte-pinned. sequential_cutoff drops the mock's legacy summary carrier, and mirror_reasoning=false removes its duplicate text projection. Re-pinned 2026-09-05: The reference reported the pinned row's 272000 window with raw counts; since 2026-09-05 the gateway reports the constant client window (1000000) and counts scaled by 1e6/272000, so every row, the pinned one included, compacts at its declared window and a splice.toml window edit lands on running sessions after `splice restart` (ModelCatalog.clientLaunchWindow). Only the usage payload differs from the recording.
 Reverted the same day: the launch plants the pinned row's own window again (ModelCatalog.clientLaunchWindow = the pinned row's TOML context_window) and a running session scales against the window it reports itself, so the usage payload matches the recording byte-for-byte again; authority and pinned_sha256 = 429edee0651e3ef935797f8a60ddbc6818521f45431c9d21a379a313f4e5dc79 restored (replay 2026-09-05: 11/11 against the restored pins).
 """
-covers = "encrypted reasoning-item replay wire path and ordinary answer text under sequential_cutoff"
+covers = "opaque replay stays off the client wire; ordinary answer text under sequential_cutoff stays byte-exact"
 
 [[scenario]]
 name = "failed"

@@ -5,6 +5,7 @@ package splice.dialect.responses
 
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
+import splice.core.reasoning.ReasoningHistory
 import splice.core.turn.SharedSummaryParts
 import splice.dialect.responses.reasoning.EmitEncryptedReasoning
 import splice.dialect.responses.reasoning.ReasoningEnvelopeEncoder
@@ -66,6 +67,8 @@ internal data class ReasoningCapture(
      *  never key the cache (toolu_synth_* repeats across turns — cross-turn bleed). Default no-op
      *  keeps the reducer byte-identical when the provider wires no cache. */
     val onTurn: TurnReasoningSink = TurnReasoningSink { _, _ -> },
+    /** The turn's visible-history cursor, shared only by its sequential continuation rounds. */
+    val history: ReasoningHistory? = null,
 )
 
 /** Per-turn inputs the machine needs beyond the event flow. */

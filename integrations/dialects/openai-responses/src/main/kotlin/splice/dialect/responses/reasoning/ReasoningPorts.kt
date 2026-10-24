@@ -51,6 +51,16 @@ internal fun interface ReasoningLookup {
     public operator fun invoke(toolUseId: String): List<String>?
 }
 
+/** One ordered snapshot of the conversation's durable position indexes, read once per request. */
+internal fun interface ReasoningHistoryLookup {
+    public operator fun invoke(): Map<String, List<String>>
+}
+
+/** Writes a visible text span while server-owned reasoning is restored at verified boundaries. */
+internal fun interface ReasoningTextEmitter {
+    public operator fun invoke(text: String)
+}
+
 /**
  * RC-1: called ONCE at a successful tool-use terminal with the round's real upstream `function_call`
  * ids and its ordered reasoning envelopes — the write side of what [ReasoningLookup] reads.
@@ -68,4 +78,7 @@ internal fun interface TurnReasoningSink {
     public operator fun invoke(toolIds: List<String>, envelopes: List<String>)
 
     public fun compacted(): Unit = Unit
+
+    /** A completed reasoning item at an exact visible-history position, including prose-only rounds. */
+    public fun positioned(position: String, envelope: String, order: ReasoningItemOrder? = null): Unit = Unit
 }

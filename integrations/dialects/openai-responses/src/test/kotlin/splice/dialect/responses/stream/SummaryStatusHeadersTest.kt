@@ -64,6 +64,29 @@ private fun split(header: String): List<String> = listOf(header.take(header.leng
 class SummaryStatusHeadersTest {
 
     @Test
+    fun `blank and comment-only summary parts never open thinking blocks`() = runTest {
+        val sink = RecordingSink()
+        val frames = liveItem(0, listOf(" ", "  ")) + liveItem(1, listOf("<!--", " -->")) +
+            liveItem(2, listOf("**Checking**", "\n\n", "<!-- -->")) + completed
+        val outcome = ResponsesStreamTranslator(ctx()).driveTurn(frames.asFlow(), sink) as TurnOutcome.Success
+        assertEquals("", outcome.text.thinkingText)
+        assertTrue(!outcome.text.emittedThinking)
+        assertTrue(sink.calls.none { it.startsWith("openThinking") || it.startsWith("think#") })
+    }
+
+    @Test
+    fun `comment markers followed by real model prose remain unchanged`() = runTest {
+        val text = "<!-- --> is quoted model text."
+        val sink = RecordingSink()
+        val outcome = ResponsesStreamTranslator(ctx()).driveTurn(
+            (liveItem(0, listOf("<!--", " -->", " is quoted model text.")) + completed).asFlow(),
+            sink,
+        ) as TurnOutcome.Success
+        assertEquals(text, outcome.text.thinkingText)
+        assertTrue(outcome.text.emittedThinking)
+    }
+
+    @Test
     fun `the captured gpt-6-sol round renders each of its nine headers once`() = runTest {
         val events = ROUND_ORDER.mapIndexed { oi, c -> liveItem(oi, split(HEADERS[c.digitToInt()])) }.flatten()
         val sink = RecordingSink()

@@ -5,10 +5,12 @@
 package splice.dialect.responses.request
 
 import kotlinx.serialization.json.JsonObject
+import splice.core.reasoning.ReasoningHistory
 import splice.core.turn.ReasoningDisplay
 import splice.core.turn.TurnMeta
 import splice.dialect.responses.reasoning.InjectPriorReasoning
 import splice.dialect.responses.reasoning.ReasoningEnvelopeDecoder
+import splice.dialect.responses.reasoning.ReasoningHistoryLookup
 import splice.dialect.responses.reasoning.ReasoningLookup
 import splice.dialect.responses.reasoning.RequestEncryptedReasoning
 import splice.upstream.ToolSearchPolicy
@@ -47,6 +49,8 @@ internal data class ReasoningHandoff(
      *  ordered envelopes of the turn that emitted it. Null = miss = today's behavior exactly.
      *  Wired by the provider; the default keeps unwired builds byte-identical. */
     public val lookup: ReasoningLookup = ReasoningLookup { null },
+    /** Server-owned history positions; legacy tool lookups remain available for older saved conversations. */
+    public val history: ReasoningHistoryLookup = ReasoningHistoryLookup { emptyMap() },
 )
 
 internal data class BuildOptions(
@@ -67,6 +71,9 @@ internal data class BuildOptions(
      *  sharing dedup state between two requests — here every instance, copies included,
      *  initializes its own fresh set, and equals/hashCode never see it. */
     public val injectedReasoningIds: MutableSet<String> = mutableSetOf()
+
+    /** Constructed afresh for every build, including copy(), like the dedup sets. */
+    public val reasoningHistory: ReasoningHistory = ReasoningHistory()
 
     /** Per-REQUEST dedup for the declaration-replay injection (CHANGE 2, cache-prefix stability
      *  2026-07-25): a deferred tool's schema is declared AT MOST ONCE per request, immediately

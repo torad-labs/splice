@@ -16,6 +16,7 @@ import splice.dialect.responses.stream.ResponsesFrameParse
 import splice.dialect.responses.stream.ResponsesHarvest
 import splice.dialect.responses.stream.SummaryDedup
 import splice.upstream.sse.WireSink
+import splice.upstream.transport.BufferCapacity
 
 private const val PART_SEPARATOR = "\n\n"
 
@@ -42,6 +43,7 @@ internal class ResponsesReasoningFold(
     // Live summary delivery (every mode but cutoff): a header-only part is a status line, rendered
     // once per round per distinct text (V4-450).
     private val statusHeaders = SummaryStatusHeaders()
+    private val leadingText = HashMap<Int, StringBuilder>()
 
     // sequential_cutoff mode (codex-rs parity, ported verbatim from session/turn.rs 2026-08-26):
     // the backend streams MULTIPLE reasoning items CONCURRENTLY, and each item's summary stream
@@ -97,7 +99,7 @@ internal class ResponsesReasoningFold(
             render(oi, statusHeaders.done(frames.reasoningKey(oi), text), sink)
             return
         }
-        if (!renderableSummaryDone(evt, text)) return
+        if (!renderableSummaryDone(evt, text) || !statusHeaders.admitsLate(text)) return
         // codex emits a section break for summary_index > 0; block-non-empty is the same boundary
         // without ever leading an empty block with a separator (the first RENDERED part of an
         // item can sit at summary_index > 0 when its restated prefix was dropped).
@@ -108,14 +110,27 @@ internal class ResponsesReasoningFold(
      *  takes the paragraph break when the block already holds text. */
     private suspend fun render(oi: Int, release: SummaryRelease?, sink: WireSink) {
         if (release == null || release.text.isEmpty()) return
+        val key = frames.reasoningKey(oi)
+        val text = if (state.blocks[key]?.sawDelta == true) {
+            release.text
+        } else {
+            val held = leadingText.getOrPut(oi) { StringBuilder() }
+            require(held.length.toLong() + release.text.length <= BufferCapacity.MAX_BUFFERED_CHARS) {
+                "reasoning prefix exceeds buffer capacity"
+            }
+            held.append(release.text)
+            if (ReadableReasoning.mayBeEmpty(held.toString())) return
+            leadingText.remove(oi)
+            held.toString()
+        }
         val b = ensureThinkingBlock(oi, sink)
         if (release.startsPart && b.sawDelta) {
             state.thinkingBuf.append(PART_SEPARATOR)
             sink.thinkingDelta(b.index, PART_SEPARATOR)
         }
         b.sawDelta = true
-        state.thinkingBuf.append(release.text)
-        sink.thinkingDelta(b.index, release.text)
+        state.thinkingBuf.append(text)
+        sink.thinkingDelta(b.index, text)
     }
 
     /** Two filters, one decision. First codex's (session/turn.rs ReasoningSummaryDone arm): the
@@ -154,6 +169,7 @@ internal class ResponsesReasoningFold(
     suspend fun maybeEmitLateReasoning(item: JsonObject?, oi: Int?, sink: WireSink) {
         if (item == null || oi == null) return
         if (JsonScalars.strOrEmpty(item["type"]) != "reasoning") return
+        leadingText.remove(oi) // An empty/comment-only raw prefix belongs only to the item that ended.
         // cutoff mode: the done-event path is the complete render surface (codex renders nothing
         // from completed items in this mode — a completed item that never went active is a
         // restatement carrier, and re-rendering it is the staircase this port kills).

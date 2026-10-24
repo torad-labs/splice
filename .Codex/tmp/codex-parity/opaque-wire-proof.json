@@ -1,0 +1,13 @@
+{
+  "kind": "opaque-replay-wire-change-proof",
+  "baselineJarSha256": "ce731c711f944d807f7980fce934feeb982735f9d1008ca44971f178a43bf56a",
+  "candidateJarSha256": "8b79c791698222439b35f01c4e3e693e6aea57807d23ba01878539ab6880d8b0",
+  "oldPin": "429edee0651e3ef935797f8a60ddbc6818521f45431c9d21a379a313f4e5dc79",
+  "newPin": "18a407c406d2e585699d18ed7437557ad7e9294a9638b41ac1845584f292f2b8",
+  "removedOpaqueBlocks": 1,
+  "transformation": "Remove opaque redacted_thinking start/delta/stop frames and close the resulting content-block index gap; preserve every other byte",
+  "reconstructionMatches": true,
+  "upstreamIdentical": true,
+  "oldStatus": 200,
+  "newStatus": 200
+}

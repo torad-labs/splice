@@ -65,6 +65,9 @@ public object ReasoningReplay {
                     put(FIELD_ID, id)
                     put(FIELD_ENCRYPTED, encrypted)
                     if (summary != null && summary.isNotEmpty()) put(FIELD_SUMMARY, summary)
+                    readableContent(
+                        item,
+                    )?.takeIf { it.second.isNotEmpty() }?.let { (key, content) -> put(key, content) }
                 },
             )
         }
@@ -77,15 +80,7 @@ public object ReasoningReplay {
     /** redacted_thinking `data` -> Responses `reasoning` input item, or null for foreign data. */
     // foreign/garbled payloads pass through as null
     public fun decodeReasoningEnvelope(data: String?, log: LogSink = LogSink(DaemonLog::write)): JsonObject? {
-        val parsed = data?.takeIf { it.isNotEmpty() }?.let { encoded ->
-            // An undecodable envelope is dropped AND logged below (CMP-002). Bad base64 and bad JSON both throw
-            // IllegalArgumentException.
-            try {
-                JsonScalars.objectOrNull(lenient, Base64.getDecoder().decode(encoded).toString(Charsets.UTF_8))
-            } catch (_: IllegalArgumentException) {
-                null
-            }
-        }
+        val parsed = parseEnvelope(data)
         val tagOk = (parsed?.get(FIELD_TAG) as? JsonPrimitive)?.content == REASONING_ENVELOPE_TAG
         val versionOk = (parsed?.get(FIELD_VERSION) as? JsonPrimitive)?.content == REASONING_ENVELOPE_VERSION.toString()
         val item = if (tagOk && versionOk) parsed[FIELD_ITEM] as? JsonObject else null
@@ -110,8 +105,21 @@ public object ReasoningReplay {
             put(FIELD_ID, id)
             put(FIELD_ENCRYPTED, encrypted)
             put(FIELD_SUMMARY, (item?.get(FIELD_SUMMARY) as? JsonArray) ?: JsonArray(emptyList()))
+            readableContent(item)?.let { (key, content) -> put(key, content) }
         }
     }
+
+    private fun parseEnvelope(data: String?): JsonObject? = data?.takeIf { it.isNotEmpty() }?.let { encoded ->
+        try {
+            JsonScalars.objectOrNull(lenient, Base64.getDecoder().decode(encoded).toString(Charsets.UTF_8))
+        } catch (_: IllegalArgumentException) {
+            null
+        }
+    }
+
+    /** The optional readable content field, validated identically by both halves of the envelope codec. */
+    private fun readableContent(item: JsonObject?): Pair<String, JsonArray>? =
+        (item?.get("content") as? JsonArray)?.let { "content" to it }
 
     /** The data of one redacted_thinking block holding [envelopes], the reasoning GPT gave in a row, in order. */
     public fun joinReasoningEnvelopes(envelopes: List<String>): String =

@@ -1,9 +1,10 @@
 // NEW: 2026-10-23 — GPT can answer with many hidden reasoning items in a row (nine before one exec call in turn
 // de23cca4b4c3, gpt-6.1-sol), and Claude Code draws each redacted_thinking block as its own empty "Thinking…" row.
-// A run of reasoning reaches Claude Code as one block, and the next request sends GPT every item of it, in order.
+// Reasoning stays server-owned. Only readable text reaches Claude Code; older input carriers still decode.
 package splice.dialect.responses.stream
 
 import kotlinx.coroutines.flow.asFlow
+import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.test.runTest
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonObject
@@ -12,6 +13,7 @@ import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertTrue
+import org.junit.jupiter.api.Assertions.fail
 import org.junit.jupiter.api.Test
 import splice.core.index.WireBlockIndex
 import splice.core.parse.AnthropicParse
@@ -60,19 +62,17 @@ private class ReasoningRunSink : WireSink {
 class ResponsesReasoningRunTest {
 
     @Test
-    fun `a run of hidden reasoning reaches Claude Code as one block before the call it led to`() = runTest {
+    fun `a run of hidden reasoning shows only its readable summary before the call`() = runTest {
         val sink = ReasoningRunSink()
         drive(reasoningRun(1..RUN) + call("call_1", RUN) + completed(), sink)
 
-        assertEquals(listOf("thinking", "hidden", "tool:call_1"), sink.calls, "one row for the run: ${sink.calls}")
+        assertEquals(listOf("thinking", "tool:call_1"), sink.calls)
+        assertTrue(sink.hidden.isEmpty(), "encrypted history is never client presentation")
     }
 
     @Test
-    fun `Claude Code's copy of a run sends GPT every reasoning item once, in order`() = runTest {
-        val sink = ReasoningRunSink()
-        drive(reasoningRun(1..RUN) + call("call_1", RUN) + completed(), sink)
-
-        val input = nextRequest(sink.hidden, "call_1")
+    fun `a legacy grouped input sends GPT every reasoning item once in order`() {
+        val input = nextRequest(listOf(legacyRun(1..RUN)), "call_1")
         val reasoning = input.filter { it["type"]?.jsonPrimitive?.content == "reasoning" }
         assertEquals((1..RUN).map { "rs_$it" }, reasoning.map { it.getValue("id").jsonPrimitive.content })
         assertEquals((1..RUN).map { "e-$it" }, reasoning.map { it.getValue("encrypted_content").jsonPrimitive.content })
@@ -81,7 +81,7 @@ class ResponsesReasoningRunTest {
     }
 
     @Test
-    fun `reasoning on each side of a message goes as one block before each thing that follows it`() = runTest {
+    fun `readable reasoning keeps its place around prose while legacy replay remains decodable`() = runTest {
         val sink = ReasoningRunSink()
         val message = listOf(
             ev("""{"type":"response.output_item.added","output_index":1,"item":{"type":"message","id":"msg_1"}}"""),
@@ -95,27 +95,59 @@ class ResponsesReasoningRunTest {
         drive(reasoningRun(1..1) + message + after + call("call_1", 4) + completed(), sink)
 
         assertEquals(
-            listOf("thinking", "hidden", "text", "hidden", "tool:call_1"),
+            listOf("thinking", "text", "tool:call_1"),
             sink.calls,
             "a block before the message and one before the call: ${sink.calls}",
         )
-        val input = nextRequest(sink.hidden, "call_1", text = "Looking.")
+        val input = nextRequest(listOf(legacyRun(1..1), legacyRun(2..3)), "call_1", text = "Looking.")
         val order = input.mapNotNull { it["id"]?.jsonPrimitive?.content ?: it["role"]?.jsonPrimitive?.content }
         assertEquals(listOf("user", "rs_1", "assistant", "rs_2", "rs_3"), order.take(5), "GPT's own order: $input")
     }
 
     @Test
-    fun `a run the stream ends on still reaches Claude Code`() = runTest {
+    fun `a run the stream ends on shows only its real readable text`() = runTest {
         val sink = ReasoningRunSink()
         val outcome = drive(reasoningRun(1..2) + completed(), sink)
 
-        assertEquals(listOf("thinking", "hidden"), sink.calls, "one block at the end: ${sink.calls}")
-        assertTrue((outcome as TurnOutcome.Success).text.emittedThinking, "the hidden block is content the client saw")
+        assertEquals(listOf("thinking"), sink.calls)
+        assertTrue((outcome as TurnOutcome.Success).text.emittedThinking, "the readable summary reached the client")
     }
 
+    @Test
+    fun `a broken encrypted-only stream retains salvage and presents no placeholder`() = runTest {
+        val sink = ReasoningRunSink()
+        val broken = flow {
+            reasoningRun(1..2, summary = false).forEach { emit(it) }
+            error("the stream broke before GPT's next item")
+        }
+        val outcome = try {
+            translator().driveTurn(broken, sink)
+        } catch (thrown: IllegalStateException) {
+            fail("the failure left the round although the reasoning before it was GPT's to show: $thrown")
+        }
+
+        assertEquals(emptyList<String>(), sink.calls)
+        assertTrue(outcome !is TurnOutcome.Success, "a broken stream is no success: $outcome")
+        assertEquals(2, (outcome as TurnOutcome.Failure).partial?.reasoningEnvelopes?.size)
+    }
+
+    private fun translator() =
+        responsesTestTranslator(emitEncryptedReasoning = true, collectReasoningEnvelopes = true) {
+            ReasoningReplay.encodeReasoningEnvelope(it)
+        }
+
+    private fun legacyRun(ids: IntRange): String = ReasoningReplay.joinReasoningEnvelopes(
+        ids.map { id ->
+            checkNotNull(
+                ReasoningReplay.encodeReasoningEnvelope(
+                    ev("""{"type":"reasoning","id":"rs_$id","encrypted_content":"e-$id"}"""),
+                ),
+            )
+        },
+    )
+
     private suspend fun drive(events: List<JsonObject>, sink: WireSink): TurnOutcome =
-        responsesTestTranslator(emitEncryptedReasoning = true) { ReasoningReplay.encodeReasoningEnvelope(it) }
-            .driveTurn(events.asFlow(), sink)
+        translator().driveTurn(events.asFlow(), sink)
 
     /** GPT's reasoning items [ids] at output indexes from [from], the first with a [summary]. */
     private fun reasoningRun(

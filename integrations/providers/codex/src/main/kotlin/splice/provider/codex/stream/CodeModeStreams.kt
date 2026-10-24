@@ -7,7 +7,6 @@ import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.ensureActive
 import splice.core.turn.TurnOutcome
 import splice.core.turn.Usage
-import splice.core.turn.noRequestUsage
 import splice.provider.codex.CodeModeBody
 import splice.provider.codex.CodeModeBridgeConfig
 import splice.provider.codex.CodeModePersistenceException
@@ -152,11 +151,7 @@ internal class CodeModeStreams(
         if (round != null) rounds.remove(record.id, round)
         record.sourceEnd = null
         round?.switching?.detach()
-        return when (raw) {
-            is TurnOutcome.Success -> raw.copy(usage = usage ?: noRequestUsage)
-            null -> usage?.let { TurnOutcome.Success(false, false, it) }
-            is TurnOutcome.Failure, is TurnOutcome.ClientAbandoned -> raw
-        }
+        return CodeModeBilledOutcome.merge(raw, usage)
     }
 
     /** Capture live sources before this turn's reconciliation can supersede or abandon their records. */

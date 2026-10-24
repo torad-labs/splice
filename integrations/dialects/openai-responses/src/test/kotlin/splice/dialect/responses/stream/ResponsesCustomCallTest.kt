@@ -87,7 +87,7 @@ class ResponsesCustomCallTest {
         val state = ResponsesTurnState()
         state.customCalls += checkNotNull(parser.parse(first))
         state.finalResponse = JsonObject(mapOf("output" to JsonArray(listOf(first, second))))
-        val outcome = payload.successOutcome(state) as TurnOutcome.Success
+        val outcome = payload.successOutcome(state)
         assertEquals(listOf("first", "second"), outcome.handoffs.customCalls.map { it.callId })
         assertEquals(listOf(first, second), outcome.handoffs.customCalls.map { it.raw })
     }
@@ -98,7 +98,7 @@ class ResponsesCustomCallTest {
         val state = ResponsesTurnState()
         state.customCalls += checkNotNull(parser.parse(first))
         state.finalResponse = JsonObject(mapOf("output" to JsonArray(emptyList())))
-        val outcome = payload.successOutcome(state) as TurnOutcome.Success
+        val outcome = payload.successOutcome(state)
         assertEquals(listOf(first), outcome.handoffs.customCalls.map { it.raw })
     }
 
@@ -107,7 +107,7 @@ class ResponsesCustomCallTest {
         val first = item("duplicate")
         val state = ResponsesTurnState()
         state.finalResponse = JsonObject(mapOf("output" to JsonArray(listOf(first, first))))
-        val outcome = payload.successOutcome(state) as TurnOutcome.Success
+        val outcome = payload.successOutcome(state)
         assertEquals(2, outcome.handoffs.customCalls.size)
     }
 

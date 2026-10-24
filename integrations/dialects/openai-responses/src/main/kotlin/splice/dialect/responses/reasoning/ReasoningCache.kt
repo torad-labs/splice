@@ -53,7 +53,7 @@ internal class ReasoningCache(
     private val log: LogSink = LogSink {},
     /** V4-334: where keyed conversations outlive the process; null keeps them in memory only. */
     files: ReasoningCacheFiles? = null,
-) {
+) : ReasoningCacheEvictions {
 
     // Iteration order = least-recently-TOUCHED first (touch re-inserts). Bound pressure evicts from
     // the front.
@@ -132,15 +132,21 @@ internal class ReasoningCache(
      *  concurrent eviction (rounds 1..k injected, k+1.. missing — the forbidden partial shape,
      *  review finding 14) and re-touch the conversation N times (finding 10). A snapshot cannot
      *  tear and costs one lock acquisition per build. */
-    fun snapshot(conversationKey: String?): Map<String, List<String>> {
+    fun snapshot(
+        conversationKey: String?,
+        legacyConversationKey: String? = conversationKey,
+    ): Map<String, List<String>> {
         restored.value
         return synchronized(lock) {
             sweepLocked()
             if (conversationKey == null) {
-                return nullByToolId.entries.associate { (id, rk) -> id to nullRounds.getValue(rk).envelopes }
+                return nullRounds.values.flatMap { round -> round.toolIds.map { it to round.envelopes } }.toMap()
             }
-            val convo = touchLocked(conversationKey) ?: return emptyMap()
-            convo.byToolId.entries.associate { (id, rk) -> id to convo.rounds.getValue(rk).envelopes }
+            // Arrival order also orders private history-position indexes sharing a visible boundary.
+            val rounds = listOfNotNull(legacyConversationKey, conversationKey).distinct().flatMap { key ->
+                touchLocked(key)?.rounds?.values.orEmpty()
+            }
+            rounds.flatMap { round -> round.toolIds.map { it to round.envelopes } }.toMap()
         }
     }
 
@@ -152,14 +158,17 @@ internal class ReasoningCache(
      *  Deliberately UNscoped (the amend path has no conversation context): a cross-conversation
      *  call_id collision over-evicts a healthy conversation, which costs a miss, never a wrong
      *  injection. */
-    fun evictByToolId(toolId: String) {
+
+    /** Stale encrypted items also occur before prose or by themselves, without any following tool id.
+     * Scan once per failed request and drop every affected conversation whole, including its file. */
+    override fun evictRejectedRounds(match: CachedReasoningMatch) {
         restored.value
         synchronized(lock) {
-            convos.filterValues { toolId in it.byToolId }.keys.toList().forEach {
+            convos.filterValues { convo -> convo.rounds.values.any { match(it) } }.keys.toList().forEach {
                 log("[reasoning-cache] stale-400 evicted conversation ${it.take(KEY_LOG_CHARS)}… whole")
                 removeConvoLocked(it)
             }
-            nullByToolId[toolId]?.let { removeNullLocked(it) }
+            nullRounds.filterValues { match(it) }.keys.toList().forEach(::removeNullLocked)
         }
         writes.flush()
     }

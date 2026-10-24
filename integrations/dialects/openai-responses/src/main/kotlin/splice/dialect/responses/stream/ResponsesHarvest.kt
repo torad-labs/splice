@@ -13,6 +13,7 @@ import splice.core.turn.ToolSearchCall
 import splice.core.turn.Usage
 import splice.core.turn.UsageField
 import splice.core.util.JsonScalars
+import splice.dialect.responses.reasoning.ReadableReasoning
 import splice.dialect.responses.tools.ResponsesToolSearchParse
 
 // Harvested lives in Harvested.kt (concentration, 2026-08-19).
@@ -36,13 +37,13 @@ internal class ResponsesHarvest {
     internal fun summaryText(item: JsonObject): String =
         normalizeParagraphs(
             (item["summary"] as? JsonArray ?: return "")
-                .joinToString(PARA) { part ->
+                .map { part ->
                     when (part) {
                         is JsonPrimitive -> JsonScalars.strOrEmpty(part)
                         is JsonObject -> JsonScalars.strOrEmpty(part[FIELD_TEXT])
                         is JsonArray -> ""
                     }
-                },
+                }.filter(ReadableReasoning::hasText).joinToString(PARA),
         )
 
     /**
@@ -52,7 +53,11 @@ internal class ResponsesHarvest {
      * Encrypted blobs are never decoded here — they are opaque and only useful for replay.
      */
     internal fun reasoningReadableText(item: JsonObject): String =
-        FULL_REASONING_KEYS.firstNotNullOfOrNull { key -> freeFormReasoningText(item[key]) }
+        FULL_REASONING_KEYS.firstNotNullOfOrNull { key ->
+            freeFormReasoningText(
+                item[key],
+            )?.takeIf(ReadableReasoning::hasText)
+        }
             ?: summaryText(item)
 
     /** One free-form reasoning field rendered readable, or null when absent/empty. */

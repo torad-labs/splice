@@ -9,9 +9,6 @@ package splice.dialect.responses.reasoning
 
 private const val MARKDOWN_BOLD = "**"
 
-// codex's marker for a header whose body is deliberately empty (split_reasoning_summary_parts).
-private const val EMPTY_BODY = "<!-- -->"
-
 // A header is a few words; a part still open in bold past this is prose and is released at once.
 private const val MAX_HEADER_CHARS = 200
 
@@ -66,7 +63,8 @@ internal class SummaryStatusHeaders {
 
     /** A completed item's text when no summary for it arrived live: refused only for a bare header
      *  this round already showed. */
-    fun admitsLate(text: String): Boolean = !HeaderShape.isHeaderOnly(text) || shown.add(text.trim())
+    fun admitsLate(text: String): Boolean = ReadableReasoning.hasText(text) &&
+        (!HeaderShape.isHeaderOnly(text) || shown.add(text.trim()))
 
     private fun settle(key: Int, doneText: String?): SummaryRelease? {
         val part = current.remove(key)
@@ -78,7 +76,7 @@ internal class SummaryStatusHeaders {
     }
 
     private fun decide(text: String): SummaryRelease? = when {
-        text.isBlank() -> null
+        !ReadableReasoning.hasText(text) -> null
         HeaderShape.isHeaderOnly(text) && !shown.add(text.trim()) -> null
         else -> SummaryRelease(text, startsPart = true)
     }
@@ -92,19 +90,20 @@ private object HeaderShape {
         val trimmed = text.trim()
         val close = closingBold(trimmed) ?: return false
         val body = trimmed.substring(close + MARKDOWN_BOLD.length).trim()
-        return body.isEmpty() || body == EMPTY_BODY
+        return ReadableReasoning.isEmptyBody(body)
     }
 
     /** Whether more deltas could still make [held] a header-only part. */
     fun mayStillBeHeaderOnly(held: String): Boolean {
         val text = held.trimStart()
         return when {
+            ReadableReasoning.mayBeEmpty(text) -> true
             text.length > MAX_HEADER_CHARS -> false
             text.length < MARKDOWN_BOLD.length -> MARKDOWN_BOLD.startsWith(text)
             !text.startsWith(MARKDOWN_BOLD) -> false
             else -> {
                 val close = closingBold(text)
-                close == null || EMPTY_BODY.startsWith(text.substring(close + MARKDOWN_BOLD.length).trim())
+                close == null || ReadableReasoning.mayBeEmpty(text.substring(close + MARKDOWN_BOLD.length))
             }
         }
     }

@@ -42,31 +42,7 @@ internal class CodeModeScriptPlacements(private val codec: CodexCodeModeHistoryC
         input: List<JsonElement>,
         conversation: List<JsonElement>,
         digests: InputItemDigests,
-    ): List<CodeModeQuiet> {
-        val prefix = CodeModeClientPrefix(conversation, digests)
-        val legacy by lazy { CodeModeLegacyStart(codec, this, input, conversation) }
-        var floor: Int? = null
-        return records.mapNotNull { record ->
-            if (!quiet(record)) {
-                floor = called(record, conversation) ?: floor
-                return@mapNotNull null
-            }
-            val replay = continuity(record)
-            val start = record.replayAnchors?.client
-            val at = if (start == null) legacy.at(record, replay, floor) else prefix.at(start)
-            at?.let {
-                floor = echo(conversation, it, replay)?.end ?: it
-                CodeModeQuiet(record, replay, it)
-            }
-        }.sortedBy(CodeModeQuiet::at)
-    }
-
-    /** Where [record]'s last client item ends in [conversation], or null when the client holds none of them. */
-    private fun called(record: CodeModeRecord, conversation: List<JsonElement>): Int? {
-        val ids = record.clientIds()
-        if (ids.isEmpty()) return null
-        return conversation.indexOfLast { codec.callId(it) in ids }.takeIf { it >= 0 }?.plus(1)
-    }
+    ): List<CodeModeQuiet> = CodeModeQuietMeasure(codec, this, input, conversation, digests).measure(records)
 
     /** The scripts to send after [folded], in the order they ran: each [due] on the history before it. */
     fun appended(
@@ -99,11 +75,19 @@ internal class CodeModeScriptPlacements(private val codec: CodexCodeModeHistoryC
      *  GPT streamed them, which may put reasoning after the preface, while GPT is sent a script's reasoning first.
      *  The client may join a script's preface and the prose GPT gave after it into one assistant message, so a
      *  preface is found at the start of what is left of the client's message, and an echo may end inside one. */
-    fun echo(items: List<JsonElement>, at: Int, continuity: List<JsonElement>): CodeModeEcho? =
-        CodeModeEchoMatch(codec, this, continuity).from(items, at)
+    fun echo(items: List<JsonElement>, at: Int, continuity: List<JsonElement>, skip: Int = 0): CodeModeEcho? =
+        CodeModeEchoMatch(codec, this, continuity).from(items, at, skip)
 
-    /** Whether [continuity] holds reasoning, which no other script's copy holds, and not only prose. */
-    fun holdsReasoning(continuity: List<JsonElement>): Boolean = continuity.any { text(it) == null }
+    /** Where the copy of [continuity] starts in [items] from [at]: there, or further on past the copies other
+     *  scripts streamed in the same reply ahead of it (one whose record is gone or was lost), never past an item
+     *  GPT did not stream, such as a message the client added. Null when the client holds no copy there. */
+    fun copyStart(items: List<JsonElement>, at: Int, continuity: List<JsonElement>): Int? =
+        (at until items.size).asSequence().takeWhile { it == at || streamed(items[it - 1]) }
+            .firstOrNull { echo(items, it, continuity) != null }
+
+    /** Whether [item] is reasoning or prose GPT streamed, which the client keeps as it came. */
+    private fun streamed(item: JsonElement): Boolean =
+        text(item) != null || codec.string(item as? JsonObject, CODE_MODE_FIELD_TYPE) == TYPE_REASONING
 
     /** [items] with the message [echo] ends inside cut in two where it ends, each part keeping the message's other
      *  fields: the script's preface, then what GPT said after it. */
@@ -123,7 +107,7 @@ internal class CodeModeScriptPlacements(private val codec: CodexCodeModeHistoryC
     }
 
     /** A finished script that made no client call and was not abandoned. */
-    private fun quiet(record: CodeModeRecord): Boolean =
+    fun quiet(record: CodeModeRecord): Boolean =
         finished(record) && !record.abandoned() && record.clientIds().isEmpty()
 
     /** Whether a script that made no client call is still to be sent: nothing of it is in the client's history. */
@@ -187,11 +171,11 @@ internal class CodeModeScriptFold(
     }
 
     /** [items] with each quiet script set to go right after the history it ran on: after its echo when that starts
-     *  there, the message the echo ends inside cut where it ends, or right there for a script that gave no reasoning
-     *  or preface, or whose reply the client never kept (a restart cut it) before it went on. Scripts that ran on one
-     *  history ran in turn, each echo after the one before; [quiet] is in the order of where they ran. A script whose
-     *  echo is not there and that ran after all of [items] is left to [CodeModeScriptPlacements.appended], which sends
-     *  it last, since the client may still replay its reply. */
+     *  there or past the copies other scripts streamed ahead of it, the message the echo ends inside cut where it
+     *  ends, or right there for a script that gave no reasoning or preface, or whose reply the client never kept (a
+     *  restart cut it) before it went on. Scripts that ran on one history ran in turn, each echo after the one before;
+     *  [quiet] is in the order of where they ran. A script whose echo is not there and that ran after all of [items]
+     *  is left to [CodeModeScriptPlacements.appended], which sends it last, since the client may still replay it. */
     private fun placed(items: List<JsonElement>): List<JsonElement> {
         var cut = items
         var start = -1
@@ -202,23 +186,28 @@ internal class CodeModeScriptFold(
                 start = script.at
                 from = script.at + added
             }
-            val echo = scripts.echo(cut, from, script.replay)
-            if (echo == null) {
+            val copy = scripts.copyStart(cut, from, script.replay)
+            val echo = copy?.let { scripts.echo(cut, it, script.replay) }
+            if (copy == null || echo == null) {
                 if (from < cut.size) placements.getOrPut(from - 1) { mutableListOf() } += script.record
                 return@forEach
             }
             if (echo.split != 0) {
-                cut = scripts.cut(cut, echo)
+                cut = split(cut, echo)
                 added++
-                val moved = placements.keys.filter { it >= echo.end }.sortedDescending()
-                moved.forEach { placements[it + 1] = checkNotNull(placements.remove(it)) }
             }
-            val lastItem = if (echo.split == 0) echo.end - 1 else echo.end
-            echoed += from..lastItem
-            placements.getOrPut(lastItem) { mutableListOf() } += script.record
-            from = lastItem + 1
+            echoed += copy..echo.last
+            placements.getOrPut(echo.last) { mutableListOf() } += script.record
+            from = echo.last + 1
         }
         return cut
+    }
+
+    /** [items] with the message [echo] ends inside cut in two, and every script placed from there on moved one on. */
+    private fun split(items: List<JsonElement>, echo: CodeModeEcho): List<JsonElement> {
+        val moved = placements.keys.filter { it >= echo.end }.sortedDescending()
+        moved.forEach { placements[it + 1] = checkNotNull(placements.remove(it)) }
+        return scripts.cut(items, echo)
     }
 
     /** Where an item goes: after the open script's output when one is open, else straight out. */
@@ -253,3 +242,4 @@ private const val TYPE_CALL = "function_call"
 private const val TYPE_RESULT = "function_call_output"
 private const val ECHO_ROLE = "assistant"
 private const val ECHO_TEXT = "content"
+private const val TYPE_REASONING = "reasoning"

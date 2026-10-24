@@ -145,6 +145,44 @@ class CodeModeHistoryPlacementTest : CodeModeBridgeTestSupport() {
         assertFalse("outer-1" in posted, "an abandoned record read back from the store is never rewritten")
     }
 
+    @Test
+    fun `a script whose copy follows another one's in the same reply is sent once after a restart`() = runTest {
+        val steps = listOf(CodeModeStep.Completed("first"), CodeModeStep.Completed("second"))
+        val manager = bridge(ScriptedRuntime(ArrayDeque(steps)))
+        val replies = ArrayDeque(
+            listOf(quietOutcome("outer-1", "rs_first"), quietOutcome("outer-2", "rs_second"), completedOutcome()),
+        )
+        manager.interceptor(turn(), disableParallel = false)
+            .intercept(body(conversation()), RecordingSink()) { RoundResult.Outcome(replies.removeFirst()) }
+        // The first script is no longer one splice sends (abandoned, as a store an older splice wrote can hold),
+        // yet the client keeps its reasoning ahead of the second script's.
+        val key = stateFiles.records().first().getValue("key").jsonPrimitive.content
+        val first = manager.registry.recordsFor(key).single { it.origin.outerCallId == "outer-1" }
+        manager.registry.changes.save(first) { it.error = "$CODE_MODE_ABANDONED: synthetic; source was not rerun" }
+
+        val restored = bridge(ScriptedRuntime(ArrayDeque(listOf(CodeModeStep.Completed("must not run")))))
+        var posted = ""
+        val next = conversation() + reasoning("rs_first") + reasoning("rs_second") + assistant("Done.") + user("Next.")
+        restored.interceptor(turn(), disableParallel = false).intercept(body(next), RecordingSink()) {
+            posted = it
+            RoundResult.Outcome(completedOutcome())
+        }
+
+        val input = Json.parseToJsonElement(posted).jsonObject.getValue("input").jsonArray.map { it.jsonObject }
+        fun count(type: String, field: String, id: String) =
+            input.count { it["type"]?.jsonPrimitive?.content == type && it[field]?.jsonPrimitive?.content == id }
+        assertEquals(1, count("reasoning", "id", "rs_first"), "the first script's reasoning, once: $posted")
+        assertEquals(1, count("reasoning", "id", "rs_second"), "the second script's reasoning, once: $posted")
+        assertEquals(1, count("custom_tool_call", "call_id", "outer-2"), "the second exec call, once: $posted")
+        assertEquals(1, count("custom_tool_call_output", "call_id", "outer-2"), "its output, once: $posted")
+        assertEquals("reasoning:rs_second", beforeCall(posted, "outer-2").last(), "its reasoning, then its call")
+    }
+
+    /** GPT's answer that starts a script, with the reasoning it gave first. */
+    private fun quietOutcome(callId: String, reasoning: String) = outerOutcome(callId).run {
+        copy(handoffs = handoffs.copy(reasoningEnvelopes = listOf(envelope(reasoning))))
+    }
+
     /** A script started on a plain exchange; the one client call id it exposed. */
     private suspend fun startFirst(manager: CodexCodeModeBridge): String {
         val sink = RecordingSink()

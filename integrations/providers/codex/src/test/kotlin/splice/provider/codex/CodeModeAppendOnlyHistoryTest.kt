@@ -44,7 +44,7 @@ import kotlin.random.Random
 private const val RUNS = 120
 
 /** Seeds a wider run once broke, kept so they stay fixed. */
-private val KEPT = listOf(249, 258, 505, 908)
+private val KEPT = listOf(168, 209, 249, 258, 505, 908)
 private const val REQUESTS = 128
 private const val DEVELOPER = """{"role":"developer","content":"s"}"""
 private const val TYPE = "type"
@@ -260,15 +260,15 @@ class CodeModeAppendOnlyHistoryTest : CodeModeBridgeTestSupport() {
 
         /** Stops splice and starts it again on the state it saved, as an install does, a script perhaps waiting on
          *  the client: what it kept in memory of GPT's posts is gone, and the next post still extends the last one.
-         *  Once, the build it starts may be newer than the one that saved the state, whose records kept no client
-         *  start. Not after a cut reply: with no start kept, a script the client holds no copy of is left out (the
-         *  older build had already left it out of what GPT was sent), a gap the goal names. The old splice ends as a
-         *  process does, which a head stop alone does not: its timed sweep would keep it and all it loaded. */
+         *  At its first restart, the build it starts is newer than the one that saved the state, whose records kept
+         *  no client start, as at an upgrade from a release. Not after a cut reply: with no start kept, a script the
+         *  client holds no copy of is left out (the older build had already left it out of what GPT was sent), a gap
+         *  the goal names. The old splice ends as a process does, which a head stop alone does not: its timed sweep
+         *  would keep it and all it loaded. */
         private fun restart() {
             trace += "restart $requests"
             manager.onProviderStop()
-            val newer = !cut && !aged
-            if (newer && faults.nextInt(3) == 0) {
+            if (!cut && !aged) {
                 aged = true
                 trace += "older build"
                 stateFiles.rewriteRecords { record ->
@@ -295,7 +295,9 @@ class CodeModeAppendOnlyHistoryTest : CodeModeBridgeTestSupport() {
 
         /** GPT's answer to the post it was sent: a script with reasoning, or a plain answer, which [last] always is. */
         private fun answer(last: Boolean): Reply {
-            val reasoning = (0 until random.nextInt(4)).map { "rs-$seed-$posts-$it" }
+            // Half of GPT's answers give no reasoning: the client keeps a preface of them at most, or nothing.
+            val count = if (faults.nextBoolean()) 0 else 1 + random.nextInt(3)
+            val reasoning = (0 until count).map { "rs-$seed-$posts-$it" }
             val envelopes = reasoning.map(Wire::envelope)
             if (last || random.nextInt(10) < 3) {
                 val text = "${preface().takeIf { random.nextInt(3) == 0 }.orEmpty()}Answer $posts."

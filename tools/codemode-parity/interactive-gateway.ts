@@ -9,7 +9,7 @@ import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { interactiveClient } from "./interactive-client";
-import { assertNativeBatch, assertNativeRestartBatch } from "./interactive-batch";
+import { assertNativeBatch, assertNativeRestartBatch, assertNativeOutOfOrderBatch } from "./interactive-batch";
 
 const CLIENT = "/home/marcos/.local/share/claude/versions/2.1.310";
 const MODEL = "gpt-6.1-sol";
@@ -17,9 +17,9 @@ const SUMMARY = "PROBE_READABLE_REASONING: inspect the callback file, then run t
 const ENVELOPE = "synthetic-probe-reasoning-envelope-not-a-real-credential";
 const FINAL = "PROBE_FINISHED";
 const HOLD_MS = 2000;
-const PROBE_VERSION = 6;
+const PROBE_VERSION = 7;
 type Obj = Record<string, any>;
-type Scenario = "success" | "late-failure" | "native-lifecycle" | "restart" | "native-batch" | "native-batch-restart";
+type Scenario = "success" | "late-failure" | "native-lifecycle" | "restart" | "native-batch" | "native-batch-restart" | "native-batch-out-of-order";
 type Mark = { event: string; epochMs: number; elapsedMs: number; [key: string]: unknown };
 
 function safeEnv(home: string): Record<string, string> {
@@ -74,7 +74,8 @@ export function declaredTools(description: string): string[] {
 }
 
 export async function interactiveScenario(jar: string, name: Scenario, root: string): Promise<Obj> {
-  const batch = name === "native-batch" || name === "native-batch-restart";
+  const outOfOrder = name === "native-batch-out-of-order";
+  const batch = name === "native-batch" || name === "native-batch-restart" || outOfOrder;
   const restart = name === "restart" || name === "native-batch-restart";
   const home = join(root, name); const task = join(home, "task");
   for (const d of [home, task, join(home, "tmp"), join(home, "claude"), join(home, "state")]) mkdirSync(d, { recursive: true, mode: 0o700 });
@@ -186,18 +187,19 @@ export async function interactiveScenario(jar: string, name: Scenario, root: str
     }
     scripts++;
     // Stable call/item identities on a retry, with an intentionally unguarded append effect.
+    const reasoningIndex = outOfOrder ? 2 : 0;
     const reasoning = { type: "reasoning", id: "rs_probe", summary: [{ type: "summary_text", text: SUMMARY }], encrypted_content: ENVELOPE };
-    emit({ type: "response.output_item.added", output_index: 0, item: { ...reasoning, summary: [] } });
-    emit({ type: "response.reasoning_summary_part.added", output_index: 0, item_id: reasoning.id, summary_index: 0, part: { type: "summary_text", text: "" } });
+    emit({ type: "response.output_item.added", output_index: reasoningIndex, item: { ...reasoning, summary: [] } });
+    emit({ type: "response.reasoning_summary_part.added", output_index: reasoningIndex, item_id: reasoning.id, summary_index: 0, part: { type: "summary_text", text: "" } });
     for (const delta of SUMMARY.match(/.{1,8}/gs)!) {
-      emit({ type: "response.reasoning_summary_text.delta", output_index: 0, item_id: reasoning.id, summary_index: 0, delta });
+      emit({ type: "response.reasoning_summary_text.delta", output_index: reasoningIndex, item_id: reasoning.id, summary_index: 0, delta });
       mark("upstream_reasoning_delta", { chars: delta.length });
       await Bun.sleep(8);
     }
     mark("summary_sent"); await Bun.sleep(50);
-    emit({ type: "response.reasoning_summary_text.done", output_index: 0, item_id: reasoning.id, summary_index: 0, text: SUMMARY });
-    emit({ type: "response.reasoning_summary_part.done", output_index: 0, item_id: reasoning.id, summary_index: 0, part: reasoning.summary[0] });
-    emit({ type: "response.output_item.done", output_index: 0, item: reasoning });
+    emit({ type: "response.reasoning_summary_text.done", output_index: reasoningIndex, item_id: reasoning.id, summary_index: 0, text: SUMMARY });
+    emit({ type: "response.reasoning_summary_part.done", output_index: reasoningIndex, item_id: reasoning.id, summary_index: 0, part: reasoning.summary[0] });
+    emit({ type: "response.output_item.done", output_index: reasoningIndex, item: reasoning });
     // task comes from mkdtemp, shell-quote nevertheless; no substitution of user-provided shell code.
     const quoted = "'" + effects.replaceAll("'", "'\\''") + "'";
     const callback = `text(await tools.Bash(${JSON.stringify({ command: `date +%s%3N >> ${quoted}`, description: "Record deterministic probe callback timestamp", timeout: 10000 })}));`;
@@ -206,6 +208,11 @@ export async function interactiveScenario(jar: string, name: Scenario, root: str
       : batch ? `${callback} text('native-batch-first');` : callback;
     const item: Obj = { type: "custom_tool_call", id: "exec_probe", call_id: "call_probe", name: "exec", input: script, status: "completed" };
     if (exec.namespace) item.namespace = exec.namespace;
+    const second: Obj = { type: "custom_tool_call", id: "exec_probe_second", call_id: "call_probe_second",
+      name: "exec", input: "text('native-batch-second'); text('native-batch-second-epoch:' + Date.now());", status: "completed" };
+    if (exec.namespace) second.namespace = exec.namespace;
+    const secondIndex = outOfOrder ? 0 : 2;
+    if (outOfOrder) emit({ type: "response.output_item.added", output_index: secondIndex, item: { ...second, input: "", status: "in_progress" } });
     emit({ type: "response.output_item.added", output_index: 1, item: { ...item, input: "", status: "in_progress" } });
     // No tool may execute on this incomplete item.
     emit({ type: "response.custom_tool_call_input.delta", output_index: 1, item_id: item.id, delta: script.slice(0, Math.floor(script.length / 2)) });
@@ -215,14 +222,15 @@ export async function interactiveScenario(jar: string, name: Scenario, root: str
     emit({ type: "response.output_item.done", output_index: 1, item }); mark("exec_item_done", { attempt: scripts });
     const responseItems = [reasoning, item];
     if (batch) {
-      const second: Obj = { type: "custom_tool_call", id: "exec_probe_second", call_id: "call_probe_second",
-        name: "exec", input: "text('native-batch-second'); text('native-batch-second-epoch:' + Date.now());", status: "completed" };
-      if (exec.namespace) second.namespace = exec.namespace;
-      emit({ type: "response.output_item.added", output_index: 2, item: { ...second, input: "", status: "in_progress" } });
-      emit({ type: "response.custom_tool_call_input.delta", output_index: 2, item_id: second.id, delta: second.input });
-      emit({ type: "response.custom_tool_call_input.done", output_index: 2, item_id: second.id, input: second.input });
-      emit({ type: "response.output_item.done", output_index: 2, item: second });
+      if (outOfOrder) {
+        mark("incomplete_item_held");
+        await Bun.sleep(HOLD_MS);
+      } else emit({ type: "response.output_item.added", output_index: secondIndex, item: { ...second, input: "", status: "in_progress" } });
+      emit({ type: "response.custom_tool_call_input.delta", output_index: secondIndex, item_id: second.id, delta: second.input });
+      emit({ type: "response.custom_tool_call_input.done", output_index: secondIndex, item_id: second.id, input: second.input });
+      emit({ type: "response.output_item.done", output_index: secondIndex, item: second });
       responseItems.push(second);
+      if (outOfOrder) responseItems.splice(0, responseItems.length, second, item, reasoning);
       mark("batch_items_done");
     }
     await Bun.sleep(HOLD_MS);
@@ -371,7 +379,9 @@ export async function interactiveScenario(jar: string, name: Scenario, root: str
   const batchFindings: string[] = [];
   if (batch) try {
     const observed = { marks, upstreamRequests: requests, scriptAttempts: scripts, callbackTimes };
-    if (name === "native-batch-restart") assertNativeRestartBatch(observed); else assertNativeBatch(observed);
+    if (name === "native-batch-restart") assertNativeRestartBatch(observed);
+    else if (outOfOrder) assertNativeOutOfOrderBatch(observed);
+    else assertNativeBatch(observed);
   } catch (error) { batchFindings.push(error instanceof Error ? error.message : String(error)); }
   const checks = {
     nativeBatchPreserved: batchFindings.length === 0,
@@ -413,7 +423,7 @@ export async function interactiveScenario(jar: string, name: Scenario, root: str
       itemDoneAt: done ?? null, terminalAt: terminal ?? null,
       callbackMinusItemDoneMs: effect !== undefined && done !== undefined ? effect - done : null,
       terminalMinusCallbackMs: effect !== undefined && terminal !== undefined ? terminal - effect : null }, marks,
-    coverage: "Real interactive PTY; completed item admission before response terminal; late response failure; native yield/wait; two serial outer exec items in one response including queued-source restart; daemon restart before real callback-result delivery; persisted client blocks and terminal observations. No paint-latency claim." };
+    coverage: "Real interactive PTY; completed item admission before response terminal; late response failure; native yield/wait; two serial outer exec items in one response including queued-source restart and out-of-order completion; daemon restart before real callback-result delivery; persisted client blocks and terminal observations. No paint-latency claim." };
 }
 
 export async function main(argv: string[]): Promise<number> {
@@ -439,7 +449,7 @@ export async function main(argv: string[]): Promise<number> {
   mkdirSync(dirname(out), { recursive: true });
   const save = () => writeFileSync(out, JSON.stringify(receipt, null, 2) + "\n", { mode: 0o600 });
   save();
-  for (const name of ["success", "late-failure", "native-lifecycle", "restart", "native-batch", "native-batch-restart"] as const) {
+  for (const name of ["success", "late-failure", "native-lifecycle", "restart", "native-batch", "native-batch-restart", "native-batch-out-of-order"] as const) {
     const result = await interactiveScenario(jar, name, root); receipt.scenarios.push(result); save();
     console.log(`${name}: ${result.passed ? "PASS" : "FAIL"} (${Object.entries(result.checks).filter(([, ok]) => !ok).map(([key]) => key).join(", ") || "all checks"})`);
   }

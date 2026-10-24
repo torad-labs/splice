@@ -2,7 +2,7 @@ import { describe, test, expect } from "bun:test";
 import { requiredCaseIds, contractFindings, structuralFindings, sealReceipt, artifact, rawArtifactFindings, type Receipt } from "./qualification";
 import { verifiers } from "./verifiers";
 import { assertNativeTypedMedia } from "./interactive-output";
-import { assertNativeBatch, assertNativeRestartBatch } from "./interactive-batch";
+import { assertNativeBatch, assertNativeRestartBatch, assertNativeOutOfOrderBatch } from "./interactive-batch";
 import { assertCandidateWorkerLoss } from "./candidate-loss";
 import type { TraceEvent } from "./native-reference";
 import { mkdtemp, writeFile, rm } from "node:fs/promises";
@@ -231,5 +231,36 @@ describe("qualification queued-source restart guard (not product parity)", () =>
   test("rejects a queued sibling that did not produce its real completed output", () => {
     const value = restartBatchObservation(); value.upstreamRequests[0]!.nativeInput[3].output[1].text = "native-batch-first";
     expect(() => assertNativeRestartBatch(value)).toThrow();
+  });
+});
+
+function outOfOrderBatchObservation() {
+  const value = batchObservation(); const input = value.upstreamRequests[0]!.nativeInput;
+  value.marks = [
+    { event: "upstream_sse", epochMs: 900, frame: { type: "response.output_item.added", output_index: 0, item: input[1] } },
+    { event: "upstream_sse", epochMs: 901, frame: { type: "response.output_item.added", output_index: 1, item: input[0] } },
+    { event: "upstream_sse", epochMs: 1000, frame: { type: "response.output_item.done", output_index: 1, item: input[0] } },
+    { event: "client_sse", epochMs: 1050, frame: { type: "content_block_start", content_block: { type: "tool_use", name: "Bash" } } },
+    { event: "client_callback_result_received", epochMs: 1150 },
+    { event: "upstream_sse", epochMs: 3000, frame: { type: "response.output_item.done", output_index: 0, item: input[1] } },
+    { event: "batch_items_done", epochMs: 3000 },
+    { event: "response_completed_sent", epochMs: 5000 },
+    { event: "upstream_sse", epochMs: 5000, frame: { type: "response.completed", response: { output: [input[1], input[0]] } } },
+  ] as any;
+  input[3].output[2].text = "native-batch-second-epoch:3200";
+  return value;
+}
+describe("qualification completed-item arrival guard (not product parity)", () => {
+  test("accepts completed item one while item zero remains incomplete", () => {
+    expect(() => assertNativeOutOfOrderBatch(outOfOrderBatchObservation())).not.toThrow();
+  });
+  test("rejects blocking the completed item's real effect behind its incomplete sibling", () => {
+    const value = outOfOrderBatchObservation(); value.callbackTimes = [3100];
+    expect(() => assertNativeOutOfOrderBatch(value)).toThrow();
+  });
+  test("rejects reconstructing model history in item-index order", () => {
+    const value = outOfOrderBatchObservation(); const input = value.upstreamRequests[0]!.nativeInput;
+    [input[0], input[1]] = [input[1], input[0]];
+    expect(() => assertNativeOutOfOrderBatch(value)).toThrow();
   });
 });

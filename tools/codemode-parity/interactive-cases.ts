@@ -3,13 +3,13 @@ import { readFile, readdir, writeFile, mkdir } from "node:fs/promises";
 import { resolve } from "node:path";
 import { interactiveScenario } from "./interactive-gateway";
 import { assertNativeTypedMedia } from "./interactive-output";
-import { assertNativeBatch, assertNativeRestartBatch } from "./interactive-batch";
+import { assertNativeBatch, assertNativeRestartBatch, assertNativeOutOfOrderBatch } from "./interactive-batch";
 import { artifact, identity, type CaseEvidence, type CaseId } from "./qualification";
 
 const summary = "PROBE_READABLE_REASONING: inspect the callback file, then run the Bash tool exactly once.";
 const envelope = "synthetic-probe-reasoning-envelope-not-a-real-credential";
 const final = "PROBE_FINISHED";
-type ScenarioName = "success" | "late-failure" | "native-lifecycle" | "restart" | "native-batch" | "native-batch-restart";
+type ScenarioName = "success" | "late-failure" | "native-lifecycle" | "restart" | "native-batch" | "native-batch-restart" | "native-batch-out-of-order";
 async function allFiles(directory: string): Promise<string[]> {
   const result: string[] = [];
   for (const entry of await readdir(directory, { withFileTypes: true })) {
@@ -74,7 +74,7 @@ export async function runInteractiveCases(jar: string, evidence: string, runId: 
   const rawArtifacts: CaseEvidence["artifacts"] = [];
   rawArtifacts.push(await artifact("/home/marcos/.local/share/claude/versions/2.1.310"));
   const failures = new Map<ScenarioName, string>();
-  for (const name of ["success", "late-failure", "native-lifecycle", "restart", "native-batch", "native-batch-restart"] as const) {
+  for (const name of ["success", "late-failure", "native-lifecycle", "restart", "native-batch", "native-batch-restart", "native-batch-out-of-order"] as const) {
     try {
       const result = await interactiveScenario(jar, name, root);
       const path = resolve(root, `${name}.observed.json`);
@@ -96,8 +96,9 @@ export async function runInteractiveCases(jar: string, evidence: string, runId: 
     item.state = item.findings.length ? "failed" : "executed";
     console.log(`${item.state === "executed" ? "EXECUTED" : "UNQUALIFIED"} ${id}`);
   };
-  record("runtime.item-boundary", ["success", "late-failure", "native-batch", "native-batch-restart"], () => {
+  record("runtime.item-boundary", ["success", "late-failure", "native-batch", "native-batch-restart", "native-batch-out-of-order"], () => {
     assertNativeBatch(results.get("native-batch")!);
+    assertNativeOutOfOrderBatch(results.get("native-batch-out-of-order")!);
     assertNativeRestartBatch(results.get("native-batch-restart")!);
   });
   record("delivery.readable-reasoning", ["success", "late-failure", "restart"], () => {});

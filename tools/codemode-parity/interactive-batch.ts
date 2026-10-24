@@ -84,3 +84,34 @@ export function assertNativeRestartBatch(value: BatchObservation): void {
   assert.deepEqual(interrupted.unresolved, []);
   assertCompleted(queued, calls[1], markers[1]);
 }
+
+/** Completion arrival, rather than item creation or output_index, admits each native handler. */
+export function assertNativeOutOfOrderBatch(value: BatchObservation): void {
+  assertNativeBatch(value);
+  const frames = value.marks.filter(mark => mark.event === "upstream_sse");
+  const created = frames.filter(mark => mark.frame?.type === "response.output_item.added" &&
+    calls.includes(mark.frame.item?.call_id));
+  const completed = frames.filter(mark => mark.frame?.type === "response.output_item.done" &&
+    calls.includes(mark.frame.item?.call_id));
+  assert.deepEqual(created.map(mark => [mark.frame.output_index, mark.frame.item.call_id]),
+    [[0, calls[1]], [1, calls[0]]], "fixture did not create index zero before index one");
+  assert.deepEqual(completed.map(mark => [mark.frame.output_index, mark.frame.item.call_id]),
+    [[1, calls[0]], [0, calls[1]]], "fixture did not complete index one before index zero");
+  const firstDone = completed[0]?.epochMs, secondDone = completed[1]?.epochMs;
+  assert.ok(Number.isFinite(firstDone) && Number.isFinite(secondDone) && secondDone - firstDone >= 1900,
+    "the earlier-created item was not held incomplete for two seconds");
+  assert.ok(value.callbackTimes[0]! >= firstDone && value.callbackTimes[0]! < secondDone,
+    "first-created incomplete item blocked the later-completed item's real Bash effect");
+  const issued = value.marks.find(mark => mark.event === "client_sse" &&
+    mark.frame?.content_block?.type === "tool_use" && mark.frame.content_block.name === "Bash")?.epochMs;
+  assert.ok(Number.isFinite(issued) && issued >= firstDone && issued < secondDone,
+    "the completed item's callback was held behind an incomplete sibling");
+  const returned = value.marks.find(mark => mark.event === "client_callback_result_received")?.epochMs;
+  assert.ok(Number.isFinite(returned) && returned < secondDone,
+    "the completed item's callback result did not arrive during the incomplete-sibling hold");
+  const terminal = frames.find(mark => mark.frame?.type === "response.completed" &&
+    mark.frame.response?.output?.some((item: any) => item.call_id === calls[0]));
+  assert.deepEqual(terminal?.frame.response.output.filter((item: any) => item.type === "custom_tool_call")
+    .map((item: any) => item.call_id), [calls[1], calls[0]],
+    "fixture terminal output must retain index order opposite to completion arrival");
+}

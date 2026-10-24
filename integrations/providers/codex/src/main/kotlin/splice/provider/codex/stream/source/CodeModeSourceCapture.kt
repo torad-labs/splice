@@ -86,7 +86,7 @@ internal class CodeModeSourceCapture(
     fun delivered(witness: CodeModeDeliveredText) {
         val call = completedCall ?: return
         val captured = continuity.delivered(witness, recoveredSource) ?: return
-        if (!registry.source.updateContinuity(checkNotNull(record), call, captured)) dispose()
+        if (!registry.source.updateContinuity(checkNotNull(record), call, captured, durable = true)) dispose()
     }
 
     private fun hold(items: List<JsonObject>?): Boolean {

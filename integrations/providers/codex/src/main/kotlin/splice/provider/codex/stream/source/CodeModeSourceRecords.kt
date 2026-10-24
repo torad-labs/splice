@@ -49,15 +49,21 @@ internal class CodeModeSourceRecords(
             true
         }
 
-    /** Completed native items and confirmed prose at a callback cutoff survive independently of response billing. */
-    fun updateContinuity(record: CodeModeRecord, call: GatewayCustomCall, continuity: CodeModeContinuity): Boolean =
-        access.withKey(record.key) {
-            if (record !in records || record.error != null) return@withKey false
-            if (current(record) == continuity) return@withKey true
-            stage(record, call, continuity)
+    /** Incremental receipts stay charged in memory; a callback cutoff durably hands off the whole confirmed tail. */
+    fun updateContinuity(
+        record: CodeModeRecord,
+        call: GatewayCustomCall,
+        continuity: CodeModeContinuity,
+        durable: Boolean = false,
+    ): Boolean = access.withKey(record.key) {
+        if (record !in records || record.error != null) return@withKey false
+        if (current(record) != continuity) stage(record, call, continuity)
+        // A cutoff still flushes items already staged by the live reader before its callback can be issued.
+        if (durable) {
             store.save(records, history.entries, dirtyKeys = setOf(record.key), changedRecord = record)
-            true
         }
+        true
+    }
 
     private fun current(record: CodeModeRecord): CodeModeContinuity = CodeModeContinuity(
         record.carry.continuity,

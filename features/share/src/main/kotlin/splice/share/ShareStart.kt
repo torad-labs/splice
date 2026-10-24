@@ -15,6 +15,8 @@ import splice.core.util.LogSink
 import splice.core.util.SafeFailureText
 import splice.upstream.codemode.ProcessDispatchers
 import java.net.InetAddress
+import java.nio.file.Files
+import java.nio.file.LinkOption
 import java.nio.file.Path
 
 public class ShareStart(
@@ -38,9 +40,7 @@ public class ShareStart(
         if (!share.enabled) return ShareOpen.Off
         val host = ShareHostName()
         val tls = certificate(host, share.hostnames).getOrElse { failure ->
-            val file = ShareState(statePaths).certificateFile
-            val fix = "move it away to mint a new one, and every joined machine then runs `splice remote add` again"
-            val why = "$file is not a certificate this machine can serve (${SafeFailureText.render(failure)}); $fix"
+            val why = refusal(ShareState(statePaths).certificateFile, failure)
             log("[share] not sharing: $why\n")
             return ShareOpen.Refused(why)
         }
@@ -72,6 +72,15 @@ public class ShareStart(
         val names = (listOf(host.short(), host.full(), "${host.short()}.local", "${host.short()}.lan") + hostnames)
             .distinct()
         return Cancellables.runCatchingCancellable { ShareCertificate(file).load(names) }
+    }
+
+    /** Why there is no certificate to serve: a [file] there that will not load is moved away to mint a new one; where
+     *  none is there, none could be made, and there is nothing to move. */
+    private fun refusal(file: Path, failure: Throwable): String {
+        val cause = SafeFailureText.render(failure)
+        if (!Files.exists(file, LinkOption.NOFOLLOW_LINKS)) return "a certificate could not be made at $file ($cause)"
+        val fix = "move it away to mint a new one, and every joined machine then runs `splice remote add` again"
+        return "$file is not a certificate this machine can serve ($cause); $fix"
     }
 }
 

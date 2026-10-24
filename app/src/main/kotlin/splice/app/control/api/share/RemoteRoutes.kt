@@ -20,6 +20,7 @@ import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
 import kotlinx.serialization.json.putJsonArray
 import splice.app.cli.share.REMOTE_VERB
+import splice.app.cli.share.RemoteAddress
 import splice.app.cli.share.RemoteImport
 import splice.app.cli.share.RemoteMachines
 import splice.app.cli.share.ShareTopologyFile
@@ -56,9 +57,10 @@ internal class RemoteRoutes {
 
     suspend fun import(call: ApplicationCall): JsonReply {
         val body = JsonBody().parse(call)
-        val host = JsonScalars.str(body, "host")?.trim()?.takeIf { it.isNotEmpty() }
-            ?: return JsonReply(HttpStatusCode.BadRequest, buildJsonObject { put("error", IMPORT_BODY) }.toString())
-        val port = JsonScalars.int(body, "port") ?: DEFAULT_SHARE_PORT
+        val typed = JsonScalars.str(body, "host")?.trim()?.takeIf { it.isNotEmpty() } ?: return refused(IMPORT_BODY)
+        // A found machine comes with its port; an address typed in the page is read as `splice remote add` reads it.
+        val (host, port) = JsonScalars.int(body, "port")?.let { typed to it } ?: RemoteAddress.of(typed)
+            ?: return refused("'$typed' is not an address: $ADDRESS_FORMS")
         return withContext(io) {
             val said = Said()
             val restart = DueRestart()
@@ -80,6 +82,9 @@ internal class RemoteRoutes {
 
     suspend fun remove(name: String): JsonReply =
         withContext(io) { RemoteVerb(env).let { it.answer(it.machines.remove(name)) } }
+
+    private fun refused(why: String): JsonReply =
+        JsonReply(HttpStatusCode.BadRequest, buildJsonObject { put("error", why) }.toString())
 
     private fun found(machine: RemoteFound, joined: Boolean): JsonObject = buildJsonObject {
         put("server", machine.info.server)
@@ -109,6 +114,9 @@ private class RemoteVerb(env: EnvReader) {
 
     fun answer(code: Int): JsonReply = said.answer(code == 0, restart.due)
 }
+
+// why: what a POST /api/remotes whose host is no address is told an address looks like.
+private const val ADDRESS_FORMS = "give a name or address, and :port when it is not $DEFAULT_SHARE_PORT"
 
 // why: what a POST /api/remotes that the route cannot read is told it must send.
 private const val IMPORT_BODY = "the body must be {\"host\": \"<name or address>\", \"port\"?: <port>}"

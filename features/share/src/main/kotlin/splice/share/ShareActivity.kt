@@ -66,10 +66,18 @@ public class ShareActivity(private val file: Path) {
         if (now.toEpochMilli() - writtenAt >= SHARE_ACTIVITY_WRITE_MS) flush()
     }
 
+    /** [name] keeps no activity: a machine that joins under a revoked one's name starts with none. */
+    internal fun forget(name: String) {
+        if (seen.remove(name) != null) write()
+    }
+
     /** Writes what is held now, when anything is: the minute's debounce, and the listener's stop. */
-    @Synchronized
     internal fun flush() {
-        if (seen.isEmpty()) return
+        if (seen.isNotEmpty()) write()
+    }
+
+    @Synchronized
+    private fun write() {
         writtenAt = System.currentTimeMillis()
         val book = ShareSeenBook(seen.values.sortedBy { it.name })
         SecureFile.writeAtomic0600(file, json.encodeToString(ShareSeenBook.serializer(), book) + "\n")

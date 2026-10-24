@@ -39,7 +39,7 @@ internal class RemoteMachines(
 ) {
     private val firstContact = RemoteHttp(RemoteTrust(null, "a sharing machine"))
     private val file = ShareTopologyFile(err, REMOTE_VERB, env)
-    private val store = RemotesStore(ShareState(StatePaths()).remotesFile)
+    private val store = RemotesStore(ShareState(StatePaths(envReader = env)).remotesFile)
 
     /** What [host]:[port] offers, asked through [http] (a first contact unless the machine is pinned), or null,
      *  said, when nothing there answers as a sharing splice or its certificate is not the pinned one. */
@@ -48,7 +48,8 @@ internal class RemoteMachines(
         val info = asked.fold(onSuccess = { it }, onFailure = { null })
         if (info == null) {
             val hint = "is ${CYAN}splice share on$RESET there?"
-            val at = http.url(host, port, "").authority
+            val at = Cancellables.runCatchingCancellable { http.url(host, port, "").authority }
+                .getOrElse { "$host:$port" }
             val refused = asked.exceptionOrNull()?.let(http::refusal)
             err.line("$REMOTE_VERB: ${refused ?: "nothing at $at answers as a sharing splice ($hint)"}")
         }

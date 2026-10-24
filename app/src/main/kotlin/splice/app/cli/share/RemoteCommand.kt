@@ -12,7 +12,6 @@ import splice.core.terminal.DIM
 import splice.core.terminal.RESET
 import splice.core.terminal.TerminalOutput
 import splice.core.topology.DEFAULT_SHARE_PORT
-import splice.core.util.Cancellables
 import splice.core.util.EnvReader
 import splice.share.ShareHostName
 import splice.share.remote.RemoteDiscovery
@@ -21,7 +20,6 @@ import splice.share.remote.RemoteHttp
 import splice.share.remote.RemoteTrust
 import splice.terminal.ConfirmPrompt
 import splice.terminal.ConsoleConfirm
-import java.net.URI
 
 internal const val REMOTE_USAGE = "[scan] | add <host[:port]> | list | sync [<machine>] | remove <machine>"
 
@@ -72,25 +70,12 @@ internal class RemoteCommand(
     }
 
     private suspend fun addHost(target: String): Int {
-        val (host, port) = authority(target) ?: return usage()
+        val (host, port) = RemoteAddress.of(target) ?: return usage()
         val info = machines.info(host, port) ?: return PeerExit.REFUSED
         val machine = RemoteFound(host, port, info)
         describe(machine)
         val imported = confirm("Use ${info.server}'s heads here?", true) && importer().import(machine)
         return if (imported) PeerExit.DONE else PeerExit.REFUSED
-    }
-
-    /** [target] as the host and port to ask: `host`, `host:port`, `[v6]`, `[v6]:port`, or a bare IPv6 address, whose
-     *  colons are all its own, read as a URI's authority. The host comes back without brackets, which RemoteHttp.url
-     *  puts back once (PR #247's fourth review: `[fd00::1]:3097` was bracketed twice). Null for any other target. */
-    private fun authority(target: String): Pair<String, Int>? {
-        val bare = target.count { it == ':' } > 1 && !target.startsWith("[")
-        // A target that is no URI authority at all is answered with the usage, as one with a path or a bad port is.
-        val uri = Cancellables.runCatchingCancellable { URI("http://${if (bare) "[$target]" else target}") }
-            .fold(onSuccess = { it }, onFailure = { null })
-        val host = uri?.takeIf { it.rawPath.isEmpty() }?.host?.removeSurrounding("[", "]")
-        val port = uri?.port?.takeIf { it != -1 } ?: DEFAULT_SHARE_PORT
-        return host?.takeIf { it.isNotBlank() && port in 1..UShort.MAX_VALUE.toInt() }?.let { it to port }
     }
 
     private fun describe(machine: RemoteFound) {

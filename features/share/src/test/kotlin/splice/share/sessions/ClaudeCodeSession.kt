@@ -1,7 +1,7 @@
 // NEW: LAN share, phase 2, milestone 6 (docs/specs/lan-share.md). A Claude Code session as Claude Code 2.1.309 keeps
 // one, for the tests of sessions across machines: a real process for its pid, its registry record and key file written
 // as the client writes them (read from its bundle and from real records on Oct 23), and its inbox socket, which keeps
-// each frame a sender wrote after presenting its token. It lists and sends the way the client's ListAgents and
+// each frame a sender wrote after presenting its token, and each receipt that told it what became of one it sent. It lists and sends the way the client's ListAgents and
 // SendMessage do: every record whose process is alive, and a send to a name or a `uds:` address through that record's
 // key file, with the frame the client wrote to a probe's socket (tools/probes/claude-code-mirror-anchor.ts). Its socket
 // is 0600, as the client leaves its own (`srw-------` in /tmp/cc-socks on this Mac, Oct 23).
@@ -34,6 +34,9 @@ import kotlin.io.path.name
 /** What a session's inbox took: the sender's `from` address, and its envelope's `from-name` and text. */
 internal data class Heard(val from: String?, val fromName: String?, val text: String)
 
+/** A receipt a session's inbox took for a message it sent: its delivery status's wire word, and why, in words. */
+internal data class Receipt(val status: String?, val detail: String?)
+
 internal class ClaudeCodeSession(
     private val registry: Path,
     sockets: Path,
@@ -47,6 +50,7 @@ internal class ClaudeCodeSession(
     private val token = UUID.randomUUID().toString().replace("-", "")
     private val inbox = ServerSocketChannel.open(StandardProtocolFamily.UNIX)
     private val frames = LinkedBlockingQueue<Heard>()
+    private val receipts = LinkedBlockingQueue<Receipt>()
     private val envelope = Regex("^<cross-session-message([^>]*)>\\n([\\s\\S]*)\\n</cross-session-message>$")
     private val attribute = Regex("([a-z-]+)=\"([^\"]*)\"")
 
@@ -144,6 +148,9 @@ internal class ClaudeCodeSession(
     /** The next message this session took within [seconds], or null. */
     fun heard(seconds: Long): Heard? = frames.poll(seconds, TimeUnit.SECONDS)
 
+    /** The next receipt this session took within [seconds], or null. */
+    fun receipt(seconds: Long): Receipt? = receipts.poll(seconds, TimeUnit.SECONDS)
+
     /** The session ends as the client ends one: its process exits and it removes its record, key file and socket. */
     override fun close() {
         process.destroy()
@@ -167,7 +174,12 @@ internal class ClaudeCodeSession(
             Json.parseToJsonElement(lines.next()).jsonObject["token"]?.jsonPrimitive?.content == token
         while (vouched && lines.hasNext()) {
             val frame = Json.parseToJsonElement(lines.next()).jsonObject
-            if (frame["type"]?.jsonPrimitive?.content == "user") frames.add(heardOf(frame))
+            when (frame["type"]?.jsonPrimitive?.content) {
+                "user" -> frames.add(heardOf(frame))
+                "control" -> receipts.add(
+                    Receipt(frame["status"]?.jsonPrimitive?.content, frame["status_detail"]?.jsonPrimitive?.content),
+                )
+            }
         }
     }
 

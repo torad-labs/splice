@@ -95,10 +95,13 @@ public data class SessionRecord(
     /** The splice head this session talks to, or null when [route] names none (direct or unknown). */
     public val head: String? get() = (route as? SessionRoute.Head)?.key
 
+    /** Whether this is a mirror (SessionMirrors): a session that runs on another machine, not a launch here. */
+    public val mirrored: Boolean get() = client.kind == MIRROR_KIND
+
     /** The machine a mirror stands for, when this is one: a session that runs on that machine, which ListAgents names
      *  `<machine>/<session>` (neither part holds a `/`). Null for a session of this machine's own. */
     internal val machine: String?
-        get() = name?.takeIf { client.kind == MIRROR_KIND }?.substringBefore('/', "")?.ifEmpty { null }
+        get() = name?.takeIf { mirrored }?.substringBefore('/', "")?.ifEmpty { null }
 
     /** A live session no head is known for yet: the only kind a head is joined to from what its requests showed. */
     internal fun wantsHead(): Boolean = availability != SessionAvailability.GONE && route !is SessionRoute.Head

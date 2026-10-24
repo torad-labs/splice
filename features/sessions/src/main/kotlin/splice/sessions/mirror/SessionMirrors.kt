@@ -81,6 +81,10 @@ public class SessionMirrors(
     /** Each machine's mirrors by the id of the session they stand for there. */
     private val byMachine = mutableMapOf<String, MutableMap<String, Mirror>>()
 
+    /** Each machine's sessions as it offered them and as its notes came from, by id, before MirrorNames tells namesakes
+     *  apart: what a sender's mirror made on demand is named among, so it is named as that machine's looks name it. */
+    private val offered = mutableMapOf<String, MutableMap<String, MirroredSession>>()
+
     /** The carrier each machine's mirrors hand a message to, kept so a sender's mirror can be made on demand. */
     private val carriers = mutableMapOf<String, MirrorCarrier>()
 
@@ -124,6 +128,7 @@ public class SessionMirrors(
     public fun withdraw(machine: String) {
         synchronized(lock) {
             byMachine.remove(machine)?.values?.forEach(Mirror::close)
+            offered.remove(machine)
             carriers.remove(machine)
             shownTo.remove(machine)
             overfull.remove(machine)
@@ -151,6 +156,7 @@ public class SessionMirrors(
 
     private fun reconcile(machine: String, sessions: List<MirroredSession>, carrier: MirrorCarrier) {
         carriers[machine] = carrier
+        offered[machine] = sessions.associateByTo(mutableMapOf()) { it.id }
         val held = byMachine.getOrPut(machine) { mutableMapOf() }
         val wanted = MirrorNames.of(sessions).associateBy { it.id }
         held.entries.removeAll { (id, mirror) ->
@@ -194,6 +200,7 @@ public class SessionMirrors(
         synchronized(lock) {
             byMachine.values.flatMap { it.values }.forEach(Mirror::close)
             byMachine.clear()
+            offered.clear()
             carriers.clear()
             ends.clear()
         }
@@ -209,9 +216,9 @@ public class SessionMirrors(
         synchronized(lock) {
             val held = byMachine[machine]?.get(from.id)
             if (held != null && held.alive()) return@synchronized held to null
-            held?.close()
-            val others = byMachine[machine]?.values?.map { it.session }.orEmpty()
-            val named = MirrorNames.of(others + from).last()
+            byMachine[machine]?.remove(from.id)?.close()
+            val others = offered[machine].orEmpty().values.filter { it.id != from.id }
+            val named = MirrorNames.of(others + from).first { it.id == from.id }
             if (byMachine.values.sumOf { it.size } >= MIRRORS_AT_MOST) {
                 return@synchronized null to "this machine already hosts the most mirrors it can ($MIRRORS_AT_MOST), " +
                     "so ${named.name} of $machine has none here to write from"
@@ -219,6 +226,7 @@ public class SessionMirrors(
             val (mirror, refused) = open(machine, named, carriers[machine] ?: link.carrier)
             mirror?.let {
                 byMachine.getOrPut(machine) { mutableMapOf() }[from.id] = it
+                offered.getOrPut(machine) { mutableMapOf() }[from.id] = from
                 ends.putIfAbsent(machine, clock() + link.lastsMs)
             }
             mirror to refused?.let { "${named.name} of $machine cannot be mirrored here: $it" }

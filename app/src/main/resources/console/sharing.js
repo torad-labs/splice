@@ -270,8 +270,8 @@ document.addEventListener("click", async (e) => {
       return;
     }
     case "add": {
-      const [host, port] = ui.host.trim().split(/:(?=\d+$)/);
-      if (await act("add", () => API.post("/api/remotes", port ? { host, port: Number(port) } : { host }))) { ui.host = ""; render(); }
+      // The daemon reads the address as `splice remote add` does: a port after a name, [v6]:port, or a bare IPv6 address.
+      if (await act("add", () => API.post("/api/remotes", { host: ui.host.trim() }))) { ui.host = ""; render(); }
       return;
     }
     case "restart": pressRestart(); return;

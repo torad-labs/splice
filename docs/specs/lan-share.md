@@ -285,7 +285,9 @@ Built on `feat/lan-share`, merged into `feat/v0.4.0` through the gate. Milestone
      A note whose sender has no mirror left on the machine it reaches (withdrawn since that machine's last look, by a
      look that failed, a switch turned off and on, or the end of its offers) is delivered from one made then with the
      carrier it came by, so it is never refused for the want of one and acknowledged gone.
-     A restart of the sharing daemon loses what its outbox held. A refusal goes back to the sender as a receipt, in words.
+     A restart of the sharing daemon loses what its outbox held. A note refused where its sender wrote it, or by the
+     machine it was posted to (a session gone there, a switch off on either side, a machine revoked), goes back to the
+     sender as a receipt, in words; one refused after it waited in an outbox is the "Not yet" below.
    - **Bounds.** Every route needs a joined machine's token, and the link names the machine, never the request. A
      machine is booked under its `[remotes]` spelling (`RemoteNames`), so two machines that each joined the other
      name each other once. No joined machine can list, write into or read from this machine's sessions until Marcos

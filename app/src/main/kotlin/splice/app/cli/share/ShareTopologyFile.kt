@@ -24,7 +24,15 @@ internal class ShareTopologyFile(
     val path = TopologyLoader.configPath(env)
 
     /** The file as it is now, or null, said, when it does not load. */
-    fun loaded(): Topology? = Cancellables.runCatchingCancellable { TopologyLoader.parse(Files.readString(path)) }.fold(
+    fun loaded(): Topology? = said(Cancellables.runCatchingCancellable { TopologyLoader.parse(Files.readString(path)) })
+
+    /** The file as it is now, or on a first run, where there is none, the starter file it writes there; null, said,
+     *  when a file that is there does not load. */
+    fun loadedOrStarter(): Topology? =
+        said(Cancellables.runCatchingCancellable { TopologyLoader.loadOrMaterialize(path) })
+
+    /** [read]'s file, or null, said, when it failed. */
+    private fun said(read: Result<Topology>): Topology? = read.fold(
         onSuccess = { it },
         onFailure = { failure ->
             err.line("$verb: $path does not load: ${SafeFailureText.render(failure)}")

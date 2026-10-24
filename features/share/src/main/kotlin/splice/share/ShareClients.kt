@@ -38,7 +38,10 @@ public data class ShareClient(
     public val address: String,
     @SerialName("joined_at") public val joinedAt: String,
     public val sessions: Boolean = false,
-)
+) {
+    /** Whether [asked] names this machine, however it is spelled: both read as RemoteNames reads a machine's name. */
+    internal fun named(asked: String): Boolean = RemoteNames.of(name) == RemoteNames.of(asked)
+}
 
 @Serializable
 internal data class ShareClientBook(val clients: List<ShareClient> = emptyList())
@@ -59,14 +62,16 @@ public class ShareClients(private val file: Path) {
     /** A new token for the machine that [asked] to join, replacing any it held: a machine that imports again gets a
      *  fresh one and the old one stops working. It is booked under the name a machine that joins it back keys it by in
      *  `[remotes]` (RemoteNames), so its sessions here, offered by it or looked at from here, are one machine's, and it
-     *  takes the place of an entry phase 1 booked under the name as given, capitals and all.
+     *  takes the place of an entry phase 1 booked under the name as given, capitals and all. A machine that is not
+     *  booked now (new, or revoked) starts with no activity: what a revoked machine of that name did is not its own.
      *  Throws IOException, writing nothing, when the book cannot be read or locked. */
     @Synchronized
     internal fun join(asked: String, address: String): String = edited { book ->
         val name = RemoteNames.of(asked)
+        if (book.clients.none { it.named(name) }) activity.forget(name)
         val token = hex.formatHex(ByteArray(SHARE_TOKEN_BYTES).also(random::nextBytes))
         val joined = ShareClient(name, digest(token), address, Instant.now().toString())
-        write(ShareClientBook(book.clients.filterNot { RemoteNames.of(it.name) == name } + joined))
+        write(ShareClientBook(book.clients.filterNot { it.named(name) } + joined))
         token
     }
 
@@ -76,19 +81,20 @@ public class ShareClients(private val file: Path) {
         return read().clients.firstOrNull { MessageDigest.isEqual(it.tokenSha256.toByteArray(UTF_8), presented) }
     }
 
-    /** Turns [name]'s Sessions switch [on] or off. False when no machine has that name. Throws IOException, writing
-     *  nothing, as [join] does. */
+    /** Turns [name]'s Sessions switch [on] or off, [name] spelled any way RemoteNames reads as the machine's. False
+     *  when no machine has that name. Throws IOException, writing nothing, as [join] does. */
     @Synchronized
     public fun allowSessions(name: String, on: Boolean): Boolean = edited { book ->
-        val found = book.clients.any { it.name == name }
-        if (found) write(ShareClientBook(book.clients.map { if (it.name == name) it.copy(sessions = on) else it }))
+        val found = book.clients.any { it.named(name) }
+        if (found) write(ShareClientBook(book.clients.map { if (it.named(name)) it.copy(sessions = on) else it }))
         found
     }
 
-    /** False when no machine has that name. Throws IOException, writing nothing, as [join] does. */
+    /** False when no machine has that name, spelled any way RemoteNames reads as the machine's. Throws IOException,
+     *  writing nothing, as [join] does. */
     @Synchronized
     public fun revoke(name: String): Boolean = edited { book ->
-        val kept = book.clients.filterNot { it.name == name }
+        val kept = book.clients.filterNot { it.named(name) }
         val found = kept.size != book.clients.size
         if (found) write(ShareClientBook(kept))
         found

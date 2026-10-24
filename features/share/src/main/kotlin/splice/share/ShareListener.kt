@@ -15,6 +15,7 @@ import splice.core.topology.ShareConfig
 import splice.core.util.LogSink
 import splice.sessions.mirror.SessionMirrors
 import splice.upstream.codemode.ProcessDispatchers
+import java.util.concurrent.atomic.AtomicReference
 
 public class ShareListener(
     private val opener: ShareStart,
@@ -47,12 +48,38 @@ public class ShareListener(
     @Volatile
     private var followed: ShareListening = ShareListening(ShareConfig(), listening = false)
 
+    /** The table last asked for: what [followAsked] serves, whatever order the jobs that call it run in. */
+    private val asked = AtomicReference<ShareConfig?>(null)
+
     /** The listener as it is now. */
     public fun state(): ShareListening = followed
 
+    /** Revokes [name]: its token stops working, its mirrors leave this machine's listing at once, and the notes waiting
+     *  for it go. False when no machine has that name. Throws IOException, as ShareClients.revoke does. Blocking. */
+    public fun revoke(name: String): Boolean {
+        val booked = clients.all().filter { it.named(name) }.map { it.name }
+        val found = clients.revoke(name)
+        if (found) booked.forEach(sessions::left)
+        return found
+    }
+
     /** Opens, closes or reopens the listener so it serves [share]; nothing when it already does. A table that is the
      *  same but did not open (a port another program held) is tried again. Answers the listener as it is after. */
-    public suspend fun follow(share: ShareConfig): ShareListening = mutex.withLock {
+    public suspend fun follow(share: ShareConfig): ShareListening {
+        ask(share)
+        return followAsked()
+    }
+
+    /** Records [share] as the table to serve, at once, in the order its callers read it: the daemon's re-read of
+     *  splice.toml asks on the read's own thread, and [followAsked] then serves the latest asked. */
+    public fun ask(share: ShareConfig) {
+        asked.set(share)
+    }
+
+    /** Serves the table last [ask]ed for, as [follow] does: a job that runs after a later one serves the later table
+     *  too, so the listener ends up as the file said last. Nothing before anything is asked. */
+    public suspend fun followAsked(): ShareListening = mutex.withLock {
+        val share = asked.get() ?: return@withLock followed
         val was = followed
         if (was.serves(share)) return@withLock was
         runInterruptible(ProcessDispatchers().io()) { reopened(was, share) }

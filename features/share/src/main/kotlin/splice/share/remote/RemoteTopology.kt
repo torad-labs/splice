@@ -17,9 +17,16 @@ import splice.share.SharedHead
 import java.net.URI
 
 public class RemoteTopology(private val topology: Topology) {
-    /** [name] at [url], pinned to [fingerprint], replacing the entry it had. */
-    public fun joined(name: String, url: String, fingerprint: String?): Topology =
-        topology.copy(remotes = topology.remotes + (name to RemoteConfig(url, fingerprint)))
+    /** [name] at [url], pinned to [fingerprint], replacing the entry it had; every command relayed to it moves to
+     *  [url] with it, so a machine that changed address is reached at the new one. */
+    public fun joined(name: String, url: String, fingerprint: String?): Topology = topology.copy(
+        remotes = topology.remotes + (name to RemoteConfig(url, fingerprint)),
+        providers = topology.providers.mapValues { (_, provider) ->
+            val head = provider.baseUrl.trimEnd('/').substringAfter("$SHARE_HEADS_PATH/", "")
+            val moves = relaysTo(provider, name) && head.isNotEmpty()
+            if (moves) provider.copy(baseUrl = RemoteRelay.url(url, head)) else provider
+        },
+    )
 
     /** The heads relayed to [name], by key. */
     public fun heads(name: String): Map<String, HeadConfig> =

@@ -136,6 +136,10 @@ public class RemoteSessions(
 
     /** What a mirror of one of [name]'s sessions hands a message to: a note to that session there, now. */
     private fun carrierTo(name: String, url: String): MirrorCarrier = MirrorCarrier { to, from, text ->
+        // Its mirrors last their time after the switch goes off; from that moment they carry nothing to it.
+        if (!links.sessions(name)) {
+            return@MirrorCarrier MirrorCarried(DeliveryStatus.REFUSED, "the Sessions switch for $name is off here")
+        }
         val note = ShareNote(ShareSession(from.id, from.name), text)
         val answered = Cancellables.runCatchingCancellable {
             runInterruptible(io) { links.api(name).note(url, to.id, note) }

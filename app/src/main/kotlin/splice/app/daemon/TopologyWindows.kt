@@ -209,8 +209,12 @@ internal class TopologyWindows(
             return
         }
         share = declared.daemon.mcpShare
-        // The listener reopens off this read's thread: a read sits on a turn's path, and a bind takes a moment.
-        sharing?.let { listener -> scope.launch { listener.follow(declared.share) } }
+        // The listener reopens off this read's thread: a read sits on a turn's path, and a bind takes a moment. The
+        // table is asked for here, in the order of the reads, so the jobs serve the latest whatever order they run in.
+        sharing?.let { listener ->
+            listener.ask(declared.share)
+            scope.launch { listener.followAsked() }
+        }
         // A table that breaks a rule leaves the rules in force and says why.
         compaction?.let { rules ->
             Cancellables.discard(

@@ -44,7 +44,7 @@ internal class RemoteImport(
     private val confirm: ConfirmPrompt,
     private val restart: DaemonRestart = CliRestart(env, err),
 ) {
-    private val store = RemotesStore(ShareState(StatePaths()).remotesFile)
+    private val store = RemotesStore(ShareState(StatePaths(envReader = env)).remotesFile)
     private val file = ShareTopologyFile(err, REMOTE_VERB, env)
     private val held = mutableListOf<String>()
 
@@ -52,13 +52,20 @@ internal class RemoteImport(
      *  [machine] stated, which is pinned from then on (trust on first contact, RemoteJoin). */
     suspend fun import(machine: RemoteFound): Boolean {
         val name = RemoteNames.of(machine.info.server)
+        // A join replaces the token this machine holds there, so a file that would stop the import stops it first.
+        val current = file.loadedOrStarter() ?: return false
+        val joined = joined(machine) ?: return false
+        // The token goes first: a provider that names the machine finds it on its first turn.
+        return kept(name, joined.token) && imported(machine, name, current, joined)
+    }
+
+    /** [machine] joined, which is said; null when it refuses, said in its words. */
+    private fun joined(machine: RemoteFound): Joined? {
         val joined = RemoteJoin(ShareHostName().short()).join(machine)
         if (joined is RemoteJoined.Refused) err.line("$REMOTE_VERB: ${joined.why}")
-        val ok = joined as? RemoteJoined.Joined ?: return false
+        val ok = joined as? Joined ?: return null
         out.line("$GREEN✓$RESET joined ${machine.info.server}, certificate $DIM${ok.pin}$RESET pinned")
-        // The token goes first: a provider that names the machine finds it on its first turn.
-        val current = file.loaded()?.takeIf { kept(name, ok.token) } ?: return false
-        return imported(machine, name, current, ok)
+        return ok
     }
 
     private suspend fun imported(machine: RemoteFound, name: String, current: Topology, joined: Joined): Boolean {

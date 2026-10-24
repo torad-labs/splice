@@ -496,4 +496,20 @@ class SharingRoutesTest {
             )
         }
     }
+
+    @Test
+    fun `an address typed in any form the CLI takes is asked at its own port, and one that is no address is a 400`() {
+        serve { call ->
+            val v6 = call(HttpMethod.Post, "/api/remotes", "{\"host\":\"[::1]:1\"}", true)
+            assertEquals(200, v6.status.value, v6.bodyAsText())
+            val said = json(v6.bodyAsText()).getValue("said").jsonArray
+                .joinToString(" ") { it.jsonObject.getValue("text").jsonPrimitive.content }
+            assertTrue("[::1]:1 " in said, "asked at the address and the port typed: $said")
+
+            val bad = call(HttpMethod.Post, "/api/remotes", "{\"host\":\"not an address\"}", true)
+            assertEquals(400, bad.status.value, bad.bodyAsText())
+            val error = json(bad.bodyAsText()).getValue("error").jsonPrimitive.content
+            assertTrue("not an address" in error, "it names what it could not read: $error")
+        }
+    }
 }

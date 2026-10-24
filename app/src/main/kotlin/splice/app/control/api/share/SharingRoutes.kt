@@ -78,7 +78,7 @@ internal class SharingRoutes(private val wired: SharingWired) {
 
     private fun revoked(parts: SharingParts, name: String): JsonReply {
         val said = Said()
-        val found = Cancellables.runCatchingCancellable { parts.listener.clients.revoke(name) }.getOrElse { failure ->
+        val found = Cancellables.runCatchingCancellable { parts.listener.revoke(name) }.getOrElse { failure ->
             said.bad("nothing was revoked: ${SafeFailureText.render(failure)}")
             return said.refused()
         }

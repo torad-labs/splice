@@ -84,7 +84,27 @@ internal data class ShareSessionParts(
     val mirrors: SessionMirrors?,
     val switch: SessionsSwitch,
     val outboxes: ShareOutboxes = ShareOutboxes(),
-)
+) {
+    /** What [client]'s mirrors hand a note to: its outbox while its Sessions switch is on here, and a refusal in words
+     *  from the moment it is off, or [client] was revoked, by the Sharing page or by `splice share revoke` in a process
+     *  of its own. */
+    fun carrier(client: String): MirrorCarrier {
+        val outbox = outboxes.carrier(client)
+        return MirrorCarrier { to, from, text ->
+            if (switch.on(client)) {
+                outbox.carry(to, from, text)
+            } else {
+                MirrorCarried(DeliveryStatus.REFUSED, "$client was revoked here, or its Sessions switch is off")
+            }
+        }
+    }
+
+    /** [client] was revoked: its mirrors leave this machine's listing and the notes waiting for it go. Blocking. */
+    fun left(client: String) {
+        mirrors?.withdraw(client)
+        outboxes.drop(client)
+    }
+}
 
 /** The session routes' answers, over [parts]' mirrors; when this daemon hosts none, every route says so. */
 internal class ShareSessionHost(
@@ -105,7 +125,8 @@ internal class ShareSessionHost(
     /** This machine's running sessions, as [client] is shown them. */
     suspend fun list(call: ApplicationCall, client: String) {
         val hosting = hosted(call) ?: return
-        val sessions = hosting.local().map { ShareSession(it.id, it.name, it.heardAt) }
+        // Every record is read from disk, which may be slow: never on the listener's few call threads.
+        val sessions = withContext(io) { hosting.local() }.map { ShareSession(it.id, it.name, it.heardAt) }
         respond(call, ShareSessions.serializer(), ShareSessions(sessions))
         hosting.shown(client, sessions.size)
     }
@@ -116,7 +137,7 @@ internal class ShareSessionHost(
         val offered = read(call, ShareSessions.serializer(), SESSIONS_BODY_MAX_BYTES) ?: return
         val lease = ((offered.lookMs ?: LEASE_MAX_MS) * LEASE_LOOKS).coerceIn(LEASE_MIN_MS, LEASE_MAX_MS)
         served += client
-        val link = MirrorLink(parts.outboxes.carrier(client), lease)
+        val link = MirrorLink(parts.carrier(client), lease)
         withContext(io) { hosting.mirror(client, offered.sessions.map(::mirrored), link) }
         respond(call, ShareSessions.serializer(), ShareSessions(emptyList()))
     }
@@ -128,8 +149,9 @@ internal class ShareSessionHost(
         val to = call.parameters["id"].orEmpty()
         served += client
         // A machine that never offered: its sender's mirror lasts as long as any machine's that stopped looking.
-        val link = MirrorLink(parts.outboxes.carrier(client), LEASE_MAX_MS)
-        val carried = hosting.deliver(to, client, mirrored(note.from), note.text, link)
+        val link = MirrorLink(parts.carrier(client), LEASE_MAX_MS)
+        // The delivery reads every record and may make a mirror, a process: never on the listener's call threads.
+        val carried = withContext(io) { hosting.deliver(to, client, mirrored(note.from), note.text, link) }
         respond(call, ShareNoteAnswer.serializer(), ShareNoteAnswer(carried.status?.wire, carried.detail))
     }
 
@@ -205,6 +227,11 @@ internal class ShareOutboxes {
             }
         }
         if (held) MirrorCarried(null) else MirrorCarried(DeliveryStatus.DROPPED, "$client is not collecting its notes")
+    }
+
+    /** Lets go of every note waiting for [client]: it was revoked. */
+    fun drop(client: String) {
+        boxes.remove(client)
     }
 
     /** The notes waiting for [client] once [ack] is let go, oldest first, or the first to arrive within [waitS]

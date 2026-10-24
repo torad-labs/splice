@@ -26,6 +26,8 @@ internal class MockFailureScenarios(private val wire: MockSseWire) {
         when (scenario) {
             "failed" -> wire.sse(e.failed("server_error", "boom upstream"))
             "empty_completed" -> wire.sse(e.completed("empty", 0, 0))
+            // A complete handshake followed by EOF, with no model content or HTTP framing race.
+            "truncated_before_content" -> wire.sse("""{"type":"response.created","response":{"id":"incomplete"}}""")
             else -> return false
         }
         return true

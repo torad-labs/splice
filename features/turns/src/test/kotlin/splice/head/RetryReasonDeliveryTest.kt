@@ -93,7 +93,7 @@ class RetryReasonDeliveryTest {
 
     @Test
     fun `a torn pre-content stream explains its reissue without turning status into model output`() = runTest {
-        val wire = messages("tear")
+        val wire = messages("truncated_before_content")
         assertNotice(wire, "truncated")
         assertTrue(wire.contains("event: error\n"), wire)
         assertFalse(wire.contains("event: message_stop\n"), wire)

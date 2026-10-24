@@ -209,7 +209,10 @@ class ReasoningDeliveryBoundaryTest(@param:TempDir private val state: Path) {
         )
         assertEquals("Hello world!", sink.text.toString())
         assertEquals(0, sink.opaqueBlocks)
-        assertEquals(listOf("user", "Hello world!", "rs_after_answer", "user"), projection(input(provider, sink)))
+        assertEquals(
+            listOf("developer", "user", "Hello world!", "rs_after_answer", "user"),
+            projection(input(provider, sink)),
+        )
     }
 
     @Test
@@ -241,7 +244,10 @@ class ReasoningDeliveryBoundaryTest(@param:TempDir private val state: Path) {
             .drop(built.requestBody.getValue("input").jsonArray.size)
         assertEquals(listOf("Hello world", "rs_after_complete"), projection(added.dropLast(1).map { it.jsonObject }))
         for (view in listOf(provider, DeliveryProvider(state))) {
-            assertEquals(listOf("user", "Hello world", "rs_after_complete", "user"), projection(input(view, sink)))
+            assertEquals(
+                listOf("developer", "user", "Hello world", "rs_after_complete", "user"),
+                projection(input(view, sink)),
+            )
         }
         assertEquals(0, sink.opaqueBlocks)
     }
@@ -279,7 +285,7 @@ class ReasoningDeliveryBoundaryTest(@param:TempDir private val state: Path) {
             .drop(built.requestBody.getValue("input").jsonArray.size)
         assertEquals(listOf("Hello"), projection(added.dropLast(1).map { it.jsonObject }))
         assertEquals(listOf(complete, reason), retained.nativePrefix)
-        assertEquals(listOf("user", "Hello", "user"), projection(input(provider, sink)))
+        assertEquals(listOf("developer", "user", "Hello", "user"), projection(input(provider, sink)))
         assertEquals(0, sink.opaqueBlocks)
     }
 
@@ -308,7 +314,10 @@ class ReasoningDeliveryBoundaryTest(@param:TempDir private val state: Path) {
                 .continuationForFailure(ReanchorRound(built.requestBody, failure, 0)),
         )
         for (view in listOf(provider, DeliveryProvider(state))) {
-            assertEquals(listOf("user", "rs_before_mismatch", "Hello!", "user"), projection(input(view, sink)))
+            assertEquals(
+                listOf("developer", "user", "rs_before_mismatch", "Hello!", "user"),
+                projection(input(view, sink)),
+            )
         }
         assertEquals(0, sink.opaqueBlocks)
     }
@@ -334,7 +343,7 @@ class ReasoningDeliveryBoundaryTest(@param:TempDir private val state: Path) {
         assertEquals("RightLeft", sink.text.toString())
         assertEquals(0, sink.opaqueBlocks)
         for (view in listOf(provider, DeliveryProvider(state))) {
-            assertEquals(listOf("user", "RightLeft", "rs_terminal", "user"), projection(input(view, sink)))
+            assertEquals(listOf("developer", "user", "RightLeft", "rs_terminal", "user"), projection(input(view, sink)))
         }
     }
 

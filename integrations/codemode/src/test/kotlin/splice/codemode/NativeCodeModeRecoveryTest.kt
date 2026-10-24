@@ -6,7 +6,6 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.InternalCoroutinesApi
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.launch
-import kotlinx.coroutines.test.runTest
 import kotlinx.coroutines.withContext
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertNotEquals
@@ -25,7 +24,7 @@ import kotlin.coroutines.CoroutineContext
 
 class NativeCodeModeRecoveryTest {
     @Test
-    fun `a callback remains available after its observer is cancelled while collecting siblings`() = runTest {
+    fun `a callback remains available after its observer is cancelled while collecting siblings`() = nativeProcessTest {
         NativeCodeModeRuntime().use { runtime ->
             val cell = runtime.startNativeSession(
                 "cancel",
@@ -45,7 +44,7 @@ class NativeCodeModeRecoveryTest {
     }
 
     @Test
-    fun `host loss fails accepted work while a new module runs in a fresh session`() = runTest {
+    fun `host loss fails accepted work while a new module runs in a fresh session`() = nativeProcessTest {
         val process = AtomicReference<Process>()
         NativeCodeModeRuntime(spawn = WorkerSpawn { builder -> builder.start().also(process::set) }).use { runtime ->
             val cell = runtime.startNativeSession(
@@ -74,7 +73,7 @@ class NativeCodeModeRecoveryTest {
     }
 
     @Test
-    fun `completed modules release capacity before delayed callers collect their output`() = runTest {
+    fun `completed modules release capacity before delayed callers collect their output`() = nativeProcessTest {
         DelayedCaller().use { caller ->
             NativeCodeModeRuntime(limits = PoolLimits(maxWorkers = 1)).use { runtime ->
                 val cells = (0 until RECOVERY_CAPACITY_ATTEMPTS).map { index ->

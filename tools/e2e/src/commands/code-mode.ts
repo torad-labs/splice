@@ -1700,11 +1700,11 @@ export const GUIDANCE_SCENARIO: Scenario = {
 export const SCRIPTS: Record<string, string> = {
   "lookup-edit": 'const data = JSON.parse(await tools.Read({file_path:"settings.json"})); ' +
     'data.timeout = 20; await tools.Write({file_path:"settings.json", content:JSON.stringify(data)}); ' +
-    'return "UPDATED";',
+    'text("UPDATED");',
   "independent-reads": 'const values = await Promise.all(["a.txt","b.txt","c.txt"].map(' +
-    "file_path => tools.Read({file_path}))); return values.reduce((s,v)=>s+Number(v),0);",
-  "optional-discovery": 'return await tools.mcp__release__lookup({});',
-  "background-result": 'return await tools.Agent({prompt:"7 times 8"});',
+    "file_path => tools.Read({file_path}))); text(values.reduce((s,v)=>s+Number(v),0));",
+  "optional-discovery": 'text(await tools.mcp__release__lookup({}));',
+  "background-result": 'text(await tools.Agent({prompt:"7 times 8"}));',
 };
 export const EXPECTED: Record<string, string> = {
   "lookup-edit": "UPDATED", "independent-reads": "110", "optional-discovery": "0.4.0", "background-result": "56",
@@ -1879,7 +1879,7 @@ export function mockHandler(state: MockState): Methods {
         h.wfile.write(data);
       } catch (error) {
         if (!(isValueError(error) || isKeyError(error) || isTypeError(error) || error instanceof StopIteration)) throw error;
-        state.set("error", (error as Error).message);
+        if (!state.has("error")) state.set("error", (error as Error).message);
         h.sendError(400, "mock protocol assertion failed");
       }
     },

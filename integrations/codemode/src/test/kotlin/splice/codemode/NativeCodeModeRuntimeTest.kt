@@ -1,7 +1,6 @@
 package splice.codemode
 
 import kotlinx.coroutines.async
-import kotlinx.coroutines.test.runTest
 import kotlinx.coroutines.yield
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
@@ -17,7 +16,7 @@ import splice.upstream.failure.CodeModeCapacityException
 
 class NativeCodeModeRuntimeTest {
     @Test
-    fun `explicit yield retains one cell and wait returns only its suffix`() = runTest {
+    fun `explicit yield retains one cell and wait returns only its suffix`() = nativeProcessTest {
         NativeCodeModeRuntime().use { runtime ->
             val cell = runtime.startNativeSession(
                 "yield",
@@ -36,7 +35,7 @@ class NativeCodeModeRuntimeTest {
     }
 
     @Test
-    fun `stored values survive cells and remain isolated between sessions`() = runTest {
+    fun `stored values survive cells and remain isolated between sessions`() = nativeProcessTest {
         NativeCodeModeRuntime().use { runtime ->
             runtime.startSession("a", "store('value', {count: 7});", emptySet()).advance()
             val retained = runtime.startSession("a", "text(load('value'));", emptySet()).advance()
@@ -47,7 +46,7 @@ class NativeCodeModeRuntimeTest {
     }
 
     @Test
-    fun `parallel callbacks retain independent promises and fast dependent branch advances`() = runTest {
+    fun `parallel callbacks retain independent promises and fast dependent branch advances`() = nativeProcessTest {
         NativeCodeModeRuntime().use { runtime ->
             val source = """
                 const fast = tools.Read({key: 'fast'}).then(value => tools.Read({key: value}));
@@ -72,7 +71,7 @@ class NativeCodeModeRuntimeTest {
     }
 
     @Test
-    fun `notification arrives while the native cell remains available for completion`() = runTest {
+    fun `notification arrives while the native cell remains available for completion`() = nativeProcessTest {
         NativeCodeModeRuntime().use { runtime ->
             val cell = runtime.startSession("notify", "notify('working'); text('done');", emptySet())
             assertEquals("working", (cell.advance() as CodeModeStep.Notified).text)
@@ -81,7 +80,7 @@ class NativeCodeModeRuntimeTest {
     }
 
     @Test
-    fun `invalid module source causes no prefix effects`() = runTest {
+    fun `invalid module source causes no prefix effects`() = nativeProcessTest {
         NativeCodeModeRuntime().use { runtime ->
             val failed = runtime.startSession("parse", "store('bad', true); const = ;", emptySet()).advance()
             assertNotNull((failed as CodeModeStep.Completed).error)
@@ -91,7 +90,7 @@ class NativeCodeModeRuntimeTest {
     }
 
     @Test
-    fun `timed yield and termination address only their own running cell`() = runTest {
+    fun `timed yield and termination address only their own running cell`() = nativeProcessTest {
         NativeCodeModeRuntime().use { runtime ->
             val cell = runtime.startNativeSession(
                 "terminate",
@@ -108,7 +107,7 @@ class NativeCodeModeRuntimeTest {
     }
 
     @Test
-    fun `media content stays typed through native completion`() = runTest {
+    fun `media content stays typed through native completion`() = nativeProcessTest {
         NativeCodeModeRuntime().use { runtime ->
             val source = "audio('data:audio/wav;base64,AAAA'); image('data:image/png;base64,YQ==');"
             val completed = runtime.startSession("media", source, emptySet()).advance() as CodeModeStep.Completed
@@ -131,7 +130,7 @@ class NativeCodeModeRuntimeTest {
     }
 
     @Test
-    fun `simultaneous sessions with the same native cell id keep their callbacks isolated`() = runTest {
+    fun `simultaneous sessions with the same native cell id keep their callbacks isolated`() = nativeProcessTest {
         NativeCodeModeRuntime().use { runtime ->
             val a = runtime.startSession("a", "text(await tools.Read({key:'a'}));", setOf("Read"))
             val b = runtime.startSession("b", "text(await tools.Read({key:'b'}));", setOf("Read"))
@@ -147,7 +146,7 @@ class NativeCodeModeRuntimeTest {
     }
 
     @Test
-    fun `callback results can arrive while a separate observation is pending`() = runTest {
+    fun `callback results can arrive while a separate observation is pending`() = nativeProcessTest {
         NativeCodeModeRuntime().use { runtime ->
             val cell = runtime.startNativeSession(
                 "independent",
@@ -165,7 +164,7 @@ class NativeCodeModeRuntimeTest {
     }
 
     @Test
-    fun `malformed client function input rejects its promise without issuing a callback`() = runTest {
+    fun `malformed client function input rejects its promise without issuing a callback`() = nativeProcessTest {
         NativeCodeModeRuntime().use { runtime ->
             val source = "try { await tools.Read('wrong'); } catch(e) { text(String(e)); }"
             val result = runtime.startSession("invalid-input", source, setOf("Read")).advance()
@@ -177,7 +176,7 @@ class NativeCodeModeRuntimeTest {
     }
 
     @Test
-    fun `yielded cells retain configured capacity until their termination is acknowledged`() = runTest {
+    fun `yielded cells retain configured capacity until their termination is acknowledged`() = nativeProcessTest {
         NativeCodeModeRuntime(
             limits = PoolLimits(memoryBudgetMb = NATIVE_TEST_MEMORY_MB),
             cellHeapMb = NATIVE_TEST_HEAP_MB,

@@ -15,6 +15,7 @@ import splice.provider.codex.state.CodeModeReplayAnchors
 import splice.provider.codex.stream.CodeModeSourceEnds
 import splice.provider.codex.stream.CodeModeSourceLease
 import splice.provider.codex.stream.CodeModeSourceState
+import splice.provider.codex.stream.source.CodeModeSourceClaims
 import splice.upstream.codemode.CodeModeResult
 import java.lang.ref.WeakReference
 
@@ -46,6 +47,9 @@ internal data class CodeModeRecord(
     var nativeParent: CodeModeRecord? = null
     var sourceState: CodeModeSourceState? = null
     var sourceEnd: CodeModeSourceLease? = null
+
+    /** Raw receipts reserved on this record's lease before confirmed delivery admits them to its native tail. */
+    val sourceClaims: CodeModeSourceClaims = CodeModeSourceClaims()
 
     /** Monotonic parked time, nested borrowers, and last positive liveness sample. Never persisted. */
     var cellIdleSince: Long? = null

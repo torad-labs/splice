@@ -1,6 +1,7 @@
 // NEW: source staging and billing commits share the callback and result transition conversation key.
 package splice.provider.codex.stream.source
 
+import kotlinx.serialization.json.JsonObject
 import splice.core.turn.GatewayCustomCall
 import splice.core.turn.Usage
 import splice.provider.codex.CodeModeContinuity
@@ -65,9 +66,10 @@ internal class CodeModeSourceRecords(
     )
 
     /** A live reader's raw receipt remains owned after its stream lease ends, until delivery can certify its tail. */
-    fun holdPayload(record: CodeModeRecord, bytes: Long): Boolean = access.withKey(record.key) {
+    fun holdPayload(record: CodeModeRecord, items: Map<JsonObject, Long>): Boolean = access.withKey(record.key) {
         if (record !in records || record.error != null) return@withKey false
-        CodeModeHeap.grow(record, bytes)
+        CodeModeHeap.grow(record, record.sourceClaims.additional(items, record.carry.nativeAfterExec))
+        record.sourceClaims.retain(items, record.carry.nativeAfterExec)
         true
     }
 
@@ -101,12 +103,16 @@ internal class CodeModeSourceRecords(
         val before = STORED.json(record.origin.outer) + STORED.text(record.origin.source) +
             record.carry.continuity.sumOf(STORED::json) + record.carry.replay.sumOf(STORED::segment) +
             record.carry.nativeAfterExec.orEmpty().sumOf(STORED::json)
-        CodeModeHeap.grow(record, (next - before).coerceAtLeast(0L)) { kept -> replaced(kept, record) }
+        val credit = record.sourceClaims.credit(continuity.nativeAfterExec, record.carry.nativeAfterExec)
+        CodeModeHeap.grow(record, (next - before - credit).coerceAtLeast(0L)) { kept ->
+            replaced(kept, record, continuity, call)
+        }
         record.origin.outer = call.raw
         record.origin.source = call.input
         record.carry.continuity = continuity.logicalItems
         record.carry.replay = continuity.replayItems
         record.carry.nativeAfterExec = continuity.nativeAfterExec
+        record.sourceClaims.transferred(continuity.nativeAfterExec)
     }
 
     private fun sourceUsage(usage: Usage): CodeModeSourceUsage = CodeModeSourceUsage(
@@ -146,13 +152,32 @@ internal class CodeModeSourceRecords(
     }
 
     /** What [kept] still holds of the payloads a finished round replaces on [record]. */
-    private fun replaced(kept: CodeModeRecordSnapshot, record: CodeModeRecord): Long {
-        val outer = if (kept.outer === record.origin.outer) STORED.json(record.origin.outer) else 0L
-        val source = if (kept.source === record.origin.source) STORED.text(record.origin.source) else 0L
+    private fun replaced(
+        kept: CodeModeRecordSnapshot,
+        record: CodeModeRecord,
+        next: CodeModeContinuity,
+        call: GatewayCustomCall,
+    ): Long {
         val logical =
-            if (kept.continuity === record.carry.continuity) record.carry.continuity.sumOf(STORED::json) else 0L
-        val replay = record.carry.replay.takeIf { it === kept.continuityReplay }?.sumOf(STORED::segment) ?: 0L
-        val after = record.carry.nativeAfterExec.takeIf { it === kept.nativeAfterExec }?.sumOf(STORED::json) ?: 0L
-        return outer + source + logical + replay + after
+            if (next.logicalItems !== kept.continuity && kept.continuity === record.carry.continuity) {
+                record.carry.continuity.sumOf(STORED::json)
+            } else {
+                0L
+            }
+        val replay = record.carry.replay.takeIf { it === kept.continuityReplay && it !== next.replayItems }
+            ?.sumOf(STORED::segment) ?: 0L
+        val after = record.carry.nativeAfterExec.takeIf { it === kept.nativeAfterExec }
+            ?.filter { old -> next.nativeAfterExec.orEmpty().none { it === old } }?.sumOf(STORED::json) ?: 0L
+        return replacedOrigin(kept, record, call) + logical + replay + after
+    }
+
+    private fun replacedOrigin(kept: CodeModeRecordSnapshot, record: CodeModeRecord, call: GatewayCustomCall): Long {
+        val outer = if (call.raw !== kept.outer && kept.outer === record.origin.outer) STORED.json(kept.outer) else 0L
+        val source = if (call.input !== kept.source && kept.source === record.origin.source) {
+            STORED.text(kept.source)
+        } else {
+            0L
+        }
+        return outer + source
     }
 }

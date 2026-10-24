@@ -337,7 +337,7 @@ private class TopologyChecks(
 
     fun findings(): List<TopologyFinding> =
         references() + auth() + ports() + (if (withRosters) rosters() else statics()) + knobs() + prompts() +
-            compaction() + channel() + remotes()
+            compaction() + channel() + remotes() + relays()
 
     /** An auth kind its provider's dialect cannot carry, asked the way head assembly asks it ([AuthCompatibility]), so
      *  the pairing refuses boot with every other finding instead of skipping that head behind a running daemon. */
@@ -459,6 +459,16 @@ private class TopologyChecks(
         listOfNotNull(
             taken?.let { TopologyFinding("remote.$command", it) },
             unread?.let { TopologyFinding("remote.$command.url", "$it; $copy") },
+        )
+    }
+
+    /** LAN share: a relay the first build wrote, which this build no longer runs, said with what replaces it. */
+    private fun relays(): List<TopologyFinding> = RetiredRelays.of(topology).map { (key, head) ->
+        val command = head.claude.command ?: key
+        TopologyFinding(
+            "heads.$key",
+            "'$command' is the first LAN-share build's relay to another machine, which this build no longer runs; " +
+                "`splice remote add` with the address `splice share status` prints there replaces it",
         )
     }
 

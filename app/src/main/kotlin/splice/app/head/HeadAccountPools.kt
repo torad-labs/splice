@@ -172,7 +172,8 @@ internal class HeadAccountPools(private val evidenceLoads: EvidenceLoadFactory? 
 
         override fun view(sessionId: String?): HeadAccountPoolView = controlView(pool.view(sessionId)).copy(
             pinnedLabel = pool.pinned(sessionId),
-            nextTargetLabel = pool.nextTargetLabel(),
+            // The session's own next login: a session pinned before its first turn shows that pin, not the head's pick.
+            nextTargetLabel = pool.nextTargetLabel(sessionId),
         )
 
         override fun pin(label: String, sessionId: String?): Boolean = pool.pin(label, sessionId)

@@ -307,14 +307,39 @@ class LanShareTest {
     }
 
     @Test
+    fun `a request a web page can send runs no turn on the server's logins`() = runBlocking {
+        val before = upstream.upstreamAuths.size
+        val body = """{"model":"$SOL","max_tokens":64,"messages":[{"role":"user","content":"from a page"}]}"""
+        val fromPage = client.post("$share/claudex/v1/messages") {
+            header("Origin", "https://page.example")
+            header("Content-Type", "text/plain")
+            setBody(body)
+        }
+        assertEquals(403, fromPage.status.value, fromPage.bodyAsText())
+        val notJson = client.post("$share/claudex/v1/messages") {
+            header("Content-Type", "text/plain")
+            header("X-Claude-Code-Session-Id", "page-session")
+            setBody(body)
+        }
+        assertEquals(400, notJson.status.value, notJson.bodyAsText())
+        assertEquals(before, upstream.upstreamAuths.size, "a page's request reached the server's login")
+    }
+
+    @Test
     fun `the node's statusline is the server's`() {
-        val (_, recipe) = launch("claudex")
-        val tree = Path.of(recipe.env().getValue("CLAUDE_CONFIG_DIR"))
-        val settings = Json.parseToJsonElement(tree.resolve("settings.json").readText()).jsonObject
-        val command = settings.getValue("statusLine").jsonObject.getValue("command").jsonPrimitive.content
+        val command = statuslineCommand("claudex")
         assertTrue(command.contains("$share/claudex/statusline"), command)
         val (code, said) = statusline(command)
         assertEquals(200, code, said)
+    }
+
+    @Test
+    fun `a session the address pins to a login shows that login on its statusline before its first turn`() {
+        val (code, pinned) = statusline(statuslineCommand("claudex-work"), session = "mac-session-fresh-work")
+        assertEquals(200, code, pinned)
+        assertTrue(pinned.contains("work"), pinned)
+        val (_, plain) = statusline(statuslineCommand("claudex"), session = "mac-session-fresh-plain")
+        assertFalse(plain.contains("work"), plain)
     }
 
     @Test
@@ -326,13 +351,21 @@ class LanShareTest {
         assertTrue(texts.none { it.contains("signs in with an API key") })
     }
 
-    /** The statusline command run as Claude Code runs it, by bash with the session's JSON on stdin: the answer's status
+    /** The statusline command [command]'s launch plants in its Claude Code settings. */
+    private fun statuslineCommand(command: String): String {
+        val (_, recipe) = launch(command)
+        val tree = Path.of(recipe.env().getValue("CLAUDE_CONFIG_DIR"))
+        val settings = Json.parseToJsonElement(tree.resolve("settings.json").readText()).jsonObject
+        return settings.getValue("statusLine").jsonObject.getValue("command").jsonPrimitive.content
+    }
+
+    /** The statusline command run as Claude Code runs it, by bash with [session]'s JSON on stdin: the answer's status
      *  (curl's write-out, appended to the same command) and its text. */
-    private fun statusline(command: String): Pair<Int, String> {
+    private fun statusline(command: String, session: String = "mac-session-1"): Pair<Int, String> {
         val driven = "$command --write-out '\\n%{http_code}'"
         val process = ProcessBuilder("bash", "-c", driven).start()
         process.outputStream.use {
-            it.write("""{"session_id":"mac-session-1","model":{"id":"$SOL","display_name":"$SOL"}}""".toByteArray())
+            it.write("""{"session_id":"$session","model":{"id":"$SOL","display_name":"$SOL"}}""".toByteArray())
         }
         val out = process.inputStream.readBytes().toString(Charsets.UTF_8)
         check(process.waitFor(10, TimeUnit.SECONDS)) { "statusline command did not exit within 10s: $driven" }

@@ -6,9 +6,16 @@
 //
 //   GET  /                                  what this machine offers: each command, its head, models and logins
 //   GET  /<command>/launch?auth=&models=     what the other machine's launch needs (SharedLaunch), filtered by both
-//   POST /<command>/statusline              the control plane's statusline for that head, with the turn key
+//   POST /<command>[/@<login>]/statusline   the control plane's statusline for that head, with the turn key;
+//                                           `@<login>` first pins the session the body names, so the line is that
+//                                           login's from the first draw
 //   ANY  /<command>[/@<login>]/v1/...       relayed to the head on loopback with the turn key in place of what was
 //                                           sent; `@<login>` first pins the session to that login, as Accounts' Pin
+//
+// Claude Code sends no Origin and posts its turns as application/json. A web page in a browser on the LAN sends an
+// Origin with every POST, and without a preflight (which nothing here approves) can post only a "simple" body, never
+// JSON. So a request with an Origin is refused, and so is a turn whose body is not JSON: a page can't run a turn on
+// this machine's logins by addressing it by IP or as localhost, which the Host check admits.
 //
 // A command may be named by the command it runs as here or by its head's key. One not offered is 404 naming the ones
 // that are; one offered but not running, or not answering, is 503 in this machine's name. Every error is in the
@@ -28,6 +35,7 @@ import io.ktor.server.engine.embeddedServer
 import io.ktor.server.netty.Netty
 import io.ktor.server.netty.NettyApplicationEngine
 import io.ktor.server.plugins.origin
+import io.ktor.server.request.contentType
 import io.ktor.server.request.httpMethod
 import io.ktor.server.request.path
 import io.ktor.server.request.queryString
@@ -41,6 +49,7 @@ import splice.core.config.TurnKey
 import splice.core.topology.SHARE_AUTH_PARAM
 import splice.core.topology.SHARE_MODELS_PARAM
 import splice.core.topology.ShareConfig
+import splice.core.util.JsonScalars
 import splice.core.util.LogSink
 import splice.core.wire.HttpStatus
 import splice.http.listen.HttpListenerThreads
@@ -108,16 +117,18 @@ public class ShareListener(
         when {
             path.firstOrNull() == API_ROOT -> turn(call, head, login, path)
             login == null && path == listOf(LAUNCH_ROUTE) -> launch(call, head)
-            login == null && path == listOf(STATUSLINE) -> relay.statusline(call, head)
+            path == listOf(STATUSLINE) -> relay.statusline(call, head) { body -> login?.let { lined(head, it, body) } }
             else -> ShareErrors.refuse(call, HttpStatus.NOT_FOUND, "no such path on ${heads.machine}")
         }
     }
 
-    /** Why this request may not be answered at all, or null when it may: LanAdmission's two checks. */
+    /** Why this request may not be answered at all, or null when it may: LanAdmission's two checks, and no Origin,
+     *  which a browser puts on every request a page posts and Claude Code puts on none. */
     private fun admissionRefusal(call: ApplicationCall): String? {
         val host = call.request.headers[HttpHeaders.Host]
         return admission.refusal(call.request.origin.remoteAddress)
             ?: "this Host is not one of this machine's names".takeUnless { admission.admitsHost(host) }
+            ?: "a web page may not reach this machine's heads".takeIf { HttpHeaders.Origin in call.request.headers }
     }
 
     private suspend fun info(call: ApplicationCall) {
@@ -148,27 +159,39 @@ public class ShareListener(
      *  another; a turn that names no session cannot be pinned, so with a login named it is refused too. */
     private suspend fun turn(call: ApplicationCall, head: SharedHead, login: String?, path: List<String>) {
         if (!head.running()) return notRunning(call, head)
+        val posted = call.request.httpMethod == HttpMethod.Post
+        if (posted && call.request.contentType().withoutParameters() != ContentType.Application.Json) {
+            return ShareErrors.refuse(call, HttpStatus.BAD_REQUEST, "a turn's body must be application/json")
+        }
         if (login != null) {
-            val refusal = withContext(io) { pinned(call, head, login) }
+            val session = call.request.headers[SESSION_HEADER]?.takeIf(String::isNotBlank)
+            val refusal = withContext(io) { pinned(head, login, session, call.request.httpMethod != HttpMethod.Get) }
             if (refusal != null) return ShareErrors.refuse(call, HttpStatus.BAD_REQUEST, refusal)
         }
         val query = call.request.queryString().takeIf(String::isNotEmpty)?.let { "?$it" }.orEmpty()
         relay.turn(call, head, path.joinToString("/", prefix = "/") + query)
     }
 
-    /** Pins this request's session to [login] on [head], or says why it can't: null once pinned. */
-    private fun pinned(call: ApplicationCall, head: SharedHead, login: String): String? {
+    /** Pins [session] to [login] on [head], or says why it can't: null once pinned, or when there is nothing to pin
+     *  and the request [runs] no turn. */
+    private fun pinned(head: SharedHead, login: String, session: String?, runs: Boolean): String? {
         val logins = head.logins()
-        val session = call.request.headers[SESSION_HEADER]?.takeIf(String::isNotBlank)
         return when {
             login !in logins -> launches.noLogin(head, login, logins)
             session != null && head.pin(login, session) -> null
             session != null -> launches.noLogin(head, login, head.logins())
             // Nothing to pin: a read that runs no turn goes through; a turn would run on another login, so it doesn't.
-            call.request.httpMethod == HttpMethod.Get -> null
+            !runs -> null
             else ->
                 "this request names no Claude Code session, so it can't be run on ${heads.machine}'s login '$login'"
         }
+    }
+
+    /** Pins the session a statusline [body] names (Claude Code's `session_id`) to [login] on [head] before the line
+     *  is drawn, so it shows that login's usage before the session's first turn; a body naming none is drawn as is. */
+    private fun lined(head: SharedHead, login: String, body: ByteArray): String? {
+        val session = JsonScalars.str(JsonScalars.objectOrNull(json, body.decodeToString()), STATUSLINE_SESSION)
+        return pinned(head, login, session?.takeIf(String::isNotBlank), runs = false)
     }
 
     private suspend fun notRunning(call: ApplicationCall, head: SharedHead) {
@@ -200,6 +223,9 @@ private const val LOGIN_MARK = "@"
 private const val API_ROOT = "v1"
 private const val LAUNCH_ROUTE = "launch"
 private const val STATUSLINE = "statusline"
+
+// The key Claude Code names a statusline's session under in the JSON it feeds the statusline.
+private const val STATUSLINE_SESSION = "session_id"
 
 // why: a stop lets requests already in the listener finish for a second before it closes; a relayed turn still
 // streaming is cut, and the other machine's Claude Code retries it as it retries any cut turn.

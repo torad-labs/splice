@@ -39,6 +39,12 @@ import java.net.http.HttpRequest
 import java.net.http.HttpResponse
 import java.time.Duration
 
+/** What a statusline's body passes before it is relayed: the session it names pinned to the address's login. */
+internal fun interface StatuslineAdmission {
+    /** Why [body]'s statusline may not be drawn, or null once it may. */
+    fun refusal(body: ByteArray): String?
+}
+
 internal class ShareRelay(
     private val turnKey: TurnKey,
     private val controlPort: Int,
@@ -59,9 +65,12 @@ internal class ShareRelay(
         forward(call, URI.create("http://127.0.0.1:${head.port}$path"), body, silent)
     }
 
-    /** The control plane's statusline for [head], fed the session's JSON as Claude Code feeds its statusline. */
-    suspend fun statusline(call: ApplicationCall, head: SharedHead) {
+    /** The control plane's statusline for [head], fed the session's JSON as Claude Code feeds its statusline, once
+     *  [admission] has read the body: a refusal it returns is answered instead. */
+    suspend fun statusline(call: ApplicationCall, head: SharedHead, admission: StatuslineAdmission) {
         val body = body(call, STATUSLINE_BODY_MAX_BYTES, STATUSLINE_READ_MS) ?: return
+        val refusal = withContext(io) { admission.refusal(body) }
+        if (refusal != null) return ShareErrors.refuse(call, HttpStatus.BAD_REQUEST, refusal)
         val silent = "$machine's statusline for ${head.command} is not answering"
         forward(call, URI.create("http://127.0.0.1:$controlPort/statusline/${head.key}"), body, silent)
     }

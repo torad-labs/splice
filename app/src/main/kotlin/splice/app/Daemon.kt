@@ -208,7 +208,7 @@ public class Daemon(
     private val heads = LinkedHashMap<String, ManagedHead>()
 
     /** LAN share: the commands this machine runs on another's heads, and the listener that offers its own. */
-    private val share = DaemonShare(topology, config, TurnKey(mgmtKey), log)
+    private val share = DaemonShare(topology, config, TurnKey(mgmtKey), log, statePaths.stateDir)
     private val stopLock = Mutex()
     private var stopped = false
 

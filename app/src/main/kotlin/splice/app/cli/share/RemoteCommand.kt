@@ -34,6 +34,7 @@ internal class RemoteCommand(
     private val restart = ShareRestart(out, err, env, REMOTE_VERB)
     private val directory = ShareDirectory(ProcessDispatchers().io())
     private val install = InstallCommand(out, err)
+    private val relays = FirstBuildRelays(out, err, env)
 
     suspend fun run(args: List<String>): Int {
         val rest = args.drop(1)
@@ -49,7 +50,7 @@ internal class RemoteCommand(
     private suspend fun add(rest: List<String>): Int {
         val named = rest.size == AS_ARGS && rest[1] == "--as"
         if (rest.size != 1 && !named) return usage()
-        val added = RemoteAdd(out, err, file, directory).add(rest[0], if (named) rest[2] else null)
+        val added = RemoteAdd(out, err, file, directory, relays).add(rest[0], if (named) rest[2] else null)
             ?: return PeerExit.REFUSED
         added.commands.forEach { link(it, added.machine) }
         val followed = restart.followed(added.topology)

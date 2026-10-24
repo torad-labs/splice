@@ -109,9 +109,13 @@ The server (`[share]` in its `splice.toml`, `enabled = true`, `port = 3097`):
 | `GET /` | the machine's name and its offered commands: head, command, models, logins |
 | `GET /<head>/launch?auth=&models=` | what a node's launch needs: the models block (pinned, offered, labels, tiers, picker rows, window), the client timeout, and the base path for turns |
 | `POST /<head>[/@<login>]/v1/...` | relayed to the head on loopback with the head's turn key in place of whatever the node sent; `@<login>` pins the session (`X-Claude-Code-Session-Id`) to that login first |
-| `POST /<head>/statusline` | relayed to the control plane's statusline for that head, with the turn key |
+| `POST /<head>[/@<login>]/statusline` | relayed to the control plane's statusline for that head, with the turn key; `@<login>` pins the session the body names (`session_id`) first, so the line is that login's from its first draw |
 
-A source off the LAN, or a Host that does not name this machine, is answered 403 with the reason. A head
+A source off the LAN, or a Host that does not name this machine, is answered 403 with the reason. So is a
+request with an `Origin` header: a browser puts one on every request a page posts, and Claude Code puts
+none. A turn whose body is not `application/json` is 400: a page can post JSON only after a preflight,
+which nothing here approves. Together they keep a page from running a turn by addressing the machine by
+IP or as `localhost`, which the Host check admits. A head
 that is not offered is 404, naming the ones that are. A login or a model the head lacks is 400, naming the
 ones it has. A head that is offered but not running, or not answering, is 503. Every error is an Anthropic
 error body naming the machine and the head, and none is `overloaded_error`.
@@ -120,8 +124,15 @@ The node (`[remote.<command>]` in its `splice.toml`, `url = "<the address>"`): `
 shim as every command does. The daemon finds no head named `claudex`, finds the remote command, asks
 `GET <server>/<head>/launch` with the address's params (3 s to connect), and builds the recipe: base URL
 the server's turn path, auth token the word `splice-lan`, the head's models and timeout, its own
-`~/.claude-<command>` tree, the server's statusline, and a `/login` that names the server. When the server
-can't be reached, or refuses, the launch is refused with that reason.
+`~/.claude-<command>` tree, the server's statusline (on the login the address names), and a `/login` that
+names the server. The server's host joins `NO_PROXY`, so a proxy the shell names takes neither the turns nor
+the statusline. When the server can't be reached, or refuses, the launch is refused with that reason.
+
+A node the first build left still has that build's relays: a head per command, on a provider it wrote
+with `forward_client_identity`, and a share token in keys.toml. Boot refuses with a finding at
+`heads.<key>` for each, naming the fix, and `splice remote add` with the server's address replaces each
+relay under its own name, taking its provider and its share token out in the same add. The server removes
+the first build's `share/clients.json` and its lock when it starts.
 
 `splice share on|off|status` writes `[share]` and restarts the daemon; `status` prints each command's
 address. `splice remote add <address>` checks the address against the server and writes

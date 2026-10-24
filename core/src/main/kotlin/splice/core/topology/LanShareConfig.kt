@@ -114,6 +114,25 @@ public object RemoteAddresses {
     private fun refused(why: String): RemoteAddressRead = RemoteAddressRead.Refused(why)
 }
 
+/** The first LAN-share build's relays (2026-10-22 to 24) left in a node's file: each head whose provider that build
+ *  wrote with `forward_client_identity`, an api-key passthrough to the server's old route, its share token in
+ *  keys.toml. This build runs no such relay. Boot names each one, and `splice remote add` replaces one under its own
+ *  name. */
+public object RetiredRelays {
+    /** The relay heads in [topology], by key. */
+    public fun of(topology: Topology): Map<String, HeadConfig> = topology.heads.filter { (_, head) ->
+        topology.providers[head.provider]?.quirks?.forwardClientIdentity == true
+    }
+
+    /** [topology] without the relay [heads] and each provider no other head is left on. */
+    public fun without(topology: Topology, heads: Set<String>): Topology {
+        val kept = topology.heads - heads
+        val used = kept.values.map { it.provider }.toSet()
+        val gone = heads.mapNotNull { topology.heads[it]?.provider }.filterNot { it in used }.toSet()
+        return topology.copy(heads = kept, providers = topology.providers - gone)
+    }
+}
+
 /** The query param a remote command's address names the server's login in: `?auth=work`. */
 public const val SHARE_AUTH_PARAM: String = "auth"
 

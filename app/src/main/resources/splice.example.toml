@@ -99,6 +99,7 @@ summary_field = true
 # rejected loudly at startup instead of being ignored in silence. Remove it from any config that
 # has it; it is documented here so that an operator reading this file learns why it is gone.
 # retired: compact_effort — a compaction is built exactly like a turn, so any effort pin misses the prompt cache on the whole transcript
+# retired: forward_client_identity — the first LAN-share build's relay wrote it; boot refuses that relay and `splice remote add` replaces it
 # websocket (default false in code): serve rounds over the Responses WebSocket with
 # previous_response_id chaining, so a continuation turn sends ONLY the new items instead of the
 # whole history. Measured on a 12-round tool loop: wire bytes go FLAT (~2.4KB) while the full send

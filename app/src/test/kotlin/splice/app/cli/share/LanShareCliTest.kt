@@ -27,6 +27,7 @@ import splice.core.terminal.TerminalOutput
 import splice.core.testing.TestPorts
 import splice.core.topology.AuthKind
 import splice.core.topology.RemoteConfig
+import splice.core.topology.TopologyFindings
 import splice.core.util.EnvReader
 import splice.head.MockChatGptUpstream
 import splice.launch.install.InstallCommand
@@ -55,6 +56,7 @@ class LanShareCliTest {
     private val closedPort = TestPorts.reserve()
     private lateinit var torad: Daemon
     private lateinit var toradEnv: EnvReader
+    private lateinit var toradState: Path
     private val share get() = "http://127.0.0.1:$sharePort"
 
     @BeforeAll
@@ -72,9 +74,14 @@ class LanShareCliTest {
         Files.createDirectories(config.parent)
         Files.writeString(config, toradToml(primary))
         toradEnv = envOf(tmp.resolve("torad"))
+        // What the first build's server kept of the machines that joined it, there when this build starts.
+        toradState = tmp.resolve("torad-state")
+        Files.createDirectories(toradState.resolve("share"))
+        Files.writeString(toradState.resolve("share/clients.json"), """{"clients":[{"name":"mac","sha256":"00"}]}""")
+        Files.writeString(toradState.resolve("share/clients.json.lock"), "")
         torad = Daemon(
             topology = TopologyLoader.parse(config.readText()),
-            statePaths = StatePaths(baseOverride = tmp.resolve("torad-state")),
+            statePaths = StatePaths(baseOverride = toradState),
             log = {},
             refreshCall = { _, _ -> RefreshAttempt.Denied("test-denied") },
         )
@@ -146,6 +153,33 @@ class LanShareCliTest {
             """.trimIndent() + "\n",
         )
         return Node(dir, envOf(dir))
+    }
+
+    /** A node as the first LAN-share build left it: `claudex` a head of its own, relaying through a provider it wrote
+     *  to the server's old route, with that build's share token in keys.toml. */
+    private fun firstBuildNode(dir: Path): Node {
+        val node = node(dir)
+        val relay = """
+            [providers.claudex]
+            dialect = "anthropic-passthrough"
+            base_url = "$share/share/v1/heads/claudex"
+            auth = { kind = "api-key", env = "CLAUDEX_API_KEY" }
+            quirks = { forward_client_identity = true }
+            [[providers.claudex.models]]
+            id = "$SOL"
+            context_window = 272000
+
+            [heads.claudex]
+            provider = "claudex"
+            port = ${TestPorts.reserve()}
+            discovery_prefix = "claude-claudex--"
+            pinned_model = "$SOL"
+            [heads.claudex.claude]
+            command = "claudex"
+        """.trimIndent()
+        Files.writeString(node.config, node.config.readText() + "\n" + relay + "\n")
+        Files.writeString(dir.resolve("keys.toml"), "CLAUDEX_API_KEY = \"first-build-share-token\"\n")
+        return node
     }
 
     private fun envOf(dir: Path): EnvReader {
@@ -238,6 +272,31 @@ class LanShareCliTest {
         assertTrue(node.linked("claudex"), added.toString())
         assertFalse(Files.exists(dir.resolve("keys.toml")), "a node keeps no key")
         assertTrue(added.out.contains("claudex"), added.toString())
+    }
+
+    @Test
+    fun `a node the first build left is told at boot what replaces its relay, and remote add replaces it`(
+        @TempDir dir: Path,
+    ) {
+        val node = firstBuildNode(dir)
+        val booted = TopologyFindings.of(TopologyLoader.parse(node.config.readText()), stateBase = dir.resolve("state"))
+        assertTrue(
+            booted.any { it.path == "heads.claudex" && it.message.contains("splice remote add") },
+            booted.joinToString("\n") { it.text() },
+        )
+        val added = remote(node, "add", "$share/claudex")
+        assertEquals(0, added.code, added.toString())
+        val after = TopologyLoader.parse(node.config.readText())
+        assertEquals(mapOf("claudex" to RemoteConfig("$share/claudex")), after.remote)
+        assertFalse("claudex" in after.heads || "claudex" in after.providers, node.config.readText())
+        assertFalse(dir.resolve("keys.toml").readText().contains("CLAUDEX_API_KEY"), "the share token is still kept")
+        assertTrue(node.linked("claudex"), added.toString())
+    }
+
+    @Test
+    fun `a server the first build ran keeps no record of the machines that joined it`() {
+        assertFalse(Files.exists(toradState.resolve("share/clients.json")), "clients.json is still there")
+        assertFalse(Files.exists(toradState.resolve("share/clients.json.lock")), "its lock is still there")
     }
 
     @Test

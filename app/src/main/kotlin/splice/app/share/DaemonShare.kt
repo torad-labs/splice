@@ -23,12 +23,16 @@ import splice.share.ShareMachine
 import splice.share.SharedHead
 import splice.share.SharedHeads
 import splice.upstream.codemode.ProcessDispatchers
+import java.nio.file.Files
+import java.nio.file.Path
 
 internal class DaemonShare(
     private val topology: Topology,
     private val config: ConfigService,
     private val turnKey: TurnKey,
     private val log: LogSink,
+    /** splice's state folder, where the first LAN-share build kept the machines that joined this one. */
+    private val stateDir: Path,
 ) {
     @Volatile
     private var listener: ShareListener? = null
@@ -39,6 +43,7 @@ internal class DaemonShare(
 
     /** Opens the listener when `[share]` turns it on, offering [heads] and [controlPort]'s statusline. */
     fun open(heads: Map<String, ManagedHead>, controlPort: Int) {
+        forgetJoins()
         if (!topology.share.enabled) return
         val offered = ManagedSharedHeads(heads, topology, config, ShareMachine(log).name())
         val opened = ShareListener(topology.share, offered, turnKey, controlPort, ProcessDispatchers().io(), log)
@@ -54,7 +59,25 @@ internal class DaemonShare(
         listener?.stop()
         listener = null
     }
+
+    /** The first build's record of the machines that joined this one (`share/clients.json` and its lock), which no
+     *  part of this build reads: a machine now joins nothing. Removed once, said in the log. */
+    private fun forgetJoins() {
+        val folder = stateDir.resolve(SHARE_STATE)
+        val gone = listOf(CLIENTS_FILE, "$CLIENTS_FILE.lock").filter { name ->
+            Cancellables.runCatchingBestEffort { Files.deleteIfExists(folder.resolve(name)) }.getOrElse { failure ->
+                log("[share] could not remove the first build's $name: ${SafeFailureText.render(failure)}\n")
+                false
+            }
+        }
+        if (gone.isEmpty()) return
+        log("[share] removed the first build's record of joined machines: ${gone.joinToString()}\n")
+    }
 }
+
+// The first LAN-share build's folder under splice's state, and the record of joined machines it kept there.
+private const val SHARE_STATE = "share"
+private const val CLIENTS_FILE = "clients.json"
 
 /** The heads this machine offers: every head with a launch that holds its own credentials. A head that forwards the
  *  caller's own Claude login has nothing to offer a machine that holds none. */

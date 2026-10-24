@@ -334,7 +334,9 @@ That `claudex` is Claude Code pointed at the first machine, the way Claude Code 
 
 Two query params on the address choose what the second machine gets, and the first machine applies them. `?auth=work` runs its sessions on the login named `work`, as a Pin on the Accounts page does, and `?models=gpt-5.6-sol,gpt-5.6-mini` shows only those models. An address with no command (`http://torad-server.lan:3097`) adds every command the machine offers, and `--as <command>` gives an address a name of its own, so one command can run on two logins as `claudex` and `claudex-work`. `splice remote` lists them with whether each machine answers now, and `splice remote remove <command>` takes one out. A login or a model the machine lacks is refused when the address is added and when the command starts, and a machine that can't be reached is said before Claude Code starts.
 
-The first machine answers machines on its own LAN only: private and link-local addresses, and an IPv6 address on one of its own /64s, never Tailscale's 100.64/10. A request must name the machine in its Host. There is no join, token or certificate, so any device on that LAN can run its heads, and prompts and replies cross the LAN unencrypted. Turn sharing on only on a network you trust.
+The first machine answers machines on its own LAN only: private and link-local addresses, and an IPv6 address on one of its own /64s, never Tailscale's 100.64/10. A request must name the machine in its Host, and a request from a web page in a browser is refused. There is no join, token or certificate, so any device on that LAN can run its heads, and prompts and replies cross the LAN unencrypted. Turn sharing on only on a network you trust.
+
+A machine that ran the first build of this (October 22 to 24) still has a head for each command it imported then. splice refuses to start until those are replaced, and says so for each one: run `splice remote add` with the first machine's address, and each old head is replaced by the address under its own name, its key removed from `keys.toml` in the same step.
 
 ## Troubleshooting
 

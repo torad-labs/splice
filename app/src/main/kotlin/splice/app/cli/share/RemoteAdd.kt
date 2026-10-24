@@ -2,7 +2,9 @@
 // before anything is kept, so a typo is said now, never found out as a launch that fails or runs on the wrong login.
 // The server must answer, offer the command, and have the login `auth=` names and every model `models=` lists. An
 // address naming the server alone adds every command it offers. A name this machine already runs (a head here, or
-// another address under that name) is refused with how to give the new one another: `--as <command>`.
+// another address under that name) is refused with how to give the new one another: `--as <command>`. A relay the first
+// LAN-share build wrote under that name is the one exception: the address replaces it, and its share token leaves
+// keys.toml in the same add.
 package splice.app.cli.share
 
 import splice.core.terminal.CYAN
@@ -36,6 +38,8 @@ internal class RemoteAdd(
     private val err: TerminalOutput,
     private val file: ShareTopologyFile,
     private val directory: ShareDirectory,
+    /** The first LAN-share build's relays, which an address under one's name replaces. */
+    private val relays: FirstBuildRelays,
 ) {
     // A name a command link can take: a bare file name, as a head's key is.
     private val commandName = Regex("^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$")
@@ -53,16 +57,19 @@ internal class RemoteAdd(
     private suspend fun asked(address: String, name: String?): Offered? =
         if (serverOnly(address)) every(address.trimEnd('/'), name) else one(address, name)
 
-    /** [offered] written into [topology], each entry whose name is free here; one that is not is said. */
+    /** [offered] written into [topology], each entry whose name is free here; one that is not is said. A first-build
+     *  relay under an entry's name is replaced by it. */
     private fun kept(topology: Topology, offered: Offered): RemoteAdded? {
         val refusals = offered.entries.mapNotNull { (command, remote) ->
             taken(topology, command, remote)?.let { command to it }
         }.toMap()
         refusals.values.forEach { err.line("$REMOTE_VERB: $it") }
         val fresh = offered.entries - refusals.keys
-        val wanted = topology.copy(remote = topology.remote + fresh)
+        val replacing = relays.replacing(topology, fresh.keys)
+        val wanted = replacing.topology.let { it.copy(remote = it.remote + fresh) }
         if (fresh.isEmpty() || !file.saved(wanted)) return null
         out.line("added to ${file.path}: ${fresh.keys.joinToString(", ")}")
+        relays.replaced(topology, replacing)
         return RemoteAdded(wanted, fresh.keys.toList(), offered.machine, refusals.isEmpty())
     }
 
@@ -136,7 +143,7 @@ internal class RemoteAdd(
             held == remote -> null
             held != null -> "${quoted(command)} already runs on ${held.url}; $elsewhere, or take that one out first " +
                 "with ${CYAN}splice remote remove $command$RESET"
-            command in reserved || topology.resolveHeadKeys(command).isNotEmpty() ->
+            command in reserved || relays.runsHere(topology, command) ->
                 "${quoted(command)} is already a command here; $elsewhere"
             else -> null
         }

@@ -36,6 +36,7 @@ import splice.launch.LaunchOutcome
 import splice.launch.LaunchSpec
 import splice.launch.RemoteCommands
 import splice.sessions.registry.LaunchMarker
+import java.net.URI
 import java.nio.file.Path
 
 // LaunchSpec + LaunchRecipe live in LaunchTypes.kt (concentration, 2026-08-19).
@@ -382,7 +383,7 @@ public class LaunchService(
             // cooldown lift. Planted UNCONDITIONALLY, native included: it is a client-side WAIT
             // policy, and every head wants its session to survive a hold.
             put("CLAUDE_CODE_RETRY_WATCHDOG", "1")
-            put("NO_PROXY", mergedNoProxy())
+            put("NO_PROXY", mergedNoProxy(spec))
             // Hide Claude Code's built-in Anthropic-account commands: in a gateway head, auth is the
             // proxy bearer above, so /login (a local-jsx command hardwired to platform.claude.com —
             // no hook or base-url override can reach it) and /logout are dead doors. These are the
@@ -404,8 +405,15 @@ public class LaunchService(
         }
     }
 
-    private fun mergedNoProxy(): String =
-        sequenceOf(envReader("NO_PROXY"), envReader("no_proxy"), "127.0.0.1,localhost")
+    /** The ambient NO_PROXY with loopback added, and for a command another machine serves (LAN share) that machine's
+     *  host, which a proxy the shell names can't reach: Claude Code and the statusline's curl both honour it. */
+    private fun mergedNoProxy(spec: LaunchSpec): String =
+        sequenceOf(
+            envReader("NO_PROXY"),
+            envReader("no_proxy"),
+            "127.0.0.1,localhost",
+            spec.gateway.remote?.let { URI.create(it).host?.removeSurrounding("[", "]") },
+        )
             .filterNotNull()
             .flatMap { it.split(',').asSequence() }
             .map { it.trim() }

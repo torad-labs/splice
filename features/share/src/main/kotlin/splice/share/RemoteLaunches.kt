@@ -77,7 +77,7 @@ public class RemoteLaunches(
             signInWay = SignInWay.Elsewhere(shared.machine),
             headKey = command,
         )
-        val statusline = "${address.server}/${address.head}/statusline"
+        val statusline = "${address.turns}/statusline"
         val gateway = LaunchGateway(
             port = 0,
             inferenceToken = NODE_TOKEN,

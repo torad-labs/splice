@@ -45,6 +45,15 @@ internal class CodeModeParityDelegates(private val frames: CodeModeParityFrames)
         val result = frame.getValue("result").jsonObject
         val success = JsonScalars.str(result, "status") == "ok"
         val value = (result["value"] as? JsonObject)?.get("result") ?: result["message"] ?: JsonNull
-        awaiting.held.cell.submitResults(listOf(CodeModeResult(awaiting.callback, JsonWire.string(value), !success)))
+        awaiting.held.cell.submitResults(
+            listOf(
+                CodeModeResult(
+                    awaiting.callback,
+                    if (success) JsonWire.string(value) else JsonScalars.str(result, "message").orEmpty(),
+                    !success,
+                    if (success) value else null,
+                ),
+            ),
+        )
     }
 }

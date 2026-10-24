@@ -1,6 +1,5 @@
 package splice.codemode.nativehost
 
-import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonNull
 import kotlinx.serialization.json.JsonObject
@@ -98,18 +97,12 @@ internal object NativeRequests {
                         "value",
                         buildJsonObject {
                             put("type", "tool/result")
-                            put("result", toolOutput(result.output))
+                            put("result", result.payload ?: JsonPrimitive(result.output))
                         },
                     )
                 }
             },
         )
-    }
-
-    private fun toolOutput(output: String): JsonElement = try {
-        Json.parseToJsonElement(output)
-    } catch (_: IllegalArgumentException) {
-        JsonPrimitive(output)
     }
 
     fun notified(id: JsonElement): JsonObject = buildJsonObject {

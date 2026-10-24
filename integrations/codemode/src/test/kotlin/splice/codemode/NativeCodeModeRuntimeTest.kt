@@ -164,6 +164,38 @@ class NativeCodeModeRuntimeTest {
     }
 
     @Test
+    fun `client text results retain JSON-looking text as strings`() = nativeProcessTest {
+        NativeCodeModeRuntime().use { runtime ->
+            val cell = runtime.startSession(
+                "text-result",
+                "text(await tools.Read({})); " +
+                    "const result = await tools.Read({}); text(typeof result); text(JSON.parse(result).count);",
+                setOf("Read"),
+            )
+            val call = (cell.advance() as CodeModeStep.Calls).calls.single()
+            val next = cell.advance(listOf(CodeModeResult(call.id, "accepted"))) as CodeModeStep.Calls
+            val result = cell.advance(
+                listOf(CodeModeResult(next.calls.single().id, "{\"count\":7}")),
+            ) as CodeModeStep.Completed
+            assertEquals(null, result.error)
+            assertEquals("accepted\nstring\n7", result.output)
+        }
+    }
+
+    @Test
+    fun `an explicitly typed delegate value reaches the native promise as an object`() = nativeProcessTest {
+        NativeCodeModeRuntime().use { runtime ->
+            val cell = runtime.startSession("typed-result", "text((await tools.Read({})).count);", setOf("Read"))
+            val call = (cell.advance() as CodeModeStep.Calls).calls.single()
+            val result = cell.advance(
+                listOf(CodeModeResult(call.id, "legacy text", payload = buildJsonObject { put("count", 7) })),
+            ) as CodeModeStep.Completed
+            assertEquals(null, result.error)
+            assertEquals("7", result.output)
+        }
+    }
+
+    @Test
     fun `malformed client function input rejects its promise without issuing a callback`() = nativeProcessTest {
         NativeCodeModeRuntime().use { runtime ->
             val source = "try { await tools.Read('wrong'); } catch(e) { text(String(e)); }"

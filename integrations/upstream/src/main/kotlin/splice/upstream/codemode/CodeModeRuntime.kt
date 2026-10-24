@@ -1,6 +1,7 @@
 // NEW: script runtime yields ordinary client tool requests without executing privileged operations.
 package splice.upstream.codemode
 
+import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonObject
 
 /** Splice-owned script execution. A yielded request is executed by the client, never by this runtime. */
@@ -55,7 +56,13 @@ public interface CodeModeCell : AutoCloseable {
 
 public data class CodeModeCall(val id: String, val name: String, val arguments: JsonObject)
 
-public data class CodeModeResult(val id: String, val output: String, val isError: Boolean = false)
+public data class CodeModeResult(
+    val id: String,
+    val output: String,
+    val isError: Boolean = false,
+    /** An explicitly typed native delegate value; absent values preserve [output] as client text. */
+    val payload: JsonElement? = null,
+)
 
 public sealed class CodeModeStep {
     /** Newly issued calls may arrive after script completion while older callbacks remain outstanding. */

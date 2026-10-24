@@ -47,6 +47,7 @@ private class CodeModePrefaceSlots(
         private set
     var replay = input.replayItems
         private set
+    private val received = input.replayItems
     private val slots = mutableMapOf(0 to start)
     private val prefaceCount = record.carry.continuity.size
     private var coalesced = false
@@ -63,16 +64,17 @@ private class CodeModePrefaceSlots(
     }
 
     fun restore(offset: Int, items: List<JsonElement>) {
-        replay = CodeModeSourceReplay.fill(replay, slots[offset] ?: logical.size, items, start)
+        val native = items.map { CodeModeSourceReplay.preferred(received, start, it) }
+        replay = CodeModeSourceReplay.fill(replay, slots[offset] ?: logical.size, native, start)
     }
 
     private fun removeOwned(record: CodeModeRecord) {
-        val owned = record.carry.replay.flatMap { it.items }.toSet()
+        val owned = record.carry.replay.flatMap { it.items }.mapTo(mutableSetOf(), CodeModeReasoningIdentity::key)
         replay = replay.mapNotNull { segment ->
             val items = if (segment.logicalOffset < start) {
                 segment.items
             } else {
-                segment.items.filterNot(owned::contains)
+                segment.items.filterNot { CodeModeReasoningIdentity.key(it) in owned }
             }
             segment.copy(items = items).takeIf { it.items.isNotEmpty() }
         }

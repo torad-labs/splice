@@ -20,8 +20,18 @@ import splice.provider.codex.stream.CodeModeRedirectablePost
 import splice.provider.codex.stream.CodeModeRuntimeRun
 import splice.provider.codex.stream.CodeModeRuntimeStarter
 import splice.provider.codex.stream.CodeModeSourceState
-import splice.provider.codex.stream.CodeModeStreamingCell
 import splice.provider.codex.stream.CodeModeStreams
+import splice.provider.codex.stream.batch.CodeModeAdmissionBodies
+import splice.provider.codex.stream.batch.CodeModeBatchDispatch
+import splice.provider.codex.stream.batch.CodeModeBatchLinks
+import splice.provider.codex.stream.batch.CodeModeBatchPost
+import splice.provider.codex.stream.batch.CodeModeBatchPreparation
+import splice.provider.codex.stream.batch.CodeModeBatchRefusal
+import splice.provider.codex.stream.batch.CodeModeBatchRewrite
+import splice.provider.codex.stream.batch.CodeModeBatchStart
+import splice.provider.codex.stream.batch.CodeModeGeneratedActions
+import splice.provider.codex.stream.batch.CodeModeGeneratedContinuation
+import splice.provider.codex.stream.batch.CodeModeRuntimeDispatch
 import splice.upstream.failure.CodeModeCapacityException
 import java.io.IOException
 
@@ -44,12 +54,36 @@ internal class CodexCodeModeDriver(
     val streams = CodeModeStreams(config, registry, wire)
     private val factory = CodeModeRecordFactory(config, wire)
     private val starter = CodeModeRuntimeStarter(run, registry, config)
+    private val batches = CodeModeBatchDispatch(registry)
+    private val preparation = CodeModeBatchPreparation(config, registry, wire, sent)
+
+    private val dispatch = CodeModeRuntimeDispatch(
+        starter,
+        registry,
+        machine,
+        streams,
+        sent,
+        batches,
+    )
+
+    private val generated = CodeModeGeneratedContinuation(
+        streams,
+        batches,
+        CodeModeGeneratedActions(
+            CodeModeBatchStart(::startRuntime),
+            CodeModeBatchPost(::post),
+            CodeModeBatchRewrite(::continuation),
+            CodeModeBatchRefusal(::failure),
+        ),
+    )
 
     /** A redirectable post can yield a durable script while its upstream response remains live. */
     suspend fun post(context: CodeModeRunContext, initialOuter: GatewayCustomCall?, body: CodeModeBody): TurnOutcome {
         sent.sent(context, body)
         val post = context.link.post as? CodeModeRedirectablePost
             ?: return drive(context, initialOuter, body, sent.settled(context, context.link.post(body)))
+        val admissionBody = CodeModeAdmissionBodies(wire).compact(context, body)
+        val clientStart = sent.clientStart(context)
         val round = streams.begin(context, body, post) { call ->
             driveProblem(context, listOf(call), call)?.let { error(it) }
             validation.outer(
@@ -62,7 +96,7 @@ internal class CodexCodeModeDriver(
             )?.let { error(it) }
             context.scripts++
             val pending = TurnOutcome.Success(false, false, noRequestUsage)
-            val record = checkNotNull(factory.create(context, call, body, pending, sent.clientStart(context)))
+            val record = checkNotNull(factory.create(context, call, admissionBody, pending, clientStart))
             record.postedOn = sent.newest(context.key)
             record.sourceState = CodeModeSourceState()
             check(registry.add(record)) { "code-mode registry capacity reached" }
@@ -77,7 +111,7 @@ internal class CodexCodeModeDriver(
         } finally {
             val clientCancelled = !currentCoroutineContext().isActive
             withContext(NonCancellable) {
-                val parked = admitted?.phase == CodeModePhase.ACTIVE || admitted?.phase == CodeModePhase.STARTING
+                val parked = (round.activeRecord ?: admitted)?.let(CodeModeBatchLinks::retained) == true
                 // A cancelled first client step must release even a reader blocked writing to that client.
                 if (clientCancelled) {
                     round.stopClientStep()
@@ -103,33 +137,16 @@ internal class CodexCodeModeDriver(
         round.localFailure?.let { return it }
         if (record == null) return drive(context, initialOuter, body, sent.settled(context, round.outcome()))
         streams.keep(record, round)
-        val (_, advanced) = startRuntime(record, context, round)
-        return round.localFailure ?: if (record.phase == CodeModePhase.COMPLETED) {
-            finishGenerated(record, context, body)
+        val (running, advanced) = startRuntime(record, context, round)
+        return round.localFailure ?: if (running.phase == CodeModePhase.COMPLETED) {
+            finishGenerated(running, context, body)
         } else {
-            streams.billFinished(record, advanced)
+            streams.billFinished(running, advanced)
         }
     }
 
-    suspend fun finishGenerated(record: CodeModeRecord, context: CodeModeRunContext, body: CodeModeBody): TurnOutcome {
-        val generated = streams.takeOutcome(record)
-        context.recovery?.generated(generated)
-        if (context.completed.none { it.id == record.id }) context.completed += record
-        // The item may already have executed when its response failed. Keep its saved output for a retry's
-        // canonical history, but this turn must still expose the failed or incomplete response terminal.
-        val terminal = when (generated) {
-            is TurnOutcome.Success -> generated.takeIf { it.incomplete }
-            is TurnOutcome.Failure, is TurnOutcome.ClientAbandoned -> generated
-            null -> null
-        }
-        if (terminal != null) return terminal
-        val rewritten = continuation(context, record, body)
-        rewritten.error?.let { return failure(it) }
-        val outcome = post(context, null, checkNotNull(rewritten.body))
-        val accumulated = CodeModeOutcomeAccumulator()
-        if (generated is TurnOutcome.Success) accumulated.absorb(generated)
-        return accumulated.finish(outcome)
-    }
+    suspend fun finishGenerated(record: CodeModeRecord, context: CodeModeRunContext, body: CodeModeBody): TurnOutcome =
+        generated.finish(record, context, body)
 
     suspend fun drive(
         context: CodeModeRunContext,
@@ -155,6 +172,17 @@ internal class CodexCodeModeDriver(
     ): TurnOutcome? {
         val success = state.outcome as? TurnOutcome.Success ?: return accumulated.finish(state.outcome)
         val calls = success.handoffs.customCalls
+        if (calls.size > 1) {
+            accumulated.absorb(success)
+            val record = preparation.prepare(context, state.body, success)
+            val (_, advanced) = startRuntime(record, context)
+            val result = if (record.phase == CodeModePhase.COMPLETED) {
+                finishGenerated(record, context, state.body)
+            } else {
+                advanced
+            }
+            return accumulated.finish(result)
+        }
         val outer = state.suppliedOuter ?: calls.singleOrNull()
         val problem = driveProblem(context, calls, outer)
         return when {
@@ -250,41 +278,18 @@ internal class CodexCodeModeDriver(
         return if (record.phase == CodeModePhase.COMPLETED) finishGenerated(record, context, body) else advanced
     }
 
-    private suspend fun attachmentFailure(record: CodeModeRecord, stream: CodeModeLiveRound?): TurnOutcome =
-        if (stream?.localFailure != null) {
-            checkNotNull(stream.localFailure)
-        } else if (stream?.sourceInterrupted == true) {
-            stream.outcome()
-        } else {
-            TurnOutcome.Failure(
-                record.error.orEmpty(),
-                cause = FailureCause.INTERNAL,
-                phase = FailurePhase.MID_OUTPUT,
-                salvagedUsage = noRequestUsage,
-            )
-        }
-
     private suspend fun startRuntime(
         record: CodeModeRecord,
         context: CodeModeRunContext,
         stream: CodeModeLiveRound? = null,
     ): Pair<CodeModeRecord, TurnOutcome> = try {
-        val started = starter.start(record, context, stream)
-        val cell = if (stream == null) started else CodeModeStreamingCell(started, record, stream)
-        if (!registry.attach(record, cell)) {
-            record to attachmentFailure(record, stream)
+        val selected = starter.select(record, stream)
+        if (selected.id != record.id) {
+            val round = checkNotNull(stream)
+            streams.keep(selected, round, record)
+            startRuntime(selected, context, round)
         } else {
-            record to machine.advance(
-                CodeModeAdvanceRequest(
-                    record,
-                    context.turn,
-                    context.disableParallel,
-                    emptyList(),
-                    streams.attach(record, context.link.sink),
-                    stream,
-                    context.recovery?.delivery(record),
-                ),
-            )
+            dispatch.start(record, context, stream)
         }
     } catch (error: CancellationException) {
         registry.lose(record, "code-mode runtime start cancelled; source was not rerun", error)

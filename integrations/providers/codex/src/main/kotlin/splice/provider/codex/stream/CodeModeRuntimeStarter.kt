@@ -10,6 +10,7 @@ import splice.core.turn.noRequestUsage
 import splice.provider.codex.CODE_MODE_RECORD_LOG_CHARS
 import splice.provider.codex.CODE_MODE_WAIT_TOOL_NAME
 import splice.provider.codex.CodeModeBridgeConfig
+import splice.provider.codex.CodeModePhase
 import splice.provider.codex.CodeModeRecord
 import splice.provider.codex.CodeModeRunContext
 import splice.provider.codex.CodexCodeModeMachine
@@ -29,10 +30,13 @@ internal class CodeModeRuntimeStarter(
 ) {
     suspend fun start(record: CodeModeRecord, context: CodeModeRunContext, stream: CodeModeLiveRound?): CodeModeCell =
         try {
+            record.runtimeDispatching = true
             if (stream == null) {
                 starting(record, context, null)
             } else {
-                stream.source.whileStarting { starting(record, context, stream) }
+                stream.executing(record)
+                val cell = stream.sourceFor(record).whileStarting { starting(record, context, stream) }
+                CodeModeStreamingCell(cell, record, stream)
             }
         } catch (error: IOException) {
             reportSourceRejection(context, stream)
@@ -76,7 +80,12 @@ internal class CodeModeRuntimeStarter(
         return if (stream == null) {
             host.startSession(record.key, record.origin.source, context.turn.tools, context.turn.descriptions)
         } else {
-            host.startStreamingSession(record.key, stream.source.view(), context.turn.tools, context.turn.descriptions)
+            host.startStreamingSession(
+                record.key,
+                stream.sourceFor(record).view(),
+                context.turn.tools,
+                context.turn.descriptions,
+            )
         }
     }
 
@@ -93,7 +102,7 @@ internal class CodeModeRuntimeStarter(
         val source = if (stream == null) {
             record.origin.source
         } else {
-            when (val whole = stream.source.view().read()) {
+            when (val whole = stream.sourceFor(record).view().read()) {
                 is CodeModeSourcePart.Complete -> whole.text
                 is CodeModeSourcePart.Failed -> throw IOException("Native code-mode source did not complete")
             }
@@ -126,6 +135,11 @@ internal class CodeModeRuntimeStarter(
         )
     }
 
+    suspend fun select(record: CodeModeRecord, stream: CodeModeLiveRound?): CodeModeRecord {
+        if (stream == null || runtime() !is NativeCodeModeLifecycle) return record
+        return stream.select(record) ?: throw IOException("Native source did not complete")
+    }
+
     private fun retained(
         record: CodeModeRecord,
         invocation: CodeModeNativeInvocation,
@@ -133,7 +147,7 @@ internal class CodeModeRuntimeStarter(
     ): CodeModeHeldNativeCell {
         val id = checkNotNull(invocation.cellId)
         val terminal = registry.completed(record.key, record.conversationId).firstOrNull {
-            it.nativeCellId == id && it.nativeCompleted && it.phase == splice.provider.codex.CodeModePhase.COMPLETED
+            it.nativeCellId == id && it.nativeCompleted && it.phase == CodeModePhase.COMPLETED
         }
         terminal?.let { registry.nativeCells.completed(owner, id, it.origin.outerCallId) }
         return registry.nativeCells.take(owner, id)

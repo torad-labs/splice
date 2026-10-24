@@ -2,16 +2,22 @@
 
 ## Current repair and verification
 
-Runtime source: `27647a41a6fdfc5777c417a1405f637d8b42f067`. Normal local pre-push gate: PASS (300.2 seconds; all scoped module checks, architecture/law checks and required direct legs). Frozen interactive client fixture: PASS for completion and late provider failure on the same jar. Workflow-pinned secret scan: [recorded in the current verification status](https://github.com/torad-labs/splice/pull/420#issuecomment-6383599545).
+Runtime source: `5bbb329b6867720c79cf6a4c89a63be5e34fb730`. Normal local pre-push gate: PASS (530.4 seconds). Frozen interactive client fixture: PASS for completion and late provider failure on the same jar. Workflow-pinned secret scan: [recorded in the current verification status](https://github.com/torad-labs/splice/pull/420#issuecomment-6383599545).
 
-Qualified jar SHA-256: `f49510cd7ea8d0d22c079111538bbf054c68403961766d0cf2d07f3ce7f09be1`. Both interactive scenarios delivered the exact 89 fixture characters once on the wire and in native client thinking blocks, with zero opaque blocks, one effect and normal exit 0.
+Qualified jar SHA-256: `2424daaf4a1a3c893c80024f479a34349c9e8224a85203b73917f695c2260183`. Both interactive scenarios delivered the exact 89 fixture characters once on the wire and in native client thinking blocks, with zero opaque blocks, one effect and normal exit 0.
 
 | Interactive scenario | Effect after item.done | Effect before terminal |
 |---|---:|---:|
-| Completion | 1,245 ms | 755 ms |
-| Late provider failure | 1,406 ms | 594 ms |
+| Completion | 744 ms | 1,257 ms |
+| Late provider failure | 797 ms | 1,203 ms |
 
 The repair starts a validated whole exec item at item completion, preserves accepted source through late provider failure, and retains readable reasoning once while keeping encrypted items in native server history. Ordered prefaces and reasoning survive callbacks, restart and re-anchor. Sparse terminal arrays and reused output indexes retain source boundaries. Native torn and recovered message boundaries are preserved, with complete prefix bytes replayed once. The cursor advances from actually delivered text, so interrupted prose and reverse message completion retain the client-visible boundary. A uniquely matching anonymous message can bind to its terminal ID without losing additional native reasoning. Native and codec-normalized copies are deduplicated by nonempty reasoning item identity while preserving native payload fields and distinct IDs.
+
+Backend-complete text and delivered text are tracked separately. A provable completion suffix is delivered before later reasoning can advance history. Recovery retains complete backend snapshots while refusing unsafe continuation beyond an undelivered or mismatched prefix. Terminal-only reasoning uses verified delivery boundaries; pending prose survives reused indexes, and missing exec indexes seal after the last captured item.
+
+Held raw-reasoning prefixes count toward the unchanged shared character capacity. Literal prefixes settle before later visible output and at terminal/EOF boundaries, while blank/comment filtering and honest failures remain intact. Accounting is incremental and unchanged blank prefixes are not rescanned on every answer chunk.
+
+History hashing batches the same tagged UTF-16 grammar into a fixed 4 KiB buffer. Literal legacy vectors, Unicode/surrogate chunk boundaries, copies and restored snapshots preserve existing keys without a cache migration. The history walk stays live while unaffected immutable message fragments are reused; only verified insertion spans rebuild. Reasoning before/after messages and between a tool result and a coalesced peer update remains outside cached lookups. No measured speed claim is made before the fixed paired evaluation.
 
 Optional cache persistence can be disabled while replay remains available in bounded memory. Sessionless tool turns use the existing canonical opener and exact tool-ID memory lookup; they do not emit opaque client carriers or create an unscoped positioned store. Sessionless prose without a verifiable scope or tool identity remains a cache miss. Old duplicate live/terminal records are reconciled before admission accounting. Ordinary tool-result text and image changes invalidate later reasoning; only the exact cleared-result marker can reuse a unique, branch-scoped proof of the original full result. Proofs contain hashes, consume no reasoning-entry slots, and share the existing byte limit. New proof records append only admitted deltas. Serialized journal frames and reserved ambiguity-tombstone space are charged to the unchanged byte budget; conflicts remain durable misses. Whole-history replacement is reserved for actual normalization or index migration. A corrupt cache remains removed until actual reasoning is available to persist. Previously cleared legacy hashes without a verifiable original prefix cannot be reconstructed; those lookups miss safely.
 

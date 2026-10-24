@@ -15,7 +15,7 @@ public object CodeModeGatewayProbe {
             "history.append-only" -> CodeModeGatewayProbeHistory(support).append()
             "history.restart" -> CodeModeGatewayProbeHistory(support).restart(phase)
             "history.replay-is-not-steering" -> CodeModeGatewayBridgeProbe(support).replay()
-            "history.real-steering" -> CodeModeGatewayProbeReplay(support).steering()
+            "history.real-steering" -> CodeModeGatewayBridgeSteering(support).run()
             "history.cleared-results" -> CodeModeGatewayBridgeProbe(support).cleared()
             else -> error("unsupported gateway probe $id")
         }

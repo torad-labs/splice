@@ -13,6 +13,7 @@ import splice.core.turn.RoundHandoffs
 import splice.core.turn.TurnOutcome
 import splice.core.turn.noRequestUsage
 import splice.core.util.JsonWire
+import splice.upstream.BuiltTurn
 import splice.upstream.RoundResult
 import splice.upstream.codemode.CodeModeCall
 import splice.upstream.codemode.CodeModeStep
@@ -62,6 +63,41 @@ internal class CodeModeGatewayBridgeProbe(private val fixture: CodeModeGatewayPr
         } finally { manager.onProviderStop() }
     }
 
+    suspend fun steering(kind: String): JsonObject {
+        try {
+            val callback = issue()
+            val request = when (kind) {
+                "newUser" -> requests.prepare(
+                    manager,
+                    callback,
+                    "accepted-client-result-${fixture.nonce}",
+                    "steer-${fixture.nonce}",
+                )
+                "editedOldResult" -> {
+                    resume(callback)
+                    requests.prepare(
+                        manager,
+                        callback,
+                        "edited-client-result-${fixture.nonce}",
+                        "continue-${fixture.nonce}",
+                    )
+                }
+                "rewind" -> requests.prepare(manager, prefix = CodeModeGatewayPrefix.REWOUND)
+                "compaction" -> requests.prepare(manager, prefix = CodeModeGatewayPrefix.COMPACTED)
+                else -> error("unknown steering fixture $kind")
+            }
+            val sent = postRequest(request)
+            return buildJsonObject {
+                put("callbackId", callback)
+                put("clientPreparedInput", request.requestBody.getValue("input"))
+                put("compaction", request.meta.compact)
+                put("postedInput", JsonArray(sent))
+                put("records", snapshots(manager))
+                put("accepted", accepted())
+            }
+        } finally { manager.onProviderStop() }
+    }
+
     private suspend fun issue(): String {
         val first = requests.prepare(manager)
         val sink = CodeModeGatewayBridgeSink()
@@ -81,6 +117,10 @@ internal class CodeModeGatewayBridgeProbe(private val fixture: CodeModeGatewayPr
         tail: String? = null,
     ): List<JsonObject> {
         val request = requests.prepare(bridge, callback, result, tail)
+        return postRequest(request)
+    }
+
+    private suspend fun postRequest(request: BuiltTurn): List<JsonObject> {
         var posted: String? = null
         checkNotNull(
             request.roundInterceptor,

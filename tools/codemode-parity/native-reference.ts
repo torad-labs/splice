@@ -1,7 +1,7 @@
 import { spawn, type ChildProcessWithoutNullStreams } from "node:child_process";
 
 export type HostFrame = Record<string, any>;
-export type TraceEvent = { at: number; direction: "sent" | "received"; frame: HostFrame };
+export type TraceEvent = { at: number; direction: "sent" | "received" | "harness"; frame: HostFrame };
 
 /** The reference is the real Codex host, not a JavaScript simulation of it. */
 export class NativeReference {
@@ -24,12 +24,17 @@ export class NativeReference {
   /** Fixture-owned fault injection; candidate runners replace this to kill only their pinned native child. */
   crashNativeHost: () => Promise<void> = async () => {
     if (!this.child.pid) throw new Error("native host has no process identity");
+    this.recordFault({ type: "harness/native-host-kill", pid: this.child.pid, signal: "SIGKILL" });
     this.child.kill("SIGKILL");
   };
+  recordFault(frame: HostFrame): void {
+    this.transcript.push({ at: performance.now() - this.startedAt, direction: "harness", frame });
+  }
 
   constructor(binary: string, args = ["--listen", "stdio"]) {
     this.child = spawn(binary, args, { stdio: "pipe" });
     this.child.stdout.on("data", (chunk: Buffer) => this.receive(chunk));
+    this.child.stdin.on("error", error => this.fail(new Error(`native host transport write failed: ${error.message}`)));
     this.child.stderr.on("data", (chunk: Buffer) => this.stderr.push(chunk.toString("utf8")));
     this.child.on("error", (error) => this.fail(error));
     this.child.on("exit", (code, signal) => {

@@ -12,6 +12,8 @@ import { runGatewayCases } from "./gateway-cases";
 import { runFormatterCases } from "./formatter-cases";
 import { runPackagingCase } from "./packaging-cases";
 import { runInteractiveCases } from "./interactive-cases";
+import { runAudioCases } from "./audio-cases";
+import { runInstalledCase } from "./installed-case";
 
 const directory = import.meta.dir;
 const repo = resolve(directory, "../..");
@@ -112,6 +114,7 @@ async function qualify(): Promise<void> {
       let failure: string | null = null, observedIdentity: any = null;
       if (side === "candidate") host.crashNativeHost = async () => {
         observedIdentity = await productionIdentity(host, candidateJar.sha256, candidateNativeHost.sha256);
+        host.recordFault({ type: "harness/native-host-kill", pid: observedIdentity.nativePid, executableSha256: candidateNativeHost.sha256, signal: "SIGKILL" });
         process.kill(observedIdentity.nativePid, "SIGKILL");
       };
       try {
@@ -132,6 +135,7 @@ async function qualify(): Promise<void> {
     console.log(`${item.state === "executed" ? "EXECUTED" : "UNQUALIFIED"} ${item.id}`);
   }
   await runFormatterCases(java, candidateJar.path, evidence, runId, cases);
+  await runAudioCases(java, candidateJar.path, evidence, runId, cases);
   await runGatewayCases(java, candidateJar.path, evidence, runId, cases);
   await runPackagingCase(java, candidateJar.path, candidateNativeHost.sha256, evidence, runId, cases);
   await runInteractiveCases(candidateJar.path, evidence, runId, cases);
@@ -157,11 +161,7 @@ async function qualify(): Promise<void> {
     item.state = item.findings.length ? "failed" : "executed";
     console.log(`${item.state === "executed" ? "EXECUTED" : "UNQUALIFIED"} ${item.id}`);
   }
-  if (options.has("--installed-pid") && options.has("--host-pid") && options.has("--jar-fd")) {
-    const pid = Number(options.get("--installed-pid")), hostPid = Number(options.get("--host-pid"));
-    const jarFd = required("--jar-fd");
-    receipt.installed = { pid, hostPid, jarFd, jarSha256: sha256(await readFile(jarFd)), hostExeSha256: sha256(await readFile(`/proc/${hostPid}/exe`)) };
-  }
+  await runInstalledCase(receipt, options, evidence);
   receipt.finishedAt = new Date().toISOString();
   receipt.qualified = true; receipt.seal = sealReceipt(receipt, key);
   const findings = [...contractProblems, ...structuralFindings(receipt, await currentExpected(receipt), key), ...await verifyFiles(receipt)];
@@ -186,10 +186,27 @@ async function readiness(): Promise<void> {
   if (findings.length) console.log(findings.join("\n"));
   process.exitCode = findings.length ? 1 : 0;
 }
+async function attestInstall(): Promise<void> {
+  const receipt: Receipt = await Bun.file(resolve(evidence, "receipt.json")).json();
+  const key = await localSealKey(keyPath, false);
+  const findings = [...contractProblems, ...structuralFindings(receipt, await currentExpected(receipt), key), ...await verifyFiles(receipt)];
+  const priorFailures = findings.filter(value => !value.startsWith("evidence.installed-identity:") &&
+    !value.startsWith("installed ") && value !== "runner did not qualify this candidate");
+  if (priorFailures.length) throw new Error(`Cannot finalize installation before every other required family passes: ${priorFailures.join("; ")}`);
+  await runInstalledCase(receipt, options, evidence);
+  receipt.finishedAt = new Date().toISOString(); receipt.qualified = true; receipt.seal = sealReceipt(receipt, key);
+  const remaining = [...structuralFindings(receipt, await currentExpected(receipt), key), ...await verifyFiles(receipt)];
+  receipt.qualified = remaining.length === 0; receipt.seal = sealReceipt(receipt, key);
+  await writeFile(resolve(evidence, "receipt.json"), JSON.stringify(receipt, null, 2) + "\n");
+  await writeProgress(receipt, remaining);
+  console.log(`${receipt.qualified ? "QUALIFIED" : "UNQUALIFIED"}: installed identity finalized for the unchanged executed candidate.`);
+  if (remaining.length) console.log(remaining.join("\n")); process.exitCode = remaining.length ? 1 : 0;
+}
 try {
   if (command === "qualify") await qualify();
   else if (command === "readiness") await readiness();
-  else throw new Error("usage: bun tools/codemode-parity [readiness|qualify] [--name VALUE ...]");
+  else if (command === "attest-install") await attestInstall();
+  else throw new Error("usage: bun tools/codemode-parity [readiness|qualify|attest-install] [--name VALUE ...]");
 } catch (error) {
   const finding = error instanceof Error ? error.message : String(error);
   await writeProgress(undefined, [finding]);

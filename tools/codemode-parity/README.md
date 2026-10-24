@@ -18,8 +18,10 @@ delivery. The host protocol returns 20,000 characters for `max_output_tokens: 20
 `formatter-cases.ts` separately executes the pinned upstream Rust truncation
 algorithms and policy methods, then compares their output with the candidate's
 production formatter. Typed-content persistence through the provider is another
-required dimension. Audio formatter fixtures currently cover the invalid-URL
-byte-count fallback; codec duration estimates need additional reference evidence.
+required dimension. `audio-cases.ts` compiles the untouched upstream audio,
+cache and string modules against Symphonia 0.6 and generates real WAV, MP3, M4A,
+Ogg and WebM samples with ffmpeg. It compares exact native token estimates at
+keep/drop boundaries, including fragmented MP4, chained Ogg and zero cost.
 
 Execute the production candidate adapter and native oracle together with:
 
@@ -52,3 +54,13 @@ Post-install qualification additionally requires `--installed-pid`, `--host-pid`
 and `--jar-fd /proc/PID/fd/N`. The installed jar path alone is insufficient.
 Readiness is deliberately separate from the build gate so installation does not
 depend on evidence that can only exist after installation.
+
+After the other 23 families pass, `attest-install` adds the fresh installed
+identity to that sealed run without repeating its execution. It refuses changed
+candidate, reference, harness, contract, stale or damaged artifacts, or any
+unresolved family other than installed identity:
+
+```sh
+bun tools/codemode-parity attest-install --evidence /absolute/artifacts \
+  --installed-pid PID --host-pid NATIVE_PID --jar-fd /proc/PID/fd/N
+```

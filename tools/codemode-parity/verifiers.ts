@@ -11,10 +11,11 @@ export const verifiers: Partial<Record<CaseId, string>> = Object.fromEntries([
 verifiers["evidence.failing-baseline"] = "codemode-parity/frozen-legacy-explicit-yield";
 verifiers["packaging.native-host"] = "codemode-parity/bundled-native-inventory-and-live-process";
 verifiers["runtime.output-content"] = "codemode-parity/native-host-rust-core-and-provider-media";
+verifiers["evidence.installed-identity"] = "codemode-parity/installed-daemon-open-jar-and-owned-native-exe";
 for (const id of ["runtime.item-boundary", "history.restart", "delivery.readable-reasoning", "delivery.interactive-cadence", "delivery.late-failure-recovery"] as const) {
   verifiers[id] = `codemode-parity/real-interactive-client/${id}`;
 }
-for (const id of ["history.append-only", "history.replay-is-not-steering", "history.cleared-results"] as const) {
+for (const id of ["history.append-only", "history.replay-is-not-steering", "history.cleared-results", "history.real-steering"] as const) {
   verifiers[id] = `codemode-parity/production-history/${id}`;
 }
 

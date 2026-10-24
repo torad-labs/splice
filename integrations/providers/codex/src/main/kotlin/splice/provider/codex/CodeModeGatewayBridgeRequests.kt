@@ -23,8 +23,10 @@ internal class CodeModeGatewayBridgeRequests(private val fixture: CodeModeGatewa
         id: String? = null,
         result: String = "",
         tail: String? = null,
+        prefix: CodeModeGatewayPrefix = CodeModeGatewayPrefix.ORIGINAL,
     ): BuiltTurn {
-        val messages = mutableListOf(fixture.user("start-${fixture.nonce}"), fixture.user("branch-${fixture.nonce}"))
+        val initial = initial(prefix)
+        val messages = initial.toMutableList()
         if (id != null) messages += callbacks(id, result)
         tail?.let { messages += fixture.user(it) }
         val body = AnthropicParse.parseAnthropicBody(
@@ -39,9 +41,9 @@ internal class CodeModeGatewayBridgeRequests(private val fixture: CodeModeGatewa
             ResponsesToolResultMedia(CodexQuirks().defaultQuirks()),
             codeModeOnly = CodeModeOnlyModels { listOf(model) },
         )
-        val built = built()
+        val built = built(prefix)
         val input = built.requestBody.getValue("input").jsonArray.map { it.jsonObject }.toMutableList()
-        input += messages.take(2)
+        input += initial
         id?.let { input += fixture.callback(it).first().jsonObject }
         builder.toolResults(body).forEach { value ->
             input += buildJsonObject {
@@ -80,17 +82,30 @@ internal class CodeModeGatewayBridgeRequests(private val fixture: CodeModeGatewa
         },
     )
 
-    private fun built(): BuiltTurn = BuiltTurn(
+    private fun built(prefix: CodeModeGatewayPrefix): BuiltTurn = BuiltTurn(
         fixture.json.parseToJsonElement(
             """{"input":[{"type":"additional_tools","role":"developer",""" +
                 """"tools":[{"type":"function","name":"Read"}]},""" +
                 """{"role":"developer","content":""}]}""",
         ).jsonObject,
         TurnMeta(
-            false,
+            prefix == CodeModeGatewayPrefix.COMPACTED,
             reasoning = TurnReasoning(ReasoningDisplay.OFF, "high", null, null),
             route = TurnRoute(true, model, model, 100),
             scope = TurnScope(conversationKey = fixture.key, sessionId = "session-${fixture.nonce}"),
         ),
     )
+
+    private fun initial(prefix: CodeModeGatewayPrefix): List<JsonObject> = when (prefix) {
+        CodeModeGatewayPrefix.ORIGINAL -> listOf(
+            fixture.user("start-${fixture.nonce}"),
+            fixture.user("branch-${fixture.nonce}"),
+        )
+        CodeModeGatewayPrefix.REWOUND -> listOf(fixture.user("start-${fixture.nonce}"))
+        CodeModeGatewayPrefix.COMPACTED -> listOf(
+            fixture.user("You have been tasked with summarizing conversations. Summary-${fixture.nonce}"),
+        )
+    }
 }
+
+internal enum class CodeModeGatewayPrefix { ORIGINAL, REWOUND, COMPACTED }

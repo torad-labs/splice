@@ -20,7 +20,6 @@ import java.nio.file.Path
 
 internal class CodeModeGatewayProbeSupport(val nonce: String, directory: Path) {
     val json = Json { encodeDefaults = true }
-    val codec = CodexCodeModeHistoryCodec(json)
     val location = CodeModeStateLocation(directory.resolve("records"), directory.resolve("legacy.json"))
     val logs = mutableListOf<String>()
     val log = LogSink { logs += it }

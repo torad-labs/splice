@@ -29,17 +29,20 @@ const drivers: Array<{ id: CaseId; phases: string[]; fullFamily: boolean; valida
     assert.equal(JSON.stringify(observed.postedInput).includes("Script terminated"), false);
     assert.equal(observed.records.length, 1); assert.equal(observed.records[0].phase, "COMPLETED");
   } },
-  { id: "history.real-steering", phases: ["single"], fullFamily: false, validate(values, nonce) {
+  { id: "history.real-steering", phases: ["single"], fullFamily: true, validate(values, nonce) {
     const observed = values[0]!.observed;
-    for (const variant of ["newUser", "editedOldResult", "unknownReasoning"]) assert.equal(observed[variant].classification, "STEERING", variant);
-    assert.deepEqual(observed.newUser.client.at(-1), user(`steer-${nonce}`));
-    assert.ok(observed.editedOldResult.client.some((item: any) => item.call_id === "old" && item.output === `edited-${nonce}`));
-    const branches = observed.historyBranches;
-    assert.deepEqual(branches.newUserModel, [...nextModel(nonce), user(`steer-${nonce}`)]);
-    for (const variant of ["edited", "rewind", "compacted"]) assert.deepEqual(branches[`${variant}Model`], branches[`${variant}Client`], `${variant} must create its intended history boundary`);
-    assert.deepEqual(branches.editedModel, [user(`edited-${nonce}`)]);
-    assert.deepEqual(branches.rewindModel, []);
-    assert.deepEqual(branches.compactedModel, [user(`compact-summary-${nonce}`)]);
+    assert.ok(observed.newUser.postedInput.some((item: any) => item.role === "user" && item.content === `steer-${nonce}`));
+    assert.ok(JSON.stringify(observed.newUser.records).includes("Script terminated"), "real new user steering must interrupt the pending source");
+    const edited = observed.editedOldResult;
+    assert.ok(edited.postedInput.some((item: any) => item.type === "function_call_output" && item.call_id === edited.callbackId && item.output === `edited-client-result-${nonce}`));
+    assert.equal(edited.postedInput.some((item: any) => item.call_id === `outer-${nonce}` || item.id === `rs-${nonce}`), false,
+      "edited accepted result must fork rather than recover another canonical script");
+    assert.ok(observed.rewind.postedInput.some((item: any) => item.role === "user" && item.content === `start-${nonce}`));
+    assert.equal(observed.rewind.postedInput.some((item: any) => item.role === "user" && item.content === `branch-${nonce}`), false);
+    assert.equal(observed.compaction.compaction, true, "actual prepared turn must carry the compaction boundary");
+    assert.ok(observed.compaction.postedInput.some((item: any) => item.role === "user" && item.content === `You have been tasked with summarizing conversations. Summary-${nonce}`));
+    for (const variant of ["rewind", "compaction"]) assert.equal(observed[variant].postedInput.some((item: any) =>
+      item.call_id === `outer-${nonce}` || item.id === `rs-${nonce}`), false, `${variant} retained native authority from the abandoned branch`);
   } },
   { id: "history.restart", phases: ["write", "read"], fullFamily: false, validate(values, nonce) {
     assert.notEqual(values[0]!.pid, values[1]!.pid, "restart fixture must execute in different JVMs");
@@ -103,12 +106,7 @@ export async function runGatewayCases(java: string, jar: string, evidence: strin
       }
       driver.validate(values, runId);
       for (const path of await stateArtifacts(stateDirectory)) item.artifacts.push(await artifact(path));
-      if (!driver.fullFamily) item.findings.push({
-        "history.restart": "Provider components survived a real JVM restart; daemon/client restart recovery remains unexecuted.",
-        "history.replay-is-not-steering": "Classifier accepted callback-only replay; captured splice-lead script resumption remains unexecuted.",
-        "history.real-steering": "History replacement boundaries ran; actual compaction/rewind/edited-result routing remains unexecuted.",
-        "history.cleared-results": "Supplied authorization classification ran; actual session witness and retained canonical chain remain unexecuted.",
-      }[driver.id as "history.restart"] ?? "Required integration dimensions remain unexecuted.");
+      if (!driver.fullFamily) item.findings.push("Provider components survived a real JVM restart; daemon/client restart recovery remains unexecuted.");
     } catch (error) { item.findings.push(error instanceof Error ? error.message : String(error)); }
     item.state = item.findings.length ? "failed" : "executed";
     console.log(`${item.state === "executed" ? "EXECUTED" : "UNQUALIFIED"} ${item.id}`);

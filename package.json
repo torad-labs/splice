@@ -14,6 +14,7 @@
     "test:hooks": "bun test tools/gate/test/hook.test.ts",
     "codemode:readiness": "bun tools/codemode-parity readiness",
     "codemode:qualify": "bun tools/codemode-parity qualify",
+    "codemode:attest-install": "bun tools/codemode-parity attest-install",
     "codemode:reference": "bun tools/codemode-parity/reference-suite.ts",
     "test:codemode-qualification": "bun test tools/codemode-parity/qualification.test.ts",
     "e2e:heads": "bun tools/e2e heads",

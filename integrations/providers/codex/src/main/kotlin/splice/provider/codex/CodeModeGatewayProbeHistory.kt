@@ -46,23 +46,6 @@ internal class CodeModeGatewayProbeHistory(private val fixture: CodeModeGatewayP
         }
     }
 
-    fun branches(): JsonObject {
-        seed()
-        val newUser = fixture.nextClient + fixture.user("steer-${fixture.nonce}")
-        val edited = listOf(fixture.user("edited-${fixture.nonce}"))
-        val compacted = listOf(fixture.user("compact-summary-${fixture.nonce}"))
-        return buildJsonObject {
-            put("newUserClient", JsonArray(newUser))
-            put("newUserModel", fixture.input(history.extend(fixture.context(newUser), emptyList())))
-            put("editedClient", JsonArray(edited))
-            put("editedModel", fixture.input(history.extend(fixture.context(edited), emptyList())))
-            put("rewindClient", JsonArray(emptyList()))
-            put("rewindModel", fixture.input(history.extend(fixture.context(emptyList()), emptyList())))
-            put("compactedClient", JsonArray(compacted))
-            put("compactedModel", fixture.input(history.extend(fixture.context(compacted), emptyList())))
-        }
-    }
-
     private fun seed() {
         val context = fixture.context(fixture.initial)
         history.sent(context, fixture.body(fixture.initial))

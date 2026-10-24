@@ -7,7 +7,7 @@ private const val OGG_GRANULE_OFFSET: Int = 6
 private const val OGG_WORD_BYTES: Int = 4
 private const val OGG_LONG_BYTES: Int = 8
 private const val OGG_VORBIS_RATE: Int = 12
-private const val OGG_OPUS_SKIP: Int = 10
+private const val OGG_OPUS_HEADER_BYTES: Int = 19
 private const val OGG_OPUS_RATE: Int = 48_000
 
 internal object NativeOggDuration {
@@ -22,7 +22,8 @@ internal object NativeOggDuration {
             offset = page.end
         }
         val selected = track ?: return null
-        return granule?.takeIf { it >= selected.skip }?.minus(selected.skip)?.toDouble()?.div(selected.rate)
+        // Symphonia's declared track duration retains codec delay; token estimates do not trim Opus preskip.
+        return granule?.takeIf { it >= 0 }?.toDouble()?.div(selected.rate)
     }
 
     private fun page(data: NativeAudioBytes, offset: Int): Page? {
@@ -45,13 +46,13 @@ internal object NativeOggDuration {
 
     private fun track(data: NativeAudioBytes, payload: Int, serial: Long): Track? = when {
         data.ascii(payload + 1, "vorbis") && data.has(payload, OGG_VORBIS_RATE + OGG_WORD_BYTES) -> {
-            data.little(payload + OGG_VORBIS_RATE, OGG_WORD_BYTES).takeIf { it > 0 }?.let { Track(serial, it, 0) }
+            data.little(payload + OGG_VORBIS_RATE, OGG_WORD_BYTES).takeIf { it > 0 }?.let { Track(serial, it) }
         }
-        data.ascii(payload, "OpusHead") && data.has(payload, OGG_OPUS_SKIP + 2) ->
-            Track(serial, OGG_OPUS_RATE.toLong(), data.little(payload + OGG_OPUS_SKIP, 2))
+        data.ascii(payload, "OpusHead") && data.has(payload, OGG_OPUS_HEADER_BYTES) ->
+            Track(serial, OGG_OPUS_RATE.toLong())
         else -> null
     }
 
-    private data class Track(val serial: Long, val rate: Long, val skip: Long)
+    private data class Track(val serial: Long, val rate: Long)
     private data class Page(val payload: Int, val end: Int, val serial: Long, val granule: Long)
 }

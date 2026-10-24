@@ -54,6 +54,11 @@ public class NativeCodeModeRuntime(
 
     @Volatile private var connection: NativeConnection? = null
 
+    override suspend fun openNativeSession(sessionKey: String) {
+        require(sessionKey.isNotBlank()) { "Native code-mode session key is required" }
+        beforeDispatch(sessionKey).lease.close()
+    }
+
     override suspend fun start(source: String, tools: Set<String>, descriptions: Map<String, String>): CodeModeCell =
         startSession("unaddressed-native-runtime", source, tools, descriptions)
 

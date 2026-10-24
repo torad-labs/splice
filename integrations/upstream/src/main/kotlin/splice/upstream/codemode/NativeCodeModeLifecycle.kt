@@ -13,6 +13,9 @@ public data class NativeCodeModeOptions(
 
 /** Optional richer start port; legacy runtimes retain their existing CodeModeRuntime contract. */
 public interface NativeCodeModeLifecycle : CodeModeRuntime {
+    /** Opens the real native session without evaluating a JavaScript module. */
+    public suspend fun openNativeSession(sessionKey: String): Unit = Unit
+
     public suspend fun startNativeSession(
         sessionKey: String,
         source: String,

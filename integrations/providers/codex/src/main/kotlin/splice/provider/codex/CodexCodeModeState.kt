@@ -60,7 +60,7 @@ internal data class CodeModeRecord(
     @Volatile var cellStartedAt: Long? = null
 
     /** The kept upstream post whose response started this script (CodeModeUpstreamLedger), so a script that made
-     *  no client call is sent after that post and nowhere else. Never persisted: the ledger is not either. */
+     *  no client call is sent after that post and nowhere else. Persisted with its authoritative ledger identity. */
     @Volatile var postedOn: Long? = null
 
     @Volatile var retainedBytes: Long? = null
@@ -131,7 +131,11 @@ internal data class CodeModeBaseline(
  *  held, and their [digest]. The script ran right after them, so a later history that starts with them still holds
  *  the history it ran on, and one that does not was cut or edited before it. */
 @Serializable
-internal data class CodeModeClientStart(val count: Int, val digest: String)
+internal data class CodeModeClientStart(
+    val count: Int,
+    val digest: String,
+    val acknowledgement: splice.provider.codex.history.CodeModeClientAcknowledgement? = null,
+)
 
 /** What the script is waiting on and how far it has run: its client calls still [pending], the [output] it has
  *  produced, the calls and rounds it has used, and when and under which request digest it last moved. */
@@ -143,7 +147,9 @@ internal data class CodeModeProgress(
     var rounds: Int = 0,
     var updatedAt: Long,
     var lastDigest: String,
-)
+) {
+    var nativeOutput: JsonElement? = null
+}
 
 /** The model's own items a record carries: the native [segments] placed in the history, and the [continuity]
  *  items with their native [replay] that the next turn repeats. */

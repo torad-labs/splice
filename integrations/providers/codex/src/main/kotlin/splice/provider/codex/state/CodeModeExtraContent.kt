@@ -34,8 +34,11 @@ internal class CodeModeExtraContent(
         record: CodeModeRecord,
         candidateMedia: Map<String, List<JsonElement>>,
         digests: InputItemDigests = InputItemDigests(),
+        clearedCallbacks: Set<String> = emptySet(),
     ): CodeModeExtra {
-        val (projected, boundary) = input?.let { onBaseline(it, record, digests) } ?: return CodeModeExtra.STEERING
+        val (projected, boundary) = input?.let {
+            onBaseline(it, record, digests, clearedCallbacks)
+        } ?: return CodeModeExtra.STEERING
         val owned = (record.results.keys + record.progress.pending.map(CodeModePending::clientId)).toSet()
         val logicalExtra = unownedIndexes(projected.logicalItems, record, owned, candidateMedia, boundary)
             .map(projected.logicalItems::get)
@@ -54,9 +57,10 @@ internal class CodeModeExtraContent(
         record: CodeModeRecord,
         candidateMedia: Map<String, List<JsonElement>>,
         extra: CodeModeExtra,
-        digests: InputItemDigests = InputItemDigests(),
+        proof: CodeModeExtraProof = CodeModeExtraProof(),
     ): String {
-        val baseline = input?.let { onBaseline(it, record, digests) }
+        val digests = proof.digests
+        val baseline = input?.let { onBaseline(it, record, digests, proof.clearedCallbacks) }
         val tail = baseline?.let { (projected, boundary) ->
             val owned = (record.results.keys + record.progress.pending.map(CodeModePending::clientId)).toSet()
             val items = unownedIndexes(projected.logicalItems, record, owned, candidateMedia, boundary).map {
@@ -88,8 +92,13 @@ internal class CodeModeExtraContent(
         input: JsonArray,
         record: CodeModeRecord,
         digests: InputItemDigests,
+        clearedCallbacks: Set<String>,
     ): Pair<ResponsesCodeModeInput, Int>? {
         val projected = codec.conversation(codec.projection.project(input)).body
+        val acknowledged = record.replayAnchors?.client?.acknowledgement
+        if (acknowledged != null) {
+            return acknowledged.boundary(projected, clearedCallbacks)?.let { projected to it }
+        }
         val boundary = codec.baselineBoundary(projected.logicalItems, record, digests)
         val validBaseline = codec.validFullPrefix(input, record) || boundary != null
         return if (validBaseline) projected to (boundary ?: record.origin.baseline.logicalCount) else null
@@ -221,7 +230,10 @@ internal class CodeModeExtraContent(
         val streamed = streamedContinuity(projected, record, boundary)
         return projected.replayItems.any { replay ->
             val slot = replay.logicalOffset to replay.items
-            val expected = slot in allowed || replay in streamed
+            val acknowledged = record.replayAnchors?.client?.acknowledgement
+            val historical = replay.logicalOffset <= boundary && acknowledged != null &&
+                replay.items.all(acknowledged::owns)
+            val expected = historical || slot in allowed || replay in streamed
             replay.logicalOffset >= boundary && !expected &&
                 replay !in delivered && replay.callbackId !in owned
         }
@@ -250,3 +262,8 @@ internal class CodeModeExtraContent(
         return copy.toSet().takeIf { copy.flatMap(ResponsesCodeModeReplay::items) == given }.orEmpty()
     }
 }
+
+internal data class CodeModeExtraProof(
+    val digests: InputItemDigests = InputItemDigests(),
+    val clearedCallbacks: Set<String> = emptySet(),
+)

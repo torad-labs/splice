@@ -61,6 +61,9 @@ internal data class CodeModeRecordSnapshot(
     /** Optional hashed session/conversation identity; older snapshots remain independent keys. */
     var conversationId: String? = null
     var nativeBaseId: String? = null
+    var postedOn: Long? = null
+    var nativeCellId: String? = null
+    var nativeOutput: JsonElement? = null
     var replayAnchors: CodeModeReplayAnchors? = null
     var sourceState: CodeModeSourceState? = null
 

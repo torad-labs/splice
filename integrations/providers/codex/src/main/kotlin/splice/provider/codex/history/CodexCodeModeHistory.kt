@@ -16,6 +16,7 @@ import splice.provider.codex.CodeModeRecord
 import splice.provider.codex.CodeModeRewrite
 import splice.provider.codex.CodexCodeModeHistoryCodec
 import splice.provider.codex.state.CodeModeExtraContent
+import splice.provider.codex.state.CodeModeExtraProof
 import splice.provider.codex.state.CodeModeHistoryIndex
 import splice.provider.codex.state.CodeModeMetadataValidator
 import splice.provider.codex.state.CodeModeNativeChain
@@ -45,14 +46,22 @@ internal class CodexCodeModeHistory(private val json: Json) {
         body: CodeModeBody,
         record: CodeModeRecord,
         candidateMedia: Map<String, List<JsonElement>> = emptyMap(),
-    ): CodeModeExtra = extras.of(body.request?.second, record, candidateMedia, body.digests)
+        clearedCallbacks: Set<String> = emptySet(),
+    ): CodeModeExtra = extras.of(body.request?.second, record, candidateMedia, body.digests, clearedCallbacks)
 
     fun describeExtraContent(
         body: CodeModeBody,
         record: CodeModeRecord,
         candidateMedia: Map<String, List<JsonElement>>,
         extra: CodeModeExtra,
-    ): String = extras.describe(body.request?.second, record, candidateMedia, extra, body.digests)
+        clearedCallbacks: Set<String> = emptySet(),
+    ): String = extras.describe(
+        body.request?.second,
+        record,
+        candidateMedia,
+        extra,
+        CodeModeExtraProof(body.digests, clearedCallbacks),
+    )
 
     /**
      * Rewrites every completed record it can still place, except an abandoned one (V4-342): its

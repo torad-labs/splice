@@ -1,75 +1,77 @@
-// NEW: per conversation, the exact histories code mode last sent GPT, which the next request only extends.
 package splice.provider.codex.history
 
+import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.JsonElement
 
-/**
- * What one upstream post was: the client's conversation it answered ([covered]), the conversation it sent
- * ([sent]), and the items it sent past [covered] that the client replays at the start of what it adds next
- * ([echoes]): the reasoning and preface of a script that made no client call. [id] tells the posts apart.
- */
+/** Exact model input and the client prefix it acknowledged. Echoes are delivery receipts, never model authority. */
+@Serializable
 internal data class CodeModeLedgerEntry(
     val covered: List<JsonElement>,
     val sent: List<JsonElement>,
     val echoes: List<JsonElement>,
     val id: Long = 0,
+    val outputRecorded: Boolean = false,
 )
 
-/**
- * Codex builds each request from the items it recorded (codex-rs core/src/session/turn.rs:1618), so what it
- * sent is always a prefix of what it sends next. This keeps the same for code mode, in memory, for the most
- * recently posted [capacity] conversations. Each keeps its last [depth] posts, newest first, so a side request
- * Claude Code sends on the same conversation (a compaction summary, a quick question) does not take the main
- * history's place. A conversation it no longer holds falls back to the client's history once, and is kept again
- * from that post.
- */
+/** The bounded map is a cache only. Eviction and daemon restart reload every durable branch, including side posts. */
 internal class CodeModeUpstreamLedger(
     private val capacity: Int = LEDGER_CONVERSATIONS,
-    private val depth: Int = LEDGER_POSTS,
+    private val storage: CodeModeHistoryStorage? = null,
 ) {
-    private var nextId = 1L
-    private val entries = object : LinkedHashMap<String, ArrayDeque<CodeModeLedgerEntry>>(
-        LEDGER_INITIAL,
-        LEDGER_LOAD,
-        true,
-    ) {
-        override fun removeEldestEntry(eldest: MutableMap.MutableEntry<String, ArrayDeque<CodeModeLedgerEntry>>?) =
-            size > capacity
+    private val entries = object : LinkedHashMap<String, CodeModeHistoryState>(LEDGER_INITIAL, LEDGER_LOAD, true) {
+        override fun removeEldestEntry(eldest: MutableMap.MutableEntry<String, CodeModeHistoryState>?): Boolean =
+            storage != null && size > capacity
     }
 
-    /** The conversation's kept posts, newest first. */
     @Synchronized
-    fun entries(key: String): List<CodeModeLedgerEntry> = entries[key]?.toList().orEmpty()
+    fun entries(key: String): List<CodeModeLedgerEntry> = state(key)?.posts.orEmpty()
 
-    /** The id of the conversation's newest kept post, the one a script started now answers. */
     @Synchronized
-    fun newest(key: String): Long? = entries[key]?.firstOrNull()?.id
+    fun newest(key: String): Long? = state(key)?.posts?.firstOrNull()?.id
 
-    /** Keeps [entry] as the newest post. A post that answered the same client history as the newest one (a
-     *  script's output sent in the request that started it) takes its place, so only the fullest one is kept. */
+    /** Every distinct branch remains addressable on disk. Reposting the same acknowledged prefix supersedes it. */
     @Synchronized
     fun record(key: String, entry: CodeModeLedgerEntry) {
-        val posts = entries.getOrPut(key) { ArrayDeque() }
-        if (posts.firstOrNull()?.covered == entry.covered) posts.removeFirst()
-        posts.addFirst(CodeModeLedgerEntry(entry.covered, entry.sent, entry.echoes, nextId++))
-        while (posts.size > depth) posts.removeLast()
+        val prior = state(key)
+        val id = prior?.nextId ?: 1L
+        val posts = prior?.posts.orEmpty().filterNot { it.covered == entry.covered }
+        val next = CodeModeHistoryState(key, listOf(entry.copy(id = id)) + posts, id + 1L)
+        publish(next)
     }
 
+    /** A response extends its exact input; encrypted reasoning and original native message items stay verbatim. */
+    @Synchronized
+    fun output(key: String, id: Long, output: List<JsonElement>, echoes: List<JsonElement>) {
+        val prior = state(key) ?: return
+        val posts = prior.posts.map { entry ->
+            if (entry.id != id || entry.outputRecorded) {
+                entry
+            } else {
+                entry.copy(
+                    sent = entry.sent + output,
+                    echoes = entry.echoes + echoes,
+                    outputRecorded = true,
+                )
+            }
+        }
+        if (posts != prior.posts) publish(prior.copy(posts = posts))
+    }
+
+    /** Drop hot references only. An exceptional request cannot erase already accepted durable model history. */
     @Synchronized
     fun forget(key: String) {
         entries.remove(key)
     }
+
+    private fun state(key: String): CodeModeHistoryState? = entries[key]
+        ?: storage?.read(key)?.also { entries[key] = it }
+
+    private fun publish(state: CodeModeHistoryState) {
+        storage?.write(state)
+        entries[state.key] = state
+    }
 }
 
-// why: one conversation per seat or subagent talking to GPT at once; a conversation past it falls back once.
 private const val LEDGER_CONVERSATIONS = 32
-
-// why: the main history plus the side requests Claude Code sends on the same conversation (a summary, a quick
-// question) between two of its turns.
-private const val LEDGER_POSTS = 4
-
-// why: the LinkedHashMap defaults, spelled out because its access-order constructor takes all three arguments.
 private const val LEDGER_INITIAL = 16
-
-// why: the LinkedHashMap default load factor, for the same reason.
 private const val LEDGER_LOAD = 0.75f

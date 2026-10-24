@@ -6,11 +6,13 @@ import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonObject
 import splice.core.turn.TurnOutcome
+import splice.core.util.LogSink
 import splice.provider.codex.CODE_MODE_FIELD_INPUT
 import splice.provider.codex.CodeModeBody
 import splice.provider.codex.CodeModeClientStart
 import splice.provider.codex.CodeModeRecord
 import splice.provider.codex.CodeModeRunContext
+import splice.provider.codex.CodeModeStateLocation
 import splice.provider.codex.CodexCodeModeHistoryCodec
 import splice.upstream.RoundBody
 import java.lang.ref.WeakReference
@@ -21,12 +23,18 @@ import java.lang.ref.WeakReference
  * items, in order, with each finished script's calls folded to its exec call and output: the call where its first
  * client call stood, the output where its last result stood, and whatever arrived between them after the output.
  * Nothing already sent is rewritten, so the prompt cache covers all of it. A history that extends no kept post (a
- * rewind, a compaction, an edit, a restart) is the client's whole history folded the same way, once; its post is
+ * rewind, a compaction or an edit) is the client's whole history folded the same way, once; its post is
  * kept from then on.
  */
-internal class CodeModeUpstreamHistory(private val json: Json) {
+internal class CodeModeUpstreamHistory(
+    private val json: Json,
+    location: CodeModeStateLocation? = null,
+    private val log: LogSink = LogSink { },
+    maxBytes: Long = HISTORY_MAX_BYTES,
+) {
     private val codec = CodexCodeModeHistoryCodec(json)
-    private val ledger = CodeModeUpstreamLedger()
+    private val ledger = CodeModeUpstreamLedger(storage = location?.let { CodeModeHistoryStorage(it, json, maxBytes) })
+    private val clientDelta = CodeModeClientDelta(codec)
     private val scripts = CodeModeScriptPlacements(codec)
 
     /** No post at all: what a conversation that extends none is folded from. */
@@ -66,7 +74,8 @@ internal class CodeModeUpstreamHistory(private val json: Json) {
         val (root, input) = request
         val preamble = input.subList(0, preambleCount(input))
         val conversation = input.subList(preamble.size, input.size)
-        val (entry, tail) = extended(context.key, conversation, records, changed)
+        val cleared = context.turn.rendering.verifiedCleared.values.flatten().toSet()
+        val (entry, tail) = extended(context.key, conversation, records, changed, cleared)
         val fresh = conversation.size > entry.covered.size
         val quiet = if (entry === nothing) {
             scripts.measured(records, preamble + conversation, conversation, client.digests)
@@ -125,9 +134,19 @@ internal class CodeModeUpstreamHistory(private val json: Json) {
     /** The newest kept post of a script started now: what [CodeModeRecord.postedOn] holds. */
     fun newest(key: String): Long? = ledger.newest(key)
 
-    /** A post upstream refused for good is not kept: the next request falls back to the client's history. */
+    /** Ordinary response items extend the prepared input verbatim. Exec responses are committed by their durable
+     * script record with its output, so a pending exec can never look like an already completed placement. */
     fun settled(context: CodeModeRunContext, outcome: TurnOutcome): TurnOutcome {
-        if (outcome is TurnOutcome.Failure && outcome.traits.permanent) ledger.forget(context.key)
+        val success = outcome as? TurnOutcome.Success ?: return outcome
+        if (success.handoffs.customCalls.isEmpty()) {
+            val output = success.handoffs.nativeOutput
+            val id = ledger.newest(context.key)
+            if (output != null && id != null) {
+                ledger.output(context.key, id, output, CodeModeOutputDelivery.items(output))
+            } else if (output == null) {
+                log("[code-mode] authoritative history legacy-output key=${context.key.take(HISTORY_LOG_KEY_CHARS)}")
+            }
+        }
         return outcome
     }
 
@@ -136,33 +155,32 @@ internal class CodeModeUpstreamHistory(private val json: Json) {
     /** The newest kept post [conversation] extends, and what the client added since. A post that sent one of the
      *  [changed] exec calls is not extended. An older post is extended only while no script started on a newer one,
      *  since that script was measured on the newer history. A conversation that extends none (a rewind, a
-     *  compaction, an edit, a restart) is the client's whole history, folded from nothing, once; its post is kept
+     *  compaction or an edit) is the client's whole history, folded from nothing, once; its post is kept
      *  from then on. */
     private fun extended(
         key: String,
         conversation: List<JsonElement>,
         records: List<CodeModeRecord>,
         changed: Set<String>,
+        cleared: Set<String>,
     ): Pair<CodeModeLedgerEntry, List<JsonElement>> {
         val posts = ledger.entries(key)
         posts.forEachIndexed { index, entry ->
             if (entry.sent.any { codec.callId(it) in changed }) return@forEachIndexed
-            val tail = newItems(entry, conversation) ?: return@forEachIndexed
+            val tail = clientDelta.after(entry, conversation, cleared) ?: return@forEachIndexed
             val newer = posts.subList(0, index).map(CodeModeLedgerEntry::id).toSet()
             return if (records.none { it.postedOn in newer }) entry to tail else nothing to conversation
         }
+        if (posts.isEmpty()) {
+            log("[code-mode] authoritative history seeded origin=legacy key=${key.take(HISTORY_LOG_KEY_CHARS)}")
+        } else {
+            log(
+                "[code-mode] authoritative history branch key=${key.take(
+                    HISTORY_LOG_KEY_CHARS,
+                )} priorPosts=${posts.size}",
+            )
+        }
         return nothing to conversation
-    }
-
-    /** What the client added since [entry]'s post, or null when its conversation does not extend that post's. A
-     *  non-empty addition starts with the post's echoes, which GPT was already sent and so are left out: the client
-     *  replays them, joining a preface with the prose GPT gave after it when they came in one message. */
-    private fun newItems(entry: CodeModeLedgerEntry, conversation: List<JsonElement>): List<JsonElement>? {
-        val covered = entry.covered.size
-        if (conversation.size < covered || conversation.subList(0, covered) != entry.covered) return null
-        val tail = conversation.subList(covered, conversation.size)
-        if (tail.isEmpty()) return tail
-        return scripts.echo(tail, 0, entry.echoes)?.let { scripts.after(tail, it) }
     }
 
     /** How many leading items of [input] are the lite preamble, which is environment and not history. */
@@ -175,3 +193,8 @@ internal class CodeModeUpstreamHistory(private val json: Json) {
             .forEach { record -> record.clientIds().forEach { put(it, record) } }
     }
 }
+
+// A byte refusal is observable and fails closed; cache eviction never discards model authority.
+private const val HISTORY_MAX_BYTES: Long = 256L * 1024 * 1024
+
+private const val HISTORY_LOG_KEY_CHARS = 8

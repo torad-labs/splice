@@ -18,7 +18,11 @@ internal class CodeModeClientPrefix(private val conversation: List<JsonElement>,
     private var fed = 0
 
     /** Where a script started now: after all of [conversation]. */
-    fun start(): CodeModeClientStart = CodeModeClientStart(conversation.size, digest(conversation.size))
+    fun start(): CodeModeClientStart = CodeModeClientStart(
+        conversation.size,
+        digest(conversation.size),
+        CodeModeClientAcknowledgements.capture(conversation),
+    )
 
     /** How many of [conversation]'s items the history [start] names is, or null when [conversation] does not start
      *  with it: the client cut or edited that history away. */

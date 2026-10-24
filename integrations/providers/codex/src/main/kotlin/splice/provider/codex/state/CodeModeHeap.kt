@@ -126,7 +126,8 @@ internal enum class CodeModeWeight {
         text(record.error.orEmpty()) +
         record.carry.segments.sumOf(::segment) + record.carry.continuity.sumOf(::json) +
         record.carry.replay.sumOf(::segment) + record.carry.nativeAfterExec.orEmpty().sumOf(::json) +
-        record.issued.sumOf(::issued) + anchors(record.replayAnchors)
+        record.issued.sumOf(::issued) + anchors(record.replayAnchors) +
+        (record.progress.nativeOutput?.let(::json) ?: 0L) + (record.nativeCellId?.let(::text) ?: 0L)
 
     fun snapshot(record: CodeModeRecordSnapshot): Long = RECORD_METADATA_BYTES +
         json(record.outer) + text(record.source) + record.pending.sumOf(::call) +
@@ -136,14 +137,26 @@ internal enum class CodeModeWeight {
         } + text(record.output.orEmpty()) + text(record.error.orEmpty()) +
         record.nativeSegments.sumOf(::segment) + record.continuity.sumOf(::json) +
         record.continuityReplay.sumOf(::segment) + record.nativeAfterExec.orEmpty().sumOf(::json) +
-        record.issued.sumOf(::issued) + anchors(record.replayAnchors)
+        record.issued.sumOf(::issued) + anchors(record.replayAnchors) +
+        (record.nativeOutput?.let(::json) ?: 0L) + (record.nativeCellId?.let(::text) ?: 0L)
 
     /** Placement maps escape with both live records and snapshots, after raw decoding trees close. */
     private fun anchors(value: CodeModeReplayAnchors?): Long = value?.let {
         SNAPSHOT_ENTRY_BYTES + anchor(it.baseline) +
             it.native.values.sumOf { placed -> SNAPSHOT_ENTRY_BYTES + anchor(placed) } +
             it.nativeFollowing.values.sumOf { placed -> SNAPSHOT_ENTRY_BYTES + anchor(placed) } +
-            (it.client?.let { start -> SNAPSHOT_ENTRY_BYTES + text(start.digest) } ?: 0L)
+            (
+                it.client?.let { start ->
+                    SNAPSHOT_ENTRY_BYTES + text(start.digest) + (
+                        start.acknowledgement?.let { acknowledgement ->
+                            acknowledgement.items.sumOf { item ->
+                                SNAPSHOT_ENTRY_BYTES + text(item.digest) + (item.callbackId?.let(::text) ?: 0L)
+                            } +
+                                acknowledgement.native.sumOf(::text)
+                        } ?: 0L
+                        )
+                } ?: 0L
+                )
     } ?: 0L
 
     private fun anchor(value: CodeModeHistoryAnchor): Long =

@@ -14,8 +14,13 @@ internal object CodeModeJournalEncoding {
         left == right && left?.completionError == right?.completionError &&
             left?.issued == right?.issued && left?.sessionId == right?.sessionId &&
             left?.conversationId == right?.conversationId &&
-            left?.nativeBaseId == right?.nativeBaseId && left?.replayAnchors == right?.replayAnchors &&
-            left?.sourceState == right?.sourceState && left?.nativeAfterExec == right?.nativeAfterExec
+            left?.nativeBaseId == right?.nativeBaseId && left?.postedOn == right?.postedOn &&
+            left?.replayAnchors == right?.replayAnchors &&
+            sourceSame(left, right)
+
+    private fun sourceSame(left: CodeModeRecordSnapshot?, right: CodeModeRecordSnapshot?): Boolean =
+        left?.sourceState == right?.sourceState && left?.nativeAfterExec == right?.nativeAfterExec &&
+            left?.nativeCellId == right?.nativeCellId && left?.nativeOutput == right?.nativeOutput
 
     fun unchanged(record: CodeModeRecordSnapshot, prior: CodeModeRecordSnapshot?): Boolean =
         same(record, prior) && prior?.encodedFieldBytes != null

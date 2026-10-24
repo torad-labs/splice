@@ -76,6 +76,9 @@ internal object CodeModeNativeChain {
                 it.completionError = state.completionError
                 it.issued = state.issued
                 it.sessionId = state.sessionId
+                it.postedOn = state.postedOn
+                it.nativeCellId = state.nativeCellId
+                it.nativeOutput = state.nativeOutput
                 it.conversationId = state.conversationId
                 it.replayAnchors = state.replayAnchors
                 it.sourceState = state.sourceState

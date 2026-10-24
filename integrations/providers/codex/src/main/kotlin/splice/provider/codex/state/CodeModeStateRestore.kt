@@ -97,7 +97,11 @@ internal object CodeModeNativeCopies {
         it.sessionId = record.sessionId
         it.conversationId = record.conversationId
         it.nativeBaseId = record.nativeBaseId
+        it.postedOn = record.postedOn
+        it.nativeCellId = record.nativeCellId
+        it.nativeOutput = record.nativeOutput
         it.replayAnchors = record.replayAnchors
         it.sourceState = record.sourceState
+        it.nativeAfterExec = record.nativeAfterExec
     }
 }

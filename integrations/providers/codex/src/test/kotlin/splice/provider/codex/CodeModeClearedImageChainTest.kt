@@ -112,7 +112,7 @@ class CodeModeClearedImageChainTest : CodeModeBridgeTestSupport() {
             put("messages", JsonArray(messages))
         }
         val body = AnthropicParse.parseAnthropicBody(raw.toString())
-        val wire = buildResponsesTestRequest(CodexQuirks.defaultQuirks(), body, "gpt-6-astra")
+        val wire = buildResponsesTestRequest(CodexQuirks().defaultQuirks(), body, "gpt-6-astra")
         val initial = built("gpt-6-astra", lite = true)
         return CodexCodeModeTurnBuilder(manager, media(), codeModeOnly = backendCodeModeOnly).prepare(
             body,

@@ -8,6 +8,7 @@ package splice.dialect.responses.reasoning
 import kotlinx.serialization.json.JsonArrayBuilder
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.add
+import splice.core.reasoning.ReasoningReplay
 import splice.core.util.JsonScalars
 import splice.core.wire.RedactedThinkingBlock
 import splice.dialect.responses.request.BuildOptions
@@ -19,8 +20,10 @@ internal class ResponsesReasoningInject {
         block: RedactedThinkingBlock,
         opts: BuildOptions,
     ) {
-        if (opts.handoff.replay.v) {
-            opts.handoff.decode(block.data)?.let { addReasoningOnce(sink, it, opts) }
+        if (!opts.handoff.replay.v) return
+        // A block holds the run of reasoning GPT gave in a row; each item goes back in its order.
+        for (envelope in ReasoningReplay.splitReasoningEnvelopes(block.data)) {
+            opts.handoff.decode(envelope)?.let { addReasoningOnce(sink, it, opts) }
         }
     }
 

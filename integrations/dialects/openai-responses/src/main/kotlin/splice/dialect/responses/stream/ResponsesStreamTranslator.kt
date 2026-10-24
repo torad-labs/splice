@@ -169,9 +169,9 @@ internal class ResponsesStreamTranslator(
 
         // A parsed terminal owns real usage. Late reader cancellation cannot interrupt its cleanup or accounting.
         return if (!terminalSeen(state)) {
-            finishRound(state, sink)
+            finishRound(state, sink, replay)
         } else {
-            withContext(NonCancellable) { finishRound(state, sink) }
+            withContext(NonCancellable) { finishRound(state, sink, replay) }
         }
     }
 
@@ -209,10 +209,16 @@ internal class ResponsesStreamTranslator(
         }
     }
 
-    private suspend fun finishRound(state: ResponsesTurnState, sink: WireSink): TurnOutcome {
+    private suspend fun finishRound(
+        state: ResponsesTurnState,
+        sink: WireSink,
+        replay: ResponsesReasoningReplay,
+    ): TurnOutcome {
         latchSweptToolBlocks(state)
         ResponsesTerminalBackfill().harvestFallback(state)
         sink.closeAll()
+        // The reasoning GPT ended the round on: nothing came after it to show it ahead of.
+        replay.flush(sink)
         ResponsesSchemaOutput(outputToolName).emit(state, sink)
         val outcome = billedOutcome(state)
         state.ending?.let { log("upstream round ended on $it") }

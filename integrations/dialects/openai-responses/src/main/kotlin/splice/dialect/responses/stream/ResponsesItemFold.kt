@@ -28,6 +28,8 @@ internal class ResponsesItemFold(
 
     suspend fun onItemAdded(evt: JsonObject, sink: WireSink) {
         val item = evt["item"] as? JsonObject ?: return
+        // The reasoning GPT gave before this item reaches Claude Code as one block, ahead of it.
+        replay.before(item, sink)
         state.streamedItemTypes.add(JsonScalars.strOrEmpty(item["type"]).ifEmpty { "?" })
         val oi = frames.intOr(evt[OUTPUT_INDEX]) ?: frames.intOr(item["index"]) ?: state.blocks.size
         execProgress.added(item, oi, sink)
@@ -59,7 +61,7 @@ internal class ResponsesItemFold(
 
     // Split into onItemDone + 2 collaborator operations (detekt 2026-07-24: CyclomaticComplexMethod
     // 11 -> the class already sits at TooManyFunctions' ceiling, so the extraction cannot be a new
-    // member — see closeOpenBlocks / ResponsesReasoningReplay.emitReplayedReasoning).
+    // member — see closeOpenBlocks / ResponsesReasoningReplay.collect).
     suspend fun onItemDone(evt: JsonObject, sink: WireSink) {
         val item = evt["item"] as? JsonObject
         // codex parity: OutputItemDone takes the active item — a summary done-event arriving
@@ -88,7 +90,7 @@ internal class ResponsesItemFold(
         if (item != null && JsonScalars.strOrEmpty(item["type"]) == "message") state.messageClosed = true
         closeOpenBlocks(oi, sink)
         if (item == null) return
-        replay.emitReplayedReasoning(item, sink)
+        replay.collect(item)
     }
 
     /** DR-77: a backend may close a function_call via output_item.done ALONE — no arguments.delta,
@@ -158,7 +160,11 @@ internal class ResponsesItemFold(
         if (mistargeted) return
         state.textBuf.append(delta)
         if (outputToolName != null) return // Validated schema JSON is emitted as tool input at completion, not prose.
-        val b = existing ?: BlockState(sink.openText(), sawDelta = false).also { state.blocks[key] = it }
+        // A backend that sends no output_item.added for its message still shows the reasoning before the text.
+        val b = existing ?: run {
+            replay.flush(sink)
+            BlockState(sink.openText(), sawDelta = false).also { state.blocks[key] = it }
+        }
         state.emittedText = true
         sink.textDelta(b.index, delta)
     }

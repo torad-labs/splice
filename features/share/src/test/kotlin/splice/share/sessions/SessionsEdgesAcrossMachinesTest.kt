@@ -85,8 +85,15 @@ internal class SessionsEdgesAcrossMachinesTest : TwoMachinesTest() {
 
             assertEquals(200, answered.getOrNull(), "its description answered: ${answered.exceptionOrNull()}")
         } finally {
-            // The slow disk answers: opened both ways, the pipe never waits for a reader, and its close ends each read.
-            RandomAccessFile(slow.toFile(), "rw").use { it.write("{}".toByteArray()) }
+            // The slow disk answers until every look has read past it, however late a look reached it: opened both
+            // ways, the pipe never waits for a reader, and each close ends the reads that were waiting on it.
+            runBlocking {
+                val until = System.currentTimeMillis() + SETTLE_MS
+                while (looks.any { !it.isDone } && System.currentTimeMillis() < until) {
+                    RandomAccessFile(slow.toFile(), "rw").use { it.write("{}".toByteArray()) }
+                    delay(POLL_MS)
+                }
+            }
             Files.deleteIfExists(slow)
             looks.forEach { look -> look.handle { _, _ -> }.get(SETTLE_MS, TimeUnit.MILLISECONDS) }
         }

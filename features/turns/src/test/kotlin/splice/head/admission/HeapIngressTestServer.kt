@@ -10,8 +10,8 @@ import splice.http.ingress.HeapIngress
 import java.util.concurrent.CompletableFuture
 
 /** The staged close's grace, stretched past the wait below so only the client's FIN can win the race. */
-internal const val GRACE_FAR_MS = 60_000L
-internal const val CLOSE_WAIT_SECONDS = 15L
+internal const val HEAP_INGRESS_TEST_GRACE_MS = 60_000L
+internal const val HEAP_INGRESS_TEST_CLOSE_WAIT_SECONDS = 15L
 
 internal class HeapIngressTestServer {
     operator fun invoke(

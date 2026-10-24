@@ -24,7 +24,8 @@ class HeapIngressCloseOrderTest {
         val heap = HeapBudget(2 * 1024 * 1024, 2 * 1024 * 1024)
         val channel = CompletableFuture<Channel>()
         val finishRoute = CompletableDeferred<Unit>()
-        val ingress = HeapIngress(heap, { 128 * 1024 }, AdmissionErrorBody, shutdownGraceMs = GRACE_FAR_MS)
+        val ingress =
+            HeapIngress(heap, { 128 * 1024 }, AdmissionErrorBody, shutdownGraceMs = HEAP_INGRESS_TEST_GRACE_MS)
         val server = testServer(ingress, channel) {
             routing {
                 post("/") {
@@ -55,7 +56,7 @@ class HeapIngressCloseOrderTest {
                     "the complete refusal must half-close output while awaiting the client's FIN",
                 )
                 socket.shutdownOutput()
-                assertTrue(accepted.closeFuture().await(CLOSE_WAIT_SECONDS, TimeUnit.SECONDS))
+                assertTrue(accepted.closeFuture().await(HEAP_INGRESS_TEST_CLOSE_WAIT_SECONDS, TimeUnit.SECONDS))
             }
         } finally {
             finishRoute.complete(Unit)

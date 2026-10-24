@@ -378,7 +378,7 @@ class HeapIngressTest {
     fun `a refused connection closes when the client half-closes, not at the grace deadline`() = runBlocking {
         val heap = HeapBudget(1024 * 1024, 128 * 1024)
         val channel = CompletableFuture<Channel>()
-        val ingress = HeapIngress(heap, { 32 * 1024 }, AdmissionErrorBody, shutdownGraceMs = GRACE_FAR_MS)
+        val ingress = HeapIngress(heap, { 32 * 1024 }, AdmissionErrorBody, shutdownGraceMs = HEAP_INGRESS_TEST_GRACE_MS)
         val server = testServer(ingress, channel) {
             routing { post("/") { error("a cap-backed refusal must not read chunks") } }
         }
@@ -397,7 +397,7 @@ class HeapIngressTest {
                 assertTrue(accepted.isOpen, "the server holds its input open until the client half-closes")
                 socket.shutdownOutput()
                 // The grace timer is stretched past the wait, so only the client's FIN can close the connection in time.
-                val closed = accepted.closeFuture().await(CLOSE_WAIT_SECONDS, TimeUnit.SECONDS)
+                val closed = accepted.closeFuture().await(HEAP_INGRESS_TEST_CLOSE_WAIT_SECONDS, TimeUnit.SECONDS)
                 assertTrue(closed, "the client's FIN must close the connection, not the grace timer")
             }
         } finally {

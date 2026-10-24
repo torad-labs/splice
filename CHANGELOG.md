@@ -159,6 +159,13 @@ origin.
   the header names that plan. An Anthropic Console API-key login is billed through that API.
 
 ### Added
+- **Use one machine's heads from another.** `splice share on` offers this machine's commands to your other machines
+  on its LAN and prints each one's address. On another machine, `splice remote add <address>` links the command, and
+  running it starts Claude Code pointed at the first machine, as Claude Code is pointed at Vertex or Bedrock: every
+  turn runs on that machine's logins, and the second machine keeps the address and nothing else, no credential and no
+  copy of the models. `?auth=<login>` on the address picks the login, `?models=<id>,<id>` the models shown. A
+  machine that can't be reached is said before Claude Code starts, never as "overloaded". Sharing is off until turned
+  on, answers its own LAN only, and is plain HTTP with no token; see `docs/specs/lan-share.md`.
 - **A wrapped `claude` never depends on splice being up.** When the launcher cannot get a launch for plain `claude`
   (no daemon, a failed handshake, no recipe), it runs Claude Code directly on your own login and says so once.
   Named heads still stop with the reason, since they have no direct path.

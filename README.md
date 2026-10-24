@@ -313,6 +313,29 @@ Transcripts are shared the same way: `projects` is in the default `share` list, 
 
 A team is created with `PUT /api/teams` on the control plane. Give it a repo, a goal and role slots, each with a role, a head, its own instructions and a session. On its next turn through splice, a session bound to an active team gets its role, the team goal, the slot's instructions and where to reach the lead. A slot marked to join by rule (`bind_by_rule`) takes the next session started on its head inside the team's repo while the slot has no running session, so a member joins without being bound by hand. The teams API reports each slot's role, head, model, account, instructions, bound session and earlier sessions, plus the team's hand-offs and sampled activity for a day. The economics API, `GET /api/teams/{id}/economics`, aggregates turns, tokens and estimated dollars at API rates per slot, and each slot's turns and tokens in the last 5 hours and 7 days on each plan account it used. A plain `claude` session can hold a slot, but its own messages don't pass through splice, so the teams API shows only what it receives.
 
+## Use one machine's heads from another
+
+On the machine that holds the logins, turn sharing on:
+
+```bash
+splice share on        # opens port 3097 to this machine's LAN and prints each command's address
+splice share status    # prints them again
+splice share off
+```
+
+On another of your machines, add a command by the address it printed, then run it as you would there:
+
+```bash
+splice remote add http://torad-server.lan:3097/claudex
+claudex
+```
+
+That `claudex` is Claude Code pointed at the first machine, the way Claude Code is pointed at Vertex or Bedrock. The second machine keeps the address as one line in its `splice.toml` (`[remote.claudex]`) and nothing else: no login, key or token, and no copy of the models. Every turn runs on the first machine's login, `/model` lists that machine's models, the statusline is that machine's, and `/login` says where the logins live.
+
+Two query params on the address choose what the second machine gets, and the first machine applies them. `?auth=work` runs its sessions on the login named `work`, as a Pin on the Accounts page does, and `?models=gpt-5.6-sol,gpt-5.6-mini` shows only those models. An address with no command (`http://torad-server.lan:3097`) adds every command the machine offers, and `--as <command>` gives an address a name of its own, so one command can run on two logins as `claudex` and `claudex-work`. `splice remote` lists them with whether each machine answers now, and `splice remote remove <command>` takes one out. A login or a model the machine lacks is refused when the address is added and when the command starts, and a machine that can't be reached is said before Claude Code starts.
+
+The first machine answers machines on its own LAN only: private and link-local addresses, and an IPv6 address on one of its own /64s, never Tailscale's 100.64/10. A request must name the machine in its Host. There is no join, token or certificate, so any device on that LAN can run its heads, and prompts and replies cross the LAN unencrypted. Turn sharing on only on a network you trust.
+
 ## Troubleshooting
 
 `splice doctor` checks prerequisites, install integrity, config, daemon, and auth, then prints

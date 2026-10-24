@@ -199,11 +199,11 @@ internal object ShareErrors {
 
 /** What `GET /` answers: this machine and the commands it offers. */
 @Serializable
-internal data class ShareInfo(val machine: String, val commands: List<ShareOffer>)
+public data class ShareInfo(val machine: String, val commands: List<ShareOffer>)
 
 /** One offered command: what an address names it by, its head, whether it runs now, its models and its logins. */
 @Serializable
-internal data class ShareOffer(
+public data class ShareOffer(
     val command: String,
     val head: String,
     val running: Boolean,

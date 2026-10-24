@@ -19,10 +19,10 @@ import splice.launch.RemoteCommands
 import splice.share.RemoteLaunches
 import splice.share.RemoteTrees
 import splice.share.ShareListener
+import splice.share.ShareMachine
 import splice.share.SharedHead
 import splice.share.SharedHeads
 import splice.upstream.codemode.ProcessDispatchers
-import java.net.InetAddress
 
 internal class DaemonShare(
     private val topology: Topology,
@@ -40,7 +40,7 @@ internal class DaemonShare(
     /** Opens the listener when `[share]` turns it on, offering [heads] and [controlPort]'s statusline. */
     fun open(heads: Map<String, ManagedHead>, controlPort: Int) {
         if (!topology.share.enabled) return
-        val offered = ManagedSharedHeads(heads, topology, config, machineName())
+        val offered = ManagedSharedHeads(heads, topology, config, ShareMachine(log).name())
         val opened = ShareListener(topology.share, offered, turnKey, controlPort, ProcessDispatchers().io(), log)
         Cancellables.runCatchingBestEffort { opened.start() }
             .onSuccess { listener = opened }
@@ -54,13 +54,6 @@ internal class DaemonShare(
         listener?.stop()
         listener = null
     }
-
-    /** This machine's name as the OS gives it, which another machine's address names and its Host carries. */
-    private fun machineName(): String = Cancellables.runCatchingCancellable { InetAddress.getLocalHost().hostName }
-        .getOrElse { failure ->
-            log("[share] this machine's name could not be read (${SafeFailureText.render(failure)})\n")
-            LOCALHOST
-        }
 }
 
 /** The heads this machine offers: every head with a launch that holds its own credentials. A head that forwards the
@@ -99,6 +92,3 @@ internal class ManagedSharedHeads(
         override fun requestReadTimeoutMs(): Long = config.getConfig(key).requestReadTimeoutMs
     }
 }
-
-// What this machine is called when the OS can't say: an address naming it is still answered by IP.
-private const val LOCALHOST = "localhost"

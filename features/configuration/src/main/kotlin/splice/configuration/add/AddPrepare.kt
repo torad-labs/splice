@@ -277,16 +277,19 @@ internal class AddPrepare(
  *  remaining candidate binds on the same IPv4 loopback address the head will use. */
 private class AddPortChoice(private val bindable: HeadPortBindable, private val lastHeadPort: Int) {
     fun floor(current: Topology): Int {
-        val occupied = current.heads.values.map { it.port } + listOfNotNull(current.daemon.controlPort)
+        val occupied = current.heads.values.map { it.port } + daemonPorts(current)
         return maxOf(occupied.maxOrNull() ?: 0, FIRST_HEAD_PORT - 1) + 1
     }
 
     fun choose(current: Topology, candidateUrl: String?, floor: Int): Int? {
-        val taken = current.heads.values.map { it.port }.toSet() +
-            listOfNotNull(current.daemon.controlPort) +
+        val taken = current.heads.values.map { it.port }.toSet() + daemonPorts(current) +
             (current.providers.values.mapNotNull { localPort(it.baseUrl) } + listOfNotNull(localPort(candidateUrl)))
         return (floor..lastHeadPort).firstOrNull { port -> port !in taken && bindable.on(port) }
     }
+
+    /** The daemon's own listeners: its control plane, and LAN share's port while sharing is on. */
+    private fun daemonPorts(current: Topology): List<Int> =
+        listOfNotNull(current.daemon.controlPort, current.share.port.takeIf { current.share.enabled })
 
     private fun localPort(baseUrl: String?): Int? {
         val uri = baseUrl?.let(::parsedUri) ?: return null

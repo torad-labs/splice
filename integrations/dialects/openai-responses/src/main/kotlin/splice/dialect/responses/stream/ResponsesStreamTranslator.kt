@@ -45,7 +45,6 @@ import splice.dialect.responses.reasoning.ResponsesReasoningFold
 import splice.dialect.responses.reasoning.ResponsesReasoningReplay
 import splice.upstream.StreamTranslator
 import splice.upstream.ToolNameShortener
-import splice.upstream.sse.CustomToolSource
 import splice.upstream.sse.WireSink
 import splice.upstream.transport.BufferCapacity
 import java.io.IOException
@@ -106,6 +105,7 @@ internal class ResponsesStreamTranslator(
         state: ResponsesTurnState,
     ): TurnOutcome {
         val reasoningFold = ResponsesReasoningFold(ctx, state, summaryParts)
+        val orderedSink = reasoningFold.orderedSink(sink)
         val replay = ResponsesReasoningReplay(ctx, state, names)
         val itemFold = ResponsesItemFold(
             state,
@@ -121,13 +121,14 @@ internal class ResponsesStreamTranslator(
         try {
             upstream
                 .takeWhile {
-                    // NF-06: reasoning envelopes and function arguments accumulate outside the
+                    // NF-06: reasoning envelopes, held prefixes and function arguments accumulate outside the
                     // rendered text buffers. Saturate their sum before the Int-shaped shared guard;
                     // block count separately bounds an upstream that opens indexes without closing.
                     val envelopeChars = state.reasoningEnvelopes.sumOf { it.length.toLong() }
                     val pendingArgsChars = minOf(
                         Int.MAX_VALUE.toLong(),
-                        envelopeChars + state.bufferedToolArgsChars + (state.nativePrefix?.retainedChars ?: 0L),
+                        envelopeChars + state.bufferedToolArgsChars + (state.nativePrefix?.retainedChars ?: 0L) +
+                            reasoningFold.pendingChars,
                     ).toInt()
                     val withinCapacity = !BufferCapacity.over(
                         state.textBuf.length,
@@ -139,7 +140,7 @@ internal class ResponsesStreamTranslator(
                     withinCapacity
                 }
                 .firstOrNull { evt ->
-                    reducer.onEvent(evt, sink)
+                    reducer.onEvent(evt, orderedSink)
                     // Protocol completion releases callbacks and usage without awaiting transport EOF.
                     state.finalResponse != null
                 }
@@ -168,13 +169,10 @@ internal class ResponsesStreamTranslator(
             if (!hasRecoverableProgress(state)) throw ignored
             unexpected = ignored
         } finally {
-            // Forget the exec items even when the upstream omits item-done or the turn aborts.
-            withContext(NonCancellable) {
-                itemFold.execProgress.closeAll()
-                if (terminalSeen(state)) sink.customToolSource(CustomToolSource.Terminal)
-            }
+            reasoningFold.leadingText.closeSourceProgress(itemFold.execProgress, terminalSeen(state), sink)
         }
 
+        reasoningFold.finishLeadingText(sink)
         // A parsed terminal owns real usage. Late reader cancellation cannot interrupt its cleanup or accounting.
         return finishPreservingTerminal(state, sink, replay)
     }

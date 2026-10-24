@@ -4,9 +4,7 @@
 // mirror-duplication invariant this file makes structurally unreachable rather than merely avoided).
 package splice.dialect.responses.reasoning
 
-import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonObject
-import kotlinx.serialization.json.JsonPrimitive
 import splice.core.turn.SharedSummaryParts
 import splice.core.util.JsonScalars
 import splice.dialect.responses.ResponsesTurnState
@@ -18,7 +16,6 @@ import splice.dialect.responses.stream.ResponsesFrameParse
 import splice.dialect.responses.stream.ResponsesHarvest
 import splice.dialect.responses.stream.SummaryDedup
 import splice.upstream.sse.WireSink
-import splice.upstream.transport.BufferCapacity
 
 private const val PART_SEPARATOR = "\n\n"
 
@@ -45,7 +42,12 @@ internal class ResponsesReasoningFold(
     // Live summary delivery (every mode but cutoff): a header-only part is a status line, rendered
     // once per round per distinct text (V4-450).
     private val statusHeaders = SummaryStatusHeaders()
-    private val leadingText = HashMap<Int, StringBuilder>()
+    val leadingText = ResponsesLeadingReasoning(
+        ReasoningLiteralWriter { oi, text, sink -> append(oi, text, startsPart = false, sink) },
+    )
+    val pendingChars: Long get() = leadingText.pendingChars
+
+    fun orderedSink(sink: WireSink): WireSink = leadingText.orderedSink(sink)
 
     // sequential_cutoff mode (codex-rs parity, ported verbatim from session/turn.rs 2026-08-26):
     // the backend streams MULTIPLE reasoning items CONCURRENTLY, and each item's summary stream
@@ -116,17 +118,16 @@ internal class ResponsesReasoningFold(
         val text = if (state.blocks[key]?.sawDelta == true) {
             release.text
         } else {
-            val held = leadingText.getOrPut(oi) { StringBuilder() }
-            require(held.length.toLong() + release.text.length <= BufferCapacity.MAX_BUFFERED_CHARS) {
-                "reasoning prefix exceeds buffer capacity"
-            }
-            held.append(release.text)
-            if (!release.canRender(held.toString())) return
-            leadingText.remove(oi)
-            held.toString()
+            leadingText.hold(oi, release) ?: return
         }
+        // Concurrent reasoning items must not move an earlier held literal behind readable text.
+        leadingText.settle(sink, discardEmpty = false)
+        append(oi, text, release.startsPart, sink)
+    }
+
+    private suspend fun append(oi: Int, text: String, startsPart: Boolean, sink: WireSink) {
         val b = ensureThinkingBlock(oi, sink)
-        if (release.startsPart && b.sawDelta) {
+        if (startsPart && b.sawDelta) {
             state.thinkingBuf.append(PART_SEPARATOR)
             sink.thinkingDelta(b.index, PART_SEPARATOR)
         }
@@ -189,21 +190,13 @@ internal class ResponsesReasoningFold(
     /** Raw deltas may end on a literal '<'. A completed raw snapshot is authoritative when present;
      * otherwise settle the held prefix itself. Removing it first prevents carry-over into the next item. */
     private suspend fun finishLeadingText(item: JsonObject, oi: Int, sink: WireSink) {
-        val held = leadingText.remove(oi)?.toString() ?: return
-        val text = if (hasRawSnapshot(item)) harvest.reasoningReadableText(item) else held
+        val text = leadingText.completed(item, oi) ?: return
         if (!ReadableReasoning.hasText(text)) return
         render(oi, SummaryRelease(text, startsPart = false, complete = true), sink)
     }
 
-    private fun hasRawSnapshot(item: JsonObject): Boolean =
-        listOf("content", "text", "reasoning", "reasoning_content").any { key ->
-            when (val value = item[key]) {
-                is JsonArray -> value.isNotEmpty()
-                is JsonObject -> value.isNotEmpty()
-                is JsonPrimitive -> JsonScalars.strOrEmpty(value).isNotEmpty()
-                null -> false
-            }
-        }
+    /** Terminal settlement also discards prefixes that never acquired readable model text. */
+    suspend fun finishLeadingText(sink: WireSink) = leadingText.settle(sink, discardEmpty = true)
 
     /**
      * If the completed reasoning item carries human-readable text we have not already streamed

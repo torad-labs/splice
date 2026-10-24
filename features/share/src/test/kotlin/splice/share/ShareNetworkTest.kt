@@ -7,7 +7,8 @@
 // interface holds a public IPv4 address, and some providers (Linode) put a /64 every customer in the datacenter shares
 // on it: those neighbours are strangers, not the LAN (round 7). So is its private network: Linode's 192.168.128.0/17 is
 // one network every customer in the region shares (round 8), so a source a datacenter interface holds, in any range,
-// is refused.
+// is refused. Link-local is refused there in either family, since no prefix says which link it came in on, and a
+// machine whose interfaces cannot be read cannot tell a house from a datacenter, so it admits loopback alone (round 9).
 package splice.share
 
 import org.junit.jupiter.api.Assertions.assertFalse
@@ -50,8 +51,8 @@ internal class ShareNetworkTest {
         },
     )
 
-    /** A machine whose interfaces splice cannot read: the named private ranges are all it has left to go on. */
-    private fun bare() = ShareNetwork("torad-server", emptyList(), AttachedPrefixes { emptyList() })
+    /** A machine whose interfaces splice cannot read: nothing tells a house from a datacenter there. */
+    private fun unreadable() = ShareNetwork("torad-server", emptyList(), AttachedPrefixes { null })
 
     @Test
     fun `a machine on the house's IPv6 prefix is on this LAN, globally routable though that prefix is`() {
@@ -117,15 +118,28 @@ internal class ShareNetworkTest {
     }
 
     @Test
-    fun `the private ranges are admitted with no interface read at all`() {
-        listOf("127.0.0.1", "::1", "192.168.1.5", "10.3.2.1", "fe80::1", "100.64.0.3", "fd00::1").forEach { source ->
-            assertTrue(bare().admitsSource(source), "$source is private on any machine")
-        }
+    fun `the private ranges are admitted on a house machine`() {
+        listOf("127.0.0.1", "::1", "192.168.1.5", "10.3.2.1", "fe80::1", "169.254.7.7", "100.64.0.3", "fd00::1")
+            .forEach { source -> assertTrue(home().admitsSource(source), "$source is on torad-server's LAN") }
+    }
+
+    @Test
+    fun `a link-local source of either family is refused on a machine with a datacenter interface`() {
+        assertFalse(linode().admitsSource("169.254.7.7"), "a neighbour that gave itself an IPv4 link-local address")
+        assertFalse(linode().admitsSource("fe80::9"), "or an IPv6 one")
+    }
+
+    @Test
+    fun `a machine whose interfaces cannot be read admits loopback alone`() {
+        assertTrue(unreadable().admitsSource("127.0.0.1"), "this machine itself")
+        assertTrue(unreadable().admitsSource("::1"), "this machine itself, over IPv6")
+        listOf("192.168.140.20", "192.168.1.5", "10.3.2.1", "fe80::1", "169.254.7.7", "100.64.0.3", "fd00::1")
+            .forEach { source -> assertFalse(unreadable().admitsSource(source), "$source could be a datacenter's") }
     }
 
     @Test
     fun `a name is never a source, and neither is an address outside every private range`() {
-        assertFalse(bare().admitsSource("torad-server.lan"), "a name is not a literal")
-        assertFalse(bare().admitsSource("203.0.113.7"), "a public address with nothing to put it on this LAN")
+        assertFalse(home().admitsSource("torad-server.lan"), "a name is not a literal")
+        assertFalse(home().admitsSource("203.0.113.7"), "a public address with nothing to put it on this LAN")
     }
 }

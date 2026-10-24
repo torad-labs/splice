@@ -36,13 +36,19 @@ login is asked for.
   other customers: Linode puts a `/64` every customer in the datacenter shares there, and its private
   network (`192.168.128.0/17`) is one network for every customer in the region. So a source on any
   prefix a datacenter interface holds is refused, whatever its range, its link-local addresses
-  included; a private network routed to the machine some other way is still admitted. An interface
+  included in either family, since no prefix says which link one came in on (IPv6 puts `fe80::/64` on
+  every interface, and macOS and RHEL route `169.254/16` onto one without holding it); a private
+  network routed to the machine some other way is still admitted. A machine whose interfaces cannot
+  be read cannot tell a house from a datacenter, so it admits loopback alone for that request. An interface
   with no IPv4 address says nothing either way and admits no one on its own prefixes. An address past
   every house prefix is still refused, and IPv4 is otherwise left to the private ranges. Marcos's "a
   private-network machine that asks is accepted" (2026-10-22) is read as his house: a datacenter's
   private network is not one. Bound: on a LAN that hands out DHCPv6 addresses with no SLAAC, a Linux
   host holds only a `/128` and the `/64` lives only in its route table, so a neighbour there is still
-  refused over IPv6 and reaches it over IPv4. Guardrails that cost no
+  refused over IPv6 and reaches it over IPv4. Bound: no address rule tells Marcos's house from any
+  other RFC 1918 network, so a machine sharing from a café, hotel or friend's Wi-Fi lets any device
+  there join with no code and run its commands (trust the LAN is kept for commands, the President's
+  round-1 decision; sessions still wait for their switch). Guardrails that cost no
   step: sharing is off until `splice share on`; the listener admits only those sources; each client
   gets its own token, listed and revocable. Trust
   reaches commands only: a joined machine crosses no Claude Code session until its Sessions switch is

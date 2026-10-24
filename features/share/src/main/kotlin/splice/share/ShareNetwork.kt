@@ -3,7 +3,8 @@
 // range Tailscale hands out) or fc00::/7 — or on an IPv6 prefix a house interface of this machine holds, one beside
 // an RFC 1918 address and no public IPv4 one, which is how a house whose router hands out a globally routable /64
 // reaches itself. A source on any prefix a datacenter interface holds (one with a public IPv4 address) is refused,
-// whatever its range: a provider's private network, link and /64 are shared with its other customers. The Host must
+// whatever its range: a provider's private network, link and /64 are shared with its other customers. A machine whose
+// interfaces cannot be read admits loopback alone, since nothing then tells a house from a datacenter. The Host must
 // be an IP literal or one of this machine's own names, the share listener's counterpart of LoopbackHost: a page whose
 // DNS was rebound onto this address arrives with its own name in Host and is refused, so a browser on the LAN cannot
 // be turned into a client.
@@ -36,8 +37,10 @@ internal class ShareNetwork(
 
     fun admitsSource(address: String): Boolean {
         val ip = literal(address) ?: return false
-        val links = attached.now().groupBy { it.link }.values
-        return ip.isLoopbackAddress || !datacenter(ip, links) && (privateRange(ip) || onThisLan(ip, links))
+        // Interfaces that could not be read cannot tell a house from a datacenter: loopback alone is admitted then.
+        val links = attached.now()?.groupBy { it.link }?.values
+        return ip.isLoopbackAddress ||
+            links != null && !datacenter(ip, links) && (privateRange(ip) || onThisLan(ip, links))
     }
 
     private fun privateRange(ip: InetAddress): Boolean =
@@ -46,11 +49,12 @@ internal class ShareNetwork(
     /** Whether a datacenter interface of this machine, one holding a public IPv4 address, holds [ip]'s prefix. Its
      *  private network is the provider's, and some share it with every customer in the region (Linode's
      *  192.168.128.0/17); its link and its IPv6 /64 are shared the same way. A source there is a stranger whatever
-     *  range its address is in. Link-local prefixes are the same fe80::/64 on every interface, so a machine with a
-     *  datacenter interface turns every link-local source away: a house machine still reaches it by its other
-     *  addresses. */
+     *  range its address is in. No prefix says which link a link-local source came in on, in either family: IPv6's
+     *  fe80::/64 is on every interface, and 169.254/16 is routed onto one (macOS's primary interface, RHEL's eth0)
+     *  without any holding it. So a machine with a datacenter interface turns every link-local source away; a house
+     *  machine still reaches it by its other addresses. */
     private fun datacenter(ip: InetAddress, links: Collection<List<SharePrefix>>): Boolean =
-        links.any { link -> publicIpv4(link) && link.any { it.holds(ip) } }
+        links.filter(::publicIpv4).any { link -> ip.isLinkLocalAddress || link.any { it.holds(ip) } }
 
     /** Whether [ip] is an IPv6 address on a prefix a house interface of this machine holds: a machine reachable with
      *  no router in between. SLAAC makes a house's /64 the link itself, globally routable though it is, so the named
@@ -125,14 +129,17 @@ internal data class SharePrefix(val address: InetAddress, val bits: Int, val lin
 /** The prefixes this machine's interfaces hold right now. Read at each request rather than kept: a Wi-Fi hop, a
  *  cable moved or a VPN coming up changes them, and the listener follows without a restart. */
 internal fun interface AttachedPrefixes {
-    fun now(): List<SharePrefix>
+    /** Null when they could not be read: nothing then tells a house from a datacenter, so loopback alone is
+     *  admitted. */
+    fun now(): List<SharePrefix>?
 }
 
-/** What the OS reports for this machine's own interfaces. An interface list splice cannot read leaves no prefix at
- *  all, so the named private ranges stay the only way in: the refusal is the safe side, and [log] says why, since a
- *  machine on the LAN being turned away otherwise looks like a wrong address. */
+/** What the OS reports for this machine's own interfaces. A list splice cannot read is null, which admits loopback
+ *  alone for that request: the refusal is the safe side, and [log] says why, since a machine on the LAN being turned
+ *  away otherwise looks like a wrong address. An interface that goes away mid-read (a container or VPN stopping) fails
+ *  the read, and the next request reads again. */
 internal class HostPrefixes(private val log: LogSink) : AttachedPrefixes {
-    override fun now(): List<SharePrefix> =
+    override fun now(): List<SharePrefix>? =
         Cancellables.runCatchingCancellable {
             NetworkInterface.getNetworkInterfaces().asSequence()
                 .filter { it.isUp }
@@ -143,8 +150,8 @@ internal class HostPrefixes(private val log: LogSink) : AttachedPrefixes {
                 .toList()
         }.onFailure { failure ->
             val why = SafeFailureText.render(failure)
-            log("[share] this machine's own networks could not be read ($why); only the private ranges are admitted\n")
-        }.getOrDefault(emptyList())
+            log("[share] this machine's own networks could not be read ($why); only loopback is admitted for now\n")
+        }.getOrNull()
 }
 
 // why: 100.64.0.0/10, carrier-grade NAT and the range Tailscale hands out, starts with the octet 100.

@@ -15,9 +15,7 @@ import org.junit.jupiter.api.io.TempDir
 import splice.core.memory.HeapBudget
 import splice.core.memory.HeapCapacityException
 import splice.core.turn.GatewayCustomCall
-import splice.provider.codex.state.CodeModeStateJournal
 import splice.provider.codex.stream.source.CodeModeSourcePayloads
-import java.nio.file.Files
 import java.nio.file.Path
 import java.time.Clock
 import java.time.Instant
@@ -138,8 +136,8 @@ private class TailBudgetState(dir: Path) : AutoCloseable {
     fun persistedTail(): List<JsonElement>? {
         journaling = true
         registry.save()
-        val file = Files.list(location.dir).use { it.toList().single() }
-        return CodeModeStateJournal.read(file, Json).records.single().nativeAfterExec
+        val recovered = CodexCodeModeStore(location, Json, {}, heap = heap).load()
+        return recovered.records.single { it.key == record.key && it.id == record.id }.nativeAfterExec
     }
 
     override fun close() {

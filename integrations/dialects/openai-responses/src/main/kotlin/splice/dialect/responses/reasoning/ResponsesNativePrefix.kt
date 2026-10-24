@@ -11,7 +11,8 @@ import splice.upstream.transport.BufferCapacity
 
 /** Completed native items retain their message boundaries independently of flattened display buffers. */
 internal class ResponsesNativePrefix {
-    private val items = sortedMapOf<Int, JsonObject>()
+    private val items = mutableListOf<NativePrefixItem>()
+    private val completedIds = hashSetOf<String>()
     private val pending = sortedMapOf<Int, StringBuilder>()
     private var sealed: List<JsonObject>? = null
     private var boundary: Int? = null
@@ -24,25 +25,28 @@ internal class ResponsesNativePrefix {
         require(retainedChars <= BufferCapacity.MAX_BUFFERED_CHARS) { "native history exceeds buffer capacity" }
     }
 
-    fun collect(item: JsonObject, index: Int) {
-        val type = JsonScalars.str(item, "type")
-        if (!replayable(item)) return
+    fun collect(item: JsonObject, index: Int): String? {
+        val isMessage = JsonScalars.str(item, "type") == "message"
+        if (!replayable(item)) return null
         val streamed = pending.remove(index)?.toString().orEmpty()
         retainedChars -= streamed.length
-        val missingMessageText = type == "message" && text(item).isEmpty()
+        val missingMessageText = isMessage && text(item).isEmpty()
         val captured = if (missingMessageText && streamed.isNotEmpty()) {
             JsonObject(item + ("content" to checkNotNull(content(message(streamed)))))
         } else {
             item
         }
-        if (index in items) return
-        retainedChars += captured.toString().length
-        require(retainedChars <= BufferCapacity.MAX_BUFFERED_CHARS) { "native history exceeds buffer capacity" }
-        items[index] = captured
+        val id = JsonScalars.str(captured, "id")
+        if (id == null || completedIds.add(id)) {
+            retainedChars += captured.toString().length
+            require(retainedChars <= BufferCapacity.MAX_BUFFERED_CHARS) { "native history exceeds buffer capacity" }
+            items.add(NativePrefixItem(index, captured))
+        }
+        return text(captured).takeIf { isMessage }
     }
 
-    fun text(item: JsonObject, index: Int? = null): String {
-        val content = content(index?.let { items[it] } ?: item)
+    private fun text(item: JsonObject): String {
+        val content = content(item)
         return if (content is JsonArray) {
             content.joinToString("") { JsonScalars.str(it as? JsonObject, "text").orEmpty() }
         } else {
@@ -76,9 +80,11 @@ internal class ResponsesNativePrefix {
 
     fun snapshot(): List<JsonObject> = sealed ?: buildList {
         val end = boundary ?: Int.MAX_VALUE
-        val completed = items.filterKeys { it < end }
-        val unfinished = pending.filterKeys { it < end && it !in completed }.mapValues { message(it.value.toString()) }
-        addAll((completed + unfinished).toSortedMap().values)
+        val completed = items.filter { it.index < end }
+        val unfinished = pending.filterKeys {
+            it < end
+        }.map { (index, text) -> NativePrefixItem(index, message(text.toString())) }
+        addAll((completed + unfinished).sortedBy { it.index }.map { it.item })
     }
 
     private fun identity(item: JsonObject): JsonElement = item["id"] ?: item
@@ -95,3 +101,5 @@ internal class ResponsesNativePrefix {
         ResponsesAssistantText.item(text, AssistantPhase.COMMENTARY) + ("type" to JsonPrimitive("message")),
     )
 }
+
+private data class NativePrefixItem(val index: Int, val item: JsonObject)

@@ -73,6 +73,7 @@ internal class ReasoningCache(
     private val lock = Any()
     private val writes = ReasoningCacheWrites(files)
     private val positions = ReasoningCachePositions()
+    private val proofs = ReasoningCacheProofs()
 
     // What the last process left on disk, published once before any read or write sees the maps: a
     // restarted daemon's first request must find it. The directory is read under the lazy's own lock,
@@ -83,7 +84,7 @@ internal class ReasoningCache(
         synchronized(lock) {
             stored.forEach { conversation ->
                 val convo = ReasoningCacheConvo()
-                val normalized = positions.normalized(conversation.rounds)
+                val normalized = positions.normalized(conversation.rounds.filter { it.ids.isNotEmpty() })
                 normalized.forEach { round ->
                     val rk = "r${seq++}"
                     val bytes = round.envelopes.sumOf { it.length.toLong() }
@@ -93,9 +94,11 @@ internal class ReasoningCache(
                     convo.bytes += bytes
                     roundCount++
                 }
+                proofs.restore(convo, conversation.rounds)
                 totalBytes += convo.bytes
                 convos[conversation.key] = convo
-                if (normalized != conversation.rounds) writes.replace(conversation.key, normalized)
+                val migrated = positions.stored(convo)
+                if (migrated != conversation.rounds) writes.replace(conversation.key, migrated)
             }
             evictToBoundLocked(writing = null, writer = null, offered = null)
         }
@@ -109,7 +112,12 @@ internal class ReasoningCache(
         synchronized(lock) {
             sweepLocked()
             if (conversationKey == null) {
-                putNullLocked(toolIds, envelopes, bytes)
+                val rk = "n${seq++}"
+                nullRounds[rk] = ReasoningCacheRound(toolIds, envelopes, bytes, clock())
+                toolIds.forEach { nullByToolId[it] = rk }
+                totalBytes += bytes
+                roundCount++
+                evictToBoundLocked(writing = null, writer = null, offered = null)
             } else {
                 putConvoLocked(conversationKey, toolIds, envelopes, bytes)
             }
@@ -139,18 +147,25 @@ internal class ReasoningCache(
     fun snapshot(
         conversationKey: String?,
         legacyConversationKey: String? = conversationKey,
-    ): Map<String, List<String>> {
+    ): Map<String, List<String>> = view(conversationKey, legacyConversationKey).rounds
+
+    fun view(conversationKey: String?, legacyConversationKey: String? = conversationKey): ReasoningCacheView {
         restored.value
         return synchronized(lock) {
             sweepLocked()
             if (conversationKey == null) {
-                return nullRounds.values.flatMap { round -> round.toolIds.map { it to round.envelopes } }.toMap()
+                return ReasoningCacheView(
+                    nullRounds.values.flatMap { round -> round.toolIds.map { it to round.envelopes } }.toMap(),
+                )
             }
             // Arrival order also orders private history-position indexes sharing a visible boundary.
             val rounds = listOfNotNull(legacyConversationKey, conversationKey).distinct().flatMap { key ->
                 touchLocked(key)?.rounds?.values.orEmpty()
             }
-            rounds.flatMap { round -> round.toolIds.map { it to round.envelopes } }.toMap()
+            ReasoningCacheView(
+                rounds.flatMap { round -> round.toolIds.map { it to round.envelopes } }.toMap(),
+                convos[conversationKey]?.resultProofs?.toMap().orEmpty(),
+            )
         }
     }
 
@@ -195,12 +210,16 @@ internal class ReasoningCache(
     }
 
     /** An unchanged legacy transcript proved this old digest; move its items to the stable grammar. */
-    fun promotePositions(conversationKey: String, aliases: Map<String, String>) {
-        if (aliases.isEmpty()) return
+    fun updateHistory(conversationKey: String, update: ReasoningHistoryUpdate) {
+        if (update.aliases.isEmpty() && update.proofs.isEmpty()) return
         restored.value
         synchronized(lock) {
-            val conversation = convos[conversationKey]
-            if (conversation != null && positions.promote(conversation, aliases)) {
+            val conversation = convos[conversationKey] ?: ReasoningCacheConvo()
+            val moved = positions.promote(conversation, update.aliases)
+            val admitted = proofs.merge(conversation, update.proofs, maxTotalBytes - totalBytes)
+            if (moved || admitted.changed) {
+                convos[conversationKey] = conversation
+                totalBytes += admitted.bytes
                 writes.replace(conversationKey, positions.stored(conversation))
             }
         }
@@ -238,15 +257,6 @@ internal class ReasoningCache(
             positions.admitted(convo, rk, convo.rounds.getValue(rk))
             writes.append(key, toolIds, envelopes)
         }
-    }
-
-    private fun putNullLocked(toolIds: List<String>, envelopes: List<String>, bytes: Long) {
-        val rk = "n${seq++}"
-        nullRounds[rk] = ReasoningCacheRound(toolIds, envelopes, bytes, clock())
-        toolIds.forEach { nullByToolId[it] = rk }
-        totalBytes += bytes
-        roundCount++
-        evictToBoundLocked(writing = null, writer = null, offered = null)
     }
 
     /** Restore the bounds. Order: null-class rounds first (the least-guaranteed class; one round

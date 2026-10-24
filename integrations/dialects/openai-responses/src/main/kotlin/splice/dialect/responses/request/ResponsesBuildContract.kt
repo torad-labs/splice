@@ -13,6 +13,7 @@ import splice.dialect.responses.reasoning.ReasoningEnvelopeDecoder
 import splice.dialect.responses.reasoning.ReasoningHistoryAlias
 import splice.dialect.responses.reasoning.ReasoningHistoryLookup
 import splice.dialect.responses.reasoning.ReasoningLookup
+import splice.dialect.responses.reasoning.ReasoningResultProofLookup
 import splice.dialect.responses.reasoning.RequestEncryptedReasoning
 import splice.upstream.ToolSearchPolicy
 
@@ -54,6 +55,7 @@ internal data class ReasoningHandoff(
     public val history: ReasoningHistoryLookup = ReasoningHistoryLookup { emptyMap() },
     /** Verified legacy positions acquire stable indexes together after the request history walk finishes. */
     public val historyAlias: ReasoningHistoryAlias = ReasoningHistoryAlias { _ -> },
+    public val resultProofs: ReasoningResultProofLookup = ReasoningResultProofLookup { emptyMap() },
 )
 
 internal data class BuildOptions(

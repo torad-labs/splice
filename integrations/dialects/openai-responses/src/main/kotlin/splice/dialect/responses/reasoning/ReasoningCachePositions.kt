@@ -58,6 +58,12 @@ internal class ReasoningCachePositions {
         return changed
     }
 
-    fun stored(conversation: ReasoningCacheConvo): List<StoredRound> =
-        conversation.rounds.values.map { StoredRound(it.toolIds, it.envelopes) }
+    fun stored(conversation: ReasoningCacheConvo): List<StoredRound> {
+        val rounds = conversation.rounds.values.map { StoredRound(it.toolIds, it.envelopes) }
+        return if (conversation.resultProofs.isEmpty()) {
+            rounds
+        } else {
+            rounds + StoredRound(emptyList(), emptyList(), conversation.resultProofs.toMap())
+        }
+    }
 }

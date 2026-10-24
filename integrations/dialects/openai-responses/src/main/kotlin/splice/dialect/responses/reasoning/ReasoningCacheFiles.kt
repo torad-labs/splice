@@ -138,9 +138,17 @@ internal data class StoredConversation(val key: String, val rounds: List<StoredR
 
 /** One line of a conversation file: a round's real function_call ids and its ordered envelopes. */
 @Serializable
-internal data class StoredRound(val ids: List<String>, val envelopes: List<String>) {
+internal data class StoredRound(
+    val ids: List<String>,
+    val envelopes: List<String>,
+    val resultProofs: Map<String, String?> = emptyMap(),
+) {
     /** A round the cache would have admitted: at least one id and one envelope. */
-    val whole: Boolean get() = ids.isNotEmpty() && envelopes.isNotEmpty()
+    val whole: Boolean get() = if (ids.isEmpty()) {
+        envelopes.isEmpty() && resultProofs.isNotEmpty()
+    } else {
+        envelopes.isNotEmpty() && resultProofs.isEmpty()
+    }
 }
 
 private val lines = Json { ignoreUnknownKeys = false }

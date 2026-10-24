@@ -56,9 +56,19 @@ internal fun interface ReasoningHistoryLookup {
     public operator fun invoke(): Map<String, List<String>>
 }
 
-/** Promotes the request's verified raw-content positions in one bounded conversation update. */
+/** Unique full-result digests at verified branch boundaries; null records an ambiguous boundary. */
+internal fun interface ReasoningResultProofLookup {
+    public operator fun invoke(): Map<String, String?>
+}
+
+internal data class ReasoningHistoryUpdate(
+    val aliases: Map<String, String> = emptyMap(),
+    val proofs: Map<String, String?> = emptyMap(),
+)
+
+/** Promotes verified positions and records result proofs in one bounded conversation update. */
 internal fun interface ReasoningHistoryAlias {
-    public operator fun invoke(aliases: Map<String, String>)
+    public operator fun invoke(update: ReasoningHistoryUpdate)
 }
 
 /** Writes a visible text span while server-owned reasoning is restored at verified boundaries. */

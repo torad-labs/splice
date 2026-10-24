@@ -29,8 +29,8 @@ internal class ResponsesReasoningReplay(
 
     fun collect(item: JsonObject, outputIndex: Int?) {
         val index = outputIndex ?: streamedItems
-        state.nativePrefix?.collect(item, index)
-        collectAt(item, cursor, streamedText = true, outputIndex = index, terminal = false)
+        val message = state.nativePrefix?.collect(item, index)
+        collectAt(item, cursor, outputIndex = index, terminal = false, message = message)
         streamedItems++
     }
 
@@ -46,7 +46,6 @@ internal class ResponsesReasoningReplay(
                 collectAt(
                     it,
                     at,
-                    streamedText = false,
                     outputIndex = index,
                     terminal = true,
                 )
@@ -59,13 +58,13 @@ internal class ResponsesReasoningReplay(
     private fun collectAt(
         item: JsonObject,
         at: ReasoningHistory?,
-        streamedText: Boolean,
         outputIndex: Int,
         terminal: Boolean,
+        message: String? = null,
     ) {
         when (JsonScalars.str(item, "type")) {
             "reasoning" -> capture(item, at, outputIndex, terminal)
-            "message" -> advanceMessage(item, at, streamedText, outputIndex)
+            "message" -> advanceMessage(item, at, message)
             "function_call" -> advanceTool(item, at)
         }
     }
@@ -91,9 +90,8 @@ internal class ResponsesReasoningReplay(
         return fresh
     }
 
-    private fun advanceMessage(item: JsonObject, at: ReasoningHistory?, streamedText: Boolean, index: Int) {
-        val captured = state.nativePrefix?.takeIf { streamedText }?.text(item, index)
-        at?.text("assistant", captured ?: messageText(item))
+    private fun advanceMessage(item: JsonObject, at: ReasoningHistory?, message: String?) {
+        at?.text("assistant", message ?: messageText(item))
     }
 
     private fun advanceTool(item: JsonObject, at: ReasoningHistory?) {

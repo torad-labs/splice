@@ -13,7 +13,7 @@ import org.junit.jupiter.api.Assertions.assertFalse
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Timeout
 import org.junit.jupiter.params.ParameterizedTest
-import org.junit.jupiter.params.provider.ValueSource
+import org.junit.jupiter.params.provider.CsvSource
 import splice.core.turn.TurnOutcome
 import splice.core.util.JsonScalars
 import splice.core.util.JsonWire
@@ -29,15 +29,16 @@ private const val TAIL_JOURNAL_METADATA_BYTES = 64L * 1024
 @Timeout(45)
 class CodeModeTailJournalTest : CodeModeTailJournalSupport() {
     @ParameterizedTest
-    @ValueSource(booleans = [false, true])
+    @CsvSource("false,true", "true,true", "false,false", "true,false")
     fun `native tail journal bytes stay bounded and complete history survives warm continuation and restart`(
         restart: Boolean,
+        includeProse: Boolean,
     ) = runTest(timeout = 40.seconds) {
         val effects = tempDir.resolve("effects")
         val attach = CompletableDeferred<Unit>()
         val runtime = EffectRuntime(effects, attach)
         var manager = bridge(runtime)
-        val post = TailPost()
+        val post = TailPost(includeProse)
         val sink = SourceSink()
         try {
             val first = async {

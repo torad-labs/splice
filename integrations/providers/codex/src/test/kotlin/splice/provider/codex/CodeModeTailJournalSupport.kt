@@ -27,7 +27,7 @@ import java.nio.file.attribute.BasicFileAttributes
 private const val GROWING_TAIL_PAIRS = 48
 
 abstract class CodeModeTailJournalSupport : CodeModeSealedItemSupport() {
-    protected inner class TailPost : RedirectableRoundPost {
+    protected inner class TailPost(private val includeProse: Boolean = true) : RedirectableRoundPost {
         val tailSent = CompletableDeferred<Unit>()
         val terminalRelease = CompletableDeferred<Unit>()
         val continuation = CompletableDeferred<String>()
@@ -40,8 +40,8 @@ abstract class CodeModeTailJournalSupport : CodeModeSealedItemSupport() {
         private val following = List(GROWING_TAIL_PAIRS) { index ->
             reasoning("tail-r-$index") to message("tail-b-$index", body(index))
         }
-        val tail = following.flatMap { listOf(it.first, it.second) }
-        val text = "A" + following.indices.joinToString("") { body(it) }
+        val tail = following.flatMap { if (includeProse) listOf(it.first, it.second) else listOf(it.first) }
+        val text = "A" + if (includeProse) following.indices.joinToString("") { body(it) } else ""
         private var first = true
 
         override suspend fun invoke(bodyJson: String): RoundResult = error("redirect required")
@@ -70,10 +70,13 @@ abstract class CodeModeTailJournalSupport : CodeModeSealedItemSupport() {
             emit(event("response.output_item.done", 2, completed.raw))
             journal.observe()
             following.forEachIndexed { index, (reasoning, message) ->
-                emit(event("response.output_item.done", 3 + 2 * index, reasoning))
+                val at = 3 + index * if (includeProse) 2 else 1
+                emit(event("response.output_item.done", at, reasoning))
                 journal.observe()
-                prose(4 + 2 * index, message, body(index)).forEach { emit(it) }
-                journal.observe()
+                if (includeProse) {
+                    prose(at + 1, message, body(index)).forEach { emit(it) }
+                    journal.observe()
+                }
             }
             tailSent.complete(Unit)
             terminalRelease.await()

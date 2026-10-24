@@ -15,6 +15,7 @@ import splice.provider.codex.state.diagnostics.CodeModeNativeEvidence
 import splice.provider.codex.state.diagnostics.CodeModeNativeRejection
 import splice.provider.codex.state.diagnostics.CodeModeUnexpectedNativeEvidence
 import splice.provider.codex.state.native.CodeModeCapturedOrder
+import splice.provider.codex.state.replay.CodeModeCanonicalSources
 import splice.provider.codex.state.replay.CodeModeNativeReplayOffsets
 
 private data class NativeClaim(
@@ -40,6 +41,7 @@ internal class CodeModeNativeReplay(
     records: List<CodeModeRecord>,
 ) {
     val payloads = index.payloads
+    val sources = CodeModeCanonicalSources(codec, input, index)
     private val bad = mutableMapOf<String, CodeModeNativeRejection>()
     private val origins = ancestors(records).flatMap { record ->
         record.carry.replay.map { CodeModeNativeOrigin(record, it) }
@@ -208,7 +210,7 @@ internal class CodeModeNativeReplay(
                 count(counted, observed + it.logicalOffset, it.items)
             }
         }
-        val replay = clientReplay(ownedIds, counted, offsets).toMutableList()
+        val replay = clientReplay(ownedIds, counted, offsets, sources).toMutableList()
         val placed = scripts.associateBy { it.record.id }
         claims.forEach { claim ->
             val placement = placed[claim.recordId]
@@ -233,9 +235,10 @@ internal class CodeModeNativeReplay(
         ownedIds: Set<String>,
         counted: MutableMap<Int, MutableMap<Token, Int>>,
         offsets: IntArray,
+        sources: CodeModeCanonicalSources? = null,
     ): List<ResponsesCodeModeReplay> = input.replayItems.filterNot { it.callbackId in ownedIds }.mapNotNull { segment ->
         val quota = counted[segment.logicalOffset].orEmpty()
-        val kept = segment.items.filter { item ->
+        val kept = segment.items.filterNot { sources?.owns(segment, it) == true }.filter { item ->
             val token = payloads.token(item)
             val remaining = quota[token] ?: 0
             if (remaining > 0) counted.getValue(segment.logicalOffset)[token] = remaining - 1

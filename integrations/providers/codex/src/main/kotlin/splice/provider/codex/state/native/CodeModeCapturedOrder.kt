@@ -7,6 +7,7 @@ import splice.core.perf.InputDigest
 import splice.dialect.responses.request.ResponsesCodeModeInput
 import splice.dialect.responses.request.ResponsesCodeModeReplay
 import splice.provider.codex.CodeModeCallReplay
+import splice.provider.codex.CodeModeContinuity
 import splice.provider.codex.CodeModeNativeSegment
 import splice.provider.codex.CodeModeRecord
 import splice.provider.codex.CodexCodeModeHistoryCodec
@@ -120,8 +121,13 @@ internal class CodeModeCapturedOrder(
         }
     }
 
-    fun continuity(record: CodeModeRecord, start: Int, prefixEnd: Int): List<ResponsesCodeModeReplay> =
-        record.carry.replay.mapNotNull { segment ->
+    fun continuity(
+        record: CodeModeRecord,
+        start: Int,
+        prefixEnd: Int,
+        source: CodeModeContinuity = CodeModeContinuity(record.carry.continuity, record.carry.replay),
+    ): List<ResponsesCodeModeReplay> =
+        source.replayItems.mapNotNull { segment ->
             val added = segment.items.filterNot(native::contains)
             added.takeIf(List<JsonElement>::isNotEmpty)?.let {
                 ResponsesCodeModeReplay(maxOf(start + segment.logicalOffset, prefixEnd), null, it)

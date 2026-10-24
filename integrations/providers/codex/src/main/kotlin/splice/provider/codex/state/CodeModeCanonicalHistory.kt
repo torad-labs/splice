@@ -9,6 +9,7 @@ import splice.dialect.responses.request.ResponsesCodeModeReplay
 import splice.provider.codex.CODE_MODE_FIELD_CALL_ID
 import splice.provider.codex.CODE_MODE_FIELD_TYPE
 import splice.provider.codex.CodeModeCallReplay
+import splice.provider.codex.CodeModeContinuity
 import splice.provider.codex.CodeModeOmission
 import splice.provider.codex.CodeModeRecord
 import splice.provider.codex.CodexCodeModeHistoryCodec
@@ -29,9 +30,10 @@ internal data class CodeModeCanonicalPlacement(
     val removed: Set<Int>,
     val retainedCallbacks: Set<String>,
     val emission: CodeModeCanonicalEmission = CodeModeCanonicalEmission.SCRIPT,
+    val source: CodeModeContinuity = CodeModeContinuity(record.carry.continuity, record.carry.replay),
 ) {
     val logicalSize: Int
-        get() = record.carry.continuity.size + when (emission) {
+        get() = source.logicalItems.size + when (emission) {
             CodeModeCanonicalEmission.SCRIPT -> 2 + record.accepted.durableMedia().size
             CodeModeCanonicalEmission.CONTINUITY -> 0
         }
@@ -61,7 +63,7 @@ internal class CodeModeCanonicalHistory(private val codec: CodexCodeModeHistoryC
         val inputOwners = records.filterNot(CodeModeNativeChain::retired)
         val natives = CodeModeNativeReplay(codec, input, index, inputOwners)
         val omitted = mutableListOf<CodeModeOmission>()
-        val placements = placements(records, index, natives, media, omitted)
+        val placements = placements(records, index, natives, media, omitted).map(natives.sources::prepare)
         val captured = capture?.takeUnless(CodeModeNativeChain::retired)?.takeIf { it.replayAnchors != null }
             ?.let { CodeModeCapturedOrder(it, index, codec) }
         val order = captured?.takeIf { it.accepts(input) }
@@ -204,11 +206,11 @@ internal class CodeModeCanonicalHistory(private val codec: CodexCodeModeHistoryC
         val record = placement.record
         starts[record.id] = logical.size
         if (order == null) {
-            record.carry.replay.forEach {
+            placement.source.replayItems.forEach {
                 replay += ResponsesCodeModeReplay(logical.size + it.logicalOffset, null, it.items)
             }
         }
-        logical += record.carry.continuity
+        logical += placement.source.logicalItems
         when (placement.emission) {
             CodeModeCanonicalEmission.SCRIPT -> {
                 logical += CodeModeCallReplay.item(record)
@@ -228,7 +230,7 @@ internal class CodeModeCanonicalHistory(private val codec: CodexCodeModeHistoryC
         val captured = order ?: return emptyList()
         val end = captured.prefixEnd(offsets) ?: offsets.last()
         return captured.native(offsets) + placements.flatMap { placement ->
-            captured.continuity(placement.record, starts.getValue(placement.record.id), end)
+            captured.continuity(placement.record, starts.getValue(placement.record.id), end, placement.source)
         }
     }
 

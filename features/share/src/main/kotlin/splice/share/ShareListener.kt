@@ -165,8 +165,8 @@ public class ShareListener(
             session != null -> launches.noLogin(head, login, head.logins())
             // Nothing to pin: a read that runs no turn goes through; a turn would run on another login, so it doesn't.
             call.request.httpMethod == HttpMethod.Get -> null
-            else -> "this request names no Claude Code session, so it can't be run on ${heads.machine}'s login " +
-                "'$login'"
+            else ->
+                "this request names no Claude Code session, so it can't be run on ${heads.machine}'s login '$login'"
         }
     }
 

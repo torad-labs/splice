@@ -19,6 +19,7 @@ class AddPortChoiceTest {
 
     private fun file(home: Path, control: Int, head: Int, provider: Int? = null, share: Int? = null): Path {
         val path = home.resolve(".config/splice/splice.toml")
+        val sharing = if (share == null) "" else "[share]\nenabled = true\nport = $share\n"
         Files.createDirectories(path.parent)
         Files.writeString(
             path,
@@ -37,7 +38,7 @@ class AddPortChoiceTest {
             port = $head
             discovery_prefix = "claude-old--"
             pinned_model = "m"
-            """.trimIndent() + "\n" + share?.let { "[share]\nenabled = true\nport = $it\n" }.orEmpty(),
+            """.trimIndent() + "\n" + sharing,
         )
         return path
     }

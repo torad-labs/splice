@@ -8,6 +8,7 @@ import splice.core.turn.FailurePhase
 import splice.core.turn.FailureTraits
 import splice.core.turn.TurnOutcome
 import splice.core.turn.noRequestUsage
+import splice.provider.codex.branch.CodeModeClientOutputDigests
 import splice.provider.codex.callbacks.CodexCodeModeIncrementalOutcomes
 import splice.provider.codex.stream.CodeModeLiveRound
 import splice.provider.codex.stream.CodeModeSourceReset

@@ -5,7 +5,6 @@ import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonObject
 import splice.core.perf.InputItemDigests
 import splice.dialect.responses.request.ResponsesCodeModeInput
-import splice.dialect.responses.request.ResponsesCodeModeReplay
 import splice.provider.codex.CODE_MODE_FIELD_CALL_ID
 import splice.provider.codex.CODE_MODE_FIELD_TYPE
 import splice.provider.codex.CodeModeCallReplay
@@ -16,6 +15,7 @@ import splice.provider.codex.CodexCodeModeHistoryCodec
 import splice.provider.codex.TYPE_CUSTOM_OUTPUT
 import splice.provider.codex.history.CodeModeOwnership
 import splice.provider.codex.state.native.CodeModeCapturedOrder
+import splice.provider.codex.state.replay.CodeModeCanonicalEmitter
 
 internal data class CodeModeCanonicalResult(
     val input: ResponsesCodeModeInput,
@@ -43,6 +43,7 @@ internal data class CodeModeCanonicalPlacement(
 internal class CodeModeCanonicalHistory(private val codec: CodexCodeModeHistoryCodec) {
     private val ownership = CodeModeOwnership(codec)
     private val continuity = CodeModeExtraContent(codec, ownership)
+    private val emitter = CodeModeCanonicalEmitter(codec)
 
     /** [digests]: the request body's item digests, shared with the turn's later indexes over the same items. */
     fun rewrite(
@@ -69,7 +70,7 @@ internal class CodeModeCanonicalHistory(private val codec: CodexCodeModeHistoryC
         val order = captured?.takeIf { it.accepts(input) }
         order?.support(inputOwners, placements)
         val refused = captured?.takeUnless { it === order }
-        return CodeModeCanonicalResult(emit(input, placements, natives, order, refused), omitted)
+        return CodeModeCanonicalResult(emitter.emit(input, placements, natives, order, refused), omitted)
     }
 
     private fun placements(
@@ -195,92 +196,4 @@ internal class CodeModeCanonicalHistory(private val codec: CodexCodeModeHistoryC
             val id = codec.string(item, CODE_MODE_FIELD_CALL_ID)
             id.takeIf { codec.string(item, CODE_MODE_FIELD_TYPE) == "function_call_output" && id !in record.results }
         }.toSet()
-
-    private fun append(
-        placement: CodeModeCanonicalPlacement,
-        logical: MutableList<JsonElement>,
-        replay: MutableList<ResponsesCodeModeReplay>,
-        starts: MutableMap<String, Int>,
-        order: CodeModeCapturedOrder?,
-    ) {
-        val record = placement.record
-        starts[record.id] = logical.size
-        if (order == null) {
-            placement.source.replayItems.forEach {
-                replay += ResponsesCodeModeReplay(logical.size + it.logicalOffset, null, it.items)
-            }
-        }
-        logical += placement.source.logicalItems
-        if (placement.emission == CodeModeCanonicalEmission.SCRIPT) logical += CodeModeCallReplay.item(record)
-        appendAfter(placement.source, logical, replay, order)
-        when (placement.emission) {
-            CodeModeCanonicalEmission.SCRIPT -> {
-                logical += codec.customOutput(record)
-                logical += record.accepted.durableMedia()
-            }
-            CodeModeCanonicalEmission.CONTINUITY -> Unit
-        }
-    }
-
-    private fun appendAfter(
-        source: CodeModeContinuity,
-        logical: MutableList<JsonElement>,
-        replay: MutableList<ResponsesCodeModeReplay>,
-        order: CodeModeCapturedOrder?,
-    ) {
-        source.afterExec.replayItems.forEach { segment ->
-            val items = order?.claim(segment.items) ?: segment.items
-            if (items.isNotEmpty()) {
-                replay += segment.copy(
-                    logicalOffset = logical.size + segment.logicalOffset,
-                    items = items,
-                )
-            }
-        }
-        logical += source.afterExec.logicalItems
-    }
-
-    private fun capturedReplay(
-        placements: List<CodeModeCanonicalPlacement>,
-        offsets: IntArray,
-        starts: Map<String, Int>,
-        order: CodeModeCapturedOrder?,
-    ): List<ResponsesCodeModeReplay> {
-        val captured = order ?: return emptyList()
-        val end = captured.prefixEnd(offsets) ?: offsets.last()
-        return captured.native(offsets) + placements.flatMap { placement ->
-            captured.continuity(placement.record, starts.getValue(placement.record.id), end, placement.source)
-        }
-    }
-
-    private fun emit(
-        input: ResponsesCodeModeInput,
-        placements: List<CodeModeCanonicalPlacement>,
-        natives: CodeModeNativeReplay,
-        order: CodeModeCapturedOrder?,
-        refused: CodeModeCapturedOrder?,
-    ): ResponsesCodeModeInput {
-        val planned = order?.placements(placements) ?: placements
-        val inserted = planned.groupBy(CodeModeCanonicalPlacement::boundary)
-        val removed = placements.flatMap(CodeModeCanonicalPlacement::removed).toSet()
-        val logical = mutableListOf<JsonElement>()
-        val continuityReplay = mutableListOf<ResponsesCodeModeReplay>()
-        val offsets = IntArray(input.logicalItems.size + 1)
-        val starts = mutableMapOf<String, Int>()
-        for (at in offsets.indices) {
-            offsets[at] = logical.size
-            val group = inserted[at].orEmpty()
-            (order?.ordered(group) ?: group).forEach { placement ->
-                append(placement, logical, continuityReplay, starts, order)
-            }
-            if (at < input.logicalItems.size && at !in removed) logical += input.logicalItems[at]
-        }
-        val replay = natives.rewrite(planned, offsets, starts, order, refused)
-        continuityReplay += capturedReplay(planned, offsets, starts, order)
-        continuityReplay += refused?.preserved(offsets).orEmpty()
-        return ResponsesCodeModeInput(
-            logical,
-            CodeModeNativeChain.emittedReplay(replay + continuityReplay, natives.payloads),
-        )
-    }
 }

@@ -18,6 +18,7 @@ import splice.core.wire.ToolUseBlock
 import splice.core.wire.UnknownBlock
 import splice.dialect.responses.request.ImageDisposition
 import splice.dialect.responses.request.ResponsesToolResultMedia
+import splice.provider.codex.branch.CodeModeClearedCandidates
 import splice.upstream.BuiltTurn
 import splice.upstream.codemode.CodeModeManual
 import splice.upstream.codemode.CodeModeResult

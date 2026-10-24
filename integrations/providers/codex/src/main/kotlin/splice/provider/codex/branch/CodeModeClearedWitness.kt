@@ -7,7 +7,6 @@ import kotlinx.serialization.json.JsonObject
 import splice.core.perf.InputDigest
 import splice.core.util.JsonScalars
 import splice.core.util.LogSink
-import splice.provider.codex.CodeModeClientOutputDigests
 import splice.provider.codex.CodeModePending
 import splice.provider.codex.CodeModeRecord
 import splice.provider.codex.CodeModeRunContext

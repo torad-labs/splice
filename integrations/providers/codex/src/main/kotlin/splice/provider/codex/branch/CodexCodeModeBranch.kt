@@ -57,7 +57,11 @@ internal class CodexCodeModeBranch(
             .filterValues { it > 1 }.keys.mapNotNull { it.second }.toSet()
 
     /** Select the accepted owner before rendering ordinary history, using the same fork exclusions. */
-    fun canonicalize(context: CodeModeRunContext, body: CodeModeBody, callbackIds: Set<String>): CodeModeRewrite {
+    suspend fun canonicalize(
+        context: CodeModeRunContext,
+        body: CodeModeBody,
+        callbackIds: Set<String>,
+    ): CodeModeRewrite {
         val resultIds = context.turn.toolResults.map(CodeModeResult::id).toSet()
         val capture = registry.owner(context.key, context.digest, resultIds, callbackIds, context.conflicts)
             ?: context.completed.lastOrNull()

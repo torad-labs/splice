@@ -1,4 +1,4 @@
-package splice.provider.codex
+package splice.provider.codex.branch
 
 import splice.core.parse.AnthropicTurnBody
 import splice.core.wire.TextBlock

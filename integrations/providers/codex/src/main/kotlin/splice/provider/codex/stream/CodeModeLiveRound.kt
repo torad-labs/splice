@@ -45,7 +45,7 @@ internal class CodeModeLiveRound(
     val source = capture.source
     val ready = capture.ready
     private val record: CodeModeRecord? get() = capture.record
-    val lifecycle = CodeModeRoundLifecycle(capture, headStop)
+    val lifecycle = CodeModeRoundLifecycle(capture, headStop, registry, config.log)
     val billing = CodeModeRoundBilling(lifecycle, registry, CodeModeRoundRecord { record }, config.log)
     val switching = CodeModeSwitchingSink(sink, observer = CodeModeSourceObserver(::observe))
     val cut = CodeModeCutClaim()
@@ -81,8 +81,7 @@ internal class CodeModeLiveRound(
     @Volatile private var terminalSeen = false
         private set
 
-    @Volatile var sourceInterrupted = false
-        private set
+    val sourceInterrupted: Boolean get() = lifecycle.sourceInterrupted
 
     val localFailure: TurnOutcome.Failure? get() = lifecycle.localFailure
 
@@ -171,14 +170,14 @@ internal class CodeModeLiveRound(
             source.fail(SOURCE_DISPOSED)
             return@synchronized outcome
         }
-        sourceInterrupted = capture.unfinished &&
+        lifecycle.sourceInterrupted = capture.unfinished &&
             (outcome as? TurnOutcome.Failure)?.cause in SOURCE_TEAR_CAUSES
         // The capture loses a source its terminal does not certify, which closes the cell a client step may still be
         // advancing. Set first, so that step ends as a torn source's step does, or with a permanent failure as it is.
         lifecycle.executionLost = !sourceInterrupted && capture.rejects(outcome)
         permanentEnding = (outcome as? TurnOutcome.Failure)?.takeIf { sourceLost && it.traits.permanent }
         Cancellables.runCatchingBestEffort { capture.finish(outcome) }
-            .getOrElse { return@synchronized reject(it) }
+            .getOrElse { return@synchronized lifecycle.reject(it) }
         if (sourceInterrupted && outcome is TurnOutcome.Failure) {
             outcome.copy(
                 cause = FailureCause.UPSTREAM_CONN_RESET,
@@ -213,7 +212,7 @@ internal class CodeModeLiveRound(
             if (!ready.isCompleted) ready.completeExceptionally(error)
             throw error
         }
-        sourceInterrupted = capture.unfinished && error is IOException
+        lifecycle.sourceInterrupted = capture.unfinished && error is IOException
         // Splice's own non-IO fault loses the record below and closes the cell a client step may be advancing, as an
         // uncertified source does. Set before the source fails, so that step ends as a torn source's step does.
         lifecycle.executionLost = !sourceInterrupted && capture.unfinished
@@ -233,7 +232,7 @@ internal class CodeModeLiveRound(
         if (stoppedByHead) throw CancellationException(HEAD_STOPPED)
         localFailure?.let { return@synchronized it }
         // A record's next client step reads the source's outcome, as a torn source's does.
-        sourceInterrupted = capture.unfinished
+        lifecycle.sourceInterrupted = capture.unfinished
         capture.interrupted(SOURCE_REFUSED)
         completion.ended(ending)
     }
@@ -294,27 +293,8 @@ internal class CodeModeLiveRound(
             if (sourceLost) return@synchronized
             if (localFailure != null) return@synchronized
             if (record?.terminal() == true && event !is CustomToolSource.Continuity) return@synchronized
-            Cancellables.runCatchingBestEffort { capture.observe(event, witness) }.onFailure(::reject)
+            Cancellables.runCatchingBestEffort { capture.observe(event, witness) }.onFailure(lifecycle::reject)
         }
-    }
-
-    private fun reject(error: Throwable): TurnOutcome.Failure {
-        val rejected = CodeModeRejection.outcome(error)
-        lifecycle.localFailure = rejected
-        sourceInterrupted = false
-        source.fail(rejected.message)
-        try {
-            if (capture.itemComplete) {
-                Cancellables.runCatchingBestEffort { capture.interrupted() }.onFailure { failure ->
-                    config.log("[code-mode] rejected response accounting was not saved (${failure::class.simpleName})")
-                }
-            } else {
-                lifecycle.localFailure = CodeModeRejection.lose(record, rejected, registry)
-            }
-        } finally {
-            ready.complete(null)
-        }
-        return checkNotNull(localFailure)
     }
 }
 

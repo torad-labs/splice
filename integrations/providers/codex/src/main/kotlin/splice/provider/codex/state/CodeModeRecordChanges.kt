@@ -2,6 +2,7 @@
 package splice.provider.codex.state
 
 import kotlinx.coroutines.CancellationException
+import kotlinx.serialization.json.JsonElement
 import splice.core.memory.HeapCapacityException
 import splice.provider.codex.CodeModeBridgeConfig
 import splice.provider.codex.CodeModeOmission
@@ -12,6 +13,7 @@ import splice.provider.codex.CodexCodeModeStore
 import splice.provider.codex.state.collection.CodeModeRecordKeys
 import splice.provider.codex.state.diagnostics.CodeModeNativeBranch
 import splice.upstream.codemode.CodeModeCell
+import splice.upstream.codemode.CodeModeResult
 import kotlin.concurrent.withLock
 
 /** A change to a live record, run under its conversation's key. */
@@ -142,6 +144,23 @@ internal class CodeModeRecordChanges(
 
     /** A retry's ownership read shares the driver's key, without sweeping or ending any source. */
     fun clientIds(record: CodeModeRecord): Set<String> = access.withKey(record.key) { record.clientIds() }
+
+    /** Acceptance reserves the result, media and wire proof before the same keyed mutation. */
+    fun acceptResults(
+        record: CodeModeRecord,
+        digest: String,
+        supplied: Map<String, CodeModeResult>,
+        media: Map<String, List<JsonElement>>,
+        clientOutputDigests: Map<String, String>,
+    ) = access.withKey(record.key) {
+        // The prior issuance is already durable. New results and the worker's next step commit together.
+        CodeModeHeap.grow(record, record.accepted.heapGrowth(supplied, media, clientOutputDigests)) { kept ->
+            record.accepted.kept(kept, supplied)
+        }
+        record.progress.lastDigest = digest
+        record.progress.updatedAt = config.clock.millis()
+        record.accepted.accept(supplied, media, clientOutputDigests)
+    }
 
     /** A change the record's next save carries. */
     fun edit(

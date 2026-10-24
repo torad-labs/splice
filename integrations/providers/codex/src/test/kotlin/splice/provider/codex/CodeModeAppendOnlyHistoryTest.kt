@@ -45,7 +45,7 @@ private const val RUNS = 120
 
 /** Seeds a wider run broke under the draws below, kept so they stay fixed. A draw moved or added in a stream moves
  *  every seed after it to another conversation, so a new decision draws only in runs that did not exist before. */
-private val KEPT = listOf(168, 209, 505)
+private val KEPT = listOf(168, 209, 505, 1280, 1537)
 
 /** Seeds a run of 2,000 broke on a store this build wrote, and on one a rollback wrote in part. */
 private val KEPT_OWN = listOf(234, 505, 701)

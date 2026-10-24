@@ -3,7 +3,9 @@ package splice.provider.codex.history
 
 import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonElement
+import kotlinx.serialization.json.JsonObject
 import splice.core.perf.InputItemDigests
+import splice.provider.codex.CODE_MODE_FIELD_ROLE
 import splice.provider.codex.CODE_MODE_METADATA_VERSION
 import splice.provider.codex.CodeModeRecord
 import splice.provider.codex.CodexCodeModeHistoryCodec
@@ -209,12 +211,19 @@ internal class CodeModeLegacyStart(
 
     /** Where a copy of prose alone may start: at the floor and past the reasoning replayed there, then the same at
      *  the anchor, then just before the anchor; at the end when there is neither. The floor is where the script
-     *  before it ends, so a copy found there is this script's and not a later one's with the same preface. */
+     *  before it ends, so a copy found there is this script's and not a later one's with the same preface. A user
+     *  message the client holds before the anchor came before the script, so none starts ahead of it: GPT's answer
+     *  before that message may open with the same words. */
     private fun prose(after: Int?, floor: CodeModeFloor?): Sequence<Int> {
         if (after == null && floor == null) return past(conversation.size)
         val before = after?.minus(1)?.takeIf { it >= 0 }
-        return floor?.next?.let(::past).orEmpty() + after?.let(::past).orEmpty() + listOfNotNull(before)
+        val asked = after?.let { anchor -> (anchor - 1 downTo 0).firstOrNull { asked(conversation[it]) }?.plus(1) }
+        val floored = floor?.next?.let(::past).orEmpty().filter { it >= (asked ?: 0) }
+        return floored + after?.let(::past).orEmpty() + listOfNotNull(before)
     }
+
+    /** Whether [item] is a message the user wrote. */
+    private fun asked(item: JsonElement): Boolean = codec.string(item as? JsonObject, CODE_MODE_FIELD_ROLE) == USER
 
     /** Every start in the history, nearest [near] first, the later of two as near first. */
     private fun nearest(near: Int): Sequence<Int> = sequence {
@@ -286,3 +295,5 @@ internal data class CodeModeEcho(val end: Int, val split: Int) {
     /** The last item that holds any of the echo. */
     val last: Int get() = if (split == 0) end - 1 else end
 }
+
+private const val USER = "user"

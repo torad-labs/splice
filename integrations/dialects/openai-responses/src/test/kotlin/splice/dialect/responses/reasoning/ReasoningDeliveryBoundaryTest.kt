@@ -10,6 +10,8 @@ import kotlinx.serialization.json.jsonArray
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.put
 import org.junit.jupiter.api.Assertions.assertEquals
+import org.junit.jupiter.api.Assertions.assertNull
+import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.io.TempDir
 import splice.core.auth.AuthDescription
@@ -20,6 +22,7 @@ import splice.core.model.ModelCatalog
 import splice.core.model.ModelEntry
 import splice.core.parse.AnthropicParse
 import splice.core.parse.AnthropicTurnBody
+import splice.core.reasoning.ReasoningReplay
 import splice.core.turn.ReasoningDisplay
 import splice.core.turn.TurnOutcome
 import splice.core.turn.WatchdogBudget
@@ -36,6 +39,7 @@ import splice.upstream.ReanchorRound
 import splice.upstream.TurnSignals
 import splice.upstream.sse.CustomToolSource
 import splice.upstream.sse.WireSink
+import java.io.IOException
 import java.nio.file.Path
 import kotlin.time.Duration.Companion.seconds
 
@@ -69,8 +73,9 @@ private class DeliveryProvider(state: Path) : ResponsesProvider(
     override fun extraHeaders(creds: Credentials): Map<String, String> = emptyMap()
 }
 
-private class DeliverySink : WireSink {
+private class DeliverySink(private val rejectedText: String? = null) : WireSink {
     val text = StringBuilder()
+    val ordered = mutableListOf<String>()
     val completed = mutableListOf<CustomToolSource.Completed>()
     var opaqueBlocks = 0
         private set
@@ -80,9 +85,13 @@ private class DeliverySink : WireSink {
     override suspend fun openThinking(): WireBlockIndex = WireBlockIndex(next++)
     override suspend fun openTool(id: String, name: String): WireBlockIndex = WireBlockIndex(next++)
     override suspend fun textDelta(index: WireBlockIndex, text: String) {
+        if (text == rejectedText) throw IOException("fixture suffix delivery failed")
         this.text.append(text)
+        ordered += "text:$text"
     }
-    override suspend fun thinkingDelta(index: WireBlockIndex, thinking: String) = Unit
+    override suspend fun thinkingDelta(index: WireBlockIndex, thinking: String) {
+        ordered += "thinking:$thinking"
+    }
     override suspend fun inputJsonDelta(index: WireBlockIndex, partialJson: String) = Unit
     override suspend fun closeBlock(index: WireBlockIndex) = Unit
     override suspend fun closeAll() = Unit
@@ -115,11 +124,19 @@ private object DeliveryFrames {
         )
     }
 
-    fun reasoning(id: String): JsonObject = buildJsonObject {
+    fun reasoning(id: String, summary: String? = null): JsonObject = buildJsonObject {
         put("type", "reasoning")
         put("id", id)
         put("encrypted_content", "cipher-$id")
-        put("summary", JsonArray(emptyList()))
+        val parts = summary?.let { text ->
+            listOf(
+                buildJsonObject {
+                    put("type", "summary_text")
+                    put("text", text)
+                },
+            )
+        }.orEmpty()
+        put("summary", JsonArray(parts))
     }
 
     fun done(item: JsonObject, index: Int? = 0): JsonObject = buildJsonObject {
@@ -170,29 +187,130 @@ class ReasoningDeliveryBoundaryTest(@param:TempDir private val state: Path) {
             sink,
         )
         val failure = checkNotNull(torn as? TurnOutcome.Failure)
-        assertEquals("Hello", sink.text.toString())
+        assertEquals("Hello world", sink.text.toString())
         assertEquals(listOf(complete), checkNotNull(failure.partial).nativePrefix)
         val next = checkNotNull(provider.reanchorPolicy(built.meta))
             .continuationForFailure(ReanchorRound(built.requestBody, failure, 0))
         val added = checkNotNull(
             next,
         ).getValue("input").jsonArray.drop(built.requestBody.getValue("input").jsonArray.size)
-        assertEquals(listOf("Hello"), projection(added.dropLast(1).map { it.jsonObject }))
+        assertEquals(listOf("Hello world"), projection(added.dropLast(1).map { it.jsonObject }))
 
-        val tail = DeliveryFrames.message("msg_tail", " world")
+        val tail = DeliveryFrames.message("msg_tail", "!")
         val reason = DeliveryFrames.reasoning("rs_after_answer")
         provider.streamTranslator(built.meta, signals).driveTurn(
             listOf(
-                DeliveryFrames.delta(" world"),
+                DeliveryFrames.delta("!"),
                 DeliveryFrames.done(tail),
                 DeliveryFrames.done(reason, 1),
                 DeliveryFrames.terminal(tail, reason),
             ).asFlow(),
             sink,
         )
-        assertEquals("Hello world", sink.text.toString())
+        assertEquals("Hello world!", sink.text.toString())
         assertEquals(0, sink.opaqueBlocks)
-        assertEquals(listOf("user", "Hello world", "rs_after_answer", "user"), projection(input(provider, sink)))
+        assertEquals(listOf("user", "Hello world!", "rs_after_answer", "user"), projection(input(provider, sink)))
+    }
+
+    @Test
+    fun `completed suffix reaches the client before following reasoning and survives replay`() = runTest {
+        val provider = DeliveryProvider(state)
+        val built = provider.buildTurn(opening, false, "session")
+        val sink = DeliverySink()
+        val complete = DeliveryFrames.message("msg_full", "Hello world")
+        val reason = DeliveryFrames.reasoning("rs_after_complete", "Now inspect the output carefully.")
+        val torn = provider.streamTranslator(built.meta, signals).driveTurn(
+            listOf(
+                DeliveryFrames.delta("Hello"),
+                DeliveryFrames.done(complete),
+                DeliveryFrames.done(reason, 1),
+            ).asFlow(),
+            sink,
+        )
+        val failure = checkNotNull(torn as? TurnOutcome.Failure)
+        val partial = checkNotNull(failure.partial)
+        assertEquals("Hello world", sink.text.toString())
+        assertEquals("Hello world", partial.text.bodyText)
+        assertEquals(listOf(complete, reason), partial.nativePrefix)
+        val suffixAt = sink.ordered.indexOf("text: world")
+        val reasoningAt = sink.ordered.indexOfFirst { it.startsWith("thinking:") }
+        assertTrue(suffixAt >= 0 && reasoningAt > suffixAt)
+        val next = checkNotNull(provider.reanchorPolicy(built.meta))
+            .continuationForFailure(ReanchorRound(built.requestBody, failure, 0))
+        val added = checkNotNull(next).getValue("input").jsonArray
+            .drop(built.requestBody.getValue("input").jsonArray.size)
+        assertEquals(listOf("Hello world", "rs_after_complete"), projection(added.dropLast(1).map { it.jsonObject }))
+        for (view in listOf(provider, DeliveryProvider(state))) {
+            assertEquals(listOf("user", "Hello world", "rs_after_complete", "user"), projection(input(view, sink)))
+        }
+        assertEquals(0, sink.opaqueBlocks)
+    }
+
+    @Test
+    fun `failed suffix delivery clamps recovery before separately retained later reasoning`() = runTest {
+        val provider = DeliveryProvider(state)
+        val built = provider.buildTurn(opening, false, "session")
+        val sink = DeliverySink(rejectedText = " world")
+        val complete = DeliveryFrames.message("msg_full", "Hello world")
+        val reason = DeliveryFrames.reasoning("rs_after_failed_suffix")
+        val torn = provider.streamTranslator(built.meta, signals).driveTurn(
+            listOf(
+                DeliveryFrames.delta("Hello"),
+                DeliveryFrames.done(complete),
+                DeliveryFrames.done(reason, 1),
+            ).asFlow(),
+            sink,
+        )
+        val failure = checkNotNull(torn as? TurnOutcome.Failure)
+        val partial = checkNotNull(failure.partial)
+        assertEquals("Hello", sink.text.toString())
+        assertEquals("Hello", partial.text.bodyText)
+        assertEquals(listOf(complete), partial.nativePrefix)
+        // A retained source can contain later items even though the client suffix was not delivered.
+        val retained = partial.copy(
+            nativePrefix = checkNotNull(partial.nativePrefix) + reason,
+            reasoningEnvelopes = partial.reasoningEnvelopes + checkNotNull(
+                ReasoningReplay.encodeReasoningEnvelope(reason),
+            ),
+        )
+        val next = checkNotNull(provider.reanchorPolicy(built.meta))
+            .continuationForFailure(ReanchorRound(built.requestBody, failure.copy(partial = retained), 0))
+        val added = checkNotNull(next).getValue("input").jsonArray
+            .drop(built.requestBody.getValue("input").jsonArray.size)
+        assertEquals(listOf("Hello"), projection(added.dropLast(1).map { it.jsonObject }))
+        assertEquals(listOf(complete, reason), retained.nativePrefix)
+        assertEquals(listOf("user", "Hello", "user"), projection(input(provider, sink)))
+        assertEquals(0, sink.opaqueBlocks)
+    }
+
+    @Test
+    fun `an unprovable completed prefix keeps later reasoning raw without positioning it`() = runTest {
+        val provider = DeliveryProvider(state)
+        val built = provider.buildTurn(opening, false, "session")
+        val sink = DeliverySink()
+        val before = DeliveryFrames.reasoning("rs_before_mismatch")
+        val complete = DeliveryFrames.message("msg_mismatch", "Hello world")
+        val after = DeliveryFrames.reasoning("rs_after_mismatch")
+        val torn = provider.streamTranslator(built.meta, signals).driveTurn(
+            listOf(
+                DeliveryFrames.done(before),
+                DeliveryFrames.delta("Hello!", 1),
+                DeliveryFrames.done(complete, 1),
+                DeliveryFrames.done(after, 2),
+            ).asFlow(),
+            sink,
+        )
+        val failure = checkNotNull(torn as? TurnOutcome.Failure)
+        assertEquals("Hello!", sink.text.toString())
+        assertEquals(listOf(before, complete, after), checkNotNull(failure.partial).nativePrefix)
+        assertNull(
+            checkNotNull(provider.reanchorPolicy(built.meta))
+                .continuationForFailure(ReanchorRound(built.requestBody, failure, 0)),
+        )
+        for (view in listOf(provider, DeliveryProvider(state))) {
+            assertEquals(listOf("user", "rs_before_mismatch", "Hello!", "user"), projection(input(view, sink)))
+        }
+        assertEquals(0, sink.opaqueBlocks)
     }
 
     @Test

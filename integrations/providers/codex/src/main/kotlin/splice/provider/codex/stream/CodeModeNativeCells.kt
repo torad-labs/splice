@@ -10,6 +10,23 @@ import java.util.concurrent.ConcurrentHashMap
 internal class CodeModeNativeCells : AutoCloseable {
     private val cells = ConcurrentHashMap<Pair<String, String>, CodeModeHeldNativeCell>()
     private val completed = ConcurrentHashMap<Pair<String, String>, String>()
+    private val sessions = ConcurrentHashMap<String, String>()
+    private val aliases = ConcurrentHashMap<String, String>()
+
+    fun trackSession(recordKey: String, key: String, clientSessionId: String) {
+        aliases[recordKey] = key
+        val prior = sessions.putIfAbsent(key, clientSessionId)
+        require(prior == null || prior == clientSessionId) { "Native session ownership changed" }
+    }
+
+    fun nativeSession(key: String): String = aliases[key] ?: key
+
+    fun clientSession(key: String): String? = sessions[nativeSession(key)]
+
+    fun hasSessions(): Boolean = sessions.isNotEmpty()
+
+    fun endedSessions(alive: splice.provider.codex.state.lease.CodeModeSessionAlive): List<String> =
+        sessions.filterValues { alive(it) == false }.keys.toList()
 
     fun retain(key: String, cell: NativeCodeModeCell, notificationCallId: String) {
         val held = CodeModeHeldNativeCell(cell, notificationCallId)
@@ -25,16 +42,21 @@ internal class CodeModeNativeCells : AutoCloseable {
         completed[key to id] = notificationCallId
     }
 
-    fun closeSession(key: String) {
+    fun closeSession(recordKey: String) {
+        val key = nativeSession(recordKey)
         val ended = cells.entries.filter { it.key.first == key }
         ended.forEach { (id, held) -> if (cells.remove(id, held)) held.cell.close() }
         completed.keys.removeIf { it.first == key }
+        sessions.remove(key)
+        aliases.entries.removeIf { it.value == key }
     }
 
     override fun close() {
         val ending = cells.values.toList()
         cells.clear()
         completed.clear()
+        sessions.clear()
+        aliases.clear()
         ending.forEach { it.cell.close() }
     }
 }

@@ -67,6 +67,9 @@ internal data class CodeModeRecord(
     var nativeCellId: String? = null
     var nativeCompleted: Boolean = false
 
+    /** Transient admission mode: a native capacity refusal proves the source was never dispatched. */
+    var nativeRuntime: Boolean = false
+
     /** Exact display receipts, distinct from canonical native notification tool outputs. */
     var deliveredOnly: List<JsonElement> = emptyList()
 

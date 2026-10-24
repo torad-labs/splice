@@ -1,4 +1,6 @@
-package splice.provider.codex.history
+package splice.provider.codex.history.durable
+
+import splice.provider.codex.history.CodeModeCallbackReceipt
 
 /** Callback proofs share unchanged balanced map nodes across every retained branch. */
 internal class CodeModeHistoryCallbacks internal constructor(internal val root: HistoryCallbackNode?) :
@@ -136,9 +138,6 @@ private class HistoryCallbackIterator(root: HistoryCallbackNode?) :
         if (!hasNext()) throw NoSuchElementException("History callback iterator is exhausted")
         val node = pending.removeLast()
         descend(node.right)
-        return object : Map.Entry<String, CodeModeCallbackReceipt> {
-            override val key = node.key
-            override val value = node.value
-        }
+        return java.util.AbstractMap.SimpleImmutableEntry(node.key, node.value)
     }
 }

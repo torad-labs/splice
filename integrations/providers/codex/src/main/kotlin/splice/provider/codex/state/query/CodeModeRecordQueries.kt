@@ -46,8 +46,13 @@ internal class CodeModeRecordQueries(
 
     fun recordsFor(key: String): List<CodeModeRecord> = withKey(key) { CodeModeRecordKeys.of(records, key) }
 
-    fun completed(key: String): List<CodeModeRecord> = withKey(key) {
-        CodeModeRecordKeys.of(records, key).filter { it.phase == CodeModePhase.COMPLETED }
+    fun completed(key: String, conversationId: String? = null): List<CodeModeRecord> = withKey(key) {
+        val matching = if (conversationId == null) {
+            CodeModeRecordKeys.of(records, key)
+        } else {
+            records.filter { it.conversationId == conversationId }
+        }
+        matching.filter { it.phase == CodeModePhase.COMPLETED }
             .filterNot { CodeModeNativeChain.retired(it) && !CodeModeNativeChain.rewritable(it) }
     }
 

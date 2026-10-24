@@ -74,10 +74,12 @@ internal class CodexCodeModeRegistry(
         history = CodeModeExpiredHistory(loaded.expired.toMutableList(), config.retention.records, heap)
     }
     val nativeCells = splice.provider.codex.stream.CodeModeNativeCells()
-    private val endSession = CodeModeSessionEnd { key ->
-        nativeCells.closeSession(key)
-        closeSession(key)
-    }
+    private val nativeSessions = splice.provider.codex.stream.CodeModeNativeSessions(
+        nativeCells,
+        config.cellLease.sessionAlive,
+        closeSession,
+    )
+    private val endSession = CodeModeSessionEnd(nativeSessions::closeSession)
     private val retention =
         CodeModeRecordRetention(config.retention, json, config.log, config.cellLease.sessionAlive, endSession)
     private val cells = mutableMapOf<String, CodeModeCell>()
@@ -101,11 +103,20 @@ internal class CodexCodeModeRegistry(
         monitor,
         records,
         history,
-        { PeriodicSweep().run() },
+        splice.provider.codex.state.CodeModeRegistrySweep(
+            config,
+            nativeSessions,
+            access,
+            records,
+            history,
+            store,
+            sweeper,
+            retention,
+        ),
         store,
         config,
         sweepInterval,
-    )
+    ).also { it.nativeOwned = CodeModeSweepOwnership(nativeCells::hasSessions) }
 
     /** V4-337: where each code-mode turn starts, before its history is built. */
     val turnStart = CodeModeTurnStart(access, retention, records, history, store, config.clock, retainedCells)
@@ -129,7 +140,8 @@ internal class CodexCodeModeRegistry(
 
     fun recordsFor(key: String): List<CodeModeRecord> = queries.recordsFor(key)
 
-    fun completed(key: String): List<CodeModeRecord> = queries.completed(key)
+    fun completed(key: String, conversationId: String? = null): List<CodeModeRecord> =
+        queries.completed(key, conversationId)
 
     fun expiredHistory(key: String, digest: String, ids: Set<String>): Boolean =
         queries.expiredHistory(key, digest, ids)
@@ -290,38 +302,6 @@ internal class CodexCodeModeRegistry(
             if (victim != null) return victim
         }
         return null
-    }
-
-    private inner class PeriodicSweep {
-        fun run() {
-            val keys = monitor.withLock {
-                records.map(CodeModeRecord::key).toSet() +
-                    history.entries.map(CodeModeExpiredSnapshot::key) + store.pendingKeys
-            }
-            keys.forEach { key ->
-                access.tryKey(key) {
-                    val changed = sweeper.sweep(key)
-                    store.save(records, history.entries, retryOnly = !changed, dirtyKeys = setOf(key))
-                }
-            }
-            withinBounds()
-        }
-
-        /** The head's bounds hold on the timer too: finished conversations past them go within one sweep of
-         *  losing their protection, under the same protections an admission keeps. A key whose lock is
-         *  taken is passed over this sweep. */
-        private fun withinBounds() {
-            val passed = mutableSetOf<String>()
-            while (true) {
-                val key = monitor.withLock { retention.overBound(records, sweeper.busyKeys() + passed) } ?: return
-                var went = false
-                access.tryKey(key) {
-                    went = retention.letGoOver(records, history, key, sweeper.busyKeys(), config.clock.millis())
-                    if (went) store.save(records, history.entries, dirtyKeys = setOf(key))
-                }
-                if (!went) passed += key
-            }
-        }
     }
 
     /** V4-179: [media] holds the follow-up items rendered for each supplied result; see [CodeModeAccepted.accept]. */

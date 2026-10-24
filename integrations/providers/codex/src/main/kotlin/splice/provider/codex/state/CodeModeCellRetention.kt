@@ -73,8 +73,18 @@ internal class CodeModeCellRetention(
         return victim
     }
 
-    fun running(record: CodeModeRecord): Boolean =
-        record.cellBorrowers > 0 || (record.id in cells && record.cellIdleSince == null)
+    fun running(
+        record: CodeModeRecord,
+        protection: CodeModeCellProtection = CodeModeCellProtection.EXECUTION,
+    ): Boolean {
+        val foreground = record.cellBorrowers > 0 || (record.id in cells && record.cellIdleSince == null)
+        return when (protection) {
+            CodeModeCellProtection.EXECUTION -> foreground
+            CodeModeCellProtection.SESSION_OWNED ->
+                foreground ||
+                    CodeModeNativeCellLifetime.retained(record, cells[record.id], config.cellLease.sessionAlive)
+        }
+    }
 
     fun supersede(key: String, digest: String, continued: Set<String>): Boolean {
         val stale = CodeModeRecordKeys.of(records, key).filter {
@@ -96,7 +106,7 @@ internal class CodeModeCellRetention(
         config.log(
             "[code-mode] pool refusal: retained=${retained.size} " +
                 "dead=${liveness.count { it == false }} unknown=${liveness.count { it == null }} " +
-                "alive=${liveness.count { it == true }} executing=${retained.count(::running)} " +
+                "alive=${liveness.count { it == true }} executing=${retained.count { running(it) }} " +
                 "oldestIdleMs=$age idleBoundMs=$CELL_IDLE_MS",
         )
     }
@@ -109,6 +119,7 @@ internal class CodeModeCellRetention(
     private fun rank(record: CodeModeRecord, bound: Long): Int? {
         if (record.phase != CodeModePhase.ACTIVE || running(record)) return null
         val liveness = alive(record)
+        if (CodeModeNativeCellLifetime.retained(record, cells[record.id], config.cellLease.sessionAlive)) return null
         return when {
             liveness == false -> if (record.id in cells || record.sourceEnd != null) 0 else null
             record.id !in cells -> null
@@ -174,3 +185,19 @@ internal class CodeModeCellRetention(
         )
     }
 }
+
+/** Native continuation ownership is independent of execution-history age and unknown-session idle leases. */
+internal object CodeModeNativeCellLifetime {
+    fun retained(
+        record: CodeModeRecord,
+        cell: CodeModeCell?,
+        alive: splice.provider.codex.state.lease.CodeModeSessionAlive,
+    ): Boolean {
+        val native = cell is splice.provider.codex.stream.CodeModeNativeObservation ||
+            (cell as? splice.provider.codex.stream.CodeModeStreamingCell)?.nativeObservation != null
+        val positiveDeath = record.sessionId?.let(alive::invoke) == false
+        return native && !positiveDeath
+    }
+}
+
+internal enum class CodeModeCellProtection { EXECUTION, SESSION_OWNED }

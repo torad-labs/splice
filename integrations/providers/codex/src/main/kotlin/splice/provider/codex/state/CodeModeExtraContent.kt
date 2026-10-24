@@ -17,6 +17,7 @@ import splice.provider.codex.CodeModeIssuedStep
 import splice.provider.codex.CodeModePending
 import splice.provider.codex.CodeModeRecord
 import splice.provider.codex.CodexCodeModeHistoryCodec
+import splice.provider.codex.history.CodeModeAcknowledgedBaseline
 import splice.provider.codex.history.CodeModeDeliveredEchoes
 import splice.provider.codex.history.CodeModeOwnership
 import splice.provider.codex.history.CodeModeScriptPlacements
@@ -25,7 +26,8 @@ internal class CodeModeExtraContent(
     private val codec: CodexCodeModeHistoryCodec,
     private val ownership: CodeModeOwnership,
 ) {
-    private val delivered = CodeModeDeliveredEchoes(codec, CodeModeScriptPlacements(codec))
+    private val scripts = CodeModeScriptPlacements(codec)
+    private val delivered = CodeModeDeliveredEchoes(codec, scripts)
 
     /** [input]: the round's parsed input array, or null when the round is not a Responses request.
      *  [digests]: the round's item digests, so this check's two baseline indexes render no item again. */
@@ -97,7 +99,7 @@ internal class CodeModeExtraContent(
         val projected = codec.conversation(codec.projection.project(input)).body
         val acknowledged = record.replayAnchors?.client?.acknowledgement
         if (acknowledged != null) {
-            return acknowledged.boundary(projected, clearedCallbacks)?.let { projected to it }
+            return CodeModeAcknowledgedBaseline.locate(projected, acknowledged, clearedCallbacks, scripts)
         }
         val boundary = codec.baselineBoundary(projected.logicalItems, record, digests)
         val validBaseline = codec.validFullPrefix(input, record) || boundary != null

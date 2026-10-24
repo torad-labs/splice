@@ -10,9 +10,9 @@ import splice.core.perf.InputDigest
 import splice.provider.codex.history.CodeModeCallbackProof
 import splice.provider.codex.history.CodeModeCallbackReceipt
 import splice.provider.codex.history.CodeModeClientDelta
-import splice.provider.codex.history.CodeModeHistoryStorage
 import splice.provider.codex.history.CodeModeLedgerEntry
 import splice.provider.codex.history.CodeModeUpstreamLedger
+import splice.provider.codex.history.durable.CodeModeHistoryStorage
 import java.nio.file.Files
 
 class CodeModeDurableAuthorityTest : CodeModeBridgeTestSupport() {

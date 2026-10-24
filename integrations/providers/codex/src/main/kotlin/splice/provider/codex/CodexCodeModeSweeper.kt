@@ -64,6 +64,7 @@ internal class CodeModeTimedSweep(
         private set
     private var terminal: Runnable? = null
     private var released = false
+    internal var nativeOwned: CodeModeSweepOwnership? = null
 
     /** A sweep changed the records and could not save them yet; the next sweep saves again. */
     private var unsaved = false
@@ -78,7 +79,8 @@ internal class CodeModeTimedSweep(
 
     /** Under [monitor]: starts the sweeps when a record is kept and none run. */
     fun arm() {
-        val retained = records.isNotEmpty() || history.entries.isNotEmpty() || terminal != null
+        val retained = records.isNotEmpty() || history.entries.isNotEmpty() || terminal != null ||
+            nativeOwned?.retained() == true
         if (released) return
         if (running == null && retained) running = CodeModeSweeps.every(interval) { sweep() }
     }
@@ -90,6 +92,8 @@ internal class CodeModeTimedSweep(
             history.entries.clear()
         }
     }
+
+    private fun empty(): Boolean = records.isEmpty() && history.entries.isEmpty() && nativeOwned?.retained() != true
 
     /** One sweep: what the sweeper changed is saved, a save that fails is logged and made again at the
      *  next sweep, and the sweeps stop once no record or expiry marker is kept. Never throws: a throw would end the
@@ -109,7 +113,7 @@ internal class CodeModeTimedSweep(
         }
         monitor.withLock {
             val clean = !unsaved && store.settled
-            val empty = records.isEmpty() && history.entries.isEmpty()
+            val empty = empty()
             if (empty && clean) {
                 running?.cancel(false)
                 running = null
@@ -129,12 +133,27 @@ internal class CodexCodeModeSweeper(
     private val closeSession: CodeModeSessionEnd,
     private val retainedCells: CodeModeCellRetention,
 ) {
+    private val expiry = splice.provider.codex.state.CodeModeRecordExpiry(
+        config,
+        records,
+        cells,
+        admissions,
+        history,
+        closeSession,
+        retainedCells,
+    )
+
     /** Expires records and reaps dead or over-age unknown parked cells; true when anything changed. */
     fun sweep(key: String? = null, protectedKey: String? = null): Boolean =
-        expireRecords(key) or retainedCells.sweep(key, protectedKey) or expireMarkers(key)
+        expiry.expire(key) or retainedCells.sweep(key, protectedKey) or expireMarkers(key)
 
     /** The keys neither an admission nor a sweep may retire: one being admitted, or one with a running cell. */
-    fun busyKeys(): Set<String> = records.filter { it.id in admissions || retainedCells.running(it) }
+    fun busyKeys(): Set<String> = records.filter {
+        it.id in admissions || retainedCells.running(
+            it,
+            splice.provider.codex.state.CodeModeCellProtection.SESSION_OWNED,
+        )
+    }
         .mapTo(mutableSetOf(), CodeModeRecord::key)
 
     /** Without an explicit count bound, old expiry evidence is bounded by the same configured lifetime. */
@@ -143,29 +162,6 @@ internal class CodexCodeModeSweeper(
         // why: every query runs this; the age test goes first because almost no marker is old enough, and it costs
         // a long comparison where the key test costs a string comparison per marker.
         return history.entries.removeAll { it.expiredAt < cutoff && (key == null || it.key == key) }
-    }
-
-    private fun expireRecords(key: String?): Boolean {
-        val cutoff = config.clock.millis() - config.retention.ttl.inWholeMilliseconds
-        // A query prepares its own conversation; do not group and inspect every other session
-        // while holding the shared registry lock. The timer supplies each other key separately.
-        val candidates = if (key == null) records else CodeModeRecordKeys.of(records, key)
-        val lastUse = candidates.groupBy(CodeModeRecord::key)
-            .mapValues { (_, kept) -> kept.maxOf { it.progress.updatedAt } }
-        val protected = candidates.filter(retainedCells::running).map(CodeModeRecord::key).toSet()
-        val stale = candidates.filter {
-            it.key !in protected && lastUse.getValue(it.key) < cutoff
-        }
-        if (stale.isEmpty()) return false
-        stale.forEach { record ->
-            admissions.remove(record.id)
-            record.endSource()
-            cells.remove(record.id)?.close()
-            history.remember(record, config.clock.millis())
-        }
-        records.removeAll(stale.toSet())
-        stale.map(CodeModeRecord::key).distinct().forEach(closeSession::invoke)
-        return true
     }
 }
 
@@ -369,3 +365,7 @@ internal class CodeModeRecordRetention(
 }
 
 private const val RECORD_ID_LOG_CHARS: Int = 8
+
+internal fun interface CodeModeSweepOwnership {
+    fun retained(): Boolean
+}

@@ -12,6 +12,7 @@ import splice.provider.codex.CODE_MODE_WAIT_TOOL_NAME
 import splice.provider.codex.CodeModeBridgeConfig
 import splice.provider.codex.CodeModeRecord
 import splice.provider.codex.CodeModeRunContext
+import splice.provider.codex.CodexCodeModeMachine
 import splice.provider.codex.CodexCodeModeRegistry
 import splice.upstream.codemode.CodeModeCell
 import splice.upstream.codemode.CodeModeRuntime
@@ -85,6 +86,10 @@ internal class CodeModeRuntimeStarter(
         context: CodeModeRunContext,
         stream: CodeModeLiveRound?,
     ): CodeModeCell {
+        record.nativeRuntime = true
+        val owner = record.conversationId ?: splice.provider.codex.state.CodeModeTurnIdentity().conversationId(
+            context.turn,
+        )
         val source = if (stream == null) {
             record.origin.source
         } else {
@@ -96,13 +101,13 @@ internal class CodeModeRuntimeStarter(
         val waiting = splice.core.util.JsonScalars.str(record.origin.outer, "name") == CODE_MODE_WAIT_TOOL_NAME
         val invocation = if (waiting) CodeModeNativeInvocations.wait(source) else CodeModeNativeInvocations.exec(source)
         val held = if (waiting) {
-            retained(record, invocation)
+            retained(record, invocation, owner)
         } else {
             require(invocation.options.maxOutputTokens <= Int.MAX_VALUE.toLong()) {
                 "Native exec output token budget exceeds the pinned host protocol range"
             }
             val cell = host.startNativeSession(
-                record.key,
+                owner,
                 checkNotNull(invocation.source),
                 context.turn.tools,
                 context.turn.descriptions,
@@ -110,9 +115,10 @@ internal class CodeModeRuntimeStarter(
             )
             CodeModeHeldNativeCell(cell, record.origin.outerCallId)
         }
+        registry.nativeCells.trackSession(record.key, owner, context.turn.sessionId)
         record.nativeCellId = held.cell.cellId
         return CodeModeNativeObservation(
-            record.key,
+            owner,
             held.cell,
             invocation,
             registry.nativeCells,
@@ -120,13 +126,17 @@ internal class CodeModeRuntimeStarter(
         )
     }
 
-    private fun retained(record: CodeModeRecord, invocation: CodeModeNativeInvocation): CodeModeHeldNativeCell {
+    private fun retained(
+        record: CodeModeRecord,
+        invocation: CodeModeNativeInvocation,
+        owner: String,
+    ): CodeModeHeldNativeCell {
         val id = checkNotNull(invocation.cellId)
-        val terminal = registry.recordsFor(record.key).firstOrNull {
+        val terminal = registry.completed(record.key, record.conversationId).firstOrNull {
             it.nativeCellId == id && it.nativeCompleted && it.phase == splice.provider.codex.CodeModePhase.COMPLETED
         }
-        terminal?.let { registry.nativeCells.completed(record.key, id, it.origin.outerCallId) }
-        return registry.nativeCells.take(record.key, id)
+        terminal?.let { registry.nativeCells.completed(owner, id, it.origin.outerCallId) }
+        return registry.nativeCells.take(owner, id)
     }
 
     /** A failure before source dispatch has a typed proof; every other start failure stays no-rerun. */
@@ -151,6 +161,15 @@ internal class CodeModeRuntimeStarter(
         )
     }
 
+    fun capacity(record: CodeModeRecord, error: CodeModeCapacityException, machine: CodexCodeModeMachine): TurnOutcome {
+        if (record.nativeRuntime) return failed(record, CodeModeStartException(error))
+        val detail = "$CAPACITY_DETAIL: ${error.message}"
+        config.log(
+            "[code-mode] ${record.id.take(CODE_MODE_RECORD_LOG_CHARS)} (outer ${record.origin.outerCallId}): $detail",
+        )
+        return machine.interrupt(record, detail)
+    }
+
     private fun runtime(): CodeModeRuntime = try {
         run.runtime()
     } catch (error: CancellationException) {
@@ -161,3 +180,6 @@ internal class CodeModeRuntimeStarter(
         throw CodeModeStartException(IllegalStateException("code-mode host could not be opened"))
     }
 }
+
+private const val CAPACITY_DETAIL: String =
+    "code-mode worker capacity reached; nothing was executed. Call exec again once a running script finishes"

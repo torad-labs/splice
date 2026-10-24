@@ -109,7 +109,7 @@ internal class CodexCodeModeResume(
         body: CodeModeBody,
     ): TurnOutcome {
         val extra = wire.extraContent(
-            body,
+            CodeModeClientHistory.of(context, body),
             record,
             candidateMedia(record, context.turn),
             clearedCallbacks = context.turn.rendering.verifiedCleared.values.flatten().toSet(),
@@ -155,7 +155,7 @@ internal class CodexCodeModeResume(
     ): TurnOutcome = when {
         interrupts(extra, record) -> {
             wire.extraContent(
-                body,
+                CodeModeClientHistory.of(context, body),
                 record,
                 candidateMedia(record, context.turn),
                 report = extra,
@@ -298,3 +298,8 @@ private object CodeModeReaderTermination {
  * nobody expected, a baseline that no longer matches), which stops the script as it always did.
  */
 internal enum class CodeModeExtra { NONE, SYSTEM, STEERING }
+
+/** Steering is evidence from the client request, before private canonical model history is rebuilt. */
+private object CodeModeClientHistory {
+    fun of(context: CodeModeRunContext, fallback: CodeModeBody): CodeModeBody = context.client ?: fallback
+}

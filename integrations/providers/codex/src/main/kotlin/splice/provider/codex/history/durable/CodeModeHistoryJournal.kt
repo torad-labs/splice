@@ -1,4 +1,6 @@
-package splice.provider.codex.history
+// CREDENTIAL-WRITE-EXEMPT[2026-10-24]: private canonical model-history journal, never a credential;
+// owner-only atomic creation protects conversation history before forced append-only revisions.
+package splice.provider.codex.history.durable
 
 import kotlinx.serialization.json.Json
 import splice.core.memory.HeapCapacityException

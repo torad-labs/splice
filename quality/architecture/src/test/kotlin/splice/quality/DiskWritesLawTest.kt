@@ -584,13 +584,14 @@ private val SHIPPED_SITES: Map<String, Map<String, Int>> = mapOf(
         "JsonlSink.appendLine(" to 1,
     ),
     // Native model authority: owner-only initial journal, forced delta append and uncommitted-tail truncation.
-    "integrations/providers/codex/src/main/kotlin/splice/provider/codex/history/CodeModeHistoryJournal.kt" to mapOf(
-        "FileChannel.open(" to 1,
-        "JsonlSink.appendLine(" to 1,
-        "writeAtomic0600(" to 1,
-    ),
+    "integrations/providers/codex/src/main/kotlin/splice/provider/codex/history/durable/CodeModeHistoryJournal.kt" to
+        mapOf(
+            "FileChannel.open(" to 1,
+            "JsonlSink.appendLine(" to 1,
+            "writeAtomic0600(" to 1,
+        ),
     // The forced migration journal atomically replaces its final history path before the legacy snapshot is removed.
-    "integrations/providers/codex/src/main/kotlin/splice/provider/codex/history/CodeModeHistoryStorage.kt" to
+    "integrations/providers/codex/src/main/kotlin/splice/provider/codex/history/durable/CodeModeHistoryStorage.kt" to
         mapOf("Files.move(" to 1),
     // The checksum-verified executable is extracted into a private temporary directory and removed at runtime close.
     "integrations/codemode/src/main/kotlin/splice/codemode/nativehost/NativeHostArtifact.kt" to

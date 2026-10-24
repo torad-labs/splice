@@ -2,6 +2,10 @@ package splice.provider.codex.history
 
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.JsonElement
+import splice.provider.codex.history.durable.CodeModeHistoryDeltas
+import splice.provider.codex.history.durable.CodeModeHistoryPrepared
+import splice.provider.codex.history.durable.CodeModeHistoryState
+import splice.provider.codex.history.durable.CodeModeHistoryStorage
 import java.util.concurrent.ConcurrentHashMap
 
 /** Exact model input and the client prefix it acknowledged. Echoes are delivery receipts, never model authority. */

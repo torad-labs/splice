@@ -1,10 +1,12 @@
-package splice.provider.codex.history
+package splice.provider.codex.history.durable
 
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.JsonElement
 import splice.core.memory.HeapCategory
 import splice.core.memory.HeapOwners
 import splice.core.memory.HeapReservations
+import splice.provider.codex.history.CodeModeCallbackReceipt
+import splice.provider.codex.history.CodeModeLedgerEntry
 import splice.provider.codex.state.CodeModeWeight
 
 @Serializable
@@ -88,13 +90,16 @@ internal object CodeModeHistoryDeltas {
         val stored = CodeModeWeight.STORED
         val payload = post.covered.items.sumOf(stored::json) + post.sent.items.sumOf(stored::json) +
             post.delivery.echoes.sumOf(stored::json)
+        val removed = post.callbacks.removed.sumOf(stored::text)
         val callbacks = post.callbacks.changed.entries.sumOf { (id, receipt) ->
             stored.text(id) + stored.text(receipt.callDigest) + stored.text(receipt.outputDigest) +
                 receipt.media.sumOf(stored::json)
         }
         val width = maxOf(post.covered.prefix + post.covered.items.size, post.sent.prefix + post.sent.items.size)
         val height = Integer.SIZE - Integer.numberOfLeadingZeros(width.coerceAtLeast(1))
-        return payload + callbacks + DELTA_METADATA_BYTES + height * DELTA_TREE_LEVEL_BYTES *
+        return payload + callbacks + removed + stored.text(
+            delta.key,
+        ) + DELTA_METADATA_BYTES + height * DELTA_TREE_LEVEL_BYTES *
             (post.callbacks.changed.size + post.callbacks.removed.size + DELTA_ITEM_TREES)
     }
 

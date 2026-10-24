@@ -1,4 +1,4 @@
-package splice.provider.codex.history
+package splice.provider.codex.history.durable
 
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.SerializationException
@@ -10,6 +10,7 @@ import splice.core.perf.InputDigest
 import splice.core.util.LogSink
 import splice.provider.codex.CodeModePersistenceException
 import splice.provider.codex.CodeModeStateLocation
+import splice.provider.codex.history.CodeModeLedgerEntry
 import splice.upstream.memory.JvmHeap
 import java.io.IOException
 import java.nio.channels.FileChannel

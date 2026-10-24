@@ -1,7 +1,8 @@
-package splice.provider.codex.history
+package splice.provider.codex.history.durable
 
 import splice.core.memory.HeapReservations
 import splice.core.memory.HeapText
+import splice.provider.codex.history.CodeModeLedgerEntry
 import java.io.IOException
 
 /** Revisions form an acyclic persistent graph; completed output updates a post without changing its stable id. */

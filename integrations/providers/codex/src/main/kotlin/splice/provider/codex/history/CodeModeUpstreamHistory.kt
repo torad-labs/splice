@@ -14,6 +14,7 @@ import splice.provider.codex.CodeModeRecord
 import splice.provider.codex.CodeModeRunContext
 import splice.provider.codex.CodeModeStateLocation
 import splice.provider.codex.CodexCodeModeHistoryCodec
+import splice.provider.codex.history.durable.CodeModeHistoryStorage
 import splice.upstream.RoundBody
 import java.lang.ref.WeakReference
 
@@ -114,8 +115,17 @@ internal class CodeModeUpstreamHistory(
      *  the request the client sent. */
     fun clientStart(context: CodeModeRunContext): CodeModeClientStart? {
         val client = context.recovery?.baseline ?: context.client ?: return null
-        return started?.takeIf { it.first.get() === client }?.second
+        val base = started?.takeIf { it.first.get() === client }?.second
             ?: read(client, context.turn.rendering.replayMedia)?.also { started = WeakReference(client) to it }
+        val delivered = context.completed.flatMap { CodeModeScriptDelivery.items(it, scripts) }
+        if (base == null || delivered.isEmpty()) return base
+        val input = checkNotNull(client.request).second.dropWhile(codec::isPreamble)
+        return base.copy(
+            acknowledgement = CodeModeClientAcknowledgements.capture(
+                input + delivered,
+                context.turn.rendering.replayMedia,
+            ),
+        )
     }
 
     /** Where a script starting now starts in [client]'s history, or null when it is not a Responses input. */

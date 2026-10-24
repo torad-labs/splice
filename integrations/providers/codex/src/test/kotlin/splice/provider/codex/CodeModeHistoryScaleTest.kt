@@ -9,9 +9,9 @@ import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 import splice.core.memory.HeapBudget
-import splice.provider.codex.history.CodeModeHistoryStorage
 import splice.provider.codex.history.CodeModeLedgerEntry
 import splice.provider.codex.history.CodeModeUpstreamLedger
+import splice.provider.codex.history.durable.CodeModeHistoryStorage
 import java.nio.file.Files
 
 class CodeModeHistoryScaleTest : CodeModeBridgeTestSupport() {

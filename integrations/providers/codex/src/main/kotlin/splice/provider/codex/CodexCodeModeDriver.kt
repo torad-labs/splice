@@ -292,14 +292,7 @@ internal class CodexCodeModeDriver(
     } catch (error: CodeModePersistenceException) {
         throw error
     } catch (error: CodeModeCapacityException) {
-        // Every slot is busy with a presumed-live cell. Nothing ran: tell the MODEL, in the script's
-        // own output, and let the turn continue — a 502 here retried identically until new user
-        // content arrived (2026-09-07, 87 failed turns on one head).
-        val detail = "$CAPACITY_DETAIL: ${error.message}"
-        config.log(
-            "[code-mode] ${record.id.take(CODE_MODE_RECORD_LOG_CHARS)} (outer ${record.origin.outerCallId}): $detail",
-        )
-        record to machine.interrupt(record, detail)
+        record to starter.capacity(record, error, machine)
     } catch (error: IOException) {
         record to failedStart(record, stream, error)
     } catch (_: IllegalArgumentException) {
@@ -332,8 +325,3 @@ internal class CodexCodeModeDriver(
 }
 
 internal const val CODE_MODE_RECORD_LOG_CHARS: Int = 8
-
-// V4-388: exec is the only tool a code_mode_only turn declares, so the detail cannot send the model to
-// direct calls; a running cell frees its worker when it finishes.
-private const val CAPACITY_DETAIL: String =
-    "code-mode worker capacity reached; nothing was executed. Call exec again once a running script finishes"

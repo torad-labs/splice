@@ -188,7 +188,9 @@ internal class Mirror(
 }
 
 /** The name part of a mirror's `<machine>/<name>`: what Claude Code can list and an envelope can carry, and no two
- *  of one machine's alike, so a SendMessage by name reaches one. */
+ *  of one machine's alike, so a SendMessage by name reaches one. Since round 15 of PR #419's review a session keeps the
+ *  name its mirror was given while it runs under its own name, whatever the machine's other sessions do, so a session
+ *  here writing to it by that name, and replies to its socket, keep reaching it. */
 internal object MirrorNames {
     private val unsafe = Regex("[^A-Za-z0-9._-]+")
 
@@ -201,15 +203,24 @@ internal object MirrorNames {
     // why: what a session is called when nothing of its name is left to show.
     private const val UNNAMED_SESSION = "session"
 
-    /** [sessions] each under its safe name, one that would repeat another's followed by the start of its id. */
-    fun of(sessions: List<MirroredSession>): List<MirroredSession> {
-        val safe = sessions.map { safe(it.name) }
-        val repeated = safe.groupingBy { it }.eachCount().filterValues { it > 1 }.keys
-        return sessions.zip(safe) { session, name ->
-            val tag = safe(session.id).take(ID_CHARS)
-            session.copy(name = if (name in repeated) "${name.take(MAX_CHARS - ID_CHARS - 1)}-$tag" else name)
+    /** [sessions] each under the name [kept] holds for it (by id, the names their mirrors were given) while that is
+     *  still its own, else under its safe name, followed by the start of its id when another has it or would. */
+    fun of(sessions: List<MirroredSession>, kept: Map<String, String> = emptyMap()): List<MirroredSession> {
+        val stays = sessions.mapNotNull { session ->
+            val name = safe(session.name)
+            kept[session.id]?.takeIf { it == name || it == tagged(name, session.id) }?.let { session.id to it }
+        }.toMap()
+        val fresh = sessions.filter { it.id !in stays }.map { safe(it.name) }
+        val repeated = fresh.groupingBy { it }.eachCount().filterValues { it > 1 }.keys + stays.values
+        return sessions.map { session ->
+            val name = safe(session.name)
+            session.copy(name = stays[session.id] ?: if (name in repeated) tagged(name, session.id) else name)
         }
     }
+
+    /** [name] followed by the start of [id], cut so the two fit [MAX_CHARS]. */
+    private fun tagged(name: String, id: String): String =
+        "${name.take(MAX_CHARS - ID_CHARS - 1)}-${safe(id).take(ID_CHARS)}"
 
     /** [name] with each run of what a listing or an envelope cannot carry made one dash, at most [MAX_CHARS] long. */
     fun safe(name: String): String = name.replace(unsafe, "-").take(MAX_CHARS).ifEmpty { UNNAMED_SESSION }

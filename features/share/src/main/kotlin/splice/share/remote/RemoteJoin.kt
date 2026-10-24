@@ -1,7 +1,8 @@
 // NEW: LAN share, phase 2, milestone 2 (docs/specs/lan-share.md). Joining a sharing machine, for `splice remote` and
 // the console's Sharing tab alike: the join goes only over a connection that shows the certificate the machine stated
 // in its info (trust on first contact), so the token it issues is only ever sent back to that certificate, which this
-// machine pins from then on. The answer is words, not output: each surface says it its own way.
+// machine pins from then on. The answer is words, not output: each surface says it its own way. Since round 15 of PR
+// #419's review a refusal is said in the sharing machine's own words, which the join reads as RemoteUnanswered.
 package splice.share.remote
 
 import splice.core.util.Cancellables
@@ -18,7 +19,8 @@ public class RemoteJoin(private val client: String) {
         return Cancellables.runCatchingCancellable { http.join(machine.address, machine.port, client) }.fold(
             onSuccess = { RemoteJoined.Joined(http, it.token, pin) },
             onFailure = { failure ->
-                val why = http.refusal(failure) ?: SafeFailureText.render(failure)
+                val said = (failure as? RemoteUnanswered)?.said
+                val why = http.refusal(failure) ?: said ?: SafeFailureText.render(failure)
                 RemoteJoined.Refused("$server did not let this machine join: $why")
             },
         )

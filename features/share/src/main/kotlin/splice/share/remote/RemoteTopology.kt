@@ -1,7 +1,9 @@
 // NEW: LAN share, phase 2 (docs/specs/lan-share.md). What `splice remote`, and the console's Sharing tab after it,
 // changes in splice.toml, as edits of a Topology the caller writes through TopologyWriter (backup first, refused
 // on a finding): the `[remotes]` entry a join adds, the rows a sync refreshes, everything a removal drops, and the
-// phase-1 imports (api-key providers pointed at a share relay) a re-join moves onto their machine. No file here.
+// phase-1 imports (api-key providers pointed at a share relay) a re-join moves onto their machine. No file here. Since
+// round 15 of PR #419's review, a machine is one entry by its certificate: a second machine whose name comes to the
+// same key is joined under a key of its own (keyFor), and the first keeps its address, pin and token.
 package splice.share.remote
 
 import splice.core.model.ModelEntry
@@ -27,6 +29,18 @@ public class RemoteTopology(private val topology: Topology) {
             if (moves) provider.copy(baseUrl = RemoteRelay.url(url, head)) else provider
         },
     )
+
+    /** The `[remotes]` key a machine named [server], reached at [url] and showing [pin], is joined under: the entry
+     *  pinned to [pin] when there is one, since a certificate is one machine's; else its name ([RemoteNames]), unless
+     *  that entry is another machine's, at another address with another certificate, which keeps it, and then the name
+     *  with the first number free. A machine with a new certificate at the address it was joined at is the same
+     *  machine. */
+    public fun keyFor(server: String, url: String, pin: String): String {
+        val name = RemoteNames.of(server)
+        val keys = sequenceOf(name) + generateSequence(2) { it + 1 }.map { "$name-$it" }
+        return topology.remotes.entries.firstOrNull { it.value.fingerprint == pin }?.key
+            ?: keys.first { key -> topology.remotes[key]?.let { it.url == url } ?: true }
+    }
 
     /** The heads relayed to [name], by key. */
     public fun heads(name: String): Map<String, HeadConfig> =
@@ -105,7 +119,7 @@ public class RemoteTopology(private val topology: Topology) {
         provider.auth.kind == AuthKind.SpliceRemote.wire && provider.auth.remote == name
 
     /** A base_url that does not parse is simply not a relay, which is the whole answer here. */
-    private fun parsed(url: String): URI? = Cancellables.runCatchingCancellable { URI(url) }
+    private fun parsed(url: String): URI? = Cancellables.runCatchingCancellable { URI.create(url) }
         .fold(onSuccess = { it }, onFailure = { null })
 }
 

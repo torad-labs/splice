@@ -3,6 +3,8 @@
 // imports from it onto that entry (their per-head keys leave keys.toml), refresh the rows of heads already here,
 // and regenerate the others through `splice add`'s own path (AddVerb.addRemote), one line each. One restart and one
 // checkup at the end, not one per head. The console's Sharing page imports through this same class, with its own restart.
+// Since round 15 of PR #419's review, a machine whose name comes to the key of another machine joined here is written
+// under a key of its own (RemoteTopology.keyFor), said, and the other keeps its address, pin, token and commands.
 package splice.app.cli.share
 
 import splice.app.AddWiring
@@ -51,24 +53,35 @@ internal class RemoteImport(
     /** True when at least one of [machine]'s heads is usable here afterwards. The join goes only to the certificate
      *  [machine] stated, which is pinned from then on (trust on first contact, RemoteJoin). */
     suspend fun import(machine: RemoteFound): Boolean {
-        val name = RemoteNames.of(machine.info.server)
         // A join replaces the token this machine holds there, so a file that would stop the import stops it first.
         val current = file.loadedOrStarter() ?: return false
         val joined = RemoteJoin(ShareHostName().short()).join(machine)
         if (joined is RemoteJoined.Refused) err.line("$REMOTE_VERB: ${joined.why}")
         val ok = joined as? RemoteJoined.Joined ?: return false
         out.line("$GREEN✓$RESET joined ${machine.info.server}, certificate $DIM${ok.pin}$RESET pinned")
+        val target = target(current, machine, ok)
         // The token goes first: a provider that names the machine finds it on its first turn.
-        return kept(name, ok.token) && imported(machine, name, current, ok)
+        return kept(target.name, ok.token) && imported(machine, target, current)
     }
 
-    private suspend fun imported(machine: RemoteFound, name: String, current: Topology, joined: Joined): Boolean {
+    /** Where [machine] is written here: under its `[remotes]` key (RemoteTopology.keyFor), said when another machine
+     *  of its name keeps the one its name gives, and at the address it is reached at. */
+    private fun target(current: Topology, machine: RemoteFound, joined: Joined): RemoteTarget {
         val server = machine.info.server
         val host = machine.reachable()
         val url = joined.http.base(host, machine.port)
-        val spellings = setOf(machine.address, host, server, "$server.local", "$server.lan")
+        val name = RemoteTopology(current).keyFor(server, url, joined.pin)
+        current.remotes[RemoteNames.of(server)]?.takeIf { name != RemoteNames.of(server) }?.let { other ->
+            out.line("  $server at $url is not the machine of that name at ${other.url}; it is joined here as $name")
+        }
+        return RemoteTarget(name, url, server, joined, host)
+    }
+
+    private suspend fun imported(machine: RemoteFound, target: RemoteTarget, current: Topology): Boolean {
+        val (name, url, server) = target
+        val spellings = setOf(machine.address, target.host, server, "$server.local", "$server.lan")
         val legacy = RemoteTopology(current).phaseOne(spellings)
-        val pinned = RemoteTopology(current).joined(name, url, joined.pin)
+        val pinned = RemoteTopology(current).joined(name, url, target.joined.pin)
         val moved = RemoteTopology(pinned).migrated(legacy, name, url)
         val here = machine.info.heads.mapNotNull { shared ->
             RemoteTopology(moved).headFor(name, shared.key)?.let { it to shared }
@@ -78,7 +91,7 @@ internal class RemoteImport(
         forgetKeys(current, legacy.keys)
         here.forEach { (key, _) -> out.line("$GREEN✓$RESET ${commandOf(wanted, key)}: already here, rows refreshed") }
         val added = machine.info.heads.filter { shared -> here.none { it.second == shared } }
-            .count { shared -> added(RemoteTarget(name, url, server, joined), shared) }
+            .count { shared -> added(target, shared) }
         settle(changed = wanted != current || added > 0, checkup = added > 0)
         return here.isNotEmpty() || added > 0
     }
@@ -106,7 +119,7 @@ internal class RemoteImport(
     private suspend fun added(target: RemoteTarget, shared: SharedHead): Boolean {
         val server = target.server
         val topology = file.loaded() ?: return false
-        val (key, command) = localNames(topology, shared.key, shared.command, server) ?: return false
+        val (key, command) = localNames(topology, shared.key, shared.command, target) ?: return false
         val head = RemoteHead(
             remote = target.name,
             remoteKey = shared.key,
@@ -138,12 +151,18 @@ internal class RemoteImport(
     }
 
     /** The key and command a shared head is written under here: its own, or, when the key names a head or a provider
-     *  here or the command is another head's, `<name>-<server>` once the person agrees. Null skips the head. */
-    private fun localNames(topology: Topology, key: String, command: String, server: String): Pair<String, String>? {
+     *  here or the command is another head's, `<name>-<machine's key>` once the person agrees. Null skips the head. */
+    private fun localNames(
+        topology: Topology,
+        key: String,
+        command: String,
+        target: RemoteTarget,
+    ): Pair<String, String>? {
         val keyTaken = key in topology.heads || key in topology.providers
         val taken = keyTaken || topology.heads.any { (k, head) -> (head.claude.command ?: k) == command }
         if (!taken) return key to command
-        val suffix = RemoteNames.of(server)
+        val suffix = target.name
+        val server = target.server
         return if (confirm("'$command' is already a command here. Add $server's as '$command-$suffix'?", true)) {
             "$key-$suffix" to "$command-$suffix"
         } else {
@@ -161,7 +180,14 @@ internal class RemoteImport(
     private fun commandOf(topology: Topology, key: String): String = topology.heads[key]?.claude?.command ?: key
 }
 
-/** The machine a head is imported from: its `[remotes]` [name], relay [url], own [server] name and the join. */
-private data class RemoteTarget(val name: String, val url: String, val server: String, val joined: Joined)
+/** The machine a head is imported from: its `[remotes]` [name], relay [url], own [server] name, the join, and the
+ *  [host] it is reached at. */
+private data class RemoteTarget(
+    val name: String,
+    val url: String,
+    val server: String,
+    val joined: Joined,
+    val host: String,
+)
 
 internal const val REMOTE_VERB = "splice remote"

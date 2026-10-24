@@ -1,7 +1,9 @@
 // NEW: LAN share, phase 2 (docs/specs/lan-share.md). `splice remote list | sync | remove`: the machines this one
 // joined, as splice.toml's `[remotes]` and this machine's share store hold them. `sync` rewrites each imported head's
 // rows, pin and tiers as its machine serves them now; `remove` drops the machine, its heads, their command links and
-// its token. Both restart a running daemon once, which then serves what the file says.
+// its token. Both restart a running daemon once, which then serves what the file says. Since round 15 of PR #419's
+// review a machine whose certificate changed, a reply that never came and a url a hand edit left that does not parse
+// are said, as their own lines meant, instead of ending the verb on an exception.
 package splice.app.cli.share
 
 import splice.app.cli.peer.PeerExit
@@ -29,7 +31,10 @@ import splice.share.remote.RemoteTopology
 import splice.share.remote.RemoteTrust
 import splice.share.remote.RemotesStore
 import java.net.URI
+import java.util.concurrent.CompletableFuture
+import java.util.concurrent.ExecutionException
 import java.util.concurrent.TimeUnit
+import java.util.concurrent.TimeoutException
 
 internal class RemoteMachines(
     private val out: TerminalOutput,
@@ -44,7 +49,7 @@ internal class RemoteMachines(
     /** What [host]:[port] offers, asked through [http] (a first contact unless the machine is pinned), or null,
      *  said, when nothing there answers as a sharing splice or its certificate is not the pinned one. */
     fun info(host: String, port: Int, http: RemoteHttp = firstContact): ShareInfo? {
-        val asked = Cancellables.runCatchingCancellable { http.info(host, port).get(ANSWER_WAIT_S, TimeUnit.SECONDS) }
+        val asked = answered(http.info(host, port))
         val info = asked.fold(onSuccess = { it }, onFailure = { null })
         if (info == null) {
             val hint = "is ${CYAN}splice share on$RESET there?"
@@ -54,6 +59,16 @@ internal class RemoteMachines(
             err.line("$REMOTE_VERB: ${refused ?: "nothing at $at answers as a sharing splice ($hint)"}")
         }
         return info
+    }
+
+    /** What [future] came to within [ANSWER_WAIT_S]: its answer, or the failure it ended on, the wait's included. */
+    private fun <T> answered(future: CompletableFuture<T>): Result<T> = try {
+        Result.success(future.get(ANSWER_WAIT_S, TimeUnit.SECONDS))
+    } catch (failed: ExecutionException) {
+        Result.failure(failed)
+    } catch (late: TimeoutException) {
+        future.cancel(true)
+        Result.failure(late)
     }
 
     fun list(): Int {
@@ -143,7 +158,7 @@ internal class RemoteMachines(
     private fun restartIfUp(): Int = if (restart()) PeerExit.DONE else PeerExit.REFUSED
 
     /** A url findings refuse at every write and start, said here too for a file edited by hand since. */
-    private fun remoteUri(url: String): URI? = Cancellables.runCatchingCancellable { URI(url) }.fold(
+    private fun remoteUri(url: String): URI? = Cancellables.runCatchingCancellable { URI.create(url) }.fold(
         onSuccess = { it.takeIf { uri -> uri.host != null } },
         onFailure = { null },
     ) ?: null.also { err.line("$REMOTE_VERB: '$url' is not an address with a host") }

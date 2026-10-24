@@ -161,7 +161,8 @@ internal class RemoteFindings(private val topology: Topology) {
 
     private fun remotes(): List<TopologyFinding> = topology.remotes.flatMap { (name, remote) ->
         // A url that does not parse is the finding itself, so its failure is answered here rather than logged.
-        val uri = Cancellables.runCatchingCancellable { URI(remote.url) }.fold(onSuccess = { it }, onFailure = { null })
+        val uri = Cancellables.runCatchingCancellable { URI.create(remote.url) }
+            .fold(onSuccess = { it }, onFailure = { null })
         // Shares are TLS only since phase 2, and every relay trusts the one certificate pinned here.
         val url = if (uri?.scheme == "https" && !uri.host.isNullOrBlank()) {
             null

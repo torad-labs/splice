@@ -3,7 +3,9 @@
 // short timeouts, because a probe across a subnet asks hundreds of addresses where nothing listens. Since phase 2
 // over TLS only, trusting through [trust]: a first contact to read what a machine offers, and the join pinned to the
 // certificate that machine stated (RemoteTrust). Since round 14 of PR #419's review, what a machine says is read
-// printable (TerminalText): its description, read before any pin exists, and its words when it refuses a join.
+// printable (TerminalText): its description, read before any pin exists, and its words when it refuses a join. Since
+// round 15, a refused join throws what every refused read throws (RemoteUnanswered, an IOException), so the join's
+// caller says it in those words instead of ending on an exception it does not catch.
 package splice.share.remote
 
 import kotlinx.serialization.json.Json
@@ -44,8 +46,8 @@ public class RemoteHttp(private val trust: RemoteTrust) : RemoteInfoProbe {
             }
     }
 
-    /** Joins [host] as [client]. Throws with the sharing machine's own words when it refuses, printable and a line's
-     *  length at most (RemoteSaid). */
+    /** Joins [host] as [client]. Throws [RemoteUnanswered] with the sharing machine's own words when it refuses,
+     *  printable and a line's length at most (RemoteSaid). */
     public fun join(host: String, port: Int, client: String): ShareJoined {
         val body = json.encodeToString(ShareJoin.serializer(), ShareJoin(client))
         val request = HttpRequest.newBuilder(url(host, port, SHARE_JOIN_PATH))
@@ -54,8 +56,8 @@ public class RemoteHttp(private val trust: RemoteTrust) : RemoteInfoProbe {
             .POST(HttpRequest.BodyPublishers.ofString(body))
             .build()
         val response = http.send(request, HttpResponse.BodyHandlers.ofString())
-        check(response.statusCode() == HttpStatus.OK) {
-            "$host answered ${response.statusCode()}: ${RemoteSaid.of(json, response.body())}"
+        if (response.statusCode() != HttpStatus.OK) {
+            throw RemoteUnanswered("$host answered ${response.statusCode()}: ${RemoteSaid.of(json, response.body())}")
         }
         return json.decodeFromString(ShareJoined.serializer(), response.body())
     }

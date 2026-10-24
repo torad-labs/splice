@@ -3,7 +3,9 @@
 // must be known before it: an import onto a splice.toml that does not load is refused before it joins, and the token
 // this machine already holds keeps working. A machine with no splice.toml yet is a first run, and the import writes the
 // starter file with the machine in it, as `splice remote` did in phase 1. A real sharing listener on loopback, and
-// RemoteImport as `splice remote add` and the Sharing page run it, over a temp splice.toml and state folder.
+// RemoteImport as `splice remote add` and the Sharing page run it, over a temp splice.toml and state folder. Since
+// round 15 of PR #419's review, a second machine that goes by the same name is a machine of its own: it is imported
+// beside the first, whose address, pin and token stay its own.
 package splice.app.cli.share
 
 import kotlinx.coroutines.runBlocking
@@ -13,24 +15,12 @@ import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.io.TempDir
 import splice.configuration.add.DaemonRestart
-import splice.core.config.ConfigService
-import splice.core.config.MgmtKey
 import splice.core.config.StatePaths
 import splice.core.terminal.TerminalOutput
-import splice.core.testing.TestPorts
-import splice.core.topology.ShareConfig
-import splice.core.topology.Topology
 import splice.core.util.EnvReader
-import splice.share.MachinesJoined
 import splice.share.ShareHostName
-import splice.share.ShareInfo
-import splice.share.ShareListener
-import splice.share.ShareStart
 import splice.share.ShareState
-import splice.share.SharedCatalogs
-import splice.share.SharedQuotas
 import splice.share.remote.RemoteFound
-import splice.share.remote.RemoteHttp
 import splice.share.remote.RemoteJoin
 import splice.share.remote.RemoteJoined
 import splice.share.remote.RemoteNames
@@ -44,10 +34,6 @@ import java.net.http.HttpRequest
 import java.net.http.HttpResponse
 import java.nio.file.Files
 import java.nio.file.Path
-import java.util.concurrent.TimeUnit
-
-// why: the sharing machine is on loopback in this JVM; five seconds covers a loaded machine minting its certificate.
-private const val INFO_WAIT_S = 5L
 
 class RemoteImportFileTest {
     @TempDir
@@ -68,29 +54,9 @@ class RemoteImportFileTest {
     private val config: Path get() = TopologyLoader.configPath(here)
 
     /** [test] with a machine sharing on loopback, found as `splice remote add 127.0.0.1:<port>` finds it. */
-    private fun sharing(test: (RemoteFound, ShareListener) -> Unit) {
-        val vars = mapOf("SPLICE_STATE_DIR" to tmp.resolve("there").toString(), "HOME" to tmp.toString())
-        val paths = StatePaths(envReader = EnvReader { vars[it] })
-        val listener = ShareListener(
-            ShareStart(Topology(), paths, MgmtKey(paths), ConfigService(paths)) { },
-            SharedCatalogs { null },
-            SharedQuotas { null },
-            paths,
-            MachinesJoined { emptySet() },
-            { },
-        )
-        val port = TestPorts.reserve()
-        try {
-            assertTrue(runBlocking { listener.follow(ShareConfig(enabled = true, port = port)) }.listening)
-            val info: ShareInfo = checkNotNull(
-                RemoteHttp(RemoteTrust(null, "a sharing machine")).info("127.0.0.1", port)
-                    .get(INFO_WAIT_S, TimeUnit.SECONDS),
-            ) { "the sharing machine answered" }
-            test(RemoteFound("127.0.0.1", port, info), listener)
-        } finally {
-            runBlocking { listener.stop() }
-        }
-    }
+    private fun sharing(test: (RemoteFound) -> Unit) = LoopbackSharing(tmp, "there").use { test(it.found) }
+
+    private val store by lazy { RemotesStore(ShareState(StatePaths(envReader = here)).remotesFile) }
 
     private fun import(machine: RemoteFound): Boolean = runBlocking {
         val lines = TerminalOutput { said += it }
@@ -110,7 +76,7 @@ class RemoteImportFileTest {
 
     @Test
     fun `an import onto a splice toml that does not load is refused before it joins, and the old token still works`() {
-        sharing { machine, _ ->
+        sharing { machine ->
             val held = RemoteJoin(ShareHostName().short()).join(machine) as RemoteJoined.Joined
             Files.createDirectories(config.parent)
             Files.writeString(config, "[heads\nthis is not toml\n")
@@ -125,7 +91,7 @@ class RemoteImportFileTest {
 
     @Test
     fun `a first import on a machine with no splice toml writes one that names the machine, and keeps its token`() {
-        sharing { machine, _ ->
+        sharing { machine ->
             assertFalse(Files.exists(config), "a first run: no splice.toml yet")
 
             import(machine)
@@ -133,10 +99,34 @@ class RemoteImportFileTest {
             val name = RemoteNames.of(machine.info.server)
             val written = TopologyLoader.parse(Files.readString(config))
             assertTrue(name in written.remotes, "splice.toml names the machine: $said")
-            val token = checkNotNull(RemotesStore(ShareState(StatePaths(envReader = here)).remotesFile).token(name)) {
+            val token = checkNotNull(store.token(name)) {
                 "the token is kept in this machine's share store: $said"
             }
             assertEquals(200, answered(machine, token), "and it is the one the sharing machine took")
+        }
+    }
+
+    @Test
+    fun `a second machine of the same name is imported beside the first, which keeps its address, pin and token`() {
+        LoopbackSharing(tmp, "there").use { first ->
+            LoopbackSharing(tmp, "other").use { second ->
+                assertEquals(first.found.info.server, second.found.info.server, "two machines of one name")
+
+                import(first.found)
+                import(second.found)
+
+                val written = TopologyLoader.parse(Files.readString(config)).remotes
+                val firsts = written.filterValues { it.fingerprint == first.found.info.fingerprint }
+                val seconds = written.filterValues { it.fingerprint == second.found.info.fingerprint }
+                assertEquals(1, firsts.size, "the first is still joined, pinned to its own certificate: $written $said")
+                assertEquals(1, seconds.size, "the second is joined beside it: $written $said")
+                val (firstName, firstEntry) = firsts.entries.single()
+                assertTrue(firstEntry.url.endsWith(":${first.port}"), "the first keeps its address: ${firstEntry.url}")
+                val firstToken = checkNotNull(store.token(firstName)) { "the first's token is kept: $said" }
+                assertEquals(200, answered(first.found, firstToken), "and it is the one the first machine took")
+                val secondToken = checkNotNull(store.token(seconds.keys.single())) { "the second's is kept: $said" }
+                assertEquals(200, answered(second.found, secondToken), "the second has its own")
+            }
         }
     }
 }

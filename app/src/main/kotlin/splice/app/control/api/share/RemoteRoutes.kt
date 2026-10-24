@@ -46,15 +46,17 @@ internal class RemoteRoutes(private val wired: SharingWired) {
      *  parts. */
     private val env: EnvReader get() = wired.parts()?.daemonEnv ?: EnvReader(System::getenv)
 
-    /** The sharing machines that answer on this machine's networks, this one left out, each marked when joined. */
+    /** The sharing machines that answer on this machine's networks, this one left out, each marked when joined: when
+     *  this machine pinned its certificate, so a second machine of a joined one's name is still offered. */
     suspend fun scan(): JsonReply = withContext(io) {
-        val joined = ShareTopologyFile(Said().terminal, REMOTE_VERB, env).loaded()?.remotes?.keys.orEmpty()
+        val remotes = ShareTopologyFile(Said().terminal, REMOTE_VERB, env).loaded()?.remotes.orEmpty()
+        val pinned = remotes.values.mapNotNull { it.fingerprint }.toSet()
         val self = ShareHostName().short()
         val found = RemoteDiscovery(RemoteHttp(RemoteTrust(null, "a sharing machine"))).scan(DEFAULT_SHARE_PORT)
             .filterNot { it.info.server == self }
         val machines = buildJsonObject {
             put("ok", true)
-            putJsonArray("machines") { found.forEach { add(found(it, RemoteNames.of(it.info.server) in joined)) } }
+            putJsonArray("machines") { found.forEach { add(found(it, it.info.fingerprint in pinned)) } }
         }
         JsonReply(HttpStatusCode.OK, machines.toString())
     }

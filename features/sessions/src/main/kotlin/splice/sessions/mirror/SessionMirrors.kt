@@ -180,7 +180,8 @@ public class SessionMirrors(
         carriers[machine] = carrier
         offered[machine] = sessions.associateByTo(mutableMapOf()) { it.id }
         val held = byMachine.getOrPut(machine) { mutableMapOf() }
-        val wanted = MirrorNames.of(sessions).associateBy { it.id }
+        val names = held.mapValues { (_, mirror) -> mirror.session.name }
+        val wanted = MirrorNames.of(sessions, names).associateBy { it.id }
         held.entries.removeAll { (id, mirror) ->
             val stale = wanted[id]?.name != mirror.session.name || !mirror.alive()
             if (stale) mirror.close()
@@ -240,9 +241,11 @@ public class SessionMirrors(
             if (closed) return@synchronized null to "this machine's splice is stopping"
             val held = byMachine[machine]?.get(from.id)
             if (held != null && held.alive()) return@synchronized held to null
+            // Names read before a dead mirror goes, so the one made for it keeps its name, as the next look keeps it.
+            val names = byMachine[machine].orEmpty().mapValues { (_, mirror) -> mirror.session.name }
             byMachine[machine]?.remove(from.id)?.close()
             val others = offered[machine].orEmpty().values.filter { it.id != from.id }
-            val named = MirrorNames.of(others + from).first { it.id == from.id }
+            val named = MirrorNames.of(others + from, names).first { it.id == from.id }
             if (byMachine.values.sumOf { it.size } >= MIRRORS_AT_MOST) {
                 return@synchronized null to "this machine already hosts the most mirrors it can ($MIRRORS_AT_MOST), " +
                     "so ${named.name} of $machine has none here to write from"

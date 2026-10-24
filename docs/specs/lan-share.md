@@ -126,6 +126,10 @@ claudex ─▶ head :3099 (anthropic-passthrough) ──TLS, pinned──▶ sha
   read, cut to a line, as they are printed, logged and shown as the reason. Every character a terminal acts on or
   cannot show is left out (C0, C1, DEL, and the Unicode Cc, Cf, Zl, Zp, Cn, Co and Cs classes), as `splice sessions`
   reads Claude Code's registry.
+- Whatever a sharing machine answers, and whatever a hand edit leaves in splice.toml, is said, never an exception
+  (round 15): a refused join in the machine's own words, a pinned machine whose certificate changed or that does not
+  answer within the wait, and a url that does not parse, which boot and every write refuse as a finding, an import's
+  look for phase-1 heads passes over, and a sync names.
 - The Sharing page reads and changes the splice.toml the daemon booted, whatever file its environment names, so an
   import, a sync or a remove from the page reaches the file the daemon's links and switches read (round 14).
 - Import of one machine (`RemoteImport`):
@@ -133,7 +137,11 @@ claudex ─▶ head :3099 (anthropic-passthrough) ──TLS, pinned──▶ sha
      first contact, `RemoteJoin`) → this machine's token there, kept in `<state>/share/remotes.json` (0600, one per
      machine, `RemotesStore`), never in `keys.toml`. splice.toml names the machine, never the token.
   2. `[remotes.<name>]` with the address that answered (the machine's own name when it resolves there) and the
-     certificate's fingerprint, pinned from then on.
+     certificate's fingerprint, pinned from then on. A machine is one entry, known by its certificate (round 15): a
+     second machine whose name comes to the same key, at another address with another certificate, is joined as
+     `<name>-2` (the first number free), said, and the first keeps its address, pin, token and commands. The same
+     machine joined again, at a new address or with a new certificate at its old one, keeps its entry. A scan marks a
+     machine joined by its certificate, so the page still offers a second machine of a joined one's name.
   3. Each shared head written through the `splice add` path (`AddVerb.addRemote`: the same refusals, checks, atomic
      save, port choice and wrapper link), one line per command and one restart at the end:
 
@@ -349,7 +357,9 @@ Built on `feat/lan-share`, merged into `feat/v0.4.0` through the gate. Milestone
      note past that is refused with that reason. Each mirror's inbox waits on a virtual thread, so however many there
      are, none holds a thread the rest of the daemon needs (at 64 they once stalled it). A mirror's name is
      what ListAgents shows and an envelope carries (`[A-Za-z0-9._-]`, 64 characters), and two sessions of one name are
-     told apart by the start of their ids.
+     told apart by the start of their ids. A session keeps the name its mirror was given while it runs under its own
+     name, whatever its machine's other sessions do: a second session of that name is the one told apart, and the
+     mirror, its socket and the sessions writing to it are left as they are (round 15).
    - **The pages.** `splice sessions` lists a mirror as its machine's ("runs on torad-server"), with no head, account
      or folder of this machine's (round 14). On the Sessions page a mirror is a row of its own machine: a badge names the machine, no folder
      here is claimed for it, it groups under the machine's name (by project and by command), and it is read only

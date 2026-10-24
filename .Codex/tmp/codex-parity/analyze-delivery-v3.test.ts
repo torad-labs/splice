@@ -42,6 +42,78 @@ function protocolTrial() {
   return { dir, upstream, client, req, frame, chunk, save, close: () => rmSync(dir, { recursive: true, force: true }) };
 }
 
+describe("r3 actual Anthropic title output contracts", () => {
+  const schema = { type: "object", properties: { title: { type: "string" } }, required: ["title"] };
+  const native = { type: "json_schema", schema };
+  const body = (extra: FixtureRow) => ({ model: "claude-codex--sol", system: [{ type: "text", text: "You are naming a coding session. Return a title." }],
+    messages: [{ role: "user", content: "inspect the fixture" }], stream: false, ...extra });
+  const titleResponse = (f: ReturnType<typeof protocolTrial>, request: FixtureRow) => {
+    f.client.push(f.req(40, 9, "/v1/messages", request),
+      { kind: "response", at_ms: 41, connection: 9, status: 200, content_type: "application/json" },
+      f.chunk(42, 9, JSON.stringify({ id: "msg-title", type: "message", role: "assistant", content: [{ type: "text", text: '{"title":"fixture"}' }], stop_reason: "end_turn" })));
+    f.save();
+  };
+  test.each(["output_config", "output_format"] as const)("real /v1/messages %s title normalizes missing schema name canonically", async shape => {
+    const f = protocolTrial();
+    try {
+      titleResponse(f, body(shape === "output_config" ? { output_config: { format: native } } : { output_format: native }));
+      const report = await inspectTrial(f.dir, "splice", "sol", profile);
+      const aux = report.downstreamRequests.find(x => x.requestAt === 40)!;
+      expect(aux.route).toBe("/v1/messages"); expect(aux.phase).toBe("title");
+      expect(aux.evidence.structuredOutput).toBe(true); expect(aux.evidence.namingDeveloper).toBe(true);
+      expect(report.sourceToGateway?.equal).toBe(true); expect(report.qualified).toBe(true);
+    } finally { f.close(); }
+  });
+  test("malformed native formats and unknown title lookalikes remain unknown, even with matching task text", async () => {
+    const malformed: unknown[] = [null, "json_schema", [], { type: "json_object", schema }, { type: "json_schema", schema: [] },
+      { type: "json_schema", schema: null }, { ...native, name: "other" }, { ...native, name: "" },
+      { type: "json_schema", schema: { properties: { title: { type: "number" } } } },
+      { type: "json_schema", schema: { properties: { title: { type: "string" }, other: { type: "string" } } } }];
+    for (const format of malformed) for (const shape of ["output_config", "output_format"]) {
+      const f = protocolTrial();
+      try {
+        titleResponse(f, body(shape === "output_config" ? { output_config: { format } } : { output_format: format }));
+        const report = await inspectTrial(f.dir, "splice", "sol", profile);
+        expect(report.downstreamRequests.find(x => x.requestAt === 40)!.phase).toBe("unknown");
+        expect(report.qualified).toBe(false);
+      } finally { f.close(); }
+    }
+  });
+  test("output_config.format takes precedence including JSON null; absent format falls back to legacy field", async () => {
+    for (const [extra, expected] of [
+      [{ output_config: { format: native }, output_format: { ...native, name: "wrong" } }, "title"],
+      [{ output_config: { format: null }, output_format: native }, "unknown"],
+      [{ output_config: {}, output_format: native }, "title"],
+    ] as const) {
+      const f = protocolTrial();
+      try {
+        titleResponse(f, body(extra));
+        expect((await inspectTrial(f.dir, "splice", "sol", profile)).downstreamRequests.find(x => x.requestAt === 40)!.phase).toBe(expected);
+      } finally { f.close(); }
+    }
+  });
+});
+
+describe("r3 canonical scalar names", () => {
+  test("schema-name defaulting and strict=true follow JsonScalars without relaxing the developer instruction", async () => {
+    const native = { type: "json_schema", schema: { properties: { title: { type: "string" } } } };
+    for (const [name, expected, defaulted] of [[null, "title", true], [{}, "title", true], [false, "unknown", false], [0, "unknown", false], ["structured_output", "title", false]] as const) {
+      const f = protocolTrial();
+      try {
+        const request = { system: "You are naming a coding session", messages: [{ role: "user", content: "inspect the fixture" }], stream: false,
+          output_config: { format: { ...native, name, strict: false } } };
+        f.client.push(f.req(40, 9, "/v1/messages", request), { kind: "response", at_ms: 41, connection: 9, status: 200, content_type: "application/json" }, f.chunk(42, 9, '{"content":[]}'));
+        f.save();
+        const aux: FixtureRow = (await inspectTrial(f.dir, "splice", "sol", profile)).downstreamRequests.find(x => x.requestAt === 40)!;
+        expect(aux.phase).toBe(expected); expect(aux.nativeOutputFormat.defaultNameApplied).toBe(defaulted); expect(aux.nativeOutputFormat.strict).toBe(true);
+        request.system = "An unknown naming instruction";
+        f.client[f.client.length - 3]!.text = JSON.stringify(request); f.save();
+        expect((await inspectTrial(f.dir, "splice", "sol", profile)).downstreamRequests.find(x => x.requestAt === 40)!.phase).toBe("unknown");
+      } finally { f.close(); }
+    }
+  });
+});
+
 describe("r2 protocol and explicit profile regressions", () => {
   test("CLI refuses a partial bench.json expectation and requires explicit three-field profile", async () => {
     const run = mkdtempSync(join(tmpdir(), "analysis-v3-cli-"));

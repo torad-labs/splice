@@ -66,15 +66,38 @@ export function classifyRequest(raw: Row, route: string | null, context: Context
   return { phase, reason, evidence };
 }
 
+/** Native-format branch of ResponsesOutputSchema.nativeFormat/nativeRefusal/format (Kotlin lines 45-50, 73-85).
+ * Presence differs from null: JSON null in output_config.format overrides output_format and is refused.
+ * JsonScalars.str preserves scalar names, while null/nonprimitive names receive the canonical schema name.
+ * This normalizes the output schema only; it supplies no model or reasoning defaults.
+ */
+function anthropicOutputFormat(body: Row) {
+  const object = (v: unknown): v is Row => v !== null && typeof v === "object" && !Array.isArray(v);
+  const config = object(body.output_config) ? body.output_config : undefined;
+  const configHasFormat = config !== undefined && Object.hasOwn(config, "format");
+  const present = configHasFormat || Object.hasOwn(body, "output_format");
+  const native = configHasFormat ? config!.format : body.output_format;
+  if (!present) return { present, format: undefined, error: null, defaultNameApplied: false };
+  if (!object(native)) return { present, format: undefined, error: "Responses output format must be a JSON object", defaultNameApplied: false };
+  if (native.type !== "json_schema") return { present, format: undefined, error: "Responses structured output requires a json_schema format", defaultNameApplied: false };
+  if (!object(native.schema)) return { present, format: undefined, error: "Responses json_schema format requires a schema object", defaultNameApplied: false };
+  const scalarName = ["string", "number", "boolean"].includes(typeof native.name) ? String(native.name) : undefined;
+  return { present, format: { type: "json_schema", name: scalarName ?? "structured_output", schema: native.schema, strict: true },
+    error: null, defaultNameApplied: scalarName === undefined };
+}
+
 function classifyDownstream(x: Exchange, context: Context) {
   if (x.route?.endsWith("/messages") && Array.isArray(x.body.messages)) {
     const input = [...(x.body.system ? [{ role: "developer", content: x.body.system }] : []), ...x.body.messages];
-    const projected = { ...x.body, input };
+    const output = anthropicOutputFormat(x.body);
+    const projected = { ...x.body, input, text: output.format ? { format: output.format } : undefined };
     const result = classifyRequest(projected, "/responses", context);
     // Claude model selectors are not upstream model IDs. Attribute this layer by actual native task/session only.
     const matched = !result.evidence.sessionConflict && (result.evidence.matchingSession || result.evidence.matchingUser);
-    const phase = result.phase === "title" ? "title" : matched && !x.body.output_format && !x.body.output_config?.format ? "task" : "unknown";
-    return { ...result, phase, reason: phase === "task" ? "Claude request matches the actual native task/session; upstream model checked separately" : result.reason };
+    const phase = output.error ? "unknown" : result.phase === "title" ? "title" : matched && !output.present ? "task" : "unknown";
+    return { ...result, phase, reason: output.error ?? (phase === "task" ? "Claude request matches the actual native task/session; upstream model checked separately" : result.reason),
+      nativeOutputFormat: { present: output.present, valid: !output.error, defaultNameApplied: output.defaultNameApplied,
+        strict: output.format?.strict ?? null, normalizer: "ResponsesOutputSchema native format/refusal semantics" } };
   }
   return classifyRequest(x.body, x.route, context);
 }
@@ -315,7 +338,7 @@ export async function main(argv: string[]): Promise<number> {
     trials.push({ task: result.task, repetition: result.repetition, verified: result.verified,
       ...await inspectTrial(join(run, result.task, `${result.repetition}-${result.arm}`), result.arm, manifest.config.model, expectedProfile) });
   }
-  const report = { format_version: 3, analysis_revision: 2, classifier: "interactive-delivery-v3 / strict-session-title-auxiliary-v1",
+  const report = { format_version: 3, analysis_revision: 3, classifier: "interactive-delivery-v3 / strict-session-title-auxiliary-v1",
     expected_reasoning_profile: expectedProfile, expected_profile_source: "explicit CLI declaration; no manifest/default inference",
     analyzer_sha256: digest(readFileSync(fileURLToPath(import.meta.url))), classifier_sha256: digest(readFileSync(fileURLToPath(import.meta.url))),
     evidence_sha256: digest(readFileSync(join(import.meta.dir, "analyze-delivery-v3-evidence.ts"))),

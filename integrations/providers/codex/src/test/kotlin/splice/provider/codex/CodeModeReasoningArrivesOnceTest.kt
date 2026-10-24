@@ -8,10 +8,20 @@ import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Test
+import org.junit.jupiter.params.ParameterizedTest
+import org.junit.jupiter.params.provider.ValueSource
+import splice.core.reasoning.ReasoningReplay
+import splice.core.turn.RoundHandoffs
+import splice.core.turn.TurnOutcome
+import splice.core.turn.Usage
+import splice.core.util.LogSink
+import splice.dialect.responses.request.AssistantPhase
+import splice.dialect.responses.request.ResponsesAssistantText
 import splice.dialect.responses.request.ResponsesContextMessage
 import splice.provider.codex.history.CodexCodeModeHistory
 import splice.provider.codex.state.native.CodeModeAnchorCapture
@@ -42,6 +52,40 @@ internal class CodeModeReasoningArrivesOnceTest : CodeModeBridgeTestSupport() {
     @Test
     fun `a record with no copy in the client's history still emits its reasoning once`() {
         assertEquals(round, reasoningIn(rewrite(history + callback("call-0"), record(history))))
+    }
+
+    @ParameterizedTest
+    @ValueSource(booleans = [true, false])
+    fun `normalized and native reasoning with one id retain the native payload once at its verified slot`(
+        nativeSource: Boolean,
+    ) {
+        val native = round.map { JsonObject((it.jsonObject - "summary") + ("status" to JsonPrimitive("completed"))) }
+        val normalized = native.map {
+            checkNotNull(ReasoningReplay.decodeReasoningEnvelope(ReasoningReplay.encodeReasoningEnvelope(it)))
+        }
+        val source = if (nativeSource) native else normalized
+        val echoed = if (nativeSource) normalized else native
+        val before = ResponsesAssistantText.item("before the middle reasoning", AssistantPhase.COMMENTARY)
+        val after = ResponsesAssistantText.item("after the middle reasoning", AssistantPhase.COMMENTARY)
+        val continuity = CodexCodeModeWire(Json, LogSink {}).continuity(
+            TurnOutcome.Success(
+                false,
+                false,
+                Usage(),
+                handoffs = RoundHandoffs(nativePrefix = listOf(source[0], before, source[1], after, source[2])),
+            ),
+        )
+        val owner = record(history).apply {
+            carry.continuity = continuity.logicalItems
+            carry.replay = continuity.replayItems
+        }
+        val client = history + listOf(echoed[0], before, echoed[1], after, echoed[2]) + callback("call-0")
+        val actual = rewrite(client, owner)
+        val expected = history + listOf(native[0], before, native[1], after, native[2]) +
+            listOf(CodeModeCallReplay.item(owner), codec.customOutput(owner))
+
+        assertEquals(expected, actual, "same-id copies collapse without erasing distinct ids or native payload fields")
+        assertEquals(actual, rewrite(actual, owner), "a second canonicalization preserves the exact native prefix")
     }
 
     private fun reasoningIn(items: List<JsonElement>): List<JsonElement> =

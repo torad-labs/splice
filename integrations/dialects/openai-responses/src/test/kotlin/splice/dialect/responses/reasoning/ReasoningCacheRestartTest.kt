@@ -10,6 +10,7 @@ import kotlinx.coroutines.flow.asFlow
 import kotlinx.coroutines.test.runTest
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.jsonArray
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
@@ -37,6 +38,7 @@ import splice.dialect.responses.ResponsesRoundTripQuirks
 import splice.upstream.ProviderLocations
 import splice.upstream.ProviderName
 import splice.upstream.ProviderTuning
+import splice.upstream.ReanchorRound
 import splice.upstream.TurnSignals
 import splice.upstream.sse.WireSink
 import java.nio.file.Files
@@ -101,6 +103,20 @@ private object QuietSink : WireSink {
     override suspend fun closeAll() = Unit
     override suspend fun addTextBlock(text: String) = Unit
     override suspend fun addRedactedThinking(data: String) = Unit
+}
+
+private class PositionTextSink : WireSink by QuietSink {
+    val text = StringBuilder()
+    var opaqueBlocks = 0
+        private set
+
+    override suspend fun textDelta(index: WireBlockIndex, text: String) {
+        this.text.append(text)
+    }
+
+    override suspend fun addRedactedThinking(data: String) {
+        opaqueBlocks++
+    }
 }
 
 private const val OPENING = "fix the failing build"
@@ -368,6 +384,100 @@ class ReasoningPositionRestartTest(@param:TempDir private val state: Path) {
             "LeftRight",
             replay.single { it["role"]?.jsonPrimitive?.content == "assistant" }["content"]?.jsonPrimitive?.content,
         )
+    }
+
+    @Test
+    fun `reasoning recovered after interrupted prose keeps its delivered boundary after restart`() = runTest {
+        val daemon = RestartProbe(state, replay = true)
+        val built = daemon.buildTurn(opening, false, "session")
+        val sink = PositionTextSink()
+        val interrupted = daemon.streamTranslator(built.meta, signals).driveTurn(
+            listOf(ev("""{"type":"response.output_text.delta","output_index":0,"delta":"Already "}""")).asFlow(),
+            sink,
+        )
+        val failure = checkNotNull(interrupted as? TurnOutcome.Failure)
+        assertEquals("Already ", checkNotNull(failure.partial).text.bodyText)
+        val continuation = checkNotNull(daemon.reanchorPolicy(built.meta))
+            .continuationForFailure(ReanchorRound(built.requestBody, failure, 0))
+        assertTrue(
+            checkNotNull(continuation).getValue("input").jsonArray.any {
+                it.jsonObject["content"] == JsonPrimitive("Already ")
+            },
+        )
+        val resumed = daemon.streamTranslator(built.meta, signals).driveTurn(
+            (reasoning("rs_recovered") + prose("finished.") + terminal).asFlow(),
+            sink,
+        )
+        assertTrue(resumed is TurnOutcome.Success)
+        assertEquals("Already finished.", sink.text.toString())
+        assertEquals(0, sink.opaqueBlocks)
+
+        for (provider in listOf(daemon, RestartProbe(state, replay = true))) {
+            val replay = provider.buildTurn(proseFollowup(sink.text.toString()), false, "session")
+                .requestBody.getValue("input").jsonArray.map { it.jsonObject }
+            assertEquals(listOf("user", "assistant", "rs_recovered", "assistant", "user"), replayOrder(replay))
+            assertEquals(
+                listOf("Already ", "finished."),
+                replay.filter { it["role"]?.jsonPrimitive?.content == "assistant" }
+                    .map { it.getValue("content").jsonPrimitive.content },
+            )
+        }
+    }
+
+    @Test
+    fun `reverse message completion preserves client text order before following reasoning`() = runTest {
+        val first = ev(
+            """{"type":"message","id":"msg_a","role":"assistant","content":[{"type":"output_text","text":"Left"}]}""",
+        )
+        val second = ev(
+            """{"type":"message","id":"msg_b","role":"assistant","content":[{"type":"output_text","text":"Right"}]}""",
+        )
+        val reason = reasoning("rs_after_reverse").single().getValue("item")
+        val frames = listOf(
+            ev("""{"type":"response.output_item.added","output_index":0,"item":$first}"""),
+            ev("""{"type":"response.output_item.added","output_index":1,"item":$second}"""),
+            ev("""{"type":"response.output_text.delta","output_index":0,"delta":"Left"}"""),
+            ev("""{"type":"response.output_text.delta","output_index":1,"delta":"Right"}"""),
+            ev("""{"type":"response.output_item.done","output_index":1,"item":$second}"""),
+            ev("""{"type":"response.output_item.done","output_index":0,"item":$first}"""),
+            ev("""{"type":"response.output_item.done","output_index":2,"item":$reason}"""),
+            ev("""{"type":"response.completed","response":{"status":"completed","output":[$first,$second,$reason]}}"""),
+        )
+        val daemon = RestartProbe(state, replay = true)
+        val built = daemon.buildTurn(opening, false, "session")
+        val sink = PositionTextSink()
+        daemon.streamTranslator(built.meta, signals).driveTurn(frames.asFlow(), sink)
+        assertEquals("LeftRight", sink.text.toString())
+        assertEquals(0, sink.opaqueBlocks)
+
+        for (provider in listOf(daemon, RestartProbe(state, replay = true))) {
+            val replay = provider.buildTurn(proseFollowup(sink.text.toString()), false, "session")
+                .requestBody.getValue("input").jsonArray.map { it.jsonObject }
+            assertEquals(listOf("user", "assistant", "rs_after_reverse", "user"), replayOrder(replay))
+        }
+    }
+
+    @Test
+    fun `terminal reasoning joins an anonymous pending message in the ordered callback handoff`() = runTest {
+        val message = ev(
+            """{"type":"message","id":"msg_terminal","role":"assistant",""" +
+                """"content":[{"type":"output_text","text":"Before."}]}""",
+        )
+        val reason = reasoning("rs_terminal").single().getValue("item")
+        val exec = ev("""{"type":"custom_tool_call","call_id":"exec_1","name":"splice_exec","input":"return 1;"}""")
+        val frames = listOf(
+            ev("""{"type":"response.output_text.delta","output_index":0,"delta":"Before."}"""),
+            ev("""{"type":"response.output_item.done","output_index":2,"item":$exec}"""),
+            ev("""{"type":"response.completed","response":{"status":"completed","output":[$message,$reason,$exec]}}"""),
+        )
+        val daemon = RestartProbe(state, replay = true)
+        val built = daemon.buildTurn(opening, false, "session")
+        val sink = PositionTextSink()
+        val outcome = daemon.streamTranslator(built.meta, signals).driveTurn(frames.asFlow(), sink)
+        val success = checkNotNull(outcome as? TurnOutcome.Success)
+        assertEquals("Before.", sink.text.toString())
+        assertEquals(0, sink.opaqueBlocks)
+        assertEquals(listOf(message, reason), success.handoffs.nativePrefix)
     }
 
     private fun proseFollowup(text: String): splice.core.parse.AnthropicTurnBody = AnthropicParse.parseAnthropicBody(

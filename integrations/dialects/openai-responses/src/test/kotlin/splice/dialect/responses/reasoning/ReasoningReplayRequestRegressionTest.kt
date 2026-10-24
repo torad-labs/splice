@@ -47,6 +47,7 @@ import splice.upstream.ProviderName
 import splice.upstream.ProviderTuning
 import splice.upstream.TurnSignals
 import splice.upstream.sse.WireSink
+import java.nio.file.Files
 import java.nio.file.Path
 import kotlin.time.Duration.Companion.seconds
 
@@ -126,6 +127,71 @@ class ReasoningReplayRequestRegressionTest(@param:TempDir private val state: Pat
             )
             assertTrue(input.any { it["type"]?.jsonPrimitive?.content == "function_call_output" })
         }
+    }
+
+    @Test
+    fun `sessionless replay retains tool round reasoning with persistence disabled`() = runTest {
+        for (session in listOf(null, "")) {
+            val directory = state.resolve(if (session == null) "absent" else "empty")
+            val provider = ReplayRequestProvider(directory, cache = false)
+            val sink = ReplayRequestSink()
+            drive(
+                provider,
+                request(opening),
+                reasoning("rs_sessionless") + prose("Inspecting.") + call("call_1", 2),
+                sink,
+                session,
+            )
+            val next = request(
+                "$opening,${assistant("${text("Inspecting.")},${tool("call_1")}")}," +
+                    result("call_1", "file contents"),
+            )
+            assertTrue(sink.envelopes.isEmpty(), "server replay must not create opaque client rows")
+            assertEquals(listOf("rs_sessionless"), reasoningIds(input(provider, next, session)))
+            val unrelated = request(
+                "${opening.replace("Inspect the files.", "Inspect other files.")}," +
+                    "${assistant(tool("call_1"))},${result("call_1", "file contents")}",
+            )
+            assertTrue(reasoningIds(input(provider, unrelated, session)).isEmpty())
+            val differentCall = request(
+                "$opening,${assistant(tool("other_call"))},${result("other_call", "file contents")}",
+            )
+            assertTrue(reasoningIds(input(provider, differentCall, session)).isEmpty())
+            assertTrue(
+                reasoningIds(input(ReplayRequestProvider(directory, cache = false), next, session)).isEmpty(),
+                "cache disabled retains replay in memory without persisting it across restart",
+            )
+        }
+    }
+
+    @Test
+    fun `new result proofs preserve durable history prefixes and replay after restart`() = runTest {
+        val provider = ReplayRequestProvider(state, cache = true)
+        drive(provider, request(opening), reasoning("rs_initial") + call("call_1"))
+        val first = "$opening,${assistant(tool("call_1"))},${result("call_1", "first contents")}"
+        drive(provider, request(first), reasoning("rs_second") + call("call_2"))
+        val key = ReasoningCachePolicy().conversationKey(
+            "fixture-session",
+            ResponsesStableIds().reasoningStorageKey(request(opening).typed),
+        )
+        val file = state.resolve(REASONING_DIR).resolve("$key.jsonl")
+        val durablePrefix = Files.readString(file)
+        val second = "$first,${assistant(tool("call_2"))},${result("call_2", "second contents")}"
+        drive(provider, request(second), reasoning("rs_third") + prose("Checked."))
+        val extended = Files.readString(file)
+        val cleared = "$opening,${assistant(tool("call_1"))}," +
+            result("call_1", "[Old tool result content cleared]") +
+            ",${assistant(tool("call_2"))}," + result("call_2", "[Old tool result content cleared]")
+        val tail = ",${assistant(text("Checked."))}," +
+            """{"role":"user","content":"Continue the inspection."}"""
+        assertEquals(
+            listOf("rs_initial", "rs_second", "rs_third"),
+            reasoningIds(input(ReplayRequestProvider(state, cache = true), request(cleared + tail))),
+        )
+        assertTrue(
+            extended.startsWith(durablePrefix),
+            "new result evidence must extend the durable journal without rewriting its retained prefix",
+        )
     }
 
     @Test
@@ -335,14 +401,19 @@ class ReasoningReplayRequestRegressionTest(@param:TempDir private val state: Pat
         body: AnthropicTurnBody,
         frames: List<JsonObject>,
         sink: ReplayRequestSink = ReplayRequestSink(),
+        sessionId: String? = "fixture-session",
     ) {
-        val built = provider.buildTurn(body, compact = false, sessionId = "fixture-session")
+        val built = provider.buildTurn(body, compact = false, sessionId = sessionId)
         val outcome = provider.streamTranslator(built.meta, signals).driveTurn((frames + terminal).asFlow(), sink)
         assertTrue(outcome is TurnOutcome.Success)
     }
 
-    private fun input(provider: ResponsesProvider, body: AnthropicTurnBody): List<JsonObject> =
-        provider.buildTurn(body, compact = false, sessionId = "fixture-session")
+    private fun input(
+        provider: ResponsesProvider,
+        body: AnthropicTurnBody,
+        sessionId: String? = "fixture-session",
+    ): List<JsonObject> =
+        provider.buildTurn(body, compact = false, sessionId = sessionId)
             .requestBody.getValue("input").jsonArray.map { it.jsonObject }
 
     private fun request(messages: String): AnthropicTurnBody = AnthropicParse.parseAnthropicBody(

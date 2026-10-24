@@ -287,7 +287,7 @@ Absent means the provider's base profile. Only the listed dialect reads a quirk.
 | `effort_ceiling` | string | `"max"` | none | parsed, but no arm reads it today |
 | `zstd_request_body` | bool | false | any | compress request bodies; proven for ChatGPT only, xAI 400s |
 | `tool_surface` | table | absent: off | responses | deferred tools: `enabled` (true), `defer_prefixes` (`["mcp__"]`), `defer`, `eager`, `min_deferred` (8), `search_limit` (8, 1-50), `search_rounds` (3, 1-5) |
-| `code_mode` and `code_mode_workers` (6), `code_mode_timeout_ms` (5000), `code_mode_heap` (512), `code_mode_memory_mb` (24576), `code_mode_models` | bool, ints, array | on for `chatgpt-oauth` + responses only | responses | the JavaScript runner; see `reliability-mcp-install.md` |
+| `code_mode` and `code_mode_workers` (6), `code_mode_heap` (512), `code_mode_memory_mb` (24576), `code_mode_models` | bool, ints, array | on for `chatgpt-oauth` + responses only | responses | the native JavaScript runner; `code_mode_timeout_ms` is retired and must be removed; use exec/wait `yield_time_ms` instead. See `reliability-mcp-install.md` |
 | `reasoning_effort` | bool | true | chat | false omits `reasoning_effort` and `reasoning` (strict vendors) |
 | `chat_effort_vocabulary` | table | absent | chat | `default`, `levels` map, optional `model_pattern` regex |
 | `stream_usage` | bool | on for local and grok-oauth, else off | chat | ask for a usage frame |

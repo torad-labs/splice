@@ -5,10 +5,19 @@ import splice.upstream.failure.CodeModeCapacityException
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.atomic.AtomicBoolean
 
+// why: Operator memory settings use binary MiB, matching the native session heap byte limit.
 private const val NATIVE_MIB: Long = 1_024L * 1_024
+
+// why: Reserve one additional heap-sized collection/copy allocation, retaining the existing pool accounting.
 private const val NATIVE_HEAP_COPY_RESERVE: Long = 2
+
+// why: Retain the pool's per-engine allowance for native metadata and execution stacks outside the guest heap.
 private const val NATIVE_CELL_RESERVE_MB: Long = 64
+
+// why: Retain the pool's process allowance for protocol buffers, native metadata and thread stacks.
 private const val NATIVE_HOST_RESERVE_MB: Long = 128
+
+// why: Each configured worker previously represented four engine slots; retain that admission ceiling.
 private const val NATIVE_CELLS_PER_WORKER: Int = 4
 
 /** Reservations remain attached to yielded cells and are released only when their execution ends. */

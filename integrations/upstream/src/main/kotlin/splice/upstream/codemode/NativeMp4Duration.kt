@@ -1,10 +1,21 @@
 package splice.upstream.codemode
 
+// why: An ISO BMFF atom starts with a four-byte length and a four-byte type.
 private const val ISO_HEADER_BYTES: Int = 8
+
+// why: ISO BMFF type identifiers and ordinary unsigned integer fields occupy four bytes.
 private const val ISO_WORD_BYTES: Int = 4
+
+// why: Extended atom sizes and version-one media durations use eight-byte integers.
 private const val ISO_LONG_BYTES: Int = 8
+
+// why: In a version-one mdhd payload, version/flags and two 64-bit timestamps precede the timescale.
 private const val ISO_VERSION_ONE_TIMESCALE: Int = 20
+
+// why: In a version-zero mdhd payload, version/flags and two 32-bit timestamps precede the timescale.
 private const val ISO_VERSION_ZERO_TIMESCALE: Int = 12
+
+// why: An hdlr payload places handler_type after version/flags and the pre_defined word.
 private const val ISO_HANDLER_TYPE: Int = 8
 
 internal object NativeMp4Duration {

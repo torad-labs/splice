@@ -1,13 +1,30 @@
 package splice.upstream.codemode
 
+// why: Matroska assigns this element identifier to Segment.
 private const val EBML_SEGMENT: Long = 0x18538067
+
+// why: Matroska assigns this element identifier to Segment Info.
 private const val EBML_INFO: Long = 0x1549a966
+
+// why: Matroska assigns this element identifier to the floating-point Segment duration.
 private const val EBML_DURATION: Long = 0x4489
+
+// why: Matroska assigns this element identifier to TimestampScale.
 private const val EBML_TIMECODE_SCALE: Long = 0x2ad7b1
+
+// why: Matroska defaults TimestampScale to one million nanoseconds per duration tick.
 private const val EBML_DEFAULT_SCALE: Long = 1_000_000
+
+// why: Convert Matroska nanosecond-scaled duration to seconds for the native token estimate.
 private const val EBML_NANOS_PER_SECOND: Double = 1_000_000_000.0
+
+// why: An EBML variable-length size can occupy at most eight bytes.
 private const val EBML_MAX_INTEGER_BYTES: Int = 8
+
+// why: The first set high bit of an EBML integer selects its encoded byte width.
 private const val EBML_HIGH_BIT: Int = 0x80
+
+// why: Each subsequent EBML integer octet contributes eight bits.
 private const val EBML_BYTE_BITS: Int = 8
 
 internal object NativeWebmDuration {

@@ -70,8 +70,9 @@ public data class QuirksConfig(
     /** code-mode only: the JAR-bundled GraalJS worker pool size (JvmCodeModeRuntime maxWorkers).
      *  NULLABLE overlay — absent keeps the code default (6). */
     @SerialName("code_mode_workers") val codeModeWorkers: Int? = null,
-    /** code-mode only: how long one worker exchange may wait for the child's answer, in milliseconds
-     *  (JvmCodeModeRuntime advanceTimeoutMs). NULLABLE overlay — absent keeps the code default (5000). */
+    /** RETIRED 2026-10-24: the old worker accepted this compatibility hint without enforcing a script deadline.
+     *  Native cells use exec/wait observation budgets and keep running after a yield. Reject an explicitly retained
+     *  value with a migration instruction rather than quietly ignoring it or terminating valid timers. */
     @SerialName("code_mode_timeout_ms") val codeModeTimeoutMs: Long? = null,
     /** code-mode only: each child JVM's heap, in MB (the -Xmx). NULLABLE overlay — absent keeps the
      *  code default (512). */
@@ -157,6 +158,13 @@ public data class QuirksConfig(
     internal fun codeModeEnabled(default: Boolean): Boolean = codeMode ?: default
 
     init {
+        if (codeModeTimeoutMs != null) {
+            throw TopologyRuleViolation(
+                "code_mode_timeout_ms",
+                "[providers.*.quirks] code_mode_timeout_ms is retired: remove the key; native code-mode cells use " +
+                    "@exec yield_time_ms and wait observation budgets, which never cancel a running script",
+            )
+        }
         if (codeModeMemoryMb != null && codeModeMemoryMb <= 0) {
             throw TopologyRuleViolation(
                 "code_mode_memory_mb",

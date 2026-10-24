@@ -1,9 +1,18 @@
 package splice.upstream.codemode
 
+// why: RIFF WAVE starts with the RIFF identifier, size word and WAVE form identifier.
 private const val WAVE_HEADER_BYTES: Int = 12
+
+// why: Each RIFF chunk has a four-byte identifier and a four-byte payload length.
 private const val WAVE_CHUNK_HEADER_BYTES: Int = 8
+
+// why: RIFF WAVE chunk lengths and average bytes-per-second fields occupy four bytes.
 private const val WAVE_WORD_BYTES: Int = 4
+
+// why: The fmt payload puts average bytes per second after format, channels and sample rate.
 private const val WAVE_FORMAT_RATE_OFFSET: Int = 8
+
+// why: The base WAVE fmt payload occupies sixteen bytes before optional extensions.
 private const val WAVE_MIN_FORMAT_BYTES: Int = 16
 
 internal object NativeWaveDuration {

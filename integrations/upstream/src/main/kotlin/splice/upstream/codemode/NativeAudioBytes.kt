@@ -3,9 +3,16 @@ package splice.upstream.codemode
 import java.nio.ByteBuffer
 import java.nio.ByteOrder
 
+// why: Container octets are unsigned even though JVM Byte values are signed.
 private const val AUDIO_UNSIGNED_BYTE: Int = 0xff
+
+// why: Byte-oriented container integers shift by eight bits for each octet.
 private const val AUDIO_BYTE_BITS: Int = 8
+
+// why: ISO media and container float32 fields occupy four bytes.
 private const val AUDIO_WORD_BYTES: Int = 4
+
+// why: ISO media float64 fields occupy eight bytes.
 private const val AUDIO_LONG_BYTES: Int = 8
 
 /** Bounded container metadata reads; audio is never decoded or executed. */

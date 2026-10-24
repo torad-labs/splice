@@ -7,11 +7,14 @@ import java.util.LinkedHashMap
 import java.util.Locale
 import kotlin.math.ceil
 
+// why: codex-utils-audio estimates ten model input tokens for each second of declared audio duration.
 private const val NATIVE_AUDIO_TOKENS_PER_SECOND: Double = 10.0
+
+// why: Match codex-utils-audio's 32-entry estimate cache; keys retain digests rather than audio URLs.
 private const val NATIVE_AUDIO_CACHE_SIZE: Int = 32
 
 /** Codex audio estimate: duration at ten tokens per second, or the UTF-8 URL estimate when unreadable. */
-public object NativeCodeModeAudio {
+internal object NativeCodeModeAudio {
     private val cache = object : LinkedHashMap<String, Long>(NATIVE_AUDIO_CACHE_SIZE, 1f, true) {
         override fun removeEldestEntry(eldest: MutableMap.MutableEntry<String, Long>?): Boolean =
             size > NATIVE_AUDIO_CACHE_SIZE

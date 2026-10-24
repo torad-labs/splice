@@ -70,5 +70,8 @@ public object NativeCodeModeOutput {
     }
 }
 
+// why: Convert the caller's elapsed milliseconds to the seconds printed by native Codex output headers.
 private const val NATIVE_MILLIS_PER_SECOND: Float = 1_000f
+
+// why: Codex rounds the default wall-time header to one decimal place before rendering it.
 private const val NATIVE_TENTHS: Float = 10f

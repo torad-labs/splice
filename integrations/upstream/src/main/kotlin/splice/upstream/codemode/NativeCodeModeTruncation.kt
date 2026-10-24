@@ -4,12 +4,17 @@ import kotlinx.serialization.json.JsonObject
 import splice.core.util.JsonScalars
 
 // Codex's codex-utils-string approximation: one token for every four UTF-8 bytes, rounded up.
+// why: codex-utils-string approximates one token per four UTF-8 bytes, rounding token counts upward.
 private const val NATIVE_BYTES_PER_TOKEN: Long = 4
+
+// why: UTF-8 continuation bytes have the two most significant bits 10; isolate those bits.
 private const val UTF8_CONTINUATION_MASK: Int = 0xc0
+
+// why: The UTF-8 continuation-byte prefix is binary 10, so middle truncation never cuts a code point.
 private const val UTF8_CONTINUATION_TAG: Int = 0x80
 
 /** Ports Codex output-truncation and UTF-8 middle truncation, retaining media order and omission markers. */
-public object NativeCodeModeTruncation {
+internal object NativeCodeModeTruncation {
     public fun tokens(text: String): Long =
         (text.encodeToByteArray().size.toLong() + NATIVE_BYTES_PER_TOKEN - 1) / NATIVE_BYTES_PER_TOKEN
 

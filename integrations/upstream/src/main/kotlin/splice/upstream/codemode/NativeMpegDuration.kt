@@ -1,26 +1,69 @@
 package splice.upstream.codemode
 
+// why: An MPEG audio frame begins with a four-byte header, also the width of Xing integer fields.
 private const val MPEG_HEADER_BYTES: Int = 4
+
+// why: The three high bits following the first 0xff octet complete the eleven-bit MPEG frame sync word.
 private const val MPEG_SYNC: Int = 0xe0
+
+// why: The first octet of an MPEG frame sync word has all eight bits set.
 private const val MPEG_BYTE: Int = 0xff
+
+// why: MPEG bitrate tables are expressed in decimal kilobits per second.
 private const val MPEG_KILOBIT: Int = 1_000
+
+// why: An MPEG-1 Layer II/III frame carries 1152 per-channel audio samples.
 private const val MPEG_ONE_SAMPLES: Int = 1_152
+
+// why: An MPEG-2/2.5 Layer III frame carries 576 per-channel audio samples.
 private const val MPEG_TWO_SAMPLES: Int = 576
+
+// why: An MPEG Layer I frame carries 384 per-channel audio samples.
 private const val MPEG_LAYER_ONE_SAMPLES: Int = 384
+
+// why: Layer II and MPEG-1 Layer III frame length uses 144 times bitrate divided by sample rate.
 private const val MPEG_FRAME_FACTOR: Int = 144
+
+// why: MPEG-2/2.5 Layer III frame length uses half the MPEG-1 coefficient because it has one granule.
 private const val MPEG_TWO_FRAME_FACTOR: Int = 72
+
+// why: Layer I frame length is twelve bitrate/rate slots, each slot occupying four bytes.
 private const val MPEG_LAYER_ONE_FACTOR: Int = 12
+
+// why: The ID3v2 tag header occupies ten bytes before its declared payload.
 private const val MPEG_ID3_HEADER: Int = 10
+
+// why: The ID3v2 payload size begins after its signature, version, revision and flags.
 private const val MPEG_ID3_SIZE_OFFSET: Int = 6
+
+// why: Each ID3v2 size octet contributes seven payload bits; its high bit remains clear.
 private const val MPEG_SYNCSAFE_BITS: Int = 7
+
+// why: Match Symphonia's estimator: sample until the frame count exceeds sixteen.
 private const val MPEG_ESTIMATE_MAX_FRAMES: Int = 16
+
+// why: Match Symphonia's estimator: stop sampling once accumulated frame lengths exceed 16 KiB.
 private const val MPEG_ESTIMATE_MAX_BYTES: Int = 16 * 1_024
+
+// why: The MPEG header encodes version 1 as the two-bit value 11.
 private const val MPEG_VERSION_ONE: Int = 3
+
+// why: The MPEG header encodes Layer I as the two-bit value 11.
 private const val MPEG_LAYER_ONE: Int = 3
+
+// why: The MPEG bitrate index occupies the upper four bits of the third header octet.
 private const val MPEG_NIBBLE_BITS: Int = 4
+
+// why: Bitrate indices 1 through 14 are defined; zero is free format and fifteen is invalid.
 private const val MPEG_BITRATE_LAST: Int = 14
+
+// why: MPEG-2 sample rates are half their MPEG-1 table entries.
 private const val MPEG_SAMPLE_RATE_HALF: Int = 2
+
+// why: MPEG-2.5 sample rates are one quarter of their MPEG-1 table entries.
 private const val MPEG_SAMPLE_RATE_QUARTER: Int = 4
+
+// why: Clear the high bit when decoding each seven-bit ID3v2 size group.
 private const val MPEG_SYNCSAFE_MASK: Int = 0x7f
 
 internal object NativeMpegDuration {

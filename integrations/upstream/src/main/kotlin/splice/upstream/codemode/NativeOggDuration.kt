@@ -1,13 +1,30 @@
 package splice.upstream.codemode
 
+// why: An Ogg page has a 27-byte fixed header before its segment table.
 private const val OGG_HEADER_BYTES: Int = 27
+
+// why: The last octet of the fixed Ogg page header gives the number of lacing segments.
 private const val OGG_SEGMENT_COUNT: Int = 26
+
+// why: The Ogg logical-stream serial number begins at byte fourteen of a page header.
 private const val OGG_SERIAL_OFFSET: Int = 14
+
+// why: The Ogg granule position begins at byte six of a page header.
 private const val OGG_GRANULE_OFFSET: Int = 6
+
+// why: An Ogg stream serial number and Vorbis sample rate occupy four bytes.
 private const val OGG_WORD_BYTES: Int = 4
+
+// why: An Ogg granule position occupies eight bytes.
 private const val OGG_LONG_BYTES: Int = 8
+
+// why: The Vorbis identification packet puts sample rate after signature, version and channel count.
 private const val OGG_VORBIS_RATE: Int = 12
+
+// why: The fixed OpusHead identification header occupies nineteen bytes.
 private const val OGG_OPUS_HEADER_BYTES: Int = 19
+
+// why: Opus Ogg granule positions always use a 48 kHz timebase, independently of input sample rate.
 private const val OGG_OPUS_RATE: Int = 48_000
 
 internal object NativeOggDuration {

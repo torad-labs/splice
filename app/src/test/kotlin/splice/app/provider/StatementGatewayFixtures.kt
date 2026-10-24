@@ -6,8 +6,6 @@ import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.delay
 import kotlinx.serialization.json.JsonPrimitive
-import splice.codemode.JvmCodeModeRuntime
-import splice.codemode.host.HostLaunch
 import splice.upstream.codemode.CodeModeCall
 import splice.upstream.codemode.CodeModeCell
 import splice.upstream.codemode.CodeModeResult
@@ -19,6 +17,8 @@ import java.util.concurrent.ConcurrentLinkedQueue
 import java.util.concurrent.CountDownLatch
 import java.util.concurrent.Executors
 import java.util.concurrent.atomic.AtomicInteger
+import splice.codemode.LegacyCodeModeRuntime as JvmCodeModeRuntime
+import splice.codemode.LegacyHostLaunch as HostLaunch
 
 /** A real loopback Responses stream with independently gated statements and response terminal. */
 internal class StatementGatewayUpstream(private val batch: String? = null) {

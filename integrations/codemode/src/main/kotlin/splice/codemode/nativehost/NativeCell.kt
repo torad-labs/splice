@@ -7,12 +7,8 @@ import kotlinx.coroutines.selects.select
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.yield
-import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonObject
-import kotlinx.serialization.json.jsonObject
 import splice.core.util.Cancellables
-import splice.core.util.JsonScalars
-import splice.upstream.codemode.CodeModeCall
 import splice.upstream.codemode.CodeModeResult
 import splice.upstream.codemode.CodeModeStep
 import splice.upstream.codemode.NativeCodeModeCell
@@ -24,15 +20,14 @@ internal class NativeCell(
     private val sessionId: String,
     private val connection: NativeConnection,
     private val scope: CoroutineScope,
-    private val initial: CompletableDeferred<JsonObject>,
-    private val tools: Set<String>,
+    initial: CompletableDeferred<JsonObject>,
+    tools: Set<String>,
     private val lease: NativeCellLease,
 ) : NativeCodeModeCell {
     override val cellId: String = "${connection.generation}:$wireCellId"
     private val closed = AtomicBoolean()
     private val advancing = Mutex()
-    private val submitting = Mutex()
-    private val pending = java.util.concurrent.ConcurrentHashMap<String, JsonElement>()
+    private val callbacks = NativeCallbacks(connection, scope, tools)
     private val readySteps = ArrayDeque<CodeModeStep>()
     private var observation: CompletableDeferred<JsonObject>? = initial
 
@@ -41,17 +36,7 @@ internal class NativeCell(
         return observe(DEFAULT_NATIVE_OBSERVE_MS)
     }
 
-    override suspend fun submitResults(results: List<CodeModeResult>): Unit = submitting.withLock {
-        check(!closed.get() || results.isEmpty()) { "Native cell is closed" }
-        require(results.map { it.id }.distinct().size == results.size) { "Duplicate native callback results" }
-        require(results.all { pending.containsKey(it.id) }) { "Result does not belong to a pending native callback" }
-        results.forEach { result ->
-            val id = pending.getValue(result.id)
-            connection.send(NativeRequests.delegate(id, result))
-            connection.events.answered(id.toString())
-            pending.remove(result.id)
-        }
-    }
+    override suspend fun submitResults(results: List<CodeModeResult>): Unit = callbacks.submit(results)
 
     override suspend fun observe(yieldTimeMs: Long): CodeModeStep = advancing.withLock {
         require(yieldTimeMs >= 0) { "Native observation time must be nonnegative" }
@@ -65,7 +50,7 @@ internal class NativeCell(
             while (readySteps.isEmpty()) {
                 select<Unit> {
                     connection.events.cell(sessionId, wireCellId).onReceive { frame ->
-                        delegate(frame)?.let(readySteps::addLast)
+                        callbacks.consume(frame)?.let(readySteps::addLast)
                     }
                     response.onAwait { frame ->
                         observation = null
@@ -106,7 +91,7 @@ internal class NativeCell(
             if (frame == null) {
                 draining = false
             } else {
-                when (val next = delegate(frame)) {
+                when (val next = callbacks.consume(frame)) {
                     is CodeModeStep.Calls -> calls.addAll(next.calls)
                     null -> Unit
                     is CodeModeStep.Notified, is CodeModeStep.Completed, is CodeModeStep.Yielded,
@@ -120,56 +105,6 @@ internal class NativeCell(
         }
         readySteps.removeFirst()
         return CodeModeStep.Calls(calls)
-    }
-
-    private fun delegate(frame: JsonObject): CodeModeStep? {
-        val id = frame.getValue("id")
-        if (JsonScalars.str(frame, "type") == "delegate/cancel") {
-            pending.entries.removeIf { it.value == id }
-            return null
-        }
-        val request = frame.getValue("request").jsonObject
-        return when (JsonScalars.str(request, "type")) {
-            "notification/send" -> {
-                acknowledge(id, NativeRequests.notified(id))
-                CodeModeStep.Notified(JsonScalars.str(request, "text").orEmpty())
-            }
-            "tool/invoke" -> invoke(id, request.getValue("invocation").jsonObject)
-            else -> error("Unknown native delegate request")
-        }
-    }
-
-    private fun invoke(id: JsonElement, invocation: JsonObject): CodeModeStep? {
-        val tool = invocation.getValue("tool_name").jsonObject
-        val name = JsonScalars.str(tool, "name") ?: error("Native tool callback has no name")
-        check(name in tools) { "Native callback requested a tool outside the client catalog" }
-        val arguments = invocation["input"] as? JsonObject
-        if (arguments == null) {
-            acknowledge(
-                id,
-                NativeRequests.delegate(
-                    id,
-                    CodeModeResult(
-                        "native-$id",
-                        "Client function tool $name requires a JSON object argument",
-                        isError = true,
-                    ),
-                ),
-            )
-            return null
-        }
-        val callId = "native-$id"
-        pending[callId] = id
-        return CodeModeStep.Calls(listOf(CodeModeCall(callId, name, arguments)))
-    }
-
-    private fun acknowledge(id: JsonElement, frame: JsonObject) {
-        scope.launch {
-            Cancellables.runCatchingBestEffort {
-                connection.send(frame)
-                connection.events.answered(id.toString())
-            }
-        }
     }
 
     private fun decode(frame: JsonObject): CodeModeStep = when (
@@ -186,7 +121,7 @@ internal class NativeCell(
         val operation = connection.operation(NativeRequests.terminate(sessionId, wireCellId))
         return NativeOutput.decode(NativeFrames.value(operation.response.await())).also {
             closed.set(true)
-            pending.clear()
+            callbacks.close()
             lease.close()
             if (!advancing.isLocked) connection.events.release(sessionId, wireCellId)
         }
@@ -194,13 +129,14 @@ internal class NativeCell(
 
     private fun release() {
         closed.set(true)
-        pending.clear()
+        callbacks.close()
         lease.close()
         connection.events.release(sessionId, wireCellId)
     }
 
     override fun close() {
         if (closed.compareAndSet(false, true)) {
+            callbacks.close()
             scope.launch {
                 Cancellables.runCatchingBestEffort {
                     connection.operation(NativeRequests.terminate(sessionId, wireCellId)).response.await()

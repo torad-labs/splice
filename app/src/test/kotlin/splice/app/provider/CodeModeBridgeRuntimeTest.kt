@@ -24,9 +24,7 @@ import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.Timeout
 import org.junit.jupiter.api.io.TempDir
 import splice.codemode.CodeModeWorkerReclamation
-import splice.codemode.JvmCodeModeRuntime
 import splice.codemode.SCRIPT_DEADLINE_MS
-import splice.codemode.host.HostLaunch
 import splice.codemode.host.PoolLimits
 import splice.core.index.WireBlockIndex
 import splice.core.turn.ErrorType
@@ -45,6 +43,8 @@ import splice.upstream.failure.CodeModeStartException
 import splice.upstream.sse.WireSink
 import java.nio.file.Path
 import java.util.concurrent.atomic.AtomicInteger
+import splice.codemode.LegacyCodeModeRuntime as JvmCodeModeRuntime
+import splice.codemode.LegacyHostLaunch as HostLaunch
 
 private const val BRIDGE_BASE_REQUEST = """{"input":[{"role":"developer","content":"s"}]}"""
 

@@ -17,9 +17,7 @@ import org.junit.jupiter.api.io.TempDir
 import splice.app.head.HeadServerFactory
 import splice.app.head.HeadStores
 import splice.app.head.HeadTelemetryStores
-import splice.codemode.JvmCodeModeRuntime
 import splice.codemode.WorkerSpawn
-import splice.codemode.host.HostLaunch
 import splice.core.auth.AuthDescription
 import splice.core.auth.Credentials
 import splice.core.auth.RefreshableAuthProvider
@@ -71,6 +69,8 @@ import java.net.http.HttpRequest
 import java.net.http.HttpResponse
 import java.nio.file.Path
 import kotlin.time.Duration.Companion.seconds
+import splice.codemode.LegacyCodeModeRuntime as JvmCodeModeRuntime
+import splice.codemode.LegacyHostLaunch as HostLaunch
 
 @Timeout(45)
 internal class CodeModeDrainTest {

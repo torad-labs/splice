@@ -33,7 +33,7 @@ public data class PoolLimits(
 
 /** How one host process is started: its heap, the JVM and classpath it runs, the OS boundary that spawns it, and how
  *  long it has to come up. */
-public data class HostLaunch(
+internal data class HostLaunch(
     public val heapMb: Int = DEFAULT_HEAP_MB,
     public val classpath: String = WorkerArtifacts.runningClasspath(),
     public val javaExecutable: String = Path.of(System.getProperty("java.home"), "bin", "java").toString(),

@@ -37,7 +37,7 @@ import java.util.concurrent.atomic.AtomicBoolean
 public const val DEFAULT_MAX_WORKERS: Int = 6
 
 // why: retained compatibility hint; startup has its own deadline and parked source waits remain caller-owned.
-public const val DEFAULT_ADVANCE_TIMEOUT_MS: Long = 5_000
+internal const val DEFAULT_ADVANCE_TIMEOUT_MS: Long = 5_000
 
 // why: JVM and native-isolate warm-up get a separate boot budget, never a script execution deadline.
 internal const val DEFAULT_WORKER_START_TIMEOUT_MS: Long = 30_000
@@ -57,7 +57,7 @@ public fun interface WorkerSpawn {
 private const val LEGACY_SESSION: String = "unaddressed-runtime"
 
 /** Sessions own engines and remain pinned to the least-loaded host selected at their first cell. */
-public class JvmCodeModeRuntime(
+internal class JvmCodeModeRuntime(
     limits: PoolLimits = PoolLimits(),
     advanceTimeoutMs: Long = DEFAULT_ADVANCE_TIMEOUT_MS,
     private val launch: HostLaunch = HostLaunch(),

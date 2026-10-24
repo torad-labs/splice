@@ -20,9 +20,7 @@ import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
 import kotlinx.serialization.json.put
 import org.junit.jupiter.api.Assertions.assertEquals
-import splice.codemode.JvmCodeModeRuntime
 import splice.codemode.WORKER_START_TIMEOUT_MS
-import splice.codemode.host.HostLaunch
 import splice.core.auth.AuthDescription
 import splice.core.auth.Credentials
 import splice.core.auth.RefreshableAuthProvider
@@ -50,6 +48,8 @@ import java.util.concurrent.Executors
 import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicBoolean
 import kotlin.time.Duration.Companion.seconds
+import splice.codemode.LegacyCodeModeRuntime as JvmCodeModeRuntime
+import splice.codemode.LegacyHostLaunch as HostLaunch
 
 internal object OrderedContinuityItems {
     const val MODEL = "gpt-5.6-sol"

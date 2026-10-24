@@ -3,59 +3,33 @@ package splice.codemode.nativehost
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.CoroutineScope
-import kotlinx.coroutines.launch
-import kotlinx.coroutines.sync.Mutex
-import kotlinx.coroutines.sync.withLock
-import kotlinx.coroutines.withContext
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.buildJsonArray
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
 import splice.core.util.JsonScalars
 import splice.upstream.failure.CodeModeWorkerLostException
-import java.io.DataInputStream
-import java.io.DataOutputStream
 import java.io.IOException
-import java.io.OutputStream
 import java.util.UUID
 import java.util.concurrent.atomic.AtomicBoolean
 
 /** Owns one stdio connection. Host loss fails retained cells; it never silently replays accepted source. */
 internal class NativeConnection(
-    private val process: Process,
-    private val scope: CoroutineScope,
-    private val ioDispatcher: CoroutineDispatcher,
+    process: Process,
+    scope: CoroutineScope,
+    ioDispatcher: CoroutineDispatcher,
     private val onClosed: NativeConnectionClosed,
 ) : AutoCloseable {
     val generation: String = UUID.randomUUID().toString()
     private val closed = AtomicBoolean()
-    private val writer = Mutex()
-    private val output = DataOutputStream(process.outputStream)
     private val operations = NativeOperations()
     val events = NativeEvents()
     private val ready = CompletableDeferred<JsonObject>()
 
+    private val transport = NativeHostTransport(process, scope, ioDispatcher, this)
+
     init {
-        scope.launch {
-            try {
-                DataInputStream(process.inputStream).use { input ->
-                    while (!closed.get()) route(NativeFrames.read(input))
-                }
-            } catch (error: IOException) {
-                fail(error)
-            } catch (error: IllegalArgumentException) {
-                fail(error)
-            } catch (error: IllegalStateException) {
-                fail(error)
-            }
-        }
-        scope.launch {
-            try {
-                process.errorStream.use { it.transferTo(OutputStream.nullOutputStream()) }
-            } catch (error: IOException) {
-                if (!closed.get()) fail(error)
-            }
-        }
+        transport.start()
     }
 
     suspend fun handshake() {
@@ -104,22 +78,10 @@ internal class NativeConnection(
     }
 
     suspend fun send(frame: JsonObject, operation: NativeOperation? = null) {
-        val payload = NativeFrames.encode(frame)
-        withContext(ioDispatcher) {
-            writer.withLock {
-                if (closed.get()) throw CodeModeWorkerLostException()
-                try {
-                    operation?.markDispatched()
-                    NativeFrames.write(output, payload)
-                } catch (error: IOException) {
-                    fail(error)
-                    throw CodeModeWorkerLostException(error)
-                }
-            }
-        }
+        transport.send(NativeFrames.encode(frame), operation)
     }
 
-    private fun route(frame: JsonObject) {
+    fun receive(frame: JsonObject) {
         when (JsonScalars.str(frame, "type")) {
             "connection/ready", "connection/rejected" -> ready.complete(frame)
             "operation/response" -> {
@@ -134,7 +96,7 @@ internal class NativeConnection(
         }
     }
 
-    private fun fail(cause: Throwable) {
+    fun fail(cause: Throwable) {
         val error = CodeModeWorkerLostException(cause)
         ready.completeExceptionally(error)
         operations.fail(error)
@@ -143,10 +105,10 @@ internal class NativeConnection(
     }
 
     fun afterExit(action: Runnable) {
-        process.onExit().thenRun(action)
+        transport.afterExit(action)
     }
 
-    fun isAvailable(): Boolean = !closed.get() && process.isAlive
+    fun isAvailable(): Boolean = !closed.get() && transport.isAvailable()
 
     override fun close() {
         if (closed.compareAndSet(false, true)) {
@@ -154,7 +116,7 @@ internal class NativeConnection(
             ready.completeExceptionally(error)
             operations.fail(error)
             events.fail(error)
-            process.destroyForcibly()
+            transport.close()
             onClosed.closed(this)
         }
     }

@@ -7,10 +7,10 @@ import kotlinx.coroutines.runBlocking
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertNull
 import org.junit.jupiter.api.Test
-import splice.codemode.JvmCodeModeRuntime
 import splice.codemode.SCRIPT_DEADLINE_MS
-import splice.codemode.host.HostLaunch
 import splice.upstream.codemode.CodeModeStep
+import splice.codemode.LegacyCodeModeRuntime as JvmCodeModeRuntime
+import splice.codemode.LegacyHostLaunch as HostLaunch
 
 class CodeModeLanguagesTest {
     private val testClasspath: String = checkNotNull(System.getProperty("codeMode.testClasspath"))

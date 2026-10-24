@@ -12,8 +12,6 @@ import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.Timeout
 import org.junit.jupiter.api.io.TempDir
-import splice.codemode.JvmCodeModeRuntime
-import splice.codemode.host.HostLaunch
 import splice.core.index.WireBlockIndex
 import splice.core.turn.ErrorType
 import splice.core.turn.GatewayCustomCall
@@ -30,6 +28,8 @@ import splice.upstream.codemode.CodeModeRuntime
 import splice.upstream.codemode.CodeModeStep
 import splice.upstream.sse.WireSink
 import java.nio.file.Path
+import splice.codemode.LegacyCodeModeRuntime as JvmCodeModeRuntime
+import splice.codemode.LegacyHostLaunch as HostLaunch
 
 @Timeout(45)
 internal class CodeModeWorkerLossTest {

@@ -67,15 +67,15 @@ public data class QuirksConfig(
     @SerialName("summary_delivery") val summaryDelivery: SummaryDelivery? = null,
     /** ChatGPT responses only: splice-owned JavaScript bridge. Absent = on for that shape (0.4.0). */
     @SerialName("code_mode") val codeMode: Boolean? = null,
-    /** code-mode only: the JAR-bundled GraalJS worker pool size (JvmCodeModeRuntime maxWorkers).
+    /** Native code-mode admission: up to four live cells per worker budget, subject to the memory budget.
      *  NULLABLE overlay — absent keeps the code default (6). */
     @SerialName("code_mode_workers") val codeModeWorkers: Int? = null,
     /** RETIRED 2026-10-24: the old worker accepted this compatibility hint without enforcing a script deadline.
      *  Native cells use exec/wait observation budgets and keep running after a yield. Reject an explicitly retained
      *  value with a migration instruction rather than quietly ignoring it or terminating valid timers. */
     @SerialName("code_mode_timeout_ms") val codeModeTimeoutMs: Long? = null,
-    /** code-mode only: each child JVM's heap, in MB (the -Xmx). NULLABLE overlay — absent keeps the
-     *  code default (512). */
+    /** Native code-mode only: each JavaScript cell's heap cap, in MiB. NULLABLE overlay — absent keeps
+     *  the code default (512). */
     @SerialName("code_mode_heap") val codeModeHeapMb: Int? = null,
     /** Head-wide host/guest/collector memory reservation in MiB. Absent keeps the 24 GiB admission budget. */
     @SerialName("code_mode_memory_mb") val codeModeMemoryMb: Long? = null,

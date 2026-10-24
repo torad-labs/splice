@@ -7,6 +7,7 @@ import kotlinx.serialization.json.JsonObject
 import splice.core.perf.InputItemDigests
 import splice.provider.codex.CODE_MODE_FIELD_ROLE
 import splice.provider.codex.CODE_MODE_METADATA_VERSION
+import splice.provider.codex.CODE_MODE_ROLE_USER
 import splice.provider.codex.CodeModeRecord
 import splice.provider.codex.CodexCodeModeHistoryCodec
 import splice.provider.codex.state.CodeModeHistoryIndex
@@ -223,7 +224,8 @@ internal class CodeModeLegacyStart(
     }
 
     /** Whether [item] is a message the user wrote. */
-    private fun asked(item: JsonElement): Boolean = codec.string(item as? JsonObject, CODE_MODE_FIELD_ROLE) == USER
+    private fun asked(item: JsonElement): Boolean =
+        codec.string(item as? JsonObject, CODE_MODE_FIELD_ROLE) == CODE_MODE_ROLE_USER
 
     /** Every start in the history, nearest [near] first, the later of two as near first. */
     private fun nearest(near: Int): Sequence<Int> = sequence {
@@ -295,5 +297,3 @@ internal data class CodeModeEcho(val end: Int, val split: Int) {
     /** The last item that holds any of the echo. */
     val last: Int get() = if (split == 0) end - 1 else end
 }
-
-private const val USER = "user"

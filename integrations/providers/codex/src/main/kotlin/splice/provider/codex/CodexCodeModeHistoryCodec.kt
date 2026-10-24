@@ -222,6 +222,7 @@ internal class CodeModeEmission(
 internal const val CODE_MODE_FIELD_CALL_ID = "call_id"
 internal const val CODE_MODE_FIELD_TYPE = "type"
 internal const val CODE_MODE_FIELD_ROLE = "role"
+internal const val CODE_MODE_ROLE_USER = "user"
 internal const val CODE_MODE_FIELD_INPUT = "input"
 internal const val CODE_MODE_TYPE_REASONING = "reasoning"
 private const val FIELD_OUTPUT = "output"

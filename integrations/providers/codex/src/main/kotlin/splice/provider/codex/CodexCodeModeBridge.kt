@@ -130,7 +130,15 @@ public class CodexCodeModeBridge(
     private val validation = CodexCodeModeValidation(config)
     internal val machine = CodexCodeModeMachine(config, registry, validation)
     internal val driver =
-        CodexCodeModeDriver(config, run, registry, wire, validation, machine, CodeModeUpstreamHistory(json))
+        CodexCodeModeDriver(
+            config,
+            run,
+            registry,
+            wire,
+            validation,
+            machine,
+            CodeModeUpstreamHistory(json, config.state, config.log, config.retention.bytes),
+        )
     internal val resume = CodexCodeModeResume(registry, wire, validation, machine, driver)
     internal val controller = CodexCodeModeTurn(registry, wire, driver, resume, machine, validation, config.log)
 

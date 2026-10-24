@@ -19,6 +19,10 @@ import splice.provider.codex.callbacks.CodexCodeModeCallIssuerActions
 import splice.provider.codex.callbacks.CodexCodeModeIncrementalOutcomes
 import splice.provider.codex.state.CodeModeWorkerRecovery
 import splice.provider.codex.stream.CodeModeLiveRound
+import splice.provider.codex.stream.CodeModeLocalOutcome
+import splice.provider.codex.stream.CodeModeNativeObservation
+import splice.provider.codex.stream.CodeModeNativeSteps
+import splice.provider.codex.stream.CodeModeNativeWallTime
 import splice.provider.codex.stream.CodeModeOversizedCalls
 import splice.provider.codex.stream.CodeModeRecoveryHistory
 import splice.provider.codex.stream.CodeModeSourceInterruptedException
@@ -49,6 +53,7 @@ internal class CodexCodeModeMachine(
     private val registry: CodexCodeModeRegistry,
     private val validation: CodexCodeModeValidation,
 ) {
+    private val nativeSteps = CodeModeNativeSteps(registry, CodeModeNativeWallTime(::wallMillis))
     private val workerRecovery = CodeModeWorkerRecovery(registry)
 
     private val oversized = CodeModeOversizedCalls(config, validation)
@@ -118,7 +123,10 @@ internal class CodexCodeModeMachine(
         }
         if (previous == null) {
             val streaming = cell as? CodeModeStreamingCell
-            val text = recovery?.text(streaming) ?: streaming?.deliveredText
+            val sourceText = recovery?.text(streaming) ?: streaming?.deliveredText
+            val observation = cell?.let(nativeSteps::observation)
+            val progress = observation?.deliveredText().orEmpty()
+            val text = (sourceText.orEmpty() + progress).takeIf(String::isNotEmpty) ?: sourceText
             val native = streaming?.deliveredNative
             val issued = CodeModeIssuedStep(record.progress.lastDigest, calls.map(CodeModePending::copy), text, native)
             // A failed save: the worker already advanced, but no callback reached the client. A retry
@@ -133,6 +141,7 @@ internal class CodexCodeModeMachine(
                 it.issued += issued
             }
         }
+        cell?.let(nativeSteps::observation)?.delivered()
         return replay(served, sink)
     }
 
@@ -241,13 +250,27 @@ internal class CodexCodeModeMachine(
         request: CodeModeAdvanceRequest,
         cell: CodeModeCell,
         step: CodeModeStep,
-    ): TurnOutcome =
-        when (step) {
-            is CodeModeStep.Calls -> callIssuer.accept(request, cell, step)
-            is CodeModeStep.WaitingForResults ->
-                CodexCodeModeIncrementalOutcomes.waitingForResults(registry, request.record, step)
-            is CodeModeStep.Completed -> complete(request.record, step)
-        }.also { request.source?.billing?.prepare(it) }
+    ): TurnOutcome {
+        var observed = step
+        while (observed is CodeModeStep.Notified) {
+            nativeSteps.notify(request, cell, observed)
+            observed = cell.advance()
+        }
+        return dispatchObserved(request, cell, observed).also { request.source?.billing?.prepare(it) }
+    }
+
+    private suspend fun dispatchObserved(
+        request: CodeModeAdvanceRequest,
+        cell: CodeModeCell,
+        step: CodeModeStep,
+    ): TurnOutcome = when (step) {
+        is CodeModeStep.Calls -> callIssuer.accept(request, cell, step)
+        is CodeModeStep.WaitingForResults ->
+            CodexCodeModeIncrementalOutcomes.waitingForResults(registry, request.record, step)
+        is CodeModeStep.Notified -> error("Native notification escaped its delivery loop")
+        is CodeModeStep.Yielded -> nativeSteps.yielded(request, cell, step)
+        is CodeModeStep.Completed -> complete(request.record, step, nativeSteps.observation(cell))
+    }
 
     /** Throwable messages may quote script or tool bytes. Only audited operational text is safe
      * for daemon.log; every other message keeps its concrete exception class and splice throw site
@@ -265,19 +288,17 @@ internal class CodexCodeModeMachine(
         check(record.phase != CodeModePhase.LOST) { "code-mode source is lost; source was not rerun" }
     }
 
-    private fun complete(record: CodeModeRecord, step: CodeModeStep.Completed): TurnOutcome {
+    private fun complete(
+        record: CodeModeRecord,
+        step: CodeModeStep.Completed,
+        observation: CodeModeNativeObservation?,
+    ): TurnOutcome {
+        if (observation != null) return nativeSteps.output(record, step, observation)
         if (!validation.fitsOutput(step.output)) return poison(record, "code-mode output exceeds the size limit")
         val wall = wallMillis(record)
         val output = step.error?.let { CodeModeExecOutput.failed(step.output, it, wall, config.bounds.maxOutputChars) }
             ?: CodeModeExecOutput.completed(step.output, wall, config.bounds.maxOutputChars)
         registry.complete(record, output)
-        return TurnOutcome.Success(
-            hasToolUse = false,
-            incomplete = false,
-            usage = noRequestUsage.copy(
-                origin = noRequestUsage.origin.copy(localStep = true),
-                reported = UsageField.entries.toSet(),
-            ),
-        )
+        return CodeModeLocalOutcome.success()
     }
 }

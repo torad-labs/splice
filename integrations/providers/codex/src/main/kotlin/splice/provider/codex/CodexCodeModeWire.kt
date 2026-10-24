@@ -61,7 +61,7 @@ internal class CodexCodeModeWire(
         val deferred = (reachable - nested.map(CodeModeManual.NestedTool::name).toSet()).isNotEmpty()
         val beside = hosted.filterNot { string(it as? JsonObject, FIELD_TYPE) == TYPE_TOOL_SEARCH }
         val exec = execTool(CodeModeManual.description(nested, deferred))
-        val surface = namespace.group(JsonArray(listOf(exec) + beside))
+        val surface = namespace.group(JsonArray(listOf(exec, CodeModeWaitTool.declaration()) + beside))
         val replaced = JsonObject(item + (FIELD_TOOLS to surface))
         val rebuilt = input.mapIndexed { position, element -> if (position == index) replaced else element }
         return JsonObject(request + (FIELD_INPUT to JsonArray(rebuilt)))
@@ -125,10 +125,11 @@ internal class CodexCodeModeWire(
         record: CodeModeRecord,
         candidateMedia: Map<String, List<JsonElement>> = emptyMap(),
         report: CodeModeExtra? = null,
+        clearedCallbacks: Set<String> = emptySet(),
     ): CodeModeExtra = if (report == null) {
-        history.extraContent(body, record, candidateMedia)
+        history.extraContent(body, record, candidateMedia, clearedCallbacks)
     } else {
-        log(history.describeExtraContent(body, record, candidateMedia, report))
+        log(history.describeExtraContent(body, record, candidateMedia, report, clearedCallbacks))
         report
     }
 
@@ -207,6 +208,7 @@ internal data class CodeModeOmission(
 )
 
 internal const val CODE_MODE_TOOL_NAME = CodeModeManual.TOOL_NAME
+internal const val CODE_MODE_WAIT_TOOL_NAME = "wait"
 
 /** The outer tool's name before V4-388: a live conversation's history and a parked record still carry
  *  it, so its calls are still this bridge's. */

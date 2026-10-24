@@ -125,9 +125,10 @@ internal class CodexCodeModeHistoryCodec(private val json: Json) {
     fun root(bodyJson: String): Pair<JsonObject, JsonArray>? = CodeModeBody(RoundBody.Text(bodyJson), json).request
 
     fun customOutput(record: CodeModeRecord): JsonObject = buildJsonObject {
-        put(FIELD_TYPE, TYPE_CUSTOM_OUTPUT)
+        val waiting = string(record.origin.outer, FIELD_TYPE) == "function_call"
+        put(FIELD_TYPE, if (waiting) "function_call_output" else TYPE_CUSTOM_OUTPUT)
         put(FIELD_CALL_ID, record.origin.outerCallId)
-        put(FIELD_OUTPUT, record.progress.output.orEmpty())
+        put(FIELD_OUTPUT, record.progress.nativeOutput ?: JsonPrimitive(record.progress.output.orEmpty()))
     }
 
     fun callId(element: JsonElement): String? =
@@ -151,10 +152,12 @@ internal class CodexCodeModeHistoryCodec(private val json: Json) {
 
 /** A streamed call's admitted prefix lives in source until its response terminal certifies the raw item. */
 internal object CodeModeCallReplay {
+    private fun executable(record: CodeModeRecord): Boolean = record.sourceState?.complete == true ||
+        JsonScalars.strOrEmpty(record.origin.outer[CODE_MODE_FIELD_INPUT]) == record.origin.source
+
     fun item(record: CodeModeRecord): JsonObject =
         if (
-            record.sourceState?.complete == true ||
-            JsonScalars.strOrEmpty(record.origin.outer[CODE_MODE_FIELD_INPUT]) == record.origin.source
+            executable(record) || JsonScalars.str(record.origin.outer, "type") == "function_call"
         ) {
             record.origin.outer
         } else {

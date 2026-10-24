@@ -25,7 +25,7 @@ internal class CodexCodeModeValidation(private val config: CodeModeBridgeConfig)
         admission: CodeModeSourceAdmission = CodeModeSourceAdmission.EXECUTABLE,
     ): String? = when {
         incomplete(call, admission) -> "exec item did not complete"
-        call.name != CODE_MODE_TOOL_NAME && call.name != LEGACY_CODE_MODE_TOOL_NAME ->
+        call.name !in setOf(CODE_MODE_TOOL_NAME, LEGACY_CODE_MODE_TOOL_NAME, CODE_MODE_WAIT_TOOL_NAME) ->
             "unsupported custom tool call '${call.name.ifEmpty { "<unnamed>" }}'"
         call.callId.isBlank() -> "exec call is missing call_id"
         call.input.isBlank() -> "exec call is missing JavaScript input"

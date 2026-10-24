@@ -165,7 +165,10 @@ internal class CodexCodeModeHistory(private val json: Json) {
         // ONCE, right after the canonical custom output — the same place the ordinary path puts a
         // tool_result's images, after its function_call_output — whether this is the live
         // continuation or a later turn's replay of the same record.
-        val canonical = record.carry.continuity + CodeModeCallReplay.item(record) + codec.customOutput(record) +
+        val canonical = record.carry.continuity + CodeModeCallReplay.item(
+            record,
+        ) + record.progress.nativeNotifications +
+            codec.customOutput(record) +
             record.accepted.durableMedia()
         val logical = input.logicalItems.filterIndexed { index, _ -> index in retained }.toMutableList()
         logical.addAll(boundary, canonical)

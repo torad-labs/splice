@@ -31,7 +31,7 @@ internal class CodeModeScriptPlacements(private val codec: CodexCodeModeHistoryC
     fun since(records: List<CodeModeRecord>, entry: CodeModeLedgerEntry): List<CodeModeQuiet> {
         val placed = entry.sent.mapNotNullTo(HashSet(), codec::callId)
         return records.filter { quiet(it) && it.postedOn == entry.id && it.origin.outerCallId !in placed }
-            .map { CodeModeQuiet(it, continuity(it), 0) }
+            .map { CodeModeQuiet(it, CodeModeScriptDelivery.items(it, this), 0) }
     }
 
     /** Each script that made no client call, in the order they ran, with where in [conversation] the history it
@@ -69,7 +69,7 @@ internal class CodeModeScriptPlacements(private val codec: CodexCodeModeHistoryC
 
     fun placement(record: CodeModeRecord): List<JsonElement> =
         listOf(CodeModeCallReplay.item(record)) + record.carry.nativeAfterExec.orEmpty() +
-            codec.customOutput(record) + record.accepted.durableMedia()
+            record.progress.nativeNotifications + codec.customOutput(record) + record.accepted.durableMedia()
 
     /** The echo of [continuity] starting at [at] in [items], or null when the items there are not it. Reasoning and
      *  calls come back as they were given and prose as text, each in the order GPT gave it, but merged in the order
@@ -160,3 +160,9 @@ internal fun interface CodeModeScriptDue {
 private const val ECHO_ROLE = "assistant"
 private const val ECHO_TEXT = "content"
 private const val REASONING_ID = "id"
+
+/** Delivery witnesses include actual progress; canonical replay retains the separate notification items. */
+internal object CodeModeScriptDelivery {
+    fun items(record: CodeModeRecord, scripts: CodeModeScriptPlacements): List<JsonElement> =
+        scripts.continuity(record) + record.deliveredOnly
+}

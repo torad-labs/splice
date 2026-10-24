@@ -87,6 +87,8 @@ internal class CodexCodeModeRegistry(
     private val admissions = startup.entries
     val retainedCells = CodeModeCellRetention(config, access, records, cells, admissions, closeSession)
     private val sweeper = CodexCodeModeSweeper(config, records, cells, admissions, history, closeSession, retainedCells)
+    val nativeCells = splice.provider.codex.stream.CodeModeNativeCells()
+
     private val queries = CodeModeRecordQueries(access, records, history) { key ->
         val changed = sweeper.sweep(key, key)
         store.save(records, history.entries, retryOnly = !changed, dirtyKeys = setOf(key))
@@ -258,12 +260,19 @@ internal class CodexCodeModeRegistry(
         monitor.withLock { store.save(records, history.entries) }
     }
 
-    fun complete(record: CodeModeRecord, output: String) = changes.complete(record, output)
+    fun complete(record: CodeModeRecord, output: String, nativeOutput: kotlinx.serialization.json.JsonElement? = null) =
+        changes.complete(record, output, nativeOutput)
 
     fun lose(record: CodeModeRecord, message: String, cancellation: CancellationException? = null) =
         changes.lose(record, message, cancellation)
 
-    fun onHeadStop() = changes.onHeadStop()
+    fun onHeadStop() {
+        try {
+            changes.onHeadStop()
+        } finally {
+            nativeCells.close()
+        }
+    }
 
     /** Global idle order is snapshotted, then each candidate is rechecked and saved under its own key. */
     fun evictIdleCell(): CodeModeRecord? {

@@ -127,7 +127,13 @@ internal enum class CodeModeWeight {
         record.carry.segments.sumOf(::segment) + record.carry.continuity.sumOf(::json) +
         record.carry.replay.sumOf(::segment) + record.carry.nativeAfterExec.orEmpty().sumOf(::json) +
         record.issued.sumOf(::issued) + anchors(record.replayAnchors) +
-        (record.progress.nativeOutput?.let(::json) ?: 0L) + (record.nativeCellId?.let(::text) ?: 0L)
+        (
+            record.progress.nativeOutput?.let(
+                ::json,
+            ) ?: 0L
+            ) + record.progress.nativeNotifications.sumOf(
+            ::json,
+        ) + (record.nativeCellId?.let(::text) ?: 0L) + record.deliveredOnly.sumOf(::json)
 
     fun snapshot(record: CodeModeRecordSnapshot): Long = RECORD_METADATA_BYTES +
         json(record.outer) + text(record.source) + record.pending.sumOf(::call) +
@@ -138,7 +144,13 @@ internal enum class CodeModeWeight {
         record.nativeSegments.sumOf(::segment) + record.continuity.sumOf(::json) +
         record.continuityReplay.sumOf(::segment) + record.nativeAfterExec.orEmpty().sumOf(::json) +
         record.issued.sumOf(::issued) + anchors(record.replayAnchors) +
-        (record.nativeOutput?.let(::json) ?: 0L) + (record.nativeCellId?.let(::text) ?: 0L)
+        (
+            record.nativeOutput?.let(
+                ::json,
+            ) ?: 0L
+            ) + record.nativeNotifications.sumOf(
+            ::json,
+        ) + (record.nativeCellId?.let(::text) ?: 0L) + record.deliveredOnly.sumOf(::json)
 
     /** Placement maps escape with both live records and snapshots, after raw decoding trees close. */
     private fun anchors(value: CodeModeReplayAnchors?): Long = value?.let {

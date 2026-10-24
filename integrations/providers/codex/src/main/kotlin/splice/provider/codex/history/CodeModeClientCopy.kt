@@ -40,7 +40,7 @@ internal class CodeModeQuietMeasure(
         return records.mapIndexedNotNull { index, record ->
             val placed = if (scripts.quiet(record)) placed(records, index, floor, index < floored) else null
             if (index < floored) floor = placed?.floor ?: called(record)?.let(::CodeModeFloor) ?: floor
-            placed?.let { CodeModeQuiet(record, scripts.continuity(record), it.at) }
+            placed?.let { CodeModeQuiet(record, CodeModeScriptDelivery.items(record, scripts), it.at) }
         }.sortedBy(CodeModeQuiet::at)
     }
 

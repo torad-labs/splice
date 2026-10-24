@@ -65,6 +65,7 @@ internal class CodexCodeModeTurnBuilder(
         val disableParallel = body.typed.toolChoice?.disableParallelToolUse == true
         val surface = manager.injectTool(built.requestBody, turn.tools)
         return built.copy(
+            meta = built.meta.copy(tools = built.meta.tools.copy(codeMode = true)),
             requestBody = CodexCodeModeInstructions.append(surface, disableParallel),
             roundInterceptor = manager.interceptor(turn = turn, disableParallel = disableParallel),
         )

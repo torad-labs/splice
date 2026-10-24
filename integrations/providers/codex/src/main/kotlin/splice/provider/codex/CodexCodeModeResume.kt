@@ -107,7 +107,12 @@ internal class CodexCodeModeResume(
         context: CodeModeRunContext,
         body: CodeModeBody,
     ): TurnOutcome {
-        val extra = wire.extraContent(body, record, candidateMedia(record, context.turn))
+        val extra = wire.extraContent(
+            body,
+            record,
+            candidateMedia(record, context.turn),
+            clearedCallbacks = context.turn.rendering.verifiedCleared.values.flatten().toSet(),
+        )
         val hasExtraContent = extra != CodeModeExtra.NONE
         val mode = if (hasExtraContent) CodeModeResultMode.INTERRUPT else CodeModeResultMode.RESUME
         val supplied = suppliedResults(record, context.turn, mode)
@@ -148,7 +153,13 @@ internal class CodexCodeModeResume(
         supplied: Map<String, CodeModeResult>,
     ): TurnOutcome = when {
         interrupts(extra, record) -> {
-            wire.extraContent(body, record, candidateMedia(record, context.turn), report = extra)
+            wire.extraContent(
+                body,
+                record,
+                candidateMedia(record, context.turn),
+                report = extra,
+                clearedCallbacks = context.turn.rendering.verifiedCleared.values.flatten().toSet(),
+            )
             machine.interrupt(record)
         }
         context.disableParallel && record.progress.pending.any { !it.exposed } -> {

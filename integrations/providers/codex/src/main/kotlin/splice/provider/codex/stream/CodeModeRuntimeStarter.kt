@@ -8,12 +8,15 @@ import splice.core.turn.FailurePhase
 import splice.core.turn.TurnOutcome
 import splice.core.turn.noRequestUsage
 import splice.provider.codex.CODE_MODE_RECORD_LOG_CHARS
+import splice.provider.codex.CODE_MODE_WAIT_TOOL_NAME
 import splice.provider.codex.CodeModeBridgeConfig
 import splice.provider.codex.CodeModeRecord
 import splice.provider.codex.CodeModeRunContext
 import splice.provider.codex.CodexCodeModeRegistry
 import splice.upstream.codemode.CodeModeCell
 import splice.upstream.codemode.CodeModeRuntime
+import splice.upstream.codemode.CodeModeSourcePart
+import splice.upstream.codemode.NativeCodeModeLifecycle
 import splice.upstream.failure.CodeModeCapacityException
 import splice.upstream.failure.CodeModeStartException
 import java.io.IOException
@@ -59,17 +62,63 @@ internal class CodeModeRuntimeStarter(
         }
     }
 
-    private suspend fun open(record: CodeModeRecord, context: CodeModeRunContext, stream: CodeModeLiveRound?) =
-        if (stream == null) {
-            runtime().startSession(record.key, record.origin.source, context.turn.tools, context.turn.descriptions)
+    private suspend fun open(
+        record: CodeModeRecord,
+        context: CodeModeRunContext,
+        stream: CodeModeLiveRound?,
+    ): CodeModeCell {
+        val host = runtime()
+        if (host is NativeCodeModeLifecycle) return native(host, record, context, stream)
+        check(record.origin.outer["name"]?.let { splice.core.util.JsonScalars.str(it) } != CODE_MODE_WAIT_TOOL_NAME) {
+            "wait requires a native code-mode host"
+        }
+        return if (stream == null) {
+            host.startSession(record.key, record.origin.source, context.turn.tools, context.turn.descriptions)
         } else {
-            runtime().startStreamingSession(
+            host.startStreamingSession(record.key, stream.source.view(), context.turn.tools, context.turn.descriptions)
+        }
+    }
+
+    private suspend fun native(
+        host: NativeCodeModeLifecycle,
+        record: CodeModeRecord,
+        context: CodeModeRunContext,
+        stream: CodeModeLiveRound?,
+    ): CodeModeCell {
+        val source = if (stream == null) {
+            record.origin.source
+        } else {
+            when (val whole = stream.source.view().read()) {
+                is CodeModeSourcePart.Complete -> whole.text
+                is CodeModeSourcePart.Failed -> throw IOException("Native code-mode source did not complete")
+            }
+        }
+        val waiting = splice.core.util.JsonScalars.str(record.origin.outer, "name") == CODE_MODE_WAIT_TOOL_NAME
+        val invocation = if (waiting) CodeModeNativeInvocations.wait(source) else CodeModeNativeInvocations.exec(source)
+        val held = if (waiting) {
+            registry.nativeCells.take(record.key, checkNotNull(invocation.cellId))
+        } else {
+            require(invocation.options.maxOutputTokens <= Int.MAX_VALUE.toLong()) {
+                "Native exec output token budget exceeds the pinned host protocol range"
+            }
+            val cell = host.startNativeSession(
                 record.key,
-                stream.source.view(),
+                checkNotNull(invocation.source),
                 context.turn.tools,
                 context.turn.descriptions,
+                invocation.options,
             )
+            CodeModeHeldNativeCell(cell, record.origin.outerCallId)
         }
+        record.nativeCellId = held.cell.cellId
+        return CodeModeNativeObservation(
+            record.key,
+            held.cell,
+            invocation,
+            registry.nativeCells,
+            held.notificationCallId,
+        )
+    }
 
     /** A failure before source dispatch has a typed proof; every other start failure stays no-rerun. */
     fun failed(record: CodeModeRecord, error: Exception?): TurnOutcome.Failure {

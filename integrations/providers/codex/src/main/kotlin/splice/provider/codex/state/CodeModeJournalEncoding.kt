@@ -20,7 +20,11 @@ internal object CodeModeJournalEncoding {
 
     private fun sourceSame(left: CodeModeRecordSnapshot?, right: CodeModeRecordSnapshot?): Boolean =
         left?.sourceState == right?.sourceState && left?.nativeAfterExec == right?.nativeAfterExec &&
-            left?.nativeCellId == right?.nativeCellId && left?.nativeOutput == right?.nativeOutput
+            left?.nativeCellId == right?.nativeCellId && left?.nativeOutput == right?.nativeOutput &&
+            nativeDeliverySame(left, right)
+
+    private fun nativeDeliverySame(left: CodeModeRecordSnapshot?, right: CodeModeRecordSnapshot?): Boolean =
+        left?.deliveredOnly == right?.deliveredOnly && left?.nativeNotifications == right?.nativeNotifications
 
     fun unchanged(record: CodeModeRecordSnapshot, prior: CodeModeRecordSnapshot?): Boolean =
         same(record, prior) && prior?.encodedFieldBytes != null

@@ -18,6 +18,8 @@ internal class CodeModeStreamingCell(
     private val record: CodeModeRecord,
     private val round: CodeModeLiveRound,
 ) : CodeModeCell by cell {
+    val nativeObservation: CodeModeNativeObservation? get() = cell as? CodeModeNativeObservation
+
     var deliveredText: String? = null
         private set
     val deliveredNative: List<kotlinx.serialization.json.JsonElement>? get() = round.switching.deliveredNative

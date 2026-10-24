@@ -91,7 +91,12 @@ internal class CodeModeUpstreamHistory(
         }
         val appended = scripts.appended(records, folded, conversation, due)
         val items = preamble + folded + appended.flatMap { scripts.continuity(it) + scripts.placement(it) }
-        val echoes = (if (fresh) emptyList() else entry.echoes) + appended.flatMap(scripts::continuity)
+        val echoes = (if (fresh) emptyList() else entry.echoes) + appended.flatMap {
+            CodeModeScriptDelivery.items(
+                it,
+                scripts,
+            )
+        }
         return if (items == input && echoes.isEmpty()) {
             client
         } else {

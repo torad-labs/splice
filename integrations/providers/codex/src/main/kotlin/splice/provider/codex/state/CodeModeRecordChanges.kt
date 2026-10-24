@@ -39,13 +39,21 @@ internal class CodeModeRecordChanges(
 ) {
     private val cleanup = CodeModeCellCleanup(config.log)
 
-    fun complete(record: CodeModeRecord, output: String) = access.withKey(record.key) {
+    fun complete(record: CodeModeRecord, output: String, nativeOutput: JsonElement? = null) = access.withKey(
+        record.key,
+    ) {
         val stored = CodeModeWeight.STORED
         val replaced = record.progress.output
         CodeModeHeap.grow(record, (stored.text(output) - stored.text(replaced.orEmpty())).coerceAtLeast(0L)) { kept ->
             if (replaced != null && kept.output === replaced) stored.text(replaced) else 0L
         }
         startup.entries.remove(record.id)
+        nativeOutput?.let { content ->
+            CodeModeHeap.grow(record, stored.json(content)) { kept ->
+                kept.nativeOutput?.let(stored::json) ?: 0L
+            }
+        }
+        record.progress.nativeOutput = nativeOutput
         record.progress.output = output
         record.progress.completionError = null
         record.phase = CodeModePhase.COMPLETED

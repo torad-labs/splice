@@ -149,6 +149,7 @@ internal data class CodeModeProgress(
     var lastDigest: String,
 ) {
     var nativeOutput: JsonElement? = null
+    var nativeNotifications: List<JsonElement> = emptyList()
 }
 
 /** The model's own items a record carries: the native [segments] placed in the history, and the [continuity]

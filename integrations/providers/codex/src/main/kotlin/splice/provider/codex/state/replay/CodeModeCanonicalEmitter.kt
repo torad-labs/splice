@@ -64,6 +64,7 @@ internal class CodeModeCanonicalEmitter(private val codec: CodexCodeModeHistoryC
         appendAfter(placement.source, logical, replay, order)
         when (placement.emission) {
             CodeModeCanonicalEmission.SCRIPT -> {
+                logical += record.progress.nativeNotifications
                 logical += codec.customOutput(record)
                 logical += record.accepted.durableMedia()
             }

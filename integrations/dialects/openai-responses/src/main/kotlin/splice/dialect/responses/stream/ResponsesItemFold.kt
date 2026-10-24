@@ -6,11 +6,13 @@ import kotlinx.serialization.json.JsonObject
 import splice.core.turn.TurnOutcome
 import splice.core.util.JsonScalars
 import splice.dialect.responses.ResponsesTurnState
+import splice.dialect.responses.reasoning.ResponsesMessageDelivery
 import splice.dialect.responses.reasoning.ResponsesReasoningFold
 import splice.dialect.responses.reasoning.ResponsesReasoningReplay
 import splice.dialect.responses.request.BlockState
 import splice.dialect.responses.tools.ResponsesToolSearchParse
 import splice.upstream.ToolNameShortener
+import splice.upstream.sse.CustomToolSource
 import splice.upstream.sse.WireSink
 
 /** Captures accumulated history immediately before a completed custom item can dispatch. */
@@ -31,12 +33,15 @@ internal class ResponsesItemFold(
     private val frames = ResponsesFrameParse()
     private val customCalls = ResponsesCustomCallParse()
     private val harvest = ResponsesHarvest()
+    private val messages = ResponsesMessageDelivery()
     private var toolSynthCounter = 0
 
     suspend fun onItemAdded(evt: JsonObject, sink: WireSink) {
         val item = evt["item"] as? JsonObject ?: return
         state.streamedItemTypes.add(JsonScalars.strOrEmpty(item["type"]).ifEmpty { "?" })
         val oi = frames.intOr(evt[OUTPUT_INDEX]) ?: frames.intOr(item["index"]) ?: state.blocks.size
+        messages.added(item, oi)
+        state.nativePrefix?.delivered?.added(oi)
         execProgress.added(item, oi, sink)
         // codex parity: EVERY added item (reasoning, message, function_call, search) becomes the
         // active item; summary done-events are rendered only while their item is active.
@@ -83,7 +88,7 @@ internal class ResponsesItemFold(
         if (item != null) {
             customCalls.parse(item)?.let { call ->
                 state.customCalls.add(call)
-                state.nativePrefix?.seal(oi)
+                state.nativePrefix?.seal(oi, call)
                 sink.customToolSource(splice.upstream.sse.CustomToolSource.Completed(call, snapshot?.invoke()))
             }
         }
@@ -97,20 +102,35 @@ internal class ResponsesItemFold(
         closeOpenBlocks(oi, sink)
         if (item == null) return
         if (!completedMessage) replay.collect(item, oi)
+        continuity(sink)
+    }
+
+    suspend fun continuity(sink: WireSink) {
+        val callId = state.nativePrefix?.delivered?.callId ?: return
+        val outcome = snapshot?.invoke() ?: return
+        sink.customToolSource(CustomToolSource.Continuity(callId, outcome))
     }
 
     private suspend fun completeMessage(item: JsonObject?, oi: Int?, sink: WireSink): Boolean {
         if (JsonScalars.str(item, "type") != "message") return false
         state.messageClosed = true
         val completion = replay.collect(checkNotNull(item), oi)
-        completion?.takeIf { it.value.isNotEmpty() }?.let { (key, suffix) ->
+        completion?.let { (key, suffix) ->
             val existing = state.blocks[key]
-            if (outputToolName == null && existing?.tool != true) {
-                emitText(key, suffix, existing, sink)
-                replay.messageTextDelivered(suffix)
-            } else {
-                replay.messageUndelivered()
+            if (suffix.isNotEmpty()) {
+                when {
+                    outputToolName != null -> {
+                        state.textBuf.append(suffix)
+                        replay.messageUndelivered()
+                    }
+                    existing?.tool != true -> {
+                        emitText(key, suffix, existing, sink)
+                        replay.messageTextDelivered(suffix, key)
+                    }
+                    else -> replay.messageUndelivered()
+                }
             }
+            messages.completed(checkNotNull(item), key)
         }
         return true
     }
@@ -170,8 +190,8 @@ internal class ResponsesItemFold(
     }
 
     suspend fun onTextDelta(evt: JsonObject, sink: WireSink) {
-        val delta = JsonScalars.strOrEmpty(evt[DELTA])
-        if (delta.isEmpty()) return
+        val offered = JsonScalars.strOrEmpty(evt[DELTA])
+        if (offered.isEmpty()) return
         val key = frames.intOr(evt[OUTPUT_INDEX]) ?: 0
         val existing = state.blocks[key]
         // DR-108: an output_index does not cross block TYPES — a text delta aimed at an open
@@ -180,12 +200,15 @@ internal class ResponsesItemFold(
         // the passthrough's PT-001 unmapped-index deltas.
         val mistargeted = existing != null && existing.tool
         if (mistargeted) return
+        val delta = messages.delta(evt, key, offered)
+        if (delta.isEmpty()) return
         if (outputToolName != null) {
             state.textBuf.append(delta) // Validated schema JSON becomes tool input at completion, not prose.
-            return
+            state.nativePrefix?.bufferedDelta(key, delta)
+        } else {
+            emitText(key, delta, existing, sink)
+            replay.textDelta(key, delta)
         }
-        emitText(key, delta, existing, sink)
-        replay.textDelta(key, delta)
     }
 
     private suspend fun emitText(key: Int, delta: String, existing: BlockState?, sink: WireSink) {

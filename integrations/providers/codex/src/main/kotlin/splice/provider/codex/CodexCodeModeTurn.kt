@@ -152,16 +152,7 @@ internal class CodexCodeModeTurn(
         initialOuter: GatewayCustomCall?,
         body: CodeModeBody,
     ): TurnOutcome {
-        val completed = context.completed
-        val resultIds = context.turn.toolResults.map(CodeModeResult::id).toSet()
-        val capture = registry.owner(context.key, context.digest, resultIds, wire.callbackIds(body), context.conflicts)
-            ?: completed.lastOrNull()
-        val completedHistory = context.link.post.canonicalize(
-            body,
-            completed,
-            context.turn.rendering.replayMedia,
-            capture,
-        )
+        val completedHistory = branch.canonicalize(context, body, wire.callbackIds(body))
         completedHistory.error?.let { return failure(it) }
         val canonicalBody = checkNotNull(completedHistory.body)
         reconcile(context, canonicalBody)

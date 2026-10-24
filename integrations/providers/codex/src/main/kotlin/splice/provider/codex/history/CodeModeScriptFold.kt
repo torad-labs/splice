@@ -20,6 +20,7 @@ internal class CodeModeScriptFold(
     private val scripts: CodeModeScriptPlacements,
 ) {
     private val reasoning = CodeModeReasoningRestore(codec, scripts)
+    private val delivered = CodeModeDeliveredEchoes(codec, scripts)
     private val out = mutableListOf<JsonElement>()
     private val between = mutableListOf<JsonElement>()
     private val opened = mutableSetOf<String>()
@@ -29,7 +30,7 @@ internal class CodeModeScriptFold(
     private var open: CodeModeRecord? = null
 
     fun fold(client: List<JsonElement>): List<JsonElement> {
-        val items = placed(client)
+        val items = placed(delivered.withoutAfterExec(client, owners.values.distinct()))
         placements[-1]?.forEach { out += scripts.continuity(it) + scripts.placement(it) }
         val last = HashMap<String, Int>()
         items.forEachIndexed { index, item -> owner(item)?.let { last[it.id] = index } }
@@ -115,6 +116,7 @@ internal class CodeModeScriptFold(
         if (opened.add(record.id)) {
             reasoning.restore(out, record)
             out += CodeModeCallReplay.item(record)
+            out += record.carry.nativeAfterExec.orEmpty()
             open = record
         }
         val result = codec.string(items[index] as? JsonObject, CODE_MODE_FIELD_TYPE) == TYPE_RESULT

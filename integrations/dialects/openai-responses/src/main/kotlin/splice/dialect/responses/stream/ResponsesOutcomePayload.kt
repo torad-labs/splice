@@ -3,6 +3,7 @@
 // code both the success path and the salvage path share.
 package splice.dialect.responses.stream
 
+import splice.core.turn.NativeDeliverySnapshot
 import splice.core.turn.ResponseShape
 import splice.core.turn.RoundHandoffs
 import splice.core.turn.RoundText
@@ -48,6 +49,7 @@ internal class ResponsesOutcomePayload(private val ctx: StreamTurnContext) {
             nativePrefix = state.nativePrefix?.takeIf {
                 state.customCalls.isNotEmpty() || customCalls.merge(emptyList(), state.finalResponse).isNotEmpty()
             }?.snapshot(),
+            nativeAfterExec = state.nativePrefix?.delivered?.afterExec(),
         ),
     )
 
@@ -76,6 +78,10 @@ internal class ResponsesOutcomePayload(private val ctx: StreamTurnContext) {
         toolTearOpen = state.toolSalvage.tearOpen,
         usage = usageOf(state),
         nativePrefix = state.nativePrefix?.snapshot(),
+        nativeDelivery = NativeDeliverySnapshot(
+            afterExec = state.nativePrefix?.delivered?.afterExec(),
+            deliveredPrefix = state.nativePrefix?.delivered?.recovery(),
+        ),
     )
 
     /** The round's harvested burn. One reader for both payload shapes (DR-130) so the compact

@@ -11,6 +11,7 @@ import splice.core.turn.TurnOutcome
 import splice.core.util.JsonScalars
 import splice.core.util.LogSink
 import splice.dialect.responses.ResponsesFunctionNamespace
+import splice.dialect.responses.request.ResponsesCodeModeProjection
 import splice.dialect.responses.request.ResponsesPriorReasoning
 import splice.provider.codex.history.CodeModeContinuityCapture
 import splice.provider.codex.history.CodexCodeModeHistory
@@ -168,7 +169,15 @@ internal class CodexCodeModeWire(
 internal data class CodeModeContinuity(
     val logicalItems: List<JsonElement>,
     val replayItems: List<CodeModeNativeSegment>,
-)
+    val nativeAfterExec: List<JsonElement>? = null,
+) {
+    val afterExec by lazy { ResponsesCodeModeProjection().project(JsonArray(nativeAfterExec.orEmpty())) }
+
+    val nativeReplay: List<CodeModeNativeSegment>
+        get() = replayItems + afterExec.replayItems.map {
+            CodeModeNativeSegment(logicalItems.size + 1 + it.logicalOffset, it.items)
+        }
+}
 
 internal data class CodeModeInputBoundary(
     val fullCount: Int,

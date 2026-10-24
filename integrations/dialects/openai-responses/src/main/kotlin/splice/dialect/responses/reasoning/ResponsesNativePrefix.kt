@@ -4,6 +4,7 @@ import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
+import splice.core.turn.GatewayCustomCall
 import splice.core.util.JsonScalars
 import splice.core.util.JsonWire
 import splice.dialect.responses.request.AssistantPhase
@@ -14,18 +15,25 @@ internal const val NATIVE_MESSAGE_TYPE = "message"
 
 /** Completed native items retain their message boundaries independently of flattened display buffers. */
 internal class ResponsesNativePrefix {
+    val delivered = ResponsesDeliveredHistory()
     private val items = mutableListOf<NativePrefixItem>()
     private val completedIds = hashSetOf<String>()
     private val pending = sortedMapOf<Int, StringBuilder>()
     private var sealed: List<JsonObject>? = null
     private var boundary: Int? = null
-    var retainedChars: Long = 0
-        private set
+    private var rawChars: Long = 0
+    val retainedChars: Long get() = rawChars + delivered.retainedChars
 
     fun delta(index: Int, text: String) {
+        bufferedDelta(index, text)
+        delivered.text(index, text)
+        checkCapacity()
+    }
+
+    fun bufferedDelta(index: Int, text: String) {
         pending.getOrPut(index) { StringBuilder() }.append(text)
-        retainedChars += text.length
-        require(retainedChars <= BufferCapacity.MAX_BUFFERED_CHARS) { "native history exceeds buffer capacity" }
+        rawChars += text.length
+        checkCapacity()
     }
 
     /** Keep complete upstream snapshots separately from the text the client actually received. */
@@ -33,26 +41,28 @@ internal class ResponsesNativePrefix {
         if (!replayable(item)) return null
         val isMessage = JsonScalars.str(item, "type") == NATIVE_MESSAGE_TYPE
         val streamed = pending.remove(index)?.toString().orEmpty()
-        retainedChars -= streamed.length
+        rawChars -= streamed.length
         val captured = when {
             !isMessage -> {
                 // Reusing an index starts another item; the preceding unfinished message remains history.
                 if (streamed.isNotEmpty()) retain(message(streamed), index)
                 item
             }
-            text(item).isEmpty() && streamed.isNotEmpty() ->
-                JsonObject(item + ("content" to checkNotNull(content(message(streamed)))))
+            ResponsesMessageText.text(item).isEmpty() && streamed.isNotEmpty() ->
+                JsonObject(item + ("content" to checkNotNull(message(streamed)["content"])))
             else -> item
         }
         val fresh = retain(captured, index)
+        if (fresh) delivered.item(captured, index)
+        checkCapacity()
         return knownSuffix(captured, streamed, fresh)
     }
 
     private fun retain(item: JsonObject, index: Int): Boolean {
         val id = JsonScalars.str(item, "id")
         if (id != null && !completedIds.add(id)) return false
-        retainedChars += JsonWire.string(item).length
-        require(retainedChars <= BufferCapacity.MAX_BUFFERED_CHARS) { "native history exceeds buffer capacity" }
+        rawChars += JsonWire.string(item).length
+        checkCapacity()
         items.add(NativePrefixItem(index, item))
         return true
     }
@@ -60,26 +70,19 @@ internal class ResponsesNativePrefix {
     private fun knownSuffix(item: JsonObject, streamed: String, fresh: Boolean): String? {
         if (JsonScalars.str(item, "type") != NATIVE_MESSAGE_TYPE) return null
         if (!fresh) return ""
-        val completed = text(item)
+        val completed = ResponsesMessageText.text(item)
         return completed.takeIf { it.startsWith(streamed) }?.substring(streamed.length)
     }
 
-    private fun text(item: JsonObject): String {
-        val content = content(item)
-        return if (content is JsonArray) {
-            content.joinToString("") { JsonScalars.str(it as? JsonObject, "text").orEmpty() }
-        } else {
-            JsonScalars.strOrEmpty(content)
+    fun seal(index: Int?, call: GatewayCustomCall) {
+        if (boundary == null) {
+            val lastCompleted = items.maxOfOrNull { it.index }
+            val lastPending = pending.keys.lastOrNull()
+            val last = listOfNotNull(lastCompleted, lastPending).maxOrNull()
+            boundary = index ?: last?.plus(1) ?: 0
+            sealed = snapshot()
         }
-    }
-
-    fun seal(index: Int?) {
-        if (boundary != null) return
-        val lastCompleted = items.maxOfOrNull { it.index }
-        val lastPending = pending.keys.lastOrNull()
-        val last = listOfNotNull(lastCompleted, lastPending).maxOrNull()
-        boundary = index ?: last?.plus(1) ?: 0
-        sealed = snapshot()
+        delivered.call(call.raw)
     }
 
     /** A sparse terminal cannot remove or permute an item already captured before the call sealed. */
@@ -95,8 +98,8 @@ internal class ResponsesNativePrefix {
         if (matched != before) return
         val reconciled = terminal.map { candidate -> known[identity(candidate)] ?: candidate }
         val added = terminal.filter { identity(it) !in known }
-        retainedChars += added.sumOf { JsonWire.string(it).length.toLong() }
-        require(retainedChars <= BufferCapacity.MAX_BUFFERED_CHARS) { "native history exceeds buffer capacity" }
+        rawChars += added.sumOf { JsonWire.string(it).length.toLong() }
+        checkCapacity()
         boundary = boundary ?: callAt
         sealed = reconciled
     }
@@ -112,7 +115,7 @@ internal class ResponsesNativePrefix {
 
     private fun messageKey(item: JsonObject): String? =
         if (JsonScalars.str(item, "type") == NATIVE_MESSAGE_TYPE && JsonScalars.str(item, "role") == "assistant") {
-            text(item).takeIf { it.isNotEmpty() }
+            ResponsesMessageText.text(item).takeIf { it.isNotEmpty() }
         } else {
             null
         }
@@ -128,7 +131,9 @@ internal class ResponsesNativePrefix {
 
     private fun identity(item: JsonObject): JsonElement = item["id"] ?: item
 
-    private fun content(item: JsonObject): JsonElement? = item["content"]
+    private fun checkCapacity() {
+        require(retainedChars <= BufferCapacity.MAX_BUFFERED_CHARS) { "native history exceeds buffer capacity" }
+    }
 
     private fun replayable(item: JsonObject): Boolean = when (JsonScalars.str(item, "type")) {
         NATIVE_MESSAGE_TYPE -> true

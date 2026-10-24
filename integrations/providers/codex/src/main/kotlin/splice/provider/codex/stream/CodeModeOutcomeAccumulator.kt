@@ -1,11 +1,14 @@
 // NEW: aggregates billed upstream outcomes across hidden code-mode continuation rounds.
 package splice.provider.codex.stream
 
+import kotlinx.serialization.json.JsonObject
+import splice.core.turn.NativeDeliverySnapshot
 import splice.core.turn.ResponseShape
 import splice.core.turn.RoundText
 import splice.core.turn.TurnOutcome
 import splice.core.turn.Usage
 import splice.core.turn.noRequestUsage
+import splice.core.util.JsonScalars
 import splice.provider.codex.history.CodeModeContinuityCapture
 
 internal class CodeModeOutcomeAccumulator {
@@ -87,7 +90,19 @@ internal class CodeModeOutcomeAccumulator {
         toolTearOpen = latest?.toolTearOpen == true,
         usage = mergeTerminalUsage(prior.usage, latest?.usage ?: noRequestUsage),
         nativePrefix = CodeModeContinuityCapture.followedBy(prior, latest),
+        nativeDelivery = NativeDeliverySnapshot(
+            afterExec = latest?.nativeAfterExec,
+            deliveredPrefix = deliveredPrefix(prior, latest),
+        ),
     )
+
+    /** A prior exec or prose needs its own canonical history; never guess its delivery order here. */
+    private fun deliveredPrefix(prior: TurnOutcome.Success, latest: TurnOutcome.PartialRound?): List<JsonObject>? {
+        if (prior.text.bodyText.isNotEmpty() || prior.handoffs.nativeAfterExec != null) return null
+        val prefix = CodeModeContinuityCapture.successItems(prior)
+        if (prefix.any { JsonScalars.str(it, "type") != "reasoning" }) return null
+        return latest?.deliveredNativePrefix?.let { prefix + it }
+    }
 
     private fun mergeRoundUsage(prior: Usage, latest: Usage): Usage = prior.followedBy(latest)
 

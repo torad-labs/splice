@@ -15,9 +15,6 @@ internal fun interface CodeModeRoundRecord {
     operator fun invoke(): CodeModeRecord?
 }
 
-/** The round's lifecycle monitor: its posting claim and the usage terminal are serialized under it. */
-internal class CodeModeRoundLifecycle
-
 /** Shares the round's lifecycle monitor so its posting claim cannot race the usage terminal. */
 internal class CodeModeRoundBilling(
     private val lifecycle: CodeModeRoundLifecycle,

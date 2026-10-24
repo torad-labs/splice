@@ -4,10 +4,10 @@ import kotlinx.serialization.SerializationException
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonObject
-import kotlinx.serialization.json.JsonPrimitive
 import splice.core.perf.InputDigest
 import splice.core.util.JsonScalars
 import splice.core.util.LogSink
+import splice.provider.codex.CodeModeClientOutputDigests
 import splice.provider.codex.CodeModePending
 import splice.provider.codex.CodeModeRecord
 import splice.provider.codex.CodeModeRunContext
@@ -54,7 +54,12 @@ internal class CodeModeClearedWitness(
                 else -> Unit
             }
             val replacement = normalized(item, id)
-            (replacement ?: listOf(element)).forEach(::feed)
+            if (replacement == null) {
+                feed(element)
+            } else {
+                feedHex(replacement.first)
+                replacement.second.forEach(::feed)
+            }
         }
     }
 
@@ -91,14 +96,19 @@ internal class CodeModeClearedWitness(
         return text(item, "name") == name && parsed == arguments
     }
 
-    private fun normalized(item: JsonObject?, id: String): List<JsonElement>? {
+    private fun normalized(item: JsonObject?, id: String): Pair<String, List<JsonElement>>? {
         if (!clearedOutput(item)) return null
         val owner = authorized[id] ?: return null
         return owner.accepted.media(id)?.let { media ->
-            rendering.verifiedCleared.getOrPut(owner.id) { mutableSetOf() }.add(id)
-            val original =
-                JsonObject(checkNotNull(item) + ("output" to JsonPrimitive(owner.results.getValue(id).output)))
-            listOf(original) + media
+            val hash = CodeModeClientOutputDigests.replay(
+                owner.accepted.clientOutputDigest(id),
+                checkNotNull(item),
+                owner.results.getValue(id).output,
+            )
+            hash?.let {
+                rendering.verifiedCleared.getOrPut(owner.id) { mutableSetOf() }.add(id)
+                it to media
+            }
         }
     }
 
@@ -106,8 +116,10 @@ internal class CodeModeClearedWitness(
         text(it, "type") == "function_call_output" && text(it, "output") == "[Old tool result content cleared]"
     } == true
 
-    private fun feed(item: JsonElement) {
-        digest.update(InputDigest.hex(item).toByteArray(Charsets.UTF_8))
+    private fun feed(item: JsonElement) = feedHex(InputDigest.hex(item))
+
+    private fun feedHex(hex: String) {
+        digest.update(hex.toByteArray(Charsets.UTF_8))
         count++
         checkpoint()
     }

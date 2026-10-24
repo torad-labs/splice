@@ -15,6 +15,9 @@ public sealed class CustomToolSource {
         val snapshot: TurnOutcome.Success? = null,
     ) : CustomToolSource()
 
+    /** Updates an already sealed source's verified history; never admits or dispatches another program. */
+    public data class Continuity(val callId: String, val snapshot: TurnOutcome.Success) : CustomToolSource()
+
     /** The round's terminal was parsed: the source is whole, whatever cancels the reader after this. */
     public data object Terminal : CustomToolSource()
 }

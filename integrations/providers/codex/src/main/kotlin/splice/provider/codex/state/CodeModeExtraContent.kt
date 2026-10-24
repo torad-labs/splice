@@ -17,12 +17,16 @@ import splice.provider.codex.CodeModeIssuedStep
 import splice.provider.codex.CodeModePending
 import splice.provider.codex.CodeModeRecord
 import splice.provider.codex.CodexCodeModeHistoryCodec
+import splice.provider.codex.history.CodeModeDeliveredEchoes
 import splice.provider.codex.history.CodeModeOwnership
+import splice.provider.codex.history.CodeModeScriptPlacements
 
 internal class CodeModeExtraContent(
     private val codec: CodexCodeModeHistoryCodec,
     private val ownership: CodeModeOwnership,
 ) {
+    private val delivered = CodeModeDeliveredEchoes(codec, CodeModeScriptPlacements(codec))
+
     /** [input]: the round's parsed input array, or null when the round is not a Responses request.
      *  [digests]: the round's item digests, so this check's two baseline indexes render no item again. */
     fun of(
@@ -112,6 +116,8 @@ internal class CodeModeExtraContent(
         record: CodeModeRecord,
         candidateMedia: Map<String, List<JsonElement>> = emptyMap(),
     ): Set<Int> {
+        val tailEcho = delivered.indexes(items, record, boundary)
+        if (tailEcho.isNotEmpty()) return tailEcho
         if (record.carry.continuity.isNotEmpty() && codec.continuityAt(items, boundary, record.carry.continuity)) {
             return (boundary until boundary + record.carry.continuity.size).toSet()
         }
@@ -120,8 +126,7 @@ internal class CodeModeExtraContent(
                 ResponsesAssistantText.item(it, AssistantPhase.COMMENTARY)
             }
         }
-        if (expected.isEmpty()) return emptySet()
-        return echoedIndexes(items, boundary, record, expected, candidateMedia)
+        return if (expected.isEmpty()) emptySet() else echoedIndexes(items, boundary, record, expected, candidateMedia)
     }
 
     /** A cut without terminal model continuity keeps its echoed prose in the original history. */

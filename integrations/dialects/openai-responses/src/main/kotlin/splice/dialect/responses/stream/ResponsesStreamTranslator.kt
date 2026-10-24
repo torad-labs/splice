@@ -49,9 +49,6 @@ import splice.upstream.sse.WireSink
 import java.io.IOException
 import java.util.concurrent.CancellationException
 
-// NF-06 runaway-upstream guard message; the cap lives in spi.BufferCapacity (one source, three dialects).
-private const val RUNAWAY_GUARD_MESSAGE = "upstream: response exceeded max buffered size; aborting"
-
 internal class ResponsesStreamTranslator(
     private val ctx: StreamTurnContext,
     private val names: ToolNameShortener = ToolNameShortener(),
@@ -61,8 +58,7 @@ internal class ResponsesStreamTranslator(
     private val outputToolName: String? = null,
 ) : StreamTranslator {
 
-    // NF-06: latched when BufferCapacity trips; never provider-reported (the verdict is local).
-    private var runawayGuard: String? = null
+    private val bufferBudget = ResponsesBufferBudget()
 
     /** V4-116: the unrecognised throwable the generic catch swallowed, if any — see [relabelUnrecognised]
      *  for why this dialect records it and rewrites the sentence afterwards instead of branching
@@ -120,18 +116,14 @@ internal class ResponsesStreamTranslator(
         try {
             upstream
                 .takeWhile {
-                    val withinCapacity = !ResponsesBufferBudget.exceeded(state, reasoningFold.pendingChars)
-                    if (!withinCapacity) runawayGuard = RUNAWAY_GUARD_MESSAGE
-                    withinCapacity
+                    bufferBudget.within(state, reasoningFold.pendingChars)
                 }
                 .firstOrNull { evt ->
                     reducer.onEvent(evt, orderedSink)
-                    // The last event may exceed capacity without another frame to run takeWhile's check.
-                    if (ResponsesBufferBudget.exceeded(state, reasoningFold.pendingChars)) {
-                        runawayGuard = RUNAWAY_GUARD_MESSAGE
-                    }
+                    // Char overflow must stop even on the last frame; block count keeps its pre-event boundary.
+                    bufferBudget.within(state, reasoningFold.pendingChars, includeBlockCount = false)
                     // Protocol completion releases callbacks and usage without awaiting transport EOF.
-                    state.finalResponse != null || runawayGuard != null
+                    state.finalResponse != null || bufferBudget.failure != null
                 }
         } catch (e: CancellationException) {
             if (cancellationMustEscape(state)) throw e
@@ -158,11 +150,13 @@ internal class ResponsesStreamTranslator(
             if (!hasRecoverableProgress(state)) throw ignored
             unexpected = ignored
         } finally {
+            // EOF at the full block count has no lookahead event to run takeWhile's guard.
+            bufferBudget.within(state, reasoningFold.pendingChars)
             reasoningFold.leadingText.closeSourceProgress(
-                itemFold.execProgress,
+                itemFold,
                 terminalSeen(state),
                 sink,
-                capacityRejected = runawayGuard != null,
+                capacityRejected = bufferBudget.failure != null,
             )
         }
 
@@ -210,7 +204,7 @@ internal class ResponsesStreamTranslator(
         ResponsesTerminalBackfill().harvestFallback(state)
         ResponsesSchemaOutput(outputToolName).latchUndelivered(state)
         val payload = ResponsesOutcomePayload(ctx)
-        val outcome = ResponsesTerminalDecision(ctx, payload).terminalOutcome(state, runawayGuard, tear)
+        val outcome = ResponsesTerminalDecision(ctx, payload).terminalOutcome(state, bufferBudget.failure, tear)
         return if (outcome is TurnOutcome.Failure && outcome.partial == null) {
             outcome.copy(salvagedUsage = payload.usageOf(state))
         } else {

@@ -70,7 +70,12 @@ internal class CodeModeRecordRestorer {
             updatedAt = saved.updatedAt,
             lastDigest = saved.lastDigest,
         ),
-        carry = CodeModeNativeContinuity(saved.nativeSegments, saved.continuity, saved.continuityReplay),
+        carry = CodeModeNativeContinuity(
+            saved.nativeSegments,
+            saved.continuity,
+            saved.continuityReplay,
+            saved.nativeAfterExec,
+        ),
     )
 }
 
@@ -107,5 +112,6 @@ internal object CodeModeRecordSnapshots {
         it.nativeBaseId = record.nativeBaseId
         it.replayAnchors = record.replayAnchors
         it.sourceState = record.sourceState
+        it.nativeAfterExec = record.carry.nativeAfterExec
     }
 }

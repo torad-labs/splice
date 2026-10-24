@@ -68,7 +68,8 @@ internal class CodeModeScriptPlacements(private val codec: CodexCodeModeHistoryC
     )
 
     fun placement(record: CodeModeRecord): List<JsonElement> =
-        listOf(CodeModeCallReplay.item(record), codec.customOutput(record)) + record.accepted.durableMedia()
+        listOf(CodeModeCallReplay.item(record)) + record.carry.nativeAfterExec.orEmpty() +
+            codec.customOutput(record) + record.accepted.durableMedia()
 
     /** The echo of [continuity] starting at [at] in [items], or null when the items there are not it. Reasoning and
      *  calls come back as they were given and prose as text, each in the order GPT gave it, but merged in the order

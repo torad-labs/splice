@@ -1,6 +1,7 @@
 // NEW: client replay excludes private recovery inputs while the current turn keeps its original upstream view.
 package splice.provider.codex.stream
 
+import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonObject
 import splice.core.turn.RoundText
 import splice.core.turn.TurnOutcome
@@ -68,7 +69,11 @@ internal class CodeModeRecoveryHistory(val baseline: CodeModeBody) {
             val native = nativeItems()
             if (native != null || outcome.handoffs.nativePrefix != null) {
                 val carried = native ?: CodeModeContinuityCapture.items(null, text(), reasoning())
-                return CodeModeContinuityCapture.project(carried + CodeModeContinuityCapture.successItems(outcome))
+                return CodeModeContinuityCapture.project(
+                    carried + CodeModeContinuityCapture.successItems(outcome),
+                ).copy(
+                    nativeAfterExec = outcome.handoffs.nativeAfterExec,
+                )
             }
             val text = text()
             return wire.continuity(
@@ -136,6 +141,10 @@ internal class CodeModeRecoveryHistory(val baseline: CodeModeBody) {
             posted.continuity = wire.continuity(outcome)
             posted.text = outcome.text.bodyText.takeIf { outcome.text.emittedText }.orEmpty()
             return prefix.continuity(outcome, wire)
+        }
+
+        fun afterExec(items: List<JsonElement>?) {
+            posted.continuity = posted.continuity.copy(nativeAfterExec = items)
         }
     }
 
@@ -226,6 +235,7 @@ internal class CodeModeRecoveryHistory(val baseline: CodeModeBody) {
             it.nativeBaseId = history.native.parent?.id
             it.replayAnchors = history.boundary.replayAnchors
             it.sourceState = state.sourceState
+            it.nativeAfterExec = history.continuity.nativeAfterExec
         }.restore().also { it.nativeParent = history.native.parent }
     }
 }

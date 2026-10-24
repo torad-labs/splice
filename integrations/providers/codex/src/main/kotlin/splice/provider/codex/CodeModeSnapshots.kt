@@ -64,6 +64,9 @@ internal data class CodeModeRecordSnapshot(
     var replayAnchors: CodeModeReplayAnchors? = null
     var sourceState: CodeModeSourceState? = null
 
+    /** Verified model items after the sealed exec, before its runtime output. Older journals have none. */
+    var nativeAfterExec: List<JsonElement>? = null
+
     @Transient var retainedBytes: Long? = null
 
     @Transient var encodedFieldBytes: Map<String, Long>? = null
@@ -80,6 +83,9 @@ internal data class CodeModeResultSnapshot(
     val output: String,
     val isError: Boolean,
     val media: List<JsonElement>? = null,
+    /** Optional v1 exact-wire item hash; absent legacy data never invents the client's original text. */
+    val clientOutputDigest: String? = null,
 ) {
-    fun restore(id: String): CodeModeAcceptedResult = CodeModeAcceptedResult(CodeModeResult(id, output, isError), media)
+    fun restore(id: String): CodeModeAcceptedResult =
+        CodeModeAcceptedResult(CodeModeResult(id, output, isError), media, clientOutputDigest)
 }

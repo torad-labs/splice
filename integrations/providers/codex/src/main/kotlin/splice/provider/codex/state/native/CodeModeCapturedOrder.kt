@@ -125,7 +125,7 @@ internal class CodeModeCapturedOrder(
         record: CodeModeRecord,
         start: Int,
         prefixEnd: Int,
-        source: CodeModeContinuity = CodeModeContinuity(record.carry.continuity, record.carry.replay),
+        source: CodeModeContinuity = record.carry.source(),
     ): List<ResponsesCodeModeReplay> =
         source.replayItems.mapNotNull { segment ->
             val added = segment.items.filterNot(native::contains)
@@ -187,7 +187,7 @@ private class CodeModeCapturedOccurrences(
         val seen = mutableSetOf<String>()
         records.forEach { source ->
             generateSequence(source) { it.nativeParent }.takeWhile { seen.add(it.id) }.forEach { record ->
-                record.carry.replay.flatMap { it.items }.forEach { item ->
+                record.carry.source().nativeReplay.flatMap { it.items }.forEach { item ->
                     producers.getOrPut(digest(item)) { mutableListOf() } += record to item
                 }
             }

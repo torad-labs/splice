@@ -86,7 +86,13 @@ internal class CodexCodeModeResume(
         val detail = record.error ?: "code-mode process state was lost; source was not rerun"
         val supplied = suppliedResults(record, context.turn, mode = CodeModeResultMode.INTERRUPT)
         supplied.error?.let { return failure(it) }
-        registry.acceptResults(record, context.digest, supplied.results, context.turn.rendering.media)
+        registry.acceptResults(
+            record,
+            context.digest,
+            supplied.results,
+            context.turn.rendering.media,
+            CodeModeClientOutputDigests.capture(context, supplied.results.keys),
+        )
         val interrupted = machine.interrupt(record, detail)
         return if (interrupted is TurnOutcome.Failure) {
             interrupted
@@ -105,7 +111,13 @@ internal class CodexCodeModeResume(
         val mode = if (hasExtraContent) CodeModeResultMode.INTERRUPT else CodeModeResultMode.RESUME
         val supplied = suppliedResults(record, context.turn, mode)
         supplied.error?.let { return failure(it) }
-        registry.acceptResults(record, context.digest, supplied.results, context.turn.rendering.media)
+        registry.acceptResults(
+            record,
+            context.digest,
+            supplied.results,
+            context.turn.rendering.media,
+            CodeModeClientOutputDigests.capture(context, supplied.results.keys),
+        )
         record.progress.pending.firstOrNull { it.name !in context.turn.tools }?.let { pending ->
             val message = "code-mode tool '${pending.name}' is no longer in the current tool catalog"
             return reject(record, context, body, hasExtraContent, message)

@@ -36,6 +36,7 @@ internal class CodeModeSwitchingSink(
     BlockEnding by content {
     private var readingScope: CoroutineScope? = null
     val deliveredNative: List<JsonElement>? get() = core.deliveredNative
+    val deliveredText: CodeModeDeliveredText get() = core.deliveredText
     override val ownerScope: CoroutineScope get() = checkNotNull(readingScope)
 
     fun ownedBy(scope: CoroutineScope) {
@@ -45,6 +46,8 @@ internal class CodeModeSwitchingSink(
     suspend fun attach(sink: WireSink) = core.attach(sink)
 
     suspend fun detach(): String? = core.detach()
+
+    suspend fun confirmedText(): CodeModeDeliveredText = core.confirmedText()
 }
 
 /** The state every part shares: the attachment lock, the client sink now attached, the block table, the writes held
@@ -56,6 +59,9 @@ internal class CodeModeSinkCore(initial: WireSink) {
     val writes = CodeModeSinkWrites()
     var deliveredNative: List<JsonElement>? = null
         private set
+    var deliveredText: CodeModeDeliveredText = CodeModeDeliveredText(0, "")
+        private set
+    private var textOffset = 0
     private val text = StringBuilder()
     private val native = mutableListOf<JsonElement>()
     private var spent = 0
@@ -73,12 +79,18 @@ internal class CodeModeSinkCore(initial: WireSink) {
         native.clear()
         val text = sink?.let {
             val kept = text.toString().takeIf { complete }
+            deliveredText = CodeModeDeliveredText(textOffset, kept)
+            textOffset += text.length
             text.clear()
             blocks.detach(it)
             kept
         }
         target = null
         text
+    }
+
+    suspend fun confirmedText(): CodeModeDeliveredText = mutex.withLock {
+        CodeModeDeliveredText(textOffset, text.toString().takeIf { complete })
     }
 
     /** The block table is read under the lock, with the write. */
@@ -111,6 +123,8 @@ internal class CodeModeSinkCore(initial: WireSink) {
 
     fun resetDelivered() {
         text.clear()
+        textOffset = 0
+        deliveredText = CodeModeDeliveredText(0, "")
         native.clear()
         spent = 0
         complete = true

@@ -10,6 +10,8 @@ import splice.dialect.responses.ResponsesTurnState
 import splice.dialect.responses.StreamTurnContext
 import splice.upstream.ToolNameShortener
 
+private const val NATIVE_FUNCTION_CALL_TYPE = "function_call"
+
 /** Completed reasoning is server history, independent of readable reasoning and terminal accounting.
  * No encrypted envelope is a client content block. Missing readable model text stays missing. */
 internal class ResponsesReasoningReplay(
@@ -26,7 +28,7 @@ internal class ResponsesReasoningReplay(
     private var positionsProven = true
 
     init {
-        if (ctx.reasoningCapture.collectEnvelopes) state.nativePrefix = ResponsesNativePrefix()
+        state.nativePrefix = ResponsesNativePrefix()
     }
 
     /** Advance in wire order, including prose whose item never completes before a recovery. */
@@ -36,19 +38,23 @@ internal class ResponsesReasoningReplay(
     }
 
     /** Completed native messages already contain this suffix; only their delivered cursor advances. */
-    fun messageTextDelivered(text: String) {
+    fun messageTextDelivered(text: String, index: Int? = null) {
         cursor?.text("assistant", text)
+        index?.let { state.nativePrefix?.delivered?.text(it, text) }
     }
 
     fun messageUndelivered() {
         positionsProven = false
+        state.nativePrefix?.delivered?.invalidate()
     }
 
     fun collect(item: JsonObject, outputIndex: Int?): IndexedValue<String>? {
         val index = outputIndex ?: streamedItems
         val suffix = state.nativePrefix?.collect(item, index)
         if (JsonScalars.str(item, "type") == NATIVE_MESSAGE_TYPE && suffix == null) messageUndelivered()
-        collectAt(item, cursor.takeIf { positionsProven }, outputIndex = index, terminal = false)
+        val position = cursor.takeIf { positionsProven && state.nativePrefix?.delivered?.callId == null }
+        collectAt(item, position, outputIndex = index, terminal = false)
+        if (JsonScalars.str(item, "type") == NATIVE_FUNCTION_CALL_TYPE) state.nativePrefix?.delivered?.item(item, index)
         streamedItems++
         return suffix?.let { IndexedValue(index, it) }
     }
@@ -60,26 +66,45 @@ internal class ResponsesReasoningReplay(
         state.nativePrefix?.finish(output)
         if (output.isEmpty()) return
         val at = initial?.copy()
-        val conflict = deliveredOrderConflicts(output)
+        val source = terminalSource(output)
         val bounds = TerminalHistoryBounds(output, initial, cursor.takeIf { positionsProven }, streamedCalls)
         output.forEachIndexed { index, value ->
             (value as? JsonObject)?.let {
-                if (conflict) {
-                    if (JsonScalars.str(it, "type") == "reasoning") capture(it, bounds.at(index), index, true)
-                } else {
-                    collectAt(it, at, outputIndex = index, terminal = true)
-                }
+                collectTerminal(it, at, index, bounds, source)
             }
         }
-        if (!conflict) publishCursor(at)
+        if (source == TerminalHistorySource.ARRAY) publishCursor(at)
         reconcileEnvelopes(output)
+    }
+
+    private fun terminalSource(output: JsonArray): TerminalHistorySource = when {
+        state.nativePrefix?.delivered?.callId != null -> TerminalHistorySource.OWNED
+        deliveredOrderConflicts(output) -> TerminalHistorySource.DELIVERED
+        else -> TerminalHistorySource.ARRAY
+    }
+
+    private fun collectTerminal(
+        item: JsonObject,
+        at: ReasoningHistory?,
+        index: Int,
+        bounds: TerminalHistoryBounds,
+        source: TerminalHistorySource,
+    ) {
+        when (source) {
+            TerminalHistorySource.OWNED ->
+                if (JsonScalars.str(item, "type") == "reasoning") capture(item, null, index, true)
+            TerminalHistorySource.DELIVERED ->
+                if (JsonScalars.str(item, "type") == "reasoning") capture(item, bounds.at(index), index, true)
+            TerminalHistorySource.ARRAY -> collectAt(item, at, index, true)
+        }
     }
 
     private fun deliveredOrderConflicts(output: JsonArray): Boolean {
         if (!positionsProven) return true
         if (!state.emittedText) return false
         val terminalText = output.mapNotNull { it as? JsonObject }
-            .filter { JsonScalars.str(it, "type") == NATIVE_MESSAGE_TYPE }.joinToString("", transform = ::messageText)
+            .filter { JsonScalars.str(it, "type") == NATIVE_MESSAGE_TYPE }
+            .joinToString("", transform = ResponsesMessageText::text)
         return terminalText != state.textBuf.toString()
     }
 
@@ -91,8 +116,8 @@ internal class ResponsesReasoningReplay(
     ) {
         when (JsonScalars.str(item, "type")) {
             "reasoning" -> capture(item, at, outputIndex, terminal)
-            NATIVE_MESSAGE_TYPE -> if (terminal) at?.text("assistant", messageText(item))
-            "function_call" -> advanceTool(item, at)
+            NATIVE_MESSAGE_TYPE -> if (terminal) at?.text("assistant", ResponsesMessageText.text(item))
+            NATIVE_FUNCTION_CALL_TYPE -> advanceTool(item, at)
         }
     }
 
@@ -142,11 +167,9 @@ internal class ResponsesReasoningReplay(
         // A sparse final output can add missing items, but cannot rewind visible items already streamed.
         if (position.offset >= current.offset) current.restore(position)
     }
-
-    private fun messageText(item: JsonObject): String = (item["content"] as? JsonArray).orEmpty().joinToString("") {
-        JsonScalars.str(it as? JsonObject, "text").orEmpty()
-    }
 }
+
+private enum class TerminalHistorySource { OWNED, DELIVERED, ARRAY }
 
 /** A conflicting terminal proves the outer boundaries, but cannot place unseen interior reasoning. */
 private class TerminalHistoryBounds(
@@ -158,13 +181,13 @@ private class TerminalHistoryBounds(
     private val context = output.mapIndexedNotNull { index, value ->
         val item = value as? JsonObject
         when (JsonScalars.str(item, "type")) {
-            NATIVE_MESSAGE_TYPE, "function_call" -> IndexedValue(index, checkNotNull(item))
+            NATIVE_MESSAGE_TYPE, NATIVE_FUNCTION_CALL_TYPE -> IndexedValue(index, checkNotNull(item))
             else -> null
         }
     }
     private val first = context.firstOrNull()?.index
     private val last = context.lastOrNull()?.index
-    private val callsObserved = context.filter { JsonScalars.str(it.value, "type") == "function_call" }
+    private val callsObserved = context.filter { JsonScalars.str(it.value, "type") == NATIVE_FUNCTION_CALL_TYPE }
         .all {
             val id = JsonScalars.str(it.value, "call_id")
             id != null && id in streamedCalls

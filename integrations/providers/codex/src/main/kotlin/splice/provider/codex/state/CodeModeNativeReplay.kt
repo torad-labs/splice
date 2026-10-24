@@ -29,7 +29,7 @@ internal class CodeModeNativeReplay(
     val sources = CodeModeCanonicalSources(codec, input, index)
     private val bad = mutableMapOf<String, CodeModeNativeRejection>()
     private val origins = ancestors(records).flatMap { record ->
-        record.carry.replay.map { CodeModeNativeOrigin(record, it) }
+        record.carry.source().nativeReplay.map { CodeModeNativeOrigin(record, it) }
     }
     private val replay = input.replayItems.groupBy { it.logicalOffset }.mapValues { (_, segments) ->
         segments.flatMap { it.items }
@@ -125,7 +125,7 @@ internal class CodeModeNativeReplay(
         placements.forEach { placement ->
             // Copy quotas refer to the observed history, not the plan's relocated emission buckets.
             val observed = checkNotNull(index.boundary(placement.record))
-            placement.record.carry.replay.forEach {
+            placement.record.carry.source().nativeReplay.forEach {
                 count(counted, observed + it.logicalOffset, it.items)
             }
         }

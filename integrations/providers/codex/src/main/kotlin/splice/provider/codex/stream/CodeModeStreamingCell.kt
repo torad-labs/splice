@@ -28,7 +28,10 @@ internal class CodeModeStreamingCell(
         return try {
             val step = cell.advance(results)
             checkSource()
-            if (step is CodeModeStep.Calls) deliveredText = round.switching.detach()
+            if (step is CodeModeStep.Calls) {
+                deliveredText = round.switching.detach()
+                round.lifecycle.delivered(round.switching.deliveredText)
+            }
             step
         } catch (error: CancellationException) {
             throw error

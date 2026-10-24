@@ -16,6 +16,7 @@ import splice.provider.codex.CodeModeRecordSnapshot
 import splice.provider.codex.state.CodeModeHeap
 import splice.provider.codex.state.CodeModeJournalEncoding
 import splice.provider.codex.state.CodeModeKeptState
+import splice.provider.codex.state.CodeModeNativeChain
 import splice.provider.codex.state.collection.CodeModeRecordKeys
 import java.util.IdentityHashMap
 
@@ -100,7 +101,7 @@ internal class CodeModeSaveHeap(private val heap: HeapReservations) {
         var ancestor: CodeModeRecord? = parent
         while (ancestor != null) {
             val current = ancestor
-            inherited += current.carry.segments + current.carry.replay
+            inherited += current.carry.segments + CodeModeNativeChain.continuity(current)
             ancestor = current.nativeParent
         }
         // The live child survives independently of the durable snapshot after publishRoot.

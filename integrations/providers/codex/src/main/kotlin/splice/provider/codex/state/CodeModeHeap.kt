@@ -29,6 +29,9 @@ import javax.management.openmbean.CompositeData
 // why: scalar fields, mutable collections, source-state metadata and bounded transition bookkeeping.
 private const val RECORD_METADATA_BYTES = 4096L
 
+// why: one new proof reference plus alignment slack in each existing accepted-result owner.
+private const val CLIENT_OUTPUT_DIGEST_REFERENCE_BYTES = 8L
+
 // why: aggregate list references and their backing-array slack survive independently of each snapshot.
 private const val STATE_ENTRY_BYTES = 128L
 
@@ -111,22 +114,29 @@ internal enum class CodeModeWeight {
 
     abstract fun json(value: JsonElement): Long
 
+    fun clientOutputDigest(value: String?): Long =
+        value?.let { text(it) + CLIENT_OUTPUT_DIGEST_REFERENCE_BYTES } ?: 0L
+
     fun record(record: CodeModeRecord): Long = RECORD_METADATA_BYTES +
         json(record.origin.outer) + text(record.origin.source) + record.progress.pending.sumOf(::call) +
         record.results.entries.sumOf { (id, result) ->
-            text(id) + text(result.output) + record.accepted.media(id).orEmpty().sumOf(::json)
+            text(id) + text(result.output) + record.accepted.media(id).orEmpty().sumOf(::json) +
+                clientOutputDigest(record.accepted.clientOutputDigest(id))
         } + text(record.progress.output.orEmpty()) + text(record.progress.completionError.orEmpty()) +
         text(record.error.orEmpty()) +
         record.carry.segments.sumOf(::segment) + record.carry.continuity.sumOf(::json) +
-        record.carry.replay.sumOf(::segment) + record.issued.sumOf(::issued) + anchors(record.replayAnchors)
+        record.carry.replay.sumOf(::segment) + record.carry.nativeAfterExec.orEmpty().sumOf(::json) +
+        record.issued.sumOf(::issued) + anchors(record.replayAnchors)
 
     fun snapshot(record: CodeModeRecordSnapshot): Long = RECORD_METADATA_BYTES +
         json(record.outer) + text(record.source) + record.pending.sumOf(::call) +
         record.results.entries.sumOf { (id, result) ->
-            text(id) + text(result.output) + result.media.orEmpty().sumOf(::json)
+            text(id) + text(result.output) + result.media.orEmpty().sumOf(::json) +
+                clientOutputDigest(result.clientOutputDigest)
         } + text(record.output.orEmpty()) + text(record.error.orEmpty()) +
         record.nativeSegments.sumOf(::segment) + record.continuity.sumOf(::json) +
-        record.continuityReplay.sumOf(::segment) + record.issued.sumOf(::issued) + anchors(record.replayAnchors)
+        record.continuityReplay.sumOf(::segment) + record.nativeAfterExec.orEmpty().sumOf(::json) +
+        record.issued.sumOf(::issued) + anchors(record.replayAnchors)
 
     /** Placement maps escape with both live records and snapshots, after raw decoding trees close. */
     private fun anchors(value: CodeModeReplayAnchors?): Long = value?.let {

@@ -1,11 +1,14 @@
 // NEW: V4-446 — exact-request retries and observable code-mode forks, apart from ordinary turns.
 package splice.provider.codex.branch
 
+import kotlinx.serialization.json.JsonObject
 import splice.core.turn.CodeModeDivergenceMarker
 import splice.core.turn.TurnOutcome
 import splice.core.turn.Usage
+import splice.core.util.JsonScalars
 import splice.core.util.LogSink
 import splice.provider.codex.CodeModeBody
+import splice.provider.codex.CodeModeRewrite
 import splice.provider.codex.CodeModeRunContext
 import splice.provider.codex.CodexCodeModeDriver
 import splice.provider.codex.CodexCodeModeMachine
@@ -39,9 +42,26 @@ internal class CodexCodeModeBranch(
             CodeModeClearedWitness(context, records, log).verify()
         }
         val resultIds = context.turn.toolResults.map(CodeModeResult::id).toSet()
+        val duplicates = duplicateCallbacks(context)
         return records.filter { record ->
-            record.results.keys.any(resultIds::contains) && validation.conflicts(record, context.turn)
+            val ambiguous = record.holdsAnyClientId(duplicates)
+            val changed = record.results.keys.any(resultIds::contains) && validation.conflicts(record, context.turn)
+            ambiguous || changed
         }.mapTo(mutableSetOf()) { it.id }
+    }
+
+    private fun duplicateCallbacks(context: CodeModeRunContext): Set<String> =
+        context.client?.request?.second.orEmpty().filterIsInstance<JsonObject>()
+            .filter { JsonScalars.str(it, "type") in setOf("function_call", "function_call_output") }
+            .groupingBy { JsonScalars.str(it, "type") to JsonScalars.str(it, "call_id") }.eachCount()
+            .filterValues { it > 1 }.keys.mapNotNull { it.second }.toSet()
+
+    /** Select the accepted owner before rendering ordinary history, using the same fork exclusions. */
+    fun canonicalize(context: CodeModeRunContext, body: CodeModeBody, callbackIds: Set<String>): CodeModeRewrite {
+        val resultIds = context.turn.toolResults.map(CodeModeResult::id).toSet()
+        val capture = registry.owner(context.key, context.digest, resultIds, callbackIds, context.conflicts)
+            ?: context.completed.lastOrNull()
+        return context.link.post.canonicalize(body, context.completed, context.turn.rendering.replayMedia, capture)
     }
 
     /** No owned B callback remains: send B's already-canonicalized history upstream without

@@ -147,9 +147,16 @@ internal data class CodeModeNativeContinuity(
     var segments: List<CodeModeNativeSegment>,
     var continuity: List<JsonElement>,
     var replay: List<CodeModeNativeSegment>,
-)
+    var nativeAfterExec: List<JsonElement>? = null,
+) {
+    fun source(): CodeModeContinuity = CodeModeContinuity(continuity, replay, nativeAfterExec)
+}
 
-internal data class CodeModeAcceptedResult(val result: CodeModeResult, val media: List<JsonElement>?)
+internal data class CodeModeAcceptedResult(
+    val result: CodeModeResult,
+    val media: List<JsonElement>?,
+    val clientOutputDigest: String? = null,
+)
 
 @Serializable
 internal data class CodeModeNativeSegment(

@@ -39,11 +39,34 @@ internal class CodeModeSourceRecords(
     fun seal(record: CodeModeRecord, call: GatewayCustomCall, continuity: CodeModeContinuity? = null): Boolean =
         access.withKey(record.key) {
             if (record !in records || record.error != null) return@withKey false
-            stage(record, call, continuity ?: CodeModeContinuity(record.carry.continuity, record.carry.replay))
+            stage(record, call, continuity ?: current(record))
             record.sourceState = (record.sourceState ?: CodeModeSourceState()).copy(itemComplete = true)
             store.save(records, history.entries, dirtyKeys = setOf(record.key), changedRecord = record)
             true
         }
+
+    /** Completed native items and confirmed prose at a callback cutoff survive independently of response billing. */
+    fun updateContinuity(record: CodeModeRecord, call: GatewayCustomCall, continuity: CodeModeContinuity): Boolean =
+        access.withKey(record.key) {
+            if (record !in records || record.error != null) return@withKey false
+            if (current(record) == continuity) return@withKey true
+            stage(record, call, continuity)
+            store.save(records, history.entries, dirtyKeys = setOf(record.key), changedRecord = record)
+            true
+        }
+
+    private fun current(record: CodeModeRecord): CodeModeContinuity = CodeModeContinuity(
+        record.carry.continuity,
+        record.carry.replay,
+        record.carry.nativeAfterExec,
+    )
+
+    /** A live reader's raw receipt remains owned after its stream lease ends, until delivery can certify its tail. */
+    fun holdPayload(record: CodeModeRecord, bytes: Long): Boolean = access.withKey(record.key) {
+        if (record !in records || record.error != null) return@withKey false
+        CodeModeHeap.grow(record, bytes)
+        true
+    }
 
     /** Response accounting can arrive after the cell completed; keep its sealed identity and issuance history. */
     fun finish(record: CodeModeRecord, call: GatewayCustomCall, continuity: CodeModeContinuity, usage: Usage): Boolean =
@@ -70,14 +93,17 @@ internal class CodeModeSourceRecords(
 
     private fun stage(record: CodeModeRecord, call: GatewayCustomCall, continuity: CodeModeContinuity) {
         val next = STORED.json(call.raw) + STORED.text(call.input) +
-            continuity.logicalItems.sumOf(STORED::json) + continuity.replayItems.sumOf(STORED::segment)
+            continuity.logicalItems.sumOf(STORED::json) + continuity.replayItems.sumOf(STORED::segment) +
+            continuity.nativeAfterExec.orEmpty().sumOf(STORED::json)
         val before = STORED.json(record.origin.outer) + STORED.text(record.origin.source) +
-            record.carry.continuity.sumOf(STORED::json) + record.carry.replay.sumOf(STORED::segment)
+            record.carry.continuity.sumOf(STORED::json) + record.carry.replay.sumOf(STORED::segment) +
+            record.carry.nativeAfterExec.orEmpty().sumOf(STORED::json)
         CodeModeHeap.grow(record, (next - before).coerceAtLeast(0L)) { kept -> replaced(kept, record) }
         record.origin.outer = call.raw
         record.origin.source = call.input
         record.carry.continuity = continuity.logicalItems
         record.carry.replay = continuity.replayItems
+        record.carry.nativeAfterExec = continuity.nativeAfterExec
     }
 
     private fun sourceUsage(usage: Usage): CodeModeSourceUsage = CodeModeSourceUsage(
@@ -123,6 +149,7 @@ internal class CodeModeSourceRecords(
         val logical =
             if (kept.continuity === record.carry.continuity) record.carry.continuity.sumOf(STORED::json) else 0L
         val replay = record.carry.replay.takeIf { it === kept.continuityReplay }?.sumOf(STORED::segment) ?: 0L
-        return outer + source + logical + replay
+        val after = record.carry.nativeAfterExec.takeIf { it === kept.nativeAfterExec }?.sumOf(STORED::json) ?: 0L
+        return outer + source + logical + replay + after
     }
 }

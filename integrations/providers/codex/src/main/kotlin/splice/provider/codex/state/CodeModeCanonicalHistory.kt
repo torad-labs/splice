@@ -30,10 +30,10 @@ internal data class CodeModeCanonicalPlacement(
     val removed: Set<Int>,
     val retainedCallbacks: Set<String>,
     val emission: CodeModeCanonicalEmission = CodeModeCanonicalEmission.SCRIPT,
-    val source: CodeModeContinuity = CodeModeContinuity(record.carry.continuity, record.carry.replay),
+    val source: CodeModeContinuity = record.carry.source(),
 ) {
     val logicalSize: Int
-        get() = source.logicalItems.size + when (emission) {
+        get() = source.logicalItems.size + source.afterExec.logicalItems.size + when (emission) {
             CodeModeCanonicalEmission.SCRIPT -> 2 + record.accepted.durableMedia().size
             CodeModeCanonicalEmission.CONTINUITY -> 0
         }
@@ -211,14 +211,33 @@ internal class CodeModeCanonicalHistory(private val codec: CodexCodeModeHistoryC
             }
         }
         logical += placement.source.logicalItems
+        if (placement.emission == CodeModeCanonicalEmission.SCRIPT) logical += CodeModeCallReplay.item(record)
+        appendAfter(placement.source, logical, replay, order)
         when (placement.emission) {
             CodeModeCanonicalEmission.SCRIPT -> {
-                logical += CodeModeCallReplay.item(record)
                 logical += codec.customOutput(record)
                 logical += record.accepted.durableMedia()
             }
             CodeModeCanonicalEmission.CONTINUITY -> Unit
         }
+    }
+
+    private fun appendAfter(
+        source: CodeModeContinuity,
+        logical: MutableList<JsonElement>,
+        replay: MutableList<ResponsesCodeModeReplay>,
+        order: CodeModeCapturedOrder?,
+    ) {
+        source.afterExec.replayItems.forEach { segment ->
+            val items = order?.claim(segment.items) ?: segment.items
+            if (items.isNotEmpty()) {
+                replay += segment.copy(
+                    logicalOffset = logical.size + segment.logicalOffset,
+                    items = items,
+                )
+            }
+        }
+        logical += source.afterExec.logicalItems
     }
 
     private fun capturedReplay(

@@ -26,19 +26,31 @@ internal class CodeModeAccepted(entries: Map<String, CodeModeAcceptedResult> = e
     /** Null means legacy uncaptured media; empty means captured with no media. */
     fun media(id: String): List<JsonElement>? = entries[id]?.media
 
+    fun clientOutputDigest(id: String): String? = entries[id]?.clientOutputDigest
+
     fun durableMedia(): List<JsonElement> = entries.values.flatMap { it.media.orEmpty() }
 
     /** A supplied id without media is explicitly captured as having none, never left legacy. */
-    fun accept(supplied: Map<String, CodeModeResult>, media: Map<String, List<JsonElement>>) {
-        supplied.forEach { (id, result) -> entries[id] = CodeModeAcceptedResult(result, media[id].orEmpty()) }
+    fun accept(
+        supplied: Map<String, CodeModeResult>,
+        media: Map<String, List<JsonElement>>,
+        clientOutputDigests: Map<String, String> = emptyMap(),
+    ) {
+        supplied.forEach { (id, result) ->
+            entries[id] = CodeModeAcceptedResult(result, media[id].orEmpty(), clientOutputDigests[id])
+        }
     }
 
     /** What accepting [supplied] adds to the record, at stored width. */
-    fun heapGrowth(supplied: Map<String, CodeModeResult>, media: Map<String, List<JsonElement>>): Long =
+    fun heapGrowth(
+        supplied: Map<String, CodeModeResult>,
+        media: Map<String, List<JsonElement>>,
+        clientOutputDigests: Map<String, String> = emptyMap(),
+    ): Long =
         supplied.entries.sumOf { (id, result) ->
             val prior = entries[id]
-            val before = prior?.let { acceptedBytes(it.result, it.media.orEmpty()) } ?: 0L
-            val after = acceptedBytes(result, media[id].orEmpty()) +
+            val before = prior?.let { acceptedBytes(it.result, it.media.orEmpty(), it.clientOutputDigest) } ?: 0L
+            val after = acceptedBytes(result, media[id].orEmpty(), clientOutputDigests[id]) +
                 if (prior == null) CodeModeWeight.STORED.text(id) else 0L
             (after - before).coerceAtLeast(0L)
         }
@@ -50,11 +62,16 @@ internal class CodeModeAccepted(entries: Map<String, CodeModeAcceptedResult> = e
             val held = snapshot.results[id]
             if (prior == null || held == null) return@sumOf 0L
             val output = if (held.output === prior.result.output) CodeModeWeight.STORED.text(held.output) else 0L
-            output + if (held.media === prior.media) held.media.orEmpty().sumOf(CodeModeWeight.STORED::json) else 0L
+            val media = if (held.media === prior.media) held.media.orEmpty().sumOf(CodeModeWeight.STORED::json) else 0L
+            val proof = CodeModeWeight.STORED.clientOutputDigest(
+                held.clientOutputDigest?.takeIf { it === prior.clientOutputDigest },
+            )
+            output + media + proof
         }
 
-    private fun acceptedBytes(result: CodeModeResult, media: List<JsonElement>): Long =
-        CodeModeWeight.STORED.text(result.output) + media.sumOf(CodeModeWeight.STORED::json)
+    private fun acceptedBytes(result: CodeModeResult, media: List<JsonElement>, clientOutputDigest: String?): Long =
+        CodeModeWeight.STORED.text(result.output) + media.sumOf(CodeModeWeight.STORED::json) +
+            CodeModeWeight.STORED.clientOutputDigest(clientOutputDigest)
 
     fun copy(): CodeModeAccepted = CodeModeAccepted(entries)
 
@@ -70,6 +87,6 @@ internal class CodeModeAccepted(entries: Map<String, CodeModeAcceptedResult> = e
     }
 
     fun snapshot(): Map<String, CodeModeResultSnapshot> = entries.mapValues { (_, entry) ->
-        CodeModeResultSnapshot(entry.result.output, entry.result.isError, entry.media)
+        CodeModeResultSnapshot(entry.result.output, entry.result.isError, entry.media, entry.clientOutputDigest)
     }
 }

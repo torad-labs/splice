@@ -15,7 +15,7 @@ internal object CodeModeJournalEncoding {
             left?.issued == right?.issued && left?.sessionId == right?.sessionId &&
             left?.conversationId == right?.conversationId &&
             left?.nativeBaseId == right?.nativeBaseId && left?.replayAnchors == right?.replayAnchors &&
-            left?.sourceState == right?.sourceState
+            left?.sourceState == right?.sourceState && left?.nativeAfterExec == right?.nativeAfterExec
 
     fun unchanged(record: CodeModeRecordSnapshot, prior: CodeModeRecordSnapshot?): Boolean =
         same(record, prior) && prior?.encodedFieldBytes != null

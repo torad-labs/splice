@@ -129,7 +129,16 @@ public sealed class TurnOutcome {
         /** Ordered provider-owned replay material, including any real unfinished prose suffix.
          * Null keeps the legacy handoff; an empty list proves that this prefix contains no native items. */
         val nativePrefix: List<JsonObject>? = null,
-    )
+        /** Confirmed native delivery details. Null preserves the legacy source-prefix handoff. */
+        val nativeDelivery: NativeDeliverySnapshot? = null,
+    ) {
+        /** Verified native items following this source's first owned exec,
+         * excluding its immutable prefix and anchor. */
+        val nativeAfterExec: List<JsonObject>? get() = nativeDelivery?.afterExec
+
+        /** Confirmed recovery order, separate from complete upstream snapshots. */
+        val deliveredNativePrefix: List<JsonObject>? get() = nativeDelivery?.deliveredPrefix
+    }
 
     /** Client vanished mid-stream: nothing to emit, seal quietly (never an error frame).
      *  [salvagedUsage] (DR-125): billed usage from rounds absorbed BEFORE the hang-up — real
@@ -138,6 +147,15 @@ public sealed class TurnOutcome {
      *  accumulator alone, and finishTurn stamps it exactly like a Failure's salvage. */
     public data class ClientAbandoned(val salvagedUsage: Usage = Usage(reported = emptySet())) : TurnOutcome()
 }
+
+/** Provider-owned native delivery boundaries. Null fields retain legacy reconstruction;
+ * empty lists are authoritative. */
+public data class NativeDeliverySnapshot(
+    /** Verified items after the first owned exec, excluding that exec's immutable prefix and anchor. */
+    val afterExec: List<JsonObject>? = null,
+    /** Native recovery material in confirmed message delivery order. */
+    val deliveredPrefix: List<JsonObject>? = null,
+)
 
 /** What kind of failure a [TurnOutcome.Failure] is, for health attribution and for the retry rule. */
 public data class FailureTraits(
@@ -224,6 +242,9 @@ public data class RoundHandoffs(
      * Controllers forward this opaque history without rendering it. Null means unavailable or legacy;
      * an empty list is an authoritative empty prefix. */
     val nativePrefix: List<JsonObject>? = null,
+    /** Verified ordered native items after the first owned exec, excluding the exec itself.
+     * Null is unavailable or legacy; an empty list is an authoritative empty suffix. */
+    val nativeAfterExec: List<JsonObject>? = null,
 )
 
 /** The text a round produced, and what of it reached the client. */

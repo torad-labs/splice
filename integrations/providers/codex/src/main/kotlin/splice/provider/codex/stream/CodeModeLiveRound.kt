@@ -35,7 +35,7 @@ internal class CodeModeLiveRound(
     wire: CodexCodeModeWire,
     admission: CodeModeStreamAdmission,
     sink: WireSink,
-    private val headStop: HeadStopSignal? = null,
+    headStop: HeadStopSignal? = null,
     recovery: CodeModeRecoveryHistory? = null,
 ) {
     /** Runs just before a parsed terminal settles. Production never sets it: billing tests hold that window. */
@@ -44,7 +44,7 @@ internal class CodeModeLiveRound(
     val source = capture.source
     val ready = capture.ready
     private val record: CodeModeRecord? get() = capture.record
-    private val lifecycle = CodeModeRoundLifecycle()
+    val lifecycle = CodeModeRoundLifecycle(capture, headStop)
     val billing = CodeModeRoundBilling(lifecycle, registry, CodeModeRoundRecord { record }, config.log)
     val switching = CodeModeSwitchingSink(sink, observer = CodeModeSourceObserver(::observe))
     val cut = CodeModeCutClaim()
@@ -71,8 +71,7 @@ internal class CodeModeLiveRound(
     @Volatile var unexpectedDeath: Boolean = false
         private set
 
-    @Volatile private var headStopped = false
-    private val stoppedByHead: Boolean get() = headStopped || headStop?.isStopping == true
+    private val stoppedByHead: Boolean get() = lifecycle.stoppedByHead
 
     @Volatile internal var upstreamEnded = false
 
@@ -81,18 +80,15 @@ internal class CodeModeLiveRound(
     @Volatile private var terminalSeen = false
         private set
 
-    @Volatile private var executionLost = false
-
     @Volatile var sourceInterrupted = false
         private set
 
-    @Volatile var localFailure: TurnOutcome.Failure? = null
-        private set
+    val localFailure: TurnOutcome.Failure? get() = lifecycle.localFailure
 
     /** The round lost the record and closed its cell without a transport tear: its terminal did not certify the
      *  admitted source, or its reader failed on splice's own non-IO fault. Only the step that was advancing that cell
      *  reads it; a later step continues on the client's history. */
-    val sourceLost: Boolean get() = executionLost || capture.disposed
+    val sourceLost: Boolean get() = lifecycle.executionLost || capture.disposed
 
     /** The round closed a live cell under its client steps: [sourceLost], or a reader that died on an unnamed
      *  throwable. A step holding or acquiring that cell ends as a torn source's step does, never as invalid_request. */
@@ -119,6 +115,7 @@ internal class CodeModeLiveRound(
                 cancelled(error)
                 throw error
             } catch (error: IOException) {
+                lifecycle.delivered(switching.confirmedText())
                 failed(error)
             } catch (error: CodeModePersistenceException) {
                 failed(error)
@@ -139,6 +136,7 @@ internal class CodeModeLiveRound(
         is RoundResult.Ended -> ended(posted.ending)
         is RoundResult.Outcome -> {
             upstreamEnded = true
+            lifecycle.delivered(switching.confirmedText())
             val result = finish(posted.outcome)
             beforeSettle?.run()
             billing.settle(readerEnd = false, clientCut = cut.client)
@@ -168,7 +166,7 @@ internal class CodeModeLiveRound(
         if (stoppedByHead) throw CancellationException(HEAD_STOPPED)
         localFailure?.let { return@synchronized it }
         if (capture.unavailable) {
-            executionLost = true
+            lifecycle.executionLost = true
             source.fail(SOURCE_DISPOSED)
             return@synchronized outcome
         }
@@ -176,7 +174,7 @@ internal class CodeModeLiveRound(
             (outcome as? TurnOutcome.Failure)?.cause in SOURCE_TEAR_CAUSES
         // The capture loses a source its terminal does not certify, which closes the cell a client step may still be
         // advancing. Set first, so that step ends as a torn source's step does, or with a permanent failure as it is.
-        executionLost = !sourceInterrupted && capture.rejects(outcome)
+        lifecycle.executionLost = !sourceInterrupted && capture.rejects(outcome)
         permanentEnding = (outcome as? TurnOutcome.Failure)?.takeIf { sourceLost && it.traits.permanent }
         Cancellables.runCatchingBestEffort { capture.finish(outcome) }
             .getOrElse { return@synchronized reject(it) }
@@ -217,7 +215,7 @@ internal class CodeModeLiveRound(
         sourceInterrupted = capture.unfinished && error is IOException
         // Splice's own non-IO fault loses the record below and closes the cell a client step may be advancing, as an
         // uncertified source does. Set before the source fails, so that step ends as a torn source's step does.
-        executionLost = !sourceInterrupted && capture.unfinished
+        lifecycle.executionLost = !sourceInterrupted && capture.unfinished
         source.fail(detail)
         capture.interrupted(detail)
         CodeModeReaderFailures.outcome(error, admitted = record != null)
@@ -259,7 +257,7 @@ internal class CodeModeLiveRound(
         if (upstreamEnded) return
         val reader = finished
         cut.cancel(reader, stoppedByHead, terminalSeen)
-        executionLost = true
+        lifecycle.executionLost = true
         source.dispose(SOURCE_DISPOSED)
         reader?.cancel()
     }
@@ -271,7 +269,7 @@ internal class CodeModeLiveRound(
         synchronized(lifecycle) {
             if (!stoppedByHead) {
                 if (!upstreamEnded) cut.cancel(finished, stoppedByHead = false, terminal = terminalSeen)
-                headStopped = true
+                lifecycle.headStopped = true
             }
         }
         cancel()
@@ -279,25 +277,29 @@ internal class CodeModeLiveRound(
 
     /** The synchronous registry stop owns persistence; a cancelled old reader cannot overwrite the next head. */
     fun stop() {
-        synchronized(lifecycle) { headStopped = true }
+        synchronized(lifecycle) { lifecycle.headStopped = true }
         cancel()
     }
 
     /** Observer faults belong to splice. They never unwind through a transport's generic stream catch. */
-    private fun observe(event: CustomToolSource) = synchronized(lifecycle) {
-        if (event == CustomToolSource.Terminal) {
-            terminalSeen = true
-            return@synchronized
+    private suspend fun observe(event: CustomToolSource) {
+        val witness = if (event is CustomToolSource.Continuity) switching.confirmedText() else null
+        synchronized(lifecycle) {
+            if (event == CustomToolSource.Terminal) {
+                terminalSeen = true
+                return@synchronized
+            }
+            if (stoppedByHead) throw CancellationException(HEAD_STOPPED)
+            if (sourceLost) return@synchronized
+            if (localFailure != null) return@synchronized
+            if (record?.terminal() == true && event !is CustomToolSource.Continuity) return@synchronized
+            Cancellables.runCatchingBestEffort { capture.observe(event, witness) }.onFailure(::reject)
         }
-        if (stoppedByHead) throw CancellationException(HEAD_STOPPED)
-        if (sourceLost) return@synchronized
-        if (localFailure != null || record?.terminal() == true) return@synchronized
-        Cancellables.runCatchingBestEffort { capture.observe(event) }.onFailure(::reject)
     }
 
     private fun reject(error: Throwable): TurnOutcome.Failure {
         val rejected = CodeModeRejection.outcome(error)
-        localFailure = rejected
+        lifecycle.localFailure = rejected
         sourceInterrupted = false
         source.fail(rejected.message)
         try {
@@ -306,7 +308,7 @@ internal class CodeModeLiveRound(
                     config.log("[code-mode] rejected response accounting was not saved (${failure::class.simpleName})")
                 }
             } else {
-                localFailure = CodeModeRejection.lose(record, rejected, registry)
+                lifecycle.localFailure = CodeModeRejection.lose(record, rejected, registry)
             }
         } finally {
             ready.complete(null)

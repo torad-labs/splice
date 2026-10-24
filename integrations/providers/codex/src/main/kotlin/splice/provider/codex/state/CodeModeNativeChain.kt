@@ -18,6 +18,7 @@ internal object CodeModeNativeChain {
     fun rewritable(record: CodeModeRecord): Boolean = when {
         record.abandoned() -> false
         !retired(record) -> true
+        !record.carry.nativeAfterExec.isNullOrEmpty() -> true
         else -> record.carry.continuity.isNotEmpty() || record.carry.replay.isNotEmpty()
     }
 
@@ -78,6 +79,7 @@ internal object CodeModeNativeChain {
                 it.conversationId = state.conversationId
                 it.replayAnchors = state.replayAnchors
                 it.sourceState = state.sourceState
+                it.nativeAfterExec = state.nativeAfterExec
             }
         }
     }
@@ -91,8 +93,11 @@ internal object CodeModeNativeChain {
         }
     }
 
-    fun continuity(record: CodeModeRecord): List<CodeModeNativeSegment> =
-        record.carry.replay.map { it.copy(logicalOffset = record.origin.baseline.logicalCount + it.logicalOffset) }
+    fun continuity(record: CodeModeRecord): List<CodeModeNativeSegment> {
+        return record.carry.source().nativeReplay.map {
+            it.copy(logicalOffset = record.origin.baseline.logicalCount + it.logicalOffset)
+        }
+    }
 
     /** Adjacent replay fragments at one logical slot are one sequence, irrespective of parser grouping. */
     fun normalized(segments: List<CodeModeNativeSegment>): List<CodeModeNativeSegment> =

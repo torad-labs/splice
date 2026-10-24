@@ -2,6 +2,7 @@
 package splice.provider.codex.history
 
 import kotlinx.serialization.json.JsonArray
+import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
 import splice.core.reasoning.ReasoningReplay
@@ -14,7 +15,9 @@ import splice.provider.codex.CodeModeContinuity
 import splice.provider.codex.CodeModeNativeSegment
 
 internal object CodeModeContinuityCapture {
-    fun success(outcome: TurnOutcome.Success): CodeModeContinuity = project(successItems(outcome))
+    fun success(outcome: TurnOutcome.Success): CodeModeContinuity = project(successItems(outcome)).copy(
+        nativeAfterExec = outcome.handoffs.nativeAfterExec,
+    )
 
     fun successItems(outcome: TurnOutcome.Success): List<JsonObject> = items(
         outcome.handoffs.nativePrefix,
@@ -43,6 +46,11 @@ internal object CodeModeContinuityCapture {
         )
     }
 
+    /** Only assistant prose contributes to the visible echo; raw native payloads remain untouched. */
+    fun text(items: List<JsonElement>): String = items.mapNotNull { it as? JsonObject }.joinToString("") { item ->
+        if (JsonScalars.str(item, "role") == "assistant") messageText(item) else ""
+    }
+
     fun followedBy(prior: TurnOutcome.Success, latest: TurnOutcome.Success): List<JsonObject>? =
         if (prior.handoffs.nativePrefix == null && latest.handoffs.nativePrefix == null) {
             null
@@ -60,11 +68,14 @@ internal object CodeModeContinuityCapture {
     private fun nativeItem(item: JsonObject): JsonObject? {
         if (JsonScalars.str(item, "type") == "reasoning") return item
         if (JsonScalars.str(item, "role") != "assistant") return null
-        val text = when (val content = item["content"]) {
-            is JsonArray -> content.joinToString("") { JsonScalars.str(it as? JsonObject, "text").orEmpty() }
-            is JsonPrimitive -> content.content.takeIf { content.isString }.orEmpty()
-            is JsonObject, null -> ""
+        return messageText(item).takeIf(String::isNotEmpty)?.let {
+            ResponsesAssistantText.item(it, AssistantPhase.COMMENTARY)
         }
-        return text.takeIf(String::isNotEmpty)?.let { ResponsesAssistantText.item(it, AssistantPhase.COMMENTARY) }
+    }
+
+    private fun messageText(item: JsonObject): String = when (val content = item["content"]) {
+        is JsonArray -> content.joinToString("") { JsonScalars.str(it as? JsonObject, "text").orEmpty() }
+        is JsonPrimitive -> content.content.takeIf { content.isString }.orEmpty()
+        is JsonObject, null -> ""
     }
 }

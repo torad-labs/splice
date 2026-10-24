@@ -10,6 +10,7 @@ import splice.provider.codex.CodeModeContinuity
 import splice.provider.codex.CodeModeNativeSegment
 import splice.provider.codex.CodeModeRecord
 import splice.provider.codex.CodexCodeModeHistoryCodec
+import splice.provider.codex.history.CodeModeDeliveredEchoes
 import splice.provider.codex.history.CodeModeReasoningIdentity
 import splice.provider.codex.history.CodeModeReasoningRestore
 import splice.provider.codex.history.CodeModeScriptPlacements
@@ -24,14 +25,22 @@ internal class CodeModeCanonicalSources(
 ) {
     private val scripts = CodeModeScriptPlacements(codec)
     private val restore = CodeModeReasoningRestore(codec, scripts)
+    private val delivered = CodeModeDeliveredEchoes(codec, scripts)
     private val copies = mutableMapOf<Int, MutableSet<JsonElement>>()
 
     fun prepare(placement: CodeModeCanonicalPlacement): CodeModeCanonicalPlacement {
         val record = placement.record
-        if (record.carry.continuity.isEmpty() && record.carry.replay.isEmpty()) return placement
         val end = index.owned(record).firstOrNull()?.takeIf {
             codec.string(input.logicalItems[it] as? JsonObject, "type") in setOf("function_call", "custom_tool_call")
         } ?: placement.boundary
+        val after = afterExec(record, placement.boundary..end)
+        val deliveredEcho = delivered.indexes(input.logicalItems, record, placement.boundary)
+        if (record.carry.continuity.isEmpty() && record.carry.replay.isEmpty()) {
+            return placement.copy(
+                removed = placement.removed + deliveredEcho,
+                source = placement.source.copy(nativeAfterExec = after),
+            )
+        }
         val echo = echo(record, placement.boundary, end)
         val start = echo.firstOrNull() ?: placement.boundary
         val logical = echo.map(input.logicalItems::get)
@@ -42,16 +51,58 @@ internal class CodeModeCanonicalSources(
         restore.restore(native, record)
         val source = codec.projection.project(JsonArray(native))
         return placement.copy(
-            removed = placement.removed + echo,
+            removed = placement.removed + echo + deliveredEcho,
             source = CodeModeContinuity(
                 source.logicalItems,
                 source.replayItems.map { CodeModeNativeSegment(it.logicalOffset, it.items) },
+                after,
             ),
         )
     }
 
     fun owns(segment: ResponsesCodeModeReplay, item: JsonElement): Boolean =
         CodeModeReasoningIdentity.key(item) in copies[segment.logicalOffset].orEmpty()
+
+    private fun afterExec(record: CodeModeRecord, prefix: IntRange): List<JsonElement>? {
+        val source = record.carry.nativeAfterExec ?: return null
+        val keys = source.filter {
+            CodeModeReasoningIdentity.id(
+                it,
+            ) != null
+        }.map(CodeModeReasoningIdentity::key).toSet()
+        if (keys.isEmpty()) return source
+        val opaque = afterRange(record)
+        val received = input.replayItems.filter {
+            it.logicalOffset in prefix || opaque?.contains(
+                it.logicalOffset,
+            ) == true
+        }
+            .flatMap { segment ->
+                val owned = segment.items.filter { CodeModeReasoningIdentity.key(it) in keys }
+                copies.getOrPut(
+                    segment.logicalOffset,
+                ) { mutableSetOf() }.addAll(owned.map(CodeModeReasoningIdentity::key))
+                owned
+            }.groupBy(CodeModeReasoningIdentity::key)
+        return source.map { item ->
+            received[CodeModeReasoningIdentity.key(item)].orEmpty().fold(item, CodeModeReasoningIdentity::preferred)
+        }
+    }
+
+    private fun afterRange(record: CodeModeRecord): IntRange? {
+        val owned = index.owned(record)
+        val call = owned.firstOrNull {
+            codec.string(
+                input.logicalItems[it] as? JsonObject,
+                "type",
+            ) == "custom_tool_call"
+        }
+            ?: return null
+        val output = owned.firstOrNull {
+            codec.string(input.logicalItems[it] as? JsonObject, "type") == "custom_tool_call_output"
+        } ?: return null
+        return call + 1..output
+    }
 
     private fun received(record: CodeModeRecord, range: IntRange): List<ResponsesCodeModeReplay> {
         val owned = record.carry.replay.flatMap { it.items }.mapTo(mutableSetOf(), CodeModeReasoningIdentity::key)

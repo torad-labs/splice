@@ -8,6 +8,8 @@ import splice.provider.codex.CodeModeBaseline
 import splice.provider.codex.CodeModeBody
 import splice.provider.codex.CodeModeBridgeConfig
 import splice.provider.codex.CodeModeClientStart
+import splice.provider.codex.CodeModeContinuity
+import splice.provider.codex.CodeModeInputBoundary
 import splice.provider.codex.CodeModeNativeContinuity
 import splice.provider.codex.CodeModeOrigin
 import splice.provider.codex.CodeModePhase
@@ -42,25 +44,7 @@ internal class CodeModeRecordFactory(private val config: CodeModeBridgeConfig, p
         val rawContinuity = wire.continuity(outcome)
         val continuity = recovery?.continuity(outcome, wire) ?: rawContinuity
         val native = CodeModeNativeChain.capture(boundary.nativeSegments, context.completed.lastOrNull())
-        return CodeModeRecord(
-            id = UUID.randomUUID().toString(),
-            key = context.key,
-            phase = CodeModePhase.LOST,
-            origin = CodeModeOrigin(
-                outer = outer.raw,
-                outerCallId = outer.callId,
-                source = outer.input,
-                baseline = CodeModeBaseline(
-                    inputCount = boundary.fullCount,
-                    inputDigest = boundary.fullDigest,
-                    logicalCount = boundary.logicalCount,
-                    logicalDigest = boundary.logicalDigest,
-                    metadataVersion = CODE_MODE_METADATA_VERSION,
-                ),
-            ),
-            progress = CodeModeProgress(updatedAt = config.clock.millis(), lastDigest = context.digest),
-            carry = CodeModeNativeContinuity(native.segments, continuity.logicalItems, continuity.replayItems),
-        ).also {
+        return record(context, outer, boundary, native, continuity).also {
             it.replayAnchors = boundary.replayAnchors?.copy(client = client)
             it.sessionId = context.turn.sessionId
             it.conversationId = CodeModeTurnIdentity().conversationId(context.turn)
@@ -75,4 +59,35 @@ internal class CodeModeRecordFactory(private val config: CodeModeBridgeConfig, p
             )
         }
     }
+
+    private fun record(
+        context: CodeModeRunContext,
+        outer: GatewayCustomCall,
+        boundary: CodeModeInputBoundary,
+        native: CodeModeNativeChain.Capture,
+        continuity: CodeModeContinuity,
+    ): CodeModeRecord = CodeModeRecord(
+        id = UUID.randomUUID().toString(),
+        key = context.key,
+        phase = CodeModePhase.LOST,
+        origin = CodeModeOrigin(
+            outer = outer.raw,
+            outerCallId = outer.callId,
+            source = outer.input,
+            baseline = CodeModeBaseline(
+                inputCount = boundary.fullCount,
+                inputDigest = boundary.fullDigest,
+                logicalCount = boundary.logicalCount,
+                logicalDigest = boundary.logicalDigest,
+                metadataVersion = CODE_MODE_METADATA_VERSION,
+            ),
+        ),
+        progress = CodeModeProgress(updatedAt = config.clock.millis(), lastDigest = context.digest),
+        carry = CodeModeNativeContinuity(
+            native.segments,
+            continuity.logicalItems,
+            continuity.replayItems,
+            continuity.nativeAfterExec,
+        ),
+    )
 }

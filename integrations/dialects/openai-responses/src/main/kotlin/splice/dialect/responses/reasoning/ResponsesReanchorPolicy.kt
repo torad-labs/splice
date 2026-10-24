@@ -15,7 +15,6 @@
 // preface (V4-335); replayed bare, it read to the model as the turn's final answer.
 package splice.dialect.responses.reasoning
 
-import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonObject
 import splice.core.turn.DEFAULT_MAX_CONTINUATIONS
 import splice.core.turn.ErrorType
@@ -109,7 +108,7 @@ internal class ResponsesReanchorPolicy(
 
     private fun nativeContinuation(partial: TurnOutcome.PartialRound): List<JsonObject>? {
         if (prosePhase == null) return null
-        val prefix = partial.nativePrefix ?: return null
+        val prefix = partial.deliveredNativePrefix ?: partial.nativePrefix ?: return null
         val delivered = partial.text.bodyText
         var offset = 0
         val items = buildList {
@@ -138,10 +137,7 @@ internal class ResponsesReanchorPolicy(
         return model.substring(0, length)
     }
 
-    private fun messageText(item: JsonObject): String = JsonScalars.str(item, "content")
-        ?: (item["content"] as? JsonArray).orEmpty().joinToString("") {
-            JsonScalars.str(it as? JsonObject, "text").orEmpty()
-        }
+    private fun messageText(item: JsonObject): String = ResponsesMessageText.text(item)
 
     /** The partial prose the client already saw, replayed as context so the model resumes it. */
     private fun assistantText(text: String): JsonObject = ResponsesAssistantText.item(text, prosePhase)

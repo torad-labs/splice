@@ -7,8 +7,8 @@ import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
 import splice.core.index.WireBlockIndex
 import splice.core.util.JsonScalars
-import splice.dialect.responses.stream.ResponsesExecProgress
 import splice.dialect.responses.stream.ResponsesHarvest
+import splice.dialect.responses.stream.ResponsesItemFold
 import splice.upstream.sse.CustomToolSource
 import splice.upstream.sse.WireSink
 import splice.upstream.transport.BufferCapacity
@@ -95,15 +95,16 @@ internal class ResponsesLeadingReasoning(
 
     /** Forget exec progress on every exit; parsed terminals settle prefixes before notifying their observer. */
     suspend fun closeSourceProgress(
-        progress: ResponsesExecProgress,
+        itemFold: ResponsesItemFold,
         terminalSeen: Boolean,
         sink: WireSink,
         capacityRejected: Boolean = false,
     ) = withContext(NonCancellable) {
-        progress.closeAll()
+        itemFold.execProgress.closeAll()
         if (capacityRejected) discardPending()
         if (terminalSeen) {
             settle(sink, discardEmpty = true)
+            itemFold.continuity(sink)
             sink.customToolSource(CustomToolSource.Terminal)
         }
     }

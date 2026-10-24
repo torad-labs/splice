@@ -492,7 +492,11 @@ class NativeAncestorPlacementTest : CodeModeBridgeTestSupport() {
             reasoning,
             preface,
             outer("outer-0").raw,
-            Json.parseToJsonElement("""{"type":"custom_tool_call_output","call_id":"outer-0","output":"done-0"}"""),
+            buildJsonObject {
+                put("type", "custom_tool_call_output")
+                put("call_id", "outer-0")
+                put("output", "Script completed\nWall time 0.0 seconds\nOutput:\ndone-0")
+            },
         )
         val prefix = original.take(oldExecIndex(original))
         assertEquals(prefix.take(at) + source + prefix.drop(at), restored.take(oldExecIndex(restored)), after)

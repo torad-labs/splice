@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import { readFile, readdir, writeFile, mkdir } from "node:fs/promises";
 import { resolve } from "node:path";
 import { interactiveScenario } from "./interactive-gateway";
+import { assertNativeTypedMedia } from "./interactive-output";
 import { artifact, identity, type CaseEvidence, type CaseId } from "./qualification";
 
 const summary = "PROBE_READABLE_REASONING: inspect the callback file, then run the Bash tool exactly once.";
@@ -134,25 +135,7 @@ export async function runInteractiveCases(jar: string, evidence: string, runId: 
   output.findings = [...priorOutputFindings, ...persistence.findings, ...(failures.has("native-lifecycle") ? [failures.get("native-lifecycle")!] : [])];
   output.artifacts.push(...persistence.artifacts, ...rawArtifacts);
   if (!output.findings.length) try {
-    const value = results.get("native-lifecycle")!;
-    const typed: any[] = [];
-    const collect = (value: any, depth = 0): void => {
-      if (depth > 12 || value === null || value === undefined) return;
-      if (typeof value === "string") {
-        if (/^\s*[\[{]/.test(value)) try { collect(JSON.parse(value), depth + 1); } catch { /* Source code is not content JSON. */ }
-      } else if (Array.isArray(value)) value.forEach(item => collect(item, depth + 1));
-      else if (typeof value === "object") {
-        if (["input_image", "input_audio", "input_text"].includes(value.type)) typed.push(value);
-        Object.values(value).forEach(item => collect(item, depth + 1));
-      }
-    };
-    for (const request of value.upstreamRequests) for (const item of request.nativeInput) {
-      if (["custom_tool_call_output", "function_call_output"].includes(item.type)) collect(item.output);
-    }
-    assert.ok(typed.some(item => item.type === "input_image" && item.image_url === "data:image/png;base64,aGVsbG8=" && item.detail === "original"));
-    assert.ok(typed.some(item => item.type === "input_audio" && item.audio_url === "data:audio/wav;base64,aGVsbG8="));
-    assert.ok(typed.some(item => item.type === "input_image" && item.image_url === "data:image/png;base64,d29ybGQ=" && item.detail === "high"));
-    assert.ok(typed.some(item => item.type === "input_text" && item.text === "native-generated"));
+    assertNativeTypedMedia(results.get("native-lifecycle")!.upstreamRequests);
   } catch (error) { output.findings.push(error instanceof Error ? error.message : String(error)); }
   output.state = output.findings.length ? "failed" : "executed";
   console.log(`${output.state === "executed" ? "EXECUTED" : "UNQUALIFIED"} ${output.id}`);

@@ -1,6 +1,7 @@
 import { describe, test, expect } from "bun:test";
 import { requiredCaseIds, contractFindings, structuralFindings, sealReceipt, artifact, rawArtifactFindings, type Receipt } from "./qualification";
 import { verifiers } from "./verifiers";
+import { assertNativeTypedMedia } from "./interactive-output";
 import { mkdtemp, writeFile, rm } from "node:fs/promises";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
@@ -93,5 +94,33 @@ describe("qualification guard negative probes (not product parity)", () => {
   });
   test("malformed receipts fail closed", () => {
     expect(structuralFindings({ pass: true }, expected, key)).toEqual(["malformed qualification receipt"]);
+  });
+});
+
+
+const nativeMedia = [
+  { type: "input_image", image_url: "data:image/png;base64,aGVsbG8=", detail: "original" },
+  { type: "input_audio", audio_url: "data:audio/wav;base64,aGVsbG8=" },
+  { type: "input_image", image_url: "data:image/png;base64,d29ybGQ=", detail: "high" },
+  { type: "input_text", text: "native-generated" },
+];
+const mediaRequests = (output: unknown) => [{ nativeInput: [{ type: "function_call_output", call_id: "wait_call_1", output }] }];
+describe("qualification typed-output guard (not product parity)", () => {
+  test("rejects media descriptors serialized in plain output text", () => {
+    expect(() => assertNativeTypedMedia(mediaRequests([{ type: "input_text", text: JSON.stringify(nativeMedia) }]))).toThrow();
+    expect(() => assertNativeTypedMedia(mediaRequests(JSON.stringify(nativeMedia)))).toThrow();
+  });
+  test("rejects nested metadata and content on non-output protocol items", () => {
+    expect(() => assertNativeTypedMedia(mediaRequests([{ type: "input_text", text: "lookalike", metadata: nativeMedia }]))).toThrow();
+    expect(() => assertNativeTypedMedia([{ nativeInput: [{ type: "custom_tool_call", output: nativeMedia }] }])).toThrow();
+    expect(() => assertNativeTypedMedia(mediaRequests([nativeMedia]))).toThrow();
+  });
+  test("accepts genuine direct typed protocol output content", () => {
+    expect(() => assertNativeTypedMedia(mediaRequests(nativeMedia))).not.toThrow();
+  });
+  test("does not recover media from stale output superseded under the same call ID", () => {
+    expect(() => assertNativeTypedMedia([
+      ...mediaRequests(nativeMedia), ...mediaRequests([{ type: "input_text", text: "Script terminated" }]),
+    ])).toThrow();
   });
 });

@@ -23,8 +23,8 @@ internal class CodeModeQuietMeasure(
     private val prefix = CodeModeClientPrefix(conversation, digests)
     private val legacy by lazy { CodeModeLegacyStart(codec, scripts, input, conversation) }
 
-    /** Where each record starts in [conversation] when that is known without its neighbours, or [UNKNOWN]. */
-    private val starts = HashMap<Int, Int>()
+    /** Where each record starts in [conversation] when that is known without its neighbours, else null. */
+    private val starts = HashMap<Int, Int?>()
 
     fun measure(records: List<CodeModeRecord>): List<CodeModeQuiet> {
         // Only a record an older build saved reads a floor, so none is measured past the last of them.
@@ -46,13 +46,14 @@ internal class CodeModeQuietMeasure(
 
     /** Where the first record after [index] whose place is known starts in the client's items, if any is. */
     private fun ceiling(records: List<CodeModeRecord>, index: Int): Int? =
-        (index + 1 until records.size).asSequence().map { at -> starts.getOrPut(at) { start(records[at]) } }
-            .firstOrNull { it != UNKNOWN }
+        (index + 1 until records.size).firstNotNullOfOrNull { at ->
+            if (at in starts) starts[at] else start(records[at]).also { starts[at] = it }
+        }
 
     /** Where [record] starts in the client's items when that is known without its neighbours: a script that made
      *  client calls at its copy of reasoning and preface, which ends at its first call; one with a client start at
      *  that prefix; one an older build saved at its copy only when that holds reasoning, which is its alone. */
-    private fun start(record: CodeModeRecord): Int {
+    private fun start(record: CodeModeRecord): Int? {
         val replay = scripts.continuity(record)
         val start = record.replayAnchors?.client
         return when {
@@ -60,7 +61,7 @@ internal class CodeModeQuietMeasure(
             start != null -> prefix.at(start)
             legacy.holdsReasoning(replay) -> legacy.at(record, replay, null, null)?.at
             else -> null
-        } ?: UNKNOWN
+        }
     }
 
     /** Where the copy that ends at [first] starts: the first start up to it whose copy of [replay] ends right there. */
@@ -232,5 +233,3 @@ internal data class CodeModeEcho(val end: Int, val split: Int) {
     /** The last item that holds any of the echo. */
     val last: Int get() = if (split == 0) end - 1 else end
 }
-
-private const val UNKNOWN = -1

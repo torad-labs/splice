@@ -10,6 +10,7 @@ import splice.dialect.responses.request.ResponsesCodeModeReplay
 import splice.provider.codex.CODE_MODE_FIELD_CALL_ID
 import splice.provider.codex.CODE_MODE_FIELD_ROLE
 import splice.provider.codex.CODE_MODE_FIELD_TYPE
+import splice.provider.codex.CODE_MODE_TYPE_REASONING
 import splice.provider.codex.CodeModeCallReplay
 import splice.provider.codex.CodeModePhase
 import splice.provider.codex.CodeModeRecord
@@ -87,7 +88,7 @@ internal class CodeModeScriptPlacements(private val codec: CodexCodeModeHistoryC
 
     /** Whether [item] is reasoning or prose GPT streamed, which the client keeps as it came. */
     private fun streamed(item: JsonElement): Boolean =
-        text(item) != null || codec.string(item as? JsonObject, CODE_MODE_FIELD_TYPE) == TYPE_REASONING
+        text(item) != null || codec.string(item as? JsonObject, CODE_MODE_FIELD_TYPE) == CODE_MODE_TYPE_REASONING
 
     /** [items] with the message [echo] ends inside cut in two where it ends, each part keeping the message's other
      *  fields: the script's preface, then what GPT said after it. */
@@ -242,4 +243,3 @@ private const val TYPE_CALL = "function_call"
 private const val TYPE_RESULT = "function_call_output"
 private const val ECHO_ROLE = "assistant"
 private const val ECHO_TEXT = "content"
-private const val TYPE_REASONING = "reasoning"

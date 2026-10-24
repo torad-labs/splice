@@ -91,8 +91,10 @@ internal class ResponsesReanchorPolicy(
         return partial.reasoningEnvelopes.isNotEmpty()
     }
 
-    private fun markerContinuation(round: ReanchorRound, partial: TurnOutcome.PartialRound): JsonObject {
+    private fun markerContinuation(round: ReanchorRound, partial: TurnOutcome.PartialRound): JsonObject? {
         val native = nativeContinuation(partial)
+        val hasNative = prosePhase != null && partial.nativePrefix != null
+        if (hasNative && native == null) return null
         val items = buildList {
             if (native != null) {
                 addAll(native)
@@ -107,13 +109,29 @@ internal class ResponsesReanchorPolicy(
 
     private fun nativeContinuation(partial: TurnOutcome.PartialRound): List<JsonObject>? {
         if (prosePhase == null) return null
-        return partial.nativePrefix?.mapNotNull { item ->
+        val prefix = partial.nativePrefix ?: return null
+        val delivered = partial.text.bodyText
+        var offset = 0
+        val items = prefix.mapNotNull { item ->
             if (JsonScalars.str(item, "type") == "message") {
-                if (partial.text.bodyText.isEmpty()) null else assistantText(messageText(item))
+                val text = deliveredPrefix(messageText(item), delivered, offset)
+                offset += text.length
+                text.takeIf { it.isNotEmpty() }?.let(::assistantText)
             } else {
                 item
             }
         }
+        return items.takeIf { offset == delivered.length }
+    }
+
+    private fun deliveredPrefix(model: String, delivered: String, offset: Int): String {
+        val limit = minOf(model.length, delivered.length - offset)
+        var length = 0
+        while (length < limit) {
+            if (model[length] != delivered[offset + length]) break
+            length++
+        }
+        return model.substring(0, length)
     }
 
     private fun messageText(item: JsonObject): String = JsonScalars.str(item, "content")

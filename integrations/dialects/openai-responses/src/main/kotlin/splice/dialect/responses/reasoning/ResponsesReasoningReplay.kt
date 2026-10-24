@@ -20,6 +20,7 @@ internal class ResponsesReasoningReplay(
     private val cursor = ctx.reasoningCapture.history
     private val initial = cursor?.copy()
     private val captured = linkedMapOf<String, String>()
+    private val streamedCalls = hashSetOf<String>()
     private var roundId: String? = null
     private var streamedItems = 0
 
@@ -35,8 +36,8 @@ internal class ResponsesReasoningReplay(
 
     fun collect(item: JsonObject, outputIndex: Int?) {
         val index = outputIndex ?: streamedItems
-        val message = state.nativePrefix?.collect(item, index)
-        collectAt(item, cursor, outputIndex = index, terminal = false, message = message)
+        state.nativePrefix?.collect(item, index)
+        collectAt(item, cursor, outputIndex = index, terminal = false)
         streamedItems++
     }
 
@@ -47,18 +48,26 @@ internal class ResponsesReasoningReplay(
         state.nativePrefix?.finish(output)
         if (output.isEmpty()) return
         val at = initial?.copy()
+        val conflict = deliveredOrderConflicts(output)
+        val bounds = TerminalHistoryBounds(output, initial, cursor, streamedCalls)
         output.forEachIndexed { index, value ->
             (value as? JsonObject)?.let {
-                collectAt(
-                    it,
-                    at,
-                    outputIndex = index,
-                    terminal = true,
-                )
+                if (conflict) {
+                    if (JsonScalars.str(it, "type") == "reasoning") capture(it, bounds.at(index), index, true)
+                } else {
+                    collectAt(it, at, outputIndex = index, terminal = true)
+                }
             }
         }
-        publishCursor(at)
+        if (!conflict) publishCursor(at)
         reconcileEnvelopes(output)
+    }
+
+    private fun deliveredOrderConflicts(output: JsonArray): Boolean {
+        if (!state.emittedText) return false
+        val terminalText = output.mapNotNull { it as? JsonObject }
+            .filter { JsonScalars.str(it, "type") == "message" }.joinToString("", transform = ::messageText)
+        return terminalText != state.textBuf.toString()
     }
 
     private fun collectAt(
@@ -66,11 +75,10 @@ internal class ResponsesReasoningReplay(
         at: ReasoningHistory?,
         outputIndex: Int,
         terminal: Boolean,
-        message: String? = null,
     ) {
         when (JsonScalars.str(item, "type")) {
             "reasoning" -> capture(item, at, outputIndex, terminal)
-            "message" -> advanceMessage(item, at, message)
+            "message" -> if (terminal) at?.text("assistant", messageText(item))
             "function_call" -> advanceTool(item, at)
         }
     }
@@ -96,16 +104,15 @@ internal class ResponsesReasoningReplay(
         return fresh
     }
 
-    private fun advanceMessage(item: JsonObject, at: ReasoningHistory?, message: String?) {
-        at?.text("assistant", message ?: messageText(item))
-    }
-
     private fun advanceTool(item: JsonObject, at: ReasoningHistory?) {
         val id = JsonScalars.str(item, "call_id") ?: return
         val arguments = JsonScalars.str(item, "arguments") ?: return
         val input = JsonScalars.objectOrNull(Json, arguments) ?: return
         val name = names.restore(JsonScalars.str(item, "name").orEmpty())
-        if (at != null) ResponsesHistoryCursor(at).append("assistant", ToolUseBlock(id, name, input))
+        if (at != null) {
+            ResponsesHistoryCursor(at).append("assistant", ToolUseBlock(id, name, input))
+            if (at === cursor) streamedCalls.add(id)
+        }
     }
 
     private fun reconcileEnvelopes(output: JsonArray) {
@@ -125,5 +132,37 @@ internal class ResponsesReasoningReplay(
 
     private fun messageText(item: JsonObject): String = (item["content"] as? JsonArray).orEmpty().joinToString("") {
         JsonScalars.str(it as? JsonObject, "text").orEmpty()
+    }
+}
+
+/** A conflicting terminal proves the outer boundaries, but cannot place unseen interior reasoning. */
+private class TerminalHistoryBounds(
+    output: JsonArray,
+    private val before: ReasoningHistory?,
+    private val after: ReasoningHistory?,
+    streamedCalls: Set<String>,
+) {
+    private val context = output.mapIndexedNotNull { index, value ->
+        val item = value as? JsonObject
+        when (JsonScalars.str(item, "type")) {
+            "message", "function_call" -> IndexedValue(index, checkNotNull(item))
+            else -> null
+        }
+    }
+    private val first = context.firstOrNull()?.index
+    private val last = context.lastOrNull()?.index
+    private val callsObserved = context.filter { JsonScalars.str(it.value, "type") == "function_call" }
+        .all {
+            val id = JsonScalars.str(it.value, "call_id")
+            id != null && id in streamedCalls
+        }
+
+    fun at(index: Int): ReasoningHistory? = when {
+        first == null -> after
+        index < first -> before
+        !callsObserved -> null
+        last == null -> null
+        index > last -> after
+        else -> null
     }
 }

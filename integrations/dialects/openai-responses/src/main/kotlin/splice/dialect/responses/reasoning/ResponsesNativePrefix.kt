@@ -28,38 +28,31 @@ internal class ResponsesNativePrefix {
         require(retainedChars <= BufferCapacity.MAX_BUFFERED_CHARS) { "native history exceeds buffer capacity" }
     }
 
-    /** Completion contributes only text not already accounted for by delivered deltas. */
-    fun collect(item: JsonObject, index: Int): String? {
+    /** Keep complete upstream snapshots separately from the text the client actually received. */
+    fun collect(item: JsonObject, index: Int) {
+        if (!replayable(item)) return
         val isMessage = JsonScalars.str(item, "type") == NATIVE_MESSAGE_TYPE
-        if (!replayable(item)) return null
         val streamed = pending.remove(index)?.toString().orEmpty()
         retainedChars -= streamed.length
-        val missingMessageText = isMessage && text(item).isEmpty()
-        val captured = if (missingMessageText && streamed.isNotEmpty()) {
-            JsonObject(item + ("content" to checkNotNull(content(message(streamed)))))
-        } else {
-            item
+        val captured = when {
+            !isMessage -> {
+                // Reusing an index starts another item; the preceding unfinished message remains history.
+                if (streamed.isNotEmpty()) retain(message(streamed), index)
+                item
+            }
+            text(item).isEmpty() && streamed.isNotEmpty() ->
+                JsonObject(item + ("content" to checkNotNull(content(message(streamed)))))
+            else -> item
         }
-        val fresh = retain(captured, index)
-        return when {
-            !isMessage -> null
-            !fresh -> ""
-            else -> unstreamedText(captured, streamed)
-        }
+        retain(captured, index)
     }
 
-    private fun retain(item: JsonObject, index: Int): Boolean {
+    private fun retain(item: JsonObject, index: Int) {
         val id = JsonScalars.str(item, "id")
-        if (id != null && !completedIds.add(id)) return false
+        if (id != null && !completedIds.add(id)) return
         retainedChars += JsonWire.string(item).length
         require(retainedChars <= BufferCapacity.MAX_BUFFERED_CHARS) { "native history exceeds buffer capacity" }
         items.add(NativePrefixItem(index, item))
-        return true
-    }
-
-    private fun unstreamedText(item: JsonObject, streamed: String): String {
-        val completed = text(item)
-        return if (completed.startsWith(streamed)) completed.substring(streamed.length) else ""
     }
 
     private fun text(item: JsonObject): String {
@@ -71,9 +64,12 @@ internal class ResponsesNativePrefix {
         }
     }
 
-    fun seal(index: Int?, fallback: Int) {
+    fun seal(index: Int?) {
         if (boundary != null) return
-        boundary = index ?: fallback
+        val lastCompleted = items.maxOfOrNull { it.index }
+        val lastPending = pending.keys.lastOrNull()
+        val last = listOfNotNull(lastCompleted, lastPending).maxOrNull()
+        boundary = index ?: last?.plus(1) ?: 0
         sealed = snapshot()
     }
 

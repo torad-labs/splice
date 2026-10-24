@@ -83,7 +83,7 @@ internal class ResponsesItemFold(
         if (item != null) {
             customCalls.parse(item)?.let { call ->
                 state.customCalls.add(call)
-                state.nativePrefix?.seal(oi, state.streamedItemTypes.lastIndex)
+                state.nativePrefix?.seal(oi)
                 sink.customToolSource(splice.upstream.sse.CustomToolSource.Completed(call, snapshot?.invoke()))
             }
         }

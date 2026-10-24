@@ -1,20 +1,27 @@
 // NEW: LAN share, phase 1 (docs/specs/lan-share.md). Who may reach the share listener at all, before any
-// route runs. The source must be a private address: loopback, RFC 1918, link-local, 100.64/10 (the range
-// Tailscale hands out) or fc00::/7. The Host must be an IP literal or one of this machine's own names, the
-// share listener's counterpart of LoopbackHost: a page whose DNS was rebound onto this address arrives with
-// its own name in Host and is refused, so a browser on the LAN cannot be turned into a client.
+// route runs. The source must be on this LAN: a private address — loopback, RFC 1918, link-local, 100.64/10 (the
+// range Tailscale hands out) or fc00::/7 — or on an IPv6 prefix one of this machine's own interfaces holds, which is
+// how a house whose router hands out a globally routable /64 reaches itself. The Host must be an IP literal or
+// one of this machine's own names, the share listener's counterpart of LoopbackHost: a page whose DNS was rebound
+// onto this address arrives with its own name in Host and is refused, so a browser on the LAN cannot be turned
+// into a client.
 package splice.share
 
 import splice.core.util.Cancellables
+import splice.core.util.LogSink
+import splice.core.util.SafeFailureText
 import java.net.Inet4Address
 import java.net.Inet6Address
 import java.net.InetAddress
+import java.net.NetworkInterface
 
 internal class ShareNetwork(
     /** This machine's host name as the OS reports it, full or short. */
     localName: String,
     /** `[share] hostnames`: further names a client may use, a Tailscale name for one. */
     hostnames: List<String>,
+    /** The prefixes this machine's own interfaces hold: what makes a routable address a machine on this LAN. */
+    private val attached: AttachedPrefixes,
 ) {
     private val ipv4 = Regex("""^\d{1,3}(\.\d{1,3}){3}$""")
 
@@ -28,8 +35,14 @@ internal class ShareNetwork(
     fun admitsSource(address: String): Boolean {
         val ip = literal(address) ?: return false
         return ip.isLoopbackAddress || ip.isSiteLocalAddress || ip.isLinkLocalAddress || carrierGrade(ip) ||
-            uniqueLocal(ip)
+            uniqueLocal(ip) || onThisLan(ip)
     }
+
+    /** Whether [ip] is an IPv6 address on a prefix one of this machine's own interfaces holds: a machine reachable
+     *  with no router in between. SLAAC makes a house's /64 the link itself, globally routable though it is, so the
+     *  named private ranges alone would turn the house away. IPv4 is left to them: a house's IPv4 is RFC 1918, and a
+     *  public IPv4 subnet on an interface is a datacenter's, shared with other customers' servers. */
+    private fun onThisLan(ip: InetAddress): Boolean = ip is Inet6Address && attached.now().any { it.holds(ip) }
 
     /** An absent Host is admitted, as LoopbackHost admits it: an HTTP/1.0 client sends none, and no browser
      *  request lacks one. */
@@ -66,6 +79,45 @@ internal class ShareNetwork(
         val bytes = (ip as? Inet6Address)?.address ?: return false
         return bytes[0].toInt() and ULA_MASK == ULA_PREFIX
     }
+}
+
+/** One prefix an interface of this machine holds: [address], with its first [bits] bits fixed. */
+internal data class SharePrefix(val address: InetAddress, val bits: Int) {
+
+    /** Whether [other] sits on this prefix: the same address family, with those leading bits equal. */
+    fun holds(other: InetAddress): Boolean {
+        val ours = address.address
+        val theirs = other.address
+        if (ours.size != theirs.size || bits !in 0..ours.size * Byte.SIZE_BITS) return false
+        return (0 until bits).all { bit(ours, it) == bit(theirs, it) }
+    }
+
+    /** The bit at [index] of [bytes], counted from the most significant bit of the first byte, as a prefix counts. */
+    private fun bit(bytes: ByteArray, index: Int): Int =
+        (bytes[index / Byte.SIZE_BITS].toInt() shr (Byte.SIZE_BITS - 1 - index % Byte.SIZE_BITS)) and 1
+}
+
+/** The prefixes this machine's interfaces hold right now. Read at each request rather than kept: a Wi-Fi hop, a
+ *  cable moved or a VPN coming up changes them, and the listener follows without a restart. */
+internal fun interface AttachedPrefixes {
+    fun now(): List<SharePrefix>
+}
+
+/** What the OS reports for this machine's own interfaces. An interface list splice cannot read leaves no prefix at
+ *  all, so the named private ranges stay the only way in: the refusal is the safe side, and [log] says why, since a
+ *  machine on the LAN being turned away otherwise looks like a wrong address. */
+internal class HostPrefixes(private val log: LogSink) : AttachedPrefixes {
+    override fun now(): List<SharePrefix> =
+        Cancellables.runCatchingCancellable {
+            NetworkInterface.getNetworkInterfaces().asSequence()
+                .filter { it.isUp }
+                .flatMap { it.interfaceAddresses.asSequence() }
+                .map { SharePrefix(it.address, it.networkPrefixLength.toInt()) }
+                .toList()
+        }.onFailure { failure ->
+            log("[share] this machine's own networks could not be read (${SafeFailureText.render(failure)}); " +
+                "only loopback, RFC 1918, link-local, 100.64/10 and fc00::/7 are admitted\n")
+        }.getOrDefault(emptyList())
 }
 
 // why: 100.64.0.0/10, carrier-grade NAT and the range Tailscale hands out, starts with the octet 100.

@@ -136,7 +136,7 @@ function remoteHtml(r) {
   if (!r.token) state = `<span class="state limit">No token here: add it again to rejoin</span>`;
   else if (r.reachable === true) state = `<span class="state live"><i aria-hidden="true"></i>Answering since ${esc(when(r.since))}</span>`;
   else if (r.reachable === false) state = `<span class="state limit">Not answering since ${esc(when(r.since))}: ${esc(r.why ?? "")}</span>`;
-  else state = `<span class="state mute">Not checked yet: its commands start with splice's next restart</span>`;
+  else state = `<span class="state mute">Not checked yet: its commands and sessions start with splice's next restart</span>`;
   const cmds = r.commands.map((c) => `<li><span class="chip">${esc(c.command)}</span><span class="model">${esc(c.model ?? "")}</span>${c.down ? `<span class="state limit">Not running there</span>` : ""}</li>`).join("");
   const acts = armed(key)
     ? `<span class="armed"><span class="said">Its commands leave this machine</span><button class="act small danger" data-act="remove" data-name="${esc(r.name)}">Remove</button><button class="act small quiet" data-act="keep">Keep</button></span>`

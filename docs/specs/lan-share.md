@@ -25,9 +25,17 @@ login is asked for.
   head. The server keeps sole ownership of every credential, its refresh, its account pool, its 429
   cooldown, its inflight gate and its usage meter. Copying an OAuth file would make two refreshers
   rotate one token and sign each other out (README, "Credential locations").
-- **Trust the LAN.** A machine on a private network that asks to join a sharing server is accepted
-  without a code. Guardrails that cost no step: sharing is off until `splice share on`; the listener
-  admits private source addresses only; each client gets its own token, listed and revocable. Trust
+- **Trust the LAN.** A machine on this LAN that asks to join a sharing server is accepted
+  without a code. On this LAN means a private source address — loopback, RFC 1918, link-local,
+  100.64/10 or `fc00::/7` — or an IPv6 address on a prefix one of this machine's own interfaces
+  holds. The second is what a house needs: a router that hands out an ISP-delegated IPv6 `/64` puts
+  two machines one hop apart on globally routable addresses, and the private ranges never see them,
+  so every imported command read unreachable the moment anything preferred IPv6 (2026-10-23). An
+  address past every attached prefix is still refused. IPv4 is left to the private ranges: a house's
+  IPv4 is RFC 1918, and a public IPv4 subnet on an interface is a datacenter's, whose neighbours are
+  other customers. Guardrails that cost no
+  step: sharing is off until `splice share on`; the listener admits only those sources; each client
+  gets its own token, listed and revocable. Trust
   reaches commands only: a joined machine crosses no Claude Code session until its Sessions switch is
   on (milestone 6, Bounds).
 

@@ -47,7 +47,7 @@ public class ShareStart(
         val io = ProcessDispatchers().io()
         val relay = ShareRelay(TurnKey(mgmtKey), config, io, log)
         val server = ShareServer(
-            ShareEndpoint(share.port, tls, ShareNetwork(host.full(), share.hostnames)),
+            ShareEndpoint(share.port, tls, ShareNetwork(host.full(), share.hostnames, HostPrefixes(log))),
             ShareHeads(topology.copy(share = share), running, host.short(), tls.fingerprint, quotas),
             clients,
             relay,

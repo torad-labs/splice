@@ -7,8 +7,8 @@ import { createHash, randomUUID } from "node:crypto";
 import { createReadStream, existsSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
-import { createInterface } from "node:readline";
 import { fileURLToPath } from "node:url";
+import { interactiveClient } from "./interactive-client";
 
 const CLIENT = "/home/marcos/.local/share/claude/versions/2.1.310";
 const MODEL = "gpt-6.1-sol";
@@ -16,7 +16,7 @@ const SUMMARY = "PROBE_READABLE_REASONING: inspect the callback file, then run t
 const ENVELOPE = "synthetic-probe-reasoning-envelope-not-a-real-credential";
 const FINAL = "PROBE_FINISHED";
 const HOLD_MS = 2000;
-const PROBE_VERSION = 2;
+const PROBE_VERSION = 3;
 type Obj = Record<string, any>;
 type Scenario = "success" | "late-failure";
 type Mark = { event: string; epochMs: number; elapsedMs: number; [key: string]: unknown };
@@ -78,12 +78,12 @@ async function scenario(jar: string, name: Scenario, root: string): Promise<Obj>
   const effects = join(task, "effects.txt");
   const start = performance.now(); const marks: Mark[] = []; const requests: Obj[] = [];
   const mark = (event: string, extra: Obj = {}) => marks.push({ event, epochMs: Date.now(), elapsedMs: Math.round(performance.now() - start), ...extra });
-  let scripts = 0, finals = 0, lateFailures = 0, seq = 0, clientEvents = 0, redacted = 0;
+  let scripts = 0, finals = 0, lateFailures = 0, seq = 0, clientEvents = 0, redacted = 0, titles = 0;
   let summaryVisibleAt: number | null = null, finalVisible = false, toolOpenAt: number | null = null;
   let clientVersion: string | null = null;
-  let wireThinking = "", cliPartialThinking = "";
-  let wireThinkingDeltas = 0, cliPartialThinkingDeltas = 0;
-  let daemon: ChildProcess | undefined, client: ChildProcess | undefined;
+  let wireThinking = "", cliThinking = "";
+  let wireThinkingDeltas = 0;
+  let daemon: ChildProcess | undefined;
   let releaseFirstTerminal!: () => void;
   const firstTerminal = new Promise<void>(r => { releaseFirstTerminal = r; });
   const pending = new Set<Promise<void>>(); const errors: string[] = [];
@@ -115,11 +115,31 @@ async function scenario(jar: string, name: Scenario, root: string): Promise<Obj>
       emit({ type: "response.completed", response: { id: `prefill_${seq}`, status: "completed", output: [], usage: { input_tokens: 1, output_tokens: 0 } } });
       return;
     }
+    // The real TUI names its session through a separate, tool-free structured-output request.
+    const format = b.text?.format;
+    const titleRequest = !exec && format?.name === "structured_output" &&
+      Object.keys(format.schema?.properties ?? {}).join() === "title" &&
+      input.some(i => i.role === "developer" && typeof i.content === "string" &&
+        i.content.includes("You are naming a coding session"));
+    if (titleRequest && ++titles <= 4) {
+      requests.at(-1)!.requestKind = "session-title";
+      const id = `fixture_title_${titles}`, text = JSON.stringify({ title: "Fixture callback" });
+      const item = { type: "message", id: `${id}_message`, role: "assistant", status: "completed",
+        content: [{ type: "output_text", text, annotations: [] }] };
+      emit({ type: "response.created", response: { id, status: "in_progress", output: [] } });
+      emit({ type: "response.output_item.added", output_index: 0, item: { ...item, status: "in_progress", content: [] } });
+      emit({ type: "response.output_text.delta", output_index: 0, item_id: item.id, content_index: 0, delta: text });
+      emit({ type: "response.output_text.done", output_index: 0, item_id: item.id, content_index: 0, text });
+      emit({ type: "response.output_item.done", output_index: 0, item });
+      emit({ type: "response.completed", response: { id, status: "completed", output: [item], usage: { input_tokens: 1, output_tokens: 1 } } });
+      return;
+    }
     if (!exec || !manualTools.includes("Bash")) {
       errors.push("exec custom tool / tools.Bash declaration missing from actual manual");
       emit({ type: "response.failed", response: { id: "bad_manual", status: "failed", error: { code: "invalid_request_error", message: "probe requires exec manual with tools.Bash" } } });
       return;
     }
+    requests.at(-1)!.requestKind = "fixture-turn";
     if (++finals > 12 || scripts > 3) throw new Error("bounded request budget exceeded");
     const id = outputs.length ? `answer_${finals}` : `script_${scripts + 1}`;
     emit({ type: "response.created", response: { id, status: "in_progress", output: [] } });
@@ -235,7 +255,7 @@ async function scenario(jar: string, name: Scenario, root: string): Promise<Obj>
     } }), { status: response.status, headers: response.headers });
   } });
   let visibleTail = "";
-  let cliSummary = false, cliRedacted = 0, cliFinal = false, cliResultError = false;
+  let cliSummary = false, cliRedacted = 0, cliFinal = false, cliResultError = false, cliTerminalThinking = false;
   let cliExit: number | null = null;
   try {
     const env = safeEnv(home);
@@ -251,33 +271,26 @@ async function scenario(jar: string, name: Scenario, root: string): Promise<Obj>
     }
     if (!ready) throw new Error("isolated head not ready in 60 seconds");
     mark("daemon_ready");
-    client = child([CLIENT, "--bare", "--print", "--verbose", "--output-format", "stream-json", "--include-partial-messages", "--model", `probe--${MODEL}`, "--tools", "Bash", "--allowedTools", "Bash", "--strict-mcp-config", "--mcp-config", '{"mcpServers":{}}', "--setting-sources", "", "--session-id", randomUUID(), "--max-turns", "6", "--system-prompt", "You are running a deterministic local fixture. Execute the requested Bash tool and report its result.", "Run the fixture tool once, then finish."], task,
-      { ...env, ANTHROPIC_BASE_URL: `http://127.0.0.1:${relay.port}`, ANTHROPIC_API_KEY: "synthetic-probe-client-only", API_TIMEOUT_MS: "90000" });
-    // The CLI's own stream is checked too; nothing from it is written verbatim.
-    const read = (async () => {
-      for await (const line of createInterface({ input: client!.stdout! })) {
-        const e = parseEvents(line); if (!e) continue;
-        const event = e.event ?? e;
-        // Count only partial events, never the later assistant message snapshot of the same text.
-        if (e.type === "stream_event" && e.event?.type === "content_block_delta" && e.event.delta?.type === "thinking_delta") {
-          cliPartialThinking += e.event.delta.thinking ?? ""; cliPartialThinkingDeltas++;
-        }
-        const blocks = e.message?.content ?? [];
-        if (event.content_block?.type === "redacted_thinking") cliRedacted++;
-        for (const b of blocks) if (b.type === "redacted_thinking") cliRedacted++;
-        const text = [event.delta?.text, event.delta?.thinking, e.result, ...blocks.map((b: Obj) => b.text ?? b.thinking)].filter(Boolean).join("\n");
-        if (text.includes("PROBE_READABLE_REASONING")) cliSummary = true;
-        if (text.includes(FINAL)) cliFinal = true;
-        if (e.type === "result" && e.is_error) cliResultError = true;
-      }
-    })();
-    let timer: ReturnType<typeof setTimeout> | undefined;
-    cliExit = await Promise.race([new Promise<number | null>(r => { client!.once("exit", code => r(code)); client!.once("error", () => r(-1)); }), new Promise<number>(r => { timer = setTimeout(() => { errors.push("client timed out after 90 seconds"); r(-2); }, 90000); })]);
-    clearTimeout(timer);
-    await stop(client); await read;
+    const sessionId = randomUUID();
+    writeFileSync(join(home, "claude/.claude.json"), JSON.stringify({
+      hasCompletedOnboarding: true, theme: "dark", hasAcknowledgedCostThreshold: true,
+      projects: { [task]: { hasTrustDialogAccepted: true, hasCompletedProjectOnboarding: true } },
+    }), { mode: 0o600 });
+    const client = await interactiveClient({
+      command: [CLIENT, "--bare", "--verbose", "--permission-mode", "default", "--model", `probe--${MODEL}`, "--tools", "Bash", "--allowedTools", "Bash", "--strict-mcp-config", "--mcp-config", '{"mcpServers":{}}', "--setting-sources", "", "--session-id", sessionId, "--system-prompt", "You are running a deterministic local fixture. Execute the requested Bash tool and report its result.", "Run the fixture tool once, then finish."],
+      cwd: task, env: { ...env, ANTHROPIC_BASE_URL: `http://127.0.0.1:${relay.port}`, ANTHROPIC_API_KEY: "synthetic-probe-client-only", API_TIMEOUT_MS: "90000" },
+      sessionId, finalText: FINAL, expectedThinking: SUMMARY, timeoutMs: 90000,
+    });
+    cliExit = client.exitCode; cliThinking = client.thinking;
+    cliSummary = cliThinking.includes(SUMMARY); cliRedacted = client.redactedBlocks;
+    cliFinal = client.finalInTranscript && client.finalOnTerminal;
+    cliTerminalThinking = client.thinkingOnTerminal;
+    cliResultError = client.timedOut || !client.transcriptFound;
+    if (client.timedOut) errors.push("interactive client timed out after 90 seconds");
+    mark("interactive_client_finished", { terminalBytes: client.terminalBytes, transcriptFound: client.transcriptFound });
     await Promise.all([...pending]);
   } catch (e) { errors.push(e instanceof Error ? e.message : "probe infrastructure failure"); }
-  finally { releaseFirstTerminal(); await stop(client); await stop(daemon); await upstream.stop(true); await relay.stop(true); }
+  finally { releaseFirstTerminal(); await stop(daemon); await upstream.stop(true); await relay.stop(true); }
 
   const callbackTimes = existsSync(effects) ? readFileSync(effects, "utf8").trim().split("\n").filter(Boolean).map(Number) : [];
   const done = marks.find(m => m.event === "exec_item_done")?.epochMs;
@@ -287,8 +300,9 @@ async function scenario(jar: string, name: Scenario, root: string): Promise<Obj>
     clientExitedSuccessfully: cliExit === 0 && !cliResultError,
     readableReasoningOnWire: summaryVisibleAt !== null,
     readableReasoningInRealClient: cliSummary,
+    readableReasoningReceivedByTerminal: cliTerminalThinking,
     fixtureThinkingExactlyOnceOnWire: wireThinking === SUMMARY,
-    fixtureThinkingExactlyOnceInClientPartialStream: cliPartialThinking === SUMMARY,
+    fixtureThinkingExactlyOnceInClientTranscript: cliThinking === SUMMARY,
     noRedactedPlaceholders: redacted === 0 && cliRedacted === 0,
     exactlyOneEffect: callbackTimes.length === 1 && Number.isFinite(effect),
     toolRanAfterWholeItemBeforeTerminal: effect !== undefined && done !== undefined && terminal !== undefined && effect >= done && effect < terminal,
@@ -304,12 +318,12 @@ async function scenario(jar: string, name: Scenario, root: string): Promise<Obj>
     thinkingDelivery: {
       expectedChars: SUMMARY.length,
       wire: { chars: wireThinking.length, deltaEvents: wireThinkingDeltas, fixtureOccurrences: wireThinking.split(SUMMARY).length - 1, exactFixtureEquality: wireThinking === SUMMARY },
-      clientPartialStream: { chars: cliPartialThinking.length, deltaEvents: cliPartialThinkingDeltas, fixtureOccurrences: cliPartialThinking.split(SUMMARY).length - 1, exactFixtureEquality: cliPartialThinking === SUMMARY },
+      clientTranscript: { chars: cliThinking.length, fixtureOccurrences: cliThinking.split(SUMMARY).length - 1, exactFixtureEquality: cliThinking === SUMMARY },
     },
     timing: { summaryVisibleAt, toolOpenAt, itemDoneAt: done ?? null, terminalAt: terminal ?? null,
       callbackMinusItemDoneMs: effect !== undefined && done !== undefined ? effect - done : null,
       terminalMinusCallbackMs: effect !== undefined && terminal !== undefined ? terminal - effect : null }, marks,
-    coverage: "Success and late response.failed, bounded automatic retry if candidate/client retries. No forced retry and no restart/resume coverage. Real print-mode stream, not TTY paint timing." };
+    coverage: "Success and late response.failed, bounded automatic retry if candidate/client retries. No forced retry and no restart/resume coverage. Real interactive PTY with persisted client blocks and terminal final-answer observation; no paint-latency claim." };
 }
 
 export async function main(argv: string[]): Promise<number> {
@@ -327,6 +341,9 @@ export async function main(argv: string[]): Promise<number> {
   if (v.exitCode !== 0 || !version.startsWith("2.1.310 ")) throw new Error("required Claude Code version is not 2.1.310");
   const receipt: Obj = { kind: "splice-real-client-parity-probe", startedAt: new Date().toISOString(),
     probeVersion: PROBE_VERSION, probeSha256: await sha(fileURLToPath(import.meta.url)),
+    invocationMode: "interactive-pty-v1", terminalColumns: 160, terminalRows: 60,
+    permissionMode: "default", allowedTools: ["Bash"],
+    interactiveClientSha256: await sha(fileURLToPath(new URL("./interactive-client.ts", import.meta.url))),
     jar, jarSha256: await sha(jar), clientPath: CLIENT, clientVersion: version, clientSha256: await sha(CLIENT),
     root, status: "running", scenarios: [], auth: "isolated synthetic OAuth fixture required for Codex arm; no inherited credentials", limits: "Loopback configuration, not an OS network sandbox. Candidate jar is trusted to honor configured endpoints." };
   mkdirSync(dirname(out), { recursive: true });

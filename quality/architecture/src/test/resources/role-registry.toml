@@ -86,6 +86,12 @@ dated = "2026-10-23"
 names = ["MirrorSweep", "Ticker"]
 reason = """Ticker paces a loop inside integrations-upstream and the modules above it: it suspends for the interval and answers false when the loop should end, so a fake stops the loop cleanly. MirrorSweep paces one loop in features-sessions, the mirrors' look for machines whose time is past (SessionMirrors), and the daemon wires it to its own ProcessTicker at the one place it builds the mirrors (SharedSessions). Both only pace a loop, so the shape is the same and this sentence says why there are two types: features-sessions has no dependency on integrations-upstream and cannot import Ticker, so the mirrors name the pace they need as their own port, as the peer pusher's Wait does for Waiter."""
 
+[[groups]]
+signature = "()->Set<String>"
+dated = "2026-10-23"
+names = ["MachinesJoined", "RuntimeUnread"]
+reason = """Two sets of names from different worlds, and a swap would cross a security boundary. MachinesJoined names the OTHER machines this one joined, as splice.toml's [remotes] holds them now: the Sessions switch requires each named machine's card on this side to be On before any session crosses with it, so a name it returns adds a gate a machine must pass. RuntimeUnread names this machine's own LOCAL heads that the runtime watch holds no reading for yet, which the console shows as checking. Wired where MachinesJoined is meant, it would read head keys as machine names, so a machine named like a head would need a card that does not exist, and every other machine this one joined would skip its card's gate and cross sessions with that card Off. Wired the other way, every joined machine would read as a local head still being checked."""
+
 # ── Nullary effects, () -> Unit ───────────────────────────────────────────────────────────────────
 [[groups]]
 signature = "()->Unit"

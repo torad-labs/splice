@@ -34,6 +34,7 @@ import splice.sessions.mirror.SessionMirrors
 import splice.sessions.registry.SessionAvailability
 import splice.sessions.registry.SessionRegistry
 import splice.sessions.registry.SessionRoute
+import splice.share.MachinesJoined
 import splice.share.SessionsSwitch
 import splice.share.ShareInfo
 import splice.share.ShareListener
@@ -159,6 +160,7 @@ internal abstract class TwoMachinesTest {
             SharedCatalogs { null },
             SharedQuotas { null },
             paths,
+            MachinesJoined { topology.remotes.keys },
             { },
             machine.mirrors,
         )
@@ -198,7 +200,8 @@ internal abstract class TwoMachinesTest {
         store.save(name, joined.token)
         if (sessions) store.allowSessions(name, true)
         val booted = joinedTo(name, joined, at)
-        return RemoteLinks(booted, store, SessionsSwitch(ShareState(machine.paths), booted.remotes.keys))
+        val switch = SessionsSwitch(ShareState(machine.paths), MachinesJoined { booted.remotes.keys })
+        return RemoteLinks(booted, store, switch)
     }
 
     /** The splice.toml of a machine that joined [name], which shares on [at], as `splice remote` writes it: its

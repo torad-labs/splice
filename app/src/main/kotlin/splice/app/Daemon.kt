@@ -18,6 +18,7 @@ import splice.app.control.FailedHeads
 import splice.app.control.ManagedHead
 import splice.app.daemon.BootedTopology
 import splice.app.daemon.HeadCatalogs
+import splice.app.daemon.RemotesInFile
 import splice.app.daemon.SharedSessions
 import splice.app.daemon.TopologyWindows
 import splice.app.head.HEAD_STOP_BUDGET_MS
@@ -110,12 +111,16 @@ public class Daemon(
     private val compactionInstructions =
         CompactionInstructions(topology.compaction, topologyDir, log = log)
 
+    /** LAN share: the machines this one joined as splice.toml names them now, which both Sessions switches read, so a
+     *  machine imported from the Sharing page has its switch before a restart starts its link. */
+    private val joinedNow = RemotesInFile(topologyPath ?: TopologyLoader.configPath(), topology.remotes.keys)
+
     /** LAN share: the machines this one joined (`[remotes]`), each with its pinned certificate and kept token. ONE
      *  instance for the relay's upstream trust, the roster refresh, the quota polls and the reachability check. */
     private val remotes = RemoteLinks(
         topology,
         RemotesStore(ShareState(statePaths).remotesFile),
-        SessionsSwitch(ShareState(statePaths), topology.remotes.keys),
+        SessionsSwitch(ShareState(statePaths), joinedNow),
     )
 
     /** LAN share, milestone 6: the mirrors of other machines' sessions, and the link to each machine this one joined. */
@@ -128,6 +133,7 @@ public class Daemon(
         SharedCatalogs { key -> heads[key]?.let { it.statusline.catalog } },
         SharedQuotas { key -> heads[key]?.sources?.usage?.quota() },
         statePaths,
+        joinedNow,
         log,
         sharedSessions.mirrors,
     )

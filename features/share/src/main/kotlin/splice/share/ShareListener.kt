@@ -22,6 +22,8 @@ public class ShareListener(
     private val running: SharedCatalogs,
     private val quotas: SharedQuotas,
     statePaths: StatePaths,
+    /** The machines this one joined, as the Sharing page draws them: what the Sessions switch reads them from. */
+    used: MachinesJoined,
     private val log: LogSink,
     /** The daemon's mirrors of other machines' sessions: a joined machine's are kept here, and it is shown this one's. */
     public val mirrors: SessionMirrors? = null,
@@ -34,7 +36,7 @@ public class ShareListener(
 
     /** Each machine's one Sessions switch, read through this machine's two books (the clients above, and the
      *  machines it joined): what the Sharing page reads and turns, and what the session routes let in by. */
-    public val switch: SessionsSwitch = SessionsSwitch(ShareState(statePaths), opener.used())
+    public val switch: SessionsSwitch = SessionsSwitch(ShareState(statePaths), used)
 
     /** The session routes' mirrors, and what sessions here wrote to them: one across reopenings, as [clients] is. */
     private val sessions = ShareSessionParts(mirrors, switch)

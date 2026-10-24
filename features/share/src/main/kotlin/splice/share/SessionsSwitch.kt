@@ -4,22 +4,28 @@
 // either of its cards on the Sharing page must stop both. So sessions cross with it only while every book that holds it
 // has its switch on. But anyone on the network may join under any name, so the machine on one card may not be the one
 // on the other: each card turns only its own book, and an On lets in only the machine its card shows. A machine this
-// one joined is one in the `[remotes]` the daemon booted with (the round-4 review): the ones its link reaches and the
-// page draws a card for, so a token kept for a name `[remotes]` no longer lists holds no machine back.
+// one joined is one splice.toml's `[remotes]` names now, a card the page draws (the round-4 and round-5 reviews): one
+// imported from the page has its switch before splice restarts and starts its link, and a token kept for a name the
+// file no longer lists holds no machine back.
 package splice.share
 
 import splice.share.remote.RemotesStore
 
-/** Read at each call, so a switch the page turns, or a re-join turns off, takes effect with no restart. [used] are the
- *  machines this one joined, as the `[remotes]` the daemon booted with names them. */
-public class SessionsSwitch(state: ShareState, private val used: Set<String>) {
+/** The machines this one joined, as splice.toml's `[remotes]` names them now: the cards the Sharing page draws. */
+public fun interface MachinesJoined {
+    public fun names(): Set<String>
+}
+
+/** Read at each call, so a switch the page turns, a re-join turns off, or a machine the page imports takes effect with
+ *  no restart. [used] reads the machines this one joined. */
+public class SessionsSwitch(state: ShareState, private val used: MachinesJoined) {
     private val clients = ShareClients(state.clientsFile)
     private val remotes = RemotesStore(state.remotesFile)
 
     /** Whether sessions cross with [name]: a book holds it, and each book that does has its switch on. */
     public fun on(name: String): Boolean {
         val joined = clients.all().firstOrNull { it.name == name }
-        val linked = name in used
+        val linked = name in used.names()
         return (joined != null || linked) && joined?.sessions != false && (!linked || remotes.sessions(name))
     }
 
@@ -30,5 +36,5 @@ public class SessionsSwitch(state: ShareState, private val used: Set<String>) {
     /** Turns [on] or off the switch on the card of [name] as a machine this one joined, in that book alone, where this
      *  machine's link reads it; false when this machine joined none of that name, in [used]. Throws IOException, as
      *  [turnJoined] does. */
-    public fun turnUsed(name: String, on: Boolean): Boolean = name in used && remotes.allowSessions(name, on)
+    public fun turnUsed(name: String, on: Boolean): Boolean = name in used.names() && remotes.allowSessions(name, on)
 }

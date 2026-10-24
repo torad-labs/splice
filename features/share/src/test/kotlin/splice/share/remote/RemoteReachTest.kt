@@ -25,6 +25,7 @@ import splice.core.topology.RemoteConfig
 import splice.core.topology.ShareConfig
 import splice.core.topology.Topology
 import splice.core.util.EnvReader
+import splice.share.MachinesJoined
 import splice.share.SessionsSwitch
 import splice.share.ShareListener
 import splice.share.ShareStart
@@ -89,6 +90,7 @@ class RemoteReachTest {
             SharedCatalogs { key -> catalog.takeIf { key == "one" } },
             SharedQuotas { null },
             paths,
+            MachinesJoined { emptySet() },
             { },
         )
         listener = opened
@@ -115,7 +117,8 @@ class RemoteReachTest {
             heads = mapOf("torad-one" to head("torad-one", 3911), "torad-two" to head("torad-two", 3912)),
             remotes = mapOf(toradName to RemoteConfig(url, joined.pin)),
         )
-        val links = RemoteLinks(mini, store, SessionsSwitch(ShareState(paths("m")), mini.remotes.keys))
+        val switch = SessionsSwitch(ShareState(paths("m")), MachinesJoined { mini.remotes.keys })
+        val links = RemoteLinks(mini, store, switch)
 
         links.check { }
 

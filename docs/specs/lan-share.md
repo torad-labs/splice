@@ -275,9 +275,9 @@ Built on `feat/lan-share`, merged into `feat/v0.4.0` through the gate. Milestone
      with it only while each card that names it is on (`SessionsSwitch`), so an Off on either stops both links (the
      round-2 review). Each card turns its own book alone (the round-3 review): anyone on the network may join under any
      name, so the machine on one card may not be the one on the other, and only the card that shows where a machine
-     joined from lets it in. A machine this one joined is one in the `[remotes]` the daemon booted with, the ones its
-     link reaches and the page draws a card for, so a token kept for a name `[remotes]` no longer lists holds no machine
-     back (the round-4 review). Under trust the LAN, a device that joins under a machine's name takes that machine's place
+     joined from lets it in. A machine this one joined is one splice.toml's `[remotes]` names as it is now, a card the
+     page draws: one imported from the page has its switch before splice restarts and starts its link (the round-5
+     review), and a token kept for a name `[remotes]` no longer lists holds no machine back (the round-4 review). Under trust the LAN, a device that joins under a machine's name takes that machine's place
      in the book of joined machines, as any re-join does, so it holds the machine's sessions off until the machine
      joins again and Marcos turns that card on.
      A switch turned off ends the crossing at the link's next look, and each look while it is off withdraws what a

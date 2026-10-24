@@ -35,6 +35,7 @@ import org.junit.jupiter.api.Assertions.assertNull
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.io.TempDir
+import splice.app.daemon.RemotesInFile
 import splice.core.config.ConfigService
 import splice.core.config.MgmtKey
 import splice.core.config.StatePaths
@@ -146,11 +147,13 @@ class SharingRoutesTest {
             health = topologyHealthFor(emptyMap()),
             auth = ControlAuth(mgmtKey = mgmt, log = { }),
         )
+        val booted = TopologyLoader.parse(Files.readString(file))
         val listener = ShareListener(
-            ShareStart(TopologyLoader.parse(Files.readString(file)), paths, mgmt, config) { },
+            ShareStart(booted, paths, mgmt, config) { },
             SharedCatalogs { null },
             SharedQuotas { null },
             paths,
+            RemotesInFile(file, booted.remotes.keys),
             { },
             mirrors,
         )
@@ -375,6 +378,35 @@ class SharingRoutesTest {
             switched(call, "/api/remotes/both/sessions", false)
             assertEquals(listOf(false, false), switches(read(call)))
             assertFalse(clients.all().single().sessions, "and the joined card stayed as it was")
+        }
+    }
+
+    // The round-5 review: a machine imported from the Sharing page has its card at once, before splice restarts and
+    // starts its link, so its Sessions switch is one at once too. Its On is kept, and while it is off nothing crosses
+    // with that machine, whichever of its cards is read.
+    @Test
+    fun `a machine imported with no restart has a Sessions switch at once, and nothing crosses while it is off`() {
+        val state = ShareState(StatePaths(envReader = env))
+        Files.createDirectories(state.clientsFile.parent)
+        Files.writeString(
+            state.clientsFile,
+            """{"clients":[{"name":"both","token_sha256":"00","address":"10.0.0.3",""" +
+                """"joined_at":"2026-10-23T12:00:00Z"}]}""",
+        )
+        serve { call ->
+            assertTrue(switched(call, "/api/share/machines/both/sessions", true).getValue("ok").jsonPrimitive.boolean)
+            val joined = read(call).getValue("joined").jsonArray.single().jsonObject
+            assertTrue(joined.getValue("crossing").jsonPrimitive.boolean, "it joined this machine, and its card is on")
+
+            // Marcos uses its commands: its `[remotes]` entry is written and its token kept, and splice runs on.
+            Files.writeString(file, Files.readString(file) + "\n[remotes.both]\nurl = \"https://both.lan:3097\"\n")
+            RemotesStore(state.remotesFile).save("both", "both-token")
+            assertEquals(listOf(true, false), switches(read(call)), "its new card reads Off")
+            assertEquals(listOf(false, false), switches(read(call), "crossing"), "and nothing crosses, as it says")
+
+            assertTrue(switched(call, "/api/remotes/both/sessions", true).getValue("ok").jsonPrimitive.boolean, "kept")
+            assertTrue(RemotesStore(state.remotesFile).sessions("both"), "where its link reads it once it starts")
+            assertEquals(listOf(true, true), switches(read(call), "crossing"), "both on, sessions cross")
         }
     }
 

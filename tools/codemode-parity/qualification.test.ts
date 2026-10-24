@@ -2,6 +2,7 @@ import { describe, test, expect } from "bun:test";
 import { requiredCaseIds, contractFindings, structuralFindings, sealReceipt, artifact, rawArtifactFindings, type Receipt } from "./qualification";
 import { verifiers } from "./verifiers";
 import { assertNativeTypedMedia } from "./interactive-output";
+import { assertNativeBatch } from "./interactive-batch";
 import { mkdtemp, writeFile, rm } from "node:fs/promises";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
@@ -122,5 +123,48 @@ describe("qualification typed-output guard (not product parity)", () => {
     expect(() => assertNativeTypedMedia([
       ...mediaRequests(nativeMedia), ...mediaRequests([{ type: "input_text", text: "Script terminated" }]),
     ])).toThrow();
+  });
+});
+
+function batchObservation() {
+  const originals = [
+    { type: "custom_tool_call", id: "exec_probe", call_id: "call_probe", name: "exec", input: "text('native-batch-first');", status: "completed" },
+    { type: "custom_tool_call", id: "exec_probe_second", call_id: "call_probe_second", name: "exec", input: "text('native-batch-second');", status: "completed" },
+  ];
+  const outputs = originals.map((item, index) => ({ type: "custom_tool_call_output", call_id: item.call_id, output: [
+    { type: "input_text", text: "Script completed\nWall time 0.1 seconds\nOutput:\n" },
+    { type: "input_text", text: index === 0 ? "native-batch-first" : "native-batch-second" },
+  ] }));
+  return { scriptAttempts: 1, callbackTimes: [1100], marks: [
+    ...originals.map(item => ({ event: "upstream_sse", frame: { type: "response.output_item.done", item } })),
+    { event: "batch_items_done", epochMs: 1000 }, { event: "response_completed_sent", epochMs: 3000 },
+  ], upstreamRequests: [{ nativeInput: [...originals, ...outputs] as any[] }] };
+}
+describe("qualification multi-item admission guard (not product parity)", () => {
+  test("accepts both original items followed by their actual distinct completed outputs", () => {
+    expect(() => assertNativeBatch(batchObservation())).not.toThrow();
+  });
+  test("rejects absent second output even when its marker appears in source", () => {
+    const value = batchObservation(); value.upstreamRequests[0]!.nativeInput.pop();
+    expect(() => assertNativeBatch(value)).toThrow();
+  });
+  test("rejects serialized marker lookalikes instead of actual executed output", () => {
+    const value = batchObservation(); value.upstreamRequests[0]!.nativeInput[3].output[1].text = JSON.stringify({ text: "native-batch-second" });
+    expect(() => assertNativeBatch(value)).toThrow();
+  });
+  test("rejects interleaved originals and outputs or duplicated batch items", () => {
+    const value = batchObservation(); const input = value.upstreamRequests[0]!.nativeInput;
+    [input[1], input[2]] = [input[2], input[1]];
+    expect(() => assertNativeBatch(value)).toThrow();
+    const duplicate = batchObservation(); duplicate.upstreamRequests[0]!.nativeInput.push(duplicate.upstreamRequests[0]!.nativeInput[1]);
+    expect(() => assertNativeBatch(duplicate)).toThrow();
+  });
+  test("rejects retried sources, a short hold, or an effect after terminal", () => {
+    const retried = batchObservation(); retried.scriptAttempts = 2;
+    expect(() => assertNativeBatch(retried)).toThrow();
+    const early = batchObservation(); early.marks[early.marks.length - 1] = { event: "response_completed_sent", epochMs: 1500 };
+    expect(() => assertNativeBatch(early)).toThrow();
+    const late = batchObservation(); late.callbackTimes = [3001];
+    expect(() => assertNativeBatch(late)).toThrow();
   });
 });

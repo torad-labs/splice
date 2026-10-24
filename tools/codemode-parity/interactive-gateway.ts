@@ -9,6 +9,7 @@ import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { interactiveClient } from "./interactive-client";
+import { assertNativeBatch } from "./interactive-batch";
 
 const CLIENT = "/home/marcos/.local/share/claude/versions/2.1.310";
 const MODEL = "gpt-6.1-sol";
@@ -16,9 +17,9 @@ const SUMMARY = "PROBE_READABLE_REASONING: inspect the callback file, then run t
 const ENVELOPE = "synthetic-probe-reasoning-envelope-not-a-real-credential";
 const FINAL = "PROBE_FINISHED";
 const HOLD_MS = 2000;
-const PROBE_VERSION = 4;
+const PROBE_VERSION = 5;
 type Obj = Record<string, any>;
-type Scenario = "success" | "late-failure" | "native-lifecycle" | "restart";
+type Scenario = "success" | "late-failure" | "native-lifecycle" | "restart" | "native-batch";
 type Mark = { event: string; epochMs: number; elapsedMs: number; [key: string]: unknown };
 
 function safeEnv(home: string): Record<string, string> {
@@ -200,7 +201,7 @@ export async function interactiveScenario(jar: string, name: Scenario, root: str
     const callback = `text(await tools.Bash(${JSON.stringify({ command: `date +%s%3N >> ${quoted}`, description: "Record deterministic probe callback timestamp", timeout: 10000 })}));`;
     const script = name === "native-lifecycle"
       ? `text('native-prefix'); notify('native-progress'); yield_control(); await new Promise(r => setTimeout(r, 80)); ${callback} text('native-suffix'); image({ image_url: 'data:image/png;base64,aGVsbG8=', detail: 'original' }); audio({ audio_url: 'data:audio/wav;base64,aGVsbG8=' }); generatedImage({ image_url: 'data:image/png;base64,d29ybGQ=', output_hint: 'native-generated' });`
-      : callback;
+      : name === "native-batch" ? `${callback} text('native-batch-first');` : callback;
     const item: Obj = { type: "custom_tool_call", id: "exec_probe", call_id: "call_probe", name: "exec", input: script, status: "completed" };
     if (exec.namespace) item.namespace = exec.namespace;
     emit({ type: "response.output_item.added", output_index: 1, item: { ...item, input: "", status: "in_progress" } });
@@ -210,14 +211,26 @@ export async function interactiveScenario(jar: string, name: Scenario, root: str
     emit({ type: "response.custom_tool_call_input.delta", output_index: 1, item_id: item.id, delta: script.slice(Math.floor(script.length / 2)) });
     emit({ type: "response.custom_tool_call_input.done", output_index: 1, item_id: item.id, input: script });
     emit({ type: "response.output_item.done", output_index: 1, item }); mark("exec_item_done", { attempt: scripts });
+    const responseItems = [reasoning, item];
+    if (name === "native-batch") {
+      const second: Obj = { type: "custom_tool_call", id: "exec_probe_second", call_id: "call_probe_second",
+        name: "exec", input: "text('native-batch-second');", status: "completed" };
+      if (exec.namespace) second.namespace = exec.namespace;
+      emit({ type: "response.output_item.added", output_index: 2, item: { ...second, input: "", status: "in_progress" } });
+      emit({ type: "response.custom_tool_call_input.delta", output_index: 2, item_id: second.id, delta: second.input });
+      emit({ type: "response.custom_tool_call_input.done", output_index: 2, item_id: second.id, input: second.input });
+      emit({ type: "response.output_item.done", output_index: 2, item: second });
+      responseItems.push(second);
+      mark("batch_items_done");
+    }
     await Bun.sleep(HOLD_MS);
     if ((name === "late-failure" || name === "restart") && lateFailures === 0) {
       lateFailures++; mark("late_failure_sent");
-      emit({ type: "response.failed", response: { id, status: "failed", error: { code: "server_error", message: "scripted late probe failure" }, output: [reasoning, item] } });
+      emit({ type: "response.failed", response: { id, status: "failed", error: { code: "server_error", message: "scripted late probe failure" }, output: responseItems } });
     } else {
       mark("response_completed_sent", { attempt: scripts });
       completedResponses.set(id, { definitions: defs, reasoningPresent: true });
-      emit({ type: "response.completed", response: { id, status: "completed", output: [reasoning, item], usage: { input_tokens: 100, output_tokens: 30 } } });
+      emit({ type: "response.completed", response: { id, status: "completed", output: responseItems, usage: { input_tokens: 100, output_tokens: 30 } } });
     }
     releaseFirstTerminal();
   };
@@ -348,7 +361,12 @@ export async function interactiveScenario(jar: string, name: Scenario, root: str
   const done = marks.find(m => m.event === "exec_item_done")?.epochMs;
   const terminal = marks.find(m => m.event === "response_completed_sent" || m.event === "late_failure_sent")?.epochMs;
   const effect = callbackTimes[0];
+  const batchFindings: string[] = [];
+  if (name === "native-batch") try {
+    assertNativeBatch({ marks, upstreamRequests: requests, scriptAttempts: scripts, callbackTimes });
+  } catch (error) { batchFindings.push(error instanceof Error ? error.message : String(error)); }
   const checks = {
+    nativeBatchPreserved: batchFindings.length === 0,
     clientExitedSuccessfully: cliExit === 0 && !cliResultError,
     readableReasoningOnWire: summaryVisibleAt !== null,
     readableReasoningInRealClient: cliSummary,
@@ -376,7 +394,7 @@ export async function interactiveScenario(jar: string, name: Scenario, root: str
     noInfrastructureErrors: errors.length === 0,
   };
   return { scenario: name, passed: Object.values(checks).every(Boolean), checks, errors, taskDir: task,
-    clientUserAgent: clientVersion, cliExit, holdMs: HOLD_MS, callbackTimes, scriptAttempts: scripts, waits, restarted,
+    clientUserAgent: clientVersion, cliExit, holdMs: HOLD_MS, callbackTimes, scriptAttempts: scripts, waits, restarted, batchFindings,
     upstreamRequests: requests, clientEvents, redactedBlocks: redacted, cliRedactedBlocks: cliRedacted,
     thinkingDelivery: {
       expectedChars: SUMMARY.length,
@@ -387,7 +405,7 @@ export async function interactiveScenario(jar: string, name: Scenario, root: str
       itemDoneAt: done ?? null, terminalAt: terminal ?? null,
       callbackMinusItemDoneMs: effect !== undefined && done !== undefined ? effect - done : null,
       terminalMinusCallbackMs: effect !== undefined && terminal !== undefined ? terminal - effect : null }, marks,
-    coverage: "Real interactive PTY; completed item admission before response terminal; late response failure; native yield/wait; daemon restart before real callback-result delivery; persisted client blocks and terminal observations. No paint-latency claim." };
+    coverage: "Real interactive PTY; completed item admission before response terminal; late response failure; native yield/wait; two serial outer exec items in one response; daemon restart before real callback-result delivery; persisted client blocks and terminal observations. No paint-latency claim." };
 }
 
 export async function main(argv: string[]): Promise<number> {
@@ -413,7 +431,7 @@ export async function main(argv: string[]): Promise<number> {
   mkdirSync(dirname(out), { recursive: true });
   const save = () => writeFileSync(out, JSON.stringify(receipt, null, 2) + "\n", { mode: 0o600 });
   save();
-  for (const name of ["success", "late-failure", "native-lifecycle", "restart"] as const) {
+  for (const name of ["success", "late-failure", "native-lifecycle", "restart", "native-batch"] as const) {
     const result = await interactiveScenario(jar, name, root); receipt.scenarios.push(result); save();
     console.log(`${name}: ${result.passed ? "PASS" : "FAIL"} (${Object.entries(result.checks).filter(([, ok]) => !ok).map(([key]) => key).join(", ") || "all checks"})`);
   }

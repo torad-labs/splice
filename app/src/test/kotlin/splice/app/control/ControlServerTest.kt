@@ -564,9 +564,12 @@ class ControlServerTest {
         val response = client.post("http://127.0.0.1:$port/statusline/codex") {
             header("Authorization", "Bearer $key")
             header("Content-Type", "application/json")
+            // Let the server reject the declared length before the client starts uploading the body.
+            header("Expect", "100-continue")
             setBody("x".repeat(70_000))
         }
         assertEquals(413, response.status.value)
+        assertEquals("statusline body exceeds 65536 bytes", response.bodyAsText())
     }
 }
 

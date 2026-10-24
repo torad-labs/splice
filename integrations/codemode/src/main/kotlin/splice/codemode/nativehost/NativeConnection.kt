@@ -74,23 +74,40 @@ internal class NativeConnection(
     }
 
     suspend fun operation(request: JsonObject, execute: Boolean = false): NativeOperation {
-        val operation = operations.register(execute)
+        val operation = prepare(execute)
+        try {
+            dispatch(operation, request)
+        } finally {
+            if (!operation.wasDispatched()) discard(operation)
+        }
+        return operation
+    }
+
+    fun prepare(execute: Boolean = false): NativeOperation = operations.register(execute)
+
+    fun discard(operation: NativeOperation) {
+        operations.discard(operation)
+    }
+
+    suspend fun dispatch(operation: NativeOperation, request: JsonObject) {
         send(
             buildJsonObject {
                 put("type", "operation/request")
                 put("id", operation.id)
                 put("request", request)
             },
+            operation,
         )
-        return operation
     }
 
-    suspend fun send(frame: JsonObject) {
+    suspend fun send(frame: JsonObject, operation: NativeOperation? = null) {
+        val payload = NativeFrames.encode(frame)
         withContext(ioDispatcher) {
             writer.withLock {
                 if (closed.get()) throw CodeModeWorkerLostException()
                 try {
-                    NativeFrames.write(output, frame)
+                    operation?.markDispatched()
+                    NativeFrames.write(output, payload)
                 } catch (error: IOException) {
                     fail(error)
                     throw CodeModeWorkerLostException(error)

@@ -21,9 +21,13 @@ internal object NativeFrames {
         return Json.parseToJsonElement(payload.decodeToString(throwOnInvalidSequence = true)).jsonObject
     }
 
-    fun write(output: DataOutputStream, frame: JsonObject) {
+    fun encode(frame: JsonObject): ByteArray {
         val payload = frame.toString().encodeToByteArray()
         require(payload.size <= NATIVE_MAX_FRAME_BYTES) { "Native host frame exceeds protocol limit" }
+        return payload
+    }
+
+    fun write(output: DataOutputStream, payload: ByteArray) {
         output.writeInt(Integer.reverseBytes(payload.size))
         output.write(payload)
         output.flush()

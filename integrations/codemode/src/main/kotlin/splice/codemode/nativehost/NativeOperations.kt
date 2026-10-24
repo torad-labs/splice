@@ -7,13 +7,22 @@ import splice.core.util.JsonScalars
 import splice.upstream.failure.CodeModeWorkerLostException
 import java.io.IOException
 import java.util.concurrent.ConcurrentHashMap
+import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.atomic.AtomicLong
 
-internal data class NativeOperation(
+internal class NativeOperation(
     val id: Long,
     val response: CompletableDeferred<JsonObject>,
     val initial: CompletableDeferred<JsonObject>? = null,
-)
+) {
+    private val dispatched = AtomicBoolean()
+
+    fun markDispatched() {
+        dispatched.set(true)
+    }
+
+    fun wasDispatched(): Boolean = dispatched.get()
+}
 
 /** An execution's acceptance and initial observation are separate, independently routed responses. */
 internal class NativeOperations {
@@ -41,6 +50,11 @@ internal class NativeOperations {
         if (table === responses && JsonScalars.str(result, "status") == "error") {
             initials.remove(id)?.completeExceptionally(IOException(JsonScalars.str(result, "message")))
         }
+    }
+
+    fun discard(operation: NativeOperation) {
+        responses.remove(operation.id)
+        initials.remove(operation.id)
     }
 
     fun fail(error: CodeModeWorkerLostException) {

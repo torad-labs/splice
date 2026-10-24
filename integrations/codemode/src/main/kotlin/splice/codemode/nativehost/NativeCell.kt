@@ -64,9 +64,7 @@ internal class NativeCell(
 
     private suspend fun observeLocked(yieldTimeMs: Long): CodeModeStep {
         readySteps.removeFirstOrNull()?.let { return it }
-        val response = observation ?: connection.operation(
-            NativeRequests.wait(sessionId, cellId, yieldTimeMs),
-        ).response.also { observation = it }
+        val response = response(yieldTimeMs)
         var step: CodeModeStep? = null
         while (step == null) {
             step = select {
@@ -80,6 +78,21 @@ internal class NativeCell(
             }
         }
         return if (step is CodeModeStep.Calls) batchCalls(step) else step
+    }
+
+    private suspend fun response(yieldTimeMs: Long): CompletableDeferred<JsonObject> {
+        observation?.let { return it }
+        val operation = connection.prepare()
+        observation = operation.response
+        try {
+            connection.dispatch(operation, NativeRequests.wait(sessionId, cellId, yieldTimeMs))
+        } finally {
+            if (!operation.wasDispatched()) {
+                connection.discard(operation)
+                observation = null
+            }
+        }
+        return operation.response
     }
 
     /** Let the reader route the same native event-loop turn, then issue ready siblings in one client batch. */

@@ -87,16 +87,17 @@ public class NativeCodeModeRuntime(
         try {
             val (host, sessionId) = beforeDispatch(sessionKey)
             // A failure from this point can follow execution. It must never authorize a source retry.
-            val operation = host.operation(
+            val operation = host.prepare(execute = true)
+            started = NativePendingStart(host, sessionId, operation)
+            host.dispatch(
+                operation,
                 NativeRequests.execute(
                     sessionId,
                     source,
                     CodeModeManual.nestedNames(tools).associateWith { descriptions[it].orEmpty() },
                     options,
                 ),
-                execute = true,
             )
-            started = NativePendingStart(host, sessionId, operation)
             val accepted = NativeFrames.value(operation.response.await())
             val cellId = JsonScalars.str(accepted, "cellId") ?: throw IOException("Native host did not accept a cell")
             return NativeCell(cellId, sessionId, host, scope, requireNotNull(operation.initial), tools, lease).also {
@@ -108,7 +109,8 @@ public class NativeCodeModeRuntime(
     }
 
     private fun abandon(started: NativePendingStart?, lease: NativeCellLease) {
-        if (started == null) {
+        if (started == null || !started.operation.wasDispatched()) {
+            started?.let { it.host.discard(it.operation) }
             lease.close()
         } else {
             scope.launch {

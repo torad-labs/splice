@@ -1,11 +1,15 @@
 // NEW: a conversation that alone reached a bound lets its finished records go at the start of
-// its turn, before that turn's history is built. Its scripts so far stay in its history as the ordinary
-// tool calls the client saw, a script it starts in that turn is measured on that history and places on
-// the next one, and nothing is abandoned, skipped or refused. Letting them go at the new script's
-// admission instead would have left its baseline on canonical items that no longer exist.
+// its turn, before that turn's history is built. What GPT was already sent stays as it was sent, the way
+// Codex builds each request from what it recorded (codex-rs core/src/session/turn.rs:1618): the let-go
+// scripts stay their exec calls and outputs, a script started in that turn places on the next, each later
+// post extends the last, and nothing is abandoned, skipped or refused. Until 2026-10-23 the let-go scripts
+// went back to the client's ordinary tool calls, which rewrote the cached prefix; that rule is replaced.
 package splice.provider.codex
 
 import kotlinx.coroutines.test.runTest
+import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.jsonArray
+import kotlinx.serialization.json.jsonObject
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertFalse
 import org.junit.jupiter.api.Assertions.assertTrue
@@ -82,35 +86,40 @@ class CodeModeConversationRebaseTest : CodeModeBridgeTestSupport() {
         return Run(starts, finalPost, ids)
     }
 
-    /** The first two scripts went at the third's turn, the third placed on the next, nothing broke. */
-    private fun assertStartedOver(run: Run) {
+    /** The let-go scripts stay as GPT was sent them, the third places on the next post, and the posts after the
+     *  let-go only extend what was sent. */
+    private fun assertKeptAsSent(run: Run) {
         assertEquals(3, runtime.starts, "a script was refused or rerun")
         assertTrue("outer-0" in run.starts[1], "the first script never placed, so nothing was tested")
         listOf(run.starts[2], run.finalPost).forEach { body ->
-            assertFalse("outer-0" in body || "outer-1" in body, "a let-go script was still placed: $body")
-            assertTrue(run.ids[0] in body && run.ids[1] in body, "a let-go script's calls left the history")
+            assertTrue("outer-0" in body && "outer-1" in body, "a let-go script left what GPT was sent: $body")
+            assertFalse(run.ids[0] in body || run.ids[1] in body, "a let-go script's calls came back: $body")
         }
+        val sent = input(run.starts[2])
+        assertEquals(sent, input(run.finalPost).take(sent.size), "the post after the let-go rewrote what was sent")
         assertEquals(2, Regex("outer-2").findAll(run.finalPost).count(), "the script after the let-go did not place")
         assertFalse(run.ids[2] in run.finalPost, "the placed script's call was also sent as an ordinary one")
         assertFalse(logLines.any { "abandoned record" in it || "history rewrite skipped" in it }, "$logLines")
     }
 
+    private fun input(body: String) = Json.parseToJsonElement(body).jsonObject.getValue("input").jsonArray.toList()
+
     @Test
-    fun `a conversation at its record bound starts over at its turn, and the script it starts there places`() =
+    fun `a conversation at its record bound keeps what GPT was sent, and the script it starts there places`() =
         runTest {
             val bridge = bridge(runtime, retention = CodeModeRetention(perConversation = 2))
 
-            assertStartedOver(threeScripts(bridge, listOf("a", "b", "c")))
+            assertKeptAsSent(threeScripts(bridge, listOf("a", "b", "c")))
             assertEquals(1, logLines.count { "let go (it reached 2 records)" in it }, "$logLines")
         }
 
     @Test
-    fun `a conversation alone past the head's bytes starts over at its turn, and the script it starts there places`() =
+    fun `a conversation alone past the head's bytes keeps what GPT was sent, and the script it starts there places`() =
         runTest {
             val big = "x".repeat(10_000)
             val bridge = bridge(runtime, retention = CodeModeRetention(bytes = 30_000))
 
-            assertStartedOver(threeScripts(bridge, listOf(big, big, "c")))
+            assertKeptAsSent(threeScripts(bridge, listOf(big, big, "c")))
             assertEquals(1, logLines.count { "it alone holds more than 30000 bytes" in it }, "$logLines")
         }
 }

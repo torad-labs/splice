@@ -277,6 +277,11 @@ context_window = 256000
 # Code's ~30K preamble takes an idle conversation's slot, and that conversation re-prefills from
 # zero. With the quirk, splice sends id_slot per conversation (session + opening messages), reads the
 # slot count from the server's /props, and sends a turn unpinned whenever no slot is free.
+# A local head also GETS ITS EARLIER REASONING BACK: each earlier assistant turn carries the thinking
+# the model wrote as reasoning_content, which the model's chat template renders in that turn's think
+# block, so the model reads the history it produced rather than an empty think block on every turn.
+# Splice's own wait notice never rides. A hosted vendor's requests are unchanged, because some vendors
+# refuse reasoning_content in input messages.
 # [providers.ollama]
 # dialect = "openai-chat"
 # base_url = "http://localhost:11434/v1"   # LM Studio: http://localhost:1234/v1, vLLM: :8000/v1

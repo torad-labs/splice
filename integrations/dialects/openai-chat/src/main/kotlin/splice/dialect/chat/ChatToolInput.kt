@@ -15,10 +15,12 @@ import splice.core.wire.ToolUseBlock
 private const val CHAT_ASSISTANT_ROLE: String = "assistant"
 
 internal class ChatToolInput {
-    fun appendCalls(sink: JsonArrayBuilder, toolUses: List<ToolUseBlock>, texts: String) {
+    /** [reasoning], when the provider replays it, rides beside the calls it chose (see ChatWireMapper). */
+    fun appendCalls(sink: JsonArrayBuilder, toolUses: List<ToolUseBlock>, texts: String, reasoning: String? = null) {
         sink.addJsonObject {
             put("role", CHAT_ASSISTANT_ROLE)
             if (texts.isNotEmpty()) put(CONTENT, texts) else put(CONTENT, null as String?)
+            reasoning?.let { put(REASONING_CONTENT, it) }
             put(
                 "tool_calls",
                 buildJsonArray {

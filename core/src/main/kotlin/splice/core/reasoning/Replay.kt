@@ -8,6 +8,10 @@
 // The pair were top-level functions until the 2026-08-16 style migration (HD-M8); they now live on
 // the ReasoningReplay object, which makes "encode and decode stay PAIRED" structural rather than a
 // comment. Same names, same bodies, same bytes.
+// 2026-10-23: a run of reasoning items GPT gave in a row reaches Claude Code as ONE redacted_thinking block, whose
+// data is the items' v1 envelopes in order, joined by REASONING_RUN_SEPARATOR, which base64 never writes. Claude
+// Code draws each block as an empty "Thinking…" row, and gpt-6.1-sol gave nine items before one exec call (turn
+// de23cca4b4c3). A one-item block stays the v1 envelope alone, byte for byte.
 package splice.core.reasoning
 
 import kotlinx.serialization.json.Json
@@ -25,6 +29,10 @@ import java.util.Base64
 
 public const val REASONING_ENVELOPE_TAG: String = "splice-reasoning"
 public const val REASONING_ENVELOPE_VERSION: Int = 1
+
+/** Between the envelopes of one block. Standard base64 writes only A-Z, a-z, 0-9, + and / and =, so no envelope
+ *  holds it, and a joined block reads as no envelope to a build that knows only v1 (it drops the block). */
+private const val REASONING_RUN_SEPARATOR: String = "."
 
 // envelope field names are the wire contract — named once, referenced everywhere so encode/decode
 // can never drift apart.
@@ -104,4 +112,16 @@ public object ReasoningReplay {
             put(FIELD_SUMMARY, (item?.get(FIELD_SUMMARY) as? JsonArray) ?: JsonArray(emptyList()))
         }
     }
+
+    /** The data of one redacted_thinking block holding [envelopes], the reasoning GPT gave in a row, in order. */
+    public fun joinReasoningEnvelopes(envelopes: List<String>): String =
+        envelopes.joinToString(REASONING_RUN_SEPARATOR)
+
+    /** The envelopes a redacted_thinking block's [data] holds, in order: one for a block an older build wrote. */
+    public fun splitReasoningEnvelopes(data: String?): List<String> =
+        data?.split(REASONING_RUN_SEPARATOR)?.filter { it.isNotEmpty() }.orEmpty()
+
+    /** Every reasoning input item a redacted_thinking block's [data] holds, in order; none for foreign data. */
+    public fun decodeReasoningEnvelopes(data: String?, log: LogSink = LogSink(DaemonLog::write)): List<JsonObject> =
+        splitReasoningEnvelopes(data).mapNotNull { decodeReasoningEnvelope(it, log) }
 }

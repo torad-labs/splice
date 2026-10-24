@@ -6,6 +6,7 @@ import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonObject
 import splice.core.turn.GatewayCustomCall
 import splice.core.util.LogSink
+import splice.provider.codex.history.CodeModeUpstreamHistory
 import splice.provider.codex.state.CodeModeSessionEnd
 import splice.provider.codex.state.diagnostics.CodeModeNativeRetirement
 import splice.provider.codex.state.lease.CodeModeCellLease
@@ -127,7 +128,8 @@ public class CodexCodeModeBridge(
     private val wire = CodexCodeModeWire(json, config.log, retirement, config.state.replayReasoning)
     private val validation = CodexCodeModeValidation(config)
     internal val machine = CodexCodeModeMachine(config, registry, validation)
-    internal val driver = CodexCodeModeDriver(config, run, registry, wire, validation, machine)
+    internal val driver =
+        CodexCodeModeDriver(config, run, registry, wire, validation, machine, CodeModeUpstreamHistory(json))
     internal val resume = CodexCodeModeResume(registry, wire, validation, machine, driver)
     internal val controller = CodexCodeModeTurn(registry, wire, driver, resume, machine, validation, config.log)
 

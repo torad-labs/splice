@@ -1,4 +1,8 @@
-// NEW: completed native rejection retires input lineage, never callback authentication or response bytes.
+// NEW: a finished native script outlives an edit of the history around it, the way Codex keeps what it recorded
+// (codex-rs core/src/session/turn.rs:1618): the edit falls back to the client's history once, the script stays its
+// exec call and output, and a history restored to what GPT was sent extends that post. Retiring native lineage
+// directly never takes callback authentication or unclaimed billing. Until 2026-10-23 an edited native item skipped
+// the record's history rewrite and retired its lineage; that rule is replaced, and its request-flow tests with it.
 package splice.provider.codex
 
 import kotlinx.coroutines.test.runTest
@@ -23,131 +27,47 @@ import splice.upstream.codemode.CodeModeStep
 
 internal class CodeModeNativeRetirementTest : CodeModeBridgeTestSupport() {
     @Test
-    fun `a permanently rejected completed native cannot reclaim restored input`() = runTest {
+    fun `an edited native search falls back once and GPT is sent its finished script as before`() = runTest {
         val fixture = completedNative()
         try {
-            rejectCompletedNative(fixture)
-            val restored = nativeResult(fixture.readId) + Json.parseToJsonElement(
-                """{"role":"user","content":"synthetic later continuation"}""",
-            )
             var posted = ""
             fixture.manager.interceptor(turn(), null, disableParallel = false)
-                .intercept(nativeRequest(restored), RecordingSink()) { request ->
+                .intercept(nativeRequest(editedNative(fixture.readId)), RecordingSink()) { request ->
                     posted = request
                     RoundResult.Outcome(completedOutcome())
                 }
-            val actual = Json.parseToJsonElement(posted).jsonObject.getValue("input").jsonArray
-            assertTrue(
-                actual.containsAll(ownedCallbacks(fixture.readId)),
-                "restored native bytes cannot let a rejected completed record rewrite its old callbacks",
-            )
-            assertTrue(fixture.registry.completed(fixture.record.key).isEmpty())
-            assertTrue(fixture.record.carry.segments.isEmpty(), "rejected input lineage is no longer retained")
-            assertEquals(null, fixture.record.nativeParent)
-            assertEquals(null, fixture.record.nativeBaseId)
-            assertEquals(2, fixture.runtime.cell.advances, "completed source was not rerun")
+            // Code mode never posts a native search, since exec declares none: the fallback folds to the same post.
+            assertEquals(fixture.sent, input(posted), "the finished script left what GPT was sent: $posted")
+            assertFalse(fixture.readId in posted, "the finished script's client calls came back: $posted")
+            assertEquals(2, Regex("outer-call").findAll(posted).count(), "the script left its exec call and output")
+            assertFalse(fixture.record.abandoned(), "an edit never abandons a finished script")
+            assertFalse(logLines.any { "abandoned record" in it || "history rewrite skipped" in it }, "$logLines")
+            assertEquals(2, fixture.runtime.cell.advances, "the finished source was not rerun")
         } finally {
             fixture.manager.onHeadStop()
         }
     }
 
     @Test
-    fun `retired completed natives preserve owned later callbacks without owning unrelated calls`() = runTest {
+    fun `a history restored to what GPT was sent after an edit extends that post as it was sent`() = runTest {
         val fixture = completedNative()
         try {
-            rejectCompletedNative(fixture)
-            val unrelated = listOf(
-                Json.parseToJsonElement(
-                    """{"type":"function_call","call_id":"synthetic-unowned","name":"Read","arguments":"{}"}""",
-                ),
-                Json.parseToJsonElement(
-                    """{"type":"function_call_output","call_id":"synthetic-unowned",""" +
-                        """"output":"synthetic unrelated result"}""",
-                ),
-            )
+            fixture.manager.interceptor(turn(), null, disableParallel = false)
+                .intercept(nativeRequest(editedNative(fixture.readId)), RecordingSink()) {
+                    RoundResult.Outcome(completedOutcome())
+                }
+            val later = Json.parseToJsonElement("""{"role":"user","content":"synthetic later continuation"}""")
             var posted = ""
             fixture.manager.interceptor(turn(), null, disableParallel = false)
-                .intercept(nativeRequest(nativeResult(fixture.readId) + unrelated), RecordingSink()) { request ->
+                .intercept(nativeRequest(nativeResult(fixture.readId) + later), RecordingSink()) { request ->
                     posted = request
                     RoundResult.Outcome(completedOutcome())
                 }
-            val actual = Json.parseToJsonElement(posted).jsonObject.getValue("input").jsonArray
-            assertTrue(
-                actual.containsAll(ownedCallbacks(fixture.readId)),
-                "authenticated callback history stays ordinary",
-            )
-            assertTrue(actual.containsAll(unrelated), "unissued calls cannot become owned history")
-            val replayed = RecordingSink()
-            fixture.manager.interceptor(turn(), null, disableParallel = false)
-                .intercept(baselineWithNativeSearch(), replayed) {
-                    error("an authenticated issued step replays locally")
-                }
-            assertEquals(listOf(fixture.readId), replayed.tools.map { it.id })
-            assertEquals(2, fixture.runtime.cell.advances, "issued-step replay never reruns the source")
+            assertEquals(fixture.sent + later, input(posted), "the restored history rewrote what GPT was sent")
+            assertFalse(fixture.record.abandoned(), "a restore never abandons a finished script")
+            assertEquals(2, fixture.runtime.cell.advances, "the finished source was not rerun")
         } finally {
             fixture.manager.onHeadStop()
-        }
-    }
-
-    @Test
-    fun `native retirement preserves rejecting request bytes and its prompt cache key`() = runTest {
-        val fixture = completedNative()
-        try {
-            fixture.registry.changes.save(fixture.record) { record ->
-                record.carry.continuity = listOf(
-                    Json.parseToJsonElement("""{"role":"assistant","content":"synthetic owned commentary"}"""),
-                )
-                record.carry.replay = listOf(
-                    CodeModeNativeSegment(
-                        0,
-                        listOf(
-                            Json.parseToJsonElement(
-                                """{"type":"reasoning","id":"synthetic-response",""" +
-                                    """"encrypted_content":"synthetic response"}""",
-                            ),
-                        ),
-                    ),
-                )
-            }
-            val before = rejectCompletedNative(fixture)
-            val after = rejectCompletedNative(fixture)
-            assertTrue(before == after, "retirement cannot change emitted request bytes")
-            assertEquals(
-                "splice-synthetic-native-retirement",
-                Json.parseToJsonElement(after).jsonObject.getValue("prompt_cache_key").jsonPrimitive.content,
-            )
-            assertTrue(fixture.record.carry.segments.isEmpty(), "the native input was retired")
-            assertFalse(fixture.record.abandoned(), "retirement is not abandonment")
-            assertFalse(logLines.any { "abandoned record" in it })
-        } finally {
-            fixture.manager.onHeadStop()
-        }
-    }
-
-    @Test
-    fun `retirement survives reload and authenticates issued replay without restarting source`() = runTest {
-        val fixture = completedNative()
-        rejectCompletedNative(fixture)
-        fixture.manager.onHeadStop()
-        val freshRuntime = ScriptedRuntime(ArrayDeque())
-        val fresh = bridge(freshRuntime)
-        try {
-            val key = fixture.record.key
-            val restored = fresh.registry.recordsFor(key).single()
-            assertTrue(fresh.registry.completed(key).isEmpty())
-            assertTrue(restored.carry.segments.isEmpty())
-            assertEquals(null, restored.nativeParent)
-            assertEquals(null, restored.nativeBaseId)
-            assertFalse(restored.abandoned())
-            assertEquals(CodeModePhase.COMPLETED, restored.phase)
-            val replayed = RecordingSink()
-            fresh.interceptor(turn(), null, disableParallel = false)
-                .intercept(baselineWithNativeSearch(), replayed) { error("authenticated replay is local after reload") }
-            assertEquals(listOf(fixture.readId), replayed.tools.map { it.id })
-            assertEquals(0, freshRuntime.cell.advances)
-            assertFalse(logLines.any { "abandoned record" in it })
-        } finally {
-            fresh.onHeadStop()
         }
     }
 
@@ -160,47 +80,6 @@ internal class CodeModeNativeRetirementTest : CodeModeBridgeTestSupport() {
             assertEquals(listOf(fixture.record), fixture.registry.completed(fixture.record.key))
             assertTrue(fixture.record.carry.segments.isNotEmpty())
             assertEquals(null, fixture.record.error)
-        } finally {
-            fixture.manager.onHeadStop()
-        }
-    }
-
-    @Test
-    fun `native retirement clears completed descendants only in its conversation`() = runTest {
-        val fixture = completedNative()
-        try {
-            val child = fixture.record.snapshot().copy(id = "synthetic-descendant").restore().apply {
-                replayAnchors = fixture.record.replayAnchors
-                nativeBaseId = fixture.record.id
-                nativeParent = fixture.record
-            }
-            val other = fixture.record.snapshot().copy(
-                id = "synthetic-other",
-                key = "synthetic-other-conversation",
-            ).restore().apply { replayAnchors = fixture.record.replayAnchors }
-            assertTrue(fixture.registry.add(child))
-            assertTrue(fixture.registry.add(other))
-            rejectCompletedNative(fixture)
-            assertTrue(fixture.registry.completed(fixture.record.key).isEmpty())
-            assertTrue(child.carry.segments.isEmpty())
-            assertEquals(null, child.nativeParent)
-            assertEquals(null, child.nativeBaseId)
-            assertEquals(listOf(other), fixture.registry.completed(other.key))
-            assertTrue(other.carry.segments.isNotEmpty())
-            assertEquals(null, other.error)
-        } finally {
-            fixture.manager.onHeadStop()
-        }
-    }
-
-    @Test
-    fun `a completed cell cannot retire its still running upstream source`() = runTest {
-        val fixture = completedNative()
-        try {
-            fixture.registry.changes.save(fixture.record) { it.sourceState = CodeModeSourceState(complete = false) }
-            rejectCompletedNative(fixture)
-            assertEquals(null, fixture.record.error, "an unfinished source must still accept terminal usage")
-            assertTrue(fixture.record.carry.segments.isNotEmpty())
         } finally {
             fixture.manager.onHeadStop()
         }
@@ -282,8 +161,10 @@ internal class CodeModeNativeRetirementTest : CodeModeBridgeTestSupport() {
         val registry: CodexCodeModeRegistry,
         val readId: String,
         val record: CodeModeRecord,
+        val sent: List<JsonElement>,
     )
 
+    /** A script that read once across a native search and finished, and the input GPT was sent with its output. */
     private suspend fun completedNative(): CompletedNative {
         val runtime = ScriptedRuntime(
             ArrayDeque(
@@ -295,36 +176,33 @@ internal class CodeModeNativeRetirementTest : CodeModeBridgeTestSupport() {
         manager.interceptor(turn(), null, disableParallel = false)
             .intercept(baselineWithNativeSearch(), sink) { RoundResult.Outcome(outerOutcome()) }
         val readId = sink.tools.single().id
+        var sent = emptyList<JsonElement>()
         manager.interceptor(turn(readId, "A"), null, disableParallel = false)
-            .intercept(nativeRequest(nativeResult(readId)), RecordingSink()) { RoundResult.Outcome(completedOutcome()) }
+            .intercept(nativeRequest(nativeResult(readId)), RecordingSink()) {
+                sent = input(it)
+                RoundResult.Outcome(completedOutcome())
+            }
         val registry = manager.registry
         val key = stateFiles.records().single().getValue("key").jsonPrimitive.content
         val record = registry.recordsFor(key).single()
         assertEquals(CodeModePhase.COMPLETED, record.phase, "the control must reach completed native state")
         assertTrue(record.carry.segments.isNotEmpty())
-        return CompletedNative(runtime, manager, registry, readId, record)
+        assertTrue(sent.isNotEmpty(), "the script's output was never posted")
+        return CompletedNative(runtime, manager, registry, readId, record, sent)
     }
 
-    private suspend fun rejectCompletedNative(fixture: CompletedNative): String {
-        val changed = nativeResult(fixture.readId).map { item ->
-            if (item.jsonObject["type"]?.jsonPrimitive?.content == "tool_search_call") {
-                JsonObject(item.jsonObject + ("arguments" to JsonPrimitive("synthetic changed native arguments")))
-            } else {
-                item
-            }
+    /** The finished script's client history with its native search changed, as an edit leaves it. */
+    private fun editedNative(readId: String): List<JsonElement> = nativeResult(readId).map { item ->
+        if (item.isSearchCall()) {
+            JsonObject(item.jsonObject + ("arguments" to JsonPrimitive("synthetic changed native arguments")))
+        } else {
+            item
         }
-        var posted = ""
-        fixture.manager.interceptor(turn(), null, disableParallel = false)
-            .intercept(nativeRequest(changed), RecordingSink()) { request ->
-                posted = request
-                RoundResult.Outcome(completedOutcome())
-            }
-        assertTrue(
-            logLines.any { "history rewrite skipped record" in it && "native_branch=payload" in it },
-            "a proven native payload rejection, not a missing-history control, must precede retirement",
-        )
-        return posted
     }
+
+    private fun JsonElement.isSearchCall() = jsonObject["type"]?.jsonPrimitive?.content == "tool_search_call"
+
+    private fun input(body: String) = Json.parseToJsonElement(body).jsonObject.getValue("input").jsonArray.toList()
 
     private fun ownedCallbacks(readId: String): List<JsonElement> =
         Json.parseToJsonElement(requestWithResult(readId, "A")).jsonObject.getValue("input").jsonArray.drop(1)

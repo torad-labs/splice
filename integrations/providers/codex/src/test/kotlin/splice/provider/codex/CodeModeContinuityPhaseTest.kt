@@ -4,7 +4,8 @@
 // rewrite then found no continuity where the client put it, kept the client's copy AND re-inserted
 // its own, and the unmatched copy counted as new client content that stopped the script (CI run
 // 36279360319, the packaged mock's lookup-edit: "assistant continuity was lost, duplicated, or
-// reordered"). A record written before continuity carried a phase is omitted, never placed.
+// reordered"). A record written before continuity carried a phase folds like any other since 2026-10-23: the
+// client's replay is the only copy of its preface, so its phase no longer matters (it was omitted before).
 // a script that made no client call leaves its preface in a message with no tool_use, which
 // the client replays as final_answer; the record's copy is still the same item, placed once, and its
 // commentary is the truer phase: the preface did precede the splice_exec call upstream.
@@ -21,6 +22,7 @@ import kotlinx.serialization.json.jsonArray
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.put
 import org.junit.jupiter.api.Assertions.assertEquals
+import org.junit.jupiter.api.Assertions.assertFalse
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 import splice.core.parse.AnthropicParse
@@ -61,7 +63,7 @@ class CodeModeContinuityPhaseTest : CodeModeBridgeTestSupport() {
     }
 
     @Test
-    fun `a finished record written before continuity carried a phase is omitted, not placed twice`() =
+    fun `a finished record written before continuity carried a phase is folded once, its preface sent once`() =
         runTest {
             val read = finish(bridge(runtime()))
             writtenByV3()
@@ -69,10 +71,8 @@ class CodeModeContinuityPhaseTest : CodeModeBridgeTestSupport() {
             val upstream = next(bridge(runtime()), answered(read))
 
             assertEquals(1, prefaces(upstream), upstream)
-            assertTrue(
-                logLines.any { "history rewrite skipped record" in it && "metadata is unavailable" in it },
-                logLines.joinToString("\n"),
-            )
+            assertFalse(read in upstream, "the script's call went upstream as a client call: $upstream")
+            assertTrue(logLines.none { "history rewrite skipped record" in it }, logLines.joinToString("\n"))
         }
 
     @Test

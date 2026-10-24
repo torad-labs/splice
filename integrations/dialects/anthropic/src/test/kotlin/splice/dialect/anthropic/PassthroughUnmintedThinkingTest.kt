@@ -43,6 +43,22 @@ class PassthroughUnmintedThinkingTest {
     }
 
     @Test
+    fun `the verifying head drops a block holding a run of GPT's reasoning`() {
+        val second = ReasoningReplay.encodeReasoningEnvelope(
+            kotlinx.serialization.json.buildJsonObject {
+                put("id", kotlinx.serialization.json.JsonPrimitive("rs_2"))
+                put("encrypted_content", kotlinx.serialization.json.JsonPrimitive("gAAAA-second"))
+            },
+        )!!
+        val run = ReasoningReplay.joinReasoningEnvelopes(listOf(envelope, second))
+        val blocks = assistantBlocks(
+            verifying = true,
+            """{"type":"redacted_thinking","data":"$run"},{"type":"text","text":"the answer"}""",
+        )
+        assertEquals(listOf("text"), blocks.map { it.type() })
+    }
+
+    @Test
     fun `a head whose upstream does not verify keeps every block as before`() {
         val blocks = assistantBlocks(
             verifying = false,

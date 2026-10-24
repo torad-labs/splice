@@ -6,6 +6,7 @@ import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonObject
 import splice.core.perf.InputItemDigests
 import splice.core.util.JsonElementInterner
+import splice.provider.codex.CodeModeClientStart
 import splice.provider.codex.CodeModeNativeSegment
 import splice.provider.codex.CodeModeRecord
 import splice.provider.codex.CodexCodeModeHistoryCodec
@@ -19,11 +20,14 @@ import splice.provider.codex.state.native.CodeModeNativeScope
 @Serializable
 internal data class CodeModeHistoryAnchor(val itemDigest: String?, val occurrence: Int, val logicalTail: Int = 0)
 
+/** Where a record's items sit: [baseline] and the [native] anchors count the request GPT was sent; [client] is where
+ *  the script started in the client's own history, null for a record saved before it was kept. */
 @Serializable
 internal data class CodeModeReplayAnchors(
     val baseline: CodeModeHistoryAnchor,
     val native: Map<Int, CodeModeHistoryAnchor>,
     val nativeFollowing: Map<Int, CodeModeHistoryAnchor> = emptyMap(),
+    val client: CodeModeClientStart? = null,
 )
 
 /** One index over client items is shared by all v5 record placements in a rewrite. */

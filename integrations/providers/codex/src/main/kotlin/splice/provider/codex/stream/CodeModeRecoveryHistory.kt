@@ -13,8 +13,9 @@ import java.util.Collections
 import java.util.IdentityHashMap
 import java.util.concurrent.ConcurrentHashMap
 
-/** Owned by one prepared turn, never shared by sessions or persisted. */
-internal class CodeModeRecoveryHistory(private val baseline: CodeModeBody) {
+/** Owned by one prepared turn, never shared by sessions or persisted. [baseline] is the request the client sent, which
+ *  the recovery continues past the round it tore. */
+internal class CodeModeRecoveryHistory(val baseline: CodeModeBody) {
     private var prefix = Prefix()
     private var generated = Prefix()
     private var continuityPrefix = Prefix()

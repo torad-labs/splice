@@ -15,6 +15,7 @@ import splice.core.turn.GatewayCustomCall
 import splice.core.turn.RoundHandoffs
 import splice.core.turn.TurnOutcome
 import splice.core.turn.Usage
+import splice.provider.codex.history.CodeModeUpstreamHistory
 import splice.provider.codex.state.CodeModeStateJournal
 import splice.provider.codex.state.save.CodeModeStateWrite
 import splice.provider.codex.stream.CodeModeRoundInterceptor
@@ -97,7 +98,8 @@ class CodeModeDispatchCrashTest {
         private val registry = CodexCodeModeRegistry(config, json, 1.hours, writer)
         private val validation = CodexCodeModeValidation(config)
         private val machine = CodexCodeModeMachine(config, registry, validation)
-        private val driver = CodexCodeModeDriver(config, run, registry, wire, validation, machine)
+        private val driver =
+            CodexCodeModeDriver(config, run, registry, wire, validation, machine, CodeModeUpstreamHistory(Json))
         private val resume = CodexCodeModeResume(registry, wire, validation, machine, driver)
         private val controller = CodexCodeModeTurn(registry, wire, driver, resume, machine, validation, config.log)
 

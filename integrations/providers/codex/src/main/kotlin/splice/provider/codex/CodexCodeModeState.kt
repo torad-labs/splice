@@ -55,6 +55,10 @@ internal data class CodeModeRecord(
     /** First runtime advance for the wall-time line; owned by this record and never persisted. */
     @Volatile var cellStartedAt: Long? = null
 
+    /** The kept upstream post whose response started this script (CodeModeUpstreamLedger), so a script that made
+     *  no client call is sent after that post and nowhere else. Never persisted: the ledger is not either. */
+    @Volatile var postedOn: Long? = null
+
     @Volatile var retainedBytes: Long? = null
     var heapLease: HeapLease? = null
 
@@ -118,6 +122,12 @@ internal data class CodeModeBaseline(
     val logicalDigest: String,
     val metadataVersion: Int,
 )
+
+/** Where a script started in the client's own history: the [count] of items, preamble aside, the client's request
+ *  held, and their [digest]. The script ran right after them, so a later history that starts with them still holds
+ *  the history it ran on, and one that does not was cut or edited before it. */
+@Serializable
+internal data class CodeModeClientStart(val count: Int, val digest: String)
 
 /** What the script is waiting on and how far it has run: its client calls still [pending], the [output] it has
  *  produced, the calls and rounds it has used, and when and under which request digest it last moved. */

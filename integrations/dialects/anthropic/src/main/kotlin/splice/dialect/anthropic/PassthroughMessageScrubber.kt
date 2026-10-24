@@ -164,7 +164,7 @@ internal class PassthroughMessageScrubber(
         }
         // The decoder's own log line is for replay; here a non-envelope is Anthropic's data and rides.
         TYPE_REDACTED_THINKING -> "redacted_thinking holding a splice reasoning envelope".takeIf {
-            ReasoningReplay.decodeReasoningEnvelope(JsonScalars.strIfString(block[DATA])) {} != null
+            ReasoningReplay.decodeReasoningEnvelopes(JsonScalars.strIfString(block[DATA])) {}.isNotEmpty()
         }
         else -> null
     }

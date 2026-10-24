@@ -99,11 +99,15 @@ internal class QuirksOverlay {
         // stream_options members. TOML wins over both, and null keeps the base — which is what
         // leaves grok-oauth's own `true` and every other head's request bytes untouched.
         val usage = providerCfg.quirks.streamUsage ?: true.takeIf { providerCfg.isLocal }
+        // A self-served runtime gets each earlier turn's reasoning back (Marcos, 2026-10-23): its template renders it
+        // in that turn's think block. A hosted vendor keeps its bytes, since some refuse reasoning_content in input.
+        val replay = true.takeIf { providerCfg.isLocal }
         val configuredVocabulary: ChatEffortVocabularyConfig? = providerCfg.quirks.chatEffortVocabulary
         val vocabulary = configuredVocabulary?.let {
             ChatEffortVocabulary(it.default, it.normalizedLevels(), it.modelPattern?.let(::Regex))
         }
         val overlaid = base.withReasoningEffortToml(providerCfg.quirks.reasoningEffort).withStreamUsageToml(usage)
+            .withReplayReasoning(replay)
         return overlaid.copy(
             reasoning = overlaid.reasoning.copy(effortVocabulary = vocabulary ?: base.reasoning.effortVocabulary),
         )

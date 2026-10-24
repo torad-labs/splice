@@ -61,6 +61,7 @@ export type Check =
   | { kind: "toolcall"; name: string; input: Json }
   | { kind: "thinking"; text: string; signature: string }
   | { kind: "redacted"; data: string }
+  | { kind: "reasoning"; role: string; text: string }
   | { kind: "absent"; text: string };
 
 interface SeamRow {
@@ -244,6 +245,15 @@ export function gradeCheck(dialect: string, body: Json, check: Check): string | 
     case "redacted": {
       const blocks = items.flatMap((i) => list(i["content"]).filter(isObj)).filter((b) => b["type"] === "redacted_thinking");
       return blocks.some((b) => b["data"] === check.data) ? null : "the redacted_thinking block did not come back byte for byte";
+    }
+    case "reasoning": {
+      // A self-served chat runtime gets an earlier turn's reasoning back as that turn's `reasoning_content`, which its
+      // chat template renders in the turn's think block (Marcos, 2026-10-23): whole, on the one turn that carried it.
+      const hits = items.filter((i) => i["role"] === check.role && i["reasoning_content"] === check.text);
+      if (hits.length === 1) return null;
+      const asText = items.some((i) => itemText(i).includes(check.text.slice(0, 40)));
+      const where = asText ? "; the reasoning arrived as visible text instead" : "";
+      return `expected exactly one ${check.role} item whose reasoning_content is the whole text ${JSON.stringify(check.text.slice(0, 60))}, found ${hits.length}${where}`;
     }
     case "absent":
       return strings(body).some((s) => s.includes(check.text)) ? `${JSON.stringify(check.text)} reached the upstream` : null;

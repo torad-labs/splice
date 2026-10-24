@@ -132,7 +132,8 @@ internal enum class CodeModeWeight {
     private fun anchors(value: CodeModeReplayAnchors?): Long = value?.let {
         SNAPSHOT_ENTRY_BYTES + anchor(it.baseline) +
             it.native.values.sumOf { placed -> SNAPSHOT_ENTRY_BYTES + anchor(placed) } +
-            it.nativeFollowing.values.sumOf { placed -> SNAPSHOT_ENTRY_BYTES + anchor(placed) }
+            it.nativeFollowing.values.sumOf { placed -> SNAPSHOT_ENTRY_BYTES + anchor(placed) } +
+            (it.client?.let { start -> SNAPSHOT_ENTRY_BYTES + text(start.digest) } ?: 0L)
     } ?: 0L
 
     private fun anchor(value: CodeModeHistoryAnchor): Long =

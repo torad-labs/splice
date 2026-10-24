@@ -440,7 +440,10 @@ class NativeAncestorPlacementTest : CodeModeBridgeTestSupport() {
             }
         assertTrue(logLines.none { "abandoned record" in it }, logLines.joinToString("\n"))
         assertEquals(2, runtime.cells.last().advances, "the original later script consumes its own callback: $outcome")
-        assertEquals(3, oldExecIndex(after) - oldExecIndex(before), "the earlier canonical triple moves an old exec")
+        // The restored callback falls back to the client's history once: it is the old script's exec call and output,
+        // which move the later exec by two. Its preface is the client's to replay, and this client replays none;
+        // until 2026-10-23 splice re-inserted it, and the move was three.
+        assertEquals(2, oldExecIndex(after) - oldExecIndex(before), "the restored exec and output move an old exec")
     }
 
     private fun ancestorRuntime(): QueuedRuntime = QueuedRuntime(

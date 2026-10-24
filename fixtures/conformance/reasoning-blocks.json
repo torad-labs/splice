@@ -1,6 +1,6 @@
 {
   "class": "reasoning-blocks",
-  "about": "A prior assistant turn's reasoning: a thinking block with its signature and a redacted_thinking block. The Anthropic passthrough must return both byte for byte (an upstream verifies the signature); the translated dialects never send visible thinking back, so neither block may leak into their upstream as text, while the assistant's visible answer still arrives.",
+  "about": "A prior assistant turn's reasoning: a thinking block with its signature and a redacted_thinking block. The Anthropic passthrough must return both byte for byte (an upstream verifies the signature). This suite's chat head is a self-served runtime by splice's own rule (openai-chat on a loopback address), and a self-served model gets each earlier turn's reasoning back as that turn's reasoning_content, which its chat template renders in the turn's think block (Marcos, 2026-10-23); the signature and the redacted block never reach it. The Responses dialect never sends visible thinking back, so neither block may leak into its upstream as text. Every dialect still delivers the assistant's visible answer.",
   "request": {
     "messages": [
       {
@@ -50,8 +50,9 @@
     ],
     "openai-chat": [
       {
-        "kind": "absent",
-        "text": "CONF-THINK"
+        "kind": "reasoning",
+        "role": "assistant",
+        "text": "CONF-THINK weighing the two causes"
       },
       {
         "kind": "absent",

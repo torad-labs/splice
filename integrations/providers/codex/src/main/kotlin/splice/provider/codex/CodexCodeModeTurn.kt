@@ -43,6 +43,9 @@ internal data class CodeModeRunContext(
     val headStop: HeadStopSignal? = null,
     val recovery: CodeModeRecoveryHistory? = null,
 ) {
+    /** The request as the client sent it, which every post of this step extends the last post with. */
+    val client: CodeModeBody? get() = link.client
+
     /** One filtered history for this request, extended only by its own completed scripts. */
     val completed: MutableList<CodeModeRecord> = mutableListOf()
 
@@ -52,10 +55,18 @@ internal data class CodeModeRunContext(
     /** Placement rejection removes execution, not the abandoning step's ownership of its source bill. */
     val abandonedSources: MutableList<CodeModeRecord> = mutableListOf()
     var scripts: Int = 0
+
+    /** Records whose accepted result this request changed (a fork): their calls stay the client's. */
+    var conflicts: Set<String> = emptySet()
 }
 
-/** The client-facing [sink] a round streams to and the [post] that sends its request upstream. */
-internal data class CodeModeRoundLink(val sink: WireSink, val post: CodeModeUpstreamPost)
+/** The client-facing [sink] a round streams to, the [post] that sends its request upstream, and the request the
+ *  [client] sent, which a copy of the round keeps. */
+internal data class CodeModeRoundLink(
+    val sink: WireSink,
+    val post: CodeModeUpstreamPost,
+    val client: CodeModeBody? = null,
+)
 
 /**
  * History that no longer lines up with a record is DEGRADED, never refused. The status quo before
@@ -87,7 +98,7 @@ internal class CodexCodeModeTurn(
             input.disableParallel,
             key,
             identity.digest(input.body.round),
-            CodeModeRoundLink(input.sink, input.post),
+            CodeModeRoundLink(input.sink, input.post, input.body),
             currentCoroutineContext()[HeadStopKey],
             input.recovery,
         )
@@ -129,33 +140,62 @@ internal class CodexCodeModeTurn(
         body: CodeModeBody,
     ): TurnOutcome {
         notes.announce(context)
-        return ordinary(context, initialOuter, body, branch.conflictingRecords(context))
+        val conflicts = branch.conflictingRecords(context)
+        context.conflicts = conflicts
+        context.completed += registry.completed(context.key).filterNot { it.id in conflicts }
+        val extended = driver.sent.extend(context, registry.recordsFor(context.key))
+        return extended?.let { extended(context, initialOuter, it) } ?: ordinary(context, initialOuter, body)
     }
 
     private suspend fun ordinary(
         context: CodeModeRunContext,
         initialOuter: GatewayCustomCall?,
         body: CodeModeBody,
-        conflicts: Set<String>,
     ): TurnOutcome {
         val completed = context.completed
-        completed += registry.completed(context.key).filterNot { it.id in conflicts }
         val resultIds = context.turn.toolResults.map(CodeModeResult::id).toSet()
-        val capture = registry.owner(context.key, context.digest, resultIds, wire.callbackIds(body), conflicts)
+        val capture = registry.owner(context.key, context.digest, resultIds, wire.callbackIds(body), context.conflicts)
             ?: completed.lastOrNull()
         val completedHistory = context.link.post.canonicalize(body, completed, context.turn.rendering.media, capture)
         completedHistory.error?.let { return failure(it) }
         val canonicalBody = checkNotNull(completedHistory.body)
         reconcile(context, canonicalBody)
-        val owner = placedOwner(context, canonicalBody, conflicts)
+        return decide(context, initialOuter, canonicalBody, placedOwner(context, canonicalBody))
+    }
+
+    /** A request built from the conversation's kept posts, or from its whole history once when it extends none:
+     *  nothing sent is rewritten, so a running script is found by its call ids and resumes on this history, never
+     *  placed again or abandoned. */
+    private suspend fun extended(
+        context: CodeModeRunContext,
+        initialOuter: GatewayCustomCall?,
+        body: CodeModeBody,
+    ): TurnOutcome {
+        reconcile(context, body)
+        val resultIds = context.turn.toolResults.map(CodeModeResult::id).toSet()
+        val owner = registry.owner(context.key, context.digest, resultIds, wire.callbackIds(body), context.conflicts)
+        return decide(context, initialOuter, body, owner?.let { PlacedOwner(it, body) })
+    }
+
+    /** What [body] is sent as: a script's generated reply, a running script resumed, or a post. A fork's history is
+     *  sent as the divergence it is, and kept like any other post. */
+    private suspend fun decide(
+        context: CodeModeRunContext,
+        initialOuter: GatewayCustomCall?,
+        body: CodeModeBody,
+        owner: PlacedOwner?,
+    ): TurnOutcome {
+        val completed = context.completed
         val terminal = completed.lastOrNull { it.sourceState?.usage != null && it.sourceState?.consumed == false }
         return when {
-            terminal != null -> driver.finishGenerated(terminal, context, canonicalBody)
+            terminal != null -> driver.finishGenerated(terminal, context, body)
             owner != null -> resumeOwner(owner, context)
-            conflicts.isNotEmpty() -> branch.sendOwnHistory(context, canonicalBody)
-            completed.any { it.progress.lastDigest == context.digest } ->
-                driver.post(context, null, canonicalBody)
-            else -> driver.post(context, initialOuter, canonicalBody)
+            context.conflicts.isNotEmpty() -> {
+                driver.sent.sent(context, body)
+                driver.sent.settled(context, branch.sendOwnHistory(context, body))
+            }
+            completed.any { it.progress.lastDigest == context.digest } -> driver.post(context, null, body)
+            else -> driver.post(context, initialOuter, body)
         }
     }
 
@@ -172,14 +212,11 @@ internal class CodexCodeModeTurn(
 
     /** The active or lost owner whose baseline still places in this history, with that history
      *  restored around it — or null when there is none, or when the one there was is abandoned. */
-    private fun placedOwner(
-        context: CodeModeRunContext,
-        canonicalBody: CodeModeBody,
-        conflicts: Set<String>,
-    ): PlacedOwner? {
+    private fun placedOwner(context: CodeModeRunContext, canonicalBody: CodeModeBody): PlacedOwner? {
         val resultIds = context.turn.toolResults.map(CodeModeResult::id).toSet()
         val callbackIds = wire.callbackIds(canonicalBody)
-        val owner = registry.owner(context.key, context.digest, resultIds, callbackIds, conflicts) ?: return null
+        val owner = registry.owner(context.key, context.digest, resultIds, callbackIds, context.conflicts)
+            ?: return null
         val restored = wire.restoreBaseline(canonicalBody, owner)
         val error = restored.error ?: return PlacedOwner(owner, checkNotNull(restored.body))
         context.abandonedSources += owner

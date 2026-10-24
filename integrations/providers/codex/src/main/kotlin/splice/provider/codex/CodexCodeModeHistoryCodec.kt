@@ -117,7 +117,7 @@ internal class CodexCodeModeHistoryCodec(private val json: Json) {
         val unchanged = original != null && received != null && rebuilt.size == received.size &&
             rebuilt.indices.all { rebuilt[it] === received[it] }
         if (unchanged) return CodeModeRewrite(original)
-        val request = JsonObject(root + (FIELD_INPUT to rebuilt))
+        val request = JsonObject(root + (CODE_MODE_FIELD_INPUT to rebuilt))
         val digests = original?.digests ?: InputItemDigests()
         return CodeModeRewrite(CodeModeBody(RoundBody.Tree(request), json, emitted.at(request), digests))
     }
@@ -135,7 +135,8 @@ internal class CodexCodeModeHistoryCodec(private val json: Json) {
 
     fun string(item: JsonObject?, key: String): String = JsonScalars.str(item, key).orEmpty()
 
-    private fun isPreamble(element: JsonElement): Boolean {
+    /** Whether [element] is part of the lite preamble, which is environment and not history. */
+    fun isPreamble(element: JsonElement): Boolean {
         val item = element as? JsonObject ?: return false
         // V4-390: a mid-conversation context message is developer-role too, but typed; it is history.
         return string(item, CODE_MODE_FIELD_ROLE) == ROLE_DEVELOPER && string(item, FIELD_CALL_ID).isEmpty() &&
@@ -153,11 +154,11 @@ internal object CodeModeCallReplay {
     fun item(record: CodeModeRecord): JsonObject =
         if (
             record.sourceState?.complete == true ||
-            JsonScalars.strOrEmpty(record.origin.outer[FIELD_INPUT]) == record.origin.source
+            JsonScalars.strOrEmpty(record.origin.outer[CODE_MODE_FIELD_INPUT]) == record.origin.source
         ) {
             record.origin.outer
         } else {
-            JsonObject(record.origin.outer + (FIELD_INPUT to JsonPrimitive(record.origin.source)))
+            JsonObject(record.origin.outer + (CODE_MODE_FIELD_INPUT to JsonPrimitive(record.origin.source)))
         }
 }
 
@@ -169,12 +170,14 @@ internal data class CodeModeConversation(
 
 /** One round's request as code mode reads it: [round] is what it posts, and [request] is what every reader
  *  of the round reads. An unchanged history posts [round] as it arrived. [digests] is shared with every body
- *  rebuilt from this one, whose history items are this one's, borrowed. */
+ *  rebuilt from this one, whose history items are this one's, borrowed. [echoes]: what a body extending the last
+ *  post sends past the client's history, that the client replays next (see CodeModeLedgerEntry). */
 internal class CodeModeBody(
     val round: RoundBody,
     json: Json,
     val emission: CodeModeEmission? = null,
     val digests: InputItemDigests = InputItemDigests(),
+    val echoes: List<JsonElement> = emptyList(),
 ) {
     /** The body parsed once: its root and input array, or null when it is not a Responses request. A tree
      *  is read as itself; only text is parsed. */
@@ -183,7 +186,7 @@ internal class CodeModeBody(
             is RoundBody.Tree -> round.element
             is RoundBody.Text -> json.parseToJsonElement(round.text)
         } as? JsonObject
-        val input = root?.get(FIELD_INPUT) as? JsonArray
+        val input = root?.get(CODE_MODE_FIELD_INPUT) as? JsonArray
         if (root != null && input != null) root to input else null
     }
 }
@@ -219,7 +222,9 @@ internal class CodeModeEmission(
 internal const val CODE_MODE_FIELD_CALL_ID = "call_id"
 internal const val CODE_MODE_FIELD_TYPE = "type"
 internal const val CODE_MODE_FIELD_ROLE = "role"
-private const val FIELD_INPUT = "input"
+internal const val CODE_MODE_ROLE_USER = "user"
+internal const val CODE_MODE_FIELD_INPUT = "input"
+internal const val CODE_MODE_TYPE_REASONING = "reasoning"
 private const val FIELD_OUTPUT = "output"
 private const val ROLE_DEVELOPER = "developer"
 private const val FIELD_PHASE = "phase"

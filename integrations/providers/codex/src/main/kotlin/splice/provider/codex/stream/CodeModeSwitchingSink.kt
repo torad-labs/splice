@@ -194,7 +194,7 @@ internal class CodeModeSinkContent(private val core: CodeModeSinkCore) : BlockDe
     override suspend fun addRedactedThinking(data: String) {
         core.write(data.encodeToByteArray().size) {
             it.addRedactedThinking(data)
-            ReasoningReplay.decodeReasoningEnvelope(data)?.let(core::rememberNative)
+            ReasoningReplay.decodeReasoningEnvelopes(data).forEach(core::rememberNative)
         }
     }
 

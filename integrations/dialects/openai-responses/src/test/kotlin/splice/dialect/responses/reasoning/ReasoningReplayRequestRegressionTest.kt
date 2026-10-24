@@ -173,6 +173,31 @@ class ReasoningReplayRequestRegressionTest(@param:TempDir private val state: Pat
     }
 
     @Test
+    fun `result proofs learned before the first reasoning item survive restart and clearing`() = runTest {
+        val provider = ReplayRequestProvider(state, cache = true)
+        drive(provider, request(opening), call("call_1"))
+        val prefix = "$opening,${assistant(tool("call_1"))},"
+        drive(
+            provider,
+            request(prefix + result("call_1", "original file contents")),
+            reasoning("rs_first") + prose("Checked."),
+        )
+        val tail = ",${assistant(text("Checked."))}," +
+            """{"role":"user","content":"Continue the inspection."}"""
+        val restarted = ReplayRequestProvider(state, cache = true)
+        val cleared = input(
+            restarted,
+            request(prefix + result("call_1", "[Old tool result content cleared]") + tail),
+        )
+        assertEquals(listOf("rs_first"), reasoningIds(cleared))
+        assertEquals(
+            "[Old tool result content cleared]",
+            cleared.single { it["type"]?.jsonPrimitive?.content == "function_call_output" }
+                .getValue("output").jsonPrimitive.content,
+        )
+    }
+
+    @Test
     fun `changed text under the same tool call id does not replay later reasoning`() = runTest {
         changedResultDropsReasoning(result("call_1", "first contents"), result("call_1", "different contents"), "text")
     }

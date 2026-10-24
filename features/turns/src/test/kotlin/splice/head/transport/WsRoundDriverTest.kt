@@ -790,7 +790,12 @@ class WsCompletionTest(@param:TempDir private val tmp: Path) {
                     """"output_index":0,"delta":"synthetic source;"}""",
             )
         }
-        add("""{"type":"response.output_item.done","output_index":0,"item":$prefix"$source"}}""")
+        // The never-reading startup fake tests cancellation of an uncertified source. Sealed-item retention
+        // across response failure is covered by CodeModeSealedStartupFailureTest; JvmCodeModeRuntime reads
+        // the whole item before its bounded boot, independently of the response terminal.
+        if (ending != "startup-wait") {
+            add("""{"type":"response.output_item.done","output_index":0,"item":$prefix"$source"}}""")
+        }
         if (ending == "completed") {
             add(
                 """{"type":"response.completed","response":{"status":"completed","output":[""" +

@@ -263,9 +263,24 @@ class CodexCodeModeReanchorTest {
             assertTrue(lines.none { "abandoned record" in it || "interrupted extra=STEERING" in it }, lines.toString())
             assertEquals(3, runtime.advances)
             val items = checkNotNull(posted).getValue("input").jsonArray
-            val texts = items.mapNotNull { item -> JsonScalars.str(item as? JsonObject, "content") }
-            assertEquals(1, texts.count { it == "prefix prefix suffix " }, "the first source prefix is replayed once")
-            assertEquals(1, texts.count { it == "second suffix " }, "the second source adds only its own prose")
+            val baseline = recovery.original.getValue("input").jsonArray
+            assertEquals(baseline, JsonArray(items.take(baseline.size)), "the original request remains unchanged")
+            assertEquals(
+                listOf(
+                    "prefix prefix ",
+                    "suffix ",
+                    "custom_tool_call:reanchored",
+                    "custom_tool_call_output:reanchored",
+                    "second suffix ",
+                    "custom_tool_call:second",
+                    "custom_tool_call_output:second",
+                ),
+                items.drop(baseline.size).map { item ->
+                    JsonScalars.str(item.jsonObject, "content")
+                        ?: "${JsonScalars.str(item.jsonObject, "type")}:${JsonScalars.str(item.jsonObject, "call_id")}"
+                },
+                "each full source preface stays once before its own exec and output",
+            )
         } finally {
             bridge.onHeadStop()
         }

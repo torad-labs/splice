@@ -26,6 +26,7 @@ internal class NativeCell(
     private val scope: CoroutineScope,
     private val initial: CompletableDeferred<JsonObject>,
     private val tools: Set<String>,
+    private val lease: NativeCellLease,
 ) : NativeCodeModeCell {
     private val closed = AtomicBoolean()
     private val advancing = Mutex()
@@ -33,6 +34,10 @@ internal class NativeCell(
     private val pending = java.util.concurrent.ConcurrentHashMap<String, JsonElement>()
     private val readySteps = ArrayDeque<CodeModeStep>()
     private var observation: CompletableDeferred<JsonObject>? = initial
+
+    init {
+        connection.events.own(sessionId, cellId, lease)
+    }
 
     override suspend fun advance(results: List<CodeModeResult>): CodeModeStep {
         submitResults(results)
@@ -119,13 +124,27 @@ internal class NativeCell(
         }
     }
 
-    private fun invoke(id: JsonElement, invocation: JsonObject): CodeModeStep {
+    private suspend fun invoke(id: JsonElement, invocation: JsonObject): CodeModeStep? {
         val tool = invocation.getValue("tool_name").jsonObject
         val name = JsonScalars.str(tool, "name") ?: error("Native tool callback has no name")
         check(name in tools) { "Native callback requested a tool outside the client catalog" }
+        val arguments = invocation["input"] as? JsonObject
+        if (arguments == null) {
+            connection.send(
+                NativeRequests.delegate(
+                    id,
+                    CodeModeResult(
+                        "native-$id",
+                        "Client function tool $name requires a JSON object argument",
+                        isError = true,
+                    ),
+                ),
+            )
+            connection.events.answered(id.toString())
+            return null
+        }
         val callId = "native-$id"
         pending[callId] = id
-        val arguments = invocation["input"] as? JsonObject ?: JsonObject(emptyMap())
         return CodeModeStep.Calls(listOf(CodeModeCall(callId, name, arguments)))
     }
 
@@ -135,6 +154,7 @@ internal class NativeCell(
         return NativeOutput.decode(NativeFrames.value(operation.response.await())).also {
             closed.set(true)
             pending.clear()
+            lease.close()
             if (!advancing.isLocked) connection.events.release(sessionId, cellId)
         }
     }
@@ -142,6 +162,7 @@ internal class NativeCell(
     private fun release() {
         closed.set(true)
         pending.clear()
+        lease.close()
         connection.events.release(sessionId, cellId)
     }
 
@@ -151,6 +172,7 @@ internal class NativeCell(
                 Cancellables.runCatchingBestEffort {
                     connection.operation(NativeRequests.terminate(sessionId, cellId)).response.await()
                 }
+                lease.close()
                 if (!advancing.isLocked) connection.events.release(sessionId, cellId)
             }
         }

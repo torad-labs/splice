@@ -24,6 +24,7 @@ internal class NativeConnection(
     private val process: Process,
     private val scope: CoroutineScope,
     private val ioDispatcher: CoroutineDispatcher,
+    private val onClosed: Runnable,
 ) : AutoCloseable {
     private val closed = AtomicBoolean()
     private val writer = Mutex()
@@ -104,7 +105,7 @@ internal class NativeConnection(
             "operation/response", "execute/initialResponse" -> operations.deliver(frame)
             "delegate/request" -> events.deliver(frame)
             "delegate/cancel" -> events.cancel(frame)
-            "cell/closed" -> Unit // Initial output can arrive after this lifecycle notification.
+            "cell/closed" -> events.completed(frame) // Release the heap reservation while preserving pending output.
             else -> throw IOException("Unknown native code-mode host frame type")
         }
     }
@@ -128,6 +129,7 @@ internal class NativeConnection(
             operations.fail(error)
             events.fail(error)
             process.destroyForcibly()
+            onClosed.run()
         }
     }
 }

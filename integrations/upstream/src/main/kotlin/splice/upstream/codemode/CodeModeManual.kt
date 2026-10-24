@@ -1,11 +1,5 @@
-// NEW: V4-388 — codex-rs code-mode-protocol/src/description.rs and core/src/tools/code_mode/execute_spec.rs,
-// ported: the one `exec` tool a code_mode_only model is trained on, whose description is the manual of
-// every nested tool. The template (exec-description.txt) is codex's EXEC_DESCRIPTION_TEMPLATE with the
-// lines splice's runtime does not honor removed — image, audio, generatedImage, store, load, notify,
-// setTimeout, clearTimeout, yield_control, and the `// @exec:` pragma with its yield_time_ms and
-// max_output_tokens (no wait tool, nothing parses them) — and the argument/return lines stated as the
-// cell runs them (an object in, the output string back; Bash as the example, exec_command is codex's).
-// codex swaps helper lines by runtime capability the same way (ImageDetailVisibility).
+// Codex's full native EXEC_DESCRIPTION_TEMPLATE, with its default yield budget and image helper rendered.
+// All advertised globals execute in the bundled upstream host; this is also the manual for client tools.
 package splice.upstream.codemode
 
 import kotlinx.serialization.json.JsonElement

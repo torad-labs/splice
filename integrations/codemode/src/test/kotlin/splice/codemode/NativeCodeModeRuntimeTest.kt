@@ -9,9 +9,11 @@ import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertNotNull
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
+import splice.codemode.host.PoolLimits
 import splice.upstream.codemode.CodeModeResult
 import splice.upstream.codemode.CodeModeStep
 import splice.upstream.codemode.NativeCodeModeOptions
+import splice.upstream.failure.CodeModeCapacityException
 
 class NativeCodeModeRuntimeTest {
     @Test
@@ -161,6 +163,47 @@ class NativeCodeModeRuntimeTest {
             assertEquals("accepted", (observation.await() as CodeModeStep.Completed).output)
         }
     }
+
+    @Test
+    fun `malformed client function input rejects its promise without issuing a callback`() = runTest {
+        NativeCodeModeRuntime().use { runtime ->
+            val source = "try { await tools.Read('wrong'); } catch(e) { text(String(e)); }"
+            val result = runtime.startSession("invalid-input", source, setOf("Read")).advance()
+            assertEquals(
+                "Client function tool Read requires a JSON object argument",
+                (result as CodeModeStep.Completed).output,
+            )
+        }
+    }
+
+    @Test
+    fun `yielded cells retain configured capacity until their termination is acknowledged`() = runTest {
+        NativeCodeModeRuntime(
+            limits = PoolLimits(memoryBudgetMb = NATIVE_TEST_MEMORY_MB),
+            cellHeapMb = NATIVE_TEST_HEAP_MB,
+        ).use { runtime ->
+            val cell = runtime.startNativeSession(
+                "capacity",
+                "yield_control(); await new Promise(()=>{});",
+                emptySet(),
+                emptyMap(),
+                NativeCodeModeOptions(),
+            )
+            assertTrue(cell.advance() is CodeModeStep.Yielded)
+            var refused = false
+            try {
+                runtime.startSession("capacity", "text('must not start');", emptySet())
+            } catch (_: CodeModeCapacityException) {
+                refused = true
+            }
+            assertTrue(refused)
+            cell.terminate()
+            val resumed = runtime.startSession("capacity", "text('after release');", emptySet()).advance()
+            assertEquals("after release", (resumed as CodeModeStep.Completed).output)
+        }
+    }
 }
 
 private const val NATIVE_TEST_WAIT_MS: Long = 1_000
+private const val NATIVE_TEST_MEMORY_MB: Long = 224
+private const val NATIVE_TEST_HEAP_MB: Int = 16

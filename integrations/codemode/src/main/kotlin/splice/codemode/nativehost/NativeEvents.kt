@@ -11,6 +11,7 @@ import java.util.concurrent.ConcurrentHashMap
 internal class NativeEvents {
     private val cells = ConcurrentHashMap<Pair<String, String>, Channel<JsonObject>>()
     private val delegates = ConcurrentHashMap<String, Pair<String, String>>()
+    private val leases = ConcurrentHashMap<Pair<String, String>, NativeCellLease>()
 
     @Volatile private var failure: CodeModeWorkerLostException? = null
 
@@ -38,8 +39,19 @@ internal class NativeEvents {
         delegates.remove(delegateId)
     }
 
+    fun own(sessionId: String, cellId: String, lease: NativeCellLease) {
+        leases[sessionId to cellId] = lease
+    }
+
+    fun completed(frame: JsonObject) {
+        val sessionId = requireNotNull(JsonScalars.str(frame, "sessionId"))
+        val cellId = requireNotNull(JsonScalars.str(frame, "cellId"))
+        leases.remove(sessionId to cellId)?.close()
+    }
+
     fun release(sessionId: String, id: String) {
         val key = sessionId to id
+        leases.remove(key)?.close()
         cells.remove(key)?.close()
         delegates.entries.removeIf { it.value == key }
     }
@@ -47,5 +59,7 @@ internal class NativeEvents {
     fun fail(error: CodeModeWorkerLostException) {
         failure = error
         cells.values.forEach { it.close(error) }
+        leases.values.forEach(NativeCellLease::close)
+        leases.clear()
     }
 }

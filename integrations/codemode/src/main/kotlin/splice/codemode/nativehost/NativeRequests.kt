@@ -21,6 +21,12 @@ internal object NativeRequests {
         put(NATIVE_SESSION_ID, sessionId)
     }
 
+    fun open(sessionId: String, heapBytes: Long): JsonObject = buildJsonObject {
+        put(NATIVE_METHOD, "session/open")
+        put(NATIVE_SESSION_ID, sessionId)
+        put("cellExecutionLimits", buildJsonObject { put("maxHeapSizeBytes", heapBytes) })
+    }
+
     fun execute(sessionId: String, source: String, catalog: Map<String, String>, options: NativeCodeModeOptions) =
         buildJsonObject {
             put(NATIVE_METHOD, "session/execute")

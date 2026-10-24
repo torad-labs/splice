@@ -3,7 +3,7 @@ package splice.upstream.codemode
 /** Foreground observation budgets passed unchanged to the pinned native runtime. */
 public data class NativeCodeModeOptions(
     val yieldTimeMs: Long = 10_000,
-    val maxOutputTokens: Int = 10_000,
+    val maxOutputTokens: Long = 10_000,
 ) {
     init {
         require(yieldTimeMs >= 0) { "Native observation time must be nonnegative" }

@@ -8,10 +8,14 @@ import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeout
+import splice.codemode.host.PoolLimits
 import splice.codemode.nativehost.NativeCell
+import splice.codemode.nativehost.NativeCellAdmission
+import splice.codemode.nativehost.NativeCellLease
 import splice.codemode.nativehost.NativeConnection
 import splice.codemode.nativehost.NativeFrames
 import splice.codemode.nativehost.NativeHostArtifact
+import splice.codemode.nativehost.NativePendingStart
 import splice.codemode.nativehost.NativeRequests
 import splice.core.util.Cancellables
 import splice.core.util.JsonScalars
@@ -31,6 +35,8 @@ import java.util.concurrent.atomic.AtomicBoolean
 
 /** Executes full modules in the bundled Codex host while client callbacks retain their permission boundary. */
 public class NativeCodeModeRuntime(
+    limits: PoolLimits = PoolLimits(),
+    cellHeapMb: Int = DEFAULT_HEAP_MB,
     private val ioDispatcher: CoroutineDispatcher = ProcessDispatchers().io(),
     private val spawn: WorkerSpawn = WorkerSpawn(ProcessBuilder::start),
     private val artifact: NativeHostArtifact = NativeHostArtifact(),
@@ -40,6 +46,7 @@ public class NativeCodeModeRuntime(
     private val scope = LifecycleScope(ioDispatcher)
     private val opening = Mutex()
     private val sessions = java.util.concurrent.ConcurrentHashMap<String, String>()
+    private val admission = NativeCellAdmission(limits, cellHeapMb)
 
     @Volatile private var connection: NativeConnection? = null
 
@@ -71,20 +78,51 @@ public class NativeCodeModeRuntime(
         options: NativeCodeModeOptions,
     ): NativeCodeModeCell {
         require(sessionKey.isNotBlank()) { "Native code-mode session key is required" }
-        val (host, sessionId) = beforeDispatch(sessionKey)
-        // A failure from this point can follow execution. It must never authorize a source retry.
-        val operation = host.operation(
-            NativeRequests.execute(
-                sessionId,
-                source,
-                CodeModeManual.nestedNames(tools).associateWith { descriptions[it].orEmpty() },
-                options,
-            ),
-            execute = true,
-        )
-        val accepted = NativeFrames.value(operation.response.await())
-        val cellId = JsonScalars.str(accepted, "cellId") ?: throw IOException("Native host did not accept a cell")
-        return NativeCell(cellId, sessionId, host, scope, requireNotNull(operation.initial), tools)
+        require(
+            options.maxOutputTokens <= Int.MAX_VALUE,
+        ) { "Native execute output budget exceeds protocol V1 i32 range" }
+        val lease = admission.reserve()
+        var transferred = false
+        var started: NativePendingStart? = null
+        try {
+            val (host, sessionId) = beforeDispatch(sessionKey)
+            // A failure from this point can follow execution. It must never authorize a source retry.
+            val operation = host.operation(
+                NativeRequests.execute(
+                    sessionId,
+                    source,
+                    CodeModeManual.nestedNames(tools).associateWith { descriptions[it].orEmpty() },
+                    options,
+                ),
+                execute = true,
+            )
+            started = NativePendingStart(host, sessionId, operation)
+            val accepted = NativeFrames.value(operation.response.await())
+            val cellId = JsonScalars.str(accepted, "cellId") ?: throw IOException("Native host did not accept a cell")
+            return NativeCell(cellId, sessionId, host, scope, requireNotNull(operation.initial), tools, lease).also {
+                transferred = true
+            }
+        } finally {
+            if (!transferred) abandon(started, lease)
+        }
+    }
+
+    private fun abandon(started: NativePendingStart?, lease: NativeCellLease) {
+        if (started == null) {
+            lease.close()
+        } else {
+            scope.launch {
+                try {
+                    Cancellables.runCatchingBestEffort {
+                        val accepted = NativeFrames.value(started.operation.response.await())
+                        val id = requireNotNull(JsonScalars.str(accepted, "cellId"))
+                        started.host.operation(NativeRequests.terminate(started.sessionId, id)).response.await()
+                    }
+                } finally {
+                    lease.close()
+                }
+            }
+        }
     }
 
     private suspend fun beforeDispatch(sessionKey: String): Pair<NativeConnection, String> = try {
@@ -93,7 +131,7 @@ public class NativeCodeModeRuntime(
                 check(!closed.get()) { "Native code-mode runtime is closed" }
                 val host = connection ?: open().also { connection = it }
                 val sessionId = sessions[sessionKey] ?: UUID.randomUUID().toString().also { id ->
-                    NativeFrames.value(host.operation(NativeRequests.session("session/open", id)).response.await())
+                    NativeFrames.value(host.operation(NativeRequests.open(id, admission.heapBytes)).response.await())
                     sessions[sessionKey] = id
                 }
                 host to sessionId
@@ -110,6 +148,7 @@ public class NativeCodeModeRuntime(
                 spawn(ProcessBuilder(artifact.resolve().toString(), "--listen", "stdio")),
                 scope,
                 ioDispatcher,
+                Runnable(admission::closeAll),
             ).also { connection = it }
         }
         try {
@@ -144,6 +183,7 @@ public class NativeCodeModeRuntime(
                 host.close()
             }
             sessions.clear()
+            admission.closeAll()
             scope.cancel()
         }
     }

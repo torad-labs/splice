@@ -104,11 +104,9 @@ internal class ShareServer(
     private suspend fun admitted(call: ApplicationCall): Boolean {
         val source = call.request.origin.remoteAddress
         val host = call.request.headers[HttpHeaders.Host]
-        val reason = when {
-            !endpoint.network.admitsSource(source) -> "requests from $source are not from this machine's LAN"
-            !endpoint.network.admitsHost(host) -> "this Host is not one of this machine's names"
-            else -> return true
-        }
+        val reason = endpoint.network.refusal(source)
+            ?: "this Host is not one of this machine's names".takeUnless { endpoint.network.admitsHost(host) }
+            ?: return true
         refuse(call, HttpStatus.FORBIDDEN, reason)
         return false
     }

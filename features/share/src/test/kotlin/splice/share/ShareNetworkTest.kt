@@ -9,12 +9,17 @@
 // one network every customer in the region shares (round 8), so a source a datacenter interface holds, in any range,
 // is refused. Link-local is refused there in either family, since no prefix says which link it came in on, and a
 // machine whose interfaces cannot be read cannot tell a house from a datacenter, so it admits loopback alone (round 9).
+// That holds for the OS read itself failing, an interface going away mid-read, and a machine turned away then is told
+// this machine could not read its networks, never that it is off the LAN (round 10).
 package splice.share
 
+import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertFalse
+import org.junit.jupiter.api.Assertions.assertNull
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 import java.net.InetAddress
+import java.net.SocketException
 
 internal class ShareNetworkTest {
 
@@ -135,6 +140,30 @@ internal class ShareNetworkTest {
         assertTrue(unreadable().admitsSource("::1"), "this machine itself, over IPv6")
         listOf("192.168.140.20", "192.168.1.5", "10.3.2.1", "fe80::1", "169.254.7.7", "100.64.0.3", "fd00::1")
             .forEach { source -> assertFalse(unreadable().admitsSource(source), "$source could be a datacenter's") }
+    }
+
+    @Test
+    fun `a read of this machine's own networks that fails admits loopback alone, and the log says why`() {
+        val logged = mutableListOf<String>()
+        // An interface that went away mid-read (a Docker veth, a VPN stopping): the OS read throws.
+        val failing = HostPrefixes({ logged += it }, InterfaceRead { throw SocketException("No such device") })
+        val linode = ShareNetwork("linode", emptyList(), failing)
+
+        assertFalse(linode.admitsSource("192.168.140.20"), "another customer on the datacenter's private network")
+        assertFalse(linode.admitsSource("192.168.1.5"), "or what looks like a house neighbour")
+        assertTrue(linode.admitsSource("127.0.0.1"), "this machine itself")
+        assertTrue(logged.any { "No such device" in it && "only loopback is admitted" in it }, "logged: $logged")
+    }
+
+    @Test
+    fun `a machine turned away because these networks could not be read is told that, not that it is off the LAN`() {
+        assertEquals(
+            "this machine could not read its own networks; only loopback is admitted until it can",
+            unreadable().refusal("192.168.1.243"),
+        )
+        assertEquals("requests from 203.0.113.7 are not from this machine's LAN", home().refusal("203.0.113.7"))
+        assertNull(home().refusal("192.168.1.243"), "a house neighbour is admitted")
+        assertNull(unreadable().refusal("127.0.0.1"), "and this machine itself, read or not")
     }
 
     @Test

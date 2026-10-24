@@ -4,7 +4,8 @@
 // an RFC 1918 address and no public IPv4 one, which is how a house whose router hands out a globally routable /64
 // reaches itself. A source on any prefix a datacenter interface holds (one with a public IPv4 address) is refused,
 // whatever its range: a provider's private network, link and /64 are shared with its other customers. A machine whose
-// interfaces cannot be read admits loopback alone, since nothing then tells a house from a datacenter. The Host must
+// interfaces cannot be read admits loopback alone, since nothing then tells a house from a datacenter, and tells a
+// machine it turns away that, not that it is off the LAN, which it may well be on. The Host must
 // be an IP literal or one of this machine's own names, the share listener's counterpart of LoopbackHost: a page whose
 // DNS was rebound onto this address arrives with its own name in Host and is refused, so a browser on the LAN cannot
 // be turned into a client.
@@ -35,13 +36,17 @@ internal class ShareNetwork(
         hostnames.forEach { add(it.lowercase().trimEnd('.')) }
     }
 
-    fun admitsSource(address: String): Boolean {
-        val ip = literal(address) ?: return false
+    /** Why [address] may not reach the listener, in words for the machine turned away, or null when it may. */
+    fun refusal(address: String): String? {
+        val ip = literal(address)
+        if (ip?.isLoopbackAddress == true) return null
         // Interfaces that could not be read cannot tell a house from a datacenter: loopback alone is admitted then.
-        val links = attached.now()?.groupBy { it.link }?.values
-        return ip.isLoopbackAddress ||
-            links != null && !datacenter(ip, links) && (privateRange(ip) || onThisLan(ip, links))
+        val links = attached.now()?.groupBy { it.link }?.values ?: return UNREAD_NETWORKS
+        val lan = ip != null && !datacenter(ip, links) && (privateRange(ip) || onThisLan(ip, links))
+        return if (lan) null else "requests from $address are not from this machine's LAN"
     }
+
+    fun admitsSource(address: String): Boolean = refusal(address) == null
 
     private fun privateRange(ip: InetAddress): Boolean =
         ip.isSiteLocalAddress || ip.isLinkLocalAddress || carrierGrade(ip) || uniqueLocal(ip)
@@ -138,21 +143,35 @@ internal fun interface AttachedPrefixes {
  *  alone for that request: the refusal is the safe side, and [log] says why, since a machine on the LAN being turned
  *  away otherwise looks like a wrong address. An interface that goes away mid-read (a container or VPN stopping) fails
  *  the read, and the next request reads again. */
-internal class HostPrefixes(private val log: LogSink) : AttachedPrefixes {
+internal class HostPrefixes(
+    private val log: LogSink,
+    private val read: InterfaceRead = InterfaceRead {
+        NetworkInterface.getNetworkInterfaces().asSequence()
+            .filter { it.isUp }
+            .flatMap { link ->
+                link.interfaceAddresses.asSequence()
+                    .map { SharePrefix(it.address, it.networkPrefixLength.toInt(), link.name) }
+            }
+            .toList()
+    },
+) : AttachedPrefixes {
     override fun now(): List<SharePrefix>? =
-        Cancellables.runCatchingCancellable {
-            NetworkInterface.getNetworkInterfaces().asSequence()
-                .filter { it.isUp }
-                .flatMap { link ->
-                    link.interfaceAddresses.asSequence()
-                        .map { SharePrefix(it.address, it.networkPrefixLength.toInt(), link.name) }
-                }
-                .toList()
-        }.onFailure { failure ->
+        Cancellables.runCatchingCancellable { read.prefixes() }.onFailure { failure ->
             val why = SafeFailureText.render(failure)
             log("[share] this machine's own networks could not be read ($why); only loopback is admitted for now\n")
         }.getOrNull()
 }
+
+/** The OS's own read of this machine's interfaces, the one part of [HostPrefixes] a test cannot make fail for real. */
+internal fun interface InterfaceRead {
+    /** Every prefix an interface that is up holds; throws when the OS read fails. */
+    fun prefixes(): List<SharePrefix>
+}
+
+// why: a machine on the LAN refused while this one cannot read its own networks is told the real cause, which a retry
+// may outlast; "not from this machine's LAN" would be false for it, and the cause would be in this machine's log alone.
+private const val UNREAD_NETWORKS =
+    "this machine could not read its own networks; only loopback is admitted until it can"
 
 // why: 100.64.0.0/10, carrier-grade NAT and the range Tailscale hands out, starts with the octet 100.
 private const val CGNAT_FIRST_OCTET = 100

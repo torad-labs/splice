@@ -39,7 +39,8 @@ login is asked for.
   included in either family, since no prefix says which link one came in on (IPv6 puts `fe80::/64` on
   every interface, and macOS and RHEL route `169.254/16` onto one without holding it); a private
   network routed to the machine some other way is still admitted. A machine whose interfaces cannot
-  be read cannot tell a house from a datacenter, so it admits loopback alone for that request. An interface
+  be read cannot tell a house from a datacenter, so it admits loopback alone for that request, and the 403 says so
+  ("this machine could not read its own networks"), never that the source is off its LAN. An interface
   with no IPv4 address says nothing either way and admits no one on its own prefixes. An address past
   every house prefix is still refused, and IPv4 is otherwise left to the private ranges. Marcos's "a
   private-network machine that asks is accepted" (2026-10-22) is read as his house: a datacenter's

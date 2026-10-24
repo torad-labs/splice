@@ -102,7 +102,8 @@ function joinedHtml(joined, on) {
 
 /** Whether Claude Code sessions cross with this machine, and this card's switch: off until he turns it on. [side] is
  *  "machines" for one that joined this machine and "remotes" for one this machine joined. A machine on both lists has a
- *  switch on each card, and nothing crosses until both are on. */
+ *  switch on each card, and nothing crosses until both are on. A card of one that joined names the join it shows, so a
+ *  machine that joined since under its name is not turned on by it. */
 function crossingHtml(m, side, key) {
   const on = m.sessions === true;
   const other = side === "machines" ? "Other machines" : "Machines that joined";
@@ -110,7 +111,8 @@ function crossingHtml(m, side, key) {
   if (!on) says = `<span class="hint">Off: its sessions and this machine's don't see or message each other</span>`;
   else if (m.crossing === false) says = `<span class="hint">On here, Off on its card under ${other}: nothing crosses until both are on</span>`;
   else says = countsHtml(m);
-  const btn = (want, label) => `<button data-act="sessions" data-side="${side}" data-name="${esc(m.name)}" data-on="${want ? 1 : 0}" aria-pressed="${on === want}"${busy(key) ? " disabled" : ""}>${label}</button>`;
+  const joined = side === "machines" ? ` data-joined="${esc(m.joined_at ?? "")}"` : "";
+  const btn = (want, label) => `<button data-act="sessions" data-side="${side}" data-name="${esc(m.name)}"${joined} data-on="${want ? 1 : 0}" aria-pressed="${on === want}"${busy(key) ? " disabled" : ""}>${label}</button>`;
   return `<div class="crossing"><span class="sub">Sessions</span>${says}<div class="switch small" role="group" aria-label="Sessions with ${esc(m.name)}">${btn(false, "Off")}${btn(true, "On")}</div></div>`;
 }
 
@@ -258,7 +260,8 @@ document.addEventListener("click", async (e) => {
     case "sessions": {
       if (t.getAttribute("aria-pressed") === "true") return;
       const machines = t.dataset.side === "machines", name = encodeURIComponent(t.dataset.name);
-      act(`${machines ? "machine" : "remote"}:${t.dataset.name}`, () => API.put(`/api/${machines ? "share/machines" : "remotes"}/${name}/sessions`, { on: t.dataset.on === "1" }));
+      const body = machines ? { on: t.dataset.on === "1", joined_at: t.dataset.joined } : { on: t.dataset.on === "1" };
+      act(`${machines ? "machine" : "remote"}:${t.dataset.name}`, () => API.put(`/api/${machines ? "share/machines" : "remotes"}/${name}/sessions`, body));
       return;
     }
     case "remove": act(`remote:${t.dataset.name}`, () => API.del(`/api/remotes/${encodeURIComponent(t.dataset.name)}`)); return;

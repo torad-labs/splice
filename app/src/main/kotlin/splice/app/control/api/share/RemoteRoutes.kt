@@ -8,7 +8,8 @@
 //
 // Each runs `splice remote`'s own classes, so the page and the CLI take one path. The last three change splice.toml's
 // heads, which the daemon reads only at start, so each answers `restart: true` and the page takes the console's own
-// restart (POST /api/daemon/restart), which waits for compactions and cuts only what the person agreed to.
+// restart (POST /api/daemon/restart), which waits for compactions and cuts only what the person agreed to. Each reads
+// and writes the splice.toml the daemon booted (SharingParts), the one its links read.
 package splice.app.control.api.share
 
 import io.ktor.http.HttpStatusCode
@@ -38,9 +39,12 @@ import splice.share.remote.RemoteTrust
 import splice.terminal.ConfirmPrompt
 import splice.upstream.codemode.ProcessDispatchers
 
-internal class RemoteRoutes {
-    private val env = EnvReader(System::getenv)
+internal class RemoteRoutes(private val wired: SharingWired) {
     private val io = ProcessDispatchers().io()
+
+    /** The daemon's environment, naming the splice.toml it booted; this process's where no daemon built the page's
+     *  parts. */
+    private val env: EnvReader get() = wired.parts()?.daemonEnv ?: EnvReader(System::getenv)
 
     /** The sharing machines that answer on this machine's networks, this one left out, each marked when joined. */
     suspend fun scan(): JsonReply = withContext(io) {

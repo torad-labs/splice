@@ -129,9 +129,11 @@ internal class ShareServer(
         root.route("$SHARE_HEADS_PATH/{head}") {
             // Any answer proves the path is there: what `splice add`'s reachability check asks of a base URL.
             get { call.respondText("splice share: head '${call.parameters["head"]}'\n") }
-            post("/v1/messages") { guarded(call, turn = true)?.let { relayed(call, "/v1/messages", it) } }
-            post("/v1/messages/count_tokens") { guarded(call)?.let { relayed(call, "/v1/messages/count_tokens", it) } }
-            get("/v1/models") { guarded(call)?.let { relayed(call, "/v1/models", it) } }
+            post("/v1/messages") { guarded(call, turn = true)?.let { relayed(call, "/v1/messages", it.name) } }
+            post("/v1/messages/count_tokens") {
+                guarded(call)?.let { relayed(call, "/v1/messages/count_tokens", it.name) }
+            }
+            get("/v1/models") { guarded(call)?.let { relayed(call, "/v1/models", it.name) } }
             get("/roster") { guarded(call)?.let { roster(call) } }
             get("/usage") { guarded(call)?.let { usage(call) } }
         }
@@ -148,11 +150,12 @@ internal class ShareServer(
         }
     }
 
-    /** The joined machine whose token this is, counted as heard from ([turn] counts a relayed turn); anything else is
+    /** The joined machine whose token this is, as its join booked it, counted as heard from ([turn] counts a relayed
+     *  turn); anything else is
      *  answered here, with a 401 in words, and is null. A route that [crossing] reaches this machine's sessions also
      *  needs that machine's Sessions switch on here (the President's decision on the round-1 review, Oct 23: trust the
      *  LAN for commands, not for sessions); one whose switch is off is answered with a 403 in words, and is null. */
-    private suspend fun guarded(call: ApplicationCall, turn: Boolean = false, crossing: Boolean = false): String? {
+    private suspend fun guarded(call: ApplicationCall, turn: Boolean = false, crossing: Boolean = false): ShareClient? {
         val bearer = BearerScheme.bearerToken(call.request.headers[HttpHeaders.Authorization])
         val holder = withContext(io) { clients.holder(bearer)?.also { heard(it.name, turn) } }
         val refused = when {
@@ -164,7 +167,7 @@ internal class ShareServer(
             else -> null
         }
         refused?.let { (status, why) -> refuse(call, status, why) }
-        return holder?.name?.takeIf { refused == null }
+        return holder?.takeIf { refused == null }
     }
 
     /** Counts [name] as heard from, as [guarded] does. A last seen the disk will not take, at most one write a minute, is

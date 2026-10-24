@@ -13,6 +13,7 @@ import splice.core.usage.QuotaJson
 import splice.core.usage.QuotaSnapshot
 import splice.core.util.Cancellables
 import splice.core.util.SafeFailureText
+import splice.core.util.TerminalText
 import splice.core.wire.HttpStatus
 import splice.share.OUTBOX_MAX_WAIT_S
 import splice.share.SHARE_HEALTH_PATH
@@ -51,7 +52,8 @@ public class RemoteApi internal constructor(
         .build()
 
     /** The picker of the head whose relay is [base] (`<url>/share/v1/heads/<key>`), as that machine serves it now. */
-    public fun roster(base: String): SharedHead = json.decodeFromString(SharedHead.serializer(), get("$base/roster"))
+    public fun roster(base: String): SharedHead =
+        json.decodeFromString(SharedHead.serializer(), get("$base/roster")).cleaned()
 
     /** That head's plan windows now, or null when it holds none. */
     public fun usage(base: String): QuotaSnapshot? = QuotaJson().decode(get("$base/usage"))
@@ -105,7 +107,7 @@ public class RemoteApi internal constructor(
         val response = Cancellables.runCatchingCancellable { http.send(request, HttpResponse.BodyHandlers.ofString()) }
             .getOrElse { failure -> throw RemoteUnanswered("$name did not answer: ${why(failure)}", failure) }
         if (response.statusCode() != HttpStatus.OK) {
-            throw RemoteUnanswered("$name answered ${response.statusCode()}: ${said(response.body())}")
+            throw RemoteUnanswered("$name answered ${response.statusCode()}: ${RemoteSaid.of(json, response.body())}")
         }
         return response.body()
     }
@@ -121,14 +123,17 @@ public class RemoteApi internal constructor(
     /** This machine's token on [name], read per request so a re-join lands with no restart. */
     private fun token(): String =
         store.token(name) ?: throw RemoteUnanswered("no token is kept for $name; run `splice remote add` for it")
+}
 
-    /** The message of a share refusal (the Anthropic error shape), else the body's start. */
-    private fun said(body: String): String {
+/** What a machine said when it refused: the message of a share refusal (the Anthropic error shape), else the body's
+ *  start, printable (TerminalText) and a line's length at most, as it is logged, printed and shown as the reason. */
+internal object RemoteSaid {
+    fun of(json: Json, body: String): String {
         val message = Cancellables.runCatchingCancellable {
             val error = json.parseToJsonElement(body) as? JsonObject
             ((error?.get("error") as? JsonObject)?.get("message") as? JsonPrimitive)?.content
         }.fold(onSuccess = { it }, onFailure = { null })
-        return message ?: body.take(SAID_MAX_CHARS)
+        return TerminalText.line(message ?: body, SAID_MAX_CHARS)
     }
 }
 
@@ -144,5 +149,5 @@ private const val REMOTE_API_CONNECT_MS = 3_000L
 // why: every guarded read is a small answer built in memory on the sharing machine.
 private const val REMOTE_API_REQUEST_MS = 10_000L
 
-// why: enough of an unexpected body to recognize what answered, never a page of it.
+// why: enough of a refusal to read why, or of an unexpected body to recognize what answered, never a page of it.
 private const val SAID_MAX_CHARS = 200

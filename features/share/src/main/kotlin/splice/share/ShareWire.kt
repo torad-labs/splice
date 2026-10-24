@@ -16,6 +16,7 @@ import splice.core.topology.ProviderFamilyRule
 import splice.core.topology.ShareConfig
 import splice.core.topology.Topology
 import splice.core.usage.QuotaSnapshot
+import splice.core.util.TerminalText
 import java.time.Instant
 
 /** `GET /share/v1/info`: who this machine is and the heads it offers, as their pickers show them now. */
@@ -27,7 +28,16 @@ public data class ShareInfo(
     /** The SHA-256 of the certificate this listener serves (ShareFingerprint). A client pins it at the join, which
      *  only goes ahead over a connection showing that certificate; null from a phase-1 machine. */
     public val fingerprint: String? = null,
-)
+) {
+    /** This description as this machine reads it: every text another machine wrote, made printable (TerminalText), as
+     *  it is read before any pin exists, from whatever answers at the address, and printed for a person to trust. */
+    internal fun cleaned(): ShareInfo = ShareInfo(
+        TerminalText.printable(server),
+        TerminalText.printable(version),
+        heads.map(SharedHead::cleaned),
+        fingerprint?.let(TerminalText::printable),
+    )
+}
 
 /** One offered head: what a client needs to regenerate the same command against it. The pinned model is
  *  [models]' first row. */
@@ -39,7 +49,15 @@ public data class SharedHead(
     /** The vendor family of the head's provider here (ProviderFamilyRule): what the client's console colours the
      *  regenerated head by, since its own provider only relays. Null where this machine names none. */
     public val family: String? = null,
-)
+) {
+    /** This head with every text another machine wrote made printable (TerminalText). */
+    internal fun cleaned(): SharedHead = copy(
+        key = TerminalText.printable(key),
+        command = TerminalText.printable(command),
+        models = models.map(SharedModel::cleaned),
+        family = family?.let(TerminalText::printable),
+    )
+}
 
 /** One picker row: the wire id, its label, its window in force now (an `extra_windows` entry over the row's own),
  *  the Claude tiers that name it, and the card it is priced at. */
@@ -58,7 +76,14 @@ public data class SharedModel(
      *  it mirrors this one onto the row, and its statusline and accounting price the turns as this machine does.
      *  A card's peak hours do not travel, as splice.toml has no spelling for them. */
     public val rates: ModelRates? = null,
-)
+) {
+    /** This row with every text another machine wrote made printable (TerminalText). */
+    internal fun cleaned(): SharedModel = copy(
+        id = TerminalText.printable(id),
+        label = TerminalText.printable(label),
+        slots = slots.map(TerminalText::printable),
+    )
+}
 
 /** The heads this machine offers, described from what each running head serves NOW: its live catalog (rows,
  *  windows in force, pinned model, the Claude tiers that name each row), not a re-read of splice.toml. A client

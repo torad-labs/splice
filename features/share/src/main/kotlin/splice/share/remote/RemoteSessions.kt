@@ -9,12 +9,15 @@
 // Each look gives a machine's mirrors three looks more (SessionMirrors ends them), as its offers do on the other side.
 // Since round 13 of PR #419's review, what this machine acknowledged of each outbox is kept on disk (RemoteAcks), so a
 // restart hands no note over twice, and a look or a collection that fails in a way nothing foresaw starts again a look
-// later, so no one failure ends a machine's link.
+// later, so no one failure ends a machine's link. Since round 14, each note is acknowledged on disk as it is handed
+// over, and a stop lands between two notes, so a stop part way through a collection hands none of them over again; a
+// collection that fails is said in the log once while it keeps failing, as a look is, and so is its coming back.
 package splice.share.remote
 
 import kotlinx.coroutines.CoroutineExceptionHandler
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
@@ -31,9 +34,7 @@ import splice.sessions.mirror.MirrorLink
 import splice.sessions.mirror.MirroredSession
 import splice.sessions.mirror.SessionMirrors
 import splice.sessions.peer.DeliveryStatus
-import splice.share.LEASE_LOOKS
-import splice.share.LEASE_MAX_MS
-import splice.share.LEASE_MIN_MS
+import splice.share.ShareLease
 import splice.share.ShareNote
 import splice.share.ShareOutbox
 import splice.share.ShareOutboxAck
@@ -57,8 +58,8 @@ public class RemoteSessions(
     private val io = ProcessDispatchers().io()
     private val acks = RemoteAcks(acks, log)
 
-    /** How long a machine's mirrors here last without another look that answers: three looks, as on the other side. */
-    private val lasts = (lookMs * LEASE_LOOKS).coerceIn(LEASE_MIN_MS, LEASE_MAX_MS)
+    /** How long a machine's mirrors here last without another look that answers, as on the other side. */
+    private val lasts = ShareLease.of(lookMs)
 
     /** Looks at and collects from every joined machine until [scope] ends. Null when this one joined none. Each loop
      *  runs on its own: one that fails is said in the log and starts again a look later, and never stops another
@@ -92,15 +93,18 @@ public class RemoteSessions(
 
     /** Mirrors [name]'s sessions here, each carrying a message by [link]'s carrier, and offers this machine's there,
      *  every [lookMs]. A machine that does not answer has its mirrors withdrawn, which is said once, and so is its coming
-     *  back. */
+     *  back. A switch turned off here withdraws both sides at the next look: [name] is offered none of this machine's. */
     private suspend fun look(name: String, url: String, link: MirrorLink) {
         var failing = false
         var off = false
+        var offered = false
         do {
             if (!links.sessions(name)) {
                 if (!off) log("[remote $name] no session crosses with it: Sessions is off for it on the Sharing page\n")
+                if (offered) leftThere(name, url)
                 withContext(io) { mirrors.withdraw(name) }
                 off = true
+                offered = false
                 failing = false
                 continue
             }
@@ -120,6 +124,7 @@ public class RemoteSessions(
                     failing = false
                     withContext(io) { mirrors.mirror(name, theirs, link) }
                     mirrors.shown(name, shown)
+                    offered = true
                 },
                 onFailure = { failure ->
                     if (!failing) log("[remote $name] its sessions are not mirrored here: ${said(failure)}\n")
@@ -130,27 +135,50 @@ public class RemoteSessions(
         } while (currentCoroutineContext().isActive && ticker.awaitTick(lookMs))
     }
 
+    /** Tells [name] that none of this machine's sessions cross with it now, by an offer of none, so its mirrors of them
+     *  go at once rather than when their time ends; one it does not take ends with their time all the same. */
+    private suspend fun leftThere(name: String, url: String) {
+        val told = Cancellables.runCatchingCancellable {
+            runInterruptible(io) { links.api(name).offer(url, emptyList(), lookMs) }
+        }
+        Cancellables.discard(told, "a machine not told keeps this one's mirrors only until their time ends")
+    }
+
     /** Delivers what [name]'s sessions write to this machine's, as it arrives, and acknowledges it with the next
-     *  collection, so [name] holds a note until it knows it arrived. A collection that fails waits for the next look
-     *  before it tries again; the look says why the machine does not answer. While [name]'s Sessions switch is off it
-     *  collects nothing, and a collection the switch went off under delivers nothing: its notes wait there. A note
-     *  whose sender has no mirror here, made by none of [name]'s looks since a withdraw, is delivered from one made
-     *  with [link], so a reply goes back the same way. What was handed over is acknowledged on disk (RemoteAcks), so
-     *  the collection after a restart here acknowledges it too. */
+     *  collection, so [name] holds a note until it knows it arrived. A collection that fails is said in the log once
+     *  while it keeps failing, and so is its coming back, and waits for the next look before it tries again. While
+     *  [name]'s Sessions switch is off it collects nothing, and a collection the switch went off under delivers nothing:
+     *  its notes wait there. A note whose sender has no mirror here, made by none of [name]'s looks since a withdraw, is
+     *  delivered from one made with [link], so a reply goes back the same way. */
     private suspend fun collect(name: String, url: String, link: MirrorLink) {
+        var failing = false
         do {
             val answer = if (links.sessions(name)) collected(name, url, acks.of(name)) else null
-            val delivered = answer?.takeIf { links.sessions(name) }
-            delivered?.notes?.forEach { deliver(name, it, link) }
-            delivered?.acknowledging()?.let { withContext(io) { acks.delivered(name, it) } }
-            val again = answer != null || ticker.awaitTick(lookMs)
+            answer?.onFailure { if (!failing) log("[remote $name] its notes are not collected: ${said(it)}\n") }
+                ?.onSuccess { outbox ->
+                    if (failing) log("[remote $name] its notes are collected again\n")
+                    if (links.sessions(name)) handed(name, outbox, link)
+                }
+            failing = answer?.isFailure ?: failing
+            val again = answer?.isSuccess == true || ticker.awaitTick(lookMs)
         } while (currentCoroutineContext().isActive && again)
     }
 
-    /** One collection of [name]'s outbox, acknowledging [ack]; null when it failed. */
-    private suspend fun collected(name: String, url: String, ack: ShareOutboxAck?): ShareOutbox? =
+    /** One collection of [name]'s outbox, acknowledging [ack]. */
+    private suspend fun collected(name: String, url: String, ack: ShareOutboxAck?): Result<ShareOutbox> =
         Cancellables.runCatchingCancellable { runInterruptible(io) { links.api(name).outbox(url, ack) } }
-            .fold(onSuccess = { it }, onFailure = { null })
+
+    /** Hands each of [outbox]'s notes to its session here, and acknowledges each on disk (RemoteAcks) once it is handed
+     *  over, whatever stops the link then, so the collection after a restart here acknowledges it too. A stop lands
+     *  between two notes: those after it wait there for the next collection. */
+    private suspend fun handed(name: String, outbox: ShareOutbox, link: MirrorLink) {
+        for (note in outbox.notes) {
+            if (!currentCoroutineContext().isActive) return
+            deliver(name, note, link)
+            val box = outbox.box ?: continue
+            withContext(NonCancellable + io) { acks.delivered(name, ShareOutboxAck(box, note.seq)) }
+        }
+    }
 
     /** Hands [note] to its session here. One whose handing fails in a way nothing foresaw is not delivered, said as a
      *  refused one is, and the notes after it still are: the collection that brought it acknowledges it either way. */

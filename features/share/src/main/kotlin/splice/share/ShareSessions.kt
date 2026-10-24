@@ -85,16 +85,16 @@ internal data class ShareSessionParts(
     val switch: SessionsSwitch,
     val outboxes: ShareOutboxes = ShareOutboxes(),
 ) {
-    /** What [client]'s mirrors hand a note to: its outbox while its Sessions switch is on here, and a refusal in words
-     *  from the moment it is off, or [client] was revoked, by the Sharing page or by `splice share revoke` in a process
-     *  of its own. */
-    fun carrier(client: String): MirrorCarrier {
-        val outbox = outboxes.carrier(client)
+    /** What [client]'s mirrors, made under its join of [joined], hand a note to: its outbox while its Sessions switch is
+     *  on here, and a refusal in words from the moment it is off, or [client] was revoked, by the Sharing page or by
+     *  `splice share revoke` in a process of its own, or joined again since. */
+    fun carrier(client: String, joined: String): MirrorCarrier {
+        val outbox = outboxes.carrier(client, joined)
         return MirrorCarrier { to, from, text ->
-            if (switch.on(client)) {
+            if (switch.on(client, joined)) {
                 outbox.carry(to, from, text)
             } else {
-                MirrorCarried(DeliveryStatus.REFUSED, "$client was revoked here, or its Sessions switch is off")
+                MirrorCarried(DeliveryStatus.REFUSED, "$client was revoked, joined again or switched off here")
             }
         }
     }
@@ -119,50 +119,52 @@ internal class ShareSessionHost(
     /** The machines whose mirrors this listener made, by an offer or a note: withdrawn when it closes. */
     private val served: MutableSet<String> = ConcurrentHashMap.newKeySet()
 
-    /** Whether [client] may list, write into and read from this machine's sessions: its one Sessions switch is on. */
-    fun crossing(client: String): Boolean = parts.switch.on(client)
+    /** Whether [client] may list, write into and read from this machine's sessions: its one Sessions switch is on. One
+     *  whose switch is off has its mirrors here withdrawn as it asks, so an Off ends the crossing at its next look, not
+     *  when their time ends. Blocking. */
+    fun crossing(client: String): Boolean = parts.switch.on(client).also { on -> if (!on) withdraw(client) }
 
     /** This machine's running sessions, as [client] is shown them. */
-    suspend fun list(call: ApplicationCall, client: String) {
+    suspend fun list(call: ApplicationCall, client: ShareClient) {
         val hosting = hosted(call) ?: return
         // Every record is read from disk, which may be slow: never on the listener's few call threads.
         val sessions = withContext(io) { hosting.local() }.map { ShareSession(it.id, it.name, it.heardAt) }
         respond(call, ShareSessions.serializer(), ShareSessions(sessions))
-        hosting.shown(client, sessions.size)
+        hosting.shown(client.name, sessions.size)
     }
 
     /** [client]'s running sessions, mirrored here from now on. */
-    suspend fun offer(call: ApplicationCall, client: String) {
+    suspend fun offer(call: ApplicationCall, client: ShareClient) {
         val hosting = hosted(call) ?: return
         val offered = read(call, ShareSessions.serializer(), SESSIONS_BODY_MAX_BYTES) ?: return
-        val lease = ((offered.lookMs ?: LEASE_MAX_MS) * LEASE_LOOKS).coerceIn(LEASE_MIN_MS, LEASE_MAX_MS)
-        served += client
-        val link = MirrorLink(parts.carrier(client), lease)
-        withContext(io) { hosting.mirror(client, offered.sessions.map(::mirrored), link) }
+        served += client.name
+        val lease = ShareLease.of(offered.lookMs ?: LEASE_MAX_MS)
+        val link = MirrorLink(parts.carrier(client.name, client.joinedAt), lease)
+        withContext(io) { hosting.mirror(client.name, offered.sessions.map(::mirrored), link) }
         respond(call, ShareSessions.serializer(), ShareSessions(emptyList()))
     }
 
     /** A note from a session on [client] to the session here the path names. */
-    suspend fun note(call: ApplicationCall, client: String) {
+    suspend fun note(call: ApplicationCall, client: ShareClient) {
         val hosting = hosted(call) ?: return
         val note = read(call, ShareNote.serializer(), NOTE_BODY_MAX_BYTES) ?: return
         val to = call.parameters["id"].orEmpty()
-        served += client
+        served += client.name
         // A machine that never offered: its sender's mirror lasts as long as any machine's that stopped looking.
-        val link = MirrorLink(parts.carrier(client), LEASE_MAX_MS)
+        val link = MirrorLink(parts.carrier(client.name, client.joinedAt), LEASE_MAX_MS)
         // The delivery reads every record and may make a mirror, a process: never on the listener's call threads.
-        val carried = withContext(io) { hosting.deliver(to, client, mirrored(note.from), note.text, link) }
+        val carried = withContext(io) { hosting.deliver(to, client.name, mirrored(note.from), note.text, link) }
         respond(call, ShareNoteAnswer.serializer(), ShareNoteAnswer(carried.status?.wire, carried.detail))
     }
 
     /** The notes waiting for [client], or the first to arrive within the wait the query asks for (at most
      *  [OUTBOX_MAX_WAIT_S] seconds), once those its last collection took are acknowledged. */
-    suspend fun outbox(call: ApplicationCall, client: String) {
+    suspend fun outbox(call: ApplicationCall, client: ShareClient) {
         hosted(call) ?: return
         val query = call.request.queryParameters
         val wait = query["wait"]?.toLongOrNull()?.coerceIn(0L, OUTBOX_MAX_WAIT_S) ?: 0L
         val ack = query["box"]?.let { box -> query["after"]?.toLongOrNull()?.let { ShareOutboxAck(box, it) } }
-        respond(call, ShareOutbox.serializer(), parts.outboxes.collect(client, ack, wait))
+        respond(call, ShareOutbox.serializer(), parts.outboxes.collect(client.name, client.joinedAt, ack, wait))
     }
 
     /** Withdraws the mirrors of every machine this listener made any for: it is closing. One a request still running
@@ -204,31 +206,44 @@ internal class ShareSessionHost(
 /** The notes sessions here wrote to joined machines' mirrors, each held until a collection by the machine it waits for
  *  acknowledges it. One for the listener's life, so a change to `[share]` keeps what waits. Each machine's box has an
  *  id of its own, which an acknowledgement names: a box made again, by a daemon restart or after a revoke, takes no
- *  acknowledgement of the one it replaced, so a collection still carrying one drops nothing of the new. */
+ *  acknowledgement of the one it replaced, so a collection still carrying one drops nothing of the new. Each box is one
+ *  join's, named by when the machine joined: a machine that joins under a revoked one's name collects a box of its own,
+ *  whichever comes first of the revoke, a note to the revoked machine and the new machine's collection, and a note
+ *  carried for the revoked one after that is refused. */
 internal class ShareOutboxes {
     private val boxes = ConcurrentHashMap<String, Box>()
 
-    /** One machine's notes, oldest first, the place of the last one held, which wakes a held collection, and the id an
-     *  acknowledgement of them names. */
-    private class Box {
+    /** One machine's notes, for its join of [owner], oldest first, the place of the last one held, which wakes a held
+     *  collection, and the id an acknowledgement of them names. */
+    private class Box(val owner: String) {
         val id = UUID.randomUUID().toString()
         val held = ArrayDeque<ShareOutboxNote>()
         var next = 1L
         val arrived = MutableStateFlow(0L)
-    }
 
-    /** What [client]'s mirrors hand a note to: its outbox, which a full one refuses as dropped. */
-    fun carrier(client: String) = MirrorCarrier { to, from, text ->
-        val box = box(client)
-        val held = synchronized(box) {
-            (box.held.size < OUTBOX_CAPACITY).also { room ->
-                if (room) {
-                    box.held.addLast(ShareOutboxNote(spelled(to), spelled(from), text, box.next))
-                    box.arrived.value = box.next++
-                }
+        /** [note] at the end, with its place here, or dropped in words, for [client], when the box is full. */
+        fun hold(client: String, note: ShareOutboxNote): MirrorCarried = synchronized(this) {
+            if (held.size < OUTBOX_CAPACITY) {
+                held.addLast(note.copy(seq = next))
+                arrived.value = next++
+                MirrorCarried(null)
+            } else {
+                MirrorCarried(DeliveryStatus.DROPPED, "$client is not collecting its notes")
             }
         }
-        if (held) MirrorCarried(null) else MirrorCarried(DeliveryStatus.DROPPED, "$client is not collecting its notes")
+    }
+
+    /** What [client]'s mirrors, made under its join of [joined], hand a note to: its outbox, which a full one refuses as
+     *  dropped, and one of a later join refuses. The note is put in the box while the box is the one [client] has, so a
+     *  revoke or a collection of a later join that replaces it at that moment lets go of the note with it. */
+    fun carrier(client: String, joined: String) = MirrorCarrier { to, from, text ->
+        var carried = MirrorCarried(DeliveryStatus.REFUSED, "$client joined again here since this session was mirrored")
+        boxes.compute(client) { _, had ->
+            (had ?: Box(joined)).also { box ->
+                if (box.owner == joined) carried = box.hold(client, ShareOutboxNote(spelled(to), spelled(from), text))
+            }
+        }
+        carried
     }
 
     /** Lets go of every note waiting for [client]: it was revoked. */
@@ -236,10 +251,11 @@ internal class ShareOutboxes {
         boxes.remove(client)
     }
 
-    /** The notes waiting for [client] once [ack] is let go, oldest first, or the first to arrive within [waitS]
-     *  seconds. Each stays until a later collection acknowledges it, however many collections are handed it. */
-    suspend fun collect(client: String, ack: ShareOutboxAck?, waitS: Long): ShareOutbox {
-        val box = box(client)
+    /** The notes waiting for [client], as it joined at [joined], once [ack] is let go, oldest first, or the first to
+     *  arrive within [waitS] seconds. Each stays until a later collection acknowledges it, however many collections are
+     *  handed it. A box of another join is let go of: what waits there was written for a machine since revoked. */
+    suspend fun collect(client: String, joined: String, ack: ShareOutboxAck?, waitS: Long): ShareOutbox {
+        val box = checkNotNull(boxes.compute(client) { _, had -> had?.takeIf { it.owner == joined } ?: Box(joined) })
         ack?.takeIf { it.box == box.id }?.let { acknowledged(box, it.after) }
         if (waiting(box).isEmpty()) {
             withTimeoutOrNull(waitS.seconds) { box.arrived.first { waiting(box).isNotEmpty() } }
@@ -253,8 +269,6 @@ internal class ShareOutboxes {
     }
 
     private fun waiting(box: Box): List<ShareOutboxNote> = synchronized(box) { box.held.take(OUTBOX_NOTES_AT_ONCE) }
-
-    private fun box(client: String): Box = boxes.computeIfAbsent(client) { Box() }
 
     private fun spelled(session: MirroredSession) = ShareSession(session.id, session.name, session.heardAt)
 }
@@ -275,8 +289,18 @@ private const val NOTE_BODY_MAX_BYTES = 131_072
 // why: these bodies are small and come over a LAN or a tailnet in one go; five seconds is the join's own deadline.
 private const val SESSIONS_READ_MS = 5_000L
 
+/** How long a machine's mirrors last without another of its looks: three looks, and the longest a look's requests take
+ *  on top, so a look that answers slowly never lets them lapse before the next one. */
+internal object ShareLease {
+    fun of(lookMs: Long): Long = (lookMs * LEASE_LOOKS + LOOK_TAKES_MS).coerceIn(LEASE_MIN_MS, LEASE_MAX_MS)
+}
+
 // why: a machine's mirrors outlast three of its looks, so one late or failed look does not withdraw and remake them.
 internal const val LEASE_LOOKS: Long = 3L
+
+// why: the longest a look's two requests take before they fail, each connecting within 3 s and answering within 10 s
+// (RemoteApi): a look whose requests take their time renews the mirrors before they lapse.
+internal const val LOOK_TAKES_MS: Long = 26_000L
 
 // why: a lease shorter than a second would withdraw a machine's mirrors between two requests of one look.
 internal const val LEASE_MIN_MS: Long = 1_000L

@@ -63,15 +63,21 @@ public class ShareClients(private val file: Path) {
      *  fresh one and the old one stops working. It is booked under the name a machine that joins it back keys it by in
      *  `[remotes]` (RemoteNames), so its sessions here, offered by it or looked at from here, are one machine's, and it
      *  takes the place of an entry phase 1 booked under the name as given, capitals and all. A machine that is not
-     *  booked now (new, or revoked) starts with no activity: what a revoked machine of that name did is not its own.
+     *  booked now (new, or revoked) starts with no activity: what a revoked machine of that name did is not its own,
+     *  and is let go of once the machine is booked, a disk that refuses to write that change holding no join back.
      *  Throws IOException, writing nothing, when the book cannot be read or locked. */
     @Synchronized
     internal fun join(asked: String, address: String): String = edited { book ->
         val name = RemoteNames.of(asked)
-        if (book.clients.none { it.named(name) }) activity.forget(name)
         val token = hex.formatHex(ByteArray(SHARE_TOKEN_BYTES).also(random::nextBytes))
         val joined = ShareClient(name, digest(token), address, Instant.now().toString())
         write(ShareClientBook(book.clients.filterNot { it.named(name) } + joined))
+        if (book.clients.none { it.named(name) }) {
+            Cancellables.discard(
+                Cancellables.runCatchingCancellable { activity.forget(name) },
+                "the last seen is let go of in memory first, and the daemon's next write of it leaves it out",
+            )
+        }
         token
     }
 
@@ -81,12 +87,14 @@ public class ShareClients(private val file: Path) {
         return read().clients.firstOrNull { MessageDigest.isEqual(it.tokenSha256.toByteArray(UTF_8), presented) }
     }
 
-    /** Turns [name]'s Sessions switch [on] or off, [name] spelled any way RemoteNames reads as the machine's. False
-     *  when no machine has that name. Throws IOException, writing nothing, as [join] does. */
+    /** Turns [name]'s Sessions switch [on] or off, [name] spelled any way RemoteNames reads as the machine's, and,
+     *  [joined] given, only while the machine of that name is the one that joined then. False when no machine has that
+     *  name, or the one that has it joined at another time. Throws IOException, writing nothing, as [join] does. */
     @Synchronized
-    public fun allowSessions(name: String, on: Boolean): Boolean = edited { book ->
-        val found = book.clients.any { it.named(name) }
-        if (found) write(ShareClientBook(book.clients.map { if (it.named(name)) it.copy(sessions = on) else it }))
+    public fun allowSessions(name: String, on: Boolean, joined: String? = null): Boolean = edited { book ->
+        val its = { client: ShareClient -> client.named(name) && (joined == null || client.joinedAt == joined) }
+        val found = book.clients.any(its)
+        if (found) write(ShareClientBook(book.clients.map { if (its(it)) it.copy(sessions = on) else it }))
         found
     }
 

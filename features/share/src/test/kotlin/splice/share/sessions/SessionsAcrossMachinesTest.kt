@@ -3,7 +3,9 @@
 // SendMessage, each way; a session that ends leaves the other machine at the next look; and only a joined machine is
 // shown any. Since the round-1 review (the President's decision, Oct 23), sessions cross only while the Sessions switch
 // is on, so these cases turn both machines' switches on, as Marcos does on each Sharing page; the switch's own cases
-// are SessionsSwitchAcrossMachinesTest's. The machines are TwoMachinesTest's.
+// are SessionsSwitchAcrossMachinesTest's. The machines are TwoMachinesTest's. Round 14 of PR #419's review added a look
+// whose requests take their time, as over a slow tailnet relay: it is a look all the same, and nothing it mirrored ends
+// while the next is on its way.
 package splice.share.sessions
 
 import kotlinx.coroutines.cancelAndJoin
@@ -20,6 +22,7 @@ import splice.core.topology.ShareConfig
 import splice.sessions.mirror.MirrorCounts
 import splice.sessions.peer.DeliveryStatus
 import splice.sessions.registry.SessionAvailability
+import splice.share.LEASE_MAX_MS
 import splice.share.ShareState
 import splice.share.remote.RemoteFound
 import splice.share.remote.RemoteHttp
@@ -41,6 +44,10 @@ import kotlin.random.Random
 // from-name can carry it. Never `<name>@<machine>`: SendMessage refuses an @ as a teammate's team ("to must be a bare
 // teammate name", Claude Code 2.1.309, Oct 23).
 private val SAFE_MIRROR = Regex("^$MINI/[A-Za-z0-9._-]{1,64}$")
+
+// why: what a slow tailnet relay makes a look's two requests take (round 14's case: about eight seconds and four),
+// inside the ten seconds each may take.
+private const val SLOW_LOOK_REQUESTS_MS = 12_000L
 
 internal class SessionsAcrossMachinesTest : TwoMachinesTest() {
 
@@ -228,6 +235,8 @@ internal class SessionsAcrossMachinesTest : TwoMachinesTest() {
         assertEquals(MirrorCounts(here = 2, there = 1), counted(torad, MINI, MirrorCounts(2, 1)), "on torad")
 
         runBlocking { link.cancelAndJoin() }
+        // Every lease a look gave has run out: a machine that stopped looking leaves within a minute.
+        skew.addAndGet(LEASE_MAX_MS)
         val quiet = MirrorCounts(here = 0, there = null)
         assertEquals(quiet, counted(torad, MINI, quiet), "a machine that stopped looking is counted nothing either way")
     }
@@ -240,8 +249,32 @@ internal class SessionsAcrossMachinesTest : TwoMachinesTest() {
         listed(rig) { "$MINI/splice" in it }
 
         runBlocking { link.cancelAndJoin() }
+        skew.addAndGet(LEASE_MAX_MS)
         val after = listed(rig) { "$MINI/splice" !in it }
         assertTrue("$MINI/splice" !in after, "a machine that stopped looking has no session listed on the other")
+    }
+
+    @Test
+    fun `a machine whose looks take their time keeps its sessions listed on the other until the next one`() {
+        val rig = torad.session("rig-lead")
+        val splice = mini.session("splice")
+        val link = join()
+        listed(rig) { "$MINI/splice" in it }
+        listed(splice) { "$toradName/rig-lead" in it }
+
+        // The next look is on its way: a look later, plus the time its two requests take, inside their deadline.
+        runBlocking { link.cancelAndJoin() }
+        skew.addAndGet(LOOK_MS + SLOW_LOOK_REQUESTS_MS)
+        torad.mirrors.expire()
+        mini.mirrors.expire()
+        assertTrue("$MINI/splice" in rig.agents(), "mini's session is still listed on torad")
+        assertTrue("$toradName/rig-lead" in splice.agents(), "and torad's on mini")
+
+        skew.addAndGet(LEASE_MAX_MS)
+        torad.mirrors.expire()
+        mini.mirrors.expire()
+        assertTrue("$MINI/splice" !in rig.agents(), "once no look comes for a minute, mini's leaves torad")
+        assertTrue("$toradName/rig-lead" !in splice.agents(), "and torad's leaves mini")
     }
 
     @Test

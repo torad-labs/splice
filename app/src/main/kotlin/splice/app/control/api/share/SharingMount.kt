@@ -15,7 +15,7 @@ import splice.app.control.mount.ControlGuard
 internal class SharingMount(ports: ConsolePorts, private val guard: ControlGuard) {
     private val routes = SharingRoutes(SharingWired { ports.sharing })
     private val switches = SessionsSwitchRoutes(SharingWired { ports.sharing })
-    private val remotes = RemoteRoutes()
+    private val remotes = RemoteRoutes(SharingWired { ports.sharing })
 
     fun register(route: Route) {
         route.get("/api/share") { guard.guarded(call) { routes.read().send(call) } }

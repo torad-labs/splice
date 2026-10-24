@@ -2,7 +2,8 @@
 // registry, sockets folder and state: "torad" shares over its real TLS listener, and "mini" joined it and runs the
 // daemon's session link, as the daemon runs both. The sessions are Claude Code's own shapes (ClaudeCodeSession);
 // everything between them is splice's real code. The cases are in SessionsAcrossMachinesTest and, for the Sessions
-// switch, SessionsSwitchAcrossMachinesTest; this is the rig they share.
+// switch, SessionsSwitchAcrossMachinesTest; this is the rig they share. Since round 14 of PR #419's review a test can
+// move both machines' clocks on ([skew]): a lease of tens of seconds runs out without the test waiting for it.
 package splice.share.sessions
 
 import kotlinx.coroutines.CoroutineScope
@@ -28,6 +29,7 @@ import splice.core.topology.RemoteConfig
 import splice.core.topology.ShareConfig
 import splice.core.topology.Topology
 import splice.core.util.EnvReader
+import splice.core.util.WallClock
 import splice.sessions.mirror.MirrorAnchor
 import splice.sessions.mirror.MirrorPlace
 import splice.sessions.mirror.MirrorSweep
@@ -62,6 +64,7 @@ import java.nio.file.Files
 import java.nio.file.Path
 import java.nio.file.attribute.PosixFilePermissions
 import java.util.UUID
+import java.util.concurrent.atomic.AtomicLong
 import javax.net.ssl.SSLSocket
 import kotlin.random.Random
 
@@ -106,7 +109,7 @@ internal abstract class TwoMachinesTest {
 
     /** One machine: its Claude Code registry, its sockets folder (owner-only, with short names, so a socket path fits
      *  the 104 bytes a Mac allows), its state, and the mirrors its daemon hosts there, each holding a pid by
-     *  [anchor], or by the daemon's own when none is given. */
+     *  [anchor], or by the daemon's own when none is given, and timed by the test's clock, which [skew] moves on. */
     protected inner class Machine(letter: String, anchor: MirrorAnchor? = null) {
         val home: Path = Files.createDirectories(tmp.resolve(letter))
         val registry: Path = Files.createDirectories(home.resolve("r"))
@@ -125,10 +128,11 @@ internal abstract class TwoMachinesTest {
         val acks: Path = ShareState(paths).acksFile
         private val place = MirrorPlace(registry, sockets, home.resolve("m.log"))
         private val sweep = MirrorSweep { ProcessTicker().awaitTick(it) }
+        private val clock = WallClock { System.currentTimeMillis() + skew.get() }
         val mirrors = if (anchor == null) {
-            SessionMirrors(place, scope, Dispatchers.IO, { }, sweep)
+            SessionMirrors(place, scope, Dispatchers.IO, { }, sweep, clock)
         } else {
-            SessionMirrors(place, scope, Dispatchers.IO, { }, sweep, anchor = anchor)
+            SessionMirrors(place, scope, Dispatchers.IO, { }, sweep, clock, anchor)
         }
 
         fun session(name: String, heardAt: Long? = null, id: String = UUID.randomUUID().toString()) =
@@ -141,6 +145,9 @@ internal abstract class TwoMachinesTest {
     }
 
     protected val opened = mutableListOf<AutoCloseable>()
+
+    /** How far the test moved both machines' clocks past the wall's: the time a lease runs by, without waiting it. */
+    protected val skew = AtomicLong()
     protected val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
     protected lateinit var torad: Machine
     protected lateinit var mini: Machine

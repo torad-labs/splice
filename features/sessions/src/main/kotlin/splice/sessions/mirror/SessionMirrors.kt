@@ -118,6 +118,10 @@ public class SessionMirrors(
      *  only where none is held. Every mirror is made under one, so none outlasts the time its machine was given. */
     private val ends = mutableMapOf<String, Long>()
 
+    /** Whether the daemon withdrew every mirror as it stops: an offer or a note still on its way then makes none, as
+     *  nothing would sweep it once the daemon is gone and its record would outlive it. */
+    private var closed = false
+
     init {
         scope.launch(io) {
             while (sweep.awaitNext(MIRRORS_SWEEP_MS)) expire()
@@ -163,11 +167,12 @@ public class SessionMirrors(
 
     /** Makes [sessions] the mirrors of [machine]: each new one registered, each gone one withdrawn, a renamed one
      *  registered anew under its new name. Each hands what it takes to [link]'s carrier, and they last at least
-     *  [link]'s time from now. */
+     *  [link]'s time from now, those made before a failure part way included. None once the daemon closed them. */
     public fun mirror(machine: String, sessions: List<MirroredSession>, link: MirrorLink) {
         synchronized(lock) {
-            reconcile(machine, sessions, link.carrier)
+            if (closed) return
             ends[machine] = maxOf(ends[machine] ?: 0L, clock() + link.lastsMs)
+            reconcile(machine, sessions, link.carrier)
         }
     }
 
@@ -212,9 +217,10 @@ public class SessionMirrors(
         }
     }
 
-    /** Withdraws every mirror. */
+    /** Withdraws every mirror, and makes none from now on. */
     override fun close() {
         synchronized(lock) {
+            closed = true
             byMachine.values.flatMap { it.values }.forEach(Mirror::close)
             byMachine.clear()
             offered.clear()
@@ -231,6 +237,7 @@ public class SessionMirrors(
      *  none of [machine]'s is left lasts [link]'s time. Null, with why, when it cannot be made. */
     private fun senderOf(machine: String, from: MirroredSession, link: MirrorLink): Pair<Mirror?, String?> =
         synchronized(lock) {
+            if (closed) return@synchronized null to "this machine's splice is stopping"
             val held = byMachine[machine]?.get(from.id)
             if (held != null && held.alive()) return@synchronized held to null
             byMachine[machine]?.remove(from.id)?.close()

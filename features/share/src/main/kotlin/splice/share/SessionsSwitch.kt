@@ -33,9 +33,20 @@ public class SessionsSwitch(state: ShareState, private val used: MachinesJoined)
             (card == null || remotes.sessions(card))
     }
 
-    /** Turns [on] or off the switch on the card of [name] as a machine that joined this one, in that book alone; false
-     *  when no machine of that name joined. Throws IOException, as the book's own change does. */
-    public fun turnJoined(name: String, on: Boolean): Boolean = clients.allowSessions(name, on)
+    /** Whether sessions cross with [name] as the machine that joined at [joined]: they do, and the machine booked under
+     *  that name now is that one, so a mirror made for a machine since revoked carries nothing to one that joined
+     *  after it. */
+    internal fun on(name: String, joined: String): Boolean =
+        on(name) && clients.all().any { it.named(name) && it.joinedAt == joined }
+
+    /** Turns [on] or off the switch on the card of [name] as the machine that joined this one at [joined], in that book
+     *  alone; false when no machine of that name joined, or the one booked under it now joined at another time: a card
+     *  drawn before a re-join turns nothing of the machine that joined since. Throws IOException, as the book's own
+     *  change does. */
+    public fun turnJoined(name: String, on: Boolean, joined: String): Boolean = clients.allowSessions(name, on, joined)
+
+    /** Whether a machine of [name] joined this one, whenever it did. */
+    public fun joined(name: String): Boolean = clients.all().any { it.named(name) }
 
     /** Turns [on] or off the switch on the card of [name] as a machine this one joined, in that book alone, where this
      *  machine's link reads it; false when this machine joined none of that name, in [used]. Throws IOException, as

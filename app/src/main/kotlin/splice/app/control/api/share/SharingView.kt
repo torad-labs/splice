@@ -22,7 +22,7 @@ import splice.share.remote.RemoteTopology
 import splice.share.remote.RemotesStore
 
 internal class SharingView(private val parts: SharingParts, private val file: Topology) {
-    private val state = ShareState(StatePaths(envReader = parts.env))
+    private val state = ShareState(StatePaths(envReader = parts.daemonEnv))
 
     private val store = RemotesStore(state.remotesFile)
 

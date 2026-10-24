@@ -22,6 +22,7 @@ import splice.core.terminal.YELLOW
 import splice.core.topology.HeadConfig
 import splice.core.util.EnvReader
 import splice.core.util.SafeFailureText
+import splice.core.util.TerminalText
 import splice.core.util.WallClock
 import splice.sessions.registry.ProcessEnvironment
 import splice.sessions.registry.RouteOfPid
@@ -38,15 +39,6 @@ import java.nio.file.Files
 private const val MS_PER_MINUTE = 60_000L
 private const val MINUTES_PER_HOUR = 60L
 private const val CWD_MAX = 48
-private val UNPRINTABLE: Set<Int> = setOf(
-    Character.CONTROL.toInt(),
-    Character.FORMAT.toInt(),
-    Character.LINE_SEPARATOR.toInt(),
-    Character.PARAGRAPH_SEPARATOR.toInt(),
-    Character.UNASSIGNED.toInt(),
-    Character.PRIVATE_USE.toInt(),
-    Character.SURROGATE.toInt(),
-)
 
 /** `splice sessions`. [output] is the listing, [errors] the one diagnostic: an unreadable topology. */
 public class SessionsCommand(
@@ -79,15 +71,15 @@ public class SessionsCommand(
 
     private fun printRow(s: SessionRecord, home: String, now: Long, account: SessionAccountLine?) {
         val name = shownName(s) ?: s.process.pid?.let { "pid $it" } ?: "?"
-        val head = headLabel(s.route) + accountText(account)
+        val head = headLabel(s) + accountText(account)
         val model = account?.model?.let { "  ${clean(it)}" }.orEmpty()
-        val cwd = shortCwd(clean(s.process.cwd.orEmpty()).replaceFirst(home, "~"))
+        val cwd = shortCwd(s, home)
         val age = listOfNotNull(ago("started", now, s.process.startedAt), ago("updated", now, s.process.updatedAt))
             .joinToString(", ").ifEmpty { "never updated" }
         val availability = s.availability.name.lowercase()
         output.line(
             "  ${glyph(s.availability)} ${BOLD}$name$RESET  $CYAN$head$RESET$model  ${clean(s.status.state ?: "-")}  " +
-                "$availability  $DIM$age · $cwd$RESET",
+                "$availability  $DIM$age$cwd$RESET",
         )
         sendLine(s)?.let { output.line(it) }
     }
@@ -100,11 +92,15 @@ public class SessionsCommand(
         return on + pin
     }
 
-    /** V4-293: a session that never went through splice is "direct", not a routing fault. */
-    private fun headLabel(route: SessionRoute): String = when (route) {
-        is SessionRoute.Head -> clean(route.key)
-        SessionRoute.Direct -> "direct"
-        SessionRoute.Unknown -> "unknown head"
+    /** V4-293: a session that never went through splice is "direct", not a routing fault. A mirror (round 14 of PR
+     *  #419's review) stands for a session of another machine, which runs there under a head of that machine's. */
+    private fun headLabel(s: SessionRecord): String {
+        s.machine?.let { return "runs on ${clean(it)}" }
+        return when (val route = s.route) {
+            is SessionRoute.Head -> clean(route.key)
+            SessionRoute.Direct -> "direct"
+            SessionRoute.Unknown -> "unknown head"
+        }
     }
 
     private fun glyph(availability: SessionAvailability): String = when (availability) {
@@ -130,13 +126,17 @@ public class SessionsCommand(
      *  by CODE POINT (V4-324): an emoji is two UTF-16 units and one printable character, and filtering
      *  units dropped both halves of it, so `build 🚀` was offered as a SendMessage to `build `. Only a
      *  surrogate standing alone is still SURROGATE here, and it goes. */
-    private fun clean(text: String): String = buildString {
-        text.codePoints().filter { Character.getType(it) !in UNPRINTABLE }.forEach { appendCodePoint(it) }
-    }
+    private fun clean(text: String): String = TerminalText.printable(text)
 
     private fun quoted(name: String): String = name.replace("\\", "\\\\").replace("\"", "\\\"")
 
-    private fun shortCwd(cwd: String): String = if (cwd.length > CWD_MAX) "…" + cwd.takeLast(CWD_MAX) else cwd
+    /** " · <folder>" for the folder a session runs in, under ~ in the home folder and cut to its end; none for a mirror,
+     *  whose folder is its machine's. */
+    private fun shortCwd(s: SessionRecord, home: String): String {
+        if (s.machine != null) return ""
+        val cwd = clean(s.process.cwd.orEmpty()).replaceFirst(home, "~")
+        return " · " + if (cwd.length > CWD_MAX) "…" + cwd.takeLast(CWD_MAX) else cwd
+    }
 
     /** "[word] 3h ago" for the moment [at], or null when the registry did not say. */
     private fun ago(word: String, now: Long, at: Long?): String? {

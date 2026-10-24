@@ -3,8 +3,9 @@
 // a session another machine writes from is named here as that machine's looks name it, so a reply to that name reaches
 // it; a machine revoked here leaves the listing at once, and a note written to it after is refused in words; and a
 // machine whose Sessions switch goes off takes no note from this one from that moment. Round 13 added a session resumed
-// while its first process still runs: one session, listed once, and a note reaches the one resumed. Two machines in one
-// JVM, the rig in TwoMachinesTest.
+// while its first process still runs: one session, listed once, and a note reaches the one resumed. Round 14 added a
+// collection that fails: said in the log once while it keeps failing, and once when it collects again, as the look says
+// its own. Two machines in one JVM, the rig in TwoMachinesTest.
 package splice.share.sessions
 
 import kotlinx.coroutines.delay
@@ -31,6 +32,7 @@ import java.nio.file.Path
 import java.time.Duration
 import java.util.UUID
 import java.util.concurrent.CompletableFuture
+import java.util.concurrent.ConcurrentLinkedQueue
 import java.util.concurrent.TimeUnit
 import kotlin.io.path.listDirectoryEntries
 
@@ -184,5 +186,35 @@ internal class SessionsEdgesAcrossMachinesTest : TwoMachinesTest() {
 
         val got = checkNotNull(resumed.heard(SETTLE_MS / 1_000)) { "the resumed session took the note" }
         assertEquals("to the one resumed", got.text)
+    }
+
+    @Test
+    fun `a collection that fails is said in the log once while it keeps failing, and so is its coming back`() {
+        val rig = torad.session("rig-lead")
+        mini.session("splice")
+        val said = ConcurrentLinkedQueue<String>()
+        val links = links(joined().second)
+        checkNotNull(RemoteSessions(links, mini.mirrors, mini.acks, { said += it }, LOOK_MS).start(scope))
+        val before = heardFrom(MINI)
+        waitFor { heardFrom(MINI) != before }
+
+        runBlocking { listener.stop() }
+        waitFor { said.any { "notes are not collected" in it } }
+        // Several collections fail while torad is away, each a look apart.
+        runBlocking { delay(LOOK_MS * LOOKS_OFF) }
+        assertEquals(1, said.count { "notes are not collected" in it }, "said once: $said")
+
+        listener = sharing(torad, port)
+        // A collection that answers is one held until a note arrives or its wait runs out: a note answers it now.
+        listed(rig) { "$MINI/splice" in it }
+        rig.send("$MINI/splice", "once torad is back")
+        waitFor { said.any { "notes are collected again" in it } }
+        assertEquals(1, said.count { "notes are collected again" in it }, "and its coming back once: $said")
+    }
+
+    /** Waits, up to a deadline, until [wanted] holds. */
+    private fun waitFor(wanted: () -> Boolean) = runBlocking {
+        val until = System.currentTimeMillis() + SETTLE_MS
+        while (!wanted() && System.currentTimeMillis() < until) delay(POLL_MS)
     }
 }

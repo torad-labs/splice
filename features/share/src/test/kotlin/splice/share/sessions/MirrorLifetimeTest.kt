@@ -1,7 +1,9 @@
 // NEW: LAN share, phase 2, the round-3 review (docs/specs/lan-share.md, Bounds). The goal: another machine's session is
 // listed here only while that machine is heard from, whatever made its mirror (a look, an offer, or a note that came
 // from it), and never once sessions stop crossing with it, by a switch turned off or by this machine no longer sharing.
-// The machines are TwoMachinesTest's.
+// Round 14 of PR #419's review added the daemon's stop, after which a request still on its way makes no mirror, and an
+// offer that fails part way, whose mirrors made before the failure still end with their time. The machines are
+// TwoMachinesTest's.
 package splice.share.sessions
 
 import kotlinx.coroutines.Dispatchers
@@ -10,7 +12,9 @@ import kotlinx.coroutines.runBlocking
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
+import org.junit.jupiter.api.assertThrows
 import splice.core.util.WallClock
+import splice.sessions.mirror.MirrorAnchor
 import splice.sessions.mirror.MirrorCarried
 import splice.sessions.mirror.MirrorCarrier
 import splice.sessions.mirror.MirrorLink
@@ -43,6 +47,9 @@ private const val LIFETIME_STEPS = 30
 // why: the longest time one look, offer or note gives a machine's mirrors in these runs, and the most one step moves
 // the clock, so a machine's time runs out in some steps and not in others.
 private const val LIFETIME_SPAN_MS = 3_000L
+
+// why: the mirror of an offer whose anchor fails in a way nothing foresaw: two are made before it.
+private const val BROKEN_AT = 3
 
 // why: two machines, so one machine's withdraw or end is seen to leave the other's mirrors alone.
 private val LIFETIME_MACHINES = listOf("far", "near")
@@ -109,6 +116,46 @@ internal class MirrorLifetimeTest : TwoMachinesTest() {
             } finally {
                 mirrors.close()
             }
+        }
+    }
+
+    @Test
+    fun `an offer that arrives once the daemon withdrew every mirror makes none`() {
+        val rig = torad.session("rig-lead")
+        val carrier = MirrorCarrier { _, _, _ -> MirrorCarried(null) }
+
+        torad.mirrors.close()
+        torad.mirrors.mirror(MINI, listOf(MirroredSession("s-late", "late")), MirrorLink(carrier, HOUR_MS))
+
+        assertTrue("$MINI/late" !in rig.agents(), "no record of a mirror outlives the daemon's stop")
+    }
+
+    @Test
+    fun `mirrors an offer made before it failed part way still end with their time`() {
+        val now = AtomicLong(System.currentTimeMillis())
+        val opened = AtomicInteger()
+        val place = MirrorPlace(torad.registry, torad.sockets, torad.home.resolve("part.log"))
+        val anchor = MirrorAnchor {
+            // A failure nothing foresaw, on the third mirror of the offer.
+            check(opened.incrementAndGet() != BROKEN_AT) { "the anchor broke" }
+            ProcessBuilder("/bin/cat")
+                .redirectOutput(ProcessBuilder.Redirect.DISCARD)
+                .redirectError(ProcessBuilder.Redirect.DISCARD)
+                .start()
+        }
+        val clock = WallClock { now.get() }
+        val mirrors = SessionMirrors(place, scope, Dispatchers.IO, { }, MirrorSweep { false }, clock, anchor)
+        val carrier = MirrorCarrier { _, _, _ -> MirrorCarried(null) }
+        val offered = (1..BROKEN_AT + 1).map { MirroredSession("s$it", "far-$it") }
+        try {
+            assertThrows<IllegalStateException> { mirrors.mirror("far", offered, MirrorLink(carrier, LOOK_MS)) }
+            assertEquals(BROKEN_AT - 1, mirrors.counts("far").here, "the mirrors made before it failed")
+
+            now.addAndGet(HOUR_MS)
+            mirrors.expire()
+            assertEquals(0, mirrors.counts("far").here, "end with the time the offer gave them")
+        } finally {
+            mirrors.close()
         }
     }
 

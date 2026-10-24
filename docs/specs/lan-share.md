@@ -121,6 +121,13 @@ claudex ─▶ head :3099 (anthropic-passthrough) ──TLS, pinned──▶ sha
   skips discovery (multicast blocked, Tailscale). `splice remote list` shows the machines joined here and their
   commands; `splice remote sync [<machine>]` rewrites each imported head's rows, pin and tiers as its machine serves
   them now; `splice remote remove <machine>` drops the machine, its heads, their command links and its token.
+- What another machine says is read printable (`TerminalText`, round 14): its description, read before any pin exists
+  from whatever answers at the address and printed for Marcos to trust, and its words when it refuses a join or a
+  read, cut to a line, as they are printed, logged and shown as the reason. Every character a terminal acts on or
+  cannot show is left out (C0, C1, DEL, and the Unicode Cc, Cf, Zl, Zp, Cn, Co and Cs classes), as `splice sessions`
+  reads Claude Code's registry.
+- The Sharing page reads and changes the splice.toml the daemon booted, whatever file its environment names, so an
+  import, a sync or a remove from the page reaches the file the daemon's links and switches read (round 14).
 - Import of one machine (`RemoteImport`):
   1. `POST /share/v1/join`, over a connection that must show the certificate the machine's info stated (trust on
      first contact, `RemoteJoin`) → this machine's token there, kept in `<state>/share/remotes.json` (0600, one per
@@ -248,7 +255,9 @@ Built on `feat/lan-share`, merged into `feat/v0.4.0` through the gate. Milestone
    machine one names is asked for `/share/v1/info` the moment it is named, all under the scan's one deadline
    (`RemoteDiscovery`):
    - **mDNS.** While it listens, a sharing machine advertises `_splice._tcp` under its name at its own port, and stops
-     when the listener closes (`ShareAdvert`). On Linux and elsewhere through JmDNS (Apache-2.0, approved 2026-10-22).
+     when the listener closes (`ShareAdvert`). On Linux and elsewhere through JmDNS (Apache-2.0, approved 2026-10-22),
+     where a network whose advert will not say goodbye is said in the log and leaves the others to theirs, so the next
+     advert still opens (round 14).
      On a Mac through the system's mDNSResponder (`dns-sd -R` to advertise, `dns-sd -Z` to browse): macOS gives a
      process of ours no multicast at all, from a terminal or from launchd (a send to 224.0.0.251 answers "no route to
      host"), while `dns-sd` works from both. A small shell around the advert ends it when the daemon is gone.
@@ -281,7 +290,9 @@ Built on `feat/lan-share`, merged into `feat/v0.4.0` through the gate. Milestone
      session, the one heard from last: it is offered once and takes the notes (round 13).
    - **The link.** Every 5 s the joining machine reads each machine it joined (`GET /share/v1/sessions`, its running
      sessions, mirrors left out), mirrors them, and offers its own (`PUT`, with how often it looks). The sharing
-     machine keeps those mirrors for three looks past the last offer (from 1 s to a minute) and withdraws them when its
+     machine keeps those mirrors for three looks past the last offer, plus the 26 s a look's two requests can take
+     before they fail, so a look that answers slowly never lets them lapse (from 1 s to a minute; round 14), and
+     withdraws them when its
      listener closes, which a change to the commands it offers alone does not do (the open listener takes it, so a turn
      relayed through it carries on); a machine that does not answer has none mirrored on the other until it does.
    - **Messages.** A message to a mirror goes to its machine at once (`POST /share/v1/sessions/{id}/message`), which
@@ -291,15 +302,21 @@ Built on `feat/lan-share`, merged into `feat/v0.4.0` through the gate. Milestone
      (`GET .../outbox?wait=25`), so the joining machine takes no connection in. A note leaves the outbox only once a
      later collection acknowledges it (`&box=<outbox>&after=<seq>`): a collection cut on the way, because the machine
      slept, restarted its daemon or lost its network, takes nothing with it, and a change to `[share]` keeps what waits.
-     The joining machine keeps what it acknowledged in `<state>/share/acks.json` (`RemoteAcks`), so a restart of its
-     daemon hands no note over twice. A look or a collection that fails in a way nothing foresaw is said in the log and
+     The joining machine keeps what it acknowledged in `<state>/share/acks.json` (`RemoteAcks`), each note as it is
+     handed over, and a stop lands between two notes, so a stop of its daemon, `splice restart --now` included, hands
+     no note over twice; a hard kill between handing a note over and writing it down hands that one note over again
+     (round 14). A look or a collection that fails in a way nothing foresaw is said in the log and
      starts again a look later, and a note whose handing fails that way is said as a refused one is, so no one failure
-     ends a machine's link (round 13).
+     ends a machine's link (round 13). A collection that fails is said in the log once while it keeps failing, and so
+     is its coming back, as a look's failure is (round 14).
      A note whose sender has no mirror left on the machine it reaches (withdrawn since that machine's last look, by a
      look that failed, a switch turned off and on, or the end of its offers) is delivered from one made then with the
      carrier it came by, so it is never refused for the want of one and acknowledged gone.
      A restart of the sharing daemon loses what its outbox held, and a revoke what waited for that machine; the box
-     made after either has an id of its own, so an acknowledgement of the one before drops nothing of it. A note refused where its sender wrote it, or by the
+     made after either has an id of its own, so an acknowledgement of the one before drops nothing of it. Each box is
+     one join's, named by when the machine joined: a machine that joins under a revoked one's name collects a box of
+     its own whichever comes first of the revoke, a note to the revoked machine and its own collection, and the revoked
+     machine's mirrors carry nothing more, refused in words (round 14). A note refused where its sender wrote it, or by the
      machine it was posted to (a session gone there, a switch off on either side, a machine revoked), goes back to the
      sender as a receipt, in words; one refused after it waited in an outbox is the "Not yet" below.
    - **Bounds.** Every route needs a joined machine's token, and the link names the machine, never the request. A
@@ -319,9 +336,13 @@ Built on `feat/lan-share`, merged into `feat/v0.4.0` through the gate. Milestone
      page draws: one imported from the page has its switch before splice restarts and starts its link (the round-5
      review), and a token kept for a name `[remotes]` no longer lists holds no machine back (the round-4 review). Under trust the LAN, a device that joins under a machine's name takes that machine's place
      in the book of joined machines, as any re-join does, so it holds the machine's sessions off until the machine
-     joins again and Marcos turns that card on.
-     A switch turned off ends the crossing at the link's next look, and each look while it is off withdraws what a
-     collection already under way made since. Every mirror, whatever made it (a look, an offer or a note), ends once
+     joins again and Marcos turns that card on. A card of a machine that joined this one names the join it shows
+     (`joined_at`), and its switch turns only that join: a page drawn before a revoke and a re-join under that name
+     turns nothing of the machine that joined since, and says so (round 14).
+     A switch turned off ends the crossing at the link's next look, on both machines: the link whose card went off
+     offers the other machine none of this one's sessions, and a machine that asks with its switch off here has its
+     mirrors withdrawn as it asks, so neither waits for the mirrors' time to end (round 14). Each look while it is off
+     withdraws what a collection already under way made since. Every mirror, whatever made it (a look, an offer or a note), ends once
      its machine's time is past (`SessionMirrors`): a look or an offer gives three looks from then, and a note gives a
      minute to a machine that has none; and a listener that closes withdraws every machine
      it mirrored. Any machine on the network may join and each mirror is a process, so a daemon hosts at most 256, and a
@@ -329,7 +350,8 @@ Built on `feat/lan-share`, merged into `feat/v0.4.0` through the gate. Milestone
      are, none holds a thread the rest of the daemon needs (at 64 they once stalled it). A mirror's name is
      what ListAgents shows and an envelope carries (`[A-Za-z0-9._-]`, 64 characters), and two sessions of one name are
      told apart by the start of their ids.
-   - **The pages.** On the Sessions page a mirror is a row of its own machine: a badge names the machine, no folder
+   - **The pages.** `splice sessions` lists a mirror as its machine's ("runs on torad-server"), with no head, account
+     or folder of this machine's (round 14). On the Sessions page a mirror is a row of its own machine: a badge names the machine, no folder
      here is claimed for it, it groups under the machine's name (by project and by command), and it is read only
      (SendMessage and Close; no composer, note, stop or move). It reads stale or live as its session does on the other
      machine, since the link carries when that session was last heard from (`heard_at`), and it leaves the list with

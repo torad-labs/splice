@@ -42,7 +42,7 @@ internal class SharingRoutes(private val wired: SharingWired) {
         val parts = wired.parts() ?: return unwired()
         return withContext(io) {
             val said = Said()
-            val file = ShareTopologyFile(said.terminal, SHARE_VERB, parts.env).loaded()
+            val file = ShareTopologyFile(said.terminal, SHARE_VERB, parts.daemonEnv).loaded()
             if (file == null) {
                 said.refused()
             } else {
@@ -63,7 +63,7 @@ internal class SharingRoutes(private val wired: SharingWired) {
 
     private suspend fun written(parts: SharingParts, change: ShareChange): JsonReply {
         val said = Said()
-        val file = ShareTopologyFile(said.terminal, SHARE_VERB, parts.env)
+        val file = ShareTopologyFile(said.terminal, SHARE_VERB, parts.daemonEnv)
         val current = file.loaded() ?: return said.refused()
         val wanted = current.copy(share = change.applied(current))
         if (!file.saved(wanted)) return said.refused()

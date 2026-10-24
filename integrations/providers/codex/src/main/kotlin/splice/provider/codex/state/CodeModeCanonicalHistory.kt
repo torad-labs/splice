@@ -143,7 +143,7 @@ internal class CodeModeCanonicalHistory(private val codec: CodexCodeModeHistoryC
                 ) ->
                     "code-mode opaque call was edited"
                 type == TYPE_CUSTOM_OUTPUT && item != codec.customOutput(record) &&
-                    item !in record.progress.nativeNotifications -> "code-mode opaque output was edited"
+                    record.progress.nativeNotifications.none { it == item } -> "code-mode opaque output was edited"
                 else -> null
             }
         }

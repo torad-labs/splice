@@ -22,11 +22,11 @@ internal class ResponsesCustomCallParse(private val codeMode: Boolean = false) {
     fun isWait(item: JsonObject): Boolean = codeMode && JsonScalars.str(item, "type") == "function_call" &&
         JsonScalars.str(item, "name") == "wait"
 
-    /** Terminal output owns ordering; streamed-only items survive incomplete terminal carriers. */
+    /** Completed items keep their arrival order and source; terminal-only fallbacks append. */
     fun merge(streamed: List<GatewayCustomCall>, response: JsonObject?): List<GatewayCustomCall> {
         val terminal = harvest(response)
-        val terminalIds = terminal.mapTo(HashSet(), GatewayCustomCall::callId)
-        return terminal + streamed.filterNot { it.callId in terminalIds }
+        val streamedIds = streamed.mapTo(HashSet(), GatewayCustomCall::callId)
+        return streamed + terminal.filterNot { it.callId in streamedIds }
     }
 
     fun harvest(response: JsonObject?): List<GatewayCustomCall> {

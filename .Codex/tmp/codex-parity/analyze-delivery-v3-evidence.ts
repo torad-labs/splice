@@ -148,7 +148,7 @@ export function auditNative(text: string, kind: "claude" | "codex", expectedSess
 
 /** Snapshot reconciliation keeps live item positions; sparse terminal arrays never reorder already seen items. */
 export function sourceEvidence(events: TimedEvent[]) {
-  const entries = new Map<string, { index: number; kind: Segment["kind"]; parts: Map<number, { delta: string; done?: string }> }>();
+  const entries = new Map<string, { index: number; kind: Segment["kind"]; parts: Map<number, { delta: string; done?: string; cursor?: number }> }>();
   const ids = new Map<number, string>(); let inconsistencies = 0;
   const entry = (e: Row, item?: Row) => {
     const index = Number.isFinite(e.output_index) ? e.output_index : entries.size;
@@ -164,8 +164,8 @@ export function sourceEvidence(events: TimedEvent[]) {
       if (typeof p.text !== "string") return;
       const part = target.parts.get(i);
       if (part?.done !== undefined && part.done !== p.text) inconsistencies++;
-      if (part?.delta && part.delta !== p.text) inconsistencies++;
-      target.parts.set(i, { delta: part?.delta ?? "", done: p.text });
+      if (part?.done === undefined && part?.delta && !p.text.startsWith(part.delta)) inconsistencies++;
+      target.parts.set(i, { delta: part?.delta ?? "", done: part?.done ?? p.text, cursor: part?.cursor ?? part?.delta.length ?? 0 });
     });
   };
   for (const { data: e } of events) {
@@ -174,8 +174,21 @@ export function sourceEvidence(events: TimedEvent[]) {
       const target = entry(e); if (e.type.startsWith("response.output_text")) target.kind = "prose";
       const index = e.summary_index ?? e.content_index ?? 0;
       const part = target.parts.get(index) ?? { delta: "" };
-      if (e.type.endsWith(".delta")) part.delta += e.delta ?? "";
-      else { if (part.delta && part.delta !== e.text) inconsistencies++; part.done = e.text; }
+      if (e.type.endsWith(".delta")) {
+        const delta = e.delta ?? "";
+        if (part.done !== undefined) {
+          // Only an exhausted canonical range may restart a known replay; every byte must match at its cursor.
+          const cursor = part.cursor === part.done.length ? 0 : part.cursor ?? part.delta.length;
+          if (!part.done.startsWith(delta, cursor)) inconsistencies++;
+          part.cursor = cursor + delta.length;
+        }
+        part.delta += delta;
+      } else {
+        if (part.done !== undefined && part.done !== e.text) inconsistencies++;
+        if (part.done === undefined && part.delta && !e.text.startsWith(part.delta)) inconsistencies++;
+        part.cursor ??= part.delta.length;
+        part.done ??= e.text;
+      }
       target.parts.set(index, part);
     } else if (["response.completed", "response.failed", "response.incomplete"].includes(e.type)) {
       (e.response?.output ?? []).forEach((item: Row, index: number) => {

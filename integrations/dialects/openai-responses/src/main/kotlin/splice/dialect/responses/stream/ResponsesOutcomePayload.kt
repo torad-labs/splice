@@ -30,7 +30,12 @@ internal class ResponsesOutcomePayload(private val ctx: StreamTurnContext) {
         text = RoundText(
             thinkingText = state.thinkingBuf.toString(),
             // Schema JSON was delivered as tool input, not prose for an honesty fallback to emit again.
-            bodyText = if (state.schemaToolEmitted) "" else state.textBuf.toString(),
+            bodyText = if (state.schemaToolEmitted) {
+                ""
+            } else {
+                state.nativePrefix?.textOwner?.snapshot(state.textBuf)
+                    ?: state.textBuf.toString()
+            },
             emittedText = state.emittedText,
             emittedThinking = state.emittedThinking,
         ),
@@ -69,7 +74,12 @@ internal class ResponsesOutcomePayload(private val ctx: StreamTurnContext) {
         text = RoundText(
             thinkingText = state.thinkingBuf.toString(),
             // Schema JSON was delivered as tool input, not prose for an honesty fallback to emit again.
-            bodyText = if (state.schemaToolEmitted) "" else state.textBuf.toString(),
+            bodyText = if (state.schemaToolEmitted) {
+                ""
+            } else {
+                state.nativePrefix?.textOwner?.snapshot(state.textBuf)
+                    ?: state.textBuf.toString()
+            },
             emittedText = state.emittedText,
             emittedThinking = state.emittedThinking,
         ),

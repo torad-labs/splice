@@ -6,23 +6,24 @@ import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
 import splice.core.turn.GatewayCustomCall
 import splice.core.util.JsonScalars
-import splice.core.util.JsonWire
 import splice.dialect.responses.request.AssistantPhase
 import splice.dialect.responses.request.ResponsesAssistantText
-import splice.upstream.transport.BufferCapacity
 
 internal const val NATIVE_MESSAGE_TYPE = "message"
 
 /** Completed native items retain their message boundaries independently of flattened display buffers. */
-internal class ResponsesNativePrefix {
-    val delivered = ResponsesDeliveredHistory()
+internal class ResponsesNativePrefix(body: CharSequence) {
+    val textOwner = ResponsesTextOwner(body)
+    val ownership = ResponsesNativeOwnership(textOwner)
+    val delivered = ResponsesDeliveredHistory(textOwner)
     private val items = mutableListOf<NativePrefixItem>()
     private val completedIds = hashSetOf<String>()
-    private val pending = sortedMapOf<Int, StringBuilder>()
+    private val pending = sortedMapOf<Int, ResponsesTextRanges>()
     private var sealed: List<JsonObject>? = null
     private var boundary: Int? = null
-    private var rawChars: Long = 0
-    val retainedChars: Long get() = rawChars + delivered.retainedChars
+
+    /** Additional native data outside textBuf's proven contents; raw snapshots retain their own bounded owner. */
+    val retainedChars: Long get() = ownership.extraChars
 
     fun delta(index: Int, text: String) {
         bufferedDelta(index, text)
@@ -31,8 +32,7 @@ internal class ResponsesNativePrefix {
     }
 
     fun bufferedDelta(index: Int, text: String) {
-        pending.getOrPut(index) { StringBuilder() }.append(text)
-        rawChars += text.length
+        pending.getOrPut(index, textOwner::borrow).append(text.length)
         checkCapacity()
     }
 
@@ -40,38 +40,39 @@ internal class ResponsesNativePrefix {
     fun collect(item: JsonObject, index: Int): String? {
         if (!replayable(item)) return null
         val isMessage = JsonScalars.str(item, "type") == NATIVE_MESSAGE_TYPE
-        val streamed = pending.remove(index)?.toString().orEmpty()
-        rawChars -= streamed.length
+        val streamed = pending.remove(index)
+        val streamedLength = streamed?.length ?: 0
         val captured = when {
             !isMessage -> {
                 // Reusing an index starts another item; the preceding unfinished message remains history.
-                if (streamed.isNotEmpty()) retain(message(streamed), index)
+                if (streamedLength != 0) retain(message(checkNotNull(streamed).materialize()), index, streamed)
                 item
             }
-            ResponsesMessageText.text(item).isEmpty() && streamed.isNotEmpty() ->
-                JsonObject(item + ("content" to checkNotNull(message(streamed)["content"])))
+            ResponsesMessageText.text(item).isEmpty() && streamedLength != 0 ->
+                JsonObject(item + ("content" to checkNotNull(message(checkNotNull(streamed).materialize())["content"])))
             else -> item
         }
-        val fresh = retain(captured, index)
+        val fresh = retain(captured, index, streamed)
         if (fresh) delivered.item(captured, index)
         checkCapacity()
         return knownSuffix(captured, streamed, fresh)
     }
 
-    private fun retain(item: JsonObject, index: Int): Boolean {
+    private fun retain(item: JsonObject, index: Int, observed: ResponsesTextRanges? = null): Boolean {
         val id = JsonScalars.str(item, "id")
         if (id != null && !completedIds.add(id)) return false
-        rawChars += JsonWire.string(item).length
+        ownership.retain(item, index, observed)
         checkCapacity()
         items.add(NativePrefixItem(index, item))
         return true
     }
 
-    private fun knownSuffix(item: JsonObject, streamed: String, fresh: Boolean): String? {
+    private fun knownSuffix(item: JsonObject, streamed: ResponsesTextRanges?, fresh: Boolean): String? {
         if (JsonScalars.str(item, "type") != NATIVE_MESSAGE_TYPE) return null
         if (!fresh) return ""
         val completed = ResponsesMessageText.text(item)
-        return completed.takeIf { it.startsWith(streamed) }?.substring(streamed.length)
+        val matches = streamed?.matchesPrefix(completed) ?: true
+        return completed.takeIf { matches }?.substring(streamed?.length ?: 0)
     }
 
     fun seal(index: Int?, call: GatewayCustomCall) {
@@ -98,7 +99,7 @@ internal class ResponsesNativePrefix {
         if (matched != before) return
         val reconciled = terminal.map { candidate -> known[identity(candidate)] ?: candidate }
         val added = terminal.filter { identity(it) !in known }
-        rawChars += added.sumOf { JsonWire.string(it).length.toLong() }
+        added.forEachIndexed { index, item -> ownership.retain(item, index, null) }
         checkCapacity()
         boundary = boundary ?: callAt
         sealed = reconciled
@@ -125,14 +126,14 @@ internal class ResponsesNativePrefix {
         val completed = items.filter { it.index < end }
         val unfinished = pending.filterKeys {
             it < end
-        }.map { (index, text) -> NativePrefixItem(index, message(text.toString())) }
+        }.map { (index, text) -> NativePrefixItem(index, message(text.materialize())) }
         addAll((completed + unfinished).sortedBy { it.index }.map { it.item })
     }
 
     private fun identity(item: JsonObject): JsonElement = item["id"] ?: item
 
     private fun checkCapacity() {
-        require(retainedChars <= BufferCapacity.MAX_BUFFERED_CHARS) { "native history exceeds buffer capacity" }
+        ownership.checkCapacity()
     }
 
     private fun replayable(item: JsonObject): Boolean = when (JsonScalars.str(item, "type")) {

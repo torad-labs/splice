@@ -28,7 +28,7 @@ internal class ResponsesReasoningReplay(
     private var positionsProven = true
 
     init {
-        state.nativePrefix = ResponsesNativePrefix()
+        state.nativePrefix = ResponsesNativePrefix(state.textBuf)
     }
 
     /** Advance in wire order, including prose whose item never completes before a recovery. */
@@ -40,7 +40,10 @@ internal class ResponsesReasoningReplay(
     /** Completed native messages already contain this suffix; only their delivered cursor advances. */
     fun messageTextDelivered(text: String, index: Int? = null) {
         cursor?.text("assistant", text)
-        index?.let { state.nativePrefix?.delivered?.text(it, text) }
+        index?.let {
+            state.nativePrefix?.ownership?.representedSuffix(it, text.length)
+            state.nativePrefix?.delivered?.text(it, text)
+        }
     }
 
     fun messageUndelivered() {

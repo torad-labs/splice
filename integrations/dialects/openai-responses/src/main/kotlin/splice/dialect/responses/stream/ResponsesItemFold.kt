@@ -121,6 +121,7 @@ internal class ResponsesItemFold(
                 when {
                     outputToolName != null -> {
                         state.textBuf.append(suffix)
+                        state.nativePrefix?.ownership?.representedSuffix(key, suffix.length)
                         replay.messageUndelivered()
                     }
                     existing?.tool != true -> {

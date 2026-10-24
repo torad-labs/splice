@@ -120,10 +120,8 @@ internal class ResponsesStreamTranslator(
                 }
                 .firstOrNull { evt ->
                     reducer.onEvent(evt, orderedSink)
-                    // Char overflow must stop even on the last frame; block count keeps its pre-event boundary.
-                    bufferBudget.within(state, reasoningFold.pendingChars, includeBlockCount = false)
                     // Protocol completion releases callbacks and usage without awaiting transport EOF.
-                    state.finalResponse != null || bufferBudget.failure != null
+                    state.finalResponse != null
                 }
         } catch (e: CancellationException) {
             if (cancellationMustEscape(state)) throw e
@@ -150,7 +148,7 @@ internal class ResponsesStreamTranslator(
             if (!hasRecoverableProgress(state)) throw ignored
             unexpected = ignored
         } finally {
-            // EOF at the full block count has no lookahead event to run takeWhile's guard.
+            // The last frame has no lookahead: latch char/block overflow before any held literal can flush.
             bufferBudget.within(state, reasoningFold.pendingChars)
             reasoningFold.leadingText.closeSourceProgress(
                 itemFold,

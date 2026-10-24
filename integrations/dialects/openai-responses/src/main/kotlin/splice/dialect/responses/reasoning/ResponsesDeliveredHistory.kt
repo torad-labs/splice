@@ -7,7 +7,7 @@ import splice.dialect.responses.request.AssistantPhase
 import splice.dialect.responses.request.ResponsesAssistantText
 
 /** Confirmed delivery order is independent of native output indexes and full backend snapshots. */
-internal class ResponsesDeliveredHistory {
+internal class ResponsesDeliveredHistory(private val owner: ResponsesTextOwner) {
     private val entries = mutableListOf<DeliveredNativeItem>()
     private val open = mutableMapOf<Int, DeliveredMessage>()
     private val fragmented = hashSetOf<Int>()
@@ -15,8 +15,6 @@ internal class ResponsesDeliveredHistory {
     private var verifiedEnd: Int? = null
     private var proven = true
     var callId: String? = null
-        private set
-    var retainedChars: Long = 0
         private set
 
     fun added(index: Int) {
@@ -28,22 +26,20 @@ internal class ResponsesDeliveredHistory {
         var entry = open[index]
         if (entry == null || entries.lastOrNull() !== entry) {
             if (entry != null) fragmented.add(index)
-            entry = DeliveredMessage().also { entries.add(it); open[index] = it }
+            entry = DeliveredMessage(owner.borrow()).also { entries.add(it); open[index] = it }
         }
         val released = if (index in fragmented) null else entry.completeSuffix(text)
         if (released != null) {
-            retainedChars -= released
             open.remove(index)
             return
         }
         entry.append(text)
-        retainedChars += text.length
         if (index !in fragmented) promote(index, entry)
     }
 
     fun item(item: JsonObject, index: Int) {
         if (JsonScalars.str(item, "type") == NATIVE_MESSAGE_TYPE) {
-            val entry = open.getOrPut(index) { DeliveredMessage().also { entries.add(it) } }
+            val entry = open.getOrPut(index) { DeliveredMessage(owner.borrow()).also { entries.add(it) } }
             entry.completed = item
             if (index !in fragmented) promote(index, entry)
         } else {
@@ -85,7 +81,7 @@ internal class ResponsesDeliveredHistory {
         if (!entry.matchesPrefix(text)) {
             invalidate()
         } else if (entry.length == text.length) {
-            retainedChars -= entry.release(completed)
+            entry.release(completed)
             open.remove(index)
         }
     }
@@ -99,25 +95,22 @@ private class DeliveredItem(private val item: JsonObject) : DeliveredNativeItem 
     override fun snapshot(): JsonObject = item
 }
 
-private class DeliveredMessage : DeliveredNativeItem {
-    private var body: StringBuilder? = StringBuilder()
+private class DeliveredMessage(private val body: ResponsesTextRanges) : DeliveredNativeItem {
     private var raw: JsonObject? = null
     private var actualLength = 0
     var completed: JsonObject? = null
     val length: Int get() = actualLength
 
     fun append(text: String) {
-        checkNotNull(body).append(text)
+        body.append(text.length)
         actualLength += text.length
     }
 
-    fun matchesPrefix(text: String): Boolean = text.startsWith(checkNotNull(body))
+    fun matchesPrefix(text: String): Boolean = body.matchesPrefix(text)
 
     fun release(item: JsonObject): Int {
-        val length = checkNotNull(body).length
         raw = item
-        body = null
-        return length
+        return body.length
     }
 
     fun completeSuffix(text: String): Int? {
@@ -131,6 +124,7 @@ private class DeliveredMessage : DeliveredNativeItem {
         )
         if (!matches) return null
         actualLength += text.length
+        body.append(text.length)
         return release(item)
     }
 
@@ -138,7 +132,7 @@ private class DeliveredMessage : DeliveredNativeItem {
         actualLength == 0 -> null
         raw != null -> raw
         else -> JsonObject(
-            ResponsesAssistantText.item(checkNotNull(body).toString(), AssistantPhase.COMMENTARY) +
+            ResponsesAssistantText.item(body.materialize(), AssistantPhase.COMMENTARY) +
                 ("type" to JsonPrimitive(NATIVE_MESSAGE_TYPE)),
         )
     }

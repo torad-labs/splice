@@ -10,7 +10,7 @@ import splice.dialect.responses.request.AssistantPhase
 import splice.dialect.responses.request.ResponsesAssistantText
 import splice.upstream.transport.BufferCapacity
 
-private const val NATIVE_MESSAGE_TYPE = "message"
+internal const val NATIVE_MESSAGE_TYPE = "message"
 
 /** Completed native items retain their message boundaries independently of flattened display buffers. */
 internal class ResponsesNativePrefix {
@@ -29,8 +29,8 @@ internal class ResponsesNativePrefix {
     }
 
     /** Keep complete upstream snapshots separately from the text the client actually received. */
-    fun collect(item: JsonObject, index: Int) {
-        if (!replayable(item)) return
+    fun collect(item: JsonObject, index: Int): String? {
+        if (!replayable(item)) return null
         val isMessage = JsonScalars.str(item, "type") == NATIVE_MESSAGE_TYPE
         val streamed = pending.remove(index)?.toString().orEmpty()
         retainedChars -= streamed.length
@@ -44,15 +44,24 @@ internal class ResponsesNativePrefix {
                 JsonObject(item + ("content" to checkNotNull(content(message(streamed)))))
             else -> item
         }
-        retain(captured, index)
+        val fresh = retain(captured, index)
+        return knownSuffix(captured, streamed, fresh)
     }
 
-    private fun retain(item: JsonObject, index: Int) {
+    private fun retain(item: JsonObject, index: Int): Boolean {
         val id = JsonScalars.str(item, "id")
-        if (id != null && !completedIds.add(id)) return
+        if (id != null && !completedIds.add(id)) return false
         retainedChars += JsonWire.string(item).length
         require(retainedChars <= BufferCapacity.MAX_BUFFERED_CHARS) { "native history exceeds buffer capacity" }
         items.add(NativePrefixItem(index, item))
+        return true
+    }
+
+    private fun knownSuffix(item: JsonObject, streamed: String, fresh: Boolean): String? {
+        if (JsonScalars.str(item, "type") != NATIVE_MESSAGE_TYPE) return null
+        if (!fresh) return ""
+        val completed = text(item)
+        return completed.takeIf { it.startsWith(streamed) }?.substring(streamed.length)
     }
 
     private fun text(item: JsonObject): String {

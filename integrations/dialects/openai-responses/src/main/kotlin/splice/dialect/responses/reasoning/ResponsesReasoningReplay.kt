@@ -23,6 +23,7 @@ internal class ResponsesReasoningReplay(
     private val streamedCalls = hashSetOf<String>()
     private var roundId: String? = null
     private var streamedItems = 0
+    private var positionsProven = true
 
     init {
         if (ctx.reasoningCapture.collectEnvelopes) state.nativePrefix = ResponsesNativePrefix()
@@ -30,15 +31,26 @@ internal class ResponsesReasoningReplay(
 
     /** Advance in wire order, including prose whose item never completes before a recovery. */
     fun textDelta(index: Int, text: String) {
-        cursor?.text("assistant", text)
+        messageTextDelivered(text)
         state.nativePrefix?.delta(index, text)
     }
 
-    fun collect(item: JsonObject, outputIndex: Int?) {
+    /** Completed native messages already contain this suffix; only their delivered cursor advances. */
+    fun messageTextDelivered(text: String) {
+        cursor?.text("assistant", text)
+    }
+
+    fun messageUndelivered() {
+        positionsProven = false
+    }
+
+    fun collect(item: JsonObject, outputIndex: Int?): IndexedValue<String>? {
         val index = outputIndex ?: streamedItems
-        state.nativePrefix?.collect(item, index)
-        collectAt(item, cursor, outputIndex = index, terminal = false)
+        val suffix = state.nativePrefix?.collect(item, index)
+        if (JsonScalars.str(item, "type") == NATIVE_MESSAGE_TYPE && suffix == null) messageUndelivered()
+        collectAt(item, cursor.takeIf { positionsProven }, outputIndex = index, terminal = false)
         streamedItems++
+        return suffix?.let { IndexedValue(index, it) }
     }
 
     /** Terminal-only backends carry the same ordered output array. Revisit it from the request cursor;
@@ -49,7 +61,7 @@ internal class ResponsesReasoningReplay(
         if (output.isEmpty()) return
         val at = initial?.copy()
         val conflict = deliveredOrderConflicts(output)
-        val bounds = TerminalHistoryBounds(output, initial, cursor, streamedCalls)
+        val bounds = TerminalHistoryBounds(output, initial, cursor.takeIf { positionsProven }, streamedCalls)
         output.forEachIndexed { index, value ->
             (value as? JsonObject)?.let {
                 if (conflict) {
@@ -64,9 +76,10 @@ internal class ResponsesReasoningReplay(
     }
 
     private fun deliveredOrderConflicts(output: JsonArray): Boolean {
+        if (!positionsProven) return true
         if (!state.emittedText) return false
         val terminalText = output.mapNotNull { it as? JsonObject }
-            .filter { JsonScalars.str(it, "type") == "message" }.joinToString("", transform = ::messageText)
+            .filter { JsonScalars.str(it, "type") == NATIVE_MESSAGE_TYPE }.joinToString("", transform = ::messageText)
         return terminalText != state.textBuf.toString()
     }
 
@@ -78,7 +91,7 @@ internal class ResponsesReasoningReplay(
     ) {
         when (JsonScalars.str(item, "type")) {
             "reasoning" -> capture(item, at, outputIndex, terminal)
-            "message" -> if (terminal) at?.text("assistant", messageText(item))
+            NATIVE_MESSAGE_TYPE -> if (terminal) at?.text("assistant", messageText(item))
             "function_call" -> advanceTool(item, at)
         }
     }
@@ -145,7 +158,7 @@ private class TerminalHistoryBounds(
     private val context = output.mapIndexedNotNull { index, value ->
         val item = value as? JsonObject
         when (JsonScalars.str(item, "type")) {
-            "message", "function_call" -> IndexedValue(index, checkNotNull(item))
+            NATIVE_MESSAGE_TYPE, "function_call" -> IndexedValue(index, checkNotNull(item))
             else -> null
         }
     }

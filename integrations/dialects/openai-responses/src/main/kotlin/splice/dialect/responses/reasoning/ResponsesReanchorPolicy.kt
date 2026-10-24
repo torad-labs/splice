@@ -112,13 +112,17 @@ internal class ResponsesReanchorPolicy(
         val prefix = partial.nativePrefix ?: return null
         val delivered = partial.text.bodyText
         var offset = 0
-        val items = prefix.mapNotNull { item ->
-            if (JsonScalars.str(item, "type") == "message") {
-                val text = deliveredPrefix(messageText(item), delivered, offset)
-                offset += text.length
-                text.takeIf { it.isNotEmpty() }?.let(::assistantText)
-            } else {
-                item
+        val items = buildList {
+            for (item in prefix) {
+                if (JsonScalars.str(item, "type") == "message") {
+                    val model = messageText(item)
+                    val text = deliveredPrefix(model, delivered, offset)
+                    offset += text.length
+                    if (text.isNotEmpty()) add(assistantText(text))
+                    if (text.length != model.length) break
+                } else {
+                    add(item)
+                }
             }
         }
         return items.takeIf { offset == delivered.length }

@@ -87,16 +87,32 @@ internal class ResponsesItemFold(
                 sink.customToolSource(splice.upstream.sse.CustomToolSource.Completed(call, snapshot?.invoke()))
             }
         }
+        val completedMessage = completeMessage(item, oi, sink)
         // Some backends only attach readable reasoning on the completed item (no per-token
         // summary deltas). Surface that text NOW so Claude Code's thinking UI fills live,
         // not only via the end-of-turn harvest fallback.
         reasoningFold.maybeEmitLateReasoning(item, oi, sink)
         maybeHarvestLateToolArgs(item, oi, sink)
         recordDoneDetail(item)
-        if (item != null && JsonScalars.strOrEmpty(item["type"]) == "message") state.messageClosed = true
         closeOpenBlocks(oi, sink)
         if (item == null) return
-        replay.collect(item, oi)
+        if (!completedMessage) replay.collect(item, oi)
+    }
+
+    private suspend fun completeMessage(item: JsonObject?, oi: Int?, sink: WireSink): Boolean {
+        if (JsonScalars.str(item, "type") != "message") return false
+        state.messageClosed = true
+        val completion = replay.collect(checkNotNull(item), oi)
+        completion?.takeIf { it.value.isNotEmpty() }?.let { (key, suffix) ->
+            val existing = state.blocks[key]
+            if (outputToolName == null && existing?.tool != true) {
+                emitText(key, suffix, existing, sink)
+                replay.messageTextDelivered(suffix)
+            } else {
+                replay.messageUndelivered()
+            }
+        }
+        return true
     }
 
     /** DR-77: a backend may close a function_call via output_item.done ALONE — no arguments.delta,
@@ -164,14 +180,21 @@ internal class ResponsesItemFold(
         // the passthrough's PT-001 unmapped-index deltas.
         val mistargeted = existing != null && existing.tool
         if (mistargeted) return
-        state.textBuf.append(delta)
-        if (outputToolName != null) return // Validated schema JSON is emitted as tool input at completion, not prose.
+        if (outputToolName != null) {
+            state.textBuf.append(delta) // Validated schema JSON becomes tool input at completion, not prose.
+            return
+        }
+        emitText(key, delta, existing, sink)
+        replay.textDelta(key, delta)
+    }
+
+    private suspend fun emitText(key: Int, delta: String, existing: BlockState?, sink: WireSink) {
         val b = existing ?: run {
             BlockState(sink.openText(), sawDelta = false).also { state.blocks[key] = it }
         }
-        state.emittedText = true
         sink.textDelta(b.index, delta)
-        replay.textDelta(key, delta)
+        state.textBuf.append(delta)
+        state.emittedText = true
     }
 
     // tool args stream as input_json_delta on the SAME wire block index; the .done frame closes it.

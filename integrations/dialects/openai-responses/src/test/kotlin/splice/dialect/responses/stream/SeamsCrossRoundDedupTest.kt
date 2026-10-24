@@ -18,6 +18,7 @@ import splice.core.index.WireBlockIndex
 import splice.core.model.ModelCatalog
 import splice.core.model.ModelEntry
 import splice.core.parse.AnthropicParse
+import splice.core.parse.AnthropicTurnBody
 import splice.core.reasoning.ReasoningReplay
 import splice.core.turn.ReasoningDisplay
 import splice.core.turn.TurnMeta
@@ -97,6 +98,7 @@ private fun codexSeams(
     log: LogSink = LogSink {},
     reasoningCache: ReasoningCache = ReasoningCache(),
     cacheOn: Boolean = false,
+    turnOptions: ResponsesTurnOptions? = null,
 ): ResponsesTurnSeams {
     val quirks = ResponsesQuirks(
         lite = ResponsesLiteQuirks(),
@@ -117,7 +119,7 @@ private fun codexSeams(
             quirks = quirks,
             continuity = continuity,
             summaryParts = ConversationSummaryParts(),
-            turnOptions = ResponsesTurnOptions(
+            turnOptions = turnOptions ?: ResponsesTurnOptions(
                 ReasoningSettings(ReasoningDisplay.TEXT, false, "high", "detailed"),
                 quirks,
                 ModelCatalog(
@@ -134,6 +136,73 @@ private fun codexSeams(
             services = TranslatorServices(log = log),
         ),
     )
+}
+
+/** The provider's real options, translator seams and request builder with a deliberately small cache. */
+private class ReasoningCapacityReplay(cache: ReasoningCache) {
+    private val quirks = ResponsesQuirks(
+        providerTag = "claudex",
+        lite = ResponsesLiteQuirks(),
+        roundTrip = ResponsesRoundTripQuirks(reasoningCache = true),
+    )
+    private val options = ResponsesTurnOptions(
+        ReasoningSettings(ReasoningDisplay.TEXT, true, null, null),
+        quirks,
+        ModelCatalog(
+            discoveryPrefix = "claude-codex--",
+            models = listOf(ModelEntry(id = "gpt-5.6-luna", contextWindow = 272_000)),
+            defaultContextWindow = 272_000,
+        ),
+        LogSink {},
+        ReasoningContinuity(cache, ReasoningCachePolicy(), ResponsesStableIds()),
+        ToolSurfaceLatch(),
+    )
+    private val seams = codexSeams(reasoningCache = cache, cacheOn = true, turnOptions = options)
+    private val builder = ResponsesRequestBuilder(quirks)
+    private val signals = TurnSignals(watchdogFired = { null }, clientGone = { false })
+
+    suspend fun capture() {
+        val call = ev("""{"type":"function_call","call_id":"call_1","name":"read","arguments":"{}"}""")
+        drive(
+            request(null),
+            listOf(
+                reasoning("r1"),
+                ev("""{"type":"response.output_item.added","output_index":1,"item":$call}"""),
+                ev("""{"type":"response.output_item.done","output_index":1,"item":$call}"""),
+                completed,
+            ),
+        )
+        drive(request("original"), listOf(reasoning("r2"), completed))
+    }
+
+    fun ids(result: String): List<String> {
+        val body = request(result)
+        val input = builder.build(body.typed, body.raw, options.build(body, false, "session")).req
+            .getValue("input").jsonArray.map { it.jsonObject }
+        return input.filter { it["type"]?.jsonPrimitive?.content == "reasoning" }
+            .map { it.getValue("id").jsonPrimitive.content }
+    }
+
+    private suspend fun drive(body: AnthropicTurnBody, frames: List<JsonObject>) {
+        val built = builder.build(body.typed, body.raw, options.build(body, false, "session"))
+        seams.streamTranslator(built.meta, signals).driveTurn(frames.asFlow(), SeamsSink())
+    }
+
+    private fun reasoning(id: String): JsonObject = ev(
+        """{"type":"response.output_item.done","output_index":0,""" +
+            """"item":{"type":"reasoning","id":"$id","encrypted_content":"x"}}""",
+    )
+
+    private fun request(result: String?): AnthropicTurnBody {
+        val followup = result?.let {
+            """,{"role":"assistant","content":[{"type":"tool_use","id":"call_1","name":"read","input":{}}]},""" +
+                """{"role":"user","content":[{"type":"tool_result","tool_use_id":"call_1","content":"$it"}]}"""
+        }.orEmpty()
+        return AnthropicParse.parseAnthropicBody(
+            """{"model":"gpt-5.6-luna","messages":[{"role":"user","content":"Opening"}$followup],""" +
+                """"tools":[{"name":"read","input_schema":{"type":"object"}}]}""",
+        )
+    }
 }
 
 private fun testMeta(): TurnMeta = TurnMeta(
@@ -154,6 +223,28 @@ private fun testMeta(): TurnMeta = TurnMeta(
 )
 
 class SeamsCrossRoundDedupTest {
+
+    @Test
+    fun `result proof metadata leaves two reasoning entries available under a two-entry cap`() = runTest {
+        val replay = ReasoningCapacityReplay(ReasoningCache(maxEntries = 2))
+        replay.capture()
+
+        assertEquals(listOf("r1", "r2"), replay.ids("original"))
+        assertEquals(listOf("r1", "r2"), replay.ids("[Old tool result content cleared]"))
+    }
+
+    @Test
+    fun `a rejected result proof preserves ordinary reasoning and misses cleared history`() = runTest {
+        val bytes = listOf("r1", "r2").sumOf { id ->
+            val item = ev("""{"type":"reasoning","id":"$id","encrypted_content":"x"}""")
+            checkNotNull(ReasoningReplay.encodeReasoningEnvelope(item)).length.toLong()
+        }
+        val replay = ReasoningCapacityReplay(ReasoningCache(maxTotalBytes = bytes))
+        replay.capture()
+
+        assertEquals(listOf("r1", "r2"), replay.ids("original"))
+        assertEquals(listOf("r1"), replay.ids("[Old tool result content cleared]"))
+    }
 
     @Test
     fun `live and terminal copies leave entry and byte capacity for the next reasoning item`() = runTest {

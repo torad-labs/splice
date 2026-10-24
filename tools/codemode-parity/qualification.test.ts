@@ -1,7 +1,7 @@
 import { describe, test, expect } from "bun:test";
 import { requiredCaseIds, contractFindings, structuralFindings, sealReceipt, artifact, rawArtifactFindings, type Receipt } from "./qualification";
 import { verifiers } from "./verifiers";
-import { assertNativeTypedMedia } from "./interactive-output";
+import { assertNativeTypedMedia, assertAcceptedCallbackText, assertInterruptedCallbackText } from "./interactive-output";
 import { assertNativeBatch, assertNativeRestartBatch, assertNativeOutOfOrderBatch } from "./interactive-batch";
 import { assertCandidateWorkerLoss } from "./candidate-loss";
 import { resolveEvidenceDirectory } from "./evidence-location";
@@ -138,6 +138,7 @@ function batchObservation() {
     { type: "input_text", text: "Script completed\nWall time 0.1 seconds\nOutput:\n" },
     { type: "input_text", text: index === 0 ? "native-batch-first" : "native-batch-second" },
   ] }));
+  outputs[0]!.output.push({ type: "input_text", text: "accepted" });
   outputs[1]!.output.push({ type: "input_text", text: "native-batch-second-epoch:1200" });
   return { scriptAttempts: 1, callbackTimes: [1100], marks: [
     ...originals.map(item => ({ event: "upstream_sse", epochMs: 1000, frame: { type: "response.output_item.done", item } })),
@@ -212,7 +213,7 @@ function restartBatchObservation() {
     type: "tool_use", id: "callback-once", name: "Bash",
   } } } as any);
   value.upstreamRequests[0]!.nativeInput[2].output = "Script terminated\nWall time 0.0 seconds\nOutput:\n" + JSON.stringify({
-    status: "interrupted", sourceRerun: false, results: [{ id: "callback-once", output: "(Bash completed with no output)", isError: false }], unresolved: [],
+    status: "interrupted", sourceRerun: false, results: [{ id: "callback-once", output: "accepted", isError: false }], unresolved: [],
   });
   return value;
 }
@@ -313,5 +314,31 @@ describe("qualification evidence-location guard (not product parity)", () => {
       const selected = await resolveEvidenceDirectory(undefined, progress, join(directory, "older"));
       expect(structuralFindings(await Bun.file(join(selected, "receipt.json")).json(), expected, key)).toEqual(["malformed qualification receipt"]);
     } finally { await rm(directory, { recursive: true, force: true }); }
+  });
+});
+
+describe("qualification plain callback text guard (not product parity)", () => {
+  const completed = (text: string) => [{ nativeInput: [{ type: "custom_tool_call_output", call_id: "call_probe", output: [
+    { type: "input_text", text: "Script completed\n" }, { type: "input_text", text },
+  ] }] }];
+  test("accepts literal non-JSON callback stdout in completed model output", () => {
+    expect(() => assertAcceptedCallbackText(completed("accepted"))).not.toThrow();
+  });
+  test("rejects quoted or serialized lookalikes and absent completion after host EOF", () => {
+    expect(() => assertAcceptedCallbackText(completed('"accepted"'))).toThrow();
+    expect(() => assertAcceptedCallbackText(completed('{"text":"accepted"}'))).toThrow();
+    expect(() => assertAcceptedCallbackText([])).toThrow();
+  });
+  test("cannot borrow accepted text from source or the unrelated second batch module", () => {
+    const requests = completed("lost");
+    requests[0]!.nativeInput.push({ type: "custom_tool_call", call_id: "call_probe", output: [{ type: "input_text", text: "accepted" }] });
+    requests[0]!.nativeInput.push({ type: "custom_tool_call_output", call_id: "call_probe_second", output: [{ type: "input_text", text: "accepted" }] });
+    expect(() => assertAcceptedCallbackText(requests)).toThrow();
+  });
+  test("requires exact accepted text in the honest interruption receipt", () => {
+    const value = restartBatchObservation();
+    expect(() => assertInterruptedCallbackText(value.upstreamRequests)).not.toThrow();
+    value.upstreamRequests[0]!.nativeInput[2].output = value.upstreamRequests[0]!.nativeInput[2].output.replace('"output":"accepted"', '"output":"changed"');
+    expect(() => assertInterruptedCallbackText(value.upstreamRequests)).toThrow();
   });
 });

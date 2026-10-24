@@ -8,6 +8,7 @@ import { createReadStream, existsSync, mkdirSync, mkdtempSync, readFileSync, wri
 import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
+import { assertAcceptedCallbackText, assertInterruptedCallbackText } from "./interactive-output";
 import { interactiveClient } from "./interactive-client";
 import { assertNativeBatch, assertNativeRestartBatch, assertNativeOutOfOrderBatch } from "./interactive-batch";
 
@@ -17,7 +18,7 @@ const SUMMARY = "PROBE_READABLE_REASONING: inspect the callback file, then run t
 const ENVELOPE = "synthetic-probe-reasoning-envelope-not-a-real-credential";
 const FINAL = "PROBE_FINISHED";
 const HOLD_MS = 2000;
-const PROBE_VERSION = 7;
+const PROBE_VERSION = 8;
 type Obj = Record<string, any>;
 type Scenario = "success" | "late-failure" | "native-lifecycle" | "restart" | "native-batch" | "native-batch-restart" | "native-batch-out-of-order";
 type Mark = { event: string; epochMs: number; elapsedMs: number; [key: string]: unknown };
@@ -80,7 +81,7 @@ export async function interactiveScenario(jar: string, name: Scenario, root: str
   const home = join(root, name); const task = join(home, "task");
   for (const d of [home, task, join(home, "tmp"), join(home, "claude"), join(home, "state")]) mkdirSync(d, { recursive: true, mode: 0o700 });
   const effects = join(task, "effects.txt");
-  const start = performance.now(); const marks: Mark[] = []; const requests: Obj[] = [];
+  const start = performance.now(); const marks: Mark[] = []; const requests: Array<Obj & { nativeInput: Obj[] }> = [];
   const mark = (event: string, extra: Obj = {}) => marks.push({ event, epochMs: Date.now(), elapsedMs: Math.round(performance.now() - start), ...extra });
   let scripts = 0, finals = 0, lateFailures = 0, seq = 0, clientEvents = 0, redacted = 0, titles = 0, waits = 0;
   let restarted = false;
@@ -202,7 +203,7 @@ export async function interactiveScenario(jar: string, name: Scenario, root: str
     emit({ type: "response.output_item.done", output_index: reasoningIndex, item: reasoning });
     // task comes from mkdtemp, shell-quote nevertheless; no substitution of user-provided shell code.
     const quoted = "'" + effects.replaceAll("'", "'\\''") + "'";
-    const callback = `text(await tools.Bash(${JSON.stringify({ command: `date +%s%3N >> ${quoted}`, description: "Record deterministic probe callback timestamp", timeout: 10000 })}));`;
+    const callback = `text(await tools.Bash(${JSON.stringify({ command: `date +%s%3N >> ${quoted} && printf accepted`, description: "Record deterministic probe callback timestamp", timeout: 10000 })}));`;
     const script = name === "native-lifecycle"
       ? `text('native-prefix'); notify('native-progress'); yield_control(); await new Promise(r => setTimeout(r, 80)); ${callback} text('native-suffix'); image({ image_url: 'data:image/png;base64,aGVsbG8=', detail: 'original' }); audio({ audio_url: 'data:audio/wav;base64,aGVsbG8=' }); generatedImage({ image_url: 'data:image/png;base64,d29ybGQ=', output_hint: 'native-generated' });`
       : batch ? `${callback} text('native-batch-first');` : callback;
@@ -383,7 +384,12 @@ export async function interactiveScenario(jar: string, name: Scenario, root: str
     else if (outOfOrder) assertNativeOutOfOrderBatch(observed);
     else assertNativeBatch(observed);
   } catch (error) { batchFindings.push(error instanceof Error ? error.message : String(error)); }
+  const callbackFindings: string[] = [];
+  try {
+    if (restart) assertInterruptedCallbackText(requests); else assertAcceptedCallbackText(requests);
+  } catch (error) { callbackFindings.push(error instanceof Error ? error.message : String(error)); }
   const checks = {
+    nativeCallbackTextPreserved: callbackFindings.length === 0,
     nativeBatchPreserved: batchFindings.length === 0,
     clientExitedSuccessfully: cliExit === 0 && !cliResultError,
     readableReasoningOnWire: summaryVisibleAt !== null,
@@ -412,7 +418,7 @@ export async function interactiveScenario(jar: string, name: Scenario, root: str
     noInfrastructureErrors: errors.length === 0,
   };
   return { scenario: name, passed: Object.values(checks).every(Boolean), checks, errors, taskDir: task,
-    clientUserAgent: clientVersion, cliExit, holdMs: HOLD_MS, callbackTimes, scriptAttempts: scripts, waits, restarted, batchFindings,
+    clientUserAgent: clientVersion, cliExit, holdMs: HOLD_MS, callbackTimes, scriptAttempts: scripts, waits, restarted, batchFindings, callbackFindings,
     upstreamRequests: requests, clientEvents, redactedBlocks: redacted, cliRedactedBlocks: cliRedacted,
     thinkingDelivery: {
       expectedChars: SUMMARY.length,

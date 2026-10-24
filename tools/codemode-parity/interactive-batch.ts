@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { assertAcceptedCallbackText } from "./interactive-output";
 
 const calls = ["call_probe", "call_probe_second"] as const;
 const markers = ["native-batch-first", "native-batch-second"] as const;
@@ -50,6 +51,7 @@ function assertCompleted(content: any, call: string, marker: string): void {
 
 export function assertNativeBatch(value: BatchObservation): void {
   const outputs = batchOutputs(value);
+  assertAcceptedCallbackText(value.upstreamRequests);
   outputs.forEach((content, index) => assertCompleted(content, calls[index]!, markers[index]!));
   const terminal = value.marks.find(mark => mark.event === "response_completed_sent")?.epochMs;
   const admitted = value.marks.find(mark => mark.event === "upstream_sse" &&
@@ -79,7 +81,7 @@ export function assertNativeRestartBatch(value: BatchObservation): void {
     mark.frame.content_block?.type === "tool_use" && mark.frame.content_block.name === "Bash")
     .map(mark => mark.frame.content_block.id);
   assert.equal(new Set(callbacks).size, 1, "restart must retain one actual Bash callback identity");
-  assert.deepEqual(interrupted.results, [{ id: callbacks[0], output: "(Bash completed with no output)", isError: false }],
+  assert.deepEqual(interrupted.results, [{ id: callbacks[0], output: "accepted", isError: false }],
     "first source lost or changed the accepted callback result");
   assert.deepEqual(interrupted.unresolved, []);
   assertCompleted(queued, calls[1], markers[1]);

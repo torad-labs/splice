@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { readFile, readdir, writeFile, mkdir } from "node:fs/promises";
 import { resolve } from "node:path";
 import { interactiveScenario } from "./interactive-gateway";
-import { assertNativeTypedMedia } from "./interactive-output";
+import { assertNativeTypedMedia, assertAcceptedCallbackText, assertInterruptedCallbackText } from "./interactive-output";
 import { assertNativeBatch, assertNativeRestartBatch, assertNativeOutOfOrderBatch } from "./interactive-batch";
 import { artifact, identity, type CaseEvidence, type CaseId } from "./qualification";
 
@@ -44,6 +44,8 @@ async function validate(result: any, root: string): Promise<void> {
   if (result.scenario === "native-lifecycle") {
     assert.ok(effects[0]! >= epoch(result, "wait_item_done"), "native callback must follow its model wait handoff");
   } else assert.ok(effects[0]! < terminal, "whole-item callback was held until response terminal");
+  if (["restart", "native-batch-restart"].includes(result.scenario)) assertInterruptedCallbackText(result.upstreamRequests);
+  else assertAcceptedCallbackText(result.upstreamRequests);
   const frames = result.marks.filter((mark: any) => mark.event === "client_sse").map((mark: any) => mark.frame);
   const thinking = frames.filter((frame: any) => frame.type === "content_block_delta" && frame.delta?.type === "thinking_delta")
     .map((frame: any) => frame.delta.thinking).join("");

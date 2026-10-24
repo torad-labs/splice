@@ -2,9 +2,9 @@
   "schema": 1,
   "status": "UNQUALIFIED",
   "productQualified": false,
-  "updatedAt": "2026-10-24T22:07:38.809Z",
+  "updatedAt": "2026-10-24T22:18:10.012Z",
   "contractSha256": "1447cea2a966f22f65ab0142b87825c37d06f83e36655680136005fc14422a29",
-  "harnessSha256": "71c558d4020abe71b0cc867570cc8c8adfa7925307b39217539ba6e4106fc653",
+  "harnessSha256": "afa7fb507e6acb0e479f95f43590d7a928d7c2ef5153c6bf840d3a35ea3eb38d",
   "requiredFamilies": 24,
   "executedFamilies": [
     "runtime.module-semantics",

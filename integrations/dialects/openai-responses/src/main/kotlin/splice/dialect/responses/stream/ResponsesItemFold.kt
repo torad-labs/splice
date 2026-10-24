@@ -166,12 +166,12 @@ internal class ResponsesItemFold(
         if (mistargeted) return
         state.textBuf.append(delta)
         if (outputToolName != null) return // Validated schema JSON is emitted as tool input at completion, not prose.
-        state.nativePrefix?.delta(key, delta)
         val b = existing ?: run {
             BlockState(sink.openText(), sawDelta = false).also { state.blocks[key] = it }
         }
         state.emittedText = true
         sink.textDelta(b.index, delta)
+        replay.textDelta(key, delta)
     }
 
     // tool args stream as input_json_delta on the SAME wire block index; the .done frame closes it.

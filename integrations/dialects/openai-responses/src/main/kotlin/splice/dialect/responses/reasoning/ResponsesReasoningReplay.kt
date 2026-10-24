@@ -27,6 +27,12 @@ internal class ResponsesReasoningReplay(
         if (ctx.reasoningCapture.collectEnvelopes) state.nativePrefix = ResponsesNativePrefix()
     }
 
+    /** Advance in wire order, including prose whose item never completes before a recovery. */
+    fun textDelta(index: Int, text: String) {
+        cursor?.text("assistant", text)
+        state.nativePrefix?.delta(index, text)
+    }
+
     fun collect(item: JsonObject, outputIndex: Int?) {
         val index = outputIndex ?: streamedItems
         val message = state.nativePrefix?.collect(item, index)

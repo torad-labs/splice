@@ -14,7 +14,7 @@ import kotlinx.serialization.json.jsonPrimitive
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.params.ParameterizedTest
-import org.junit.jupiter.params.provider.ValueSource
+import org.junit.jupiter.params.provider.CsvSource
 import splice.core.reasoning.ReasoningReplay
 import splice.core.turn.RoundHandoffs
 import splice.core.turn.TurnOutcome
@@ -55,9 +55,10 @@ internal class CodeModeReasoningArrivesOnceTest : CodeModeBridgeTestSupport() {
     }
 
     @ParameterizedTest
-    @ValueSource(booleans = [true, false])
+    @CsvSource("true,false", "false,false", "true,true", "false,true")
     fun `normalized and native reasoning with one id retain the native payload once at its verified slot`(
         nativeSource: Boolean,
+        coalesced: Boolean,
     ) {
         val native = round.map { JsonObject((it.jsonObject - "summary") + ("status" to JsonPrimitive("completed"))) }
         val normalized = native.map {
@@ -79,7 +80,16 @@ internal class CodeModeReasoningArrivesOnceTest : CodeModeBridgeTestSupport() {
             carry.continuity = continuity.logicalItems
             carry.replay = continuity.replayItems
         }
-        val client = history + listOf(echoed[0], before, echoed[1], after, echoed[2]) + callback("call-0")
+        val clientEcho = if (coalesced) {
+            val joined = ResponsesAssistantText.item(
+                "before the middle reasoningafter the middle reasoning",
+                AssistantPhase.COMMENTARY,
+            )
+            listOf(echoed[0], joined, echoed[1], echoed[2])
+        } else {
+            listOf(echoed[0], before, echoed[1], after, echoed[2])
+        }
+        val client = history + clientEcho + callback("call-0")
         val actual = rewrite(client, owner)
         val expected = history + listOf(native[0], before, native[1], after, native[2]) +
             listOf(CodeModeCallReplay.item(owner), codec.customOutput(owner))

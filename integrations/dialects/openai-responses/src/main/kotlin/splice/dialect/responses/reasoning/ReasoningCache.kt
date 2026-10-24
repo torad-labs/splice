@@ -73,8 +73,8 @@ internal class ReasoningCache(
     private val lock = Any()
     private val writes = ReasoningCacheWrites(files)
     private val positions = ReasoningCachePositions()
-    private val persistence = ReasoningRoundPersistence(writes, positions)
     private val proofs = ReasoningCacheProofs()
+    private val persistence = ReasoningRoundPersistence(writes, positions, proofs)
 
     // What the last process left on disk, published once before any read or write sees the maps: a
     // restarted daemon's first request must find it. The directory is read under the lazy's own lock,
@@ -85,7 +85,12 @@ internal class ReasoningCache(
         synchronized(lock) {
             stored.forEach { conversation ->
                 val convo = ReasoningCacheConvo()
-                val normalized = positions.normalized(conversation.rounds.filter { it.ids.isNotEmpty() })
+                val recorded = conversation.rounds.filter { it.ids.isNotEmpty() }
+                if (recorded.isEmpty()) {
+                    writes.drop(conversation.key)
+                    return@forEach
+                }
+                val normalized = positions.normalized(recorded)
                 normalized.forEach { round ->
                     val rk = "r${seq++}"
                     val bytes = round.envelopes.sumOf { it.length.toLong() }
@@ -98,8 +103,7 @@ internal class ReasoningCache(
                 proofs.restore(convo, conversation.rounds)
                 totalBytes += convo.bytes
                 convos[conversation.key] = convo
-                val migrated = positions.stored(convo)
-                if (migrated != conversation.rounds) writes.replace(conversation.key, migrated)
+                if (normalized != recorded) totalBytes += persistence.rewrite(conversation.key, convo)
             }
             evictToBoundLocked(writing = null, writer = null, offered = null)
         }
@@ -221,8 +225,12 @@ internal class ReasoningCache(
             if (moved || admitted.changed) {
                 convos[conversationKey] = conversation
                 totalBytes += admitted.bytes
-                // A client-only proof cannot recreate a rejected conversation's file.
-                if (conversation.rounds.isNotEmpty()) writes.replace(conversationKey, positions.stored(conversation))
+                if (moved) {
+                    totalBytes += persistence.rewrite(conversationKey, conversation)
+                } else if (conversation.rounds.isNotEmpty() && admitted.changed) {
+                    // Proof-only evidence remains bounded in memory until the first admitted reasoning item.
+                    writes.append(conversationKey, emptyList(), emptyList(), admitted.delta)
+                }
             }
         }
         writes.flush()
@@ -239,7 +247,7 @@ internal class ReasoningCache(
         val convo = touchLocked(key) ?: ReasoningCacheConvo().also { convos[key] = it }
         val updated = positions.update(convo, toolIds)
         if (updated != null) {
-            if (updated) writes.replace(key, positions.stored(convo))
+            if (updated) totalBytes += persistence.rewrite(key, convo)
             return
         }
         if (convo.frozen) return // admission frozen; admitted rounds keep serving
@@ -338,14 +346,20 @@ internal class ReasoningCache(
 private class ReasoningRoundPersistence(
     private val writes: ReasoningCacheWrites,
     private val positions: ReasoningCachePositions,
+    private val proofs: ReasoningCacheProofs,
 ) {
     fun enqueue(key: String, conversation: ReasoningCacheConvo, round: ReasoningCacheRound) {
         val firstWithProofs = conversation.rounds.size == 1 && conversation.resultProofs.isNotEmpty()
         if (firstWithProofs) {
-            writes.replace(key, positions.stored(conversation))
-        } else {
-            writes.append(key, round.toolIds, round.envelopes)
+            writes.append(key, emptyList(), emptyList(), conversation.resultProofs.toMap())
         }
+        writes.append(key, round.toolIds, round.envelopes)
+    }
+
+    fun rewrite(key: String, conversation: ReasoningCacheConvo): Long {
+        val released = proofs.compact(conversation)
+        writes.replace(key, positions.stored(conversation))
+        return released
     }
 }
 

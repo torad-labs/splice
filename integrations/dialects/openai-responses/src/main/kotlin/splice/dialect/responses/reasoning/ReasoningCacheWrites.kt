@@ -27,9 +27,14 @@ internal class ReasoningCacheWrites(private val files: ReasoningCacheFiles?) {
     }
 
     /** Queue [key]'s admitted round. Called under the cache's lock; a key no file can carry is not queued. */
-    fun append(key: String, toolIds: List<String>, envelopes: List<String>) {
+    fun append(
+        key: String,
+        toolIds: List<String>,
+        envelopes: List<String>,
+        resultProofs: Map<String, String?> = emptyMap(),
+    ) {
         if (usable && files?.accepts(key) == true) {
-            pending.add(ReasoningCacheWrite(key, StoredRound(toolIds, envelopes)))
+            pending.add(ReasoningCacheWrite(key, StoredRound(toolIds, envelopes, resultProofs)))
         }
     }
 

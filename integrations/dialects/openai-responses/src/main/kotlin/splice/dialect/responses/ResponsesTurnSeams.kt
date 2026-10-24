@@ -81,13 +81,18 @@ internal class ResponsesTurnSeams(private val deps: ResponsesTurnSeamsDeps) {
      *  (ResponsesTurnOptions): a tool round's reasoning in, and, on a compaction's Success, the
      *  conversation out (V4-334). Both only where the quirk runs the cache. */
     private fun reasoningSink(meta: TurnMeta): TurnReasoningSink {
-        val conversation = deps.continuity.policy.conversationKey(meta.scope.sessionId, meta.scope.conversationKey)
+        val opening = if (meta.scope.sessionId.isNullOrEmpty()) {
+            meta.scope.reasoningStorageKey
+        } else {
+            meta.scope.conversationKey
+        }
+        val conversation = deps.continuity.policy.conversationKey(meta.scope.sessionId, opening)
         val positioned = meta.scope.sessionId?.takeIf { it.isNotEmpty() }?.let {
             deps.continuity.policy.conversationKey(it, meta.scope.reasoningStorageKey)
         }
         return object : TurnReasoningSink {
             override fun invoke(toolIds: List<String>, envelopes: List<String>) {
-                if (deps.continuity.policy.reasoningCacheActive(deps.quirks, meta.compact)) {
+                if (conversation != null && retainsToolReasoning(meta)) {
                     deps.continuity.cache.put(conversation, toolIds, envelopes)
                 }
             }
@@ -107,6 +112,12 @@ internal class ResponsesTurnSeams(private val deps: ResponsesTurnSeamsDeps) {
                 deps.continuity.cache.put(positioned, listOf(index), listOf(envelope))
             }
         }
+    }
+
+    private fun retainsToolReasoning(meta: TurnMeta): Boolean {
+        if (meta.compact) return false
+        if (deps.quirks.roundTrip.reasoningCache) return true
+        return meta.scope.sessionId.isNullOrEmpty() && deps.turnOptions.replayOn()
     }
 
     private fun summaryOwner(meta: TurnMeta): SummaryRoundOwner =

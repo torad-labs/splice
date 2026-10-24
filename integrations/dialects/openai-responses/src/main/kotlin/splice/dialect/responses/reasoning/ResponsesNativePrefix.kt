@@ -5,9 +5,12 @@ import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
 import splice.core.util.JsonScalars
+import splice.core.util.JsonWire
 import splice.dialect.responses.request.AssistantPhase
 import splice.dialect.responses.request.ResponsesAssistantText
 import splice.upstream.transport.BufferCapacity
+
+private const val NATIVE_MESSAGE_TYPE = "message"
 
 /** Completed native items retain their message boundaries independently of flattened display buffers. */
 internal class ResponsesNativePrefix {
@@ -25,8 +28,9 @@ internal class ResponsesNativePrefix {
         require(retainedChars <= BufferCapacity.MAX_BUFFERED_CHARS) { "native history exceeds buffer capacity" }
     }
 
+    /** Completion contributes only text not already accounted for by delivered deltas. */
     fun collect(item: JsonObject, index: Int): String? {
-        val isMessage = JsonScalars.str(item, "type") == "message"
+        val isMessage = JsonScalars.str(item, "type") == NATIVE_MESSAGE_TYPE
         if (!replayable(item)) return null
         val streamed = pending.remove(index)?.toString().orEmpty()
         retainedChars -= streamed.length
@@ -36,13 +40,26 @@ internal class ResponsesNativePrefix {
         } else {
             item
         }
-        val id = JsonScalars.str(captured, "id")
-        if (id == null || completedIds.add(id)) {
-            retainedChars += captured.toString().length
-            require(retainedChars <= BufferCapacity.MAX_BUFFERED_CHARS) { "native history exceeds buffer capacity" }
-            items.add(NativePrefixItem(index, captured))
+        val fresh = retain(captured, index)
+        return when {
+            !isMessage -> null
+            !fresh -> ""
+            else -> unstreamedText(captured, streamed)
         }
-        return text(captured).takeIf { isMessage }
+    }
+
+    private fun retain(item: JsonObject, index: Int): Boolean {
+        val id = JsonScalars.str(item, "id")
+        if (id != null && !completedIds.add(id)) return false
+        retainedChars += JsonWire.string(item).length
+        require(retainedChars <= BufferCapacity.MAX_BUFFERED_CHARS) { "native history exceeds buffer capacity" }
+        items.add(NativePrefixItem(index, item))
+        return true
+    }
+
+    private fun unstreamedText(item: JsonObject, streamed: String): String {
+        val completed = text(item)
+        return if (completed.startsWith(streamed)) completed.substring(streamed.length) else ""
     }
 
     private fun text(item: JsonObject): String {
@@ -68,15 +85,32 @@ internal class ResponsesNativePrefix {
         val terminal = complete.take(callAt).filter(::replayable)
         val before = sealed ?: snapshot()
         val known = before.associateBy(::identity)
-        val matched = terminal.mapNotNull { known[identity(it)] }
+        val anonymous = anonymousMatches(before, terminal)
+        val matched = terminal.mapNotNull { known[identity(it)] ?: anonymous[it] }
         if (matched != before) return
         val reconciled = terminal.map { candidate -> known[identity(candidate)] ?: candidate }
         val added = terminal.filter { identity(it) !in known }
-        retainedChars += added.sumOf { it.toString().length.toLong() }
+        retainedChars += added.sumOf { JsonWire.string(it).length.toLong() }
         require(retainedChars <= BufferCapacity.MAX_BUFFERED_CHARS) { "native history exceeds buffer capacity" }
         boundary = boundary ?: callAt
         sealed = reconciled
     }
+
+    /** Exact text is an anchor only when unique on both sides; known anchors must retain their order. */
+    private fun anonymousMatches(before: List<JsonObject>, terminal: List<JsonObject>): Map<JsonObject, JsonObject> {
+        val anonymous = before.filter { JsonScalars.str(it, "id") == null }.groupBy(::messageKey)
+        val candidates = terminal.groupBy(::messageKey)
+        return anonymous.filterKeys { it != null }.filterValues { it.size == 1 }.mapNotNull { (key, entries) ->
+            candidates[key]?.singleOrNull()?.let { it to entries.single() }
+        }.toMap()
+    }
+
+    private fun messageKey(item: JsonObject): String? =
+        if (JsonScalars.str(item, "type") == NATIVE_MESSAGE_TYPE && JsonScalars.str(item, "role") == "assistant") {
+            text(item).takeIf { it.isNotEmpty() }
+        } else {
+            null
+        }
 
     fun snapshot(): List<JsonObject> = sealed ?: buildList {
         val end = boundary ?: Int.MAX_VALUE
@@ -92,13 +126,13 @@ internal class ResponsesNativePrefix {
     private fun content(item: JsonObject): JsonElement? = item["content"]
 
     private fun replayable(item: JsonObject): Boolean = when (JsonScalars.str(item, "type")) {
-        "message" -> true
+        NATIVE_MESSAGE_TYPE -> true
         "reasoning" -> !JsonScalars.str(item, "encrypted_content").isNullOrEmpty()
         else -> false
     }
 
     private fun message(text: String): JsonObject = JsonObject(
-        ResponsesAssistantText.item(text, AssistantPhase.COMMENTARY) + ("type" to JsonPrimitive("message")),
+        ResponsesAssistantText.item(text, AssistantPhase.COMMENTARY) + ("type" to JsonPrimitive(NATIVE_MESSAGE_TYPE)),
     )
 }
 

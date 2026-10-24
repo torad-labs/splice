@@ -35,13 +35,22 @@ internal class ReasoningContinuity(
 ) {
     /** The lookup for [body], keyed within [sessionId] as the capture keys it (ResponsesTurnSeams). Lazy, so a
      *  build with no tool_use blocks never touches the cache at all. */
-    fun snapshotFor(body: AnthropicTurnBody, sessionId: String?): Lazy<ReasoningCacheView> = lazy {
-        val legacy = policy.conversationKey(sessionId, ids.stablePromptCacheKey(body.typed))
-        val scoped = sessionId?.takeIf { it.isNotEmpty() }?.let {
-            policy.conversationKey(it, ids.reasoningStorageKey(body.typed))
+    fun snapshotFor(
+        body: AnthropicTurnBody,
+        sessionId: String?,
+        includeLegacy: Boolean = true,
+    ): Lazy<ReasoningCacheView> = lazy {
+        val canonical = policy.conversationKey(sessionId, ids.reasoningStorageKey(body.typed))
+        val legacy = if (includeLegacy) {
+            policy.conversationKey(
+                sessionId,
+                ids.stablePromptCacheKey(body.typed),
+            )
+        } else {
+            null
         }
-        val snapshot = cache.view(scoped ?: legacy, legacy)
-        if (scoped == null) {
+        val snapshot = if (canonical == null) ReasoningCacheView(emptyMap()) else cache.view(canonical, legacy)
+        if (sessionId.isNullOrEmpty()) {
             snapshot.copy(
                 rounds = snapshot.rounds.filterKeys { !it.startsWith(HISTORY_POSITION_PREFIX) },
                 proofs = emptyMap(),
@@ -138,7 +147,7 @@ internal class ResponsesTurnOptions(
 
     private fun cachedHistory(body: AnthropicTurnBody, sessionId: String?, replay: Boolean): Lazy<ReasoningCacheView> =
         if (quirks.roundTrip.reasoningCache || replay) {
-            continuity.snapshotFor(body, sessionId)
+            continuity.snapshotFor(body, sessionId, includeLegacy = quirks.roundTrip.reasoningCache)
         } else {
             lazy { ReasoningCacheView(emptyMap()) }
         }

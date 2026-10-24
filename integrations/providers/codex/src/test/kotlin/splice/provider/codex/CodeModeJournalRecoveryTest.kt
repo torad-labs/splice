@@ -315,6 +315,10 @@ class CodeModeJournalRecoveryTest {
               "baselineInputDigest":"changed input","metadataVersion":75,"baselineLogicalCount":76,
               "baselineLogicalDigest":"changed logical","nativeSegments":[{"logicalOffset":77,"items":["native"]}],
               "continuity":["logical"],"continuityReplay":[{"logicalOffset":78,"items":["replay"]}],
+              "nativeAfterExec":[{"type":"reasoning","id":"after-exec-reason","status":"completed",
+              "encrypted_content":"synthetic-after","summary":[],"content":[]},
+              {"type":"message","id":"after-exec-message","status":"completed","role":"assistant",
+              "phase":"commentary","content":[{"type":"output_text","text":"after exec prose","annotations":[]}]}],
               "issued":[{"requestDigest":"issued digest","calls":[]}],"sessionId":"synthetic session",
               "conversationId":"synthetic conversation","nativeBaseId":"synthetic parent","replayAnchors":{"baseline":{"itemDigest":"anchor","occurrence":79},
               "native":{}},"sourceState":{"complete":true,"consumed":true}
@@ -326,10 +330,15 @@ class CodeModeJournalRecoveryTest {
         return codec.decodeFromJsonElement(JsonObject(fields + values))
     }
 
-    @Test
-    fun `patches replace every serialized field including defaults empty collections and nullable body state`() {
+    @ParameterizedTest
+    @ValueSource(booleans = [false, true])
+    fun `patches replace every serialized field including defaults empty collections and nullable body state`(
+        knownEmptyTail: Boolean,
+    ) {
         val file = dir.resolve("all-fields.json")
-        val empty = CodeModeRecords.of("alpha", 1).snapshot()
+        val empty = CodeModeRecords.of("alpha", 1).snapshot().also {
+            it.nativeAfterExec = if (knownEmptyTail) emptyList() else null
+        }
         val full = populated(empty)
         val prior = CodeModePersistedState(records = listOf(full))
         CodeModeStateJournal.write(file, CodeModeStateJournal.encode("alpha", null, prior, codec))
@@ -338,6 +347,7 @@ class CodeModeJournalRecoveryTest {
         val fields = codec.parseToJsonElement(patch).jsonObject.getValue("patches")
             .jsonArray.single().jsonObject.getValue("fields").jsonObject
         assertEquals(codec.encodeToJsonElement(full).jsonObject.keys - setOf("id", "key"), fields.keys)
+        assertEquals(if (knownEmptyTail) JsonArray(emptyList()) else JsonNull, fields["nativeAfterExec"])
         CodeModeStateJournal.write(file, patch)
         assertEquals(codec.encodeToJsonElement(next), codec.encodeToJsonElement(CodeModeStateJournal.read(file, codec)))
         assertEquals(codec.encodeToString(empty).toByteArray(Charsets.UTF_8).size.toLong(), empty.retainedBytes)
@@ -359,7 +369,7 @@ class CodeModeJournalRecoveryTest {
         val file = dir.resolve("mixed-journal.json")
         val original = populated(CodeModeRecords.of("alpha", 1).snapshot())
         CodeModeStateJournal.write(file, pretty.encodeToString(CodeModePersistedState(records = listOf(original))))
-        val old = original.copy(source = "legacy source")
+        val old = original.copy(source = "legacy source").also { it.nativeAfterExec = original.nativeAfterExec }
         val delta = CodeModeStateDelta("alpha", listOf(old), emptySet(), emptyList())
         CodeModeStateJournal.write(file, codec.encodeToString(delta))
         val prior = CodeModeStateJournal.read(file, codec)
@@ -371,6 +381,7 @@ class CodeModeJournalRecoveryTest {
             it.nativeBaseId = original.nativeBaseId
             it.replayAnchors = original.replayAnchors
             it.sourceState = original.sourceState
+            it.nativeAfterExec = original.nativeAfterExec
         }
         val next = CodeModePersistedState(records = listOf(changed))
         CodeModeStateJournal.write(file, CodeModeStateJournal.encode("alpha", prior, next, codec, file))
@@ -382,7 +393,8 @@ class CodeModeJournalRecoveryTest {
         val original = populated(CodeModeRecords.of("alpha", 1).snapshot())
         val prior = CodeModePersistedState(records = listOf(original))
         val checkpoint = CodeModeStateJournal.encode("alpha", null, prior, codec)
-        val next = CodeModePersistedState(records = listOf(original.copy(output = "café")))
+        val changed = original.copy(output = "café").also { it.nativeAfterExec = original.nativeAfterExec }
+        val next = CodeModePersistedState(records = listOf(changed))
         val patch = CodeModeStateJournal.encode("alpha", prior, next, codec)
         patch.indices.drop(1).forEach { prefix ->
             val file = dir.resolve("patch-tear-$prefix.json")

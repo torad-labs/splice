@@ -57,6 +57,7 @@ internal class ResponsesTurnSeams(private val deps: ResponsesTurnSeamsDeps) {
                         roundScope = summaryOwner,
                     ),
                     reasoningCapture = ReasoningCapture(
+                        codeMode = meta.tools.codeMode,
                         // Collect this round's encrypted reasoning envelopes whenever a continuation
                         // could consume them: fold replay (Success side) OR mid-stream re-anchor salvage
                         // (Failure side) — i.e. every non-compact responses turn since re-anchor landed

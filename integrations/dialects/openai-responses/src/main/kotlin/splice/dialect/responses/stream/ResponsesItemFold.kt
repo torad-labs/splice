@@ -27,11 +27,12 @@ internal class ResponsesItemFold(
     private val names: ToolNameShortener = ToolNameShortener(),
     private val outputToolName: String? = null,
     private val snapshot: CompletedItemSnapshot? = null,
+    codeMode: Boolean = false,
 ) {
 
     val execProgress = ResponsesExecProgress()
     private val frames = ResponsesFrameParse()
-    private val customCalls = ResponsesCustomCallParse()
+    private val customCalls = ResponsesCustomCallParse(codeMode)
     private val harvest = ResponsesHarvest()
     private val messages = ResponsesMessageDelivery()
     private var toolSynthCounter = 0
@@ -50,7 +51,7 @@ internal class ResponsesItemFold(
         // active item; summary done-events are rendered only while their item is active.
         state.activeItemId = JsonScalars.strOrEmpty(item["id"]).ifEmpty { null }
         state.activeItemOi = oi
-        if (JsonScalars.strOrEmpty(item["type"]) == "function_call") {
+        if (JsonScalars.strOrEmpty(item["type"]) == "function_call" && !customCalls.isWait(item)) {
             // DR-107: an added at an already-open output_index EVICTED the live block map-only —
             // its wire stayed open (start, no stop) and its args were never validated (no CX-01
             // latch possible), orphaning tool AND text blocks alike on index reuse. Close and
@@ -81,6 +82,7 @@ internal class ResponsesItemFold(
             JsonScalars.str(item, "id"),
             frames.intOr(evt[OUTPUT_INDEX]) ?: frames.intOr(item?.get("index")),
         )
+        state.nativeOutput.collect(item, oi, enabled = state.nativePrefix != null)
         // codex parity: OutputItemDone takes the active item — a summary done-event arriving
         // between items (or after a later item started) is stale and must not render.
         state.activeItemId = null

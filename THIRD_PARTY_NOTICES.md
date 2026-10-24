@@ -33,6 +33,15 @@ match.
 
 ## Embedded JavaScript engine
 
+The Codex code-mode host is bundled from the official OpenAI Codex 0.159.1 release
+under the Apache License, Version 2.0. Splice verifies each executable's SHA-256
+when packaging and extracting it. Target-specific origin URLs, release tag commit,
+archive hashes and executable hashes are recorded in
+`integrations/codemode/native/*/host.properties` and in the shipped SBOM. The full
+upstream license is embedded at `META-INF/licenses/codex-code-mode-host/LICENSE`.
+Release-tag provenance does not assert a verified upstream build attestation.
+Source: https://github.com/openai/codex/tree/rust-v0.159.1
+
 The code-mode worker bundles GraalJS community Java libraries; it does not require a GraalVM,
 Node.js, or Codex installation. Exact versions and transitive artifacts are enumerated in the
 release's `dependency-licenses.json` and SBOM, with SHA-256 pins in

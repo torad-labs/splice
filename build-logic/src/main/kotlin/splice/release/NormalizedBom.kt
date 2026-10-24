@@ -4,11 +4,13 @@ package splice.release
 import groovy.json.JsonOutput
 import groovy.json.JsonSlurper
 import org.gradle.api.DefaultTask
+import org.gradle.api.file.ConfigurableFileCollection
 import org.gradle.api.file.RegularFileProperty
 import org.gradle.api.provider.Property
 import org.gradle.api.tasks.CacheableTask
 import org.gradle.api.tasks.Input
 import org.gradle.api.tasks.InputFile
+import org.gradle.api.tasks.InputFiles
 import org.gradle.api.tasks.OutputFile
 import org.gradle.api.tasks.PathSensitive
 import org.gradle.api.tasks.PathSensitivity
@@ -29,6 +31,10 @@ abstract class NormalizedBom : DefaultTask() {
 
     @get:Input
     abstract val releaseVersion: Property<String>
+
+    @get:InputFiles
+    @get:PathSensitive(PathSensitivity.NONE)
+    abstract val nativeManifests: ConfigurableFileCollection
 
     @get:OutputFile
     abstract val output: RegularFileProperty
@@ -56,8 +62,11 @@ abstract class NormalizedBom : DefaultTask() {
         val stableBom = LinkedHashMap(bomJson)
         stableBom["metadata"] = normalizedMetadata(bomJson, input)
         val refReplacements = LinkedHashMap<String, String>()
-        stableBom["components"] = normalizedComponents(bomJson, input, refReplacements)
-        stableBom["dependencies"] = normalizedDependencies(bomJson, input, refReplacements)
+        val native = NativeCodeModeInventory.components(nativeManifests.files)
+        stableBom["components"] = normalizedComponents(bomJson, input, refReplacements) + native
+        stableBom["dependencies"] = normalizedDependencies(bomJson, input, refReplacements) + native.map {
+            linkedMapOf("ref" to it["bom-ref"], "dependsOn" to emptyList<String>())
+        }
         stableBom["serialNumber"] = serialNumber(stableBom)
         write(stableBom)
     }

@@ -249,6 +249,15 @@ val normalizeReleaseBom = tasks.register<splice.release.NormalizedBom>("normaliz
     output.set(bom)
     releaseGroup.set(releaseGroupValue)
     releaseVersion.set(releaseVersionValue)
+    val platforms = IsolatePlatforms.shipped(
+        allPlatforms = providers.gradleProperty("splice.allPlatforms").orNull?.toBooleanStrictOrNull(),
+        hosted = providers.environmentVariable("CI").isPresent,
+        os = providers.systemProperty("os.name").get(),
+        arch = providers.systemProperty("os.arch").get(),
+    )
+    nativeManifests.from(platforms.map {
+        repositoryRoot.file("integrations/codemode/native/$it/host.properties")
+    })
 }
 
 val normalizedBom = bom
@@ -549,6 +558,15 @@ tasks.register("stageRelease") {
         check(missingIsolates.isEmpty()) {
             "release stage: the fat jar holds no code-mode isolate for ${missingIsolates.joinToString()}; " +
                 "build it with -Psplice.allPlatforms=true (tools/release gives it to every build it makes)"
+        }
+        val missingNativeHosts = ZipFile(jar).use { zip ->
+            IsolatePlatforms.every.filter { platform ->
+                val root = "splice/codemode/native/$platform"
+                zip.getEntry("$root/host.properties") == null || zip.getEntry("$root/codex-code-mode-host.gz") == null
+            }
+        }
+        check(missingNativeHosts.isEmpty()) {
+            "release stage: the fat jar lacks a pinned native code-mode host for ${missingNativeHosts.joinToString()}"
         }
         listOf(bom, licenses).forEach { report ->
             val file = report.get().asFile

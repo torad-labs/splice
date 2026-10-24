@@ -69,6 +69,8 @@ internal data class ReasoningCapture(
     val onTurn: TurnReasoningSink = TurnReasoningSink { _, _ -> },
     /** The turn's visible-history cursor, shared only by its sequential continuation rounds. */
     val history: ReasoningHistory? = null,
+    /** Gateway-local tool ownership accompanying this native-history capture. */
+    val codeMode: Boolean = false,
 )
 
 /** Per-turn inputs the machine needs beyond the event flow. */
@@ -88,7 +90,9 @@ internal data class StreamTurnContext(
     val caps: WatchdogCaps,
     val summary: SummaryHandling,
     val reasoningCapture: ReasoningCapture = ReasoningCapture(),
-)
+) {
+    val codeMode: Boolean get() = reasoningCapture.codeMode
+}
 
 /** The watchdog's stream-idle cap and total upstream cap, in milliseconds, as the failure text states them. */
 internal data class WatchdogCaps(

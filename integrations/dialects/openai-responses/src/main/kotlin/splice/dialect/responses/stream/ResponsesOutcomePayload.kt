@@ -15,7 +15,7 @@ import splice.dialect.responses.StreamTurnContext
 internal class ResponsesOutcomePayload(private val ctx: StreamTurnContext) {
 
     private val harvest = ResponsesHarvest()
-    private val customCalls = ResponsesCustomCallParse()
+    private val customCalls = ResponsesCustomCallParse(ctx.codeMode)
 
     fun successOutcome(state: ResponsesTurnState): TurnOutcome.Success = TurnOutcome.Success(
         hasToolUse = state.hasToolUse,
@@ -55,6 +55,7 @@ internal class ResponsesOutcomePayload(private val ctx: StreamTurnContext) {
                 state.customCalls.isNotEmpty() || customCalls.merge(emptyList(), state.finalResponse).isNotEmpty()
             }?.snapshot(),
             nativeAfterExec = state.nativePrefix?.delivered?.afterExec(),
+            nativeOutput = state.nativePrefix?.let { state.nativeOutput.snapshot(state.finalResponse) },
         ),
     )
 

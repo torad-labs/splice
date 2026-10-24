@@ -48,6 +48,9 @@ public interface CodeModeRuntime : AutoCloseable {
 public interface CodeModeCell : AutoCloseable {
     /** Results may be any nonempty, duplicate-free subset of calls returned earlier by this cell. */
     public suspend fun advance(results: List<CodeModeResult> = emptyList()): CodeModeStep
+
+    /** Observe the same running cell for at most [yieldTimeMs], without restarting its source. */
+    public suspend fun observe(yieldTimeMs: Long): CodeModeStep = advance()
 }
 
 public data class CodeModeCall(val id: String, val name: String, val arguments: JsonObject)
@@ -60,9 +63,26 @@ public sealed class CodeModeStep {
         val calls: List<CodeModeCall>,
         val output: String? = null,
         val error: String? = null,
+        val content: List<JsonObject> = emptyList(),
     ) : CodeModeStep()
 
     /** No output means the guest is still waiting on a promise; otherwise it completed with callbacks outstanding. */
     public data class WaitingForResults(val output: String?, val error: String? = null) : CodeModeStep()
-    public data class Completed(val output: String, val error: String? = null) : CodeModeStep()
+
+    /** Model-supplied progress delivered independently of the cell's accumulated output. */
+    public data class Notified(val text: String) : CodeModeStep()
+
+    /** The source is still running under this stable identity; a later wait observes only its new output. */
+    public data class Yielded(
+        val cellId: String,
+        val output: String,
+        val content: List<JsonObject> = emptyList(),
+    ) : CodeModeStep()
+
+    public data class Completed(
+        val output: String,
+        val error: String? = null,
+        val content: List<JsonObject> = emptyList(),
+        val terminated: Boolean = false,
+    ) : CodeModeStep()
 }

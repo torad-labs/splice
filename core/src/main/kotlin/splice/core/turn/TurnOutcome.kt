@@ -234,6 +234,8 @@ public data class RoundHandoffs(
     /** Verified ordered native items after the first owned exec, excluding the exec itself.
      * Null is unavailable or legacy; an empty list is an authoritative empty suffix. */
     val nativeAfterExec: List<JsonObject>? = null,
+    /** Complete native model output in provider order, retained independently of client rendering. */
+    val nativeOutput: List<JsonObject>? = null,
 )
 
 /** The text a round produced, and what of it reached the client. */

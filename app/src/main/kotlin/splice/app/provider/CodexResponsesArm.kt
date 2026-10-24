@@ -5,12 +5,10 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Job
 import splice.app.TokenUrlRefreshCall
 import splice.app.provider.codex.CodeModeSessionLiveness
-import splice.codemode.DEFAULT_ADVANCE_TIMEOUT_MS
 import splice.codemode.DEFAULT_HEAP_MB
 import splice.codemode.DEFAULT_MAX_WORKERS
 import splice.codemode.DEFAULT_POOL_MEMORY_MB
-import splice.codemode.JvmCodeModeRuntime
-import splice.codemode.host.HostLaunch
+import splice.codemode.NativeCodeModeRuntime
 import splice.codemode.host.PoolLimits
 import splice.core.auth.RefreshableAuthProvider
 import splice.core.config.CODE_MODE_DIR
@@ -158,15 +156,13 @@ internal class CodexResponsesArm(
             CodexCodeModeBridge(
                 CodeModeBridgeConfig(
                     runtimes = {
-                        JvmCodeModeRuntime(
-                            // TOML quirks overlay the native pool's defaults, including its head memory reservation.
+                        NativeCodeModeRuntime(
                             limits = PoolLimits(
                                 maxWorkers = ctx.providerCfg.quirks.codeModeWorkers ?: DEFAULT_MAX_WORKERS,
                                 memoryBudgetMb = ctx.providerCfg.quirks.codeModeMemoryMb ?: DEFAULT_POOL_MEMORY_MB,
                             ),
-                            advanceTimeoutMs = ctx.providerCfg.quirks.codeModeTimeoutMs ?: DEFAULT_ADVANCE_TIMEOUT_MS,
-                            launch = HostLaunch(heapMb = ctx.providerCfg.quirks.codeModeHeapMb ?: DEFAULT_HEAP_MB),
-                        ).also { it.observeHostLifecycle(HeadScopedLogs.headScopedLog(ctx.key, log)) }
+                            cellHeapMb = ctx.providerCfg.quirks.codeModeHeapMb ?: DEFAULT_HEAP_MB,
+                        )
                     },
                     state = CodeModeStateLocation(
                         dir = statePaths.headsDir.resolve(ctx.key).resolve(CODE_MODE_DIR),

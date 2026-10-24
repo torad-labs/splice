@@ -7,16 +7,20 @@ import splice.core.turn.GatewayCustomCall
 import splice.core.util.JsonScalars
 
 /** One parser for streamed and terminal custom-tool items; interpretation stays outside the dialect. */
-internal class ResponsesCustomCallParse {
+internal class ResponsesCustomCallParse(private val codeMode: Boolean = false) {
     fun parse(item: JsonObject): GatewayCustomCall? {
-        if (JsonScalars.strOrEmpty(item["type"]) != TYPE_CUSTOM_TOOL_CALL) return null
+        val wait = isWait(item)
+        if (JsonScalars.strOrEmpty(item["type"]) != TYPE_CUSTOM_TOOL_CALL && !wait) return null
         return GatewayCustomCall(
             callId = JsonScalars.strOrEmpty(item["call_id"]),
             name = JsonScalars.strOrEmpty(item["name"]),
-            input = JsonScalars.strOrEmpty(item["input"]),
+            input = JsonScalars.strOrEmpty(item[if (wait) "arguments" else "input"]),
             raw = item,
         )
     }
+
+    fun isWait(item: JsonObject): Boolean = codeMode && JsonScalars.str(item, "type") == "function_call" &&
+        JsonScalars.str(item, "name") == "wait"
 
     /** Terminal output owns ordering; streamed-only items survive incomplete terminal carriers. */
     fun merge(streamed: List<GatewayCustomCall>, response: JsonObject?): List<GatewayCustomCall> {

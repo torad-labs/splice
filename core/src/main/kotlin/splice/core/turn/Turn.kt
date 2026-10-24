@@ -81,6 +81,8 @@ public data class TurnToolSurface(
     val deferred: Int? = null,
     /** Schema-constrained response text is this caller tool's JSON input, not ordinary prose. */
     val outputToolName: String? = null,
+    /** Gateway owns exec/wait only when this turn explicitly armed its code-mode interceptor. */
+    val codeMode: Boolean = false,
 )
 
 /** The compaction text a turn carries. */

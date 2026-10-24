@@ -11,6 +11,7 @@ import splice.core.util.JsonScalars
 import splice.dialect.responses.reasoning.ResponsesNativePrefix
 import splice.dialect.responses.request.BlockState
 import splice.dialect.responses.request.ToolSalvage
+import splice.dialect.responses.stream.ResponsesCompletedOutput
 import splice.upstream.failure.ClassifiedFailure
 import splice.upstream.transport.BufferCapacity
 
@@ -105,6 +106,7 @@ internal class ResponsesTurnState {
     // only when ctx.reasoningCapture.collectEnvelopes — otherwise stays empty, pre-fold behaviour intact.
     val reasoningEnvelopes = mutableListOf<String>()
     var nativePrefix: ResponsesNativePrefix? = null
+    val nativeOutput = ResponsesCompletedOutput()
 
     // Mid-stream re-anchor salvage (eli 2026-07-24) — see [ToolSalvage].
     val toolSalvage = ToolSalvage()

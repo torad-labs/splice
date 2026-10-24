@@ -109,6 +109,7 @@ internal class ResponsesStreamTranslator(
             names,
             outputToolName,
             snapshot = CompletedItemSnapshot { ResponsesOutcomePayload(ctx).successOutcome(state) },
+            codeMode = ctx.codeMode,
         )
         val reducer = ResponsesEventReducer(state, itemFold, reasoningFold)
         val cleanup = ResponsesRoundCleanup(state, replay, bufferBudget, reasoningFold)

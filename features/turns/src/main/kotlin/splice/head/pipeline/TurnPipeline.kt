@@ -11,7 +11,6 @@ package splice.head.pipeline
 import splice.core.perf.OutcomeTag
 import splice.core.perf.OutcomeTags
 import splice.core.turn.CONN_RESET_OUTCOME
-import splice.core.turn.FailureCause
 import splice.core.turn.TurnMeta
 import splice.core.turn.TurnOutcome
 import splice.core.util.LogSink
@@ -56,25 +55,19 @@ internal class TurnPipeline(
                 if (meta.compact) {
                     compact.recordStreamError(meta, elapsedMs, outcome.type.wireName)
                 }
-                // V4-59: the same seam feeds BOTH endings. The deterministic one is the visible
-                // leak — its text block is rendered verbatim into the conversation — but the error
-                // event carries the identical raw body, so presenting only one of the two would
-                // have left most failures still quoting a vendor's JSON at the client.
-                val spoken = failures.spoken(outcome.type, outcome.message)
-                if (outcome.traits.deterministic || stalledAfterContent(outcome, emitter)) {
-                    val ending = if (outcome.traits.providerReported) {
-                        EXPLAINED_PREFIX + spoken
-                    } else {
-                        OutcomeSentences.of(outcome) + ".\n\n" + EXPLAINED_PREFIX + spoken
-                    }
-                    emitter.emitExplained(ending, outcome.salvagedUsage)
+                val spoken = failures.spoken(outcome.type, outcome.message, outcome.cause)
+                val message = if (outcome.traits.deterministic && !outcome.traits.providerReported) {
+                    OutcomeSentences.of(outcome) + ". " + spoken
                 } else {
-                    // V4-81: the wire type is the EMITTER's decision now (SseEmitter.emitError
-                    // holds the pre-content rule and the counter it needs), so the pipeline passes
-                    // the failure's own permanence through and no longer snapshots perf at all —
-                    // the V4-79 parameter is gone with the rule it fed.
-                    emitter.emitError(outcome.type, spoken, permanent = outcome.traits.permanent)
+                    spoken
                 }
+                // Failures belong to the error channel, including refusals and failures after
+                // partial output. A text block and a clean stop would record them as an answer.
+                emitter.emitError(
+                    outcome.type,
+                    message,
+                    permanent = outcome.traits.permanent || outcome.traits.deterministic,
+                )
                 // V4-67: a tear the gateway converted into an outcome keeps the conn-reset tag it
                 // would have carried had it escaped to TurnConnEnd. That tag is the only string in
                 // the journal that names this failure class, and the row that made a torn stream
@@ -88,13 +81,4 @@ internal class TurnPipeline(
             is TurnOutcome.Success -> return streamFinish.finishSuccess(emitter, outcome, meta, elapsedMs)
         }
     }
-
-    /** A stall splice could not resume once the client had seen content: the client never retries after content, so
-     *  an error frame there reads only as a lost connection. It ends in words instead (splice-lead's ruling, Oct 12). */
-    private fun stalledAfterContent(outcome: TurnOutcome.Failure, emitter: TurnTerminal): Boolean =
-        outcome.cause == FailureCause.UPSTREAM_STALLED && emitter.contentShown
 }
-
-/** What a deterministic failure reads as on the client: the proxy speaking, marked as such. The
- *  code that follows it says WHICH splice failure this is; the mark says it is us talking. */
-private const val EXPLAINED_PREFIX = "\u26A0 splice "

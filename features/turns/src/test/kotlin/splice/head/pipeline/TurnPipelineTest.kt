@@ -210,32 +210,23 @@ class TurnPipelineTest {
         // this file knowing. What the test asserts — that no byte splice emits is JSON — is a
         // property of the presentation seam, and every cause still crosses it.
         for (cause in FailureCause.entries) {
-            // Both endings: the deterministic one is the visible leak, and the error event carries
-            // the identical body — presenting one and not the other leaves most failures leaking.
-            val explained = RecTerminal()
-            pipeline().finishStream(
-                explained,
-                TurnOutcome.Failure(
-                    payload,
-                    cause = cause,
-                    phase = FailurePhase.MID_OUTPUT,
-                    traits = FailureTraits(deterministic = true),
-                ),
-                meta("text"),
-                elapsedMs = 1,
-            )
-            offending += inspect("text block for $cause", explained.texts.joinToString(" "))
-
-            val errored = RecTerminal()
-            pipeline().finishStream(
-                errored,
-                TurnOutcome.Failure(payload, cause = cause, phase = FailurePhase.MID_OUTPUT),
-                meta("text"),
-                elapsedMs = 1,
-                // The assertion here is about BYTES, not the type; `true` keeps the wire type the
-                // one the case names, so this wall stays a statement about presentation alone.
-            )
-            offending += inspect("error event for $cause", errored.errorMessage)
+            for (deterministic in listOf(false, true)) {
+                val rec = RecTerminal()
+                pipeline().finishStream(
+                    rec,
+                    TurnOutcome.Failure(
+                        payload,
+                        cause = cause,
+                        phase = FailurePhase.MID_OUTPUT,
+                        traits = FailureTraits(deterministic = deterministic),
+                    ),
+                    meta("text"),
+                    elapsedMs = 1,
+                )
+                assertTrue(rec.texts.isEmpty(), "$cause must not become assistant text")
+                assertEquals("error", rec.ending)
+                offending += inspect("error event for $cause deterministic=$deterministic", rec.errorMessage)
+            }
         }
         assertTrue(offending.isEmpty(), "JSON reached the client:\n" + offending.joinToString("\n"))
     }
@@ -272,19 +263,19 @@ class TurnPipelineTest {
             meta("text"),
             elapsedMs = 1,
         )
-        val text = rec.texts.single()
+        assertTrue(rec.texts.isEmpty())
+        val text = rec.errorMessage
         assertTrue(text.contains("could not be read"), "an unreadable body must be described: $text")
         assertTrue(!text.contains("{"), "no body may be reproduced as braces: $text")
         assertTrue(!text.contains("baz"), "no field of an unreadable body may be reproduced: $text")
     }
 
-    /** A deterministic failure (a verdict no retry can change) ends in words, not an error event;
-     *  every other failure keeps the honestly-typed error the client is right to retry. */
+    /** Both permanent and transient failures use the error channel, keeping their retry semantics. */
     @Test
-    fun `a deterministic failure ends as an explained text block, a transient one as an error event`() = runTest {
-        val explained = RecTerminal()
+    fun `deterministic and transient failures are errors without assistant text`() = runTest {
+        val deterministic = RecTerminal()
         val tag = pipeline().finishStream(
-            explained,
+            deterministic,
             TurnOutcome.Failure(
                 "code-mode cell is unavailable",
                 cause = FailureCause.CODE_MODE_PROTOCOL,
@@ -294,20 +285,15 @@ class TurnPipelineTest {
             meta("text"),
             elapsedMs = 1,
         )
-        assertEquals("terminal", explained.ending)
-        // V4-59: the verb is unchanged \u2014 still a text block, still marked as the proxy speaking \u2014
-        // The human sentence leads; the stable code and the complete diagnostic follow it.
-        // V4-117: the code is INVALID-REQUEST because the type is DERIVED, and the matrix gives
-        // CODE_MODE_PROTOCOL an empty ceiling \u2014 a non-retryable class \u2014 so the wire type is the
-        // client's bad-request one rather than api_error. The assertions follow the matrix; they are
-        // not relaxed to whatever the code happens to emit.
+        assertEquals("error", deterministic.ending)
+        assertEquals(ErrorType.INVALID_REQUEST, deterministic.errorType)
+        assertTrue(deterministic.errorPermanent)
+        assertTrue(deterministic.texts.isEmpty())
         assertEquals(
-            listOf(
-                "splice could not complete this session's code-mode step; " +
-                    "start a new session, and if it repeats read the daemon log.\n\n" +
-                    "\u26A0 splice [SPLICE-INVALID-REQUEST] code-mode cell is unavailable",
-            ),
-            explained.texts,
+            "splice could not complete this session's code-mode step; " +
+                "start a new session, and if it repeats read the daemon log. " +
+                "[SPLICE-INVALID-REQUEST] code-mode cell is unavailable",
+            deterministic.errorMessage,
         )
         assertEquals("failure:invalid_request_error", tag)
 

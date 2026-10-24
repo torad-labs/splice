@@ -21,7 +21,6 @@ import kotlinx.serialization.json.buildJsonArray
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
 import kotlinx.serialization.json.putJsonObject
-import splice.core.index.WireBlockIndex
 import splice.core.turn.ErrorType
 import splice.core.turn.Usage
 import splice.core.util.JsonScalars
@@ -81,21 +80,6 @@ internal class SseEmitter(
 
     override val hasEnded: Boolean get() = seal.get() == SealState.ENDED
     override val responseMessageId: String get() = start.messageId
-
-    // A tool_use block already on the wire must still derive stop_reason=tool_use when a
-    // deterministic failure ends the turn in words — the client runs what it was shown.
-    @Volatile private var toolSeen = false
-
-    override suspend fun openTool(id: String, name: String): WireBlockIndex =
-        blocks.openTool(id, name).also { toolSeen = true }
-
-    /** A deterministic failure's ending: the explanation as one text block, then the clean
-     *  terminal with the stop_reason the streamed content earned. Nothing here is an error frame. */
-    override suspend fun emitExplained(message: String, usage: Usage) {
-        if (seal.get() != SealState.OPEN) return
-        blocks.addTextBlock(message)
-        emitTerminal(hasToolUse = toolSeen, incomplete = false, usage = usage)
-    }
 
     override val endedCleanly: Boolean get() = cleanEnd.get()
 
@@ -196,8 +180,6 @@ internal class SseEmitter(
      *  ending cannot forget it, and the collect path never arrives because it has its own terminal
      *  ([CollectingTerminal]) whose envelope keeps the failure's REAL status — a buffered 429 stays
      *  429 and a buffered api_error stays 502, which is the shape its callers already assert. */
-    override val contentShown: Boolean get() = contentReached()
-
     override suspend fun emitError(type: ErrorType, message: String, permanent: Boolean) {
         val wireType = PreContentWireType.of(type, contentReached(), permanent)
         if (!seal.compareAndSet(SealState.OPEN, SealState.ENDING)) return

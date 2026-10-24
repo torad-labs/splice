@@ -53,8 +53,9 @@ internal class PassthroughEventRouter(
     /** stop_reason classification first, then the turn-level usage delta — the order the pre-split
      *  onMessageDelta ran them in. */
     private fun onMessageDelta(evt: JsonObject) {
-        val reason = JsonScalars.strOrEmpty((evt["delta"] as? JsonObject)?.get("stop_reason"))
-        terminal.onStopReason(reason)
+        val delta = evt["delta"] as? JsonObject
+        val reason = JsonScalars.strOrEmpty(delta?.get("stop_reason"))
+        terminal.onStopReason(reason, delta?.get("stop_details") as? JsonObject)
         shape.onStopReason(reason)
         usage.harvestUsage(evt["usage"] as? JsonObject)
     }

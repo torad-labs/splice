@@ -164,24 +164,13 @@ public data class FailureTraits(
      *  truncation-without-terminal). Drives the G20 health split — the old OVERLOADED-implies-
      *  local heuristic misattributed passthrough overloaded_error (review 2026-07-19). */
     val providerReported: Boolean = false,
-    /** True when the SAME request produces the SAME failure — a verdict the gateway reached on
-     *  its own (a code-mode record it cannot resume, a script the runtime cannot admit), which
-     *  no retry can change. Rendered as a readable ending the client shows verbatim rather than
-     *  an SSE error event: Claude Code 2.1.x re-sends an `api_error` identically until it gives
-     *  up when it arrives before content, and after content replaces the message with a fixed
-     *  "Server error mid-response" line (87 and 47 identical turns on 2026-09-07).
-     *
-     *  A cut AFTER content (a restart that outlasts the drain budget, a dead upstream) is unrecoverable in Claude Code
-     *  2.1.x BY DESIGN: it never retries once any content block has reached it, whatever the ending. The error event is
-     *  the chosen ending for that cut, on purpose. A clean stop with an explanatory text block was weighed and refused
-     *  (splice-lead, 2026-10-10): it makes a cut turn look finished to the agent, which is worse than the client's
-     *  "may be incomplete", which is true. The remedy is fewer restarts, not a prettier cut. */
+    /** A verdict the same request cannot change, such as an unavailable code-mode record.
+     *  Delivered through the error channel with permanence preserved; never rendered as an answer. */
     val deterministic: Boolean = false,
     /** V4-81: NO retry can change this verdict — an identical re-send reproduces it exactly.
      *
-     *  Distinct from [deterministic], which is about the ENDING'S SHAPE (words the client
-     *  renders vs an error event); this is about whether the failure is RE-ATTEMPTABLE, and it
-     *  is what the pre-content wire-type rule reads. Advertising such a failure as transient is
+     *  Also covers provider verdicts that do not carry the local [deterministic] marker. This is
+     *  what the pre-content wire-type rule reads. Advertising such a failure as transient is
      *  the expensive lie: RetryPolicy arms a cooldown only for RATE_LIMITED, so with
      *  CLAUDE_CODE_RETRY_WATCHDOG=1 a relabelled permanent failure makes the client re-send the
      *  identical bytes up to 300 times, six upstream attempts each, for a verdict that cannot

@@ -583,8 +583,10 @@ class PassthroughStopReasonHonestyTest {
         val f = turnEndingWith("refusal") as TurnOutcome.Failure
         assertEquals(ErrorType.INVALID_REQUEST, f.type)
         assertTrue(f.traits.providerReported, "the BACKEND sent stop_reason=refusal — G20 provenance is upstream")
-        assertTrue(f.message.contains("refused"), f.message)
+        assertTrue(f.message.contains("blocked by the upstream safety classifier"), f.message)
         assertTrue(f.message.contains("stop_reason=refusal"), f.message)
+        assertTrue(f.message.contains("did not provide a refusal category or explanation"), f.message)
+        assertTrue(f.traits.permanent)
     }
 
     @Test

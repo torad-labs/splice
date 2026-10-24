@@ -28,6 +28,7 @@ import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
 import splice.core.turn.ErrorType
+import splice.core.turn.FailureCause
 import splice.core.util.ERR_SNIPPET
 
 /** A failure as the client should read it: a stable, greppable [code] and a human [body]. */
@@ -38,20 +39,20 @@ internal class FailureRenderer {
 
     /** The pair a caller needs, kept separate from the rendering so a test can pin the code and the
      *  sentence independently instead of matching one composed string. */
-    fun present(type: ErrorType, message: String): FailureText = FailureText(codeFor(type), sentence(message))
+    fun present(type: ErrorType, message: String, cause: FailureCause? = null): FailureText =
+        FailureText(codeFor(type), sentence(message, cause))
 
     /** V4-59: the code namespace. Derived from the enum on purpose — see this file's header. */
     fun codeFor(type: ErrorType): String = CODE_PREFIX + type.name.replace('_', '-')
 
-    /** The single line both endings render, so a code cannot be spelled one way in a text block and
-     *  another in an error event — the two would then be ungreppable as one class of failure. */
-    fun spoken(type: ErrorType, message: String): String {
-        val text = present(type, message)
+    /** The failure's stable code and human explanation, delivered through the error channel. */
+    fun spoken(type: ErrorType, message: String, cause: FailureCause? = null): String {
+        val text = present(type, message, cause)
         return "[${text.code}] ${text.body}"
     }
 
     /** The human sentence for a failure body. See the header for what each shape contributes. */
-    fun sentence(message: String): String {
+    fun sentence(message: String, cause: FailureCause? = null): String {
         // A body that is not JSON is prose and rides through (V4-235: dashes aside): null IS the complete story
         // here, by design (see the header). Cancellable so a cancelled turn actually stops.
         val element = try {
@@ -65,8 +66,9 @@ internal class FailureRenderer {
             // your session token has expired, please sign in again", and the login-hint test pins
             // that the operator keeps it. Markup is not the same as noise, and a shape test cannot
             // tell a proxy's 502 page from a vendor's prose, so this layer does not guess.
-            // V4-235: its em dashes are spoken before the cap, so the snippet stays within it.
-            element == null -> clauseBreaks(message).take(ERR_SNIPPET).ifBlank { UNREADABLE }
+            // Classifier refusals carry an explanation assembled by the dialect. Keep it whole;
+            // the generic body snippet would cut off the category, explanation or recovery hint.
+            element == null -> prose(message, cause).ifBlank { UNREADABLE }
             // A JSON string is prose wearing quotes — unwrap it rather than describing it.
             element is JsonPrimitive && element.isString -> clauseBreaks(element.content).ifBlank { UNREADABLE }
             element is JsonObject -> humanField(element)?.let(::clauseBreaks) ?: UNREADABLE
@@ -74,6 +76,10 @@ internal class FailureRenderer {
             // there is no human-meaningful field to lift out of it, so it is described, not dumped.
             else -> UNREADABLE
         }
+    }
+
+    private fun prose(message: String, cause: FailureCause?): String = clauseBreaks(message).let {
+        if (cause == FailureCause.MODEL_REFUSED) it else it.take(ERR_SNIPPET)
     }
 
     /** The one field worth showing: our own fail-fast and the OpenAI-shaped bodies use `detail`, an

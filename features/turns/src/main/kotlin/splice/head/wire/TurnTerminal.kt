@@ -60,21 +60,6 @@ internal interface TurnTerminal : WireSink {
      *  so a caller that does not know keeps the retryable reading it always had. */
     public suspend fun emitError(type: ErrorType, message: String, permanent: Boolean = false)
 
-    /** Whether content has reached the client on this turn. A stall that cannot be resumed after it ends in words, not
-     *  an error, since the client never retries after content (splice-lead's ruling, Oct 12). Default false: a sink
-     *  that cannot count what it wrote keeps the error ending. */
-    public val contentShown: Boolean get() = false
-
-    /** The ending for a failure NO retry can change (TurnOutcome.Failure.deterministic): the
-     *  explanation as a text block the client renders verbatim, then the clean terminal. An error
-     *  event here is worse than useless — Claude Code re-sends it identically before content and
-     *  hides the message behind "Server error mid-response" after content — so the wire says what
-     *  happened in words instead. Default composes the two verbs every sink already has. */
-    public suspend fun emitExplained(message: String, usage: Usage) {
-        addTextBlock(message)
-        emitTerminal(hasToolUse = false, incomplete = false, usage = usage)
-    }
-
     /** Client vanished before any ending: seal with nothing emitted (never an error/terminal). */
     public fun abandon()
 

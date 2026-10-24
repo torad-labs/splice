@@ -20,7 +20,6 @@ import splice.core.turn.Usage
 import splice.upstream.transport.BufferCapacity
 
 private const val ERROR_STATUS = 502
-private const val OK_STATUS = 200
 
 class CollectingTerminalTest {
 
@@ -32,16 +31,16 @@ class CollectingTerminalTest {
     // happened. Shipping that as a clean 200 with an empty content array is protocol-invalid and
     // silently discards the tool call; the turn must fail honestly instead.
     @Test
-    fun `explained ending is a clean 200 message carrying the explanation as text`() = runTest {
+    fun `a permanent failure returns an error status and body without assistant content`() = runTest {
         val t = terminal()
-        t.emitExplained("\u26A0 splice: explained", Usage())
-        assertEquals(OK_STATUS, t.httpStatus())
+        t.emitError(ErrorType.INVALID_REQUEST, "generation blocked", permanent = true)
+        assertEquals(400, t.httpStatus())
         val body = t.responseBody()
-        assertEquals("message", body["type"]?.jsonPrimitive?.content)
-        assertEquals("end_turn", body["stop_reason"]?.jsonPrimitive?.content)
-        val block = body.getValue("content").jsonArray.single().jsonObject
-        assertEquals("text", block["type"]?.jsonPrimitive?.content)
-        assertEquals("\u26A0 splice: explained", block["text"]?.jsonPrimitive?.content)
+        assertEquals("error", body["type"]?.jsonPrimitive?.content)
+        assertEquals("invalid_request_error", body.getValue("error").jsonObject["type"]?.jsonPrimitive?.content)
+        assertEquals("generation blocked", body.getValue("error").jsonObject["message"]?.jsonPrimitive?.content)
+        assertTrue("content" !in body)
+        assertTrue("stop_reason" !in body)
     }
 
     @Test

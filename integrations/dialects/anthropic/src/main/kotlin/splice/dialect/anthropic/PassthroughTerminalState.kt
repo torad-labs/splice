@@ -5,10 +5,12 @@
 // the `else ->` remainder is still handed to stopReasonFailure at the same call site.
 package splice.dialect.anthropic
 
+import kotlinx.serialization.json.JsonObject
 import splice.core.turn.FailureCause
 import splice.core.turn.FailurePhase
 import splice.core.turn.FailureTraits
 import splice.core.turn.TurnOutcome
+import splice.core.util.JsonScalars
 import splice.upstream.failure.UpstreamFailureClassifier
 
 private const val CONTEXT_EXCEEDED_MESSAGE =
@@ -41,7 +43,7 @@ internal class PassthroughTerminalState(
         runawayGuard = failureRules.runawayGuardMessage(quirks.providerTag)
     }
 
-    internal fun onStopReason(reason: String) {
+    internal fun onStopReason(reason: String, details: JsonObject?) {
         when (reason) {
             "tool_use" -> blocks.hasToolUse = true
             "max_tokens" -> incomplete = true
@@ -52,7 +54,7 @@ internal class PassthroughTerminalState(
             // vendor value keep end_turn semantics (see [PassthroughFailureRules.stopReasonFailure]).
             // First latch wins so a later genuine `error` event can never be overwritten by a
             // trailing message_delta.
-            else -> failureRules.stopReasonFailure(reason)?.let { (cause, why) ->
+            else -> failureRules.stopReasonFailure(reason, details)?.let { (cause, why) ->
                 if (failureCause == null) {
                     failureCause = cause
                     failureMessage = why
@@ -105,7 +107,7 @@ internal class PassthroughTerminalState(
             // provider-reported (G20)
             TurnOutcome.Failure(
                 "${quirks.providerTag}: $failureMessage",
-                traits = FailureTraits(providerReported = true),
+                traits = FailureTraits(providerReported = true, permanent = it == FailureCause.MODEL_REFUSED),
                 // V4-117: the CAUSE the two producers above latched (onError's vendor type, or
                 // stopReasonFailure's stop_reason verdict), carried through untouched. An earlier
                 // draft hard-coded UPSTREAM_REPORTED here and threw both verdicts away, which seven
@@ -152,13 +154,25 @@ private class PassthroughFailureRules {
     // V4-117: a CAUSE per arm, not a type. The arms derive their wire types from the cause (refusal →
     // INVALID_REQUEST since b21329586, pause_turn → OVERLOADED, context-exceeded → INVALID_REQUEST),
     // and the overflow arm reads the classifier's own cause rather than re-stating its type.
-    fun stopReasonFailure(reason: String): Pair<FailureCause, String>? = when (reason) {
-        "refusal" -> FailureCause.MODEL_REFUSED to "generation refused by the model (stop_reason=refusal)"
+    fun stopReasonFailure(reason: String, details: JsonObject?): Pair<FailureCause, String>? = when (reason) {
+        "refusal" -> FailureCause.MODEL_REFUSED to refusalMessage(details)
         "pause_turn" ->
             FailureCause.UPSTREAM_STATUS_5XX to "backend paused the turn (stop_reason=pause_turn); retry"
         "model_context_window_exceeded" -> UpstreamFailureClassifier.overflowFailure(CONTEXT_EXCEEDED_MESSAGE).let {
             it.cause to it.message
         }
         else -> null
+    }
+
+    private fun refusalMessage(details: JsonObject?): String = buildString {
+        append("generation was blocked by the upstream safety classifier (stop_reason=refusal).")
+        val category = JsonScalars.strIfString(details?.get("category")).takeIf { it.isNotBlank() }
+        val explanation = JsonScalars.strIfString(details?.get("explanation")).takeIf { it.isNotBlank() }
+        category?.let { append(" Refusal category: $it.") }
+        explanation?.let { append(" $it") }
+        if (category == null && explanation == null) {
+            append(" The upstream did not provide a refusal category or explanation.")
+        }
+        append(" Review the request before retrying.")
     }
 }

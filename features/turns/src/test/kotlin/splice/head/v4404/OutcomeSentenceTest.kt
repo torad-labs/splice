@@ -207,7 +207,7 @@ class OutcomeSentenceTest {
     }
 
     @Test
-    fun `local and provider invalid requests keep their origin in the trace and local terminal`(
+    fun `local and provider invalid requests keep their origin in the trace and error`(
         @TempDir tmp: Path,
     ) = runBlocking {
         val localSentence = "splice could not complete this session's code-mode step; " +
@@ -218,10 +218,10 @@ class OutcomeSentenceTest {
         for (reported in listOf(false, true)) {
             val rig = Rig("origin-$reported", tmp)
             val deps = headDeps(tmp.resolve("stores-$reported"))
-            var explained: String? = null
+            var errorMessage: String? = null
             val terminal = object : TurnTerminal by RecordingTerminal() {
-                override suspend fun emitExplained(message: String, usage: Usage) {
-                    explained = message
+                override suspend fun emitError(type: ErrorType, message: String, permanent: Boolean) {
+                    errorMessage = message
                 }
             }
             val drive = rig.drive().copy(emitter = terminal)
@@ -247,10 +247,10 @@ class OutcomeSentenceTest {
             }
             assertEquals(if (reported) providerSentence else localSentence, sentenceOf(rig.turnRecord()))
             if (!reported) {
-                assertTrue(checkNotNull(explained).startsWith(localSentence + ".\n\n"), explained)
-                assertTrue("[SPLICE-INVALID-REQUEST]" in checkNotNull(explained))
-                assertTrue(failure.message in checkNotNull(explained))
+                assertTrue(checkNotNull(errorMessage).startsWith(localSentence + ". "), errorMessage)
             }
+            assertTrue("[SPLICE-INVALID-REQUEST]" in checkNotNull(errorMessage))
+            assertTrue(failure.message in checkNotNull(errorMessage))
         }
     }
 

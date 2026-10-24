@@ -2,9 +2,12 @@
 // daemon opens it at start with the table it booted with, and every later version of the table reaches it: the
 // console's Sharing page hands its write here at once, and the daemon's re-read of splice.toml (TopologyWindows) hands
 // any other edit, `splice share on|off` and an edit by hand included. So sharing turns on and off, and changes the
-// commands it offers, without a daemon restart. A table that moved closes the listener and opens it again with the new
-// one; the machines that joined and their activity are one book across those reopenings. Since milestone 5, while it
-// listens it advertises itself on this machine's networks (ShareAdvert), and it stops when the listener closes.
+// commands it offers, without a daemon restart. A table whose port, on/off or names moved closes the listener and opens
+// it again with the new one; the machines that joined and their activity are one book across those reopenings. One
+// that changes only the commands offered is taken by the open listener (round 12 of PR #419's review), so a turn
+// relayed through it and a collection held open carry on, as editing which commands are shared cuts no local turn.
+// The daemon's stop closes it for good: no table asked for while its heads drain opens it again. Since milestone 5,
+// while it listens it advertises itself on this machine's networks (ShareAdvert), and it stops when the listener closes.
 package splice.share
 
 import kotlinx.coroutines.runInterruptible
@@ -51,6 +54,10 @@ public class ShareListener(
     /** The table last asked for: what [followAsked] serves, whatever order the jobs that call it run in. */
     private val asked = AtomicReference<ShareConfig?>(null)
 
+    /** Set by [stop]: the daemon is stopping, and nothing opens the listener again. */
+    @Volatile
+    private var stopped = false
+
     /** The listener as it is now. */
     public fun state(): ShareListening = followed
 
@@ -77,12 +84,23 @@ public class ShareListener(
     }
 
     /** Serves the table last [ask]ed for, as [follow] does: a job that runs after a later one serves the later table
-     *  too, so the listener ends up as the file said last. Nothing before anything is asked. */
+     *  too, so the listener ends up as the file said last. Nothing before anything is asked, or once [stop] ran. */
     public suspend fun followAsked(): ShareListening = mutex.withLock {
         val share = asked.get() ?: return@withLock followed
         val was = followed
-        if (was.serves(share)) return@withLock was
-        runInterruptible(ProcessDispatchers().io()) { reopened(was, share) }
+        val open = server
+        when {
+            stopped || was.serves(share) -> was
+            open != null && was.offersOnly(share) -> offering(open, was, share)
+            else -> runInterruptible(ProcessDispatchers().io()) { reopened(was, share) }
+        }
+    }
+
+    /** [open], offering [share]'s commands from now on with no reopening. Under [mutex]. */
+    private fun offering(open: ShareServer, was: ShareListening, share: ShareConfig): ShareListening {
+        open.offer(share)
+        followed = was.copy(share = share, offered = open.offered)
+        return followed
     }
 
     /** Closes what [was] opened and opens what [share] asks for. Blocking, under [mutex]. */
@@ -112,6 +130,7 @@ public class ShareListener(
     /** Closes the listener for good: the daemon's stop, before its heads drain. */
     public suspend fun stop() {
         mutex.withLock {
+            stopped = true
             runInterruptible(ProcessDispatchers().io()) { server?.stop() }
             advert.off()
             server = null
@@ -132,4 +151,7 @@ public data class ShareListening(
     /** Whether this listener already serves [wanted]: the same table, open, or closed because it says off. A table
      *  that did not open is tried again. */
     internal fun serves(wanted: ShareConfig): Boolean = share == wanted && (listening || !wanted.enabled)
+
+    /** Whether this open listener can serve [wanted] as it is: the same table but for the commands it offers. */
+    internal fun offersOnly(wanted: ShareConfig): Boolean = listening && share.copy(heads = wanted.heads) == wanted
 }

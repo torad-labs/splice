@@ -9,12 +9,14 @@
 // Each look gives a machine's mirrors three looks more (SessionMirrors ends them), as its offers do on the other side.
 package splice.share.remote
 
+import kotlinx.coroutines.CoroutineExceptionHandler
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.runInterruptible
+import kotlinx.coroutines.supervisorScope
 import kotlinx.coroutines.withContext
 import splice.core.util.Cancellables
 import splice.core.util.LogSafe
@@ -51,15 +53,21 @@ public class RemoteSessions(
     /** How long a machine's mirrors here last without another look that answers: three looks, as on the other side. */
     private val lasts = (lookMs * LEASE_LOOKS).coerceIn(LEASE_MIN_MS, LEASE_MAX_MS)
 
-    /** Looks at and collects from every joined machine until [scope] ends. Null when this one joined none. */
+    /** Looks at and collects from every joined machine until [scope] ends. Null when this one joined none. Each loop
+     *  runs on its own: one that fails ends itself, said in the log, and never another machine's or its other loop. */
     public fun start(scope: CoroutineScope): Job? {
         val joined = links.names().mapNotNull { name -> links.url(name)?.let { name to it } }
         if (joined.isEmpty()) return null
-        return scope.launch {
-            for ((name, url) in joined) {
-                val link = MirrorLink(carrierTo(name, url), lasts)
-                launch { look(name, url, link) }
-                launch { collect(name, url, link) }
+        val stopped = CoroutineExceptionHandler { _, failure ->
+            log("[remote] a session link stopped: ${SafeFailureText.render(failure)}\n")
+        }
+        return scope.launch(stopped) {
+            supervisorScope {
+                for ((name, url) in joined) {
+                    val link = MirrorLink(carrierTo(name, url), lasts)
+                    launch { look(name, url, link) }
+                    launch { collect(name, url, link) }
+                }
             }
         }
     }

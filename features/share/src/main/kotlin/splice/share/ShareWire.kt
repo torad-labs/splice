@@ -13,6 +13,7 @@ import splice.core.model.ModelCatalog
 import splice.core.model.ModelRates
 import splice.core.model.TurnPrice
 import splice.core.topology.ProviderFamilyRule
+import splice.core.topology.ShareConfig
 import splice.core.topology.Topology
 import splice.core.usage.QuotaSnapshot
 import java.time.Instant
@@ -71,10 +72,20 @@ internal class ShareHeads(
     private val fingerprint: String,
     private val quotas: SharedQuotas,
 ) {
-    private val offered: List<String> = topology.share.sharedHeads(topology).filter { running.of(it) != null }
+    /** The heads offered now: [topology]'s table's at the start, and each later table's that [offer] takes. */
+    @Volatile
+    private var offered: List<String> = offering(topology.share)
     private val upSince = Instant.now().toString()
 
     fun keys(): List<String> = offered
+
+    /** Offers [share]'s heads from now on, those running. */
+    fun offer(share: ShareConfig) {
+        offered = offering(share)
+    }
+
+    private fun offering(share: ShareConfig): List<String> =
+        share.sharedHeads(topology).filter { running.of(it) != null }
 
     /** The loopback port of an offered head, or null for any other name. */
     fun port(key: String): Int? = key.takeIf { it in offered }?.let { topology.heads[it]?.port }

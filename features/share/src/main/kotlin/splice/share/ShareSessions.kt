@@ -202,14 +202,16 @@ internal class ShareSessionHost(
 }
 
 /** The notes sessions here wrote to joined machines' mirrors, each held until a collection by the machine it waits for
- *  acknowledges it. One for the listener's life, so a change to `[share]` keeps what waits. A daemon restart starts a
- *  new one under a new [id], so an acknowledgement of the old one drops nothing of the new. */
+ *  acknowledges it. One for the listener's life, so a change to `[share]` keeps what waits. Each machine's box has an
+ *  id of its own, which an acknowledgement names: a box made again, by a daemon restart or after a revoke, takes no
+ *  acknowledgement of the one it replaced, so a collection still carrying one drops nothing of the new. */
 internal class ShareOutboxes {
-    private val id = UUID.randomUUID().toString()
     private val boxes = ConcurrentHashMap<String, Box>()
 
-    /** One machine's notes, oldest first, and the place of the last one held, which wakes a held collection. */
+    /** One machine's notes, oldest first, the place of the last one held, which wakes a held collection, and the id an
+     *  acknowledgement of them names. */
     private class Box {
+        val id = UUID.randomUUID().toString()
         val held = ArrayDeque<ShareOutboxNote>()
         var next = 1L
         val arrived = MutableStateFlow(0L)
@@ -238,11 +240,11 @@ internal class ShareOutboxes {
      *  seconds. Each stays until a later collection acknowledges it, however many collections are handed it. */
     suspend fun collect(client: String, ack: ShareOutboxAck?, waitS: Long): ShareOutbox {
         val box = box(client)
-        ack?.takeIf { it.box == id }?.let { acknowledged(box, it.after) }
+        ack?.takeIf { it.box == box.id }?.let { acknowledged(box, it.after) }
         if (waiting(box).isEmpty()) {
             withTimeoutOrNull(waitS.seconds) { box.arrived.first { waiting(box).isNotEmpty() } }
         }
-        return ShareOutbox(waiting(box), id)
+        return ShareOutbox(waiting(box), box.id)
     }
 
     /** Lets go of [box]'s notes up to [after]: its machine delivered them. */

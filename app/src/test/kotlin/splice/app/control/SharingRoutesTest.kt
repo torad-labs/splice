@@ -40,6 +40,8 @@ import splice.core.config.ConfigService
 import splice.core.config.MgmtKey
 import splice.core.config.StatePaths
 import splice.core.testing.TestPorts
+import splice.core.topology.ShareConfig
+import splice.core.topology.Topology
 import splice.core.util.EnvReader
 import splice.sessions.mirror.MirrorCarried
 import splice.sessions.mirror.MirrorCarrier
@@ -48,6 +50,8 @@ import splice.sessions.mirror.MirrorPlace
 import splice.sessions.mirror.MirrorSweep
 import splice.sessions.mirror.MirroredSession
 import splice.sessions.mirror.SessionMirrors
+import splice.share.MachinesJoined
+import splice.share.SessionsSwitch
 import splice.share.ShareClients
 import splice.share.ShareHostName
 import splice.share.ShareListener
@@ -58,6 +62,9 @@ import splice.share.SharedQuotas
 import splice.share.remote.RemoteDiscovery
 import splice.share.remote.RemoteFound
 import splice.share.remote.RemoteHttp
+import splice.share.remote.RemoteJoin
+import splice.share.remote.RemoteJoined
+import splice.share.remote.RemoteLinks
 import splice.share.remote.RemoteTrust
 import splice.share.remote.RemotesStore
 import splice.topology.TopologyLoader
@@ -137,7 +144,12 @@ class SharingRoutesTest {
         EnvReader { vars[it] }
     }
 
-    private fun serve(wired: Boolean = true, mirrors: SessionMirrors? = null, test: suspend (ShareCall) -> Unit) {
+    private fun serve(
+        wired: Boolean = true,
+        mirrors: SessionMirrors? = null,
+        remotes: RemoteLinks? = null,
+        test: suspend (ShareCall) -> Unit,
+    ) {
         val paths = StatePaths(envReader = env)
         val mgmt = MgmtKey(paths)
         val config = ConfigService(paths)
@@ -157,7 +169,7 @@ class SharingRoutesTest {
             { },
             mirrors,
         )
-        if (wired) control.ports.sharing = SharingParts(listener, remotes = null, env = env)
+        if (wired) control.ports.sharing = SharingParts(listener, remotes = remotes, env = env)
         runBlocking { control.start() }
         val port = control.listeningPort
         val client = HttpClient(CIO) { expectSuccess = false }
@@ -510,6 +522,72 @@ class SharingRoutesTest {
             assertEquals(400, bad.status.value, bad.bodyAsText())
             val error = json(bad.bodyAsText()).getValue("error").jsonPrimitive.content
             assertTrue("not an address" in error, "it names what it could not read: $error")
+        }
+    }
+
+    /** A machine sharing on [port] that offers no command, as torad does once it stops offering one: on its own state
+     *  folder, apart from this machine's. */
+    private fun sharingNothing(port: Int): ShareListener {
+        val vars = mapOf("SPLICE_STATE_DIR" to tmp.resolve("there").toString(), "HOME" to tmp.toString())
+        val paths = StatePaths(envReader = EnvReader { vars[it] })
+        val there = ShareListener(
+            ShareStart(Topology(), paths, MgmtKey(paths), ConfigService(paths)) { },
+            SharedCatalogs { null },
+            SharedQuotas { null },
+            paths,
+            MachinesJoined { emptySet() },
+            { },
+        )
+        runBlocking { there.follow(ShareConfig(enabled = true, port = port)) }
+        return there
+    }
+
+    @Test
+    fun `a command whose address ends in a slash reads not answering while its machine does not serve it`() {
+        val port = TestPorts.reserve()
+        val there = sharingNothing(port)
+        val watching = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+        try {
+            val info = checkNotNull(RemoteHttp(RemoteTrust(null, "torad")).info("127.0.0.1", port).get())
+            val joined = RemoteJoin("mini").join(RemoteFound("127.0.0.1", port, info)) as RemoteJoined.Joined
+            val url = joined.http.base("127.0.0.1", port)
+            // A relayed command's base_url, edited by hand to end in a slash.
+            Files.writeString(
+                file,
+                """
+                [remotes.torad]
+                url = "$url"
+                fingerprint = "${joined.pin}"
+
+                [providers.torad-kimi]
+                dialect = "anthropic-passthrough"
+                base_url = "$url/share/v1/heads/kimi/"
+                auth = { kind = "splice-remote", remote = "torad" }
+
+                [heads.torad-kimi]
+                provider = "torad-kimi"
+                port = 3911
+                discovery_prefix = "claude-torad-kimi--"
+                pinned_model = "kimi-1"
+                """.trimIndent() + "\n",
+            )
+            val state = ShareState(StatePaths(envReader = env))
+            val store = RemotesStore(state.remotesFile)
+            store.save("torad", joined.token)
+            val booted = TopologyLoader.parse(Files.readString(file))
+            val links = RemoteLinks(booted, store, SessionsSwitch(state, MachinesJoined { booted.remotes.keys }))
+            links.watch(watching, { })
+            runBlocking { withTimeout(SHARE_TIMEOUT_MS) { while (links.reach().isEmpty()) delay(SHARE_POLL_MS) } }
+            assertEquals(mapOf("torad-kimi" to "torad"), links.notAnswering(), "the heads route reads it not answering")
+
+            serve(remotes = links) { call ->
+                val torad = read(call).getValue("remotes").jsonArray.single().jsonObject
+                val kimi = torad.getValue("commands").jsonArray.single().jsonObject
+                assertTrue(kimi.getValue("down").jsonPrimitive.boolean, "and so does the Sharing page: $kimi")
+            }
+        } finally {
+            watching.cancel()
+            runBlocking { there.stop() }
         }
     }
 }

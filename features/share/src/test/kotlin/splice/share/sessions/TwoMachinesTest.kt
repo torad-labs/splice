@@ -28,6 +28,8 @@ import splice.core.topology.RemoteConfig
 import splice.core.topology.ShareConfig
 import splice.core.topology.Topology
 import splice.core.util.EnvReader
+import splice.sessions.mirror.CatAnchor
+import splice.sessions.mirror.MirrorAnchor
 import splice.sessions.mirror.MirrorPlace
 import splice.sessions.mirror.MirrorSweep
 import splice.sessions.mirror.SessionMirrors
@@ -103,8 +105,9 @@ internal abstract class TwoMachinesTest {
     lateinit var tmp: Path
 
     /** One machine: its Claude Code registry, its sockets folder (owner-only, with short names, so a socket path fits
-     *  the 104 bytes a Mac allows), its state, and the mirrors its daemon hosts there. */
-    protected inner class Machine(letter: String) {
+     *  the 104 bytes a Mac allows), its state, and the mirrors its daemon hosts there, each holding a pid by
+     *  [anchor]. */
+    protected inner class Machine(letter: String, anchor: MirrorAnchor = CatAnchor) {
         val home: Path = Files.createDirectories(tmp.resolve(letter))
         val registry: Path = Files.createDirectories(home.resolve("r"))
         val sockets: Path = Files.createDirectory(
@@ -123,6 +126,7 @@ internal abstract class TwoMachinesTest {
             Dispatchers.IO,
             { },
             MirrorSweep { ProcessTicker().awaitTick(it) },
+            anchor = anchor,
         )
 
         fun session(name: String, heardAt: Long? = null) =

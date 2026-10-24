@@ -2,7 +2,9 @@
 // that machine's session, once and in order, whatever happens to the collections that carry it. A collection whose
 // answer never arrives (the machine slept, its daemon restarted, its Wi-Fi dropped) takes nothing with it: a note leaves
 // the outbox only once a later collection acknowledges it. Checked against a model over generated runs, since no list
-// of examples covers the orders in which notes, cut collections and acknowledged ones can come.
+// of examples covers the orders in which notes, cut collections and acknowledged ones can come. Round 12 of PR #419's
+// review added a revoke on the Sharing page followed by a re-join: what waited at the revoke goes, and every note after
+// it arrives, though the collecting machine still carries its acknowledgement of the box the revoke threw away.
 package splice.share
 
 import kotlinx.coroutines.runBlocking
@@ -17,16 +19,18 @@ private const val MINI = "mini"
 // why: a fixed seed, so a failing run is the same run next time.
 private const val SEED = 419
 
-// why: enough runs that every order of the four actions comes up many times.
+// why: enough runs that every order of the five actions comes up many times.
 private const val RUNS = 300
 
 // why: the most actions in one run, kept under the outbox's capacity of 256 so no note is refused as dropped.
 private const val ACTIONS_AT_MOST = 200
 
-// why: the share of each action in a draw of ten: a note, a cut collection, a delivered one, a restart.
+// why: the share of each action in a draw of eleven: a note, a cut collection, a delivered one, a restart, a revoke.
+private const val DRAWS = 11
 private const val NOTE_UNDER = 5
 private const val CUT_UNDER = 7
 private const val DELIVERED_UNDER = 9
+private const val RESTART_UNDER = 10
 
 class ShareOutboxesTest {
     private val to = MirroredSession("s-mini", "splice")
@@ -56,7 +60,7 @@ class ShareOutboxesTest {
             val collector = Collector()
             val expected = mutableListOf<String>()
             repeat(random.nextInt(1, ACTIONS_AT_MOST)) { step ->
-                val draw = random.nextInt(10)
+                val draw = random.nextInt(DRAWS)
                 when {
                     draw < NOTE_UNDER -> {
                         val text = "run $run, note $step"
@@ -69,8 +73,14 @@ class ShareOutboxesTest {
                     draw < DELIVERED_UNDER -> collector.took(outboxes.collected(collector))
                     // The sharing machine's daemon restarts: what it held in memory is gone, and the collecting
                     // machine still carries its acknowledgement of the old outbox.
-                    else -> {
+                    draw < RESTART_UNDER -> {
                         outboxes = ShareOutboxes()
+                        expected.retainAll(collector.delivered.toSet())
+                    }
+                    // Marcos revokes the collecting machine on the Sharing page and it joins again: the notes waiting
+                    // for it go, and its collections carry on with the acknowledgement they held.
+                    else -> {
+                        outboxes.drop(MINI)
                         expected.retainAll(collector.delivered.toSet())
                     }
                 }

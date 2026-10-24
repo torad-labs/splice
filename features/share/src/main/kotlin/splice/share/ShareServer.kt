@@ -35,6 +35,7 @@ import kotlinx.coroutines.withContext
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonPrimitive
 import splice.core.auth.BearerScheme
+import splice.core.topology.ShareConfig
 import splice.core.usage.QuotaJson
 import splice.core.util.Cancellables
 import splice.core.util.LogSink
@@ -91,6 +92,12 @@ internal class ShareServer(
         engine = server
         val offered = "${heads.keys()} on :${endpoint.port} over TLS (${endpoint.tls.fingerprint})"
         log("[share] offering $offered to this machine's private networks\n")
+    }
+
+    /** Offers [share]'s commands from now on, on the listener already open: nothing in flight is cut. */
+    fun offer(share: ShareConfig) {
+        heads.offer(share)
+        log("[share] now offering ${heads.keys()} on :${endpoint.port}\n")
     }
 
     fun stop() {

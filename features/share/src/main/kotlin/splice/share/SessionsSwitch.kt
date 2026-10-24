@@ -9,6 +9,7 @@
 // file no longer lists holds no machine back.
 package splice.share
 
+import splice.share.remote.RemoteNames
 import splice.share.remote.RemotesStore
 
 /** The machines this one joined, as splice.toml's `[remotes]` names them now: the cards the Sharing page draws. */
@@ -22,11 +23,14 @@ public class SessionsSwitch(state: ShareState, private val used: MachinesJoined)
     private val clients = ShareClients(state.clientsFile)
     private val remotes = RemotesStore(state.remotesFile)
 
-    /** Whether sessions cross with [name]: a book holds it, and each book that does has its switch on. */
+    /** Whether sessions cross with [name]: a book holds it, and each book that does has its switch on. Each book is
+     *  read by the name's RemoteNames spelling: phase 1 booked a machine as it calls itself (`Torad-Server`), an import
+     *  keys `[remotes]` by the lower-case one, and each link asks by its own book's. */
     public fun on(name: String): Boolean {
-        val joined = clients.all().firstOrNull { it.name == name }
-        val linked = name in used.names()
-        return (joined != null || linked) && joined?.sessions != false && (!linked || remotes.sessions(name))
+        val joined = clients.all().filter { it.named(name) }
+        val card = card(name)
+        return (joined.isNotEmpty() || card != null) && joined.all { it.sessions } &&
+            (card == null || remotes.sessions(card))
     }
 
     /** Turns [on] or off the switch on the card of [name] as a machine that joined this one, in that book alone; false
@@ -36,5 +40,8 @@ public class SessionsSwitch(state: ShareState, private val used: MachinesJoined)
     /** Turns [on] or off the switch on the card of [name] as a machine this one joined, in that book alone, where this
      *  machine's link reads it; false when this machine joined none of that name, in [used]. Throws IOException, as
      *  [turnJoined] does. */
-    public fun turnUsed(name: String, on: Boolean): Boolean = name in used.names() && remotes.allowSessions(name, on)
+    public fun turnUsed(name: String, on: Boolean): Boolean = card(name)?.let { remotes.allowSessions(it, on) } == true
+
+    /** The `[remotes]` key of the machine this one joined under [name], however it is spelled, or null. */
+    private fun card(name: String): String? = used.names().firstOrNull { RemoteNames.of(it) == RemoteNames.of(name) }
 }

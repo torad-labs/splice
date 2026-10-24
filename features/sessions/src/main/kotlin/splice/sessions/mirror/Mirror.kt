@@ -36,10 +36,6 @@ import java.security.SecureRandom
 import java.util.HexFormat
 import java.util.UUID
 
-// why: the anchor holds a pid and nothing else; cat reads its pipe from the daemon and exits at its end, which comes
-// when the daemon exits, however it exits.
-private const val ANCHOR = "/bin/cat"
-
 // why: a mirror stands for a session on another machine, whose folders mean nothing here.
 private const val NO_CWD = "/"
 
@@ -49,10 +45,7 @@ internal class Mirror(
     @Volatile var carrier: MirrorCarrier,
     private val parts: MirrorParts,
 ) {
-    private val anchor: Process = ProcessBuilder(ANCHOR)
-        .redirectOutput(ProcessBuilder.Redirect.DISCARD)
-        .redirectError(ProcessBuilder.Redirect.DISCARD)
-        .start()
+    private val anchor: Process = parts.anchor.start()
     private val pid: Long = anchor.pid()
     private val socket: Path = parts.place.sockets.resolve("$pid.sock")
     private val token = HexFormat.of().formatHex(ByteArray(PEER_TOKEN_BYTES).also(SecureRandom()::nextBytes))

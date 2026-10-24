@@ -119,7 +119,7 @@ internal class SharingView(private val parts: SharingParts, private val file: To
             }
             putJsonArray("commands") {
                 RemoteTopology(file).heads(name).forEach { (key, head) ->
-                    val there = file.providers[head.provider]?.baseUrl?.substringAfterLast('/')
+                    val there = file.providers[head.provider]?.baseUrl?.trimEnd('/')?.substringAfterLast('/')
                     addJsonObject {
                         put("key", key)
                         put("command", head.claude.command ?: key)

@@ -13,8 +13,10 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.ExecutorCoroutineDispatcher
 import kotlinx.coroutines.asCoroutineDispatcher
 import kotlinx.coroutines.launch
+import splice.core.util.Cancellables
 import splice.core.util.LogSafe
 import splice.core.util.LogSink
+import splice.core.util.SafeFailureText
 import splice.core.util.WallClock
 import splice.sessions.note.PeerNoteSocket
 import splice.sessions.note.PeerTargets
@@ -37,6 +39,20 @@ import java.util.concurrent.Executors
  *  the log the mirrors' inboxes count what they saw in. */
 public data class MirrorPlace(val registry: Path, val sockets: Path, val log: Path)
 
+/** What holds a mirror's pid: a process of its own, started for each mirror. Throws IOException when none can start,
+ *  as a fork refused for want of memory or processes. */
+public fun interface MirrorAnchor {
+    public fun start(): Process
+}
+
+/** The anchor every mirror holds in the daemon: `/bin/cat` reading a pipe from the daemon, which exits at its end. */
+public object CatAnchor : MirrorAnchor {
+    override fun start(): Process = ProcessBuilder(ANCHOR)
+        .redirectOutput(ProcessBuilder.Redirect.DISCARD)
+        .redirectError(ProcessBuilder.Redirect.DISCARD)
+        .start()
+}
+
 /** A session on another machine: its id there, the name it goes by there, and when it was last heard from there, by
  *  that machine's clock (null when its record says nothing of it). */
 public data class MirroredSession(val id: String, val name: String, val heardAt: Long? = null)
@@ -55,6 +71,7 @@ internal data class MirrorParts(
     val io: CoroutineDispatcher,
     val identity: PidIdentity,
     val user: String,
+    val anchor: MirrorAnchor,
 ) {
     val files = PeerRegistryFiles(listOf(place.registry))
     val sockets = PeerSockets(null, null, user)
@@ -65,8 +82,8 @@ internal data class MirrorParts(
     val inboxes: ExecutorCoroutineDispatcher = Executors.newVirtualThreadPerTaskExecutor().asCoroutineDispatcher()
 }
 
-/** The mirrors this daemon hosts at [place], their inboxes served in [scope] on [io]. Each machine's are withdrawn
- *  once their time by [clock] is past, looked for at each turn of [sweep]. */
+/** The mirrors this daemon hosts at [place], their inboxes served in [scope] on [io], each holding a pid by [anchor].
+ *  Each machine's are withdrawn once their time by [clock] is past, looked for at each turn of [sweep]. */
 public class SessionMirrors(
     place: MirrorPlace,
     scope: CoroutineScope,
@@ -74,8 +91,10 @@ public class SessionMirrors(
     private val log: LogSink,
     sweep: MirrorSweep,
     private val clock: WallClock = WallClock { System.currentTimeMillis() },
+    anchor: MirrorAnchor = CatAnchor,
 ) : AutoCloseable {
-    private val parts = MirrorParts(place, scope, io, ProcPidIdentity(), System.getProperty("user.name").orEmpty())
+    private val parts =
+        MirrorParts(place, scope, io, ProcPidIdentity(), System.getProperty("user.name").orEmpty(), anchor)
     private val lock = Any()
 
     /** Each machine's mirrors by the id of the session they stand for there. */
@@ -244,10 +263,16 @@ public class SessionMirrors(
         }
     }
 
-    /** A mirror of [session], open, or null with why it could not be, which the log says too. */
+    /** A mirror of [session], open, or null with why it could not be, which the log says too: one whose process
+     *  could not start, as a fork refused for want of memory or processes, is refused like a socket that would not
+     *  bind. */
     private fun open(machine: String, session: MirroredSession, carrier: MirrorCarrier): Pair<Mirror?, String?> {
-        val mirror = Mirror(machine, session, carrier, parts)
-        val refused = mirror.open() ?: return mirror to null
+        val opened: Pair<Mirror?, String?> =
+            Cancellables.runCatchingCancellable { Mirror(machine, session, carrier, parts) }.fold(
+                onSuccess = { made -> made to made.open() },
+                onFailure = { null to "its process did not start: ${SafeFailureText.render(it)}" },
+            )
+        val refused = opened.second ?: return opened.first to null
         log(
             "share: ${LogSafe.str(session.name)} of ${LogSafe.str(machine)} cannot be mirrored here: " +
                 LogSafe.str(refused),
@@ -259,6 +284,10 @@ public class SessionMirrors(
         it.availability != SessionAvailability.GONE && it.client.kind != MIRROR_KIND
     }
 }
+
+// why: the anchor holds a pid and nothing else; cat reads its pipe from the daemon and exits at its end, which comes
+// when the daemon exits, however it exits.
+private const val ANCHOR = "/bin/cat"
 
 // why: an unnamed session is shown by the start of its id, as Claude Code shows one.
 internal const val SHORT_ID_CHARS = 8

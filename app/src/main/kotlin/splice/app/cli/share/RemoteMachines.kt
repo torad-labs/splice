@@ -71,29 +71,40 @@ internal class RemoteMachines(
         return PeerExit.DONE
     }
 
-    /** Each head's rows, pin and tiers as its machine serves them now; a head the machine stopped offering is said. */
+    /** Each head's rows, pin and tiers as its machine serves them now; a head the machine stopped offering is said. A
+     *  machine that does not answer is said too, and the sync exits refused: its rows could not be checked. */
     fun sync(only: String?): Int {
         val topology = file.loaded() ?: return PeerExit.REFUSED
         val names = only?.let { listOf(it) } ?: topology.remotes.keys.toList()
         names.firstOrNull { it !in topology.remotes }?.let { return unknown(it) }
-        val wanted = names.fold(topology) { current, name -> synced(current, name) }
-        return when {
-            wanted == topology -> PeerExit.DONE.also { out.line("$GREEN✓$RESET every row is current") }
-            !file.saved(wanted) -> PeerExit.REFUSED
-            else -> {
-                out.line("$GREEN✓$RESET rows refreshed in ${file.path}")
-                restartIfUp()
-            }
+        val unanswered = mutableListOf<String>()
+        val wanted = names.fold(topology) { current, name ->
+            synced(current, name) ?: current.also { unanswered += name }
         }
+        return settled(topology, wanted, answered = unanswered.isEmpty())
     }
 
-    /** [topology] with [name]'s heads as it serves them now; unchanged when it does not answer. */
-    private fun synced(topology: Topology, name: String): Topology {
+    /** What a sync of [topology] to [wanted] comes to: the rows rewritten and a running daemon restarted once, or none
+     *  to rewrite. Refused, with no row called current, unless every machine [answered]. */
+    private fun settled(topology: Topology, wanted: Topology, answered: Boolean): Int = when {
+        wanted != topology -> rewritten(wanted).takeIf { answered } ?: PeerExit.REFUSED
+        answered -> PeerExit.DONE.also { out.line("$GREEN✓$RESET every row is current") }
+        else -> PeerExit.REFUSED
+    }
+
+    private fun rewritten(wanted: Topology): Int {
+        if (!file.saved(wanted)) return PeerExit.REFUSED
+        out.line("$GREEN✓$RESET rows refreshed in ${file.path}")
+        return restartIfUp()
+    }
+
+    /** [topology] with [name]'s heads as it serves them now; null, said, when it does not answer. */
+    private fun synced(topology: Topology, name: String): Topology? {
         val remote = topology.remotes.getValue(name)
-        val url = remoteUri(remote.url) ?: return topology
+        val url = remoteUri(remote.url) ?: return null
         val pinned = RemoteHttp(RemoteTrust(remote.fingerprint.orEmpty(), name))
         val port = url.port.takeIf { it > 0 } ?: DEFAULT_SHARE_PORT
-        val info = info(url.host.trim('[', ']'), port, pinned) ?: return topology
+        val info = info(url.host.trim('[', ']'), port, pinned) ?: return null
         val edits = RemoteTopology(topology)
         val add = "${CYAN}splice remote add ${url.host}$RESET"
         info.heads.filter { edits.headFor(name, it.key) == null }

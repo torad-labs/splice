@@ -274,7 +274,8 @@ Built on `feat/lan-share`, merged into `feat/v0.4.0` through the gate. Milestone
    - **The link.** Every 5 s the joining machine reads each machine it joined (`GET /share/v1/sessions`, its running
      sessions, mirrors left out), mirrors them, and offers its own (`PUT`, with how often it looks). The sharing
      machine keeps those mirrors for three looks past the last offer (from 1 s to a minute) and withdraws them when its
-     listener closes; a machine that does not answer has none mirrored on the other until it does.
+     listener closes, which a change to the commands it offers alone does not do (the open listener takes it, so a turn
+     relayed through it carries on); a machine that does not answer has none mirrored on the other until it does.
    - **Messages.** A message to a mirror goes to its machine at once (`POST /share/v1/sessions/{id}/message`), which
      delivers it from its own mirror of the sender, so the envelope's `from` and `from-name` (`<machine>/<sender>`)
      are a mirror there and a reply comes back the same way. A message for the joining machine's sessions waits in its
@@ -285,7 +286,8 @@ Built on `feat/lan-share`, merged into `feat/v0.4.0` through the gate. Milestone
      A note whose sender has no mirror left on the machine it reaches (withdrawn since that machine's last look, by a
      look that failed, a switch turned off and on, or the end of its offers) is delivered from one made then with the
      carrier it came by, so it is never refused for the want of one and acknowledged gone.
-     A restart of the sharing daemon loses what its outbox held. A note refused where its sender wrote it, or by the
+     A restart of the sharing daemon loses what its outbox held, and a revoke what waited for that machine; the box
+     made after either has an id of its own, so an acknowledgement of the one before drops nothing of it. A note refused where its sender wrote it, or by the
      machine it was posted to (a session gone there, a switch off on either side, a machine revoked), goes back to the
      sender as a receipt, in words; one refused after it waited in an outbox is the "Not yet" below.
    - **Bounds.** Every route needs a joined machine's token, and the link names the machine, never the request. A

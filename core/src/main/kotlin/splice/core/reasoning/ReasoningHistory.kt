@@ -116,5 +116,9 @@ public class ReasoningHistory {
 /** Private cache indexes use this namespace; these are never upstream function_call ids. */
 public const val HISTORY_POSITION_PREFIX: String = "splice-reasoning-at:"
 private val LENGTH_SHIFTS = IntArray(Int.SIZE_BYTES) { (Int.SIZE_BYTES - 1 - it) * Byte.SIZE_BITS }
+
+// why: Bound each cursor's batch scratch to 4 KiB while amortizing digest calls across encoded units.
 private const val HISTORY_ENCODING_BYTES = 4096
+
+// why: Each text unit is one grammar tag byte followed by its two UTF-16 big-endian bytes.
 private const val TEXT_UNIT_BYTES = 3

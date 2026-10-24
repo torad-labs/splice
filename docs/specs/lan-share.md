@@ -19,6 +19,38 @@ and on yes writes the same heads into the Mac's `splice.toml`, links the same co
 `claudex` on the Mac then runs Claude Code on torad-server's ChatGPT login. No login is copied and no
 login is asked for.
 
+## Decisions (Marcos, 2026-10-24): a node is a client, nothing more
+
+Marcos, after the Mac's `claudex` died on a LAN blip and its `/login` answered "this head signs in with an
+API key" (2026-10-24): "a user using splice as a node, should connect to the server splice just like it
+does, when using vertex or bedrock. That's it, it shouldnt care about credentials, it shouldn't care about
+synching file, about tailscale, NONE OF that. And we can filter the details about models and usage, and
+what the auth to use via query params. That's it, it's so simple."
+
+- **A node is Claude Code pointed at the server.** The machine that uses another machine's heads is a
+  node. It connects to the server's splice the way Claude Code connects to Vertex or Bedrock: a base URL,
+  and nothing else to hold or keep in step. The server's splice listens on the LAN for its heads and
+  injects every credential itself. The node holds no credential, no token and no key, and syncs no file.
+  Whether the node runs a daemon of its own is the seat's design call; what it never does is the above.
+- **What the node asks for rides in query params.** Which head, which of the server's logins (auth) a
+  turn uses, and which models and usage the node is shown, are named by query params on the server's URL
+  and filtered there. Nothing about them is copied to the node.
+- **Trust the LAN, for turns too.** No join, no per-machine token, no trust on first contact, no
+  certificate pin, no remotes store. The server's heads answer any machine on its private networks.
+  Raised once: every device on that LAN can then use the heads. Marcos's decision.
+- **Tailscale is not part of this.** A node reaches the server by its LAN address, as it would any proxy.
+
+What this sets aside in this spec, from here down: the join and its token (`POST /share/v1/join`, the
+client token on every request, `RemotesStore`, a token in `keys.toml` or anywhere on the node), trust on
+first contact and the pinned certificate (`RemoteJoin`, `RemoteTrust`), and the sessions and file sync
+between machines (milestone 6). The 2026-10-22 decisions below stand where they don't contradict this:
+relay never copy, and trust the LAN.
+
+What the Mac showed on 2026-10-24 that this replaces: the relay modeled as an api-key provider, whose
+`/login` said "this head signs in with an API key"; and a dead connection to the server answered as a 529
+`overloaded_error`, so Claude Code printed "(overloaded), retrying" and never the reason. A node that
+can't reach the server says so, in those words.
+
 ## Decisions (Marcos, 2026-10-22)
 
 - **Relay, never copy.** A turn on the Mac goes to the Mac's head, which forwards it to the server's

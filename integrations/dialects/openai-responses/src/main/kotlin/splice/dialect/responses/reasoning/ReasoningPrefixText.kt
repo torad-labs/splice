@@ -1,6 +1,8 @@
 package splice.dialect.responses.reasoning
 
 private const val EMPTY_PREFIX_BODY = "<!-- -->"
+
+// why: inherited SummaryStatusHeaders cutoff releases an unfinished bold run past a short header as prose.
 private const val MAX_PREFIX_HEADER_CHARS = 200
 
 /** The first delta, rather than item index, orders raw and summary prefixes awaiting presentation. */

@@ -21,6 +21,7 @@ import splice.dialect.responses.reasoning.InjectPriorReasoning
 import splice.dialect.responses.reasoning.ReasoningCache
 import splice.dialect.responses.reasoning.ReasoningCacheFiles
 import splice.dialect.responses.reasoning.ReasoningHistoryLookup
+import splice.dialect.responses.reasoning.ReasoningItemOrder
 import splice.dialect.responses.reasoning.ReasoningPositionIndex
 import splice.dialect.responses.reasoning.ResponsesHistoryCursor
 import java.nio.file.Path
@@ -45,11 +46,11 @@ class ResponsesReasoningFragmentCompatibilityTest(@param:TempDir private val sta
         val baseline = input(builder, cache)
         val cursor = ResponsesHistoryCursor()
         body.typed.messages.first().let { message -> message.content.forEach { cursor.append(message.role, it) } }
-        retain(cache, cursor.history.key, "rs_before")
+        retain(cache, cursor.history.key, "rs_before", outputIndex = 0)
         val warm = input(builder, cache)
         assertEquals(warm, input(builder, cache))
         cursor.text("assistant", "Before ")
-        retain(cache, cursor.history.key, "rs_middle")
+        retain(cache, cursor.history.key, "rs_middle", outputIndex = 2)
         val inserted = input(builder, cache)
         assertEquals(
             listOf(
@@ -87,14 +88,19 @@ class ResponsesReasoningFragmentCompatibilityTest(@param:TempDir private val sta
         ),
     ).req.getValue("input").jsonArray
 
-    private fun retain(cache: ReasoningCache, position: String, id: String) {
+    private fun retain(cache: ReasoningCache, position: String, id: String, outputIndex: Int) {
         val item = buildJsonObject {
             put("type", JsonPrimitive("reasoning"))
             put("id", JsonPrimitive(id))
             put("encrypted_content", JsonPrimitive("fixture-$id"))
         }
         val envelope = checkNotNull(ReasoningReplay.encodeReasoningEnvelope(item))
-        cache.put(FRAGMENT_CONVERSATION, listOf(ReasoningPositionIndex().index(position, envelope)), listOf(envelope))
+        val order = ReasoningItemOrder("fragment-round", outputIndex, terminal = true, reasoningId = id)
+        cache.put(
+            FRAGMENT_CONVERSATION,
+            listOf(ReasoningPositionIndex().index(position, envelope, order)),
+            listOf(envelope),
+        )
     }
 
     private fun label(value: JsonElement): String {

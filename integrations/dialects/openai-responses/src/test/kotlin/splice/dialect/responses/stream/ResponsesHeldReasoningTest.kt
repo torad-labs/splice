@@ -57,6 +57,12 @@ class ResponsesHeldReasoningTest {
         assertEquals(1, sink.calls.count { it.startsWith("openThinking#") }, "one nonempty reasoning row")
         assertFalse(sink.calls.any { it.startsWith("redacted:") }, "no opaque substitute for readable text")
         assertEquals(listOf("answer"), textDeltas(sink))
+        assertEquals(
+            listOf("<", "answer"),
+            sink.calls.filter { it.startsWith("think#") || it.startsWith("text#") }
+                .map { it.substringAfter(':') },
+            "held reasoning must precede the later visible answer, not move across it at termination",
+        )
         assertEquals(ending == "completed", outcome is TurnOutcome.Success, "ending honesty must survive settlement")
         if (outcome is TurnOutcome.Success) assertEquals("<", outcome.text.thinkingText)
     }

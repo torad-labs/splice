@@ -110,6 +110,8 @@ internal class NativeConnection(
 
     fun isAvailable(): Boolean = !closed.get() && transport.isAvailable()
 
+    fun isClosed(): Boolean = closed.get()
+
     override fun close() {
         if (closed.compareAndSet(false, true)) {
             val error = CodeModeWorkerLostException()

@@ -50,7 +50,7 @@ internal class NativeHostTransport(
     suspend fun send(payload: ByteArray, operation: NativeOperation?) {
         withContext(ioDispatcher) {
             writer.withLock {
-                if (closed.get()) throw CodeModeWorkerLostException()
+                if (closed.get() || connection.isClosed()) throw CodeModeWorkerLostException()
                 try {
                     operation?.markDispatched()
                     NativeFrames.write(output, payload)

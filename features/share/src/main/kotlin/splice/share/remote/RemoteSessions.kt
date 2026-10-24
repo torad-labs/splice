@@ -13,7 +13,8 @@
 // over, and a stop lands between two notes, so a stop part way through a collection hands none of them over again; a
 // collection that fails is said in the log once while it keeps failing, as a look is, and so is its coming back.
 // Since round 16, a machine that answers a look has its sessions mirrored here whether or not it takes this machine's
-// offer.
+// offer. Since round 17, a note's status there that this build has no word for, as a newer or an older build may name,
+// tells its sender the note may not have arrived, never that it is on its way.
 package splice.share.remote
 
 import kotlinx.coroutines.CoroutineExceptionHandler
@@ -30,14 +31,17 @@ import splice.core.util.Cancellables
 import splice.core.util.LogSafe
 import splice.core.util.LogSink
 import splice.core.util.SafeFailureText
+import splice.core.util.TerminalText
 import splice.sessions.mirror.MirrorCarried
 import splice.sessions.mirror.MirrorCarrier
 import splice.sessions.mirror.MirrorLink
+import splice.sessions.mirror.MirrorWay
 import splice.sessions.mirror.MirroredSession
 import splice.sessions.mirror.SessionMirrors
 import splice.sessions.peer.DeliveryStatus
 import splice.share.ShareLease
 import splice.share.ShareNote
+import splice.share.ShareNoteAnswer
 import splice.share.ShareOutbox
 import splice.share.ShareOutboxAck
 import splice.share.ShareOutboxNote
@@ -75,7 +79,7 @@ public class RemoteSessions(
         return scope.launch(stopped) {
             supervisorScope {
                 for ((name, url) in joined) {
-                    val link = MirrorLink(carrierTo(name, url), lasts)
+                    val link = MirrorLink(carrierTo(name, url), lasts, MirrorWay.LOOK)
                     launch { carryOn(name, "look", LinkLoop { look(name, url, link) }) }
                     launch { carryOn(name, "collection", LinkLoop { collect(name, url, link) }) }
                 }
@@ -109,7 +113,7 @@ public class RemoteSessions(
     private suspend fun switchedOff(name: String, url: String, state: RemoteLookState) {
         if (!state.off) log("[remote $name] no session crosses with it: Sessions is off for it on the Sharing page\n")
         if (state.offered) leftThere(name, url)
-        withContext(io) { mirrors.withdraw(name) }
+        withContext(io) { mirrors.withdraw(name, MirrorWay.LOOK) }
         state.switchedOff()
     }
 
@@ -125,7 +129,7 @@ public class RemoteSessions(
         }
         looked.onFailure { failure ->
             if (!state.failing) log("[remote $name] its sessions are not mirrored here: ${said(failure)}\n")
-            withContext(io) { mirrors.withdraw(name) }
+            withContext(io) { mirrors.withdraw(name, MirrorWay.LOOK) }
         }
         if (state.failing && looked.isSuccess) log("[remote $name] its sessions are mirrored here again\n")
         state.failing = looked.isFailure
@@ -228,11 +232,20 @@ public class RemoteSessions(
             runInterruptible(io) { links.api(name).note(url, to.id, note) }
         }
         answered.fold(
-            onSuccess = { answer ->
-                MirrorCarried(DeliveryStatus.entries.firstOrNull { it.wire == answer.status }, answer.detail)
-            },
+            onSuccess = { answer -> carried(name, answer) },
             onFailure = { MirrorCarried(DeliveryStatus.DROPPED, said(it)) },
         )
+    }
+
+    /** What [name]'s answer to a note tells its sender: the status it named, with why; nothing while the note is on its
+     *  way; and for a status this build has no word for, that the note may not have arrived, with what [name] said. */
+    private fun carried(name: String, answer: ShareNoteAnswer): MirrorCarried {
+        val status = answer.status ?: return MirrorCarried(null, answer.detail)
+        val known = DeliveryStatus.entries.firstOrNull { it.wire == status }
+        if (known != null) return MirrorCarried(known, answer.detail)
+        val named = TerminalText.line(status, STATUS_SHOWN_CHARS)
+        val why = "$name answered \"$named\", which splice here does not know, so the note may not have arrived"
+        return MirrorCarried(DeliveryStatus.DROPPED, answer.detail?.let { "$why: $it" } ?: why)
     }
 
     private fun said(failure: Throwable): String =
@@ -243,6 +256,9 @@ public class RemoteSessions(
 private fun interface LinkLoop {
     suspend fun run()
 }
+
+// why: a status word is a few letters; past 40, one this build does not know is shown cut, as a label is.
+private const val STATUS_SHOWN_CHARS = 40
 
 // why: a session that starts or ends shows on the other machine within ten seconds, the goal's bound, and a look is two
 // small requests per joined machine.

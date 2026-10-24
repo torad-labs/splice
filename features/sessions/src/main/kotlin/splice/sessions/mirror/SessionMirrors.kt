@@ -7,6 +7,11 @@
 // end here, whatever made them, once their time is past: a look or an offer from it moves that time later, and a note
 // gives one only to a machine that has none. Two running records under one session id, as `claude --resume` leaves
 // while the first process still runs, are one session here, the one heard from last (round 13 of PR #419's review).
+// Since round 17 a session is mirrored once, whichever ways name it: a machine reaches this one by this machine's look
+// at it and by its own offers and notes here, and one this machine keys twice (`b` and `b-2`) names its sessions
+// under both keys. What each way names is a claim with its own time. A mirror stays while any claim names its session,
+// under the machine it is listed under while that machine still names it, and hands a message to that machine's way
+// that named it last, so one way going quiet leaves what another still names as it is.
 package splice.sessions.mirror
 
 import kotlinx.coroutines.CoroutineDispatcher
@@ -59,7 +64,7 @@ internal object CatAnchor : MirrorAnchor {
 public data class MirroredSession(val id: String, val name: String, val heardAt: Long? = null)
 
 /** How sessions cross with one machine: how many of its sessions are mirrored here, and how many of this machine's it
- *  was last shown (null until it is, and again once its link goes quiet). */
+ *  was last shown (null until it is, and again once every way it reaches this one goes quiet). */
 public data class MirrorCounts(val here: Int, val there: Int?)
 
 /** What every mirror serves with: the folders, the registry's files and reader, the outbox a message and a receipt go
@@ -81,10 +86,21 @@ internal data class MirrorParts(
     val outbox = PeerNoteSocket(io, user = user, registryDirs = listOf(place.registry))
     val helperLog = HelperLog(place.log, WallClock { System.currentTimeMillis() })
     val inboxes: ExecutorCoroutineDispatcher = Executors.newVirtualThreadPerTaskExecutor().asCoroutineDispatcher()
+
+    /** This machine's own running sessions by id, mirrors left out: of two records under one id, as `claude --resume`
+     *  leaves while the first process still runs, the one heard from last. */
+    fun ownSessions(): Map<String, OwnSession> = registry.read()
+        .filter { it.availability != SessionAvailability.GONE && it.client.kind != MIRROR_KIND }
+        .mapNotNull { record ->
+            val heardAt = listOfNotNull(record.process.updatedAt, record.status.updatedAt).maxOrNull()
+            record.sessionId?.let { id -> id to OwnSession(record, heardAt) }
+        }
+        .groupBy({ it.first }, { it.second })
+        .mapValues { (_, records) -> records.maxBy { it.heardAt ?: Long.MIN_VALUE } }
 }
 
 /** The mirrors this daemon hosts at [place], their inboxes served in [scope] on [io], each holding a pid by [anchor].
- *  Each machine's are withdrawn once their time by [clock] is past, looked for at each turn of [sweep]. */
+ *  What each way named is withdrawn once its time by [clock] is past, looked for at each turn of [sweep]. */
 public class SessionMirrors(
     place: MirrorPlace,
     scope: CoroutineScope,
@@ -98,25 +114,18 @@ public class SessionMirrors(
         MirrorParts(place, scope, io, ProcPidIdentity(), System.getProperty("user.name").orEmpty(), anchor)
     private val lock = Any()
 
-    /** Each machine's mirrors by the id of the session they stand for there. */
-    private val byMachine = mutableMapOf<String, MutableMap<String, Mirror>>()
+    /** What each way a machine's sessions reach this one by names now: the sessions it looked, offered or wrote
+     *  from. */
+    private val claims = MirrorClaims()
 
-    /** Each machine's sessions as it offered them and as its notes came from, by id, before MirrorNames tells namesakes
-     *  apart: what a sender's mirror made on demand is named among, so it is named as that machine's looks name it. */
-    private val offered = mutableMapOf<String, MutableMap<String, MirroredSession>>()
-
-    /** The carrier each machine's mirrors hand a message to, kept so a sender's mirror can be made on demand. */
-    private val carriers = mutableMapOf<String, MirrorCarrier>()
+    /** The mirrors by the id of the session each stands for: one a session, whichever ways name it. */
+    private val mirrors = mutableMapOf<String, Mirror>()
 
     /** How many of this machine's sessions each machine was last shown. */
     private val shownTo = mutableMapOf<String, Int>()
 
     /** The machines that offered more sessions than there was room for, said once until they fit again. */
     private val overfull = mutableSetOf<String>()
-
-    /** When each machine's mirrors end, by [clock]. A look or an offer from it moves that later, and a note sets one
-     *  only where none is held. Every mirror is made under one, so none outlasts the time its machine was given. */
-    private val ends = mutableMapOf<String, Long>()
 
     /** Whether the daemon withdrew every mirror as it stops: an offer or a note still on its way then makes none, as
      *  nothing would sweep it once the daemon is gone and its record would outlive it. */
@@ -130,13 +139,14 @@ public class SessionMirrors(
 
     /** This machine's own running sessions, as another machine is shown them: every one Claude Code registered here
      *  whose process runs, mirrors left out, once each. */
-    public fun local(): List<MirroredSession> = ownSessions().map { (id, own) ->
+    public fun local(): List<MirroredSession> = parts.ownSessions().map { (id, own) ->
         MirroredSession(id, own.record.name ?: id.take(SHORT_ID_CHARS), own.heardAt)
     }
 
-    /** How sessions cross with [machine], as the Sharing page shows it. */
+    /** How sessions cross with [machine], as the Sharing page shows it: of the sessions its ways name, how many are
+     *  mirrored here, under whichever key. */
     public fun counts(machine: String): MirrorCounts = synchronized(lock) {
-        MirrorCounts(byMachine[machine]?.size ?: 0, shownTo[machine])
+        MirrorCounts(claims.named(machine).count { it in mirrors }, shownTo[machine])
     }
 
     /** [machine] was just shown [sessions] of this machine's running sessions. */
@@ -144,58 +154,81 @@ public class SessionMirrors(
         synchronized(lock) { shownTo[machine] = sessions }
     }
 
-    /** Withdraws [machine]'s mirrors and forgets it: its link went quiet, so nothing crosses with it until it looks
-     *  again. */
-    public fun withdraw(machine: String) {
+    /** [way] of [machine] went quiet (a look that failed, its Sessions switch off, its offers ending): what it named
+     *  stays mirrored while another way names it, and [machine] is forgotten once none does, so nothing crosses with
+     *  it until it looks or offers again. */
+    public fun withdraw(machine: String, way: MirrorWay) {
         synchronized(lock) {
-            byMachine.remove(machine)?.values?.forEach(Mirror::close)
-            offered.remove(machine)
-            carriers.remove(machine)
-            shownTo.remove(machine)
-            overfull.remove(machine)
-            ends.remove(machine)
+            claims.drop(machine, way)
+            settle(setOf(machine))
         }
     }
 
-    /** Withdraws each machine whose mirrors' time is past. */
+    /** Withdraws each way whose time is past. */
     public fun expire() {
         synchronized(lock) {
-            val now = clock()
-            ends.filterValues { it < now }.keys.toList().forEach(::withdraw)
+            val ended = claims.expire(clock())
+            if (ended.isNotEmpty()) settle(ended)
         }
     }
 
-    /** Makes [sessions] the mirrors of [machine]: each new one registered, each gone one withdrawn, a renamed one
-     *  registered anew under its new name. Each hands what it takes to [link]'s carrier, and they last at least
-     *  [link]'s time from now, those made before a failure part way included. None once the daemon closed them. */
+    /** Forgets each of [machines] no way names any more, and makes the mirrors what the ways name now. */
+    private fun settle(machines: Set<String>) {
+        for (machine in machines - claims.machines()) {
+            shownTo.remove(machine)
+            overfull.remove(machine)
+        }
+        reconcile()
+    }
+
+    /** Makes [sessions] what [machine] names by [link]'s way: each one no way named before registered, each one no
+     *  way names any more withdrawn, a renamed one registered anew under its new name. A message to one goes by the
+     *  carrier of its machine's way that named it last, and what [link]'s way names lasts at least [link]'s time from
+     *  now, those made before a failure part way included. None once the daemon closed them. */
     public fun mirror(machine: String, sessions: List<MirroredSession>, link: MirrorLink) {
         synchronized(lock) {
             if (closed) return
-            ends[machine] = maxOf(ends[machine] ?: 0L, clock() + link.lastsMs)
-            reconcile(machine, sessions, link.carrier)
+            claims.name(machine, sessions, link, clock())
+            reconcile()
         }
     }
 
-    private fun reconcile(machine: String, sessions: List<MirroredSession>, carrier: MirrorCarrier) {
-        carriers[machine] = carrier
-        offered[machine] = sessions.associateByTo(mutableMapOf()) { it.id }
-        val held = byMachine.getOrPut(machine) { mutableMapOf() }
-        val names = held.mapValues { (_, mirror) -> mirror.session.name }
-        val wanted = MirrorNames.of(sessions, names).associateBy { it.id }
-        held.entries.removeAll { (id, mirror) ->
-            val stale = wanted[id]?.name != mirror.session.name || !mirror.alive()
+    /** Makes the mirrors what the ways name, and answers why each session named that has no mirror could not have
+     *  one. */
+    private fun reconcile(): Map<String, String> {
+        val wanted = claims.wanted(mirrors)
+        mirrors.entries.removeAll { (id, mirror) ->
+            val stale = wanted[id]?.keeps(mirror) != true
             if (stale) mirror.close()
             stale
         }
-        held.forEach { (id, mirror) -> wanted[id]?.let(mirror::heard) }
-        val fresh = wanted.values.filter { it.id !in held }
-        val room = (MIRRORS_AT_MOST - byMachine.values.sumOf { it.size }).coerceAtLeast(0)
-        for (session in fresh.take(room)) {
-            open(machine, session, carrier).first?.let { held[session.id] = it }
+        for ((id, mirror) in mirrors) {
+            val want = wanted.getValue(id)
+            mirror.heard(want.session)
+            mirror.carrier = want.carrier
         }
-        roomFor(machine, fresh.size - room)
-        held.values.forEach { it.carrier = carrier }
-        if (held.isEmpty()) byMachine.remove(machine)
+        return opened(wanted.values.filter { it.session.id !in mirrors })
+    }
+
+    /** Opens a mirror for each of [fresh] there is room for, and says, once, of each machine whose sessions did not
+     *  all fit. Answers why each that has none could not have one. */
+    private fun opened(fresh: List<MirrorWant>): Map<String, String> {
+        val room = (MIRRORS_AT_MOST - mirrors.size).coerceAtLeast(0)
+        val refused = fresh.drop(room).associateTo(mutableMapOf()) { want ->
+            want.session.id to "this machine already hosts the most mirrors it can ($MIRRORS_AT_MOST), so " +
+                "${want.session.name} of ${want.machine} has none here"
+        }
+        for (want in fresh.take(room)) {
+            val (mirror, why) = open(want.machine, want.session, want.carrier)
+            if (mirror != null) {
+                mirrors[want.session.id] = mirror
+            } else {
+                refused[want.session.id] = "${want.session.name} of ${want.machine} cannot be mirrored here: $why"
+            }
+        }
+        val left = fresh.drop(room).groupingBy { it.machine }.eachCount()
+        claims.machines().forEach { roomFor(it, left[it] ?: 0) }
+        return refused
     }
 
     /** Delivers [text] from [from], a session on [machine], to the session here whose id is [to]. It goes from the
@@ -207,7 +240,7 @@ public class SessionMirrors(
         text: String,
         link: MirrorLink,
     ): MirrorCarried {
-        val target = ownSessions()[to]?.record
+        val target = parts.ownSessions()[to]?.record
             ?: return MirrorCarried(DeliveryStatus.REFUSED, "no session here has the id $to")
         val (sender, refused) = senderOf(machine, from, link)
         sender ?: return MirrorCarried(DeliveryStatus.REFUSED, refused)
@@ -222,41 +255,24 @@ public class SessionMirrors(
     override fun close() {
         synchronized(lock) {
             closed = true
-            byMachine.values.flatMap { it.values }.forEach(Mirror::close)
-            byMachine.clear()
-            offered.clear()
-            carriers.clear()
-            ends.clear()
+            mirrors.values.forEach(Mirror::close)
+            mirrors.clear()
+            claims.clear()
         }
         parts.helperLog.flush()
         parts.inboxes.close()
     }
 
-    /** The mirror here of [from], made with [machine]'s carrier when there is none, or with [link]'s, the one the note
-     *  came by, when nothing [machine] offered or showed is left here: mirrors withdrawn since its last look, by a look
-     *  that failed, its Sessions switch turned off and on, or its offers ending, take no note with them. One made when
-     *  none of [machine]'s is left lasts [link]'s time. Null, with why, when it cannot be made. */
+    /** The mirror here of [from], which [machine]'s way the note came by, [link]'s, now names: the one its session
+     *  has, or one made now. Mirrors withdrawn since its last look, by a look that failed, its Sessions switch turned
+     *  off and on, or its offers ending, take no note with them, so a way that names nothing takes [link]'s time and
+     *  carrier, the ones the note came by. Null, with why, when it cannot be made. */
     private fun senderOf(machine: String, from: MirroredSession, link: MirrorLink): Pair<Mirror?, String?> =
         synchronized(lock) {
             if (closed) return@synchronized null to "this machine's splice is stopping"
-            val held = byMachine[machine]?.get(from.id)
-            if (held != null && held.alive()) return@synchronized held to null
-            // Names read before a dead mirror goes, so the one made for it keeps its name, as the next look keeps it.
-            val names = byMachine[machine].orEmpty().mapValues { (_, mirror) -> mirror.session.name }
-            byMachine[machine]?.remove(from.id)?.close()
-            val others = offered[machine].orEmpty().values.filter { it.id != from.id }
-            val named = MirrorNames.of(others + from, names).first { it.id == from.id }
-            if (byMachine.values.sumOf { it.size } >= MIRRORS_AT_MOST) {
-                return@synchronized null to "this machine already hosts the most mirrors it can ($MIRRORS_AT_MOST), " +
-                    "so ${named.name} of $machine has none here to write from"
-            }
-            val (mirror, refused) = open(machine, named, carriers[machine] ?: link.carrier)
-            mirror?.let {
-                byMachine.getOrPut(machine) { mutableMapOf() }[from.id] = it
-                offered.getOrPut(machine) { mutableMapOf() }[from.id] = from
-                ends.putIfAbsent(machine, clock() + link.lastsMs)
-            }
-            mirror to refused?.let { "${named.name} of $machine cannot be mirrored here: $it" }
+            claims.add(machine, from, link, clock())
+            val refused = reconcile()
+            mirrors[from.id] to refused[from.id]
         }
 
     /** Says, once, that [machine] offered [left] sessions more than there was room for. */
@@ -287,21 +303,10 @@ public class SessionMirrors(
         )
         return null to refused
     }
-
-    /** This machine's own running sessions by id, mirrors left out: of two records under one id, as `claude --resume`
-     *  leaves while the first process still runs, the one heard from last. */
-    private fun ownSessions(): Map<String, OwnSession> = parts.registry.read()
-        .filter { it.availability != SessionAvailability.GONE && it.client.kind != MIRROR_KIND }
-        .mapNotNull { record ->
-            val heardAt = listOfNotNull(record.process.updatedAt, record.status.updatedAt).maxOrNull()
-            record.sessionId?.let { id -> id to OwnSession(record, heardAt) }
-        }
-        .groupBy({ it.first }, { it.second })
-        .mapValues { (_, records) -> records.maxBy { it.heardAt ?: Long.MIN_VALUE } }
 }
 
 /** One of this machine's own sessions: its registry [record], and when it was last heard from, by its record. */
-private data class OwnSession(val record: SessionRecord, val heardAt: Long?)
+internal data class OwnSession(val record: SessionRecord, val heardAt: Long?)
 
 // why: the anchor holds a pid and nothing else; cat reads its pipe from the daemon and exits at its end, which comes
 // when the daemon exits, however it exits.

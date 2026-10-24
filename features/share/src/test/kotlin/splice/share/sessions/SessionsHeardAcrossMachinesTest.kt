@@ -13,6 +13,7 @@ import kotlinx.serialization.json.jsonPrimitive
 import kotlinx.serialization.json.long
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
+import splice.sessions.mirror.MirrorWay
 import splice.share.remote.RemoteSessions
 import java.nio.file.Files
 import java.nio.file.Path
@@ -58,7 +59,7 @@ internal class SessionsHeardAcrossMachinesTest : TwoMachinesTest() {
         slowLink()
         listed(splice) { "$toradName/rig-lead" in it }
         listed(rig) { "$MINI/splice" in it }
-        mini.mirrors.withdraw(toradName)
+        mini.mirrors.withdraw(toradName, MirrorWay.LOOK)
         listed(splice) { "$toradName/rig-lead" !in it }
 
         val wrote = System.currentTimeMillis()
@@ -76,7 +77,7 @@ internal class SessionsHeardAcrossMachinesTest : TwoMachinesTest() {
         slowLink()
         listed(splice) { "$toradName/rig-lead" in it }
         listed(rig) { "$MINI/splice" in it }
-        torad.mirrors.withdraw(MINI)
+        torad.mirrors.withdraw(MINI, MirrorWay.OFFER)
         listed(rig) { "$MINI/splice" !in it }
 
         val wrote = System.currentTimeMillis()

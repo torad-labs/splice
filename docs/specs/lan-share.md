@@ -236,7 +236,10 @@ Built on `feat/lan-share`, merged into `feat/v0.4.0` through the gate. Milestone
    (`RosterSources`); the quota poll, which reads `/usage` (`HeadQuotaPolling`); and a check of `/health` every minute.
    A head whose machine did not answer, or whose head there is not running, is "Not answering" in the console as a
    stopped local runtime is; `/health` names each machine's state under `remotes`, and doctor shows one row per
-   machine. `splice models` says a remote head lists its models on its own machine. On the sharing machine:
+   machine. A command the sharing machine offers is served whenever its head runs, read at each request: one that
+   failed at the daemon's start and came up later, or went down and came back, is in the description, its picker and
+   the health with no restart and no edit to `[share]`, and one not running is in the health as down (round 17).
+   `splice models` says a remote head lists its models on its own machine. On the sharing machine:
    last seen and turns today per joined machine, and the machine's name on each relayed turn's perf row. Last seen is
    written about once a minute; a write the disk refuses is said in the log and fails no request.
 4. **Console** (landed): a Sharing page, the console's ninth (Marcos asked for a Sharing tab; the 0.4.0 spec records
@@ -249,7 +252,7 @@ Built on `feat/lan-share`, merged into `feat/v0.4.0` through the gate. Milestone
    | route | does |
    |---|---|
    | `GET /api/share` | this machine's sharing, its joined machines, and the machines it uses (`SharingView`) |
-   | `PUT /api/share` | `{enabled?, port?, heads?}` written to `[share]`; the listener follows it at once, with no restart |
+   | `PUT /api/share` | `{enabled?, port?, heads?}` written to `[share]`; the listener follows it at once, with no restart. A port it names is one sharing can open on, sharing on or off: one outside 1 to 65535, or one a command or the console listens on, is refused in words and the file is left as it was (round 17) |
    | `DELETE /api/share/machines/{name}` | revoke a joined machine |
    | `PUT /api/share/machines/{name}/sessions` | `{on}`: whether a joined machine may cross sessions with this one |
    | `PUT /api/remotes/{name}/sessions` | `{on}`: whether a machine this one joined may cross sessions with it |
@@ -262,7 +265,9 @@ Built on `feat/lan-share`, merged into `feat/v0.4.0` through the gate. Milestone
    `restart: true` and the page offers the console's own restart. `[share]` is a live key: the daemon
    (`ShareListener`) opens, moves or closes the listener whenever the file changes. A table boot would refuse (a port
    outside 1-65535, a head that is not one or cannot be shared) leaves sharing as it is, and the log says why as boot
-   would (round 13).
+   would (round 13). While splice.toml does not load, `GET /api/share` answers its refusal, and the page says the
+   daemon's lines with nothing that acts on the file, then shows sharing again once the file loads, reading every
+   5 s as before (round 17).
 5. **Discovery** (landed): `splice remote` and the Sharing page's Find machines look in three places at once, and each
    machine one names is asked for `/share/v1/info` the moment it is named, all under the scan's one deadline
    (`RemoteDiscovery`):
@@ -308,6 +313,9 @@ Built on `feat/lan-share`, merged into `feat/v0.4.0` through the gate. Milestone
      withdraws them when its
      listener closes, which a change to the commands it offers alone does not do (the open listener takes it, so a turn
      relayed through it carries on); a machine that does not answer has none mirrored on the other until it does.
+     A daemon that does not take its control port (a second one, or one whose port another process holds) exits
+     without starting a link, so it never looks at, offers to or collects from a machine beside the one that runs
+     (round 17).
      One that answers the look but does not take the offer (one too large for it to read, say) keeps its sessions
      mirrored here, and its refusal is said in the log once while it lasts, and so is its end (round 16).
    - **Messages.** A message to a mirror goes to its machine at once (`POST /share/v1/sessions/{id}/message`), which
@@ -334,7 +342,11 @@ Built on `feat/lan-share`, merged into `feat/v0.4.0` through the gate. Milestone
      its own whichever comes first of the revoke, a note to the revoked machine and its own collection, and the revoked
      machine's mirrors carry nothing more, refused in words (round 14). A note refused where its sender wrote it, or by the
      machine it was posted to (a session gone there, a switch off on either side, a machine revoked), goes back to the
-     sender as a receipt, in words; one refused after it waited in an outbox is the "Not yet" below.
+     sender as a receipt, in words; one refused after it waited in an outbox is the "Not yet" below. A status the
+     machine it was posted to names that this build has no word for, as a newer or an older build may, goes back as a
+     dropped receipt with that machine's word in it, saying the note may not have arrived, never that it is on its way;
+     and a denial there goes back as a refusal saying that machine denied it, since a session drops a denied receipt,
+     which comes with no token (round 17).
    - **Bounds.** Every route needs a joined machine's token, and the link names the machine, never the request. A
      machine is booked under its `[remotes]` spelling (`RemoteNames`), so two machines that each joined the other
      name each other once. No joined machine can list, write into or read from this machine's sessions until Marcos
@@ -364,9 +376,13 @@ Built on `feat/lan-share`, merged into `feat/v0.4.0` through the gate. Milestone
      offers the other machine none of this one's sessions, and a machine that asks with its switch off here has its
      mirrors withdrawn as it asks, so neither waits for the mirrors' time to end (round 14). Each look while it is off
      withdraws what a collection already under way made since. Every mirror, whatever made it (a look, an offer or a note), ends once
-     its machine's time is past (`SessionMirrors`): a look or an offer gives three looks from then, and a note gives a
-     minute to a machine that has none; and a listener that closes withdraws every machine
-     it mirrored. Any machine on the network may join and each mirror is a process, so a daemon hosts at most 256, and a
+     the time of every way that names its session is past (`SessionMirrors`): a look or an offer gives three looks
+     from then, and a note gives a minute to a way that names none; and a listener that closes withdraws every machine
+     it mirrored. A session is mirrored once, whichever ways name it: two machines that each joined the other reach each
+     other by this machine's look and by the other's offers and notes, and a machine keyed twice (`b` and `b-2`)
+     names its sessions under both keys. A way going quiet (a look that fails, a revoke, its offers ending) leaves what
+     another way still names as it is: the mirror stays under the machine it is listed under, with its name and
+     socket, while that machine names it, and a message to it goes by that machine's way that named it last (round 17). Any machine on the network may join and each mirror is a process, so a daemon hosts at most 256, and a
      note past that is refused with that reason. Each mirror's inbox waits on a virtual thread, so however many there
      are, none holds a thread the rest of the daemon needs (at 64 they once stalled it). A mirror's name is
      what ListAgents shows and an envelope carries (`[A-Za-z0-9._-]`, 64 characters), and two sessions of one name are

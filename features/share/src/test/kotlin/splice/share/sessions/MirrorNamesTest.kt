@@ -14,6 +14,7 @@ import org.junit.jupiter.api.Test
 import splice.sessions.mirror.MirrorCarried
 import splice.sessions.mirror.MirrorCarrier
 import splice.sessions.mirror.MirrorLink
+import splice.sessions.mirror.MirrorWay
 import splice.sessions.mirror.MirroredSession
 import java.nio.file.Files
 import java.util.UUID
@@ -52,7 +53,7 @@ internal class MirrorNamesTest : TwoMachinesTest() {
     fun `a mirrored session keeps its name and socket while it runs under that name, whatever the others do`() {
         val random = Random(OFFERS_SEED)
         val ids = List(OFFERED_AT_MOST) { UUID(random.nextLong(), random.nextLong()).toString() }
-        val link = MirrorLink(MirrorCarrier { _, _, _ -> MirrorCarried(null) }, HOUR_MS)
+        val link = MirrorLink(MirrorCarrier { _, _, _ -> MirrorCarried(null) }, HOUR_MS, MirrorWay.OFFER)
         repeat(OFFERS_RUNS) { run ->
             var before = emptyMap<String, String>()
             var listed = emptyMap<String, Pair<String, String>>()
@@ -62,7 +63,8 @@ internal class MirrorNamesTest : TwoMachinesTest() {
                     before[id]?.takeIf { random.nextInt(5) > 0 } ?: OFFERED_NAMES[random.nextInt(OFFERED_NAMES.size)]
                 }
 
-                torad.mirrors.mirror(MINI, offered.map { (id, name) -> MirroredSession(id, name) }, link)
+                val sessions = offered.map { (id, name) -> MirroredSession(id, name) }
+                torad.mirrors.mirror(MINI, sessions, link)
 
                 val now = mirrored()
                 val at = "run $run, step $step"

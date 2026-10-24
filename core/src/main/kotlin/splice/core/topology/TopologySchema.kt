@@ -137,6 +137,16 @@ public data class ShareConfig(
         return range + named
     }
 
+    /** Why the listener could not open on [port] in [topology], in the words boot refuses it with when sharing is on;
+     *  empty when it could. The Sharing page checks a port it saves by this while sharing is off too (round 17 of PR
+     *  #419's review), so turning sharing on later never meets a port it took without a word. */
+    public fun unopenable(topology: Topology): List<String> {
+        if (port !in validPortRange) return listOf("port $port is outside $validPortRange; use a port in that range")
+        val owners = topology.copy(share = copy(enabled = true)).portCollisions()[port].orEmpty()
+        if (SHARE_PORT_OWNER !in owners) return emptyList()
+        return listOf("port $port is shared by ${owners.joinToString(", ")}; give each its own port")
+    }
+
     private fun authOf(topology: Topology, key: String): String? =
         topology.heads[key]?.provider?.let { topology.providers[it] }?.auth?.kind
 }

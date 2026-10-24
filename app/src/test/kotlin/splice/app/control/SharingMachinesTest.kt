@@ -27,6 +27,7 @@ import splice.sessions.mirror.MirrorCarrier
 import splice.sessions.mirror.MirrorLink
 import splice.sessions.mirror.MirrorPlace
 import splice.sessions.mirror.MirrorSweep
+import splice.sessions.mirror.MirrorWay
 import splice.sessions.mirror.MirroredSession
 import splice.sessions.mirror.SessionMirrors
 import splice.share.ShareClients
@@ -59,11 +60,13 @@ internal class SharingMachinesTest : SharingRoutesFixture() {
         // Its mirrors last longer than the test, so they never look for ended ones.
         val mirrors = SessionMirrors(place, scope, Dispatchers.IO, { }, MirrorSweep { false })
         Files.createDirectories(tmp.resolve("r"))
-        val link = MirrorLink(MirrorCarrier { _, _, _ -> MirrorCarried(null) }, MIRRORS_LAST_MS)
+        val carrier = MirrorCarrier { _, _, _ -> MirrorCarried(null) }
         try {
-            mirrors.mirror("mini", listOf(MirroredSession("a", "splice"), MirroredSession("b", "review")), link)
+            val offered = listOf(MirroredSession("a", "splice"), MirroredSession("b", "review"))
+            mirrors.mirror("mini", offered, MirrorLink(carrier, MIRRORS_LAST_MS, MirrorWay.OFFER))
             mirrors.shown("mini", 1)
-            mirrors.mirror("far", listOf(MirroredSession("c", "rig-lead")), link)
+            val far = MirrorLink(carrier, MIRRORS_LAST_MS, MirrorWay.LOOK)
+            mirrors.mirror("far", listOf(MirroredSession("c", "rig-lead")), far)
             serve(mirrors = mirrors) { call ->
                 val view = read(call)
                 val mini = view.getValue("joined").jsonArray.single().jsonObject

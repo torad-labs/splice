@@ -2,7 +2,9 @@
 // its heads, and what a client sends to join. Both ends are this codebase, so one set of types serves the
 // listener (ShareServer) and `splice remote` (RemoteCommand); snake_case on the wire like every splice payload.
 // ShareHeads, which builds the description from the running heads, joined these types here on 2026-10-22
-// (concentration): a file of its own thinned this package's median under its neighbours.
+// (concentration): a file of its own thinned this package's median under its neighbours. Since round 17 of PR #419's
+// review, a head the table offers is served whenever it runs, read at each request, so one that came up after the
+// listener opened is offered too.
 package splice.share
 
 import kotlinx.serialization.SerialName
@@ -97,23 +99,22 @@ internal class ShareHeads(
     private val fingerprint: String,
     private val quotas: SharedQuotas,
 ) {
-    /** The heads offered now: [topology]'s table's at the start, and each later table's that [offer] takes. */
+    /** The heads offered now: [topology]'s table's at the start, and each later table's that [offer] takes. Each is
+     *  served while its head runs, whenever that head came up. */
     @Volatile
-    private var offered: List<String> = offering(topology.share)
+    private var offered: List<String> = topology.share.sharedHeads(topology)
     private val upSince = Instant.now().toString()
 
     fun keys(): List<String> = offered
 
-    /** Offers [share]'s heads from now on, those running. */
+    /** Offers [share]'s heads from now on. */
     fun offer(share: ShareConfig) {
-        offered = offering(share)
+        offered = share.sharedHeads(topology)
     }
 
-    private fun offering(share: ShareConfig): List<String> =
-        share.sharedHeads(topology).filter { running.of(it) != null }
-
-    /** The loopback port of an offered head, or null for any other name. */
-    fun port(key: String): Int? = key.takeIf { it in offered }?.let { topology.heads[it]?.port }
+    /** The loopback port of an offered head running now, or null for any other name. */
+    fun port(key: String): Int? =
+        key.takeIf { it in offered && running.of(it) != null }?.let { topology.heads[it]?.port }
 
     fun info(): ShareInfo = ShareInfo(server, GATEWAY_VERSION, offered.mapNotNull(::described), fingerprint)
 

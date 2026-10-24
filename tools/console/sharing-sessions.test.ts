@@ -3,8 +3,9 @@
 // the round-1 review (the President's decision, Oct 23), each card also carries the machine's Sessions switch, off until
 // Marcos turns it on: a machine whose switch is off says nothing crosses and counts nothing, and pressing the switch
 // asks the daemon to turn it on that machine's own side. Since the round-3 review, a machine on both lists has a switch
-// on each card, and sessions cross only while both are on: a card turned on while the other is off says so. Through the
-// real page against a stub daemon (LAN share, milestone 6).
+// on each card, and sessions cross only while both are on: a card turned on while the other is off says so. Since the
+// round-14 review a switch on a machine that joined names the join its card shows, so a page left open since an earlier
+// join turns nothing of a later one. Through the real page against a stub daemon (LAN share, milestone 6).
 import { afterAll, beforeAll, expect, test } from "bun:test";
 import { chromium, type Browser, type Page } from "@playwright/test";
 import { existsSync } from "node:fs";
@@ -126,7 +127,7 @@ test("pressing a switch asks the daemon to turn it, on that machine's own side",
   const until = Date.now() + 10_000;
   while (turned.length < 2 && Date.now() < until) await Bun.sleep(20);
   expect(turned).toEqual([
-    { path: "/api/share/machines/laptop/sessions", body: { on: true } },
+    { path: "/api/share/machines/laptop/sessions", body: { on: true, joined_at: "2026-10-23T09:07:52Z" } },
     { path: "/api/remotes/studio/sessions", body: { on: false } },
   ]);
 });

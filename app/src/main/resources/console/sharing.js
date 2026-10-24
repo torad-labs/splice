@@ -6,6 +6,8 @@
 // Acts: PUT /api/share (on, off, port, which commands), DELETE /api/share/machines/{name}, POST /api/remotes/scan,
 // POST /api/remotes, POST /api/remotes/{name}/sync, DELETE /api/remotes/{name}. The last three change which commands
 // splice runs, so they end in the console's own restart (POST /api/daemon/restart), asked once when it would cut a request.
+// While splice.toml does not load, GET /api/share answers its refusal (ok false and what is wrong with the file), and
+// the page says those lines with nothing that acts until the file loads again (round 17 of PR #419's review).
 CONSOLE.page("sharing.html", (scope) => {
   "use strict";
   const { document, API, setTimeout, setInterval } = scope;
@@ -14,8 +16,8 @@ const WAIT = '<svg class="wait" viewBox="0 0 40 40" aria-hidden="true"><circle c
 const COPY = G('<rect x="9" y="9" width="12" height="12" rx="2"/><path d="M5 15V5a2 2 0 0 1 2-2h10"/>', 'aria-hidden="true"');
 const root = document.getElementById("board");
 
-// what the daemon says: GET /api/share, and the last scan of his networks
-const data = { share: null, err: null, found: null };
+// what the daemon says: GET /api/share, what it said when splice.toml did not load, and the last scan of his networks
+const data = { share: null, err: null, refused: null, found: null };
 // what he is doing: the press armed for a second press, the act in flight, the words an act came back with (by card),
 // the port field's draft, the scan in flight, the address typed to add, and the restart an act left due
 const ui = { armed: null, busy: null, said: {}, port: null, scanning: false, host: "", restart: null, cut: null };
@@ -28,6 +30,12 @@ async function read() {
     return;
   }
   data.err = null;
+  if (res.body?.ok === false || !res.body?.sharing) {
+    data.share = null;
+    data.refused = res.body?.said?.length ? res.body.said : [{ text: "splice.toml does not load", bad: true }];
+    return;
+  }
+  data.refused = null;
   data.share = res.body;
 }
 
@@ -37,12 +45,13 @@ const when = (iso) => { const d = new Date(iso); return Number.isNaN(d.getTime()
 const turns = (n) => (n === 1 ? "1 turn" : `${n} turns`);
 /** A certificate's fingerprint short enough to read and compare by eye: its first and last eight. */
 const shortPin = (pin) => { const hex = String(pin).replace(/^sha256:/, ""); return hex.length > 20 ? `${hex.slice(0, 8)}…${hex.slice(-8)}` : hex; };
-/** The lines an act came back with, the refusals in the limit's ink, under the card that asked. */
-const saidHtml = (key) => {
-  const lines = ui.said[key];
+/** Lines the daemon said, the refusals in the limit's ink. */
+const toldHtml = (lines) => {
   if (!lines?.length) return "";
   return `<ul class="told">${lines.map((l) => `<li${l.bad ? ' class="limit"' : ""}>${esc(l.text)}</li>`).join("")}</ul>`;
 };
+/** The lines an act came back with, under the card that asked. */
+const saidHtml = (key) => toldHtml(ui.said[key]);
 const armed = (key) => ui.armed === key;
 const busy = (key) => ui.busy === key;
 
@@ -178,6 +187,8 @@ function render() {
   if (!data.share) {
     root.innerHTML = data.err
       ? `<p class="empty limit">${esc(data.err)}</p>`
+      : data.refused
+      ? `<div class="col"><p class="empty limit">splice.toml does not load, so sharing can't be read or changed here until it does.</p>${toldHtml(data.refused)}</div>`
       : `<div class="col">${GHOST.card([14, 22, 18, 26], 0)}</div><div class="col">${GHOST.card([12, 20, 24], 0)}</div>`;
     return;
   }
@@ -284,6 +295,8 @@ document.addEventListener("click", async (e) => {
   }
 });
 
+// whether api.js locked the page for a key splice does not take, as composer.js and models.js read it
+const locked = () => document.body.classList.contains("locked");
 setInterval(async () => {
   if (document.hidden || locked() || ui.busy || ui.restart === "going") return;
   await read(); render();

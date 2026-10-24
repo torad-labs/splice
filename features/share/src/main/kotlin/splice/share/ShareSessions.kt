@@ -29,6 +29,7 @@ import splice.core.wire.HttpStatus
 import splice.sessions.mirror.MirrorCarried
 import splice.sessions.mirror.MirrorCarrier
 import splice.sessions.mirror.MirrorLink
+import splice.sessions.mirror.MirrorWay
 import splice.sessions.mirror.MirroredSession
 import splice.sessions.mirror.SessionMirrors
 import splice.sessions.peer.DeliveryStatus
@@ -101,7 +102,7 @@ internal data class ShareSessionParts(
 
     /** [client] was revoked: its mirrors leave this machine's listing and the notes waiting for it go. Blocking. */
     fun left(client: String) {
-        mirrors?.withdraw(client)
+        mirrors?.withdraw(client, MirrorWay.OFFER)
         outboxes.drop(client)
     }
 }
@@ -139,7 +140,7 @@ internal class ShareSessionHost(
         val offered = read(call, ShareSessions.serializer(), SESSIONS_BODY_MAX_BYTES) ?: return
         served += client.name
         val lease = ShareLease.of(offered.lookMs ?: LEASE_MAX_MS)
-        val link = MirrorLink(parts.carrier(client.name, client.joinedAt), lease)
+        val link = MirrorLink(parts.carrier(client.name, client.joinedAt), lease, MirrorWay.OFFER)
         withContext(io) { hosting.mirror(client.name, offered.sessions.map(::mirrored), link) }
         respond(call, ShareSessions.serializer(), ShareSessions(emptyList()))
     }
@@ -151,7 +152,7 @@ internal class ShareSessionHost(
         val to = call.parameters["id"].orEmpty()
         served += client.name
         // A machine that never offered: its sender's mirror lasts as long as any machine's that stopped looking.
-        val link = MirrorLink(parts.carrier(client.name, client.joinedAt), LEASE_MAX_MS)
+        val link = MirrorLink(parts.carrier(client.name, client.joinedAt), LEASE_MAX_MS, MirrorWay.OFFER)
         // The delivery reads every record and may make a mirror, a process: never on the listener's call threads.
         val carried = withContext(io) { hosting.deliver(to, client.name, mirrored(note.from), note.text, link) }
         respond(call, ShareNoteAnswer.serializer(), ShareNoteAnswer(carried.status?.wire, carried.detail))
@@ -174,7 +175,7 @@ internal class ShareSessionHost(
     }
 
     private fun withdraw(client: String) {
-        parts.mirrors?.withdraw(client)
+        parts.mirrors?.withdraw(client, MirrorWay.OFFER)
     }
 
     private suspend fun hosted(call: ApplicationCall): SessionMirrors? {

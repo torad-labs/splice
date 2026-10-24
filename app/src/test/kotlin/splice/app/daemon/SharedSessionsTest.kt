@@ -20,6 +20,7 @@ import splice.core.util.EnvReader
 import splice.sessions.mirror.MirrorCarried
 import splice.sessions.mirror.MirrorCarrier
 import splice.sessions.mirror.MirrorLink
+import splice.sessions.mirror.MirrorWay
 import splice.sessions.mirror.MirroredSession
 import java.nio.file.Files
 import java.nio.file.Path
@@ -50,7 +51,7 @@ class SharedSessionsTest {
         val shared = SharedSessions(reader, StatePaths(envReader = reader)) { }
         val registry = Path.of(env.getValue("HOME"), ".claude", "sessions")
         val record = try {
-            val link = MirrorLink(MirrorCarrier { _, _, _ -> MirrorCarried(null) }, MIRRORS_LAST_MS)
+            val link = MirrorLink(MirrorCarrier { _, _, _ -> MirrorCarried(null) }, MIRRORS_LAST_MS, MirrorWay.LOOK)
             shared.mirrors.mirror("far", listOf(MirroredSession("id-1", "rig-lead")), link)
             Json.parseToJsonElement(Files.readString(registry.listDirectoryEntries("*.json").single())).jsonObject
         } finally {
@@ -92,7 +93,7 @@ class SharedSessionsTest {
         val shared = SharedSessions(reader, StatePaths(envReader = reader)) { }
         val registry = Path.of(vars.getValue("HOME"), ".claude", "sessions")
         try {
-            val link = MirrorLink(MirrorCarrier { _, _, _ -> MirrorCarried(null) }, MIRRORS_BRIEF_MS)
+            val link = MirrorLink(MirrorCarrier { _, _, _ -> MirrorCarried(null) }, MIRRORS_BRIEF_MS, MirrorWay.LOOK)
             shared.mirrors.mirror("far", listOf(MirroredSession("id-1", "rig-lead")), link)
             assertEquals(1, registry.listDirectoryEntries("*.json").size, "far's session is mirrored")
             val gone = runBlocking {

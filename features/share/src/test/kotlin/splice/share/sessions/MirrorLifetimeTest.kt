@@ -20,6 +20,7 @@ import splice.sessions.mirror.MirrorCarrier
 import splice.sessions.mirror.MirrorLink
 import splice.sessions.mirror.MirrorPlace
 import splice.sessions.mirror.MirrorSweep
+import splice.sessions.mirror.MirrorWay
 import splice.sessions.mirror.MirroredSession
 import splice.sessions.mirror.SessionMirrors
 import splice.share.ShareInfo
@@ -125,7 +126,8 @@ internal class MirrorLifetimeTest : TwoMachinesTest() {
         val carrier = MirrorCarrier { _, _, _ -> MirrorCarried(null) }
 
         torad.mirrors.close()
-        torad.mirrors.mirror(MINI, listOf(MirroredSession("s-late", "late")), MirrorLink(carrier, HOUR_MS))
+        val late = listOf(MirroredSession("s-late", "late"))
+        torad.mirrors.mirror(MINI, late, MirrorLink(carrier, HOUR_MS, MirrorWay.OFFER))
 
         assertTrue("$MINI/late" !in rig.agents(), "no record of a mirror outlives the daemon's stop")
     }
@@ -148,7 +150,9 @@ internal class MirrorLifetimeTest : TwoMachinesTest() {
         val carrier = MirrorCarrier { _, _, _ -> MirrorCarried(null) }
         val offered = (1..BROKEN_AT + 1).map { MirroredSession("s$it", "far-$it") }
         try {
-            assertThrows<IllegalStateException> { mirrors.mirror("far", offered, MirrorLink(carrier, LOOK_MS)) }
+            assertThrows<IllegalStateException> {
+                mirrors.mirror("far", offered, MirrorLink(carrier, LOOK_MS, MirrorWay.OFFER))
+            }
             assertEquals(BROKEN_AT - 1, mirrors.counts("far").here, "the mirrors made before it failed")
 
             now.addAndGet(HOUR_MS)
@@ -177,7 +181,8 @@ internal class MirrorLifetimeTest : TwoMachinesTest() {
         // A collection that passed the switch before it went off delivers after the link withdrew torad's mirrors.
         val late = MirrorCarrier { _, _, _ -> MirrorCarried(null) }
         val from = MirroredSession("s-late", "late")
-        runBlocking { mini.mirrors.deliver(spliceId, toradName, from, "late", MirrorLink(late, HOUR_MS)) }
+        val link = MirrorLink(late, HOUR_MS, MirrorWay.LOOK)
+        runBlocking { mini.mirrors.deliver(spliceId, toradName, from, "late", link) }
         assertTrue("$toradName/late" in splice.agents(), "its sender was made a mirror here")
         assertTrue("$toradName/late" !in listed(splice) { "$toradName/late" !in it }, "and goes at the next look")
     }
@@ -199,12 +204,12 @@ private class LifetimeRun(
     /** One step, at random, on one machine at random. */
     fun step() {
         val machine = LIFETIME_MACHINES.random(random)
-        val link = MirrorLink(carrier, random.nextLong(1, LIFETIME_SPAN_MS))
+        val link = MirrorLink(carrier, random.nextLong(1, LIFETIME_SPAN_MS), MirrorWay.LOOK)
         when (random.nextInt(4)) {
             0 -> looked(machine, link)
             1 -> noted(machine, link)
             2 -> {
-                mirrors.withdraw(machine)
+                mirrors.withdraw(machine, MirrorWay.LOOK)
                 forget(machine)
             }
             else -> {

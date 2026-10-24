@@ -154,6 +154,15 @@ internal class Mirror(
         return status
     }
 
+    /** [carried] as a receipt its sender takes: a denial on [machine] goes as a refusal that says so (round 17 of PR
+     *  #419's review). A denied receipt goes with no auth line, as one answering a sender that presented no token does,
+     *  and a session drops a frame with none, so it would leave the sender reading the note as on its way. */
+    private fun taken(carried: MirrorCarried): MirrorCarried {
+        if (carried.status != DeliveryStatus.DENIED) return carried
+        val why = "$machine denied it" + carried.detail?.let { ": $it" }.orEmpty()
+        return MirrorCarried(DeliveryStatus.REFUSED, why)
+    }
+
     private suspend fun denied(frame: InboundFrame.Message): DeliveryStatus? =
         answer(frame, MirrorCarried(DeliveryStatus.DENIED, "the sender did not present this mirror's token"))
 
@@ -174,7 +183,7 @@ internal class Mirror(
             val writer = MirroredSession(id, sender.name ?: id.take(SHORT_ID_CHARS))
             val carried = Cancellables.runCatchingCancellable { carrier.carry(session, writer, frame.text) }
                 .getOrElse { MirrorCarried(DeliveryStatus.DROPPED, SafeFailureText.render(it)) }
-            return answer(frame, carried)
+            return answer(frame, taken(carried))
         }
 
         override suspend fun onReceipt(frame: InboundFrame.Receipt, sender: SenderCheck) {

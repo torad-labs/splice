@@ -5,6 +5,9 @@
 //                                       (ShareTopologyFile), and the listener follows it at once, with no restart
 //   DELETE /api/share/machines/{name}   revoke a machine that joined this one
 //
+// A port the body names is one the listener can open on, sharing on or off (round 17 of PR #419's review): one outside
+// 1-65535, or one a command or the console listens on, is refused in words and the file is left as it was.
+//
 // Each machine's Sessions switch has its own rows (SessionsSwitchRoutes), and the machines this one joined theirs
 // (RemoteRoutes). A refusal is an answer: 200 with ok false and the
 // words `splice share` would print, as the topology route answers one.
@@ -66,9 +69,18 @@ internal class SharingRoutes(private val wired: SharingWired) {
         val file = ShareTopologyFile(said.terminal, SHARE_VERB, parts.daemonEnv)
         val current = file.loaded() ?: return said.refused()
         val wanted = current.copy(share = change.applied(current))
-        if (!file.saved(wanted)) return said.refused()
+        if (!opens(change, current, wanted, said) || !file.saved(wanted)) return said.refused()
         parts.listener.follow(wanted.share)
         return ok(SharingView(parts, wanted).json())
+    }
+
+    /** Whether the listener could open on the port [change] names, in [wanted], sharing on or off; why not is said in
+     *  [said]. A body that keeps [current]'s port is not asked again. */
+    private fun opens(change: ShareChange, current: Topology, wanted: Topology, said: Said): Boolean {
+        if (change.port == null || change.port == current.share.port) return true
+        val unopenable = wanted.share.unopenable(wanted)
+        unopenable.forEach { said.bad("nothing was saved: $it") }
+        return unopenable.isEmpty()
     }
 
     suspend fun revoke(name: String): JsonReply {

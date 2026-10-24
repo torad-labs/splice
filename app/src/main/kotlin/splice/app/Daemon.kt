@@ -299,10 +299,6 @@ public class Daemon(
             log,
             LocalWindowRefresh(controlPlane.buildInputs::refreshLocalModels),
         )
-        // LAN share: whether each machine this one joined, and each head it offers, is up; ends with the probe scope.
-        remotes.watch(controlPlane.probeScope, log)
-        // Each machine this one joined lists this one's sessions, and this one lists its.
-        sharedSessions.start(remotes)
         controlPlane.start(
             controlPort = controlPort,
             heads = heads,
@@ -314,6 +310,11 @@ public class Daemon(
             headCount = topology.heads.size,
             probes = headProbes,
         ) ?: return
+        // LAN share, once the control port is this daemon's: one that exits without it reaches no machine it joined.
+        // Whether each machine this one joined, and each head it offers, is up; ends with the probe scope.
+        remotes.watch(controlPlane.probeScope, log)
+        // Each machine this one joined lists this one's sessions, and this one lists its.
+        sharedSessions.start(remotes)
         // MCP hub step 6: each installed Claude Code version's --plugin-dir-no-mcp verdict, checked in the background.
         controlPlane.pluginFlagChecks.request()
         // LAN share (docs/specs/lan-share.md): opened last, over the heads that started; closed while [share] is off.

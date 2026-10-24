@@ -20,6 +20,7 @@ import org.junit.jupiter.api.Test
 import splice.core.testing.TestPorts
 import splice.core.topology.ShareConfig
 import splice.sessions.mirror.MirrorCounts
+import splice.sessions.mirror.MirrorWay
 import splice.sessions.peer.DeliveryStatus
 import splice.sessions.registry.SessionAvailability
 import splice.share.LEASE_MAX_MS
@@ -168,9 +169,9 @@ internal class SessionsAcrossMachinesTest : TwoMachinesTest() {
         listed(splice) { "$toradName/rig-lead" in it }
         listed(rig) { "$MINI/splice" in it }
 
-        // torad's mirrors here go between two looks, as a failed look, the switch turned off and on again, or the end
-        // of torad's own offers where it joined mini too each withdraws them.
-        mini.mirrors.withdraw(toradName)
+        // torad's mirrors here go between two looks, as a failed look or the switch turned off and on again withdraws
+        // them.
+        mini.mirrors.withdraw(toradName, MirrorWay.LOOK)
         assertTrue("$toradName/rig-lead" !in listed(splice) { "$toradName/rig-lead" !in it }, "withdrawn")
 
         rig.send("$MINI/splice", "after the withdraw")

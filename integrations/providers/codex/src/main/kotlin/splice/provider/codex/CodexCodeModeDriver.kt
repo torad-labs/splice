@@ -52,7 +52,14 @@ internal class CodexCodeModeDriver(
             ?: return drive(context, initialOuter, body, sent.settled(context, context.link.post(body)))
         val round = streams.begin(context, body, post) { call ->
             driveProblem(context, listOf(call), call)?.let { error(it) }
-            validation.outer(call.copy(input = call.input.ifBlank { "source pending" }))?.let { error(it) }
+            validation.outer(
+                call.copy(
+                    input = call.input.ifBlank {
+                        "source pending"
+                    },
+                ),
+                CodeModeSourceAdmission.PENDING,
+            )?.let { error(it) }
             context.scripts++
             val pending = TurnOutcome.Success(false, false, noRequestUsage)
             val record = checkNotNull(factory.create(context, call, body, pending, sent.clientStart(context)))

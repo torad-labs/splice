@@ -13,6 +13,7 @@ import splice.provider.codex.state.lease.CodeModeCellLease
 import splice.provider.codex.stream.CodeModeRoundInterceptor
 import splice.provider.codex.stream.CodeModeRuntimeRun
 import splice.upstream.RoundInterceptor
+import splice.upstream.codemode.CodeModeCall
 import splice.upstream.codemode.CodeModeResult
 import splice.upstream.codemode.CodeModeRuntime
 import java.nio.file.Path
@@ -187,4 +188,15 @@ public data class CodeModeResultRendering(
     /** The same results rendered with the V4-178 markers, for replay identity against a record the previous
      *  daemon wrote (see CodexCodeModeValidation.conflicts). */
     val legacy: List<CodeModeResult> = emptyList(),
-)
+    /** Sole-marker typed candidates; admission still requires scoped accepted state and a verified prefix. */
+    val clearedCallbacks: Map<String, CodeModeCall> = emptyMap(),
+) {
+    internal val verifiedCleared: MutableMap<String, MutableSet<String>> = mutableMapOf()
+
+    /** Admission still sees all media. Only proved cleared echoes defer to the record's accepted media. */
+    internal val replayMedia: Map<String, List<JsonElement>>
+        get() {
+            val cleared = verifiedCleared.values.flatten().toSet()
+            return if (cleared.isEmpty()) media else media.filterKeys { it !in cleared }
+        }
+}

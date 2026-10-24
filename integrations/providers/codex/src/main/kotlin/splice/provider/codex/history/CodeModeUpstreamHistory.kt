@@ -40,7 +40,7 @@ internal class CodeModeUpstreamHistory(private val json: Json) {
     fun extend(context: CodeModeRunContext, records: List<CodeModeRecord>): CodeModeBody? {
         val client = context.client?.takeIf { context.recovery == null } ?: return null
         val request = client.request ?: return null
-        val media = context.turn.rendering.media
+        val media = context.turn.rendering.replayMedia
         val changed = records.filter { it.id in context.conflicts || replaysOtherMedia(it, media) }
         val calls = changed.mapTo(HashSet()) { it.origin.outerCallId }
         return extend(context, client, request, records - changed.toSet(), calls)

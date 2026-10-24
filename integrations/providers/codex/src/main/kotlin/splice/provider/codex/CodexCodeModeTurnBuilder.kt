@@ -47,13 +47,18 @@ internal class CodexCodeModeTurnBuilder(
             "client tool name '$CODE_MODE_TOOL_NAME' collides with splice's code-mode bridge"
         }
         require(!sessionId.isNullOrBlank()) { "code mode requires a client session id" }
+        val cleared = CodeModeClearedCandidates.read(body)
         val turn = CodexCodeModeBridge.Turn(
             sessionId = sessionId,
             conversationKey = built.meta.scope.conversationKey.orEmpty(),
             model = built.meta.route.upstreamModel,
             tools = body.typed.tools.map { it.name }.toSet(),
             toolResults = toolResults(body),
-            rendering = CodeModeResultRendering(toolMedia(body), legacyResults(body)),
+            rendering = CodeModeResultRendering(
+                toolMedia(body).filterKeys { it !in cleared },
+                legacyResults(body),
+                cleared,
+            ),
             descriptions = descriptions(body),
         )
         val disableParallel = body.typed.toolChoice?.disableParallelToolUse == true

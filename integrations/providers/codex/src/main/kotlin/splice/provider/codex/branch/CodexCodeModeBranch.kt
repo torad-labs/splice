@@ -34,8 +34,12 @@ internal class CodexCodeModeBranch(
 
     /** Exclude an incompatible A record from rewriting and ownership, but keep B's own records. */
     fun conflictingRecords(context: CodeModeRunContext): Set<String> {
+        val records = registry.recordsFor(context.key)
+        if (context.turn.rendering.clearedCallbacks.isNotEmpty()) {
+            CodeModeClearedWitness(context, records, log).verify()
+        }
         val resultIds = context.turn.toolResults.map(CodeModeResult::id).toSet()
-        return registry.recordsFor(context.key).filter { record ->
+        return records.filter { record ->
             record.results.keys.any(resultIds::contains) && validation.conflicts(record, context.turn)
         }.mapTo(mutableSetOf()) { it.id }
     }

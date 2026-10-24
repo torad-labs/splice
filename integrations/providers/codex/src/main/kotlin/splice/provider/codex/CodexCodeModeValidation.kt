@@ -2,10 +2,13 @@
 package splice.provider.codex
 
 import splice.core.turn.GatewayCustomCall
+import splice.core.util.JsonScalars
 import splice.upstream.codemode.CodeModeCall
 import splice.upstream.codemode.CodeModeLimits
 import splice.upstream.codemode.CodeModeProtocol
 import splice.upstream.codemode.CodeModeResult
+
+internal enum class CodeModeSourceAdmission { PENDING, EXECUTABLE }
 
 internal enum class CodeModeResultMode { RESUME, INTERRUPT }
 
@@ -17,7 +20,11 @@ internal class CodexCodeModeValidation(private val config: CodeModeBridgeConfig)
     fun admit(result: CodeModeResult): CodeModeResult =
         result.copy(output = CodeModeLimits.boundedText(result.output, config.bounds.maxOutputChars))
 
-    fun outer(call: GatewayCustomCall): String? = when {
+    fun outer(
+        call: GatewayCustomCall,
+        admission: CodeModeSourceAdmission = CodeModeSourceAdmission.EXECUTABLE,
+    ): String? = when {
+        incomplete(call, admission) -> "exec item did not complete"
         call.name != CODE_MODE_TOOL_NAME && call.name != LEGACY_CODE_MODE_TOOL_NAME ->
             "unsupported custom tool call '${call.name.ifEmpty { "<unnamed>" }}'"
         call.callId.isBlank() -> "exec call is missing call_id"
@@ -25,6 +32,11 @@ internal class CodexCodeModeValidation(private val config: CodeModeBridgeConfig)
         call.input.length > config.bounds.maxSourceChars || !CodeModeLimits.fitsText(call.input) ->
             "exec source exceeds the size limit"
         else -> null
+    }
+
+    private fun incomplete(call: GatewayCustomCall, admission: CodeModeSourceAdmission): Boolean {
+        if (admission == CodeModeSourceAdmission.PENDING) return false
+        return "status" in call.raw && JsonScalars.str(call.raw, "status") != "completed"
     }
 
     fun calls(record: CodeModeRecord, tools: Set<String>, calls: List<CodeModeCall>): String? {
@@ -77,9 +89,13 @@ internal class CodexCodeModeValidation(private val config: CodeModeBridgeConfig)
 
     private fun conflicts(record: CodeModeRecord, turn: CodexCodeModeBridge.Turn, prior: CodeModeResult): Boolean {
         val accepted = record.results[prior.id] ?: return false
+        val cleared = turn.rendering.verifiedCleared[record.id]?.contains(prior.id) == true
         val media = record.accepted.media(prior.id)
-            ?: return accepted != prior && accepted != turn.rendering.legacy.firstOrNull { it.id == prior.id }
-        return accepted != prior || media != turn.rendering.media[prior.id].orEmpty()
+        return when {
+            cleared -> accepted.isError != prior.isError
+            media == null -> accepted != prior && accepted != turn.rendering.legacy.firstOrNull { it.id == prior.id }
+            else -> accepted != prior || media != turn.rendering.media[prior.id].orEmpty()
+        }
     }
 
     private fun pendingFrameProblem(record: CodeModeRecord, current: Map<String, CodeModeResult>): String? {

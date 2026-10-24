@@ -18,6 +18,7 @@ import org.junit.jupiter.api.Assertions.assertThrows
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.io.TempDir
+import splice.client.login.SignInWay
 import splice.client.login.TokenCaptureSpec
 import splice.core.util.LogSink
 import java.io.IOException
@@ -34,7 +35,7 @@ class ClaudeConfigMaterializerTest {
     private val openRouterSignIn = MaterializeSignIn(
         loginCommand = "claude-openrouter login",
         signInLabel = "OpenRouter",
-        signInViaBrowser = false,
+        signInWay = SignInWay.Terminal,
         tokenCapture = TokenCaptureSpec("OPENROUTER_API_KEY", "sk-or-[A-Za-z0-9_-]{20,}", "OpenRouter"),
     )
 
@@ -416,7 +417,7 @@ class ClaudeConfigMaterializerTest {
                 signIn = MaterializeSignIn(
                     loginCommand = "claude-fireworks login",
                     signInLabel = "Fireworks",
-                    signInViaBrowser = false,
+                    signInWay = SignInWay.Terminal,
                     tokenCapture = null, // splice does not know this vendor's token shape
                 ),
             ),

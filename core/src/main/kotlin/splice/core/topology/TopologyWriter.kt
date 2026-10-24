@@ -337,7 +337,7 @@ private class TopologyChecks(
 
     fun findings(): List<TopologyFinding> =
         references() + auth() + ports() + (if (withRosters) rosters() else statics()) + knobs() + prompts() +
-            compaction() + channel()
+            compaction() + channel() + remotes()
 
     /** An auth kind its provider's dialect cannot carry, asked the way head assembly asks it ([AuthCompatibility]), so
      *  the pairing refuses boot with every other finding instead of skipping that head behind a running daemon. */
@@ -423,17 +423,43 @@ private class TopologyChecks(
         }
 
     private fun ports(): List<TopologyFinding> {
+        val range = "${validPortRange.first}-${validPortRange.last}"
         val invalid = topology.invalidPortHeads().map { (key, port) ->
-            val range = "${validPortRange.first}-${validPortRange.last}"
             TopologyFinding("heads.$key.port", "port $port is outside $range; use a port in that range")
         }
+        val share = topology.share
+        val sharing = listOfNotNull(
+            TopologyFinding(SHARE_PORT_OWNER, "port ${share.port} is outside $range; use a port in that range")
+                .takeIf { share.enabled && share.port !in validPortRange },
+        )
         val shared = topology.portCollisions().flatMap { (port, owners) ->
             owners.map { owner ->
-                val at = if (owner in topology.heads) "heads.$owner.port" else "daemon.control_port"
+                val at = when (owner) {
+                    in topology.heads -> "heads.$owner.port"
+                    SHARE_PORT_OWNER -> SHARE_PORT_OWNER
+                    else -> "daemon.control_port"
+                }
                 TopologyFinding(at, "port $port is shared by ${owners.joinToString(", ")}; give each its own port")
             }
         }
-        return invalid + shared
+        return invalid + sharing + shared
+    }
+
+    /** LAN share: a remote command must be a name nothing here runs already, and its address one the launch can read.
+     *  Said at boot, beside every other finding, never found out as a launch that runs something else. */
+    private fun remotes(): List<TopologyFinding> = topology.remote.flatMap { (command, remote) ->
+        val taken = when {
+            command == CLAUDE_COMMAND -> "claude is Claude Code's own command; give this one another name"
+            topology.resolveHeadKeys(command).isNotEmpty() ->
+                "a head here already runs as $command; give this one another name"
+            else -> null
+        }
+        val unread = (RemoteAddresses.read(remote.url) as? RemoteAddressRead.Refused)?.why
+        val copy = "copy the address `splice share status` prints on the machine that shares it"
+        listOfNotNull(
+            taken?.let { TopologyFinding("remote.$command", it) },
+            unread?.let { TopologyFinding("remote.$command.url", "$it; $copy") },
+        )
     }
 
     /** What boot can ask without a runtime: the reasons a head can never have a catalog, whatever is discovered. */
@@ -476,3 +502,6 @@ private class TopologyChecks(
         return global + perHead
     }
 }
+
+/** Claude Code's own command, which a remote command may not take: `claude` stays plain Claude Code. */
+private const val CLAUDE_COMMAND = "claude"

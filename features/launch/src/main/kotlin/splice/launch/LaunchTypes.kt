@@ -11,6 +11,7 @@ import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
 import splice.client.ClaudePolicy
+import splice.client.login.SignInWay
 import splice.client.login.TokenCaptureSpec
 import splice.core.model.CLAUDE_CODE_ONE_MILLION
 import splice.core.model.CLIENT_TABLE_WINDOW
@@ -185,8 +186,9 @@ public data class LaunchModels(
 public data class LaunchSignIn(
     val loginCommand: String, // shell command that runs THIS head's provider sign-in (e.g. `claudex login`)
     val signInLabel: String, // provider label for the /login UX ("Codex (ChatGPT)", "Grok (xAI)")
-    /** False for api-key heads: the /login block reason points at a masked terminal prompt. */
-    val signInViaBrowser: Boolean = true,
+    /** Terminal for api-key heads: the /login block reason points at a masked terminal prompt. Elsewhere for a
+     *  command another machine serves (LAN share): its /login names that machine and starts nothing here. */
+    val signInWay: SignInWay = SignInWay.Browser,
     /** api-key heads: capture a bare pasted token into the KeyStore (blocked from model context). */
     val tokenCapture: TokenCaptureSpec? = null,
     /** Install the SessionStart key-missing advertiser (daemon sets it only while unconfigured). */
@@ -220,6 +222,9 @@ public data class LaunchGateway(
      * shut the only door that can heal a 401.
      */
     val forwardClientAuth: Boolean = false,
+    /** LAN share: the other machine's address this command's turns go to (`http://torad-server.lan:3097/claudex`), in
+     *  place of this machine's loopback [port]. Null for a head on this machine. */
+    val remote: String? = null,
 )
 
 public data class LaunchRecipe(

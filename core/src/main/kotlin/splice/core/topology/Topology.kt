@@ -46,6 +46,10 @@ public data class Topology(
     val heads: Map<String, HeadConfig> = emptyMap(),
     /** V4-124: per-repo standing prompts, keyed by the project root path. Absent = today's bytes. */
     val projects: Map<String, ProjectConfig> = emptyMap(),
+    /** LAN share (docs/specs/lan-share.md): this machine's heads offered to the person's other machines. */
+    val share: ShareConfig = ShareConfig(),
+    /** LAN share: commands another machine's splice serves, by the command each runs as here. */
+    val remote: Map<String, RemoteConfig> = emptyMap(),
 ) {
     /** Resolve a user-supplied head name — the topology key or the installed wrapper command
      *  (starter: head `openrouter`, command `claude-openrouter`) — to matching topology keys. A topology-KEY
@@ -77,7 +81,9 @@ public data class Topology(
      *  the same behaviour as before this check existed. */
     public fun portCollisions(): Map<Int, List<String>> {
         val controlPort = daemon.controlPort ?: Knob.CONTROL_PORT.count().toInt()
-        val declared = heads.entries.map { it.value.port to it.key } + (controlPort to CONTROL_PLANE_OWNER)
+        // LAN share's listener holds its port only while sharing is on.
+        val sharing = listOfNotNull((share.port to SHARE_PORT_OWNER).takeIf { share.enabled })
+        val declared = heads.entries.map { it.value.port to it.key } + (controlPort to CONTROL_PLANE_OWNER) + sharing
         return declared.groupBy({ it.first }, { it.second }).filterValues { it.size > 1 }
     }
 
@@ -463,6 +469,9 @@ internal val headModelSlots = setOf("opus", "sonnet", "haiku", "fable")
  *  dotted form [DaemonConfig.controlPort]'s own TOML key, so the report points at where to look
  *  and cannot be confused with a head key. */
 private const val CONTROL_PLANE_OWNER: String = "daemon.controlPort"
+
+/** What a LAN share port collision names as its owner in [Topology.portCollisions]: its own key path. */
+internal const val SHARE_PORT_OWNER: String = "share.port"
 
 /** The version the Codex model list is asked as. The version is a claim about the CLIENT; measured 2026-09-22 against
  *  chatgpt.com/backend-api/codex: no version is HTTP 400, `0.1.0` an empty list, `0.200.0` and above all nine models.

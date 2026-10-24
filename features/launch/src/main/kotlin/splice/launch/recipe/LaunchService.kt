@@ -34,6 +34,7 @@ import splice.core.config.UserHome
 import splice.core.util.EnvReader
 import splice.launch.LaunchOutcome
 import splice.launch.LaunchSpec
+import splice.launch.RemoteCommands
 import splice.sessions.registry.LaunchMarker
 import java.nio.file.Path
 
@@ -74,6 +75,10 @@ public class LaunchService(
      *  `claude` falls back to the V4-445 file of hosted user servers. Assigned by the daemon before routes serve
      *  requests; null runs every launch over its own servers. */
     public var hubLaunch: McpHubLaunch? = null
+
+    /** LAN share: the commands another machine serves, launched when a name no head here carries is asked for.
+     *  Assigned by the daemon before routes serve requests; null launches heads only. */
+    public var remotes: RemoteCommands? = null
 
     /** V4-183: a bare -c resolves to this head's own newest session in the launch cwd. */
     private val headBoundedContinue = HeadBoundedContinue()
@@ -126,7 +131,7 @@ public class LaunchService(
             signIn = MaterializeSignIn(
                 loginCommand = effective.signIn.loginCommand,
                 signInLabel = effective.signIn.signInLabel,
-                signInViaBrowser = effective.signIn.signInViaBrowser,
+                signInWay = effective.signIn.signInWay,
                 tokenCapture = effective.signIn.tokenCapture,
                 advertiseKeySetup = effective.signIn.advertiseKeySetup,
                 loginOutcomeFile = effective.signIn.loginOutcomeFile,
@@ -334,7 +339,8 @@ public class LaunchService(
 
     private fun buildEnv(spec: LaunchSpec, slots: List<Pair<String, String>>): Map<String, String> {
         return buildMap {
-            put("ANTHROPIC_BASE_URL", "http://127.0.0.1:${spec.gateway.port}")
+            // LAN share: a command another machine serves goes to that machine's address, never through this one.
+            put("ANTHROPIC_BASE_URL", spec.gateway.remote ?: "http://127.0.0.1:${spec.gateway.port}")
             // AUTH_TOKEN (bearer), NOT API_KEY — a bearer avoids Claude Code's custom-api-key
             // approval flow. The head validates this per-install credential before any quota-
             // consuming work. A native-auth head plants NOTHING: the client's own credential must

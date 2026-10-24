@@ -164,3 +164,9 @@ providers.*.quirks.zstd_request_body
 providers.*.window_rules	
 providers.*.window_rules[].context_window	
 providers.*.window_rules[].prefix	
+remote	
+remote.*.url	
+share	
+share.enabled	
+share.hostnames	
+share.port	

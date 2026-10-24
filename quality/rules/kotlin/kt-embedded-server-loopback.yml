@@ -12,6 +12,11 @@
 # — that form parses to a `value_argument` node, not the assignment node the first
 # pattern matches, so a standalone `host = "127.0.0.1"` pattern alone misses it;
 # `context:`+`selector: value_argument` is required to target that node shape.
+#
+# ONE exemption, by decision (Marcos, 2026-10-22, kept by his ruling of 2026-10-24; docs/specs/lan-share.md): the LAN
+# share listener, which opens only when `[share] enabled`, binds all interfaces, and admits only a source on this
+# machine's own networks that names this machine in its Host, before anything else runs. Every other embeddedServer
+# stays loopback-only; a second exemption needs its own decision recorded the same way.
 id: kt-embedded-server-loopback
 language: kotlin
 severity: error
@@ -19,6 +24,8 @@ message: "Loopback only: embeddedServer must be called with the literal host \"1
 files:
   - "**/src/main/**/*.kt"
   - "**/src/main/**/*.kts"
+ignores:
+  - "features/share/src/main/kotlin/splice/share/ShareListener.kt"
 rule:
   pattern: embeddedServer($$$ARGS)
   not:

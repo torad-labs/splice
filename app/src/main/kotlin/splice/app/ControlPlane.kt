@@ -31,6 +31,7 @@ import splice.core.compaction.CompactionInstructions
 import splice.core.usage.QuotaReadFailures
 import splice.core.version.ClientVersionTracker
 import splice.head.HeadDeps
+import splice.launch.RemoteCommands
 import splice.lifecycle.restart.ShutdownDaemon
 import splice.oauth.codex.CodexRefresh
 import splice.upstream.LifecycleScope
@@ -64,6 +65,10 @@ internal class ControlPlane(
     private val sessionWiring = ControlSessions(daemon)
     private val parts = ControlServerParts(daemon, topology)
     private val claudeLogin = ClaudeLoginSlot()
+
+    /** LAN share: the commands this machine runs on another's heads, assigned by Daemon before [start] (the launch
+     *  service asks them for a name no head here has). Null runs none. */
+    internal var remoteCommands: RemoteCommands? = null
 
     /** Captures the owner only at send time, after launch composition has wired the live native places. */
     internal val credentialAccountNames = HeadDeps.CredentialAccountNames { key ->
@@ -199,7 +204,8 @@ internal class ControlPlane(
             log,
             readings = ControlReadings(health.report(heads, failedHeads, headCount, probes, signals), signals),
             runtime = ControlRuntime(
-                launchService = launch.service(home, sharing, controlPort, mcp.hubLive),
+                launchService = launch.service(home, sharing, controlPort, mcp.hubLive)
+                    .also { it.remotes = remoteCommands },
                 shutdownDaemon = shutdownDaemon,
                 sessions = sessions,
                 mcpHost = mcpHost,

@@ -96,6 +96,11 @@ internal object LoginHookScripts {
 
     private fun leadText(hook: HeadLogin): String =
         when {
+            // LAN share: the logins are the other machine's, and nothing here can sign one in.
+            hook.signsInOn.isNotBlank() ->
+                "${hook.headKey} signs in on ${hook.signsInOn}: its logins live there, and this machine holds none. " +
+                    "To sign in or add a login, run `${hook.loginCommand}` on ${hook.signsInOn}, or use the " +
+                    "Accounts page of its console."
             hook.viaBrowser ->
                 "Opening your browser to sign in to ${hook.signInLabel}. Finish there, then continue. " +
                     "If it did not open, run: ${hook.loginCommand}. To sign in another account: " +

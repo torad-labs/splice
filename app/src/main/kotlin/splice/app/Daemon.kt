@@ -31,6 +31,7 @@ import splice.app.head.LaunchSpecFactory
 import splice.app.head.ManagedHeadFactory
 import splice.app.head.QuotaPollSeams
 import splice.app.probe.LocalWindowRefresh
+import splice.app.share.DaemonShare
 import splice.client.mcp.McpShareChoice
 import splice.client.resume.originals.TranscriptOriginals
 import splice.codemode.WorkerArtifacts
@@ -39,6 +40,7 @@ import splice.core.compaction.SessionProject
 import splice.core.config.ConfigService
 import splice.core.config.MgmtKey
 import splice.core.config.StatePaths
+import splice.core.config.TurnKey
 import splice.core.retired.RetiredHeads
 import splice.core.topology.HeadModel
 import splice.core.topology.ProviderFamilyRule
@@ -51,6 +53,7 @@ import splice.lifecycle.restart.ShutdownDaemon
 import splice.models.roster.DeclaredHead
 import splice.models.roster.DeclaredHeads
 import splice.oauth.codex.CodexRefresh
+import splice.share.RemoteTrees
 import splice.topology.TopologyLoader
 import splice.usage.quota.ClientUserAgent
 import java.nio.file.Path
@@ -203,6 +206,9 @@ public class Daemon(
     )
 
     private val heads = LinkedHashMap<String, ManagedHead>()
+
+    /** LAN share: the commands this machine runs on another's heads, and the listener that offers its own. */
+    private val share = DaemonShare(topology, config, TurnKey(mgmtKey), log)
     private val stopLock = Mutex()
     private var stopped = false
 
@@ -257,6 +263,10 @@ public class Daemon(
             log,
             LocalWindowRefresh(controlPlane.buildInputs::refreshLocalModels),
         )
+        controlPlane.remoteCommands = share.remotes(
+            RemoteTrees(launchSpecFactory::remoteTrees),
+            launchSpecFactory.remotePolicy(),
+        )
         controlPlane.start(
             controlPort = controlPort,
             heads = heads,
@@ -268,6 +278,7 @@ public class Daemon(
             headCount = topology.heads.size,
             probes = headProbes,
         ) ?: return
+        share.open(heads, controlPort)
         // MCP hub step 6: each installed Claude Code version's --plugin-dir-no-mcp verdict, checked in the background.
         controlPlane.pluginFlagChecks.request()
         val degraded = if (failed.isEmpty()) "" else " DEGRADED=${failed.keys}"
@@ -281,6 +292,8 @@ public class Daemon(
             // at the END, so a pass that was cut short is finished by the next call, never taken for done.
             headProbes.fenceStarts()
             controlPlane.ownership.fence()
+            // No other machine's turn starts on a head that is about to drain.
+            share.close()
 
             // Heads stop in PARALLEL under a phase DEADLINE, then control stops — see
             // [HeadShutdown.stopHeads]. The supervisor scope + stopFailureHandler live there so an

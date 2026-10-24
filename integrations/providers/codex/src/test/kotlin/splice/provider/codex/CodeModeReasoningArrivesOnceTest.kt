@@ -89,10 +89,14 @@ internal class CodeModeReasoningArrivesOnceTest : CodeModeBridgeTestSupport() {
         } else {
             listOf(echoed[0], before, echoed[1], after, echoed[2])
         }
-        val client = history + clientEcho + callback("call-0")
+        val later = ResponsesAssistantText.item(
+            "before the middle reasoningafter the middle reasoning",
+            AssistantPhase.COMMENTARY,
+        )
+        val client = history + clientEcho + callback("call-0") + later
         val actual = rewrite(client, owner)
         val expected = history + listOf(native[0], before, native[1], after, native[2]) +
-            listOf(CodeModeCallReplay.item(owner), codec.customOutput(owner))
+            listOf(CodeModeCallReplay.item(owner), codec.customOutput(owner), later)
 
         assertEquals(expected, actual, "same-id copies collapse without erasing distinct ids or native payload fields")
         assertEquals(actual, rewrite(actual, owner), "a second canonicalization preserves the exact native prefix")

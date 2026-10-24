@@ -10,9 +10,6 @@ internal object ReadableReasoning {
         return close < 0 || trimmed.substring(close + 2).trim() != EMPTY_BODY
     }
 
-    /** Hold only a leading blank/comment candidate; a real body releases every model byte unchanged. */
-    fun mayBeEmpty(text: String): Boolean = EMPTY_BODY.startsWith(text.trim())
-
     /** A completed, trimmed summary body is empty only when absent or exactly the model's empty-body marker. */
     fun isEmptyBody(text: String): Boolean = text.isEmpty() || text == EMPTY_BODY
 }

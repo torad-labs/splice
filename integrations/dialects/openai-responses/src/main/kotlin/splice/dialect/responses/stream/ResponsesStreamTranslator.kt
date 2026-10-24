@@ -111,6 +111,7 @@ internal class ResponsesStreamTranslator(
             snapshot = CompletedItemSnapshot { ResponsesOutcomePayload(ctx).successOutcome(state) },
         )
         val reducer = ResponsesEventReducer(state, itemFold, reasoningFold)
+        val cleanup = ResponsesRoundCleanup(state, replay, bufferBudget, reasoningFold)
         // Stream read errors surface via the terminal decision, never a crash; only a genuine
         // cancellation (no watchdog fire) is allowed to propagate.
         try {
@@ -148,29 +149,21 @@ internal class ResponsesStreamTranslator(
             if (!hasRecoverableProgress(state)) throw ignored
             unexpected = ignored
         } finally {
-            // The last frame has no lookahead: latch char/block overflow before any held literal can flush.
-            bufferBudget.within(state, reasoningFold.pendingChars)
-            reasoningFold.leadingText.closeSourceProgress(
-                itemFold,
-                terminalSeen(state),
-                sink,
-                capacityRejected = bufferBudget.failure != null,
-            )
+            cleanup.close(itemFold, sink, terminalSeen(state))
         }
 
         reasoningFold.finishLeadingText(sink)
         // A parsed terminal owns real usage. Late reader cancellation cannot interrupt its cleanup or accounting.
-        return finishPreservingTerminal(state, sink, replay)
+        return finishPreservingTerminal(state, sink)
     }
 
     private suspend fun finishPreservingTerminal(
         state: ResponsesTurnState,
         sink: WireSink,
-        replay: ResponsesReasoningReplay,
     ): TurnOutcome = if (terminalSeen(state)) {
-        withContext(NonCancellable) { finishRound(state, sink, replay) }
+        withContext(NonCancellable) { finishRound(state, sink) }
     } else {
-        finishRound(state, sink, replay)
+        finishRound(state, sink)
     }
 
     private fun terminalSeen(state: ResponsesTurnState): Boolean =
@@ -200,6 +193,7 @@ internal class ResponsesStreamTranslator(
     private fun billedOutcome(state: ResponsesTurnState): TurnOutcome {
         latchSweptToolBlocks(state)
         ResponsesTerminalBackfill().harvestFallback(state)
+        bufferBudget.within(state, heldChars = 0)
         ResponsesSchemaOutput(outputToolName).latchUndelivered(state)
         val payload = ResponsesOutcomePayload(ctx)
         val outcome = ResponsesTerminalDecision(ctx, payload).terminalOutcome(state, bufferBudget.failure, tear)
@@ -213,12 +207,9 @@ internal class ResponsesStreamTranslator(
     private suspend fun finishRound(
         state: ResponsesTurnState,
         sink: WireSink,
-        replay: ResponsesReasoningReplay,
     ): TurnOutcome {
         latchSweptToolBlocks(state)
-        ResponsesTerminalBackfill().harvestFallback(state)
         sink.closeAll()
-        replay.finish()
         ResponsesSchemaOutput(outputToolName).emit(state, sink)
         val outcome = billedOutcome(state)
         state.ending?.let { log("upstream round ended on $it") }

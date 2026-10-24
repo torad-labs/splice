@@ -23,6 +23,7 @@ import splice.provider.codex.CodexCodeModeBridge
 import splice.provider.codex.CodexCodeModeRegistry
 import splice.provider.codex.CodexCodeModeWire
 import splice.provider.codex.state.CodeModeTurnIdentity
+import splice.provider.codex.stream.CodeModeReaderFailures.SOURCE_FAILED
 import splice.upstream.RoundResult
 import splice.upstream.TurnEnd
 import splice.upstream.sse.CustomToolSource
@@ -154,9 +155,7 @@ internal class CodeModeLiveRound(
      *  out of the record's save). Its source had no terminal, so the cell reading it waited forever and nothing
      *  was logged. The source fails, the record is lost as [failed] loses it, and the throwable's class is named. */
     private fun died(cause: Throwable?) {
-        val unnamed = cause?.takeUnless {
-            it is CancellationException || it is CodeModePersistenceException
-        } ?: return
+        val unnamed = CodeModeReaderFailures.unexpected(cause) ?: return
         upstreamEnded = true
         unexpectedDeath = !capture.itemComplete
         config.log("[code-mode] upstream source reader died (${unnamed::class.simpleName}): $SOURCE_FAILED")
@@ -226,15 +225,7 @@ internal class CodeModeLiveRound(
         executionLost = !sourceInterrupted && capture.unfinished
         source.fail(detail)
         capture.interrupted(detail)
-        TurnOutcome.Failure(
-            detail,
-            cause = if (error is IOException && record != null) {
-                FailureCause.UPSTREAM_CONN_RESET
-            } else {
-                FailureCause.INTERNAL
-            },
-            phase = FailurePhase.MID_OUTPUT,
-        )
+        CodeModeReaderFailures.outcome(error, admitted = record != null)
     }
 
     /** The upstream ended the source post without an outcome (the retry loop gave up on it, it had no credentials, it
@@ -282,7 +273,7 @@ internal class CodeModeLiveRound(
         ending?.let { CodeModeEndings.settle(it) }
         val failure = awaited.exceptionOrNull() ?: return awaited.getOrThrow()
         if (failure is CodeModePersistenceException) throw failure
-        return TurnOutcome.Failure(SOURCE_FAILED, cause = FailureCause.INTERNAL, phase = FailurePhase.MID_OUTPUT)
+        return CodeModeReaderFailures.outcome()
     }
 
     /** Disposal cancels the already-posted reader so its stream and admission slot are freed. */
@@ -348,7 +339,6 @@ internal class CodeModeLiveRound(
 
 // why: a disposed execution cannot retain its response reader or dispatch unread source.
 internal const val SOURCE_DISPOSED = "code-mode execution disposed; source was not rerun"
-private const val SOURCE_FAILED = "upstream source failed; source was not rerun"
 private const val HEAD_STOPPED = "code-mode head stopped"
 private const val SOURCE_REFUSED = "upstream refused the source request; source was not rerun"
 private val SOURCE_TEAR_CAUSES = setOf(

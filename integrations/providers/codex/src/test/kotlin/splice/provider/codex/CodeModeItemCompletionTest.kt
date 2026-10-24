@@ -258,11 +258,15 @@ class CodeModeItemCompletionTest : CodeModeItemCompletionSupport() {
         }
         val expected = listOf(before, reasoning[0], prefaces[0], reasoning[1], prefaces[1]) + remainder +
             listOf(CodeModeCallReplay.item(record), codec.customOutput(record), after)
-        val inputs = listOf(
-            listOf(before, joined, callback, result, after),
-            listOf(before, reasoning[0], joined, reasoning[1], callback, result, after),
-            listOf(before, reasoning[0], prefaces[0], reasoning[1], commentary("B$extra"), callback, result, after),
-        )
+        val inputs = buildList {
+            add(listOf(before, joined, callback, result, after))
+            add(listOf(before, reasoning[0], joined, reasoning[1], callback, result, after))
+            add(listOf(before, reasoning[0], prefaces[0], reasoning[1], commentary("B$extra"), callback, result, after))
+            if (extra.isEmpty()) {
+                add(listOf(before, callback, result, after))
+                add(listOf(before, reasoning[0], reasoning[1], callback, result, after))
+            }
+        }
 
         private fun element(text: String): JsonElement = Json.parseToJsonElement(text)
 

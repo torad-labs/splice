@@ -1,7 +1,6 @@
 // NEW: folds each finished script's client calls into the exec call and output GPT was sent, as Codex records them.
 package splice.provider.codex.history
 
-import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
@@ -16,7 +15,6 @@ import splice.provider.codex.CodeModeCallReplay
 import splice.provider.codex.CodeModePhase
 import splice.provider.codex.CodeModeRecord
 import splice.provider.codex.CodexCodeModeHistoryCodec
-import splice.provider.codex.state.CodeModeNativeChain
 
 /**
  * Where a finished script that made no client call goes, since nothing of it is in the client's history but the
@@ -148,54 +146,6 @@ internal data class CodeModeQuiet(val record: CodeModeRecord, val replay: List<J
 /** Where the client's copy of a script's reasoning and preface starts, and its [echo]. */
 internal data class CodeModeCopy(val start: Int, val echo: CodeModeEcho)
 
-/** Source item boundaries mapped onto the client's exact text echo, splitting coalesced messages where needed. */
-private class CodeModePrefaceSlots(
-    input: ResponsesCodeModeInput,
-    record: CodeModeRecord,
-    private val start: Int,
-    private val scripts: CodeModeScriptPlacements,
-) {
-    var logical = input.logicalItems
-        private set
-    var replay = input.replayItems
-        private set
-    private val slots = mutableMapOf(0 to start)
-
-    init {
-        val owned = record.carry.replay.flatMap { it.items }.toSet()
-        replay = replay.mapNotNull { segment ->
-            val items = if (segment.logicalOffset < start) {
-                segment.items
-            } else {
-                segment.items.filterNot(owned::contains)
-            }
-            segment.copy(items = items).takeIf { it.items.isNotEmpty() }
-        }
-        if (start < logical.size) {
-            record.carry.continuity.indices.forEach { index ->
-                split(record.carry.continuity.take(index + 1), index + 1)
-            }
-        }
-    }
-
-    fun position(offset: Int): Int = slots[offset] ?: logical.size
-
-    private fun split(prefix: List<JsonElement>, offset: Int) {
-        val echo = checkNotNull(scripts.echo(logical, start, prefix)) { "source preface echo changed during replay" }
-        if (echo.split > 0) {
-            logical = scripts.cut(logical, echo)
-            replay = replay.map { segment ->
-                if (segment.logicalOffset > echo.end) {
-                    segment.copy(logicalOffset = segment.logicalOffset + 1)
-                } else {
-                    segment
-                }
-            }
-        }
-        slots[offset] = echo.end + if (echo.split > 0) 1 else 0
-    }
-}
-
 /** Whether an item of the client's history is in the copy of a script other than the one being placed, which that
  *  script's copy search does not go past. */
 internal fun interface CodeModeOtherCopy {
@@ -217,6 +167,7 @@ internal class CodeModeScriptFold(
     private val quiet: List<CodeModeQuiet>,
     private val scripts: CodeModeScriptPlacements,
 ) {
+    private val reasoning = CodeModeReasoningRestore(codec, scripts)
     private val out = mutableListOf<JsonElement>()
     private val between = mutableListOf<JsonElement>()
     private val opened = mutableSetOf<String>()
@@ -310,7 +261,7 @@ internal class CodeModeScriptFold(
 
     private fun callback(items: List<JsonElement>, index: Int, record: CodeModeRecord, closes: Boolean) {
         if (opened.add(record.id)) {
-            restoreReasoning(record)
+            reasoning.restore(out, record)
             out += CodeModeCallReplay.item(record)
             open = record
         }
@@ -325,32 +276,6 @@ internal class CodeModeScriptFold(
             between.clear()
             open = null
         }
-    }
-
-    /** Callback ownership places hidden source reasoning even when the client never received an opaque carrier. */
-    private fun restoreReasoning(record: CodeModeRecord) {
-        if (record.carry.replay.isEmpty()) return
-        val projected = codec.projection.project(JsonArray(out))
-        val logical = projected.logicalItems
-        val start = continuityStart(logical, record)
-        val slots = CodeModePrefaceSlots(projected, record, start, scripts)
-        val replay = record.carry.replay.map { segment ->
-            ResponsesCodeModeReplay(slots.position(segment.logicalOffset), null, segment.items)
-        }
-        val rebuilt = codec.projection.rebuild(
-            ResponsesCodeModeInput(slots.logical, CodeModeNativeChain.emittedReplay(slots.replay + replay)),
-        )
-        out.clear()
-        out.addAll(rebuilt)
-    }
-
-    /** The owned callback bounds this prose suffix; the existing matcher handles joined and coalesced messages. */
-    private fun continuityStart(items: List<JsonElement>, record: CodeModeRecord): Int {
-        if (record.carry.continuity.isEmpty()) return items.size
-        val floor = items.indexOfLast { scripts.text(it) == null } + 1
-        return (floor until items.size).firstOrNull { at ->
-            scripts.echo(items, at, record.carry.continuity) != null
-        } ?: items.size
     }
 
     private fun owner(item: JsonElement): CodeModeRecord? {

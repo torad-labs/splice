@@ -440,10 +440,7 @@ class NativeAncestorPlacementTest : CodeModeBridgeTestSupport() {
             }
         assertTrue(logLines.none { "abandoned record" in it }, logLines.joinToString("\n"))
         assertEquals(2, runtime.cells.last().advances, "the original later script consumes its own callback: $outcome")
-        // The restored callback falls back to the client's history once: it is the old script's exec call and output,
-        // which move the later exec by two. Its preface is the client's to replay, and this client replays none;
-        // until 2026-10-23 splice re-inserted it, and the move was three.
-        assertEquals(2, oldExecIndex(after) - oldExecIndex(before), "the restored exec and output move an old exec")
+        assertAncestorRestored(before, after)
     }
 
     private fun ancestorRuntime(): QueuedRuntime = QueuedRuntime(
@@ -481,8 +478,30 @@ class NativeAncestorPlacementTest : CodeModeBridgeTestSupport() {
         return id
     }
 
-    private fun oldExecIndex(bodyJson: String): Int =
-        Json.parseToJsonElement(bodyJson).jsonObject.getValue("input").jsonArray.indexOfFirst {
+    /** The ancestor retains its native reasoning and preface even when the client replays only its callback. */
+    private fun assertAncestorRestored(before: String, after: String) {
+        val original = Json.parseToJsonElement(before).jsonObject.getValue("input").jsonArray
+        val restored = Json.parseToJsonElement(after).jsonObject.getValue("input").jsonArray
+        val at = original.indexOf(Json.parseToJsonElement(user("start-0"))) + 1
+        assertTrue(at > 0, before)
+        val reasoning = checkNotNull(ReasoningReplay.decodeReasoningEnvelope(reasoningEnvelope("ancestor-reason-0")))
+        val preface = Json.parseToJsonElement(
+            """{"role":"assistant","phase":"commentary","content":"prose-0"}""",
+        )
+        val source = listOf(
+            reasoning,
+            preface,
+            outer("outer-0").raw,
+            Json.parseToJsonElement("""{"type":"custom_tool_call_output","call_id":"outer-0","output":"done-0"}"""),
+        )
+        val prefix = original.take(oldExecIndex(original))
+        assertEquals(prefix.take(at) + source + prefix.drop(at), restored.take(oldExecIndex(restored)), after)
+        assertEquals(1, restored.count { it == reasoning }, "the restored ancestor's reasoning appears once: $after")
+        assertEquals(1, restored.count { it == preface }, "the restored ancestor's preface appears once: $after")
+    }
+
+    private fun oldExecIndex(items: List<JsonElement>): Int =
+        items.indexOfFirst {
             (it as? JsonObject)?.get("call_id")?.jsonPrimitive?.content == "outer-1"
         }
 

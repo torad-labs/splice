@@ -9,6 +9,7 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.test.runTest
 import kotlinx.coroutines.withContext
 import org.junit.jupiter.api.Assertions.assertEquals
+import org.junit.jupiter.api.Assertions.assertNotEquals
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 import splice.codemode.host.PoolLimits
@@ -58,7 +59,16 @@ class NativeCodeModeRecoveryTest {
             process.get().destroyForcibly().waitFor()
             val failed = Cancellables.runCatchingBestEffort { cell.observe(RECOVERY_WAIT_MS) }
             assertTrue(failed.exceptionOrNull() is CodeModeWorkerLostException)
-            val fresh = runtime.startSession("session", "text(load('accepted')); text('new module');", emptySet())
+            val fresh = runtime.startNativeSession(
+                "session",
+                "text(load('accepted')); text('new module');",
+                emptySet(),
+                emptyMap(),
+                NativeCodeModeOptions(),
+            )
+            assertNotEquals(cell.cellId, fresh.cellId)
+            val stillFailed = Cancellables.runCatchingBestEffort { cell.observe(RECOVERY_WAIT_MS) }
+            assertTrue(stillFailed.exceptionOrNull() is CodeModeWorkerLostException)
             assertEquals("undefined\nnew module", (fresh.advance() as CodeModeStep.Completed).output)
         }
     }

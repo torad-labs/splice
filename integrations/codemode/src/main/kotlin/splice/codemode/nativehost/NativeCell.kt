@@ -20,7 +20,7 @@ import java.util.concurrent.atomic.AtomicBoolean
 
 /** Delegate results resume their original promises; observing a yield never cancels execution. */
 internal class NativeCell(
-    override val cellId: String,
+    private val wireCellId: String,
     private val sessionId: String,
     private val connection: NativeConnection,
     private val scope: CoroutineScope,
@@ -28,6 +28,7 @@ internal class NativeCell(
     private val tools: Set<String>,
     private val lease: NativeCellLease,
 ) : NativeCodeModeCell {
+    override val cellId: String = "${connection.generation}:$wireCellId"
     private val closed = AtomicBoolean()
     private val advancing = Mutex()
     private val submitting = Mutex()
@@ -63,12 +64,12 @@ internal class NativeCell(
             val response = response(yieldTimeMs)
             while (readySteps.isEmpty()) {
                 select<Unit> {
-                    connection.events.cell(sessionId, cellId).onReceive { frame ->
+                    connection.events.cell(sessionId, wireCellId).onReceive { frame ->
                         delegate(frame)?.let(readySteps::addLast)
                     }
                     response.onAwait { frame ->
                         observation = null
-                        val result = NativeOutput.decode(NativeFrames.value(frame))
+                        val result = decode(frame)
                         readySteps.addLast(result)
                         if (result is CodeModeStep.Completed) release()
                     }
@@ -84,7 +85,7 @@ internal class NativeCell(
         val operation = connection.prepare()
         observation = operation.response
         try {
-            connection.dispatch(operation, NativeRequests.wait(sessionId, cellId, yieldTimeMs))
+            connection.dispatch(operation, NativeRequests.wait(sessionId, wireCellId, yieldTimeMs))
         } finally {
             if (!operation.wasDispatched()) {
                 connection.discard(operation)
@@ -98,7 +99,7 @@ internal class NativeCell(
     private suspend fun batchCalls(first: CodeModeStep.Calls): CodeModeStep.Calls {
         yield()
         val calls = first.calls.toMutableList()
-        val channel = connection.events.cell(sessionId, cellId)
+        val channel = connection.events.cell(sessionId, wireCellId)
         var draining = true
         while (draining) {
             val frame = channel.tryReceive().getOrNull()
@@ -171,14 +172,23 @@ internal class NativeCell(
         }
     }
 
+    private fun decode(frame: JsonObject): CodeModeStep = when (
+        val step = NativeOutput.decode(NativeFrames.value(frame))
+    ) {
+        is CodeModeStep.Yielded -> step.copy(cellId = cellId)
+        is CodeModeStep.Completed, is CodeModeStep.Calls, is CodeModeStep.Notified,
+        is CodeModeStep.WaitingForResults,
+        -> step
+    }
+
     override suspend fun terminate(): CodeModeStep {
         check(!closed.get()) { "Native cell is closed" }
-        val operation = connection.operation(NativeRequests.terminate(sessionId, cellId))
+        val operation = connection.operation(NativeRequests.terminate(sessionId, wireCellId))
         return NativeOutput.decode(NativeFrames.value(operation.response.await())).also {
             closed.set(true)
             pending.clear()
             lease.close()
-            if (!advancing.isLocked) connection.events.release(sessionId, cellId)
+            if (!advancing.isLocked) connection.events.release(sessionId, wireCellId)
         }
     }
 
@@ -186,17 +196,17 @@ internal class NativeCell(
         closed.set(true)
         pending.clear()
         lease.close()
-        connection.events.release(sessionId, cellId)
+        connection.events.release(sessionId, wireCellId)
     }
 
     override fun close() {
         if (closed.compareAndSet(false, true)) {
             scope.launch {
                 Cancellables.runCatchingBestEffort {
-                    connection.operation(NativeRequests.terminate(sessionId, cellId)).response.await()
+                    connection.operation(NativeRequests.terminate(sessionId, wireCellId)).response.await()
                 }
                 lease.close()
-                if (!advancing.isLocked) connection.events.release(sessionId, cellId)
+                if (!advancing.isLocked) connection.events.release(sessionId, wireCellId)
             }
         }
     }

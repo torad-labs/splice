@@ -17,6 +17,7 @@ import java.io.DataInputStream
 import java.io.DataOutputStream
 import java.io.IOException
 import java.io.OutputStream
+import java.util.UUID
 import java.util.concurrent.atomic.AtomicBoolean
 
 /** Owns one stdio connection. Host loss fails retained cells; it never silently replays accepted source. */
@@ -26,6 +27,7 @@ internal class NativeConnection(
     private val ioDispatcher: CoroutineDispatcher,
     private val onClosed: NativeConnectionClosed,
 ) : AutoCloseable {
+    val generation: String = UUID.randomUUID().toString()
     private val closed = AtomicBoolean()
     private val writer = Mutex()
     private val output = DataOutputStream(process.outputStream)

@@ -15,8 +15,7 @@ class NativeCodeModeTimeoutRetirementTest {
     @Test
     fun `a retained legacy timeout reports its key and the native observation migration`() {
         val failure = assertThrows(IllegalArgumentException::class.java) {
-            Json.decodeFromString<QuirksConfig>("""{"code_mode_timeout_ms":5000}""")
-            Unit
+            assertNull(Json.decodeFromString<QuirksConfig>("""{"code_mode_timeout_ms":5000}""").codeModeTimeoutMs)
         }
         val message = failure.message.orEmpty()
         assertTrue(message.contains("code_mode_timeout_ms"), message)

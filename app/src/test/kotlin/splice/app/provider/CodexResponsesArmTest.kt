@@ -4,6 +4,7 @@ package splice.app.provider
 
 import kotlinx.coroutines.test.runTest
 import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.jsonArray
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
 import org.junit.jupiter.api.Assertions.assertEquals
@@ -29,6 +30,7 @@ import splice.core.topology.HeadConfig
 import splice.core.topology.ProviderConfig
 import splice.core.topology.QuirksConfig
 import splice.core.turn.WatchdogBudget
+import splice.dialect.responses.ResponsesFunctionNamespace
 import splice.oauth.OAuthAccountFiles
 import splice.upstream.BuiltTurn
 import java.nio.file.Files
@@ -116,8 +118,14 @@ class CodexResponsesArmTest {
         assertTrue(built.extraHeaders.containsKey("thread-id"))
         assertEquals("model=gpt-6-astra", built.extraHeaders["x-codex-routing-hint"])
         val wire = built.requestBody.toString()
-        // V4-388: a code-mode turn declares the client tools inside exec's manual, none top-level.
-        assertFalse(wire.contains("\"type\":\"function\""))
+        // Client functions remain in exec's manual; the native wait operation is declared separately.
+        val declared = built.requestBody.getValue("input").jsonArray.first().jsonObject
+        val tools = ResponsesFunctionNamespace().members(declared.getValue("tools").jsonArray).map { it.jsonObject }
+        assertEquals(
+            listOf("wait"),
+            tools.filter { it["type"]?.jsonPrimitive?.content == "function" }
+                .map { it.getValue("name").jsonPrimitive.content },
+        )
         assertFalse(wire.contains("\"strict\":true"))
         // f6a29a77f: current codex-rs omits empty lite instructions (codex-api/src/common.rs:286-287).
         assertFalse("instructions" in built.requestBody, "current codex-rs omits the empty field")

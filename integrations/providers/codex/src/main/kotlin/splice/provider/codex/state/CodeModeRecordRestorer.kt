@@ -32,6 +32,8 @@ internal class CodeModeRecordRestorer {
             record.postedOn = saved.postedOn
             record.nativeCellId = saved.nativeCellId
             record.nativeCompleted = saved.nativeCompleted
+            record.dispatchStarted = saved.dispatchStarted
+            record.nativeBatch = saved.nativeBatch
             record.deliveredOnly = saved.deliveredOnly
             record.progress.nativeOutput = saved.nativeOutput
             record.progress.nativeNotifications = saved.nativeNotifications
@@ -119,6 +121,8 @@ internal object CodeModeRecordSnapshots {
         it.postedOn = record.postedOn
         it.nativeCellId = record.nativeCellId
         it.nativeCompleted = record.nativeCompleted
+        it.dispatchStarted = record.dispatchStarted
+        it.nativeBatch = record.nativeBatch
         it.deliveredOnly = record.deliveredOnly
         it.nativeOutput = record.progress.nativeOutput
         it.nativeNotifications = record.progress.nativeNotifications

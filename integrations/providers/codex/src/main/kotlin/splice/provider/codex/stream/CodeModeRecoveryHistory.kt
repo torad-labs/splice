@@ -19,7 +19,13 @@ import java.util.concurrent.ConcurrentHashMap
 
 /** Owned by one prepared turn, never shared by sessions or persisted. [baseline] is the request the client sent, which
  *  the recovery continues past the round it tore. */
-internal class CodeModeRecoveryHistory(val baseline: CodeModeBody) {
+internal class CodeModeRecoveryHistory(baseline: CodeModeBody) {
+    var baseline: CodeModeBody = baseline
+        private set
+
+    fun compact(wire: CodexCodeModeWire) {
+        baseline.request?.first?.let { baseline = wire.body(splice.upstream.RoundBody.Tree(it)) }
+    }
     private var prefix = Prefix()
     private var generated = Prefix()
     private var continuityPrefix = Prefix()
@@ -233,6 +239,13 @@ internal class CodeModeRecoveryHistory(val baseline: CodeModeBody) {
             it.sessionId = state.sessionId
             it.conversationId = state.conversationId
             it.nativeBaseId = history.native.parent?.id
+            it.nativeBatch = state.nativeBatch
+            it.nativeCellId = state.nativeCellId
+            it.nativeCompleted = state.nativeCompleted
+            it.dispatchStarted = state.dispatchStarted
+            it.deliveredOnly = state.deliveredOnly
+            it.nativeOutput = state.nativeOutput
+            it.nativeNotifications = state.nativeNotifications
             it.replayAnchors = history.boundary.replayAnchors
             it.sourceState = state.sourceState
             it.nativeAfterExec = history.continuity.nativeAfterExec

@@ -25,7 +25,8 @@ internal object CodeModeJournalEncoding {
 
     private fun nativeDeliverySame(left: CodeModeRecordSnapshot?, right: CodeModeRecordSnapshot?): Boolean =
         left?.deliveredOnly == right?.deliveredOnly && left?.nativeNotifications == right?.nativeNotifications &&
-            left?.nativeCompleted == right?.nativeCompleted
+            left?.nativeCompleted == right?.nativeCompleted && left?.nativeBatch == right?.nativeBatch &&
+            left?.dispatchStarted == right?.dispatchStarted
 
     fun unchanged(record: CodeModeRecordSnapshot, prior: CodeModeRecordSnapshot?): Boolean =
         same(record, prior) && prior?.encodedFieldBytes != null

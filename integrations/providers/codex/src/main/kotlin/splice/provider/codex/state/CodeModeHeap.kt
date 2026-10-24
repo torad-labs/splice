@@ -18,6 +18,7 @@ import splice.provider.codex.CodeModePending
 import splice.provider.codex.CodeModePersistedState
 import splice.provider.codex.CodeModeRecord
 import splice.provider.codex.CodeModeRecordSnapshot
+import splice.provider.codex.stream.batch.CodeModeBatchWeight
 import splice.upstream.memory.JvmHeap
 import java.lang.management.ManagementFactory
 import java.lang.ref.WeakReference
@@ -133,7 +134,11 @@ internal enum class CodeModeWeight {
             ) ?: 0L
             ) + record.progress.nativeNotifications.sumOf(
             ::json,
-        ) + (record.nativeCellId?.let(::text) ?: 0L) + record.deliveredOnly.sumOf(::json)
+        ) + (
+            record.nativeCellId?.let(
+                ::text,
+            ) ?: 0L
+            ) + record.deliveredOnly.sumOf(::json) + CodeModeBatchWeight.bytes(record.nativeBatch)
 
     fun snapshot(record: CodeModeRecordSnapshot): Long = RECORD_METADATA_BYTES +
         json(record.outer) + text(record.source) + record.pending.sumOf(::call) +
@@ -150,7 +155,11 @@ internal enum class CodeModeWeight {
             ) ?: 0L
             ) + record.nativeNotifications.sumOf(
             ::json,
-        ) + (record.nativeCellId?.let(::text) ?: 0L) + record.deliveredOnly.sumOf(::json)
+        ) + (
+            record.nativeCellId?.let(
+                ::text,
+            ) ?: 0L
+            ) + record.deliveredOnly.sumOf(::json) + CodeModeBatchWeight.bytes(record.nativeBatch)
 
     /** Placement maps escape with both live records and snapshots, after raw decoding trees close. */
     private fun anchors(value: CodeModeReplayAnchors?): Long = value?.let {

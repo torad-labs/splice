@@ -9,6 +9,7 @@ import splice.core.memory.HeapLease
 import splice.provider.codex.state.CodeModeRecordRestorer
 import splice.provider.codex.state.CodeModeReplayAnchors
 import splice.provider.codex.stream.CodeModeSourceState
+import splice.provider.codex.stream.batch.CodeModeNativeBatch
 import splice.upstream.codemode.CodeModeResult
 
 @Serializable
@@ -64,6 +65,8 @@ internal data class CodeModeRecordSnapshot(
     var postedOn: Long? = null
     var nativeCellId: String? = null
     var nativeCompleted: Boolean = false
+    var dispatchStarted: Boolean = false
+    var nativeBatch: CodeModeNativeBatch? = null
     var deliveredOnly: List<JsonElement> = emptyList()
     var nativeOutput: JsonElement? = null
     var nativeNotifications: List<JsonElement> = emptyList()

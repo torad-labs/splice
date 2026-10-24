@@ -47,7 +47,7 @@ class CodeModeHistoryScaleTest : CodeModeBridgeTestSupport() {
             assertEquals(model.take(INITIAL_MODEL_ITEMS + steps * MODEL_ITEMS_PER_APPEND), restored[age].sent)
             assertEquals(client.take(steps + 1), restored[age].covered)
         }
-        assertTrue(readingHeap.available > 0L, "a 64 MiB ledger could not retain the shared native graph")
+        assertTrue(readingHeap.available.value > 0L, "a 64 MiB ledger could not retain the shared native graph")
     }
 
     @Test

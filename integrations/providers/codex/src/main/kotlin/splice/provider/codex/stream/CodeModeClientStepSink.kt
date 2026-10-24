@@ -8,6 +8,8 @@ internal class CodeModeClientStepSink(
     private val round: CodeModeSwitchingSink,
     private val sink: WireSink,
 ) : WireSink by sink {
+    fun belongsTo(round: CodeModeSwitchingSink): Boolean = this.round === round
+
     override suspend fun openTool(id: String, name: String): WireBlockIndex {
         round.detach()
         return sink.openTool(id, name)

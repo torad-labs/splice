@@ -15,6 +15,7 @@ import splice.provider.codex.state.CodeModeReplayAnchors
 import splice.provider.codex.stream.CodeModeSourceEnds
 import splice.provider.codex.stream.CodeModeSourceLease
 import splice.provider.codex.stream.CodeModeSourceState
+import splice.provider.codex.stream.batch.CodeModeNativeBatch
 import splice.provider.codex.stream.source.CodeModeSourceClaims
 import splice.upstream.codemode.CodeModeResult
 import java.lang.ref.WeakReference
@@ -66,9 +67,15 @@ internal data class CodeModeRecord(
     /** Identity only; native V8 continuations are never serialized or rerun after restart. */
     var nativeCellId: String? = null
     var nativeCompleted: Boolean = false
+    var nativeBatch: CodeModeNativeBatch? = null
+    var nativeBatchOwner: CodeModeRecord? = null
+    var nativeBatchMembers: List<CodeModeRecord> = emptyList()
 
     /** Transient admission mode: a native capacity refusal proves the source was never dispatched. */
     var nativeRuntime: Boolean = false
+
+    @Volatile var runtimeDispatching: Boolean = false
+    var dispatchStarted: Boolean = false
 
     /** Exact display receipts, distinct from canonical native notification tool outputs. */
     var deliveredOnly: List<JsonElement> = emptyList()
@@ -108,7 +115,8 @@ internal data class CodeModeRecord(
     fun holdsAnyClientId(ids: Set<String>): Boolean =
         accepted.holdsAny(ids) || progress.pending.any { it.clientId in ids }
 
-    fun terminal(): Boolean = phase == CodeModePhase.COMPLETED || error != null
+    fun terminal(): Boolean =
+        (phase == CodeModePhase.COMPLETED && nativeBatch?.settled != false) || error != null
 
     /** V4-342: whether the record was abandoned, its history no longer placing it. The conversation went on
      *  upstream on the client's own history, and that stays the history: no later rewrite places the

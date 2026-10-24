@@ -40,14 +40,18 @@ internal class CodeModeSourceRecords(
     }
 
     /** Persist the exact completed item before any worker can execute it, under the admission's no-rerun identity. */
-    fun seal(record: CodeModeRecord, call: GatewayCustomCall, continuity: CodeModeContinuity? = null): Boolean =
-        access.withKey(record.key) {
-            if (record !in records || record.error != null) return@withKey false
-            stage(record, call, continuity ?: current(record))
-            record.sourceState = (record.sourceState ?: CodeModeSourceState()).copy(itemComplete = true)
-            store.save(records, history.entries, dirtyKeys = setOf(record.key), changedRecord = record)
-            true
-        }
+    fun seal(
+        record: CodeModeRecord,
+        call: GatewayCustomCall,
+        continuity: CodeModeContinuity? = null,
+        persist: Boolean = true,
+    ): Boolean = access.withKey(record.key) {
+        if (record !in records || record.error != null) return@withKey false
+        stage(record, call, continuity ?: current(record))
+        record.sourceState = (record.sourceState ?: CodeModeSourceState()).copy(itemComplete = true)
+        if (persist) store.save(records, history.entries, dirtyKeys = setOf(record.key), changedRecord = record)
+        true
+    }
 
     /** Incremental receipts stay charged in memory; a callback cutoff durably hands off the whole confirmed tail. */
     fun updateContinuity(
@@ -80,18 +84,24 @@ internal class CodeModeSourceRecords(
     }
 
     /** Response accounting can arrive after the cell completed; keep its sealed identity and issuance history. */
-    fun finish(record: CodeModeRecord, call: GatewayCustomCall, continuity: CodeModeContinuity, usage: Usage): Boolean =
-        access.withKey(record.key) {
-            if (record !in records || record.error != null) return@withKey false
-            stage(record, call, continuity)
-            record.sourceState = CodeModeSourceState(
-                complete = true,
-                usage = sourceUsage(usage),
-            )
-            // A round that finishes after its client turn ended is still the conversation's newest context.
-            contexts.note(record.key, usage)
-            true
-        }
+    fun finish(
+        record: CodeModeRecord,
+        call: GatewayCustomCall,
+        continuity: CodeModeContinuity,
+        usage: Usage,
+        billingOwner: Boolean = true,
+    ): Boolean = access.withKey(record.key) {
+        if (record !in records || record.error != null) return@withKey false
+        stage(record, call, continuity)
+        record.sourceState = CodeModeSourceState(
+            complete = true,
+            usage = if (billingOwner) sourceUsage(usage) else null,
+            consumed = !billingOwner,
+        )
+        // A round that finishes after its client turn ended is still the conversation's newest context.
+        if (billingOwner) contexts.note(record.key, usage)
+        true
+    }
 
     /** A late reader failure ends accounting without revoking the completed item or its live cell. */
     fun interrupted(record: CodeModeRecord, usage: Usage? = null) = access.withKey(record.key) {

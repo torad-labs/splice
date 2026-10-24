@@ -50,10 +50,11 @@ internal class CodeModeRoundBilling(
         }
     }
 
-    private fun consume(current: CodeModeRecord): Usage? {
-        val staged = registry.source.consume(current)
+    fun consume(current: CodeModeRecord): Usage? {
+        val owner = record() ?: current
+        val staged = registry.source.consume(owner)
         // A staged terminal has one durable consumption owner. Its reported copy is only for rejected staging.
-        return (staged ?: reported.takeIf { current.sourceState?.usage == null })?.also {
+        return (staged ?: reported.takeIf { owner.sourceState?.usage == null })?.also {
             reported = null
             usageConsumed = true
         }

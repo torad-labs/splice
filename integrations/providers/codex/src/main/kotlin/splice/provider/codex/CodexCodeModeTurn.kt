@@ -21,6 +21,7 @@ import splice.provider.codex.state.diagnostics.CodeModeNativeRejection
 import splice.provider.codex.stream.CodeModeLiveRound
 import splice.provider.codex.stream.CodeModeRecoveryHistory
 import splice.provider.codex.stream.CodeModeUpstreamPost
+import splice.provider.codex.stream.batch.CodeModeBatchHistory
 import splice.upstream.codemode.CodeModeResult
 import splice.upstream.sse.WireSink
 
@@ -47,7 +48,7 @@ internal data class CodeModeRunContext(
     val client: CodeModeBody? get() = link.client
 
     /** One filtered history for this request, extended only by its own completed scripts. */
-    val completed: MutableList<CodeModeRecord> = mutableListOf()
+    val completed: MutableList<CodeModeRecord> = java.util.concurrent.CopyOnWriteArrayList()
 
     /** Sources posted by this step can be cut before it ever parks or holds a billing row. */
     val postedSources: MutableList<CodeModeLiveRound> = mutableListOf()
@@ -65,7 +66,7 @@ internal data class CodeModeRunContext(
 internal data class CodeModeRoundLink(
     val sink: WireSink,
     val post: CodeModeUpstreamPost,
-    val client: CodeModeBody? = null,
+    var client: CodeModeBody? = null,
 )
 
 /**
@@ -182,7 +183,7 @@ internal class CodexCodeModeTurn(
         owner: PlacedOwner?,
     ): TurnOutcome {
         val completed = context.completed
-        val terminal = completed.lastOrNull { it.sourceState?.usage != null && it.sourceState?.consumed == false }
+        val terminal = completed.lastOrNull(CodeModeBatchHistory::unclaimed)
         return when {
             terminal != null -> driver.finishGenerated(terminal, context, body)
             owner != null -> resumeOwner(owner, context)

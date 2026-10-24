@@ -1,229 +1,142 @@
-// NEW: item completion seals executable source; response completion independently settles continuity and usage.
 package splice.provider.codex.stream.source
 
 import kotlinx.coroutines.CancellationException
-import kotlinx.coroutines.CompletableDeferred
-import kotlinx.serialization.json.JsonObject
 import splice.core.turn.GatewayCustomCall
 import splice.core.turn.TurnOutcome
 import splice.core.turn.noRequestUsage
 import splice.provider.codex.CodeModeBridgeConfig
-import splice.provider.codex.CodeModePersistenceException
 import splice.provider.codex.CodeModeRecord
 import splice.provider.codex.CodexCodeModeRegistry
-import splice.provider.codex.CodexCodeModeValidation
 import splice.provider.codex.CodexCodeModeWire
 import splice.provider.codex.stream.CodeModeRecoveryHistory
-import splice.provider.codex.stream.CodeModeSourceBuffer
-import splice.provider.codex.stream.CodeModeSourceCommit
 import splice.provider.codex.stream.CodeModeStreamAdmission
-import splice.provider.codex.stream.SOURCE_DISPOSED
+import splice.provider.codex.stream.batch.CodeModeBatchAdmissions
+import splice.provider.codex.stream.batch.CodeModeCompletedSources
 import splice.upstream.sse.CustomToolSource
 
+/** One response owns its reader and bill; each executable item owns an independent durable source cursor. */
 internal class CodeModeSourceCapture(
-    private val config: CodeModeBridgeConfig,
-    private val registry: CodexCodeModeRegistry,
-    private val wire: CodexCodeModeWire,
+    config: CodeModeBridgeConfig,
+    registry: CodexCodeModeRegistry,
+    wire: CodexCodeModeWire,
     admission: CodeModeStreamAdmission,
-    private var recovery: CodeModeRecoveryHistory? = null,
+    recovery: CodeModeRecoveryHistory? = null,
 ) {
-    // One use only: the driver's closure reaches the raw request, context and client call.
-    private var admission: CodeModeStreamAdmission? = admission
+    private val admissions = CodeModeBatchAdmissions(registry, admission)
+    private val sealed = CodeModeCompletedSources()
+    private val first = CodeModeItemSourceCapture(config, registry, wire, admissions, recovery, admissions)
+    private val items = java.util.concurrent.ConcurrentHashMap<String, CodeModeItemSourceCapture>()
+    private val factory = CodeModeItemCaptures(config, registry, wire, admissions)
+    val source get() = first.source
+    val ready get() = first.ready
+    val record get() = sealed.owner ?: first.record
 
-    @Volatile var disposed: Boolean = false
-        private set
+    @Volatile private var executingId: String? = null
+    private val execution get() = executingId?.let(items::get) ?: first
+    val executingRecord get() = execution.record
+    val disposed get() = execution.disposed
+    val itemComplete get() = execution.itemComplete
+    val unfinished get() = execution.unfinished
+    val unavailable get() = execution.unavailable
 
-    val source: CodeModeSourceBuffer = CodeModeSourceBuffer(
-        CodeModeSourceCommit { text ->
-            if (!registry.source.append(checkNotNull(record), text)) dispose()
-        },
-    )
-    val ready = CompletableDeferred<CodeModeRecord?>()
-    var record: CodeModeRecord? = null
-        private set
-    private var startedCall: GatewayCustomCall? = null
-    private var completedCall: GatewayCustomCall? = null
-    private var recoveredSource: CodeModeRecoveryHistory.Source? = null
-    private val continuity = CodeModeSourceContinuity(wire)
-    private val items = CodeModeSourceItems(config)
-    private val payloads = CodeModeSourcePayloads(registry)
-
-    @Volatile var itemComplete: Boolean = false
-        private set
-
-    val unfinished: Boolean get() = !itemComplete && record != null
-    val unavailable: Boolean get() = !itemComplete && record?.terminal() == true
-
-    fun rejects(outcome: TurnOutcome): Boolean = !itemComplete && uncertified(outcome) != null
-
-    /** Published before waking a source cursor, without taking its round's lifecycle monitor. */
-    private fun dispose() {
-        disposed = true
-        source.dispose(SOURCE_DISPOSED)
-    }
+    fun executing(record: CodeModeRecord) { executingId = record.origin.outerCallId }
 
     fun observe(event: CustomToolSource, witness: CodeModeDeliveredText? = null) {
         when (event) {
-            is CustomToolSource.Started -> begin(event.call)
-            is CustomToolSource.Delta -> delta(event)
-            is CustomToolSource.Completed -> complete(event.call, event.snapshot)
-            is CustomToolSource.Continuity -> progress(event, witness)
-            CustomToolSource.Terminal -> Unit // the live round reads it, before this capture is asked
+            is CustomToolSource.Started -> capture(event.call).observe(event, witness)
+            is CustomToolSource.Completed -> {
+                capture(
+                    event.call,
+                ).observe(event.copy(snapshot = CodeModeItemPrefix.of(event.snapshot, event.call)), witness)
+                val record = checkNotNull(items[event.call.callId]?.record)
+                sealed.add(record)
+            }
+            is CustomToolSource.Delta -> checkNotNull(items[event.callId]).observe(event, witness)
+            is CustomToolSource.Continuity -> {
+                checkNotNull(items[event.callId]).observe(single(event), witness)
+                admissions.capture(event.snapshot)
+            }
+            CustomToolSource.Terminal -> Unit
         }
     }
 
-    private fun progress(event: CustomToolSource.Continuity, witness: CodeModeDeliveredText?) {
-        val call = checkNotNull(completedCall) { "exec continuity has no completed item" }
-        check(event.callId == call.callId) { "streamed exec continuity identity changed" }
-        val reported = event.snapshot.handoffs.customCalls.singleOrNull { it.callId == call.callId }
-        checkNotNull(reported) { "exec continuity lost its completed item" }
-        items.completed(reported, call)
-        if (!hold(event.snapshot.handoffs.nativeAfterExec)) return
-        val captured = continuity.capture(event.snapshot, recoveredSource, witness)
-        if (!registry.source.updateContinuity(checkNotNull(record), call, captured)) dispose()
+    private fun capture(call: GatewayCustomCall): CodeModeItemSourceCapture = items.getOrPut(call.callId) {
+        if (items.isEmpty()) first else factory.create()
     }
+
+    private fun single(event: CustomToolSource.Continuity): CustomToolSource.Continuity = event.copy(
+        snapshot = itemOutcome(event.snapshot, event.callId, true),
+    )
+
+    fun sourceFor(record: CodeModeRecord) =
+        checkNotNull(items[record.origin.outerCallId]).source
 
     fun delivered(witness: CodeModeDeliveredText) {
-        val call = completedCall ?: return
-        val captured = continuity.delivered(witness, recoveredSource) ?: return
-        if (!registry.source.updateContinuity(checkNotNull(record), call, captured, durable = true)) dispose()
+        items.values.forEach { it.delivered(witness) }
     }
 
-    private fun hold(items: List<JsonObject>?): Boolean {
-        val held = payloads.retain(checkNotNull(record), items)
-        if (!held) dispose()
-        return held
-    }
+    suspend fun select(record: CodeModeRecord): CodeModeRecord? = sealed.select(record)
 
-    private fun complete(call: GatewayCustomCall, snapshot: TurnOutcome.Success? = null) {
-        if (record == null) begin(call.copy(input = ""))
-        check(completedCall == null) { "exec item completed more than once" }
-        items.identity(call, checkNotNull(startedCall))
-        check(call.input.startsWith(source.text)) { "completed exec source changed its dispatched prefix" }
-        CodexCodeModeValidation(config).outer(call)?.let { error(it) }
-        if (!hold(snapshot?.handoffs?.nativeAfterExec)) return
-        val captured = snapshot?.let { continuity.capture(it, recoveredSource) }
-        if (!registry.source.seal(checkNotNull(record), call, captured)) {
-            dispose()
-            return
-        }
-        continuity.sealed(snapshot)
-        completedCall = call
-        itemComplete = true
-        source.complete(call.input)
-    }
+    suspend fun next(record: CodeModeRecord): CodeModeRecord? = sealed.next(record)
 
-    private fun begin(call: GatewayCustomCall) {
-        check(record == null) { "code mode accepts one outer custom call per round" }
-        val admit = checkNotNull(admission) { "code-mode source admission was already used" }
-        admission = null
-        val admitted = admit.admit(call)
-        record = admitted
-        recoveredSource = recovery?.source(admitted)
-        recovery = null
-        startedCall = call
-        if (call.input.isNotEmpty()) {
-            items.source(call.input)
-            source.publish(call.input)
-        }
-        ready.complete(admitted)
-    }
-
-    private fun delta(event: CustomToolSource.Delta) {
-        val current = checkNotNull(record) { "exec source has no admitted item" }
-        check(event.callId == current.origin.outerCallId) { "streamed exec identity changed" }
-        check(completedCall == null) { "exec source continued after item completion" }
-        val appended = source.text + event.text
-        items.source(appended)
-        if (!source.publish(appended)) {
-            config.log("[code-mode] a streamed exec delta arrived after its source failed; dropped")
-        }
-    }
-
-    /** Why the terminal [outcome] does not certify the admitted source, with no source text and no ids, or null when
-     *  no source was admitted or the terminal is a complete success carrying exactly one exec call. */
-    fun uncertified(outcome: TurnOutcome): String? = if (record == null) {
-        null
-    } else {
-        when (outcome) {
-            is TurnOutcome.Failure ->
-                "failure cause=${outcome.cause} permanent=${outcome.traits.permanent} " +
-                    "provider=${outcome.traits.providerReported}"
-            is TurnOutcome.ClientAbandoned -> "client abandoned"
-            is TurnOutcome.Success -> when {
-                outcome.incomplete -> "incomplete ${outcome.shape.outputShape}"
-                outcome.handoffs.customCalls.size != 1 ->
-                    "calls=${outcome.handoffs.customCalls.size} ${outcome.shape.outputShape}"
-                else -> null
-            }
-        }
-    }
+    fun rejects(outcome: TurnOutcome): Boolean = execution.unfinished && execution.rejects(forExecution(outcome))
 
     fun finish(outcome: TurnOutcome) {
-        recovery = null
-        val current = record ?: return
-        val why = uncertified(outcome)
-        val success = terminalSuccess(outcome, why)
-        if (success == null) {
-            unfinished(outcome, current, why)
-            return
+        if (outcome is TurnOutcome.Success) {
+            outcome.handoffs.customCalls.filter { items[it.callId]?.itemComplete != true }.forEach {
+                observe(CustomToolSource.Completed(it, outcome))
+            }
+            admissions.capture(outcome)
         }
-        val call = success.handoffs.customCalls.single()
-        val started = checkNotNull(startedCall)
-        items.identity(call, started)
-        completedCall?.let { items.completed(call, it) }
-        check(call.input.startsWith(source.text)) { "terminal exec source changed its dispatched prefix" }
-        items.source(call.input)
-        if (!itemComplete) complete(call, success)
-        if (disposed || !hold(success.handoffs.nativeAfterExec)) return
-        val captured = continuity.capture(success, recoveredSource)
-        if (!registry.source.finish(current, completedCall ?: call, captured, success.usage)) {
-            dispose()
+        items.forEach { (id, item) ->
+            val bill = id == record?.origin?.outerCallId
+            item.finish(CodeModeItemOutcomes.of(outcome, id, bill), billingOwner = bill)
         }
+        admissions.release()
+        sealed.end()
     }
 
-    private fun terminalSuccess(outcome: TurnOutcome, why: String?): TurnOutcome.Success? {
-        val success = outcome as? TurnOutcome.Success ?: return null
-        if (itemComplete && !success.incomplete) {
-            check(success.handoffs.customCalls.size == 1) { "terminal exec item count changed" }
+    private fun forExecution(outcome: TurnOutcome): TurnOutcome =
+        if (outcome is TurnOutcome.Success && execution.record != null) {
+            itemOutcome(outcome, checkNotNull(execution.record).origin.outerCallId, true)
+        } else {
+            outcome
         }
-        return success.takeIf { why == null }
+
+    private fun itemOutcome(
+        outcome: TurnOutcome.Success,
+        id: String,
+        bill: Boolean,
+    ): TurnOutcome.Success = outcome.copy(
+        usage = if (bill) outcome.usage else noRequestUsage,
+        handoffs = outcome.handoffs.copy(customCalls = outcome.handoffs.customCalls.filter { it.callId == id }),
+    )
+
+    fun endAdmissions() {
+        admissions.release()
+        sealed.end()
     }
 
-    private fun unfinished(outcome: TurnOutcome, current: CodeModeRecord, why: String?) {
-        config.log("[code-mode] upstream exec source did not complete: $why")
-        source.fail(SOURCE_INCOMPLETE)
-        if (!itemComplete) {
-            registry.lose(current, SOURCE_INCOMPLETE)
-            return
-        }
-        val partial = (outcome as? TurnOutcome.Failure)?.partial
-        if (!hold(partial?.nativeAfterExec)) return
-        continuity.partial(partial, recoveredSource)?.let { captured ->
-            registry.source.updateContinuity(current, checkNotNull(completedCall), captured)
-        }
-        val usage = when (outcome) {
-            is TurnOutcome.Success -> outcome.usage
-            is TurnOutcome.Failure -> (outcome.partial?.usage ?: noRequestUsage) + outcome.salvagedUsage
-            is TurnOutcome.ClientAbandoned -> outcome.salvagedUsage
-        }
-        registry.source.interrupted(current, usage.takeIf { it.reported.isNotEmpty() })
-    }
-
-    fun interrupted(detail: String = SOURCE_INCOMPLETE, cancellation: CancellationException? = null) {
-        recovery = null
-        val current = record ?: return
-        if (!itemComplete) {
-            if (!current.terminal()) registry.lose(current, detail, cancellation)
-            return
-        }
-        try {
-            registry.source.interrupted(current)
-        } catch (error: CodeModePersistenceException) {
-            if (cancellation == null) throw error
-            cancellation.addSuppressed(error)
+    fun interrupted(message: String? = null, cancellation: CancellationException? = null) {
+        endAdmissions()
+        items.values.forEach { item ->
+            if (message == null) item.interrupted() else item.interrupted(message, cancellation)
         }
     }
 }
 
-private const val SOURCE_INCOMPLETE = "upstream exec source did not complete; source was not rerun"
+/** Extra cursors retain no request/controller closure beyond the response owner's bounded admission. */
+private class CodeModeItemCaptures(
+    private val config: CodeModeBridgeConfig,
+    private val registry: CodexCodeModeRegistry,
+    private val wire: CodexCodeModeWire,
+    private val admission: CodeModeBatchAdmissions,
+) {
+    fun create(): CodeModeItemSourceCapture = CodeModeItemSourceCapture(
+        config,
+        registry,
+        wire,
+        admission,
+        sealing = admission,
+    )
+}

@@ -100,6 +100,8 @@ internal object CodeModeNativeCopies {
         it.postedOn = record.postedOn
         it.nativeCellId = record.nativeCellId
         it.nativeCompleted = record.nativeCompleted
+        it.dispatchStarted = record.dispatchStarted
+        it.nativeBatch = record.nativeBatch
         it.deliveredOnly = record.deliveredOnly
         it.nativeOutput = record.nativeOutput
         it.nativeNotifications = record.nativeNotifications

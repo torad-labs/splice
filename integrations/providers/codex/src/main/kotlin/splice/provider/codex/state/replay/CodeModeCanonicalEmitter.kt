@@ -12,6 +12,7 @@ import splice.provider.codex.state.CodeModeCanonicalPlacement
 import splice.provider.codex.state.CodeModeNativeChain
 import splice.provider.codex.state.CodeModeNativeReplay
 import splice.provider.codex.state.native.CodeModeCapturedOrder
+import splice.provider.codex.stream.batch.CodeModeBatchLinks
 
 /** Emits an already validated placement plan in one pass, remapping every counted native occurrence with it. */
 internal class CodeModeCanonicalEmitter(private val codec: CodexCodeModeHistoryCodec) {
@@ -55,12 +56,13 @@ internal class CodeModeCanonicalEmitter(private val codec: CodexCodeModeHistoryC
     ) {
         val record = placement.record
         starts[record.id] = logical.size
-        if (order == null) {
+        if (order == null || CodeModeBatchLinks.multiple(record)) {
             placement.source.replayItems.forEach {
                 replay += ResponsesCodeModeReplay(logical.size + it.logicalOffset, null, it.items)
             }
         }
         logical += placement.source.logicalItems
+        if (CodeModeBatchLinks.multiple(record)) return
         if (placement.emission == CodeModeCanonicalEmission.SCRIPT) logical += CodeModeCallReplay.item(record)
         appendAfter(placement.source, logical, replay, order)
         when (placement.emission) {
@@ -97,7 +99,9 @@ internal class CodeModeCanonicalEmitter(private val codec: CodexCodeModeHistoryC
     ): List<ResponsesCodeModeReplay> {
         val captured = order ?: return emptyList()
         val end = captured.prefixEnd(offsets) ?: offsets.last()
-        return captured.native(offsets) + placements.flatMap { placement ->
+        return captured.native(offsets) + placements.filterNot {
+            CodeModeBatchLinks.multiple(it.record)
+        }.flatMap { placement ->
             captured.continuity(placement.record, starts.getValue(placement.record.id), end, placement.source)
         }
     }

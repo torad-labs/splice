@@ -10,11 +10,13 @@ import splice.core.turn.Usage
 import splice.provider.codex.CodeModeBody
 import splice.provider.codex.CodeModeBridgeConfig
 import splice.provider.codex.CodeModePersistenceException
+import splice.provider.codex.CodeModePhase
 import splice.provider.codex.CodeModeRecord
 import splice.provider.codex.CodeModeRunContext
 import splice.provider.codex.CodexCodeModeBridge
 import splice.provider.codex.CodexCodeModeRegistry
 import splice.provider.codex.CodexCodeModeWire
+import splice.provider.codex.stream.batch.CodeModeBatchHistory
 import splice.upstream.LifecycleScope
 import splice.upstream.RowRelease
 import splice.upstream.codemode.ProcessDispatchers
@@ -123,7 +125,11 @@ internal class CodeModeStreams(
         round.start(scope, post, body) { reading.remove(round) }
     }
 
-    fun keep(record: CodeModeRecord, round: CodeModeLiveRound) {
+    fun keep(record: CodeModeRecord, round: CodeModeLiveRound, predecessor: CodeModeRecord? = null) {
+        predecessor?.let {
+            rounds.remove(it.id, round)
+            it.sourceEnd = null
+        }
         rounds[record.id] = round
         record.sourceEnd = CodeModeSourceLease(record.id, round, rounds)
     }
@@ -134,6 +140,7 @@ internal class CodeModeStreams(
 
     suspend fun attach(record: CodeModeRecord, sink: WireSink): WireSink {
         val round = rounds[record.id] ?: return sink
+        if (sink is CodeModeClientStepSink && sink.belongsTo(round.switching)) return sink
         round.switching.attach(sink)
         return CodeModeClientStepSink(round.switching, sink)
     }
@@ -144,10 +151,14 @@ internal class CodeModeStreams(
             round?.outcome()
         } catch (error: CancellationException) {
             currentCoroutineContext().ensureActive()
-            if (record.phase != splice.provider.codex.CodeModePhase.COMPLETED) throw error
+            if (record.phase != CodeModePhase.COMPLETED) throw error
             null
         }
-        val usage = registry.source.consume(record)
+        val usage = if (round == null) {
+            registry.source.consume(CodeModeBatchHistory.owner(record))
+        } else {
+            round.billing.consume(record)
+        }
         if (round != null) rounds.remove(record.id, round)
         record.sourceEnd = null
         round?.switching?.detach()
@@ -197,7 +208,14 @@ internal class CodeModeStreams(
         round: CodeModeLiveRound? = rounds[record.id],
     ): TurnOutcome {
         val usage = try {
-            if (round != null) round.billing.claim(record, step) else registry.source.consume(record)
+            if (round != null) {
+                round.billing.claim(
+                    record,
+                    step,
+                )
+            } else {
+                registry.source.consume(CodeModeBatchHistory.owner(record))
+            }
         } catch (error: CodeModePersistenceException) {
             config.log("[code-mode] source round billed later: its claim was not saved (${error::class.simpleName})")
             null
@@ -210,7 +228,7 @@ internal class CodeModeStreams(
     suspend fun endStep(record: CodeModeRecord) {
         val round = rounds[record.id] ?: return
         round.switching.detach()
-        if (record.phase == splice.provider.codex.CodeModePhase.LOST) {
+        if (record.phase == CodeModePhase.LOST) {
             rounds.remove(record.id, round)
             round.cancel()
         }

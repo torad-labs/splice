@@ -28,6 +28,8 @@ import splice.provider.codex.state.CodeModeTurnStart
 import splice.provider.codex.state.collection.CodeModeRecordList
 import splice.provider.codex.state.query.CodeModeRecordQueries
 import splice.provider.codex.state.query.CodeModeResultOwners
+import splice.provider.codex.state.retention.CodeModeRegistrySweep
+import splice.provider.codex.state.retention.CodeModeSweepRecords
 import splice.provider.codex.state.save.CodeModeStateWrite
 import splice.provider.codex.stream.CodeModeClientContexts
 import splice.provider.codex.stream.CodeModeSourceEnds
@@ -103,11 +105,11 @@ internal class CodexCodeModeRegistry(
         monitor,
         records,
         history,
-        splice.provider.codex.state.CodeModeRegistrySweep(
+        CodeModeRegistrySweep(
             config,
             nativeSessions,
             access,
-            splice.provider.codex.state.CodeModeSweepRecords(records, history),
+            CodeModeSweepRecords(records, history),
             store,
             sweeper,
             retention,

@@ -15,6 +15,8 @@ import splice.provider.codex.CodeModeRunContext
 import splice.provider.codex.CodeModeStateLocation
 import splice.provider.codex.CodexCodeModeHistoryCodec
 import splice.provider.codex.history.durable.CodeModeHistoryStorage
+import splice.provider.codex.stream.batch.CodeModeBatchHistory
+import splice.provider.codex.stream.batch.CodeModeBatchLinks
 import splice.upstream.RoundBody
 import java.lang.ref.WeakReference
 
@@ -51,6 +53,7 @@ internal class CodeModeUpstreamHistory(
      *  it folded is extended, since its result is no longer what GPT was sent. Null only for a recovery request or
      *  one that is not a Responses input. */
     fun extend(context: CodeModeRunContext, records: List<CodeModeRecord>): CodeModeBody? {
+        CodeModeBatchLinks.link(records)
         val client = context.client?.takeIf { context.recovery == null } ?: return null
         val request = client.request ?: return null
         val media = context.turn.rendering.replayMedia
@@ -227,7 +230,10 @@ internal class CodeModeUpstreamHistory(
      *  an abandoned one keeps them for good: its conversation went on upstream on them (V4-342). */
     private fun owners(records: List<CodeModeRecord>): Map<String, CodeModeRecord> = buildMap {
         records.filter { scripts.finished(it) && !it.abandoned() }
-            .forEach { record -> record.clientIds().forEach { put(it, record) } }
+            .forEach { record ->
+                val owner = CodeModeBatchHistory.owner(record)
+                record.clientIds().forEach { put(it, owner) }
+            }
     }
 }
 

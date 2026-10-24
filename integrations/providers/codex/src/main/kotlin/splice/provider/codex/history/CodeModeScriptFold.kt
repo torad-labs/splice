@@ -8,6 +8,8 @@ import splice.provider.codex.CODE_MODE_FIELD_TYPE
 import splice.provider.codex.CodeModeCallReplay
 import splice.provider.codex.CodeModeRecord
 import splice.provider.codex.CodexCodeModeHistoryCodec
+import splice.provider.codex.stream.batch.CodeModeBatchHistory
+import splice.provider.codex.stream.batch.CodeModeBatchLinks
 
 /** One pass over the client's new items, folding each finished script's calls into its exec call and output, and
  *  sending each [quiet] script right after the history it ran on, its reasoning and preface as GPT gave them in place
@@ -114,17 +116,24 @@ internal class CodeModeScriptFold(
 
     private fun callback(items: List<JsonElement>, index: Int, record: CodeModeRecord, closes: Boolean) {
         if (opened.add(record.id)) {
-            reasoning.restore(out, record)
-            out += CodeModeCallReplay.item(record)
-            out += record.carry.nativeAfterExec.orEmpty()
+            if (CodeModeBatchLinks.multiple(record)) {
+                out += scripts.continuity(record)
+            } else {
+                reasoning.restore(out, record)
+                out += CodeModeCallReplay.item(record)
+                out += record.carry.nativeAfterExec.orEmpty()
+            }
             open = record
         }
         val result = codec.string(items[index] as? JsonObject, CODE_MODE_FIELD_TYPE) == TYPE_RESULT
-        val media = codec.callId(items[index])?.takeIf { result }?.let(record.accepted::media).orEmpty()
+        val media = codec.callId(items[index])?.takeIf {
+            result
+        }?.let({ id -> CodeModeBatchHistory.media(record, id) }).orEmpty()
         val end = minOf(index + 1 + media.size, items.size)
         if (media.isNotEmpty() && items.subList(index + 1, end) == media) followUps += (index + 1 until end)
         if (closes) {
-            out += CodeModeScriptOutputs.items(record, codec)
+            out += CodeModeBatchHistory.outputs(record, codec)
+                ?: CodeModeScriptOutputs.items(record, codec)
             out += between
             between.clear()
             open = null

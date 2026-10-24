@@ -20,6 +20,7 @@ import splice.provider.codex.state.CodeModeExpiredHistory
 import splice.provider.codex.state.CodeModeSessionEnd
 import splice.provider.codex.state.collection.CodeModeRecordKeys
 import splice.provider.codex.state.lease.CodeModeSessionAlive
+import splice.provider.codex.state.retention.CodeModeRecordExpiry
 import splice.upstream.codemode.CodeModeCell
 import java.util.concurrent.Executors
 import java.util.concurrent.ScheduledFuture
@@ -133,7 +134,7 @@ internal class CodexCodeModeSweeper(
     private val closeSession: CodeModeSessionEnd,
     private val retainedCells: CodeModeCellRetention,
 ) {
-    private val expiry = splice.provider.codex.state.CodeModeRecordExpiry(
+    private val expiry = CodeModeRecordExpiry(
         config,
         records,
         cells,

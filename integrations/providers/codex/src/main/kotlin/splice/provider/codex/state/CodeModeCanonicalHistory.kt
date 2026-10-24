@@ -16,6 +16,8 @@ import splice.provider.codex.TYPE_CUSTOM_OUTPUT
 import splice.provider.codex.history.CodeModeOwnership
 import splice.provider.codex.state.native.CodeModeCapturedOrder
 import splice.provider.codex.state.replay.CodeModeCanonicalEmitter
+import splice.provider.codex.stream.batch.CodeModeBatchLinks
+import splice.provider.codex.stream.batch.CodeModeBatchViews
 
 internal data class CodeModeCanonicalResult(
     val input: ResponsesCodeModeInput,
@@ -33,10 +35,13 @@ internal data class CodeModeCanonicalPlacement(
     val source: CodeModeContinuity = record.carry.source(),
 ) {
     val logicalSize: Int
-        get() = source.logicalItems.size + source.afterExec.logicalItems.size + when (emission) {
-            CodeModeCanonicalEmission.SCRIPT ->
-                2 + record.accepted.durableMedia().size + record.progress.nativeNotifications.size
-            CodeModeCanonicalEmission.CONTINUITY -> 0
+        get() = source.logicalItems.size + source.afterExec.logicalItems.size + when {
+            CodeModeBatchLinks.multiple(record) -> 0
+            else -> when (emission) {
+                CodeModeCanonicalEmission.SCRIPT ->
+                    2 + record.accepted.durableMedia().size + record.progress.nativeNotifications.size
+                CodeModeCanonicalEmission.CONTINUITY -> 0
+            }
         }
 }
 
@@ -54,7 +59,8 @@ internal class CodeModeCanonicalHistory(private val codec: CodexCodeModeHistoryC
         capture: CodeModeRecord? = null,
         digests: InputItemDigests = InputItemDigests(),
     ): CodeModeCanonicalResult {
-        if (records.none { it.replayAnchors != null }) {
+        val grouped = CodeModeBatchViews(codec).of(records)
+        if (grouped.none { it.replayAnchors != null }) {
             val replay = CodeModeNativeChain.normalizedReplay(input.replayItems.filter { it.items.isNotEmpty() })
             val omitted = records.map {
                 CodeModeOmission(it, "code-mode continuity anchor no longer places its owned callbacks")
@@ -62,10 +68,19 @@ internal class CodeModeCanonicalHistory(private val codec: CodexCodeModeHistoryC
             return CodeModeCanonicalResult(input.copy(replayItems = replay), omitted)
         }
         val index = CodeModeHistoryIndex(input.logicalItems, codec, digests)
-        val inputOwners = records.filterNot(CodeModeNativeChain::retired)
+        val inputOwners = grouped.filterNot(CodeModeNativeChain::retired)
         val natives = CodeModeNativeReplay(codec, input, index, inputOwners)
         val omitted = mutableListOf<CodeModeOmission>()
-        val placements = placements(records, index, natives, media, omitted).map(natives.sources::prepare)
+        val placements = placements(grouped, index, natives, media, omitted).map {
+            if (CodeModeBatchLinks.multiple(
+                    it.record,
+                )
+            ) {
+                it
+            } else {
+                natives.sources.prepare(it)
+            }
+        }
         val captured = capture?.takeUnless(CodeModeNativeChain::retired)?.takeIf { it.replayAnchors != null }
             ?.let { CodeModeCapturedOrder(it, index, codec) }
         val order = captured?.takeIf { it.accepts(input) }

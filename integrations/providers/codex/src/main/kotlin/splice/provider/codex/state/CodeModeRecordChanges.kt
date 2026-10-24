@@ -135,7 +135,7 @@ internal class CodeModeRecordChanges(
         }
         keys.forEach { key ->
             access.withKey(key) {
-                CodeModeRecordKeys.of(records, key).filter { !it.terminal() }
+                CodeModeRecordKeys.of(records, key).filter { it.phase != CodeModePhase.COMPLETED && !it.terminal() }
                     .filter { it.phase != CodeModePhase.STARTING }.forEach { record ->
                         cells.remove(record.id)?.close()
                         record.phase = CodeModePhase.LOST
@@ -185,12 +185,18 @@ internal class CodeModeRecordChanges(
         record: CodeModeRecord,
         undo: CodeModeRecordChange = CodeModeRecordChange {},
         growthBytes: Long = 0L,
+        wholeKey: Boolean = false,
         change: CodeModeRecordChange,
     ) = access.withKey(record.key) {
         CodeModeHeap.grow(record, growthBytes)
         change(record)
         try {
-            store.save(records, history.entries, dirtyKeys = setOf(record.key), changedRecord = record)
+            store.save(
+                records,
+                history.entries,
+                dirtyKeys = setOf(record.key),
+                changedRecord = record.takeUnless { wholeKey },
+            )
         } catch (error: CodeModePersistenceException) {
             undo(record)
             throw error

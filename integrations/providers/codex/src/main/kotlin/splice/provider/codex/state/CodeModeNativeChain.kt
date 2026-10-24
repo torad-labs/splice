@@ -8,6 +8,7 @@ import splice.dialect.responses.request.ResponsesCodeModeReplay
 import splice.provider.codex.CodeModeNativeSegment
 import splice.provider.codex.CodeModeRecord
 import splice.provider.codex.CodeModeRecordSnapshot
+import splice.provider.codex.stream.batch.CodeModeBatchLinks
 
 /** Durable input retirement is not execution failure or active-script abandonment. */
 internal const val CODE_MODE_NATIVE_RETIRED: String = "code-mode completed native input retired"
@@ -44,6 +45,7 @@ internal object CodeModeNativeChain {
 
     /** Only earlier records of the same conversation can be a parent. Missing parents stay unknown. */
     fun link(records: List<CodeModeRecord>) {
+        CodeModeBatchLinks.link(records)
         val prior = mutableMapOf<Pair<String, String>, CodeModeRecord>()
         records.forEach { record ->
             record.nativeParent = record.nativeBaseId?.let { prior[record.key to it] }
@@ -79,6 +81,8 @@ internal object CodeModeNativeChain {
                 it.postedOn = state.postedOn
                 it.nativeCellId = state.nativeCellId
                 it.nativeCompleted = state.nativeCompleted
+                it.dispatchStarted = state.dispatchStarted
+                it.nativeBatch = state.nativeBatch
                 it.deliveredOnly = state.deliveredOnly
                 it.nativeOutput = state.nativeOutput
                 it.nativeNotifications = state.nativeNotifications

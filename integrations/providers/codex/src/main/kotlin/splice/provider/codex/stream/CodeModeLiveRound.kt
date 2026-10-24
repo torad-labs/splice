@@ -47,7 +47,12 @@ internal class CodeModeLiveRound(
     private val capture = CodeModeSourceCapture(config, registry, wire, admission, recovery)
     val source = capture.source
     val ready = capture.ready
+    suspend fun next(record: CodeModeRecord): CodeModeRecord? = capture.next(record)
+    suspend fun select(record: CodeModeRecord): CodeModeRecord? = capture.select(record)
+    fun executing(record: CodeModeRecord) = capture.executing(record)
+    fun sourceFor(record: CodeModeRecord): CodeModeSourceBuffer = capture.sourceFor(record)
     private val record: CodeModeRecord? get() = capture.record
+    val activeRecord: CodeModeRecord? get() = capture.executingRecord
     val lifecycle = CodeModeRoundLifecycle(capture, headStop, registry, config.log)
     val billing = CodeModeRoundBilling(lifecycle, registry, CodeModeRoundRecord { record }, config.log)
     val switching = CodeModeSwitchingSink(sink, observer = CodeModeSourceObserver(::observe))
@@ -128,6 +133,7 @@ internal class CodeModeLiveRound(
             } catch (error: IllegalArgumentException) {
                 readerOutcomes.failed(error)
             } finally {
+                capture.endAdmissions()
                 if (!ready.isCompleted) ready.complete(null)
             }
         }.also { reader ->
@@ -167,7 +173,7 @@ internal class CodeModeLiveRound(
     fun owns(turn: CodexCodeModeBridge.Turn): Boolean = synchronized(lifecycle) {
         if (upstreamEnded || sourceLost) return@synchronized false
         if (localFailure != null || stoppedByHead) return@synchronized false
-        val current = record ?: return@synchronized false
+        val current = capture.executingRecord ?: return@synchronized false
         if (current.sessionId != turn.sessionId || current.key != CodeModeTurnIdentity().turnKey(turn)) {
             return@synchronized false
         }
@@ -219,7 +225,6 @@ internal class CodeModeLiveRound(
             if (stoppedByHead) throw CancellationException(HEAD_STOPPED)
             if (sourceLost) return@synchronized
             if (localFailure != null) return@synchronized
-            if (record?.terminal() == true && event !is CustomToolSource.Continuity) return@synchronized
             Cancellables.runCatchingBestEffort { capture.observe(event, witness) }.onFailure(lifecycle::reject)
         }
     }

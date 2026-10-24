@@ -8,6 +8,7 @@ import splice.provider.codex.state.CodeModeExpiredHistory
 import splice.provider.codex.state.CodeModeNativeChain
 import splice.provider.codex.state.CodeModeRegistryAccess
 import splice.provider.codex.state.collection.CodeModeRecordKeys
+import splice.provider.codex.stream.batch.CodeModeBatchLinks
 
 /** Who owns a result's ids: a record of another conversation that claims one, and the ids no record knows. */
 internal data class CodeModeResultOwners(
@@ -90,6 +91,7 @@ internal class CodeModeRecordQueries(
         digest: String,
         ids: Set<String>,
         excluded: Set<String>,
-    ): Boolean = record.id !in excluded &&
+    ): Boolean = record.id !in excluded && CodeModeBatchLinks.accepted(record) &&
+        (record.nativeBatch?.dispatched != false || record.nativeBatch?.ordinal == 0) &&
         (record.progress.lastDigest == digest || (ids.isNotEmpty() && record.holdsAnyClientId(ids)))
 }

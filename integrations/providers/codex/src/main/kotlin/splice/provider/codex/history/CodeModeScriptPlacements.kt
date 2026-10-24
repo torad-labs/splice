@@ -14,6 +14,8 @@ import splice.provider.codex.CodeModeCallReplay
 import splice.provider.codex.CodeModePhase
 import splice.provider.codex.CodeModeRecord
 import splice.provider.codex.CodexCodeModeHistoryCodec
+import splice.provider.codex.stream.batch.CodeModeBatchHistory
+import splice.provider.codex.stream.batch.CodeModeBatchLinks
 
 /**
  * Where a finished script that made no client call goes, since nothing of it is in the client's history but the
@@ -24,7 +26,8 @@ import splice.provider.codex.CodexCodeModeHistoryCodec
  */
 internal class CodeModeScriptPlacements(private val codec: CodexCodeModeHistoryCodec) {
     fun finished(record: CodeModeRecord): Boolean =
-        record.phase == CodeModePhase.COMPLETED && record.progress.output != null
+        CodeModeBatchHistory.finished(record)
+            ?: (record.phase == CodeModePhase.COMPLETED && record.progress.output != null)
 
     /** Each script that made no client call, started on [entry]'s post and is not in it, in the order they ran:
      *  the history each was measured on ends where the client's new items begin. */
@@ -60,16 +63,16 @@ internal class CodeModeScriptPlacements(private val codec: CodexCodeModeHistoryC
     }
 
     /** The reasoning and preface GPT gave before the script's call, in the order it gave them. */
-    fun continuity(record: CodeModeRecord): List<JsonElement> = codec.projection.rebuild(
-        ResponsesCodeModeInput(
-            record.carry.continuity,
-            record.carry.replay.map { ResponsesCodeModeReplay(it.logicalOffset, null, it.items) },
-        ),
-    )
+    fun continuity(record: CodeModeRecord): List<JsonElement> =
+        CodeModeBatchHistory.continuity(record)
+            ?: CodeModeScriptDelivery.continuity(record)
 
     fun placement(record: CodeModeRecord): List<JsonElement> =
-        listOf(CodeModeCallReplay.item(record)) + record.carry.nativeAfterExec.orEmpty() +
-            CodeModeScriptOutputs.items(record, codec)
+        CodeModeBatchHistory.outputs(record, codec)
+            ?: (
+                listOf(CodeModeCallReplay.item(record)) + record.carry.nativeAfterExec.orEmpty() +
+                    CodeModeScriptOutputs.items(record, codec)
+                )
 
     /** The echo of [continuity] starting at [at] in [items], or null when the items there are not it. Reasoning and
      *  calls come back as they were given and prose as text, each in the order GPT gave it, but merged in the order
@@ -121,13 +124,16 @@ internal class CodeModeScriptPlacements(private val codec: CodexCodeModeHistoryC
 
     /** A finished script that made no client call and was not abandoned. */
     fun quiet(record: CodeModeRecord): Boolean =
-        finished(record) && !record.abandoned() && record.clientIds().isEmpty()
+        finished(record) && !record.abandoned() &&
+            CodeModeBatchHistory.owner(record) === record &&
+            CodeModeBatchHistory.callbacks(record).isEmpty()
 
     /** Whether a script that made no client call is still to be sent: nothing of it is in the client's history. */
     private fun unsent(record: CodeModeRecord, prior: List<JsonElement>, conversation: List<JsonElement>): Boolean {
-        val ids = record.clientIds()
+        if (CodeModeBatchHistory.owner(record) !== record) return false
+        val ids = CodeModeBatchHistory.callbacks(record)
         val called = conversation.any { codec.callId(it) in ids }
-        val placed = prior.any { codec.callId(it) == record.origin.outerCallId }
+        val placed = CodeModeBatchHistory.placed(record, prior, codec)
         return finished(record) && !called && !placed
     }
 
@@ -163,8 +169,27 @@ private const val REASONING_ID = "id"
 
 /** Delivery witnesses include actual progress; canonical replay retains the separate notification items. */
 internal object CodeModeScriptDelivery {
-    fun items(record: CodeModeRecord, scripts: CodeModeScriptPlacements): List<JsonElement> =
-        scripts.continuity(record) + record.deliveredOnly
+    private val projection = splice.dialect.responses.request.ResponsesCodeModeProjection()
+    fun continuity(record: CodeModeRecord): List<JsonElement> = projection.rebuild(
+        ResponsesCodeModeInput(
+            record.carry.continuity,
+            record.carry.replay.map { ResponsesCodeModeReplay(it.logicalOffset, null, it.items) },
+        ),
+    )
+
+    fun items(record: CodeModeRecord, scripts: CodeModeScriptPlacements): List<JsonElement> {
+        if (!CodeModeBatchLinks.multiple(record)) {
+            return scripts.continuity(record) + record.deliveredOnly
+        }
+        val owner = checkNotNull(record.nativeBatchOwner)
+        if (record.id != owner.id) return emptyList()
+        val model = if (CodeModeBatchHistory.finished(owner) == true) {
+            CodeModeContinuityCapture.items(owner.nativeBatch?.items, "", emptyList())
+        } else {
+            continuity(owner)
+        }
+        return model + owner.nativeBatchMembers.flatMap { it.deliveredOnly }
+    }
 }
 
 /** Native notify enqueues pending input; core records the tool result before draining that queue next step. */

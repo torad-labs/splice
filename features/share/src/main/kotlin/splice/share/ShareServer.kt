@@ -105,7 +105,7 @@ internal class ShareServer(
         val source = call.request.origin.remoteAddress
         val host = call.request.headers[HttpHeaders.Host]
         val reason = when {
-            !endpoint.network.admitsSource(source) -> "requests from $source are not from a private network"
+            !endpoint.network.admitsSource(source) -> "requests from $source are not from this machine's LAN"
             !endpoint.network.admitsHost(host) -> "this Host is not one of this machine's names"
             else -> return true
         }

@@ -27,13 +27,17 @@ login is asked for.
   rotate one token and sign each other out (README, "Credential locations").
 - **Trust the LAN.** A machine on this LAN that asks to join a sharing server is accepted
   without a code. On this LAN means a private source address — loopback, RFC 1918, link-local,
-  100.64/10 or `fc00::/7` — or an IPv6 address on a prefix one of this machine's own interfaces
-  holds. The second is what a house needs: a router that hands out an ISP-delegated IPv6 `/64` puts
-  two machines one hop apart on globally routable addresses, and the private ranges never see them,
-  so every imported command read unreachable the moment anything preferred IPv6 (2026-10-23). An
-  address past every attached prefix is still refused. IPv4 is left to the private ranges: a house's
-  IPv4 is RFC 1918, and a public IPv4 subnet on an interface is a datacenter's, whose neighbours are
-  other customers. Guardrails that cost no
+  100.64/10 or `fc00::/7` — or an IPv6 address on a prefix a house interface of this machine holds.
+  The second is what a house needs: a router that hands out an ISP-delegated IPv6 `/64` puts two
+  machines one hop apart on globally routable addresses, and the private ranges never see them, so
+  every imported command read unreachable the moment anything preferred IPv6 (2026-10-23). A house
+  interface holds an RFC 1918 address its router NATs and no public IPv4 one. A datacenter server's
+  interface holds a public IPv4 address, and some providers (Linode) put a `/64` every customer there
+  shares beside it, so its prefixes admit no one; an interface with no IPv4 address says nothing
+  either way and admits no one too. An address past every house prefix is still refused, and IPv4 is
+  left to the private ranges. Bound: on a LAN that hands out DHCPv6 addresses with no SLAAC, a Linux
+  host holds only a `/128` and the `/64` lives only in its route table, so a neighbour there is still
+  refused over IPv6 and reaches it over IPv4. Guardrails that cost no
   step: sharing is off until `splice share on`; the listener admits only those sources; each client
   gets its own token, listed and revocable. Trust
   reaches commands only: a joined machine crosses no Claude Code session until its Sessions switch is

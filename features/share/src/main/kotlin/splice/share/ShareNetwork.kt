@@ -1,7 +1,8 @@
 // NEW: LAN share, phase 1 (docs/specs/lan-share.md). Who may reach the share listener at all, before any
 // route runs. The source must be on this LAN: a private address — loopback, RFC 1918, link-local, 100.64/10 (the
-// range Tailscale hands out) or fc00::/7 — or on an IPv6 prefix one of this machine's own interfaces holds, which is
-// how a house whose router hands out a globally routable /64 reaches itself. The Host must be an IP literal or
+// range Tailscale hands out) or fc00::/7 — or on an IPv6 prefix a house interface of this machine holds, one beside
+// an RFC 1918 address and no public IPv4 one, which is how a house whose router hands out a globally routable /64
+// reaches itself while a datacenter's shared /64 stays closed. The Host must be an IP literal or
 // one of this machine's own names, the share listener's counterpart of LoopbackHost: a page whose DNS was rebound
 // onto this address arrives with its own name in Host and is refused, so a browser on the LAN cannot be turned
 // into a client.
@@ -38,11 +39,22 @@ internal class ShareNetwork(
             uniqueLocal(ip) || onThisLan(ip)
     }
 
-    /** Whether [ip] is an IPv6 address on a prefix one of this machine's own interfaces holds: a machine reachable
-     *  with no router in between. SLAAC makes a house's /64 the link itself, globally routable though it is, so the
-     *  named private ranges alone would turn the house away. IPv4 is left to them: a house's IPv4 is RFC 1918, and a
-     *  public IPv4 subnet on an interface is a datacenter's, shared with other customers' servers. */
-    private fun onThisLan(ip: InetAddress): Boolean = ip is Inet6Address && attached.now().any { it.holds(ip) }
+    /** Whether [ip] is an IPv6 address on a prefix a house interface of this machine holds: a machine reachable with
+     *  no router in between. SLAAC makes a house's /64 the link itself, globally routable though it is, so the named
+     *  private ranges alone would turn the house away. IPv4 is left to them: a house's IPv4 is RFC 1918, and a public
+     *  IPv4 subnet on an interface is a datacenter's, shared with other customers' servers. */
+    private fun onThisLan(ip: InetAddress): Boolean {
+        if (ip !is Inet6Address) return false
+        return attached.now().groupBy { it.link }.values.any { link -> house(link) && link.any { it.holds(ip) } }
+    }
+
+    /** Whether the interface holding [link] is a house's: its router NATs an RFC 1918 address, and it holds no public
+     *  IPv4 address. A datacenter server's interface holds a public IPv4 address, and some providers (Linode) put a
+     *  /64 every customer there shares beside it. An interface with no IPv4 address says nothing either way. */
+    private fun house(link: List<SharePrefix>): Boolean {
+        val ipv4 = link.map { it.address }.filterIsInstance<Inet4Address>()
+        return ipv4.any { it.isSiteLocalAddress } && ipv4.all { it.isSiteLocalAddress || it.isLinkLocalAddress }
+    }
 
     /** An absent Host is admitted, as LoopbackHost admits it: an HTTP/1.0 client sends none, and no browser
      *  request lacks one. */
@@ -81,8 +93,9 @@ internal class ShareNetwork(
     }
 }
 
-/** One prefix an interface of this machine holds: [address], with its first [bits] bits fixed. */
-internal data class SharePrefix(val address: InetAddress, val bits: Int) {
+/** One prefix an interface of this machine holds: [address], with its first [bits] bits fixed, on the interface
+ *  named [link]. */
+internal data class SharePrefix(val address: InetAddress, val bits: Int, val link: String) {
 
     /** Whether [other] sits on this prefix: the same address family, with those leading bits equal. */
     fun holds(other: InetAddress): Boolean {
@@ -111,8 +124,10 @@ internal class HostPrefixes(private val log: LogSink) : AttachedPrefixes {
         Cancellables.runCatchingCancellable {
             NetworkInterface.getNetworkInterfaces().asSequence()
                 .filter { it.isUp }
-                .flatMap { it.interfaceAddresses.asSequence() }
-                .map { SharePrefix(it.address, it.networkPrefixLength.toInt()) }
+                .flatMap { link ->
+                    link.interfaceAddresses.asSequence()
+                        .map { SharePrefix(it.address, it.networkPrefixLength.toInt(), link.name) }
+                }
                 .toList()
         }.onFailure { failure ->
             val why = SafeFailureText.render(failure)

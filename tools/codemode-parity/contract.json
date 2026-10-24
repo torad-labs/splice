@@ -17,7 +17,7 @@
   },
   "cases": [
     { "id": "runtime.module-semantics", "requirement": "Execute complete JavaScript modules with Codex semantics and no premature partial-source effects" },
-    { "id": "runtime.item-boundary", "requirement": "Admit a completed exec item before response completion, while preserving late failure honesty" },
+    { "id": "runtime.item-boundary", "requirement": "Admit each completed exec or wait item before response completion, process multiple outer items in native serial order with all model items before their ordered outputs, and preserve late failure honesty" },
     { "id": "runtime.sequential-callbacks", "requirement": "Resume dependent callbacks as soon as their required results arrive" },
     { "id": "runtime.partial-parallel-results", "requirement": "A fast callback can advance its dependent branch while an unrelated sibling is still pending" },
     { "id": "runtime.explicit-yield", "requirement": "yield_control returns accumulated output while the same cell remains resumable" },

@@ -1,10 +1,11 @@
-package splice.provider.codex.stream
+package splice.provider.codex.stream.reader
 
 import splice.core.turn.HeadStopSignal
 import splice.core.turn.TurnOutcome
 import splice.core.util.Cancellables
 import splice.core.util.LogSink
 import splice.provider.codex.CodexCodeModeRegistry
+import splice.provider.codex.stream.CodeModeRejection
 import splice.provider.codex.stream.source.CodeModeDeliveredText
 import splice.provider.codex.stream.source.CodeModeSourceCapture
 

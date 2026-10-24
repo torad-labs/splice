@@ -10,6 +10,7 @@ import splice.provider.codex.state.diagnostics.CodeModeNativeRetirement
 import splice.provider.codex.stream.CodeModeRoundInterceptor
 import splice.provider.codex.stream.CodeModeRuntimeRun
 import splice.upstream.RoundInterceptor
+import splice.upstream.codemode.CodeModeResult
 import kotlin.time.Duration
 import kotlin.time.Duration.Companion.minutes
 

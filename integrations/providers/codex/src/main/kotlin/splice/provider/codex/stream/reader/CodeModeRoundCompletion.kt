@@ -1,5 +1,5 @@
 // NEW: source completion settles non-cancellable cleanup before delivering the outcome to its reading client step.
-package splice.provider.codex.stream
+package splice.provider.codex.stream.reader
 
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CompletableDeferred
@@ -16,6 +16,8 @@ import splice.core.util.Cancellables
 import splice.core.util.LogSink
 import splice.core.util.SafeFailureText
 import splice.provider.codex.CodeModePersistenceException
+import splice.provider.codex.stream.CodeModeEndings
+import splice.provider.codex.stream.CodeModeReaderFailures
 import splice.upstream.TurnEnd
 import splice.upstream.transport.UpstreamEnding
 

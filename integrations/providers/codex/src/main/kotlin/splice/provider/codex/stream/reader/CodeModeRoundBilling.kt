@@ -1,5 +1,5 @@
 // NEW: terminal source usage belongs to its posting row; an intentional cut belongs to the cutting client step.
-package splice.provider.codex.stream
+package splice.provider.codex.stream.reader
 
 import splice.core.turn.TurnOutcome
 import splice.core.turn.Usage
@@ -9,6 +9,7 @@ import splice.core.util.LogSink
 import splice.provider.codex.CodeModePersistenceException
 import splice.provider.codex.CodeModeRecord
 import splice.provider.codex.CodexCodeModeRegistry
+import splice.provider.codex.stream.CodeModeOwedRound
 import splice.upstream.PostingTurnRow
 
 internal fun interface CodeModeRoundRecord {

@@ -19,6 +19,12 @@ import splice.provider.codex.CodexCodeModeBridge
 import splice.provider.codex.CodexCodeModeRegistry
 import splice.provider.codex.CodexCodeModeWire
 import splice.provider.codex.state.CodeModeTurnIdentity
+import splice.provider.codex.stream.reader.CodeModeReaderDeath
+import splice.provider.codex.stream.reader.CodeModeReaderOutcomes
+import splice.provider.codex.stream.reader.CodeModeRoundBilling
+import splice.provider.codex.stream.reader.CodeModeRoundCompletion
+import splice.provider.codex.stream.reader.CodeModeRoundLifecycle
+import splice.provider.codex.stream.reader.CodeModeRoundRecord
 import splice.provider.codex.stream.source.CodeModeSourceCapture
 import splice.upstream.RoundResult
 import splice.upstream.TurnEnd

@@ -1,4 +1,4 @@
-package splice.provider.codex.stream
+package splice.provider.codex.stream.reader
 
 import kotlinx.coroutines.CancellationException
 import splice.core.turn.FailureCause
@@ -7,7 +7,10 @@ import splice.core.turn.TurnOutcome
 import splice.core.util.Cancellables
 import splice.core.util.LogSink
 import splice.provider.codex.CodeModePersistenceException
+import splice.provider.codex.stream.CodeModeReaderFailures
 import splice.provider.codex.stream.CodeModeReaderFailures.SOURCE_FAILED
+import splice.provider.codex.stream.HEAD_STOPPED
+import splice.provider.codex.stream.SOURCE_DISPOSED
 import splice.provider.codex.stream.source.CodeModeSourceCapture
 import java.io.IOException
 

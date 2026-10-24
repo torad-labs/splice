@@ -160,6 +160,7 @@ names = [
     "ConfigRepair",
     "CodeModeJournaling",
     "CodeModeReplayReasoning",
+    "CodeModeSweepOwnership",
     "ConsolePresence",
     "ContentReached",
     "CopyingOriginals",
@@ -215,6 +216,9 @@ or stop the wrong thing. \
 CodeModeReplayReasoning (2026-10-12) asks whether an earlier turn's reasoning rides back to the model, at each code-mode \
 post; it is the replay_reasoning setting, not a prompt-store switch, so wired as one it would keep reasoning \
 the operator turned off, and read as the others it would stop a journal the operator kept. \
+CodeModeSweepOwnership (2026-10-24) asks whether native sessions still need periodic cleanup after their execution \
+records retire. It keeps the sweep armed for those sessions; a client-disconnect or configuration predicate here \
+could leave native hosts without a cleanup owner or keep an unnecessary timer running. \
 StderrEcho (V4-353, 2026-09-27: should this daemon.log line also go to stderr, which is daemon-boot.log \
 until the daemon is up) is a logging decision read per line; read as any of the others it would either \
 re-grow the boot log for the daemon's whole life (V4-258) or drop the reason a failed boot prints. A single \

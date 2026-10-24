@@ -22,6 +22,13 @@ function epoch(result: any, event: string): number {
   const value = result.marks.find((mark: any) => mark.event === event)?.epochMs;
   assert.ok(Number.isFinite(value), `missing raw ${event} timestamp`); return value;
 }
+function modelOutputs(result: any): any[] {
+  const latest = new Map<string, any>();
+  for (const request of result.upstreamRequests) for (const item of request.nativeInput) {
+    if (["custom_tool_call_output", "function_call_output"].includes(item.type)) latest.set(`${item.type}:${item.call_id}`, item);
+  }
+  return [...latest.values()];
+}
 async function validate(result: any, root: string): Promise<void> {
   assert.equal(result.errors.length, 0, result.errors.join("\n"));
   assert.equal(result.cliExit, 0);
@@ -98,8 +105,13 @@ export async function runInteractiveCases(jar: string, evidence: string, runId: 
     assert.ok(value.timing.terminalThinkingAt !== null && value.timing.terminalThinkingAt < value.timing.terminalAt);
     const lifecycle = results.get("native-lifecycle")!;
     assert.ok(lifecycle.marks.some((mark: any) => mark.event === "wait_item_done"));
-    const input = JSON.stringify(lifecycle.upstreamRequests.map((request: any) => request.nativeInput));
-    for (const marker of ["native-prefix", "native-suffix", "native-progress"]) assert.ok(input.includes(marker), `missing canonical ${marker}`);
+    const outputs = modelOutputs(lifecycle);
+    assert.ok(outputs.some(item => item.call_id === "call_probe" && item.output === "native-progress"), "native notification lost its original call ownership");
+    const waited = outputs.filter(item => item.type === "function_call_output" && /^wait_call_/.test(item.call_id)).at(-1);
+    assert.ok(Array.isArray(waited?.output), "real native wait never produced its typed model output");
+    assert.match(waited.output[0]?.text ?? "", /^Script completed\n/, "native wait was steered/terminated instead of completed");
+    assert.ok(waited.output.some((item: any) => item.type === "input_text" && item.text === "native-suffix"), "native suffix never executed after the callback");
+    assert.equal(waited.output.some((item: any) => item.type === "input_text" && item.text === "native-prefix"), false, "wait repeated the already yielded prefix");
   });
   const restartCheck = () => {
     const value = results.get("restart")!;

@@ -14,6 +14,7 @@ import { runPackagingCase } from "./packaging-cases";
 import { runInteractiveCases } from "./interactive-cases";
 import { runAudioCases } from "./audio-cases";
 import { runInstalledCase } from "./installed-case";
+import { runNativeGatewayCases } from "./native-gateway-cases";
 
 const directory = import.meta.dir;
 const repo = resolve(directory, "../..");
@@ -141,6 +142,7 @@ async function qualify(): Promise<void> {
     item.state = item.findings.length ? "failed" : "executed";
     console.log(`${item.state === "executed" ? "EXECUTED" : "UNQUALIFIED"} ${item.id}`);
   }
+  await runNativeGatewayCases(java, candidateJar.path, candidateNativeHost.path, evidence, runId, cases);
   await runFormatterCases(java, candidateJar.path, evidence, runId, cases);
   await runAudioCases(java, candidateJar.path, evidence, runId, cases);
   await runGatewayCases(java, candidateJar.path, evidence, runId, cases);

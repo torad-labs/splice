@@ -13,12 +13,25 @@ internal class ResponsesHistoryInput(private val opts: BuildOptions) {
         it.removePrefix(HISTORY_POSITION_PREFIX).substringBefore(':').toLongOrNull()
     }.toHashSet()
     private val inject = ResponsesReasoningInject()
+    private val aliases = linkedMapOf<String, String>()
     val active: Boolean = positions.isNotEmpty()
 
     fun inject(sink: JsonArrayBuilder) {
-        positions.remove(cursor.history.key).orEmpty().forEach { envelope ->
+        val stable = cursor.history.key
+        val current = positions.remove(stable).orEmpty()
+        val legacy = cursor.legacyKey
+        val previous = if (legacy == stable) emptyList() else positions.remove(legacy).orEmpty()
+        if (previous.isNotEmpty()) aliases[legacy] = stable
+        (previous + current).forEach { envelope ->
             opts.handoff.decode(envelope)?.let { inject.addReasoningOnce(sink, it, opts) }
         }
+    }
+
+    /** One promotion batch after all matching positions have been reconstructed, never one rewrite per item. */
+    fun promote() {
+        if (aliases.isEmpty()) return
+        opts.handoff.historyAlias(aliases.toMap())
+        aliases.clear()
     }
 
     fun text(sink: JsonArrayBuilder, role: String, text: String, emit: ReasoningTextEmitter) {
@@ -27,16 +40,15 @@ internal class ResponsesHistoryInput(private val opts: BuildOptions) {
         val start = cursor.history.offset
         for (end in 1..text.length) {
             if (start + end !in offsets) continue
-            cursor.history.text(role, text.substring(hashed, end))
+            cursor.text(role, text.substring(hashed, end))
             hashed = end
-            val envelopes = positions[cursor.history.key].orEmpty()
-            if (envelopes.isNotEmpty()) {
+            if (positions.containsKey(cursor.history.key) || positions.containsKey(cursor.legacyKey)) {
                 emit(text.substring(emitted, end))
                 emitted = end
                 inject(sink)
             }
         }
-        cursor.history.text(role, text.substring(hashed))
+        cursor.text(role, text.substring(hashed))
         if (emitted < text.length) emit(text.substring(emitted))
     }
 }

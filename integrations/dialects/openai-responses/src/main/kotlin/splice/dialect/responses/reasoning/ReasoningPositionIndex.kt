@@ -24,8 +24,7 @@ internal class ReasoningPositionIndex {
         val records = snapshot.entries.filter { it.key.startsWith(HISTORY_POSITION_PREFIX) }.map { entry ->
             PositionRecord(entry.key.substringBeforeLast(':'), entry.key.substringAfterLast(':'), entry.value)
         }
-        val terminalItems = records.filter { it.terminal }.map { it.identity }.toSet()
-        return records.filter { it.terminal || it.identity !in terminalItems }
+        return records.groupBy { it.identity }.values.map { copies -> copies.reduce(::preferred) }
             .groupBy { it.position }.mapValues { (_, runs) ->
                 runs.groupBy { it.round }.values.flatMap { round ->
                     round.sortedWith(
@@ -33,6 +32,26 @@ internal class ReasoningPositionIndex {
                     ).flatMap { it.envelopes }
                 }
             }
+    }
+
+    fun identity(index: String): String? = record(index)?.identity
+
+    /** Live positions include the real streamed prose; a sparse terminal cannot relocate them. */
+    fun preferredIndex(first: String, second: String): String {
+        val previous = record(first) ?: return first
+        val candidate = record(second) ?: return first
+        return if (preferred(previous, candidate) === candidate) second else first
+    }
+
+    private fun record(index: String): PositionRecord? = index.takeIf { it.startsWith(HISTORY_POSITION_PREFIX) }?.let {
+        PositionRecord(it.substringBeforeLast(':'), it.substringAfterLast(':'), emptyList())
+    }
+
+    private fun preferred(first: PositionRecord, second: PositionRecord): PositionRecord = when {
+        first.position != second.position -> if (first.terminal && !second.terminal) second else first
+        first.terminal -> first
+        second.terminal && first.outputIndex != second.outputIndex -> second
+        else -> first
     }
 
     private fun digest(text: String): String = HexFormat.of().formatHex(

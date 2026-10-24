@@ -20,12 +20,17 @@ internal class ResponsesReasoningReplay(
     private val cursor = ctx.reasoningCapture.history
     private val initial = cursor?.copy()
     private val captured = linkedMapOf<String, String>()
-    private var textChars = 0
     private var roundId: String? = null
     private var streamedItems = 0
 
+    init {
+        if (ctx.reasoningCapture.collectEnvelopes) state.nativePrefix = ResponsesNativePrefix()
+    }
+
     fun collect(item: JsonObject, outputIndex: Int?) {
-        collectAt(item, cursor, streamedText = true, outputIndex = outputIndex ?: streamedItems, terminal = false)
+        val index = outputIndex ?: streamedItems
+        state.nativePrefix?.collect(item, index)
+        collectAt(item, cursor, streamedText = true, outputIndex = index, terminal = false)
         streamedItems++
     }
 
@@ -33,6 +38,7 @@ internal class ResponsesReasoningReplay(
      * already captured ids are skipped, and streamed positions never depend on the terminal arriving. */
     fun finish() {
         val output = state.finalResponse?.get("output") as? JsonArray ?: return
+        state.nativePrefix?.finish(output)
         if (output.isEmpty()) return
         val at = initial?.copy()
         output.forEachIndexed { index, value ->
@@ -59,7 +65,7 @@ internal class ResponsesReasoningReplay(
     ) {
         when (JsonScalars.str(item, "type")) {
             "reasoning" -> capture(item, at, outputIndex, terminal)
-            "message" -> advanceMessage(item, at, streamedText)
+            "message" -> advanceMessage(item, at, streamedText, outputIndex)
             "function_call" -> advanceTool(item, at)
         }
     }
@@ -85,10 +91,9 @@ internal class ResponsesReasoningReplay(
         return fresh
     }
 
-    private fun advanceMessage(item: JsonObject, at: ReasoningHistory?, streamedText: Boolean) {
-        val text = if (streamedText) state.textBuf.substring(textChars) else messageText(item)
-        at?.text("assistant", text.ifEmpty { messageText(item) })
-        if (streamedText) textChars = state.textBuf.length
+    private fun advanceMessage(item: JsonObject, at: ReasoningHistory?, streamedText: Boolean, index: Int) {
+        val captured = state.nativePrefix?.takeIf { streamedText }?.text(item, index)
+        at?.text("assistant", captured ?: messageText(item))
     }
 
     private fun advanceTool(item: JsonObject, at: ReasoningHistory?) {

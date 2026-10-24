@@ -52,6 +52,7 @@ internal class ResponsesMessageFragments(
                 if (!history.active) msg.content.forEach { history.cursor.append(msg.role, it) }
             }
             history.inject(this)
+            history.promote()
         }
     }
 

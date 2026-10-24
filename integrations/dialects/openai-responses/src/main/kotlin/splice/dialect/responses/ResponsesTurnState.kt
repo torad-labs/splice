@@ -8,6 +8,7 @@ import splice.core.turn.GatewayCustomCall
 import splice.core.turn.ToolSearchCall
 import splice.core.turn.UsageField
 import splice.core.util.JsonScalars
+import splice.dialect.responses.reasoning.ResponsesNativePrefix
 import splice.dialect.responses.request.BlockState
 import splice.dialect.responses.request.ToolSalvage
 import splice.upstream.failure.ClassifiedFailure
@@ -103,6 +104,7 @@ internal class ResponsesTurnState {
     // splice-reasoning envelopes of this round's encrypted reasoning items (fold replay). Collected
     // only when ctx.reasoningCapture.collectEnvelopes — otherwise stays empty, pre-fold behaviour intact.
     val reasoningEnvelopes = mutableListOf<String>()
+    var nativePrefix: ResponsesNativePrefix? = null
 
     // Mid-stream re-anchor salvage (eli 2026-07-24) — see [ToolSalvage].
     val toolSalvage = ToolSalvage()

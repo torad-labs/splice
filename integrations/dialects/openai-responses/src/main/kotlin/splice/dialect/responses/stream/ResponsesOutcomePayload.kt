@@ -45,6 +45,9 @@ internal class ResponsesOutcomePayload(private val ctx: StreamTurnContext) {
             // produce a client-visible empty turn through the honesty gate — the worst available failure.
             toolSearches = state.toolSearches.ifEmpty { harvest.harvestToolSearchCalls(state.finalResponse) },
             customCalls = customCalls.merge(state.customCalls, state.finalResponse),
+            nativePrefix = state.nativePrefix?.takeIf {
+                state.customCalls.isNotEmpty() || customCalls.merge(emptyList(), state.finalResponse).isNotEmpty()
+            }?.snapshot(),
         ),
     )
 
@@ -72,6 +75,7 @@ internal class ResponsesOutcomePayload(private val ctx: StreamTurnContext) {
         reasoningEnvelopes = state.reasoningEnvelopes.toList(),
         toolTearOpen = state.toolSalvage.tearOpen,
         usage = usageOf(state),
+        nativePrefix = state.nativePrefix?.snapshot(),
     )
 
     /** The round's harvested burn. One reader for both payload shapes (DR-130) so the compact

@@ -72,6 +72,7 @@ internal class ReasoningCache(
     private var seq = 0L
     private val lock = Any()
     private val writes = ReasoningCacheWrites(files)
+    private val positions = ReasoningCachePositions()
 
     // What the last process left on disk, published once before any read or write sees the maps: a
     // restarted daemon's first request must find it. The directory is read under the lazy's own lock,
@@ -82,16 +83,19 @@ internal class ReasoningCache(
         synchronized(lock) {
             stored.forEach { conversation ->
                 val convo = ReasoningCacheConvo()
-                conversation.rounds.forEach { round ->
+                val normalized = positions.normalized(conversation.rounds)
+                normalized.forEach { round ->
                     val rk = "r${seq++}"
                     val bytes = round.envelopes.sumOf { it.length.toLong() }
                     convo.rounds[rk] = ReasoningCacheRound(round.ids, round.envelopes, bytes, clock())
                     round.ids.forEach { convo.byToolId[it] = rk }
+                    positions.admitted(convo, rk, convo.rounds.getValue(rk))
                     convo.bytes += bytes
                     roundCount++
                 }
                 totalBytes += convo.bytes
                 convos[conversation.key] = convo
+                if (normalized != conversation.rounds) writes.replace(conversation.key, normalized)
             }
             evictToBoundLocked(writing = null, writer = null, offered = null)
         }
@@ -190,6 +194,19 @@ internal class ReasoningCache(
         writes.flush()
     }
 
+    /** An unchanged legacy transcript proved this old digest; move its items to the stable grammar. */
+    fun promotePositions(conversationKey: String, aliases: Map<String, String>) {
+        if (aliases.isEmpty()) return
+        restored.value
+        synchronized(lock) {
+            val conversation = convos[conversationKey]
+            if (conversation != null && positions.promote(conversation, aliases)) {
+                writes.replace(conversationKey, positions.stored(conversation))
+            }
+        }
+        writes.flush()
+    }
+
     // ── internals ────────────────────────────────────────────────────────────────────────────
 
     /** Re-insert [key] at the most-recently-touched end, or null if the conversation is not held.
@@ -199,6 +216,11 @@ internal class ReasoningCache(
 
     private fun putConvoLocked(key: String, toolIds: List<String>, envelopes: List<String>, bytes: Long) {
         val convo = touchLocked(key) ?: ReasoningCacheConvo().also { convos[key] = it }
+        val updated = positions.update(convo, toolIds)
+        if (updated != null) {
+            if (updated) writes.replace(key, positions.stored(convo))
+            return
+        }
         if (convo.frozen) return // admission frozen; admitted rounds keep serving
         // Client-retry grace: an id we already hold is a re-capture of the same round. Admitting
         // it again would orphan the old round, which still counts against the bound (review
@@ -212,7 +234,10 @@ internal class ReasoningCache(
         roundCount++
         evictToBoundLocked(writing = key, writer = convo, offered = rk)
         // Written only once it survived the bound: a round the freeze rejected was never served.
-        if (rk in convo.rounds) writes.append(key, toolIds, envelopes)
+        if (rk in convo.rounds) {
+            positions.admitted(convo, rk, convo.rounds.getValue(rk))
+            writes.append(key, toolIds, envelopes)
+        }
     }
 
     private fun putNullLocked(toolIds: List<String>, envelopes: List<String>, bytes: Long) {
@@ -238,18 +263,13 @@ internal class ReasoningCache(
             val neighbor = if (oldestNull == null) convos.keys.firstOrNull { it != writing } else null
             when {
                 oldestNull != null -> removeNullLocked(oldestNull)
-                neighbor != null -> evictNeighborLocked(neighbor)
+                neighbor != null -> {
+                    log("[reasoning-cache] bound pressure evicted conversation ${neighbor.take(KEY_LOG_CHARS)}… whole")
+                    removeConvoLocked(neighbor)
+                }
                 else -> if (!freezeWriterLocked(writing, writer, offered)) return
             }
         }
-    }
-
-    private fun evictNeighborLocked(key: String) {
-        log(
-            "[reasoning-cache] bound pressure evicted conversation " +
-                "${key.take(KEY_LOG_CHARS)}… whole (${convos.getValue(key).rounds.size} rounds)",
-        )
-        removeConvoLocked(key)
     }
 
     /** Reject the round just offered and freeze admission for the writer. True when the offered

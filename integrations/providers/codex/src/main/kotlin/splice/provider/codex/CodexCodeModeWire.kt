@@ -7,15 +7,12 @@ import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
-import splice.core.reasoning.ReasoningReplay
 import splice.core.turn.TurnOutcome
 import splice.core.util.JsonScalars
 import splice.core.util.LogSink
 import splice.dialect.responses.ResponsesFunctionNamespace
-import splice.dialect.responses.request.AssistantPhase
-import splice.dialect.responses.request.ResponsesAssistantText
-import splice.dialect.responses.request.ResponsesCodeModeProjection
 import splice.dialect.responses.request.ResponsesPriorReasoning
+import splice.provider.codex.history.CodeModeContinuityCapture
 import splice.provider.codex.history.CodexCodeModeHistory
 import splice.provider.codex.state.diagnostics.CodeModeHistoryOmissions
 import splice.provider.codex.state.diagnostics.CodeModeNativeRejection
@@ -148,21 +145,7 @@ internal class CodexCodeModeWire(
     fun restoreBaseline(body: CodeModeBody, record: CodeModeRecord): CodeModeRewrite =
         history.restoreBaseline(body, record)
 
-    fun continuity(outcome: TurnOutcome.Success): CodeModeContinuity {
-        val items = buildList {
-            addAll(outcome.handoffs.reasoningEnvelopes.mapNotNull(ReasoningReplay::decodeReasoningEnvelope))
-            // V4-335: the text said before the script, as the client replays it: it precedes the
-            // client calls in the same message, which the builder calls commentary.
-            if (outcome.text.emittedText && outcome.text.bodyText.isNotEmpty()) {
-                add(ResponsesAssistantText.item(outcome.text.bodyText, AssistantPhase.COMMENTARY))
-            }
-        }
-        val projected = ResponsesCodeModeProjection().project(JsonArray(items))
-        return CodeModeContinuity(
-            projected.logicalItems,
-            projected.replayItems.map { CodeModeNativeSegment(it.logicalOffset, it.items) },
-        )
-    }
+    fun continuity(outcome: TurnOutcome.Success): CodeModeContinuity = CodeModeContinuityCapture.success(outcome)
 
     /** codex-rs execute_spec.rs create_code_mode_tool: a freeform tool constrained by the exec grammar. */
     private fun execTool(description: String): JsonObject = buildJsonObject {

@@ -6,6 +6,7 @@ import splice.core.turn.RoundText
 import splice.core.turn.TurnOutcome
 import splice.core.turn.Usage
 import splice.core.turn.noRequestUsage
+import splice.provider.codex.history.CodeModeContinuityCapture
 
 internal class CodeModeOutcomeAccumulator {
     private var success: TurnOutcome.Success? = null
@@ -64,6 +65,7 @@ internal class CodeModeOutcomeAccumulator {
             handoffs = latest.handoffs.copy(
                 reasoningEnvelopes = prior.handoffs.reasoningEnvelopes + latest.handoffs.reasoningEnvelopes,
                 toolSearches = prior.handoffs.toolSearches + latest.handoffs.toolSearches,
+                nativePrefix = CodeModeContinuityCapture.followedBy(prior, latest),
             ),
         )
     }
@@ -84,6 +86,7 @@ internal class CodeModeOutcomeAccumulator {
         reasoningEnvelopes = prior.handoffs.reasoningEnvelopes + latest?.reasoningEnvelopes.orEmpty(),
         toolTearOpen = latest?.toolTearOpen == true,
         usage = mergeTerminalUsage(prior.usage, latest?.usage ?: noRequestUsage),
+        nativePrefix = CodeModeContinuityCapture.followedBy(prior, latest),
     )
 
     private fun mergeRoundUsage(prior: Usage, latest: Usage): Usage = prior.followedBy(latest)

@@ -1,13 +1,16 @@
 // NEW: client replay excludes private recovery inputs while the current turn keeps its original upstream view.
 package splice.provider.codex.stream
 
+import kotlinx.serialization.json.JsonObject
 import splice.core.turn.RoundText
 import splice.core.turn.TurnOutcome
+import splice.core.util.JsonWire
 import splice.provider.codex.CodeModeBody
 import splice.provider.codex.CodeModeContinuity
 import splice.provider.codex.CodeModeInputBoundary
 import splice.provider.codex.CodeModeRecord
 import splice.provider.codex.CodexCodeModeWire
+import splice.provider.codex.history.CodeModeContinuityCapture
 import splice.provider.codex.state.CodeModeNativeChain
 import java.util.Collections
 import java.util.IdentityHashMap
@@ -36,13 +39,15 @@ internal class CodeModeRecoveryHistory(val baseline: CodeModeBody) {
         private val text: String = "",
         private val envelopes: List<String> = emptyList(),
         private val before: Prefix? = null,
+        private val nativePrefix: List<JsonObject>? = null,
     ) {
         fun extend(partial: TurnOutcome.PartialRound): Prefix {
             val emitted = partial.text.bodyText.takeIf { partial.text.emittedText }.orEmpty()
-            return if (emitted.isEmpty() && partial.reasoningEnvelopes.isEmpty()) {
+            val empty = emitted.isEmpty() && partial.reasoningEnvelopes.isEmpty()
+            return if (empty && partial.nativePrefix.isNullOrEmpty()) {
                 this
             } else {
-                Prefix(emitted, partial.reasoningEnvelopes.toList(), this)
+                Prefix(emitted, partial.reasoningEnvelopes.toList(), this, partial.nativePrefix?.toList())
             }
         }
 
@@ -55,10 +60,16 @@ internal class CodeModeRecoveryHistory(val baseline: CodeModeBody) {
                 } else {
                     partial.reasoningEnvelopes
                 },
+                nativePrefix = remainingNative(partial),
             )
         }
 
         fun continuity(outcome: TurnOutcome.Success, wire: CodexCodeModeWire): CodeModeContinuity {
+            val native = nativeItems()
+            if (native != null || outcome.handoffs.nativePrefix != null) {
+                val carried = native ?: CodeModeContinuityCapture.items(null, text(), reasoning())
+                return CodeModeContinuityCapture.project(carried + CodeModeContinuityCapture.successItems(outcome))
+            }
             val text = text()
             return wire.continuity(
                 outcome.copy(
@@ -80,7 +91,8 @@ internal class CodeModeRecoveryHistory(val baseline: CodeModeBody) {
             var chars = 0L
             var cursor: Prefix? = this
             while (cursor != null && seen.add(cursor)) {
-                chars += cursor.text.length + cursor.envelopes.sumOf { it.length }
+                chars += cursor.text.length + cursor.envelopes.sumOf { it.length } +
+                    cursor.nativePrefix.orEmpty().sumOf(JsonWire::byteSize)
                 cursor = cursor.before
             }
             return chars
@@ -89,6 +101,23 @@ internal class CodeModeRecoveryHistory(val baseline: CodeModeBody) {
         private fun text(): String = buildString { appendText(this) }
 
         private fun reasoning(): List<String> = buildList { visit { addAll(it.envelopes) } }
+
+        private fun remainingNative(partial: TurnOutcome.PartialRound): List<JsonObject>? {
+            val supplied = partial.nativePrefix ?: return null
+            val completed = nativeItems() ?: CodeModeContinuityCapture.items(null, text(), reasoning())
+            val normalized = CodeModeContinuityCapture.items(supplied, "", emptyList())
+            return if (normalized.take(completed.size) == completed) normalized.drop(completed.size) else supplied
+        }
+
+        /** Native segments keep their own boundaries; legacy segments retain their original fallback order. */
+        private fun nativeItems(): List<JsonObject>? {
+            var captured = false
+            visit { if (it.nativePrefix != null) captured = true }
+            if (!captured) return null
+            return buildList {
+                visit { addAll(CodeModeContinuityCapture.items(it.nativePrefix, it.text, it.envelopes)) }
+            }
+        }
 
         private inline fun visit(action: (Prefix) -> Unit) {
             val segments = ArrayDeque<Prefix>()
@@ -142,6 +171,7 @@ internal class CodeModeRecoveryHistory(val baseline: CodeModeBody) {
             TurnOutcome.PartialRound(
                 text = RoundText(bodyText = success.text.bodyText, emittedText = success.text.emittedText),
                 reasoningEnvelopes = success.handoffs.reasoningEnvelopes,
+                nativePrefix = success.handoffs.nativePrefix,
             ),
         )
     }

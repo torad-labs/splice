@@ -93,15 +93,14 @@ internal class ResponsesTurnSeams(private val deps: ResponsesTurnSeamsDeps) {
             }
 
             override fun compacted() {
-                if (deps.quirks.roundTrip.reasoningCache) {
-                    deps.continuity.cache.dropConversation(conversation)
-                    deps.continuity.cache.dropConversation(positioned)
-                }
+                deps.continuity.cache.dropConversation(conversation)
+                deps.continuity.cache.dropConversation(positioned)
             }
 
             override fun positioned(position: String, envelope: String, order: ReasoningItemOrder?) {
-                if (positioned == null) return
-                if (!deps.continuity.policy.reasoningCacheActive(deps.quirks, meta.compact)) return
+                if (positioned == null || meta.compact) return
+                val storageEnabled = deps.quirks.roundTrip.reasoningCache || deps.turnOptions.replayOn()
+                if (!storageEnabled) return
                 // Private cache index, not a synthetic upstream call id. The envelope digest makes retries
                 // idempotent while distinct reasoning-only rounds may share the same visible boundary.
                 val index = ReasoningPositionIndex().index(position, envelope, order)

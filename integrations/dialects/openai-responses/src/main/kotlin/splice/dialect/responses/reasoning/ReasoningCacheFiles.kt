@@ -64,6 +64,16 @@ internal class ReasoningCacheFiles(private val dir: Path, private val log: LogSi
         }
     }
 
+    fun replace(key: String, rounds: List<StoredRound>): Boolean = try {
+        val contents = rounds.joinToString("\n", postfix = "\n") { lines.encodeToString(StoredRound.serializer(), it) }
+        SecureFile.writeAtomic0600(fileOf(key), contents)
+        true
+    } catch (failure: IOException) {
+        log("[reasoning-cache] reconciled conversation not written (${SafeFailureText.render(failure)}): memory only")
+        drop(key)
+        false
+    }
+
     /** Remove [key]'s file, and the lock JsonlSink.appendLine keeps beside it (the ActivityDays siblings). */
     fun drop(key: String) {
         val file = fileOf(key)

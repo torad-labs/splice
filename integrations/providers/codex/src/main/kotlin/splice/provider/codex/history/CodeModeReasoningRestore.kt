@@ -4,7 +4,6 @@ package splice.provider.codex.history
 import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonElement
 import splice.dialect.responses.request.ResponsesCodeModeInput
-import splice.dialect.responses.request.ResponsesCodeModeReplay
 import splice.provider.codex.CodeModeRecord
 import splice.provider.codex.CodexCodeModeHistoryCodec
 import splice.provider.codex.state.CodeModeNativeChain
@@ -19,11 +18,9 @@ internal class CodeModeReasoningRestore(
         val projected = codec.projection.project(JsonArray(out))
         val start = continuityStart(projected.logicalItems, record)
         val slots = CodeModePrefaceSlots(projected, record, start, scripts)
-        val replay = record.carry.replay.map { segment ->
-            ResponsesCodeModeReplay(slots.position(segment.logicalOffset), null, segment.items)
-        }
+        record.carry.replay.forEach { slots.restore(it.logicalOffset, it.items) }
         val rebuilt = codec.projection.rebuild(
-            ResponsesCodeModeInput(slots.logical, CodeModeNativeChain.emittedReplay(slots.replay + replay)),
+            ResponsesCodeModeInput(slots.logical, CodeModeNativeChain.emittedReplay(slots.replay)),
         )
         out.clear()
         out.addAll(rebuilt)
@@ -51,8 +48,25 @@ private class CodeModePrefaceSlots(
     var replay = input.replayItems
         private set
     private val slots = mutableMapOf(0 to start)
+    private val prefaceCount = record.carry.continuity.size
+    private var coalesced = false
 
     init {
+        val missingEcho = start == logical.size
+        if (missingEcho) logical = logical + record.carry.continuity
+        record.carry.continuity.indices.forEach { index ->
+            split(record.carry.continuity.take(index + 1), index + 1)
+        }
+        // A coalesced or omitted echo needs the source's saved boundaries. Otherwise keep verified native positions:
+        // an older record's flat envelopes cannot displace a cached item from after its real preface to before it.
+        if (missingEcho || coalesced) removeOwned(record)
+    }
+
+    fun restore(offset: Int, items: List<JsonElement>) {
+        replay = CodeModeSourceReplay.fill(replay, slots[offset] ?: logical.size, items, start)
+    }
+
+    private fun removeOwned(record: CodeModeRecord) {
         val owned = record.carry.replay.flatMap { it.items }.toSet()
         replay = replay.mapNotNull { segment ->
             val items = if (segment.logicalOffset < start) {
@@ -62,17 +76,12 @@ private class CodeModePrefaceSlots(
             }
             segment.copy(items = items).takeIf { it.items.isNotEmpty() }
         }
-        if (start == logical.size) logical = logical + record.carry.continuity
-        record.carry.continuity.indices.forEach { index ->
-            split(record.carry.continuity.take(index + 1), index + 1)
-        }
     }
-
-    fun position(offset: Int): Int = slots[offset] ?: logical.size
 
     private fun split(prefix: List<JsonElement>, offset: Int) {
         val echo = checkNotNull(scripts.echo(logical, start, prefix)) { "source preface echo changed during replay" }
         if (echo.split > 0) {
+            if (offset < prefaceCount) coalesced = true
             logical = scripts.cut(logical, echo)
             replay = replay.map { segment ->
                 if (segment.logicalOffset > echo.end) {

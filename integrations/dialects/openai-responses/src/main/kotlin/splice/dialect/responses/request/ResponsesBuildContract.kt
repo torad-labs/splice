@@ -10,6 +10,7 @@ import splice.core.turn.ReasoningDisplay
 import splice.core.turn.TurnMeta
 import splice.dialect.responses.reasoning.InjectPriorReasoning
 import splice.dialect.responses.reasoning.ReasoningEnvelopeDecoder
+import splice.dialect.responses.reasoning.ReasoningHistoryAlias
 import splice.dialect.responses.reasoning.ReasoningHistoryLookup
 import splice.dialect.responses.reasoning.ReasoningLookup
 import splice.dialect.responses.reasoning.RequestEncryptedReasoning
@@ -51,6 +52,8 @@ internal data class ReasoningHandoff(
     public val lookup: ReasoningLookup = ReasoningLookup { null },
     /** Server-owned history positions; legacy tool lookups remain available for older saved conversations. */
     public val history: ReasoningHistoryLookup = ReasoningHistoryLookup { emptyMap() },
+    /** Verified legacy positions acquire stable indexes together after the request history walk finishes. */
+    public val historyAlias: ReasoningHistoryAlias = ReasoningHistoryAlias { _ -> },
 )
 
 internal data class BuildOptions(

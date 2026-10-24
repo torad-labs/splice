@@ -69,6 +69,7 @@ internal class ResponsesItemFold(
     // member — see closeOpenBlocks / ResponsesReasoningReplay.collect).
     suspend fun onItemDone(evt: JsonObject, sink: WireSink) {
         val item = evt["item"] as? JsonObject
+        val oi = frames.intOr(evt[OUTPUT_INDEX]) ?: frames.intOr(item?.get("index"))
         // codex parity: OutputItemDone takes the active item — a summary done-event arriving
         // between items (or after a later item started) is stale and must not render.
         state.activeItemId = null
@@ -82,10 +83,10 @@ internal class ResponsesItemFold(
         if (item != null) {
             customCalls.parse(item)?.let { call ->
                 state.customCalls.add(call)
+                state.nativePrefix?.seal(oi, state.streamedItemTypes.lastIndex)
                 sink.customToolSource(splice.upstream.sse.CustomToolSource.Completed(call, snapshot?.invoke()))
             }
         }
-        val oi = frames.intOr(evt[OUTPUT_INDEX]) ?: frames.intOr(item?.get("index"))
         // Some backends only attach readable reasoning on the completed item (no per-token
         // summary deltas). Surface that text NOW so Claude Code's thinking UI fills live,
         // not only via the end-of-turn harvest fallback.
@@ -165,6 +166,7 @@ internal class ResponsesItemFold(
         if (mistargeted) return
         state.textBuf.append(delta)
         if (outputToolName != null) return // Validated schema JSON is emitted as tool input at completion, not prose.
+        state.nativePrefix?.delta(key, delta)
         val b = existing ?: run {
             BlockState(sink.openText(), sawDelta = false).also { state.blocks[key] = it }
         }

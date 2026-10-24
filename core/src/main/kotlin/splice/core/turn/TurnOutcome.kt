@@ -126,6 +126,9 @@ public sealed class TurnOutcome {
         val reasoningEnvelopes: List<String> = emptyList(),
         val toolTearOpen: Boolean = false,
         val usage: Usage = Usage(reported = emptySet()),
+        /** Ordered provider-owned replay material, including any real unfinished prose suffix.
+         * Null keeps the legacy handoff; an empty list proves that this prefix contains no native items. */
+        val nativePrefix: List<JsonObject>? = null,
     )
 
     /** Client vanished mid-stream: nothing to emit, seal quietly (never an error frame).
@@ -217,6 +220,10 @@ public data class RoundHandoffs(
     val toolSearches: List<ToolSearchCall> = emptyList(),
     /** Gateway-local custom calls. Empty keeps every non-bridge outcome byte-identical. */
     val customCalls: List<GatewayCustomCall> = emptyList(),
+    /** Ordered native reasoning and message items preceding this round's owned custom call, excluding the call.
+     * Controllers forward this opaque history without rendering it. Null means unavailable or legacy;
+     * an empty list is an authoritative empty prefix. */
+    val nativePrefix: List<JsonObject>? = null,
 )
 
 /** The text a round produced, and what of it reached the client. */

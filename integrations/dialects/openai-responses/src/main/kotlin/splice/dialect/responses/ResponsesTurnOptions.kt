@@ -11,6 +11,7 @@ import splice.core.util.LogSink
 import splice.dialect.responses.reasoning.InjectPriorReasoning
 import splice.dialect.responses.reasoning.ReasoningCache
 import splice.dialect.responses.reasoning.ReasoningCachePolicy
+import splice.dialect.responses.reasoning.ReasoningHistoryAlias
 import splice.dialect.responses.reasoning.ReasoningHistoryLookup
 import splice.dialect.responses.reasoning.ReasoningLookup
 import splice.dialect.responses.reasoning.ReasoningPositionIndex
@@ -39,6 +40,12 @@ internal class ReasoningContinuity(
         val snapshot = cache.snapshot(scoped ?: legacy, legacy)
         if (scoped == null) snapshot.filterKeys { !it.startsWith(HISTORY_POSITION_PREFIX) } else snapshot
     }
+
+    fun alias(body: AnthropicTurnBody, sessionId: String?, aliases: Map<String, String>) {
+        if (sessionId.isNullOrEmpty()) return
+        val key = policy.conversationKey(sessionId, ids.reasoningStorageKey(body.typed)) ?: return
+        cache.promotePositions(key, aliases)
+    }
 }
 
 internal class ResponsesTurnOptions(
@@ -61,7 +68,7 @@ internal class ResponsesTurnOptions(
         // idiom as PassthroughStreamTranslator.unmappedIndexLogged); scoped to this call's local
         // var, not an instance field, since the provider itself is long-lived across many turns.
         var reasoningEnvelopeDropLogged = false
-        val cached = if (quirks.roundTrip.reasoningCache) {
+        val cached = if (quirks.roundTrip.reasoningCache || now.replay) {
             continuity.snapshotFor(
                 body,
                 sessionId,
@@ -87,7 +94,7 @@ internal class ResponsesTurnOptions(
                 // Ask for the opaque encrypted handle whenever reasoning is visible OR the
                 // reasoning cache needs it (RC-5: the cache can only hold what the server returns).
                 // Not a function of `compact`: the request is built like a turn (the builder header).
-                includeEncrypted = RequestEncryptedReasoning(showOn || quirks.roundTrip.reasoningCache),
+                includeEncrypted = RequestEncryptedReasoning(showOn || now.replay || quirks.roundTrip.reasoningCache),
                 decode = { data ->
                     ReasoningReplay.decodeReasoningEnvelope(data) { msg ->
                         if (!reasoningEnvelopeDropLogged) {
@@ -110,6 +117,7 @@ internal class ResponsesTurnOptions(
                 history = ReasoningHistoryLookup {
                     if (sessionId.isNullOrEmpty()) emptyMap() else ReasoningPositionIndex().positions(cached.value)
                 },
+                historyAlias = ReasoningHistoryAlias { aliases -> continuity.alias(body, sessionId, aliases) },
             ),
             sessionId = sessionId,
             // The provider's capability latch, read at build time: false = a shape-400 already
@@ -119,4 +127,6 @@ internal class ResponsesTurnOptions(
     }
 
     fun showOn(): Boolean = reasoning.now().visible()
+
+    fun replayOn(): Boolean = reasoning.now().replay
 }

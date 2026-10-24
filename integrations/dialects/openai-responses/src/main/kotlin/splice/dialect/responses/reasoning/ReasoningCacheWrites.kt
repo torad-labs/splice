@@ -33,6 +33,13 @@ internal class ReasoningCacheWrites(private val files: ReasoningCacheFiles?) {
         }
     }
 
+    /** A reconciled conversation replaces its old records atomically, retaining the installed schema. */
+    fun replace(key: String, rounds: List<StoredRound>) {
+        if (usable && files?.accepts(key) == true) {
+            pending.add(ReasoningCacheWrite(key, round = null, replacement = rounds))
+        }
+    }
+
     /** Queue the removal of [key]'s file. Called under the cache's lock. */
     fun drop(key: String) {
         if (usable && files?.accepts(key) == true) pending.add(ReasoningCacheWrite(key, round = null))
@@ -44,19 +51,29 @@ internal class ReasoningCacheWrites(private val files: ReasoningCacheFiles?) {
         synchronized(ioLock) {
             while (true) {
                 val write = pending.poll() ?: break
-                val round = write.round
-                when {
-                    round == null -> {
-                        unwritten.remove(write.key)
-                        disk.drop(write.key)
-                    }
-                    write.key in unwritten -> Unit
-                    !disk.append(write.key, round) -> unwritten.add(write.key)
-                }
+                applyWrite(disk, write)
             }
+        }
+    }
+
+    private fun applyWrite(disk: ReasoningCacheFiles, write: ReasoningCacheWrite) {
+        val round = write.round
+        val replacement = write.replacement
+        when {
+            round == null && replacement == null -> {
+                unwritten.remove(write.key)
+                disk.drop(write.key)
+            }
+            write.key in unwritten -> Unit
+            replacement != null -> if (!disk.replace(write.key, replacement)) unwritten.add(write.key)
+            round != null && !disk.append(write.key, round) -> unwritten.add(write.key)
         }
     }
 }
 
 /** One queued write: append [round] to [key]'s conversation, or remove the conversation when it is null. */
-internal data class ReasoningCacheWrite(val key: String, val round: StoredRound?)
+internal data class ReasoningCacheWrite(
+    val key: String,
+    val round: StoredRound?,
+    val replacement: List<StoredRound>? = null,
+)

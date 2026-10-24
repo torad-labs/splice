@@ -56,6 +56,11 @@ internal fun interface ReasoningHistoryLookup {
     public operator fun invoke(): Map<String, List<String>>
 }
 
+/** Promotes the request's verified raw-content positions in one bounded conversation update. */
+internal fun interface ReasoningHistoryAlias {
+    public operator fun invoke(aliases: Map<String, String>)
+}
+
 /** Writes a visible text span while server-owned reasoning is restored at verified boundaries. */
 internal fun interface ReasoningTextEmitter {
     public operator fun invoke(text: String)

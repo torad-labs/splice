@@ -39,6 +39,7 @@ internal class CodeModeSourceCapture(
     private var startedCall: GatewayCustomCall? = null
     private var completedCall: GatewayCustomCall? = null
     private var recoveredSource: CodeModeRecoveryHistory.Source? = null
+    private val continuity = CodeModeSourceContinuity(wire)
 
     @Volatile var itemComplete: Boolean = false
         private set
@@ -69,11 +70,12 @@ internal class CodeModeSourceCapture(
         checkIdentity(call, checkNotNull(startedCall))
         check(call.input.startsWith(source.text)) { "completed exec source changed its dispatched prefix" }
         CodexCodeModeValidation(config).outer(call)?.let { error(it) }
-        val continuity = snapshot?.let { recoveredSource?.finish(it, wire) ?: wire.continuity(it) }
-        if (!registry.source.seal(checkNotNull(record), call, continuity)) {
+        val captured = snapshot?.let { continuity.capture(it, recoveredSource) }
+        if (!registry.source.seal(checkNotNull(record), call, captured)) {
             dispose()
             return
         }
+        continuity.sealed(snapshot)
         completedCall = call
         itemComplete = true
         source.complete(call.input)
@@ -155,8 +157,8 @@ internal class CodeModeSourceCapture(
         checkSource(call.input)
         if (!itemComplete) complete(call, success)
         if (disposed) return
-        val continuity = recoveredSource?.finish(success, wire) ?: wire.continuity(success)
-        if (!registry.source.finish(current, call, continuity, success.usage)) {
+        val captured = continuity.capture(success, recoveredSource)
+        if (!registry.source.finish(current, call, captured, success.usage)) {
             dispose()
         }
     }

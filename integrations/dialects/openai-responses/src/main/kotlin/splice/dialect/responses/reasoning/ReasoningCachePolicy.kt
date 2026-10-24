@@ -115,6 +115,7 @@ internal data class ReasoningCacheRound(
 internal class ReasoningCacheConvo {
     val rounds = LinkedHashMap<String, ReasoningCacheRound>()
     val byToolId = HashMap<String, String>()
+    val positioned = HashMap<String, String>()
     var bytes = 0L
     var frozen = false
 }

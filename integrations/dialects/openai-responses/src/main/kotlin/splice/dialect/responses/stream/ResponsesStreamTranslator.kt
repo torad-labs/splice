@@ -127,7 +127,7 @@ internal class ResponsesStreamTranslator(
                     val envelopeChars = state.reasoningEnvelopes.sumOf { it.length.toLong() }
                     val pendingArgsChars = minOf(
                         Int.MAX_VALUE.toLong(),
-                        envelopeChars + state.bufferedToolArgsChars,
+                        envelopeChars + state.bufferedToolArgsChars + (state.nativePrefix?.retainedChars ?: 0L),
                     ).toInt()
                     val withinCapacity = !BufferCapacity.over(
                         state.textBuf.length,

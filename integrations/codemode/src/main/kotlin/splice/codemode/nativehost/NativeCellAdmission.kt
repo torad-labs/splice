@@ -58,3 +58,11 @@ internal data class NativePendingStart(
     val sessionId: String,
     val operation: NativeOperation,
 )
+
+internal data class NativePreparedSession(
+    val host: NativeConnection,
+    val sessionId: String,
+    val lease: NativeCellLease,
+)
+
+internal data class NativeSessionBinding(val host: NativeConnection, val id: String)

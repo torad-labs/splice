@@ -12,6 +12,8 @@ internal class NativeEvents {
     private val cells = ConcurrentHashMap<Pair<String, String>, Channel<JsonObject>>()
     private val delegates = ConcurrentHashMap<String, Pair<String, String>>()
     private val leases = ConcurrentHashMap<Pair<String, String>, NativeCellLease>()
+    private val expected = ConcurrentHashMap<Long, NativeOwnership>()
+    private val earlyCompletions = ConcurrentHashMap.newKeySet<Pair<String, String>>()
 
     @Volatile private var failure: CodeModeWorkerLostException? = null
 
@@ -39,19 +41,44 @@ internal class NativeEvents {
         delegates.remove(delegateId)
     }
 
-    fun own(sessionId: String, cellId: String, lease: NativeCellLease) {
-        leases[sessionId to cellId] = lease
+    fun expect(operationId: Long, sessionId: String, lease: NativeCellLease) {
+        expected[operationId] = NativeOwnership(sessionId, lease)
+    }
+
+    fun accepted(frame: JsonObject) {
+        val id = requireNotNull(JsonScalars.long(frame, "id"))
+        val ownership = expected.remove(id) ?: return
+        val result = frame.getValue("result").jsonObject
+        if (JsonScalars.str(result, "status") == "ok") {
+            val value = result.getValue("value").jsonObject
+            val cellId = requireNotNull(JsonScalars.str(value, "cellId"))
+            val key = ownership.sessionId to cellId
+            if (earlyCompletions.remove(key)) ownership.lease.close() else leases[key] = ownership.lease
+        } else {
+            ownership.lease.close()
+        }
+    }
+
+    fun discard(operationId: Long) {
+        expected.remove(operationId)?.lease?.close()
     }
 
     fun completed(frame: JsonObject) {
         val sessionId = requireNotNull(JsonScalars.str(frame, "sessionId"))
         val cellId = requireNotNull(JsonScalars.str(frame, "cellId"))
-        leases.remove(sessionId to cellId)?.close()
+        val key = sessionId to cellId
+        val lease = leases.remove(key)
+        if (lease != null) {
+            lease.close()
+        } else if (earlyCompletions.size < expected.size && expected.values.any { it.sessionId == sessionId }) {
+            earlyCompletions.add(key)
+        }
     }
 
     fun release(sessionId: String, id: String) {
         val key = sessionId to id
-        leases.remove(key)?.close()
+        // Keep the receipt until cell/closed arrives, so an older terminal cell cannot consume a newer start's slot.
+        leases[key]?.close()
         cells.remove(key)?.close()
         delegates.entries.removeIf { it.value == key }
     }
@@ -61,5 +88,10 @@ internal class NativeEvents {
         cells.values.forEach { it.close(error) }
         leases.values.forEach(NativeCellLease::close)
         leases.clear()
+        expected.values.forEach { it.lease.close() }
+        expected.clear()
+        earlyCompletions.clear()
     }
 }
+
+private data class NativeOwnership(val sessionId: String, val lease: NativeCellLease)

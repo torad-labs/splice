@@ -35,19 +35,15 @@ internal class NativeCell(
     private val readySteps = ArrayDeque<CodeModeStep>()
     private var observation: CompletableDeferred<JsonObject>? = initial
 
-    init {
-        connection.events.own(sessionId, cellId, lease)
-    }
-
     override suspend fun advance(results: List<CodeModeResult>): CodeModeStep {
         submitResults(results)
         return observe(DEFAULT_NATIVE_OBSERVE_MS)
     }
 
     override suspend fun submitResults(results: List<CodeModeResult>): Unit = submitting.withLock {
-        check(!closed.get()) { "Native cell is closed" }
+        check(!closed.get() || results.isEmpty()) { "Native cell is closed" }
         require(results.map { it.id }.distinct().size == results.size) { "Duplicate native callback results" }
-        require(results.all { it.id in pending }) { "Result does not belong to a pending native callback" }
+        require(results.all { pending.containsKey(it.id) }) { "Result does not belong to a pending native callback" }
         results.forEach { result ->
             val id = pending.getValue(result.id)
             connection.send(NativeRequests.delegate(id, result))
@@ -58,26 +54,29 @@ internal class NativeCell(
 
     override suspend fun observe(yieldTimeMs: Long): CodeModeStep = advancing.withLock {
         require(yieldTimeMs >= 0) { "Native observation time must be nonnegative" }
-        check(!closed.get()) { "Native cell is closed" }
+        check(!closed.get() || readySteps.isNotEmpty()) { "Native cell is closed" }
         observeLocked(yieldTimeMs)
     }
 
     private suspend fun observeLocked(yieldTimeMs: Long): CodeModeStep {
-        readySteps.removeFirstOrNull()?.let { return it }
-        val response = response(yieldTimeMs)
-        var step: CodeModeStep? = null
-        while (step == null) {
-            step = select {
-                connection.events.cell(sessionId, cellId).onReceive { frame -> delegate(frame) }
-                response.onAwait { frame ->
-                    observation = null
-                    NativeOutput.decode(NativeFrames.value(frame)).also { result ->
+        if (readySteps.isEmpty()) {
+            val response = response(yieldTimeMs)
+            while (readySteps.isEmpty()) {
+                select<Unit> {
+                    connection.events.cell(sessionId, cellId).onReceive { frame ->
+                        delegate(frame)?.let(readySteps::addLast)
+                    }
+                    response.onAwait { frame ->
+                        observation = null
+                        val result = NativeOutput.decode(NativeFrames.value(frame))
+                        readySteps.addLast(result)
                         if (result is CodeModeStep.Completed) release()
                     }
                 }
             }
         }
-        return if (step is CodeModeStep.Calls) batchCalls(step) else step
+        val step = readySteps.first()
+        return if (step is CodeModeStep.Calls) batchCalls(step) else readySteps.removeFirst()
     }
 
     private suspend fun response(yieldTimeMs: Long): CompletableDeferred<JsonObject> {
@@ -109,17 +108,20 @@ internal class NativeCell(
                 when (val next = delegate(frame)) {
                     is CodeModeStep.Calls -> calls.addAll(next.calls)
                     null -> Unit
-                    else -> {
+                    is CodeModeStep.Notified, is CodeModeStep.Completed, is CodeModeStep.Yielded,
+                    is CodeModeStep.WaitingForResults,
+                    -> {
                         readySteps.addLast(next)
                         draining = false
                     }
                 }
             }
         }
+        readySteps.removeFirst()
         return CodeModeStep.Calls(calls)
     }
 
-    private suspend fun delegate(frame: JsonObject): CodeModeStep? {
+    private fun delegate(frame: JsonObject): CodeModeStep? {
         val id = frame.getValue("id")
         if (JsonScalars.str(frame, "type") == "delegate/cancel") {
             pending.entries.removeIf { it.value == id }
@@ -128,8 +130,7 @@ internal class NativeCell(
         val request = frame.getValue("request").jsonObject
         return when (JsonScalars.str(request, "type")) {
             "notification/send" -> {
-                connection.send(NativeRequests.notified(id))
-                connection.events.answered(id.toString())
+                acknowledge(id, NativeRequests.notified(id))
                 CodeModeStep.Notified(JsonScalars.str(request, "text").orEmpty())
             }
             "tool/invoke" -> invoke(id, request.getValue("invocation").jsonObject)
@@ -137,13 +138,14 @@ internal class NativeCell(
         }
     }
 
-    private suspend fun invoke(id: JsonElement, invocation: JsonObject): CodeModeStep? {
+    private fun invoke(id: JsonElement, invocation: JsonObject): CodeModeStep? {
         val tool = invocation.getValue("tool_name").jsonObject
         val name = JsonScalars.str(tool, "name") ?: error("Native tool callback has no name")
         check(name in tools) { "Native callback requested a tool outside the client catalog" }
         val arguments = invocation["input"] as? JsonObject
         if (arguments == null) {
-            connection.send(
+            acknowledge(
+                id,
                 NativeRequests.delegate(
                     id,
                     CodeModeResult(
@@ -153,12 +155,20 @@ internal class NativeCell(
                     ),
                 ),
             )
-            connection.events.answered(id.toString())
             return null
         }
         val callId = "native-$id"
         pending[callId] = id
         return CodeModeStep.Calls(listOf(CodeModeCall(callId, name, arguments)))
+    }
+
+    private fun acknowledge(id: JsonElement, frame: JsonObject) {
+        scope.launch {
+            Cancellables.runCatchingBestEffort {
+                connection.send(frame)
+                connection.events.answered(id.toString())
+            }
+        }
     }
 
     override suspend fun terminate(): CodeModeStep {

@@ -13,10 +13,13 @@ import splice.codemode.nativehost.NativeCell
 import splice.codemode.nativehost.NativeCellAdmission
 import splice.codemode.nativehost.NativeCellLease
 import splice.codemode.nativehost.NativeConnection
+import splice.codemode.nativehost.NativeConnectionClosed
 import splice.codemode.nativehost.NativeFrames
 import splice.codemode.nativehost.NativeHostArtifact
 import splice.codemode.nativehost.NativePendingStart
+import splice.codemode.nativehost.NativePreparedSession
 import splice.codemode.nativehost.NativeRequests
+import splice.codemode.nativehost.NativeSessionBinding
 import splice.core.util.Cancellables
 import splice.core.util.JsonScalars
 import splice.upstream.LifecycleScope
@@ -28,6 +31,7 @@ import splice.upstream.codemode.NativeCodeModeCell
 import splice.upstream.codemode.NativeCodeModeLifecycle
 import splice.upstream.codemode.NativeCodeModeOptions
 import splice.upstream.codemode.ProcessDispatchers
+import splice.upstream.failure.CodeModeCapacityException
 import splice.upstream.failure.CodeModeStartException
 import java.io.IOException
 import java.util.UUID
@@ -45,7 +49,7 @@ public class NativeCodeModeRuntime(
     private val ownership = Any()
     private val scope = LifecycleScope(ioDispatcher)
     private val opening = Mutex()
-    private val sessions = java.util.concurrent.ConcurrentHashMap<String, String>()
+    private val sessions = java.util.concurrent.ConcurrentHashMap<String, NativeSessionBinding>()
     private val admission = NativeCellAdmission(limits, cellHeapMb)
 
     @Volatile private var connection: NativeConnection? = null
@@ -81,14 +85,17 @@ public class NativeCodeModeRuntime(
         require(
             options.maxOutputTokens <= Int.MAX_VALUE,
         ) { "Native execute output budget exceeds protocol V1 i32 range" }
-        val lease = admission.reserve()
+        val prepared = beforeDispatch(sessionKey)
+        val lease = prepared.lease
         var transferred = false
         var started: NativePendingStart? = null
         try {
-            val (host, sessionId) = beforeDispatch(sessionKey)
+            val host = prepared.host
+            val sessionId = prepared.sessionId
             // A failure from this point can follow execution. It must never authorize a source retry.
             val operation = host.prepare(execute = true)
             started = NativePendingStart(host, sessionId, operation)
+            host.events.expect(operation.id, sessionId, lease)
             host.dispatch(
                 operation,
                 NativeRequests.execute(
@@ -127,20 +134,50 @@ public class NativeCodeModeRuntime(
         }
     }
 
-    private suspend fun beforeDispatch(sessionKey: String): Pair<NativeConnection, String> = try {
+    private suspend fun beforeDispatch(sessionKey: String): NativePreparedSession = try {
         withTimeout(DEFAULT_WORKER_START_TIMEOUT_MS) {
             opening.withLock {
                 check(!closed.get()) { "Native code-mode runtime is closed" }
-                val host = connection ?: open().also { connection = it }
-                val sessionId = sessions[sessionKey] ?: UUID.randomUUID().toString().also { id ->
-                    NativeFrames.value(host.operation(NativeRequests.open(id, admission.heapBytes)).response.await())
-                    sessions[sessionKey] = id
+                val host = activeConnection()
+                val lease = admission.reserve()
+                var prepared = false
+                try {
+                    val sessionId = sessions[sessionKey]?.takeIf { it.host === host }?.id
+                        ?: UUID.randomUUID().toString().also { id ->
+                            NativeFrames.value(
+                                host.operation(NativeRequests.open(id, admission.heapBytes)).response.await(),
+                            )
+                            sessions[sessionKey] = NativeSessionBinding(host, id)
+                        }
+                    NativePreparedSession(host, sessionId, lease).also { prepared = true }
+                } finally {
+                    if (!prepared) lease.close()
                 }
-                host to sessionId
             }
         }
     } catch (error: IOException) {
-        throw CodeModeStartException(error)
+        throw beforeDispatchFailure(error)
+    }
+
+    private fun beforeDispatchFailure(error: IOException): IOException = when (error) {
+        is CodeModeCapacityException -> error
+        else -> CodeModeStartException(error)
+    }
+
+    private suspend fun activeConnection(): NativeConnection {
+        val current = connection
+        if (current != null && current.isAvailable()) return current
+        current?.close()
+        return open()
+    }
+
+    private fun retire(dead: NativeConnection) {
+        synchronized(ownership) {
+            if (connection === dead) {
+                connection = null
+                sessions.clear()
+            }
+        }
     }
 
     private suspend fun open(): NativeConnection = withContext(ioDispatcher) {
@@ -150,7 +187,7 @@ public class NativeCodeModeRuntime(
                 spawn(ProcessBuilder(artifact.resolve().toString(), "--listen", "stdio")),
                 scope,
                 ioDispatcher,
-                Runnable(admission::closeAll),
+                NativeConnectionClosed(::retire),
             ).also { connection = it }
         }
         try {
@@ -166,11 +203,10 @@ public class NativeCodeModeRuntime(
     }
 
     override fun closeSession(sessionKey: String) {
-        val sessionId = sessions.remove(sessionKey) ?: return
-        val host = connection ?: return
+        val session = sessions.remove(sessionKey) ?: return
         scope.launch {
             Cancellables.runCatchingBestEffort {
-                host.operation(NativeRequests.session("session/shutdown", sessionId)).response.await()
+                session.host.operation(NativeRequests.session("session/shutdown", session.id)).response.await()
             }
         }
     }

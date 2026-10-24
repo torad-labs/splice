@@ -24,7 +24,7 @@ internal class NativeConnection(
     private val process: Process,
     private val scope: CoroutineScope,
     private val ioDispatcher: CoroutineDispatcher,
-    private val onClosed: Runnable,
+    private val onClosed: NativeConnectionClosed,
 ) : AutoCloseable {
     private val closed = AtomicBoolean()
     private val writer = Mutex()
@@ -87,6 +87,7 @@ internal class NativeConnection(
 
     fun discard(operation: NativeOperation) {
         operations.discard(operation)
+        events.discard(operation.id)
     }
 
     suspend fun dispatch(operation: NativeOperation, request: JsonObject) {
@@ -119,7 +120,11 @@ internal class NativeConnection(
     private fun route(frame: JsonObject) {
         when (JsonScalars.str(frame, "type")) {
             "connection/ready", "connection/rejected" -> ready.complete(frame)
-            "operation/response", "execute/initialResponse" -> operations.deliver(frame)
+            "operation/response" -> {
+                events.accepted(frame)
+                operations.deliver(frame)
+            }
+            "execute/initialResponse" -> operations.deliver(frame)
             "delegate/request" -> events.deliver(frame)
             "delegate/cancel" -> events.cancel(frame)
             "cell/closed" -> events.completed(frame) // Release the heap reservation while preserving pending output.
@@ -139,6 +144,8 @@ internal class NativeConnection(
         process.onExit().thenRun(action)
     }
 
+    fun isAvailable(): Boolean = !closed.get() && process.isAlive
+
     override fun close() {
         if (closed.compareAndSet(false, true)) {
             val error = CodeModeWorkerLostException()
@@ -146,7 +153,11 @@ internal class NativeConnection(
             operations.fail(error)
             events.fail(error)
             process.destroyForcibly()
-            onClosed.run()
+            onClosed.closed(this)
         }
     }
+}
+
+internal fun interface NativeConnectionClosed {
+    fun closed(connection: NativeConnection)
 }

@@ -41,9 +41,13 @@ internal class ResponsesReasoningFold(
 
     // Live summary delivery (every mode but cutoff): a header-only part is a status line, rendered
     // once per round per distinct text (V4-450).
-    private val statusHeaders = SummaryStatusHeaders()
+    private val prefixSequence = ReasoningPrefixSequence()
+    private val statusHeaders = SummaryStatusHeaders(prefixSequence)
     val leadingText = ResponsesLeadingReasoning(
         ReasoningLiteralWriter { oi, text, sink -> append(oi, text, startsPart = false, sink) },
+        ReasoningSummaryWriter { oi, release, sink -> append(oi, release.text, release.startsPart, sink) },
+        statusHeaders,
+        prefixSequence,
     )
     val pendingChars: Long get() = leadingText.pendingChars
 
@@ -74,7 +78,7 @@ internal class ResponsesReasoningFold(
         // The paragraph break rides the part's first rendered text, so a part that renders nothing
         // leaves no break behind it.
         val oi = frames.intOr(evt[OUTPUT_INDEX]) ?: 0
-        render(oi, statusHeaders.partAdded(frames.reasoningKey(oi)), sink)
+        render(oi, statusHeaders.partAdded(oi), sink)
     }
 
     suspend fun onThinkingDelta(evt: JsonObject, sink: WireSink) {
@@ -87,7 +91,7 @@ internal class ResponsesReasoningFold(
             // `continue`s on ReasoningSummaryDelta). Raw reasoning_text deltas still stream live.
             ctx.summary.dedupeRepeatedParts && summary -> null
             summaryDedup.suppress(oi, delta) -> null
-            summary -> statusHeaders.delta(frames.reasoningKey(oi), delta)
+            summary -> statusHeaders.delta(oi, delta)
             else -> SummaryRelease(delta, startsPart = false)
         }
         render(oi, release, sink)
@@ -100,7 +104,7 @@ internal class ResponsesReasoningFold(
         val oi = frames.intOr(evt[OUTPUT_INDEX]) ?: 0
         if (!ctx.summary.dedupeRepeatedParts) {
             // Live delivery: the done event settles a part still held as a possible bare header.
-            render(oi, statusHeaders.done(frames.reasoningKey(oi), text), sink)
+            render(oi, statusHeaders.done(oi, text), sink)
             return
         }
         if (!renderableSummaryDone(evt, text) || !statusHeaders.admitsLate(text)) return
@@ -179,9 +183,8 @@ internal class ResponsesReasoningFold(
         if (ctx.summary.dedupeRepeatedParts) return
         // Its summary arrived live, so it is already rendered or decided: settle only a part the
         // item ended on while still held as a possible bare header.
-        val key = frames.reasoningKey(oi)
-        if (statusHeaders.sawLive(key)) {
-            render(oi, statusHeaders.itemDone(key), sink)
+        if (statusHeaders.sawLive(oi)) {
+            render(oi, statusHeaders.itemDone(oi), sink)
         } else {
             emitReasoningItemText(item, oi, sink)
         }

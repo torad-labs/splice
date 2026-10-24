@@ -46,7 +46,6 @@ import splice.dialect.responses.reasoning.ResponsesReasoningReplay
 import splice.upstream.StreamTranslator
 import splice.upstream.ToolNameShortener
 import splice.upstream.sse.WireSink
-import splice.upstream.transport.BufferCapacity
 import java.io.IOException
 import java.util.concurrent.CancellationException
 
@@ -121,28 +120,18 @@ internal class ResponsesStreamTranslator(
         try {
             upstream
                 .takeWhile {
-                    // NF-06: reasoning envelopes, held prefixes and function arguments accumulate outside the
-                    // rendered text buffers. Saturate their sum before the Int-shaped shared guard;
-                    // block count separately bounds an upstream that opens indexes without closing.
-                    val envelopeChars = state.reasoningEnvelopes.sumOf { it.length.toLong() }
-                    val pendingArgsChars = minOf(
-                        Int.MAX_VALUE.toLong(),
-                        envelopeChars + state.bufferedToolArgsChars + (state.nativePrefix?.retainedChars ?: 0L) +
-                            reasoningFold.pendingChars,
-                    ).toInt()
-                    val withinCapacity = !BufferCapacity.over(
-                        state.textBuf.length,
-                        state.thinkingBuf.length,
-                        toolIndexCount = state.blocks.size,
-                        pendingArgsLen = pendingArgsChars,
-                    )
+                    val withinCapacity = !ResponsesBufferBudget.exceeded(state, reasoningFold.pendingChars)
                     if (!withinCapacity) runawayGuard = RUNAWAY_GUARD_MESSAGE
                     withinCapacity
                 }
                 .firstOrNull { evt ->
                     reducer.onEvent(evt, orderedSink)
+                    // The last event may exceed capacity without another frame to run takeWhile's check.
+                    if (ResponsesBufferBudget.exceeded(state, reasoningFold.pendingChars)) {
+                        runawayGuard = RUNAWAY_GUARD_MESSAGE
+                    }
                     // Protocol completion releases callbacks and usage without awaiting transport EOF.
-                    state.finalResponse != null
+                    state.finalResponse != null || runawayGuard != null
                 }
         } catch (e: CancellationException) {
             if (cancellationMustEscape(state)) throw e
@@ -169,7 +158,12 @@ internal class ResponsesStreamTranslator(
             if (!hasRecoverableProgress(state)) throw ignored
             unexpected = ignored
         } finally {
-            reasoningFold.leadingText.closeSourceProgress(itemFold.execProgress, terminalSeen(state), sink)
+            reasoningFold.leadingText.closeSourceProgress(
+                itemFold.execProgress,
+                terminalSeen(state),
+                sink,
+                capacityRejected = runawayGuard != null,
+            )
         }
 
         reasoningFold.finishLeadingText(sink)

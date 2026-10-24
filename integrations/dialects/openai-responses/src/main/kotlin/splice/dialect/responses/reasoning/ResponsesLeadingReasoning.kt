@@ -18,33 +18,40 @@ internal fun interface ReasoningLiteralWriter {
     suspend fun write(outputIndex: Int, text: String, sink: WireSink)
 }
 
+/** Writes a settled summary through the fold's existing paragraph and header policies. */
+internal fun interface ReasoningSummaryWriter {
+    suspend fun write(outputIndex: Int, release: SummaryRelease, sink: WireSink)
+}
+
 /** Owns ambiguous leading prefixes, their shared-capacity charge, and settlement at visible boundaries. */
 internal class ResponsesLeadingReasoning(
     private val writer: ReasoningLiteralWriter,
+    private val summaryWriter: ReasoningSummaryWriter,
+    private val summaries: SummaryStatusHeaders,
+    private val sequence: ReasoningPrefixSequence,
 ) {
-    private val prefixes = LinkedHashMap<Int, StringBuilder>()
+    private val prefixes = LinkedHashMap<Int, ReasoningPrefixText>()
     private val harvest = ResponsesHarvest()
     private var changed = false
-    var pendingChars: Long = 0
-        private set
+    private var rawPendingChars = 0L
+    private var summaryRevision = -1L
+    val pendingChars: Long get() = rawPendingChars + summaries.pendingChars
 
     fun hold(oi: Int, release: SummaryRelease): String? {
-        val held = prefixes.getOrPut(oi) { StringBuilder() }
+        val held = prefixes.getOrPut(oi) { ReasoningPrefixText(sequence.next()) }
         require(held.length.toLong() + release.text.length <= BufferCapacity.MAX_BUFFERED_CHARS) {
             "reasoning prefix exceeds buffer capacity"
         }
         held.append(release.text)
-        pendingChars += release.text.length
+        rawPendingChars += release.text.length
         changed = true
-        if (!release.canRender(held.toString())) return null
-        return take(oi)
+        if (!release.canRender(held)) return null
+        return remove(oi)?.toString()
     }
-
-    fun take(oi: Int): String? = remove(oi)?.toString()
 
     /** A completed raw snapshot overrides its held prefix; absent snapshots retain the literal bytes. */
     fun completed(item: JsonObject, oi: Int): String? {
-        val held = take(oi) ?: return null
+        val held = remove(oi)?.toString() ?: return null
         return if (hasRawSnapshot(item)) harvest.reasoningReadableText(item) else held
     }
 
@@ -58,21 +65,32 @@ internal class ResponsesLeadingReasoning(
             }
         }
 
-    private fun remove(oi: Int): StringBuilder? = prefixes.remove(oi)?.also {
-        pendingChars -= it.length
+    private fun remove(oi: Int): ReasoningPrefixText? = prefixes.remove(oi)?.also {
+        rawPendingChars -= it.length
         changed = true
     }
 
-    /** Preserve arrival order; blank prefixes can still acquire a body after interleaved prose. */
+    /** Preserve arrival order; a real visible phase or an ending also discards blank/comment-only prefixes. */
     suspend fun settle(sink: WireSink, discardEmpty: Boolean) {
-        if (!discardEmpty && !changed) return
-        for (oi in prefixes.keys.toList()) {
-            val text = checkNotNull(prefixes[oi]).toString()
-            val readable = ReadableReasoning.hasText(text)
-            if (readable || discardEmpty) remove(oi)
-            if (readable) writer.write(oi, text, sink)
+        if (pendingChars == 0L) return
+        if (!discardEmpty && !changed) {
+            if (summaryRevision == summaries.revision) return
         }
+        val pending = prefixes.map { (key, text) -> HeldReasoningPrefix(key, summary = false, text) } +
+            summaries.pending()
+        for (held in pending.sortedBy { it.text.order }) settlePrefix(held, sink, discardEmpty)
         changed = false
+        summaryRevision = summaries.revision
+    }
+
+    private suspend fun settlePrefix(held: HeldReasoningPrefix, sink: WireSink, discardEmpty: Boolean) {
+        if (!held.text.readable && !discardEmpty) return
+        if (held.summary) {
+            summaries.atBoundary(held.key)?.let { summaryWriter.write(held.key, it, sink) }
+        } else {
+            remove(held.key)
+            if (held.text.readable) writer.write(held.key, held.text.toString(), sink)
+        }
     }
 
     /** Forget exec progress on every exit; parsed terminals settle prefixes before notifying their observer. */
@@ -80,38 +98,48 @@ internal class ResponsesLeadingReasoning(
         progress: ResponsesExecProgress,
         terminalSeen: Boolean,
         sink: WireSink,
+        capacityRejected: Boolean = false,
     ) = withContext(NonCancellable) {
         progress.closeAll()
+        if (capacityRejected) discardPending()
         if (terminalSeen) {
             settle(sink, discardEmpty = true)
             sink.customToolSource(CustomToolSource.Terminal)
         }
     }
 
+    private fun discardPending() {
+        prefixes.clear()
+        rawPendingChars = 0
+        summaries.discardPending()
+        changed = false
+        summaryRevision = summaries.revision
+    }
+
     /** Settle a leading literal before a later visible phase, rather than after the answer at termination. */
     fun orderedSink(sink: WireSink): WireSink = object : WireSink by sink {
         override suspend fun openText(): WireBlockIndex {
-            settle(sink, discardEmpty = false)
+            settle(sink, discardEmpty = true)
             return sink.openText()
         }
 
         override suspend fun textDelta(index: WireBlockIndex, text: String) {
-            settle(sink, discardEmpty = false)
+            settle(sink, discardEmpty = true)
             sink.textDelta(index, text)
         }
 
         override suspend fun openTool(id: String, name: String): WireBlockIndex {
-            settle(sink, discardEmpty = false)
+            settle(sink, discardEmpty = true)
             return sink.openTool(id, name)
         }
 
         override suspend fun inputJsonDelta(index: WireBlockIndex, partialJson: String) {
-            settle(sink, discardEmpty = false)
+            settle(sink, discardEmpty = true)
             sink.inputJsonDelta(index, partialJson)
         }
 
         override suspend fun customToolSource(event: CustomToolSource) {
-            if (event is CustomToolSource.Completed) settle(sink, discardEmpty = false)
+            if (event is CustomToolSource.Completed) settle(sink, discardEmpty = true)
             sink.customToolSource(event)
         }
     }

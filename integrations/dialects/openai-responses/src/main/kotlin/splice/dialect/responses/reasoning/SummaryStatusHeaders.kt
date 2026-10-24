@@ -9,28 +9,37 @@ package splice.dialect.responses.reasoning
 
 private const val MARKDOWN_BOLD = "**"
 
-// A header is a few words; a part still open in bold past this is prose and is released at once.
-private const val MAX_HEADER_CHARS = 200
-
 /** Summary text the fold renders now. [startsPart] marks a part's first rendered text, which takes
  *  the paragraph break when its thinking block already holds text. */
 internal data class SummaryRelease(val text: String, val startsPart: Boolean, val complete: Boolean = false) {
     /** A completed literal prefix cannot still become a comment placeholder. */
-    fun canRender(held: String): Boolean =
-        if (complete) ReadableReasoning.hasText(held) else !ReadableReasoning.mayBeEmpty(held)
+    fun canRender(held: ReasoningPrefixText): Boolean =
+        if (complete) held.readable else !held.mayBeEmpty
 }
 
 /** One round's header decisions, keyed by the fold's reasoning keys. Each item's current summary part
  *  is held only while it can still turn out to be a bare header; the first character of a body
  *  releases it to stream live. */
-internal class SummaryStatusHeaders {
+internal class SummaryStatusHeaders(private val sequence: ReasoningPrefixSequence = ReasoningPrefixSequence()) {
 
-    private class Part {
-        val held = StringBuilder()
-        var live = false
+    private data class Part(var held: ReasoningPrefixText? = null, var live: Boolean = false)
+
+    private val current = LinkedHashMap<Int, Part>()
+    var pendingChars: Long = 0
+        private set
+    var revision: Long = 0
+        private set
+
+    /** Only held text owns capacity; released parts keep their live identity without keeping another copy. */
+    private fun release(part: Part): String? {
+        val held = part.held ?: return null
+        part.held = null
+        part.live = true
+        pendingChars -= held.length
+        revision++
+        return held.toString()
     }
 
-    private val current = HashMap<Int, Part>()
     private val shown = HashSet<String>()
     private val liveKeys = HashSet<Int>()
 
@@ -50,10 +59,12 @@ internal class SummaryStatusHeaders {
         liveKeys.add(key)
         val part = current.getOrPut(key) { Part() }
         if (part.live) return SummaryRelease(text, startsPart = false)
-        part.held.append(text)
-        if (HeaderShape.mayStillBeHeaderOnly(part.held.toString())) return null
-        part.live = true
-        return SummaryRelease(part.held.toString(), startsPart = true)
+        val held = part.held ?: ReasoningPrefixText(sequence.next()).also { part.held = it }
+        held.append(text)
+        pendingChars += text.length
+        revision++
+        if (held.mayBeHeaderOnly) return null
+        return SummaryRelease(checkNotNull(release(part)), startsPart = true)
     }
 
     /** The part's completed text, authoritative over what was held. */
@@ -70,12 +81,27 @@ internal class SummaryStatusHeaders {
     fun admitsLate(text: String): Boolean = ReadableReasoning.hasText(text) &&
         (!HeaderShape.isHeaderOnly(text) || shown.add(text.trim()))
 
+    fun pending(): List<HeldReasoningPrefix> = current.mapNotNull { (key, part) ->
+        part.held?.let { HeldReasoningPrefix(key, summary = true, it) }
+    }
+
+    fun discardPending() {
+        current.clear()
+        pendingChars = 0
+        revision++
+    }
+
+    /** A visible boundary settles a part but leaves it live for any subsequent body deltas. */
+    fun atBoundary(key: Int): SummaryRelease? = current[key]?.let { part -> release(part)?.let(::decide) }
+
     private fun settle(key: Int, doneText: String?): SummaryRelease? {
         val part = current.remove(key)
+        val wasLive = part?.live == true
+        val held = part?.let(::release)
         return when {
             part == null -> doneText?.let { decide(it) }
-            part.live -> null
-            else -> decide(doneText ?: part.held.toString())
+            wasLive -> null
+            else -> decide(doneText ?: held.orEmpty())
         }
     }
 
@@ -95,21 +121,6 @@ private object HeaderShape {
         val close = closingBold(trimmed) ?: return false
         val body = trimmed.substring(close + MARKDOWN_BOLD.length).trim()
         return ReadableReasoning.isEmptyBody(body)
-    }
-
-    /** Whether more deltas could still make [held] a header-only part. */
-    fun mayStillBeHeaderOnly(held: String): Boolean {
-        val text = held.trimStart()
-        return when {
-            ReadableReasoning.mayBeEmpty(text) -> true
-            text.length > MAX_HEADER_CHARS -> false
-            text.length < MARKDOWN_BOLD.length -> MARKDOWN_BOLD.startsWith(text)
-            !text.startsWith(MARKDOWN_BOLD) -> false
-            else -> {
-                val close = closingBold(text)
-                close == null || ReadableReasoning.mayBeEmpty(text.substring(close + MARKDOWN_BOLD.length))
-            }
-        }
     }
 
     /** Index of the bold run's closing marker, when [text] opens with a non-empty bold run. */

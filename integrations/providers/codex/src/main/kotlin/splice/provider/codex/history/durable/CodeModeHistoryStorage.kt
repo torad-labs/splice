@@ -1,14 +1,11 @@
 package splice.provider.codex.history.durable
 
 import kotlinx.serialization.Serializable
-import kotlinx.serialization.SerializationException
 import kotlinx.serialization.Transient
 import kotlinx.serialization.json.Json
 import splice.core.memory.HeapReservations
 import splice.core.memory.HeapText
-import splice.core.perf.InputDigest
 import splice.core.util.LogSink
-import splice.provider.codex.CodeModePersistenceException
 import splice.provider.codex.CodeModeStateLocation
 import splice.provider.codex.history.CodeModeLedgerEntry
 import splice.upstream.memory.JvmHeap
@@ -38,7 +35,8 @@ internal class CodeModeHistoryStorage(
     private val heap: HeapReservations = JvmHeap.budget,
     private val log: LogSink = LogSink {},
 ) {
-    private val dir = location.dir.resolve("history")
+    private val paths = CodeModeHistoryPaths(location.dir)
+    private val dir = paths.directory
     private val journal = CodeModeHistoryJournal(json, heap, maxBytes, log)
     private val written = ConcurrentHashMap<String, Long>()
     private val offsets = ConcurrentHashMap<String, Long>()
@@ -46,7 +44,7 @@ internal class CodeModeHistoryStorage(
     private val pending = ConcurrentHashMap<String, MutableList<CodeModeHistoryPrepared>>()
     val durableEnabled: Boolean get() = location.journaling.now()
 
-    fun read(key: String): CodeModeHistoryState? = guarded {
+    fun read(key: String): CodeModeHistoryState? = CodeModeHistoryValidation.guarded {
         val file = path(key)
         val state = when {
             Files.exists(file) -> {
@@ -62,7 +60,7 @@ internal class CodeModeHistoryStorage(
         state
     }
 
-    fun write(prepared: CodeModeHistoryPrepared) = guarded {
+    fun write(prepared: CodeModeHistoryPrepared) = CodeModeHistoryValidation.guarded {
         CodeModeHistoryDeltas.own(prepared, heap)
         val key = prepared.delta.key
         if (!durableEnabled) {
@@ -103,7 +101,7 @@ internal class CodeModeHistoryStorage(
         val staging = path(key).resolveSibling("${path(key).fileName}.migrating")
         val state = HeapText.Reader.read(old, heap).use { stage ->
             val legacy = json.decodeFromString<CodeModeHistoryState>(stage.text)
-            require(legacy.key == key && legacy.version == 1) { "Legacy authoritative history identity is invalid" }
+            CodeModeHistoryValidation.legacy(legacy, key)
             migrateEntries(legacy, staging)
         }
         Files.move(staging, path(key), StandardCopyOption.REPLACE_EXISTING, StandardCopyOption.ATOMIC_MOVE)
@@ -134,16 +132,6 @@ internal class CodeModeHistoryStorage(
         return state
     }
 
-    private fun path(key: String): Path = dir.resolve(InputDigest.hex(key) + ".jsonl")
-    private fun legacy(key: String): Path = dir.resolve(InputDigest.hex(key) + ".json")
-
-    private inline fun <T> guarded(operation: () -> T): T = try {
-        operation()
-    } catch (error: SerializationException) {
-        throw CodeModePersistenceException(IOException("authoritative history cannot be decoded", error), false)
-    } catch (error: IllegalArgumentException) {
-        throw CodeModePersistenceException(IOException("authoritative history revision is invalid", error), false)
-    } catch (error: IOException) {
-        throw CodeModePersistenceException(error, false)
-    }
+    private fun path(key: String): Path = paths.journal(key)
+    private fun legacy(key: String): Path = paths.legacy(key)
 }

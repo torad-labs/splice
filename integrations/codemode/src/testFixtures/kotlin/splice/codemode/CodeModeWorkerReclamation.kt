@@ -4,6 +4,7 @@ package splice.codemode
 import kotlinx.coroutines.future.await
 import kotlinx.coroutines.withTimeout
 import org.junit.jupiter.api.Assertions.assertFalse
+import splice.upstream.codemode.CodeModeRuntime
 import java.util.concurrent.CompletableFuture
 
 /** How long a closed host has to exit, and its worker to be seen exiting, before the fixture fails. */
@@ -14,7 +15,7 @@ class CodeModeWorkerReclamation : WorkerSpawn {
 
     override fun invoke(builder: ProcessBuilder): Process = builder.start().also { worker.complete(it) }
 
-    suspend fun assertReclaimed(runtime: JvmCodeModeRuntime) {
+    suspend fun assertReclaimed(runtime: CodeModeRuntime) {
         runtime.close()
         val process = withTimeout(REAP_TIMEOUT_MS) { worker.await() }
         withTimeout(REAP_TIMEOUT_MS) { process.onExit().await() }

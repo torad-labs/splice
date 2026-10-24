@@ -141,7 +141,7 @@ zstd_request_body = true
 # The JAR-bundled runner fills existing host JVMs to four session engines before starting another.
 # These code-mode-only overrides retain the defaults shown when omitted (chatgpt-oauth + responses).
 #   code_mode_workers = 6      maximum on-demand host JVMs, with four session-owned engines per host
-#   code_mode_timeout_ms is retired; remove it. Use exec/wait yield_time_ms observation budgets instead.
+# retired: code_mode_timeout_ms — remove this key; native exec/wait yield_time_ms observes cells without cancelling them.
 #   code_mode_heap = 512       MiB for each host JVM heap; each session's native heap has its own 384 MiB cap
 #   code_mode_memory_mb = 24576 head-wide reservation including collector/native headroom; idle engines evict first
 # The default admits 21 concurrent sessions: 6 host reservations x 1152 MiB + 21 engines x 832 MiB = 24384 MiB.

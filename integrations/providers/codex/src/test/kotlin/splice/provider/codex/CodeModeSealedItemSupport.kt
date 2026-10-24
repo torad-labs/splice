@@ -36,6 +36,10 @@ abstract class CodeModeSealedItemSupport : CodeModeItemCompletionSupport() {
             this.text.append(text)
         }
 
+        override suspend fun textDelta(index: WireBlockIndex, text: String) {
+            this.text.append(text)
+        }
+
         override suspend fun openTool(id: String, name: String): WireBlockIndex {
             callback.complete(SeenTool(id, name))
             return WireBlockIndex(0)

@@ -5,7 +5,6 @@
 package splice.launch.install
 
 import splice.core.terminal.TerminalOutput
-import splice.core.topology.HeadConfig
 import splice.core.topology.Topology
 import splice.core.util.Cancellables
 import splice.core.util.EnvReader
@@ -47,14 +46,7 @@ internal class InstallLinker(
         shimRefusal(launchShim)?.let { return InstallResult.Refused(it) }
         val bin = layout.localBin(env)
         Files.createDirectories(bin)
-        // All heads for --all/no-arg, else the one named by topology key OR wrapper command (a failed
-        // resolution has already printed why — unknown vs ambiguous).
-        val selected = if (headArg == null || headArg == "--all") {
-            topology.heads
-        } else {
-            val key = heads.resolveSpecificHead(topology, headArg) ?: return InstallResult.Declined
-            topology.heads.filterKeys { it == key }
-        }
+        val selected = selected(topology, headArg) ?: return InstallResult.Declined
         val refusal = collisionRefusal(topology) ?: linkRefusal(bin, selected, launchShim)
         // Said only when it is true: doctor, a few lines later, grades the same fact.
         val onPath = env("PATH").orEmpty().split(':').any { it == bin.toString() }
@@ -72,12 +64,28 @@ internal class InstallLinker(
         return if (refusal == null) InstallResult.Linked else InstallResult.Refused(refusal)
     }
 
+    /** Every command for --all/no-arg, else the one named: a remote command (LAN share) by its name, a head by
+     *  topology key OR wrapper command. Null when [headArg] names nothing, which has already printed why (unknown vs
+     *  ambiguous). */
+    private fun selected(topology: Topology, headArg: String?): List<Pair<String, String>>? = when {
+        headArg == null || headArg == "--all" -> commands(topology)
+        headArg in topology.remote -> listOf(headArg to headArg)
+        else -> heads.resolveSpecificHead(topology, headArg)
+            ?.let { key -> commands(topology).filter { it.first == key } }
+    }
+
+    /** Each command the topology links, with what runs it: a head's wrapper command (or its key) with the head's
+     *  key, and a remote command (LAN share, `[remote.<command>]`) with its own name. */
+    private fun commands(topology: Topology): List<Pair<String, String>> =
+        topology.heads.map { (key, head) -> key to (head.claude.command ?: key) } +
+            topology.remote.keys.map { it to it }
+
     /** Validate the WHOLE topology's commands (+ `splice`) on EVERY install, not just this
      *  invocation — otherwise sequential single-head installs silently retarget an existing
      *  wrapper symlink onto a command another head already owns. */
     private fun collisionRefusal(topology: Topology): String? {
-        val commandOwners = topology.heads
-            .map { (key, head) -> (head.claude.command ?: key) to key }
+        val commandOwners = commands(topology)
+            .map { (key, command) -> command to key }
             .plus(SELF_COMMAND to SELF_COMMAND)
             .groupBy({ it.first }, { it.second })
         val collisions = commandOwners.filterValues { it.size > 1 }
@@ -89,8 +97,7 @@ internal class InstallLinker(
     }
 
     /** The first reason a selected wrapper (or `splice` itself) cannot be linked, all checked before any is linked. */
-    private fun linkRefusal(bin: Path, selected: Map<String, HeadConfig>, launchShim: Path): String? {
-        val requested = selected.map { (key, head) -> key to (head.claude.command ?: key) }
+    private fun linkRefusal(bin: Path, requested: List<Pair<String, String>>, launchShim: Path): String? {
         val commands = requested.map { it.second } + SELF_COMMAND
         return commands.firstNotNullOfOrNull { command -> replaceableRefusal(bin, command) }
             ?: requested.firstNotNullOfOrNull { (key, command) -> linkOne(bin, key, command, launchShim) }

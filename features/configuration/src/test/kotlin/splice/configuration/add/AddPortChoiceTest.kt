@@ -17,7 +17,7 @@ class AddPortChoiceTest {
     private val output = TerminalOutput { }
     private val env = EnvReader { null }
 
-    private fun file(home: Path, control: Int, head: Int, provider: Int? = null): Path {
+    private fun file(home: Path, control: Int, head: Int, provider: Int? = null, share: Int? = null): Path {
         val path = home.resolve(".config/splice/splice.toml")
         Files.createDirectories(path.parent)
         Files.writeString(
@@ -37,7 +37,7 @@ class AddPortChoiceTest {
             port = $head
             discovery_prefix = "claude-old--"
             pinned_model = "m"
-            """.trimIndent() + "\n",
+            """.trimIndent() + "\n" + share?.let { "[share]\nenabled = true\nport = $it\n" }.orEmpty(),
         )
         return path
     }
@@ -51,8 +51,13 @@ class AddPortChoiceTest {
         lastPort: Int = 65_535,
     ): AddPrepared = UserHome.within(home) {
         file(home, control, control + 1, provider)
+        prepared(candidate, lastPort)
+    }
+
+    /** The add of a local runtime at [candidate] onto the splice.toml already written. */
+    private fun prepared(candidate: String, lastPort: Int = 65_535): AddPrepared {
         val add = AddPrepare(output, AddChecks(output), { _, default -> default }, lastHeadPort = lastPort)
-        add.prepare(
+        return add.prepare(
             AddArgs(
                 profile = "local",
                 name = "new",
@@ -72,6 +77,19 @@ class AddPortChoiceTest {
         val result = prepare(home, control, taken, "http://127.0.0.1:32199/v1")
         val candidate = assertInstanceOf(AddPrepared.Ready::class.java, result).candidate
         assertEquals(taken + 1, candidate.topology.heads.getValue("new").port)
+    }
+
+    @Test
+    fun `the LAN share port, while sharing is on, cannot become the next head`(@TempDir home: Path) {
+        val control = TestPorts.reserveRun(PORTS_FROM_CONTROL)
+        val head = control + 1
+        val sharing = head + 1
+        val result = UserHome.within(home) {
+            file(home, control, head, share = sharing)
+            prepared("http://127.0.0.1:32199/v1")
+        }
+        val candidate = assertInstanceOf(AddPrepared.Ready::class.java, result).candidate
+        assertEquals(sharing + 1, candidate.topology.heads.getValue("new").port)
     }
 
     @Test

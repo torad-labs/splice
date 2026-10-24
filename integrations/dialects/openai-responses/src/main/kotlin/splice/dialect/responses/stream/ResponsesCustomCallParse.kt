@@ -25,8 +25,9 @@ internal class ResponsesCustomCallParse(private val codeMode: Boolean = false) {
     /** Completed items keep their arrival order and source; terminal-only fallbacks append. */
     fun merge(streamed: List<GatewayCustomCall>, response: JsonObject?): List<GatewayCustomCall> {
         val terminal = harvest(response)
-        val streamedIds = streamed.mapTo(HashSet(), GatewayCustomCall::callId)
-        return streamed + terminal.filterNot { it.callId in streamedIds }
+        val completed = streamed.distinct()
+        val streamedIds = completed.mapTo(HashSet(), GatewayCustomCall::callId)
+        return completed + terminal.filterNot { it.callId in streamedIds }
     }
 
     fun harvest(response: JsonObject?): List<GatewayCustomCall> {

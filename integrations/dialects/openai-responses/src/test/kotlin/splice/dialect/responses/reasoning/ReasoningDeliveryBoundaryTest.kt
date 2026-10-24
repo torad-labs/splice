@@ -49,7 +49,7 @@ private object DeliveryAuth : RefreshableAuthProvider {
     override suspend fun describe(): AuthDescription = AuthDescription(true, "fixture")
 }
 
-private class DeliveryProvider(state: Path) : ResponsesProvider(
+internal class DeliveryProvider(state: Path) : ResponsesProvider(
     tuning = ProviderTuning(
         name = ProviderName(key = "claudex", label = "claudex"),
         catalog = ModelCatalog(
@@ -73,7 +73,7 @@ private class DeliveryProvider(state: Path) : ResponsesProvider(
     override fun extraHeaders(creds: Credentials): Map<String, String> = emptyMap()
 }
 
-private class DeliverySink(private val rejectedText: String? = null) : WireSink {
+internal class DeliverySink(private val rejectedText: String? = null) : WireSink {
     val text = StringBuilder()
     val ordered = mutableListOf<String>()
     val completed = mutableListOf<CustomToolSource.Completed>()
@@ -106,7 +106,7 @@ private class DeliverySink(private val rejectedText: String? = null) : WireSink 
     }
 }
 
-private object DeliveryFrames {
+internal object DeliveryFrames {
     fun message(id: String, text: String): JsonObject = buildJsonObject {
         put("type", "message")
         put("id", id)

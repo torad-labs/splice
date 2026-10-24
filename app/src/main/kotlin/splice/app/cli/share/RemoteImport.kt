@@ -61,7 +61,7 @@ internal class RemoteImport(
         out.line("$GREEN✓$RESET joined ${machine.info.server}, certificate $DIM${ok.pin}$RESET pinned")
         val target = target(current, machine, ok)
         // The token goes first: a provider that names the machine finds it on its first turn.
-        return kept(target.name, ok.token) && imported(machine, target, current)
+        return kept(target, ok.token) && imported(machine, target, current)
     }
 
     /** Where [machine] is written here: under its `[remotes]` key (RemoteTopology.keyFor), said when another machine
@@ -96,11 +96,12 @@ internal class RemoteImport(
         return here.isNotEmpty() || added > 0
     }
 
-    private fun kept(name: String, token: String): Boolean =
-        Cancellables.runCatchingCancellable { store.save(name, token) }.fold(
+    /** Keeps [token] as [target]'s, with the name the machine gave, which the Sessions switch reads its key back to. */
+    private fun kept(target: RemoteTarget, token: String): Boolean =
+        Cancellables.runCatchingCancellable { store.save(target.name, token, target.server) }.fold(
             onSuccess = { true },
             onFailure = { failure ->
-                err.line("$REMOTE_VERB: the token from $name was not kept: ${SafeFailureText.render(failure)}")
+                err.line("$REMOTE_VERB: the token from ${target.name} was not kept: ${SafeFailureText.render(failure)}")
                 false
             },
         )

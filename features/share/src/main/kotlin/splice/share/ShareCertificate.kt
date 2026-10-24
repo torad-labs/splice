@@ -3,7 +3,8 @@
 // <state>/share/tls.pem (0600: the key and the certificate as PEM, so `openssl x509 -in tls.pem -noout -fingerprint
 // -sha256` shows what a client pins). A client pins its SHA-256 when it joins (trust on first contact, the LAN trust
 // Marcos chose on 2026-10-22), so the certificate never changes on its own: a file that cannot be read stops sharing,
-// said in the log, rather than minting a new one every joined machine would then refuse.
+// said in the log, rather than minting a new one every joined machine would then refuse. Since round 16 of PR #419's
+// review, whatever bytes the file holds are read into that one failure, never an exception its callers do not take.
 package splice.share
 
 import io.ktor.network.tls.certificates.buildKeyStore
@@ -14,7 +15,9 @@ import splice.core.util.PathProbe
 import splice.core.util.SecureFile
 import java.nio.file.FileAlreadyExistsException
 import java.nio.file.Files
+import java.nio.file.LinkOption
 import java.nio.file.Path
+import java.security.GeneralSecurityException
 import java.security.KeyFactory
 import java.security.KeyStore
 import java.security.MessageDigest
@@ -38,22 +41,36 @@ public class ShareCertificate(private val file: Path) {
     /** The certificate's fingerprint, or null when none is minted yet or the file holds none: `splice share status`
      *  shows it, so a person can compare it with what a client printed when it joined. */
     public fun fingerprint(): String? = PathProbe.text(file)?.let { text ->
-        Cancellables.runCatchingCancellable { ShareFingerprint.of(certificate(text)) }
+        Cancellables.runCatchingCancellable { fingerprintOf(text) }
             .fold(onSuccess = { it }, onFailure = { null })
     }
 
     /** The listener's key store, minting the certificate for [names] when the file is absent. Throws, naming the
      *  file, when it holds no usable key and certificate. */
-    internal fun load(names: List<String>): ShareTls {
-        val text = PathProbe.text(file) ?: minted(names)
+    internal fun load(names: List<String>): ShareTls = try {
+        // A file there that is not text is no certificate, and is never minted over: a joined machine pinned it.
+        val text = if (Files.exists(file, LinkOption.NOFOLLOW_LINKS)) Files.readString(file) else minted(names)
         val password = randomPassword()
         val cert = certificate(text)
         val store = KeyStore.getInstance("PKCS12").apply {
             load(null, null)
             setKeyEntry(SHARE_TLS_ALIAS, key(text), password, arrayOf(cert))
         }
-        return ShareTls(store, password, ShareFingerprint.of(cert))
+        ShareTls(store, password, ShareFingerprint.of(cert))
+    } catch (refused: GeneralSecurityException) {
+        throw unserved(refused)
     }
+
+    private fun fingerprintOf(text: String): String = try {
+        ShareFingerprint.of(certificate(text))
+    } catch (refused: GeneralSecurityException) {
+        throw unserved(refused)
+    }
+
+    /** The file's bytes are no key or certificate the JDK takes: the failure every caller already says in words,
+     *  naming the file. */
+    private fun unserved(refused: GeneralSecurityException): IllegalArgumentException =
+        IllegalArgumentException("$file holds no key and certificate this machine can serve", refused)
 
     /** A new key and certificate, written only when nothing is there yet: a daemon that lost the race reads the one
      *  the other wrote. */

@@ -47,7 +47,7 @@ public class RemoteLinks(
 
     /** Whether sessions cross with [name]: its one Sessions switch here, read at each call, so the Sharing page turns
      *  it with no restart, on both its cards where it also joined this machine. */
-    public fun sessions(name: String): Boolean = switch.on(name)
+    public fun sessions(name: String): Boolean = switch.onUsed(name)
 
     /** Where [name]'s listener answers, as `[remotes]` keeps it; null for a machine not joined. */
     public fun url(name: String): String? = remotes[name]?.url

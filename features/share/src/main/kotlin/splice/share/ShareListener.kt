@@ -15,7 +15,9 @@ import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import splice.core.config.StatePaths
 import splice.core.topology.ShareConfig
+import splice.core.util.Cancellables
 import splice.core.util.LogSink
+import splice.core.util.SafeFailureText
 import splice.sessions.mirror.SessionMirrors
 import splice.upstream.codemode.ProcessDispatchers
 import java.util.concurrent.atomic.AtomicReference
@@ -103,12 +105,20 @@ public class ShareListener(
         return followed
     }
 
-    /** Closes what [was] opened and opens what [share] asks for. Blocking, under [mutex]. */
+    /** Closes what [was] opened and opens what [share] asks for. Blocking, under [mutex]. Nothing listens from the
+     *  close on, and the state says so on every way out: an open that fails, however, is said and tried again. */
     private fun reopened(was: ShareListening, share: ShareConfig): ShareListening {
         val open = server
         open?.stop()
         server = null
-        followed = when (val opened = opener.open(share, clients, running, quotas, sessions)) {
+        followed = ShareListening(share, listening = false)
+        val opened = Cancellables.runCatchingBestEffort { opener.open(share, clients, running, quotas, sessions) }
+            .getOrElse { failure ->
+                val why = "the listener did not open: ${SafeFailureText.render(failure)}"
+                log("[share] not sharing: $why\n")
+                ShareOpen.Refused(why)
+            }
+        followed = when (opened) {
             is ShareOpen.Listening -> {
                 server = opened.server
                 advert.on(ShareHostName().short(), share.port)

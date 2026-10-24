@@ -290,9 +290,11 @@ private const val NOTE_BODY_MAX_BYTES = 131_072
 private const val SESSIONS_READ_MS = 5_000L
 
 /** How long a machine's mirrors last without another of its looks: three looks, and the longest a look's requests take
- *  on top, so a look that answers slowly never lets them lapse before the next one. */
+ *  on top, so a look that answers slowly never lets them lapse before the next one. The look is the other machine's
+ *  word, taken between none and a minute first, so no look it names makes the product wrap around to the shortest. */
 internal object ShareLease {
-    fun of(lookMs: Long): Long = (lookMs * LEASE_LOOKS + LOOK_TAKES_MS).coerceIn(LEASE_MIN_MS, LEASE_MAX_MS)
+    fun of(lookMs: Long): Long =
+        (lookMs.coerceIn(0L, LEASE_MAX_MS) * LEASE_LOOKS + LOOK_TAKES_MS).coerceIn(LEASE_MIN_MS, LEASE_MAX_MS)
 }
 
 // why: a machine's mirrors outlast three of its looks, so one late or failed look does not withdraw and remake them.

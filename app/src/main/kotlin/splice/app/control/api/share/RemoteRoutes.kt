@@ -64,9 +64,13 @@ internal class RemoteRoutes(private val wired: SharingWired) {
     suspend fun import(call: ApplicationCall): JsonReply {
         val body = JsonBody().parse(call)
         val typed = JsonScalars.str(body, "host")?.trim()?.takeIf { it.isNotEmpty() } ?: return refused(IMPORT_BODY)
-        // A found machine comes with its port; an address typed in the page is read as `splice remote add` reads it.
-        val (host, port) = JsonScalars.int(body, "port")?.let { typed to it } ?: RemoteAddress.of(typed)
-            ?: return refused("'$typed' is not an address: $ADDRESS_FORMS")
+        // Every host is read as `splice remote add` reads an address, a found card's IPv6 one bracketed, scoped or
+        // bare among them; a found machine's port stands over any the host carries, and one that is no port is said.
+        val given = JsonScalars.int(body, "port")
+        val address = RemoteAddress.of(typed)?.let { (host, port) -> host to (given ?: port) }
+        val unread = if (address == null) "'$typed' is not an address" else "$given is not a port"
+        val (host, port) = address?.takeIf { it.second in 1..UShort.MAX_VALUE.toInt() }
+            ?: return refused("$unread: $ADDRESS_FORMS")
         return withContext(io) {
             val said = Said()
             val restart = DueRestart()

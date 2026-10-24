@@ -110,7 +110,7 @@ internal class SharingView(private val parts: SharingParts, private val file: To
             remote.fingerprint?.let { put("fingerprint", it) }
             put("token", name in tokens)
             put("sessions", store.sessions(name))
-            put("crossing", parts.listener.switch.on(name))
+            put("crossing", parts.listener.switch.onUsed(name))
             crossing(name, this)
             reach?.let { found ->
                 put("reachable", found.reachable)

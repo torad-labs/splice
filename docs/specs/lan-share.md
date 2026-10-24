@@ -81,7 +81,11 @@ claudex ─▶ head :3099 (anthropic-passthrough) ──TLS, pinned──▶ sha
   machine's names (`<host>`, `<host>.local`, `<host>.lan`, `share.hostnames`), valid ten years, kept in
   `<state>/share/tls.pem` (0600, `ShareCertificate`). It is never minted again over a file that is there: every
   joined machine pinned it, so a file that will not load stops sharing, said in the log. `splice share status` shows
-  its fingerprint (`sha256:<hex>`, the same as `openssl x509 -in tls.pem -noout -fingerprint -sha256`). A phase-1
+  its fingerprint (`sha256:<hex>`, the same as `openssl x509 -in tls.pem -noout -fingerprint -sha256`). Whatever
+  bytes the file holds (a key of another kind, a damaged certificate, a cut block, no text at all), the daemon starts,
+  sharing stays off with the step that fixes it (move the file away to mint a new one), and the status and the
+  Sharing page show the certificate's fingerprint while the file still holds it and none once it does not; the
+  listener says it is listening exactly when its port answers, through any run of such files and tables (round 16). A phase-1
   client still on plain HTTP gets a 426 in the Anthropic error shape naming the one command that moves it
   (`ShareTlsOnly`). The listener speaks HTTP/1.1 only: with HTTP/2 on, Netty builds the pipeline after the ALPN
   handshake, and a plain request never reached that guard. Routes:
@@ -250,7 +254,7 @@ Built on `feat/lan-share`, merged into `feat/v0.4.0` through the gate. Milestone
    | `PUT /api/share/machines/{name}/sessions` | `{on}`: whether a joined machine may cross sessions with this one |
    | `PUT /api/remotes/{name}/sessions` | `{on}`: whether a machine this one joined may cross sessions with it |
    | `POST /api/remotes/scan` | the sharing machines found, each marked when already used here |
-   | `POST /api/remotes` | `{host, port?}`: import one, as `splice remote add` does |
+   | `POST /api/remotes` | `{host, port?}`: import one, as `splice remote add` does; the host is read as that command reads an address, a found card's IPv6 host bracketed, scoped or bare among them, its `port` stands over any the host carries, and one outside 1 to 65535 is a 400 in words (round 16) |
    | `POST /api/remotes/{name}/sync` | its commands as it serves them now |
    | `DELETE /api/remotes/{name}` | drop it, its commands and its token |
 
@@ -299,10 +303,13 @@ Built on `feat/lan-share`, merged into `feat/v0.4.0` through the gate. Milestone
    - **The link.** Every 5 s the joining machine reads each machine it joined (`GET /share/v1/sessions`, its running
      sessions, mirrors left out), mirrors them, and offers its own (`PUT`, with how often it looks). The sharing
      machine keeps those mirrors for three looks past the last offer, plus the 26 s a look's two requests can take
-     before they fail, so a look that answers slowly never lets them lapse (from 1 s to a minute; round 14), and
+     before they fail, so a look that answers slowly never lets them lapse (from 1 s to a minute; round 14; a look
+     the offer names is taken between none and a minute first, so no number makes it the shortest, round 16), and
      withdraws them when its
      listener closes, which a change to the commands it offers alone does not do (the open listener takes it, so a turn
      relayed through it carries on); a machine that does not answer has none mirrored on the other until it does.
+     One that answers the look but does not take the offer (one too large for it to read, say) keeps its sessions
+     mirrored here, and its refusal is said in the log once while it lasts, and so is its end (round 16).
    - **Messages.** A message to a mirror goes to its machine at once (`POST /share/v1/sessions/{id}/message`), which
      delivers it from its own mirror of the sender, so the envelope's `from` and `from-name` (`<machine>/<sender>`)
      are a mirror there and a reply comes back the same way. A message for the joining machine's sessions waits in its
@@ -319,7 +326,8 @@ Built on `feat/lan-share`, merged into `feat/v0.4.0` through the gate. Milestone
      is its coming back, as a look's failure is (round 14).
      A note whose sender has no mirror left on the machine it reaches (withdrawn since that machine's last look, by a
      look that failed, a switch turned off and on, or the end of its offers) is delivered from one made then with the
-     carrier it came by, so it is never refused for the want of one and acknowledged gone.
+     carrier it came by, so it is never refused for the want of one and acknowledged gone. That mirror is listed as
+     heard from when the note arrived, the moment its sender wrote, both ways (round 16).
      A restart of the sharing daemon loses what its outbox held, and a revoke what waited for that machine; the box
      made after either has an id of its own, so an acknowledgement of the one before drops nothing of it. Each box is
      one join's, named by when the machine joined: a machine that joins under a revoked one's name collects a box of
@@ -346,7 +354,12 @@ Built on `feat/lan-share`, merged into `feat/v0.4.0` through the gate. Milestone
      in the book of joined machines, as any re-join does, so it holds the machine's sessions off until the machine
      joins again and Marcos turns that card on. A card of a machine that joined this one names the join it shows
      (`joined_at`), and its switch turns only that join: a page drawn before a revoke and a re-join under that name
-     turns nothing of the machine that joined since, and says so (round 14).
+     turns nothing of the machine that joined since, and says so (round 14). Two machines may go by one name: a second
+     is imported as `<name>-2`, while the book of joined machines holds only the one that joined last, and nothing in
+     the books tells which of the two that is. So each link asks as its book knows the machine, a machine that joined
+     by its name and one this machine joined by its `[remotes]` key, read back to the name the machine gave, and an Off
+     on any card of that name stops sessions crossing with every machine that goes by it until one is renamed, rather
+     than let them cross with the one whose card is off (round 16).
      A switch turned off ends the crossing at the link's next look, on both machines: the link whose card went off
      offers the other machine none of this one's sessions, and a machine that asks with its switch off here has its
      mirrors withdrawn as it asks, so neither waits for the mirrors' time to end (round 14). Each look while it is off

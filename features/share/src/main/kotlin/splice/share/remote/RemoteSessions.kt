@@ -12,6 +12,8 @@
 // later, so no one failure ends a machine's link. Since round 14, each note is acknowledged on disk as it is handed
 // over, and a stop lands between two notes, so a stop part way through a collection hands none of them over again; a
 // collection that fails is said in the log once while it keeps failing, as a look is, and so is its coming back.
+// Since round 16, a machine that answers a look has its sessions mirrored here whether or not it takes this machine's
+// offer.
 package splice.share.remote
 
 import kotlinx.coroutines.CoroutineExceptionHandler
@@ -92,47 +94,71 @@ public class RemoteSessions(
     }
 
     /** Mirrors [name]'s sessions here, each carrying a message by [link]'s carrier, and offers this machine's there,
-     *  every [lookMs]. A machine that does not answer has its mirrors withdrawn, which is said once, and so is its coming
-     *  back. A switch turned off here withdraws both sides at the next look: [name] is offered none of this machine's. */
+     *  every [lookMs]. A machine that does not answer has its mirrors withdrawn, which is said once, and so is its
+     *  coming back. One that answers keeps its sessions listed here though it does not take this machine's (offered). A
+     *  switch turned off here withdraws both sides at the next look: [name] is offered none of this machine's. */
     private suspend fun look(name: String, url: String, link: MirrorLink) {
-        var failing = false
-        var off = false
-        var offered = false
+        val state = RemoteLookState()
         do {
-            if (!links.sessions(name)) {
-                if (!off) log("[remote $name] no session crosses with it: Sessions is off for it on the Sharing page\n")
-                if (offered) leftThere(name, url)
-                withContext(io) { mirrors.withdraw(name) }
-                off = true
-                offered = false
-                failing = false
-                continue
-            }
-            off = false
-            val looked = Cancellables.runCatchingCancellable {
-                runInterruptible(io) {
-                    val api = links.api(name)
-                    val theirs = api.sessions(url)
-                    val ours = mirrors.local()
-                    api.offer(url, ours.map { ShareSession(it.id, it.name, it.heardAt) }, lookMs)
-                    theirs.map { MirroredSession(it.id, it.name, it.heardAt) } to ours.size
-                }
-            }
-            looked.fold(
-                onSuccess = { (theirs, shown) ->
-                    if (failing) log("[remote $name] its sessions are mirrored here again\n")
-                    failing = false
-                    withContext(io) { mirrors.mirror(name, theirs, link) }
-                    mirrors.shown(name, shown)
-                    offered = true
-                },
-                onFailure = { failure ->
-                    if (!failing) log("[remote $name] its sessions are not mirrored here: ${said(failure)}\n")
-                    failing = true
-                    withContext(io) { mirrors.withdraw(name) }
-                },
-            )
+            if (links.sessions(name)) looked(name, url, link, state) else switchedOff(name, url, state)
         } while (currentCoroutineContext().isActive && ticker.awaitTick(lookMs))
+    }
+
+    /** [name]'s Sessions switch is off here: its mirrors go, and this machine's there where it holds any. Said once
+     *  while it stays off. */
+    private suspend fun switchedOff(name: String, url: String, state: RemoteLookState) {
+        if (!state.off) log("[remote $name] no session crosses with it: Sessions is off for it on the Sharing page\n")
+        if (state.offered) leftThere(name, url)
+        withContext(io) { mirrors.withdraw(name) }
+        state.switchedOff()
+    }
+
+    /** One look at [name], whose switch is on: its sessions read, this machine's offered there once it answers, and
+     *  then its own mirrored here, so a mirror that cannot be made holds back neither side. One that does not answer
+     *  has its mirrors withdrawn and is asked nothing more until the next look. */
+    private suspend fun looked(name: String, url: String, link: MirrorLink, state: RemoteLookState) {
+        state.off = false
+        val looked = Cancellables.runCatchingCancellable {
+            runInterruptible(io) {
+                links.api(name).sessions(url).map { MirroredSession(it.id, it.name, it.heardAt) }
+            }
+        }
+        looked.onFailure { failure ->
+            if (!state.failing) log("[remote $name] its sessions are not mirrored here: ${said(failure)}\n")
+            withContext(io) { mirrors.withdraw(name) }
+        }
+        if (state.failing && looked.isSuccess) log("[remote $name] its sessions are mirrored here again\n")
+        state.failing = looked.isFailure
+        looked.onSuccess { theirs ->
+            val taken = offered(name, url, state.refused)
+            state.refused = !taken
+            state.offered = state.offered || taken
+            withContext(io) { mirrors.mirror(name, theirs, link) }
+        }
+    }
+
+    /** Offers [name] this machine's sessions, and answers whether it took them. One it does not take is said once while
+     *  it keeps refusing ([refused] says it did last time), and so is its taking them again; its own sessions stay
+     *  listed here either way, since it answered. */
+    private suspend fun offered(name: String, url: String, refused: Boolean): Boolean {
+        val shown = Cancellables.runCatchingCancellable {
+            runInterruptible(io) {
+                val ours = mirrors.local()
+                links.api(name).offer(url, ours.map { ShareSession(it.id, it.name, it.heardAt) }, lookMs)
+                ours.size
+            }
+        }
+        return shown.fold(
+            onSuccess = { count ->
+                if (refused) log("[remote $name] it takes this machine's sessions again\n")
+                mirrors.shown(name, count)
+                true
+            },
+            onFailure = { failure ->
+                if (!refused) log("[remote $name] it does not take this machine's sessions: ${said(failure)}\n")
+                false
+            },
+        )
     }
 
     /** Tells [name] that none of this machine's sessions cross with it now, by an offer of none, so its mirrors of them

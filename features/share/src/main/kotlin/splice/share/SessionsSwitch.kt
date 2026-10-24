@@ -6,7 +6,11 @@
 // on the other: each card turns only its own book, and an On lets in only the machine its card shows. A machine this
 // one joined is one splice.toml's `[remotes]` names now, a card the page draws (the round-4 and round-5 reviews): one
 // imported from the page has its switch before splice restarts and starts its link, and a token kept for a name the
-// file no longer lists holds no machine back.
+// file no longer lists holds no machine back. Round 16 of PR #419's review: two machines may go by one name, imported
+// here under `<name>` and `<name>-2`, while the clients book holds only the one that joined last, and nothing in the
+// books tells which of the two that is. So each link asks as its book knows the machine, a joined one by its name and
+// an imported one by its `[remotes]` key, read back to the name it gave; and an Off on any card of that name stops
+// every machine that goes by it, rather than let sessions cross with the one whose card is off.
 package splice.share
 
 import splice.share.remote.RemoteNames
@@ -23,15 +27,27 @@ public class SessionsSwitch(state: ShareState, private val used: MachinesJoined)
     private val clients = ShareClients(state.clientsFile)
     private val remotes = RemotesStore(state.remotesFile)
 
-    /** Whether sessions cross with [name]: a book holds it, and each book that does has its switch on. Each book is
-     *  read by the name's RemoteNames spelling: phase 1 booked a machine as it calls itself (`Torad-Server`), an import
-     *  keys `[remotes]` by the lower-case one, and each link asks by its own book's. */
-    public fun on(name: String): Boolean {
-        val joined = clients.all().filter { it.named(name) }
-        val card = card(name)
-        return (joined.isNotEmpty() || card != null) && joined.all { it.sessions } &&
-            (card == null || remotes.sessions(card))
+    /** Whether sessions cross with the machine that joined this one as [name]: its link into this one asks so, and its
+     *  card on the Sharing page. Phase 1 booked a machine as it calls itself (`Torad-Server`), an import keys
+     *  `[remotes]` by the lower-case spelling, and both read as RemoteNames reads a name. */
+    public fun on(name: String): Boolean = crossing(RemoteNames.of(name))
+
+    /** Whether sessions cross with the machine this one joined under the `[remotes]` key [key]: this machine's link
+     *  into it asks so, and its card. */
+    public fun onUsed(key: String): Boolean = crossing(machineOf(key, remotes.servers()))
+
+    /** Whether sessions cross with [machine], by its RemoteNames spelling: a book holds it, and every card of that name
+     *  in each book is on. */
+    private fun crossing(machine: String): Boolean {
+        val joined = clients.all().filter { it.named(machine) }
+        val servers = remotes.servers()
+        val cards = used.names().filter { machineOf(it, servers) == machine }
+        return (joined.isNotEmpty() || cards.isNotEmpty()) && joined.all { it.sessions } && cards.all(remotes::sessions)
     }
+
+    /** The machine [key] was imported from, by its RemoteNames spelling: the name it gave, kept in [servers], which a
+     *  key's `-2` hides; the key itself for one imported before that name was kept. */
+    private fun machineOf(key: String, servers: Map<String, String>): String = RemoteNames.of(servers[key] ?: key)
 
     /** Whether sessions cross with [name] as the machine that joined at [joined]: they do, and the machine booked under
      *  that name now is that one, so a mirror made for a machine since revoked carries nothing to one that joined

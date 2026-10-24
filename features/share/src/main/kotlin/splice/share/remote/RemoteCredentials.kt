@@ -24,17 +24,19 @@ import java.time.Instant
 
 /** One joined machine, by its `[remotes]` key, with the token it issued this machine, and its Sessions switch here:
  *  whether that machine may list, write into and read from this machine's sessions, off until the Sharing page turns it
- *  on, and off again after a re-join. */
+ *  on, and off again after a re-join. [server] is the name the machine gave when it was imported, which a key's `-2`
+ *  hides where two machines go by one name; null for one imported before round 16 of PR #419's review. */
 @Serializable
 internal data class RemoteToken(
     val name: String,
     val token: String,
     @SerialName("joined_at") val joinedAt: String,
     val sessions: Boolean = false,
+    val server: String? = null,
 ) {
     // The token is the secret; a log of this record names the machine only.
     override fun toString(): String =
-        "RemoteToken(name=$name, token=<redacted>, joinedAt=$joinedAt, sessions=$sessions)"
+        "RemoteToken(name=$name, token=<redacted>, joinedAt=$joinedAt, sessions=$sessions, server=$server)"
 }
 
 @Serializable
@@ -51,12 +53,12 @@ public class RemotesStore(private val file: Path) {
     public fun token(name: String): String? = read().remotes.firstOrNull { it.name == name }?.token
 
     /** Keeps [token] as [name]'s, replacing the one it held: a re-join's token supersedes the old one, which the
-     *  issuing machine no longer accepts. Throws IOException, writing nothing, when the file cannot be read or
-     *  locked. */
-    public fun save(name: String, token: String) {
+     *  issuing machine no longer accepts. [server] is the name the machine gives itself. Throws IOException, writing
+     *  nothing, when the file cannot be read or locked. */
+    public fun save(name: String, token: String, server: String? = null) {
         edited { book ->
             val kept = book.remotes.filterNot { it.name == name }
-            write(RemoteTokenBook(kept + RemoteToken(name, token, Instant.now().toString())))
+            write(RemoteTokenBook(kept + RemoteToken(name, token, Instant.now().toString(), server = server)))
         }
     }
 
@@ -81,6 +83,11 @@ public class RemotesStore(private val file: Path) {
 
     /** The machines a token is kept for, by `[remotes]` key. */
     public fun names(): List<String> = read().remotes.map { it.name }
+
+    /** The name each machine gave itself when it was imported, by `[remotes]` key; one imported before that was
+     *  kept is left out. */
+    public fun servers(): Map<String, String> =
+        read().remotes.mapNotNull { remote -> remote.server?.let { remote.name to it } }.toMap()
 
     /** A missing file is no tokens; one that does not parse also reads as none, and every relay then fails in words. */
     private fun read(): RemoteTokenBook {

@@ -32,14 +32,20 @@ public class RemoteHttp(private val trust: RemoteTrust) : RemoteInfoProbe {
         .sslContext(trust.context)
         .build()
 
-    /** What the machine at [host]:[port] offers; completes with null when nothing there answers as splice, and
-     *  exceptionally when its certificate is not the one [trust] pinned, which [refusal] then words. */
+    /** What the machine at [host]:[port] offers; completes with null when nothing there answers as splice, an address
+     *  no request can be made to among them, and exceptionally when its certificate is not the one [trust] pinned,
+     *  which [refusal] then words. Never throws: a caller waits on what it answers. */
     override fun info(host: String, port: Int): CompletableFuture<ShareInfo?> {
-        val request = HttpRequest.newBuilder(url(host, port, SHARE_INFO_PATH))
-            .timeout(Duration.ofMillis(REMOTE_REQUEST_TIMEOUT_MS))
-            .GET()
-            .build()
-        return http.sendAsync(request, HttpResponse.BodyHandlers.ofString())
+        val asked = Cancellables.runCatchingCancellable {
+            val request = HttpRequest.newBuilder(url(host, port, SHARE_INFO_PATH))
+                .timeout(Duration.ofMillis(REMOTE_REQUEST_TIMEOUT_MS))
+                .GET()
+                .build()
+            http.sendAsync(request, HttpResponse.BodyHandlers.ofString())
+        }
+        // A scope or a port no URI or request takes is an address where nothing answers.
+        val sent = asked.getOrElse { return CompletableFuture.completedFuture(null) }
+        return sent
             .handle { response, failure ->
                 if (refusal(failure) != null) throw CompletionException(failure)
                 response?.takeIf { it.statusCode() == HttpStatus.OK }?.body()?.let(::parsed)

@@ -28,7 +28,6 @@ import splice.core.topology.RemoteConfig
 import splice.core.topology.ShareConfig
 import splice.core.topology.Topology
 import splice.core.util.EnvReader
-import splice.sessions.mirror.CatAnchor
 import splice.sessions.mirror.MirrorAnchor
 import splice.sessions.mirror.MirrorPlace
 import splice.sessions.mirror.MirrorSweep
@@ -106,8 +105,8 @@ internal abstract class TwoMachinesTest {
 
     /** One machine: its Claude Code registry, its sockets folder (owner-only, with short names, so a socket path fits
      *  the 104 bytes a Mac allows), its state, and the mirrors its daemon hosts there, each holding a pid by
-     *  [anchor]. */
-    protected inner class Machine(letter: String, anchor: MirrorAnchor = CatAnchor) {
+     *  [anchor], or by the daemon's own when none is given. */
+    protected inner class Machine(letter: String, anchor: MirrorAnchor? = null) {
         val home: Path = Files.createDirectories(tmp.resolve(letter))
         val registry: Path = Files.createDirectories(home.resolve("r"))
         val sockets: Path = Files.createDirectory(
@@ -120,14 +119,13 @@ internal abstract class TwoMachinesTest {
             "HOME" to home.toString(),
         )
         val paths = StatePaths(envReader = EnvReader { env[it] })
-        val mirrors = SessionMirrors(
-            MirrorPlace(registry, sockets, home.resolve("m.log")),
-            scope,
-            Dispatchers.IO,
-            { },
-            MirrorSweep { ProcessTicker().awaitTick(it) },
-            anchor = anchor,
-        )
+        private val place = MirrorPlace(registry, sockets, home.resolve("m.log"))
+        private val sweep = MirrorSweep { ProcessTicker().awaitTick(it) }
+        val mirrors = if (anchor == null) {
+            SessionMirrors(place, scope, Dispatchers.IO, { }, sweep)
+        } else {
+            SessionMirrors(place, scope, Dispatchers.IO, { }, sweep, anchor = anchor)
+        }
 
         fun session(name: String, heardAt: Long? = null) =
             ClaudeCodeSession(registry, sockets, name, heardAt).also(opened::add)

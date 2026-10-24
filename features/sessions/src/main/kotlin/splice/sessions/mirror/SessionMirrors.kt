@@ -46,7 +46,7 @@ public fun interface MirrorAnchor {
 }
 
 /** The anchor every mirror holds in the daemon: `/bin/cat` reading a pipe from the daemon, which exits at its end. */
-public object CatAnchor : MirrorAnchor {
+internal object CatAnchor : MirrorAnchor {
     override fun start(): Process = ProcessBuilder(ANCHOR)
         .redirectOutput(ProcessBuilder.Redirect.DISCARD)
         .redirectError(ProcessBuilder.Redirect.DISCARD)

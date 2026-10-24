@@ -11,7 +11,6 @@ import kotlinx.coroutines.runBlocking
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
-import splice.sessions.mirror.CatAnchor
 import splice.sessions.mirror.MirrorAnchor
 import splice.share.remote.RemoteSessions
 import java.io.IOException
@@ -27,7 +26,11 @@ internal class MirrorAnchorTest : TwoMachinesTest() {
             "f",
             MirrorAnchor {
                 if (refusing.get()) throw IOException("error=35, Resource temporarily unavailable")
-                CatAnchor.start()
+                // What the daemon's own anchor runs: a process that holds a pid until its pipe ends.
+                ProcessBuilder("/bin/cat")
+                    .redirectOutput(ProcessBuilder.Redirect.DISCARD)
+                    .redirectError(ProcessBuilder.Redirect.DISCARD)
+                    .start()
             },
         )
         val said = ConcurrentLinkedQueue<String>()

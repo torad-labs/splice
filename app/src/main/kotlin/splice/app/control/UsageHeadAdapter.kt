@@ -73,9 +73,7 @@ internal object UsageHeadAdapter {
             val auth = AuthKindRegistry.from(head.authSurface.authKind)
             return when {
                 declared()[key]?.family == "local" -> UsageBilling.LOCAL_RUNTIME
-                // A shared head (splice-remote) runs on the sharing machine's own plan login (LAN share, phase 2).
-                auth?.isOAuth == true || auth == AuthKind.Client || auth == AuthKind.SpliceRemote ->
-                    UsageBilling.SUBSCRIPTION
+                auth?.isOAuth == true || auth == AuthKind.Client -> UsageBilling.SUBSCRIPTION
                 else -> UsageBilling.API_RATE
             }
         }

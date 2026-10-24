@@ -25,9 +25,6 @@ private const val SESSION_KEY = "session"
 private const val SESSION_ID_KEY = "session_id"
 private const val RESPONSE_ID_KEY = "response_message_id"
 private const val MESSAGES_HASH_KEY = "messages_hash"
-
-// LAN share: the joined machine that relayed the turn here (PerfTranscriptIds.from).
-private const val FROM_KEY = "from"
 private const val ACCOUNT_KEY = "account"
 private const val CACHE_COLD_KEY = "cache_cold"
 private const val COMPACT_KEY = "compact"
@@ -66,7 +63,6 @@ internal class PerfRowShape {
                 sessionId = text(obj, SESSION_ID_KEY),
                 responseMessageId = text(obj, RESPONSE_ID_KEY),
                 messagesHash = text(obj, MESSAGES_HASH_KEY),
-                from = text(obj, FROM_KEY),
             ),
             turns = PerfTurnIds(trace = text(obj, TURN_KEY), request = text(obj, REQUEST_TURN_KEY)),
         )

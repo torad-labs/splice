@@ -23,15 +23,7 @@ internal class ClientWindowWitness(private val posted: ClientWindows) {
         val said = CLAUDE_CODE_ONE_MILLION.takeIf { betas.any { it.trim().startsWith(ONE_MILLION_BETA) } }
         return said ?: posted.windowFor(sessionId)
     }
-
-    /** True for a turn another machine's head relayed here (ShareRelay). Its client divides by a window only that
-     *  head knows, so that head scales the counts and this one reports them raw: one head owns the scale. */
-    fun relayed(call: ApplicationCall): Boolean = call.request.headers[SHARE_RELAY_HEADER] != null
 }
-
-/** The header the share listener sets on every turn it relays to a head here, after dropping any copy the client
- *  sent. Lower case, as the relay compares the names it forwards. */
-public const val SHARE_RELAY_HEADER: String = "x-splice-share-relay"
 
 private const val BETA_HEADER = "anthropic-beta"
 

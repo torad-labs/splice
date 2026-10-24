@@ -34,7 +34,6 @@ import jdk.net.ExtendedSocketOptions
 import kotlinx.coroutines.asCoroutineDispatcher
 import okhttp3.ConnectionPool
 import okhttp3.Dispatcher
-import okhttp3.OkHttpClient
 import okhttp3.Protocol
 import splice.core.config.Knob
 import splice.core.util.LogSink
@@ -53,15 +52,12 @@ import java.util.concurrent.ExecutorService
 import java.util.concurrent.Executors
 import java.util.concurrent.atomic.AtomicBoolean
 import javax.net.SocketFactory
-import javax.net.ssl.HostnameVerifier
 import javax.net.ssl.SSLContext
 import javax.net.ssl.SSLSocketFactory
 import javax.net.ssl.X509TrustManager
 import kotlin.random.Random
 
-/** [trust]: a TLS trust of the upstream's own (LAN share's pinned relay); null keeps the platform's CAs and name check,
- *  as every vendor upstream does. */
-public class UpstreamTransport(private val trust: UpstreamTrust? = null) {
+public class UpstreamTransport {
     public fun defaultClient(
         totalTimeoutMs: Long,
         log: LogSink = LogSink {},
@@ -77,7 +73,7 @@ public class UpstreamTransport(private val trust: UpstreamTrust? = null) {
         log,
         noDelayGuard,
         requestWriteBound ?: WriteBoundMs { requestWriteTimeoutMs },
-        UpstreamSockets(trust = trust?.manager, verifier = trust?.verifier),
+        UpstreamSockets(),
     )
 
     /** [defaultClient] over [sockets], whose TLS trust and send buffer a test sets (V4-289). */
@@ -147,7 +143,7 @@ public class UpstreamTransport(private val trust: UpstreamTrust? = null) {
                     // IPv6 route is never dialled ahead of a working IPv4 one.
                     fastFallback(false)
                     socketFactory(factory)
-                    sockets.tls(this)
+                    sockets.trust?.let { trust -> sslSocketFactory(sockets.tlsFactory(trust), trust) }
                     dispatcher(dispatcher)
                     connectionPool(pool)
                     // V4-307: first, so a thread refused anywhere below is placed before or after the send.
@@ -445,11 +441,9 @@ internal class KeepaliveSocketFactory(
 
 /** V4-289: what a test sets on the client's sockets: the TLS trust for a loopback certificate, a fixed send
  *  buffer and the send-queue table. Production passes none, so its sockets keep the platform trust, autotuned
- *  buffers and the kernel's own table, except a LAN share relay, which passes its pinned [trust] and [verifier]. */
+ *  buffers and the kernel's own table. */
 internal class UpstreamSockets(
     val trust: X509TrustManager? = null,
-    /** Replaces OkHttp's name check; set with [trust] by a pinned relay, null otherwise. */
-    val verifier: HostnameVerifier? = null,
     val sendBufferBytes: Int? = null,
     /** V4-289: the kernel's send queues; a test hands a missing table to pin the macOS path. Null is the
      *  kernel's own table, read by a [ProcNetTcp] that logs to the client's log (V4-292). */
@@ -460,13 +454,6 @@ internal class UpstreamSockets(
 ) {
     fun tlsFactory(trust: X509TrustManager): SSLSocketFactory =
         SSLContext.getInstance("TLS").apply { init(null, arrayOf(trust), null) }.socketFactory
-
-    /** [trust] and [verifier] on [builder], when set; none keeps OkHttp's platform trust and name check. */
-    fun tls(builder: OkHttpClient.Builder) {
-        val trust = trust ?: return
-        builder.sslSocketFactory(tlsFactory(trust), trust)
-        verifier?.let(builder::hostnameVerifier)
-    }
 }
 
 // The three keepalive timings, 10 + 3 x 5: a dead peer is known within 25s of its last byte (Oct 12, splice-lead:

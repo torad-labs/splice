@@ -14,7 +14,6 @@ import splice.core.util.SafeFailureText
 import splice.sessions.peer.DeliveryStatus
 import splice.sessions.peer.InboundFrame
 import splice.sessions.peer.InboxHandler
-import splice.sessions.peer.PeerConnections
 import splice.sessions.peer.PeerOutbox
 import splice.sessions.peer.PeerSender
 import splice.sessions.peer.SenderCheck
@@ -45,7 +44,7 @@ public class PeerInbox(
     private val self: PeerSender,
     private val log: LogSink,
     elapsed: ElapsedClock = ElapsedClock { MonoClock.nowMs() },
-) : InboxHandler, PeerConnections {
+) : InboxHandler {
     private val limits = InboundLimits(elapsed)
 
     private data class Verdict(val status: DeliveryStatus, val detail: String?)
@@ -68,7 +67,7 @@ public class PeerInbox(
      * The handler for one connection: `auth: token` in the journal when [tokenPresented], `auth: none` when the
      * connection sent no auth line. The inbox itself journals no `auth`, because the contract's frames do not carry it.
      */
-    override fun forConnection(tokenPresented: Boolean): InboxHandler =
+    public fun forConnection(tokenPresented: Boolean): InboxHandler =
         Labeled(if (tokenPresented) PEER_AUTH_TOKEN else PEER_AUTH_NONE)
 
     override suspend fun onMessage(frame: InboundFrame.Message, sender: SenderCheck): DeliveryStatus? =

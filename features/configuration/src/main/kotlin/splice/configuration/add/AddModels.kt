@@ -25,9 +25,6 @@ public const val WINDOW_ATTEMPTS: Int = 3
 /** A TOML value `splice add` will write bare: no quote, no backslash, no control character. */
 internal val addValuePattern = Regex("[^\"\\\\\\p{Cntrl}]+")
 
-/** A TOML key `splice add` will write bare, a tier name in `model_slots`: letters, digits, dashes and underscores. */
-internal val addKeyPattern = Regex("[A-Za-z0-9_-]+")
-
 internal class AddModelRows(private val output: TerminalOutput, private val prompt: AddPrompter) {
 
     /** The catalog keys models by id, so a repeated id would keep only the last window (review 2026-09-14). */

@@ -48,7 +48,6 @@ import splice.head.HeadDeps
 import splice.head.MessageEdges
 import splice.head.ReceivedBody
 import splice.head.RequestBodyReader
-import splice.head.SHARE_RELAY_HEADER
 import splice.head.compact.CompactClassifier
 import splice.head.compaction.CompactionReplay
 import splice.head.wire.ClientInbound
@@ -230,19 +229,14 @@ internal class TurnPreparation(
         // session's row carries (V4-319's MessagesHash: without a session no re-send can be told apart).
         val messagesHash = sessionId?.let { MessagesHash.of(parsed.raw) }
         val scope = fromProvider.meta.scope.let {
-            it.copy(
-                sessionId = it.sessionId ?: sessionId,
-                messagesHash = messagesHash,
-                relayedFrom = call.request.headers[SHARE_RELAY_HEADER],
-            )
+            it.copy(sessionId = it.sessionId ?: sessionId, messagesHash = messagesHash)
         }
         val prepared = fromProvider.copy(meta = fromProvider.meta.copy(scope = scope))
         // Per-turn headers already outrank the provider's own in TurnDriver's merge, so a forwarded
         // value REPLACES a configured default (e.g. the caller's anthropic-version wins over the
         // provider's), and UpstreamClient folds the casing.
-        val built = if (deps.forwardsClientHeaders) {
-            val forwarded = clientAuth.forwardedClientHeaders(call, credential = deps.policy.forwardClientAuth)
-            prepared.copy(extraHeaders = prepared.extraHeaders + forwarded)
+        val built = if (deps.policy.forwardClientAuth) {
+            prepared.copy(extraHeaders = prepared.extraHeaders + clientAuth.forwardedClientHeaders(call))
         } else {
             prepared
         }

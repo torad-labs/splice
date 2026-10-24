@@ -3,7 +3,6 @@
 package splice.usage.quota
 
 import splice.core.usage.QuotaFreshness
-import splice.core.usage.QuotaSnapshot
 import splice.core.usage.QuotaView
 
 /** Reads the head's persisted usage/ratelimit (file truth). */
@@ -13,10 +12,6 @@ public fun interface HeadUsageSource {
 
     /** Refresh provider quota without serving a turn. Sources without a quota probe keep their file truth. */
     public suspend fun probeNow() { }
-
-    /** The provider's plan windows as the head holds them now, whole (per-model weeks included), or null when it has
-     *  none: what LAN share serves a joined machine, whose own head shows the same bars. */
-    public fun quota(): QuotaSnapshot? = null
 }
 
 /** The persisted `x-ratelimit-*` read. [observedAt] is the round that sent them, in epoch SECONDS

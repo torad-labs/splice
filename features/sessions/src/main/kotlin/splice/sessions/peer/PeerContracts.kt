@@ -94,12 +94,3 @@ public interface InboxHandler {
 
     public suspend fun onDenied(frame: InboundFrame.Message)
 }
-
-/** What an inbox socket's loop (PeerInboxServer) hands its frames to: a handler for each connection, by whether it
- *  presented the token, and each message a connection with a wrong token sent. A peer helper's journal is one; a
- *  mirror of another machine's session (LAN share, milestone 6) is the other, and sends its frames on to that session. */
-public interface PeerConnections {
-    public fun forConnection(tokenPresented: Boolean): InboxHandler
-
-    public suspend fun onDenied(frame: InboundFrame.Message)
-}

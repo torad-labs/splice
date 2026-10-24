@@ -5,15 +5,11 @@ package splice.app.head
 
 import splice.app.provider.ProviderBuild
 import splice.core.config.SpliceConfig
-import splice.core.topology.AuthKind
 import splice.core.util.LogSink
-import splice.share.remote.RemoteLinks
-import splice.share.remote.RemoteTrust
 import splice.upstream.retry.ProviderHoldStore
 import splice.upstream.transport.RetryPacing
 import splice.upstream.transport.UpstreamClient
 import splice.upstream.transport.UpstreamTransport
-import splice.upstream.transport.UpstreamTrust
 import splice.upstream.transport.WriteBoundMs
 
 internal class UpstreamFactory {
@@ -22,8 +18,6 @@ internal class UpstreamFactory {
         cfg: SpliceConfig,
         log: LogSink,
         providerHold: ProviderHoldStore?,
-        /** The machines this one joined (`[remotes]`), for a `splice-remote` provider's pinned trust. */
-        remotes: RemoteLinks? = null,
     ): UpstreamClient = UpstreamClient(
         cfg.upstreamTimeoutMs,
         cfg.upstreamRetries,
@@ -36,7 +30,7 @@ internal class UpstreamFactory {
         // mock's JSON.parse, which was the source of every leaked harness daemon.
         zstdRequestBody = ctx.providerCfg.quirks.zstdRequestBody == true,
         // V4-272: a request the upstream stops taking is cut at firstByteTimeout, not the turn cap.
-        client = UpstreamTransport(remoteTrust(ctx, remotes)).defaultClient(
+        client = UpstreamTransport().defaultClient(
             cfg.upstreamTimeoutMs,
             log,
             requestWriteTimeoutMs = cfg.firstByteTimeoutMs,
@@ -47,14 +41,4 @@ internal class UpstreamFactory {
         pacing = RetryPacing(live = ctx.faultPlan.liveRetryCurve, liveRetries = ctx.faultPlan.liveRetries),
         holdStore = providerHold,
     )
-
-    /** A `splice-remote` provider's upstream trusts only the certificate its machine showed when this one joined. Boot
-     *  refuses such a provider without a pinned `[remotes]` entry (RemoteFindings), so an empty pin, which no
-     *  certificate matches, only stands in for one that cannot be missing. */
-    private fun remoteTrust(ctx: ProviderBuild, remotes: RemoteLinks?): UpstreamTrust? {
-        val auth = ctx.providerCfg.auth
-        if (auth.kind != AuthKind.SpliceRemote.wire) return null
-        val trust = auth.remote?.let { remotes?.trust(it) } ?: RemoteTrust("", auth.remote ?: ctx.key)
-        return UpstreamTrust(trust, trust.verifier)
-    }
 }

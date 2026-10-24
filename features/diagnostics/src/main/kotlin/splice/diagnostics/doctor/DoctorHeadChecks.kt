@@ -8,14 +8,12 @@ package splice.diagnostics.doctor
 import splice.core.config.StatePaths
 import splice.core.topology.Topology
 import splice.core.util.Cancellables
-import splice.core.util.LocalTimeText
 import splice.core.util.SafeFailureText
 import splice.daemonclient.DaemonHealth
 import splice.topology.TopologyLoader
 import java.nio.file.Files
 import java.nio.file.NoSuchFileException
 import java.nio.file.Path
-import java.time.Instant
 
 /** The doctor per-head checks as a constructed collaborator (Kotlin style law, 2026-08-15: main
  *  sources carry no top-level functions). Receives the ONE [DoctorRuntime] the run holds, so the
@@ -41,35 +39,8 @@ internal class DoctorHeadChecks(private val doctorRuntime: DoctorRuntime) {
                 ":${cfg.port} ${if (listening) "listening" else "not listening"}",
             )
         }
-        return listOfNotNull(doctorRuntime.turnPathCheck(h), headSummary(h)) + perHead + remoteChecks(h)
+        return listOfNotNull(doctorRuntime.turnPathCheck(h), headSummary(h)) + perHead
     }
-
-    /** LAN share: one row per machine this one joined, as the daemon's last check (every minute) found it. A WARN, not
-     *  a FAIL: the machine is someone's own other computer, and being off is not a fault in this one's setup. */
-    private fun remoteChecks(h: HealthView): List<DoctorCheck> = h.remotes.map { (name, found) ->
-        when {
-            !found.reachable -> DoctorCheck(
-                "remote $name",
-                CheckStatus.WARN,
-                "unreachable since ${said(found.since)}: ${found.why}. Its commands answer no turn until it is back",
-                "on $name: splice share status",
-            )
-            found.down.isNotEmpty() -> DoctorCheck(
-                "remote $name",
-                CheckStatus.WARN,
-                "reachable, but ${found.down.joinToString(", ")} not running there, so those commands answer no turn",
-                "on $name: splice status",
-            )
-            else -> DoctorCheck("remote $name", CheckStatus.OK, "reachable since ${said(found.since)}")
-        }
-    }
-
-    /** A check instant from /health as a person reads it (LocalTimeText); one that does not parse is "the last check". */
-    private fun said(since: String?): String = since?.let { instant ->
-        // An instant that does not parse is a /health from another build; the row then names the check instead.
-        Cancellables.runCatchingCancellable { LocalTimeText().at(Instant.parse(instant).epochSecond) }
-            .fold(onSuccess = { it }, onFailure = { null })
-    } ?: "the last check"
 
     /** The heads/readyHeads/failedHeads verdict; null on a foreign/ancient listener without the
      *  counters (a real daemon always sends all three) — nothing honest to report then. */

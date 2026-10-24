@@ -80,25 +80,12 @@ dated = "2026-10-19"
 names = ["Wait", "Waiter"]
 reason = """Waiter pauses an upstream retry or probe loop for a number of milliseconds, inside integrations-upstream. Wait pauses the peer webhook pusher between two attempts of one push, from 5 seconds to 30 minutes, and the peer helper wires it to its own Waiter at the one place it builds the pusher. Both only suspend the caller, so the shape is the same and this sentence says why there are two types: features-sessions has no dependency on integrations-upstream and cannot import Waiter, so the pusher names the pause it needs as its own port."""
 
-[[groups]]
-signature = "suspend (Long)->Boolean"
-dated = "2026-10-23"
-names = ["MirrorSweep", "Ticker"]
-reason = """Ticker paces a loop inside integrations-upstream and the modules above it: it suspends for the interval and answers false when the loop should end, so a fake stops the loop cleanly. MirrorSweep paces one loop in features-sessions, the mirrors' look for machines whose time is past (SessionMirrors), and the daemon wires it to its own ProcessTicker at the one place it builds the mirrors (SharedSessions). Both only pace a loop, so the shape is the same and this sentence says why there are two types: features-sessions has no dependency on integrations-upstream and cannot import Ticker, so the mirrors name the pace they need as their own port, as the peer pusher's Wait does for Waiter."""
-
-[[groups]]
-signature = "()->Set<String>"
-dated = "2026-10-23"
-names = ["MachinesJoined", "RuntimeUnread"]
-reason = """Two sets of names from different worlds, and a swap would cross a security boundary. MachinesJoined names the OTHER machines this one joined, as splice.toml's [remotes] holds them now: the Sessions switch requires each named machine's card on this side to be On before any session crosses with it, so a name it returns adds a gate a machine must pass. RuntimeUnread names this machine's own LOCAL heads that the runtime watch holds no reading for yet, which the console shows as checking. Wired where MachinesJoined is meant, it would read head keys as machine names, so a machine named like a head would need a card that does not exist, and every other machine this one joined would skip its card's gate and cross sessions with that card Off. Wired the other way, every joined machine would read as a local head still being checked."""
-
 # ── Nullary effects, () -> Unit ───────────────────────────────────────────────────────────────────
 [[groups]]
 signature = "()->Unit"
 dated = "2026-10-13"
 names = [
     "AccountMembershipRefresh",
-    "AdvertGoodbye",
     "AuthRefreshObserver",
     "ClaudePoolChange",
     "CodeModeCleanup",
@@ -161,7 +148,7 @@ its own rather than folded onto one of the observers above: an observer is subsc
 is set). ParseTally (9cfae331a) counts one perf line decoded, the read's own measure of how much it \
 decoded; wired where FileIoTask or a release was meant it would count nothing while the work ran. \
 Substituting any for any other is not a type error and would be silent: RestoreStep \
-for WsRoundAbort unwinds an upgrade in the middle of a turn. McpWriteAvailable signals that a bounded stdin slot opened for retained reverse replies. McpWriteFailureDrain is the asynchronous stop-and-reap action returned after the exact transport failure has already been synchronously fenced and published. NotificationEnqueue requests dispatch of a hosted child notification only after the host confirms ownership. McpWriteExpired records that one queued child write timed out; substituting slot availability for failure draining would leave the failed child unreaped, while using the drain as an availability signal would stop a child when capacity opens. Expiring a notification would discard a reply the client still awaits. AdvertGoodbye (ADDED 2026-10-24, round 14 of PR #419's review) says one network's multicast DNS advert of this machine's sharing goodbye and closes its responder, so a machine still holding the record drops it; one that throws is said in the log and the next network still says its own. Wired where StopControl or ShutdownDaemon was meant, moving sharing to another port would stop the control plane or the daemon. These roles need MORE naming than a shared shape, not less."""
+for WsRoundAbort unwinds an upgrade in the middle of a turn. McpWriteAvailable signals that a bounded stdin slot opened for retained reverse replies. McpWriteFailureDrain is the asynchronous stop-and-reap action returned after the exact transport failure has already been synchronously fenced and published. NotificationEnqueue requests dispatch of a hosted child notification only after the host confirms ownership. McpWriteExpired records that one queued child write timed out; substituting slot availability for failure draining would leave the failed child unreaped, while using the drain as an availability signal would stop a child when capacity opens. Expiring a notification would discard a reply the client still awaits. These roles need MORE naming than a shared shape, not less."""
 
 # ── 24 names, () -> Boolean ───────────────────────────────────────────────────────────────────────
 [[groups]]
@@ -462,7 +449,6 @@ names = [
     "EnvReader",
     "HeadOfSession",
     "HistoryWindowStore",
-    "JoinsBooked",
     "QuotaHeaderRead",
     "SessionAddress",
     "SessionServedOf",
@@ -512,13 +498,7 @@ SessionServedOf (Oct 11, 2026) is a SIXTH source: a session id to the MODEL spli
 model a later Continue on move put it on, from the daemon's own perf rows and move records. Its miss means \
 "splice has served this session nothing and never moved it". Its answer is a model id, which Continue on \
 compares against its menu and keeps as a move's "from" model. Served by HeadOfSession it would put a head \
-key where a model id is compared, and the menu would offer back the very model the session is on. \
-JoinsBooked (round 18 of PR #419's review) is a SEVENTH source: a joined machine's name to WHEN the machine \
-booked under it now joined this one, from the LAN share's book of joined machines. Its miss means "no machine \
-is booked under that name", a revoke. Its answer is a join's timestamp, which the share outbox compares \
-with the join a mirror was made under, to hold a note or refuse it. Served by EnvReader or SessionServedOf it \
-would compare a join against a config value or a model id, and every note would be refused or, worse, held for \
-a machine revoked since."""
+key where a model id is compared, and the menu would offer back the very model the session is on."""
 
 # ── 5 names, () -> T ──────────────────────────────────────────────────────────────────────────────
 [[groups]]
@@ -667,19 +647,18 @@ other unregisters it. The shape cannot tell them apart and the consequence of a 
 terminal is restored twice and a later, unrelated exit path runs code belonging to a finished \
 prompt. Two names is the only thing keeping the pair readable at the call site."""
 
-# ── 6 names, suspend () -> Unit ───────────────────────────────────────────────────────────────────
+# ── 5 names, suspend () -> Unit ───────────────────────────────────────────────────────────────────
 [[groups]]
 signature = "suspend ()->Unit"
 dated = "2026-09-17"
 names = [
     "HeadRestart",
     "Heartbeat",
-    "LinkLoop",
     "MgmtRoute",
     "RouteBody",
     "Teardown",
 ]
-reason = """Heartbeat is "the one frame the pinger may write for the turn: a `ping` event, after message_start only" — a PERIODIC write, bounded to a single legal frame type because the wire must stay legal, and it exists against the client's 600 s stream watchdog (two 11-12 minute compactions on 2026-09-05 hung at exactly 600 s without it). MgmtRoute is "the body of one authenticated `/mgmt` route, run only AFTER the bearer key matched", and its KDoc says that ordering IS the type's content: everything mutating on the control plane is wrapped in one, so a route responding outside one would be reachable without the management key. A repeating one-frame-only writer and an authorization-gated route body are the two seams whose confusion either breaks the wire or removes the auth gate. ADDED 2026-09-20 (V4-132): HeadRestart restarts ONE head so a switched account takes effect, and its failure means the operator's switch silently did not apply. Heartbeat is a periodic liveness tick whose individual failure is tolerable by design; MgmtRoute serves a request. Collapsing HeadRestart into either would put an account switch on a best-effort path. ADDED 2026-10-08: Teardown is the daemon's ordered stop body, suspend now that main owns the stop path, run once under the halt watchdog with the process halted if it overruns. It is neither a tick nor a route nor a head restart; a Teardown run as a Heartbeat would stop the daemon on a ping, and a HeadRestart run as a Teardown would restart one head where the whole stop was meant. ADDED 2026-10-09: RouteBody is the work of one HEAD route (a turn, a models answer, GET /wire), run by ClientAuth.guarded only AFTER the route's door opened and a refused call was already answered. MgmtRoute is the same promise for the control plane's /mgmt key, in another module that turns cannot see; RouteBody is the head listener's, and its three doors (caller, upstream credential, operator key) are the head's own. It is not a tick, a stop or a restart: a RouteBody run as a Heartbeat would serve a request on a timer, and a Heartbeat passed as a RouteBody would let a route answer with a ping frame. ADDED 2026-10-24 (round 13 of PR #419's review): LinkLoop is one of a joined machine's two session loops, its look or its collection, which runs until the link ends and is started again a look later when it fails in a way nothing foresaw, so one failure never ends that machine's link. It returns only when the link ends. It is not a tick (a Heartbeat runs once per beat and returns), not a stop or a restart, and not a route: a LinkLoop run as a Heartbeat would hold the pinger until the link ended, and a Heartbeat run as a LinkLoop would be restarted forever on a ping that failed."""
+reason = """Heartbeat is "the one frame the pinger may write for the turn: a `ping` event, after message_start only" — a PERIODIC write, bounded to a single legal frame type because the wire must stay legal, and it exists against the client's 600 s stream watchdog (two 11-12 minute compactions on 2026-09-05 hung at exactly 600 s without it). MgmtRoute is "the body of one authenticated `/mgmt` route, run only AFTER the bearer key matched", and its KDoc says that ordering IS the type's content: everything mutating on the control plane is wrapped in one, so a route responding outside one would be reachable without the management key. A repeating one-frame-only writer and an authorization-gated route body are the two seams whose confusion either breaks the wire or removes the auth gate. ADDED 2026-09-20 (V4-132): HeadRestart restarts ONE head so a switched account takes effect, and its failure means the operator's switch silently did not apply. Heartbeat is a periodic liveness tick whose individual failure is tolerable by design; MgmtRoute serves a request. Collapsing HeadRestart into either would put an account switch on a best-effort path. ADDED 2026-10-08: Teardown is the daemon's ordered stop body, suspend now that main owns the stop path, run once under the halt watchdog with the process halted if it overruns. It is neither a tick nor a route nor a head restart; a Teardown run as a Heartbeat would stop the daemon on a ping, and a HeadRestart run as a Teardown would restart one head where the whole stop was meant. ADDED 2026-10-09: RouteBody is the work of one HEAD route (a turn, a models answer, GET /wire), run by ClientAuth.guarded only AFTER the route's door opened and a refused call was already answered. MgmtRoute is the same promise for the control plane's /mgmt key, in another module that turns cannot see; RouteBody is the head listener's, and its three doors (caller, upstream credential, operator key) are the head's own. It is not a tick, a stop or a restart: a RouteBody run as a Heartbeat would serve a request on a timer, and a Heartbeat passed as a RouteBody would let a route answer with a ping frame."""
 
 # ── 2 names, suspend (String) -> Boolean ──────────────────────────────────────────────────────────
 [[groups]]

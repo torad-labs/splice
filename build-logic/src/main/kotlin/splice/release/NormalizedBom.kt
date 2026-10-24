@@ -49,16 +49,6 @@ abstract class NormalizedBom : DefaultTask() {
         ),
     )
 
-    // CycloneDX 3.4.1 records no license for jmdns 3.6.4, though its POM declares one in <licenses>: Apache License,
-    // Version 2.0, the license its jar's manifest names too (Bundle-License).
-    private val jmdns = "org.jmdns:jmdns:3.6.4"
-
-    private val jmdnsLicenses = listOf(
-        linkedMapOf(
-            "license" to linkedMapOf("id" to "Apache-2.0", "url" to "https://www.apache.org/licenses/LICENSE-2.0.txt"),
-        ),
-    )
-
     @TaskAction
     fun normalize() {
         val input = source.get().asFile
@@ -91,7 +81,7 @@ abstract class NormalizedBom : DefaultTask() {
         return (bom["components"] as? List<*>).orEmpty().map { raw ->
             LinkedHashMap(objectOrError(raw, "$input: component")).also { entry ->
                 normalizeComponentIdentity(entry, group, version, replacements)
-                addDeclaredLicenses(entry)
+                addIsolateLicenses(entry)
             }
         }
     }
@@ -112,12 +102,11 @@ abstract class NormalizedBom : DefaultTask() {
         }
     }
 
-    /** The licenses a component declares where CycloneDX recorded none: the GraalJS isolates' and jmdns's. */
-    private fun addDeclaredLicenses(entry: MutableMap<Any?, Any?>) {
+    private fun addIsolateLicenses(entry: MutableMap<Any?, Any?>) {
         val coordinate = "${entry["group"]}:${entry["name"]}:${entry["version"]}"
-        if (!(entry["licenses"] as? List<*>).isNullOrEmpty()) return
-        if (coordinate in graalJsCommunityIsolates) entry["licenses"] = graalJsCommunityIsolateLicenses
-        if (coordinate == jmdns) entry["licenses"] = jmdnsLicenses
+        if (coordinate in graalJsCommunityIsolates && (entry["licenses"] as? List<*>).isNullOrEmpty()) {
+            entry["licenses"] = graalJsCommunityIsolateLicenses
+        }
     }
 
     private fun normalizedDependencies(

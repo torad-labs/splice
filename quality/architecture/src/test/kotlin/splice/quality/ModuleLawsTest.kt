@@ -147,16 +147,6 @@ private val MODULE_DEPENDENCY_LAW: Map<String, Set<String>> = mapOf(
         ":integrations-daemon-client",
         ":features-accounts",
     ),
-    // LAN share (docs/specs/lan-share.md): the one listener beyond loopback, which relays a joined machine's turn to
-    // a head here under that head's own admission, and the client side that finds, joins and relays to such machines.
-    // Since milestone 6 it mirrors each joined machine's sessions here through the session registry's mirrors.
-    ":features-share" to setOf(
-        ":core",
-        ":integrations-http",
-        ":integrations-upstream",
-        ":features-turns",
-        ":features-sessions",
-    ),
     // the management plane reads the domain, the client side it assembles a launch spec for, and
     // the head-start slice it delegates starting a head to.
 )

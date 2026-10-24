@@ -20,7 +20,7 @@ import java.security.MessageDigest
 import java.util.HexFormat
 
 /** The registry record, readable by every process of this user as Claude Code's own are. */
-internal const val RECORD_MODE = "rw-r--r--"
+private const val RECORD_MODE = "rw-r--r--"
 
 /** The record and key file names in each registry directory, and whether a record there is a given peer's. */
 public class PeerRegistryFiles(internal val directories: List<Path>) {

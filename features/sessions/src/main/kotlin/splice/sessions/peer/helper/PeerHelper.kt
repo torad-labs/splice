@@ -42,7 +42,7 @@ import java.util.concurrent.ConcurrentHashMap
 public const val HELPER_UNREGISTERED_EXIT: Int = 78
 
 // why: 16 random bytes as hex is the 32-character peerToken Claude Code itself mints (spec 2.2).
-internal const val PEER_TOKEN_BYTES = 16
+private const val PEER_TOKEN_BYTES = 16
 
 // why: helper.log holds counts and errors only; a megabyte is months of them, and one rolled generation is kept.
 private const val HELPER_LOG_MAX_BYTES = 1L shl 20

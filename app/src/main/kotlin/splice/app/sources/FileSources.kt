@@ -63,8 +63,6 @@ public class UsageStoreSource(
         return UsageView(state.outputTokens5h, state.entries, ratelimit, quota?.snapshot()?.let(::quotaView))
     }
 
-    override fun quota(): QuotaSnapshot? = quota?.snapshot()
-
     private fun windowView(window: QuotaWindow, observed: Long?): QuotaWindowView =
         QuotaWindowView(window.usedPercent.toInt(), window.resetsAt, observed, window.windowSeconds)
 

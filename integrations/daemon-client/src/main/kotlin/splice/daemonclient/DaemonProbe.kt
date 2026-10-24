@@ -43,20 +43,10 @@ public object DaemonProbe {
         public val ok: Boolean? = null,
         public val heads: HealthHeads,
         public val topology: HealthTopology = HealthTopology(),
+        public val turnPathStalled: List<String> = emptyList(),
         public val client: HealthClient = HealthClient(),
         /** V4-452: the two quota facts /health names apart, per head. */
         public val quota: HealthQuota = HealthQuota(),
-        /** LAN share: each machine this one joined, by name, as the daemon's last check found it. */
-        public val remotes: Map<String, HealthRemote> = emptyMap(),
-    )
-
-    /** One joined machine on /health: [reachable] since [since] (an ISO instant), [why] it is not, and [down], the
-     *  heads it offers that it said are not running. */
-    public data class HealthRemote(
-        public val reachable: Boolean,
-        public val since: String?,
-        public val why: String? = null,
-        public val down: List<String> = emptyList(),
     )
 
     /** What /health says about the Claude Code sessions the daemon serves: [versionWarning], the aggregate version
@@ -79,8 +69,6 @@ public object DaemonProbe {
         public val ready: Int?,
         public val failed: Int?,
         public val failedReasons: Map<String, String> = emptyMap(),
-        /** The heads whose turn path stalled (`turnPathStalled`): requests accepted and never answered. */
-        public val stalled: List<String> = emptyList(),
     )
 
     /** Which topology the daemon runs: its digest, and whether the config file has changed since. Each is null when
@@ -186,14 +174,14 @@ public object DaemonProbe {
                     ?.mapNotNull { (key, reason) -> JsonScalars.str(reason)?.let { key to it } }
                     ?.toMap()
                     .orEmpty(),
-                stalled = (obj["turnPathStalled"] as? JsonArray)
-                    ?.mapNotNull { JsonScalars.str(it) }
-                    .orEmpty(),
             ),
             topology = HealthTopology(
                 digest = JsonScalars.str(obj, "topologyDigest"),
                 stale = (obj["topologyStale"] as? JsonPrimitive)?.booleanOrNull,
             ),
+            turnPathStalled = (obj["turnPathStalled"] as? JsonArray)
+                ?.mapNotNull { JsonScalars.str(it) }
+                .orEmpty(),
             client = HealthClient(
                 versionWarning = JsonScalars.str(obj, "clientVersionWarning"),
                 mcpHub = when (JsonScalars.str(obj, "mcpHub")) {
@@ -212,10 +200,6 @@ public object DaemonProbe {
                     ?.toMap()
                     .orEmpty(),
             ),
-            remotes = (obj["remotes"] as? JsonObject)
-                ?.mapNotNull { (name, remote) -> HealthRemoteReading.parse(remote as? JsonObject)?.let { name to it } }
-                ?.toMap()
-                .orEmpty(),
         )
     }
 
@@ -350,20 +334,6 @@ public class TraceConfigProbe {
 }
 
 private const val PROBE_TIMEOUT_MS = 400
-
-/** The parse of one joined machine's entry under /health's `remotes`, beside [DaemonProbe] as [QuotaFullReading] is. */
-private object HealthRemoteReading {
-    /** The machine's state, or null for an entry that does not say whether it is reachable. */
-    fun parse(obj: JsonObject?): DaemonProbe.HealthRemote? {
-        val reachable = (obj?.get("reachable") as? JsonPrimitive)?.booleanOrNull ?: return null
-        return DaemonProbe.HealthRemote(
-            reachable,
-            since = JsonScalars.str(obj, "since"),
-            why = JsonScalars.str(obj, "why"),
-            down = (obj["down"] as? JsonArray)?.mapNotNull { JsonScalars.str(it) }.orEmpty(),
-        )
-    }
-}
 
 /** The parse of one head's `quotaFull` entry from /health: a pure read with no probe state, so it sits
  *  beside [DaemonProbe] rather than in its function budget. */

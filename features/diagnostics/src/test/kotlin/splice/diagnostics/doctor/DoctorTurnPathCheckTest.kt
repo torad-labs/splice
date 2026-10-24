@@ -16,8 +16,9 @@ class DoctorTurnPathCheckTest {
     private fun health(ok: Boolean?, stalled: List<String> = emptyList()) = HealthView(
         version = "kt-1",
         // the wedge's own numbers: everything "ready" while nothing works
-        heads = DaemonProbe.HealthHeads(total = 4, ready = 4, failed = 0, stalled = stalled),
+        heads = DaemonProbe.HealthHeads(total = 4, ready = 4, failed = 0),
         ok = ok,
+        turnPathStalled = stalled,
     )
 
     @Test

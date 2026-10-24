@@ -18,8 +18,6 @@ import splice.app.control.FailedHeads
 import splice.app.control.ManagedHead
 import splice.app.daemon.BootedTopology
 import splice.app.daemon.HeadCatalogs
-import splice.app.daemon.RemotesInFile
-import splice.app.daemon.SharedSessions
 import splice.app.daemon.TopologyWindows
 import splice.app.head.HEAD_STOP_BUDGET_MS
 import splice.app.head.HeadBoot
@@ -46,7 +44,6 @@ import splice.core.topology.HeadModel
 import splice.core.topology.ProviderFamilyRule
 import splice.core.topology.Topology
 import splice.core.topology.TopologyKnobLayer
-import splice.core.util.EnvReader
 import splice.core.util.LogSink
 import splice.core.version.ClientVersionTracker
 import splice.head.compaction.CompactionTail
@@ -54,14 +51,6 @@ import splice.lifecycle.restart.ShutdownDaemon
 import splice.models.roster.DeclaredHead
 import splice.models.roster.DeclaredHeads
 import splice.oauth.codex.CodexRefresh
-import splice.share.SessionsSwitch
-import splice.share.ShareListener
-import splice.share.ShareStart
-import splice.share.ShareState
-import splice.share.SharedCatalogs
-import splice.share.SharedQuotas
-import splice.share.remote.RemoteLinks
-import splice.share.remote.RemotesStore
 import splice.topology.TopologyLoader
 import splice.usage.quota.ClientUserAgent
 import java.nio.file.Path
@@ -111,33 +100,6 @@ public class Daemon(
     private val compactionInstructions =
         CompactionInstructions(topology.compaction, topologyDir, log = log)
 
-    /** LAN share: the machines this one joined as splice.toml names them now, which both Sessions switches read, so a
-     *  machine imported from the Sharing page has its switch before a restart starts its link. */
-    private val joinedNow = RemotesInFile(topologyPath ?: TopologyLoader.configPath(), topology.remotes.keys)
-
-    /** LAN share: the machines this one joined (`[remotes]`), each with its pinned certificate and kept token. ONE
-     *  instance for the relay's upstream trust, the roster refresh, the quota polls and the reachability check. */
-    private val remotes = RemoteLinks(
-        topology,
-        RemotesStore(ShareState(statePaths).remotesFile),
-        SessionsSwitch(ShareState(statePaths), joinedNow),
-    )
-
-    /** LAN share, milestone 6: the mirrors of other machines' sessions, and the link to each machine this one joined. */
-    private val sharedSessions = SharedSessions(EnvReader(System::getenv), statePaths, log)
-
-    /** LAN share (docs/specs/lan-share.md): the listener as `[share]` says it now. Opened last in [start], over the
-     *  heads that started, and following the file from then on (TopologyWindows, the console's Sharing page). */
-    private val sharing = ShareListener(
-        ShareStart(topology, statePaths, mgmtKey, config, log),
-        SharedCatalogs { key -> heads[key]?.let { it.statusline.catalog } },
-        SharedQuotas { key -> heads[key]?.sources?.usage?.quota() },
-        statePaths,
-        joinedNow,
-        log,
-        sharedSessions.mirrors,
-    )
-
     /** V4-162: the context windows splice.toml declares, re-read while the daemon runs, and the
      *  version the control plane publishes as running. Hoisted above [controlPlane], which reports
      *  it; its catalogs resolve through [buildInputs] at re-read time, after start() built the heads. */
@@ -173,8 +135,6 @@ public class Daemon(
                 }
             },
             running = topologyWindows,
-            remotes = remotes,
-            sharing = sharing,
         ),
         refreshCall,
         mcpHosting = McpHostingSettings(share = McpShareChoice { topologyWindows.mcpShare }).with(topology.daemon),
@@ -224,7 +184,6 @@ public class Daemon(
         ).also {
             it.credentialAccountNames = controlPlane.credentialAccountNames
             it.sentCredentials = controlPlane.sentCredentials
-            it.remotes = remotes
         }
     private val managedHeadFactory = ManagedHeadFactory(
         statePaths = statePaths,
@@ -239,7 +198,6 @@ public class Daemon(
             // usage endpoint buckets by (ClaudeUsageProbe). One tracker, the same one every head observes into.
             clientUserAgent = ClientUserAgent(clientVersions::newestClaudeCodeUserAgent),
             readFailures = controlPlane.quotaReadFailures,
-            remotes = remotes,
         ),
         perfSources = controlPlane.perfRows,
     )
@@ -310,18 +268,8 @@ public class Daemon(
             headCount = topology.heads.size,
             probes = headProbes,
         ) ?: return
-        // LAN share, once the control port is this daemon's: one that exits without it reaches no machine it joined.
-        // Whether each machine this one joined, and each head it offers, is up; ends with the probe scope.
-        remotes.watch(controlPlane.probeScope, log)
-        // Each machine this one joined lists this one's sessions, and this one lists its.
-        sharedSessions.start(remotes)
         // MCP hub step 6: each installed Claude Code version's --plugin-dir-no-mcp verdict, checked in the background.
         controlPlane.pluginFlagChecks.request()
-        // LAN share (docs/specs/lan-share.md): opened last, over the heads that started; closed while [share] is off.
-        // Handed to the re-read of splice.toml first, which asks it for the table the file said last, so an edit a
-        // read saw since the heads bound is what it opens on.
-        topologyWindows.sharing = sharing
-        sharing.followAsked()
         val degraded = if (failed.isEmpty()) "" else " DEGRADED=${failed.keys}"
         log("[daemon] up: control :$controlPort, heads ${heads.keys}$degraded\n")
     }
@@ -333,9 +281,6 @@ public class Daemon(
             // at the END, so a pass that was cut short is finished by the next call, never taken for done.
             headProbes.fenceStarts()
             controlPlane.ownership.fence()
-            // Other machines' turns stop arriving before the heads drain the ones already running.
-            sharing.stop()
-            sharedSessions.stop()
 
             // Heads stop in PARALLEL under a phase DEADLINE, then control stops — see
             // [HeadShutdown.stopHeads]. The supervisor scope + stopFailureHandler live there so an

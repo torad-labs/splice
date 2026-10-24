@@ -32,8 +32,6 @@ internal data class AddModel(
     val rates: ModelRates? = null,
     /** V4-232: the Claude model the client resolves this row as (ModelEntry.clientModel). Null = none. */
     val clientModel: String? = null,
-    /** ModelEntry.compactionReserveTokens: a remote head mirrors the reserve its sharing head compacts by. */
-    val compactionReserve: Long? = null,
 ) {
     /** The rate card emitted INLINE on the model row — never as a `[providers.X.models.rates]`
      *  sub-table. That spelling repeats its header once per model, and splice's own
@@ -71,16 +69,6 @@ public data class AddProfile internal constructor(
     /** What added the row, named in its TOML comment and the verb's title. */
     internal val origin: String get() = labels.origin ?: "splice add $name"
 
-    /** Whether a value would end its line in splice.toml and start another: the base URL, the command and the family,
-     *  each written inside quotes, with a quote, a backslash or a control character, or a tier name, written as a key,
-     *  that is not a bare one. On an import the family and the tiers are what another machine described (round 13 of
-     *  PR #419's review). */
-    internal val quoted: Boolean get() {
-        val values = listOfNotNull(baseUrl, head.command, provider.family)
-        val tiers = models.flatMap { it.slots }
-        return values.any { !addValuePattern.matches(it) } || tiers.any { !addKeyPattern.matches(it) }
-    }
-
     /** The models this profile writes by default, as a picker offers them (setup, spec section 1). */
     public val modelChoices: List<AddModelChoice>
         get() = models.map { AddModelChoice(it.id, it.label, it.contextWindow) }
@@ -100,10 +88,6 @@ public data class AddProviderSpec internal constructor(
     internal val requiresKey: Boolean = authKind == API_KEY,
     /** Extra provider lines, already valid TOML (a default vendor header, for one). */
     internal val extra: List<String> = emptyList(),
-    /** A `splice-remote` provider's machine: the `[remotes]` key its `auth.remote` names. */
-    internal val authRemote: String? = null,
-    /** The family the provider is written with, for one whose own auth names none (a head another machine shares). */
-    internal val family: String? = null,
 )
 
 /** The head a profile adds: the [key] it is known by (provider AND head key) and the wrapper [command] that
@@ -134,9 +118,6 @@ internal data class AddModelPolicy(
     val listAuthoritative: Boolean = true,
     /** The endpoint supplies the serving roster; declared rows supply only pinned models and tiers. */
     val discoverRoster: Boolean = false,
-    /** The head serves every declared row at its own window and maps tiers in a `model_slots` table, so one model
-     *  may fill several tiers (LAN share: a head regenerated from another machine's, which may do exactly that). */
-    val tierTable: Boolean = false,
 )
 
 public class AddProfiles {
@@ -169,8 +150,11 @@ public class AddProfiles {
         family: String? = null,
     ): String {
         val models = profile.models
-        val spec = profile.provider
-        val auth = authLine(spec, key)
+        val auth = if (profile.provider.authKind == API_KEY) {
+            """auth = { kind = "api-key", env = "${apiKeyEnv(key)}" }"""
+        } else {
+            """auth = { kind = "${profile.provider.authKind}" }"""
+        }
         val on = shared?.let { ", a command on [providers.$it]" }.orEmpty()
         val origin = listOf("", "# Added by `${profile.origin}`$on.")
         val tables = listOf(
@@ -184,10 +168,9 @@ public class AddProfiles {
                 "id = \"${m.id}\"",
                 "label = \"${m.label}\"",
                 "context_window = ${m.contextWindow}",
-            ) + m.clientModel?.let { listOf("client_model = \"$it\"") }.orEmpty() +
-                m.compactionReserve?.let { listOf("compaction_reserve_tokens = $it") }.orEmpty() + m.ratesLine()
+            ) + m.clientModel?.let { listOf("client_model = \"$it\"") }.orEmpty() + m.ratesLine()
         }
-        val kin = (family ?: spec.family)?.let { listOf("[providers.$key.discovery]", "family = \"$it\"") }.orEmpty()
+        val kin = family?.let { listOf("[providers.$key.discovery]", "family = \"$it\"") }.orEmpty()
         val provider = origin + (tables + kin).takeIf { shared == null }.orEmpty()
         val mappings = models.flatMap { m -> m.slots.map { slot -> m.id to slot } }
         val pinned = models.first()
@@ -198,29 +181,21 @@ public class AddProfiles {
             "port = $port",
             "discovery_prefix = \"claude-$key--\"",
             "pinned_model = \"${pinned.id}\"",
-        ) + headExtras(mappings, pinned.contextWindow, profile.policy) + listOf(
+        ) + headExtras(mappings, pinned.contextWindow, profile.policy.discoverRoster) + listOf(
             "[heads.$key.claude]",
             "command = \"${profile.head.command}\"",
         )
         return (provider + head).joinToString("\n") + "\n"
     }
 
-    /** The provider's `auth` line: an api-key provider's env var, a remote's machine, else the kind alone. */
-    private fun authLine(spec: AddProviderSpec, key: String): String = when {
-        spec.authKind == API_KEY -> """auth = { kind = "api-key", env = "${apiKeyEnv(key)}" }"""
-        spec.authRemote != null -> """auth = { kind = "${spec.authKind}", remote = "${spec.authRemote}" }"""
-        else -> """auth = { kind = "${spec.authKind}" }"""
-    }
-
-    /** Discovery and tier-table profiles keep row windows and map tiers separately. Other profiles keep their
+    /** Discovery profiles keep row windows and map tiers separately. Other profiles keep their
      *  pinned window and their existing serving allowlist when they declare tiers. */
     private fun headExtras(
         mappings: List<Pair<String, String>>,
         pinnedWindow: Long,
-        policy: AddModelPolicy,
+        discoverRoster: Boolean,
     ): List<String> {
-        if (policy.discoverRoster || policy.tierTable) {
-            if (mappings.isEmpty()) return emptyList()
+        if (discoverRoster) {
             return listOf("model_slots = {" + mappings.joinToString { (id, slot) -> "$slot = \"$id\"" } + "}")
         }
         val window = listOf("context_window = $pinnedWindow")

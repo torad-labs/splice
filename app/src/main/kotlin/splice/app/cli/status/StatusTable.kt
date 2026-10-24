@@ -190,10 +190,12 @@ internal class StatusTable(
      *  an enum, so the next registered auth kind or dialect fails to COMPILE here rather than
      *  quietly acquiring a vendor name that has nothing to do with it. */
     internal fun backendLabel(provider: ProviderConfig): String =
-        when (val kind = AuthKindRegistry.from(provider.auth.kind)) {
-            is AuthKind.OAuth -> signInLabel(kind)
+        when (AuthKindRegistry.from(provider.auth.kind)) {
+            AuthKind.ChatgptOAuth -> "codex / ChatGPT"
+            AuthKind.GrokOAuth -> "xAI Grok"
+            AuthKind.KimiOAuth -> "Moonshot Kimi"
+            AuthKind.MuseOAuth -> "Meta Muse"
             AuthKind.Client -> "Anthropic (your login)"
-            AuthKind.SpliceRemote -> "relayed to ${provider.auth.remote}"
             // Unregistered kinds — api-key, or an operator's custom scheme, which AuthKind.kt
             // deliberately leaves unregistered. The wire dialect is then the only evidence there
             // is, so the label describes the WIRE and names no vendor it cannot verify. A local
@@ -201,14 +203,6 @@ internal class StatusTable(
             // own process.
             null -> dialectLabel(provider.dialect).let { if (provider.isLocal) "local runtime ($it)" else it }
         }
-
-    /** The vendor a sign-in kind belongs to; exhaustive over the sealed OAuth kinds, as [backendLabel] is. */
-    private fun signInLabel(kind: AuthKind.OAuth): String = when (kind) {
-        AuthKind.ChatgptOAuth -> "codex / ChatGPT"
-        AuthKind.GrokOAuth -> "xAI Grok"
-        AuthKind.KimiOAuth -> "Moonshot Kimi"
-        AuthKind.MuseOAuth -> "Meta Muse"
-    }
 
     private fun dialectLabel(dialect: Dialect): String = when (dialect) {
         Dialect.OPENAI_CHAT -> "OpenAI-compatible"

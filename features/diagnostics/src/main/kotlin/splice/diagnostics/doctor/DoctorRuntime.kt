@@ -127,10 +127,10 @@ internal class DoctorRuntime {
      *  budget — same reason JW-05 split this file off in the first place. */
     internal fun turnPathCheck(h: HealthView): DoctorCheck? = when {
         h.ok == null -> null
-        h.heads.stalled.isNotEmpty() -> DoctorCheck(
+        h.turnPathStalled.isNotEmpty() -> DoctorCheck(
             "turn path",
             CheckStatus.FAIL,
-            "WEDGED on ${h.heads.stalled.joinToString(", ")}: requests are accepted but never " +
+            "WEDGED on ${h.turnPathStalled.joinToString(", ")}: requests are accepted but never " +
                 "answered (loopback probes timed out). This is the 91h-outage signature. After a restart, " +
                 "`splice logs --head <key> --tail 100` says why.",
             "splice restart",

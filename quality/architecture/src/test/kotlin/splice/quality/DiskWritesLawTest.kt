@@ -297,17 +297,6 @@ private val SHIPPED_SITES: Map<String, Map<String, Int>> = mapOf(
     "app/src/main/kotlin/splice/app/daemon/DaemonLock.kt" to mapOf("FileChannel.open(" to 1),
     // The MCP hub front's environment file, in the mcp-front.env README row.
     "app/src/main/kotlin/splice/app/McpFrontEnv.kt" to mapOf("writeAtomic0600(" to 1),
-    // The client book and its empty lock, opened 0600 where the filesystem keeps modes, in the share/clients.json row.
-    "features/share/src/main/kotlin/splice/share/ShareClients.kt" to
-        mapOf("FileChannel.open(" to 2, "writeAtomic0600(" to 1),
-    // The listener's key and self-signed certificate, written once, in the share/tls.pem row.
-    "features/share/src/main/kotlin/splice/share/ShareCertificate.kt" to mapOf("createNew0600(" to 1),
-    // This machine's tokens on the machines it joined, in the share/remotes.json row; its lock is ShareClients.kt's.
-    "features/share/src/main/kotlin/splice/share/remote/RemoteCredentials.kt" to mapOf("writeAtomic0600(" to 1),
-    // When each joined machine was last heard from and its turns today, in the share/activity.json row.
-    "features/share/src/main/kotlin/splice/share/ShareActivity.kt" to mapOf("writeAtomic0600(" to 1),
-    // What this machine acknowledged of each joined machine's outbox, in the share/acks.json row.
-    "features/share/src/main/kotlin/splice/share/remote/RemoteAcks.kt" to mapOf("writeAtomic0600(" to 1),
     // Registration replacement and its content-addressed backup are owned by the extracted registration writer.
     "app/src/main/kotlin/splice/app/cli/mcp/McpServiceRegistration.kt" to mapOf("writeAtomic0600(" to 2),
     "app/src/main/kotlin/splice/app/head/HeadTraceStores.kt" to mapOf("ActivityDays(" to 1),
@@ -426,9 +415,6 @@ private val SHIPPED_SITES: Map<String, Map<String, Int>> = mapOf(
     "features/sessions/src/main/kotlin/splice/sessions/registry/SeenSessions.kt" to mapOf("writeAtomic0600(" to 1),
     // The latest manager session, head and consent, in the manager.json README row.
     "features/sessions/src/main/kotlin/splice/sessions/manager/ManagerPointer.kt" to mapOf("writeAtomic0600(" to 1),
-    // A mirror of another machine's session: its registry key file and record under ~/.claude/sessions, in the
-    // README's two rows for them.
-    "features/sessions/src/main/kotlin/splice/sessions/mirror/Mirror.kt" to mapOf("writeAtomic0600(" to 2),
     // A peer helper's helper.json, helper.log and helper.lock (package B), in the README's state/peers row.
     "features/sessions/src/main/kotlin/splice/sessions/peer/helper/PeerHelper.kt" to mapOf(
         "FileChannel.open(" to 1,

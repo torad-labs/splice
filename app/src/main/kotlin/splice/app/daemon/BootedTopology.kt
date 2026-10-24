@@ -24,8 +24,6 @@
 package splice.app.daemon
 
 import splice.models.roster.DeclaredHeads
-import splice.share.ShareListener
-import splice.share.remote.RemoteLinks
 import java.nio.file.Path
 
 /** The booted config's identity plus what it declared. Defaults are the same "not supplied" values
@@ -41,11 +39,6 @@ internal data class BootedTopology(
     /** V4-162: the version the daemon RUNS, which a window-only edit moves (TopologyWindows). Null =
      *  nothing re-reads the file, so the booted [digest] is the running one and any change is stale. */
     val running: RunningTopology? = null,
-    /** LAN share: the machines this config joined (`[remotes]`), which a `splice-remote` head's roster is read
-     *  from (RosterSources). Null where no daemon built them. */
-    val remotes: RemoteLinks? = null,
-    /** LAN share: this machine's listener, which the Sharing page reads and turns on and off. Null in a rig. */
-    val sharing: ShareListener? = null,
 )
 
 /** V4-162: which splice.toml version the daemon runs, and whether the file has moved past it in a way

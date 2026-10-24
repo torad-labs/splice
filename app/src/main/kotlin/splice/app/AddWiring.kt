@@ -40,7 +40,6 @@ import java.nio.charset.StandardCharsets
 import java.nio.file.Files
 import java.nio.file.Path
 import java.util.concurrent.TimeUnit
-import javax.net.ssl.SSLContext
 
 // A connection check expects one word; cap the bytes read without retaining provider output in memory.
 private const val LIVE_OUTPUT_BYTES = 4096
@@ -51,16 +50,9 @@ private const val LIVE_EXIT_WAIT_SECONDS = 2L
 internal object AddWiring {
 
     /** [restart] is the plain `splice restart` unless a caller owns the restart itself: setup adds its
-     *  ticked heads and restarts once at the end. [doctor] and [output] likewise: `splice remote` adds several
-     *  heads, says one line for each, and runs one checkup after them all, reaching each machine over its pinned
-     *  [tls]. */
-    fun add(
-        restart: DaemonRestart = DaemonRestart { LifecycleWiring.restart() },
-        doctor: AddDoctor = AddDoctor { env -> DoctorWiring.command().doctor(emptyList(), env) },
-        output: TerminalOutput = TerminalOutput(::println),
-        tls: SSLContext? = null,
-    ): AddVerb = AddVerb(
-        output = output,
+     *  ticked heads and restarts once at the end. */
+    fun add(restart: DaemonRestart = DaemonRestart { LifecycleWiring.restart() }): AddVerb = AddVerb(
+        output = TerminalOutput(::println),
         errors = TerminalOutput(System.err::println),
         ports = AddPorts(
             login = AddLogin { key, provider, topology -> LoginCommand().runLoginFlow(key, provider, topology) },
@@ -69,10 +61,9 @@ internal object AddWiring {
             daemonUp = DaemonUpProbe { port -> AdminSupport.daemonUp(port) },
             prompt = ConsolePrompter(),
             liveTurn = CommandLiveTurn(),
-            doctor = doctor,
+            doctor = AddDoctor { env -> DoctorWiring.command().doctor(emptyList(), env) },
         ),
         localRows = RuntimeRows(),
-        tls = tls,
     )
 
     /** V4-220 item 3: `splice add` as the console runs it — its own sign-in sessions, the wrapper linked

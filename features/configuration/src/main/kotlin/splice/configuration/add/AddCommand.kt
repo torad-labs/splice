@@ -43,8 +43,7 @@ internal class AddCommand(
         return added(candidate, env)
     }
 
-    /** A head a local runtime or another machine described (RuntimeHeadAdd, RemoteHeadAdd): no command line, the
-     *  same everything else. */
+    /** A head a local runtime described (RuntimeHeadAdd): no command line, the same everything else. */
     suspend fun addDescribed(profile: AddProfile, env: EnvReader): Boolean {
         val candidate = prepare.described(profile, env) ?: return false
         return added(candidate, env)
@@ -54,10 +53,8 @@ internal class AddCommand(
         val title = "$BOLD${candidate.resolved.origin}$RESET"
         output.line("$title$DIM: '${candidate.key}' as $CYAN${candidate.command}$RESET")
         val ok = authenticate(candidate, env) && verified(candidate, env) && save(candidate)
-        if (!ok) {
-            output.line("${YELLOW}nothing written$RESET: ${candidate.file.path} is unchanged")
-            return false
-        }
+        if (!ok) output.line("${YELLOW}nothing written$RESET: ${candidate.file.path} is unchanged")
+        if (!ok) return false
         val options = candidate.args.options
         val live = options.live ||
             (!options.yes && confirm("Run one short live turn against '${candidate.key}' now?", default = false))
@@ -65,19 +62,13 @@ internal class AddCommand(
     }
 
     private suspend fun authenticate(c: AddCandidate, env: EnvReader): Boolean = when {
-        signedInElsewhere(c) != null -> true.also { output.line("  ${"auth".padEnd(ADD_PAD)} ${signedInElsewhere(c)}") }
+        c.provider.auth.kind == AuthKind.Client.wire ->
+            true.also { output.line("  ${"auth".padEnd(ADD_PAD)} your own Claude login is forwarded at launch") }
         checks.credential(c.providerKey, c.provider, env).ok ->
             true.also { output.line("  ${"auth".padEnd(ADD_PAD)} credential already present") }
         c.args.options.yes || confirm("Sign in to '${c.key}' now?", default = true) ->
             ports.login(c.key, c.provider, c.topology)
         else -> false.also { output.line("  ${"auth".padEnd(ADD_PAD)} sign-in is required to add '${c.key}'") }
-    }
-
-    /** What signs a head in that splice holds no login for here, or null when it is the add's to sign in. */
-    private fun signedInElsewhere(c: AddCandidate): String? = when (c.provider.auth.kind) {
-        AuthKind.Client.wire -> "your own Claude login is forwarded at launch"
-        AuthKind.SpliceRemote.wire -> "relayed to ${c.provider.auth.remote}, which runs it on its login"
-        else -> null
     }
 
     private fun verified(c: AddCandidate, env: EnvReader): Boolean {

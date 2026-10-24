@@ -78,7 +78,6 @@ internal class PerfRowDecode(private val pool: PerfFieldNames) {
         private var sessionId: String? = null
         private var response: String? = null
         private var messagesHash: String? = null
-        private var from: String? = null
         private var account: String? = null
         private var turn: String? = null
         private var turnId: String? = null
@@ -94,6 +93,8 @@ internal class PerfRowDecode(private val pool: PerfFieldNames) {
                 "outcome" -> outcome = text(parser)
                 "model" -> model = text(parser)
                 "session" -> session = text(parser)
+                "session_id" -> sessionId = text(parser)
+                "response_message_id" -> response = text(parser)
                 "account" -> account = text(parser)
                 "turn" -> turn = text(parser)
                 else -> marker(key, parser)
@@ -109,18 +110,8 @@ internal class PerfRowDecode(private val pool: PerfFieldNames) {
                 // V4-444: the capture flag and the upstream's own failure words, read like the facts above them.
                 "capture" -> captured = text(parser)?.toBooleanStrictOrNull()
                 "provider_message" -> providerMessage = text(parser)
-                PerfKeys.ASYNC_IO_DROPS -> drops = text(parser)?.toLongOrNull()
-                else -> link(key, parser)
-            }
-        }
-
-        /** The ids that join the row to its transcript and its turn's re-sends. */
-        private fun link(key: String, parser: JsonParser) {
-            when (key) {
-                "session_id" -> sessionId = text(parser)
-                "response_message_id" -> response = text(parser)
                 "messages_hash" -> messagesHash = text(parser)
-                "from" -> from = text(parser)
+                PerfKeys.ASYNC_IO_DROPS -> drops = text(parser)?.toLongOrNull()
             }
         }
 
@@ -141,7 +132,7 @@ internal class PerfRowDecode(private val pool: PerfFieldNames) {
                     captured = captured,
                     providerMessage = providerMessage,
                 ),
-                transcript = PerfTranscriptLink(sessionId, response, messagesHash, from),
+                transcript = PerfTranscriptLink(sessionId, response, messagesHash),
                 turns = PerfTurnIds(trace = turn, request = turnId),
             )
         }

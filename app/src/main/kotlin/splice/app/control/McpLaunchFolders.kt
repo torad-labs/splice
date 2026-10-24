@@ -113,8 +113,7 @@ internal class McpLaunchFolders(
     fun read(): List<CountedPlan> {
         val vanilla = UserHome.claudeDir()
         val launches = sessions?.read().orEmpty()
-            // A mirror stands for a session another machine runs (LAN share): no launch here.
-            .filter { it.availability != SessionAvailability.GONE && !it.mirrored }
+            .filter { it.availability != SessionAvailability.GONE }
             .mapNotNull { record ->
                 val folder = record.process.cwd?.let(PathProbe::spelled)?.takeIf { it.isAbsolute }
                 val home = record.process.pid?.let { environment.configHome(it, vanilla) }

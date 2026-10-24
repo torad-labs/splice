@@ -53,7 +53,6 @@ class ProviderAssemblyCompatibilityTest {
         AuthKind.KimiOAuth to setOf(Dialect.ANTHROPIC_PASSTHROUGH),
         AuthKind.MuseOAuth to setOf(Dialect.OPENAI_RESPONSES, Dialect.ANTHROPIC_PASSTHROUGH),
         AuthKind.Client to setOf(Dialect.ANTHROPIC_PASSTHROUGH),
-        AuthKind.SpliceRemote to setOf(Dialect.ANTHROPIC_PASSTHROUGH),
     )
 
     @Test
@@ -90,8 +89,8 @@ class ProviderAssemblyCompatibilityTest {
             }
         }
 
-        assertEquals(8, accepted)
-        assertEquals(10, rejected)
+        assertEquals(7, accepted)
+        assertEquals(8, rejected)
     }
 
     @Test

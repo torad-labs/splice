@@ -420,12 +420,6 @@ quirks = { mfjs = true, strip_cache_control = true, synthesize_signatures = true
 # from the request when a live probe shows the endpoint rejects them. Kimi accepts them, so it is
 # NOT set here; declare it for a passthrough upstream that 400s on the shape.
 # strip_sampling_params = true
-# forward_client_identity (default false): on a passthrough provider that holds its own key, send the
-# client's Anthropic wire knobs and identity upstream (anthropic-version, anthropic-beta, the session id,
-# user-agent, x-app, x-stainless-*), never its credential. `splice remote` sets it on each head it imports
-# from another machine's `splice share`, where the session id keeps a session on one account and one
-# prompt-cache key. Kimi is not a splice head, so it is NOT set here.
-# forward_client_identity = true
 # Static vendor headers, pure TOML. Kimi's /coding endpoint 403s unrecognized user agents (this
 # exact UA is proven-accepted), and the Anthropic wire needs its version header on every request.
 # `Accept` and the X-Msh-* device identity stay in code: one is a dialect invariant, the other is

@@ -122,10 +122,8 @@ public class SeenSessions(
     /** Reuses the ended projection while its recorded facts are unchanged. */
     internal fun ended(record: SeenSession): SessionRecord = held.ended(record)
 
-    /** What is kept of [record], or null when it is not this machine's to keep: one with no id, and a mirror, whose
-     *  session runs on another machine and is kept there. */
     private fun seen(record: SessionRecord): SeenSession? {
-        val id = record.sessionId?.takeIf { SESSION_ID.matches(it) && record.machine == null } ?: return null
+        val id = record.sessionId?.takeIf(SESSION_ID::matches) ?: return null
         val at = listOfNotNull(record.process.updatedAt, record.status.updatedAt, record.process.startedAt).maxOrNull()
             ?: return null
         val earlier = held[id] ?: recorded(id)

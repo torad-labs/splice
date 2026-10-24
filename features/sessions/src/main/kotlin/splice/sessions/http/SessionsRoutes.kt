@@ -215,9 +215,7 @@ public class SessionsRoutes(
         put("model", shown.model)
         put("title", shown.title)
         put("version", s.client.version)
-        // a mirror's session runs on another machine: its machine is named, and nothing of a folder here is
-        put("cwd", s.process.cwd.takeIf { s.machine == null })
-        s.machine?.let { put("machine", it) }
+        put("cwd", s.process.cwd)
         put("status", s.status.state)
         put("waiting_for", s.status.waitingFor)
         put("status_updated_at", s.status.updatedAt)
@@ -227,10 +225,8 @@ public class SessionsRoutes(
         put("head", s.head ?: UNKNOWN_HEAD)
         put("route", routeName(s.route))
         put("availability", JsonPrimitive(s.availability.name.lowercase()))
-        if (s.machine == null) {
-            repoOf(s)?.let { put("repo", repoJson(it)) }
-            projects.put(this, s)
-        }
+        repoOf(s)?.let { put("repo", repoJson(it)) }
+        projects.put(this, s)
         val bound = s.sessionId?.let { teamOf(it) }
         // the card names the team a person reads, never its id; no reader joins a row to its team by id
         put("team_name", bound?.name)

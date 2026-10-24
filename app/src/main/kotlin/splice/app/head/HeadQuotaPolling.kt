@@ -1,7 +1,6 @@
 // NEW: quota polling follows live membership, borrowing the daemon's existing poller creation and lifetime.
 package splice.app.head
 
-import kotlinx.coroutines.runInterruptible
 import splice.accounts.order.AccountOrderStore
 import splice.app.auth.claude.ClaudeNativeQuota
 import splice.app.auth.claude.OWN_SIGN_IN_LABEL
@@ -11,16 +10,12 @@ import splice.app.provider.Wired
 import splice.app.provider.WiredAccount
 import splice.core.auth.AuthProvider
 import splice.core.auth.ClientAuthProvider
-import splice.core.topology.AuthKind
 import splice.core.usage.QuotaReadFailures
 import splice.head.usage.QuotaTracker
 import splice.provider.muse.MuseAuthProvider
-import splice.share.remote.RemoteLinks
-import splice.upstream.codemode.ProcessDispatchers
 import splice.usage.quota.ClientUserAgent
 import splice.usage.quota.QuotaIntervalMs
 import splice.usage.quota.QuotaPoller
-import splice.usage.quota.QuotaProbe
 import splice.usage.quota.QuotaProbes
 import splice.usage.quota.QuotaReadWatch
 import splice.usage.quota.UsageFields
@@ -35,8 +30,6 @@ internal class HeadQuotaPolling(
     private val orders: AccountOrderStore,
     /** Where each login's failed limits read is kept for /api/accounts (Accounts' "Not read" reason). */
     private val failures: QuotaReadFailures = QuotaReadFailures(),
-    /** LAN share: the machines this one joined, for a `splice-remote` head's probe. */
-    private val remotes: RemoteLinks? = null,
 ) {
     private val held = ConcurrentHashMap<String, QuotaPoller>()
     private val owners = ConcurrentHashMap<String, AuthProvider>()
@@ -108,16 +101,7 @@ internal class HeadQuotaPolling(
                 auth,
                 usageFields,
                 clientUserAgent,
-            ) ?: remoteProbe() ?: return null
+            ) ?: return null
         return startQuotaPoller(ctx.key, QuotaReadWatch(probe, failures.outcome(ctx.key, label)), tracker, intervalMs)
-    }
-
-    /** A `splice-remote` head's plan windows are the ones its head holds on the machine it relays to: that machine
-     *  polls its vendor, and this one reads the answer from it, so the bars here show the same plan. */
-    private fun remoteProbe(): QuotaProbe? {
-        val provider = ctx.providerCfg
-        val remote = provider.auth.remote?.takeIf { provider.auth.kind == AuthKind.SpliceRemote.wire } ?: return null
-        val api = remotes?.api(remote) ?: return null
-        return QuotaProbe { runInterruptible(ProcessDispatchers().io()) { api.usage(provider.baseUrl) } }
     }
 }

@@ -12,8 +12,6 @@ import splice.core.topology.AuthCompatibility
 import splice.core.topology.Dialect
 import splice.core.util.LogSink
 import splice.oauth.grok.GrokRefresh
-import splice.share.ShareState
-import splice.share.remote.RemotesStore
 import java.util.concurrent.atomic.AtomicBoolean
 
 /**
@@ -35,12 +33,7 @@ internal class ProviderAssembly(
     private val passthroughAssembly = PassthroughAssembly()
     private val chatArm = ChatArm(probeScope, log, grokRefresh)
     internal val claudePoolChanges = claudeChanges
-    private val passthroughArm = PassthroughArm(
-        passthroughAssembly,
-        claudeAccounts,
-        claudePoolChanges,
-        RemotesStore(ShareState(statePaths).remotesFile),
-    )
+    private val passthroughArm = PassthroughArm(passthroughAssembly, claudeAccounts, claudePoolChanges)
 
     internal fun claudeAccounts(head: String, auth: splice.core.auth.RefreshableAuthProvider): List<WiredAccount> =
         claudeAccounts.accounts(head, auth)

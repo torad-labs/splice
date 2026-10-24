@@ -50,7 +50,7 @@ public class StoredCredential(private val json: Json = Json { ignoreUnknownKeys 
         AuthKind.GrokOAuth -> GrokCredentialShape()
         AuthKind.KimiOAuth -> KimiCredentialShape()
         AuthKind.MuseOAuth -> MuseCredentialShape()
-        AuthKind.Client, AuthKind.SpliceRemote, null -> null
+        AuthKind.Client, null -> null
     }
 
     /** The token stored for this provider that a request presents ([CredentialShape.presented] — the

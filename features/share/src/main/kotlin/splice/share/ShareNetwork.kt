@@ -2,10 +2,11 @@
 // route runs. The source must be on this LAN: a private address — loopback, RFC 1918, link-local, 100.64/10 (the
 // range Tailscale hands out) or fc00::/7 — or on an IPv6 prefix a house interface of this machine holds, one beside
 // an RFC 1918 address and no public IPv4 one, which is how a house whose router hands out a globally routable /64
-// reaches itself while a datacenter's shared /64 stays closed. The Host must be an IP literal or
-// one of this machine's own names, the share listener's counterpart of LoopbackHost: a page whose DNS was rebound
-// onto this address arrives with its own name in Host and is refused, so a browser on the LAN cannot be turned
-// into a client.
+// reaches itself. A source on any prefix a datacenter interface holds (one with a public IPv4 address) is refused,
+// whatever its range: a provider's private network, link and /64 are shared with its other customers. The Host must
+// be an IP literal or one of this machine's own names, the share listener's counterpart of LoopbackHost: a page whose
+// DNS was rebound onto this address arrives with its own name in Host and is refused, so a browser on the LAN cannot
+// be turned into a client.
 package splice.share
 
 import splice.core.util.Cancellables
@@ -35,26 +36,37 @@ internal class ShareNetwork(
 
     fun admitsSource(address: String): Boolean {
         val ip = literal(address) ?: return false
-        return ip.isLoopbackAddress || ip.isSiteLocalAddress || ip.isLinkLocalAddress || carrierGrade(ip) ||
-            uniqueLocal(ip) || onThisLan(ip)
+        val links = attached.now().groupBy { it.link }.values
+        return ip.isLoopbackAddress || !datacenter(ip, links) && (privateRange(ip) || onThisLan(ip, links))
     }
+
+    private fun privateRange(ip: InetAddress): Boolean =
+        ip.isSiteLocalAddress || ip.isLinkLocalAddress || carrierGrade(ip) || uniqueLocal(ip)
+
+    /** Whether a datacenter interface of this machine, one holding a public IPv4 address, holds [ip]'s prefix. Its
+     *  private network is the provider's, and some share it with every customer in the region (Linode's
+     *  192.168.128.0/17); its link and its IPv6 /64 are shared the same way. A source there is a stranger whatever
+     *  range its address is in. Link-local prefixes are the same fe80::/64 on every interface, so a machine with a
+     *  datacenter interface turns every link-local source away: a house machine still reaches it by its other
+     *  addresses. */
+    private fun datacenter(ip: InetAddress, links: Collection<List<SharePrefix>>): Boolean =
+        links.any { link -> publicIpv4(link) && link.any { it.holds(ip) } }
 
     /** Whether [ip] is an IPv6 address on a prefix a house interface of this machine holds: a machine reachable with
      *  no router in between. SLAAC makes a house's /64 the link itself, globally routable though it is, so the named
-     *  private ranges alone would turn the house away. IPv4 is left to them: a house's IPv4 is RFC 1918, and a public
-     *  IPv4 subnet on an interface is a datacenter's, shared with other customers' servers. */
-    private fun onThisLan(ip: InetAddress): Boolean {
-        if (ip !is Inet6Address) return false
-        return attached.now().groupBy { it.link }.values.any { link -> house(link) && link.any { it.holds(ip) } }
-    }
+     *  private ranges alone would turn the house away. IPv4 is left to them: a house's IPv4 is RFC 1918. */
+    private fun onThisLan(ip: InetAddress, links: Collection<List<SharePrefix>>): Boolean =
+        ip is Inet6Address && links.any { link -> house(link) && link.any { it.holds(ip) } }
 
     /** Whether the interface holding [link] is a house's: its router NATs an RFC 1918 address, and it holds no public
-     *  IPv4 address. A datacenter server's interface holds a public IPv4 address, and some providers (Linode) put a
-     *  /64 every customer there shares beside it. An interface with no IPv4 address says nothing either way. */
-    private fun house(link: List<SharePrefix>): Boolean {
-        val ipv4 = link.map { it.address }.filterIsInstance<Inet4Address>()
-        return ipv4.any { it.isSiteLocalAddress } && ipv4.all { it.isSiteLocalAddress || it.isLinkLocalAddress }
-    }
+     *  IPv4 address. An interface with no IPv4 address says nothing either way. */
+    private fun house(link: List<SharePrefix>): Boolean =
+        link.any { it.address is Inet4Address && it.address.isSiteLocalAddress } && !publicIpv4(link)
+
+    /** Whether the interface holding [link] holds a public IPv4 address, as a datacenter server's does and a house's,
+     *  behind its router's NAT, never does. */
+    private fun publicIpv4(link: List<SharePrefix>): Boolean = link.map { it.address }.filterIsInstance<Inet4Address>()
+        .any { !it.isSiteLocalAddress && !it.isLinkLocalAddress && !it.isLoopbackAddress && !carrierGrade(it) }
 
     /** An absent Host is admitted, as LoopbackHost admits it: an HTTP/1.0 client sends none, and no browser
      *  request lacks one. */

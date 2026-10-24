@@ -1,11 +1,13 @@
 // NEW: LAN share, the gap Marcos hit on 2026-10-23 (docs/specs/lan-share.md, "Trust the LAN"). The goal: two
 // machines on one LAN reach each other whatever address family they pick, and joining, which takes no code, stays
 // closed to anyone who is not on that LAN. A home router hands out an ISP-delegated IPv6 prefix, so this Mac reached
-// torad-server from 2605:a601:aa80:1500:4c5b:… to its 2605:a601:aa80:1500:… /64, one hop apart, and neither address is
-// loopback, RFC 1918, link-local, 100.64/10 or fc00::/7: the listener refused it and every imported command read
+// torad-server from 2605:a601:aa80:1500:4c5b:… to its 2605:a601:aa80:1500:… /64, one hop apart, and neither address
+// is loopback, RFC 1918, link-local, 100.64/10 or fc00::/7: the listener refused it and every imported command read
 // unreachable. A house's interface holds that /64 beside an RFC 1918 address its router NATs. A datacenter server's
 // interface holds a public IPv4 address, and some providers (Linode) put a /64 every customer in the datacenter shares
-// on it: those neighbours are strangers, not the LAN (round 7).
+// on it: those neighbours are strangers, not the LAN (round 7). So is its private network: Linode's 192.168.128.0/17 is
+// one network every customer in the region shares (round 8), so a source a datacenter interface holds, in any range,
+// is refused.
 package splice.share
 
 import org.junit.jupiter.api.Assertions.assertFalse
@@ -34,7 +36,8 @@ internal class ShareNetworkTest {
         },
     )
 
-    /** A Linode: eth0 holds its public IPv4 and an EUI-64 address on the /64 the datacenter's customers share. */
+    /** A Linode: eth0 holds its public IPv4, an EUI-64 address on the /64 the datacenter's customers share, and its
+     *  link-local address, as Linux gives every interface. */
     private fun linode(vararg more: SharePrefix) = ShareNetwork(
         "linode",
         emptyList(),
@@ -42,6 +45,7 @@ internal class ShareNetworkTest {
             listOf(
                 prefix("198.51.100.4", 24, "eth0"),
                 prefix("2600:3c02::f03c:91ff:fe24:3a2f", 64, "eth0"),
+                prefix("fe80::f03c:91ff:fe24:3a2f", 64, "eth0"),
             ) + more
         },
     )
@@ -66,6 +70,25 @@ internal class ShareNetworkTest {
     @Test
     fun `another customer on a datacenter's shared IPv6 prefix is not on this LAN`() {
         assertFalse(linode().admitsSource("2600:3c02::f03c:91ff:fe99:1"), "a neighbour on the datacenter's /64")
+    }
+
+    @Test
+    fun `a house machine on the router's RFC 1918 network is on this LAN`() {
+        assertTrue(home().admitsSource("192.168.1.243"), "the Mac on torad-server's /24")
+    }
+
+    @Test
+    fun `another customer on a datacenter's shared private network is not on this LAN`() {
+        val private = linode(prefix("192.168.139.5", 17, "eth0"))
+        assertFalse(private.admitsSource("192.168.140.20"), "another customer's Linode on the region's /17")
+        assertFalse(private.admitsSource("fe80::f03c:91ff:fe99:1"), "or on the datacenter's link")
+        assertTrue(private.admitsSource("10.8.0.5"), "a routed private network no datacenter interface holds")
+    }
+
+    @Test
+    fun `a datacenter interface with a private IPv4 address beside its public one admits no IPv6 neighbour`() {
+        val private = linode(prefix("192.168.139.5", 17, "eth0"))
+        assertFalse(private.admitsSource("2600:3c02::f03c:91ff:fe99:1"), "its /64 is still the datacenter's")
     }
 
     @Test

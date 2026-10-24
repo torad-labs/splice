@@ -77,10 +77,11 @@ public class ShareStart(
     /** Why there is no certificate to serve: a [file] there that will not load is moved away to mint a new one; where
      *  none is there, none could be made, and there is nothing to move. */
     private fun refusal(file: Path, failure: Throwable): String {
-        val cause = SafeFailureText.render(failure)
-        if (!Files.exists(file, LinkOption.NOFOLLOW_LINKS)) return "a certificate could not be made at $file ($cause)"
+        if (!Files.exists(file, LinkOption.NOFOLLOW_LINKS)) {
+            return "a certificate could not be made at $file (${SafeFailureText.render(failure)})"
+        }
         val fix = "move it away to mint a new one, and every joined machine then runs `splice remote add` again"
-        return "$file is not a certificate this machine can serve ($cause); $fix"
+        return "$file is not a certificate this machine can serve (${SafeFailureText.render(failure)}); $fix"
     }
 }
 

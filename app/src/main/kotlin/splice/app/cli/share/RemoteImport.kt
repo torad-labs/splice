@@ -54,18 +54,12 @@ internal class RemoteImport(
         val name = RemoteNames.of(machine.info.server)
         // A join replaces the token this machine holds there, so a file that would stop the import stops it first.
         val current = file.loadedOrStarter() ?: return false
-        val joined = joined(machine) ?: return false
-        // The token goes first: a provider that names the machine finds it on its first turn.
-        return kept(name, joined.token) && imported(machine, name, current, joined)
-    }
-
-    /** [machine] joined, which is said; null when it refuses, said in its words. */
-    private fun joined(machine: RemoteFound): Joined? {
         val joined = RemoteJoin(ShareHostName().short()).join(machine)
         if (joined is RemoteJoined.Refused) err.line("$REMOTE_VERB: ${joined.why}")
-        val ok = joined as? Joined ?: return null
+        val ok = joined as? RemoteJoined.Joined ?: return false
         out.line("$GREEN✓$RESET joined ${machine.info.server}, certificate $DIM${ok.pin}$RESET pinned")
-        return ok
+        // The token goes first: a provider that names the machine finds it on its first turn.
+        return kept(name, ok.token) && imported(machine, name, current, ok)
     }
 
     private suspend fun imported(machine: RemoteFound, name: String, current: Topology, joined: Joined): Boolean {

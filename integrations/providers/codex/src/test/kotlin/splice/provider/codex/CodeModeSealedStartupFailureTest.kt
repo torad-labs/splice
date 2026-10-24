@@ -6,15 +6,15 @@ import kotlinx.coroutines.cancelAndJoin
 import kotlinx.coroutines.test.runTest
 import kotlinx.coroutines.withTimeout
 import kotlinx.coroutines.yield
-import kotlinx.serialization.json.jsonObject
+import kotlinx.serialization.json.Json
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertFalse
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.Timeout
 import splice.core.turn.TurnOutcome
-import splice.core.util.JsonScalars
 import splice.provider.codex.stream.CodeModeSourceBuffer
+import splice.provider.codex.stream.CodeModeSourceState
 import splice.upstream.codemode.CodeModeCell
 import splice.upstream.codemode.CodeModeRuntime
 import splice.upstream.codemode.CodeModeSource
@@ -133,9 +133,12 @@ class CodeModeSealedStartupFailureTest : CodeModeItemCompletionSupport() {
     /** Wait for the production reader's durable settlement, not merely the fixture's return from into(). */
     private suspend fun awaitSettledItem() = withTimeout(5.seconds) {
         while (true) {
-            val source = stateFiles.records().single().getValue("sourceState").jsonObject
-            if (JsonScalars.str(source["complete"]) == "true") {
-                assertEquals("true", JsonScalars.str(source["itemComplete"]))
+            val source = Json.decodeFromJsonElement(
+                CodeModeSourceState.serializer(),
+                stateFiles.records().single().getValue("sourceState"),
+            )
+            if (source.complete) {
+                assertTrue(source.itemComplete, "durable settlement must retain the accepted whole item")
                 break
             }
             yield()

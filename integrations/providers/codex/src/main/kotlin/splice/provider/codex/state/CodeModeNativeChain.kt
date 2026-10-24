@@ -78,6 +78,7 @@ internal object CodeModeNativeChain {
                 it.sessionId = state.sessionId
                 it.postedOn = state.postedOn
                 it.nativeCellId = state.nativeCellId
+                it.nativeCompleted = state.nativeCompleted
                 it.deliveredOnly = state.deliveredOnly
                 it.nativeOutput = state.nativeOutput
                 it.nativeNotifications = state.nativeNotifications

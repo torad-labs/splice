@@ -63,6 +63,7 @@ internal data class CodeModeRecordSnapshot(
     var nativeBaseId: String? = null
     var postedOn: Long? = null
     var nativeCellId: String? = null
+    var nativeCompleted: Boolean = false
     var deliveredOnly: List<JsonElement> = emptyList()
     var nativeOutput: JsonElement? = null
     var nativeNotifications: List<JsonElement> = emptyList()

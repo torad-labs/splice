@@ -73,8 +73,13 @@ internal class CodexCodeModeRegistry(
         ).also(CodeModeNativeChain::link)
         history = CodeModeExpiredHistory(loaded.expired.toMutableList(), config.retention.records, heap)
     }
+    val nativeCells = splice.provider.codex.stream.CodeModeNativeCells()
+    private val endSession = CodeModeSessionEnd { key ->
+        nativeCells.closeSession(key)
+        closeSession(key)
+    }
     private val retention =
-        CodeModeRecordRetention(config.retention, json, config.log, config.cellLease.sessionAlive, closeSession)
+        CodeModeRecordRetention(config.retention, json, config.log, config.cellLease.sessionAlive, endSession)
     private val cells = mutableMapOf<String, CodeModeCell>()
     val startup = CodeModeStartupAdmissions(access, records, history, store, config.clock, cells)
 
@@ -85,9 +90,8 @@ internal class CodexCodeModeRegistry(
     val source = CodeModeSourceRecords(access, records, history, store, contexts)
     val changes = CodeModeRecordChanges(access, records, history, store, cells, startup, config)
     private val admissions = startup.entries
-    val retainedCells = CodeModeCellRetention(config, access, records, cells, admissions, closeSession)
-    private val sweeper = CodexCodeModeSweeper(config, records, cells, admissions, history, closeSession, retainedCells)
-    val nativeCells = splice.provider.codex.stream.CodeModeNativeCells()
+    val retainedCells = CodeModeCellRetention(config, access, records, cells, admissions, endSession)
+    private val sweeper = CodexCodeModeSweeper(config, records, cells, admissions, history, endSession, retainedCells)
 
     private val queries = CodeModeRecordQueries(access, records, history) { key ->
         val changed = sweeper.sweep(key, key)
@@ -227,7 +231,7 @@ internal class CodexCodeModeRegistry(
                 retainedCells.park(it, "code-mode parked program replaced by a newer program in its session")
             }
             (previous.map(CodeModeRecord::key).toSet() - key - parked.map(CodeModeRecord::key).toSet())
-                .forEach(closeSession::invoke)
+                .forEach(endSession::invoke)
         }
 
         fun onlyAdds(key: String): Boolean =
@@ -240,7 +244,7 @@ internal class CodexCodeModeRegistry(
                 record.sourceEnd = null
             }
             val removed = records.removeAll { it.key == key && it.id in evicted }
-            if (removed && records.none { it.key == key }) closeSession(key)
+            if (removed && records.none { it.key == key }) endSession(key)
             history.entries.removeAll { it.key == key && it in removedMarkers }
             history.entries.addAll(addedMarkers.filter { it.key == key })
         }

@@ -66,6 +66,7 @@ internal class CodeModeNativeSteps(
             observation.invocation.options.maxOutputTokens.coerceAtMost(Int.MAX_VALUE.toLong()).toInt(),
         )
         val output = JsonArray(content)
+        if (step is CodeModeStep.Completed) registry.changes.edit(record) { it.nativeCompleted = true }
         if (step is CodeModeStep.Yielded) observation.handOff()
         registry.complete(record, JsonWire.string(output), output)
         return CodeModeLocalOutcome.success()

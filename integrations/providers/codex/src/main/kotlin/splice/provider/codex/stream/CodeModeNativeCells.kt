@@ -9,6 +9,7 @@ import java.util.concurrent.ConcurrentHashMap
 /** Live engines remain session-local. Durable ids describe lost engines after restart; they never replay source. */
 internal class CodeModeNativeCells : AutoCloseable {
     private val cells = ConcurrentHashMap<Pair<String, String>, CodeModeHeldNativeCell>()
+    private val completed = ConcurrentHashMap<Pair<String, String>, String>()
 
     fun retain(key: String, cell: NativeCodeModeCell, notificationCallId: String) {
         val held = CodeModeHeldNativeCell(cell, notificationCallId)
@@ -16,12 +17,24 @@ internal class CodeModeNativeCells : AutoCloseable {
         check(previous == null || previous.cell === cell) { "Native cell identity is already owned" }
     }
 
-    fun take(key: String, id: String): CodeModeHeldNativeCell =
-        checkNotNull(cells.remove(key to id)) { "Native cell is unavailable; its source was not rerun" }
+    fun take(key: String, id: String): CodeModeHeldNativeCell = cells.remove(key to id)
+        ?: completed[key to id]?.let { CodeModeHeldNativeCell(CodeModeTerminalNativeCell(id), it) }
+        ?: error("Native cell is unavailable; its source was not rerun")
+
+    fun completed(key: String, id: String, notificationCallId: String) {
+        completed[key to id] = notificationCallId
+    }
+
+    fun closeSession(key: String) {
+        val ended = cells.entries.filter { it.key.first == key }
+        ended.forEach { (id, held) -> if (cells.remove(id, held)) held.cell.close() }
+        completed.keys.removeIf { it.first == key }
+    }
 
     override fun close() {
         val ending = cells.values.toList()
         cells.clear()
+        completed.clear()
         ending.forEach { it.cell.close() }
     }
 }
@@ -44,12 +57,14 @@ internal class CodeModeNativeObservation(
         cell.submitResults(results)
         if (initial && invocation.terminate) {
             initial = false
-            return cell.terminate()
+            return cell.terminate().also { retained.completed(key, cellId, notificationCallId) }
         }
         initial = false
         val queued = deferred
         deferred = null
-        return queued ?: cell.observe(invocation.options.yieldTimeMs)
+        val step = queued ?: cell.observe(invocation.options.yieldTimeMs)
+        if (step is CodeModeStep.Completed) retained.completed(key, cellId, notificationCallId)
+        return step
     }
 
     fun notification(text: String) {
@@ -78,3 +93,17 @@ internal class CodeModeNativeObservation(
 }
 
 internal data class CodeModeHeldNativeCell(val cell: NativeCodeModeCell, val notificationCallId: String)
+
+/** Only a positively recorded terminal native cell can use this empty exhausted observation. */
+private class CodeModeTerminalNativeCell(override val cellId: String) : NativeCodeModeCell {
+    override suspend fun submitResults(results: List<CodeModeResult>) {
+        require(results.isEmpty()) { "A completed native cell owns no pending callback" }
+    }
+    override suspend fun advance(results: List<CodeModeResult>): CodeModeStep {
+        submitResults(results)
+        return CodeModeStep.Completed("")
+    }
+    override suspend fun observe(yieldTimeMs: Long): CodeModeStep = CodeModeStep.Completed("")
+    override suspend fun terminate(): CodeModeStep = CodeModeStep.Completed("", terminated = true)
+    override fun close() = Unit
+}

@@ -96,7 +96,7 @@ internal object HistoryItemTrees {
         if (left.left.height >= left.right.height) {
             HistoryItemBranch(left.left, HistoryItemBranch(left.right, right))
         } else {
-            val middle = left.branch(right)
+            val middle = branch(left.right)
             HistoryItemBranch(HistoryItemBranch(left.left, middle.left), HistoryItemBranch(middle.right, right))
         }
 
@@ -104,7 +104,7 @@ internal object HistoryItemTrees {
         if (right.right.height >= right.left.height) {
             HistoryItemBranch(HistoryItemBranch(left, right.left), right.right)
         } else {
-            val middle = right.branch(left)
+            val middle = branch(right.left)
             HistoryItemBranch(HistoryItemBranch(left, middle.left), HistoryItemBranch(middle.right, right.right))
         }
 }

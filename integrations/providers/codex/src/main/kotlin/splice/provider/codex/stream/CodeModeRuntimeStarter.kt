@@ -96,7 +96,7 @@ internal class CodeModeRuntimeStarter(
         val waiting = splice.core.util.JsonScalars.str(record.origin.outer, "name") == CODE_MODE_WAIT_TOOL_NAME
         val invocation = if (waiting) CodeModeNativeInvocations.wait(source) else CodeModeNativeInvocations.exec(source)
         val held = if (waiting) {
-            registry.nativeCells.take(record.key, checkNotNull(invocation.cellId))
+            retained(record, invocation)
         } else {
             require(invocation.options.maxOutputTokens <= Int.MAX_VALUE.toLong()) {
                 "Native exec output token budget exceeds the pinned host protocol range"
@@ -118,6 +118,15 @@ internal class CodeModeRuntimeStarter(
             registry.nativeCells,
             held.notificationCallId,
         )
+    }
+
+    private fun retained(record: CodeModeRecord, invocation: CodeModeNativeInvocation): CodeModeHeldNativeCell {
+        val id = checkNotNull(invocation.cellId)
+        val terminal = registry.recordsFor(record.key).firstOrNull {
+            it.nativeCellId == id && it.nativeCompleted && it.phase == splice.provider.codex.CodeModePhase.COMPLETED
+        }
+        terminal?.let { registry.nativeCells.completed(record.key, id, it.origin.outerCallId) }
+        return registry.nativeCells.take(record.key, id)
     }
 
     /** A failure before source dispatch has a typed proof; every other start failure stays no-rerun. */

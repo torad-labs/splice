@@ -65,6 +65,7 @@ internal data class CodeModeRecord(
 
     /** Identity only; native V8 continuations are never serialized or rerun after restart. */
     var nativeCellId: String? = null
+    var nativeCompleted: Boolean = false
 
     /** Exact display receipts, distinct from canonical native notification tool outputs. */
     var deliveredOnly: List<JsonElement> = emptyList()

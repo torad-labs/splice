@@ -152,17 +152,12 @@ internal class RemoteImport(
 
     /** The key and command a shared head is written under here: its own, or, when the key names a head or a provider
      *  here or the command is another head's, `<name>-<machine's key>` once the person agrees. Null skips the head. */
-    private fun localNames(
-        topology: Topology,
-        key: String,
-        command: String,
-        target: RemoteTarget,
-    ): Pair<String, String>? {
+    private fun localNames(topology: Topology, key: String, command: String, to: RemoteTarget): Pair<String, String>? {
         val keyTaken = key in topology.heads || key in topology.providers
         val taken = keyTaken || topology.heads.any { (k, head) -> (head.claude.command ?: k) == command }
         if (!taken) return key to command
-        val suffix = target.name
-        val server = target.server
+        val suffix = to.name
+        val server = to.server
         return if (confirm("'$command' is already a command here. Add $server's as '$command-$suffix'?", true)) {
             "$key-$suffix" to "$command-$suffix"
         } else {
@@ -179,15 +174,5 @@ internal class RemoteImport(
 
     private fun commandOf(topology: Topology, key: String): String = topology.heads[key]?.claude?.command ?: key
 }
-
-/** The machine a head is imported from: its `[remotes]` [name], relay [url], own [server] name, the join, and the
- *  [host] it is reached at. */
-private data class RemoteTarget(
-    val name: String,
-    val url: String,
-    val server: String,
-    val joined: Joined,
-    val host: String,
-)
 
 internal const val REMOTE_VERB = "splice remote"

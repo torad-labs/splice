@@ -12,6 +12,7 @@ import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.io.TempDir
 import splice.core.parse.AnthropicParse
+import splice.core.parse.AnthropicTurnBody
 import splice.core.reasoning.ReasoningReplay
 import splice.core.turn.ReasoningDisplay
 import splice.core.util.JsonScalars
@@ -66,11 +67,45 @@ class ResponsesReasoningFragmentCompatibilityTest(@param:TempDir private val sta
         assertEquals(baseline, input(builder, cache))
     }
 
+    @Test
+    fun `coalesced tool result and peer update retain reasoning between the two user blocks`() {
+        val request = AnthropicParse.parseAnthropicBody(
+            """{"model":"gpt-5.6-sol","messages":[
+                {"role":"user","content":"Start"},
+                {"role":"assistant","content":[{"type":"tool_use","id":"t1","name":"run","input":{}}]},
+                {"role":"user","content":[
+                    {"type":"tool_result","tool_use_id":"t1","content":"file contents"},
+                    {"type":"text","text":"Peer update"}]}]}""",
+        )
+        val cache = cache()
+        val builder = ResponsesRequestBuilder(quirks)
+        input(builder, cache, request)
+        val cursor = ResponsesHistoryCursor()
+        request.typed.messages.take(
+            2,
+        ).forEach { message -> message.content.forEach { cursor.append(message.role, it) } }
+        cursor.append("user", request.typed.messages.last().content.first())
+        retain(cache, cursor.history.key, "rs_after_result", outputIndex = 0)
+        val expected = listOf(
+            "user:Start",
+            "function_call:t1",
+            "function_call_output:t1",
+            "reasoning:rs_after_result",
+            "user:Peer update",
+        )
+        assertEquals(expected, input(builder, cache, request).map(::label))
+        assertEquals(expected, input(builder, cache(), request).map(::label))
+    }
+
     private fun cache(): ReasoningCache = ReasoningCache(files = ReasoningCacheFiles(state) {})
 
-    private fun input(builder: ResponsesRequestBuilder, cache: ReasoningCache): JsonArray = builder.build(
-        body.typed,
-        body.raw,
+    private fun input(
+        builder: ResponsesRequestBuilder,
+        cache: ReasoningCache,
+        request: AnthropicTurnBody = body,
+    ): JsonArray = builder.build(
+        request.typed,
+        request.raw,
         BuildOptions(
             compact = false,
             models = ModelIds("gpt-5.6-sol", "gpt-5.6-sol"),

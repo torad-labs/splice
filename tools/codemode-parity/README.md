@@ -1,7 +1,9 @@
 `bun tools/codemode-parity readiness` is the product qualification check. It exits
 nonzero until every frozen contract family has executable evidence for the exact
 candidate and the installed daemon's open jar/native executable match it.
-`progress.json` reports that state explicitly. Normal gate tests validate the
+`progress.json` reports that state explicitly. Readiness and install attestation use
+its last receipt location unless `--evidence` is provided; the pointer only selects
+a file and never bypasses qualification. Malformed progress fails closed. Normal gate tests validate the
 qualification guard; their green result does not qualify the product.
 
 Run model-free native observations with:

@@ -17,10 +17,11 @@ import { runInstalledCase } from "./installed-case";
 import { runNativeGatewayCases } from "./native-gateway-cases";
 import { candidateCommand } from "./candidate-command";
 import { assertCandidateWorkerLoss } from "./candidate-loss";
+import { resolveEvidenceDirectory } from "./evidence-location";
 
 const directory = import.meta.dir;
 const repo = resolve(directory, "../..");
-const defaultEvidence = resolve(repo, "../artifacts/codemode-burst-2026-10-24/qualification");
+const defaultEvidence = resolve(repo, "../artifacts/codemode-parity/qualification");
 const [command = "readiness", ...args] = process.argv.slice(2);
 const options = new Map<string, string>();
 for (let i = 0; i < args.length; i += 2) {
@@ -30,7 +31,8 @@ for (let i = 0; i < args.length; i += 2) {
 }
 const known = ["--candidate-jar", "--candidate-host", "--reference-host", "--baseline-jar", "--java", "--evidence", "--installed-pid", "--host-pid", "--jar-fd"];
 for (const option of options.keys()) if (!known.includes(option)) throw new Error(`unknown option ${option}`);
-const evidence = resolve(options.get("--evidence") ?? defaultEvidence);
+let evidence = resolve(options.get("--evidence") ?? defaultEvidence);
+let evidenceSelected = false;
 const progressPath = resolve(directory, "progress.json");
 const lock = await Bun.file(resolve(directory, "reference-lock.json")).json();
 const contractBytes = await readFile(resolve(directory, "contract.json"));
@@ -45,7 +47,7 @@ const writeProgress = async (receipt: Receipt | undefined, findings: string[]) =
     updatedAt: new Date().toISOString(), contractSha256, harnessSha256: currentHarnessHash,
     requiredFamilies: requiredCaseIds.length, executedFamilies: observedCases.filter(item => item?.state === "executed").map(item => item.id),
     remainingFamilies: requiredCaseIds.filter(id => !observedCases.some(item => item?.id === id && item.state === "executed")),
-    findings, receiptPath: receipt ? resolve(evidence, "receipt.json") : null,
+    findings, receiptPath: resolve(evidence, "receipt.json"),
     referenceSourceLinkage: "unproven",
     scope: "A green harness test suite or native reference subset never qualifies the product.",
   }, null, 2) + "\n");
@@ -215,12 +217,19 @@ async function attestInstall(): Promise<void> {
   if (remaining.length) console.log(remaining.join("\n")); process.exitCode = remaining.length ? 1 : 0;
 }
 try {
+  if (!["qualify", "readiness", "attest-install"].includes(command)) {
+    throw new Error("usage: bun tools/codemode-parity [readiness|qualify|attest-install] [--name VALUE ...]");
+  }
+  if (command === "readiness" || command === "attest-install") {
+    evidence = await resolveEvidenceDirectory(options.get("--evidence"), progressPath, defaultEvidence);
+  }
+  evidenceSelected = true;
   if (command === "qualify") await qualify();
   else if (command === "readiness") await readiness();
   else if (command === "attest-install") await attestInstall();
-  else throw new Error("usage: bun tools/codemode-parity [readiness|qualify|attest-install] [--name VALUE ...]");
 } catch (error) {
   const finding = error instanceof Error ? error.message : String(error);
-  await writeProgress(undefined, [finding]);
+  // Preserve malformed progress unchanged: erasing its pointer could select an unrelated older receipt next time.
+  if (evidenceSelected) await writeProgress(undefined, [finding]);
   console.error(`UNQUALIFIED: ${finding}`); process.exitCode = 1;
 }

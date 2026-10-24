@@ -4,6 +4,7 @@ import { verifiers } from "./verifiers";
 import { assertNativeTypedMedia } from "./interactive-output";
 import { assertNativeBatch, assertNativeRestartBatch, assertNativeOutOfOrderBatch } from "./interactive-batch";
 import { assertCandidateWorkerLoss } from "./candidate-loss";
+import { resolveEvidenceDirectory } from "./evidence-location";
 import type { TraceEvent } from "./native-reference";
 import { mkdtemp, writeFile, rm } from "node:fs/promises";
 import { join } from "node:path";
@@ -262,5 +263,55 @@ describe("qualification completed-item arrival guard (not product parity)", () =
     const value = outOfOrderBatchObservation(); const input = value.upstreamRequests[0]!.nativeInput;
     [input[0], input[1]] = [input[1], input[0]];
     expect(() => assertNativeOutOfOrderBatch(value)).toThrow();
+  });
+});
+
+describe("qualification evidence-location guard (not product parity)", () => {
+  test("uses the last recorded receipt directory and explicit evidence wins", async () => {
+    const directory = await mkdtemp(join(tmpdir(), "splice-evidence-pointer-"));
+    const progress = join(directory, "progress.json");
+    try {
+      await writeFile(progress, JSON.stringify({ schema: 1, receiptPath: join(directory, "latest", "receipt.json") }));
+      expect(await resolveEvidenceDirectory(undefined, progress, join(directory, "older"))).toBe(join(directory, "latest"));
+      await writeFile(progress, "malformed");
+      expect(await resolveEvidenceDirectory(join(directory, "explicit"), progress, join(directory, "older"))).toBe(join(directory, "explicit"));
+    } finally { await rm(directory, { recursive: true, force: true }); }
+  });
+  test("falls back only when progress or a recorded receipt is absent", async () => {
+    const directory = await mkdtemp(join(tmpdir(), "splice-evidence-pointer-"));
+    const progress = join(directory, "progress.json"), fallback = join(directory, "canonical");
+    try {
+      expect(await resolveEvidenceDirectory(undefined, progress, fallback)).toBe(fallback);
+      await writeFile(progress, JSON.stringify({ schema: 1, receiptPath: null }));
+      expect(await resolveEvidenceDirectory(undefined, progress, fallback)).toBe(fallback);
+      const missingReceipt = join(directory, "missing", "receipt.json");
+      await writeFile(progress, JSON.stringify({ schema: 1, receiptPath: missingReceipt }));
+      expect(await resolveEvidenceDirectory(undefined, progress, fallback)).toBe(join(directory, "missing"));
+    } finally { await rm(directory, { recursive: true, force: true }); }
+  });
+  test("malformed progress never falls back to an older receipt or erases the pointer", async () => {
+    const directory = await mkdtemp(join(tmpdir(), "splice-evidence-pointer-"));
+    const progress = join(directory, "progress.json");
+    try {
+      for (const raw of ["broken json", "null", "[]", '{"schema":1}',
+        JSON.stringify({ schema: 1, receiptPath: "relative/receipt.json" }),
+        JSON.stringify({ schema: 1, receiptPath: join(directory, "other.json") }),
+        JSON.stringify({ schema: 1, receiptPath: 123 }),
+        JSON.stringify({ schema: 1, receiptPath: directory + "/../older/receipt.json" })]) {
+        await writeFile(progress, raw);
+        await expect(resolveEvidenceDirectory(undefined, progress, join(directory, "older"))).rejects.toThrow("malformed qualification progress");
+        expect(await Bun.file(progress).text()).toBe(raw);
+      }
+    } finally { await rm(directory, { recursive: true, force: true }); }
+  });
+  test("a valid location pointer cannot qualify an asserted PASS receipt", async () => {
+    const directory = await mkdtemp(join(tmpdir(), "splice-evidence-pointer-"));
+    const progress = join(directory, "progress.json");
+    try {
+      await writeFile(progress, JSON.stringify({ schema: 1, receiptPath: join(directory, "receipt.json") }));
+      await writeFile(join(directory, "receipt.json"), '{"pass":true}');
+      const selected = await resolveEvidenceDirectory(undefined, progress, join(directory, "older"));
+      expect(structuralFindings(await Bun.file(join(selected, "receipt.json")).json(), expected, key)).toEqual(["malformed qualification receipt"]);
+    } finally { await rm(directory, { recursive: true, force: true }); }
   });
 });

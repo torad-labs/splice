@@ -11,7 +11,8 @@ internal class ResponsesBufferBudget {
     fun within(state: ResponsesTurnState, heldChars: Long): Boolean {
         // Native history charges independently owned data; its borrowed display text is already in textBuf.
         val retained = state.reasoningEnvelopes.sumOf { it.length.toLong() } + state.bufferedToolArgsChars +
-            (state.nativePrefix?.retainedChars ?: 0L) + heldChars + state.textBuf.length + state.thinkingBuf.length
+            (state.nativePrefix?.retainedChars ?: 0L) + state.nativeOutput.retainedChars +
+            heldChars + state.textBuf.length + state.thinkingBuf.length
         val exceeded = BufferCapacity.over(
             state.textBuf.length,
             state.thinkingBuf.length,

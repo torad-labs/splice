@@ -31,13 +31,15 @@ internal object CodeModeParityPayload {
     private fun kind(step: CodeModeStep): String = when (step) {
         is CodeModeStep.Yielded -> "Yielded"
         is CodeModeStep.Completed -> if (step.terminated) "Terminated" else "Result"
-        else -> error("Expected a native observation")
+        is CodeModeStep.Calls, is CodeModeStep.Notified, is CodeModeStep.WaitingForResults ->
+            error("Expected a native observation")
     }
 
     private fun content(step: CodeModeStep): List<JsonObject> = when (step) {
         is CodeModeStep.Yielded -> step.content
         is CodeModeStep.Completed -> step.content
-        else -> error("Expected a native observation")
+        is CodeModeStep.Calls, is CodeModeStep.Notified, is CodeModeStep.WaitingForResults ->
+            error("Expected a native observation")
     }
 
     fun ok(value: JsonObject): JsonObject = buildJsonObject {

@@ -249,6 +249,13 @@ val normalizeReleaseBom = tasks.register<splice.release.NormalizedBom>("normaliz
     output.set(bom)
     releaseGroup.set(releaseGroupValue)
     releaseVersion.set(releaseVersionValue)
+    licensePoms.from(splice.release.MavenPomLicenses.resolve(
+        dependencies,
+        configurations,
+        configurations.runtimeClasspath.get().incoming.resolutionResult.allComponents.mapNotNull {
+            it.id as? ModuleComponentIdentifier
+        },
+    ))
     val platforms = IsolatePlatforms.shipped(
         allPlatforms = providers.gradleProperty("splice.allPlatforms").orNull?.toBooleanStrictOrNull(),
         hosted = providers.environmentVariable("CI").isPresent,

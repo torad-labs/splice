@@ -76,15 +76,18 @@ internal class CodeModeParityProtocol(
     private suspend fun operation(id: JsonElement, request: JsonObject) {
         val session = JsonScalars.str(request, FIELD_SESSION).orEmpty()
         when (JsonScalars.str(request, "method")) {
-            "session/open" -> response(
-                id,
-                CodeModeParityPayload.ok(
-                    buildJsonObject {
-                        put("type", "session/ready")
-                        put(FIELD_SESSION, session)
-                    },
-                ),
-            )
+            "session/open" -> {
+                runtime.openNativeSession(session)
+                response(
+                    id,
+                    CodeModeParityPayload.ok(
+                        buildJsonObject {
+                            put("type", "session/ready")
+                            put(FIELD_SESSION, session)
+                        },
+                    ),
+                )
+            }
             "session/execute" -> execute(id, session, request.getValue(FIELD_REQUEST).jsonObject)
             "session/wait" -> wait(id, session, request.getValue(FIELD_REQUEST).jsonObject)
             "session/terminate" -> terminate(id, session, JsonScalars.str(request, "cellId").orEmpty())
@@ -175,7 +178,24 @@ internal class CodeModeParityProtocol(
     private suspend fun terminate(id: JsonElement, session: String, cellId: String) {
         val held = cells.remove(session to cellId)
         val step = held?.cell?.terminate() ?: CodeModeStep.Completed("", terminated = true)
-        response(id, CodeModeParityPayload.ok(CodeModeParityPayload.outcome(cellId, step)))
+        if (held != null) cancelPending(held)
+        response(
+            id,
+            CodeModeParityPayload.ok(
+                buildJsonObject {
+                    put("type", "wait/completed")
+                    put(
+                        "outcome",
+                        buildJsonObject {
+                            put(
+                                if (held == null) "MissingCell" else "LiveCell",
+                                CodeModeParityPayload.outcome(cellId, step),
+                            )
+                        },
+                    )
+                },
+            ),
+        )
     }
 
     private suspend fun observe(held: Held, budget: Long): CodeModeStep {
@@ -183,10 +203,14 @@ internal class CodeModeParityProtocol(
             when (val step = held.cell.observe(budget)) {
                 is CodeModeStep.Calls -> step.calls.forEach { callback(held, it) }
                 is CodeModeStep.Notified -> notification(held, step.text)
-                else -> {
-                    if (step is CodeModeStep.Completed) cells.remove(held.session to held.cell.cellId)
+                is CodeModeStep.Completed, is CodeModeStep.Yielded -> {
+                    if (step is CodeModeStep.Completed) {
+                        cells.remove(held.session to held.cell.cellId)
+                        cancelPending(held)
+                    }
                     return step
                 }
+                is CodeModeStep.WaitingForResults -> error("Native observer returned a legacy waiting state")
             }
         }
     }
@@ -243,6 +267,20 @@ internal class CodeModeParityProtocol(
             put(FIELD_REQUEST, request)
         },
     )
+
+    /** A terminal isolate discards every unresolved delegate; the adapter preserves that cancellation. */
+    private fun cancelPending(held: Held) {
+        pending.entries.filter { it.value.held === held }.forEach { (id, callback) ->
+            if (pending.remove(id, callback)) {
+                frames.send(
+                    buildJsonObject {
+                        put("type", "delegate/cancel")
+                        put("id", id)
+                    },
+                )
+            }
+        }
+    }
 
     private suspend fun reply(frame: JsonObject) {
         val id = JsonScalars.str(frame, "id") ?: return

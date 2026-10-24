@@ -36,6 +36,10 @@ abstract class NormalizedBom : DefaultTask() {
     @get:PathSensitive(PathSensitivity.NONE)
     abstract val nativeManifests: ConfigurableFileCollection
 
+    @get:InputFiles
+    @get:PathSensitive(PathSensitivity.NONE)
+    abstract val licensePoms: ConfigurableFileCollection
+
     @get:OutputFile
     abstract val output: RegularFileProperty
 
@@ -60,12 +64,21 @@ abstract class NormalizedBom : DefaultTask() {
         val input = source.get().asFile
         val bomJson = objectOrError(JsonSlurper().parse(input), "$input: root")
         val stableBom = LinkedHashMap(bomJson)
-        stableBom["metadata"] = normalizedMetadata(bomJson, input)
+        val metadata = normalizedMetadata(bomJson, input)
+        stableBom["metadata"] = metadata
         val refReplacements = LinkedHashMap<String, String>()
         val native = NativeCodeModeInventory.components(nativeManifests.files)
         stableBom["components"] = normalizedComponents(bomJson, input, refReplacements) + native
-        stableBom["dependencies"] = normalizedDependencies(bomJson, input, refReplacements) + native.map {
-            linkedMapOf("ref" to it["bom-ref"], "dependsOn" to emptyList<String>())
+        val dependencies = normalizedDependencies(bomJson, input, refReplacements)
+        if (native.isNotEmpty()) {
+            val component = objectOrError(metadata["component"], "$input: root component")
+            val root = dependencies.firstOrNull { it["ref"] == component[BOM_REFERENCE_FIELD] }
+                ?: error("Native runtime BOM has no root dependency entry")
+            val prior = (root[BOM_DEPENDS_ON_FIELD] as? List<*>).orEmpty()
+            root[BOM_DEPENDS_ON_FIELD] = prior + native.map { it[BOM_REFERENCE_FIELD] }
+        }
+        stableBom["dependencies"] = dependencies + native.map {
+            linkedMapOf("ref" to it[BOM_REFERENCE_FIELD], BOM_DEPENDS_ON_FIELD to emptyList<String>())
         }
         stableBom["serialNumber"] = serialNumber(stableBom)
         write(stableBom)
@@ -87,10 +100,15 @@ abstract class NormalizedBom : DefaultTask() {
     ): List<LinkedHashMap<Any?, Any?>> {
         val group = releaseGroup.get()
         val version = releaseVersion.get()
+        val inherited = MavenPomLicenses.inherited(licensePoms.files)
         return (bom["components"] as? List<*>).orEmpty().map { raw ->
             LinkedHashMap(objectOrError(raw, "$input: component")).also { entry ->
                 normalizeComponentIdentity(entry, group, version, replacements)
                 addIsolateLicenses(entry)
+                val key = "${entry["group"]}:${entry["name"]}:${entry["version"]}"
+                if ((entry[BOM_LICENSES_FIELD] as? List<*>).isNullOrEmpty() && !inherited[key].isNullOrEmpty()) {
+                    entry[BOM_LICENSES_FIELD] = inherited.getValue(key)
+                }
             }
         }
     }
@@ -103,18 +121,18 @@ abstract class NormalizedBom : DefaultTask() {
     ) {
         if (entry["group"] != group || entry["version"] != "unspecified") return
         entry["version"] = version
-        listOf("bom-ref", "purl").forEach { key ->
+        listOf(BOM_REFERENCE_FIELD, "purl").forEach { key ->
             val old = entry[key]?.toString() ?: return@forEach
             val updated = old.replace("@unspecified", "@$version")
             entry[key] = updated
-            if (key == "bom-ref") replacements[old] = updated
+            if (key == BOM_REFERENCE_FIELD) replacements[old] = updated
         }
     }
 
     private fun addIsolateLicenses(entry: MutableMap<Any?, Any?>) {
         val coordinate = "${entry["group"]}:${entry["name"]}:${entry["version"]}"
-        if (coordinate in graalJsCommunityIsolates && (entry["licenses"] as? List<*>).isNullOrEmpty()) {
-            entry["licenses"] = graalJsCommunityIsolateLicenses
+        if (coordinate in graalJsCommunityIsolates && (entry[BOM_LICENSES_FIELD] as? List<*>).isNullOrEmpty()) {
+            entry[BOM_LICENSES_FIELD] = graalJsCommunityIsolateLicenses
         }
     }
 
@@ -126,7 +144,7 @@ abstract class NormalizedBom : DefaultTask() {
         (bom["dependencies"] as? List<*>).orEmpty().map { raw ->
             LinkedHashMap(objectOrError(raw, "$input: dependency")).also { entry ->
                 entry["ref"] = replacements[entry["ref"]?.toString()] ?: entry["ref"]
-                entry["dependsOn"] = (entry["dependsOn"] as? List<*>).orEmpty().map { ref ->
+                entry[BOM_DEPENDS_ON_FIELD] = (entry[BOM_DEPENDS_ON_FIELD] as? List<*>).orEmpty().map { ref ->
                     replacements[ref.toString()] ?: ref
                 }
             }
@@ -146,3 +164,7 @@ abstract class NormalizedBom : DefaultTask() {
     private fun <T> objectOrError(value: T?, description: String): Map<*, *> =
         value as? Map<*, *> ?: error("$description is not an object")
 }
+
+private const val BOM_REFERENCE_FIELD = "bom-ref"
+private const val BOM_DEPENDS_ON_FIELD = "dependsOn"
+private const val BOM_LICENSES_FIELD = "licenses"

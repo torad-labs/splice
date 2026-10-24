@@ -5,6 +5,8 @@ import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.launch
 import splice.codemode.NativeCodeModeRuntime
 import splice.codemode.WorkerSpawn
+import splice.core.util.JsonWire
+import splice.provider.codex.CodeModeGatewayNativeProbe
 import splice.provider.codex.CodeModeGatewayProbe
 import splice.upstream.LifecycleScope
 import splice.upstream.codemode.ProcessDispatchers
@@ -31,6 +33,10 @@ public object CodeModeParityProbe {
     }
 
     private suspend fun run(args: Array<String>) {
+        if (args.firstOrNull() == "--native-gateway-fixture") {
+            nativeGateway(args)
+            return
+        }
         if (args.firstOrNull() == "--format-fixture") {
             require(args.size == 2) { "Expected a formatter probe nonce" }
             CodeModeParityFormat.run(args[1])
@@ -41,21 +47,34 @@ public object CodeModeParityProbe {
             val details = args.drop(1)
             CodeModeParityText.write(
                 System.out,
-                CodeModeGatewayProbe.run(details[0], details[1], Path.of(details[2]), details.last()).toString(),
+                JsonWire.string(CodeModeGatewayProbe.run(details[0], details[1], Path.of(details[2]), details.last())),
             )
             return
         }
         require(args.size == 1) { "Expected the reference identity of the candidate native host" }
-        val expected = digest(Path.of(args.single()))
+        runtime(Path.of(args.single())).use { runtime ->
+            coroutineScope { CodeModeParityProtocol(runtime, CodeModeParityFrames(), this).run() }
+        }
+    }
+
+    private suspend fun nativeGateway(args: Array<String>) {
+        require(args.size == GATEWAY_PROBE_ARGUMENTS) { "Expected native gateway case, nonce, state and host identity" }
+        val details = args.drop(1)
+        runtime(Path.of(details.last())).use { native ->
+            val result = CodeModeGatewayNativeProbe.run(details[0], details[1], Path.of(details[2]), native)
+            CodeModeParityText.write(System.out, JsonWire.string(result))
+        }
+    }
+
+    private fun runtime(referenceHost: Path): NativeCodeModeRuntime {
+        val expected = digest(referenceHost)
         val spawn = WorkerSpawn { builder ->
             check(digest(Path.of(builder.command().first())) == expected) { "Candidate native host identity differs" }
             builder.start().also { child ->
                 CodeModeParityText.write(System.err, "{\"type\":\"parity/identity\",\"nativeHostPid\":${child.pid()}}")
             }
         }
-        NativeCodeModeRuntime(spawn = spawn).use { runtime ->
-            coroutineScope { CodeModeParityProtocol(runtime, CodeModeParityFrames(), this).run() }
-        }
+        return NativeCodeModeRuntime(spawn = spawn)
     }
 
     private fun digest(path: Path): String {

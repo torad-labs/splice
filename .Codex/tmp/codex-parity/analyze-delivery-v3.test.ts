@@ -293,6 +293,51 @@ describe("genuine native transcripts", () => {
   });
 });
 
+describe("r4 completion snapshots with delayed matching deltas", () => {
+  for (const completion of ["item", "text"] as const) {
+    const snapshot = (text: string): FixtureRow => completion === "item"
+      ? { type: "response.output_item.done", output_index: 0, item: { type: "message", id: "m", content: [{ type: "output_text", text }] } }
+      : { type: "response.output_text.done", output_index: 0, item_id: "m", content_index: 0, text };
+    const delta = (text: string): FixtureRow => ({ type: "response.output_text.delta", output_index: 0, item_id: "m", content_index: 0, delta: text });
+    const evidence = (events: FixtureRow[]) => sourceEvidence([...events,
+      { type: "response.completed", response: { output: [] } },
+    ].map((data, at) => ({ at, data })));
+
+    for (const suffix of [[" world"], [" ", "wor", "ld"]]) {
+      test(`${completion} snapshot accepts a prefix followed by ${suffix.length} matching late chunks exactly once`, () => {
+        const result = evidence([delta("Hello"), snapshot("Hello world"), ...suffix.map(delta)]);
+        expect(result.segments).toEqual([a("Hello world")]);
+        expect(result.inconsistencies).toBe(0);
+        expect(result.unclosedReadableParts).toBe(0);
+      });
+    }
+    test(`${completion} snapshot accepts the whole matching text arriving late`, () => {
+      const result = evidence([snapshot("Hello world"), delta("Hello world")]);
+      expect(result.segments).toEqual([a("Hello world")]);
+      expect(result.inconsistencies).toBe(0);
+    });
+    test(`${completion} snapshot rejects an incompatible observed prefix`, () => {
+      const result = evidence([delta("Hallo"), snapshot("Hello world")]);
+      expect(result.segments).toEqual([a("Hello world")]);
+      expect(result.inconsistencies).toBeGreaterThan(0);
+    });
+    test(`${completion} snapshot rejects contradictory late bytes even with sparse terminal output`, () => {
+      const result = evidence([snapshot("Hello world"), delta("Hello"), delta(" wrong")]);
+      expect(result.segments).toEqual([a("Hello world")]);
+      expect(result.inconsistencies).toBeGreaterThan(0);
+    });
+    test(`${completion} snapshot rejects late bytes exceeding its completed text`, () => {
+      const result = evidence([delta("Hello world"), snapshot("Hello world"), delta("!")]);
+      expect(result.segments).toEqual([a("Hello world")]);
+      expect(result.inconsistencies).toBeGreaterThan(0);
+    });
+    test(`${completion} completed text cannot be replaced by a conflicting completion`, () => {
+      const result = evidence([snapshot("Hello world"), snapshot("Hello wrong")]);
+      expect(result.inconsistencies).toBeGreaterThan(0);
+    });
+  }
+});
+
 describe("exact readable evidence", () => {
   test("duplicate gateway block identity after stop is not mistaken for a fresh block", () => {
     const events = [

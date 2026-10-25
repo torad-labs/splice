@@ -39,12 +39,6 @@ import java.net.http.HttpRequest
 import java.net.http.HttpResponse
 import java.time.Duration
 
-/** What a statusline's body passes before it is relayed: the session it names pinned to the address's login. */
-internal fun interface StatuslineAdmission {
-    /** Why [body]'s statusline may not be drawn, or null once it may. */
-    fun refusal(body: ByteArray): String?
-}
-
 internal class ShareRelay(
     private val turnKey: TurnKey,
     private val controlPort: Int,

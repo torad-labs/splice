@@ -6,6 +6,7 @@
 package splice.app.share
 
 import splice.accounts.pool.HeadAccountPinSource
+import splice.app.auth.claude.OWN_SIGN_IN_LABEL
 import splice.app.control.ManagedHead
 import splice.client.ClaudePolicy
 import splice.core.config.ConfigService
@@ -79,8 +80,10 @@ internal class DaemonShare(
 private const val SHARE_STATE = "share"
 private const val CLIENTS_FILE = "clients.json"
 
-/** The heads this machine offers: every head with a launch that holds its own credentials. A head that forwards the
- *  caller's own Claude login has nothing to offer a machine that holds none. */
+/** The heads this machine offers: every head with a launch that serves only on logins it holds. A Claude head that
+ *  takes the caller's own login is offered once every login in its pool is one it signed in itself (an added account,
+ *  a native place): a node's turn then runs on one of those. While the caller's own sign-in is one of its logins, or
+ *  it holds none, it has nothing to offer a machine that holds no login of its own. */
 internal class ManagedSharedHeads(
     private val heads: Map<String, ManagedHead>,
     private val topology: Topology,
@@ -88,8 +91,16 @@ internal class ManagedSharedHeads(
     override val machine: String,
 ) : SharedHeads {
     override fun offered(): List<SharedHead> = heads.mapNotNull { (key, head) ->
-        val spec = head.launchSpec?.takeUnless { it.gateway.forwardClientAuth } ?: return@mapNotNull null
+        val spec = head.launchSpec?.takeIf { !it.gateway.forwardClientAuth || holdsEveryLogin(head) }
+            ?: return@mapNotNull null
         Offered(key, topology.heads[key]?.claude?.command ?: key, head, spec)
+    }
+
+    /** Whether [head] holds every login it serves on: it has some, and none is the caller's own sign-in, whose label
+     *  no added account may take. */
+    private fun holdsEveryLogin(head: ManagedHead): Boolean {
+        val logins = head.authSurface.accountPool?.view(null)?.accounts?.map { it.label }.orEmpty()
+        return logins.isNotEmpty() && OWN_SIGN_IN_LABEL !in logins
     }
 
     private inner class Offered(
@@ -99,6 +110,8 @@ internal class ManagedSharedHeads(
         private val spec: LaunchSpec,
     ) : SharedHead {
         override val port: Int get() = spec.gateway.port
+
+        override val forwardsClientAuth: Boolean get() = spec.gateway.forwardClientAuth
 
         override fun running(): Boolean = head.head.healthSnapshot().running
 

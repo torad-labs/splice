@@ -4,7 +4,7 @@ package splice.share
 
 import splice.launch.LaunchSpec
 
-/** One head this machine offers: every head that holds its own credentials. */
+/** One head this machine offers: every head that serves only on logins it holds itself. */
 public interface SharedHead {
     /** Its topology key. */
     public val key: String
@@ -14,6 +14,10 @@ public interface SharedHead {
 
     /** Its port on this machine's loopback, where the listener relays a turn. */
     public val port: Int
+
+    /** Whether its door takes a caller's own Claude login and refuses this machine's keys. A turn relayed to it then
+     *  carries the node's word in place of the turn key, and the head's pool sends one of the logins it holds. */
+    public val forwardsClientAuth: Boolean get() = false
 
     public fun running(): Boolean
 

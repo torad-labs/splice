@@ -5,6 +5,7 @@ import splice.accounts.claude.ClaudeLoginPlaceId
 import splice.accounts.claude.ClaudeLoginPlaceView
 import splice.accounts.claude.ClaudeLoginPlacesSource
 import splice.app.auth.claude.ClaudeCredentialProfiles
+import splice.app.auth.claude.ClaudeLoginHeaders
 import splice.app.auth.claude.ClaudeNativeAuth
 import splice.app.auth.claude.ClaudeNativeQuota
 import splice.core.config.StatePaths
@@ -86,6 +87,7 @@ internal class ClaudeNativeAccountWiring(
                 ),
             ),
             credential = WiredAccountCredential(present = view.credential.present, refusal = view.credential.refusal),
+            extraHeaders = ClaudeLoginHeaders,
             nativePlace = view.id,
         )
         return Entry(auth.credentialKey, view.identity.account?.uuid, auth, wired)

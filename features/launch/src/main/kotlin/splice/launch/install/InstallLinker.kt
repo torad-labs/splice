@@ -69,16 +69,16 @@ internal class InstallLinker(
      *  ambiguous). */
     private fun selected(topology: Topology, headArg: String?): List<Pair<String, String>>? = when {
         headArg == null || headArg == "--all" -> commands(topology)
-        headArg in topology.remote -> listOf(headArg to headArg)
+        headArg in topology.remoteLinks -> listOf(headArg to headArg)
         else -> heads.resolveSpecificHead(topology, headArg)
             ?.let { key -> commands(topology).filter { it.first == key } }
     }
 
     /** Each command the topology links, with what runs it: a head's wrapper command (or its key) with the head's
-     *  key, and a remote command (LAN share, `[remote.<command>]`) with its own name. */
+     *  key, and a remote command (LAN share, `[remote.<command>]`) with its own name, `claude` aside. */
     private fun commands(topology: Topology): List<Pair<String, String>> =
         topology.heads.map { (key, head) -> key to (head.claude.command ?: key) } +
-            topology.remote.keys.map { it to it }
+            topology.remoteLinks.map { it to it }
 
     /** Validate the WHOLE topology's commands (+ `splice`) on EVERY install, not just this
      *  invocation — otherwise sequential single-head installs silently retarget an existing

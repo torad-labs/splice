@@ -55,10 +55,11 @@ public class LaunchRoutes(
             )
             return
         }
-        val resolved = resolve(key, targets)
-        // LAN share: a name no head here carries may be a command another machine serves.
-        val remote = if (resolved == null) launchService?.remotes?.launch(key) else null
-        if (remote != null) remoteReply(call, key, remote) else localReply(call, key, resolved)
+        val direct = targets.singleOrNull()?.let { Resolved(it, wrapped = null) }
+        // LAN share: a name no head here carries may be a command another machine serves. A `[remote.claude]` is
+        // asked before the wrap's own Claude head: the person gave that name to another machine's head.
+        val remote = if (direct == null) launchService?.remotes?.launch(key) else null
+        if (remote != null) remoteReply(call, key, remote) else localReply(call, key, direct ?: wrapped(key))
     }
 
     /** A head here, or the 404 or 503 that says why [key] launches none. */
@@ -107,7 +108,9 @@ public class LaunchRoutes(
     }
 
     /** A command another machine serves: refused in that machine's words, or launched from the spec it answered,
-     *  through the same recipe a head here gets. Nothing here holds its credentials, so there is no key to warn of. */
+     *  through the same recipe a head here gets. Nothing here holds its credentials, so there is no key to warn of. A
+     *  wrapped `claude` served elsewhere launches as the wrapped `claude` does here, over the person's own ~/.claude:
+     *  only where its turns go changes. */
     private suspend fun remoteReply(call: ApplicationCall, key: String, remote: RemoteLaunch) {
         val service = requireNotNull(launchService)
         val spec = when (remote) {
@@ -119,12 +122,13 @@ public class LaunchRoutes(
             is RemoteLaunch.Ready -> remote.spec
         }
         val request = receiveLaunchRequest(call)
-        val refusal = service.loginGuard?.refusal(spec.trees.own)
+        val wrapped = service.wrap.launchThrough(key)
+        val refusal = service.loginGuard?.refusal(wrapped?.configDir ?: spec.trees.own)
         if (refusal != null) {
             call.respondText(LaunchReplies.errorJson(refusal), ContentType.Application.Json, HttpStatusCode.Conflict)
             return
         }
-        val caller = LaunchCaller(request.cwd, null, request.inheritedConfigDir, request.launch)
+        val caller = LaunchCaller(request.cwd, wrapped, request.inheritedConfigDir, request.launch)
         val skip = request.dangerouslySkipPermissions
         val outcome = service.launchOutcome(spec, request.extraArgs, skip, caller = caller)
         answer(call, key, outcome)
@@ -168,14 +172,14 @@ public class LaunchRoutes(
         caller = LaunchCaller(request.cwd, wrapped, request.inheritedConfigDir, request.launch),
     )
 
-    /** The head [key] launches, given its key/label [targets] (at most one — several were refused).
+    /** The head a wrapped `claude` launches when no head here carries [key] and no other machine serves it.
      *
      *  V4-129 review: a wrapped `claude` IS the launch shim, which names its head by its own basename
      *  — `claude`, a name no head carries, so every wrapped `claude` 404'd until unwrap. While the
      *  wrap is in place that name is the splice-owned Claude head over the vanilla ~/.claude
-     *  (WrappedHead.launchThrough); a head really keyed or labeled `claude` still wins. */
-    private fun resolve(key: String, targets: List<LaunchHead>): Resolved? {
-        targets.singleOrNull()?.let { return Resolved(it, wrapped = null) }
+     *  (WrappedHead.launchThrough); a head really keyed or labeled `claude` still wins, and so does a
+     *  `[remote.claude]`. */
+    private fun wrapped(key: String): Resolved? {
         val wrapped = launchService?.wrap?.launchThrough(key) ?: return null
         return heads.byKey(CLAUDE_HEAD_KEY)?.let { Resolved(it, wrapped) }
     }

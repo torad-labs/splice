@@ -93,8 +93,17 @@ What the Mac showed on 2026-10-24 that this replaces: the relay modeled as an ap
   A request must also name this machine in its Host: an IP literal, its host name, the host name under
   `.local`, `.lan`, `.home` or `.internal`, or a name in `[share] hostnames`. That keeps a web page a
   browser on the LAN opens from reaching the heads by rebinding its own name to this machine.
-- **What is offered.** Every head that holds its own credentials. A head that forwards the caller's own
-  Claude login has nothing to offer a node, which holds none.
+- **What is offered.** Every head that serves only on logins it holds. A Claude head, which takes the
+  caller's own login, is offered once every login in its pool is one the server signed in itself (its native
+  sign-ins, its added accounts): a node's turn runs on one of those, and the held login names Anthropic's
+  OAuth beta on every turn it carries, which a node's Claude Code, holding no login, does not. While the
+  caller's own sign-in is one of the head's logins, or it holds none, it has nothing to offer a node.
+- **Plain `claude` on a node** (Marcos, 2026-10-25: "claude here is still using a local account instead of
+  the server account on torad-server"). `claude` may name a remote command: `splice remote add
+  http://torad-server.lan:3097/claude-splice --as claude`. The wrapped `claude` then launches on the server's
+  head, over the node's own `~/.claude` as it does today, so its settings, instructions and sessions stay
+  the person's: only where its turns go changes. `claude` stays Claude Code's own link, which no remote
+  command makes, replaces or removes, `splice install` and `splice uninstall` included.
 - **A login pin is the console's pin.** `auth=work` pins each of the node's sessions to `work` through the
   head's own pool, the call the Accounts page's Pin makes, before its turn is relayed. What a pinned session
   does when its login is at its limit is what it does on the server today.
@@ -109,7 +118,7 @@ The server (`[share]` in its `splice.toml`, `enabled = true`, `port = 3097`):
 |---|---|
 | `GET /` | the machine's name and its offered commands: head, command, models, logins |
 | `GET /<head>/launch?auth=&models=` | what a node's launch needs: the models block (pinned, offered, labels, tiers, picker rows, window), the client timeout, and the base path for turns |
-| `POST /<head>[/@<login>]/v1/...` | relayed to the head on loopback with the head's turn key in place of whatever the node sent; `@<login>` pins the session (`X-Claude-Code-Session-Id`) to that login first |
+| `POST /<head>[/@<login>]/v1/...` | relayed to the head on loopback with the head's turn key in place of whatever the node sent (a Claude head, whose door refuses splice's keys, gets the node's word `splice-lan`, and its pool sends a login it holds); `@<login>` pins the session (`X-Claude-Code-Session-Id`) to that login first |
 | `POST /<head>[/@<login>]/statusline` | relayed to the control plane's statusline for that head, with the turn key; `@<login>` pins the session the body names (`session_id`) first, so the line is that login's from its first draw |
 
 A source off the LAN, or a Host that does not name this machine, is answered 403 with the reason. So is a
@@ -122,10 +131,10 @@ ones it has. A head that is offered but not running, or not answering, is 503. E
 error body naming the machine and the head, and none is `overloaded_error`.
 
 The node (`[remote.<command>]` in its `splice.toml`, `url = "<the address>"`): `claudex` runs the launch
-shim as every command does. The daemon finds no head named `claudex`, finds the remote command, asks
+shim as every command does. The daemon finds no head named `claudex`, finds the remote command (asked before the wrapped `claude`'s own head here), asks
 `GET <server>/<head>/launch` with the address's params (3 s to connect), and builds the recipe: base URL
 the server's turn path, auth token the word `splice-lan`, the head's models and timeout, its own
-`~/.claude-<command>` tree, the server's statusline (on the login the address names), and a `/login` that
+`~/.claude-<command>` tree (the wrapped `claude`'s is the node's own `~/.claude`), the server's statusline (on the login the address names), and a `/login` that
 names the server. The server's host joins `NO_PROXY` and `no_proxy` (curl reads the lowercase one first), so a proxy the shell names takes neither the turns nor
 the statusline. When the server can't be reached, or refuses, the launch is refused with that reason. The
 session's start hook posts to the node's own daemon under the command's name, which records the session as that

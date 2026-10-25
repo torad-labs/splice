@@ -409,6 +409,30 @@ class LanShareCliTest {
     }
 
     @Test
+    fun `remote add --as claude keeps the address and leaves the claude link to Claude Code and the wrap`(
+        @TempDir dir: Path,
+    ) {
+        val node = node(dir)
+        // `claude` is Claude Code's own link, which splice's wrap points at the launch shim: never a remote's to make.
+        val own = Files.writeString(Files.createDirectories(dir.resolve("claude-versions")).resolve("2.1.310"), "")
+        Files.createDirectories(node.link("claude").parent)
+        Files.createSymbolicLink(node.link("claude"), own)
+        val added = remote(node, "add", "$share/claudex", "--as", "claude")
+        assertEquals(0, added.code, added.toString())
+        assertEquals(mapOf("claude" to RemoteConfig("$share/claudex")), node.remote)
+        assertEquals(own, Files.readSymbolicLink(node.link("claude")), "adding it left the claude link alone")
+        val lines = TerminalOutput {}
+        InstallCommand(lines, lines).install(null, node.env)
+        assertEquals(own, Files.readSymbolicLink(node.link("claude")), "splice install left the claude link alone")
+        InstallCommand(lines, lines).uninstall(null, node.env)
+        assertEquals(own, Files.readSymbolicLink(node.link("claude")), "splice uninstall left the claude link alone")
+        val removed = remote(node, "remove", "claude")
+        assertEquals(0, removed.code, removed.toString())
+        assertTrue(node.remote.isEmpty(), node.config.readText())
+        assertEquals(own, Files.readSymbolicLink(node.link("claude")), "removing it left the claude link alone")
+    }
+
+    @Test
     fun `remote remove takes the command and its link out`(@TempDir dir: Path) {
         val node = node(dir)
         assertEquals(0, remote(node, "add", "$share/claudex").code)

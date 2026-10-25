@@ -15,6 +15,7 @@ package splice.app.provider
 import splice.accounts.claude.ClaudeLoginPlacesSource
 import splice.app.auth.claude.ClaudeAccountFolders
 import splice.app.auth.claude.ClaudeFolderAuth
+import splice.app.auth.claude.ClaudeLoginHeaders
 import splice.app.auth.claude.ClaudeOAuthRefresh
 import splice.app.auth.claude.ClaudeTokenRefresh
 import splice.app.auth.claude.OWN_SIGN_IN_LABEL
@@ -60,6 +61,7 @@ internal class ClaudeAccountWiring(
                 ),
                 quota = WiredAccountQuota(file = account.directory.resolve(QUOTA_FILE)),
                 credential = WiredAccountCredential(present = account.refusal == null, refusal = account.refusal),
+                extraHeaders = ClaudeLoginHeaders,
             )
         }
     }

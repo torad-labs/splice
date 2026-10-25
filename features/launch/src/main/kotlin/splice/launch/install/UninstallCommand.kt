@@ -60,7 +60,7 @@ internal class UninstallCommand(
         // refuses --all on an unreadable topology rather than silently shrinking it (DR-101).
         val topology = attempt.getOrElse { null }
         if (headArg == null || headArg == "--all") return allTargets(attempt, configPath)
-        if (topology == null || headArg in topology.remote) return listOf(headArg)
+        if (topology == null || headArg in topology.remoteLinks) return listOf(headArg)
         return heads.resolveSpecificHead(topology, headArg)?.let { key ->
             listOf(topology.heads.getValue(key).claude.command ?: key)
         }
@@ -77,7 +77,7 @@ internal class UninstallCommand(
     ): List<String>? {
         val topology = attempt.getOrNull()
         if (topology != null) {
-            val commands = topology.heads.map { (k, h) -> h.claude.command ?: k } + topology.remote.keys
+            val commands = topology.heads.map { (k, h) -> h.claude.command ?: k } + topology.remoteLinks
             return (commands + SELF_COMMAND).distinct()
         }
         if (attempt.exceptionOrNull() is java.nio.file.NoSuchFileException) {

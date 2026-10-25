@@ -1,6 +1,7 @@
 // Who the share listener answers (docs/specs/lan-share.md, "Who is on the LAN"): a source on this machine's own
 // networks, naming this machine in its Host. Properties over generated addresses and names, against three machines:
-// torad-server as it is (a house: its router's /24 and the ISP's /64 on one interface, Tailscale on another), a
+// torad-server as it is (a house: its router's /24, the ISP's /64 and the router's unique local /64 on one interface,
+// Tailscale on another), a
 // datacenter server (a public IPv4 address and the provider's shared networks on one interface), and a machine whose
 // interfaces cannot be read, which cannot tell the two apart and so answers loopback alone.
 package splice.share
@@ -27,6 +28,7 @@ internal class LanAdmissionTest {
             listOf(
                 prefix("192.168.1.236", 24, "enp8s0"),
                 prefix("2605:a601:aa80:1500:d347:d258:75ac:12c5", 64, "enp8s0"),
+                prefix("fd4e:9a1b:22c0:1::236", 64, "enp8s0"),
                 prefix("100.104.52.116", 32, "tailscale0"),
                 prefix("fd7a:115c:a1e0::3d01:34da", 128, "tailscale0"),
             )
@@ -77,6 +79,15 @@ internal class LanAdmissionTest {
 
     private fun onHouseSixtyFour() = "2605:a601:aa80:1500:${hex()}:${hex()}:${hex()}:${hex()}"
 
+    private fun onHouseUniqueLocal() = "fd4e:9a1b:22c0:1:${hex()}:${hex()}:${hex()}:${hex()}"
+
+    /** A tailnet peer's IPv6 address: Tailscale's fd7a:115c:a1e0::/48, inside the unique local range. */
+    private fun tailnet() = "fd7a:115c:a1e0:${hex()}::${hex()}:${hex()}"
+
+    /** A unique local address under a prefix no interface of the house holds: another site's, or a VPN's. */
+    private fun offHouseUniqueLocal() =
+        "${listOf("fc", "fd").random(random)}${octet().toString(16).padStart(2, '0')}:${hex()}:${hex()}::${hex()}"
+
     /** A global IPv6 address off the house's /64: another /64 under the same /48, or anywhere else. */
     private fun offHouseSixtyFour() = listOf(
         "2605:a601:aa80:${random.nextInt(0x1501, 0x10000).toString(16)}::${hex()}",
@@ -90,14 +101,23 @@ internal class LanAdmissionTest {
     }
 
     @Test
-    fun `a house answers its private ranges, link-local, unique local, and its own IPv6 prefix`() = repeat(CASES) {
-        val source = listOf(rfc1918(), linkLocal(), uniqueLocal(), onHouseSixtyFour()).random(random)
-        assertNull(house.refusal(source), source)
+    fun `a house answers its private ranges, link-local, and the IPv6 prefixes its own interface holds`() =
+        repeat(CASES) {
+            val source = listOf(rfc1918(), linkLocal(), onHouseUniqueLocal(), onHouseSixtyFour()).random(random)
+            assertNull(house.refusal(source), source)
+        }
+
+    @Test
+    fun `a tailnet peer is turned away over both of its addresses`() = repeat(CASES) {
+        val source = listOf(carrierGrade(), tailnet()).random(random)
+        val said = house.refusal(source)
+        assertNotNull(said, source)
+        assertTrue(said!!.contains("not from this machine's LAN"), said)
     }
 
     @Test
-    fun `a house turns away the internet, Tailscale's range, and a prefix beside its own`() = repeat(CASES) {
-        val source = listOf(publicIpv4(), carrierGrade(), offHouseSixtyFour()).random(random)
+    fun `a house turns away the internet and a prefix beside its own, global or unique local`() = repeat(CASES) {
+        val source = listOf(publicIpv4(), offHouseSixtyFour(), offHouseUniqueLocal()).random(random)
         val said = house.refusal(source)
         assertNotNull(said, source)
         assertTrue(said!!.contains("not from this machine's LAN"), said)

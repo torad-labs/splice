@@ -1,8 +1,9 @@
 // NEW: LAN share (docs/specs/lan-share.md, "Who is on the LAN"). Who may reach the share listener at all, before any
-// route runs. The source must be on this machine's own networks: loopback, RFC 1918, link-local, unique local IPv6
-// (fc00::/7), or an IPv6 address on a prefix a house interface of this machine holds, one beside an RFC 1918 address
-// and no public IPv4 one, which is how a house whose router hands out a globally routable /64 reaches itself.
-// 100.64/10 is not: that is Tailscale's range, and Tailscale is not part of this (Marcos, 2026-10-24). A source on any
+// route runs. The source must be on this machine's own networks: loopback, RFC 1918, link-local, or an IPv6 address on
+// a prefix a house interface of this machine holds, one beside an RFC 1918 address and no public IPv4 one, which is how
+// a house whose router hands out a globally routable or unique local /64 reaches itself. Neither 100.64/10 nor unique
+// local IPv6 as a whole (fc00::/7) is: Tailscale hands out 100.64/10 and fd7a:115c:a1e0::/48, inside fc00::/7, and
+// Tailscale is not part of this (Marcos, 2026-10-24), so a tailnet peer is turned away over either address. A source on any
 // prefix a datacenter interface holds (one with a public IPv4 address) is refused, whatever its range: a provider's
 // private network, link and /64 are shared with its other customers. A machine whose interfaces cannot be read admits
 // loopback alone, since nothing then tells a house from a datacenter, and says that, not that the source is off the
@@ -52,8 +53,7 @@ internal class LanAdmission(
         return if (lan) null else "requests from $address are not from this machine's LAN"
     }
 
-    private fun privateRange(ip: InetAddress): Boolean =
-        ip.isSiteLocalAddress || ip.isLinkLocalAddress || uniqueLocal(ip)
+    private fun privateRange(ip: InetAddress): Boolean = ip.isSiteLocalAddress || ip.isLinkLocalAddress
 
     /** Whether a datacenter interface of this machine, one holding a public IPv4 address, holds [ip]'s prefix. Its
      *  private network is the provider's, and some share it with every customer in the region (Linode's
@@ -64,7 +64,7 @@ internal class LanAdmission(
         links.filter(::publicIpv4).any { link -> ip.isLinkLocalAddress || link.any { it.holds(ip) } }
 
     /** Whether [ip] is an IPv6 address on a prefix a house interface of this machine holds: a machine reachable with
-     *  no router in between. SLAAC makes a house's /64 the link itself, globally routable though it is. IPv4 is left
+     *  no router in between. SLAAC makes a house's /64 the link itself, globally routable or unique local alike. IPv4 is left
      *  to the private ranges: a house's IPv4 is RFC 1918. */
     private fun onThisLan(ip: InetAddress, links: Collection<List<SharePrefix>>): Boolean =
         ip is Inet6Address && links.any { link -> house(link) && link.any { it.holds(ip) } }
@@ -113,10 +113,6 @@ internal class LanAdmission(
         return first == CGNAT_FIRST_OCTET && second and CGNAT_SECOND_MASK == CGNAT_SECOND_OCTET
     }
 
-    private fun uniqueLocal(ip: InetAddress): Boolean {
-        val bytes = (ip as? Inet6Address)?.address ?: return false
-        return bytes[0].toInt() and ULA_MASK == ULA_PREFIX
-    }
 }
 
 /** One prefix an interface of this machine holds: [address], with its first [bits] bits fixed, on the interface
@@ -176,8 +172,3 @@ private const val CGNAT_SECOND_MASK = 0xc0
 // why: in 100.64/10 those two bits read 01, the second octets 64 through 127.
 private const val CGNAT_SECOND_OCTET = 0x40
 
-// why: fc00::/7, IPv6's unique local range, fixes the top seven bits of the first byte.
-private const val ULA_MASK = 0xfe
-
-// why: those seven bits read 1111110, the first bytes 0xfc and 0xfd.
-private const val ULA_PREFIX = 0xfc

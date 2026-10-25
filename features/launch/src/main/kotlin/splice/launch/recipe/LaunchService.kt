@@ -383,7 +383,10 @@ public class LaunchService(
             // cooldown lift. Planted UNCONDITIONALLY, native included: it is a client-side WAIT
             // policy, and every head wants its session to survive a hold.
             put("CLAUDE_CODE_RETRY_WATCHDOG", "1")
-            put("NO_PROXY", mergedNoProxy(spec))
+            val noProxy = mergedNoProxy(spec)
+            put("NO_PROXY", noProxy)
+            // curl, which runs the statusline, reads the lowercase spelling first and ignores NO_PROXY once it is set.
+            put("no_proxy", noProxy)
             // Hide Claude Code's built-in Anthropic-account commands: in a gateway head, auth is the
             // proxy bearer above, so /login (a local-jsx command hardwired to platform.claude.com —
             // no hook or base-url override can reach it) and /logout are dead doors. These are the

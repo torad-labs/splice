@@ -83,9 +83,10 @@ What the Mac showed on 2026-10-24 that this replaces: the relay modeled as an ap
   server's to apply to what it describes, so it never reaches a turn.
 - **`usage` follows `auth`.** The statusline a node sees is the server's for that session, which shows
   the login the session runs on; `auth=` is the filter. No separate `usage` param.
-- **Who is on the LAN.** A source on loopback, RFC 1918, link-local (`169.254/16`, `fe80::/10`), unique
-  local IPv6 (`fc00::/7`), or an IPv6 address on a `/64` one of this machine's interfaces holds (a house
-  router that hands out global IPv6 puts the Mac there). `100.64/10` is not, since that is Tailscale's.
+- **Who is on the LAN.** A source on loopback, RFC 1918, link-local (`169.254/16`, `fe80::/10`), or an
+  IPv6 address on a `/64` one of this machine's house interfaces holds (a house router that hands out global
+  or unique local IPv6 puts the Mac there). Neither `100.64/10` nor the rest of unique local IPv6 is:
+  Tailscale hands out `100.64/10` and `fd7a:115c:a1e0::/48`, so a tailnet peer is turned away over either.
   A source on any prefix a datacenter interface holds (one with a public IPv4 address) is refused whatever
   its range: a provider's private network, link and /64 are shared with its other customers. A machine
   whose interfaces can't be read answers loopback alone, and says why.
@@ -125,7 +126,7 @@ shim as every command does. The daemon finds no head named `claudex`, finds the 
 `GET <server>/<head>/launch` with the address's params (3 s to connect), and builds the recipe: base URL
 the server's turn path, auth token the word `splice-lan`, the head's models and timeout, its own
 `~/.claude-<command>` tree, the server's statusline (on the login the address names), and a `/login` that
-names the server. The server's host joins `NO_PROXY`, so a proxy the shell names takes neither the turns nor
+names the server. The server's host joins `NO_PROXY` and `no_proxy` (curl reads the lowercase one first), so a proxy the shell names takes neither the turns nor
 the statusline. When the server can't be reached, or refuses, the launch is refused with that reason.
 
 A node the first build left still has that build's relays: a head per command, on a provider it wrote

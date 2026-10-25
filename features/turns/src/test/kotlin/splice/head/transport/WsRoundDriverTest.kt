@@ -43,6 +43,7 @@ import org.junit.jupiter.api.AfterAll
 import org.junit.jupiter.api.Assertions.assertDoesNotThrow
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertFalse
+import org.junit.jupiter.api.Assertions.assertNotNull
 import org.junit.jupiter.api.Assertions.assertNull
 import org.junit.jupiter.api.Assertions.assertSame
 import org.junit.jupiter.api.Assertions.assertTrue
@@ -72,6 +73,7 @@ import splice.core.turn.TurnReasoning
 import splice.core.turn.TurnRoute
 import splice.core.turn.Usage
 import splice.core.turn.WatchdogBudget
+import splice.core.usage.PlanLimit
 import splice.core.util.AsyncFileIo
 import splice.core.util.ElapsedClock
 import splice.core.util.WallClock
@@ -106,6 +108,7 @@ import splice.upstream.Provider
 import splice.upstream.ProviderLocations
 import splice.upstream.ProviderName
 import splice.upstream.ProviderTuning
+import splice.upstream.RetryNotice
 import splice.upstream.RoundBody
 import splice.upstream.WsPathPulse
 import splice.upstream.WsRound
@@ -1647,3 +1650,147 @@ class WsRoundFailureTest(@param:TempDir private val tmp: Path) {
         }
     }
 }
+
+/** A plan hold ends when the upstream answers the login again, whichever transport carried the answer.
+ *
+ *  Oct 25, 01:08 CT: ChatGPT named claudex's 7-day window spent until Oct 30, then reset it early. By 01:45 the
+ *  account's own quota read 1% of the week, yet `splice status` still said "out of quota until Oct 30": claudex's turns
+ *  are answered over the websocket, and only an HTTP answer ended the hold. A plain HTTP request ended it at 01:46. */
+@TestInstance(TestInstance.Lifecycle.PER_CLASS)
+class WsPlanHoldTest(@param:TempDir private val tmp: Path) {
+    private val mock = MockChatGptUpstream()
+    private val client = HttpClient(CIO) { defaultRequest { bearerAuth("test-inference-token") } }
+
+    @AfterAll
+    fun close() {
+        client.close()
+        mock.stop()
+    }
+
+    @Test
+    fun `a turn the upstream answers over the websocket ends its login's plan hold`() {
+        val upstream = UpstreamClient(totalTimeoutMs = 30_000, maxRetries = 2)
+        val login = requireNotNull(upstream.credentialCooldown(mapOf("Authorization" to "Bearer tok-ws")))
+        login.planHold.hold(spentWeek(), RetryNotice { })
+        assertNotNull(upstream.planHold, "the premise: the head holds the login's spent week")
+        val h = HeadServer(
+            provider = WsDriverFixture(tmp, mock.baseUrl).provider(ScriptedRunner(TEXT_ROUND + COMPLETED)),
+            listenPort = 0,
+            deps = headDeps(
+                tmp = tmp,
+                upstream = upstream,
+                log = {},
+                seams = HeadDeps.HeadSeams(requestMaterializationGate = RequestMaterializationGate()),
+            ).copy(stores = headStores(tmp, suffix = "-plan-hold")),
+        )
+        runBlocking { h.start() }
+        try {
+            assertTrue(h.providerResetForMs() > 0L, "the premise: /health names the week's reset for the head")
+            val before = mock.upstreamBodies.size
+            val sse = runBlocking {
+                client.post("http://127.0.0.1:${h.port}/v1/messages") {
+                    setBody(
+                        """{"model":"claude-codex--gpt-5.6-sol","stream":true,"max_tokens":100,
+                            "messages":[{"role":"user","content":"hi"}]}""",
+                    )
+                }.bodyAsText()
+            }
+            assertTrue(sse.contains("event: message_stop"), "the turn was answered: $sse")
+            assertEquals(before, mock.upstreamBodies.size, "the premise: the websocket answered it, not HTTP")
+            assertEquals(0L, h.providerResetForMs(), "the upstream answered the login: /health names no reset for it")
+        } finally {
+            runBlocking { h.stop() }
+        }
+    }
+
+    @Test
+    fun `a pooled login's plan hold ends when the upstream answers it over the websocket`() = runTest {
+        val (inputs, account) = pooledInputs(this)
+        try {
+            driver(ScriptedRunner(TEXT_ROUND + COMPLETED)).run(inputs)
+            assertEquals(0L, account.cooldown.providerUnavailableForMs(), "the upstream answered: no reset is named")
+        } finally {
+            inputs.turnJob.cancel()
+            inputs.drive.slot.release()
+        }
+    }
+
+    @Test
+    fun `a pooled login's plan hold stays when the upstream refuses it over the websocket`() = runTest {
+        val (inputs, account) = pooledInputs(this)
+        try {
+            driver(ScriptedRunner(listOf(USAGE_LIMIT))).run(inputs)
+            assertTrue(account.cooldown.providerUnavailableForMs() > 0L, "a refusal is no answer: the reset stands")
+        } finally {
+            inputs.turnJob.cancel()
+            inputs.drive.slot.release()
+        }
+    }
+
+    /** Two sessions on one login: this one's round is sent, another's turn is refused for the spent week, and then
+     *  this round's response.created arrives. The refusal is newer than the send, so it stands, as on HTTP. */
+    @Test
+    fun `a refusal learned while the websocket round is in flight outlives its answer`() = runTest {
+        val (inputs, account) = pooledInputs(this)
+        account.cooldown.acceptance()()
+        assertEquals(0L, account.cooldown.providerUnavailableForMs(), "the premise: the login starts open")
+        val scripted = ScriptedRunner(TEXT_ROUND + COMPLETED)
+        val refusedMidRound = object : WsRoundRunner by scripted {
+            override suspend fun attempt(
+                bodyJson: String,
+                meta: TurnMeta,
+                turnHeaders: Map<String, String>,
+                creds: Credentials,
+                perf: TurnPerf?,
+            ): WsRound {
+                account.cooldown.planHold.hold(spentWeek(), RetryNotice { })
+                return scripted.attempt(bodyJson, meta, turnHeaders, creds, perf)
+            }
+        }
+        try {
+            driver(refusedMidRound).run(inputs)
+            assertTrue(account.cooldown.providerUnavailableForMs() > 0L, "the newer refusal outlives the answer")
+        } finally {
+            inputs.turnJob.cancel()
+            inputs.drive.slot.release()
+        }
+    }
+
+    private suspend fun pooledInputs(scope: CoroutineScope): Pair<WsRoundInputs, PoolAccount> {
+        val inputs = WsDriverFixture(tmp, mock.baseUrl).inputs(RecordingTerminal(), scope)
+        val account = PoolAccount(
+            "synthetic",
+            true,
+            WsFakeAuth(),
+            AccountQuotaSource { null },
+            RateLimitCooldown(ElapsedClock { 0L }),
+        )
+        inputs.drive.account =
+            (AccountPool(listOf(account), WallClock { 999L }).select(null) as Selection.Chosen).account
+        account.cooldown.planHold.hold(spentWeek(), RetryNotice { })
+        assertTrue(account.cooldown.providerUnavailableForMs() > 0L, "the premise: the week's reset is named")
+        return inputs to account
+    }
+
+    private fun driver(runner: WsRoundRunner): WsRoundDriver = WsRoundDriver(
+        WsDriverFixture(tmp, mock.baseUrl).provider(runner),
+        log = {},
+        classifyZeroEvent = ZeroEventClassifier { _, outcome, _, _ -> outcome },
+        clock = { 999L },
+    )
+
+    /** The week ChatGPT named spent on Oct 25: five days out, as Oct 30 was. */
+    private fun spentWeek(): PlanLimit =
+        PlanLimit("seven_day", System.currentTimeMillis() / 1_000L + FIVE_DAYS_SECONDS, windowSeconds = WEEK_SECONDS)
+}
+
+private const val COMPLETED =
+    """{"type":"response.completed","response":{"status":"completed","usage":{"input_tokens":10,"output_tokens":3}}}"""
+
+/** The refusal ChatGPT sends when a plan window is spent, as the websocket's first event. */
+private const val USAGE_LIMIT =
+    """{"type":"error","status":429,"error":{"type":"usage_limit_reached",""" +
+        """"message":"The usage limit has been reached","resets_in_seconds":432000}}"""
+
+private const val FIVE_DAYS_SECONDS = 432_000L
+private const val WEEK_SECONDS = 604_800L

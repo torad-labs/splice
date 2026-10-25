@@ -207,6 +207,7 @@ internal class CodeModeItemSourceCapture(
         config.log("[code-mode] upstream exec source did not complete: $why")
         source.fail(SOURCE_INCOMPLETE)
         if (!itemComplete) {
+            registry.startup.release(current)
             registry.lose(current, SOURCE_INCOMPLETE)
             return
         }
@@ -227,6 +228,7 @@ internal class CodeModeItemSourceCapture(
         recovery = null
         val current = record ?: return
         if (!itemComplete) {
+            registry.startup.release(current)
             if (!current.terminal()) registry.lose(current, detail, cancellation)
             return
         }

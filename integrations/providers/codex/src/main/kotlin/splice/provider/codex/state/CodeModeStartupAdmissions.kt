@@ -81,4 +81,9 @@ internal class CodeModeStartupAdmissions(
         record.progress.updatedAt = clock.millis()
         store.save(records, history.entries, dirtyKeys = setOf(record.key), changedRecord = record)
     }
+
+    /** A pre-ready local rejection forgets the dispatch ticket; its record is lost by the caller's cleanup. */
+    fun release(record: CodeModeRecord): Unit = access.withKey(record.key) {
+        entries.remove(record.id)
+    }
 }

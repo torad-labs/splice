@@ -45,6 +45,17 @@ internal class CodeModeRoundLifecycle(
                     log("[code-mode] rejected response accounting was not saved (${failure::class.simpleName})")
                 }
             } else {
+                capture.record?.let { record ->
+                    // The dispatch ticket of a source that never attached cannot outlive its round.
+                    val release = Cancellables.runCatchingBestEffort { registry.startup.release(record) }
+                    if (release.isFailure) {
+                        val cause = release.exceptionOrNull()
+                        log(
+                            "[code-mode] the rejected startup admission was not released " +
+                                "(${cause?.let { it::class.simpleName }})",
+                        )
+                    }
+                }
                 localFailure = CodeModeRejection.lose(capture.record, rejected, registry)
             }
         } finally {

@@ -160,7 +160,7 @@ internal class LoginCommand(
             // Accept the topology key or the wrapper command (`<command> login` passes argv[0]).
             val keys = topology.resolveHeadKeys(headArg)
             keys.singleOrNull()?.let { return it }
-            // A command another machine serves (LAN share) signs in there: `claudex login` typed on the node lands here.
+            // A command another machine serves (LAN share) signs in there; `claudex login` typed on a node lands here.
             val remote = topology.remote[headArg]
             println(
                 when {

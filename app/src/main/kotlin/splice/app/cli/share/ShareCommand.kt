@@ -105,7 +105,7 @@ internal class ShareCommand(
         return PeerExit.DONE
     }
 
-    /** [wanted] written to splice.toml, unless it shares on a port another program here holds, which is said instead. */
+    /** [wanted] written to splice.toml, unless it shares on a port another program here holds, said instead. */
     private suspend fun saved(wanted: Topology): Boolean {
         val port = wanted.share.port
         if (wanted.share.enabled && held(port)) {

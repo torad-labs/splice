@@ -20,7 +20,7 @@
  * loads nothing — is exit 2, never a pass.
  */
 import { spawnSync } from "node:child_process";
-import { existsSync, readFileSync } from "node:fs";
+import { existsSync, readFileSync, realpathSync } from "node:fs";
 import { isAbsolute, join, relative } from "node:path";
 
 export const CONFIG = "tools/gate/config/typecheck.json";
@@ -79,12 +79,14 @@ function runProgram(root: string, compiler: string, program: string): ProgramRes
   if (r.error) throw new WallError(`typecheck: ${program}: could not start ${compiler} (${r.error.message})`);
   const files = new Set<string>();
   const diagnostics: string[] = [];
+  // tsc lists each file by its real path: on macOS a root under `/var/…` is listed as `/private/var/…`.
+  const realRoot = realpathSync(root);
   for (const line of (r.stdout + r.stderr).split("\n")) {
     if (line === "") continue;
     if (PROGRAM_ERROR.test(line)) throw new WallError(`typecheck: ${program}: ${line}`);
     if (DIAGNOSTIC.test(line)) diagnostics.push(line);
     else if (isAbsolute(line)) {
-      const rel = relative(root, line);
+      const rel = relative(realRoot, line);
       if (!rel.startsWith("..") && !rel.split("/").includes("node_modules")) files.add(rel);
     }
   }

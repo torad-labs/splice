@@ -15,7 +15,7 @@
 // commit's files, exactly as the gradle `detekt` task has no type resolution; a rule that needs another file is pre-push's.
 import { spawn } from "node:child_process";
 import { createHash } from "node:crypto";
-import { chmodSync, copyFileSync, existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from "node:fs";
+import { chmodSync, copyFileSync, existsSync, mkdirSync, readFileSync, realpathSync, renameSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
 import { resolveJdk21 } from "./jdk.ts";
@@ -119,11 +119,13 @@ export function findingLines(tool: "ktlint" | "detekt", output: string, dir: str
 }
 
 /** Standalone ktlint, at the version [root]'s catalog names, over [files] (repo-relative) of the tree [root], whose own
- *  .editorconfig it reads. This is the pre-push's batched lint: the same pinned jar and rule file the Gradle plugin and the
+ *  .editorconfig it reads. ktlint names each file by the real path of the folder it runs in, so [root] is read through its
+ *  links first: on macOS the temp folder `/var/…` is `/private/var/…`, and a finding under the other spelling was dropped. This is the pre-push's batched lint: the same pinned jar and rule file the Gradle plugin and the
  *  pre-commit run, over the files a push changes. ktlint exits 1 on findings; any other nonzero exit, or a 1 that prints no
  *  finding, is a linter that did not judge. */
-export async function ktlintOver(root: string, files: readonly string[]): Promise<LintVerdict> {
+export async function ktlintOver(tree: string, files: readonly string[]): Promise<LintVerdict> {
   try {
+    const root = realpathSync(tree);
     const version = catalogVersion(readFileSync(join(root, "gradle", "libs.versions.toml"), "utf8"), "ktlint");
     if (version === undefined) return { error: "gradle/libs.versions.toml names no ktlint version" };
     const jdk = resolveJdk21();
@@ -141,10 +143,11 @@ export async function ktlintOver(root: string, files: readonly string[]): Promis
   }
 }
 
-/** The real linters, at the versions [root]'s catalog names. */
+/** The real linters, at the versions [root]'s catalog names. The mirror is read through its links, as in [ktlintOver]. */
 export function stagedLinters(root: string): StagedLint {
-  return async (dir, files) => {
+  return async (mirror, files) => {
     try {
+      const dir = realpathSync(mirror);
       const catalog = readFileSync(join(root, "gradle", "libs.versions.toml"), "utf8");
       const ktlintVersion = catalogVersion(catalog, "ktlint");
       const detektVersion = catalogVersion(catalog, "detekt");

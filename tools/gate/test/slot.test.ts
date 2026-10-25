@@ -22,6 +22,18 @@ afterAll(() => {
   if (inherited.wait !== undefined) process.env.GRADLE_SLOT_WAIT_S = inherited.wait;
 });
 
+/** The PATH a fake build runs on: the system's own /usr/bin and /bin, never this machine's ~/.local/bin, so
+ *  `command -v buildgate` finds nothing. Its scripts observe the lock with util-linux flock(1); macOS has none of its
+ *  own, so a folder holding only the one this machine has (Homebrew's) comes first. */
+const SYSTEM_PATH = ((): string => {
+  const flock = Bun.which("flock");
+  if (flock === null || ["/usr/bin", "/bin"].includes(dirname(flock))) return "/usr/bin:/bin";
+  const bin = mkdtempSync(join(tmpdir(), "gate-flock-"));
+  workspaces.push(bin);
+  symlinkSync(flock, join(bin, "flock"));
+  return `${bin}:/usr/bin:/bin`;
+})();
+
 /** A build root whose `gradlew` records how it was called — and what the holder file said. */
 function fakeBuildRoot(script = 'echo "ARGS:$*"\ncat "$LOCK.holder"\nexit 0\n') {
   const dir = mkdtempSync(join(tmpdir(), "gate-slot-"));
@@ -32,9 +44,8 @@ function fakeBuildRoot(script = 'echo "ARGS:$*"\ncat "$LOCK.holder"\nexit 0\n') 
     `#!/usr/bin/env bash\nLOCK="${join(dir, ".gradle-slot.lock")}"\n{ ${script} } >"${receipt}" 2>&1\n`,
   );
   chmodSync(join(dir, "gradlew"), 0o755);
-  // PATH without this machine's ~/.local/bin, so `command -v buildgate` finds nothing and the test
-  // exercises the same branch CI does. The buildgate branch has a test of its own below.
-  return { layout: { repoRoot: dir, buildRoot: dir }, dir, receipt, path: "/usr/bin:/bin" };
+  // The same branch CI takes: no buildgate on PATH. The buildgate branch has a test of its own below.
+  return { layout: { repoRoot: dir, buildRoot: dir }, dir, receipt, path: SYSTEM_PATH };
 }
 
 describe("the gradle slot", () => {
@@ -218,7 +229,9 @@ describe("the gradle slot", () => {
     // bun test pins the runtime to UTC; `date` must be asked in the same zone or the two spellings
     // of the same instant differ by an offset and the comparison says nothing about the format.
     const zone = Intl.DateTimeFormat().resolvedOptions().timeZone;
-    const shell = Bun.spawnSync(["date", "-Is", "-d", `@${Math.floor(now.getTime() / 1000)}`], {
+    // GNU date is the oracle: macOS's own date is BSD's, and Homebrew's coreutils names GNU's `gdate`.
+    const gnuDate = process.platform === "darwin" ? "gdate" : "date";
+    const shell = Bun.spawnSync([gnuDate, "-Is", "-d", `@${Math.floor(now.getTime() / 1000)}`], {
       env: { ...process.env, TZ: zone },
     })
       .stdout.toString()
@@ -371,7 +384,7 @@ try {
   for (const mode of ["plain", "joint"] as const) {
     test(`a ${mode} run from a second worktree leaves no holder record behind`, async () => {
       const scratch = secondWorktree();
-      const fake = { layout: scratch.layout, dir: scratch.second, receipt: join(scratch.second, "receipt.txt"), path: "/usr/bin:/bin" };
+      const fake = { layout: scratch.layout, dir: scratch.second, receipt: join(scratch.second, "receipt.txt"), path: SYSTEM_PATH };
       const path = mode === "joint" ? admissionGate(fake, true).path : fake.path;
       const code = await runUnderSlot({
         layout: scratch.layout,

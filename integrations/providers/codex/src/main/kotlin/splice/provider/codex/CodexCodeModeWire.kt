@@ -61,7 +61,9 @@ internal class CodexCodeModeWire(
         val deferred = (reachable - nested.map(CodeModeManual.NestedTool::name).toSet()).isNotEmpty()
         val beside = hosted.filterNot { string(it as? JsonObject, FIELD_TYPE) == TYPE_TOOL_SEARCH }
         val exec = execTool(CodeModeManual.description(nested, deferred))
-        val surface = namespace.group(JsonArray(listOf(exec, CodeModeWaitTool.declaration()) + beside))
+        // The wait tool is splice's own: exec stands alone in the namespace and wait rides only where a
+        // head asks for it (the pinned exec-only tests), never in every grouped lite list.
+        val surface = namespace.group(JsonArray(listOf(exec) + beside))
         val replaced = JsonObject(item + (FIELD_TOOLS to surface))
         val rebuilt = input.mapIndexed { position, element -> if (position == index) replaced else element }
         return JsonObject(request + (FIELD_INPUT to JsonArray(rebuilt)))

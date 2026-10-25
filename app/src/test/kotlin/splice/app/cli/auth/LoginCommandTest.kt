@@ -119,6 +119,33 @@ class LoginCommandTest {
         )
     }
 
+    /** `claudex login` typed on a node, where claudex runs on another machine (LAN share): the shim hands it to
+     *  `splice login claudex`, which says where that command's logins live rather than calling it unknown. */
+    @Test
+    fun `login for a command another machine serves says its logins live on that machine`(@TempDir tmp: Path) {
+        val config = tmp.resolve(".config").resolve("splice").resolve("splice.toml")
+        Files.createDirectories(config.parent)
+        val remote = "\n[remote.claudex]\nurl = \"http://torad-server.lan:3097/claudex\"\n"
+        Files.writeString(config, FAST_HEAD_TOML + remote)
+        val out = java.io.ByteArrayOutputStream()
+        val savedOut = System.out
+        System.setOut(java.io.PrintStream(out))
+        var signedIn = true
+        try {
+            UserHome.within(tmp) {
+                assertEquals(config, TopologyLoader.configPath(), "the redirected config path is the one login() reads")
+                signedIn = kotlinx.coroutines.runBlocking { LoginCommand().login("claudex") }
+            }
+        } finally {
+            System.setOut(savedOut)
+        }
+        val printed = out.toString()
+        assertFalse(signedIn, printed)
+        assertTrue(printed.contains("claudex runs on another machine (http://torad-server.lan:3097/claudex)"), printed)
+        assertTrue(printed.contains("its logins live there"), printed)
+        assertFalse(printed.contains("unknown head"), printed)
+    }
+
     // ---- `splice login <claude-head> --label`, end to end over the real session registry ----
 
     /** The Claude head runs over [configDir]; claudex, another head of the same provider, on 3105. */

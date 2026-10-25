@@ -1,7 +1,8 @@
 // NEW: LAN share (docs/specs/lan-share.md, Marcos's ruling of 2026-10-24). `splice share`, the server's side: turn
 // `[share]` on or off in splice.toml and restart so the listener follows, and print, for each command this machine
 // offers, the address another machine adds it by. What is offered is the listener's own answer, asked on loopback, so
-// the list is the daemon's, never a guess from the file.
+// the list is the daemon's, never a guess from the file. A port another program here holds is refused before the file
+// changes: the listener could not open it, and a restart would not free it.
 package splice.app.cli.share
 
 import splice.app.cli.peer.PeerExit
@@ -12,6 +13,7 @@ import splice.core.terminal.GREEN
 import splice.core.terminal.RESET
 import splice.core.terminal.TerminalOutput
 import splice.core.topology.ShareConfig
+import splice.core.topology.Topology
 import splice.core.util.EnvReader
 import splice.core.util.LogSink
 import splice.share.ShareAddresses
@@ -19,6 +21,9 @@ import splice.share.ShareDirectory
 import splice.share.ShareDirectoryRead
 import splice.share.ShareInfo
 import splice.upstream.codemode.ProcessDispatchers
+import java.net.BindException
+import java.net.InetSocketAddress
+import java.net.ServerSocket
 
 internal const val SHARE_USAGE = "on [--port N] | off | status"
 
@@ -29,6 +34,7 @@ internal class ShareCommand(
 ) {
     private val file = ShareTopologyFile(err, SHARE_VERB, env)
     private val restart = ShareRestart(out, err, env, SHARE_VERB)
+    private val directory = ShareDirectory(ProcessDispatchers().io())
 
     suspend fun run(args: List<String>): Int {
         val rest = args.drop(1)
@@ -49,7 +55,7 @@ internal class ShareCommand(
     private suspend fun switched(on: Boolean, port: Int?): Int {
         val current = file.loaded() ?: return PeerExit.REFUSED
         val wanted = current.copy(share = current.share.copy(enabled = on, port = port ?: current.share.port))
-        if (!file.saved(wanted)) return PeerExit.REFUSED
+        if (!saved(wanted)) return PeerExit.REFUSED
         out.line("$GREEN✓$RESET sharing ${if (on) "on, port ${wanted.share.port}" else "off"} in ${file.path}")
         return when {
             !restart.followed(wanted) -> PeerExit.REFUSED
@@ -64,7 +70,7 @@ internal class ShareCommand(
             out.line("sharing is off. ${CYAN}splice share on$RESET lets your other machines run this one's commands.")
             return PeerExit.DONE
         }
-        return when (val read = ShareDirectory(ProcessDispatchers().io()).read("http://127.0.0.1:${share.port}")) {
+        return when (val read = directory.read("http://127.0.0.1:${share.port}")) {
             is ShareDirectoryRead.Read -> offered(share, read.info)
             is ShareDirectoryRead.Refused -> {
                 err.line("$SHARE_VERB: sharing is on in ${file.path}, but nothing here answers on it: ${read.why}")
@@ -97,6 +103,33 @@ internal class ShareCommand(
         val others = reach.addresses - server
         if (others.isNotEmpty()) out.line("${DIM}by address: ${others.joinToString(", ")}$RESET")
         return PeerExit.DONE
+    }
+
+    /** [wanted] written to splice.toml, unless it shares on a port another program here holds, which is said instead. */
+    private suspend fun saved(wanted: Topology): Boolean {
+        val port = wanted.share.port
+        if (wanted.share.enabled && held(port)) {
+            val another = "${CYAN}splice share on --port <N>$RESET"
+            err.line("$SHARE_VERB: port $port is held by another program here; choose another with $another")
+            return false
+        }
+        return file.saved(wanted)
+    }
+
+    /** Whether another program here holds [port]: it can't be bound, and what answers on it is not this machine's
+     *  share listener, which holds it while sharing is on. */
+    private suspend fun held(port: Int): Boolean =
+        !bindable(port) && directory.read("http://127.0.0.1:$port") !is ShareDirectoryRead.Read
+
+    /** Whether [port] can be bound on every address, as the share listener binds it. */
+    private fun bindable(port: Int): Boolean = try {
+        ServerSocket().use { socket ->
+            socket.reuseAddress = false
+            socket.bind(InetSocketAddress(port))
+        }
+        true
+    } catch (_: BindException) {
+        false
     }
 
     private fun usage(): Int {

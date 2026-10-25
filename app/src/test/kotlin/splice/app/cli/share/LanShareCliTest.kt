@@ -35,6 +35,7 @@ import splice.oauth.OAuthAccountFiles
 import splice.topology.TopologyLoader
 import java.net.InetAddress
 import java.net.NetworkInterface
+import java.net.ServerSocket
 import java.net.Socket
 import java.net.URI
 import java.nio.file.Files
@@ -239,6 +240,19 @@ class LanShareCliTest {
         val added = remote(node, "add", claudex)
         assertEquals(0, added.code, added.toString())
         assertEquals(mapOf("claudex" to RemoteConfig(claudex)), node.remote)
+    }
+
+    @Test
+    fun `share on a port another program holds says so, and leaves sharing off`(@TempDir dir: Path) {
+        val node = node(dir)
+        ServerSocket(0).use { holder ->
+            val port = holder.localPort
+            val on = share(node.env, "on", "--port", "$port")
+            assertNotEquals(0, on.code, on.toString())
+            assertTrue(on.err.contains("port $port is held by another program here"), on.toString())
+            assertFalse(on.toString().contains("is splice running"), on.toString())
+            assertFalse(TopologyLoader.parse(node.config.readText()).share.enabled, node.config.readText())
+        }
     }
 
     @Test

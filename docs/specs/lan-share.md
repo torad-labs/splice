@@ -35,7 +35,7 @@ How anyone can tell it does:
    "overloaded". When torad-server answers but its claudex is not running, or does not answer, the turn's
    error says that, in torad-server's name.
 6. `/login` in the Mac's `claudex` says its logins live on torad-server and how to sign in there. It never
-   asks for a key.
+   asks for a key. `claudex login` typed in the Mac's terminal says the same.
 7. torad-server answers machines on its own networks only. There is no join, token, pin or certificate.
 
 ## Decisions (Marcos, 2026-10-24): a node is a client, nothing more
@@ -136,7 +136,7 @@ relay under its own name, taking its provider and its share token out in the sam
 the first build's `share/clients.json` and its lock when it starts.
 
 `splice share on|off|status` writes `[share]` and restarts the daemon; `status` prints each command's
-address. `splice remote add <address>` checks the address against the server and writes
+address. `share on` refuses a port another program here holds, naming it, before the file changes. `splice remote add <address>` checks the address against the server and writes
 `[remote.<command>]`, links the command and restarts; `add <server>` with no head adds every command it
 offers; `splice remote remove <command>` takes one out; `splice remote` lists them, each with whether its
 server answers now.

@@ -132,7 +132,10 @@ internal class TurnDriver(
 
     /** The detachment seams both transport shapes share; built once, handed down whole. */
     private val detachOwner = DetachOwner(log, compactionReplay, streamer.detachScope, streamer.detachContext)
-    private val localResponses = LocalResponses(provider, deps, compactionReplay)
+
+    /** What a compaction retry is served from without an upstream turn (CompactionReplay): a streamed replay, a
+     *  collect hold, or a streamed recording collected for a stream:false fallback. HeadAdmission calls it. */
+    internal val localResponses = LocalResponses(provider, deps, compactionReplay)
 
     // Pre-priced HD-24 contingency: collect() moved to its own file (CollectTurn.kt) because the
     // un-split TurnDriver.kt measured ratio 1.83, just over the 1.8 gate.
@@ -160,13 +163,6 @@ internal class TurnDriver(
         localResponses.answer(call, local)
         telemetry.localAnswers.activityAnswer(local.sessionId, provider.catalog.stripSuffixes(local.model), perf)
     }
-
-    /** A compaction retry served from the detached first attempt's recording (CompactionReplay). */
-    suspend fun replay(call: ApplicationCall, replayed: Preparation.Replay) = localResponses.replay(call, replayed)
-
-    /** The non-stream sibling: a collect compaction retry answered from its held body (CompactionReplay). */
-    suspend fun replayCollected(call: ApplicationCall, collected: Preparation.Collected) =
-        localResponses.replayCollected(call, collected)
 
     /** Drive one turn, emit classified failures, and — if a cancellation lands (head stop,
      *  write-timeout, parent cancel) — seal the terminal honestly before rethrowing (see

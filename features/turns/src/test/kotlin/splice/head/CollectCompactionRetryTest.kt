@@ -8,6 +8,11 @@ package splice.head
 
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.runBlocking
+import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.jsonArray
+import kotlinx.serialization.json.jsonObject
+import kotlinx.serialization.json.jsonPrimitive
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
@@ -54,15 +59,19 @@ class CollectCompactionRetryTest {
         """"system":"SCENARIO:hold You are tasked with summarizing conversations for another agent.",""" +
         """"messages":[{"role":"user","content":"compact"}]}"""
 
-    private fun post(port: Int): Socket {
+    // The SAME request with stream:true: Claude Code's first attempt streams, and when that attempt dies its
+    // fallback re-sends these bytes as stream:false (rig's finding, hack-program on glml53, 2026-10-25 00:58 CT).
+    private val streamBody = body.replace("\"stream\":false", "\"stream\":true")
+
+    private fun post(port: Int, json: String = body): Socket {
         val socket = Socket("127.0.0.1", port)
         val request = "POST /v1/messages HTTP/1.1\r\n" +
             "Host: 127.0.0.1:$port\r\n" +
             "Authorization: Bearer test-inference-token\r\n" +
             "Content-Type: application/json\r\n" +
             "x-claude-code-session-id: sess-collect-retry\r\n" +
-            "Content-Length: ${body.toByteArray().size}\r\n" +
-            "Connection: close\r\n\r\n" + body
+            "Content-Length: ${json.toByteArray().size}\r\n" +
+            "Connection: close\r\n\r\n" + json
         socket.getOutputStream().write(request.toByteArray())
         socket.getOutputStream().flush()
         return socket
@@ -159,6 +168,87 @@ class CollectCompactionRetryTest {
             )
         } finally {
             held.mock.releaseHold() // never leave a parked upstream thread behind
+            held.head.stop()
+        }
+    }
+
+    /** The streamed first attempt, detached: it reached upstream and holds its slot, then its client left. */
+    private suspend fun detachStreamingCompaction(held: HeldHead) {
+        val first = post(held.head.port, streamBody)
+        assertTrue(
+            waitFor(20_000) { held.mock.upstreamBodies.size == 1 },
+            "precondition: the streaming compaction must reach upstream: ${held.lines.joinToString("")}",
+        )
+        assertTrue(waitFor(20_000) { held.gate.snapshot().inflight == 1 }, "the streaming compaction holds its slot")
+        first.close()
+        assertTrue(
+            waitFor(20_000) { held.lines.any { "compaction continues detached" in it } },
+            "the streaming compaction must detach: ${held.lines.joinToString("")}",
+        )
+    }
+
+    /** The ONE Messages body a collect answer carries, read off the raw HTTP response. */
+    private fun messageOf(answer: String): JsonObject {
+        assertTrue("event:" !in answer, "a collect retry reads ONE messages body, not SSE frames: $answer")
+        return Json.parseToJsonElement(answer.substringAfter("\r\n\r\n")).jsonObject
+    }
+
+    /** What the hold scenario streamed, collected: one text block saying "held", ended cleanly. */
+    private fun assertStreamedAnswerCollected(answer: String) {
+        val message = messageOf(answer)
+        assertEquals("message", message["type"]?.jsonPrimitive?.content, answer)
+        val texts = message["content"]?.jsonArray.orEmpty().map { it.jsonObject["text"]?.jsonPrimitive?.content }
+        assertEquals(listOf("held"), texts, "the retry gets the streamed answer's text: $answer")
+        assertEquals("end_turn", message["stop_reason"]?.jsonPrimitive?.content, answer)
+    }
+
+    /** RED before the fix (rig, 2026-10-25): the non-stream fallback looked only at non-stream holds, so it
+     *  started a second ~40 minute read beside the detached streamed one and starved it. */
+    @Test
+    fun `a non-stream retry of a running detached streaming compaction follows it and costs no upstream turn`(
+        @TempDir tmp: Path,
+    ) = runBlocking {
+        val held = startHeldHead(tmp)
+        try {
+            detachStreamingCompaction(held)
+            // The fallback arrives while the streamed read is still parked, as it did 65 ms after the detach.
+            val retry = post(held.head.port)
+            assertTrue(
+                waitFor(20_000) {
+                    held.lines.any { "collecting its recording" in it } || held.mock.upstreamBodies.size > 1
+                },
+                "the retry must be prepared while the stream still runs: ${held.lines.joinToString("")}",
+            )
+            assertEquals(1, held.mock.upstreamBodies.size, "the non-stream retry must not start a second upstream read")
+
+            held.mock.releaseHold()
+            val answer = readAnswer(retry)
+            assertStreamedAnswerCollected(answer)
+            assertEquals(1, held.mock.upstreamBodies.size, "the whole exchange cost one upstream read")
+        } finally {
+            held.mock.releaseHold()
+            held.head.stop()
+        }
+    }
+
+    @Test
+    fun `a non-stream retry after a detached streaming compaction finished is answered from its recording`(
+        @TempDir tmp: Path,
+    ) = runBlocking {
+        val held = startHeldHead(tmp)
+        try {
+            detachStreamingCompaction(held)
+            held.mock.releaseHold()
+            assertTrue(
+                waitFor(20_000) { held.lines.any { "held for a byte-identical retry" in it } },
+                "the detached stream must finish and keep its answer: ${held.lines.joinToString("")}",
+            )
+            // The hold stays released: a retry that wrongly went upstream would finish, and be counted.
+            val answer = readAnswer(post(held.head.port))
+            assertEquals(1, held.mock.upstreamBodies.size, "the non-stream retry must not start a second upstream read")
+            assertStreamedAnswerCollected(answer)
+        } finally {
+            held.mock.releaseHold()
             held.head.stop()
         }
     }

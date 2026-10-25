@@ -17,6 +17,7 @@ import splice.core.turn.UsageField
 import splice.core.util.JsonWire
 import splice.head.HeadDeps
 import splice.head.compaction.CompactionReplay
+import splice.head.compaction.RecordedAnswer
 import splice.head.turn.Preparation
 import splice.head.turn.SESSION_TAG_CHARS
 import splice.head.wire.CollectingTerminal
@@ -113,23 +114,7 @@ internal class LocalResponses(
         val who = collected.sessionId?.let { "session ${it.take(SESSION_TAG_CHARS)}" } ?: "no session"
         val body = collected.hold.await()
         if (body == null) {
-            val terminal = CollectingTerminal(
-                collected.model,
-                wiring.usagePayloadBuilderFor(
-                    provider.catalog,
-                    collected.model,
-                    deps.stores.clientWindows.windowFor(collected.sessionId),
-                ),
-            )
-            terminal.emitError(
-                ErrorType.OVERLOADED,
-                "${provider.key}: the compaction this retry followed did not finish; retry",
-            )
-            call.respondText(
-                terminal.responseBody().let(JsonWire::string),
-                ContentType.Application.Json,
-                HttpStatusCode.fromValue(terminal.httpStatus()),
-            )
+            respondUnfinished(call, collected.model, collected.sessionId)
             deps.log(
                 "[${provider.key}] collect compaction retry followed a compaction that did not finish ($who; " +
                     "sealed with an error, the next retry runs upstream)\n",
@@ -146,6 +131,50 @@ internal class LocalResponses(
                 "upstream turn)\n",
         )
         replay.answers.consumed(collected.key, collected.hold)
+    }
+
+    /** Claude Code's stream:false fallback for a streamed compaction that lost its client: follow that drive's
+     *  recording to its end exactly as a streamed retry does, then answer the ONE body this shape reads,
+     *  collected from the frames. A delivered body spends the recording as a streamed replay does; a drive that
+     *  ended without its terminal answers the honest error, and the next attempt runs upstream. */
+    suspend fun collectRecording(call: ApplicationCall, recorded: Preparation.CollectedRecording) {
+        quotaHeaders(call, recorded.sessionId)
+        val who = recorded.sessionId?.let { "session ${it.take(SESSION_TAG_CHARS)}" } ?: "no session"
+        val answer = RecordedAnswer()
+        val whole = recorded.recording.follow { frame -> answer.accept(frame) }
+        val body = answer.message()?.takeIf { whole }
+        if (body == null) {
+            respondUnfinished(call, recorded.model, recorded.sessionId)
+            deps.log(
+                "[${provider.key}] collect compaction retry followed a streamed compaction that did not finish " +
+                    "($who; sealed with an error, the next retry runs upstream)\n",
+            )
+            return
+        }
+        call.respondText(JsonWire.string(body), ContentType.Application.Json, HttpStatusCode.fromValue(OK_STATUS))
+        replay.consumed(recorded.key, recorded.recording)
+        deps.log(
+            "[${provider.key}] collect compaction answer collected from its streamed recording ($who, " +
+                "${recorded.recording.size} frames; the retry cost no upstream turn)\n",
+        )
+    }
+
+    // The honest overload error a collect follower answers when the compaction it followed did not finish,
+    // which Claude Code retries: the collect shape of the frame sealFollower writes for a streamed one.
+    private suspend fun respondUnfinished(call: ApplicationCall, model: String, sessionId: String?) {
+        val terminal = CollectingTerminal(
+            model,
+            wiring.usagePayloadBuilderFor(provider.catalog, model, deps.stores.clientWindows.windowFor(sessionId)),
+        )
+        terminal.emitError(
+            ErrorType.OVERLOADED,
+            "${provider.key}: the compaction this retry followed did not finish; retry",
+        )
+        call.respondText(
+            terminal.responseBody().let(JsonWire::string),
+            ContentType.Application.Json,
+            HttpStatusCode.fromValue(terminal.httpStatus()),
+        )
     }
 
     // The one failure ending the wire knows (SseEmitter.emitError, L3): an overloaded error, which

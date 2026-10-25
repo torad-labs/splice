@@ -79,12 +79,14 @@ internal class HeadAdmission(
             is Preparation.Local -> driver.answerLocally(call, prepared, admitted.perf)
             is Preparation.Replay -> {
                 // settle returned this retry's candidate before it follows the independently held drive.
-                driver.replay(call, prepared)
+                driver.localResponses.replay(call, prepared)
             }
             is Preparation.Collected -> {
                 // The collect sibling: this retry waits out its held answer instead of prefilling again.
-                driver.replayCollected(call, prepared)
+                driver.localResponses.replayCollected(call, prepared)
             }
+            // A non-stream fallback of a streamed compaction: it follows that recording into one body.
+            is Preparation.CollectedRecording -> driver.localResponses.collectRecording(call, prepared)
             is Preparation.Ready -> serveReady(call, prepared, admitted)
         }
     }

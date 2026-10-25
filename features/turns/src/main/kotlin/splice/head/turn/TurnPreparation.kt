@@ -99,6 +99,16 @@ internal sealed class Preparation {
         val sessionId: String?,
         val model: String,
     ) : Preparation()
+
+    /** Claude Code's stream:false fallback for a STREAMED compaction that lost its client: the same upstream
+     *  bytes, so the same compaction. It follows that drive's [recording] and answers it collected into one
+     *  body (RecordedAnswer) instead of starting a second read beside it (rig's finding, 2026-10-25). */
+    data class CollectedRecording(
+        val recording: FrameRecording,
+        val key: String,
+        val sessionId: String?,
+        val model: String,
+    ) : Preparation()
 }
 
 internal class TurnPreparation(
@@ -254,8 +264,11 @@ internal class TurnPreparation(
             prepared
         }
         perf.mark(PerfKeys.BUILD)
-        // A compaction retry whose bytes match a compaction that outlived its first client is
-        // answered from that recording (TurnStreamer records it, LocalResponses replays it).
+        // A compaction retry whose bytes match a compaction that outlived its first client is answered from
+        // what that drive left (TurnStreamer records it, LocalResponses serves it), on both transports: a
+        // streaming retry replays the recording's frames; a collect retry follows a collect compaction's held
+        // answer, or else collects a streamed one's recording, which is Claude Code's stream:false fallback
+        // (rig's findings of 2026-10-24 and 2026-10-25: hack-program cold-prefilled on every interruption).
         val replayed = if (built.meta.compact) compactionReplay(built, parsed.typed.stream) else null
         // V4-165: a replayed turn is never driven, so what its build holds ends here, not at a drive.
         replayed?.let { built.onEnd?.ended() }
@@ -269,11 +282,6 @@ internal class TurnPreparation(
         )
     }
 
-    /** Both transports, both halves now. A streaming retry replays its recording's frames
-     *  (LocalResponses.replay); a collect retry follows the held answer of the compaction that
-     *  outlived it (replayCollected). Before the answer ledger only streams held anything — the
-     *  "Claude Code's auto-compaction streams" bet below lost to heads whose compactions are
-     *  stream:false (rig's finding, 2026-10-24: hack-program cold-prefilled on every interruption). */
     private fun compactionReplay(built: BuiltTurn, stream: Boolean): Preparation? =
         if (stream) replayFor(built) else collectedFor(built)
 
@@ -288,16 +296,33 @@ internal class TurnPreparation(
         return Preparation.Replay(recording, key, built.meta.scope.sessionId, built.meta.route.originalModel)
     }
 
-    /** The collect sibling of [replayFor]: what the answer ledger holds under the same retry key. */
-    private fun collectedFor(built: BuiltTurn): Preparation.Collected? {
+    /** The collect sibling of [replayFor]: what the answer ledger holds under the same retry key, and else
+     *  the recording of a streamed compaction the same key names, which is what Claude Code's fallback retries. */
+    private fun collectedFor(built: BuiltTurn): Preparation? {
         val key = replay.key(built.meta, built.requestBody) ?: return null
-        val hold = replay.answers.find(key) ?: return null
-        val state = if (hold.isCompleted) "held" else "still driving"
-        deps.log(
-            "[${provider.key}] collect compaction retry matches a detached one ($state, " +
-                "${who(built.meta.scope.sessionId)}following its held answer, no upstream turn)\n",
-        )
-        return Preparation.Collected(hold, key, built.meta.scope.sessionId, built.meta.route.originalModel)
+        val session = built.meta.scope.sessionId
+        val model = built.meta.route.originalModel
+        val hold = replay.answers.find(key)
+        val recording = if (hold == null) replay.lookup(key) else null
+        return when {
+            hold != null -> {
+                val state = if (hold.isCompleted) "held" else "still driving"
+                deps.log(
+                    "[${provider.key}] collect compaction retry matches a detached one ($state, " +
+                        "${who(session)}following its held answer, no upstream turn)\n",
+                )
+                Preparation.Collected(hold, key, session, model)
+            }
+            recording != null -> {
+                val state = if (recording.isComplete) "finished" else "still running"
+                deps.log(
+                    "[${provider.key}] collect compaction retry matches a detached streaming compaction ($state, " +
+                        "${who(session)}collecting its recording into one body, no upstream turn)\n",
+                )
+                Preparation.CollectedRecording(recording, key, session, model)
+            }
+            else -> null
+        }
     }
 
     // The class, never the content (safe-failure-render): the body is the user's transcript. The

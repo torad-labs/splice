@@ -779,6 +779,33 @@ const ARMS: readonly Arm[] = [
     },
   },
   {
+    // LAN share: a node's session carries ANTHROPIC_AUTH_TOKEN=splice-lan, the word its launch plants for the server
+    // (RemoteLaunches.kt, NODE_TOKEN). A command launched from inside that session, such as plain `claude` through a
+    // head that forwards the caller's own login, must not send the word ahead of that login: Anthropic refuses it 401
+    // and Claude Code retries. A token the person set themselves rides on.
+    name: "a LAN node's token inherited from its session is dropped, and the caller's own token kept",
+    run: async (ctx) => {
+      const capture = join(ctx.dir, "token-capture");
+      const stub = join(ctx.dir, "token-stub");
+      writeStub(stub,
+        'import { writeFileSync } from "node:fs";\n' +
+        "writeFileSync(process.argv[2], JSON.stringify(process.env.ANTHROPIC_AUTH_TOKEN ?? null));\n",
+      );
+      const seen = async (inherited: string): Promise<unknown> => {
+        rmSync(capture, { force: true });
+        ctx.daemon.forget();
+        ctx.daemon.recipe = [stub, capture].map((word) => `A ${word}`).join("\n") + "\n";
+        const run = await ctx.launch({ ...ctx.harness, ANTHROPIC_AUTH_TOKEN: inherited });
+        ctx.daemon.recipe = undefined;
+        return run.code === 0 ? JSON.parse(read(capture)) : `no launch: ${run.output}`;
+      };
+      const lan = await seen("splice-lan");
+      if (lan !== null) return `an inherited splice-lan must be dropped, the launched program saw ${JSON.stringify(lan)}`;
+      const own = await seen("sk-ant-the-person");
+      return own === "sk-ant-the-person" ? null : `the caller's own token must ride on, it saw ${JSON.stringify(own)}`;
+    },
+  },
+  {
     // curl is the one tool the shim needs that the machine may not have; it says what to install instead of failing
     // inside a request. The PATH holds only what the shim runs before it needs curl.
     name: "a missing curl is named, with what to install",

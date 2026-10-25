@@ -101,7 +101,8 @@ public class RemoteLaunches(
 }
 
 // The word a node's Claude Code is given as its auth token. It opens nothing: the server signs every turn with its
-// own logins, and its listener drops whatever a request carries.
+// own logins, and its listener drops whatever a request carries. The launch shim (splice-launch, drop_own_token) names
+// the same word, so a launch from inside a node's session never inherits it.
 private const val NODE_TOKEN = "splice-lan"
 
 // why: the statusline redraws often; a server that is off should cost it two seconds, not curl's default minutes.

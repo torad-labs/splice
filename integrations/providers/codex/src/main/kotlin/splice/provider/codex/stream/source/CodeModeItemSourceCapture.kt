@@ -97,16 +97,26 @@ internal class CodeModeItemSourceCapture(
     }
 
     private fun complete(call: GatewayCustomCall, snapshot: TurnOutcome.Success? = null) {
-        if (record == null) begin(call.copy(input = ""))
+        val fresh = record == null
+        if (fresh) begin(call.copy(input = ""))
         check(completedCall == null) { "exec item completed more than once" }
         items.identity(call, checkNotNull(startedCall))
         check(call.input.startsWith(source.text)) { "completed exec source changed its dispatched prefix" }
-        CodexCodeModeValidation(config).outer(call)?.let { error(it) }
+        CodexCodeModeValidation(config).outer(call)?.let { invalid ->
+            // A source that breaks its size bounds is a client input problem: the same words append()
+            // rejects with require(); identity and protocol problems stay internal IllegalStateExceptions.
+            val oversized = call.input.length > config.bounds.maxSourceChars ||
+                !splice.upstream.codemode.CodeModeLimits.fitsText(call.input)
+            if (oversized) throw IllegalArgumentException(invalid) else error(invalid)
+        }
         if (!hold(snapshot?.handoffs?.nativeAfterExec)) return
         val captured = snapshot?.let { continuity.capture(it, recoveredSource) }
         val current = checkNotNull(record)
         val sealed = sealing?.seal(current, call, captured, snapshot) ?: registry.source.seal(current, call, captured)
         if (!sealed) {
+            // A decline on an item this response never streamed is an identity change, not disposal;
+            // disposal only closes items the round itself began.
+            check(!fresh) { "streamed exec identity changed" }
             dispose()
             return
         }

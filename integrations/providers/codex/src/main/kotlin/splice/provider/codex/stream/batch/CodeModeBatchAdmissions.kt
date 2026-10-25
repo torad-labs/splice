@@ -37,7 +37,10 @@ internal class CodeModeBatchAdmissions(
         val next = records + record
         val items = snapshot?.let(::modelItems) ?: (captured + call.raw)
         check(items.take(captured.size) == captured) { "model response batch changed its completed prefix" }
-        publication.publish(next, record, call, continuity, items)
+        if (!publication.publish(next, record, call, continuity, items)) {
+            // The source was already disposed under its key: leave the batch untouched for the capture to close.
+            return false
+        }
         records += record
         captured = items
         CodeModeBatchLinks.link(records)

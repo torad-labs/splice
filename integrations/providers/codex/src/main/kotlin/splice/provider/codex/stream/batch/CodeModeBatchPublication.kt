@@ -24,28 +24,33 @@ internal class CodeModeBatchPublication(private val registry: CodexCodeModeRegis
             ) - CodeModeBatchWeight.bytes(owner.nativeBatch)
             ).coerceAtLeast(0L)
         var before: CodeModeBatchUndo? = null
-        registry.changes.save(
-            owner,
-            undo = CodeModeRecordChange { before?.restore() },
-            growthBytes = ownerGrowth,
-            wholeKey = true,
-        ) {
-            val nextOwner = (owner.nativeBatch ?: CodeModeNativeBatch(owner.id, 0)).copy(
-                dispatched = dispatched(owner),
-                size = records.size,
-                settled = false,
-                items = items,
-            )
-            val nextMember = CodeModeNativeBatch(owner.id, records.lastIndex, dispatched = dispatched(record))
-            if (owner !== record) CodeModeHeap.grow(record, growth(nextMember, record.nativeBatch))
-            before = CodeModeBatchUndo(owner, record)
-            check(registry.source.seal(record, call, continuity, persist = false)) { "source admission is unavailable" }
-            owner.nativeBatch = nextOwner
-            if (!nextOwner.dispatched) owner.phase = CodeModePhase.STARTING
-            if (owner !== record) {
-                record.nativeBatch = nextMember
-                if (!nextMember.dispatched) record.phase = CodeModePhase.STARTING
+        try {
+            registry.changes.save(
+                owner,
+                undo = CodeModeRecordChange { before?.restore() },
+                growthBytes = ownerGrowth,
+                wholeKey = true,
+            ) {
+                val nextOwner = (owner.nativeBatch ?: CodeModeNativeBatch(owner.id, 0)).copy(
+                    dispatched = dispatched(owner),
+                    size = records.size,
+                    settled = false,
+                    items = items,
+                )
+                val nextMember = CodeModeNativeBatch(owner.id, records.lastIndex, dispatched = dispatched(record))
+                if (owner !== record) CodeModeHeap.grow(record, growth(nextMember, record.nativeBatch))
+                before = CodeModeBatchUndo(owner, record)
+                if (!registry.source.seal(record, call, continuity, persist = false)) throw SourceAdmissionDeclined
+                owner.nativeBatch = nextOwner
+                if (!nextOwner.dispatched) owner.phase = CodeModePhase.STARTING
+                if (owner !== record) {
+                    record.nativeBatch = nextMember
+                    if (!nextMember.dispatched) record.phase = CodeModePhase.STARTING
+                }
             }
+        } catch (_: SourceAdmissionDeclined) {
+            before?.restore()
+            return false
         }
         return true
     }
@@ -56,6 +61,10 @@ internal class CodeModeBatchPublication(private val registry: CodexCodeModeRegis
     private fun dispatched(record: CodeModeRecord): Boolean =
         record.dispatchStarted || record.nativeBatch?.dispatched == true
 }
+
+/** Ownership can end between a terminal's early checks and this keyed publish: declining then is disposal,
+ *  never an internal failure, so the capture closes its cell without rerunning the source. */
+private object SourceAdmissionDeclined : IllegalStateException("source admission is unavailable")
 
 /** An unsuccessful append cannot publish live membership or an uncommitted executable seal. */
 private class CodeModeBatchUndo(private val owner: CodeModeRecord, private val record: CodeModeRecord) {

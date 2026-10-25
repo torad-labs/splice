@@ -119,8 +119,8 @@ internal class ResponsesWsSession(
      * is no correct way to use this inside a round; it survives only because ~17 unit tests build
      * frames without ever committing them, which is safe.
      */
-    fun frameFor(key: String, request: JsonObject, generation: Long): WsFrame =
-        frameAndEpoch(key, request, generation).frame
+    fun frameFor(key: String, request: JsonObject, generation: Long, compaction: Boolean = false): WsFrame =
+        frameAndEpoch(key, request, generation, compaction = compaction).frame
 
     /** Build the frame AND capture the commit epoch under ONE lock (F7) — the WS runner must use
      *  this, never frameFor + epochOf, or a concurrent clear between the two invalidates the chain
@@ -130,6 +130,7 @@ internal class ResponsesWsSession(
         request: JsonObject,
         generation: Long,
         clientMetadata: JsonObject? = null,
+        compaction: Boolean = false,
     ): WsFrameAndEpoch = synchronized(lock) {
         val now = clock()
         trimLocked(now)
@@ -137,14 +138,14 @@ internal class ResponsesWsSession(
             it.at = now
             chains[key] = it
         }
-        val delta = if (chain == null) null else chainableDelta(chain, request, generation)
-        val frame = if (chain == null || delta == null) {
-            // Claude Code's auto-compaction is the live case for this reason (2026-09-05): it
+        val chained = if (chain == null) null else chainableDelta(chain, request, generation, compaction)
+        val frame = if (chain == null || chained == null) {
+            // Claude Code's auto-compaction was the live case for this reason (2026-09-05): it
             // fires between a tool call and its execution, so the compaction body ends at the
             // PREVIOUS tool result and the call the server just emitted is never answered.
-            // Chained, the server refused every one ("No tool output found for function call …")
-            // and the round fell back to a cold SSE send that re-read the whole transcript (35%
-            // cache); a full send on this socket keeps the prefix cache instead.
+            // Chained as it was, the server refused every one ("No tool output found for function
+            // call …"). Since 2026-10-25 a compaction closes those calls and chains
+            // (WsCompactionClose); an ordinary turn that leaves one open still full-sends here.
             val items = (request[FIELD_INPUT] as? JsonArray)?.filterIsInstance<JsonObject>().orEmpty()
             val unanswered = chain?.let { WsChainingChecks.unansweredCalls(it.pendingCalls, items) }.orEmpty()
             WsFrame(
@@ -165,29 +166,43 @@ internal class ResponsesWsSession(
             )
         } else {
             WsFrame(
-                frame(request, previousResponseId = chain.responseId, input = JsonArray(delta), clientMetadata),
+                frame(request, previousResponseId = chain.responseId, input = JsonArray(chained.send), clientMetadata),
                 chained = true,
             )
         }
         // DR-78: materialize the per-key epoch (see epochOf) — the live-seq fallback let an
         // unrelated conversation's clear void this key's commit.
-        WsFrameAndEpoch(frame, epochs.getOrPut(key) { ++seq })
+        WsFrameAndEpoch(
+            frame,
+            epochs.getOrPut(key) { ++seq },
+            committed = chained?.committed(request),
+        )
     }
 
-    /** The items to send incrementally, or null when ANY precondition fails (bail closed). */
-    private fun chainableDelta(chain: Chain, request: JsonObject, generation: Long): List<JsonObject>? {
+    /** The items to send incrementally, or null when ANY precondition fails (bail closed). A
+     *  [compaction] the ordinary delta refuses may still chain by closing the calls it left open. */
+    private fun chainableDelta(
+        chain: Chain,
+        request: JsonObject,
+        generation: Long,
+        compaction: Boolean,
+    ): WsChainedSend? {
         // Reconnect (server context died with the socket) or a changed pinned property.
         val reusable = chain.generation == generation && chain.props == propsOf(request)
         val array = (request[FIELD_INPUT] as? JsonArray)?.takeIf { reusable } ?: return null
-        val items = array.filterIsInstance<JsonObject>()
         // A non-object item is a shape this classifier does not model, so bail: filterIsInstance
         // would otherwise silently drop it from the comparison and produce a WRONG delta.
+        val items = array.filterIsInstance<JsonObject>().takeIf { it.size == array.size } ?: return null
         // An empty delta means the same input was re-sent (a client retry), not a continuation:
         // chaining it would ask the server to continue from a response with nothing to react to.
-        return items.takeIf { it.size == array.size }
-            ?.let { deltaOf(chain.input, it, chain.evidence) }
+        val delta = deltaOf(chain.input, items, chain.evidence)
             ?.takeIf { it.isNotEmpty() }
-            ?.takeIf { delta -> WsChainingChecks.unansweredCalls(chain.pendingCalls, delta).isEmpty() }
+            ?.takeIf { WsChainingChecks.unansweredCalls(chain.pendingCalls, it).isEmpty() }
+        return when {
+            delta != null -> WsChainedSend(delta)
+            compaction -> WsCompactionClose.close(chain.input, items, chain.pendingCalls, chain.evidence)
+            else -> null
+        }
     }
 
     /** Commit after a clean terminal: the round's FULL logical input becomes the next turn's
@@ -345,8 +360,11 @@ internal class ResponsesWsSession(
 }
 
 /** Suffix shapes are separate from the session's retained connection state. Unknown ones bail. */
-private object WsSuffixDisposition {
+internal object WsSuffixDisposition {
     private enum class Disposition { SERVER_HAS_IT, SEND, BAIL }
+
+    /** An item the server produced and so already holds: reasoning or a call. */
+    fun isServerItem(item: JsonObject): Boolean = JsonScalars.str(item[WS_FIELD_TYPE]) in OBSERVED_SERVER_ITEMS
 
     fun accept(item: JsonObject, send: MutableList<JsonObject>): Boolean = when (dispositionOf(item)) {
         Disposition.SERVER_HAS_IT -> true

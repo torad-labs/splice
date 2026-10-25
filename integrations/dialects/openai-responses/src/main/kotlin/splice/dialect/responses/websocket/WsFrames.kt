@@ -3,6 +3,8 @@
 // (concentration, 2026-08-19).
 package splice.dialect.responses.websocket
 
+import kotlinx.serialization.json.JsonObject
+
 /** What to send on the wire for one WS round. [chained] is diagnostics + the WS-5 instrument: the
  *  count that must move when chaining engages, and must NOT when it bails. [fullSendReason] names
  *  a bail worth a log line (today: the server holds a tool call this turn never answers); null for
@@ -21,4 +23,10 @@ internal data class WsFrame(
  *  dropped state while its captured (post-bump) epoch still matched at commit, resurrecting exactly
  *  what cleared existed to bar (a bypassed SSE turn's messages then classify as server-held and
  *  silently vanish). Capturing both atomically closes it. */
-internal data class WsFrameAndEpoch(val frame: WsFrame, val epoch: Long)
+internal data class WsFrameAndEpoch(
+    val frame: WsFrame,
+    val epoch: Long,
+    /** The request to commit when the server will hold more than the client's input shows: a
+     *  compaction whose open calls were closed (WsCompactionClose). Null commits the request sent. */
+    val committed: JsonObject? = null,
+)

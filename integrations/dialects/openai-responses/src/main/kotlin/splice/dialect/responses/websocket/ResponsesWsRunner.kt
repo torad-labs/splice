@@ -126,9 +126,12 @@ internal class ResponsesWsRunner(
             // now-stale context, and the post-bump epoch still matched at commit — resurrecting the
             // state the clear existed to bar.
             val metadata = requestMetadata.forTurn(seed.request, turnHeaders, seed.meta.upstreamHeaders.snapshot())
-            val built = session.frameAndEpoch(seed.chain, seed.request, conn.generation, metadata)
-            pending = ResponsesWsIdentity.PendingCommit(seed.request, conn.generation, built.epoch)
-            if (built.frame.chained) log("[ws] ${identity.logKey(seed.key)} chained onto the previous response\n")
+            val built = session.frameAndEpoch(seed.chain, seed.request, conn.generation, metadata, seed.meta.compact)
+            pending = ResponsesWsIdentity.PendingCommit(built.committed ?: seed.request, conn.generation, built.epoch)
+            if (built.frame.chained) {
+                val closed = if (built.committed != null) ", its open tool calls closed as aborted" else ""
+                log("[ws] ${identity.logKey(seed.key)} chained onto the previous response$closed\n")
+            }
             built.frame.fullSendCode?.let { log("[ws] ${identity.logKey(seed.key)} full send code=$it\n") }
             built.frame.fullSendReason?.let { log("[ws] ${identity.logKey(seed.key)} full send: $it\n") }
             built.frame.json

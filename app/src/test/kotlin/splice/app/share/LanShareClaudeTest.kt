@@ -131,6 +131,11 @@ class LanShareClaudeTest {
         val planted = env.keys.filter { it.startsWith("ANTHROPIC_DEFAULT_") || it.startsWith("CLAUDE_CODE_MAX_") } +
             env.keys.filter { it == "CLAUDE_CODE_AUTO_COMPACT_WINDOW" }
         assertEquals(emptyList<String>(), planted, "no model or window is planted over the person's own: $env")
+        // PR 423 review round 2: its turns reach Anthropic through the server's Claude head, as a wrapped claude's do
+        // through a head here, so auto mode keeps Anthropic's own checks. /login and /logout stay hidden, as on every
+        // remote command: the node holds no login, and signing in here would change nothing about where turns go.
+        assertFalse("CLAUDE_CODE_AUTO_MODE_SERVER" in env, "auto mode keeps Anthropic's checks: $env")
+        assertEquals("1", env["DISABLE_LOGIN_COMMAND"], env.toString())
     }
 
     @Test

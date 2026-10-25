@@ -15,6 +15,7 @@ import io.ktor.client.request.bearerAuth
 import io.ktor.client.request.header
 import io.ktor.client.request.post
 import io.ktor.client.request.setBody
+import io.ktor.client.statement.HttpResponse
 import io.ktor.client.statement.bodyAsText
 import io.ktor.http.HttpStatusCode
 import kotlinx.coroutines.runBlocking
@@ -162,9 +163,13 @@ class PoolFailoverTurnTest {
             FailoverRig(directory, limited = emptyMap(), pooled = false, headAuth = own, bearer = SHARE_NODE_TOKEN)
         rig.start()
         try {
-            val (status, body) = rig.turn()
-            assertEquals(HttpStatusCode.ServiceUnavailable, status, body)
+            val response = rig.response()
+            val body = response.bodyAsText()
+            assertEquals(HttpStatusCode.ServiceUnavailable, response.status, body)
             assertTrue("another machine" in body, "the answer says why the turn did not run: $body")
+            // PR 423 review round 2: a launch plants CLAUDE_CODE_RETRY_WATCHDOG, which gives a 503 300 retries; only the
+            // server can bring a login back, so the node is told not to retry and shows the sentence at once.
+            assertEquals("false", response.headers["x-should-retry"], "the node does not retry into it")
             assertTrue(rig.requests.isEmpty(), "the node's word must never reach the vendor: ${rig.requests}")
             assertTrue(own.describe().present, "the head's own sign-in is not marked rejected")
         } finally {
@@ -326,7 +331,13 @@ private class FailoverRig(
     suspend fun start() = head.start()
 
     suspend fun turn(stream: Boolean = true): Pair<HttpStatusCode, String> {
-        val response = client.post("http://127.0.0.1:${head.port}/v1/messages") {
+        val response = response(stream)
+        return response.status to response.bodyAsText()
+    }
+
+    /** One turn's whole answer, headers included. */
+    suspend fun response(stream: Boolean = true): HttpResponse =
+        client.post("http://127.0.0.1:${head.port}/v1/messages") {
             header("Content-Type", "application/json")
             header("x-claude-code-session-id", SESSION)
             setBody(
@@ -334,8 +345,6 @@ private class FailoverRig(
                     """"messages":[{"role":"user","content":"go"}]}""",
             )
         }
-        return response.status to response.bodyAsText()
-    }
 
     fun switchReason(): String? = pool.view(SESSION).lastSwitch?.reason
 

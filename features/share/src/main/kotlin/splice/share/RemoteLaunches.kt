@@ -89,7 +89,7 @@ public class RemoteLaunches(
             apiTimeoutMs = shared.timeoutMs,
             statuslineCommand = "curl -sS --connect-timeout $STATUSLINE_CONNECT_S --data-binary @- '$statusline'",
             remote = address.turns,
-            nativeModels = shared.clientModels,
+            remoteClaude = shared.clientModels,
         )
         return LaunchSpec(trees.of(command), shared.models.launchModels(), signIn, gateway, policy)
     }

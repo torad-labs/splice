@@ -227,14 +227,18 @@ public data class LaunchGateway(
     /** LAN share: the other machine's address this command's turns go to (`http://torad-server.lan:3097/claudex`), in
      *  place of this machine's loopback [port]. Null for a head on this machine. */
     val remote: String? = null,
-    /** A remote Claude head, whose client picks its own models on a machine that holds no login, where
-     *  [forwardClientAuth] is false. See [clientModels]. */
-    val nativeModels: Boolean = false,
+    /** A Claude head on another machine ([remote]): its turns reach Anthropic on that machine's logins, so this one,
+     *  which holds none, has [forwardClientAuth] false. See [clientModels] and [reachesAnthropic]. */
+    val remoteClaude: Boolean = false,
 ) {
     /** TRUE when the client picks its own models: the launch plants no roster, tier, spelling or window, and the
      *  person's own settings decide (V4-449). A head here does so exactly when it forwards the caller's login, a remote
-     *  one when [nativeModels] says so. Derived, so a copy that turns [forwardClientAuth] on carries it too. */
-    val clientModels: Boolean get() = forwardClientAuth || nativeModels
+     *  one when it is a Claude head. Derived, so a copy that turns [forwardClientAuth] on carries it too. */
+    val clientModels: Boolean get() = forwardClientAuth || remoteClaude
+
+    /** TRUE when the turns reach Anthropic itself, so Anthropic's own server-side checks answer: a Claude head here,
+     *  or one on another machine. A translated head does not. */
+    val reachesAnthropic: Boolean get() = forwardClientAuth || remoteClaude
 }
 
 public data class LaunchRecipe(

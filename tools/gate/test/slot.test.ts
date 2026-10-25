@@ -454,10 +454,15 @@ try {
     }
   }, 15_000);
 
+  // A zombie is dead: a killed child waits for its reaper (launchd, once its parent is gone) a moment longer under load.
   const alive = (pid: number): boolean => {
     try {
       process.kill(pid, 0);
-      if (process.platform !== "linux") return true;
+      if (process.platform !== "linux") {
+        // macOS has no /proc: ps says the same state, empty once the process is gone.
+        const state = Bun.spawnSync(["ps", "-o", "stat=", "-p", String(pid)]).stdout.toString().trim();
+        return state !== "" && !state.startsWith("Z");
+      }
       const stat = readFileSync(`/proc/${pid}/stat`, "utf8");
       const state = stat.slice(stat.lastIndexOf(")") + 2).split(/\s+/, 1)[0];
       return state !== "Z" && state !== "X";

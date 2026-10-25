@@ -8,10 +8,13 @@ import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Test
 import splice.core.perf.InputDigest
 import splice.provider.codex.history.CodeModeClientPrefix
+import splice.provider.codex.history.CodeModeDeliveredEchoes
 import splice.provider.codex.history.CodeModeOwnership
+import splice.provider.codex.history.CodeModeScriptPlacements
 import splice.provider.codex.state.CodeModeExtraContent
 import splice.provider.codex.state.CodeModeHistoryAnchor
 import splice.provider.codex.state.CodeModeReplayAnchors
+import splice.provider.codex.stream.batch.CodeModeNativeBatch
 import splice.upstream.codemode.CodeModeResult
 
 /** Sanitized structural replay of the Oct 24 burst: the client retains its own wider prefix and appends only
@@ -59,6 +62,31 @@ class CodeModeAcknowledgedReplayTest {
         assertEquals(
             CodeModeExtra.STEERING,
             extras.of(JsonArray(baseline + unknown + callback("one") + callback("two")), record(), emptyMap()),
+        )
+    }
+
+    @Test
+    fun `a native-only delivery receipt preserves an unwitnessed batch preface message`() {
+        val message = item("""{"role":"assistant","phase":"commentary","content":"Keep this client message."}""")
+        val calls = listOf("outer-one", "outer-two").map { id ->
+            item("""{"type":"custom_tool_call","call_id":"$id","name":"exec","input":"source"}""") as JsonObject
+        }
+        val record = record()
+        record.nativeBatch = CodeModeNativeBatch(
+            record.id,
+            ordinal = 0,
+            size = calls.size,
+            items = listOf(historical as JsonObject, message as JsonObject) + calls,
+        )
+        record.issued[0] = record.issued.single().copy(deliveredText = "", deliveredNative = listOf(historical))
+        val modelPrefix = mutableListOf(user, historical, message)
+
+        CodeModeDeliveredEchoes(codec, CodeModeScriptPlacements(codec)).removeBatchPrelude(modelPrefix, record)
+
+        assertEquals(
+            listOf(user, historical, message),
+            modelPrefix,
+            "a receipt for reasoning alone cannot erase the adjacent message from model history",
         )
     }
 

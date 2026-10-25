@@ -53,7 +53,7 @@ internal class CodeModeDeliveredEchoes(
             codec.string(it, "type") != "custom_tool_call"
         }
         val expected = CodeModeContinuityCapture.items(prefix, "", emptyList())
-        if (expected.filter { it in native } != native || expected.size > items.size) return
+        if (expected != native || expected.size > items.size) return
         val start = items.size - expected.size
         if (items.subList(start, items.size) == expected) items.subList(start, items.size).clear()
     }

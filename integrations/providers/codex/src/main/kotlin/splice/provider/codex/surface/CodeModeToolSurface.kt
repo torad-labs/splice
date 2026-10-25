@@ -71,7 +71,7 @@ internal class CodeModeToolSurface(private val log: LogSink) {
         put(
             "format",
             buildJsonObject {
-                put(FIELD_TYPE, "grammar")
+                put(CODE_MODE_FIELD_TYPE, "grammar")
                 put("syntax", "lark")
                 put("definition", CodeModeManual.GRAMMAR)
             },

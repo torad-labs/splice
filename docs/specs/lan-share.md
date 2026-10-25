@@ -116,7 +116,9 @@ What the Mac showed on 2026-10-24 that this replaces: the relay modeled as an ap
   and the head's pool sends a login the server holds in its place. When the head has no such login left for
   it (its pool lost its own sign-ins between the offer and the turn), the head answers the turn itself, a
   503 the node's Claude Code shows and does not retry: sent upstream, the word would come back a 401 that
-  marks the head's own sign-in rejected for every session.
+  marks the head's own sign-in rejected for every session. The same holds partway through a turn: when the
+  held login is refused and the only login left is the head's own sign-in, the turn ends on the held login's
+  refusal instead of moving onto it.
 - **A login pin is the console's pin.** `auth=work` pins each of the node's sessions to `work` through the
   head's own pool, the call the Accounts page's Pin makes, before its turn is relayed. What a pinned session
   does when its login is at its limit is what it does on the server today.

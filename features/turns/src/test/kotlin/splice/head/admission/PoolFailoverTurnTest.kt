@@ -177,6 +177,29 @@ class PoolFailoverTurnTest {
         }
     }
 
+    // PR 423 review round 3: the held login is refused partway through the turn and the pool, left with no login of
+    // its own, falls back to the head's own sign-in, which forwards the caller's credential. The turn must not move
+    // onto it: the word would ride to the vendor and its 401 would mark the head's own sign-in rejected.
+    @Test
+    fun `a node's turn never moves onto the head's own sign-in when its held login is refused`() = runBlocking {
+        val own = ClientAuthProvider("own")
+        val rig = FailoverRig(
+            directory,
+            limited = mapOf("one" to 2 * HOUR_S),
+            headAuth = own,
+            bearer = SHARE_NODE_TOKEN,
+            fallsBackTo = own,
+        )
+        rig.start()
+        try {
+            assertEquals(HttpStatusCode.TooManyRequests, rig.turn().first, "the held login's own refusal ends it")
+            assertEquals(listOf("one"), rig.requests, "the node's word must never reach the vendor")
+            assertTrue(own.describe().present, "the head's own sign-in is not marked rejected")
+        } finally {
+            rig.close()
+        }
+    }
+
     private suspend fun assertClientHeadAccepted(stream: Boolean) {
         val auth = ClientAuthProvider("synthetic")
         val rig = FailoverRig(directory, limited = mapOf("one" to 2 * HOUR_S), headAuth = auth)
@@ -247,6 +270,7 @@ private class FailoverRig(
     headAuth: RefreshableAuthProvider? = null,
     refusedStatus: Int? = null,
     bearer: String = "one",
+    private val fallsBackTo: RefreshableAuthProvider? = null,
 ) {
     val requests = CopyOnWriteArrayList<String>()
     val bodies = CopyOnWriteArrayList<String>()
@@ -258,6 +282,8 @@ private class FailoverRig(
             val login = request.requestHeaders.getFirst("Authorization").orEmpty().removePrefix("Bearer ")
             requests += login
             val resetIn = limited[login]
+            val unauthorized = refusedStatus ?: 401.takeIf { login == SHARE_NODE_TOKEN }
+            if (resetIn != null) fallsBackTo?.let(::fallBack)
             if (resetIn != null) {
                 val reset = (System.currentTimeMillis() / 1_000 + resetIn).toString()
                 mapOf(
@@ -270,15 +296,15 @@ private class FailoverRig(
                 ).forEach { (name, value) -> request.responseHeaders.add(name, value) }
             }
             val body = when {
-                refusedStatus != null ->
+                unauthorized != null ->
                     """{"type":"error","error":{"type":"authentication_error","message":"synthetic unauthorized"}}"""
                 resetIn != null -> refusal(login)
                 else -> SUCCESS_WIRE
             }
-            val type = if (refusedStatus != null || resetIn != null) "application/json" else "text/event-stream"
+            val type = if (unauthorized != null || resetIn != null) "application/json" else "text/event-stream"
             request.responseHeaders.add("Content-Type", type)
             val bytes = body.toByteArray(Charsets.UTF_8)
-            request.sendResponseHeaders(refusedStatus ?: if (resetIn != null) 429 else 200, bytes.size.toLong())
+            request.sendResponseHeaders(unauthorized ?: if (resetIn != null) 429 else 200, bytes.size.toLong())
             request.responseBody.use { it.write(bytes) }
         }
         start()
@@ -345,6 +371,14 @@ private class FailoverRig(
                     """"messages":[{"role":"user","content":"go"}]}""",
             )
         }
+
+    /** The pool left with no login of its own: only the head's own sign-in, as the membership publishes it. */
+    private fun fallBack(own: RefreshableAuthProvider) {
+        pool.members = listOf(
+            PoolAccount("claude-code", true, own, AccountQuotaSource { null }, RateLimitCooldown(ElapsedClock { 0L })),
+        )
+        pool.order = listOf("claude-code")
+    }
 
     fun switchReason(): String? = pool.view(SESSION).lastSwitch?.reason
 

@@ -34,6 +34,8 @@ import io.ktor.http.HttpHeaders
 import io.ktor.server.application.ApplicationCall
 import io.ktor.server.request.httpMethod
 import io.ktor.server.request.uri
+import kotlinx.coroutines.CompletableDeferred
+import kotlinx.serialization.json.JsonObject
 import splice.core.client.SESSION_HEADER
 import splice.core.parse.AnthropicTurnBody
 import splice.core.perf.PerfKeys
@@ -83,6 +85,16 @@ internal sealed class Preparation {
      *  with when the recording ends without a clean terminal. */
     data class Replay(
         val recording: FrameRecording,
+        val key: String,
+        val sessionId: String?,
+        val model: String,
+    ) : Preparation()
+
+    /** The non-stream sibling of [Replay]: a collect retry follows the held answer of the compaction
+     *  that outlived its first client (CompactionReplay.beginAnswer) instead of prefilling again —
+     *  finished holds complete at once, still-driving ones settle when their detached drive ends. */
+    data class Collected(
+        val hold: CompletableDeferred<JsonObject?>,
         val key: String,
         val sessionId: String?,
         val model: String,
@@ -257,17 +269,13 @@ internal class TurnPreparation(
         )
     }
 
-    /** Stream-only, both halves: the detached drive lives in TurnStreamer.stream() and CollectTurn
-     *  has no recording, so a non-stream compaction is served attached, as every turn was before
-     *  2026-09-05. Claude Code's auto-compaction streams; the log line is the tell if that changes. */
-    private fun compactionReplay(built: BuiltTurn, stream: Boolean): Preparation.Replay? {
-        if (stream) return replayFor(built)
-        deps.log(
-            "[${provider.key}] non-stream compaction (${who(built.meta.scope.sessionId)}served attached: " +
-                "no detached drive, no replay)\n",
-        )
-        return null
-    }
+    /** Both transports, both halves now. A streaming retry replays its recording's frames
+     *  (LocalResponses.replay); a collect retry follows the held answer of the compaction that
+     *  outlived it (replayCollected). Before the answer ledger only streams held anything — the
+     *  "Claude Code's auto-compaction streams" bet below lost to heads whose compactions are
+     *  stream:false (rig's finding, 2026-10-24: hack-program cold-prefilled on every interruption). */
+    private fun compactionReplay(built: BuiltTurn, stream: Boolean): Preparation? =
+        if (stream) replayFor(built) else collectedFor(built)
 
     private fun replayFor(built: BuiltTurn): Preparation.Replay? {
         val key = replay.key(built.meta, built.requestBody) ?: return null
@@ -278,6 +286,18 @@ internal class TurnPreparation(
                 "${who(built.meta.scope.sessionId)}replaying its answer, no upstream turn)\n",
         )
         return Preparation.Replay(recording, key, built.meta.scope.sessionId, built.meta.route.originalModel)
+    }
+
+    /** The collect sibling of [replayFor]: what the answer ledger holds under the same retry key. */
+    private fun collectedFor(built: BuiltTurn): Preparation.Collected? {
+        val key = replay.key(built.meta, built.requestBody) ?: return null
+        val hold = replay.answers.find(key) ?: return null
+        val state = if (hold.isCompleted) "held" else "still driving"
+        deps.log(
+            "[${provider.key}] collect compaction retry matches a detached one ($state, " +
+                "${who(built.meta.scope.sessionId)}following its held answer, no upstream turn)\n",
+        )
+        return Preparation.Collected(hold, key, built.meta.scope.sessionId, built.meta.route.originalModel)
     }
 
     // The class, never the content (safe-failure-render): the body is the user's transcript. The

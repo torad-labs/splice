@@ -128,6 +128,9 @@ internal class TurnDriver(
     // collaborators this is assembled from (V4-99 item 5).
     internal val sealedDrive = SealedDrive(failures, oneDrive, ending, cancellationSeal)
     private val streamer = TurnStreamer(provider, deps, driveFactory, sealedDrive, compactionReplay)
+
+    /** The detachment seams both transport shapes share; built once, handed down whole. */
+    private val detachOwner = DetachOwner(log, compactionReplay, streamer.detachScope, streamer.detachContext)
     private val localResponses = LocalResponses(provider, deps, compactionReplay)
 
     // Pre-priced HD-24 contingency: collect() moved to its own file (CollectTurn.kt) because the
@@ -137,6 +140,7 @@ internal class TurnDriver(
         driveFactory,
         sealedDrive,
         deps.turnQuota,
+        detachOwner,
         deps.stores.clientWindows,
     )
 
@@ -158,6 +162,10 @@ internal class TurnDriver(
 
     /** A compaction retry served from the detached first attempt's recording (CompactionReplay). */
     suspend fun replay(call: ApplicationCall, replayed: Preparation.Replay) = localResponses.replay(call, replayed)
+
+    /** The non-stream sibling: a collect compaction retry answered from its held body (CompactionReplay). */
+    suspend fun replayCollected(call: ApplicationCall, collected: Preparation.Collected) =
+        localResponses.replayCollected(call, collected)
 
     /** Drive one turn, emit classified failures, and — if a cancellation lands (head stop,
      *  write-timeout, parent cancel) — seal the terminal honestly before rethrowing (see

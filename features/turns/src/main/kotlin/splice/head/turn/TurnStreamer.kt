@@ -50,6 +50,7 @@ import splice.http.SseResponse
 import splice.upstream.LifecycleScope
 import splice.upstream.Provider
 import splice.upstream.codemode.ProcessDispatchers
+import kotlin.coroutines.CoroutineContext
 
 internal class TurnStreamer(
     private val provider: Provider,
@@ -76,6 +77,12 @@ internal class TurnStreamer(
     // The drive handles every turn failure itself; anything that still escapes a detached
     // compaction is a bug, logged by class (safe-failure-render) rather than lost to stderr.
     private val detachedContext = CoroutineName("compaction-detached") + detachedHandler
+
+    /** The one detachment owner both transport shapes launch their compactions onto: the stop order
+     *  cancels every child together and a restart can detach again either way. Named widening,
+     *  HD-24 style: TurnDriver passes these into CollectTurn's launcher. */
+    internal val detachScope: CoroutineScope get() = detachedScope
+    internal val detachContext: CoroutineContext get() = detachedContext
 
     /** The emitter whose pinger frames go through the pending response's progress port and whose
      *  content-reached answer reads what this turn has actually written to the client. */

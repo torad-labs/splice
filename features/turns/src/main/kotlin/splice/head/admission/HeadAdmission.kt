@@ -72,7 +72,7 @@ internal class HeadAdmission(
     }
 
     private suspend fun serve(call: ApplicationCall, prepared: Preparation, admitted: AdmittedTurn) {
-        // Only a Ready turn names a live row. settle already returned Local/Replay ownership,
+        // Only a Ready turn names a live row. settle already returned Local/Replay/Collected ownership,
         // including a borrowed handle whose row still belongs to its independent source.
         when (prepared) {
             is Preparation.Rejected -> responses.respondInvalidRequest(call, prepared.message)
@@ -81,33 +81,31 @@ internal class HeadAdmission(
                 // settle returned this retry's candidate before it follows the independently held drive.
                 driver.replay(call, prepared)
             }
-            is Preparation.Ready -> {
-                val meta = prepared.built.meta
-                // Before describe: a compaction held for a restart is not yet one the restart's read waits for.
-                if (meta.compact && !admission.compactionAdmittedOrRespond(call, TurnEnd(admitted::release))) return
-                admitted.slot.describe(
-                    meta.route.upstreamModel,
-                    meta.compact,
-                    meta.scope.sessionId?.take(SESSION_TAG_CHARS),
-                )
-                // V4-165: the turn ends when its admission slot is released — here on a refusal or
-                // an attached drive, inside TurnStreamer for a detached one. One registration
-                // covers every exit, because the slot already has to be released on each of them.
-                prepared.built.onEnd?.let(admitted.slot::onRelease)
-                // V4-319: a streaming turn is listed, and the operator can stop it, from here until
-                // the same release ends it. A collect has no open stream a stop could end with a frame.
-                if (prepared.stream) {
-                    val provider = preparation.provider
-                    val budget = deps.traffic.watchdog ?: LiveWatchdogBudget { provider.watchdog }
-                    val resume = WillResume(provider.reanchorPolicy(meta), budget)
-                    deps.traffic.liveTurns.admitted(admitted.slot, meta, prepared.messagesHash, admitted.perf, resume)
-                }
-                serveReady(call, prepared, admitted)
+            is Preparation.Collected -> {
+                // The collect sibling: this retry waits out its held answer instead of prefilling again.
+                driver.replayCollected(call, prepared)
             }
+            is Preparation.Ready -> serveReady(call, prepared, admitted)
         }
     }
 
     private suspend fun serveReady(call: ApplicationCall, prepared: Preparation.Ready, admitted: AdmittedTurn) {
+        val meta = prepared.built.meta
+        // Before describe: a compaction held for a restart is not yet one the restart's read waits for.
+        if (meta.compact && !admission.compactionAdmittedOrRespond(call, TurnEnd(admitted::release))) return
+        admitted.slot.describe(
+            meta.route.upstreamModel,
+            meta.compact,
+            meta.scope.sessionId?.take(SESSION_TAG_CHARS),
+        )
+        // V4-165: the turn ends when its admission slot is released — here on a refusal or
+        // an attached drive, inside TurnStreamer for a detached one. One registration
+        // covers every exit, because the slot already has to be released on each of them.
+        prepared.built.onEnd?.let(admitted.slot::onRelease)
+        // V4-319: a streaming turn is listed, and the operator can stop it, from here until
+        // the same release ends it. A collect has no open stream a stop could end with a frame.
+        admitToLiveTurns(prepared, admitted)
+
         // V4-134: turn.start fires HERE and nowhere earlier because this is the one path whose every
         // exit writes a perf row — the two local refusals below and the drive all go through
         // TurnTelemetry's emitters, which fire turn.end. Rejected, Local and Replay write no row, so
@@ -117,6 +115,28 @@ internal class HeadAdmission(
         // request the head received and answered — a trace that skipped it would show a client
         // retrying for no visible reason. Null for every head whose trace is off.
         val trace = prepared.takeInbound()?.let { deps.stores.captures.trace?.begin(prepared.built.meta, it) }
+        admitAccountAndDrive(call, prepared, admitted, trace)
+    }
+
+    /** The streaming registration itself: what the operator's live listing watches and can stop,
+     *  with the re-anchor policy this provider re-arms on resume. */
+    private fun admitToLiveTurns(prepared: Preparation.Ready, admitted: AdmittedTurn) {
+        if (!prepared.stream) return
+        val meta = prepared.built.meta
+        val provider = preparation.provider
+        val budget = deps.traffic.watchdog ?: LiveWatchdogBudget { provider.watchdog }
+        val resume = WillResume(provider.reanchorPolicy(meta), budget)
+        deps.traffic.liveTurns.admitted(admitted.slot, meta, prepared.messagesHash, admitted.perf, resume)
+    }
+
+    /** Account selection through its two refusals, then the credential hold that admits the drive:
+     *  the tail of [serveReady] as one named step, since describe/registration/driver each own theirs. */
+    private suspend fun admitAccountAndDrive(
+        call: ApplicationCall,
+        prepared: Preparation.Ready,
+        admitted: AdmittedTurn,
+        trace: TurnTrace?,
+    ) {
         // The key is the account: a head with no login pool records WHICH key sent the request, and a pooled one
         // answers None without a resolve.
         val keyAccount = keyAccounts.naming()

@@ -21,6 +21,7 @@ import splice.head.turn.Preparation
 import splice.head.turn.SESSION_TAG_CHARS
 import splice.head.wire.CollectingTerminal
 import splice.head.wire.FrameWrite
+import splice.head.wire.OK_STATUS
 import splice.head.wire.SseEmitterFactory
 import splice.head.wire.TurnTerminal
 import splice.head.wire.TurnWiring
@@ -101,6 +102,50 @@ internal class LocalResponses(
                     "sealed with an error, the next retry runs upstream)\n"
             },
         )
+    }
+
+    /** The non-stream sibling of [replay]: wait out the held answer exactly as a stream follower waits
+     *  on its recording's frames, then serve the ONE body this shape reads. A delivered body consumes
+     *  the hold; a drive that ended without its terminal answers the honest overload error the follower
+     *  is sealed with, and the next attempt runs upstream ([CompactionReplay] already dropped it). */
+    suspend fun replayCollected(call: ApplicationCall, collected: Preparation.Collected) {
+        quotaHeaders(call, collected.sessionId)
+        val who = collected.sessionId?.let { "session ${it.take(SESSION_TAG_CHARS)}" } ?: "no session"
+        val body = collected.hold.await()
+        if (body == null) {
+            val terminal = CollectingTerminal(
+                collected.model,
+                wiring.usagePayloadBuilderFor(
+                    provider.catalog,
+                    collected.model,
+                    deps.stores.clientWindows.windowFor(collected.sessionId),
+                ),
+            )
+            terminal.emitError(
+                ErrorType.OVERLOADED,
+                "${provider.key}: the compaction this retry followed did not finish; retry",
+            )
+            call.respondText(
+                terminal.responseBody().let(JsonWire::string),
+                ContentType.Application.Json,
+                HttpStatusCode.fromValue(terminal.httpStatus()),
+            )
+            deps.log(
+                "[${provider.key}] collect compaction retry followed a compaction that did not finish ($who; " +
+                    "sealed with an error, the next retry runs upstream)\n",
+            )
+            return
+        }
+        call.respondText(
+            JsonWire.string(body),
+            ContentType.Application.Json,
+            HttpStatusCode.fromValue(OK_STATUS),
+        )
+        deps.log(
+            "[${provider.key}] collect compaction answer served from its hold ($who; the retry cost no " +
+                "upstream turn)\n",
+        )
+        replay.answers.consumed(collected.key, collected.hold)
     }
 
     // The one failure ending the wire knows (SseEmitter.emitError, L3): an overloaded error, which

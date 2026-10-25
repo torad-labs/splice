@@ -15,6 +15,7 @@ import io.ktor.server.routing.RoutingCall
 import io.ktor.server.routing.RoutingPipelineCall
 import io.netty.channel.ChannelFuture
 import io.netty.util.concurrent.GenericFutureListener
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.awaitCancellation
@@ -30,6 +31,8 @@ import splice.head.ClientWindowWitness
 import splice.head.admission.ClientRecheck
 import splice.head.admission.TurnQuota
 import splice.head.turn.delivery.CollectedReply
+import splice.head.turn.detached.DetachedCompaction
+import splice.head.turn.detached.HeldCollectAnswer
 import splice.head.wire.ClientAnswer
 import splice.head.wire.ClientChannel
 import splice.head.wire.CollectingTerminal
@@ -44,6 +47,8 @@ internal class CollectTurn(
     private val driveFactory: TurnDriveFactory,
     private val sealedDrive: SealedDrive,
     private val turnQuota: TurnQuota,
+    /** One bundle for the four seams every detached collect needs; shared with the streaming path. */
+    private val detachOwner: DetachOwner,
     private val clientWindows: ClientWindows = ClientWindows(),
 ) {
     private val wiring = TurnWiring()
@@ -104,15 +109,65 @@ internal class CollectTurn(
                 }
             }
             try {
-                sealedDrive.driveSealingCancellation(drive, pingClient = false, seal = false)
+                // A non-stream compaction records no frames: its hold is what a byte-identical retry
+                // follows (Preparation.Collected → LocalResponses), so it detaches exactly like its
+                // streaming sibling instead of throwing the whole prefill away with the call. Every
+                // other collect turn runs attached as before.
+                val heldKey = if (built.meta.compact) detachOwner.replay.key(built.meta, built.requestBody) else null
+                if (heldKey == null) {
+                    sealedDrive.driveSealingCancellation(drive, pingClient = false, seal = false)
+                } else {
+                    runHeldCollect(drive, inputs, heldKey, terminal, channel)
+                }
                 respond(call, inputs, drive, terminal, nativeReply)
             } finally {
                 watch?.cancel()
                 withContext(NonCancellable) { drive.collectPerf.publish(drive) }
             }
         }
-        // The collect path never detaches a compaction, so it never hands the slot off (V4-99 item 3).
+        // V4-99 item 3 held until the answer ledger existed: a compaction WITH a hold hands its slot to
+        // the detached drive exactly as the streaming one does (markHandedOff in the launcher); every
+        // other collect turn still ends with its call and returns no handoff.
         return false
+    }
+
+    /** Runs [drive] under a detached compaction whose collected answer outlives this call's client:
+     *  join returns on clean completion; the call's cancellation detaches the channel first, so the
+     *  drive finishes on its own scope and the hold answers the retry (DetachOwner.scope). */
+    private suspend fun runHeldCollect(
+        drive: TurnDrive,
+        inputs: TurnInputs,
+        key: String,
+        terminal: CollectingTerminal,
+        channel: ClientChannel,
+    ) {
+        val launcher = DetachedCompaction(
+            provider.key,
+            detachOwner.log,
+            sealedDrive,
+            detachOwner.replay,
+            detachOwner.scope,
+            detachOwner.context,
+        )
+        val job = launcher.launchCollected(
+            drive,
+            inputs,
+            key,
+            detachOwner.replay.answers.begin(key),
+            HeldCollectAnswer { terminal.responseBody() },
+        )
+        try {
+            job.join()
+        } catch (cancelled: CancellationException) {
+            // The call's cancellation IS the lost client: flip both handoff atomics like
+            // ClientChannel.detachIfRecording does for a recorded stream — [detached] is what
+            // launchCollected's keep verdict reads, and these writes were inert anyway.
+            withContext(NonCancellable) {
+                channel.clientGone.set(true)
+                channel.detached.set(true)
+            }
+            throw cancelled
+        }
     }
 
     private suspend fun respond(

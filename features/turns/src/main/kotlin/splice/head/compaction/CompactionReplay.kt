@@ -121,6 +121,11 @@ internal class CompactionReplay(
         return recording
     }
 
+    /** The collect-path ledger, on this store's own TTL, capacity and clock so both maps age alike:
+     *  what a NON-STREAM compaction holds for its byte-identical retry (HeldCollectAnswers.begin).
+     *  Kept as a field here — not wired separately — so one retry key names one place to look. */
+    val answers = HeldCollectAnswers(clock, ttlMs, capacity)
+
     // Past capacity, a settled recording goes before one still in flight: begin() inserts at the
     // START of a compaction, so insertion order alone would evict the oldest-begun entry while its
     // drive is still running and its retry has not arrived yet (review of PR 137). Only when every
@@ -140,4 +145,4 @@ internal class CompactionReplay(
             .joinToString("") { "%02x".format(it) }
 }
 
-private const val DEFAULT_CAPACITY = 32
+internal const val DEFAULT_CAPACITY = 32

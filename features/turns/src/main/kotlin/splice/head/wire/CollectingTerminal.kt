@@ -30,6 +30,10 @@ internal class CollectingTerminal(
 ) : TurnTerminal, ContentBlockSink by CollectedContent(content) {
     private val ended = AtomicBoolean(false)
 
+    // The L3 verdict DetachedCompaction keeps a collected compaction by: set only where emitTerminal
+    // builds its terminal message, never on the degraded/error rewrites above it or an abandon.
+    private val cleanEnding = AtomicBoolean(false)
+
     // The L3 terminal envelope (stop_reason derivation lives in SseEmitter.kt), held not copied.
     private val envelope = SseEmitter.TerminalEnvelope()
 
@@ -112,7 +116,13 @@ internal class CollectingTerminal(
             ),
         )
         status = OK_STATUS
+        cleanEnding.set(true)
     }
+
+    /** True once [emitTerminal] delivered the clean ending — the first detached collect consumer is
+     *  DetachedCompaction.launchCollected, whose keep verdict reads it exactly as it reads a stream's
+     *  (TurnTerminal.endedCleanly). Default false stood while collect never detached. */
+    override val endedCleanly: Boolean get() = cleanEnding.get()
 
     /** V4-81: [permanent] is accepted and DELIBERATELY UNUSED here — the pre-content wire-type
      *  rule is a streaming rule and does not apply to a buffered response. On `stream:false` the

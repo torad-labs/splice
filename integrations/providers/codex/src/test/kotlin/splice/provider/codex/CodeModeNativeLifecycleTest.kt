@@ -4,6 +4,7 @@ import kotlinx.coroutines.test.runTest
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.jsonArray
 import kotlinx.serialization.json.jsonObject
@@ -82,6 +83,11 @@ class CodeModeNativeLifecycleTest : CodeModeBridgeTestSupport() {
         }.turn()
         assertTrue(result is TurnOutcome.Success)
         assertTrue(finalInput.contains("Script terminated"))
+        val terminated = Json.parseToJsonElement(finalInput).jsonObject.getValue("input").jsonArray
+            .filterIsInstance<JsonObject>().single {
+                JsonScalars.str(it, "type") == "function_call_output" && JsonScalars.str(it, "call_id") == "stop"
+            }
+        assertEquals(JsonPrimitive("Script terminated\nWall time 0.0 seconds\nOutput:\n"), terminated["output"])
         assertTrue(cell.closed)
         bridge.onHeadStop()
     }

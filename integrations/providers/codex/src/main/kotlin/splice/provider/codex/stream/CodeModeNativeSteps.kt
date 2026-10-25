@@ -1,11 +1,15 @@
 package splice.provider.codex.stream
 
 import kotlinx.serialization.json.JsonArray
+import kotlinx.serialization.json.JsonElement
+import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
 import splice.core.turn.TurnOutcome
 import splice.core.turn.UsageField
 import splice.core.turn.noRequestUsage
+import splice.core.util.JsonScalars
 import splice.core.util.JsonWire
 import splice.dialect.responses.request.AssistantPhase
 import splice.dialect.responses.request.ResponsesAssistantText
@@ -60,16 +64,28 @@ internal class CodeModeNativeSteps(
     }
 
     fun output(record: CodeModeRecord, step: CodeModeStep, observation: CodeModeNativeObservation): TurnOutcome {
+        val elapsed = wall.elapsed(record)
         val content = NativeCodeModeOutput.content(
             step,
-            wall.elapsed(record),
+            elapsed,
             observation.invocation.options.maxOutputTokens.coerceAtMost(Int.MAX_VALUE.toLong()).toInt(),
+            observation.toolPolicy.supportsOriginal,
+            NativeCodeModeOutput.FormatOptions(observation.toolPolicy.showCellOverhead, elapsed),
         )
-        val output = JsonArray(content)
+        val output = CodeModeFunctionOutput.body(content)
         if (step is CodeModeStep.Completed) registry.changes.edit(record) { it.nativeCompleted = true }
         if (step is CodeModeStep.Yielded) observation.handOff()
         registry.complete(record, JsonWire.string(output), output)
         return CodeModeLocalOutcome.success()
+    }
+}
+
+/** Matches core/tools/context.rs::function_tool_response before its function/custom envelope is written. */
+internal object CodeModeFunctionOutput {
+    fun body(content: List<JsonObject>): JsonElement {
+        val item = content.singleOrNull()?.takeIf { JsonScalars.str(it, "type") == "input_text" }
+        val text = item?.let { JsonScalars.str(it, "text") }
+        return text?.let(::JsonPrimitive) ?: JsonArray(content)
     }
 }
 

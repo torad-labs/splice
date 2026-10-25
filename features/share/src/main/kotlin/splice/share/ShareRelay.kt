@@ -47,6 +47,13 @@ internal class ShareRelay(
     private val io: CoroutineDispatcher,
     private val log: LogSink,
 ) {
+    /** What a statusline's body passes before it is relayed: the listener pins the session it names to the login the
+     *  address chose, so the line shows that login from its first draw, before the session's first turn. */
+    internal fun interface StatuslineAdmission {
+        /** Why [body]'s statusline may not be drawn, or null once it may. */
+        fun refusal(body: ByteArray): String?
+    }
+
     private val http: HttpClient = HttpClient.newBuilder()
         .version(HttpClient.Version.HTTP_1_1)
         .connectTimeout(Duration.ofMillis(RELAY_CONNECT_TIMEOUT_MS))

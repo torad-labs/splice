@@ -25,6 +25,7 @@ import splice.launch.RemoteLaunch
 import java.net.URI
 import java.net.URLEncoder
 import java.nio.charset.StandardCharsets
+import java.nio.file.Path
 
 /** The Claude Code config tree a command keeps on this machine: its own `~/.claude-<command>`, and the trees a
  *  `-r ID` resume may find a session in, as for a head here. */
@@ -50,6 +51,8 @@ public class RemoteLaunches(
                 RemoteLaunch.Refused("$command's address in splice.toml is not one it can run on: ${read.why}")
         }
     }
+
+    override fun ownTree(command: String): Path? = if (command in remotes) trees.of(command).own else null
 
     /** [command]'s launch as [address]'s server answers it, or why it can't be had. */
     private suspend fun asked(command: String, address: RemoteAddress): RemoteLaunch {

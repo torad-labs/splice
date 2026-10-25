@@ -2,10 +2,11 @@
 // serves runs, on this machine, Claude Code pointed at that machine and holding nothing else. Its launch hands Claude
 // Code the server's address and no credential; its turns answer on the server's login, the one the address names with
 // `auth=`; it is shown the models the address names with `models=`; its statusline is the server's; its /login says
-// where the logins live; and a server that can't be reached, or refuses, is said in those words before Claude Code
-// starts. Driven as it is used: two real daemons, torad (sharing) and mac (the node), each in its own state, with
-// torad's ChatGPT upstream mocked; mac's launch answered through its control port as the launch shim asks it, and
-// each turn sent the way Claude Code sends it, to the base URL and with the auth token the launch planted.
+// where the logins live; a bare -c continues the command's own newest session in the folder; and a server that can't
+// be reached, or refuses, is said in those words before Claude Code starts. Driven as it is used: two real daemons,
+// torad (sharing) and mac (the node), each in its own state, with torad's ChatGPT upstream mocked; mac's launch
+// answered through its control port as the launch shim asks it, and each turn sent the way Claude Code sends it, to
+// the base URL and with the auth token the launch planted.
 package splice.app.share
 
 import io.ktor.client.HttpClient
@@ -18,9 +19,13 @@ import io.ktor.client.statement.bodyAsText
 import kotlinx.coroutines.runBlocking
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.add
+import kotlinx.serialization.json.buildJsonArray
+import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.jsonArray
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
+import kotlinx.serialization.json.put
 import org.junit.jupiter.api.AfterAll
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertFalse
@@ -190,13 +195,22 @@ class LanShareTest {
         macUpstream.stop()
     }
 
-    /** Mac's launch of [command], as the launch shim asks for it: its status and its recipe or refusal. */
-    private fun launch(command: String): Pair<Int, JsonObject> = runBlocking {
-        val response = client.post("http://127.0.0.1:$macControl/launch/$command") {
-            header("Authorization", "Bearer $macKey")
+    /** Mac's launch of [command], as the launch shim asks for it, with the words typed after it and the folder it was
+     *  typed in: its status and its recipe or refusal. */
+    private fun launch(command: String, args: List<String> = emptyList(), cwd: String? = null): Pair<Int, JsonObject> =
+        runBlocking {
+            val response = client.post("http://127.0.0.1:$macControl/launch/$command") {
+                header("Authorization", "Bearer $macKey")
+                header("Content-Type", "application/json")
+                setBody(
+                    buildJsonObject {
+                        put("args", buildJsonArray { args.forEach { add(it) } })
+                        cwd?.let { put("cwd", it) }
+                    }.toString(),
+                )
+            }
+            response.status.value to Json.parseToJsonElement(response.bodyAsText()).jsonObject
         }
-        response.status.value to Json.parseToJsonElement(response.bodyAsText()).jsonObject
-    }
 
     private fun JsonObject.env(): Map<String, String> =
         getValue("env").jsonObject.mapValues { it.value.jsonPrimitive.content }
@@ -360,6 +374,41 @@ class LanShareTest {
         assertTrue(pinned.contains("work"), pinned)
         val (_, plain) = statusline(statuslineCommand("claudex"), session = "mac-session-fresh-plain")
         assertFalse(plain.contains("work"), plain)
+    }
+
+    @Test
+    fun `a bare -c on a node's command continues that command's newest session in the folder`(@TempDir repo: Path) {
+        val cwd = repo.toRealPath().toString()
+        val (_, first) = launch("claudex", cwd = cwd)
+        val tree = Path.of(first.env().getValue("CLAUDE_CONFIG_DIR"))
+        val session = "mac-continued-1"
+        val project = cwd.replace(Regex("[^A-Za-z0-9]"), "-")
+        val transcript = tree.resolve("projects").resolve(project).resolve("$session.jsonl")
+        // The session's start, as the SessionStart hook in the command's tree posts it to mac, before its first row.
+        val hook = runBlocking {
+            client.post("http://127.0.0.1:$macControl/hooks/resume/claudex") {
+                header("Authorization", "Bearer ${TurnKey(MgmtKey(macState)).get()}")
+                header("Content-Type", "application/json")
+                setBody(
+                    buildJsonObject {
+                        put("source", "startup")
+                        put("session_id", session)
+                        put("transcript_path", transcript.toString())
+                        put("cwd", cwd)
+                    }.toString(),
+                )
+            }.status.value
+        }
+        assertEquals(200, hook)
+        Files.createDirectories(transcript.parent)
+        Files.writeString(transcript, """{"type":"user","sessionId":"$session"}""" + "\n")
+
+        val (status, again) = launch("claudex", listOf("-c"), cwd)
+
+        assertEquals(200, status, again.toString())
+        val argv = again.getValue("argv").jsonArray.map { it.jsonPrimitive.content }
+        assertTrue(argv.windowed(2).contains(listOf("--resume", session)), argv.toString())
+        assertFalse(again["warning"]?.jsonPrimitive?.content.orEmpty().contains("no session"), again.toString())
     }
 
     @Test

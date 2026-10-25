@@ -4,10 +4,16 @@
 // credential. The share module answers it; the launch routes ask it for a name no head here carries.
 package splice.launch
 
+import java.nio.file.Path
+
 /** The commands another machine serves, read at launch time. */
 public interface RemoteCommands {
     /** The launch [command] names on another machine, or null when no remote command is called that. */
     public suspend fun launch(command: String): RemoteLaunch?
+
+    /** The config tree [command] keeps on this machine, where its sessions are recorded as its own so a bare -c
+     *  continues them, or null when no remote command is called that. */
+    public fun ownTree(command: String): Path?
 }
 
 /** What a remote command's launch came to before Claude Code starts. */

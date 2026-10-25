@@ -127,7 +127,9 @@ shim as every command does. The daemon finds no head named `claudex`, finds the 
 the server's turn path, auth token the word `splice-lan`, the head's models and timeout, its own
 `~/.claude-<command>` tree, the server's statusline (on the login the address names), and a `/login` that
 names the server. The server's host joins `NO_PROXY` and `no_proxy` (curl reads the lowercase one first), so a proxy the shell names takes neither the turns nor
-the statusline. When the server can't be reached, or refuses, the launch is refused with that reason.
+the statusline. When the server can't be reached, or refuses, the launch is refused with that reason. The
+session's start hook posts to the node's own daemon under the command's name, which records the session as that
+tree's own, so a bare `claudex -c` continues the newest `claudex` session in the folder, as a head here does.
 
 A node the first build left still has that build's relays: a head per command, on a provider it wrote
 with `forward_client_identity`, and a share token in keys.toml. Boot refuses with a finding at

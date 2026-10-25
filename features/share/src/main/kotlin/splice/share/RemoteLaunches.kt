@@ -15,6 +15,7 @@ import splice.core.topology.RemoteAddresses
 import splice.core.topology.RemoteConfig
 import splice.core.topology.SHARE_AUTH_PARAM
 import splice.core.topology.SHARE_MODELS_PARAM
+import splice.core.topology.SHARE_NODE_TOKEN
 import splice.core.wire.HttpStatus
 import splice.launch.HeadTrees
 import splice.launch.LaunchGateway
@@ -72,7 +73,8 @@ public class RemoteLaunches(
     }
 
     /** The recipe a head here gets, pointed at [address]: the server's models, timeout and statusline, this machine's
-     *  own tree for [command], a token that opens nothing, and a /login that says where the logins live. */
+     *  own tree for [command], a token that opens nothing, and a /login that says where the logins live. A head whose
+     *  client picks its own models there leaves them to the person here too. */
     private fun spec(command: String, address: RemoteAddress, shared: SharedLaunch): LaunchSpec {
         val signIn = LaunchSignIn(
             loginCommand = shared.signIn.command,
@@ -83,10 +85,11 @@ public class RemoteLaunches(
         val statusline = "${address.turns}/statusline"
         val gateway = LaunchGateway(
             port = 0,
-            inferenceToken = NODE_TOKEN,
+            inferenceToken = SHARE_NODE_TOKEN,
             apiTimeoutMs = shared.timeoutMs,
             statuslineCommand = "curl -sS --connect-timeout $STATUSLINE_CONNECT_S --data-binary @- '$statusline'",
             remote = address.turns,
+            remoteClaude = shared.clientModels,
         )
         return LaunchSpec(trees.of(command), shared.models.launchModels(), signIn, gateway, policy)
     }
@@ -102,11 +105,6 @@ public class RemoteLaunches(
 
     private fun encoded(value: String): String = URLEncoder.encode(value, StandardCharsets.UTF_8)
 }
-
-// The word a node's Claude Code is given as its auth token. It opens nothing: the server signs every turn with its
-// own logins, and its listener drops whatever a request carries. The launch shim (splice-launch, drop_own_token) names
-// the same word, so a launch from inside a node's session never inherits it.
-private const val NODE_TOKEN = "splice-lan"
 
 // why: the statusline redraws often; a server that is off should cost it two seconds, not curl's default minutes.
 private const val STATUSLINE_CONNECT_S = 2

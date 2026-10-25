@@ -99,7 +99,7 @@ public class ShareListener(
         if (refusal != null) return ShareErrors.refuse(call, HttpStatus.FORBIDDEN, refusal)
         val parts = call.request.path().split('/').filter(String::isNotEmpty)
         val named = parts.firstOrNull() ?: return info(call)
-        val offered = heads.offered()
+        val offered = withContext(io) { heads.offered() }
         val head = offered.firstOrNull { it.command == named } ?: offered.firstOrNull { it.key == named }
         if (head == null) {
             val offers = offered.joinToString(", ") { it.command }.ifEmpty { "nothing" }

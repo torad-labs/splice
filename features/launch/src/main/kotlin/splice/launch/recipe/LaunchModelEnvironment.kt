@@ -55,7 +55,7 @@ internal object LaunchModelEnvironment {
         }
 
     fun windows(spec: LaunchSpec): Map<String, String> {
-        if (spec.gateway.forwardClientAuth) return emptyMap()
+        if (spec.gateway.clientModels) return emptyMap()
         // The pinned row's window remains the compaction target on foreign-provider heads.
         // Presented and [1m]-spelled rows must retain their client's larger context ceiling.
         val compactWindow = maxOf(

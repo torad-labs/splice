@@ -1,6 +1,7 @@
 // NEW: LAN share (docs/specs/lan-share.md). A request from another machine's Claude Code, handed to this machine's head
 // on loopback (a turn) or to its control plane (a statusline), with this machine's turn key in place of whatever the
-// other machine sent, and the answer streamed back as it arrives. The head runs the turn exactly as for a session here:
+// other machine sent, and the answer streamed back as it arrives. A head that takes the caller's own login gets the
+// node's word instead of the turn key, and its pool sends a login it holds. The head runs the turn as for a session here:
 // its admission, account selection, cooldowns and honest failures all apply unchanged, and no credential of any
 // provider leaves this process. An event stream goes back through SseChannelResponse, the daemon's one streaming
 // writer; any other answer goes back whole. The body is read under the head's own limits first (its maxRequestBytes
@@ -26,6 +27,7 @@ import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeout
 import kotlinx.io.readByteArray
 import splice.core.config.TurnKey
+import splice.core.topology.SHARE_NODE_TOKEN
 import splice.core.util.Cancellables
 import splice.core.util.LogSink
 import splice.core.util.SafeFailureText
@@ -63,7 +65,10 @@ internal class ShareRelay(
     suspend fun turn(call: ApplicationCall, head: SharedHead, path: String) {
         val body = body(call, head.maxRequestBytes(), head.requestReadTimeoutMs()) ?: return
         val silent = "${head.command} on $machine is not answering"
-        forward(call, URI.create("http://127.0.0.1:${head.port}$path"), body, silent)
+        // A head that takes the caller's own login refuses this machine's turn key as a credential to send upstream.
+        // It gets the node's word instead, which opens nothing: its pool sends a login it holds in that word's place.
+        val bearer = if (head.forwardsClientAuth) SHARE_NODE_TOKEN else turnKey.get()
+        forward(call, URI.create("http://127.0.0.1:${head.port}$path"), body, silent, bearer)
     }
 
     /** The control plane's statusline for [head], fed the session's JSON as Claude Code feeds its statusline, once
@@ -73,10 +78,11 @@ internal class ShareRelay(
         val refusal = withContext(io) { admission.refusal(body) }
         if (refusal != null) return ShareErrors.refuse(call, HttpStatus.BAD_REQUEST, refusal)
         val silent = "$machine's statusline for ${head.command} is not answering"
-        forward(call, URI.create("http://127.0.0.1:$controlPort/statusline/${head.key}"), body, silent)
+        forward(call, URI.create("http://127.0.0.1:$controlPort/statusline/${head.key}"), body, silent, turnKey.get())
     }
 
-    private suspend fun forward(call: ApplicationCall, target: URI, body: ByteArray, silent: String) {
+    /** [body] to [target], signed with [bearer] in place of whatever the other machine sent. */
+    private suspend fun forward(call: ApplicationCall, target: URI, body: ByteArray, silent: String, bearer: String) {
         val publisher = if (body.isEmpty()) {
             HttpRequest.BodyPublishers.noBody()
         } else {
@@ -86,7 +92,7 @@ internal class ShareRelay(
         call.request.headers.forEach { name, values ->
             if (name.lowercase() !in notForwarded) values.forEach { request.header(name, it) }
         }
-        request.header(HttpHeaders.Authorization, "Bearer ${turnKey.get()}")
+        request.header(HttpHeaders.Authorization, "Bearer $bearer")
         val streamed = HttpResponse.BodyHandlers.ofInputStream()
         val sent = withContext(io) { Cancellables.runCatchingCancellable { http.send(request.build(), streamed) } }
         val response = sent.getOrElse { failure ->

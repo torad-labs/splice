@@ -18,7 +18,9 @@ import splice.launch.ModelTiers
 import splice.launch.PICKER_VALUE
 
 /** One command's launch, as this machine hands it to another: the [machine] it runs on, the [command] and [head] it
- *  is there, its [models], Claude Code's request timeout for it, and where its logins are signed in. */
+ *  is there, its [models], Claude Code's request timeout for it, and where its logins are signed in. [clientModels]
+ *  is a head whose client picks its own models (a Claude head, V4-449): the other machine's launch then plants none of
+ *  [models] over the person's own settings, as a session here gets none. */
 @Serializable
 internal data class SharedLaunch(
     val machine: String,
@@ -27,6 +29,7 @@ internal data class SharedLaunch(
     val models: SharedModels,
     val timeoutMs: Long,
     val signIn: SharedSignIn,
+    val clientModels: Boolean = false,
 )
 
 /** LaunchModels on the wire, part for part. */
@@ -77,7 +80,16 @@ internal class SharedLaunches(private val machine: String) {
         if (why != null) return SharedLaunchRead.Refused(HttpStatus.BAD_REQUEST, why)
         val shown = if (wanted.isEmpty()) spec.models else narrowed(spec.models, wanted.toSet())
         val signIn = SharedSignIn(spec.signIn.loginCommand, spec.signIn.signInLabel)
-        val launch = SharedLaunch(machine, head.command, head.key, wire(shown), spec.gateway.apiTimeoutMs, signIn)
+        val gateway = spec.gateway
+        val launch = SharedLaunch(
+            machine,
+            head.command,
+            head.key,
+            wire(shown),
+            gateway.apiTimeoutMs,
+            signIn,
+            gateway.clientModels,
+        )
         return SharedLaunchRead.Read(launch)
     }
 

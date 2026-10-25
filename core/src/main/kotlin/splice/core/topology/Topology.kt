@@ -64,6 +64,11 @@ public data class Topology(
      *  the wrapper command). Callers that must tell those apart use [resolveHeadKeys]. */
     public fun resolveHeadKey(name: String): String? = resolveHeadKeys(name).singleOrNull()
 
+    /** LAN share: the remote commands splice links to its launch shim, every one but `claude`. That name is Claude
+     *  Code's own link, which its updater re-points and splice's wrap points at the shim: a `[remote.claude]` is
+     *  reached through the wrapped `claude`, and nothing that links or unlinks a remote command touches it. */
+    public val remoteLinks: Set<String> get() = remote.keys - CLAUDE_COMMAND
+
     /** JW-13: ports mapped to the >1 heads that share them — the port analogue of the
      *  wrapper-command collision install already validates. A copy-pasted [heads.X] with an
      *  unchanged port otherwise surfaces only as an opaque per-head "Address already in use". */

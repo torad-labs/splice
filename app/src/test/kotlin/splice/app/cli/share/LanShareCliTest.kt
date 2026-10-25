@@ -21,8 +21,13 @@ import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.TestInstance
 import org.junit.jupiter.api.io.TempDir
 import splice.app.Daemon
+import splice.client.wrap.WrapResult
+import splice.client.wrap.WrapStateStore
+import splice.client.wrap.WrappedHead
 import splice.core.auth.RefreshAttempt
+import splice.core.config.InstallPaths
 import splice.core.config.StatePaths
+import splice.core.terminal.RESET
 import splice.core.terminal.TerminalOutput
 import splice.core.testing.TestPorts
 import splice.core.topology.AuthKind
@@ -185,34 +190,6 @@ class LanShareCliTest {
         Files.writeString(node.config, node.config.readText() + "\n" + relay + "\n")
         Files.writeString(dir.resolve("keys.toml"), "CLAUDEX_API_KEY = \"first-build-share-token\"\n")
         return node
-    }
-
-    private fun envOf(dir: Path): EnvReader {
-        val vars = mapOf(
-            "SPLICE_CONFIG" to dir.resolve("splice.toml").toString(),
-            "SPLICE_BIN_DIR" to dir.resolve("bin").toString(),
-            "SPLICE_SHARE_DIR" to dir.resolve("share").toString(),
-            "SPLICE_STATE_DIR" to dir.resolve("state").toString(),
-            "HOME" to dir.toString(),
-            "PATH" to dir.resolve("bin").toString(),
-        )
-        return EnvReader { vars[it] }
-    }
-
-    /** One machine's run of a verb: its exit code, and what it printed on stdout and stderr. */
-    private data class Run(val code: Int, val out: String, val err: String) {
-        override fun toString(): String = "exit $code\n--- out\n$out\n--- err\n$err"
-    }
-
-    private class Node(val dir: Path, val env: EnvReader) {
-        val config: Path get() = dir.resolve("splice.toml")
-        val remote: Map<String, RemoteConfig> get() = TopologyLoader.parse(config.readText()).remote
-
-        fun link(command: String): Path = dir.resolve("bin").resolve(command)
-
-        /** Whether [command] is linked to this node's launch shim, as every splice command is. */
-        fun linked(command: String): Boolean = link(command).isSymbolicLink() &&
-            Files.readSymbolicLink(link(command)) == dir.resolve("share/splice-launch")
     }
 
     private fun share(env: EnvReader, vararg args: String): Run = captured { out, err ->
@@ -409,6 +386,51 @@ class LanShareCliTest {
     }
 
     @Test
+    fun `remote add --as claude on a wrapped node runs plain claude there and leaves the link to the wrap`(
+        @TempDir dir: Path,
+    ) {
+        val node = node(dir)
+        val shim = node.wrapped()
+        val added = remote(node, "add", "$share/claudex", "--as", "claude")
+        assertEquals(0, added.code, added.toString())
+        assertTrue("claude$RESET runs on " in added.out, added.toString())
+        assertEquals(mapOf("claude" to RemoteConfig("$share/claudex")), node.remote)
+        // `claude` is Claude Code's own link, which the wrap points at the launch shim: never a remote's to make.
+        assertEquals(shim, Files.readSymbolicLink(node.link("claude")), "adding it left the wrap's link alone")
+        val lines = TerminalOutput {}
+        InstallCommand(lines, lines).install(null, node.env)
+        assertEquals(shim, Files.readSymbolicLink(node.link("claude")), "splice install left the wrap's link alone")
+        val removed = remote(node, "remove", "claude")
+        assertEquals(0, removed.code, removed.toString())
+        assertTrue(node.remote.isEmpty(), node.config.readText())
+        assertEquals(shim, Files.readSymbolicLink(node.link("claude")), "removing it left the wrap's link alone")
+    }
+
+    // PR 423 review: on a node whose `claude` is not wrapped, plain `claude` is Claude Code itself and never asks
+    // splice where to run, so a `[remote.claude]` would change nothing while the add said it did.
+    @Test
+    fun `remote add --as claude on a node whose claude is not wrapped is refused, naming how to wrap it`(
+        @TempDir dir: Path,
+    ) {
+        val node = node(dir)
+        val own = node.claudeCodeOwn()
+        val added = remote(node, "add", "$share/claudex", "--as", "claude")
+        assertNotEquals(0, added.code, added.toString())
+        assertFalse("runs on" in added.out, "nothing runs on torad: $added")
+        assertTrue("splice setup" in added.err, "the refusal names how to wrap claude: $added")
+        assertTrue(node.remote.isEmpty(), node.config.readText())
+        assertEquals(own, Files.readSymbolicLink(node.link("claude")), "the refused add left the claude link alone")
+        // A `[remote.claude]` written by hand boots (LanShareConfigTest); install and uninstall still leave Claude
+        // Code's own link alone.
+        Files.writeString(node.config, node.config.readText() + "\n[remote.claude]\nurl = \"$share/claudex\"\n")
+        val lines = TerminalOutput {}
+        InstallCommand(lines, lines).install(null, node.env)
+        assertEquals(own, Files.readSymbolicLink(node.link("claude")), "splice install left the claude link alone")
+        InstallCommand(lines, lines).uninstall(null, node.env)
+        assertEquals(own, Files.readSymbolicLink(node.link("claude")), "splice uninstall left the claude link alone")
+    }
+
+    @Test
     fun `remote remove takes the command and its link out`(@TempDir dir: Path) {
         val node = node(dir)
         assertEquals(0, remote(node, "add", "$share/claudex").code)
@@ -466,6 +488,56 @@ class LanShareCliTest {
                 LockSupport.parkNanos(5_000_000L)
             }
         }
+    }
+}
+
+private fun envOf(dir: Path): EnvReader {
+    val vars = mapOf(
+        "SPLICE_CONFIG" to dir.resolve("splice.toml").toString(),
+        "SPLICE_BIN_DIR" to dir.resolve("bin").toString(),
+        "SPLICE_SHARE_DIR" to dir.resolve("share").toString(),
+        "SPLICE_STATE_DIR" to dir.resolve("state").toString(),
+        "HOME" to dir.toString(),
+        "PATH" to dir.resolve("bin").toString(),
+    )
+    return EnvReader { vars[it] }
+}
+
+/** One machine's run of a verb: its exit code, and what it printed on stdout and stderr. */
+private data class Run(val code: Int, val out: String, val err: String) {
+    override fun toString(): String = "exit $code\n--- out\n$out\n--- err\n$err"
+}
+
+private class Node(val dir: Path, val env: EnvReader) {
+    val config: Path get() = dir.resolve("splice.toml")
+    val remote: Map<String, RemoteConfig> get() = TopologyLoader.parse(config.readText()).remote
+
+    fun link(command: String): Path = dir.resolve("bin").resolve(command)
+
+    /** Whether [command] is linked to this node's launch shim, as every splice command is. */
+    fun linked(command: String): Boolean = link(command).isSymbolicLink() &&
+        Files.readSymbolicLink(link(command)) == dir.resolve("share/splice-launch")
+
+    /** This node's `claude` as Claude Code's installer leaves it: a link to the release it runs. */
+    fun claudeCodeOwn(): Path {
+        val own = Files.writeString(
+            Files.createDirectories(dir.resolve("claude-versions")).resolve("2.1.310"),
+            "#!/bin/sh\n",
+        )
+        own.toFile().setExecutable(true)
+        Files.createDirectories(link("claude").parent)
+        Files.createSymbolicLink(link("claude"), own)
+        return own
+    }
+
+    /** This node's `claude` wrapped as `splice setup` wraps it: the launch shim in its place, the release it ran
+     *  recorded in the node's own state folder. */
+    fun wrapped(): Path {
+        claudeCodeOwn()
+        val store = WrapStateStore(StatePaths(envReader = env).stateDir.resolve("claude-head-wrap.json"))
+        val wrap = WrappedHead(dir, InstallPaths(envReader = env), store).wrap()
+        check(wrap is WrapResult.Ok) { "the node's wrap: $wrap" }
+        return dir.resolve("share/splice-launch")
     }
 }
 

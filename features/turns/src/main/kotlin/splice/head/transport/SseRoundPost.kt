@@ -52,9 +52,10 @@ internal class SseRoundPost(
         creds: Credentials,
     ): Map<String, String> {
         val drive = inputs.drive
-        val headers = provider.extraHeaders(creds) +
-            drive.account?.account?.extraHeaders?.invoke(creds).orEmpty() +
-            CallerCredential.over(drive.turnHeaders, creds) + httpRoutingHeaders(inputs)
+        val account = drive.account?.account?.extraHeaders?.invoke(creds).orEmpty()
+        val caller = CallerCredential.over(drive.turnHeaders, creds)
+        val headers = provider.extraHeaders(creds) + ListValuedHeaders.over(account, caller) +
+            httpRoutingHeaders(inputs)
         val key = CredentialKey.fromHeaders(
             CredentialKey.headers(creds, headers),
             (creds as? Credentials.ApiKey)?.header,

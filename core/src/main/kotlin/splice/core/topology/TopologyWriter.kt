@@ -445,15 +445,12 @@ private class TopologyChecks(
         return invalid + sharing + shared
     }
 
-    /** LAN share: a remote command must be a name nothing here runs already, and its address one the launch can read.
-     *  Said at boot, beside every other finding, never found out as a launch that runs something else. */
+    /** LAN share: a remote command must be a name no head here runs already, and its address one the launch can read.
+     *  Said at boot, beside every other finding, never found out as a launch that runs something else. `claude` may
+     *  name one (Marcos, 2026-10-25): the wrapped `claude` then launches on the other machine's head. */
     private fun remotes(): List<TopologyFinding> = topology.remote.flatMap { (command, remote) ->
-        val taken = when {
-            command == CLAUDE_COMMAND -> "claude is Claude Code's own command; give this one another name"
-            topology.resolveHeadKeys(command).isNotEmpty() ->
-                "a head here already runs as $command; give this one another name"
-            else -> null
-        }
+        val taken = "a head here already runs as $command; give this one another name"
+            .takeIf { topology.resolveHeadKeys(command).isNotEmpty() }
         val unread = (RemoteAddresses.read(remote.url) as? RemoteAddressRead.Refused)?.why
         val copy = "copy the address `splice share status` prints on the machine that shares it"
         listOfNotNull(
@@ -513,5 +510,6 @@ private class TopologyChecks(
     }
 }
 
-/** Claude Code's own command: splice's wrapper takes its place on PATH, and a remote command may not take it. */
+/** Claude Code's own command: splice's wrapper takes its place on PATH. A remote command may take its name, and is
+ *  reached through that wrapper; no remote command links or unlinks it (Topology.remoteLinks). */
 public const val CLAUDE_COMMAND: String = "claude"

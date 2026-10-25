@@ -34,7 +34,9 @@ internal class TurnAccountHandoff(
         var adopted = false
         try {
             currentCoroutineContext().ensureActive()
-            adopted = adopt(drive, pending.previous, next)
+            // LAN share: a node's word cannot move onto a login that forwards it; the vendor would see the word.
+            adopted = !CallerCredential.unheldNodeWord(drive.turnHeaders, next.account.auth) &&
+                adopt(drive, pending.previous, next)
             return adopted
         } finally {
             if (!adopted) next.releaseCredentialProbe()

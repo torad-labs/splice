@@ -164,7 +164,7 @@ public class ResumeHookRoute(
     private fun rewrite(managed: LaunchHead, transcript: Path, spec: LaunchSpec, sessionId: String): String? {
         val pinnedModel = spec.models.pinnedModel
         val rewritten = Cancellables.runCatchingCancellable {
-            val offered = spec.models.availableModelIds.takeUnless { spec.gateway.forwardClientAuth }
+            val offered = spec.models.availableModelIds.takeUnless { spec.gateway.clientModels }
             rewriter.rewrite(transcript, CallingRoster(pinnedModel, offered, managed.head.key))
         }
             .getOrElse { cause ->

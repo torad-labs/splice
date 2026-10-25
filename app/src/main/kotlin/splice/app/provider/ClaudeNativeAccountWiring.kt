@@ -86,6 +86,7 @@ internal class ClaudeNativeAccountWiring(
                 ),
             ),
             credential = WiredAccountCredential(present = view.credential.present, refusal = view.credential.refusal),
+            extraHeaders = ClaudeLoginHeaders,
             nativePlace = view.id,
         )
         return Entry(auth.credentialKey, view.identity.account?.uuid, auth, wired)

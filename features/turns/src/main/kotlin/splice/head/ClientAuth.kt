@@ -13,6 +13,7 @@ import splice.core.auth.ForeignHostLog
 import splice.core.auth.LoopbackHost
 import splice.core.perf.LivenessProbe
 import splice.head.admission.AdmissionResponses
+import splice.head.transport.ListValuedHeaders
 import java.security.MessageDigest
 
 /** See [ClientAuth.forwardedClientHeaders]: the caller's credential plus the wire knobs it chose.
@@ -40,18 +41,6 @@ private val CLIENT_IDENTITY_HEADERS: Set<String> = setOf(
     "x-claude-code-session-id",
     "anthropic-dangerous-direct-browser-access",
 )
-
-/** The allowlisted names whose value is a COMMA-SEPARATED LIST, so repeated field lines are one
- *  value split across lines and must be rejoined rather than have all but the first dropped.
- *
- *  Only `anthropic-beta` qualifies. `Authorization` and `x-api-key` are singleton credentials and
- *  `anthropic-version` is a single token: joining a repeat of any of those would forge a value the
- *  caller never sent, so for them the first line wins, which is what a singleton field means. */
-private val LIST_VALUED_CLIENT_HEADERS: Set<String> = setOf("anthropic-beta")
-
-// why: RFC 9110 5.3 joins repeated list-valued field lines with a comma and OWS; the vendor parses
-// the beta flags off exactly this separator, so it is the wire form, not a formatting choice.
-private const val FIELD_LINE_SEPARATOR = ", "
 
 /** Which of a head's doors a route opens. */
 internal enum class Door {
@@ -266,8 +255,9 @@ internal class ClientAuth(
     private fun forwardedValue(call: ApplicationCall, name: String): String? {
         val lines = call.request.headers.getAll(name)?.filter { it.isNotBlank() }.orEmpty()
         if (lines.isEmpty()) return null
-        return if (name in LIST_VALUED_CLIENT_HEADERS) {
-            lines.joinToString(FIELD_LINE_SEPARATOR)
+        // The repeated lines of a list-valued field are one value, rejoined (ListValuedHeaders names which).
+        return if (name in ListValuedHeaders.names) {
+            lines.joinToString(ListValuedHeaders.FIELD_LINE_SEPARATOR)
         } else {
             lines.first()
         }

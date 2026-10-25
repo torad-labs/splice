@@ -15,6 +15,7 @@ import io.ktor.client.request.bearerAuth
 import io.ktor.client.request.header
 import io.ktor.client.request.post
 import io.ktor.client.request.setBody
+import io.ktor.client.statement.HttpResponse
 import io.ktor.client.statement.bodyAsText
 import io.ktor.http.HttpStatusCode
 import kotlinx.coroutines.runBlocking
@@ -33,6 +34,7 @@ import splice.core.auth.Credentials
 import splice.core.auth.RefreshableAuthProvider
 import splice.core.model.ModelCatalog
 import splice.core.model.ModelEntry
+import splice.core.topology.SHARE_NODE_TOKEN
 import splice.core.turn.WatchdogBudget
 import splice.core.usage.PlanLimit
 import splice.core.usage.QuotaHeaderRead
@@ -136,6 +138,68 @@ class PoolFailoverTurnTest {
         }
     }
 
+    // LAN share, PR 423 review: another machine's turn reaches a Claude head holding that machine's word, which opens
+    // nothing, and the head's pool runs it on a login the head holds.
+    @Test
+    fun `a node's word runs on a login the pool holds, never on the word`() = runBlocking {
+        val own = ClientAuthProvider("own")
+        val rig = FailoverRig(directory, limited = emptyMap(), headAuth = own, bearer = SHARE_NODE_TOKEN)
+        rig.start()
+        try {
+            assertEquals(HttpStatusCode.OK, rig.turn().first)
+            assertEquals(listOf("one"), rig.requests, "the pool's login rides in the word's place")
+        } finally {
+            rig.close()
+        }
+    }
+
+    // When the login the turn would run on is the caller's own (the head's own logins gone between the share's offer
+    // and this turn), there is none to put in the word's place. The word must never reach the vendor, whose 401 would
+    // mark the head's own sign-in rejected for every session.
+    @Test
+    fun `a node's word on a head with no login of its own is answered here, never sent upstream`() = runBlocking {
+        val own = ClientAuthProvider("own")
+        val rig =
+            FailoverRig(directory, limited = emptyMap(), pooled = false, headAuth = own, bearer = SHARE_NODE_TOKEN)
+        rig.start()
+        try {
+            val response = rig.response()
+            val body = response.bodyAsText()
+            assertEquals(HttpStatusCode.ServiceUnavailable, response.status, body)
+            assertTrue("another machine" in body, "the answer says why the turn did not run: $body")
+            // PR 423 review round 2: a launch plants CLAUDE_CODE_RETRY_WATCHDOG, which gives a 503 300 retries; only the
+            // server can bring a login back, so the node is told not to retry and shows the sentence at once.
+            assertEquals("false", response.headers["x-should-retry"], "the node does not retry into it")
+            assertTrue(rig.requests.isEmpty(), "the node's word must never reach the vendor: ${rig.requests}")
+            assertTrue(own.describe().present, "the head's own sign-in is not marked rejected")
+        } finally {
+            rig.close()
+        }
+    }
+
+    // PR 423 review round 3: the held login is refused partway through the turn and the pool, left with no login of
+    // its own, falls back to the head's own sign-in, which forwards the caller's credential. The turn must not move
+    // onto it: the word would ride to the vendor and its 401 would mark the head's own sign-in rejected.
+    @Test
+    fun `a node's turn never moves onto the head's own sign-in when its held login is refused`() = runBlocking {
+        val own = ClientAuthProvider("own")
+        val rig = FailoverRig(
+            directory,
+            limited = mapOf("one" to 2 * HOUR_S),
+            headAuth = own,
+            bearer = SHARE_NODE_TOKEN,
+            fallsBackTo = own,
+        )
+        rig.start()
+        try {
+            assertEquals(HttpStatusCode.TooManyRequests, rig.turn().first, "the held login's own refusal ends it")
+            assertEquals(listOf("one"), rig.requests, "the node's word must never reach the vendor")
+            assertTrue(own.describe().present, "the head's own sign-in is not marked rejected")
+        } finally {
+            rig.close()
+        }
+    }
+
     private suspend fun assertClientHeadAccepted(stream: Boolean) {
         val auth = ClientAuthProvider("synthetic")
         val rig = FailoverRig(directory, limited = mapOf("one" to 2 * HOUR_S), headAuth = auth)
@@ -205,6 +269,8 @@ private class FailoverRig(
     pooled: Boolean = true,
     headAuth: RefreshableAuthProvider? = null,
     refusedStatus: Int? = null,
+    bearer: String = "one",
+    private val fallsBackTo: RefreshableAuthProvider? = null,
 ) {
     val requests = CopyOnWriteArrayList<String>()
     val bodies = CopyOnWriteArrayList<String>()
@@ -216,6 +282,8 @@ private class FailoverRig(
             val login = request.requestHeaders.getFirst("Authorization").orEmpty().removePrefix("Bearer ")
             requests += login
             val resetIn = limited[login]
+            val unauthorized = refusedStatus ?: 401.takeIf { login == SHARE_NODE_TOKEN }
+            if (resetIn != null) fallsBackTo?.let(::fallBack)
             if (resetIn != null) {
                 val reset = (System.currentTimeMillis() / 1_000 + resetIn).toString()
                 mapOf(
@@ -228,15 +296,15 @@ private class FailoverRig(
                 ).forEach { (name, value) -> request.responseHeaders.add(name, value) }
             }
             val body = when {
-                refusedStatus != null ->
+                unauthorized != null ->
                     """{"type":"error","error":{"type":"authentication_error","message":"synthetic unauthorized"}}"""
                 resetIn != null -> refusal(login)
                 else -> SUCCESS_WIRE
             }
-            val type = if (refusedStatus != null || resetIn != null) "application/json" else "text/event-stream"
+            val type = if (unauthorized != null || resetIn != null) "application/json" else "text/event-stream"
             request.responseHeaders.add("Content-Type", type)
             val bytes = body.toByteArray(Charsets.UTF_8)
-            request.sendResponseHeaders(refusedStatus ?: if (resetIn != null) 429 else 200, bytes.size.toLong())
+            request.sendResponseHeaders(unauthorized ?: if (resetIn != null) 429 else 200, bytes.size.toLong())
             request.responseBody.use { it.write(bytes) }
         }
         start()
@@ -284,12 +352,18 @@ private class FailoverRig(
             policy = HeadDeps.HeadPolicy(forwardClientAuth = true),
         ).copy(stores = headStores(directory).copy(perfStats = PerfStats(perfFile))),
     )
-    private val client = HttpClient(CIO) { defaultRequest { bearerAuth("one") } }
+    private val client = HttpClient(CIO) { defaultRequest { bearerAuth(bearer) } }
 
     suspend fun start() = head.start()
 
     suspend fun turn(stream: Boolean = true): Pair<HttpStatusCode, String> {
-        val response = client.post("http://127.0.0.1:${head.port}/v1/messages") {
+        val response = response(stream)
+        return response.status to response.bodyAsText()
+    }
+
+    /** One turn's whole answer, headers included. */
+    suspend fun response(stream: Boolean = true): HttpResponse =
+        client.post("http://127.0.0.1:${head.port}/v1/messages") {
             header("Content-Type", "application/json")
             header("x-claude-code-session-id", SESSION)
             setBody(
@@ -297,7 +371,13 @@ private class FailoverRig(
                     """"messages":[{"role":"user","content":"go"}]}""",
             )
         }
-        return response.status to response.bodyAsText()
+
+    /** The pool left with no login of its own: only the head's own sign-in, as the membership publishes it. */
+    private fun fallBack(own: RefreshableAuthProvider) {
+        pool.members = listOf(
+            PoolAccount("claude-code", true, own, AccountQuotaSource { null }, RateLimitCooldown(ElapsedClock { 0L })),
+        )
+        pool.order = listOf("claude-code")
     }
 
     fun switchReason(): String? = pool.view(SESSION).lastSwitch?.reason

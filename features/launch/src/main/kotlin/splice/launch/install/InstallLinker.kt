@@ -64,21 +64,29 @@ internal class InstallLinker(
         return if (refusal == null) InstallResult.Linked else InstallResult.Refused(refusal)
     }
 
+    /** TRUE when [command]'s link here runs the launch shim, so the command asks splice where to run: a head's
+     *  wrapper, or `claude` once `splice setup` wrapped it. No link, or a link to anything else, is false. */
+    internal fun runsShim(command: String, env: EnvReader): Boolean {
+        val link = layout.wrapperLinkOrNull(layout.localBin(env), command) ?: return false
+        return link.isSymbolicLink() && Files.readSymbolicLink(link) == layout.launchShimPath(env)
+    }
+
     /** Every command for --all/no-arg, else the one named: a remote command (LAN share) by its name, a head by
      *  topology key OR wrapper command. Null when [headArg] names nothing, which has already printed why (unknown vs
      *  ambiguous). */
     private fun selected(topology: Topology, headArg: String?): List<Pair<String, String>>? = when {
         headArg == null || headArg == "--all" -> commands(topology)
-        headArg in topology.remote -> listOf(headArg to headArg)
+        // A remote `claude` is reached through the wrapped `claude`, so it has no link to make (Topology.remoteLinks).
+        headArg in topology.remote -> listOf(headArg to headArg).filter { it.first in topology.remoteLinks }
         else -> heads.resolveSpecificHead(topology, headArg)
             ?.let { key -> commands(topology).filter { it.first == key } }
     }
 
     /** Each command the topology links, with what runs it: a head's wrapper command (or its key) with the head's
-     *  key, and a remote command (LAN share, `[remote.<command>]`) with its own name. */
+     *  key, and a remote command (LAN share, `[remote.<command>]`) with its own name, `claude` aside. */
     private fun commands(topology: Topology): List<Pair<String, String>> =
         topology.heads.map { (key, head) -> key to (head.claude.command ?: key) } +
-            topology.remote.keys.map { it to it }
+            topology.remoteLinks.map { it to it }
 
     /** Validate the WHOLE topology's commands (+ `splice`) on EVERY install, not just this
      *  invocation — otherwise sequential single-head installs silently retarget an existing

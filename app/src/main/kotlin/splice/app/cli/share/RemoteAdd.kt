@@ -4,12 +4,14 @@
 // address naming the server alone adds every command it offers. A name this machine already runs (a head here, or
 // another address under that name) is refused with how to give the new one another: `--as <command>`. A relay the first
 // LAN-share build wrote under that name is the one exception: the address replaces it, and its share token leaves
-// keys.toml in the same add.
+// keys.toml in the same add. `claude` is added only where `claude` is wrapped: an unwrapped `claude` is Claude Code
+// itself, which never asks splice where to run, so the address would change nothing.
 package splice.app.cli.share
 
 import splice.core.terminal.CYAN
 import splice.core.terminal.RESET
 import splice.core.terminal.TerminalOutput
+import splice.core.topology.CLAUDE_COMMAND
 import splice.core.topology.RemoteAddress
 import splice.core.topology.RemoteAddressRead
 import splice.core.topology.RemoteAddresses
@@ -33,6 +35,12 @@ internal data class RemoteAdded(
 /** The entries an address asks for, by command, and the [machine] that serves them. */
 private data class Offered(val machine: String, val entries: Map<String, RemoteConfig>)
 
+/** Whether a command's link here runs splice's launch shim, so the command asks splice where to run: `claude` does
+ *  once it is wrapped (InstallCommand.runsShim). */
+internal fun interface ShimLinked {
+    operator fun invoke(command: String): Boolean
+}
+
 internal class RemoteAdd(
     private val out: TerminalOutput,
     private val err: TerminalOutput,
@@ -40,12 +48,14 @@ internal class RemoteAdd(
     private val directory: ShareDirectory,
     /** The first LAN-share build's relays, which an address under one's name replaces. */
     private val relays: FirstBuildRelays,
+    private val runsShim: ShimLinked,
 ) {
     // A name a command link can take: a bare file name, as a head's key is.
     private val commandName = Regex("^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$")
 
-    // Claude Code's own command, which stays plain Claude Code, and splice's own.
-    private val reserved = setOf("claude", "splice")
+    // splice's own command. `claude` may name another machine's command once `claude` is wrapped: the wrapped `claude`
+    // launches there, and its link stays Claude Code's (Topology.remoteLinks).
+    private val reserved = setOf("splice")
 
     /** [text] added, as [name] when given and as the server calls it otherwise; null, said, when nothing was. */
     suspend fun add(text: String, name: String?): RemoteAdded? {
@@ -140,6 +150,9 @@ internal class RemoteAdd(
         val held = topology.remote[command]
         return when {
             !commandName.matches(command) -> "${quoted(command)} can't be a command's name; $elsewhere"
+            command == CLAUDE_COMMAND && !runsShim(command) ->
+                "claude here is Claude Code itself, not wrapped, so it would still run on this machine's own login; " +
+                    "wrap it with ${CYAN}splice setup$RESET first, or $elsewhere"
             held == remote -> null
             held != null -> "${quoted(command)} already runs on ${held.url}; $elsewhere, or take that one out first " +
                 "with ${CYAN}splice remote remove $command$RESET"

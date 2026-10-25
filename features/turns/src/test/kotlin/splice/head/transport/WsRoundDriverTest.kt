@@ -1727,6 +1727,35 @@ class WsPlanHoldTest(@param:TempDir private val tmp: Path) {
         }
     }
 
+    /** Two sessions on one login: this one's round is sent, another's turn is refused for the spent week, and then
+     *  this round's response.created arrives. The refusal is newer than the send, so it stands, as on HTTP. */
+    @Test
+    fun `a refusal learned while the websocket round is in flight outlives its answer`() = runTest {
+        val (inputs, account) = pooledInputs(this)
+        account.cooldown.acceptance()()
+        assertEquals(0L, account.cooldown.providerUnavailableForMs(), "the premise: the login starts open")
+        val scripted = ScriptedRunner(TEXT_ROUND + COMPLETED)
+        val refusedMidRound = object : WsRoundRunner by scripted {
+            override suspend fun attempt(
+                bodyJson: String,
+                meta: TurnMeta,
+                turnHeaders: Map<String, String>,
+                creds: Credentials,
+                perf: TurnPerf?,
+            ): WsRound {
+                account.cooldown.planHold.hold(spentWeek(), RetryNotice { })
+                return scripted.attempt(bodyJson, meta, turnHeaders, creds, perf)
+            }
+        }
+        try {
+            driver(refusedMidRound).run(inputs)
+            assertTrue(account.cooldown.providerUnavailableForMs() > 0L, "the newer refusal outlives the answer")
+        } finally {
+            inputs.turnJob.cancel()
+            inputs.drive.slot.release()
+        }
+    }
+
     private suspend fun pooledInputs(scope: CoroutineScope): Pair<WsRoundInputs, PoolAccount> {
         val inputs = WsDriverFixture(tmp, mock.baseUrl).inputs(RecordingTerminal(), scope)
         val account = PoolAccount(
@@ -1743,7 +1772,7 @@ class WsPlanHoldTest(@param:TempDir private val tmp: Path) {
         return inputs to account
     }
 
-    private fun driver(runner: ScriptedRunner): WsRoundDriver = WsRoundDriver(
+    private fun driver(runner: WsRoundRunner): WsRoundDriver = WsRoundDriver(
         WsDriverFixture(tmp, mock.baseUrl).provider(runner),
         log = {},
         classifyZeroEvent = ZeroEventClassifier { _, outcome, _, _ -> outcome },

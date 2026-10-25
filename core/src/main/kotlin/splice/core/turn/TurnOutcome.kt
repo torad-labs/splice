@@ -236,6 +236,8 @@ public data class RoundHandoffs(
     val nativeAfterExec: List<JsonObject>? = null,
     /** Complete native model output in provider order, retained independently of client rendering. */
     val nativeOutput: List<JsonObject>? = null,
+    /** Confirmed delivery order, separate from canonical native output and available on streamed item snapshots. */
+    val nativeDelivery: NativeDeliverySnapshot? = null,
 )
 
 /** The text a round produced, and what of it reached the client. */

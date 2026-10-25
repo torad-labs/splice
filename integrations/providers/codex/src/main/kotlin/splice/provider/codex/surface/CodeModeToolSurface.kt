@@ -7,6 +7,8 @@ import kotlinx.serialization.json.put
 import splice.core.util.JsonScalars
 import splice.core.util.LogSink
 import splice.dialect.responses.ResponsesFunctionNamespace
+import splice.provider.codex.CODE_MODE_FIELD_INPUT
+import splice.provider.codex.CODE_MODE_FIELD_TYPE
 import splice.provider.codex.CODE_MODE_TOOL_NAME
 import splice.provider.codex.CodeModeWaitTool
 import splice.upstream.codemode.CodeModeManual
@@ -26,27 +28,27 @@ internal class CodeModeToolSurface(private val log: LogSink) {
      *  arrives grouped into the `functions` namespace and leaves grouped the same way (V4-390): exec
      *  rides inside it, as codex's does. */
     fun injectTool(request: JsonObject, clientTools: Set<String>): JsonObject {
-        val input = request[FIELD_INPUT] as? JsonArray ?: return request
-        val index = input.indexOfFirst { string(it as? JsonObject, FIELD_TYPE) == TYPE_ADDITIONAL_TOOLS }
+        val input = request[CODE_MODE_FIELD_INPUT] as? JsonArray ?: return request
+        val index = input.indexOfFirst { string(it as? JsonObject, CODE_MODE_FIELD_TYPE) == "additional_tools" }
         val item = input.getOrNull(index) as? JsonObject
-        val tools = item?.get(FIELD_TOOLS) as? JsonArray
+        val tools = item?.get("tools") as? JsonArray
         require(item != null && tools != null) { "code mode requires the Responses lite additional_tools item" }
         val (functions, hosted) = namespace.members(tools).partition {
-            string(it as? JsonObject, FIELD_TYPE) == TYPE_FUNCTION
+            string(it as? JsonObject, CODE_MODE_FIELD_TYPE) == "function"
         }
         val reachable = reachable(clientTools)
         val nested = functions.mapNotNull { it as? JsonObject }.map { tool ->
-            CodeModeManual.NestedTool(string(tool, FIELD_NAME), string(tool, FIELD_DESCRIPTION), tool[FIELD_PARAMETERS])
+            CodeModeManual.NestedTool(string(tool, "name"), string(tool, "description"), tool["parameters"])
         }.filter { it.name in reachable }
         val deferred = (reachable - nested.map(CodeModeManual.NestedTool::name).toSet()).isNotEmpty()
-        val beside = hosted.filterNot { string(it as? JsonObject, FIELD_TYPE) == TYPE_TOOL_SEARCH }
+        val beside = hosted.filterNot { string(it as? JsonObject, CODE_MODE_FIELD_TYPE) == "tool_search" }
         val exec = execTool(CodeModeManual.description(nested, deferred))
         // Codex registers both native handlers together (spec_plan.rs:932-936); yielded cells
         // must retain an advertised wait tool even though client tools live inside exec.
         val surface = namespace.group(JsonArray(listOf(exec, CodeModeWaitTool.declaration()) + beside))
-        val replaced = JsonObject(item + (FIELD_TOOLS to surface))
+        val replaced = JsonObject(item + ("tools" to surface))
         val rebuilt = input.mapIndexed { position, element -> if (position == index) replaced else element }
-        return JsonObject(request + (FIELD_INPUT to JsonArray(rebuilt)))
+        return JsonObject(request + (CODE_MODE_FIELD_INPUT to JsonArray(rebuilt)))
     }
 
     /** The client tools `tools.<Name>` can reach: the worker dedupes the same whole catalog with the
@@ -63,9 +65,9 @@ internal class CodeModeToolSurface(private val log: LogSink) {
 
     /** codex-rs execute_spec.rs create_code_mode_tool: a freeform tool constrained by the exec grammar. */
     private fun execTool(description: String): JsonObject = buildJsonObject {
-        put(FIELD_TYPE, "custom")
-        put(FIELD_NAME, CODE_MODE_TOOL_NAME)
-        put(FIELD_DESCRIPTION, description)
+        put(CODE_MODE_FIELD_TYPE, "custom")
+        put("name", CODE_MODE_TOOL_NAME)
+        put("description", description)
         put(
             "format",
             buildJsonObject {
@@ -78,13 +80,3 @@ internal class CodeModeToolSurface(private val log: LogSink) {
 
     private fun string(item: JsonObject?, key: String): String = JsonScalars.str(item, key).orEmpty()
 }
-
-private const val FIELD_INPUT = "input"
-private const val FIELD_TYPE = "type"
-private const val FIELD_NAME = "name"
-private const val FIELD_DESCRIPTION = "description"
-private const val FIELD_TOOLS = "tools"
-private const val FIELD_PARAMETERS = "parameters"
-private const val TYPE_ADDITIONAL_TOOLS = "additional_tools"
-private const val TYPE_FUNCTION = "function"
-private const val TYPE_TOOL_SEARCH = "tool_search"

@@ -46,6 +46,7 @@ internal class CodeModeItemSourceCapture(
     private var completedCall: GatewayCustomCall? = null
     private var recoveredSource: CodeModeRecoveryHistory.Source? = null
     private val continuity = CodeModeSourceContinuity(wire)
+    val deliveredNative get() = continuity.deliveredNative
     private val items = CodeModeSourceItems(config)
     private val payloads = CodeModeSourcePayloads(registry)
 

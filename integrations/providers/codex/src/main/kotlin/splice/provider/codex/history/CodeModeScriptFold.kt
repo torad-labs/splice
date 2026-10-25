@@ -117,6 +117,7 @@ internal class CodeModeScriptFold(
     private fun callback(items: List<JsonElement>, index: Int, record: CodeModeRecord, closes: Boolean) {
         if (opened.add(record.id)) {
             if (CodeModeBatchLinks.multiple(record)) {
+                delivered.removeBatchPrelude(out, record)
                 out += scripts.continuity(record)
             } else {
                 reasoning.restore(out, record)

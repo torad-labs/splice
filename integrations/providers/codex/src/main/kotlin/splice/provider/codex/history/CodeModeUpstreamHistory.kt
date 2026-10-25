@@ -49,23 +49,21 @@ internal class CodeModeUpstreamHistory(
 
     /** The request for [context]: the kept post it extends with what the client added, or its whole history folded
      *  when it extends none. A record whose accepted result this request changed (a fork), or replays with other
-     *  media than it captured (V4-179), is not folded: the client's calls are the history, and no post that sent
-     *  it folded is extended, since its result is no longer what GPT was sent. Null only for a recovery request or
+     *  media than it captured (V4-179), or was abandoned, is not folded: the client's calls are the history, and no
+     *  post that sent it folded is extended. Null only for a recovery request or
      *  one that is not a Responses input. */
     fun extend(context: CodeModeRunContext, records: List<CodeModeRecord>): CodeModeBody? {
         CodeModeBatchLinks.link(records)
         val client = context.client?.takeIf { context.recovery == null } ?: return null
         val request = client.request ?: return null
         val media = context.turn.rendering.replayMedia
-        val changed = records.filter { it.id in context.conflicts || replaysOtherMedia(it, media) }
+        val changed = records.filter {
+            it.abandoned() && it.clientIds().isNotEmpty() ||
+                it.id in context.conflicts || clientStep.replaysOtherMedia(it, media)
+        }
         val calls = changed.mapTo(HashSet()) { it.origin.outerCallId }
         return extend(context, client, request, records - changed.toSet(), calls)
     }
-
-    /** Whether a result [record] captured media for comes back with other media (one it never
-     *  captured is not judged). */
-    private fun replaysOtherMedia(record: CodeModeRecord, media: Map<String, List<JsonElement>>): Boolean =
-        media.any { (id, replayed) -> record.accepted.media(id)?.let { it != replayed } == true }
 
     /** A script that finished without a client call follows the post it started on: none of it is in the client's
      *  history, so its reasoning and preface go first and the client replays them next ([CodeModeBody.echoes]).
@@ -121,6 +119,15 @@ internal class CodeModeUpstreamHistory(
 
     fun postedClientStart(context: CodeModeRunContext, record: CodeModeRecord): CodeModeClientAcknowledgement? =
         clientStep.postedStart(context, record, ledger.entries(context.key))
+
+    /** Restored, exactly receipted older callbacks do not steer a script that started while they were absent. */
+    fun resumeClient(context: CodeModeRunContext, record: CodeModeRecord): CodeModeBody? {
+        val client = context.client ?: return null
+        val input = clientStep.resumeInput(context, record, ledger.entries(context.key)) ?: return client
+        val root = checkNotNull(client.request).first
+        val rebuilt = JsonObject(root + (CODE_MODE_FIELD_INPUT to JsonArray(input)))
+        return CodeModeBody(RoundBody.Tree(rebuilt), json, digests = client.digests)
+    }
 
     /** Keeps [body] as what [context]'s conversation last sent, as it is posted. */
     fun sent(context: CodeModeRunContext, body: CodeModeBody) {

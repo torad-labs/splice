@@ -130,6 +130,8 @@ describe("qualification typed-output guard (not product parity)", () => {
 });
 
 function batchObservation() {
+  const reasoning = { type: "reasoning", id: "rs_probe", summary: [{ type: "summary_text", text: "Read the callback evidence." }],
+    encrypted_content: "synthetic-reasoning-envelope" };
   const originals = [
     { type: "custom_tool_call", id: "exec_probe", call_id: "call_probe", name: "exec", input: "text('native-batch-first');", status: "completed" },
     { type: "custom_tool_call", id: "exec_probe_second", call_id: "call_probe_second", name: "exec", input: "text('native-batch-second');", status: "completed" },
@@ -142,25 +144,40 @@ function batchObservation() {
   outputs[1]!.output.push({ type: "input_text", text: "native-batch-second-epoch:1200" });
   outputs[1]!.output.push({ type: "input_text", text: "effect-file:1100" });
   return { scriptAttempts: 1, callbackTimes: [1100], marks: [
+    { event: "upstream_sse", epochMs: 900, frame: { type: "response.created", response: { id: "script_1" } } },
+    { event: "upstream_sse", epochMs: 950, frame: { type: "response.output_item.done", output_index: 2, item: reasoning } },
     ...originals.map(item => ({ event: "upstream_sse", epochMs: 1000, frame: { type: "response.output_item.done", item } })),
     { event: "batch_items_done", epochMs: 1000 },
     { event: "client_sse", epochMs: 1050, frame: { type: "content_block_start", content_block: { type: "tool_use", name: "Bash", id: "callback-once" } } },
     { event: "client_callback_result_received", epochMs: 1150, results: [{ tool_use_id: "callback-once", content: "accepted" }] },
     { event: "client_sse", epochMs: 1175, frame: { type: "content_block_start", content_block: { type: "tool_use", name: "Read", id: "callback-read" } } },
     { event: "client_callback_result_received", epochMs: 1190, results: [{ tool_use_id: "callback-read", content: "effect-file:1100" }] },
+    { event: "upstream_sse", epochMs: 2900, frame: { type: "response.completed", response: { id: "script_1", output: [...originals, reasoning] } } },
     { event: "response_completed_sent", epochMs: 3000 },
-  ] as any[], upstreamRequests: [{ nativeInput: [...originals, ...outputs] as any[] }] };
+  ] as any[], upstreamRequests: [{ nativeInput: [reasoning, ...originals, ...outputs] as any[] }] };
 }
 describe("qualification multi-item admission guard (not product parity)", () => {
   test("accepts both original items followed by their actual distinct completed outputs", () => {
     expect(() => assertNativeBatch(batchObservation())).not.toThrow();
+  });
+  test("requires each completed first-response reasoning item exactly once with its upstream payload", () => {
+    const duplicate = batchObservation();
+    duplicate.upstreamRequests[0]!.nativeInput.push(structuredClone(duplicate.upstreamRequests[0]!.nativeInput[0]));
+    expect(() => assertNativeBatch(duplicate)).toThrow();
+
+    const changed = batchObservation();
+    changed.upstreamRequests[0]!.nativeInput[0] = {
+      ...structuredClone(changed.upstreamRequests[0]!.nativeInput[0]),
+      summary: [{ type: "summary_text", text: "changed reasoning" }],
+    };
+    expect(() => assertNativeBatch(changed)).toThrow();
   });
   test("rejects absent second output even when its marker appears in source", () => {
     const value = batchObservation(); value.upstreamRequests[0]!.nativeInput.pop();
     expect(() => assertNativeBatch(value)).toThrow();
   });
   test("rejects serialized marker lookalikes instead of actual executed output", () => {
-    const value = batchObservation(); value.upstreamRequests[0]!.nativeInput[3].output[1].text = JSON.stringify({ text: "native-batch-second" });
+    const value = batchObservation(); value.upstreamRequests[0]!.nativeInput[4].output[1].text = JSON.stringify({ text: "native-batch-second" });
     expect(() => assertNativeBatch(value)).toThrow();
   });
   test("rejects interleaved originals and outputs or duplicated batch items", () => {
@@ -171,7 +188,7 @@ describe("qualification multi-item admission guard (not product parity)", () => 
     expect(() => assertNativeBatch(duplicate)).toThrow();
   });
   test("rejects second execution held until terminal and a late first callback result", () => {
-    const held = batchObservation(); held.upstreamRequests[0]!.nativeInput[3].output[2].text = "native-batch-second-epoch:3001";
+    const held = batchObservation(); held.upstreamRequests[0]!.nativeInput[4].output[2].text = "native-batch-second-epoch:3001";
     expect(() => assertNativeBatch(held)).toThrow();
     const late = batchObservation(); late.marks[late.marks.length - 2] = { event: "client_callback_result_received", epochMs: 3001 };
     expect(() => assertNativeBatch(late)).toThrow();
@@ -191,7 +208,7 @@ describe("qualification multi-item admission guard (not product parity)", () => 
     expect(() => assertNativeBatch(reused)).toThrow();
     const forged = batchObservation(); forged.marks.find(mark => mark.event === "client_callback_result_received" && mark.results?.[0]?.tool_use_id === "callback-read")!.results![0]!.content = "source contained tools.Read";
     expect(() => assertNativeBatch(forged)).toThrow();
-    const dropped = batchObservation(); dropped.upstreamRequests[0]!.nativeInput[3].output.pop();
+    const dropped = batchObservation(); dropped.upstreamRequests[0]!.nativeInput[4].output.pop();
     expect(() => assertNativeBatch(dropped)).toThrow();
   });
 });
@@ -224,7 +241,7 @@ describe("qualification worker-loss guard (not product parity)", () => {
 
 function restartBatchObservation() {
   const value = batchObservation();
-  value.upstreamRequests[0]!.nativeInput[2].output = "Script terminated\nWall time 0.0 seconds\nOutput:\n" + JSON.stringify({
+  value.upstreamRequests[0]!.nativeInput[3].output = "Script terminated\nWall time 0.0 seconds\nOutput:\n" + JSON.stringify({
     status: "interrupted", sourceRerun: false, results: [{ id: "callback-once", output: "accepted", isError: false }], unresolved: [],
   });
   return value;
@@ -236,14 +253,14 @@ describe("qualification queued-source restart guard (not product parity)", () =>
   });
   test("rejects a rerun declaration or missing accepted callback evidence", () => {
     const rerun = restartBatchObservation();
-    rerun.upstreamRequests[0]!.nativeInput[2].output = rerun.upstreamRequests[0]!.nativeInput[2].output.replace('"sourceRerun":false', '"sourceRerun":true');
+    rerun.upstreamRequests[0]!.nativeInput[3].output = rerun.upstreamRequests[0]!.nativeInput[3].output.replace('"sourceRerun":false', '"sourceRerun":true');
     expect(() => assertNativeRestartBatch(rerun)).toThrow();
     const missing = restartBatchObservation();
-    missing.upstreamRequests[0]!.nativeInput[2].output = missing.upstreamRequests[0]!.nativeInput[2].output.replace('"callback-once"', '"different-callback"');
+    missing.upstreamRequests[0]!.nativeInput[3].output = missing.upstreamRequests[0]!.nativeInput[3].output.replace('"callback-once"', '"different-callback"');
     expect(() => assertNativeRestartBatch(missing)).toThrow();
   });
   test("rejects a queued sibling that did not produce its real completed output", () => {
-    const value = restartBatchObservation(); value.upstreamRequests[0]!.nativeInput[3].output[1].text = "native-batch-first";
+    const value = restartBatchObservation(); value.upstreamRequests[0]!.nativeInput[4].output[1].text = "native-batch-first";
     expect(() => assertNativeRestartBatch(value)).toThrow();
   });
 });
@@ -251,19 +268,21 @@ describe("qualification queued-source restart guard (not product parity)", () =>
 function outOfOrderBatchObservation() {
   const value = batchObservation(); const input = value.upstreamRequests[0]!.nativeInput;
   value.marks = [
-    { event: "upstream_sse", epochMs: 900, frame: { type: "response.output_item.added", output_index: 0, item: input[1] } },
-    { event: "upstream_sse", epochMs: 901, frame: { type: "response.output_item.added", output_index: 1, item: input[0] } },
-    { event: "upstream_sse", epochMs: 1000, frame: { type: "response.output_item.done", output_index: 1, item: input[0] } },
+    { event: "upstream_sse", epochMs: 899, frame: { type: "response.created", response: { id: "script_1" } } },
+    { event: "upstream_sse", epochMs: 900, frame: { type: "response.output_item.added", output_index: 0, item: input[2] } },
+    { event: "upstream_sse", epochMs: 901, frame: { type: "response.output_item.added", output_index: 1, item: input[1] } },
+    { event: "upstream_sse", epochMs: 950, frame: { type: "response.output_item.done", output_index: 2, item: input[0] } },
+    { event: "upstream_sse", epochMs: 1000, frame: { type: "response.output_item.done", output_index: 1, item: input[1] } },
     { event: "client_sse", epochMs: 1050, frame: { type: "content_block_start", content_block: { type: "tool_use", name: "Bash", id: "callback-once" } } },
     { event: "client_callback_result_received", epochMs: 1150, results: [{ tool_use_id: "callback-once", content: "accepted" }] },
-    { event: "upstream_sse", epochMs: 3000, frame: { type: "response.output_item.done", output_index: 0, item: input[1] } },
+    { event: "upstream_sse", epochMs: 3000, frame: { type: "response.output_item.done", output_index: 0, item: input[2] } },
     { event: "batch_items_done", epochMs: 3000 },
     { event: "client_sse", epochMs: 3100, frame: { type: "content_block_start", content_block: { type: "tool_use", name: "Read", id: "callback-read" } } },
     { event: "client_callback_result_received", epochMs: 3150, results: [{ tool_use_id: "callback-read", content: "effect-file:1100" }] },
+    { event: "upstream_sse", epochMs: 4900, frame: { type: "response.completed", response: { id: "script_1", output: [input[2], input[1], input[0]] } } },
     { event: "response_completed_sent", epochMs: 5000 },
-    { event: "upstream_sse", epochMs: 5000, frame: { type: "response.completed", response: { output: [input[1], input[0]] } } },
   ] as any;
-  input[3].output[2].text = "native-batch-second-epoch:3200";
+  input[4].output[2].text = "native-batch-second-epoch:3200";
   return value;
 }
 describe("qualification completed-item arrival guard (not product parity)", () => {
@@ -276,7 +295,7 @@ describe("qualification completed-item arrival guard (not product parity)", () =
   });
   test("rejects reconstructing model history in item-index order", () => {
     const value = outOfOrderBatchObservation(); const input = value.upstreamRequests[0]!.nativeInput;
-    [input[0], input[1]] = [input[1], input[0]];
+    [input[1], input[2]] = [input[2], input[1]];
     expect(() => assertNativeOutOfOrderBatch(value)).toThrow();
   });
 });
@@ -352,7 +371,7 @@ describe("qualification plain callback text guard (not product parity)", () => {
   test("requires exact accepted text in the honest interruption receipt", () => {
     const value = restartBatchObservation();
     expect(() => assertInterruptedCallbackText(value.upstreamRequests)).not.toThrow();
-    value.upstreamRequests[0]!.nativeInput[2].output = value.upstreamRequests[0]!.nativeInput[2].output.replace('"output":"accepted"', '"output":"changed"');
+    value.upstreamRequests[0]!.nativeInput[3].output = value.upstreamRequests[0]!.nativeInput[3].output.replace('"output":"accepted"', '"output":"changed"');
     expect(() => assertInterruptedCallbackText(value.upstreamRequests)).toThrow();
   });
 });

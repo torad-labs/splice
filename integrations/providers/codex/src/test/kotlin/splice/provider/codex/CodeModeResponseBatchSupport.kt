@@ -1,9 +1,11 @@
 package splice.provider.codex
 
 import kotlinx.coroutines.CompletableDeferred
+import kotlinx.coroutines.flow.flow
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.jsonArray
 import kotlinx.serialization.json.jsonObject
@@ -13,6 +15,7 @@ import splice.core.turn.RoundHandoffs
 import splice.core.turn.TurnOutcome
 import splice.core.turn.noRequestUsage
 import splice.core.util.JsonScalars
+import splice.dialect.responses.responsesTestTranslator
 import splice.upstream.RedirectableRoundPost
 import splice.upstream.RoundResult
 import splice.upstream.codemode.CodeModeCall
@@ -65,6 +68,67 @@ abstract class CodeModeResponseBatchSupport : CodeModeBridgeTestSupport() {
             terminalGate?.await()
             sink.customToolSource(CustomToolSource.Terminal)
             return RoundResult.Outcome(ending ?: batch(listOf(first, second)))
+        }
+    }
+
+    /** Real parser snapshots distinguish delivery order from the opposite native output indexes. */
+    protected inner class ReasonedBatchPost : RedirectableRoundPost {
+        val secondRelease = CompletableDeferred<Unit>()
+        val secondSealed = CompletableDeferred<Unit>()
+        val terminalRelease = CompletableDeferred<Unit>()
+        val finalInput = CompletableDeferred<JsonArray>()
+        val readable = "Inspect the callback, then preserve both accepted results."
+        val reasoning = buildJsonObject {
+            put("type", "reasoning"); put("id", "batch-reasoning"); put("encrypted_content", "synthetic-batch-cipher")
+            put("summary", JsonArray(listOf(buildJsonObject { put("type", "summary_text"); put("text", readable) })))
+        }
+        private val calls = listOf(firstCall(), secondCall()).mapIndexed { index, call ->
+            JsonObject(call.raw + ("id" to JsonPrimitive("batch-item-$index")))
+        }
+        private var initial = true
+
+        override suspend fun invoke(bodyJson: String): RoundResult = error("redirect required")
+
+        override suspend fun into(bodyJson: String, sink: WireSink): RoundResult {
+            if (!initial) {
+                finalInput.complete(Json.parseToJsonElement(bodyJson).jsonObject.getValue("input").jsonArray)
+                return RoundResult.Outcome(completedOutcome())
+            }
+            initial = false
+            val frames = flow {
+                emit(frame("response.output_item.added", 2, reasoning))
+                emit(frame("response.output_item.done", 2, reasoning))
+                emit(frame("response.output_item.added", 0, JsonObject(calls[1] + ("input" to JsonPrimitive("")))))
+                emit(frame("response.output_item.added", 1, JsonObject(calls[0] + ("input" to JsonPrimitive("")))))
+                emit(frame("response.output_item.done", 1, calls[0]))
+                secondRelease.await()
+                emit(frame("response.output_item.done", 0, calls[1]))
+                secondSealed.complete(Unit)
+                terminalRelease.await()
+                emit(
+                    buildJsonObject {
+                        put("type", "response.completed")
+                        put(
+                            "response",
+                            buildJsonObject {
+                                put("status", "completed")
+                                put("output", JsonArray(listOf(calls[1], calls[0], reasoning)))
+                            },
+                        )
+                    },
+                )
+            }
+            return RoundResult.Outcome(responsesTestTranslator(codeMode = true).driveTurn(frames, sink))
+        }
+
+        fun echoed(body: String): String {
+            val root = Json.parseToJsonElement(body).jsonObject
+            val input = root.getValue("input").jsonArray
+            return JsonObject(root + ("input" to JsonArray(input.take(1) + reasoning + input.drop(1)))).toString()
+        }
+
+        private fun frame(type: String, index: Int, item: JsonObject): JsonObject = buildJsonObject {
+            put("type", type); put("output_index", index); put("item", item)
         }
     }
 

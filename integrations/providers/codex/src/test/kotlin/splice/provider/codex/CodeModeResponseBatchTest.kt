@@ -14,9 +14,11 @@ import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertFalse
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
+import splice.core.index.WireBlockIndex
 import splice.core.turn.TurnOutcome
 import splice.core.util.JsonScalars
 import splice.upstream.RoundResult
+import splice.upstream.sse.WireSink
 
 class CodeModeResponseBatchTest : CodeModeResponseBatchSupport() {
     @Test
@@ -119,6 +121,49 @@ class CodeModeResponseBatchTest : CodeModeResponseBatchSupport() {
         assertTrue(canonical(input)[3].toString().contains("edit-result"))
         assertFalse(logLines.any { "interrupted extra=STEERING" in it })
         manager.onHeadStop()
+    }
+
+    @Test
+    fun `signatureless reasoning completed at a higher output index owns the preterminal callback echo`() = runTest {
+        val manager = bridge(Host(callback = true, secondCallback = true))
+        val post = ReasonedBatchPost()
+        val read = RecordingSink()
+        val receivedThinking = StringBuilder()
+        val signatures = mutableListOf<String>()
+        val sink = object : WireSink by read {
+            override suspend fun thinkingDelta(
+                index: WireBlockIndex,
+                thinking: String,
+            ) { receivedThinking.append(thinking) }
+            override suspend fun signatureDelta(index: WireBlockIndex, signature: String) { signatures += signature }
+        }
+        try {
+            manager.interceptor(turn(), disableParallel = false).intercept(BASE_REQUEST, sink, post).turn()
+            assertEquals(post.readable, receivedThinking.toString())
+            assertEquals(emptyList<String>(), signatures, "readable thinking has no client replay signature")
+            val readId = read.tools.single().id
+            post.secondRelease.complete(Unit)
+            post.secondSealed.await()
+            val edit = RecordingSink()
+            val next = manager.interceptor(turn(readId, "read-result"), disableParallel = false)
+                .intercept(post.echoed(followup(readId)), edit, post).turn()
+            assertTrue(next is TurnOutcome.Success && next.hasToolUse)
+            assertFalse(post.finalInput.isCompleted, "both callback steps precede the held response terminal")
+            val editId = edit.tools.single().id
+            post.terminalRelease.complete(Unit)
+            manager.interceptor(turn(editId, "edit-result"), disableParallel = false)
+                .intercept(post.echoed(bothResults(readId, editId)), RecordingSink(), post).turn()
+            val input = post.finalInput.await()
+            val items = canonical(input)
+            assertTrue(items[2].toString().contains("first-output:read-result"))
+            assertTrue(items[3].toString().contains("second-output:edit-result"))
+            assertFalse(logLines.any { "interrupted extra=STEERING" in it })
+            assertEquals(listOf(post.reasoning), input.filter { JsonScalars.str(it.jsonObject, "type") == "reasoning" })
+        } finally {
+            post.secondRelease.complete(Unit)
+            post.terminalRelease.complete(Unit)
+            manager.onHeadStop()
+        }
     }
 
     @Test

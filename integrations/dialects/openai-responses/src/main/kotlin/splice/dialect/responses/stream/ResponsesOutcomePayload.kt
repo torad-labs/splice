@@ -56,6 +56,9 @@ internal class ResponsesOutcomePayload(private val ctx: StreamTurnContext) {
             }?.snapshot(),
             nativeAfterExec = state.nativePrefix?.delivered?.afterExec(),
             nativeOutput = state.nativePrefix?.let { state.nativeOutput.snapshot(state.finalResponse) },
+            nativeDelivery = state.nativePrefix?.let {
+                NativeDeliverySnapshot(deliveredPrefix = it.delivered.recovery())
+            },
         ),
     )
 

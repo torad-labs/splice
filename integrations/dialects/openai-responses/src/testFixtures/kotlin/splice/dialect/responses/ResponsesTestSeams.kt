@@ -56,6 +56,7 @@ fun buildResponsesTestRequest(
 fun responsesTestTranslator(
     emitEncryptedReasoning: Boolean = false,
     collectReasoningEnvelopes: Boolean = false,
+    codeMode: Boolean = false,
     encode: (JsonObject) -> String? = { null },
 ): StreamTranslator = ResponsesStreamTranslator(
     StreamTurnContext(
@@ -75,6 +76,7 @@ fun responsesTestTranslator(
         ),
         reasoningCapture = ReasoningCapture(
             collectEnvelopes = collectReasoningEnvelopes,
+            codeMode = codeMode,
         ),
     ),
 )

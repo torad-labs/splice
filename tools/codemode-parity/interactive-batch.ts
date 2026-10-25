@@ -47,6 +47,7 @@ function batchOutputs(value: BatchObservation): any[] {
     item.type === "custom_tool_call_output" && calls.includes(item.call_id)));
   assert.ok(next, "no model continuation received the batch outputs");
   const input: any[] = next.nativeInput;
+  assertFirstResponseReasoning(value, input);
   const positions: number[] = [];
   for (const original of done) {
     const found = input.filter(item => item.type === "custom_tool_call" && item.call_id === original.call_id);
@@ -65,6 +66,34 @@ function batchOutputs(value: BatchObservation): any[] {
     "all original model batch items must precede both ordered outputs");
   assertScriptCallbacks(value, outputs[1]);
   return outputs;
+}
+
+/** A first response's completed reasoning must survive once, with the payload the server delivered. */
+function assertFirstResponseReasoning(value: BatchObservation, input: any[]): void {
+  const completed = value.marks.findIndex(mark => mark.event === "upstream_sse" && mark.frame?.type === "response.completed" &&
+    calls.every(call => mark.frame.response?.output?.some((item: any) => item.type === "custom_tool_call" && item.call_id === call)));
+  assert.ok(completed >= 0, "first batch response completion is missing");
+  const responseId = value.marks[completed]!.frame.response.id;
+  let created = -1;
+  for (let index = 0; index < completed; index++) {
+    const mark = value.marks[index];
+    if (mark.event === "upstream_sse" && mark.frame?.type === "response.created" && mark.frame.response?.id === responseId) {
+      created = index;
+    }
+  }
+  assert.ok(created >= 0, "first batch response creation is missing");
+  const reasoning = value.marks.slice(created + 1, completed)
+    .filter(mark => mark.event === "upstream_sse" && mark.frame?.type === "response.output_item.done" &&
+      mark.frame.item?.type === "reasoning")
+    .map(mark => mark.frame.item);
+  assert.ok(reasoning.length > 0, "first batch response emitted no completed reasoning items");
+  assert.equal(new Set(reasoning.map(item => item.id)).size, reasoning.length,
+    "first batch response repeated a completed reasoning identity");
+  for (const item of reasoning) {
+    const copies = input.filter(candidate => candidate?.type === "reasoning" && candidate.id === item.id);
+    assert.equal(copies.length, 1, `${item.id}: completed first-response reasoning must appear exactly once in final history`);
+    assert.deepEqual(copies[0], item, `${item.id}: completed first-response reasoning payload changed in final history`);
+  }
 }
 
 function assertCompleted(content: any, call: string, marker: string): void {

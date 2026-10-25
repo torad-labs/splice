@@ -52,6 +52,7 @@ internal class CodeModeLiveRound(
     suspend fun select(record: CodeModeRecord): CodeModeRecord? = capture.select(record)
     fun executing(record: CodeModeRecord) = capture.executing(record)
     fun sourceFor(record: CodeModeRecord): CodeModeSourceBuffer = capture.sourceFor(record)
+    fun deliveredNative(record: CodeModeRecord) = capture.deliveredNative(record)
     private val record: CodeModeRecord? get() = capture.record
     val activeRecord: CodeModeRecord? get() = capture.executingRecord
     val lifecycle = CodeModeRoundLifecycle(capture, headStop, registry, config.log)

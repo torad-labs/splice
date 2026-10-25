@@ -53,7 +53,8 @@ internal class CodeModeSourceCapture(
             }
             is CustomToolSource.Delta -> checkNotNull(items[event.callId]).observe(event, witness)
             is CustomToolSource.Continuity -> {
-                checkNotNull(items[event.callId]).observe(single(event), witness)
+                val single = event.copy(snapshot = itemOutcome(event.snapshot, event.callId, true))
+                checkNotNull(items[event.callId]).observe(single, witness)
                 admissions.capture(event.snapshot)
             }
             CustomToolSource.Terminal -> Unit
@@ -64,12 +65,10 @@ internal class CodeModeSourceCapture(
         if (items.isEmpty()) first else factory.create()
     }
 
-    private fun single(event: CustomToolSource.Continuity): CustomToolSource.Continuity = event.copy(
-        snapshot = itemOutcome(event.snapshot, event.callId, true),
-    )
-
     fun sourceFor(record: CodeModeRecord) =
         checkNotNull(items[record.origin.outerCallId]).source
+
+    fun deliveredNative(record: CodeModeRecord) = items[record.origin.outerCallId]?.deliveredNative
 
     fun delivered(witness: CodeModeDeliveredText) {
         items.values.forEach { it.delivered(witness) }

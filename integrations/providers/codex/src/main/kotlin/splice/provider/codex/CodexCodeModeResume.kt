@@ -105,7 +105,7 @@ internal class CodexCodeModeResume(
         body: CodeModeBody,
     ): TurnOutcome {
         val extra = wire.extraContent(
-            CodeModeClientHistory.of(context, body),
+            driver.sent.resumeClient(context, record) ?: body,
             record,
             results.media(record, context.turn),
             clearedCallbacks = context.turn.rendering.verifiedCleared.values.flatten().toSet(),
@@ -151,7 +151,7 @@ internal class CodexCodeModeResume(
     ): TurnOutcome = when {
         results.interrupts(extra, record) -> {
             wire.extraContent(
-                CodeModeClientHistory.of(context, body),
+                driver.sent.resumeClient(context, record) ?: body,
                 record,
                 results.media(record, context.turn),
                 report = extra,
@@ -162,33 +162,35 @@ internal class CodexCodeModeResume(
         context.disableParallel && record.progress.pending.any { !it.exposed } -> {
             exposeNext(record, supplied, context.link.sink)
         }
-        else -> {
-            val batch = results.runtime(record)
-            if (batch.isEmpty() && record.progress.pending.isNotEmpty()) {
-                CodexCodeModeIncrementalOutcomes.waitingForResults(
-                    registry,
+        else -> continueRuntime(record, context)
+    }
+
+    private suspend fun continueRuntime(record: CodeModeRecord, context: CodeModeRunContext): TurnOutcome {
+        val batch = results.runtime(record)
+        return if (batch.isEmpty() && record.progress.pending.isNotEmpty()) {
+            CodexCodeModeIncrementalOutcomes.waitingForResults(
+                registry,
+                record,
+                CodeModeStep.WaitingForResults(record.progress.output, record.progress.completionError),
+            )
+        } else {
+            if (batch.isNotEmpty()) {
+                val delivered = batch.map(CodeModeResult::id).toSet()
+                registry.changes.edit(record) { live ->
+                    live.progress.pending.removeAll { it.runtimeId in delivered }
+                }
+            }
+            machine.advance(
+                CodeModeAdvanceRequest(
                     record,
-                    CodeModeStep.WaitingForResults(record.progress.output, record.progress.completionError),
-                )
-            } else {
-                if (batch.isNotEmpty()) {
-                    val delivered = batch.map(CodeModeResult::id).toSet()
-                    registry.changes.edit(record) { live ->
-                        live.progress.pending.removeAll { it.runtimeId in delivered }
-                    }
-                }
-                machine.advance(
-                    CodeModeAdvanceRequest(
-                        record,
-                        context.turn,
-                        context.disableParallel,
-                        batch,
-                        context.link.sink,
-                        driver.streams.find(record),
-                    ),
-                ).also { outcome ->
-                    CodeModeSourceReset.note(driver.streams.find(record), outcome, context.link.post.perf)
-                }
+                    context.turn,
+                    context.disableParallel,
+                    batch,
+                    context.link.sink,
+                    driver.streams.find(record),
+                ),
+            ).also { outcome ->
+                CodeModeSourceReset.note(driver.streams.find(record), outcome, context.link.post.perf)
             }
         }
     }
@@ -240,8 +242,3 @@ internal class CodexCodeModeResume(
  * nobody expected, a baseline that no longer matches), which stops the script as it always did.
  */
 internal enum class CodeModeExtra { NONE, SYSTEM, STEERING }
-
-/** Steering is evidence from the client request, before private canonical model history is rebuilt. */
-private object CodeModeClientHistory {
-    fun of(context: CodeModeRunContext, fallback: CodeModeBody): CodeModeBody = context.client ?: fallback
-}

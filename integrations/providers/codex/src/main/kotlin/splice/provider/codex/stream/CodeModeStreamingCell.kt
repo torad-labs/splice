@@ -22,7 +22,8 @@ internal class CodeModeStreamingCell(
 
     var deliveredText: String? = null
         private set
-    val deliveredNative: List<kotlinx.serialization.json.JsonElement>? get() = round.switching.deliveredNative
+    val deliveredNative: List<kotlinx.serialization.json.JsonElement>?
+        get() = round.deliveredNative(record) ?: round.switching.deliveredNative
 
     override suspend fun advance(results: List<CodeModeResult>): CodeModeStep {
         currentCoroutineContext().ensureActive()

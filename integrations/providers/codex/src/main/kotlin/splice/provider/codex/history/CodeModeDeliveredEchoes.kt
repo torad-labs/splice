@@ -45,6 +45,19 @@ internal class CodeModeDeliveredEchoes(
         return rebuild(input, removed, native)
     }
 
+    /** A batch appends its full source once; only the exact pre-call copy certified by delivery is replaced. */
+    fun removeBatchPrelude(items: MutableList<JsonElement>, record: CodeModeRecord) {
+        val native = record.issued.firstOrNull()?.deliveredNative.orEmpty()
+        if (native.isEmpty()) return
+        val prefix = record.nativeBatch?.items.orEmpty().takeWhile {
+            codec.string(it, "type") != "custom_tool_call"
+        }
+        val expected = CodeModeContinuityCapture.items(prefix, "", emptyList())
+        if (expected.filter { it in native } != native || expected.size > items.size) return
+        val start = items.size - expected.size
+        if (items.subList(start, items.size) == expected) items.subList(start, items.size).clear()
+    }
+
     private fun step(items: List<JsonElement>, step: CodeModeIssuedStep, lower: Int): IntRange? {
         val text = step.deliveredText?.takeIf(String::isNotEmpty) ?: return null
         val ids = step.calls.mapTo(mutableSetOf()) { it.clientId }

@@ -1,6 +1,7 @@
 // NEW: an item-sealed native prefix survives a terminal that supplies only the legacy flat receipt.
 package splice.provider.codex.stream.source
 
+import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonObject
 import splice.core.turn.TurnOutcome
 import splice.provider.codex.CodeModeContinuity
@@ -16,6 +17,10 @@ internal class CodeModeSourceContinuity(private val wire: CodexCodeModeWire) {
     private var prefixKnown = false
     private var beforeText = ""
 
+    /** The first completed call seals a proven arrival-order prefix independently of native output indexes. */
+    @Volatile var deliveredNative: List<JsonElement>? = null
+        private set
+
     fun sealed(snapshot: TurnOutcome.Success?) {
         sealedPrefix = snapshot?.let(CodeModeContinuityCapture::successItems)
         verifiedAfterExec = snapshot?.handoffs?.nativeAfterExec?.toList()
@@ -27,6 +32,11 @@ internal class CodeModeSourceContinuity(private val wire: CodexCodeModeWire) {
         recovery: CodeModeRecoveryHistory.Source?,
         witness: CodeModeDeliveredText? = null,
     ): CodeModeContinuity {
+        if (deliveredNative == null) {
+            outcome.handoffs.nativeDelivery?.deliveredPrefix?.let { prefix ->
+                deliveredNative = CodeModeContinuityCapture.project(prefix).replayItems.flatMap { it.items }
+            }
+        }
         witness?.let(delivery::accept)
         outcome.handoffs.nativeAfterExec?.let { verifiedAfterExec = it.toList() }
         val kept = outcome.copy(

@@ -7,7 +7,7 @@ import splice.core.memory.HeapReservations
 import splice.provider.codex.state.CodeModeAccepted
 import splice.provider.codex.state.CodeModeRecordSnapshots
 import splice.provider.codex.state.CodeModeReplayAnchors
-import splice.provider.codex.stream.CodeModeSourceEnds
+import splice.provider.codex.state.CodeModeSourceEnds
 import splice.provider.codex.stream.CodeModeSourceLease
 import splice.provider.codex.stream.CodeModeSourceState
 import splice.provider.codex.stream.batch.CodeModeNativeBatch

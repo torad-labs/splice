@@ -1,18 +1,15 @@
 package splice.provider.codex.branch
 
-import kotlinx.serialization.SerializationException
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonObject
 import splice.core.perf.InputDigest
 import splice.core.util.JsonScalars
 import splice.core.util.LogSink
-import splice.provider.codex.CodeModePending
 import splice.provider.codex.CodeModeRecord
 import splice.provider.codex.CodeModeRunContext
 import splice.provider.codex.CodexCodeModeHistoryCodec
 import splice.provider.codex.history.CodeModeClientAcknowledgement
-import splice.upstream.codemode.CodeModeCall
 import java.security.MessageDigest
 import java.util.HexFormat
 
@@ -25,17 +22,14 @@ internal fun interface CodeModePostedClientStart {
 internal class CodeModeClearedWitness(
     private val context: CodeModeRunContext,
     private val records: List<CodeModeRecord>,
-    private val log: LogSink,
+    log: LogSink,
 ) {
     private val rendering = context.turn.rendering
     private val input = context.client?.request?.second.orEmpty()
     private val codec = CodexCodeModeHistoryCodec(Json)
     private val items = input.dropWhile(codec::isPreamble)
     private val baseline = CodeModeClearedBaseline(codec, items)
-    private val calls = items.filterIsInstance<JsonObject>().filter { text(it, "type") == "function_call" }
-        .groupBy { text(it, "call_id") }
-    private val outputs = items.filterIsInstance<JsonObject>().filter { text(it, "type") == "function_call_output" }
-        .groupBy { text(it, "call_id") }
+    private val identity = CodeModeClearedIdentity(context, items, log)
     private val owners = records.flatMap { record ->
         record.clientIds().map {
             it to record
@@ -82,34 +76,7 @@ internal class CodeModeClearedWitness(
         }
         val continued = owner.id in verified || baseline.matchesAcknowledgedStart(owner, id, cleared, posted)
         if (!continued || owner.sessionId != context.turn.sessionId) return
-        if (matches(owner, id)) authorized[id] = owner
-    }
-
-    private fun matches(owner: CodeModeRecord, id: String): Boolean {
-        val candidate = rendering.clearedCallbacks[id] ?: return false
-        val call = owner.issued.flatMap { it.calls }
-            .filter { it.clientId == id }.distinct().singleOrNull() ?: return false
-        val identity = matchesCall(call, candidate) && uniqueWire(id, candidate)
-        val result = context.turn.toolResults.singleOrNull { it.id == id }
-        return identity && result?.isError == owner.results[id]?.isError
-    }
-
-    private fun matchesCall(call: CodeModePending, candidate: CodeModeCall): Boolean =
-        call.exposed && call.name == candidate.name && call.arguments == candidate.arguments
-
-    private fun uniqueWire(id: String, candidate: CodeModeCall): Boolean {
-        val wire = calls[id]?.singleOrNull() ?: return false
-        return outputs[id]?.size == 1 && matchesWire(wire, candidate.name, candidate.arguments)
-    }
-
-    private fun matchesWire(item: JsonObject, name: String, arguments: JsonObject): Boolean {
-        val parsed = try {
-            Json.parseToJsonElement(text(item, "arguments"))
-        } catch (_: SerializationException) {
-            log("[code-mode] cleared callback replay skipped: malformed callback arguments")
-            return false
-        }
-        return text(item, "name") == name && parsed == arguments
+        if (identity.matches(owner, id)) authorized[id] = owner
     }
 
     private fun normalized(item: JsonObject?, id: String): Pair<String, List<JsonElement>>? {

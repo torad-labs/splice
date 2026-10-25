@@ -23,6 +23,7 @@ import splice.provider.codex.state.CodeModeNativeChain
 import splice.provider.codex.state.CodeModeRecordChanges
 import splice.provider.codex.state.CodeModeRegistryAccess
 import splice.provider.codex.state.CodeModeSessionEnd
+import splice.provider.codex.state.CodeModeSourceEnds
 import splice.provider.codex.state.CodeModeStartupAdmissions
 import splice.provider.codex.state.CodeModeTurnStart
 import splice.provider.codex.state.collection.CodeModeRecordList
@@ -36,7 +37,6 @@ import splice.provider.codex.state.retention.CodeModeTimedSweep
 import splice.provider.codex.state.retention.CodexCodeModeSweeper
 import splice.provider.codex.state.save.CodeModeStateWrite
 import splice.provider.codex.stream.CodeModeClientContexts
-import splice.provider.codex.stream.CodeModeSourceEnds
 import splice.provider.codex.stream.source.CodeModeSourceRecords
 import splice.upstream.codemode.CodeModeCell
 import splice.upstream.codemode.CodeModeResult

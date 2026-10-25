@@ -7,12 +7,20 @@ import splice.core.turn.TurnOutcome
 import splice.core.util.Cancellables
 import splice.core.util.LogSink
 import splice.provider.codex.CodeModePersistenceException
-import splice.provider.codex.stream.CodeModeReaderFailures
-import splice.provider.codex.stream.CodeModeReaderFailures.SOURCE_FAILED
-import splice.provider.codex.stream.HEAD_STOPPED
-import splice.provider.codex.stream.SOURCE_DISPOSED
+import splice.provider.codex.stream.CodeModeLiveRound
+import splice.provider.codex.stream.reader.CodeModeReaderFailures.HEAD_STOPPED
+import splice.provider.codex.stream.reader.CodeModeReaderFailures.SOURCE_DISPOSED
 import splice.provider.codex.stream.source.CodeModeSourceCapture
 import java.io.IOException
+
+/** Only an unnamed reader death converges through LOST; named source and runtime faults keep their attribution. */
+internal object CodeModeReaderTermination {
+    suspend fun ended(source: CodeModeLiveRound?): Boolean {
+        if (source?.unexpectedDeath != true) return false
+        source.outcome()
+        return true
+    }
+}
 
 /** Owns the result of the upstream reader independently of the script's observation and client steps. */
 internal class CodeModeReaderOutcomes(
@@ -41,11 +49,18 @@ internal class CodeModeReaderOutcomes(
         val unnamed = CodeModeReaderFailures.unexpected(cause) ?: return
         upstreamEnded = true
         unexpectedDeath = !capture.itemComplete
-        log("[code-mode] upstream source reader died (${unnamed::class.simpleName}): $SOURCE_FAILED")
-        capture.source.fail(SOURCE_FAILED)
+        log(
+            "[code-mode] upstream source reader died (${unnamed::class.simpleName}): " +
+                CodeModeReaderFailures.SOURCE_FAILED,
+        )
+        capture.source.fail(CodeModeReaderFailures.SOURCE_FAILED)
         synchronized(lifecycle) {
             if (stoppedByHead) return
-            Cancellables.runCatchingBestEffort { capture.interrupted(SOURCE_FAILED) }.onFailure { failure ->
+            Cancellables.runCatchingBestEffort {
+                capture.interrupted(
+                    CodeModeReaderFailures.SOURCE_FAILED,
+                )
+            }.onFailure { failure ->
                 log("[code-mode] the dead reader's record was not saved as lost (${failure::class.simpleName})")
             }
         }
@@ -92,11 +107,11 @@ internal class CodeModeReaderOutcomes(
     fun failed(error: Exception): TurnOutcome.Failure = synchronized(lifecycle) {
         upstreamEnded = true
         if (stoppedByHead) {
-            capture.source.fail(SOURCE_FAILED)
+            capture.source.fail(CodeModeReaderFailures.SOURCE_FAILED)
             throw CancellationException(HEAD_STOPPED, error)
         }
         localFailure?.let { return@synchronized it }
-        val detail = SOURCE_FAILED
+        val detail = CodeModeReaderFailures.SOURCE_FAILED
         if (error is CodeModePersistenceException) {
             capture.source.fail(detail)
             if (!capture.ready.isCompleted) capture.ready.completeExceptionally(error)

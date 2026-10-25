@@ -9,11 +9,27 @@ import splice.core.util.LogSink
 import splice.provider.codex.CodeModePersistenceException
 import splice.provider.codex.CodeModeRecord
 import splice.provider.codex.CodexCodeModeRegistry
-import splice.provider.codex.stream.CodeModeOwedRound
+import splice.provider.codex.stream.CodeModeOutcomeAccumulator
+import splice.provider.codex.stream.CodeModeStreams
 import splice.upstream.PostingTurnRow
+import splice.upstream.RowRelease
 
 internal fun interface CodeModeRoundRecord {
     operator fun invoke(): CodeModeRecord?
+}
+
+/** A posting step's row, owed the source round that was still streaming when the step returned. */
+internal class CodeModeOwedRound(private val release: RowRelease, private val step: TurnOutcome.Success) {
+    /** Releases the row with [round] merged into the step's usage the way [CodeModeStreams.billFinished] merges a
+     *  round that finished in time, or with none when the round left nothing to bill. */
+    fun settle(round: Usage?) {
+        val usage = round?.let {
+            val accumulated = CodeModeOutcomeAccumulator()
+            accumulated.absorb(TurnOutcome.Success(hasToolUse = false, incomplete = false, usage = it))
+            (accumulated.finishLocal(step) as? TurnOutcome.Success)?.usage
+        }
+        release.release(usage)
+    }
 }
 
 /** Shares the round's lifecycle monitor so its posting claim cannot race the usage terminal. */

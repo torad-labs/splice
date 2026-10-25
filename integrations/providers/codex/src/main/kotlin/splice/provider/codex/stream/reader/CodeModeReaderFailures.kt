@@ -1,5 +1,5 @@
 // NEW: classifies thrown reader failures separately from parsed upstream outcomes and local persistence failures.
-package splice.provider.codex.stream
+package splice.provider.codex.stream.reader
 
 import kotlinx.coroutines.CancellationException
 import splice.core.turn.FailureCause
@@ -10,6 +10,10 @@ import java.io.IOException
 
 internal object CodeModeReaderFailures {
     const val SOURCE_FAILED = "upstream source failed; source was not rerun"
+
+    // why: a disposed execution cannot retain its response reader or dispatch unread source.
+    const val SOURCE_DISPOSED = "code-mode execution disposed; source was not rerun"
+    const val HEAD_STOPPED = "code-mode head stopped"
 
     fun unexpected(cause: Throwable?): Throwable? = cause?.takeUnless {
         it is CancellationException || it is CodeModePersistenceException

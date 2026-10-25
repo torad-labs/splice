@@ -18,48 +18,9 @@ import splice.provider.codex.CodexCodeModeRegistry
 import splice.provider.codex.CodexCodeModeWire
 import splice.provider.codex.stream.batch.CodeModeBatchHistory
 import splice.upstream.LifecycleScope
-import splice.upstream.RowRelease
 import splice.upstream.codemode.ProcessDispatchers
 import splice.upstream.sse.WireSink
 import java.util.concurrent.ConcurrentHashMap
-
-/** Source stops stay on the ending thread, after its outermost registry scope releases every lock. */
-internal object CodeModeSourceEnds {
-    private val pending = ThreadLocal<MutableList<CodeModeSourceLease>>()
-
-    fun defer(lease: CodeModeSourceLease?) {
-        if (lease == null) return
-        lease.retire()
-        val held = pending.get()
-        if (held == null) lease.ended() else held.add(lease)
-    }
-
-    inline fun <T> unlocked(block: () -> T): T {
-        if (pending.get() != null) return block()
-        val leases = mutableListOf<CodeModeSourceLease>()
-        pending.set(leases)
-        return try {
-            block()
-        } finally {
-            pending.remove()
-            leases.forEach(CodeModeSourceLease::ended)
-        }
-    }
-}
-
-/** A posting step's row, owed the source round that was still streaming when the step returned. */
-internal class CodeModeOwedRound(private val release: RowRelease, private val step: TurnOutcome.Success) {
-    /** Releases the row with [round] merged into the step's usage the way [CodeModeStreams.billFinished] merges a
-     *  round that finished in time, or with none when the round left nothing to bill. */
-    fun settle(round: Usage?) {
-        val usage = round?.let {
-            val accumulated = CodeModeOutcomeAccumulator()
-            accumulated.absorb(TurnOutcome.Success(hasToolUse = false, incomplete = false, usage = it))
-            (accumulated.finishLocal(step) as? TurnOutcome.Success)?.usage
-        }
-        release.release(usage)
-    }
-}
 
 /** Ending an execution lease cancels its response reader and releases its upstream slot. */
 internal class CodeModeSourceLease(

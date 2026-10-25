@@ -12,13 +12,13 @@ import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 import splice.provider.codex.state.CodeModeKeyLocks
 import splice.provider.codex.state.CodeModeRegistryAccess
+import splice.provider.codex.state.CodeModeSourceEnds
 import splice.provider.codex.state.CodeModeStateJournal
 import splice.provider.codex.state.CodeModeTurnIdentity
 import splice.provider.codex.state.lease.CodeModeCellLease
 import splice.provider.codex.state.lease.CodeModeSessionAlive
 import splice.provider.codex.state.save.CodeModeStateWrite
 import splice.provider.codex.stream.CodeModeLiveRound
-import splice.provider.codex.stream.CodeModeSourceEnds
 import splice.provider.codex.stream.CodeModeSourceLease
 import splice.provider.codex.stream.CodeModeStreamAdmission
 import splice.upstream.sse.CustomToolSource

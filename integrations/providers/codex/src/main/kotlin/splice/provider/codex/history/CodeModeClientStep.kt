@@ -1,4 +1,4 @@
-package splice.provider.codex.history.client
+package splice.provider.codex.history
 
 import kotlinx.serialization.json.JsonElement
 import splice.provider.codex.CodeModeBody
@@ -6,12 +6,6 @@ import splice.provider.codex.CodeModeClientStart
 import splice.provider.codex.CodeModeRecord
 import splice.provider.codex.CodeModeRunContext
 import splice.provider.codex.CodexCodeModeHistoryCodec
-import splice.provider.codex.history.CodeModeClientAcknowledgement
-import splice.provider.codex.history.CodeModeClientAcknowledgements
-import splice.provider.codex.history.CodeModeClientPrefix
-import splice.provider.codex.history.CodeModeLedgerEntry
-import splice.provider.codex.history.CodeModeScriptDelivery
-import splice.provider.codex.history.CodeModeScriptPlacements
 import splice.provider.codex.stream.batch.CodeModeBatchLinks
 import java.lang.ref.WeakReference
 

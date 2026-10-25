@@ -1,7 +1,7 @@
 // NEW: per-conversation transition locks are separate from the head-wide state lock.
 package splice.provider.codex.state
 
-import splice.provider.codex.stream.CodeModeSourceEnds
+import splice.provider.codex.stream.CodeModeSourceLease
 import java.util.concurrent.locks.ReentrantLock
 import kotlin.concurrent.withLock
 
@@ -60,6 +60,30 @@ internal class CodeModeRegistryAccess(
             monitor.withLock(block)
         } finally {
             keys.release(key, entry)
+        }
+    }
+}
+
+/** Source stops stay on the ending thread, after its outermost registry scope releases every lock. */
+internal object CodeModeSourceEnds {
+    private val pending = ThreadLocal<MutableList<CodeModeSourceLease>>()
+
+    fun defer(lease: CodeModeSourceLease?) {
+        if (lease == null) return
+        lease.retire()
+        val held = pending.get()
+        if (held == null) lease.ended() else held.add(lease)
+    }
+
+    inline fun <T> unlocked(block: () -> T): T {
+        if (pending.get() != null) return block()
+        val leases = mutableListOf<CodeModeSourceLease>()
+        pending.set(leases)
+        return try {
+            block()
+        } finally {
+            pending.remove()
+            leases.forEach(CodeModeSourceLease::ended)
         }
     }
 }

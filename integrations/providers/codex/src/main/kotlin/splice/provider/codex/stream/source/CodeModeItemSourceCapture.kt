@@ -17,7 +17,7 @@ import splice.provider.codex.stream.CodeModeRecoveryHistory
 import splice.provider.codex.stream.CodeModeSourceBuffer
 import splice.provider.codex.stream.CodeModeSourceCommit
 import splice.provider.codex.stream.CodeModeStreamAdmission
-import splice.provider.codex.stream.SOURCE_DISPOSED
+import splice.provider.codex.stream.reader.CodeModeReaderFailures.SOURCE_DISPOSED
 import splice.upstream.sse.CustomToolSource
 
 internal class CodeModeItemSourceCapture(

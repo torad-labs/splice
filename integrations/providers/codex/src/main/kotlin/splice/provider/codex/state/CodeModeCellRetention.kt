@@ -6,7 +6,6 @@ import splice.provider.codex.CodeModeBridgeConfig
 import splice.provider.codex.CodeModePhase
 import splice.provider.codex.CodeModeRecord
 import splice.provider.codex.state.collection.CodeModeRecordKeys
-import splice.provider.codex.stream.CodeModeSourceEnds
 import splice.upstream.codemode.CodeModeCell
 import kotlin.concurrent.withLock
 import kotlin.time.Duration.Companion.minutes

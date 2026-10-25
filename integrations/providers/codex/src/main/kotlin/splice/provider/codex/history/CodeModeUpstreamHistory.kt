@@ -14,7 +14,6 @@ import splice.provider.codex.CodeModeRecord
 import splice.provider.codex.CodeModeRunContext
 import splice.provider.codex.CodeModeStateLocation
 import splice.provider.codex.CodexCodeModeHistoryCodec
-import splice.provider.codex.history.client.CodeModeClientStep
 import splice.provider.codex.history.durable.CodeModeHistoryStorage
 import splice.provider.codex.stream.batch.CodeModeBatchHistory
 import splice.provider.codex.stream.batch.CodeModeBatchLinks

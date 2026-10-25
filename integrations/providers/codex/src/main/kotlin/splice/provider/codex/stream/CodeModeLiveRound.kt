@@ -19,18 +19,17 @@ import splice.provider.codex.CodexCodeModeBridge
 import splice.provider.codex.CodexCodeModeRegistry
 import splice.provider.codex.CodexCodeModeWire
 import splice.provider.codex.state.CodeModeTurnIdentity
-import splice.provider.codex.stream.reader.CodeModeReaderDeath
+import splice.provider.codex.stream.reader.CodeModeReaderFailures
 import splice.provider.codex.stream.reader.CodeModeReaderOutcomes
+import splice.provider.codex.stream.reader.CodeModeReaderSettlement
 import splice.provider.codex.stream.reader.CodeModeRoundBilling
 import splice.provider.codex.stream.reader.CodeModeRoundCompletion
 import splice.provider.codex.stream.reader.CodeModeRoundLifecycle
 import splice.provider.codex.stream.reader.CodeModeRoundRecord
 import splice.provider.codex.stream.source.CodeModeSourceCapture
-import splice.upstream.RoundResult
 import splice.upstream.TurnEnd
 import splice.upstream.sse.CustomToolSource
 import splice.upstream.sse.WireSink
-import splice.upstream.transport.UpstreamEnding
 import java.io.IOException
 
 internal class CodeModeLiveRound(
@@ -43,7 +42,9 @@ internal class CodeModeLiveRound(
     recovery: CodeModeRecoveryHistory? = null,
 ) {
     /** Runs just before a parsed terminal settles. Production never sets it: billing tests hold that window. */
-    internal var beforeSettle: Runnable? = null
+    internal var beforeSettle: Runnable?
+        get() = settlement.beforeSettle
+        set(value) { settlement.beforeSettle = value }
     private val capture = CodeModeSourceCapture(config, registry, wire, admission, recovery)
     val source = capture.source
     val ready = capture.ready
@@ -62,6 +63,7 @@ internal class CodeModeLiveRound(
         private set
     private val settled = CompletableDeferred<Unit>()
     private val readerOutcomes = CodeModeReaderOutcomes(config.log, capture, lifecycle, billing)
+    private val settlement = CodeModeReaderSettlement(capture, lifecycle, readerOutcomes, billing, cut)
 
     /** The reader ended and its last billing settled: any row it was owed is released, and its usage is consumed or
      *  waits in the record's source state for the step that takes the outcome. */
@@ -69,13 +71,7 @@ internal class CodeModeLiveRound(
     private val completion = CodeModeRoundCompletion(
         config.log,
         settled,
-        CodeModeReaderDeath { cause ->
-            try {
-                readerOutcomes.died(cause)
-            } finally {
-                billing.settle(readerEnd = true, clientCut = cut.client)
-            }
-        },
+        settlement,
     )
 
     val unexpectedDeath: Boolean get() = readerOutcomes.unexpectedDeath
@@ -86,8 +82,8 @@ internal class CodeModeLiveRound(
         get() = readerOutcomes.upstreamEnded
         set(value) { readerOutcomes.upstreamEnded = value }
 
-    /** The upstream delivered the round's terminal; its outcome has not reached [settleRead] yet. A client step that
-     *  fails in that gap cuts nothing: the source finished. */
+    /** The upstream delivered the round's terminal; its outcome has not reached [CodeModeRoundCompletion.settleRead]
+     *  yet. A client step that fails in that gap cuts nothing: the source finished. */
     @Volatile private var terminalSeen = false
         private set
 
@@ -119,7 +115,7 @@ internal class CodeModeLiveRound(
         finished = scope.async(start = CoroutineStart.UNDISPATCHED) {
             switching.ownedBy(this)
             try {
-                settleRead(post, post.into(body, switching))
+                completion.settleRead(post, post.into(body, switching), switching)
             } catch (error: CancellationException) {
                 readerOutcomes.cancelled(error)
                 throw error
@@ -139,42 +135,6 @@ internal class CodeModeLiveRound(
         }.also { reader ->
             reader.invokeOnCompletion { cause -> completion.completed(scope, cause, end) }
         }
-    }
-
-    /** What the reader's post gave: an outcome the source finishes on, or an upstream ending the turn ends on.
-     *  A streamed round meets its ending through this reader path, so it records the intercepted turn's slot here,
-     *  the same settlement a non-streamed post does at CodeModeUpstreamPost.invoke — otherwise the continuation
-     *  refusal of a script leaves as an internal Outcome and the head never sees the real ending. */
-    private suspend fun settleRead(post: CodeModeRedirectablePost, posted: RoundResult): TurnOutcome =
-        when (posted) {
-            is RoundResult.Ended -> {
-                post.record(posted.ending)
-                ended(posted.ending)
-            }
-            is RoundResult.Outcome -> {
-                upstreamEnded = true
-                lifecycle.delivered(switching.confirmedText())
-                val result = readerOutcomes.finish(posted.outcome)
-                beforeSettle?.run()
-                billing.settle(readerEnd = false, clientCut = cut.client)
-                result
-            }
-        }
-
-    /** The upstream ended the source post without an outcome (the retry loop gave up on it, it had no credentials, it
-     *  tore, or sent a frame over the limit). That ending is the client turn's ending, classified where a plain turn's
-     *  is, so [outcome] hands it to whichever turn reads this round. Oct 4: a refusal reached the death handler as an unnamed
-     *  throwable, ended the round as an internal fault, and Claude Code retried a refused request as an overload for
-     *  36 minutes. */
-    private fun ended(ending: UpstreamEnding): TurnOutcome.Failure = synchronized(lifecycle) {
-        upstreamEnded = true
-        source.fail(SOURCE_REFUSED)
-        if (stoppedByHead) throw CancellationException(HEAD_STOPPED)
-        localFailure?.let { return@synchronized it }
-        // A record's next client step reads the source's outcome, as a torn source's does.
-        lifecycle.sourceInterrupted = capture.unfinished
-        capture.interrupted(SOURCE_REFUSED)
-        completion.ended(ending)
     }
 
     fun owns(turn: CodexCodeModeBridge.Turn): Boolean = synchronized(lifecycle) {
@@ -198,7 +158,7 @@ internal class CodeModeLiveRound(
         val reader = finished
         cut.cancel(reader, stoppedByHead, terminalSeen)
         lifecycle.executionLost = true
-        source.dispose(SOURCE_DISPOSED)
+        source.dispose(CodeModeReaderFailures.SOURCE_DISPOSED)
         reader?.cancel()
     }
 
@@ -229,15 +189,10 @@ internal class CodeModeLiveRound(
                 terminalSeen = true
                 return@synchronized
             }
-            if (stoppedByHead) throw CancellationException(HEAD_STOPPED)
+            if (stoppedByHead) throw CancellationException(CodeModeReaderFailures.HEAD_STOPPED)
             if (sourceLost) return@synchronized
             if (localFailure != null) return@synchronized
             Cancellables.runCatchingBestEffort { capture.observe(event, witness) }.onFailure(lifecycle::reject)
         }
     }
 }
-
-// why: a disposed execution cannot retain its response reader or dispatch unread source.
-internal const val SOURCE_DISPOSED = "code-mode execution disposed; source was not rerun"
-internal const val HEAD_STOPPED = "code-mode head stopped"
-private const val SOURCE_REFUSED = "upstream refused the source request; source was not rerun"

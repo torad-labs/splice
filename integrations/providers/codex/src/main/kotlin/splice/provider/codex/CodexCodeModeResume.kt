@@ -10,8 +10,8 @@ import splice.core.turn.noRequestUsage
 import splice.provider.codex.branch.CodeModeClientOutputDigests
 import splice.provider.codex.callbacks.CodeModeResumeResults
 import splice.provider.codex.callbacks.CodexCodeModeIncrementalOutcomes
-import splice.provider.codex.stream.CodeModeLiveRound
 import splice.provider.codex.stream.CodeModeSourceReset
+import splice.provider.codex.stream.reader.CodeModeReaderTermination
 import splice.upstream.codemode.CodeModeResult
 import splice.upstream.codemode.CodeModeStep
 import splice.upstream.sse.WireSink
@@ -230,15 +230,6 @@ internal class CodexCodeModeResume(
             phase = FailurePhase.MID_OUTPUT,
             salvagedUsage = noRequestUsage,
         )
-}
-
-/** Only an unnamed reader death converges through LOST; named source and runtime faults keep their attribution. */
-private object CodeModeReaderTermination {
-    suspend fun ended(source: CodeModeLiveRound?): Boolean {
-        if (source?.unexpectedDeath != true) return false
-        source.outcome()
-        return true
-    }
 }
 
 /**

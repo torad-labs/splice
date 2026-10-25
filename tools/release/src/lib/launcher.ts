@@ -702,10 +702,15 @@ const ARMS: readonly Arm[] = [
     // passwd fallback, including when an explicit config and jar point into a test sandbox.
     name: "V4-218 an unset or blank HOME uses the JVM's fallback home",
     run: async (ctx) => {
-      // The passwd home, which the JVM's user.home falls back to. Bun's userInfo() can echo the sandbox HOME.
+      // The passwd home, which the JVM's user.home falls back to. Bun's userInfo() can echo the sandbox HOME. macOS has
+      // no getent: its passwd database is Directory Services, which dscl reads.
       const user = execFileSync("id", ["-un"], { encoding: "utf8" }).trim();
-      const entry = execFileSync("getent", ["passwd", user], { encoding: "utf8" }).trim();
-      const fallback = entry.split(":")[5] ?? "";
+      const fallback =
+        process.platform === "darwin"
+          ? (execFileSync("dscl", [".", "-read", `/Users/${user}`, "NFSHomeDirectory"], { encoding: "utf8" })
+              .trim()
+              .split(/\s+/)[1] ?? "")
+          : (execFileSync("getent", ["passwd", user], { encoding: "utf8" }).trim().split(":")[5] ?? "");
       const expected = `-Duser.home=${fallback}`;
       for (const home of [undefined, "", "  "]) {
         rmSync(ctx.captures.javaArgv, { force: true });

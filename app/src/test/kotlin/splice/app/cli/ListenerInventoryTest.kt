@@ -79,12 +79,18 @@ class ListenerInventoryTest {
         val body = Json.parseToJsonElement(out.single()).jsonObject.getValue("socket_activation").jsonObject
         assertEquals("true", body.getValue("adopt_inherited").jsonPrimitive.content)
         assertEquals("LISTEN_FDNAMES", body.getValue("matches_by").jsonPrimitive.content)
-        // The machine answer, which a manager reads before it stops the running daemon: on this Linux box the native
-        // transport loads, so available is true and no cause is printed. A box without it reads false WITH a cause,
-        // and that is the whole point of the field — a static true would have told a manager nothing.
+        // The machine answer, which a manager reads before it stops the running daemon. The native transport is
+        // Linux's epoll: on Linux it loads, so available is true and no cause is printed. A Mac never has it, so it
+        // reads false WITH the cause a refused boot would give, and that is the whole point of the field — a static
+        // true would have told a manager nothing.
         val native = body.getValue("native_transport").jsonObject
-        assertEquals("true", native.getValue("available").jsonPrimitive.content)
-        assertNull(native["cause"])
+        if (System.getProperty("os.name") == "Linux") {
+            assertEquals("true", native.getValue("available").jsonPrimitive.content)
+            assertNull(native["cause"])
+        } else {
+            assertEquals("false", native.getValue("available").jsonPrimitive.content)
+            assertTrue(native.getValue("cause").jsonPrimitive.content.startsWith("native_unavailable: "))
+        }
         assertTrue(
             body.getValue("refuses").jsonArray.map { it.jsonPrimitive.content }.contains("native_unavailable"),
             "a manager must be able to expect the refusal it will be given",

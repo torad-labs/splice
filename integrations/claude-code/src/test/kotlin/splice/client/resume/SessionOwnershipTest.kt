@@ -79,7 +79,8 @@ class SessionOwnershipTest {
     @Test
     fun `the cwd is matched by real path, so a symlinked spelling finds the same sessions`(@TempDir home: Path) {
         val own = ownership(home)
-        val real = Files.createDirectories(home.resolve("real"))
+        // why: the real path of a folder in the temp dir, which on a Mac sits under /var, a link to /private/var
+        val real = Files.createDirectories(home.resolve("real")).toRealPath()
         val link = Files.createSymbolicLink(home.resolve("link"), real)
         own.record("s1", link.toString(), transcript(home, "s1"))
 

@@ -23,6 +23,8 @@ import org.junit.jupiter.api.AfterEach
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
+import org.junit.jupiter.api.condition.EnabledOnOs
+import org.junit.jupiter.api.condition.OS
 import org.junit.jupiter.api.io.TempDir
 import splice.core.util.LogSink
 import splice.upstream.RetryNotice
@@ -151,12 +153,16 @@ class UpstreamClientWriteStallTest(@TempDir tmp: Path) {
     }
 
     // V4-289 (1): the write returns once the body is in the kernel, and the header wait ran on the turn cap.
+    // why: the cut reads unacknowledged bytes from /proc/net/tcp, which only Linux has. On macOS the watch never
+    // guesses: `with no send-queue table a waiting write is still cut, and a buffered one is never guessed at`.
+    @EnabledOnOs(OS.LINUX)
     @Test
     fun `a request that fits in the send buffer and is never read is cut at the write timeout`() {
         assertCutAndRetried(upstream(then = Serving.Reads(0)), BUFFERED_BODY)
     }
 
     // V4-289 (2): every hosted head is https.
+    @EnabledOnOs(OS.LINUX)
     @Test
     fun `the same request over TLS is cut at the write timeout`() {
         assertCutAndRetried(upstream(then = Serving.Reads(0), tls = true), BUFFERED_BODY, tls = true)

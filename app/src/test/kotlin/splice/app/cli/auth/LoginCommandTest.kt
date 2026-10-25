@@ -119,6 +119,37 @@ class LoginCommandTest {
         )
     }
 
+    /** `claudex login` typed on a node, where claudex runs on another machine (LAN share): the shim hands it to
+     *  `splice login claudex`, which says where that command's logins live rather than calling it unknown, and how to
+     *  sign in there by a name that exists there, whatever the command is called here (`--as claudex-work`). */
+    @Test
+    fun `login for a command another machine serves says its logins live on that machine`(@TempDir tmp: Path) {
+        val config = tmp.resolve(".config").resolve("splice").resolve("splice.toml")
+        Files.createDirectories(config.parent)
+        val remotes = "\n[remote.claudex]\nurl = \"http://torad-server.lan:3097/claudex\"\n" +
+            "\n[remote.claudex-work]\nurl = \"http://torad-server.lan:3097/claudex?auth=work\"\n"
+        Files.writeString(config, FAST_HEAD_TOML + remotes)
+        for (command in listOf("claudex", "claudex-work")) {
+            val out = java.io.ByteArrayOutputStream()
+            val savedOut = System.out
+            System.setOut(java.io.PrintStream(out))
+            var signedIn = true
+            try {
+                UserHome.within(tmp) {
+                    assertEquals(config, TopologyLoader.configPath(), "the redirected config path is login()'s")
+                    signedIn = kotlinx.coroutines.runBlocking { LoginCommand().login(command) }
+                }
+            } finally {
+                System.setOut(savedOut)
+            }
+            val printed = out.toString()
+            assertFalse(signedIn, printed)
+            assertTrue(printed.contains("its logins live there"), printed)
+            assertTrue(printed.contains("Run `splice login claudex` on torad-server.lan"), printed)
+            assertFalse(printed.contains("unknown head") || printed.contains("`claudex-work login`"), printed)
+        }
+    }
+
     // ---- `splice login <claude-head> --label`, end to end over the real session registry ----
 
     /** The Claude head runs over [configDir]; claudex, another head of the same provider, on 3105. */

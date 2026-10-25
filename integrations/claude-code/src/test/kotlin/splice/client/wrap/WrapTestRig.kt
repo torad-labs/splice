@@ -16,7 +16,10 @@ import kotlin.io.path.writeText
 
 /** One rig: bin/, share/, a real "binary" file the pre-existing claude symlink points at, the
  *  shim file itself, and a WrappedHead wired to all of it plus a fixed clock. */
-internal class WrapRig(home: Path) {
+internal class WrapRig(temp: Path) {
+    // why: the wrap records the binary claude resolves to by real path. A Mac's temp folder is under /var, a link to
+    // /private/var, so the rig lays its tree out in the real path, as a real home is.
+    val home: Path = temp.toRealPath()
     val bin: Path = home.resolve("bin").createDirectories()
     val share: Path = home.resolve("share").createDirectories()
     val versions: Path = home.resolve("versions").createDirectories()

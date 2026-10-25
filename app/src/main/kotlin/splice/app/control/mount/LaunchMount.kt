@@ -48,6 +48,7 @@ internal class LaunchMount(
             ?: TranscriptModelRewrite(originals = TranscriptOriginals(sessions.statePaths)),
         sessions.activity,
         sessions.starts,
+        ResumeHookRoute.RemoteSessionTrees { command -> launchService?.remotes?.ownTree(command) },
     )
 
     fun register(route: Route) {

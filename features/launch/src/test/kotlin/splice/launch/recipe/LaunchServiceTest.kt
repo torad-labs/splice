@@ -36,6 +36,15 @@ import splice.launch.launch
 import java.nio.file.Files
 import java.nio.file.Path
 
+// why: on a Mac every launch carries splice's mark in a --settings of its own (LaunchMarker), since macOS hides a
+// hardened client's environment from ps; elsewhere nothing is added. The OS decides, so the OS is asked here.
+private val launchMark: List<String> =
+    if (System.getProperty("os.name").orEmpty().startsWith("Mac")) {
+        listOf("--settings", """{"spliceLaunch":true}""")
+    } else {
+        emptyList()
+    }
+
 class LaunchServiceTest(@param:TempDir private val tmp: Path) {
 
     private val service = LaunchService(
@@ -514,7 +523,7 @@ class LaunchServiceTest(@param:TempDir private val tmp: Path) {
             "an adoption is an explicit act and is said out loud: ${recipe.warning}",
         )
         assertEquals(
-            listOf("claude", "-r", "abc-123"),
+            listOf("claude") + launchMark + listOf("-r", "abc-123"),
             recipe.argv,
             "the copy is additive — the client is still launched with the caller's own argv",
         )

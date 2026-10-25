@@ -9,6 +9,7 @@ import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.io.TempDir
+import splice.core.config.UserHome
 import splice.sessions.registry.SessionListing
 import splice.sessions.registry.SessionRecord
 import splice.sessions.registry.SessionSource
@@ -22,7 +23,15 @@ import java.nio.file.Path
 
 class HistoryProjectRoutesTest {
     @Test
-    fun `a transcript-only session makes its git root a project with readable instructions`(@TempDir tmp: Path) {
+    fun `a transcript-only session makes its git root a project with readable instructions`(@TempDir temp: Path) {
+        // why: the resolver probes only trusted roots, realpath against realpath. The OS temp folder is /tmp on Linux,
+        // which it trusts, and /var/folders on a Mac (a link to /private/var), which it does not, so the session
+        // works in the real path of a home on both.
+        val tmp = temp.toRealPath()
+        UserHome.within(tmp) { transcriptOnlyProject(tmp) }
+    }
+
+    private fun transcriptOnlyProject(tmp: Path) {
         val repo = Files.createDirectories(tmp.resolve("tally"))
         Files.createDirectory(repo.resolve(".git"))
         val nested = Files.createDirectories(repo.resolve("src/deep"))

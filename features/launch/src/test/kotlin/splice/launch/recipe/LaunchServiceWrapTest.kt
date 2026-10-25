@@ -34,6 +34,15 @@ import kotlin.io.path.exists
 import kotlin.io.path.readText
 import kotlin.io.path.writeText
 
+// why: on a Mac every launch carries splice's mark in a --settings of its own (LaunchMarker), since macOS hides a
+// hardened client's environment from ps; elsewhere nothing is added. The OS decides, so the OS is asked here.
+private val launchMark: List<String> =
+    if (System.getProperty("os.name").orEmpty().startsWith("Mac")) {
+        listOf("--settings", """{"spliceLaunch":true}""")
+    } else {
+        emptyList()
+    }
+
 class LaunchServiceWrapTest(@param:TempDir private val tmp: Path) {
 
     private fun spec(head: String, forwardClientAuth: Boolean = false) = LaunchSpec(
@@ -176,7 +185,8 @@ class LaunchServiceWrapTest(@param:TempDir private val tmp: Path) {
         val recipe = LaunchService(ClaudeConfigMaterializer(tmp))
             .launch(spec("claude-splice", forwardClientAuth = true), emptyList(), dangerouslySkipPermissions = false)
         assertEquals(tmp.resolve(".claude-claude-splice").toString(), recipe.env["CLAUDE_CONFIG_DIR"])
-        assertFalse("--settings" in recipe.argv, "the head's settings are materialized in its own tree")
+        val settings = recipe.argv.zipWithNext().filter { it.first == "--settings" }.map { it.second }
+        assertEquals(launchMark.drop(1), settings, "the head's settings are materialized in its own tree")
     }
 
     @Test

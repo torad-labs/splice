@@ -54,6 +54,7 @@ import splice.core.config.MgmtKey
 import splice.core.config.StatePaths
 import splice.core.head.Head
 import splice.core.head.HeadHealth
+import splice.core.testing.TestPorts
 import splice.diagnostics.logs.HeadLogSource
 import splice.head.compact.CompactView
 import splice.head.compact.HeadCompactSource
@@ -66,7 +67,6 @@ import splice.launch.recipe.LaunchService
 import splice.usage.quota.HeadUsageSource
 import splice.usage.quota.RateLimitView
 import splice.usage.quota.UsageView
-import java.net.ServerSocket
 import java.nio.file.Files
 import java.nio.file.Path
 import kotlin.io.path.exists
@@ -153,7 +153,7 @@ class ClaudeHeadRoutesWiringTest {
             runBlocking {
                 withTimeout(TIMEOUT_MS) {
                     val deadline = System.nanoTime() + TIMEOUT_MS * 1_000_000
-                    while (System.nanoTime() < deadline && runCatching { ServerSocket(port).close() }.isSuccess) {
+                    while (System.nanoTime() < deadline && !TestPorts.listening(port)) {
                         delay(POLL_MS)
                     }
                     test(port, key)

@@ -24,15 +24,6 @@ import splice.daemonclient.DaemonSettings
 
 internal const val ADD_PAD = 11
 
-/** What a described add writes beside its rows, such as a remote head's token in the key store. [claim] runs after
- *  the add's refusals and before its checks, which may need what it wrote; false stops the add. [release] takes the
- *  write back when the add then saves nothing. */
-internal interface AddSideWrite {
-    fun claim(candidate: AddCandidate): Boolean
-
-    fun release()
-}
-
 /** [output] is every line the verb prints; [errors] takes only what resolving the control port says
  *  about a broken splice.toml. */
 internal class AddCommand(
@@ -52,30 +43,18 @@ internal class AddCommand(
         return added(candidate, env)
     }
 
-    /** A head a local runtime or another machine described (RuntimeHeadAdd, RemoteHeadAdd): no command line, the
-     *  same everything else. [beside] is written only once every refusal has passed, and taken back when the add
-     *  writes nothing, so a refused add leaves the key store as it found it. */
-    suspend fun addDescribed(profile: AddProfile, env: EnvReader, beside: AddSideWrite? = null): Boolean {
+    /** A head a local runtime described (RuntimeHeadAdd): no command line, the same everything else. */
+    suspend fun addDescribed(profile: AddProfile, env: EnvReader): Boolean {
         val candidate = prepare.described(profile, env) ?: return false
-        if (beside != null && !beside.claim(candidate)) return false
-        return added(candidate, env, beside)
+        return added(candidate, env)
     }
 
-    private suspend fun added(candidate: AddCandidate, env: EnvReader, beside: AddSideWrite? = null): Boolean {
+    private suspend fun added(candidate: AddCandidate, env: EnvReader): Boolean {
         val title = "$BOLD${candidate.resolved.origin}$RESET"
         output.line("$title$DIM: '${candidate.key}' as $CYAN${candidate.command}$RESET")
-        // The side write is kept only once the file is saved: a refusal, a throw or a cancellation on the way takes
-        // it back, so a later add is not refused over a key nothing was written for (PR #247's fourth review).
-        var ok = false
-        try {
-            ok = authenticate(candidate, env) && verified(candidate, env) && save(candidate)
-        } finally {
-            if (!ok) beside?.release()
-        }
-        if (!ok) {
-            output.line("${YELLOW}nothing written$RESET: ${candidate.file.path} is unchanged")
-            return false
-        }
+        val ok = authenticate(candidate, env) && verified(candidate, env) && save(candidate)
+        if (!ok) output.line("${YELLOW}nothing written$RESET: ${candidate.file.path} is unchanged")
+        if (!ok) return false
         val options = candidate.args.options
         val live = options.live ||
             (!options.yes && confirm("Run one short live turn against '${candidate.key}' now?", default = false))

@@ -57,12 +57,13 @@ public sealed class Command {
         override suspend fun run(): Int = splice.app.cli.peer.PeerCommand().run(args)
     }
 
-    /** `splice share <verb>`: offer this machine's heads to the person's other machines (docs/specs/lan-share.md). */
+    /** `splice share <verb>`: offer this machine's commands to the person's other machines on its LAN
+     *  (docs/specs/lan-share.md). */
     public data class Share(val args: List<String>) : Command() {
         override suspend fun run(): Int = splice.app.cli.share.ShareCommand().run(args)
     }
 
-    /** `splice remote [<verb>]`: use the heads another of the person's machines shares (docs/specs/lan-share.md). */
+    /** `splice remote [<verb>]`: run commands another of the person's machines shares (docs/specs/lan-share.md). */
     public data class Remote(val args: List<String>) : Command() {
         override suspend fun run(): Int = splice.app.cli.share.RemoteCommand().run(args)
     }

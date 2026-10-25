@@ -9,6 +9,7 @@ import splice.app.provider.HeadBuildInputs
 import splice.app.provider.ProviderBuild
 import splice.client.ClaudePolicy
 import splice.client.login.LoginOutcomeFile
+import splice.client.login.SignInWay
 import splice.core.config.MgmtKey
 import splice.core.config.StatePaths
 import splice.core.config.TurnKey
@@ -97,7 +98,7 @@ internal class LaunchSpecFactory(
                 // start ONLY while the key is unconfigured (re-materialized each launch).
                 loginCommand = signIn.command,
                 signInLabel = signIn.label,
-                signInViaBrowser = signIn.viaBrowser,
+                signInWay = if (signIn.viaBrowser) SignInWay.Browser else SignInWay.Terminal,
                 // The CAPABILITY rides ungated; whether it materializes is decided per LAUNCH by
                 // LaunchService against ManagedHead.keyPresence (DR-81 — this used to bake the
                 // boot-time key check in, so `splice key set` never disarmed the paste-capture hook:
@@ -132,6 +133,20 @@ internal class LaunchSpecFactory(
     }
 
     private fun shellSingleQuote(value: String): String = "'" + value.replace("'", "'\\''") + "'"
+
+    /** LAN share: the trees a command another machine serves keeps here, as a head's: its own `~/.claude-<command>`,
+     *  and every head's tree and plain Claude Code's for a `-r ID` resume. */
+    internal fun remoteTrees(command: String): HeadTrees {
+        val own = configDirOf(command, null)
+        val siblings = topology.heads.map { (key, head) -> configDirOf(key, head.claude.configDir) }
+            .filter { it != own }
+        return HeadTrees(own, siblings, UserHome.claudeDir().takeUnless { it == own || it in siblings })
+    }
+
+    /** LAN share: what a command another machine serves shares with plain Claude Code, as the file sets for every
+     *  head; it isolates nothing of its own, having no `[heads]` table here. */
+    internal fun remotePolicy(): ClaudePolicy =
+        ClaudePolicy(share = topology.claude.share.toSet(), isolate = emptySet())
 
     /** V4-130: each served head's CLAUDE_CONFIG_DIR/projects in topology order, for SessionProject's
      *  headless fallback, which searches them before its own vanilla default. Derived from the topology

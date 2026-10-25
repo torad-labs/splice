@@ -4,9 +4,11 @@
 // session splice never launched (DIRECT) from a launch nothing recorded, and whose CLAUDE_CONFIG_DIR names its config
 // home. macOS has no /proc. This reads the same facts from /bin/ps, which needs no root for this user's processes.
 //
-// THE SPELLINGS ARE CLAUDE CODE'S OWN (2.1.296, read from its bundle on Oct 13): off Linux and Windows its pidDomain is
-// the literal "linux", and its procStart is `ps -o lstart= -p <pid>` run with LC_ALL=C and TZ=UTC, trimmed. The
-// lstart here is that command with that environment, so the two strings are equal for the same process.
+// THE SPELLINGS ARE CLAUDE CODE'S OWN (2.1.309, read from its bundle on Oct 23): off Linux, WSL and Windows its
+// pidDomain is the literal "darwin" (2.1.296 wrote "linux", and a session keeps the registration its start wrote, so
+// both spellings are this Mac's; a full linux:<machine-id>:pid:[<inode>] is another host's), and its
+// procStart is `ps -o lstart= -p <pid>` run with LC_ALL=C and TZ=UTC, trimmed. The lstart here is that command with
+// that environment, so the two strings are equal for the same process.
 //
 // THE ENVIRONMENT comes from `ps -E -ww -o command=`, which prints the arguments and then the environment, joined by
 // spaces. The arguments alone (`ps -ww -o command=`) are cut from its front, and the rest is split before each
@@ -30,7 +32,10 @@ import java.io.IOException
 import java.util.concurrent.TimeUnit
 
 /** Claude Code's pidDomain on every host but Linux, WSL and Windows. */
-private const val DARWIN_PID_DOMAIN = "linux"
+private const val DARWIN_PID_DOMAIN = "darwin"
+
+/** The pidDomain Claude Code 2.1.296 wrote on a Mac, which a session started then still carries. */
+private const val OLD_DARWIN_PID_DOMAIN = "linux"
 
 private const val PS = "/bin/ps"
 
@@ -53,6 +58,10 @@ public class DarwinPs(
 
     /** Claude Code's pidDomain on macOS, or null off macOS. */
     internal fun domain(): String? = DARWIN_PID_DOMAIN.takeIf { here }
+
+    /** Whether [domain] is a pidDomain a Claude Code on this Mac wrote, now or before; false off macOS. */
+    internal fun spells(domain: String): Boolean =
+        here && (domain == DARWIN_PID_DOMAIN || domain == OLD_DARWIN_PID_DOMAIN)
 
     /** [pid]'s start as Claude Code writes procStart on macOS, or null off macOS or when ps cannot say. */
     internal fun lstart(pid: Long): String? {

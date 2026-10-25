@@ -25,6 +25,10 @@ private const val OVERFLOWING_DEPTH = 3_000
 // why: 8,000 accesses overflowed a worker's stack on most workers, in the parse or at run time (CI run 37234377673).
 private const val OVERFLOWING_CHAIN = 8_000
 
+// why: the chain is sized to a stack, so the worker's is pinned to x86_64 Linux's default. An arm64 Mac's default
+// is 2 MiB, where 8,000 accesses parse and run, and its JVM spawns the worker with that default.
+private const val CHAIN_WORKER_STACK = "-Xss1m"
+
 /** A program too deep for the worker's stack ends with the program's own error, from whichever side overflows: the
  *  engine's parse of the whole program, or its run. Either is the script's error, never a lost worker. */
 private val PROGRAM_STACK_ERRORS = listOf("SyntaxError: ", "RangeError: ")
@@ -55,7 +59,7 @@ class CodeModeWorkerTaskDeathTest {
     @Test
     fun `a program whose member chain overflows the worker's stack ends with its own error, never a lost worker`() =
         runBlocking {
-            runtime().use { runtime ->
+            runtime(CHAIN_WORKER_STACK).use { runtime ->
                 val chain = "const a = {}; a.a = a; const v = " + "a.".repeat(OVERFLOWING_CHAIN) + "a;\n"
                 warm(runtime)
                 val step = withTimeout(ANSWER_BOUND_MS) { run(runtime, chain) }
@@ -91,10 +95,14 @@ class CodeModeWorkerTaskDeathTest {
             }
         }
 
-    private fun runtime(): JvmCodeModeRuntime = JvmCodeModeRuntime(
+    /** [stack], when given, is the worker JVM's thread stack option, placed right after its java executable. */
+    private fun runtime(stack: String? = null): JvmCodeModeRuntime = JvmCodeModeRuntime(
         launch = HostLaunch(
             classpath = classpath,
-            spawn = WorkerSpawn { builder -> builder.start().also(spawned::add) },
+            spawn = WorkerSpawn { builder ->
+                stack?.let { builder.command().add(1, it) }
+                builder.start().also(spawned::add)
+            },
         ),
     ).also { it.observeHostLifecycle(LogSink(messages::add)) }
 

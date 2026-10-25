@@ -1,136 +1,137 @@
-// NEW: LAN share, phase 1 (docs/specs/lan-share.md; Marcos, 2026-10-22). `splice share`, the sharing machine's
-// side: turn `[share]` on or off in splice.toml (through TopologyWriter, which refuses an edit that brings a
-// finding and backs the file up first) and restart so the listener follows; list the machines that joined;
-// revoke one. The listener itself is the daemon's (ShareServer).
+// NEW: LAN share (docs/specs/lan-share.md, Marcos's ruling of 2026-10-24). `splice share`, the server's side: turn
+// `[share]` on or off in splice.toml and restart so the listener follows, and print, for each command this machine
+// offers, the address another machine adds it by. What is offered is the listener's own answer, asked on loopback, so
+// the list is the daemon's, never a guess from the file. A port another program here holds is refused before the file
+// changes: the listener could not open it, and a restart would not free it.
 package splice.app.cli.share
 
-import splice.app.LifecycleWiring
-import splice.app.cli.AdminSupport
 import splice.app.cli.peer.PeerExit
-import splice.app.share.ShareClients
-import splice.app.share.ShareState
-import splice.core.config.StatePaths
+import splice.core.terminal.BOLD
 import splice.core.terminal.CYAN
 import splice.core.terminal.DIM
 import splice.core.terminal.GREEN
 import splice.core.terminal.RESET
 import splice.core.terminal.TerminalOutput
+import splice.core.topology.ShareConfig
 import splice.core.topology.Topology
-import splice.core.topology.TopologyParse
-import splice.core.topology.TopologyWriteResult
-import splice.core.topology.TopologyWriter
-import splice.core.util.Cancellables
 import splice.core.util.EnvReader
-import splice.core.util.SafeFailureText
-import splice.topology.TopologyLoader
+import splice.core.util.LogSink
+import splice.share.ShareAddresses
+import splice.share.ShareDirectory
+import splice.share.ShareDirectoryRead
+import splice.share.ShareInfo
+import splice.upstream.codemode.ProcessDispatchers
+import java.net.BindException
 import java.net.InetSocketAddress
-import java.net.Socket
-import java.nio.file.Files
+import java.net.ServerSocket
 
-internal const val SHARE_USAGE = "on [--port N] | off | status | revoke <machine>"
+internal const val SHARE_USAGE = "on [--port N] | off | status"
 
 internal class ShareCommand(
     private val out: TerminalOutput = TerminalOutput(::println),
     private val err: TerminalOutput = TerminalOutput(System.err::println),
-    private val env: EnvReader = EnvReader(System::getenv),
+    env: EnvReader = EnvReader(System::getenv),
 ) {
-    private val clients = ShareClients(ShareState(StatePaths()).clientsFile)
-    private val path = TopologyLoader.configPath(env)
+    private val file = ShareTopologyFile(err, SHARE_VERB, env)
+    private val restart = ShareRestart(out, err, env, SHARE_VERB)
+    private val directory = ShareDirectory(ProcessDispatchers().io())
 
-    fun run(args: List<String>): Int {
+    suspend fun run(args: List<String>): Int {
         val rest = args.drop(1)
         return when (args.firstOrNull()) {
             "on" -> on(rest)
-            "off" -> if (rest.isEmpty()) switch(false, null) else usage()
+            "off" -> if (rest.isEmpty()) switched(false, null) else usage()
             null, "status" -> if (rest.isEmpty()) status() else usage()
-            "revoke" -> rest.singleOrNull()?.let(::revoke) ?: usage()
             else -> usage()
         }
     }
 
-    private fun on(rest: List<String>): Int = when {
-        rest.isEmpty() -> switch(true, null)
-        rest.size == 2 && rest[0] == "--port" -> rest[1].toIntOrNull()?.let { switch(true, it) } ?: usage()
+    private suspend fun on(rest: List<String>): Int = when {
+        rest.isEmpty() -> switched(true, null)
+        rest.size == 2 && rest[0] == "--port" -> rest[1].toIntOrNull()?.let { switched(true, it) } ?: usage()
         else -> usage()
     }
 
-    private fun switch(on: Boolean, port: Int?): Int {
-        val current = loaded() ?: return PeerExit.REFUSED
-        val share = current.share.copy(enabled = on, port = port ?: current.share.port)
-        if (!saved(current.copy(share = share))) return PeerExit.REFUSED
-        out.line("$GREEN✓$RESET sharing ${if (on) "on, port ${share.port}" else "off"} in $path")
-        return restarted(current.copy(share = share))
-    }
-
-    private fun loaded(): Topology? =
-        Cancellables.runCatchingCancellable { TopologyLoader.parse(Files.readString(path)) }.fold(
-            onSuccess = { it },
-            onFailure = { failure ->
-                err.line("splice share: $path does not load: ${SafeFailureText.render(failure)}")
-                null
-            },
-        )
-
-    private fun saved(wanted: Topology): Boolean {
-        val writer = TopologyWriter(path, StatePaths().configBackupsDir, TopologyParse(TopologyLoader::parse))
-        val result = Cancellables.runCatchingCancellable { writer.write(wanted) }.getOrElse { failure ->
-            err.line("splice share: $path was not changed: ${SafeFailureText.render(failure)}")
-            return false
+    private suspend fun switched(on: Boolean, port: Int?): Int {
+        val current = file.loaded() ?: return PeerExit.REFUSED
+        val wanted = current.copy(share = current.share.copy(enabled = on, port = port ?: current.share.port))
+        if (!saved(wanted)) return PeerExit.REFUSED
+        out.line("$GREEN✓$RESET sharing ${if (on) "on, port ${wanted.share.port}" else "off"} in ${file.path}")
+        return when {
+            !restart.followed(wanted) -> PeerExit.REFUSED
+            on && restart.up(wanted) -> status()
+            else -> PeerExit.DONE
         }
-        if (result is TopologyWriteResult.Refused) result.findings.forEach { err.line("splice share: ${it.text()}") }
-        return result !is TopologyWriteResult.Refused
     }
 
-    /** The listener opens and closes with the daemon, so a running one restarts to follow the file. */
-    private fun restarted(topology: Topology): Int {
-        if (!AdminSupport.daemonUp(AdminSupport.controlPort(topology, env))) {
-            out.line("  the daemon is not running; it follows this at its next start")
+    private suspend fun status(): Int {
+        val share = (file.loaded() ?: return PeerExit.REFUSED).share
+        if (!share.enabled) {
+            out.line("sharing is off. ${CYAN}splice share on$RESET lets your other machines run this one's commands.")
             return PeerExit.DONE
         }
-        if (!LifecycleWiring.restart()) {
-            err.line("splice share: the restart failed; run ${CYAN}splice restart$RESET")
+        return when (val read = directory.read("http://127.0.0.1:${share.port}")) {
+            is ShareDirectoryRead.Read -> offered(share, read.info)
+            is ShareDirectoryRead.Refused -> {
+                err.line("$SHARE_VERB: sharing is on in ${file.path}, but nothing here answers on it: ${read.why}")
+                err.line("  is splice running? ${CYAN}splice restart$RESET")
+                PeerExit.REFUSED
+            }
+        }
+    }
+
+    /** What [info] offers, each command at the address another machine on this LAN adds it by. */
+    private fun offered(share: ShareConfig, info: ShareInfo): Int {
+        val reach = ShareAddresses(share, info.machine, LogSink { err.line(it.trimEnd()) }).reach()
+        val server = reach.server ?: run {
+            err.line("$SHARE_VERB: ${info.machine} has no address on a LAN, so no other machine can reach it")
             return PeerExit.REFUSED
         }
-        if (topology.share.enabled) out.line("  ${DIM}on your other machines:$RESET ${CYAN}splice remote$RESET")
+        out.line("sharing is on: $BOLD$server$RESET, on ${info.machine}'s LAN")
+        if (info.commands.isEmpty()) out.line("  no command here holds a login of its own to offer")
+        info.commands.forEach { offer ->
+            val state = if (offer.running) "" else "  ${DIM}not running$RESET"
+            out.line("  ${offer.command.padEnd(COMMAND_PAD)} $server/${offer.command}$state")
+            val logins = offer.logins.joinToString(", ").ifEmpty { "its one login" }
+            val models = offer.models.joinToString(", ")
+            out.line("  ${"".padEnd(COMMAND_PAD)} ${DIM}logins: $logins · models: $models$RESET")
+        }
+        out.line("on another machine: ${CYAN}splice remote add <address>$RESET, or every one at once:")
+        out.line("  ${CYAN}splice remote add $server$RESET")
+        out.line("${DIM}an address may end in ?auth=<login> to run on that login,$RESET")
+        out.line("${DIM}and in ?models=<id>,<id> to show only those models$RESET")
+        val others = reach.addresses - server
+        if (others.isNotEmpty()) out.line("${DIM}by address: ${others.joinToString(", ")}$RESET")
         return PeerExit.DONE
     }
 
-    private fun status(): Int {
-        val topology = loaded() ?: return PeerExit.REFUSED
-        val share = topology.share
-        if (share.enabled) {
-            val state = if (listening(share.port)) "${GREEN}listening$RESET" else "not listening (is the daemon up?)"
-            out.line("sharing is on, port ${share.port}: $state")
-            out.line("  heads     ${share.sharedHeads(topology).joinToString(", ").ifEmpty { "none" }}")
-        } else {
-            out.line("sharing is off. ${CYAN}splice share on$RESET offers this machine's heads to your other machines.")
+    /** [wanted] written to splice.toml, unless it shares on a port this machine can't open, said in the OS's words
+     *  (held by another program, or below 1024 for a user on Linux). This machine's own share listener holds its port
+     *  while sharing is on, and answers there. */
+    private suspend fun saved(wanted: Topology): Boolean {
+        val port = wanted.share.port
+        val refusal = if (wanted.share.enabled) bindRefusal(port) else null
+        if (refusal != null && directory.read("http://127.0.0.1:$port") !is ShareDirectoryRead.Read) {
+            val another = "${CYAN}splice share on --port <N>$RESET"
+            err.line("$SHARE_VERB: port $port can't be opened here ($refusal); choose another with $another")
+            return false
         }
-        val joined = clients.all()
-        if (joined.isEmpty()) out.line("  machines  none joined")
-        joined.forEach { machine ->
-            val name = machine.name.padEnd(MACHINE_NAME_PAD)
-            out.line("  machine   $name from ${machine.address}, joined ${machine.joinedAt}")
-        }
-        return PeerExit.DONE
+        return file.saved(wanted)
     }
 
-    private fun revoke(name: String): Int {
-        val found = Cancellables.runCatchingCancellable { clients.revoke(name) }.getOrElse { failure ->
-            err.line("splice share: nothing was revoked: ${SafeFailureText.render(failure)}")
-            return PeerExit.REFUSED
+    /** Why [port] can't be bound on every address, as the share listener binds it, in the OS's words; null when it can,
+     *  or when it is no port at all, which the writer refuses in its own words. */
+    private fun bindRefusal(port: Int): String? = try {
+        ServerSocket().use { socket ->
+            socket.reuseAddress = false
+            socket.bind(InetSocketAddress(port))
         }
-        if (!found) {
-            err.line("splice share: no machine named '$name' has joined (see ${CYAN}splice share status$RESET)")
-            return PeerExit.REFUSED
-        }
-        val back = "${CYAN}splice remote$RESET"
-        out.line("$GREEN✓$RESET '$name' revoked: its next turn is refused until it runs $back again")
-        return PeerExit.DONE
+        null
+    } catch (refused: BindException) {
+        refused.message ?: "the OS refused it"
+    } catch (_: IllegalArgumentException) {
+        null
     }
-
-    private fun listening(port: Int): Boolean = Cancellables.runCatchingCancellable {
-        Socket().use { it.connect(InetSocketAddress("127.0.0.1", port), LISTENER_PROBE_MS) }
-    }.isSuccess
 
     private fun usage(): Int {
         err.line("usage: splice share $SHARE_USAGE")
@@ -138,10 +139,4 @@ internal class ShareCommand(
     }
 }
 
-// why: the machine column of `splice share status`: a host name of up to sixteen characters lines up the
-// address and the join time beside it, and a longer name pushes only its own row.
-private const val MACHINE_NAME_PAD = 16
-
-// why: a connect to this machine's own loopback answers in well under a millisecond when the listener is up,
-// so half a second only bounds a stalled stack and keeps `splice share status` instant either way.
-private const val LISTENER_PROBE_MS = 500
+private const val SHARE_VERB = "splice share"

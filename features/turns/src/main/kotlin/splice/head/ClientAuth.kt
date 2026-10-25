@@ -246,17 +246,12 @@ internal class ClientAuth(
      *  An allowlist, never "forward everything": Host, Content-Length, Accept-Encoding and friends
      *  describe the hop to the gateway, not the hop to the vendor, and copying them corrupts the
      *  upstream request. What rides is the caller's credential, Anthropic wire knobs and genuine
-     *  client identity, exactly as chosen by the client, never synthesized from splice's version.
-     *
-     *  [credential] false leaves the caller's credential out: a head on its own key whose upstream is another
-     *  splice head (LAN share, `forward_client_identity`) sends the session id and wire knobs, never this
-     *  machine's turn key. */
-    fun forwardedClientHeaders(call: ApplicationCall, credential: Boolean = true): Map<String, String> {
+     *  client identity, exactly as chosen by the client, never synthesized from splice's version. */
+    fun forwardedClientHeaders(call: ApplicationCall): Map<String, String> {
         val identity = call.request.headers.names().filter {
             it.lowercase() in CLIENT_IDENTITY_HEADERS || it.startsWith("x-stainless-", ignoreCase = true)
         }
-        val allowed = FORWARDED_CLIENT_HEADERS.keys.filter { credential || it !in CREDENTIAL_HEADERS }
-        return (allowed + identity).mapNotNull { name ->
+        return (FORWARDED_CLIENT_HEADERS.keys + identity).mapNotNull { name ->
             forwardedValue(call, name)?.let { name to it }
         }.toMap()
     }

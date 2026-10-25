@@ -13,10 +13,10 @@
 # pattern matches, so a standalone `host = "127.0.0.1"` pattern alone misses it;
 # `context:`+`selector: value_argument` is required to target that node shape.
 #
-# ONE exemption, by decision (Marcos, 2026-10-22, docs/specs/lan-share.md): the LAN share listener, which
-# opens only when `[share] enabled`, binds all interfaces and admits private source addresses and this
-# machine's own Host names before any route. Every other embeddedServer stays loopback-only; a second
-# exemption needs its own decision recorded the same way.
+# ONE exemption, by decision (Marcos, 2026-10-22, kept by his ruling of 2026-10-24; docs/specs/lan-share.md): the LAN
+# share listener, which opens only when `[share] enabled`, binds all interfaces, and admits only a source on this
+# machine's own networks that names this machine in its Host, before anything else runs. Every other embeddedServer
+# stays loopback-only; a second exemption needs its own decision recorded the same way.
 id: kt-embedded-server-loopback
 language: kotlin
 severity: error
@@ -25,7 +25,7 @@ files:
   - "**/src/main/**/*.kt"
   - "**/src/main/**/*.kts"
 ignores:
-  - "app/src/main/kotlin/splice/app/share/ShareServer.kt"
+  - "features/share/src/main/kotlin/splice/share/ShareListener.kt"
 rule:
   pattern: embeddedServer($$$ARGS)
   not:

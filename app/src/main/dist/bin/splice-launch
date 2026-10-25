@@ -709,13 +709,15 @@ unescape() {
 # as a headless read a seat starts, would carry it to a head that forwards the caller's credential, which refuses it 401
 # and Claude Code retries until its caller gives up (Temple read, Oct 13 2:22 PM CT: 22 refusals in 9.5 min, 204 that
 # day). It is dropped before the recipe applies, so a head that plants its own token still sets it below, and a token the
-# person set themselves rides on untouched. Values are compared in this shell only, never printed or sent.
+# person set themselves rides on untouched. Values are compared in this shell only, never printed or sent. The word a
+# LAN-share node's sessions carry, splice-lan (RemoteLaunches.kt, NODE_TOKEN), is splice's too, and dropped the same way.
 drop_own_token() {
   [ -n "${ANTHROPIC_AUTH_TOKEN-}" ] || return 0
   dot_turn=""
   [ -r "$STATE_DIR/turn-auth-header" ] && dot_turn=$(sed -n 's/^Authorization: Bearer //p' "$STATE_DIR/turn-auth-header" 2>/dev/null)
   dot_mgmt=$(read_key)
-  if { [ -n "$dot_turn" ] && [ "$ANTHROPIC_AUTH_TOKEN" = "$dot_turn" ]; } ||
+  if [ "$ANTHROPIC_AUTH_TOKEN" = splice-lan ] ||
+    { [ -n "$dot_turn" ] && [ "$ANTHROPIC_AUTH_TOKEN" = "$dot_turn" ]; } ||
     { [ -n "$dot_mgmt" ] && [ "$ANTHROPIC_AUTH_TOKEN" = "$dot_mgmt" ]; }; then
     unset ANTHROPIC_AUTH_TOKEN
   fi

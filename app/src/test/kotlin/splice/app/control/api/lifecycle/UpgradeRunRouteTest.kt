@@ -37,10 +37,10 @@ import splice.app.control.controlServerFor
 import splice.core.config.ConfigService
 import splice.core.config.MgmtKey
 import splice.core.config.StatePaths
+import splice.core.testing.TestPorts
 import splice.core.util.EnvReader
 import splice.lifecycle.upgrade.UpgradeRunLauncher
 import splice.lifecycle.upgrade.UpgradeRuns
-import java.net.ServerSocket
 import java.nio.file.Files
 import java.nio.file.Path
 import java.util.concurrent.CopyOnWriteArrayList
@@ -214,7 +214,7 @@ class UpgradeRunRouteTest {
     private suspend fun awaitPort() {
         val deadline = System.nanoTime() + TIMEOUT_MS * 1_000_000
         while (System.nanoTime() < deadline) {
-            if (runCatching { ServerSocket(control.listeningPort).close() }.isFailure) return
+            if (TestPorts.listening(control.listeningPort)) return
             delay(POLL_MS)
         }
         error("the control server never bound :${control.listeningPort}")

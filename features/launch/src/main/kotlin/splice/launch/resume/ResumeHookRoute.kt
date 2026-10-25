@@ -18,6 +18,10 @@
 // a link to the shared tree under V4-168) and must land under the head's own projects tree, so the
 // bearer this route guards with can only ever rewrite transcripts that head already reads.
 // LAYOUT-01: heads arrive through the LaunchHeads port, by exact topology key.
+//
+// LAN share: a command another machine serves (`[remote.*]`) has no head here, but keeps its own tree here like one,
+// and its hook posts under its name. Its sessions are recorded there on both sources, so a bare -c continues them;
+// nothing is rewritten, since which models the other machine serves is that machine's to know.
 package splice.launch.resume
 
 import io.ktor.http.ContentType
@@ -66,7 +70,14 @@ public class ResumeHookRoute(
     private val foreground: ForegroundToolActivity? = null,
     /** Told of every startup with a folder: Teams binds a session to a slot by its rule there (SessionStarts). */
     private val starts: SessionStarts? = null,
+    private val remoteTrees: RemoteSessionTrees = RemoteSessionTrees { null },
 ) {
+    /** LAN share: where a command another machine serves records its sessions, by its name here: its own tree
+     *  (RemoteCommands.ownTree), or null for a name that is no such command. */
+    public fun interface RemoteSessionTrees {
+        public fun own(command: String): Path?
+    }
+
     private val json = Json { ignoreUnknownKeys = true }
 
     /** The monitors of the heads' ownership files: a hook builds its own SessionOwnership, so the route holds the lock
@@ -90,21 +101,26 @@ public class ResumeHookRoute(
      *  (or already named it). Internal so the decision is tested without a socket, as SessionsRoutes is. */
     internal fun handle(key: String, body: String, owner: String? = null): String? {
         val managed = heads.byKey(key)
-        val spec = managed?.spec
+        val tree = ownTree(key, managed)
         val hook = parse(body)?.let { ResumeCall(it) }
         return when {
-            managed == null -> "no head is keyed that"
-            spec == null -> "that head has no launch spec, so no transcript tree"
+            tree == null ->
+                if (managed == null) "no head is keyed that" else "that head has no launch spec, so no transcript tree"
             hook == null -> "the body is not a JSON object"
             hook.source != RESUME_SOURCE && hook.source != STARTUP_SOURCE ->
                 "the hook source is neither a startup nor a resume"
             !SESSION_ID_SHAPE.matches(hook.sessionId) -> "the session id is not a session id"
             else -> {
                 started(key, hook, owner)
-                located(managed, spec, hook)
+                located(managed, tree, hook)
             }
         }
     }
+
+    /** The tree [key]'s sessions are recorded in: [managed]'s own, or, when no head is keyed that, the own tree of a
+     *  command another machine serves by that name; null for a head with no launch spec, or a name that is neither. */
+    private fun ownTree(key: String, managed: LaunchHead?): Path? =
+        if (managed == null) remoteTrees.own(key) else managed.spec?.trees?.own
 
     private fun started(key: String, hook: ResumeCall, owner: String?) {
         owner?.takeIf { it.length == FOREGROUND_OWNER_LENGTH }?.let {
@@ -123,8 +139,9 @@ public class ResumeHookRoute(
         val cwd: String = JsonScalars.str(hook, "cwd").orEmpty()
     }
 
-    private fun located(managed: LaunchHead, spec: LaunchSpec, hook: ResumeCall): String? {
-        val configDir = spec.trees.own
+    /** [hook]'s session recorded in [configDir], and on a resume its transcript moved onto [managed]'s model; a
+     *  command another machine serves ([managed] null) has nothing moved. */
+    private fun located(managed: LaunchHead?, configDir: Path, hook: ResumeCall): String? {
         // 2026-09-21: a startup fires before Claude Code has written the session's first row, so the
         // transcript is a path that does not exist yet (measured: every startup hook since V4-183
         // landed was refused here, one second after its launch, and no head ever owned a session —
@@ -140,7 +157,8 @@ public class ResumeHookRoute(
         if (hook.cwd.isNotBlank()) {
             SessionOwnership(configDir, log = log, locks = ownershipLocks).record(hook.sessionId, hook.cwd, transcript)
         }
-        return if (hook.source == RESUME_SOURCE) rewrite(managed, transcript, spec, hook.sessionId) else null
+        if (managed == null || hook.source != RESUME_SOURCE) return null
+        return rewrite(managed, transcript, checkNotNull(managed.spec), hook.sessionId)
     }
 
     private fun rewrite(managed: LaunchHead, transcript: Path, spec: LaunchSpec, sessionId: String): String? {

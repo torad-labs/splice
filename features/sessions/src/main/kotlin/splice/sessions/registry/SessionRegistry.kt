@@ -114,8 +114,11 @@ public fun interface PidAlive {
  *  kernel start time and its wall-clock start. One seam, because [SessionRegistry] judges them together;
  *  a test answers from a tree it wrote. Every fact is null when it is not readable. */
 public interface PidIdentity {
-    /** `linux:<machine-id>:pid:[<inode>]`, the domain a pid is meaningful in (on macOS, Claude Code's `linux`). */
+    /** `linux:<machine-id>:pid:[<inode>]`, the domain a pid is meaningful in (on macOS, Claude Code's `darwin`). */
     public fun hostDomain(): String?
+
+    /** Whether a registration's [domain] names this host: [hostDomain], or another spelling a Claude Code here wrote. */
+    public fun hosts(domain: String): Boolean = domain == hostDomain()
 
     /** The kernel start time of [pid] as /proc/<pid>/stat spells it (on macOS, as `ps -o lstart=` does). */
     public fun procStart(pid: Long): String?
@@ -250,9 +253,8 @@ public class SessionRegistry(
      *  another namespace's), or a start time that is not the running process's (the pid was reused).
      *  Only a registration without them falls back to the start-time tolerance. */
     private fun foreignPid(pid: Long, domain: String?, procStart: String?, startedAt: Long?): Boolean {
-        val hostDomain = identity.hostDomain()
-        val judged = domain != null && hostDomain != null
-        if (judged && domain != hostDomain) return true
+        val judged = domain != null && identity.hostDomain() != null
+        if (judged && !identity.hosts(checkNotNull(domain))) return true
         return identity.reused(pid, procStart, startedAt)
     }
 

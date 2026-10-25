@@ -21,6 +21,7 @@ import splice.launch.LaunchHeads
 import splice.launch.LaunchOutcome
 import splice.launch.LaunchReplies
 import splice.launch.LaunchSpec
+import splice.launch.RemoteLaunch
 import splice.launch.wrap.CLAUDE_HEAD_KEY
 
 /** [cwd]: V4-183, the shim's working directory, absent from a shim older than shim-4. */
@@ -55,6 +56,13 @@ public class LaunchRoutes(
             return
         }
         val resolved = resolve(key, targets)
+        // LAN share: a name no head here carries may be a command another machine serves.
+        val remote = if (resolved == null) launchService?.remotes?.launch(key) else null
+        if (remote != null) remoteReply(call, key, remote) else localReply(call, key, resolved)
+    }
+
+    /** A head here, or the 404 or 503 that says why [key] launches none. */
+    private suspend fun localReply(call: ApplicationCall, key: String, resolved: Resolved?) {
         val target = resolved?.head
         val spec = target?.spec
         if (spec == null || launchService == null) {
@@ -90,14 +98,48 @@ public class LaunchRoutes(
         }
         // Read both live windows and the native destination hold after body reception has finished.
         val launched = target.catalog?.let(spec::withWindows) ?: spec
-        when (val outcome = launchFor(target, launched, request, resolved.wrapped, service)) {
+        val outcome = when (val launch = launchFor(target, launched, request, resolved.wrapped, service)) {
+            is LaunchOutcome.Ready ->
+                LaunchOutcome.Ready(launchResponse.withAuthWarning(target, launched, launch.recipe))
+            is LaunchOutcome.Refused -> launch
+        }
+        answer(call, key, outcome)
+    }
+
+    /** A command another machine serves: refused in that machine's words, or launched from the spec it answered,
+     *  through the same recipe a head here gets. Nothing here holds its credentials, so there is no key to warn of. */
+    private suspend fun remoteReply(call: ApplicationCall, key: String, remote: RemoteLaunch) {
+        val service = requireNotNull(launchService)
+        val spec = when (remote) {
+            is RemoteLaunch.Refused -> {
+                val refused = LaunchReplies.errorJson(remote.reason)
+                call.respondText(refused, ContentType.Application.Json, HttpStatusCode.Conflict)
+                return
+            }
+            is RemoteLaunch.Ready -> remote.spec
+        }
+        val request = receiveLaunchRequest(call)
+        val refusal = service.loginGuard?.refusal(spec.trees.own)
+        if (refusal != null) {
+            call.respondText(LaunchReplies.errorJson(refusal), ContentType.Application.Json, HttpStatusCode.Conflict)
+            return
+        }
+        val caller = LaunchCaller(request.cwd, null, request.inheritedConfigDir, request.launch)
+        val skip = request.dangerouslySkipPermissions
+        val outcome = service.launchOutcome(spec, request.extraArgs, skip, caller = caller)
+        answer(call, key, outcome)
+    }
+
+    /** [outcome] as the shim reads it: a refusal in words, or its recipe, audited. */
+    private suspend fun answer(call: ApplicationCall, key: String, outcome: LaunchOutcome) {
+        when (outcome) {
             is LaunchOutcome.Refused -> call.respondText(
                 LaunchReplies.errorJson(outcome.reason),
                 ContentType.Application.Json,
                 HttpStatusCode.Conflict,
             )
             is LaunchOutcome.Ready -> {
-                val recipe = launchResponse.withAuthWarning(target, launched, outcome.recipe)
+                val recipe = outcome.recipe
                 audit.launched(key, recipe.argv)
                 recipe.warning?.let(audit::warned)
                 // A shim that names the line form in Accept is answered in it; everything else keeps the JSON body.

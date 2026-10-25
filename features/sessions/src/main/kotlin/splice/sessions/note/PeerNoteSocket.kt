@@ -126,13 +126,16 @@ public class PeerNoteSocket(
     }
 
     /** True when [socket] sits directly in the folder of [sender]'s own helper socket, spelled absolute with no `.` or
-     *  `..`, and reached through no link anywhere on its path. A `from` names where a receipt goes, and it is the
-     *  frame's claim: any other folder, however it is spelled, is refused. */
+     *  `..`, and still sits there, under its own name, once every link is resolved. A `from` names where a receipt
+     *  goes, and it is the frame's claim: any other folder, however it is spelled, is refused. A link above that
+     *  folder is allowed, since it moves the folder and the socket together: a Mac's Claude Code names its socket
+     *  /tmp/cc-socks/<pid>.sock, and /tmp there is a link to /private/tmp. */
     private fun inOwnFolder(socket: Path, sender: PeerSender): Boolean {
         val folder = PathProbe.spelled(sender.socket)?.parent ?: return false
         val plain = socket.isAbsolute && socket.normalize() == socket
         if (!plain || socket.parent != folder) return false
-        return PathProbe.resolved(socket) == socket
+        val real = PathProbe.resolved(socket)
+        return real?.fileName == socket.fileName && real.parent == PathProbe.resolved(folder)
     }
 
     /** Why a peer's message may not go to [target] on [socket], or null when it may. */

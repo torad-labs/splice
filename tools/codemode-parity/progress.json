@@ -1,13 +1,14 @@
 {
   "schema": 1,
-  "status": "UNQUALIFIED",
-  "productQualified": false,
-  "updatedAt": "2026-10-24T22:18:10.012Z",
+  "status": "QUALIFIED",
+  "productQualified": true,
+  "updatedAt": "2026-10-25T09:03:11.412Z",
   "contractSha256": "1447cea2a966f22f65ab0142b87825c37d06f83e36655680136005fc14422a29",
-  "harnessSha256": "afa7fb507e6acb0e479f95f43590d7a928d7c2ef5153c6bf840d3a35ea3eb38d",
+  "harnessSha256": "9e6bedf4e88767fec3507b4febe4a9254eeb3595726b808312f80897ce13888c",
   "requiredFamilies": 24,
   "executedFamilies": [
     "runtime.module-semantics",
+    "runtime.item-boundary",
     "runtime.sequential-callbacks",
     "runtime.partial-parallel-results",
     "runtime.explicit-yield",
@@ -18,6 +19,7 @@
     "runtime.timers",
     "runtime.session-store",
     "runtime.output-content",
+    "runtime.errors-and-cancellation",
     "history.append-only",
     "history.restart",
     "history.replay-is-not-steering",
@@ -27,23 +29,12 @@
     "delivery.interactive-cadence",
     "delivery.late-failure-recovery",
     "packaging.native-host",
-    "evidence.failing-baseline"
-  ],
-  "remainingFamilies": [
-    "runtime.item-boundary",
-    "runtime.errors-and-cancellation",
+    "evidence.failing-baseline",
     "evidence.installed-identity"
   ],
-  "findings": [
-    "harness hash mismatch",
-    "runtime.item-boundary: not executed successfully",
-    "runtime.errors-and-cancellation: not executed successfully",
-    "evidence.installed-identity: not executed successfully",
-    "evidence.installed-identity: missing or malformed raw artifact",
-    "installed open jar/native executable identity is missing or mismatched",
-    "runner did not qualify this candidate"
-  ],
-  "receiptPath": "/home/marcos/Documents/dev/projects/splice/artifacts/codemode-parity-2026-10-24/qualification-prebatch/receipt.json",
+  "remainingFamilies": [],
+  "findings": [],
+  "receiptPath": "/home/marcos/Documents/dev/projects/splice/artifacts/codemode-parity-2026-10-24/qualification-final-b228fe52/receipt.json",
   "referenceSourceLinkage": "unproven",
   "scope": "A green harness test suite or native reference subset never qualifies the product."
 }

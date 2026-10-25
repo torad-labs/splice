@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { associateCallbacks, auditNative, classifyRequest, compareSegments, decodeSse, gatewayEvidence, inspectTrial, main, sourceEvidence } from "./analyze-delivery-v3.ts";
@@ -41,6 +41,133 @@ function protocolTrial() {
   const save = () => { writeFileSync(join(dir, "requests/upstream.jsonl"), jsonl(...upstream)); writeFileSync(join(dir, "requests/client.jsonl"), jsonl(...client)); };
   return { dir, upstream, client, req, frame, chunk, save, close: () => rmSync(dir, { recursive: true, force: true }) };
 }
+
+describe("r5 captured producer metadata contracts", () => {
+  const fixture = JSON.parse(readFileSync(new URL("./analyze-delivery-v3-producer-fixtures.json", import.meta.url), "utf8"));
+  const origin = { kind: "codex", version: "0.159.1", originator: "codex-tui", source: "cli" };
+  const linked = { ...context, nativeOrigin: origin, taskInstallations: new Set(["installation-one"]) };
+  const nativeTitle = (): FixtureRow => ({ model: "gpt-5.6-luna", stream: true, reasoning: { effort: "low", summary: "detailed", context: "all_turns" },
+    client_metadata: { session_id: "child-session", thread_id: "child-session", "x-codex-installation-id": "installation-one" },
+    input: [{ role: "developer", content: [{ type: "input_text", text: "captured CLI instructions" }] },
+      { role: "user", content: [{ type: "input_text", text: fixture.codexNamingInstruction + "\n\nUser prompt:\ninspect the fixture" }] }],
+    text: { format: structuredClone(fixture.codexFormat) } });
+  test("pinned Codex USER title contract is auxiliary with exact task and captured installation provenance", () => {
+    const result = classifyRequest(nativeTitle(), "/responses", linked);
+    expect(result.phase).toBe("title");
+    expect(result.evidence.matchingSession).toBe(false);
+  });
+  test("native title rejects missing or conflicting origin and installation proof", () => {
+    for (const extra of [{ nativeOrigin: undefined }, { nativeOrigin: { ...origin, version: "other" } },
+      { nativeOrigin: { ...origin, source: "other" } }, { taskInstallations: new Set<string>() }, { taskInstallations: new Set(["other"]) }]) {
+      expect(classifyRequest(nativeTitle(), "/responses", { ...linked, ...extra }).phase).toBe("unknown");
+    }
+  });
+  test("native title rejects role impostors, truncated instructions, task mismatch and malformed schema", () => {
+    const changes = [
+      (b: FixtureRow) => { b.input[1].role = "assistant"; },
+      (b: FixtureRow) => { b.input[1].role = "developer"; },
+      (b: FixtureRow) => { b.input[1].content[0].text = b.input[1].content[0].text.slice(1); },
+      (b: FixtureRow) => { b.input[1].content[0].text += " unrelated"; },
+      (b: FixtureRow) => { b.text.format.strict = false; },
+      (b: FixtureRow) => { b.text.format.schema.required = []; },
+      (b: FixtureRow) => { b.text.format.schema.additionalProperties = true; },
+      (b: FixtureRow) => { b.text.format.schema.properties.title.maxLength = 99; },
+      (b: FixtureRow) => { b.client_metadata.thread_id = "other-child"; },
+    ];
+    for (const change of changes) { const body = nativeTitle(); change(body); expect(classifyRequest(body, "/responses", linked).phase).toBe("unknown"); }
+  });
+  test("genuine Codex artifact supplies pinned origin and session-attributed captured installation", async () => {
+    const f = protocolTrial();
+    try {
+      const native = jsonl(
+        { type: "session_meta", payload: { id: "session-one", cli_version: "0.159.1", originator: "codex-tui", source: "cli" } },
+        { type: "response_item", payload: { type: "message", role: "user", content: [{ type: "input_text", text: "inspect the fixture" }] } },
+        { type: "response_item", payload: { type: "reasoning", summary: [{ type: "summary_text", text: "R" }] } },
+        { type: "response_item", payload: { type: "message", role: "assistant", content: [{ type: "output_text", text: "done" }] } },
+        { type: "event_msg", payload: { type: "task_complete" } },
+      );
+      writeFileSync(join(f.dir, "events.jsonl"), native); writeFileSync(join(f.dir, "control/native.jsonl"), native);
+      f.upstream[0]!.text = JSON.stringify({ ...task(), client_metadata: { session_id: "session-one", "x-codex-installation-id": "installation-one" } });
+      writeFileSync(join(f.dir, "requests/native.jsonl"), jsonl(...f.upstream, f.req(40, 9, "/responses", nativeTitle()),
+        { kind: "response_frame", at_ms: 42, connection: 9, text: JSON.stringify({ type: "response.completed", response: { output: [] } }) }));
+      const report = await inspectTrial(f.dir, "codex", "sol", profile);
+      expect(report.generated.find(x => x.requestAt === 40)!.phase).toBe("title");
+      expect(report.totals.phases.unknown).toBe(0);
+      expect(report.qualified).toBe(true);
+    } finally { f.close(); }
+  });
+  const userId = (session = "session-one") => JSON.stringify({ device_id: "fixture-device", account_uuid: "fixture-account", session_id: session });
+  const claudeTitle = (): FixtureRow => ({ model: "sol", stream: false, metadata: { user_id: userId() },
+    system: [{ type: "text", text: "x-anthropic-billing-header: cc_version=2.1.299.fixture; cc_entrypoint=cli;" },
+      { type: "text", text: fixture.claudeOfficialInstruction }, { type: "text", text: fixture.claudeNamingInstruction }],
+    messages: [{ role: "user", content: [{ type: "text", text: "<session>\ninspect the fixture\n</session>" + fixture.claudeSessionSuffix }] }],
+    output_config: { format: structuredClone(fixture.claudeNativeFormat) } });
+  const addTitle = (f: ReturnType<typeof protocolTrial>, body: FixtureRow) => {
+    f.client.push(f.req(40, 9, "/v1/messages", body), { kind: "response", at_ms: 41, connection: 9, status: 200, content_type: "application/json" },
+      f.chunk(42, 9, JSON.stringify({ type: "message", content: [{ type: "text", text: '{"title":"fixture"}' }], stop_reason: "end_turn" })));
+  };
+  test("actual Claude title system blocks and canonical projected developer prefix remain auxiliary", async () => {
+    const f = protocolTrial();
+    try {
+      const title = claudeTitle(); addTitle(f, title);
+      f.upstream.push(f.req(40, 9, "/responses", { model: "sol", stream: false, client_metadata: { session_id: "session-one" },
+        input: [{ role: "developer", content: fixture.claudeOfficialInstruction + fixture.claudeNamingInstruction }, ...title.messages],
+        text: { format: { ...fixture.claudeNativeFormat, name: "structured_output", strict: true } } }),
+      { kind: "response", at_ms: 41, connection: 9, status: 200, content_type: "application/json" }, f.chunk(42, 9, '{"output":[]}'));
+      f.save(); const report = await inspectTrial(f.dir, "splice", "sol", profile);
+      expect(report.generated.find(x => x.requestAt === 40)!.phase).toBe("title");
+      expect(report.downstreamRequests.find(x => x.requestAt === 40)!.phase).toBe("title");
+      expect(report.qualified).toBe(true);
+    } finally { f.close(); }
+  });
+  test("Claude title rejects changed instruction, task, roles, missing/malformed/conflicting session proof", async () => {
+    const changes = [
+      (b: FixtureRow) => { b.system[2].text += " altered"; },
+      (b: FixtureRow) => { b.messages[0].role = "assistant"; },
+      (b: FixtureRow) => { b.messages[0].content[0].text = "<session>\nother task\n</session>" + fixture.claudeSessionSuffix; },
+      (b: FixtureRow) => { delete b.metadata; },
+      (b: FixtureRow) => { b.metadata.user_id = '{"session_id":'; },
+      (b: FixtureRow) => { b.metadata.user_id = userId("other-session"); },
+      (b: FixtureRow) => { b.output_config.format.schema.required = []; },
+    ];
+    for (const change of changes) {
+      const f = protocolTrial();
+      try { const body = claudeTitle(); change(body); addTitle(f, body); f.save(); const report = await inspectTrial(f.dir, "splice", "sol", profile);
+        expect(report.downstreamRequests.find(x => x.requestAt === 40)!.phase).toBe("unknown"); expect(report.qualified).toBe(false);
+      } finally { f.close(); }
+    }
+  });
+  const gatewayTask = (): FixtureRow => ({ model: "sol", stream: true, metadata: { user_id: userId() },
+    messages: [{ role: "user", content: [{ type: "text", text: "captured CLI context" }, { type: "text", text: "captured runtime context" }, { type: "text", text: "inspect the fixture" }] },
+      { role: "system", content: "captured per-turn context" }] });
+  test("gateway multipart task requires the genuine JSON-encoded session and exact user text block", async () => {
+    const f = protocolTrial();
+    try {
+      f.client[0]!.text = JSON.stringify(gatewayTask()); f.save();
+      const report = await inspectTrial(f.dir, "splice", "sol", profile);
+      expect(report.downstreamRequests[0]!.phase).toBe("task");
+      expect(report.downstreamRequests[0]!.evidence.matchingSession).toBe(true);
+      expect(report.downstreamRequests[0]!.evidence.matchingUser).toBe(true);
+      expect(report.sourceToGateway?.equal).toBe(true); expect(report.qualified).toBe(true);
+    } finally { f.close(); }
+  });
+  test("gateway rejects impostor or malformed session, wrong user roles and nonexact task blocks", async () => {
+    const changes = [
+      (b: FixtureRow) => { b.metadata.user_id = userId("other-session"); },
+      (b: FixtureRow) => { b.metadata.user_id = '{"session_id":'; },
+      (b: FixtureRow) => { b.metadata.user_id = JSON.stringify({ session_id: ["session-one"] }); },
+      (b: FixtureRow) => { b.session_id = "other-session"; },
+      (b: FixtureRow) => { b.messages[0].role = "assistant"; },
+      (b: FixtureRow) => { b.messages[0].content[2].text += " impostor"; },
+    ];
+    for (const change of changes) {
+      const f = protocolTrial();
+      try { const body = gatewayTask(); change(body); f.client[0]!.text = JSON.stringify(body); f.save(); const report = await inspectTrial(f.dir, "splice", "sol", profile);
+        expect(report.downstreamRequests[0]!.phase).toBe("unknown"); expect(report.qualified).toBe(false);
+      } finally { f.close(); }
+    }
+  });
+});
 
 describe("r3 actual Anthropic title output contracts", () => {
   const schema = { type: "object", properties: { title: { type: "string" } }, required: ["title"] };

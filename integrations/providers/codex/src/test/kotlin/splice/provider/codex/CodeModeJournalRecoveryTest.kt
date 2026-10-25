@@ -321,7 +321,12 @@ class CodeModeJournalRecoveryTest {
               "phase":"commentary","content":[{"type":"output_text","text":"after exec prose","annotations":[]}]}],
               "issued":[{"requestDigest":"issued digest","calls":[]}],"sessionId":"synthetic session",
               "conversationId":"synthetic conversation","nativeBaseId":"synthetic parent","replayAnchors":{"baseline":{"itemDigest":"anchor","occurrence":79},
-              "native":{}},"sourceState":{"complete":true,"consumed":true}
+              "native":{}},"sourceState":{"complete":true,"consumed":true},
+              "postedOn":80,"nativeCellId":"synthetic cell","nativeCompleted":true,"dispatchStarted":true,
+              "nativeBatch":{"ownerId":"synthetic owner","ordinal":81,"dispatched":false,"size":82,"settled":true,
+              "items":[{"type":"message"}]},
+              "deliveredOnly":[{"type":"message"}],"nativeOutput":{"type":"reasoning"},
+              "nativeNotifications":[{"type":"notification"}]
             }
             """.trimIndent(),
         ).jsonObject

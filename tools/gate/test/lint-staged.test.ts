@@ -4,7 +4,7 @@ import { describe, expect, test } from "bun:test";
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
-import { catalogVersion, findingLines, lintable, stagedLinters } from "../src/lib/lint-staged.ts";
+import { catalogVersion, findingLines, lintable, lintVerdict, stagedLinters } from "../src/lib/lint-staged.ts";
 import { layout } from "../src/lib/repo.ts";
 
 describe("which staged files the linters take", () => {
@@ -27,6 +27,21 @@ describe("which staged files the linters take", () => {
     expect(findingLines("ktlint", out, "/tmp/m")).toEqual([
       { tool: "ktlint", line: "core/A.kt:3:1: Exceeded max line length (120) (standard:max-line-length)" },
     ]);
+  });
+});
+
+describe("what the linters' exits come to", () => {
+  const quiet = { status: 0, output: "" };
+  const long = "core/A.kt:3:1: Exceeded max line length (120) (standard:max-line-length)";
+
+  test("a findings exit with findings under the mirror is those findings", () => {
+    expect(lintVerdict({ status: 1, output: `/m/${long}\n` }, quiet, "/m")).toEqual({ findings: [{ tool: "ktlint", line: long }] });
+  });
+
+  test("a findings exit that names no finding under the mirror is a linter that did not judge, never a pass", () => {
+    // The Mac's commit-time ktlint printed its findings under /private/var/… for a mirror under /var/…, and passed.
+    expect(lintVerdict({ status: 1, output: `/private/m/${long}\n` }, quiet, "/m")).toHaveProperty("error");
+    expect(lintVerdict(quiet, { status: 2, output: "/elsewhere/core/A.kt:3:1: too long [MaxLineLength]\n" }, "/m")).toHaveProperty("error");
   });
 });
 

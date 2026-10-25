@@ -92,7 +92,7 @@ async function toolFile(tool: "ktlint" | "detekt", version: string): Promise<str
   return file;
 }
 
-interface Ran {
+export interface Ran {
   readonly status: number;
   readonly output: string;
 }
@@ -143,6 +143,18 @@ export async function ktlintOver(tree: string, files: readonly string[]): Promis
   }
 }
 
+/** What ktlint's run ([formatted]) and detekt's ([analysed]) over the mirror [dir] came to. ktlint exits 1 on findings
+ *  and detekt 2. Any other nonzero exit, or a findings exit that names no finding under [dir], is a linter that did not
+ *  judge, as [ktlintOver] reads it: the Mac's ktlint named its findings under another spelling of the mirror, and passed. */
+export function lintVerdict(formatted: Ran, analysed: Ran, dir: string): LintVerdict {
+  const ktlint = findingLines("ktlint", formatted.output, dir);
+  const detekt = findingLines("detekt", analysed.output, dir);
+  const judged = (ran: Ran, findingsExit: number, found: number) => ran.status === 0 || (ran.status === findingsExit && found > 0);
+  if (!judged(formatted, 1, ktlint.length)) return { error: `ktlint exited ${formatted.status}: ${formatted.output.trim()}` };
+  if (!judged(analysed, 2, detekt.length)) return { error: `detekt exited ${analysed.status}: ${analysed.output.trim()}` };
+  return { findings: [...ktlint, ...detekt] };
+}
+
 /** The real linters, at the versions [root]'s catalog names. The mirror is read through its links, as in [ktlintOver]. */
 export function stagedLinters(root: string): StagedLint {
   return async (mirror, files) => {
@@ -180,12 +192,7 @@ export function stagedLinters(root: string): StagedLint {
               env,
             ),
       ]);
-      // ktlint exits 1 on findings; detekt exits 2 on findings. Anything else is a linter that did not judge.
-      if (formatted.status !== 0 && formatted.status !== 1) return { error: `ktlint exited ${formatted.status}: ${formatted.output.trim()}` };
-      if (analysed.status !== 0 && analysed.status !== 2) return { error: `detekt exited ${analysed.status}: ${analysed.output.trim()}` };
-      return {
-        findings: [...findingLines("ktlint", formatted.output, dir), ...findingLines("detekt", analysed.output, dir)],
-      };
+      return lintVerdict(formatted, analysed, dir);
     } catch (error) {
       return { error: error instanceof Error ? error.message : String(error) };
     }

@@ -162,7 +162,6 @@ describe("the root wrapper sends a build through the gradle slot", () => {
   });
 });
 
-/** A pid that is not running: the highest the kernel will hand out, which a fresh machine is far from. */
 /** A pid no process holds: one a process just ran under and exited, checked gone with kill(pid, 0), which macOS answers
  *  as Linux does (it has no /proc to look in). */
 function deadPid(): number {

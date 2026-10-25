@@ -50,8 +50,8 @@ internal class RemoteCommand(
     private suspend fun add(rest: List<String>): Int {
         val named = rest.size == AS_ARGS && rest[1] == "--as"
         if (rest.size != 1 && !named) return usage()
-        val added = RemoteAdd(out, err, file, directory, relays).add(rest[0], if (named) rest[2] else null)
-            ?: return PeerExit.REFUSED
+        val add = RemoteAdd(out, err, file, directory, relays) { install.runsShim(it, env) }
+        val added = add.add(rest[0], if (named) rest[2] else null) ?: return PeerExit.REFUSED
         // Every command is linked, even after one is refused, so each refusal is said.
         val whole = added.commands.map { link(it, added.machine) }.all { it } && added.complete
         val followed = restart.followed(added.topology)

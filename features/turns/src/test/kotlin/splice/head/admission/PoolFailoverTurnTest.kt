@@ -33,6 +33,7 @@ import splice.core.auth.Credentials
 import splice.core.auth.RefreshableAuthProvider
 import splice.core.model.ModelCatalog
 import splice.core.model.ModelEntry
+import splice.core.topology.SHARE_NODE_TOKEN
 import splice.core.turn.WatchdogBudget
 import splice.core.usage.PlanLimit
 import splice.core.usage.QuotaHeaderRead
@@ -136,6 +137,41 @@ class PoolFailoverTurnTest {
         }
     }
 
+    // LAN share, PR 423 review: another machine's turn reaches a Claude head holding that machine's word, which opens
+    // nothing, and the head's pool runs it on a login the head holds.
+    @Test
+    fun `a node's word runs on a login the pool holds, never on the word`() = runBlocking {
+        val own = ClientAuthProvider("own")
+        val rig = FailoverRig(directory, limited = emptyMap(), headAuth = own, bearer = SHARE_NODE_TOKEN)
+        rig.start()
+        try {
+            assertEquals(HttpStatusCode.OK, rig.turn().first)
+            assertEquals(listOf("one"), rig.requests, "the pool's login rides in the word's place")
+        } finally {
+            rig.close()
+        }
+    }
+
+    // When the login the turn would run on is the caller's own (the head's own logins gone between the share's offer
+    // and this turn), there is none to put in the word's place. The word must never reach the vendor, whose 401 would
+    // mark the head's own sign-in rejected for every session.
+    @Test
+    fun `a node's word on a head with no login of its own is answered here, never sent upstream`() = runBlocking {
+        val own = ClientAuthProvider("own")
+        val rig =
+            FailoverRig(directory, limited = emptyMap(), pooled = false, headAuth = own, bearer = SHARE_NODE_TOKEN)
+        rig.start()
+        try {
+            val (status, body) = rig.turn()
+            assertEquals(HttpStatusCode.ServiceUnavailable, status, body)
+            assertTrue("another machine" in body, "the answer says why the turn did not run: $body")
+            assertTrue(rig.requests.isEmpty(), "the node's word must never reach the vendor: ${rig.requests}")
+            assertTrue(own.describe().present, "the head's own sign-in is not marked rejected")
+        } finally {
+            rig.close()
+        }
+    }
+
     private suspend fun assertClientHeadAccepted(stream: Boolean) {
         val auth = ClientAuthProvider("synthetic")
         val rig = FailoverRig(directory, limited = mapOf("one" to 2 * HOUR_S), headAuth = auth)
@@ -205,6 +241,7 @@ private class FailoverRig(
     pooled: Boolean = true,
     headAuth: RefreshableAuthProvider? = null,
     refusedStatus: Int? = null,
+    bearer: String = "one",
 ) {
     val requests = CopyOnWriteArrayList<String>()
     val bodies = CopyOnWriteArrayList<String>()
@@ -284,7 +321,7 @@ private class FailoverRig(
             policy = HeadDeps.HeadPolicy(forwardClientAuth = true),
         ).copy(stores = headStores(directory).copy(perfStats = PerfStats(perfFile))),
     )
-    private val client = HttpClient(CIO) { defaultRequest { bearerAuth("one") } }
+    private val client = HttpClient(CIO) { defaultRequest { bearerAuth(bearer) } }
 
     suspend fun start() = head.start()
 

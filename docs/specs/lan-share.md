@@ -101,9 +101,17 @@ What the Mac showed on 2026-10-24 that this replaces: the relay modeled as an ap
 - **Plain `claude` on a node** (Marcos, 2026-10-25: "claude here is still using a local account instead of
   the server account on torad-server"). `claude` may name a remote command: `splice remote add
   http://torad-server.lan:3097/claude-splice --as claude`. The wrapped `claude` then launches on the server's
-  head, over the node's own `~/.claude` as it does today, so its settings, instructions and sessions stay
-  the person's: only where its turns go changes. `claude` stays Claude Code's own link, which no remote
-  command makes, replaces or removes, `splice install` and `splice uninstall` included.
+  head, over the node's own `~/.claude` as it does today, so its settings, instructions, sessions and models
+  stay the person's: only where its turns go changes. The node gets no model list from the server, since a
+  Claude head's caller picks its own. Only a wrapped `claude` asks splice where to run, so on a node whose
+  `claude` is Claude Code itself the add is refused, naming `splice setup`, which wraps it. `claude` stays
+  Claude Code's own link, which no remote command makes, replaces or removes, `splice install` and
+  `splice uninstall` included.
+- **The node's word never reaches the vendor.** A node's turn on a Claude head carries the word `splice-lan`,
+  and the head's pool sends a login the server holds in its place. When the head has no such login left for
+  it (its pool lost its own sign-ins between the offer and the turn), the head answers the turn itself, a
+  503 the node's Claude Code shows and does not retry: sent upstream, the word would come back a 401 that
+  marks the head's own sign-in rejected for every session.
 - **A login pin is the console's pin.** `auth=work` pins each of the node's sessions to `work` through the
   head's own pool, the call the Accounts page's Pin makes, before its turn is relayed. What a pinned session
   does when its login is at its limit is what it does on the server today.

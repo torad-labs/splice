@@ -64,6 +64,13 @@ internal class InstallLinker(
         return if (refusal == null) InstallResult.Linked else InstallResult.Refused(refusal)
     }
 
+    /** TRUE when [command]'s link here runs the launch shim, so the command asks splice where to run: a head's
+     *  wrapper, or `claude` once `splice setup` wrapped it. No link, or a link to anything else, is false. */
+    internal fun runsShim(command: String, env: EnvReader): Boolean {
+        val link = layout.wrapperLinkOrNull(layout.localBin(env), command) ?: return false
+        return link.isSymbolicLink() && Files.readSymbolicLink(link) == layout.launchShimPath(env)
+    }
+
     /** Every command for --all/no-arg, else the one named: a remote command (LAN share) by its name, a head by
      *  topology key OR wrapper command. Null when [headArg] names nothing, which has already printed why (unknown vs
      *  ambiguous). */

@@ -130,7 +130,7 @@ public data class LaunchSpec(
     }
 
     private fun spelledIn(catalog: ModelCatalog): Map<String, String> {
-        if (gateway.forwardClientAuth) return emptyMap()
+        if (gateway.clientModels) return emptyMap()
         val spelling = ClientSpelling(catalog)
         return (listOf(models.pinnedModel) + models.availableModelIds).distinct()
             .associateWith(spelling::of)
@@ -227,7 +227,15 @@ public data class LaunchGateway(
     /** LAN share: the other machine's address this command's turns go to (`http://torad-server.lan:3097/claudex`), in
      *  place of this machine's loopback [port]. Null for a head on this machine. */
     val remote: String? = null,
-)
+    /** A remote Claude head, whose client picks its own models on a machine that holds no login, where
+     *  [forwardClientAuth] is false. See [clientModels]. */
+    val nativeModels: Boolean = false,
+) {
+    /** TRUE when the client picks its own models: the launch plants no roster, tier, spelling or window, and the
+     *  person's own settings decide (V4-449). A head here does so exactly when it forwards the caller's login, a remote
+     *  one when [nativeModels] says so. Derived, so a copy that turns [forwardClientAuth] on carries it too. */
+    val clientModels: Boolean get() = forwardClientAuth || nativeModels
+}
 
 public data class LaunchRecipe(
     val env: Map<String, String>,

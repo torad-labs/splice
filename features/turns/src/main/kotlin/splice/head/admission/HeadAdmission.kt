@@ -193,6 +193,8 @@ internal class HeadAdmission(
         trace: TurnTrace?,
         running: TurnAccountQuota,
     ) {
+        val sender = running.account?.account?.auth ?: preparation.provider.auth
+        if (refusals.refuseIfNodeWordUnheld(call, prepared, admitted, trace, sender)) return
         val oversized = admitted.perf.timed(splice.core.perf.PerfKeys.SIZE_PREFLIGHT_MS) {
             refusals.refuseIfOversized(call, prepared, admitted, trace)
         }

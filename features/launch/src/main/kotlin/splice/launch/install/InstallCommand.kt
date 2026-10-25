@@ -22,4 +22,7 @@ public class InstallCommand(output: TerminalOutput, errors: TerminalOutput) {
     public fun installSelf(env: EnvReader): InstallResult = linker.installSelf(env)
 
     public fun uninstall(headArg: String?, env: EnvReader): Boolean = uninstaller.uninstall(headArg, env)
+
+    /** TRUE when [command]'s link here runs splice's launch shim, so the command asks splice where to run. */
+    public fun runsShim(command: String, env: EnvReader): Boolean = linker.runsShim(command, env)
 }

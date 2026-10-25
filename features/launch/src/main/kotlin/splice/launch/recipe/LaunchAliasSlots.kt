@@ -12,7 +12,7 @@ internal object LaunchAliasSlots {
     // on a foreign head. A small roster may legitimately serve several tiers with one model.
     fun of(spec: LaunchSpec): List<Pair<String, String>> {
         // V4-449: the client picks its own models on a head that forwards its login, so no tier is planted.
-        if (spec.gateway.forwardClientAuth) return emptyList()
+        if (spec.gateway.clientModels) return emptyList()
         val offered = spec.models.availableModelIds
         val ids = (listOf(spec.models.pinnedModel) + (spec.models.tiers.candidates ?: offered)).distinct()
         val declared = declaredSlots(spec)

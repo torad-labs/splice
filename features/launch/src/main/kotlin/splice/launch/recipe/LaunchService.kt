@@ -121,7 +121,7 @@ public class LaunchService(
         // V4-358: every choice above is made on the rows' own ids; what the client is HANDED is spelled here.
         val held = effective.heldByClient()
         // V4-449: client-login heads author no roster or picker cache; an explicit pin is a launch default only.
-        val roster = held.models.availableModelIds.takeUnless { held.gateway.forwardClientAuth }
+        val roster = held.models.availableModelIds.takeUnless { held.gateway.clientModels }
         val materialize = MaterializeSpec(
             configDir = effective.trees.own,
             policy = effective.policy,
@@ -147,7 +147,7 @@ public class LaunchService(
         // NOTHING: it runs over the operator's own ~/.claude and ~/.claude.json, which stay as they are, and
         // carries the head's settings as a --settings overlay below.
         val modelOverrides = effective.models.tiers.modelOverrides
-            .takeUnless { effective.gateway.forwardClientAuth }.orEmpty()
+            .takeUnless { effective.gateway.clientModels }.orEmpty()
         materializeLaunch(materialize, trust, modelOverrides, wrapped)
         // V4-276: a launch never writes a head's .credentials.json. V4-129 copied the selected stored
         // login over it here, and Claude Code's refresh tokens rotate, so every launch put back a
@@ -228,7 +228,7 @@ public class LaunchService(
             sessionId,
             CallingRoster(
                 spec.models.pinnedModel,
-                spec.models.availableModelIds.takeUnless { spec.gateway.forwardClientAuth },
+                spec.models.availableModelIds.takeUnless { spec.gateway.clientModels },
                 spec.signIn.headKey.ifBlank { null },
                 cwd,
             ),
@@ -326,7 +326,7 @@ public class LaunchService(
         val config = wrapped?.configRootUnsets(inheritedConfigDir, dirs).orEmpty()
         // V4-449: what this head no longer plants must not leak in from an outer head's session either.
         val planted = buildEnv(held, slots)
-        val clientModels = if (spec.gateway.forwardClientAuth) {
+        val clientModels = if (spec.gateway.clientModels) {
             LaunchModelEnvironment.inherited(planted)
         } else {
             emptyList()

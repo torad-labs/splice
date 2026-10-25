@@ -139,6 +139,13 @@ public const val SHARE_AUTH_PARAM: String = "auth"
 /** The query param a remote command's address lists the models it shows in: `?models=gpt-5.5,gpt-5.4`. */
 public const val SHARE_MODELS_PARAM: String = "models"
 
+/** The word a node's Claude Code is given as its auth token. It opens nothing: the server signs every turn with its
+ *  own logins, and its listener drops whatever a request carries. The launch shim (splice-launch, drop_own_token)
+ *  names the same word, so a launch from inside a node's session never inherits it. The relay hands it to a head that
+ *  takes the caller's own login, whose pool puts one of the server's logins in its place, and such a head never sends
+ *  it upstream (CallerCredential.nodeWord). */
+public const val SHARE_NODE_TOKEN: String = "splice-lan"
+
 private const val EXAMPLE = "http://torad-server.lan:3097/claudex"
 
 /** The port `[share]` listens on when the file names none. */

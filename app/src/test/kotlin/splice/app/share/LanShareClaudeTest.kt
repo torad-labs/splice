@@ -122,6 +122,15 @@ class LanShareClaudeTest {
         assertEquals(NODE_WORD, env["ANTHROPIC_AUTH_TOKEN"])
         // Plain `claude` stays the person's own Claude Code: its settings, instructions and sessions in ~/.claude.
         assertFalse("CLAUDE_CONFIG_DIR" in env, "a wrapped claude reads the node's own ~/.claude: $env")
+        // PR 423 review: and its models stay the person's to pick, as the server's own wrapped `claude` leaves them
+        // (V4-449): no enforced allowlist over ~/.claude's, no tier slots, no window pinned to one model's.
+        val argv = recipe.getValue("argv").jsonArray.map { it.jsonPrimitive.content }
+        val overlay = argv.getOrNull(argv.indexOf("--settings") + 1).orEmpty()
+        assertTrue("statusLine" in overlay, "the launch carries its settings overlay: $argv")
+        assertFalse("availableModels" in overlay, "the person's own ~/.claude picks the models: $overlay")
+        val planted = env.keys.filter { it.startsWith("ANTHROPIC_DEFAULT_") || it.startsWith("CLAUDE_CODE_MAX_") } +
+            env.keys.filter { it == "CLAUDE_CODE_AUTO_COMPACT_WINDOW" }
+        assertEquals(emptyList<String>(), planted, "no model or window is planted over the person's own: $env")
     }
 
     @Test

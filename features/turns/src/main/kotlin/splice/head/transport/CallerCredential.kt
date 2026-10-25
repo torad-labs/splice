@@ -6,8 +6,10 @@
 // untouched, byte for byte. Read per attempt with that attempt's credentials, so a mid-request switch follows it.
 package splice.head.transport
 
+import splice.core.auth.AuthProvider
 import splice.core.auth.CredentialKey
 import splice.core.auth.Credentials
+import splice.core.topology.SHARE_NODE_TOKEN
 
 internal object CallerCredential {
     /** [turnHeaders] as they should ride beside [selected]: unchanged when [selected] is the caller's own credential
@@ -19,6 +21,16 @@ internal object CallerCredential {
         val mine = caller == null || caller == CredentialKey.fromHeaders(own)
         val carriers = own.keys.map(String::lowercase) + STANDARD_CARRIERS
         return if (mine) turnHeaders else turnHeaders.filterKeys { it.lowercase() !in carriers }
+    }
+
+    /** LAN share: TRUE when a turn holds another machine's word (SHARE_NODE_TOKEN) and [sender] would forward the
+     *  caller's credential, so no login this machine holds is there to put in the word's place. The word opens nothing
+     *  upstream, and the vendor's 401 would mark this head's own sign-in rejected. */
+    suspend fun unheldNodeWord(turnHeaders: Map<String, String>, sender: AuthProvider): Boolean {
+        val word = turnHeaders.any { (name, value) ->
+            name.lowercase() in STANDARD_CARRIERS && value.trim().substringAfterLast(" ").trim() == SHARE_NODE_TOKEN
+        }
+        return word && sender.credentials() == Credentials.ClientForwarded
     }
 }
 

@@ -27,6 +27,7 @@ import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeout
 import kotlinx.io.readByteArray
 import splice.core.config.TurnKey
+import splice.core.topology.SHARE_NODE_TOKEN
 import splice.core.util.Cancellables
 import splice.core.util.LogSink
 import splice.core.util.SafeFailureText
@@ -66,7 +67,7 @@ internal class ShareRelay(
         val silent = "${head.command} on $machine is not answering"
         // A head that takes the caller's own login refuses this machine's turn key as a credential to send upstream.
         // It gets the node's word instead, which opens nothing: its pool sends a login it holds in that word's place.
-        val bearer = if (head.forwardsClientAuth) NODE_TOKEN else turnKey.get()
+        val bearer = if (head.forwardsClientAuth) SHARE_NODE_TOKEN else turnKey.get()
         forward(call, URI.create("http://127.0.0.1:${head.port}$path"), body, silent, bearer)
     }
 

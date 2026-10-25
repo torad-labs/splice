@@ -53,7 +53,8 @@ internal class ShareHttp(private val io: CoroutineDispatcher) {
      *  doesn't resolve both as a bare ConnectException, told apart only by its causes, and each timeout by its
      *  class. */
     internal fun why(uri: URI, failure: Throwable): String {
-        val causes = generateSequence(failure) { it.cause?.takeUnless { cause -> cause === it } }.take(CAUSE_DEPTH)
+        val causes = generateSequence(failure) { it.cause?.takeUnless { cause -> cause === it } }
+            .take(UNREACHABLE_CAUSE_DEPTH)
         val host = hostOf(uri.toString())
         val connect = Duration.ofMillis(SHARE_CONNECT_MS).toSeconds()
         val answer = Duration.ofMillis(SHARE_ANSWER_MS).toSeconds()
@@ -101,4 +102,4 @@ private const val SHARE_ANSWER_MS = 10_000L
 
 // why: java.net.http wraps a connect failure twice over its cause; a few more links than that still end a chain that
 // loops back on itself.
-private const val CAUSE_DEPTH = 8
+private const val UNREACHABLE_CAUSE_DEPTH = 8

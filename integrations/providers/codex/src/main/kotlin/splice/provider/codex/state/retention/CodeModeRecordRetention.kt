@@ -210,4 +210,6 @@ internal class CodeModeRecordRetention(
             .toByteArray(Charsets.UTF_8).size.toLong().also { record.retainedBytes = it }
 }
 
+// why: enough leading characters of a conversation key to tell retention-log lines apart
+// without quoting the whole digest next to user file bytes.
 private const val RECORD_ID_LOG_CHARS: Int = 8

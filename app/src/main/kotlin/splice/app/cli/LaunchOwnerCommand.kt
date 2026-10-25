@@ -5,6 +5,8 @@ import splice.core.config.StatePaths
 import splice.core.process.LaunchDeclaration
 import splice.core.process.LaunchOwners
 import splice.core.process.LaunchTerminal
+import splice.core.topology.RemoteAddressRead
+import splice.core.topology.RemoteAddresses
 import splice.core.topology.Topology
 import splice.topology.TopologyLoader
 import java.net.URI
@@ -34,6 +36,17 @@ internal class LaunchOwnerCommand(private val args: List<String>) : Command() {
 
     private fun resolveHead(topology: Topology, selector: String, baseUrl: String, kind: String): String? {
         if (kind != "session") return topology.resolveHeadKey(selector)
+        return remoteCommand(topology, selector, baseUrl) ?: localHead(topology, baseUrl)
+    }
+
+    /** [command], when it runs on another machine (LAN share) and [baseUrl] is the address its `[remote.<command>]`
+     *  entry sends its turns to, which is the one its launch planted. */
+    private fun remoteCommand(topology: Topology, command: String, baseUrl: String): String? {
+        val read = topology.remote[command]?.let { RemoteAddresses.read(it.url) }
+        return command.takeIf { (read as? RemoteAddressRead.Read)?.address?.turns == baseUrl }
+    }
+
+    private fun localHead(topology: Topology, baseUrl: String): String? {
         // A wrapped claude basename need not name a head. The daemon-authored URL does.
         val url = URI.create(baseUrl)
         if (url.host != "127.0.0.1" || url.scheme !in setOf("http", "https")) return null

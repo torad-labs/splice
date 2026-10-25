@@ -105,31 +105,32 @@ internal class ShareCommand(
         return PeerExit.DONE
     }
 
-    /** [wanted] written to splice.toml, unless it shares on a port another program here holds, said instead. */
+    /** [wanted] written to splice.toml, unless it shares on a port this machine can't open, said in the OS's words
+     *  (held by another program, or below 1024 for a user on Linux). This machine's own share listener holds its port
+     *  while sharing is on, and answers there. */
     private suspend fun saved(wanted: Topology): Boolean {
         val port = wanted.share.port
-        if (wanted.share.enabled && held(port)) {
+        val refusal = if (wanted.share.enabled) bindRefusal(port) else null
+        if (refusal != null && directory.read("http://127.0.0.1:$port") !is ShareDirectoryRead.Read) {
             val another = "${CYAN}splice share on --port <N>$RESET"
-            err.line("$SHARE_VERB: port $port is held by another program here; choose another with $another")
+            err.line("$SHARE_VERB: port $port can't be opened here ($refusal); choose another with $another")
             return false
         }
         return file.saved(wanted)
     }
 
-    /** Whether another program here holds [port]: it can't be bound, and what answers on it is not this machine's
-     *  share listener, which holds it while sharing is on. */
-    private suspend fun held(port: Int): Boolean =
-        !bindable(port) && directory.read("http://127.0.0.1:$port") !is ShareDirectoryRead.Read
-
-    /** Whether [port] can be bound on every address, as the share listener binds it. */
-    private fun bindable(port: Int): Boolean = try {
+    /** Why [port] can't be bound on every address, as the share listener binds it, in the OS's words; null when it can,
+     *  or when it is no port at all, which the writer refuses in its own words. */
+    private fun bindRefusal(port: Int): String? = try {
         ServerSocket().use { socket ->
             socket.reuseAddress = false
             socket.bind(InetSocketAddress(port))
         }
-        true
-    } catch (_: BindException) {
-        false
+        null
+    } catch (refused: BindException) {
+        refused.message ?: "the OS refused it"
+    } catch (_: IllegalArgumentException) {
+        null
     }
 
     private fun usage(): Int {

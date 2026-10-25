@@ -252,14 +252,25 @@ class LanShareCliTest {
     }
 
     @Test
-    fun `share on a port another program holds says so, and leaves sharing off`(@TempDir dir: Path) {
+    fun `share on a port this machine can't open says why in the OS's words, sharing off`(@TempDir dir: Path) {
         val node = node(dir)
         ServerSocket(0).use { holder ->
             val port = holder.localPort
             val on = share(node.env, "on", "--port", "$port")
             assertNotEquals(0, on.code, on.toString())
-            assertTrue(on.err.contains("port $port is held by another program here"), on.toString())
+            assertTrue(on.err.contains("port $port can't be opened here (Address already in use)"), on.toString())
             assertFalse(on.toString().contains("is splice running"), on.toString())
+            assertFalse(TopologyLoader.parse(node.config.readText()).share.enabled, node.config.readText())
+        }
+    }
+
+    @Test
+    fun `share on a port outside 1-65535 is refused in the config's own words, sharing off`(@TempDir dir: Path) {
+        val node = node(dir)
+        for (port in listOf("70000", "-1")) {
+            val on = share(node.env, "on", "--port", port)
+            assertNotEquals(0, on.code, on.toString())
+            assertTrue(on.err.contains("port $port is outside 1-65535"), on.toString())
             assertFalse(TopologyLoader.parse(node.config.readText()).share.enabled, node.config.readText())
         }
     }
@@ -295,6 +306,19 @@ class LanShareCliTest {
         assertTrue(node.linked("claudex"), added.toString())
         assertFalse(Files.exists(dir.resolve("keys.toml")), "a node keeps no key")
         assertTrue(added.out.contains("claudex"), added.toString())
+    }
+
+    @Test
+    fun `remote add whose command name is another program's file says so, and does not report it added`(
+        @TempDir dir: Path,
+    ) {
+        val node = node(dir)
+        Files.createDirectories(node.link("claudex").parent)
+        Files.writeString(node.link("claudex"), "#!/bin/sh\necho the person's own claudex\n")
+        val added = remote(node, "add", "$share/claudex")
+        assertNotEquals(0, added.code, added.toString())
+        assertTrue(added.err.contains(node.link("claudex").toString()), added.toString())
+        assertFalse(node.linked("claudex"), added.toString())
     }
 
     @Test

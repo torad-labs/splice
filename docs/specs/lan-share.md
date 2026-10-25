@@ -138,7 +138,7 @@ relay under its own name, taking its provider and its share token out in the sam
 the first build's `share/clients.json` and its lock when it starts.
 
 `splice share on|off|status` writes `[share]` and restarts the daemon; `status` prints each command's
-address. `share on` refuses a port another program here holds, naming it, before the file changes. `splice remote add <address>` checks the address against the server and writes
+address. `share on` refuses a port this machine can't open (another program holds it, or the OS refuses it), in the OS's words, before the file changes. `splice remote add <address>` checks the address against the server and writes
 `[remote.<command>]`, links the command and restarts; `add <server>` with no head adds every command it
 offers; `splice remote remove <command>` takes one out; `splice remote` lists them, each with whether its
 server answers now.

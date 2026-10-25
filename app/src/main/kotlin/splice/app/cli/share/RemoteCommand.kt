@@ -52,17 +52,22 @@ internal class RemoteCommand(
         if (rest.size != 1 && !named) return usage()
         val added = RemoteAdd(out, err, file, directory, relays).add(rest[0], if (named) rest[2] else null)
             ?: return PeerExit.REFUSED
-        added.commands.forEach { link(it, added.machine) }
+        // Every command is linked, even after one is refused, so each refusal is said.
+        val whole = added.commands.map { link(it, added.machine) }.all { it } && added.complete
         val followed = restart.followed(added.topology)
-        return if (followed && added.complete) PeerExit.DONE else PeerExit.REFUSED
+        return if (followed && whole) PeerExit.DONE else PeerExit.REFUSED
     }
 
-    /** [command]'s link, to the launch shim as every command's is. */
-    private fun link(command: String, machine: String) {
-        when (val linked = install.install(command, env)) {
-            is InstallResult.Refused -> err.line("$REMOTE_VERB: ${linked.sentence}")
-            InstallResult.Declined -> Unit
-            InstallResult.Linked -> out.line("$GREEN✓$RESET $CYAN$command$RESET runs on $machine")
+    /** [command]'s link, to the launch shim as every command's is; false, said, when it was not made. */
+    private fun link(command: String, machine: String): Boolean = when (val linked = install.install(command, env)) {
+        is InstallResult.Refused -> {
+            err.line("$REMOTE_VERB: ${linked.sentence}")
+            false
+        }
+        InstallResult.Declined -> false
+        InstallResult.Linked -> {
+            out.line("$GREEN✓$RESET $CYAN$command$RESET runs on $machine")
+            true
         }
     }
 

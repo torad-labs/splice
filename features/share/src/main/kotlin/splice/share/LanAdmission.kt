@@ -112,7 +112,6 @@ internal class LanAdmission(
         val second = bytes[1].toUByte().toInt()
         return first == CGNAT_FIRST_OCTET && second and CGNAT_SECOND_MASK == CGNAT_SECOND_OCTET
     }
-
 }
 
 /** One prefix an interface of this machine holds: [address], with its first [bits] bits fixed, on the interface
@@ -171,4 +170,3 @@ private const val CGNAT_SECOND_MASK = 0xc0
 
 // why: in 100.64/10 those two bits read 01, the second octets 64 through 127.
 private const val CGNAT_SECOND_OCTET = 0x40
-

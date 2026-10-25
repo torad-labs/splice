@@ -21,6 +21,8 @@ import splice.provider.codex.history.CodeModeAcknowledgedBaseline
 import splice.provider.codex.history.CodeModeDeliveredEchoes
 import splice.provider.codex.history.CodeModeOwnership
 import splice.provider.codex.history.CodeModeScriptPlacements
+import splice.provider.codex.state.replay.CodeModeCallbackReplay
+import splice.provider.codex.state.replay.CodeModeReplayEvidence
 
 internal class CodeModeExtraContent(
     private val codec: CodexCodeModeHistoryCodec,
@@ -227,17 +229,16 @@ internal class CodeModeExtraContent(
         boundary: Int,
         digests: InputItemDigests,
     ): Boolean {
-        val allowed = CodeModeNativeChain.allowed(record)
-        val delivered = deliveredReplay(projected, record, digests)
-        val streamed = streamedContinuity(projected, record, boundary)
+        val evidence = CodeModeReplayEvidence(record, boundary)
+        val natives = CodeModeCallbackReplay.native(projected, owned)
+        val current = evidence.current(natives)
+        val witnessed = deliveredReplay(projected, record, digests) + deliveredReplay(natives, record, digests) +
+            deliveredReplay(current, record, digests) + streamedContinuity(projected, record, boundary) +
+            streamedContinuity(natives, record, boundary) + streamedContinuity(current, record, boundary)
         return projected.replayItems.any { replay ->
-            val slot = replay.logicalOffset to replay.items
-            val acknowledged = record.replayAnchors?.client?.acknowledgement
-            val historical = replay.logicalOffset <= boundary && acknowledged != null &&
-                replay.items.all(acknowledged::owns)
-            val expected = historical || slot in allowed || replay in streamed
-            replay.logicalOffset >= boundary && !expected &&
-                replay !in delivered && replay.callbackId !in owned
+            val expected = evidence.owns(replay, witnessed) ||
+                evidence.owns(evidence.current(CodeModeCallbackReplay.native(replay, owned)), witnessed)
+            replay.logicalOffset >= boundary && !expected
         }
     }
 

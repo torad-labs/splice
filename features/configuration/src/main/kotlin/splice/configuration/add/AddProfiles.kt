@@ -32,8 +32,6 @@ internal data class AddModel(
     val rates: ModelRates? = null,
     /** V4-232: the Claude model the client resolves this row as (ModelEntry.clientModel). Null = none. */
     val clientModel: String? = null,
-    /** ModelEntry.compactionReserveTokens: a remote head mirrors the reserve its sharing head compacts by. */
-    val compactionReserve: Long? = null,
 ) {
     /** The rate card emitted INLINE on the model row — never as a `[providers.X.models.rates]`
      *  sub-table. That spelling repeats its header once per model, and splice's own
@@ -120,9 +118,6 @@ internal data class AddModelPolicy(
     val listAuthoritative: Boolean = true,
     /** The endpoint supplies the serving roster; declared rows supply only pinned models and tiers. */
     val discoverRoster: Boolean = false,
-    /** The head serves every declared row at its own window and maps tiers in a `model_slots` table, so one model
-     *  may fill several tiers (LAN share: a head regenerated from another machine's, which may do exactly that). */
-    val tierTable: Boolean = false,
 )
 
 public class AddProfiles {
@@ -173,8 +168,7 @@ public class AddProfiles {
                 "id = \"${m.id}\"",
                 "label = \"${m.label}\"",
                 "context_window = ${m.contextWindow}",
-            ) + m.clientModel?.let { listOf("client_model = \"$it\"") }.orEmpty() +
-                m.compactionReserve?.let { listOf("compaction_reserve_tokens = $it") }.orEmpty() + m.ratesLine()
+            ) + m.clientModel?.let { listOf("client_model = \"$it\"") }.orEmpty() + m.ratesLine()
         }
         val kin = family?.let { listOf("[providers.$key.discovery]", "family = \"$it\"") }.orEmpty()
         val provider = origin + (tables + kin).takeIf { shared == null }.orEmpty()
@@ -187,22 +181,21 @@ public class AddProfiles {
             "port = $port",
             "discovery_prefix = \"claude-$key--\"",
             "pinned_model = \"${pinned.id}\"",
-        ) + headExtras(mappings, pinned.contextWindow, profile.policy) + listOf(
+        ) + headExtras(mappings, pinned.contextWindow, profile.policy.discoverRoster) + listOf(
             "[heads.$key.claude]",
             "command = \"${profile.head.command}\"",
         )
         return (provider + head).joinToString("\n") + "\n"
     }
 
-    /** Discovery and tier-table profiles keep row windows and map tiers separately. Other profiles keep their
+    /** Discovery profiles keep row windows and map tiers separately. Other profiles keep their
      *  pinned window and their existing serving allowlist when they declare tiers. */
     private fun headExtras(
         mappings: List<Pair<String, String>>,
         pinnedWindow: Long,
-        policy: AddModelPolicy,
+        discoverRoster: Boolean,
     ): List<String> {
-        if (policy.discoverRoster || policy.tierTable) {
-            if (mappings.isEmpty()) return emptyList()
+        if (discoverRoster) {
             return listOf("model_slots = {" + mappings.joinToString { (id, slot) -> "$slot = \"$id\"" } + "}")
         }
         val window = listOf("context_window = $pinnedWindow")

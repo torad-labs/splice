@@ -148,10 +148,8 @@ public data class QuirksConfig(
      *  leave it off. The passthrough dialect retains its nullable overlay for vendor profiles.
      *  Absent keeps the provider's base value; an explicit value overrides Muse's built-in cap. */
     @SerialName("tool_name_cap") val toolNameCap: Int? = null,
-    /** anthropic-passthrough on a key: send the client's own Anthropic wire knobs and identity upstream
-     *  (anthropic-version, anthropic-beta, the session id, user-agent, x-app, x-stainless-*), never its
-     *  credential. For an upstream that is itself a splice head (LAN share, docs/specs/lan-share.md): the
-     *  session id is what keeps a session on one account and one prompt-cache key there. Absent = off. */
+    /** Retired. The first LAN-share build (2026-10-22 to 24) wrote it on a node's relay to another machine's head. It
+     *  is read only so boot can name that relay with what replaces it (RetiredRelays), never acted on. */
     @SerialName("forward_client_identity") val forwardClientIdentity: Boolean = false,
 ) {
     /** An explicit false disables the runner. Absent keeps the auth/dialect shape's default. */

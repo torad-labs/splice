@@ -27,6 +27,7 @@ package splice.client.wrap
 import splice.client.Keys
 import splice.client.SymlinkOp
 import splice.core.config.InstallPaths
+import splice.core.topology.CLAUDE_COMMAND
 import splice.core.util.Cancellables
 import splice.core.util.PathProbe
 import splice.core.util.WallClock
@@ -39,7 +40,6 @@ import java.nio.file.StandardCopyOption.COPY_ATTRIBUTES
 import java.nio.file.StandardCopyOption.REPLACE_EXISTING
 import kotlin.io.path.isSymbolicLink
 
-private const val CLAUDE_COMMAND = "claude"
 private const val SHIM_NAME = "splice-launch"
 
 /** One lock for every state-changing wrap operation in this JVM (the daemon's): see the file header. */

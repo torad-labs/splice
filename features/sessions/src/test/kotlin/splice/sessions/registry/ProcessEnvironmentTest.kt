@@ -26,7 +26,7 @@ class ProcessEnvironmentTest {
     }
 
     private fun environment(root: Path, owners: LaunchOwners = roster(root)) =
-        ProcessEnvironment(root.resolve("proc"), owners)
+        ProcessEnvironment(root.resolve("proc"), owners, DarwinPs(here = false))
 
     @Test
     fun `a session joins the head its launch declared, whatever its environment says`(@TempDir root: Path) {

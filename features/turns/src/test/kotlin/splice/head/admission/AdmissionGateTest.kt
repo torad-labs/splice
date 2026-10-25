@@ -39,6 +39,7 @@ import splice.core.auth.ForeignHostLog
 import splice.core.auth.RefreshableAuthProvider
 import splice.core.budget.BudgetBlock
 import splice.core.budget.HeadBudget
+import splice.core.client.SESSION_HEADER
 import splice.core.memory.HeapBudget
 import splice.core.model.ModelCatalog
 import splice.core.model.ModelEntry
@@ -65,7 +66,6 @@ import splice.head.headStores
 import splice.head.noQuota
 import splice.head.turn.LiveTurns
 import splice.head.turn.Preparation
-import splice.head.turn.SESSION_HEADER
 import splice.head.turn.TurnDriver
 import splice.head.turn.TurnPreparation
 import splice.head.wire.FrameRecording

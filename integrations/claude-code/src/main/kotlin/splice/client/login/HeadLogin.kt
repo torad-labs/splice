@@ -12,7 +12,8 @@ internal const val LOGIN_SENTINEL = "SPLICE_CODEX_LOGIN"
 
 /** How one head signs in. [canCapturePaste] is true when the head also holds a [TokenCaptureSpec], which decides the
  *  whole shape of /login for an api-key head (see [LoginHookScripts.loginHookScript]); [outcomeFile] is its login
- *  receipt (LoginOutcomeFile); [headKey] lets a sign-in started as `splice login <key>` be found too. */
+ *  receipt (LoginOutcomeFile); [headKey] lets a sign-in started as `splice login <key>` be found too. [signsInOn]
+ *  is the machine holding the logins of a command another machine serves (LAN share), empty for a head here. */
 internal class HeadLogin(
     val loginCommand: String,
     val signInLabel: String,
@@ -20,6 +21,7 @@ internal class HeadLogin(
     val outcomeFile: String = "",
     val canCapturePaste: Boolean = false,
     val headKey: String = "",
+    val signsInOn: String = "",
 ) {
     /** False for a head with no login command: it gets no /login interception, and a stale one is reconciled away. */
     val offered: Boolean get() = loginCommand.isNotBlank()

@@ -14,6 +14,7 @@ import org.junit.jupiter.api.Assertions.assertFalse
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.io.TempDir
+import splice.core.config.UserHome
 import splice.core.util.AsyncFileIo
 import splice.core.util.WallClock
 import splice.sessions.activity.ActivityStores
@@ -82,13 +83,18 @@ class SessionsConsoleRoutesTest {
     @Test
     fun `every row carries repo, team and its edges summary`() {
         val stores = stores()
-        val routes = SessionsRoutes(
-            registry(),
-            TestTranscripts(),
-            roots = TranscriptRoots(vanilla = tmp.resolve(".claude")),
-            activity = ActivitySource { stores },
-        )
-        val rows = rowsOf(routes)
+        // why: the resolver probes only trusted roots. The OS temp folder is /tmp on Linux, which it trusts, and
+        // /var/folders on a Mac, which it does not, so the repo sits in the home on both.
+        val rows = UserHome.within(tmp.toRealPath()) {
+            rowsOf(
+                SessionsRoutes(
+                    registry(),
+                    TestTranscripts(),
+                    roots = TranscriptRoots(vanilla = tmp.resolve(".claude")),
+                    activity = ActivitySource { stores },
+                ),
+            )
+        }
         val repo = tmp.toRealPath().resolve("work/repo").toString()
         assertEquals(json("""{"root":"$repo"}"""), rows.getValue(ALPHA)["repo"])
         assertEquals(

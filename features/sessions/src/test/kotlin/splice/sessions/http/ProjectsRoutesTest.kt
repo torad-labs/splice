@@ -26,7 +26,11 @@ import java.nio.file.Path
 class ProjectsRoutesTest {
 
     @TempDir
-    lateinit var tmp: Path
+    lateinit var temp: Path
+
+    // why: a session records its cwd as the OS resolves it, and the resolver compares real paths. A Mac's temp
+    // folder is under /var, a link to /private/var, so the rig works in the real path the way a session would.
+    private val tmp: Path by lazy { temp.toRealPath() }
 
     private val rig by lazy { TeamRig(tmp) }
 

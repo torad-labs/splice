@@ -105,8 +105,10 @@ class PeerNoteSocketTest {
     fun `a later version, and a peer that is not Claude Code, are sent the note when they say peerProtocol 1`(
         @TempDir root: Path,
     ) {
-        for (version in listOf("2.1.305", "2.2.0", "grokbot-mailbox/0.1.0")) {
-            val inbox = inbox(root.resolve(version.replace("/", "-")).also { Files.createDirectory(it) })
+        // why: a folder per version by its index, not its text: a socket path is capped at 103 bytes on a Mac, whose
+        // temp folder alone takes 75.
+        for ((index, version) in listOf("2.1.305", "2.2.0", "grokbot-mailbox/0.1.0").withIndex()) {
+            val inbox = inbox(root.resolve("v$index").also { Files.createDirectory(it) })
             assertEquals(NoteOutcome.Submitted, send(record(inbox.socket, version)))
             assertEquals(PeerNoteFrame.encode("run the gate", "id-1"), inbox.received.get(5, TimeUnit.SECONDS))
         }
@@ -224,6 +226,23 @@ class PeerNoteSocketTest {
         assertEquals(
             PeerWire.encodeReceipt("r-1", "m-2", DeliveryStatus.DENIED, "bad peer token", deniedSelf),
             denied.received.get(5, TimeUnit.SECONDS),
+        )
+    }
+
+    // A Mac's Claude Code names its socket /tmp/cc-socks/<pid>.sock, and /tmp there is a link to /private/tmp.
+    @Test
+    fun `a receipt reaches a sockets folder whose path runs through a linked folder above it, as a Mac's tmp does`(
+        @TempDir root: Path,
+    ) {
+        val delivered = inbox(Files.createDirectory(root.resolve("private")))
+        val tmp = Files.createSymbolicLink(root.resolve("tmp"), root.resolve("private"))
+        val self = PeerSender(tmp.resolve("cc/42.sock").toString(), "gary")
+        val socket = PeerNoteSocket(Dispatchers.IO, newId = { "r-1" })
+        val address = "uds:${tmp.resolve("cc/1.sock")}"
+        assertTrue(runBlocking { socket.receipt(address, "m-1", DeliveryStatus.DELIVERED, null, self) })
+        assertEquals(
+            PeerWire.encodeReceipt("r-1", "m-1", DeliveryStatus.DELIVERED, null, self),
+            delivered.received.get(5, TimeUnit.SECONDS),
         )
     }
 

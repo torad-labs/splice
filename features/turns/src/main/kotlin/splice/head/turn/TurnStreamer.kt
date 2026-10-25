@@ -95,7 +95,6 @@ internal class TurnStreamer(
                 provider.catalog,
                 meta,
                 clientWindow.of(call, meta.scope.sessionId),
-                scaled = !clientWindow.relayed(call),
             ),
         )
     }

@@ -1,7 +1,5 @@
-// NEW: PR #247's sixth review. The ONE reading of an api-key file's text, shared by the provider that
-// authenticates with it (ApiKeyAuthProvider) and the share renewal that asks whether that file shadows the
-// key store (RemoteHeadAdd). The renewal had judged the file by its existence alone, so an empty file, or JSON
-// with no `api_key`, which the provider passes over for the store, read as shadowing a token that was in use.
+// NEW: PR #247's sixth review. The ONE reading of an api-key file's text, by the provider that authenticates
+// with it (ApiKeyAuthProvider): an empty file, or JSON with no `api_key`, supplies no key, and the store is read next.
 package splice.core.auth
 
 import kotlinx.serialization.json.Json

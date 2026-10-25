@@ -11,6 +11,7 @@ dependencies {
     // `splice install` reads splice.toml's heads for the wrappers it links; nothing public names it.
     implementation(project(":integrations-topology"))
     implementation(libs.kotlinx.serialization.json)
+    testImplementation(testFixtures(project(":core")))
     testImplementation(libs.ktor.server.netty)
     testImplementation(libs.ktor.client.cio)
     testImplementation(libs.kotlinx.coroutines.test)

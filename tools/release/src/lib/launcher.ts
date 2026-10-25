@@ -702,10 +702,15 @@ const ARMS: readonly Arm[] = [
     // passwd fallback, including when an explicit config and jar point into a test sandbox.
     name: "V4-218 an unset or blank HOME uses the JVM's fallback home",
     run: async (ctx) => {
-      // The passwd home, which the JVM's user.home falls back to. Bun's userInfo() can echo the sandbox HOME.
+      // The passwd home, which the JVM's user.home falls back to. Bun's userInfo() can echo the sandbox HOME. macOS has
+      // no getent: its passwd database is Directory Services, which dscl reads.
       const user = execFileSync("id", ["-un"], { encoding: "utf8" }).trim();
-      const entry = execFileSync("getent", ["passwd", user], { encoding: "utf8" }).trim();
-      const fallback = entry.split(":")[5] ?? "";
+      const fallback =
+        process.platform === "darwin"
+          ? (execFileSync("dscl", [".", "-read", `/Users/${user}`, "NFSHomeDirectory"], { encoding: "utf8" })
+              .trim()
+              .split(/\s+/)[1] ?? "")
+          : (execFileSync("getent", ["passwd", user], { encoding: "utf8" }).trim().split(":")[5] ?? "");
       const expected = `-Duser.home=${fallback}`;
       for (const home of [undefined, "", "  "]) {
         rmSync(ctx.captures.javaArgv, { force: true });
@@ -776,6 +781,33 @@ const ARMS: readonly Arm[] = [
       const got = JSON.stringify(JSON.parse(read(capture)));
       const want = JSON.stringify({ argv: words, foo: "a\nb\\c", gone: null });
       return got === want ? null : `the launched program saw ${got}, wanted ${want}`;
+    },
+  },
+  {
+    // LAN share: a node's session carries ANTHROPIC_AUTH_TOKEN=splice-lan, the word its launch plants for the server
+    // (RemoteLaunches.kt, NODE_TOKEN). A command launched from inside that session, such as plain `claude` through a
+    // head that forwards the caller's own login, must not send the word ahead of that login: Anthropic refuses it 401
+    // and Claude Code retries. A token the person set themselves rides on.
+    name: "a LAN node's token inherited from its session is dropped, and the caller's own token kept",
+    run: async (ctx) => {
+      const capture = join(ctx.dir, "token-capture");
+      const stub = join(ctx.dir, "token-stub");
+      writeStub(stub,
+        'import { writeFileSync } from "node:fs";\n' +
+        "writeFileSync(process.argv[2], JSON.stringify(process.env.ANTHROPIC_AUTH_TOKEN ?? null));\n",
+      );
+      const seen = async (inherited: string): Promise<unknown> => {
+        rmSync(capture, { force: true });
+        ctx.daemon.forget();
+        ctx.daemon.recipe = [stub, capture].map((word) => `A ${word}`).join("\n") + "\n";
+        const run = await ctx.launch({ ...ctx.harness, ANTHROPIC_AUTH_TOKEN: inherited });
+        ctx.daemon.recipe = undefined;
+        return run.code === 0 ? JSON.parse(read(capture)) : `no launch: ${run.output}`;
+      };
+      const lan = await seen("splice-lan");
+      if (lan !== null) return `an inherited splice-lan must be dropped, the launched program saw ${JSON.stringify(lan)}`;
+      const own = await seen("sk-ant-the-person");
+      return own === "sk-ant-the-person" ? null : `the caller's own token must ride on, it saw ${JSON.stringify(own)}`;
     },
   },
   {

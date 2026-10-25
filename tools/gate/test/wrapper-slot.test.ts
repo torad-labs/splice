@@ -162,11 +162,16 @@ describe("the root wrapper sends a build through the gradle slot", () => {
   });
 });
 
-/** A pid that is not running: the highest the kernel will hand out, which a fresh machine is far from. */
+/** A pid no process holds: one a process just ran under and exited, checked gone with kill(pid, 0), which macOS answers
+ *  as Linux does (it has no /proc to look in). */
 function deadPid(): number {
-  const max = Number(readFileSync("/proc/sys/kernel/pid_max", "utf8").trim());
-  for (let pid = max - 1; pid > max - 64; pid -= 1) {
-    if (!existsSync(`/proc/${pid}`)) return pid;
+  for (let tries = 0; tries < 8; tries += 1) {
+    const pid = Bun.spawnSync(["true"]).pid;
+    try {
+      process.kill(pid, 0);
+    } catch {
+      return pid;
+    }
   }
-  throw new Error("every pid near pid_max is in use, so this arm cannot name a dead one");
+  throw new Error("eight exited processes' pids were all taken again at once, so this arm cannot name a dead one");
 }

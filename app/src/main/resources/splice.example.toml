@@ -40,6 +40,19 @@ mirror_reasoning = false     # operator-locked off; TOML, state, env, and runtim
 # update_channel = "stable"      # "stable" follows releases only; "beta" follows prereleases too
 # auto_update = true
 
+# ── LAN share: this machine's heads, run from your other machines (docs/specs/lan-share.md) ──
+# `splice share on` writes this table and restarts; `splice share status` prints each command's address. Sharing opens
+# one port to this machine's LAN with no login, token or encryption: any device on the LAN can then run these heads.
+# [share]
+# enabled = true
+# port = 3097
+# hostnames = ["box.example.home"]   # names beyond the host name and it under .lan, .local, .home and .internal
+#
+# On a machine that runs another's heads, `splice remote add <address>` writes one line per command and links it.
+# auth= picks the server's login its sessions run on, models= the only models it is shown.
+# [remote.claudex]
+# url = "http://torad-server.lan:3097/claudex?auth=work&models=gpt-5.6-sol"
+
 # ── compaction instructions: your text after Claude Code's own summarizer prompt ──
 # Most specific scope wins and REPLACES the others (project+model > project > model > global);
 # absent inherits; instructions = "" opts out. Text inline or file = "~/path". Compaction requests
@@ -86,6 +99,7 @@ summary_field = true
 # rejected loudly at startup instead of being ignored in silence. Remove it from any config that
 # has it; it is documented here so that an operator reading this file learns why it is gone.
 # retired: compact_effort — a compaction is built exactly like a turn, so any effort pin misses the prompt cache on the whole transcript
+# retired: forward_client_identity — the first LAN-share build's relay wrote it; boot refuses that relay and `splice remote add` replaces it
 # websocket (default false in code): serve rounds over the Responses WebSocket with
 # previous_response_id chaining, so a continuation turn sends ONLY the new items instead of the
 # whole history. Measured on a 12-round tool loop: wire bytes go FLAT (~2.4KB) while the full send
@@ -425,12 +439,6 @@ quirks = { mfjs = true, strip_cache_control = true, synthesize_signatures = true
 # from the request when a live probe shows the endpoint rejects them. Kimi accepts them, so it is
 # NOT set here; declare it for a passthrough upstream that 400s on the shape.
 # strip_sampling_params = true
-# forward_client_identity (default false): on a passthrough provider that holds its own key, send the
-# client's Anthropic wire knobs and identity upstream (anthropic-version, anthropic-beta, the session id,
-# user-agent, x-app, x-stainless-*), never its credential. `splice remote` sets it on each head it imports
-# from another machine's `splice share`, where the session id keeps a session on one account and one
-# prompt-cache key. Kimi is not a splice head, so it is NOT set here.
-# forward_client_identity = true
 # Static vendor headers, pure TOML. Kimi's /coding endpoint 403s unrecognized user agents (this
 # exact UA is proven-accepted), and the Anthropic wire needs its version header on every request.
 # `Accept` and the X-Msh-* device identity stay in code: one is a dialect invariant, the other is

@@ -34,7 +34,9 @@ import splice.core.config.UserHome
 import splice.core.util.EnvReader
 import splice.launch.LaunchOutcome
 import splice.launch.LaunchSpec
+import splice.launch.RemoteCommands
 import splice.sessions.registry.LaunchMarker
+import java.net.URI
 import java.nio.file.Path
 
 // LaunchSpec + LaunchRecipe live in LaunchTypes.kt (concentration, 2026-08-19).
@@ -74,6 +76,10 @@ public class LaunchService(
      *  `claude` falls back to the V4-445 file of hosted user servers. Assigned by the daemon before routes serve
      *  requests; null runs every launch over its own servers. */
     public var hubLaunch: McpHubLaunch? = null
+
+    /** LAN share: the commands another machine serves, launched when a name no head here carries is asked for.
+     *  Assigned by the daemon before routes serve requests; null launches heads only. */
+    public var remotes: RemoteCommands? = null
 
     /** V4-183: a bare -c resolves to this head's own newest session in the launch cwd. */
     private val headBoundedContinue = HeadBoundedContinue()
@@ -126,7 +132,7 @@ public class LaunchService(
             signIn = MaterializeSignIn(
                 loginCommand = effective.signIn.loginCommand,
                 signInLabel = effective.signIn.signInLabel,
-                signInViaBrowser = effective.signIn.signInViaBrowser,
+                signInWay = effective.signIn.signInWay,
                 tokenCapture = effective.signIn.tokenCapture,
                 advertiseKeySetup = effective.signIn.advertiseKeySetup,
                 loginOutcomeFile = effective.signIn.loginOutcomeFile,
@@ -334,7 +340,8 @@ public class LaunchService(
 
     private fun buildEnv(spec: LaunchSpec, slots: List<Pair<String, String>>): Map<String, String> {
         return buildMap {
-            put("ANTHROPIC_BASE_URL", "http://127.0.0.1:${spec.gateway.port}")
+            // LAN share: a command another machine serves goes to that machine's address, never through this one.
+            put("ANTHROPIC_BASE_URL", spec.gateway.remote ?: "http://127.0.0.1:${spec.gateway.port}")
             // AUTH_TOKEN (bearer), NOT API_KEY — a bearer avoids Claude Code's custom-api-key
             // approval flow. The head validates this per-install credential before any quota-
             // consuming work. A native-auth head plants NOTHING: the client's own credential must
@@ -376,7 +383,10 @@ public class LaunchService(
             // cooldown lift. Planted UNCONDITIONALLY, native included: it is a client-side WAIT
             // policy, and every head wants its session to survive a hold.
             put("CLAUDE_CODE_RETRY_WATCHDOG", "1")
-            put("NO_PROXY", mergedNoProxy())
+            val noProxy = mergedNoProxy(spec)
+            put("NO_PROXY", noProxy)
+            // curl, which runs the statusline, reads the lowercase spelling first and ignores NO_PROXY once it is set.
+            put("no_proxy", noProxy)
             // Hide Claude Code's built-in Anthropic-account commands: in a gateway head, auth is the
             // proxy bearer above, so /login (a local-jsx command hardwired to platform.claude.com —
             // no hook or base-url override can reach it) and /logout are dead doors. These are the
@@ -398,8 +408,15 @@ public class LaunchService(
         }
     }
 
-    private fun mergedNoProxy(): String =
-        sequenceOf(envReader("NO_PROXY"), envReader("no_proxy"), "127.0.0.1,localhost")
+    /** The ambient NO_PROXY with loopback added, and for a command another machine serves (LAN share) that machine's
+     *  host, which a proxy the shell names can't reach: Claude Code and the statusline's curl both honour it. */
+    private fun mergedNoProxy(spec: LaunchSpec): String =
+        sequenceOf(
+            envReader("NO_PROXY"),
+            envReader("no_proxy"),
+            "127.0.0.1,localhost",
+            spec.gateway.remote?.let { URI.create(it).host?.removeSurrounding("[", "]") },
+        )
             .filterNotNull()
             .flatMap { it.split(',').asSequence() }
             .map { it.trim() }

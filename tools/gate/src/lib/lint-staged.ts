@@ -15,7 +15,7 @@
 // commit's files, exactly as the gradle `detekt` task has no type resolution; a rule that needs another file is pre-push's.
 import { spawn } from "node:child_process";
 import { createHash } from "node:crypto";
-import { chmodSync, copyFileSync, existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from "node:fs";
+import { chmodSync, copyFileSync, existsSync, mkdirSync, readFileSync, realpathSync, renameSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
 import { resolveJdk21 } from "./jdk.ts";
@@ -92,7 +92,7 @@ async function toolFile(tool: "ktlint" | "detekt", version: string): Promise<str
   return file;
 }
 
-interface Ran {
+export interface Ran {
   readonly status: number;
   readonly output: string;
 }
@@ -119,11 +119,13 @@ export function findingLines(tool: "ktlint" | "detekt", output: string, dir: str
 }
 
 /** Standalone ktlint, at the version [root]'s catalog names, over [files] (repo-relative) of the tree [root], whose own
- *  .editorconfig it reads. This is the pre-push's batched lint: the same pinned jar and rule file the Gradle plugin and the
+ *  .editorconfig it reads. ktlint names each file by the real path of the folder it runs in, so [root] is read through its
+ *  links first: on macOS the temp folder `/var/…` is `/private/var/…`, and a finding under the other spelling was dropped. This is the pre-push's batched lint: the same pinned jar and rule file the Gradle plugin and the
  *  pre-commit run, over the files a push changes. ktlint exits 1 on findings; any other nonzero exit, or a 1 that prints no
  *  finding, is a linter that did not judge. */
-export async function ktlintOver(root: string, files: readonly string[]): Promise<LintVerdict> {
+export async function ktlintOver(tree: string, files: readonly string[]): Promise<LintVerdict> {
   try {
+    const root = realpathSync(tree);
     const version = catalogVersion(readFileSync(join(root, "gradle", "libs.versions.toml"), "utf8"), "ktlint");
     if (version === undefined) return { error: "gradle/libs.versions.toml names no ktlint version" };
     const jdk = resolveJdk21();
@@ -141,10 +143,23 @@ export async function ktlintOver(root: string, files: readonly string[]): Promis
   }
 }
 
-/** The real linters, at the versions [root]'s catalog names. */
+/** What ktlint's run ([formatted]) and detekt's ([analysed]) over the mirror [dir] came to. ktlint exits 1 on findings
+ *  and detekt 2. Any other nonzero exit, or a findings exit that names no finding under [dir], is a linter that did not
+ *  judge, as [ktlintOver] reads it: the Mac's ktlint named its findings under another spelling of the mirror, and passed. */
+export function lintVerdict(formatted: Ran, analysed: Ran, dir: string): LintVerdict {
+  const ktlint = findingLines("ktlint", formatted.output, dir);
+  const detekt = findingLines("detekt", analysed.output, dir);
+  const judged = (ran: Ran, findingsExit: number, found: number) => ran.status === 0 || (ran.status === findingsExit && found > 0);
+  if (!judged(formatted, 1, ktlint.length)) return { error: `ktlint exited ${formatted.status}: ${formatted.output.trim()}` };
+  if (!judged(analysed, 2, detekt.length)) return { error: `detekt exited ${analysed.status}: ${analysed.output.trim()}` };
+  return { findings: [...ktlint, ...detekt] };
+}
+
+/** The real linters, at the versions [root]'s catalog names. The mirror is read through its links, as in [ktlintOver]. */
 export function stagedLinters(root: string): StagedLint {
-  return async (dir, files) => {
+  return async (mirror, files) => {
     try {
+      const dir = realpathSync(mirror);
       const catalog = readFileSync(join(root, "gradle", "libs.versions.toml"), "utf8");
       const ktlintVersion = catalogVersion(catalog, "ktlint");
       const detektVersion = catalogVersion(catalog, "detekt");
@@ -177,12 +192,7 @@ export function stagedLinters(root: string): StagedLint {
               env,
             ),
       ]);
-      // ktlint exits 1 on findings; detekt exits 2 on findings. Anything else is a linter that did not judge.
-      if (formatted.status !== 0 && formatted.status !== 1) return { error: `ktlint exited ${formatted.status}: ${formatted.output.trim()}` };
-      if (analysed.status !== 0 && analysed.status !== 2) return { error: `detekt exited ${analysed.status}: ${analysed.output.trim()}` };
-      return {
-        findings: [...findingLines("ktlint", formatted.output, dir), ...findingLines("detekt", analysed.output, dir)],
-      };
+      return lintVerdict(formatted, analysed, dir);
     } catch (error) {
       return { error: error instanceof Error ? error.message : String(error) };
     }

@@ -36,6 +36,7 @@ import splice.client.login.HookExecProbe
 import splice.client.login.HookInstaller
 import splice.client.login.HookScriptFiles
 import splice.client.login.LoginInterception
+import splice.client.login.SignInWay
 import splice.client.mcp.McpRewrite
 import splice.client.models.ClaudeModelSettings
 import splice.client.resume.ResumeHook
@@ -125,14 +126,7 @@ public class ClaudeConfigMaterializer(
         val hookAdditions = LoginInterception.concat(
             LoginInterception.wire(
                 configDir = spec.configDir,
-                login = HeadLogin(
-                    loginCommand = spec.signIn.loginCommand,
-                    signInLabel = spec.signIn.signInLabel,
-                    viaBrowser = spec.signIn.signInViaBrowser,
-                    outcomeFile = spec.signIn.loginOutcomeFile,
-                    canCapturePaste = spec.signIn.tokenCapture != null,
-                    headKey = spec.signIn.headKey,
-                ),
+                login = headLogin(spec.signIn),
                 globalCommands = if (spec.policy.shares(Keys.COMMANDS)) globalDir().resolve(Keys.COMMANDS) else null,
                 tokenCapture = spec.signIn.tokenCapture,
                 hooks = HookInstaller(execProbe = hookExecProbe),
@@ -164,6 +158,17 @@ public class ClaudeConfigMaterializer(
         )
         return MaterializeResult(spec.configDir, spec.availableModelIds?.size ?: 0, mcpCount)
     }
+
+    /** The /login interception [signIn] asks for. */
+    private fun headLogin(signIn: MaterializeSignIn): HeadLogin = HeadLogin(
+        loginCommand = signIn.loginCommand,
+        signInLabel = signIn.signInLabel,
+        viaBrowser = signIn.signInWay == SignInWay.Browser,
+        outcomeFile = signIn.loginOutcomeFile,
+        canCapturePaste = signIn.tokenCapture != null,
+        headKey = signIn.headKey,
+        signsInOn = (signIn.signInWay as? SignInWay.Elsewhere)?.machine.orEmpty(),
+    )
 
     // Guard the operator's REAL global config: the dir must look like an isolated .claude* dir AND
     // must not resolve to ~/.claude itself. `contains("claude")` let ~/.claude (and

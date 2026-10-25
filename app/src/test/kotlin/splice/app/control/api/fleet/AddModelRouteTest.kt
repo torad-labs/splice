@@ -45,12 +45,12 @@ import splice.core.config.ConfigService
 import splice.core.config.MgmtKey
 import splice.core.config.StatePaths
 import splice.core.terminal.TerminalOutput
+import splice.core.testing.TestPorts
 import splice.core.topology.ProviderConfig
 import splice.core.topology.Topology
 import splice.core.util.EnvReader
 import splice.lifecycle.restart.DaemonSupervised
 import splice.topology.TopologyLoader
-import java.net.ServerSocket
 import java.nio.file.Files
 import java.nio.file.Path
 import java.util.concurrent.ConcurrentHashMap
@@ -258,7 +258,7 @@ class AddModelRouteTest {
     private suspend fun awaitPort() {
         val deadline = System.nanoTime() + TIMEOUT_MS * 1_000_000
         while (System.nanoTime() < deadline) {
-            if (runCatching { ServerSocket(control.listeningPort).close() }.isFailure) return
+            if (TestPorts.listening(control.listeningPort)) return
             delay(POLL_MS)
         }
         error("the control server never bound :${control.listeningPort}")

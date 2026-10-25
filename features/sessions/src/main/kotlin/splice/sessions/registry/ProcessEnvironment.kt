@@ -29,8 +29,9 @@ private const val NUL: Byte = 0
 public class ProcessEnvironment(
     private val procRoot: Path = Paths.get("/proc"),
     private val owners: LaunchOwners = LaunchOwners(StatePaths().stateDir),
+    /** The Mac's ps; a test of a Linux tree passes one that is not here, so its tree decides on a Mac too. */
+    private val darwin: DarwinPs = DarwinPs(),
 ) {
-    private val darwin = DarwinPs()
     private val localHead = Regex("^https?://127\\.0\\.0\\.1:(\\d+)")
     private val wanted = listOf("$SPLICE_MARKER=").map { it.toByteArray() }
     private val configHome = listOf("$CONFIG_HOME_VARIABLE=").map { it.toByteArray() }

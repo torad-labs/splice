@@ -26,14 +26,9 @@ internal class TurnWiring(
     private val saidScales: MutableSet<String> = ConcurrentHashMap.newKeySet()
 
     /** The Anthropic usage payload builder — shared by the stream emitter and the non-stream
-     *  collector so both report tokens identically. [scaled] false reports a relayed turn's counts raw: the head on
-     *  the client's machine scales them for the window that client holds (ClientWindowWitness.relayed). */
-    fun usagePayloadBuilder(
-        catalog: ModelCatalog,
-        meta: TurnMeta,
-        sessionWindow: Long? = null,
-        scaled: Boolean = true,
-    ): UsagePayloadBuilder = usagePayloadBuilderFor(catalog, meta.route.originalModel, sessionWindow, scaled)
+     *  collector so both report tokens identically. */
+    fun usagePayloadBuilder(catalog: ModelCatalog, meta: TurnMeta, sessionWindow: Long? = null): UsagePayloadBuilder =
+        usagePayloadBuilderFor(catalog, meta.route.originalModel, sessionWindow)
 
     /** The same builder for a response the proxy composes without a provider build (LocalResponses):
      *  the row id is all it ever read of the meta. */
@@ -41,7 +36,6 @@ internal class TurnWiring(
         catalog: ModelCatalog,
         originalModel: String,
         sessionWindow: Long? = null,
-        scaled: Boolean = true,
     ): UsagePayloadBuilder {
         return { usage ->
             // Claude Code reads every assistant message's usage as the context total, zeros included,
@@ -81,7 +75,7 @@ internal class TurnWiring(
             // clients (the e2e probe, a bare curl) receive scaled counts against a window they never
             // declared — by design; the raw truth lives in splice's own accounting above.
             val clientWindow = catalog.clientContextWindowFor(originalModel, sessionWindow)
-            val scale = if (scaled) catalog.usageScale(originalModel, sessionWindow) else 1.0
+            val scale = catalog.usageScale(originalModel, sessionWindow)
             if (scale != 1.0) sayScale(originalModel, scale, clientWindow, sessionWindow)
             hud.buildUsagePayload(
                 TurnUsage(

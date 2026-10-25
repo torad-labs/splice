@@ -2,8 +2,9 @@
 // serves runs, on this machine, Claude Code pointed at that machine and holding nothing else. Its launch hands Claude
 // Code the server's address and no credential; its turns answer on the server's login, the one the address names with
 // `auth=`; it is shown the models the address names with `models=`; its statusline is the server's; its /login says
-// where the logins live; a bare -c continues the command's own newest session in the folder; and a server that can't
-// be reached, or refuses, is said in those words before Claude Code starts. Driven as it is used: two real daemons,
+// where the logins live; a bare -c continues the command's own newest session in the folder; its session is recorded as
+// the command's launch, so it starts without warning that it could not be; and a server that can't be reached, or
+// refuses, is said in those words before Claude Code starts. Driven as it is used: two real daemons,
 // torad (sharing) and mac (the node), each in its own state, with torad's ChatGPT upstream mocked; mac's launch
 // answered through its control port as the launch shim asks it, and each turn sent the way Claude Code sends it, to
 // the base URL and with the auth token the launch planted.
@@ -35,10 +36,13 @@ import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.TestInstance
 import org.junit.jupiter.api.io.TempDir
 import splice.app.Daemon
+import splice.app.cli.CommandParser
 import splice.core.auth.RefreshAttempt
 import splice.core.config.MgmtKey
 import splice.core.config.StatePaths
 import splice.core.config.TurnKey
+import splice.core.config.UserHome
+import splice.core.process.LaunchOwners
 import splice.core.testing.TestPorts
 import splice.core.topology.AuthKind
 import splice.head.MockChatGptUpstream
@@ -78,6 +82,7 @@ class LanShareTest {
     private lateinit var torad: Daemon
     private lateinit var mac: Daemon
     private lateinit var macState: StatePaths
+    private lateinit var macConfig: String
     private lateinit var macKey: String
     private val share get() = "http://127.0.0.1:$sharePort"
 
@@ -103,9 +108,10 @@ class LanShareTest {
         val macAuth = tmp.resolve("mac-codex.json")
         Files.writeString(macAuth, """{"tokens":{"access_token":"mac-own","account_id":"mac-id"}}""")
         macState = StatePaths(baseOverride = tmp.resolve("mac-state"))
+        macConfig = macToml(macAuth)
         macKey = MgmtKey(macState).get()
         mac = Daemon(
-            topology = TopologyLoader.parse(macToml(macAuth)),
+            topology = TopologyLoader.parse(macConfig),
             statePaths = macState,
             log = {},
             refreshCall = { _, _ -> RefreshAttempt.Denied("test-denied") },
@@ -259,6 +265,32 @@ class LanShareTest {
         assertTrue(env.values.none { value -> secrets.any { it in value } }, "a node's session holds no credential")
         assertTrue(tierModels(env).all { it.contains(SOL) || it.contains(MINI) }, env.toString())
         assertEquals(setOf(SOL, MINI), pickerModels(env), "the node's /model picker lists the server's models")
+    }
+
+    /** The launch shim records each session it starts, `splice record-launch <pid> <command> <base url> session …`, with
+     *  the base URL the launch planted, and warns when the record is refused. Both halves are driven here: the launch as
+     *  mac answers it, and record-launch over mac's own splice.toml, given the URL that launch planted. */
+    @Test
+    fun `a node's session is recorded as its command's launch, by the base URL the launch planted`(
+        @TempDir home: Path,
+    ) {
+        val config = home.resolve(".config/splice/splice.toml")
+        Files.createDirectories(config.parent)
+        Files.writeString(config, macConfig)
+        // record-launch records the process that started it, which here is this test's own parent.
+        val launcher = ProcessHandle.current().parent().get().pid()
+        for ((command, address) in listOf("claudex" to "$share/claudex", "claudex-work" to "$share/claudex/@work")) {
+            val planted = launch(command).second.env().getValue("ANTHROPIC_BASE_URL")
+            assertEquals(address, planted, "$command's Claude Code is given the address its entry names")
+            val (code, owner) = UserHome.within(home) {
+                assertEquals(config, TopologyLoader.configPath(), "record-launch reads mac's splice.toml")
+                assertTrue(StatePaths().stateDir.startsWith(home), "the record lands under this test's home")
+                val args = arrayOf("record-launch", "$launcher", command, planted, "session", "other")
+                runBlocking { CommandParser().parse(args)?.run() } to LaunchOwners(StatePaths().stateDir).read(launcher)
+            }
+            assertEquals(0, code, "$command's session is recorded")
+            assertEquals(command, owner?.head)
+        }
     }
 
     @Test

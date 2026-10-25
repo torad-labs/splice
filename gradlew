@@ -127,7 +127,7 @@ die () {
 #   THE MARKER IS BELIEVED ONLY WHILE ITS RUN IS ALIVE. SPLICE_GRADLE_SLOT is `<label>:<pid>`,
 #   written by the slot (tools/gate/src/lib/slot.ts, spawnGradle). A copy left behind in a seat's
 #   exported environment names a process that has exited, and this wrapper then routes as if the
-#   marker were absent. Where there is no /proc to ask, the marker is taken at its word.
+#   marker were absent. `kill -0` asks, which works where there is no /proc (macOS): the slot runs as this user.
 #
 ##############################################################################
 
@@ -140,11 +140,7 @@ splice_in_slot () {
     case $splice_holder in
       '' | *[!0-9]*) return 0 ;;        # nothing to judge the marker by; take it at its word
     esac
-    if [ -d /proc ] ; then
-        [ -d "/proc/$splice_holder" ] && return 0
-        return 1
-    fi
-    return 0
+    kill -0 "$splice_holder" 2> /dev/null
 }
 
 # Whether these arguments would actually build something.

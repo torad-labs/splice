@@ -11,10 +11,16 @@ import kotlinx.serialization.json.JsonObject
 import splice.core.util.Cancellables
 import splice.core.util.JsonScalars
 import splice.core.util.SafeFailureText
+import java.net.ConnectException
+import java.net.NoRouteToHostException
 import java.net.URI
+import java.net.UnknownHostException
 import java.net.http.HttpClient
+import java.net.http.HttpConnectTimeoutException
 import java.net.http.HttpRequest
 import java.net.http.HttpResponse
+import java.net.http.HttpTimeoutException
+import java.nio.channels.UnresolvedAddressException
 import java.time.Duration
 
 /** What asking a sharing machine came to. */
@@ -39,8 +45,29 @@ internal class ShareHttp(private val io: CoroutineDispatcher) {
         }
         return sent.fold(
             onSuccess = { ShareAnswer.Answered(it.statusCode(), it.body()) },
-            onFailure = { ShareAnswer.Unreachable(SafeFailureText.render(it)) },
+            onFailure = { ShareAnswer.Unreachable(why(uri, it)) },
         )
+    }
+
+    /** Why [uri] gave no answer, in words the person can act on. java.net.http says a refused port and a name that
+     *  doesn't resolve both as a bare ConnectException, told apart only by its causes, and each timeout by its
+     *  class. */
+    internal fun why(uri: URI, failure: Throwable): String {
+        val causes = generateSequence(failure) { it.cause?.takeUnless { cause -> cause === it } }.take(CAUSE_DEPTH)
+        val host = hostOf(uri.toString())
+        val connect = Duration.ofMillis(SHARE_CONNECT_MS).toSeconds()
+        val answer = Duration.ofMillis(SHARE_ANSWER_MS).toSeconds()
+        return when {
+            failure is HttpConnectTimeoutException ->
+                "nothing answered within $connect s; is it on, and on this network?"
+            failure is HttpTimeoutException -> "it took the connection but sent no answer within $answer s"
+            causes.any { it is UnresolvedAddressException || it is UnknownHostException } ->
+                "$host does not resolve on this network"
+            causes.any { it is NoRouteToHostException } -> "this network has no route to $host"
+            failure is ConnectException ->
+                "nothing is listening on ${uri.authority}; is sharing on there? (`splice share status` on it)"
+            else -> SafeFailureText.render(failure)
+        }
     }
 
     /** The message of a sharing machine's error [body], without the prefix this machine's own words already say, or
@@ -71,3 +98,7 @@ private const val SHARE_CONNECT_MS = 3_000L
 
 // why: the server answers from memory; ten seconds covers a busy machine and still says a hung one.
 private const val SHARE_ANSWER_MS = 10_000L
+
+// why: java.net.http wraps a connect failure twice over its cause; a few more links than that still end a chain that
+// loops back on itself.
+private const val CAUSE_DEPTH = 8

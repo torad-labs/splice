@@ -9,6 +9,8 @@ import splice.core.auth.CLIENT_AUTH_KIND
 import splice.core.terminal.TerminalOutput
 import splice.core.topology.AuthKindRegistry
 import splice.core.topology.ProviderConfig
+import splice.core.topology.RemoteAddressRead
+import splice.core.topology.RemoteAddresses
 import splice.core.topology.Topology
 import splice.core.topology.TopologyMessages
 import splice.core.util.SafeFailureText
@@ -24,6 +26,7 @@ import splice.oauth.grok.LoginGrok
 import splice.oauth.kimi.LoginKimi
 import splice.oauth.muse.LoginMuse
 import splice.topology.TopologyLoader
+import java.net.URI
 import java.nio.file.Path
 import java.nio.file.Paths
 
@@ -155,6 +158,19 @@ internal class LoginCommand(
         val refusal: String? = null,
     )
 
+    /** What `<command> login` says on a node, where [command] runs on the machine its address [url] names: how to sign
+     *  in there, by the head the address names there, since the command may go by another name here (`--as`). */
+    private fun remoteLogin(command: String, url: String): String {
+        val address = when (val read = RemoteAddresses.read(url)) {
+            is RemoteAddressRead.Read -> read.address
+            is RemoteAddressRead.Refused ->
+                return "splice: $command runs on another machine ($url); its logins live there"
+        }
+        val host = URI.create(address.server).host
+        return "splice: $command runs on $host ($url); its logins live there. " +
+            "Run `splice login ${address.head}` on $host, or use the Accounts page of its console."
+    }
+
     private fun resolveHeadKey(headArg: String?, topology: Topology): String? {
         if (headArg != null) {
             // Accept the topology key or the wrapper command (`<command> login` passes argv[0]).
@@ -164,9 +180,7 @@ internal class LoginCommand(
             val remote = topology.remote[headArg]
             println(
                 when {
-                    remote != null ->
-                        "splice: $headArg runs on another machine (${remote.url}); its logins live there. " +
-                            "Run `$headArg login` on that machine, or use the Accounts page of its console."
+                    remote != null -> remoteLogin(headArg, remote.url)
                     keys.isEmpty() -> "splice: unknown head '$headArg' (heads: ${topology.heads.keys})"
                     else -> "splice: " + TopologyMessages.ambiguousHeadMessage(headArg, keys)
                 },

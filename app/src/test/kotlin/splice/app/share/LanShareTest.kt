@@ -174,6 +174,9 @@ class LanShareTest {
 
         [remote.offline]
         url = "http://127.0.0.1:$closedPort/claudex"
+
+        [remote.nowhere]
+        url = "http://no-such-host.invalid:3097/claudex"
     """.trimIndent()
 
     @AfterAll
@@ -283,6 +286,11 @@ class LanShareTest {
         assertTrue(said.contains("offline runs on 127.0.0.1"), said)
         assertTrue(said.contains("http://127.0.0.1:$closedPort"), said)
         assertTrue(said.contains("can't be reached"), said)
+        assertTrue(said.contains("nothing is listening on 127.0.0.1:$closedPort"), said)
+
+        val (unresolved, nowhere) = launch("nowhere")
+        assertEquals(409, unresolved, nowhere.toString())
+        assertTrue(nowhere.error().contains("no-such-host.invalid does not resolve on this network"), nowhere.error())
     }
 
     @Test

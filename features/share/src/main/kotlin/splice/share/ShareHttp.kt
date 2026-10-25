@@ -13,6 +13,7 @@ import splice.core.util.JsonScalars
 import splice.core.util.SafeFailureText
 import java.net.ConnectException
 import java.net.NoRouteToHostException
+import java.net.SocketException
 import java.net.URI
 import java.net.UnknownHostException
 import java.net.http.HttpClient
@@ -37,6 +38,8 @@ internal class ShareHttp(private val io: CoroutineDispatcher) {
         .connectTimeout(Duration.ofMillis(SHARE_CONNECT_MS))
         .build()
     private val json = Json { ignoreUnknownKeys = true }
+    private val connectSeconds = Duration.ofMillis(SHARE_CONNECT_MS).toSeconds()
+    private val answerSeconds = Duration.ofMillis(SHARE_ANSWER_MS).toSeconds()
 
     suspend fun get(uri: URI): ShareAnswer {
         val request = HttpRequest.newBuilder(uri).timeout(Duration.ofMillis(SHARE_ANSWER_MS)).GET().build()
@@ -51,20 +54,26 @@ internal class ShareHttp(private val io: CoroutineDispatcher) {
 
     /** Why [uri] gave no answer, in words the person can act on. java.net.http says a refused port and a name that
      *  doesn't resolve both as a bare ConnectException, told apart only by its causes, and each timeout by its
-     *  class. */
-    internal fun why(uri: URI, failure: Throwable): String {
+     *  class. Any other refusal the OS gave (a network or a host that is down) sits at the end of the chain as a plain
+     *  SocketException carrying the OS's own words, which are said as they are. */
+    internal fun why(uri: URI, failure: Throwable): String = when (failure) {
+        is HttpConnectTimeoutException ->
+            "nothing answered within $connectSeconds s; is it on, and on this network?"
+        is HttpTimeoutException -> "it took the connection but sent no answer within $answerSeconds s"
+        else -> refused(uri, failure)
+    }
+
+    /** Why the connection to [uri] was refused, read from [failure]'s causes. */
+    private fun refused(uri: URI, failure: Throwable): String {
         val causes = generateSequence(failure) { it.cause?.takeUnless { cause -> cause === it } }
             .take(UNREACHABLE_CAUSE_DEPTH)
+        val os = causes.lastOrNull { it is SocketException && it !is ConnectException }
         val host = hostOf(uri.toString())
-        val connect = Duration.ofMillis(SHARE_CONNECT_MS).toSeconds()
-        val answer = Duration.ofMillis(SHARE_ANSWER_MS).toSeconds()
         return when {
-            failure is HttpConnectTimeoutException ->
-                "nothing answered within $connect s; is it on, and on this network?"
-            failure is HttpTimeoutException -> "it took the connection but sent no answer within $answer s"
             causes.any { it is UnresolvedAddressException || it is UnknownHostException } ->
                 "$host does not resolve on this network"
             causes.any { it is NoRouteToHostException } -> "this network has no route to $host"
+            os?.message != null -> "this machine can't reach $host: ${os.message}"
             failure is ConnectException ->
                 "nothing is listening on ${uri.authority}; is sharing on there? (`splice share status` on it)"
             else -> SafeFailureText.render(failure)

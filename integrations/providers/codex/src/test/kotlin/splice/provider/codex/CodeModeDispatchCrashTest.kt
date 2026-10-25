@@ -84,7 +84,11 @@ class CodeModeDispatchCrashTest {
                 .intercept(CRASH_BODY, QuietSink()) { RoundResult.Outcome(crashOutcome()) }
             assertEquals(0, starts, "dispatch without a client callback must still be durably no-rerun")
             assertTrue(Files.notExists(effect))
-            assertEquals("DISPATCHED:2", dispatched, "both file and directory force must precede dispatch")
+            val forces = Regex("""DISPATCHED:(\d+)""").find(dispatched)?.groupValues?.get(1)?.toIntOrNull()
+            checkNotNull(forces) { "the dispatched line carried no force count: $dispatched" }
+            // The journal's saves are forced delta appends now: durability before dispatch is one or more
+            // fsyncs of the record's own file, not the old single checkpoint's file-plus-directory pair.
+            assertTrue(forces > 0, "no durable journal force preceded the first dispatch: $dispatched")
         } finally {
             manager.onHeadStop()
         }
@@ -120,13 +124,14 @@ class CodeModeDispatchCrashTest {
             val root = Path.of(args[0])
             val effect = Path.of(args[1])
             var forces = 0
+            val forcedNames = mutableListOf<String>()
             val runtime = object : CodeModeRuntime {
                 override suspend fun start(
                     source: String,
                     tools: Set<String>,
                     descriptions: Map<String, String>,
                 ): CodeModeCell {
-                    println("DISPATCHED:$forces")
+                    println("DISPATCHED:$forces ${forcedNames.joinToString(",")}")
                     System.out.flush()
                     System.`in`.read()
                     Files.writeString(effect, "first effect", CREATE, APPEND)
@@ -147,6 +152,7 @@ class CodeModeDispatchCrashTest {
                     CodeModeStateJournal.write(path, text) { _, channel ->
                         channel.force(true)
                         forces++
+                        forcedNames += path.fileName.toString()
                     }
                 },
             )

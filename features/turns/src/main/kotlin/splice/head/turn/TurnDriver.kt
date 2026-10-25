@@ -35,6 +35,7 @@ import splice.head.transport.WsRoundDriver
 import splice.head.transport.ZeroEventFailure
 import splice.head.usage.TurnSpend
 import splice.head.usage.TurnStreamAnswers
+import splice.head.wire.DetachOwner
 import splice.upstream.Provider
 import splice.upstream.RetryNotice
 

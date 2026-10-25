@@ -36,6 +36,7 @@ import splice.head.turn.detached.HeldCollectAnswer
 import splice.head.wire.ClientAnswer
 import splice.head.wire.ClientChannel
 import splice.head.wire.CollectingTerminal
+import splice.head.wire.DetachOwner
 import splice.head.wire.ImmediateSseWriter
 import splice.head.wire.TurnWiring
 import splice.upstream.Provider
@@ -75,6 +76,32 @@ internal class CollectTurn(
         )
         // V4-174: no frames cross this channel, so the trace reads the collected answer instead —
         // at the turn record, once the terminal has closed and the body exists.
+        // collect never commits a 200 before its terminal respondText — a cancelled collect is a
+        // native connection abort client-side, and sealing there only wrote an error body nobody
+        // reads while polluting localOriginErrors (review 2026-07-22 round 3).
+        //
+        // pingClient = false stays: there is no committed SSE channel to write a keepalive to
+        // (THE FIX IS NOT A PINGER, HD-29). Ktor still does not cancel the call coroutine on this
+        // path. Liveness is Netty closeFuture → [ClientChannel.connectionClosed] → parent cancel.
+        // HeadEngine remains the bootstrap; this file is the second head file that names Netty,
+        // and only to READ closeFuture off the call's ChannelHandlerContext.
+        driveCollected(call, inputs, terminal, channel)
+        // V4-99 item 3 held until the answer ledger existed: a compaction WITH a hold hands its slot to
+        // the detached drive exactly as the streaming one does (markHandedOff in the launcher); every
+        // other collect turn still ends with its call and returns no handoff.
+        return false
+    }
+
+    /** The collect side's drive stage, extracted from [collect]: assembly with its 429 relay and the
+     *  V4-174 collected-answer trace hook, liveness against the raw call, the attach-or-hold branch,
+     *  the single body respond, and the deferred perf publish. */
+    private suspend fun driveCollected(
+        call: ApplicationCall,
+        inputs: TurnInputs,
+        terminal: CollectingTerminal,
+        channel: ClientChannel,
+    ) {
+        val built = inputs.built
         var nativeReply: RateLimitReply? = null
         inputs.trace?.collectedAnswer {
             ClientAnswer(
@@ -89,15 +116,6 @@ internal class CollectTurn(
             true
         }
         drive.collectPerf.defer()
-        // collect never commits a 200 before its terminal respondText — a cancelled collect is a
-        // native connection abort client-side, and sealing there only wrote an error body nobody
-        // reads while polluting localOriginErrors (review 2026-07-22 round 3).
-        //
-        // pingClient = false stays: there is no committed SSE channel to write a keepalive to
-        // (THE FIX IS NOT A PINGER, HD-29). Ktor still does not cancel the call coroutine on this
-        // path. Liveness is Netty closeFuture → [ClientChannel.connectionClosed] → parent cancel.
-        // HeadEngine remains the bootstrap; this file is the second head file that names Netty,
-        // and only to READ closeFuture off the call's ChannelHandlerContext.
         coroutineScope {
             val parent = coroutineContext[Job]
             val watch = if (parent == null) {
@@ -125,10 +143,6 @@ internal class CollectTurn(
                 withContext(NonCancellable) { drive.collectPerf.publish(drive) }
             }
         }
-        // V4-99 item 3 held until the answer ledger existed: a compaction WITH a hold hands its slot to
-        // the detached drive exactly as the streaming one does (markHandedOff in the launcher); every
-        // other collect turn still ends with its call and returns no handoff.
-        return false
     }
 
     /** Runs [drive] under a detached compaction whose collected answer outlives this call's client:

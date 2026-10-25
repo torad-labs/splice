@@ -17,15 +17,15 @@ import splice.upstream.RoundResult
 /** what rides beside exec, when the manual says tools were withheld, and which outer names are ours. */
 class CodeModeExecWireTest : CodeModeBridgeTestSupport() {
     @Test
-    fun `exec rides alone as codex sends it, and a withheld client tool gets the deferred note`() {
+    fun `exec and native wait ride together and a withheld client tool gets the deferred note`() {
         val bridge = bridge(ScriptedRuntime(ArrayDeque()))
         val eager = bridge.injectTool(REQUEST, setOf("Read"))
-        // V4-390: alone inside the functions namespace, as codex's lite list carries it.
+        // Codex registers both native handlers; client functions remain nested inside exec.
         val entries = eager.getValue("input").jsonArray[0].jsonObject.getValue("tools").jsonArray.map { it.jsonObject }
         assertEquals(listOf("namespace"), entries.map { it.getValue("type").jsonPrimitive.content })
         val tools = entries[0].getValue("tools").jsonArray.map { it.jsonObject }
-        assertEquals(listOf("custom"), tools.map { it.getValue("type").jsonPrimitive.content })
-        assertEquals("exec", tools[0].getValue("name").jsonPrimitive.content)
+        assertEquals(listOf("custom", "function"), tools.map { it.getValue("type").jsonPrimitive.content })
+        assertEquals(listOf("exec", "wait"), tools.map { it.getValue("name").jsonPrimitive.content })
         assertFalse(manual(eager).contains("Some deferred nested tools"), manual(eager))
         assertEquals(REQUEST.getValue("input").jsonArray.drop(1), eager.getValue("input").jsonArray.drop(1))
 

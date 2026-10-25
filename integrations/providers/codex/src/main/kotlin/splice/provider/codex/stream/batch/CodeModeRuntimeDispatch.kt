@@ -28,7 +28,7 @@ internal class CodeModeRuntimeDispatch(
         context: CodeModeRunContext,
         stream: CodeModeLiveRound?,
     ): Pair<CodeModeRecord, TurnOutcome> {
-        batches.start(record, sent.clientStart(context))
+        if (!batches.start(record, sent.clientStart(context))) return record to failure(record, stream)
         val cell = starter.start(record, context, stream)
         val outcome = if (!registry.attach(record, cell)) {
             failure(record, stream)

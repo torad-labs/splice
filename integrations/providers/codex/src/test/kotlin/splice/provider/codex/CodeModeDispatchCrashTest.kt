@@ -3,7 +3,12 @@ package splice.provider.codex
 
 import kotlinx.coroutines.runBlocking
 import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.JsonArray
+import kotlinx.serialization.json.JsonElement
+import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.buildJsonObject
+import kotlinx.serialization.json.jsonArray
+import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.put
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertTrue
@@ -15,6 +20,7 @@ import splice.core.turn.GatewayCustomCall
 import splice.core.turn.RoundHandoffs
 import splice.core.turn.TurnOutcome
 import splice.core.turn.Usage
+import splice.core.util.JsonScalars
 import splice.provider.codex.history.CodeModeUpstreamHistory
 import splice.provider.codex.state.CodeModeStateJournal
 import splice.provider.codex.state.save.CodeModeStateWrite
@@ -30,7 +36,10 @@ import java.nio.file.Files
 import java.nio.file.Path
 import java.nio.file.StandardOpenOption.APPEND
 import java.nio.file.StandardOpenOption.CREATE
+import java.util.concurrent.CompletableFuture
+import java.util.concurrent.ExecutionException
 import java.util.concurrent.TimeUnit
+import java.util.concurrent.TimeoutException
 import kotlin.time.Duration.Companion.hours
 
 @Timeout(30)
@@ -43,25 +52,25 @@ class CodeModeDispatchCrashTest {
     @Test
     fun `an abrupt process kill after dispatch but before the first effect never reruns source`() = runBlocking {
         val effect = dir.resolve("synthetic-effect.txt")
-        val errors = dir.resolve("synthetic-child-errors.txt")
-        val child = ProcessBuilder(
-            "${System.getProperty("java.home")}/bin/java",
-            "-Xmx64m",
-            "-cp",
-            checkNotNull(System.getProperty("codex.testClasspath")),
-            DispatchCrashProbe::class.java.name,
-            dir.toString(),
-            effect.toString(),
-        ).redirectError(errors.toFile()).start()
-        val dispatched: String
-        try {
-            dispatched = checkNotNull(child.inputStream.bufferedReader().readLine()) { Files.readString(errors) }
-            assertTrue(dispatched.startsWith("DISPATCHED:"))
-        } finally {
-            child.destroyForcibly()
-            assertTrue(child.waitFor(5, TimeUnit.SECONDS), "the owned synthetic child was not reaped")
-        }
+        val dispatched = awaitDispatch(effect)
+        assertTrue(dispatched.startsWith("DISPATCHED:"))
         assertTrue(Files.notExists(effect), "the first dispatched statement has not performed its effect")
+        val journal = Files.list(location.dir).use { paths ->
+            paths.filter { it.fileName.toString().endsWith(".jsonl") }.toList().single()
+        }.toAbsolutePath().normalize()
+        val saved = CodeModeStateJournal.read(journal, Json)
+        assertTrue(saved.records.single { it.outerCallId == "crash-outer" }.dispatchStarted)
+        val forced = Json.parseToJsonElement(dispatched.removePrefix("DISPATCHED:")).jsonArray
+            .map { it.jsonObject }.filter { it["dispatch"] == JsonPrimitive(true) }.map { entry ->
+                Path.of(checkNotNull(JsonScalars.str(entry, "journal"))) to
+                    Path.of(checkNotNull(JsonScalars.str(entry, "forced")))
+            }.filter { it.first == journal }.map { it.second }
+        val appended = journal in forced
+        val checkpoint = forced.any {
+            it.parent == journal.parent && it.fileName.toString().startsWith(".code-mode") &&
+                it.fileName.toString().endsWith(".tmp")
+        } && journal.parent in forced
+        assertTrue(appended || checkpoint, "the dispatched journal was not forced before its first effect: $dispatched")
         var starts = 0
         val runtime = object : CodeModeRuntime {
             override suspend fun start(
@@ -84,13 +93,44 @@ class CodeModeDispatchCrashTest {
                 .intercept(CRASH_BODY, QuietSink()) { RoundResult.Outcome(crashOutcome()) }
             assertEquals(0, starts, "dispatch without a client callback must still be durably no-rerun")
             assertTrue(Files.notExists(effect))
-            val forces = Regex("""DISPATCHED:(\d+)""").find(dispatched)?.groupValues?.get(1)?.toIntOrNull()
-            checkNotNull(forces) { "the dispatched line carried no force count: $dispatched" }
-            // The journal's saves are forced delta appends now: durability before dispatch is one or more
-            // fsyncs of the record's own file, not the old single checkpoint's file-plus-directory pair.
-            assertTrue(forces > 0, "no durable journal force preceded the first dispatch: $dispatched")
         } finally {
             manager.onHeadStop()
+        }
+    }
+
+    private fun awaitDispatch(effect: Path): String {
+        val errors = dir.resolve("synthetic-child-errors.txt")
+        val child = ProcessBuilder(
+            "${System.getProperty("java.home")}/bin/java",
+            "-Xmx64m",
+            "-cp",
+            checkNotNull(System.getProperty("codex.testClasspath")),
+            DispatchCrashProbe::class.java.name,
+            dir.toString(),
+            effect.toString(),
+        ).redirectError(errors.toFile()).start()
+        var dispatchedLine: String? = null
+        var dispatchFailure: Throwable? = null
+        val lineReader = CompletableFuture.supplyAsync { child.inputStream.bufferedReader().readLine() }
+        try {
+            dispatchedLine = lineReader.get(10, TimeUnit.SECONDS)
+        } catch (failure: TimeoutException) {
+            dispatchFailure = failure
+        } catch (failure: ExecutionException) {
+            dispatchFailure = failure.cause ?: failure
+        } finally {
+            child.destroyForcibly()
+            assertTrue(child.waitFor(5, TimeUnit.SECONDS), "the owned synthetic child was not reaped")
+        }
+        if (dispatchFailure != null) {
+            lineReader.cancel(true)
+            throw AssertionError(
+                "the synthetic child did not reach dispatch; stderr: ${Files.readString(errors)}",
+                dispatchFailure,
+            )
+        }
+        return checkNotNull(dispatchedLine) {
+            "the synthetic child exited before dispatch; stderr: ${Files.readString(errors)}"
         }
     }
 
@@ -123,15 +163,14 @@ class CodeModeDispatchCrashTest {
         fun main(args: Array<String>) = runBlocking<Unit> {
             val root = Path.of(args[0])
             val effect = Path.of(args[1])
-            var forces = 0
-            val forcedNames = mutableListOf<String>()
+            val forcedWrites = mutableListOf<JsonElement>()
             val runtime = object : CodeModeRuntime {
                 override suspend fun start(
                     source: String,
                     tools: Set<String>,
                     descriptions: Map<String, String>,
                 ): CodeModeCell {
-                    println("DISPATCHED:$forces ${forcedNames.joinToString(",")}")
+                    println("DISPATCHED:${JsonArray(forcedWrites)}")
                     System.out.flush()
                     System.`in`.read()
                     Files.writeString(effect, "first effect", CREATE, APPEND)
@@ -149,10 +188,17 @@ class CodeModeDispatchCrashTest {
             val manager = MeasuredBridge(
                 config,
                 CodeModeStateWrite { path, text ->
-                    CodeModeStateJournal.write(path, text) { _, channel ->
+                    CodeModeStateJournal.write(path, text) { forcedPath, channel ->
                         channel.force(true)
-                        forces++
-                        forcedNames += path.fileName.toString()
+                        val saved = CodeModeStateJournal.read(
+                            if (Files.isDirectory(forcedPath)) path else forcedPath,
+                            Json,
+                        )
+                        forcedWrites += buildJsonObject {
+                            put("journal", path.toAbsolutePath().normalize().toString())
+                            put("forced", forcedPath.toAbsolutePath().normalize().toString())
+                            put("dispatch", saved.records.any { it.outerCallId == "crash-outer" && it.dispatchStarted })
+                        }
                     }
                 },
             )

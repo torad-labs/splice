@@ -11,16 +11,18 @@ import { fileURLToPath } from "node:url";
 import { assertAcceptedCallbackText, assertInterruptedCallbackText } from "./interactive-output";
 import { interactiveClient } from "./interactive-client";
 import { assertNativeBatch, assertNativeRestartBatch, assertNativeOutOfOrderBatch } from "./interactive-batch";
+import { assertNativeSequential } from "./interactive-sequential";
 
 const CLIENT = "/home/marcos/.local/share/claude/versions/2.1.310";
 const MODEL = "gpt-6.1-sol";
 const SUMMARY = "PROBE_READABLE_REASONING: inspect the callback file, then run the Bash tool exactly once.";
+const SECOND_SUMMARY = "PROBE_SECOND_REASONING: read the already accepted effect file from the new model round.";
 const ENVELOPE = "synthetic-probe-reasoning-envelope-not-a-real-credential";
 const FINAL = "PROBE_FINISHED";
 const HOLD_MS = 2000;
-const PROBE_VERSION = 8;
+const PROBE_VERSION = 10;
 type Obj = Record<string, any>;
-type Scenario = "success" | "late-failure" | "native-lifecycle" | "restart" | "native-batch" | "native-batch-restart" | "native-batch-out-of-order";
+type Scenario = "success" | "late-failure" | "native-lifecycle" | "restart" | "native-batch" | "native-batch-restart" | "native-batch-out-of-order" | "native-sequential";
 type Mark = { event: string; epochMs: number; elapsedMs: number; [key: string]: unknown };
 
 function safeEnv(home: string): Record<string, string> {
@@ -78,6 +80,8 @@ export async function interactiveScenario(jar: string, name: Scenario, root: str
   const outOfOrder = name === "native-batch-out-of-order";
   const batch = name === "native-batch" || name === "native-batch-restart" || outOfOrder;
   const restart = name === "restart" || name === "native-batch-restart";
+  const sequential = name === "native-sequential";
+  const expectedThinking = sequential ? SUMMARY + SECOND_SUMMARY : SUMMARY;
   const home = join(root, name); const task = join(home, "task");
   for (const d of [home, task, join(home, "tmp"), join(home, "claude"), join(home, "state")]) mkdirSync(d, { recursive: true, mode: 0o700 });
   const effects = join(task, "effects.txt");
@@ -146,8 +150,8 @@ export async function interactiveScenario(jar: string, name: Scenario, root: str
       emit({ type: "response.completed", response: { id, status: "completed", output: [item], usage: { input_tokens: 1, output_tokens: 1 } } });
       return;
     }
-    if (!exec || !manualTools.includes("Bash")) {
-      errors.push("exec custom tool / tools.Bash declaration missing from actual manual");
+    if (!exec || !manualTools.includes("Bash") || ((batch || sequential) && !manualTools.includes("Read"))) {
+      errors.push("exec custom tool / required callback declaration missing from actual manual");
       emit({ type: "response.failed", response: { id: "bad_manual", status: "failed", error: { code: "invalid_request_error", message: "probe requires exec manual with tools.Bash" } } });
       return;
     }
@@ -156,6 +160,31 @@ export async function interactiveScenario(jar: string, name: Scenario, root: str
     const id = outputs.length ? `answer_${finals}` : `script_${scripts + 1}`;
     emit({ type: "response.created", response: { id, status: "in_progress", output: [] } });
     if (outputs.length) {
+      if (sequential && !outputs.some(output => output.call_id === "call_probe_second")) {
+        await firstTerminal;
+        scripts++;
+        const reasoning = { type: "reasoning", id: "rs_probe_second", summary: [{ type: "summary_text", text: SECOND_SUMMARY }], encrypted_content: "synthetic-second-round-envelope" };
+        mark("sequential_second_response_started");
+        emit({ type: "response.output_item.added", output_index: 0, item: { ...reasoning, summary: [] } });
+        emit({ type: "response.reasoning_summary_part.added", output_index: 0, item_id: reasoning.id, summary_index: 0, part: { type: "summary_text", text: "" } });
+        emit({ type: "response.reasoning_summary_text.delta", output_index: 0, item_id: reasoning.id, summary_index: 0, delta: SECOND_SUMMARY });
+        emit({ type: "response.reasoning_summary_text.done", output_index: 0, item_id: reasoning.id, summary_index: 0, text: SECOND_SUMMARY });
+        emit({ type: "response.reasoning_summary_part.done", output_index: 0, item_id: reasoning.id, summary_index: 0, part: reasoning.summary[0] });
+        emit({ type: "response.output_item.done", output_index: 0, item: reasoning });
+        const item: Obj = { type: "custom_tool_call", id: "exec_probe_second", call_id: "call_probe_second", name: "exec",
+          input: `text(await tools.Read(${JSON.stringify({ file_path: effects })})); text('native-sequential-second'); text('native-sequential-second-epoch:' + Date.now());`, status: "completed" };
+        if (exec.namespace) item.namespace = exec.namespace;
+        emit({ type: "response.output_item.added", output_index: 1, item: { ...item, input: "", status: "in_progress" } });
+        emit({ type: "response.custom_tool_call_input.delta", output_index: 1, item_id: item.id, delta: item.input });
+        emit({ type: "response.custom_tool_call_input.done", output_index: 1, item_id: item.id, input: item.input });
+        emit({ type: "response.output_item.done", output_index: 1, item });
+        mark("sequential_second_item_done");
+        await Bun.sleep(HOLD_MS);
+        mark("sequential_second_completed_sent");
+        completedResponses.set(id, { definitions: defs, reasoningPresent: true });
+        emit({ type: "response.completed", response: { id, status: "completed", output: [reasoning, item], usage: { input_tokens: 100, output_tokens: 30 } } });
+        return;
+      }
       const outputText = outputs.map(i => typeof i.output === "string" ? i.output : JSON.stringify(i.output)).join("\n");
       const lastStatus = [...outputText.matchAll(/Script (?:running with cell ID ([^\s\\"]+)|completed|failed|terminated)/g)].at(-1);
       if (name === "native-lifecycle" && lastStatus?.[1]) {
@@ -206,11 +235,11 @@ export async function interactiveScenario(jar: string, name: Scenario, root: str
     const callback = `text(await tools.Bash(${JSON.stringify({ command: `date +%s%3N >> ${quoted} && printf accepted`, description: "Record deterministic probe callback timestamp", timeout: 10000 })}));`;
     const script = name === "native-lifecycle"
       ? `text('native-prefix'); notify('native-progress'); yield_control(); await new Promise(r => setTimeout(r, 80)); ${callback} text('native-suffix'); image({ image_url: 'data:image/png;base64,aGVsbG8=', detail: 'original' }); audio({ audio_url: 'data:audio/wav;base64,aGVsbG8=' }); generatedImage({ image_url: 'data:image/png;base64,d29ybGQ=', output_hint: 'native-generated' });`
-      : batch ? `${callback} text('native-batch-first');` : callback;
+      : batch ? `${callback} text('native-batch-first');` : sequential ? `${callback} text('native-sequential-first');` : callback;
     const item: Obj = { type: "custom_tool_call", id: "exec_probe", call_id: "call_probe", name: "exec", input: script, status: "completed" };
     if (exec.namespace) item.namespace = exec.namespace;
     const second: Obj = { type: "custom_tool_call", id: "exec_probe_second", call_id: "call_probe_second",
-      name: "exec", input: "text('native-batch-second'); text('native-batch-second-epoch:' + Date.now());", status: "completed" };
+      name: "exec", input: `text(await tools.Read(${JSON.stringify({ file_path: effects })})); text('native-batch-second'); text('native-batch-second-epoch:' + Date.now());`, status: "completed" };
     if (exec.namespace) second.namespace = exec.namespace;
     const secondIndex = outOfOrder ? 0 : 2;
     if (outOfOrder) emit({ type: "response.output_item.added", output_index: secondIndex, item: { ...second, input: "", status: "in_progress" } });
@@ -357,7 +386,7 @@ export async function interactiveScenario(jar: string, name: Scenario, root: str
       projects: { [task]: { hasTrustDialogAccepted: true, hasCompletedProjectOnboarding: true } },
     }), { mode: 0o600 });
     const client = await interactiveClient({
-      command: [CLIENT, "--bare", "--verbose", "--permission-mode", "default", "--model", `probe--${MODEL}`, "--tools", "Bash", "--allowedTools", "Bash", "--strict-mcp-config", "--mcp-config", '{"mcpServers":{}}', "--setting-sources", "", "--session-id", sessionId, "--system-prompt", "You are running a deterministic local fixture. Execute the requested Bash tool and report its result.", "Run the fixture tool once, then finish."],
+      command: [CLIENT, "--bare", "--verbose", "--permission-mode", "default", "--model", `probe--${MODEL}`, "--tools", "Bash,Read", "--allowedTools", "Bash", "Read", "--strict-mcp-config", "--mcp-config", '{"mcpServers":{}}', "--setting-sources", "", "--session-id", sessionId, "--system-prompt", "You are running a deterministic local fixture. Execute the requested tools and report their results.", "Run the fixture tools once, then finish."],
       cwd: task, env: { ...env, ANTHROPIC_BASE_URL: `http://127.0.0.1:${relay.port}`, ANTHROPIC_API_KEY: "synthetic-probe-client-only", API_TIMEOUT_MS: "90000" },
       sessionId, finalText: FINAL, expectedThinking: SUMMARY, timeoutMs: 90000,
     });
@@ -384,6 +413,9 @@ export async function interactiveScenario(jar: string, name: Scenario, root: str
     else if (outOfOrder) assertNativeOutOfOrderBatch(observed);
     else assertNativeBatch(observed);
   } catch (error) { batchFindings.push(error instanceof Error ? error.message : String(error)); }
+  if (sequential) try {
+    assertNativeSequential({ marks, upstreamRequests: requests, scriptAttempts: scripts, callbackTimes });
+  } catch (error) { batchFindings.push(error instanceof Error ? error.message : String(error)); }
   const callbackFindings: string[] = [];
   try {
     if (restart) assertInterruptedCallbackText(requests); else assertAcceptedCallbackText(requests);
@@ -395,8 +427,9 @@ export async function interactiveScenario(jar: string, name: Scenario, root: str
     readableReasoningOnWire: summaryVisibleAt !== null,
     readableReasoningInRealClient: cliSummary,
     readableReasoningReceivedByTerminal: cliTerminalThinking,
-    fixtureThinkingExactlyOnceOnWire: wireThinking === SUMMARY,
-    fixtureThinkingExactlyOnceInClientTranscript: cliThinking === SUMMARY,
+    fixtureThinkingExactlyOnceOnWire: wireThinking === expectedThinking,
+    fixtureThinkingExactlyOnceInClientTranscript: cliThinking === expectedThinking,
+    secondReadableReasoningReceivedByTerminal: !sequential || (existsSync(join(home, "client-terminal.log")) && readFileSync(join(home, "client-terminal.log"), "utf8").includes(SECOND_SUMMARY)),
     noRedactedPlaceholders: redacted === 0 && cliRedacted === 0,
     exactlyOneEffect: callbackTimes.length === 1 && Number.isFinite(effect),
     toolRanAfterWholeItemBeforeTerminal: name === "native-lifecycle" ||
@@ -421,15 +454,15 @@ export async function interactiveScenario(jar: string, name: Scenario, root: str
     clientUserAgent: clientVersion, cliExit, holdMs: HOLD_MS, callbackTimes, scriptAttempts: scripts, waits, restarted, batchFindings, callbackFindings,
     upstreamRequests: requests, clientEvents, redactedBlocks: redacted, cliRedactedBlocks: cliRedacted,
     thinkingDelivery: {
-      expectedChars: SUMMARY.length,
-      wire: { chars: wireThinking.length, deltaEvents: wireThinkingDeltas, fixtureOccurrences: wireThinking.split(SUMMARY).length - 1, exactFixtureEquality: wireThinking === SUMMARY },
-      clientTranscript: { chars: cliThinking.length, fixtureOccurrences: cliThinking.split(SUMMARY).length - 1, exactFixtureEquality: cliThinking === SUMMARY },
+      expectedChars: expectedThinking.length,
+      wire: { chars: wireThinking.length, deltaEvents: wireThinkingDeltas, fixtureOccurrences: wireThinking.split(SUMMARY).length - 1, exactFixtureEquality: wireThinking === expectedThinking },
+      clientTranscript: { chars: cliThinking.length, fixtureOccurrences: cliThinking.split(SUMMARY).length - 1, exactFixtureEquality: cliThinking === expectedThinking },
     },
     timing: { summaryVisibleAt, toolOpenAt, terminalThinkingAt, terminalFinalAt,
       itemDoneAt: done ?? null, terminalAt: terminal ?? null,
       callbackMinusItemDoneMs: effect !== undefined && done !== undefined ? effect - done : null,
       terminalMinusCallbackMs: effect !== undefined && terminal !== undefined ? terminal - effect : null }, marks,
-    coverage: "Real interactive PTY; completed item admission before response terminal; late response failure; native yield/wait; two serial outer exec items in one response including queued-source restart and out-of-order completion; daemon restart before real callback-result delivery; persisted client blocks and terminal observations. No paint-latency claim." };
+    coverage: "Real interactive PTY; completed item admission before response terminal; late response failure; native yield/wait; two outer exec items in one response including queued-source restart and out-of-order completion; successive model responses each issuing its own client callback; daemon restart before real callback-result delivery; persisted client blocks and terminal observations. No paint-latency claim." };
 }
 
 export async function main(argv: string[]): Promise<number> {
@@ -448,14 +481,14 @@ export async function main(argv: string[]): Promise<number> {
   const receipt: Obj = { kind: "splice-real-client-parity-probe", startedAt: new Date().toISOString(),
     probeVersion: PROBE_VERSION, probeSha256: await sha(fileURLToPath(import.meta.url)),
     invocationMode: "interactive-pty-v1", terminalColumns: 160, terminalRows: 60,
-    permissionMode: "default", allowedTools: ["Bash"],
+    permissionMode: "default", allowedTools: ["Bash", "Read"],
     interactiveClientSha256: await sha(fileURLToPath(new URL("./interactive-client.ts", import.meta.url))),
     jar, jarSha256: await sha(jar), clientPath: CLIENT, clientVersion: version, clientSha256: await sha(CLIENT),
     root, status: "running", scenarios: [], auth: "isolated synthetic OAuth fixture required for Codex arm; no inherited credentials", limits: "Loopback configuration, not an OS network sandbox. Candidate jar is trusted to honor configured endpoints." };
   mkdirSync(dirname(out), { recursive: true });
   const save = () => writeFileSync(out, JSON.stringify(receipt, null, 2) + "\n", { mode: 0o600 });
   save();
-  for (const name of ["success", "late-failure", "native-lifecycle", "restart", "native-batch", "native-batch-restart", "native-batch-out-of-order"] as const) {
+  for (const name of ["success", "late-failure", "native-lifecycle", "restart", "native-batch", "native-batch-restart", "native-batch-out-of-order", "native-sequential"] as const) {
     const result = await interactiveScenario(jar, name, root); receipt.scenarios.push(result); save();
     console.log(`${name}: ${result.passed ? "PASS" : "FAIL"} (${Object.entries(result.checks).filter(([, ok]) => !ok).map(([key]) => key).join(", ") || "all checks"})`);
   }

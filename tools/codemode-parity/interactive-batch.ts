@@ -5,6 +5,30 @@ const calls = ["call_probe", "call_probe_second"] as const;
 const markers = ["native-batch-first", "native-batch-second"] as const;
 type BatchObservation = { marks: any[]; upstreamRequests: any[]; scriptAttempts: number; callbackTimes: number[] };
 
+export function assertScriptCallbacks(value: BatchObservation, secondOutput: unknown): void {
+  const callbacks = value.marks.filter(mark => mark.event === "client_sse" && mark.frame?.type === "content_block_start" &&
+    mark.frame.content_block?.type === "tool_use").map(mark => ({ ...mark.frame.content_block, epochMs: mark.epochMs }));
+  assert.deepEqual(callbacks.map(call => call.name), ["Bash", "Read"], "both outer scripts must issue their actual client callback");
+  assert.ok(callbacks.every(call => typeof call.id === "string" && call.id.length > 0));
+  assert.equal(new Set(callbacks.map(call => call.id)).size, 2, "later script reused the first callback identity");
+  const accepted = callbacks.map(call => value.marks.filter(mark => mark.event === "client_callback_result_received" &&
+    mark.results?.some((result: any) => result.tool_use_id === call.id)).at(-1));
+  assert.ok(accepted.every(Boolean), "both actual client callback results must reach the relay");
+  for (const [index, call] of callbacks.entries()) {
+    const result = accepted[index].results.find((item: any) => item.tool_use_id === call.id);
+    assert.notEqual(result.is_error, true, `${call.name}: real client callback failed`);
+    assert.ok(Number.isFinite(call.epochMs) && Number.isFinite(accepted[index].epochMs));
+  }
+  const firstAccepted = value.marks.find(mark => mark.event === "client_callback_result_received" &&
+    mark.results?.some((result: any) => result.tool_use_id === callbacks[0].id));
+  assert.ok(firstAccepted.epochMs <= callbacks[1].epochMs, "Read callback preceded acceptance of the first script's Bash result");
+  const read = accepted[1].results.find((item: any) => item.tool_use_id === callbacks[1].id);
+  const epoch = String(value.callbackTimes[0]);
+  assert.ok(JSON.stringify(read.content).includes(epoch), "Read callback did not return the actual first Bash effect file");
+  assert.ok(Array.isArray(secondOutput) && secondOutput.some((part: any) => part.type === "input_text" &&
+    typeof part.text === "string" && part.text.includes(epoch)), "second native output lost the accepted Read result");
+}
+
 /** Inspect canonical model items and real output arrays; source text cannot prove execution. */
 function batchOutputs(value: BatchObservation): any[] {
   assert.equal(value.scriptAttempts, 1, "the two-item batch must execute without response source retry");
@@ -39,6 +63,7 @@ function batchOutputs(value: BatchObservation): any[] {
   }
   assert.ok(positions.every((position, index) => index === 0 || position > positions[index - 1]!),
     "all original model batch items must precede both ordered outputs");
+  assertScriptCallbacks(value, outputs[1]);
   return outputs;
 }
 
@@ -59,6 +84,12 @@ export function assertNativeBatch(value: BatchObservation): void {
   const callbackReturned = value.marks.find(mark => mark.event === "client_callback_result_received")?.epochMs;
   assert.ok(Number.isFinite(callbackReturned) && callbackReturned < terminal,
     "fixture did not return the first callback before the held response terminal");
+  const readId = value.marks.find(mark => mark.event === "client_sse" &&
+    mark.frame?.content_block?.type === "tool_use" && mark.frame.content_block.name === "Read")?.frame.content_block.id;
+  const readReturned = value.marks.find(mark => mark.event === "client_callback_result_received" &&
+    mark.results?.some((result: any) => result.tool_use_id === readId))?.epochMs;
+  assert.ok(Number.isFinite(readReturned) && readReturned < terminal,
+    "second script's actual Read result was held until the response terminal");
   const epochs = outputs[1].filter((item: any) => item.type === "input_text" &&
     typeof item.text === "string" && /^native-batch-second-epoch:\d+$/.test(item.text));
   assert.equal(epochs.length, 1, "second source must emit one actual execution epoch");

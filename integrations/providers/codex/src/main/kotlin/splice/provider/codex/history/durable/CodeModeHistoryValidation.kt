@@ -1,6 +1,7 @@
 package splice.provider.codex.history.durable
 
 import kotlinx.serialization.SerializationException
+import splice.core.memory.HeapCapacityException
 import splice.provider.codex.CodeModePersistenceException
 import java.io.IOException
 
@@ -12,6 +13,9 @@ internal object CodeModeHistoryValidation {
 
     inline fun <T> guarded(operation: () -> T): T = try {
         operation()
+    } catch (error: HeapCapacityException) {
+        // Capacity refusal leaves the committed revision intact and is retryable when the reservation is available.
+        throw error
     } catch (error: SerializationException) {
         throw CodeModePersistenceException(IOException("authoritative history cannot be decoded", error), false)
     } catch (error: IllegalArgumentException) {

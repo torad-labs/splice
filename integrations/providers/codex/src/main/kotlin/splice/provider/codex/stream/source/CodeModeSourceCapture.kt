@@ -17,7 +17,7 @@ import splice.upstream.sse.CustomToolSource
 /** One response owns its reader and bill; each executable item owns an independent durable source cursor. */
 internal class CodeModeSourceCapture(
     config: CodeModeBridgeConfig,
-    registry: CodexCodeModeRegistry,
+    private val registry: CodexCodeModeRegistry,
     wire: CodexCodeModeWire,
     admission: CodeModeStreamAdmission,
     recovery: CodeModeRecoveryHistory? = null,
@@ -113,6 +113,8 @@ internal class CodeModeSourceCapture(
     )
 
     fun endAdmissions() {
+        // Every added item may own a startup ticket, including an earlier unfinished item when another sealed first.
+        items.values.filterNot { it.itemComplete }.forEach { item -> item.record?.let(registry.startup::release) }
         admissions.release()
         sealed.end()
     }

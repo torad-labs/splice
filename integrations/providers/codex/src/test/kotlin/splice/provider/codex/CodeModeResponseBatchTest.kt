@@ -1,8 +1,10 @@
 package splice.provider.codex
 
 import kotlinx.coroutines.CompletableDeferred
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.async
 import kotlinx.coroutines.test.runTest
+import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeout
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonArray
@@ -40,7 +42,9 @@ class CodeModeResponseBatchTest : CodeModeResponseBatchSupport() {
         val running = async {
             manager.interceptor(turn(), disableParallel = false).intercept(BASE_REQUEST, RecordingSink(), post).turn()
         }
-        assertEquals("second-output", withTimeout(5_000) { host.secondOutput.await() })
+        // The independent source reader uses a real dispatcher; a virtual deadline can fire before it is scheduled.
+        val output = withContext(Dispatchers.Default) { withTimeout(5_000) { host.secondOutput.await() } }
+        assertEquals("second-output", output)
         assertFalse(post.finalInput.isCompleted, "model request escaped before the response terminal")
         terminal.complete(Unit)
         assertTrue(running.await() is TurnOutcome.Success)
@@ -58,7 +62,7 @@ class CodeModeResponseBatchTest : CodeModeResponseBatchSupport() {
         val running = async {
             manager.interceptor(turn(), disableParallel = false).intercept(BASE_REQUEST, sink, post).turn()
         }
-        val first = withTimeout(5_000) { running.await() }
+        val first = withContext(Dispatchers.Default) { withTimeout(5_000) { running.await() } }
         assertTrue(first is TurnOutcome.Success && first.hasToolUse)
         val id = sink.tools.single().id
         late.complete(Unit)

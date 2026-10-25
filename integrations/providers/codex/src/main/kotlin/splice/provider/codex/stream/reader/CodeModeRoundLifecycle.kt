@@ -59,6 +59,7 @@ internal class CodeModeRoundLifecycle(
                 localFailure = CodeModeRejection.lose(capture.record, rejected, registry)
             }
         } finally {
+            capture.endAdmissions()
             capture.ready.complete(null)
         }
         checkNotNull(localFailure)

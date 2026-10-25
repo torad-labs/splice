@@ -17,26 +17,32 @@ import splice.dialect.responses.buildResponsesTestRequest
 
 /**
  * a code_mode_only turn carries the surface codex-rs sends
- * (core/src/tools/spec_plan.rs is_hidden_by_code_mode_only + code_mode/execute_spec.rs): ONE top-level
- * `exec` freeform tool with the lark grammar, every client tool nested in its manual as a TypeScript
- * declaration, and no client function tool beside it. Before V4-388 splice sent every client tool
+ * (core/src/tools/spec_plan.rs:932-936 + code_mode/execute_spec.rs): native `exec` and `wait`,
+ * with the lark grammar on exec, every client tool nested in its manual as a TypeScript
+ * declaration, and no client function tool beside them. Before V4-388 splice sent every client tool
  * top-level plus a 478-char `splice_exec` with a text format, and the model called exec on 0-10% of turns.
  */
 class CodeModeExecSurfaceTest : CodeModeBridgeTestSupport() {
     @Test
-    fun `exec is the only top-level tool and its manual declares every client tool`() {
+    fun `the native exec and wait surface keeps every client tool inside the manual`() {
         val prepared = prepare()
         val entries = prepared.getValue("input").jsonArray[0].jsonObject.getValue("tools").jsonArray
         assertEquals(1, entries.size, "top-level tools: ${entries.map { it.jsonObject["name"] }}")
-        // V4-390: the one top-level entry is codex's functions namespace, and exec is its only member.
+        // The lite surface groups the two native handlers inside one functions namespace.
         val functions = entries.single().jsonObject
         assertEquals("namespace", functions.getValue("type").jsonPrimitive.content)
         assertEquals("functions", functions.getValue("name").jsonPrimitive.content)
         val tools = functions.getValue("tools").jsonArray
-        assertEquals(1, tools.size, "functions members: ${tools.map { it.jsonObject["name"] }}")
-        val exec = tools.single().jsonObject
+        assertEquals(listOf("exec", "wait"), tools.map { it.jsonObject.getValue("name").jsonPrimitive.content })
+        val exec = tools[0].jsonObject
         assertEquals("custom", exec.getValue("type").jsonPrimitive.content)
         assertEquals("exec", exec.getValue("name").jsonPrimitive.content)
+        val wait = tools[1].jsonObject
+        assertEquals("function", wait.getValue("type").jsonPrimitive.content)
+        assertEquals(
+            Json.parseToJsonElement("""["cell_id"]"""),
+            wait.getValue("parameters").jsonObject.getValue("required"),
+        )
         assertEquals(
             Json.parseToJsonElement(
                 """{"type":"grammar","syntax":"lark","definition":${Json.encodeToString(GRAMMAR)}}""",

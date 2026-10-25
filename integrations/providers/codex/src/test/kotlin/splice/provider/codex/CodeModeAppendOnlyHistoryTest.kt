@@ -21,6 +21,7 @@ package splice.provider.codex
 
 import kotlinx.coroutines.test.runTest
 import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
@@ -30,12 +31,14 @@ import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.put
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
+import splice.core.parse.AnthropicParse
 import splice.core.reasoning.ReasoningReplay
 import splice.core.turn.ResponseShape
 import splice.core.turn.RoundHandoffs
 import splice.core.turn.RoundText
 import splice.core.turn.TurnOutcome
 import splice.core.turn.Usage
+import splice.provider.codex.branch.CodeModeClearedCandidates
 import splice.upstream.RoundResult
 import splice.upstream.codemode.CodeModeResult
 import splice.upstream.codemode.CodeModeStep
@@ -63,6 +66,14 @@ private val THROWN_AWAY = listOf("abandoned record", "history rewrite skipped")
 private const val FAULTS = 0x5EED
 private const val ANCHORS = "replayAnchors"
 private const val CLIENT_START = "client"
+private const val TRIMS = 0x7E1
+private const val ROLE = "role"
+private const val CONTENT = "content"
+private const val OUTPUT = "output"
+
+/** What Claude Code's microcompaction puts in place of an old tool result's content (claude-code
+ *  src/services/compact/microCompact.ts, TIME_BASED_MC_CLEARED_MESSAGE). */
+private const val CLEARED = "[Old tool result content cleared]"
 
 class CodeModeAppendOnlyHistoryTest : CodeModeBridgeTestSupport() {
 
@@ -96,6 +107,24 @@ class CodeModeAppendOnlyHistoryTest : CodeModeBridgeTestSupport() {
             assertTrue(failures.isEmpty(), "${failures.size} conversations broke:\n" + failures.joinToString("\n"))
         }
 
+    @Test
+    fun `a conversation hiding GPT's reasoning keeps every script and only extends what GPT was sent`() =
+        runTest {
+            val failures = (0 until RUNS).mapNotNull { seed ->
+                Conversation(seed, seed % 2 == 1, Store.entries[seed % Store.entries.size], reveals = false).broke()
+            }
+            assertTrue(failures.isEmpty(), "${failures.size} conversations broke:\n" + failures.joinToString("\n"))
+        }
+
+    @Test
+    fun `a conversation whose old tool results are cleared keeps every script and only extends what GPT was sent`() =
+        runTest {
+            val failures = (0 until RUNS).mapNotNull { seed ->
+                Conversation(seed, seed % 2 == 1, Store.entries[seed % Store.entries.size], trims = true).broke()
+            }
+            assertTrue(failures.isEmpty(), "${failures.size} conversations broke:\n" + failures.joinToString("\n"))
+        }
+
     /** Which build saved the state each restart starts on. */
     private enum class Store {
         /** At the first restart that cut no reply, a release's: its records kept no client start. */
@@ -115,6 +144,10 @@ class CodeModeAppendOnlyHistoryTest : CodeModeBridgeTestSupport() {
         private val seed: Int,
         private val rewinds: Boolean,
         private val store: Store = Store.UPGRADED,
+        /** Whether Claude Code is shown GPT's reasoning: it is not while reasoning is hidden or not replayed. */
+        private val reveals: Boolean = true,
+        /** Whether Claude Code clears old tool results in place before a request, as its microcompaction does. */
+        private val trims: Boolean = false,
     ) {
         private val random = Random(seed)
 
@@ -124,6 +157,9 @@ class CodeModeAppendOnlyHistoryTest : CodeModeBridgeTestSupport() {
         /** What goes wrong around a request: a restart while a script waits, a reply the client never kept, a store
          *  an older build wrote, a reply the client kept in the order GPT streamed it. Drawn apart again. */
         private val faults = Random(seed xor FAULTS)
+
+        /** When Claude Code clears old tool results, and how many recent ones it keeps. Drawn apart once more. */
+        private val trimming = Random(seed xor TRIMS)
         private val scripts = ArrayDeque<ArrayDeque<CodeModeStep>>()
         private val stepCounts = mutableListOf<Int>()
         private val runtime = QueuedRuntime(scripts)
@@ -135,6 +171,10 @@ class CodeModeAppendOnlyHistoryTest : CodeModeBridgeTestSupport() {
          *  last of its reasoning and preface, or the item before it when it gave none. */
         private val outers = mutableListOf<String>()
         private val ranAfter = HashMap<String, Int>()
+
+        /** Each script's preface, and the scripts whose reply the client never kept: GPT is sent their prefaces. */
+        private val prefaces = HashMap<String, String>()
+        private val lostCopies = mutableSetOf<String>()
 
         /** Every script that ran, a rewind or not, and how many had when splice first restarted. */
         private val started = mutableListOf<String>()
@@ -153,6 +193,7 @@ class CodeModeAppendOnlyHistoryTest : CodeModeBridgeTestSupport() {
         /** The post GPT answers in plain text and after which the client rewinds, or -1. */
         private val rewindAt = if (rewinds) 1 + random.nextInt(upstreamTurns - 2) else -1
         private var results = emptyList<CodeModeResult>()
+        private val submittedResults = mutableSetOf<String>()
         private var previous: List<JsonElement>? = null
         private var rewound = false
 
@@ -190,13 +231,19 @@ class CodeModeAppendOnlyHistoryTest : CodeModeBridgeTestSupport() {
         private suspend fun request(): String? {
             val sink = RecordingSink()
             val exchanges = mutableListOf<Pair<List<JsonElement>, Reply>>()
-            manager.interceptor(turn(seed, results), disableParallel = false).intercept(Wire.body(client), sink) {
+            if (shouldTrim()) trim()
+            // Claude Code sends every result in its history, and splice reads each one a script made.
+            val given = if (trims) clientResults() else results
+            val boundary = turn(seed, given)
+            val prepared = if (trims) boundary.copy(rendering = clearedRendering()) else boundary
+            manager.interceptor(prepared, disableParallel = false).intercept(Wire.body(client), sink) {
                 val last = posts == upstreamTurns - 1 || posts == rewindAt
                 val reply = answer(last)
                 exchanges += Wire.input(it) to reply
                 posts++
                 RoundResult.Outcome(reply.outcome)
             }
+            if (trims) submittedResults += given.map(CodeModeResult::id)
             val first = posts - exchanges.size
             spoken = client.size
             val ran = outers.size
@@ -206,6 +253,11 @@ class CodeModeAppendOnlyHistoryTest : CodeModeBridgeTestSupport() {
             afterwards(sink.tools, ran)
             val stalled = exchanges.isEmpty() && sink.tools.isEmpty()
             return "seed $seed: request $requests went nowhere".takeIf { stalled }
+        }
+
+        private fun shouldTrim(): Boolean {
+            if (!trims || requests <= 1) return false
+            return trimming.nextInt(3) == 0
         }
 
         /** What follows splice's answer before the client's next request: the client runs the [tools] it was given
@@ -243,6 +295,7 @@ class CodeModeAppendOnlyHistoryTest : CodeModeBridgeTestSupport() {
             cut = true
             client.subList(spoken, client.size).clear()
             outers.drop(ran).forEach { ranAfter[it] = spoken - 1 }
+            lostCopies += outers.drop(ran)
             if (store == Store.UPGRADED || faults.nextBoolean()) {
                 client += Wire.user("Continue $requests.")
             } else {
@@ -257,6 +310,7 @@ class CodeModeAppendOnlyHistoryTest : CodeModeBridgeTestSupport() {
             val broke = previous?.let { prefixBreak(seed, post, it, sent) }
                 ?: codexShape(seed, post, sent, outers)
                 ?: unstopped(seed, post, sent, steered)
+                ?: proseOnce(post, sent)
             if (broke != null) return broke
             previous = sent
             keep(answered)
@@ -264,6 +318,7 @@ class CodeModeAppendOnlyHistoryTest : CodeModeBridgeTestSupport() {
                 outers += it
                 started += it
                 ranAfter[it] = client.lastIndex
+                answered.preface?.let { preface -> prefaces[it] = preface }
             }
             answered.text?.let { client += Wire.user("$NEXT$post.") }
             return null
@@ -272,7 +327,11 @@ class CodeModeAppendOnlyHistoryTest : CodeModeBridgeTestSupport() {
         /** What the client keeps of GPT's [answered] reasoning and prose: the reasoning first, or, about half the
          *  times GPT reasoned, said a script's preface, and reasoned again before the call, the order it streamed. */
         private fun keep(answered: Reply) {
-            val streamed = answered.outer != null && answered.preface != null && answered.reasoning.size > 1
+            if (!reveals) {
+                (answered.preface ?: answered.text)?.let { said(it, joins = true) }
+                return
+            }
+            val streamed = streamedPreface(answered)
             if (streamed && faults.nextBoolean()) {
                 client += Wire.reasoning(answered.reasoning.first())
                 said(checkNotNull(answered.preface), joins = false)
@@ -280,6 +339,88 @@ class CodeModeAppendOnlyHistoryTest : CodeModeBridgeTestSupport() {
             } else {
                 client += answered.reasoning.map(Wire::reasoning)
                 (answered.preface ?: answered.text)?.let { said(it, joins = answered.reasoning.isEmpty()) }
+            }
+        }
+
+        private fun streamedPreface(answered: Reply): Boolean {
+            if (answered.outer == null || answered.preface == null) return false
+            return answered.reasoning.size > 1
+        }
+
+        /** Null when GPT is sent all the prose the client holds, and the preface of each script whose reply the
+         *  client never kept, each once; else how much more or less GPT was sent. */
+        private fun proseOnce(post: Int, sent: List<JsonElement>): String? {
+            val held = client.sumOf { prose(Json.parseToJsonElement(it).jsonObject).length }
+            val lost = outers.filter { it in lostCopies }.sumOf { prefaces[it]?.length ?: 0 }
+            val given = sent.sumOf { prose(it.jsonObject).length }
+            return "seed $seed, post $post: GPT was sent $given characters of prose, expected ${held + lost}"
+                .takeIf { given != held + lost }
+        }
+
+        /** Every tool result in the client's history that a script's call was given, as Claude Code sends them. */
+        private fun clientResults(): List<CodeModeResult> = client.map { Json.parseToJsonElement(it).jsonObject }
+            .filter { it.text(TYPE) == "function_call_output" }
+            .filter { it.text(CALL_ID).startsWith(CODE_MODE_CLIENT_ID_PREFIX) }
+            .map { CodeModeResult(it.text(CALL_ID), it.text(OUTPUT)) }
+
+        /** This fixture bypasses the builder, so replay its typed callback boundary to identify candidates only.
+         *  The production witness still has to prove their accepted bytes and branch; none is pre-verified. */
+        private fun clearedRendering(): CodeModeResultRendering {
+            val messages = client.map { Json.parseToJsonElement(it).jsonObject }
+                .filter { it.text(TYPE) in setOf("function_call", "function_call_output") }.map { item ->
+                    val call = item.text(TYPE) == "function_call"
+                    buildJsonObject {
+                        put(ROLE, if (call) "assistant" else "user")
+                        put(
+                            CONTENT,
+                            JsonArray(
+                                listOf(
+                                    buildJsonObject {
+                                        put(TYPE, if (call) "tool_use" else "tool_result")
+                                        put(if (call) "id" else "tool_use_id", item.getValue(CALL_ID))
+                                        if (call) {
+                                            put("name", item.getValue("name"))
+                                            put("input", Json.parseToJsonElement(item.text("arguments")))
+                                        } else {
+                                            put(
+                                                CONTENT,
+                                                JsonArray(
+                                                    listOf(
+                                                        buildJsonObject {
+                                                            put(TYPE, "text"); put("text", item.getValue(OUTPUT))
+                                                        },
+                                                    ),
+                                                ),
+                                            )
+                                        }
+                                    },
+                                ),
+                            ),
+                        )
+                    }
+                }
+            val body = AnthropicParse.parseAnthropicBody(
+                buildJsonObject {
+                    put("model", "gpt-6-astra"); put("max_tokens", 100); put("messages", JsonArray(messages))
+                }.toString(),
+            )
+            return CodeModeResultRendering(clearedCallbacks = CodeModeClearedCandidates.read(body))
+        }
+
+        /** Claude Code clears every tool result but its most recent few in place, keeping the call and its id. */
+        private fun trim() {
+            val outputs = client.indices.filter { "\"function_call_output\"" in client[it] }
+            val kept = 1 + trimming.nextInt(3)
+            val accepted = stateFiles.records().flatMap { it.getValue("results").jsonObject.keys }.toSet()
+            // A pending result has never reached the gateway: erasing it would ask the oracle to invent bytes.
+            val cleared = outputs.dropLast(kept).filter {
+                val id = Json.parseToJsonElement(client[it]).jsonObject.text(CALL_ID)
+                id in submittedResults && id in accepted && CLEARED !in client[it]
+            }
+            if (cleared.isEmpty()) return
+            trace += "trim $requests"
+            cleared.forEach { at ->
+                client[at] = Wire.output(Json.parseToJsonElement(client[at]).jsonObject.text(CALL_ID), CLEARED)
             }
         }
 
@@ -492,6 +633,9 @@ class CodeModeAppendOnlyHistoryTest : CodeModeBridgeTestSupport() {
     }
 
     private fun JsonObject.text(key: String): String = (this[key] as? JsonPrimitive)?.content.orEmpty()
+
+    /** An assistant message's prose, or nothing for any other item. */
+    private fun prose(item: JsonObject): String = if (item.text(ROLE) == "assistant") item.text(CONTENT) else ""
 
     private fun turn(seed: Int, results: List<CodeModeResult>) = CodexCodeModeBridge.Turn(
         sessionId = "session-$seed",

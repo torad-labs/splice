@@ -14,11 +14,11 @@ import splice.provider.codex.CodeModeRecord
 import splice.provider.codex.CodeModeRunContext
 import splice.provider.codex.CodeModeStateLocation
 import splice.provider.codex.CodexCodeModeHistoryCodec
+import splice.provider.codex.history.client.CodeModeClientStep
 import splice.provider.codex.history.durable.CodeModeHistoryStorage
 import splice.provider.codex.stream.batch.CodeModeBatchHistory
 import splice.provider.codex.stream.batch.CodeModeBatchLinks
 import splice.upstream.RoundBody
-import java.lang.ref.WeakReference
 
 /**
  * GPT's history in code mode is Codex's: each exec call with its output, and none of the client calls a script
@@ -43,6 +43,7 @@ internal class CodeModeUpstreamHistory(
     private val clientDelta = CodeModeClientDelta(codec)
     private val durableClears = CodeModeDurableClears(ledger, clientDelta)
     private val scripts = CodeModeScriptPlacements(codec)
+    private val clientStep = CodeModeClientStep(codec, scripts)
 
     /** No post at all: what a conversation that extends none is folded from. */
     private val nothing = CodeModeLedgerEntry(emptyList(), emptyList(), emptyList())
@@ -80,7 +81,7 @@ internal class CodeModeUpstreamHistory(
         changed: Set<String>,
     ): CodeModeBody {
         val (root, input) = request
-        val preamble = input.subList(0, preambleCount(input))
+        val preamble = input.subList(0, clientStep.preambleCount(input))
         val conversation = input.subList(preamble.size, input.size)
         val cleared = CodeModeCallbackReceipts.proof(context)
         val (entry, tail) = extended(context.key, conversation, records, changed, cleared)
@@ -95,7 +96,9 @@ internal class CodeModeUpstreamHistory(
             val last = quiet.filter { it.at == conversation.size }.mapTo(HashSet()) { it.record.id }
             CodeModeScriptDue { record, _ -> record.id in last }
         } else {
-            CodeModeScriptDue { record, _ -> record.postedOn == entry.id }
+            CodeModeScriptDue { record, _ ->
+                record.postedOn == entry.id && CodeModeRestorableClears.permits(record, cleared)
+            }
         }
         val appended = scripts.appended(records, folded, conversation, due)
         val items = preamble + folded + appended.flatMap { scripts.continuity(it) + scripts.placement(it) }
@@ -113,32 +116,12 @@ internal class CodeModeUpstreamHistory(
         }
     }
 
-    /** Where a script started now in [context]'s client history: after all of it, preamble aside. A recovery posts
-     *  the torn round's partial and a private marker after it, which the client never holds: its script started after
-     *  the request the client sent. */
-    fun clientStart(context: CodeModeRunContext): CodeModeClientStart? {
-        val client = context.recovery?.baseline ?: context.client ?: return null
-        val base = started?.takeIf { it.first.get() === client }?.second
-            ?: read(client, context.turn.rendering.replayMedia)?.also { started = WeakReference(client) to it }
-        val delivered = context.completed.flatMap { CodeModeScriptDelivery.items(it, scripts) }
-        if (base == null || delivered.isEmpty()) return base
-        val input = checkNotNull(client.request).second.dropWhile(codec::isPreamble)
-        return base.copy(
-            acknowledgement = CodeModeClientAcknowledgements.capture(
-                input + delivered,
-                context.turn.rendering.replayMedia,
-            ),
-        )
-    }
+    fun begin(context: CodeModeRunContext, records: List<CodeModeRecord>) = clientStep.begin(context, records)
 
-    /** Where a script starting now starts in [client]'s history, or null when it is not a Responses input. */
-    private fun read(client: CodeModeBody, media: Map<String, List<JsonElement>>): CodeModeClientStart? {
-        val input = client.request?.second ?: return null
-        return CodeModeClientPrefix(input.subList(preambleCount(input), input.size), client.digests, media).start()
-    }
+    fun clientStart(context: CodeModeRunContext): CodeModeClientStart? = clientStep.start(context)
 
-    /** The body the last start was read from, and that start: every script one request starts reads it once. */
-    @Volatile private var started: Pair<WeakReference<CodeModeBody>, CodeModeClientStart>? = null
+    fun postedClientStart(context: CodeModeRunContext, record: CodeModeRecord): CodeModeClientAcknowledgement? =
+        clientStep.postedStart(context, record, ledger.entries(context.key))
 
     /** Keeps [body] as what [context]'s conversation last sent, as it is posted. */
     fun sent(context: CodeModeRunContext, body: CodeModeBody) {
@@ -148,11 +131,11 @@ internal class CodeModeUpstreamHistory(
             ledger.forget(context.key)
             return
         }
-        val observed = client.subList(preambleCount(client), client.size)
+        val observed = client.subList(clientStep.preambleCount(client), client.size)
         val proof = CodeModeCallbackReceipts.proof(context)
         val prior = ledger.entries(context.key).firstOrNull { clientDelta.after(it, observed, proof) != null }
         val covered = prior?.let { clientDelta.normalized(it, observed, proof) } ?: observed
-        val conversation = posted.subList(preambleCount(posted), posted.size)
+        val conversation = posted.subList(clientStep.preambleCount(posted), posted.size)
         val callbacks = CodeModeCallbackReceipts.capture(context, covered, prior?.callbacks.orEmpty())
         ledger.record(
             context.key,
@@ -162,9 +145,11 @@ internal class CodeModeUpstreamHistory(
     }
 
     /** Durable callback receipts can verify a clear after its execution record was retired. */
-    fun acknowledgeCleared(context: CodeModeRunContext) {
+    fun acknowledgeCleared(context: CodeModeRunContext) = acknowledgeCleared(context, emptyList())
+
+    fun acknowledgeCleared(context: CodeModeRunContext, records: List<CodeModeRecord>) {
         val client = context.client?.request?.second ?: return
-        durableClears.acknowledge(context, client.drop(preambleCount(client)))
+        durableClears.acknowledge(context, client.drop(clientStep.preambleCount(client)), records)
     }
 
     /** The newest kept post of a script started now: what [CodeModeRecord.postedOn] holds. */
@@ -222,9 +207,6 @@ internal class CodeModeUpstreamHistory(
         }
         return nothing to conversation
     }
-
-    /** How many leading items of [input] are the lite preamble, which is environment and not history. */
-    private fun preambleCount(input: List<JsonElement>): Int = input.takeWhile(codec::isPreamble).size
 
     /** Each finished script's client call ids, mapped to it. A script still running keeps its calls as they are, and
      *  an abandoned one keeps them for good: its conversation went on upstream on them (V4-342). */

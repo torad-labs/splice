@@ -13,11 +13,11 @@ import org.junit.jupiter.api.Test
 
 class CodeModeNamespaceSurfaceTest : CodeModeBridgeTestSupport() {
     @Test
-    fun `a grouped lite list becomes the functions namespace holding exec, with web_search beside it`() {
+    fun `a grouped lite list holds native exec and wait with web_search beside the namespace`() {
         val surface = surface(GROUPED)
         assertEquals(listOf("namespace", "web_search"), surface.map { it.getValue("type").jsonPrimitive.content })
         val members = surface[0].getValue("tools").jsonArray.map { it.jsonObject }
-        assertEquals(listOf("exec"), members.map { it.getValue("name").jsonPrimitive.content })
+        assertEquals(listOf("exec", "wait"), members.map { it.getValue("name").jsonPrimitive.content })
         val manual = members[0].getValue("description").jsonPrimitive.content
         assertTrue(manual.contains("Reads a file."), manual)
     }

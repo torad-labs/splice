@@ -39,7 +39,7 @@ internal class CodexCodeModeBranch(
     fun conflictingRecords(context: CodeModeRunContext): Set<String> {
         val records = registry.recordsFor(context.key)
         if (context.turn.rendering.clearedCallbacks.isNotEmpty()) {
-            CodeModeClearedWitness(context, records, log).verify()
+            CodeModeClearedWitness(context, records, log).verify { driver.sent.postedClientStart(context, it) }
         }
         val resultIds = context.turn.toolResults.map(CodeModeResult::id).toSet()
         val duplicates = duplicateCallbacks(context)

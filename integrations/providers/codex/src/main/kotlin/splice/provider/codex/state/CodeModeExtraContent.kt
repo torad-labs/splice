@@ -21,6 +21,7 @@ import splice.provider.codex.history.CodeModeAcknowledgedBaseline
 import splice.provider.codex.history.CodeModeDeliveredEchoes
 import splice.provider.codex.history.CodeModeOwnership
 import splice.provider.codex.history.CodeModeScriptPlacements
+import splice.provider.codex.state.diagnostics.CodeModeHistoryLog
 import splice.provider.codex.state.replay.CodeModeCallbackReplay
 import splice.provider.codex.state.replay.CodeModeReplayEvidence
 
@@ -46,7 +47,7 @@ internal class CodeModeExtraContent(
         val owned = (record.results.keys + record.progress.pending.map(CodeModePending::clientId)).toSet()
         val logicalExtra = unownedIndexes(projected.logicalItems, record, owned, candidateMedia, boundary)
             .map(projected.logicalItems::get)
-        val replayed = unexpectedReplay(projected, record, owned, boundary, digests)
+        val replayed = unexpectedReplay(projected, record, owned, boundary)
         return when {
             replayed || logicalExtra.any { !isSystemMessage(it) } ->
                 CodeModeExtra.STEERING
@@ -68,28 +69,13 @@ internal class CodeModeExtraContent(
         val tail = baseline?.let { (projected, boundary) ->
             val owned = (record.results.keys + record.progress.pending.map(CodeModePending::clientId)).toSet()
             val items = unownedIndexes(projected.logicalItems, record, owned, candidateMedia, boundary).map {
-                "${itemKind(projected.logicalItems[it])}@$it"
+                "${CodeModeHistoryLog.extraItemKind(projected.logicalItems[it], codec)}@$it"
             }
-            if (unexpectedReplay(projected, record, owned, boundary, digests)) items + "unexpectedReplay" else items
+            if (unexpectedReplay(projected, record, owned, boundary)) items + "unexpectedReplay" else items
         } ?: listOf("baselineMismatch")
         val answered = record.progress.pending.all { it.clientId in record.results }
         return "[code-mode] interrupted extra=$extra baselineLogicalCount=${record.origin.baseline.logicalCount} " +
             "boundary=${baseline?.second ?: "unresolved"} unowned=[${tail.joinToString(",")}] answered=$answered"
-    }
-
-    private fun itemKind(element: JsonElement): String {
-        val item = element as? JsonObject ?: return "other"
-        val type = codec.string(item, CODE_MODE_FIELD_TYPE)
-        return when (type) {
-            "", "message" -> {
-                val roles = setOf("user", "assistant", "developer", "system")
-                val role = codec.string(item, CODE_MODE_FIELD_ROLE).takeIf { it in roles } ?: "other"
-                val phase = codec.string(item, "phase").takeIf { it in setOf("commentary", "final_answer") }
-                "msg:$role${phase?.let { "/$it" }.orEmpty()}"
-            }
-            "function_call", "function_call_output", "custom_tool_call", "custom_tool_call_output" -> type
-            else -> "other"
-        }
     }
 
     private fun onBaseline(
@@ -191,7 +177,17 @@ internal class CodeModeExtraContent(
         record: CodeModeRecord,
         digests: InputItemDigests = InputItemDigests(),
     ): Set<ResponsesCodeModeReplay> {
-        var lower = codec.baselineBoundary(projected.logicalItems, record, digests) ?: return emptySet()
+        val boundary = codec.baselineBoundary(projected.logicalItems, record, digests) ?: return emptySet()
+        return deliveredReplay(projected, record, boundary)
+    }
+
+    /** Classification has already resolved the acknowledged client boundary, which can differ from the model's. */
+    private fun deliveredReplay(
+        projected: ResponsesCodeModeInput,
+        record: CodeModeRecord,
+        boundary: Int,
+    ): Set<ResponsesCodeModeReplay> {
+        var lower = boundary
         val matched = linkedSetOf<ResponsesCodeModeReplay>()
         val prose = indexes(projected.logicalItems, lower, record)
         for (step in record.issued) {
@@ -227,13 +223,12 @@ internal class CodeModeExtraContent(
         record: CodeModeRecord,
         owned: Set<String>,
         boundary: Int,
-        digests: InputItemDigests,
     ): Boolean {
         val evidence = CodeModeReplayEvidence(record, boundary)
         val natives = CodeModeCallbackReplay.native(projected, owned)
         val current = evidence.current(natives)
-        val witnessed = deliveredReplay(projected, record, digests) + deliveredReplay(natives, record, digests) +
-            deliveredReplay(current, record, digests) + streamedContinuity(projected, record, boundary) +
+        val witnessed = deliveredReplay(projected, record, boundary) + deliveredReplay(natives, record, boundary) +
+            deliveredReplay(current, record, boundary) + streamedContinuity(projected, record, boundary) +
             streamedContinuity(natives, record, boundary) + streamedContinuity(current, record, boundary)
         return projected.replayItems.any { replay ->
             val expected = evidence.owns(replay, witnessed) ||

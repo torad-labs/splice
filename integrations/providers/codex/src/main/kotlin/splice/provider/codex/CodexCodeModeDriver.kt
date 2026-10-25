@@ -6,9 +6,6 @@ import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.withContext
-import splice.core.turn.FailureCause
-import splice.core.turn.FailurePhase
-import splice.core.turn.FailureTraits
 import splice.core.turn.GatewayCustomCall
 import splice.core.turn.TurnOutcome
 import splice.core.turn.noRequestUsage
@@ -32,14 +29,10 @@ import splice.provider.codex.stream.batch.CodeModeBatchStart
 import splice.provider.codex.stream.batch.CodeModeGeneratedActions
 import splice.provider.codex.stream.batch.CodeModeGeneratedContinuation
 import splice.provider.codex.stream.batch.CodeModeRuntimeDispatch
+import splice.provider.codex.stream.drive.CodeModeDriveProtocol
+import splice.provider.codex.stream.drive.CodeModeDriveState
 import splice.upstream.failure.CodeModeCapacityException
 import java.io.IOException
-
-private data class CodeModeDriveState(
-    var body: CodeModeBody,
-    var outcome: TurnOutcome,
-    var suppliedOuter: GatewayCustomCall?,
-)
 
 internal class CodexCodeModeDriver(
     private val config: CodeModeBridgeConfig,
@@ -52,6 +45,7 @@ internal class CodexCodeModeDriver(
     val sent: CodeModeUpstreamHistory,
 ) {
     val streams = CodeModeStreams(config, registry, wire)
+    private val protocol = CodeModeDriveProtocol(config)
     private val factory = CodeModeRecordFactory(config, wire)
     private val starter = CodeModeRuntimeStarter(run, registry, config)
     private val batches = CodeModeBatchDispatch(registry)
@@ -73,7 +67,7 @@ internal class CodexCodeModeDriver(
             CodeModeBatchStart(::startRuntime),
             CodeModeBatchPost(::post),
             CodeModeBatchRewrite(::continuation),
-            CodeModeBatchRefusal(::failure),
+            CodeModeBatchRefusal(protocol::failure),
         ),
     )
 
@@ -85,7 +79,7 @@ internal class CodexCodeModeDriver(
         val admissionBody = CodeModeAdmissionBodies(wire).compact(context, body)
         val clientStart = sent.clientStart(context)
         val round = streams.begin(context, admissionBody, post) { call ->
-            driveProblem(context, listOf(call), call)?.let { error(it) }
+            protocol.problem(context, listOf(call), call)?.let { error(it) }
             validation.outer(
                 call.copy(
                     input = call.input.ifBlank {
@@ -184,31 +178,14 @@ internal class CodexCodeModeDriver(
             return accumulated.finish(result)
         }
         val outer = state.suppliedOuter ?: calls.singleOrNull()
-        val problem = driveProblem(context, calls, outer)
+        val problem = protocol.problem(context, calls, outer)
         return when {
             problem != null -> {
                 accumulated.absorb(success)
-                accumulated.finishLocal(failure(problem))
+                accumulated.finishLocal(protocol.failure(problem))
             }
             outer == null -> accumulated.finish(success)
             else -> advanceScript(context, state, accumulated, success, outer)
-        }
-    }
-
-    private fun driveProblem(
-        context: CodeModeRunContext,
-        calls: List<GatewayCustomCall>,
-        outer: GatewayCustomCall?,
-    ): String? {
-        val hasTooManyCalls = calls.size > 1
-        val isMissingOuter = outer == null && calls.isNotEmpty()
-        if (hasTooManyCalls || isMissingOuter) return "code mode accepts one outer custom call per round"
-        if (outer == null) return null
-        return when {
-            context.completed.any { it.origin.outerCallId == outer.callId } ->
-                "duplicate completed code-mode call id '${outer.callId}'"
-            config.bounds.maxRounds?.let { context.scripts >= it } == true -> "code-mode round limit exceeded"
-            else -> null
         }
     }
 
@@ -228,7 +205,7 @@ internal class CodexCodeModeDriver(
             context.completed += record
             context.recovery?.generated(success)
             val rewritten = continuation(context, record, state.body)
-            rewritten.error?.let { return accumulated.finishLocal(failure(it)) }
+            rewritten.error?.let { return accumulated.finishLocal(protocol.failure(it)) }
             state.body = checkNotNull(rewritten.body)
             accumulated.finish(post(context, null, state.body))
         }
@@ -254,12 +231,12 @@ internal class CodexCodeModeDriver(
         body: CodeModeBody,
         outcome: TurnOutcome.Success,
     ): Pair<CodeModeRecord?, TurnOutcome> {
-        validation.outer(outer)?.let { return null to failure(it) }
+        validation.outer(outer)?.let { return null to protocol.failure(it) }
         val record = factory.create(context, outer, body, outcome, sent.clientStart(context))
-            ?: return null to failure("code mode requires a Responses input array")
+            ?: return null to protocol.failure("code mode requires a Responses input array")
         record.postedOn = sent.newest(context.key)
         return if (!registry.add(record)) {
-            null to failure("code-mode registry capacity reached")
+            null to protocol.failure("code-mode registry capacity reached")
         } else {
             startRuntime(record, context)
         }
@@ -271,7 +248,7 @@ internal class CodexCodeModeDriver(
         val stream = streams.find(record)
         if (stream == null && record.sourceState?.itemComplete == false) {
             registry.lose(record, "upstream source state was lost; source was not rerun")
-            return failure(record.error.orEmpty())
+            return protocol.failure(record.error.orEmpty())
         }
         val (_, advanced) = startRuntime(record, context, stream)
         stream?.switching?.detach()
@@ -302,7 +279,7 @@ internal class CodexCodeModeDriver(
         record to failedStart(record, stream, error)
     } catch (_: IllegalArgumentException) {
         registry.lose(record, "code-mode runtime rejected its input; source was not rerun")
-        record to failure(record.error.orEmpty())
+        record to protocol.failure(record.error.orEmpty())
     } catch (_: RuntimeException) {
         record to starter.failed(record, null)
     }
@@ -313,20 +290,6 @@ internal class CodexCodeModeDriver(
         error: IOException,
     ): TurnOutcome =
         if (stream?.sourceInterrupted == true) stream.outcome() else starter.failed(record, error)
-
-    private fun failure(message: String): TurnOutcome.Failure =
-        TurnOutcome.Failure(
-            message,
-            traits = FailureTraits(deterministic = true),
-            // V4-117: every path through this helper is the code-mode machine reporting its own
-            // protocol state, so they share ONE cause rather than each borrowing an upstream one.
-            // The type PARAMETER this used to take is gone with the hand-picked type itself: the
-            // callers were choosing between INVALID_REQUEST and API_ERROR for the same cause, which
-            // is exactly the second author the derived type removes.
-            cause = FailureCause.CODE_MODE_PROTOCOL,
-            phase = FailurePhase.MID_OUTPUT,
-            salvagedUsage = noRequestUsage,
-        )
 }
 
 internal const val CODE_MODE_RECORD_LOG_CHARS: Int = 8

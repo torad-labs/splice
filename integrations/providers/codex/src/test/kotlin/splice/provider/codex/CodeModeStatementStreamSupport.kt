@@ -190,6 +190,11 @@ abstract class CodeModeStatementStreamSupport : CodeModeBridgeTestSupport() {
                 handoffs = RoundHandoffs(
                     reasoningEnvelopes = listOf(checkNotNull(ReasoningReplay.encodeReasoningEnvelope(reasoning))),
                     customCalls = listOf(completed),
+                    // The reasoning arrived after the sealed exec item. Preserve that output order like the dialect
+                    // snapshot does; a legacy envelope alone would incorrectly prepend it before the sealed item.
+                    nativePrefix = emptyList(),
+                    nativeAfterExec = listOf(reasoning),
+                    nativeOutput = listOf(completed.raw, reasoning),
                 ),
             )
         }

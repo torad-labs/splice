@@ -7,14 +7,16 @@ import splice.provider.codex.CodexCodeModeRegistry
 
 /** Explicit unstarted receipts are the only queued sources this owner is allowed to dispatch after restart. */
 internal class CodeModeBatchDispatch(private val registry: CodexCodeModeRegistry) {
-    fun start(record: CodeModeRecord, client: CodeModeClientStart?) {
+    fun start(record: CodeModeRecord, client: CodeModeClientStart?): Boolean {
         val batch = record.nativeBatch
-        if (record.dispatchStarted) return
+        if (record.dispatchStarted) return true
         check(batch == null || batch.ordinal == 0 || record.sourceState?.itemComplete == true) {
             "queued source did not complete"
         }
-        registry.changes.save(record) { it.phase = CodeModePhase.STARTING }
-        check(registry.add(record)) { "queued code-mode source cannot be admitted" }
+        if (!registry.startup.claim(record)) {
+            registry.lose(record, "code-mode runtime stopped during startup; source was not rerun")
+            return false
+        }
         val acknowledged = client?.takeIf { batch != null && batch.ordinal > 0 }
         registry.changes.save(record) {
             it.dispatchStarted = true
@@ -26,6 +28,7 @@ internal class CodeModeBatchDispatch(private val registry: CodexCodeModeRegistry
                 )
             }
         }
+        return true
     }
 
     fun next(record: CodeModeRecord): CodeModeRecord? {

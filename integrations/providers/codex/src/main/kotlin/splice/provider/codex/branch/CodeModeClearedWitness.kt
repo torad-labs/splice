@@ -11,9 +11,15 @@ import splice.provider.codex.CodeModePending
 import splice.provider.codex.CodeModeRecord
 import splice.provider.codex.CodeModeRunContext
 import splice.provider.codex.CodexCodeModeHistoryCodec
+import splice.provider.codex.history.CodeModeClientAcknowledgement
 import splice.upstream.codemode.CodeModeCall
 import java.security.MessageDigest
 import java.util.HexFormat
+
+/** Resolves only the durable pre-script post that owns an execution record. */
+internal fun interface CodeModePostedClientStart {
+    operator fun invoke(record: CodeModeRecord): CodeModeClientAcknowledgement?
+}
 
 /** Request-local proof. Only existing accepted bytes normalize the hash, never the outgoing request. */
 internal class CodeModeClearedWitness(
@@ -25,6 +31,7 @@ internal class CodeModeClearedWitness(
     private val input = context.client?.request?.second.orEmpty()
     private val codec = CodexCodeModeHistoryCodec(Json)
     private val items = input.dropWhile(codec::isPreamble)
+    private val baseline = CodeModeClearedBaseline(codec, items)
     private val calls = items.filterIsInstance<JsonObject>().filter { text(it, "type") == "function_call" }
         .groupBy { text(it, "call_id") }
     private val outputs = items.filterIsInstance<JsonObject>().filter { text(it, "type") == "function_call_output" }
@@ -40,15 +47,16 @@ internal class CodeModeClearedWitness(
     private val digest = MessageDigest.getInstance("SHA-256")
     private var count = 0
 
-    fun verify() {
-        rendering.verifiedCleared.clear()
+    fun verify() = verify { null }
+
+    fun verify(start: CodeModePostedClientStart) {
         if (rendering.clearedCallbacks.isEmpty()) return
         checkpoint()
         items.forEach { element ->
             val item = element as? JsonObject
             val id = item?.let { text(it, "call_id") }.orEmpty()
             when (item?.let { text(it, "type") }) {
-                "function_call" -> authorize(id)
+                "function_call" -> authorize(id, start)
                 "function_call_output" -> Unit
                 else -> Unit
             }
@@ -62,9 +70,18 @@ internal class CodeModeClearedWitness(
         }
     }
 
-    private fun authorize(id: String) {
+    private fun authorize(id: String, start: CodeModePostedClientStart) {
         val owner = owners[id]?.singleOrNull() ?: return
-        if (owner.id !in verified || owner.sessionId != context.turn.sessionId) return
+        val cleared = rendering.verifiedCleared.values.flatten().toSet()
+        val posted = if (owner.replayAnchors?.client?.acknowledgement == null &&
+            owner.accepted.clientOutputDigest(id) != null
+        ) {
+            start(owner)
+        } else {
+            null
+        }
+        val continued = owner.id in verified || baseline.matchesAcknowledgedStart(owner, id, cleared, posted)
+        if (!continued || owner.sessionId != context.turn.sessionId) return
         if (matches(owner, id)) authorized[id] = owner
     }
 

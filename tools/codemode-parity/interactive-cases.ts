@@ -4,12 +4,14 @@ import { resolve } from "node:path";
 import { interactiveScenario } from "./interactive-gateway";
 import { assertNativeTypedMedia, assertAcceptedCallbackText, assertInterruptedCallbackText } from "./interactive-output";
 import { assertNativeBatch, assertNativeRestartBatch, assertNativeOutOfOrderBatch } from "./interactive-batch";
+import { assertNativeSequential } from "./interactive-sequential";
 import { artifact, identity, type CaseEvidence, type CaseId } from "./qualification";
 
 const summary = "PROBE_READABLE_REASONING: inspect the callback file, then run the Bash tool exactly once.";
+const secondSummary = "PROBE_SECOND_REASONING: read the already accepted effect file from the new model round.";
 const envelope = "synthetic-probe-reasoning-envelope-not-a-real-credential";
 const final = "PROBE_FINISHED";
-type ScenarioName = "success" | "late-failure" | "native-lifecycle" | "restart" | "native-batch" | "native-batch-restart" | "native-batch-out-of-order";
+type ScenarioName = "success" | "late-failure" | "native-lifecycle" | "restart" | "native-batch" | "native-batch-restart" | "native-batch-out-of-order" | "native-sequential";
 async function allFiles(directory: string): Promise<string[]> {
   const result: string[] = [];
   for (const entry of await readdir(directory, { withFileTypes: true })) {
@@ -49,7 +51,8 @@ async function validate(result: any, root: string): Promise<void> {
   const frames = result.marks.filter((mark: any) => mark.event === "client_sse").map((mark: any) => mark.frame);
   const thinking = frames.filter((frame: any) => frame.type === "content_block_delta" && frame.delta?.type === "thinking_delta")
     .map((frame: any) => frame.delta.thinking).join("");
-  assert.equal(thinking, summary, "readable wire reasoning must preserve every character exactly once");
+  const expectedThinking = result.scenario === "native-sequential" ? summary + secondSummary : summary;
+  assert.equal(thinking, expectedThinking, "readable wire reasoning must preserve every character exactly once");
   assert.equal(frames.some((frame: any) => frame.content_block?.type === "redacted_thinking"), false);
   const transcriptFiles = (await allFiles(resolve(root, result.scenario, "claude", "projects"))).filter(path => path.endsWith(".jsonl"));
   const assistants = new Map<string, any>();
@@ -58,12 +61,13 @@ async function validate(result: any, root: string): Promise<void> {
     const row = JSON.parse(line); if (row.type === "assistant" && row.uuid) assistants.set(row.uuid, row);
   }
   const blocks = [...assistants.values()].flatMap(row => row.message?.content ?? []);
-  assert.equal(blocks.filter(block => block.type === "thinking").map(block => block.thinking ?? "").join(""), summary,
+  assert.equal(blocks.filter(block => block.type === "thinking").map(block => block.thinking ?? "").join(""), expectedThinking,
     "actual interactive client persisted duplicate or missing readable reasoning");
   assert.equal(blocks.some(block => block.type === "redacted_thinking"), false);
   assert.ok(blocks.some(block => block.type === "text" && block.text?.includes(final)));
   const terminalLog = await readFile(resolve(root, result.scenario, "client-terminal.log"), "utf8");
   assert.ok(terminalLog.includes(final)); assert.ok(terminalLog.includes(summary));
+  if (result.scenario === "native-sequential") assert.ok(terminalLog.includes(secondSummary));
   assert.ok(result.upstreamRequests.some((request: any) => request.nativeInput.some((item: any) => item.type === "reasoning" && item.encrypted_content === envelope)),
     "encrypted native reasoning must reach model history");
   assert.equal(frames.some((frame: any) => JSON.stringify(frame).includes(envelope)), false, "encrypted reasoning leaked to client output");
@@ -76,7 +80,7 @@ export async function runInteractiveCases(jar: string, evidence: string, runId: 
   const rawArtifacts: CaseEvidence["artifacts"] = [];
   rawArtifacts.push(await artifact("/home/marcos/.local/share/claude/versions/2.1.310"));
   const failures = new Map<ScenarioName, string>();
-  for (const name of ["success", "late-failure", "native-lifecycle", "restart", "native-batch", "native-batch-restart", "native-batch-out-of-order"] as const) {
+  for (const name of ["success", "late-failure", "native-lifecycle", "restart", "native-batch", "native-batch-restart", "native-batch-out-of-order", "native-sequential"] as const) {
     try {
       const result = await interactiveScenario(jar, name, root);
       const path = resolve(root, `${name}.observed.json`);
@@ -91,18 +95,21 @@ export async function runInteractiveCases(jar: string, evidence: string, runId: 
   for (const path of await allFiles(root)) rawArtifacts.push(await artifact(path));
   const record = (id: CaseId, names: ScenarioName[], check: () => void) => {
     const item = cases.find(candidate => candidate.id === id)!;
-    const previous = id === "history.restart" ? item.findings.filter(value => !value.startsWith("Provider components survived")) : [];
+    const previous = id === "history.restart" ? item.findings.filter(value => !value.startsWith("Provider components survived"))
+      : id === "history.append-only" ? item.findings : [];
     item.findings = [...previous, ...names.flatMap(name => failures.has(name) ? [`${name}: ${failures.get(name)}`] : [])];
     item.artifacts.push(...rawArtifacts);
     if (!item.findings.length) try { check(); } catch (error) { item.findings.push(error instanceof Error ? error.message : String(error)); }
     item.state = item.findings.length ? "failed" : "executed";
     console.log(`${item.state === "executed" ? "EXECUTED" : "UNQUALIFIED"} ${id}`);
   };
-  record("runtime.item-boundary", ["success", "late-failure", "native-batch", "native-batch-restart", "native-batch-out-of-order"], () => {
+  record("runtime.item-boundary", ["success", "late-failure", "native-batch", "native-batch-restart", "native-batch-out-of-order", "native-sequential"], () => {
     assertNativeBatch(results.get("native-batch")!);
     assertNativeOutOfOrderBatch(results.get("native-batch-out-of-order")!);
     assertNativeRestartBatch(results.get("native-batch-restart")!);
+    assertNativeSequential(results.get("native-sequential")!);
   });
+  record("history.append-only", ["native-sequential"], () => assertNativeSequential(results.get("native-sequential")!));
   record("delivery.readable-reasoning", ["success", "late-failure", "restart"], () => {});
   record("delivery.interactive-cadence", ["success", "native-lifecycle"], () => {
     const value = results.get("success")!;

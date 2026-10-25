@@ -52,6 +52,19 @@ A missing driver stays explicit in `verifiers.ts`; it cannot be waived by
 editing a receipt. Local sealing detects receipt edits; it is not an attestation
 against someone who can modify this checkout and its Git-private seal key.
 
+Qualification includes eight real interactive Claude client flows: success,
+late failure, native lifecycle, restart, three native batch variants, and one
+native sequential-script flow. The batch and sequential flows require real Bash and
+Read callbacks and preserved results. Gateway probes separately distinguish
+acknowledged replay from unknown reasoning and reject an unaccepted cleared
+result as authority. These are independent checks; a passing client flow does
+not prove that an older history bug was reproduced.
+
+Run the harness guard tests with `bun test tools/codemode-parity`. The normal
+push gate runs the same whole directory, including guards against incomplete
+replay, clearing, and interactive evidence. A green guard suite checks the
+verifier; the sealed candidate run still has to pass readiness.
+
 Post-install qualification additionally requires `--installed-pid`, `--host-pid`
 and `--jar-fd /proc/PID/fd/N`. The installed jar path alone is insufficient.
 Readiness is deliberately separate from the build gate so installation does not

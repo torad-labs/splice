@@ -11,6 +11,9 @@ internal class CodeModeGatewayBridgeSteering(private val fixture: CodeModeGatewa
             val scoped = CodeModeGatewayProbeSupport(fixture.nonce, directory)
             observed[kind] = CodeModeGatewayBridgeProbe(scoped).steering(kind)
         }
+        observed["replayOwnership"] = CodeModeGatewayReplayOwnership(
+            CodeModeGatewayProbeSupport(fixture.nonce, fixture.location.dir.parent.resolve("replayOwnership")),
+        ).run()
         return JsonObject(observed)
     }
 }

@@ -16,7 +16,7 @@
     "codemode:qualify": "bun tools/codemode-parity qualify",
     "codemode:attest-install": "bun tools/codemode-parity attest-install",
     "codemode:reference": "bun tools/codemode-parity/reference-suite.ts",
-    "test:codemode-qualification": "bun test tools/codemode-parity/qualification.test.ts",
+    "test:codemode-qualification": "bun test tools/codemode-parity",
     "e2e:heads": "bun tools/e2e heads",
     "e2e:heads:wire": "bun tools/e2e heads --tier 1",
     "e2e:docker": "bash tools/e2e/docker/run.sh",

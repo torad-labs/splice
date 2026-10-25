@@ -259,9 +259,9 @@ class CodexCodeModeStartupFailureTest : CodeModeBridgeTestSupport() {
         assertTrue(outcome is TurnOutcome.Failure)
         assertEquals(ErrorType.OVERLOADED, (outcome as TurnOutcome.Failure).type)
         assertFalse(outcome.traits.deterministic)
-        assertTrue(runtime.cell.closed)
         assertTrue(sink.tools.isEmpty())
         assertEquals("LOST", stateFiles.records().single().getValue("phase").jsonPrimitive.content)
+        assertTrue(active.startup.entries.isEmpty(), "a stopped admission cannot retain a dispatch ticket")
     }
 
     private suspend fun assertRetry(error: Exception, restore: Boolean = false) {

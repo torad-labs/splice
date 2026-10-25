@@ -12,6 +12,7 @@ internal object CodeModeClearedHistory {
         entry: CodeModeLedgerEntry,
         proof: CodeModeCallbackProof,
     ): List<JsonElement> {
+        if (received.none { cleared(it as? JsonObject) }) return received
         val outputs = CodeModeCallbackReceipts.items(entry.covered, "function_call_output")
         val calls = CodeModeCallbackReceipts.items(received, "function_call")
         val actual = CodeModeCallbackReceipts.items(received, "function_call_output")

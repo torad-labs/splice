@@ -140,11 +140,16 @@ function batchObservation() {
   ] }));
   outputs[0]!.output.push({ type: "input_text", text: "accepted" });
   outputs[1]!.output.push({ type: "input_text", text: "native-batch-second-epoch:1200" });
+  outputs[1]!.output.push({ type: "input_text", text: "effect-file:1100" });
   return { scriptAttempts: 1, callbackTimes: [1100], marks: [
     ...originals.map(item => ({ event: "upstream_sse", epochMs: 1000, frame: { type: "response.output_item.done", item } })),
-    { event: "batch_items_done", epochMs: 1000 }, { event: "client_callback_result_received", epochMs: 1150 },
+    { event: "batch_items_done", epochMs: 1000 },
+    { event: "client_sse", epochMs: 1050, frame: { type: "content_block_start", content_block: { type: "tool_use", name: "Bash", id: "callback-once" } } },
+    { event: "client_callback_result_received", epochMs: 1150, results: [{ tool_use_id: "callback-once", content: "accepted" }] },
+    { event: "client_sse", epochMs: 1175, frame: { type: "content_block_start", content_block: { type: "tool_use", name: "Read", id: "callback-read" } } },
+    { event: "client_callback_result_received", epochMs: 1190, results: [{ tool_use_id: "callback-read", content: "effect-file:1100" }] },
     { event: "response_completed_sent", epochMs: 3000 },
-  ], upstreamRequests: [{ nativeInput: [...originals, ...outputs] as any[] }] };
+  ] as any[], upstreamRequests: [{ nativeInput: [...originals, ...outputs] as any[] }] };
 }
 describe("qualification multi-item admission guard (not product parity)", () => {
   test("accepts both original items followed by their actual distinct completed outputs", () => {
@@ -179,6 +184,16 @@ describe("qualification multi-item admission guard (not product parity)", () => 
     const late = batchObservation(); late.callbackTimes = [3001];
     expect(() => assertNativeBatch(late)).toThrow();
   });
+  test("rejects a second script without its own actual Read callback and accepted file result", () => {
+    const missing = batchObservation(); missing.marks = missing.marks.filter(mark => mark.frame?.content_block?.name !== "Read");
+    expect(() => assertNativeBatch(missing)).toThrow();
+    const reused = batchObservation(); reused.marks.find(mark => mark.frame?.content_block?.name === "Read")!.frame!.content_block!.id = "callback-once";
+    expect(() => assertNativeBatch(reused)).toThrow();
+    const forged = batchObservation(); forged.marks.find(mark => mark.event === "client_callback_result_received" && mark.results?.[0]?.tool_use_id === "callback-read")!.results![0]!.content = "source contained tools.Read";
+    expect(() => assertNativeBatch(forged)).toThrow();
+    const dropped = batchObservation(); dropped.upstreamRequests[0]!.nativeInput[3].output.pop();
+    expect(() => assertNativeBatch(dropped)).toThrow();
+  });
 });
 
 function workerLossTrace(): TraceEvent[] {
@@ -209,9 +224,6 @@ describe("qualification worker-loss guard (not product parity)", () => {
 
 function restartBatchObservation() {
   const value = batchObservation();
-  value.marks.push({ event: "client_sse", frame: { type: "content_block_start", content_block: {
-    type: "tool_use", id: "callback-once", name: "Bash",
-  } } } as any);
   value.upstreamRequests[0]!.nativeInput[2].output = "Script terminated\nWall time 0.0 seconds\nOutput:\n" + JSON.stringify({
     status: "interrupted", sourceRerun: false, results: [{ id: "callback-once", output: "accepted", isError: false }], unresolved: [],
   });
@@ -242,10 +254,12 @@ function outOfOrderBatchObservation() {
     { event: "upstream_sse", epochMs: 900, frame: { type: "response.output_item.added", output_index: 0, item: input[1] } },
     { event: "upstream_sse", epochMs: 901, frame: { type: "response.output_item.added", output_index: 1, item: input[0] } },
     { event: "upstream_sse", epochMs: 1000, frame: { type: "response.output_item.done", output_index: 1, item: input[0] } },
-    { event: "client_sse", epochMs: 1050, frame: { type: "content_block_start", content_block: { type: "tool_use", name: "Bash" } } },
-    { event: "client_callback_result_received", epochMs: 1150 },
+    { event: "client_sse", epochMs: 1050, frame: { type: "content_block_start", content_block: { type: "tool_use", name: "Bash", id: "callback-once" } } },
+    { event: "client_callback_result_received", epochMs: 1150, results: [{ tool_use_id: "callback-once", content: "accepted" }] },
     { event: "upstream_sse", epochMs: 3000, frame: { type: "response.output_item.done", output_index: 0, item: input[1] } },
     { event: "batch_items_done", epochMs: 3000 },
+    { event: "client_sse", epochMs: 3100, frame: { type: "content_block_start", content_block: { type: "tool_use", name: "Read", id: "callback-read" } } },
+    { event: "client_callback_result_received", epochMs: 3150, results: [{ tool_use_id: "callback-read", content: "effect-file:1100" }] },
     { event: "response_completed_sent", epochMs: 5000 },
     { event: "upstream_sse", epochMs: 5000, frame: { type: "response.completed", response: { output: [input[1], input[0]] } } },
   ] as any;

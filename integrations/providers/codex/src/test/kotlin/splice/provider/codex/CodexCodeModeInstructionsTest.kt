@@ -53,7 +53,11 @@ class CodexCodeModeInstructionsTest : CodeModeBridgeTestSupport() {
                 val originalTools = namespace.members(before.first().jsonObject.getValue("tools").jsonArray)
                 val augmentedTools = namespace.members(after.first().jsonObject.getValue("tools").jsonArray)
                 // V4-388: the client tools leave the top level and are declared inside exec's manual.
-                val exec = augmentedTools.single().jsonObject
+                assertEquals(
+                    listOf("exec", "wait"),
+                    augmentedTools.map { it.jsonObject.getValue("name").jsonPrimitive.content },
+                )
+                val exec = augmentedTools.first().jsonObject
                 assertEquals("exec", exec.getValue("name").jsonPrimitive.content)
                 originalTools.forEach { tool ->
                     val name = tool.jsonObject.getValue("name").jsonPrimitive.content

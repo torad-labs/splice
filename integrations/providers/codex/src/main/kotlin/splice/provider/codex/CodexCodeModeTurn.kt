@@ -58,6 +58,8 @@ internal data class CodeModeRoundLink(
     val sink: WireSink,
     val post: CodeModeUpstreamPost,
     var client: CodeModeBody? = null,
+    /** Delivery already recorded when this request began; copies attaching a resumed sink keep it. */
+    var priorDeliveryCounts: Map<String, Int> = emptyMap(),
 )
 
 /**
@@ -132,10 +134,14 @@ internal class CodexCodeModeTurn(
         body: CodeModeBody,
     ): TurnOutcome {
         notes.announce(context)
+        val records = registry.recordsFor(context.key)
+        context.turn.rendering.verifiedCleared.clear()
+        driver.sent.acknowledgeCleared(context, records)
         val conflicts = branch.conflictingRecords(context)
         context.conflicts = conflicts
         context.completed += registry.completed(context.key).filterNot { it.id in conflicts }
-        val extended = driver.sent.extend(context, registry.recordsFor(context.key))
+        driver.sent.begin(context, records)
+        val extended = driver.sent.extend(context, records)
         return extended?.let { extended(context, initialOuter, it) } ?: ordinary(context, initialOuter, body)
     }
 

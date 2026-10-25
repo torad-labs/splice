@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { createHash } from "node:crypto";
 import { mkdir, readdir, writeFile } from "node:fs/promises";
 import { resolve } from "node:path";
 import { artifact, type CaseEvidence, type CaseId } from "./qualification";
@@ -27,6 +28,101 @@ function validateHistory(observed: any, nonce: string): void {
   assert.deepEqual(observed.nextClient, [user(`begin-${nonce}`), assistant("Same words. Same words."), user(`next-${nonce}`)]);
   assert.deepEqual(observed.nextModelInput, nextModel(nonce), "merged display text must acknowledge exact native items without reconstructing them");
 }
+/** Each classifier result must carry the raw request and its persisted callback/reasoning ownership witnesses. */
+export function assertReplayOwnership(observed: any, nonce: string): void {
+  const variants = ["callbackOnly", "unknownReasoningBeforeOwnedCallback", "deliveredReasoningWithValidatedDeclaration", "unknownReasoningWithDeclaration"];
+  assert.ok(observed && typeof observed === "object");
+  assert.deepEqual(Object.keys(observed).sort(), ["schema", "baseline", ...variants].sort());
+  assert.equal(observed.schema, 1);
+  const callback = (id: string) => [
+    { type: "function_call", call_id: id, name: "Read", arguments: "{}" },
+    { type: "function_call_output", call_id: id, output: `result-${nonce}` },
+  ];
+  const historical = native(nonce)[0];
+  const baseline = [user(`begin-${nonce}`), ...callback("old"), historical, user(`continue-${nonce}`)];
+  const digest = (item: unknown) => createHash("sha256").update(JSON.stringify(item)).digest("hex");
+  assert.deepEqual(observed.baseline, baseline);
+  const added = { type: "reasoning", id: `rs-added-${nonce}`, summary: [], encrypted_content: `opaque-added-${nonce}` };
+  const declarationId = `ts_decl_replay-${nonce}`;
+  const declaration = [added,
+    { type: "tool_search_call", call_id: declarationId, execution: "client", arguments: { query: "Read" } },
+    { type: "tool_search_output", call_id: declarationId, execution: "client", tools: [
+      { type: "function", name: "Read", parameters: { type: "object" } },
+    ] },
+  ];
+  for (const kind of variants) {
+    const value = observed[kind];
+    assert.ok(value && typeof value === "object", `${kind}: actual classifier observation missing`);
+    assert.deepEqual(Object.keys(value).sort(), ["classification", "input", "record", "projection"].sort());
+    const delivered = kind === "deliveredReasoningWithValidatedDeclaration";
+    const extra = kind === "callbackOnly" ? [] : kind === "unknownReasoningBeforeOwnedCallback" ? [added] : declaration;
+    assert.equal(value.classification, kind === "callbackOnly" || delivered ? "NONE" : "STEERING", `${kind}: production replay ownership classification`);
+    assert.deepEqual(value.input, [...baseline, ...extra, ...callback("one"), ...callback("two")], `${kind}: raw classifier input`);
+    const record = value.record;
+    assert.ok(record && typeof record === "object", `${kind}: reloaded durable record missing`);
+    assert.equal(record.id, `record-${nonce}`); assert.equal(record.key, `parity-${nonce}`);
+    assert.equal(record.outerCallId, `exec-${nonce}`); assert.equal(record.source, "source");
+    assert.equal(record.baselineLogicalCount, 1, `${kind}: model baseline must differ from the acknowledged client boundary`);
+    assert.deepEqual(record.issued.flatMap((step: any) => step.calls).map((call: any) => [call.clientId, call.runtimeId, call.name, call.arguments]),
+      [["one", "one", "Read", {}], ["two", "two", "Read", {}]]);
+    assert.deepEqual(record.pending.map((call: any) => call.clientId), ["one", "two"]);
+    assert.deepEqual(Object.keys(record.results).sort(), ["one", "two"]);
+    for (const id of ["one", "two"]) {
+      assert.equal(record.results[id].output, `result-${nonce}`); assert.equal(record.results[id].isError, false);
+    }
+    assert.deepEqual(record.nativeSegments.flatMap((segment: any) => segment.items), [historical]);
+    assert.deepEqual(record.continuity, []); assert.deepEqual(record.continuityReplay, []);
+    assert.deepEqual(record.issued.flatMap((step: any) => step.deliveredNative ?? []), delivered ? [added] : [], `${kind}: exact delivered reasoning witness`);
+    const acknowledged = record.replayAnchors?.client?.acknowledgement;
+    assert.deepEqual(acknowledged?.items?.map((item: any) => [item.digest, item.callbackId]),
+      [baseline[0], baseline[1], baseline[2], baseline[4]].map((item: any) => [digest(item), item.type === "function_call_output" ? "old" : null]),
+      `${kind}: durable acknowledgement must identify the exact wider client baseline`);
+    assert.deepEqual(acknowledged?.native, [digest({ type: "reasoning", id: `rs-${nonce}` })]);
+    assert.equal(record.replayAnchors.client.count, baseline.length);
+    assert.equal(record.replayAnchors.client.digest,
+      createHash("sha256").update(baseline.map(digest).join("")).digest("hex"));
+    const projection = [{ logicalOffset: 3, items: [historical] },
+      ...(extra.length ? [{ logicalOffset: 4, callbackId: "one", items: extra }] : [])];
+    assert.deepEqual(value.projection, projection, `${kind}: validated declaration must bind to the owned Read callback`);
+  }
+}
+/** A clear marker on a callback the old durable branch never issued cannot recover that branch's native source. */
+export function assertUnacceptedClear(observed: any, nonce: string): void {
+  assert.ok(observed && typeof observed === "object", "unaccepted-clear production observation missing");
+  assert.deepEqual(Object.keys(observed).sort(), ["clientInput", "postedInput", "beforeRecords", "afterRecords", "callbackId", "oldRecordId", "oldOuterCallId"].sort());
+  assert.equal(observed.callbackId, `toolu_splice_unaccepted-clear-${nonce}`);
+  assert.equal(observed.oldOuterCallId, `outer-${nonce}`);
+  assert.ok(typeof observed.oldRecordId === "string" && observed.oldRecordId.length > 0);
+  assert.ok(Array.isArray(observed.beforeRecords) && observed.beforeRecords.length > 0);
+  assert.ok(Array.isArray(observed.afterRecords));
+  const authority = (records: any[]) => records.map(({ updatedAt, ...record }) => record);
+  assert.deepEqual(authority(observed.afterRecords), authority(observed.beforeRecords),
+    "unaccepted clear must retain original durable branch authority unchanged");
+  observed.beforeRecords.forEach((record: any, index: number) => {
+    const after = observed.afterRecords[index];
+    assert.ok(Number.isFinite(record.updatedAt) && Number.isFinite(after.updatedAt) && after.updatedAt >= record.updatedAt,
+      "request touch must retain a monotonic numeric timestamp");
+  });
+  const old = observed.beforeRecords.filter((record: any) => record.id === observed.oldRecordId);
+  assert.equal(old.length, 1); assert.equal(old[0].outerCallId, observed.oldOuterCallId);
+  assert.ok(typeof old[0].source === "string" && old[0].source.length > 0);
+  for (const record of observed.beforeRecords) {
+    const owned = [...Object.keys(record.results), ...record.pending.map((call: any) => call.clientId),
+      ...record.issued.flatMap((step: any) => step.calls.map((call: any) => call.clientId))];
+    assert.equal(owned.includes(observed.callbackId), false, "claimed unaccepted callback was actually owned by retained source");
+  }
+  const packets = (input: any) => {
+    assert.ok(Array.isArray(input));
+    return input.filter((item: any) => item.call_id === observed.callbackId);
+  };
+  const original = packets(observed.clientInput);
+  assert.equal(original.length, 2, "raw unaccepted callback call/result pair missing or duplicated");
+  assert.equal(original[0].type, "function_call"); assert.equal(original[0].name, "Read");
+  assert.deepEqual(original[1], { type: "function_call_output", call_id: observed.callbackId, output: "[Old tool result content cleared]" });
+  assert.deepEqual(packets(observed.postedInput), original, "unknown callback and actual clear marker must remain raw upstream");
+  assert.equal(observed.postedInput.some((item: any) => item.call_id === observed.oldOuterCallId), false,
+    "unaccepted callback resurrected the old source or its output");
+}
 const drivers: Array<{ id: CaseId; phases: string[]; fullFamily: boolean; validate(values: Observation[], nonce: string): void }> = [
   { id: "history.append-only", phases: ["single"], fullFamily: true, validate(values, nonce) { validateHistory(values[0]!.observed, nonce); } },
   { id: "history.replay-is-not-steering", phases: ["single"], fullFamily: true, validate(values, nonce) {
@@ -47,6 +143,7 @@ const drivers: Array<{ id: CaseId; phases: string[]; fullFamily: boolean; valida
   } },
   { id: "history.real-steering", phases: ["single"], fullFamily: true, validate(values, nonce) {
     const observed = values[0]!.observed;
+    assertReplayOwnership(observed.replayOwnership, nonce);
     assert.ok(observed.newUser.postedInput.some((item: any) => item.role === "user" && item.content === `steer-${nonce}`));
     assert.ok(JSON.stringify(observed.newUser.records).includes("Script terminated"), "real new user steering must interrupt the pending source");
     const edited = observed.editedOldResult;
@@ -77,6 +174,7 @@ const drivers: Array<{ id: CaseId; phases: string[]; fullFamily: boolean; valida
   } },
   { id: "history.cleared-results", phases: ["single"], fullFamily: true, validate(values, nonce) {
     const observed = values[0]!.observed;
+    assertUnacceptedClear(observed.unacceptedClear, nonce);
     assert.deepEqual(observed.postedInput, [...observed.canonical, user(`continue-${nonce}`)]);
     assert.ok(observed.canonical.some((item: any) => item.type === "reasoning" && item.encrypted_content === `opaque-${nonce}`));
     assert.ok(observed.canonical.some((item: any) => item.type === "custom_tool_call" && item.call_id === `outer-${nonce}`));

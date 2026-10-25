@@ -5,7 +5,7 @@
       "task": "codeModeQualificationGuards",
       "inputs": ["tools/codemode-parity/**", "package.json"],
       "why": "Negative probes prevent a smoke subset, removed/duplicate/skipped case, mismatched executable, stale evidence, edited raw artifact or asserted PASS from becoming full code-mode qualification. This validates the qualification mechanism; actual product parity remains the separate all-family post-install readiness command, which also checks the running daemon's open jar and native executable.",
-      "command": ["bun", "test", "tools/codemode-parity/qualification.test.ts"]
+      "command": ["bun", "test", "tools/codemode-parity"]
     },
     {
       "task": "gateRules",

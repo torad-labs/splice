@@ -1,12 +1,16 @@
 // NEW: request-local native rejection evidence and shared history log context, never journal state.
 package splice.provider.codex.state.diagnostics
 
+import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonObject
 import splice.core.util.JsonScalars
 import splice.dialect.responses.request.ResponsesCodeModeInput
+import splice.provider.codex.CODE_MODE_FIELD_ROLE
+import splice.provider.codex.CODE_MODE_FIELD_TYPE
 import splice.provider.codex.CODE_MODE_RECORD_LOG_CHARS
 import splice.provider.codex.CodeModeNativeSegment
 import splice.provider.codex.CodeModeRecord
+import splice.provider.codex.CodexCodeModeHistoryCodec
 import splice.provider.codex.state.CodeModeHistoryIndex
 
 internal enum class CodeModeNativeBranch(val wire: String) {
@@ -122,7 +126,7 @@ internal object CodeModeNativeEvidenceCapture {
         "function_call" -> "function_call"
         "function_call_output" -> "function_call_output"
         "message" -> "message"
-        else -> if (item == null) "unknown" else "other"
+        else -> if (item == null) "unknown" else OTHER_ITEM_KIND
     }
 }
 
@@ -137,7 +141,25 @@ private const val UNAVAILABLE_EVIDENCE = "native_owner_depth=none native_bounds_
     "native_witness_source=none native_witness_kind=unknown native_witness_resolved=false " +
     "native_expected_occurrences=none native_actual_occurrences=none"
 
+// Unrecognized item kinds and roles share this log-safe label; their payloads never enter diagnostics.
+private const val OTHER_ITEM_KIND = "other"
+
 internal object CodeModeHistoryLog {
+    fun extraItemKind(element: JsonElement, codec: CodexCodeModeHistoryCodec): String {
+        val item = element as? JsonObject ?: return OTHER_ITEM_KIND
+        val type = codec.string(item, CODE_MODE_FIELD_TYPE)
+        return when (type) {
+            "", "message" -> {
+                val roles = setOf("user", "assistant", "developer", "system")
+                val role = codec.string(item, CODE_MODE_FIELD_ROLE).takeIf { it in roles } ?: OTHER_ITEM_KIND
+                val phase = codec.string(item, "phase").takeIf { it in setOf("commentary", "final_answer") }
+                "msg:$role${phase?.let { "/$it" }.orEmpty()}"
+            }
+            "function_call", "function_call_output", "custom_tool_call", "custom_tool_call_output" -> type
+            else -> OTHER_ITEM_KIND
+        }
+    }
+
     fun context(record: CodeModeRecord, rejection: CodeModeNativeRejection?): String {
         val session = record.sessionId?.take(CODE_MODE_RECORD_LOG_CHARS) ?: "none"
         val evidence = rejection?.evidence?.logFields() ?: UNAVAILABLE_EVIDENCE

@@ -35,6 +35,14 @@ internal class CodeModeStartupAdmissions(
         }
     }
 
+    /** Sealing an admitted item preserves its original stop generation; only a queued item needs a new ticket. */
+    fun claim(record: CodeModeRecord): Boolean = access.withKey(record.key) {
+        if (record !in records || record.error != null) return@withKey false
+        entries[record.id]?.let { return@withKey it == generation }
+        if (record.phase != CodeModePhase.STARTING) return@withKey false
+        dispatch(record)
+    }
+
     private fun dispatch(record: CodeModeRecord): Boolean {
         val admittedGeneration = generation
         record.phase = CodeModePhase.LOST

@@ -23,6 +23,7 @@ import splice.upstream.RoundBodyPost
 import splice.upstream.RoundInterceptor
 import splice.upstream.RoundResult
 import splice.upstream.sse.WireSink
+import splice.upstream.transport.UpstreamEnding
 
 internal class CodeModeRoundInterceptor(
     private val turn: CodexCodeModeBridge.Turn,
@@ -45,8 +46,9 @@ internal class CodeModeRoundInterceptor(
 
     /** The round as the head holds it: a tree is read as that tree, so nothing renders or reparses it here. */
     override suspend fun intercept(body: RoundBody, sink: WireSink, postRound: InterceptedRoundPost): RoundResult {
-        val upstream = CodeModeUpstreamPosts.of(postRound, wire)
         val slot = CodeModeEndingSlot()
+        // Detached readers record through this reference; the context element still covers in-context layers.
+        val upstream = CodeModeUpstreamPosts.of(postRound, wire, slot)
         val outcome = withContext(slot) {
             controller.run(
                 CodeModeRunInput(turn, initialOuter, disableParallel, wire.body(body), sink, upstream, recovery),
@@ -65,18 +67,35 @@ internal class CodeModeRoundInterceptor(
 
 /** The code-mode post for a round post: redirectable when the transport can redirect it, plain otherwise. */
 internal object CodeModeUpstreamPosts {
-    fun of(post: InterceptedRoundPost, wire: CodexCodeModeWire): CodeModeUpstreamPost =
-        if (post is RedirectableRoundPost) CodeModeRedirectablePost(post, wire) else CodeModeUpstreamPost(post, wire)
+    fun of(
+        post: InterceptedRoundPost,
+        wire: CodexCodeModeWire,
+        slot: CodeModeEndingSlot? = null,
+    ): CodeModeUpstreamPost =
+        if (post is RedirectableRoundPost) {
+            CodeModeRedirectablePost(post, wire, slot)
+        } else {
+            CodeModeUpstreamPost(post, wire, slot)
+        }
 }
 
 /** How a code-mode round goes upstream: what it posts leaves out the dialect's tool_search pairs, and the
  *  turn's perf record rides through, so code mode's local work counts on the turn it serves. A post that
- *  declares RoundBodyPost is handed the body as it is; any other is handed its text. */
+ *  declares RoundBodyPost is handed the body as it is; any other is handed its text.
+ *
+ *  [endings] is the intercepted turn's ending slot: detached reader coroutines do not carry the
+ *  interceptor's withContext element, so whichever layer meets an UpstreamEnding records it here. */
 internal open class CodeModeUpstreamPost(
     private val target: InterceptedRoundPost,
-    private val wire: CodexCodeModeWire,
+    protected val wire: CodexCodeModeWire,
+    val endings: CodeModeEndingSlot? = null,
 ) {
     val perf: TurnPerf? get() = target.perf
+
+    /** The upstream ended this post without an outcome: hand it to the turn that wraps this dispatch. */
+    fun record(ending: UpstreamEnding) {
+        endings?.record(ending)
+    }
 
     suspend fun canonicalize(
         body: CodeModeBody,
@@ -91,7 +110,10 @@ internal open class CodeModeUpstreamPost(
         val posted = wire.upstream(body)
         return when (val result = if (target is RoundBodyPost) target.post(posted) else target(posted.text)) {
             is RoundResult.Outcome -> result.outcome
-            is RoundResult.Ended -> CodeModeEndings.settle(result.ending)
+            is RoundResult.Ended -> {
+                record(result.ending)
+                CodeModeEndings.placeholder()
+            }
         }
     }
 }
@@ -99,8 +121,9 @@ internal open class CodeModeUpstreamPost(
 /** The same for a post the transport can redirect, so a script can park while its round streams on. */
 internal class CodeModeRedirectablePost(
     private val target: RedirectableRoundPost,
-    private val wire: CodexCodeModeWire,
-) : CodeModeUpstreamPost(target, wire) {
+    wire: CodexCodeModeWire,
+    slot: CodeModeEndingSlot? = null,
+) : CodeModeUpstreamPost(target, wire, slot) {
     /** The posting turn's row, for a round still streaming when that turn returns. */
     val postingRow: PostingTurnRow? get() = target.postingRow
 

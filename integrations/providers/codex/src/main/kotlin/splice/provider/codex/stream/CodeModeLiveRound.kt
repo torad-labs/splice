@@ -119,7 +119,7 @@ internal class CodeModeLiveRound(
         finished = scope.async(start = CoroutineStart.UNDISPATCHED) {
             switching.ownedBy(this)
             try {
-                settleRead(post.into(body, switching))
+                settleRead(post, post.into(body, switching))
             } catch (error: CancellationException) {
                 readerOutcomes.cancelled(error)
                 throw error
@@ -141,18 +141,25 @@ internal class CodeModeLiveRound(
         }
     }
 
-    /** What the reader's post gave: an outcome the source finishes on, or an upstream ending the turn ends on. */
-    private suspend fun settleRead(posted: RoundResult): TurnOutcome = when (posted) {
-        is RoundResult.Ended -> ended(posted.ending)
-        is RoundResult.Outcome -> {
-            upstreamEnded = true
-            lifecycle.delivered(switching.confirmedText())
-            val result = readerOutcomes.finish(posted.outcome)
-            beforeSettle?.run()
-            billing.settle(readerEnd = false, clientCut = cut.client)
-            result
+    /** What the reader's post gave: an outcome the source finishes on, or an upstream ending the turn ends on.
+     *  A streamed round meets its ending through this reader path, so it records the intercepted turn's slot here,
+     *  the same settlement a non-streamed post does at CodeModeUpstreamPost.invoke — otherwise the continuation
+     *  refusal of a script leaves as an internal Outcome and the head never sees the real ending. */
+    private suspend fun settleRead(post: CodeModeRedirectablePost, posted: RoundResult): TurnOutcome =
+        when (posted) {
+            is RoundResult.Ended -> {
+                post.record(posted.ending)
+                ended(posted.ending)
+            }
+            is RoundResult.Outcome -> {
+                upstreamEnded = true
+                lifecycle.delivered(switching.confirmedText())
+                val result = readerOutcomes.finish(posted.outcome)
+                beforeSettle?.run()
+                billing.settle(readerEnd = false, clientCut = cut.client)
+                result
+            }
         }
-    }
 
     /** The upstream ended the source post without an outcome (the retry loop gave up on it, it had no credentials, it
      *  tore, or sent a frame over the limit). That ending is the client turn's ending, classified where a plain turn's

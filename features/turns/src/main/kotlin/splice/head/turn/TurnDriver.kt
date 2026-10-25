@@ -26,6 +26,7 @@ import splice.head.HeadHealthCounts
 import splice.head.admission.LocalRefusal
 import splice.head.admission.LocalResponses
 import splice.head.compaction.CompactionReplay
+import splice.head.transport.CredentialHolds
 import splice.head.transport.SseRoundConsume
 import splice.head.transport.SseRoundDriver
 import splice.head.transport.SseRoundPost
@@ -78,6 +79,7 @@ internal class TurnDriver(
             },
             answerObserver = TurnStreamAnswers(deps.stores.usageStore),
             clock = splice.core.util.WallClock(System::currentTimeMillis),
+            holds = CredentialHolds { headers, carrier -> deps.traffic.upstream.credentialCooldown(headers, carrier) },
         ),
         SseRoundPost(
             provider,

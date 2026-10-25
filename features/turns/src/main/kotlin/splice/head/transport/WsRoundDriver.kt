@@ -8,7 +8,8 @@
 // the client saw content. Nothing here can produce a client-visible failure the SSE path would not
 // have produced (NEVER-BELOW-STATUS-QUO), and SSE keeps sole ownership of retry, the single-flight
 // 401 refresh and the shared 429 cooldown, which live in UpstreamClient and are deliberately NOT
-// reimplemented here.
+// reimplemented here. A round the upstream answers (response.created) only reports that answer to
+// its credential's hold, as an HTTP answer does, so a plan hold ends whichever transport answered.
 package splice.head.transport
 
 import kotlinx.coroutines.CompletableJob
@@ -36,9 +37,10 @@ internal class WsRoundDriver(
     classifyZeroEvent: ZeroEventClassifier,
     answerObserver: StreamAnswerObserver = StreamAnswerObserver { _, _, _, _ -> },
     clock: WallClock = WallClock(System::currentTimeMillis),
+    holds: CredentialHolds = CredentialHolds { _, _ -> null },
 ) {
     private val roundDrive = WsRoundDrive(provider, classifyZeroEvent)
-    private val roundAcquire = WsRoundAcquire(provider, answerObserver, clock)
+    private val roundAcquire = WsRoundAcquire(provider, answerObserver, clock, holds)
 
     /** Run the round, or null to fall through to the SSE path. */
     suspend fun run(inputs: WsRoundInputs): TurnOutcome? {

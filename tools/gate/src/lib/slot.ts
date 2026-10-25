@@ -9,8 +9,8 @@
 //   - the holder file is written BEFORE any JVM starts; legacy runs remove it under the lock (:33-34);
 //     joint runs write it only after host admission and trust it only while that host holds the lock;
 //   - `buildgate` is this MACHINE's containment wrapper, absent on CI, so it is guarded (:37-42);
-//   - `--offline` is a local nicety and a lie on CI, where the restored cache is always one
-//     dependency bump behind the tree (:43-50);
+//   - no run is `--offline` (2026-10-25): the script's local nicety failed every build here once Gradle's
+//     30-day cleanup deleted POMs no build had re-read, since an offline run cannot fetch them again;
 //   - gradle's exit status propagates, and the release line reports it (:57-68);
 //   - a signal reaches the WRAPPER, not only the process group: `kill <pid>` on the gate is how a
 //     seat, a CI cancel and a supervisor all stop a run, and the shell script dies of it in
@@ -327,8 +327,10 @@ function spawnGradle(
   // exported in a seat's shell outlives the run that set it, and a marker naming a dead process is
   // ignored by the wrapper (see its own note), so the stale case routes instead of slipping through.
   childEnv.SPLICE_GRADLE_SLOT = `${label}:${process.pid}`;
-  // `-n "${CI:-}"` in the script: an empty CI is not CI.
-  const offline = childEnv.CI ? [] : ["--offline"];
+  // No `--offline`, locally or on CI. Gradle's cache cleanup deletes a dependency's POM after 30 days without a
+  // read (a configuration-cache hit reads none) while its jar stays, and an offline run cannot fetch it again:
+  // dependency verification then failed every local build on 2026-10-25 until ~600 POMs were refetched by hand.
+  // With pinned versions an online run asks a repository only for a file the cache no longer has.
   // Projects build in parallel on CI only. The runner is the job's alone; on this box the slot's JVMs
   // run in buildgate.slice, which hostshield makes earlyoom's first victim, so here one project at a time.
   // The pre-push tree is the exception: its longest tasks (the app and turns test suites, then the kover and detekt
@@ -344,7 +346,7 @@ function spawnGradle(
   if (!existsSync(gradlew)) throw new Error(`gate: no gradle wrapper at ${gradlew}`);
   // Locally the daemon stays warm inside the gate (heap, metaspace and Kotlin-daemon caps live in gradle.properties); CI is one build per runner.
   const daemon = childEnv.CI ? ["--no-daemon"] : localDaemon(label);
-  const gradleArgs = [...offline, ...parallel, ...daemon, ...args];
+  const gradleArgs = [...parallel, ...daemon, ...args];
   let argv = buildgate ? [buildgate, gradlew, ...gradleArgs] : [gradlew, ...gradleArgs];
   if (buildgate && admission) {
     childEnv.BUILDGATE_LOCK = admission.lock;

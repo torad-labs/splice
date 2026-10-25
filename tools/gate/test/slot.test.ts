@@ -137,10 +137,14 @@ describe("the gradle slot", () => {
     expect(await runUnderSlot({ layout: fake.layout, label: "red", args: ["check"], env: { CI: "1", PATH: fake.path } })).toBe(7);
   });
 
-  test("--offline is a local nicety and is dropped on CI", async () => {
+  // 2026-10-25 (Marcos: "let's fix the gradle cache issue"): Gradle's 30-day cache cleanup deletes a dependency's
+  // POM that no build re-read while its jar stays, and an --offline run cannot fetch it again, so dependency
+  // verification failed every local build until someone refetched ~600 POMs by hand. Every run, local or CI, lets
+  // Gradle download what its cache lost; with pinned versions it touches the network only for a missing file.
+  test("a local run lets Gradle download a dependency file its cache cleanup removed, as CI does", async () => {
     const local = fakeBuildRoot();
     await runUnderSlot({ layout: local.layout, label: "local", args: ["help"], env: { CI: "", PATH: local.path } });
-    expect(readFileSync(local.receipt, "utf8")).toContain("ARGS:--offline ");
+    expect(readFileSync(local.receipt, "utf8")).not.toContain("--offline");
     const ci = fakeBuildRoot();
     await runUnderSlot({ layout: ci.layout, label: "ci", args: ["help"], env: { CI: "true", PATH: ci.path } });
     expect(readFileSync(ci.receipt, "utf8")).not.toContain("--offline");
@@ -166,7 +170,7 @@ describe("the gradle slot", () => {
   test("--parallel is CI's and the pre-push tree's: every other local build runs one project at a time", async () => {
     const local = fakeBuildRoot();
     await runUnderSlot({ layout: local.layout, label: "local", args: ["help"], env: { CI: "", PATH: local.path } });
-    expect(readFileSync(local.receipt, "utf8")).toContain("ARGS:--offline ");
+    expect(readFileSync(local.receipt, "utf8")).not.toContain("--parallel");
     const ci = fakeBuildRoot();
     await runUnderSlot({ layout: ci.layout, label: "ci", args: ["help"], env: { CI: "true", PATH: ci.path } });
     expect(readFileSync(ci.receipt, "utf8")).toContain("ARGS:--parallel --no-daemon help");
@@ -542,7 +546,7 @@ try {
     expect(hostArgv.slice(0, 3)).toEqual(["--exclusive", "--joint", join(real.repoRoot, "tools/gate/bin/gradlew")]);
     expect(hostArgv.slice(-args.length)).toEqual(args);
     const wrapped = readFileSync(join(fake.dir, "real-argv"), "utf8").split("\0").slice(0, -1);
-    expect(wrapped[0]).toBe("--offline");
+    expect(wrapped).not.toContain("--offline");
     expect(wrapped.slice(-args.length)).toEqual(args);
     expect(readFileSync(fake.receipt, "utf8")).toMatch(/^admitted pid=\d+ since=/);
   });

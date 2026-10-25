@@ -15,13 +15,15 @@ package splice.app.provider
 import splice.accounts.claude.ClaudeLoginPlacesSource
 import splice.app.auth.claude.ClaudeAccountFolders
 import splice.app.auth.claude.ClaudeFolderAuth
-import splice.app.auth.claude.ClaudeLoginHeaders
 import splice.app.auth.claude.ClaudeOAuthRefresh
 import splice.app.auth.claude.ClaudeTokenRefresh
 import splice.app.auth.claude.OWN_SIGN_IN_LABEL
+import splice.core.auth.Credentials
 import splice.core.auth.RefreshableAuthProvider
 import splice.core.config.StatePaths
 import splice.core.util.LogSink
+import splice.upstream.CredentialHeaders
+import splice.usage.quota.CLAUDE_OAUTH_BETA
 
 internal class ClaudeAccountWiring(
     private val statePaths: StatePaths,
@@ -65,6 +67,15 @@ internal class ClaudeAccountWiring(
             )
         }
     }
+}
+
+/** The headers a login splice holds for a Claude head adds to each turn it carries (LAN share,
+ *  docs/specs/lan-share.md). A held login is an OAuth login, and Anthropic serves one only on a request that names the
+ *  OAuth beta. A caller signed in with OAuth names it itself; a node's Claude Code, launched on a word that is no
+ *  login, names none. So the held login names it, beside the caller's own flags (ListValuedHeaders joins the lists). */
+internal object ClaudeLoginHeaders : CredentialHeaders {
+    override suspend fun invoke(credentials: Credentials): Map<String, String> =
+        mapOf("anthropic-beta" to CLAUDE_OAUTH_BETA)
 }
 
 // why: each added account's quota snapshot lives beside its own credential, so no two logins share a window and

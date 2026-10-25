@@ -53,34 +53,27 @@ internal class RemoteCommand(
         val added = RemoteAdd(out, err, file, directory, relays).add(rest[0], if (named) rest[2] else null)
             ?: return PeerExit.REFUSED
         // Every command is linked, even after one is refused, so each refusal is said.
-        val whole = added.commands.map { link(it, added.machine, added.topology) }.all { it } && added.complete
+        val whole = added.commands.map { link(it, added.machine) }.all { it } && added.complete
         val followed = restart.followed(added.topology)
         return if (followed && whole) PeerExit.DONE else PeerExit.REFUSED
     }
 
-    /** [command]'s link, to the launch shim as every command's is; false, said, when it was not made. `claude` keeps
-     *  Claude Code's own link: the wrapped `claude` reaches its remote (Topology.remoteLinks). */
-    private fun link(command: String, machine: String, topology: Topology): Boolean {
-        if (command !in topology.remoteLinks) {
-            out.line("$GREEN✓$RESET $CYAN$command$RESET runs on $machine while splice wraps it")
-            return true
+    /** [command]'s link, to the launch shim as every command's is; false, said, when it was not made. */
+    private fun link(command: String, machine: String): Boolean = when (val linked = install.install(command, env)) {
+        is InstallResult.Refused -> {
+            err.line("$REMOTE_VERB: ${linked.sentence}")
+            false
         }
-        return when (val linked = install.install(command, env)) {
-            is InstallResult.Refused -> {
-                err.line("$REMOTE_VERB: ${linked.sentence}")
-                false
-            }
-            InstallResult.Declined -> false
-            InstallResult.Linked -> {
-                out.line("$GREEN✓$RESET $CYAN$command$RESET runs on $machine")
-                true
-            }
+        InstallResult.Declined -> false
+        InstallResult.Linked -> {
+            out.line("$GREEN✓$RESET $CYAN$command$RESET runs on $machine")
+            true
         }
     }
 
     private fun remove(command: String): Int {
         val topology = file.loaded()?.takeIf { remote(it, command) } ?: return PeerExit.REFUSED
-        if (command in topology.remoteLinks) install.uninstall(command, env)
+        install.uninstall(command, env)
         val wanted = topology.copy(remote = topology.remote - command)
         if (!file.saved(wanted)) return PeerExit.REFUSED
         out.line("$GREEN✓$RESET $command no longer runs on another machine here")

@@ -44,8 +44,8 @@ internal class RemoteAdd(
     // A name a command link can take: a bare file name, as a head's key is.
     private val commandName = Regex("^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$")
 
-    // splice's own command. `claude` may name another machine's command: the wrapped `claude` then launches there
-    // (LaunchRoutes), and its link stays Claude Code's, which no remote makes, replaces or removes (Topology.remoteLinks).
+    // splice's own command. `claude` may name another machine's command: the wrapped `claude` launches there, and
+    // its link stays Claude Code's (Topology.remoteLinks).
     private val reserved = setOf("splice")
 
     /** [text] added, as [name] when given and as the server calls it otherwise; null, said, when nothing was. */

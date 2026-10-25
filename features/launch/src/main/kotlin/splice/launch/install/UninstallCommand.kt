@@ -59,10 +59,14 @@ internal class UninstallCommand(
         // The failure is NOT dropped here: [attempt] itself is handed to allTargets below, which
         // refuses --all on an unreadable topology rather than silently shrinking it (DR-101).
         val topology = attempt.getOrElse { null }
-        if (headArg == null || headArg == "--all") return allTargets(attempt, configPath)
-        if (topology == null || headArg in topology.remoteLinks) return listOf(headArg)
-        return heads.resolveSpecificHead(topology, headArg)?.let { key ->
-            listOf(topology.heads.getValue(key).claude.command ?: key)
+        return when {
+            headArg == null || headArg == "--all" -> allTargets(attempt, configPath)
+            topology == null -> listOf(headArg)
+            // A remote `claude`'s link is Claude Code's own, which no remote command removes (Topology.remoteLinks).
+            headArg in topology.remote -> listOf(headArg).filter { it in topology.remoteLinks }
+            else -> heads.resolveSpecificHead(topology, headArg)?.let { key ->
+                listOf(topology.heads.getValue(key).claude.command ?: key)
+            }
         }
     }
 

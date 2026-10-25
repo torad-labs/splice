@@ -60,8 +60,9 @@ internal const val CLAUDE_USAGE_URL = "https://api.anthropic.com/api/oauth/usage
  *  probe from a stand-in on its own machine, so a made-up token never reaches Anthropic (Oct 10, 2026). */
 internal const val CLAUDE_USAGE_URL_ENV = "CLAUDE_OAUTH_USAGE_URL"
 
-// why: the OAuth beta the endpoint requires, the same value every Claude turn already carries.
-private const val CLAUDE_OAUTH_BETA = "oauth-2025-04-20"
+// why: the OAuth beta Anthropic requires beside a Claude OAuth token, on this endpoint and on every turn; a held Claude
+// login names it on each turn it carries (ClaudeLoginHeaders).
+public const val CLAUDE_OAUTH_BETA: String = "oauth-2025-04-20"
 
 // why: the body's own field names for the two windows splice has slots for. Claude Code's status line draws only these
 // two bars; the console's Accounts also draws each model's weekly window under the week (Oct 10, 2026).

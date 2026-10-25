@@ -257,7 +257,7 @@ internal class ClientAuth(
         if (lines.isEmpty()) return null
         // The repeated lines of a list-valued field are one value, rejoined (ListValuedHeaders names which).
         return if (name in ListValuedHeaders.names) {
-            lines.joinToString(ListValuedHeaders.SEPARATOR)
+            lines.joinToString(ListValuedHeaders.FIELD_LINE_SEPARATOR)
         } else {
             lines.first()
         }

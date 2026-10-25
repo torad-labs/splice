@@ -69,7 +69,8 @@ internal class InstallLinker(
      *  ambiguous). */
     private fun selected(topology: Topology, headArg: String?): List<Pair<String, String>>? = when {
         headArg == null || headArg == "--all" -> commands(topology)
-        headArg in topology.remoteLinks -> listOf(headArg to headArg)
+        // A remote `claude` is reached through the wrapped `claude`, so it has no link to make (Topology.remoteLinks).
+        headArg in topology.remote -> listOf(headArg to headArg).filter { it.first in topology.remoteLinks }
         else -> heads.resolveSpecificHead(topology, headArg)
             ?.let { key -> commands(topology).filter { it.first == key } }
     }

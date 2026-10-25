@@ -58,6 +58,10 @@ class LanShareCliTest {
     private lateinit var torad: Daemon
     private lateinit var toradEnv: EnvReader
     private lateinit var toradState: Path
+
+    /** Whether torad's share port accepted at the moment its control port was bound: from then `/health` answers, and
+     *  `splice share on`, which restarts and waits for `/health`, reads the share port at once. */
+    @Volatile private var shareAtBound: Boolean? = null
     private val share get() = "http://127.0.0.1:$sharePort"
 
     @BeforeAll
@@ -83,7 +87,7 @@ class LanShareCliTest {
         torad = Daemon(
             topology = TopologyLoader.parse(config.readText()),
             statePaths = StatePaths(baseOverride = toradState),
-            log = {},
+            log = { line -> if (line.startsWith("[daemon] control plane bound")) shareAtBound = accepts(sharePort) },
             refreshCall = { _, _ -> RefreshAttempt.Denied("test-denied") },
         )
         runBlocking { torad.start() }
@@ -240,6 +244,11 @@ class LanShareCliTest {
         val added = remote(node, "add", claudex)
         assertEquals(0, added.code, added.toString())
         assertEquals(mapOf("claudex" to RemoteConfig(claudex)), node.remote)
+    }
+
+    @Test
+    fun `the share port answers by the time the control port does, so share on reads its address after a restart`() {
+        assertEquals(true, shareAtBound, "the share listener was not yet open when /health first answered")
     }
 
     @Test
@@ -422,6 +431,8 @@ class LanShareCliTest {
         val own = NetworkInterface.getNetworkInterfaces().toList().flatMap { it.inetAddresses.toList() }.toSet()
         return InetAddress.getAllByName(host).any { it in own && !it.isLoopbackAddress }
     }
+
+    private fun accepts(port: Int): Boolean = runCatching { Socket("127.0.0.1", port).use { } }.isSuccess
 
     private fun awaitListening(vararg ports: Int) {
         val deadline = System.currentTimeMillis() + 15_000

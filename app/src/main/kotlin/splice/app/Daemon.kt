@@ -267,6 +267,9 @@ public class Daemon(
             RemoteTrees(launchSpecFactory::remoteTrees),
             launchSpecFactory.remotePolicy(),
         )
+        // The share listener opens before the control plane too: `splice share on` restarts, waits for /health, and
+        // reads the share port at once.
+        share.open(heads, controlPort)
         controlPlane.start(
             controlPort = controlPort,
             heads = heads,
@@ -277,8 +280,7 @@ public class Daemon(
             },
             headCount = topology.heads.size,
             probes = headProbes,
-        ) ?: return
-        share.open(heads, controlPort)
+        ) ?: return share.close()
         // MCP hub step 6: each installed Claude Code version's --plugin-dir-no-mcp verdict, checked in the background.
         controlPlane.pluginFlagChecks.request()
         val degraded = if (failed.isEmpty()) "" else " DEGRADED=${failed.keys}"

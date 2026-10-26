@@ -1082,6 +1082,10 @@ describe("a text-scanning law's content inputs are every tracked file, declared 
     }
     cpSync(join(repoRoot, "gradle.properties"), join(copy, "gradle.properties"));
     symlinkSync(join(repoRoot, "gradlew"), join(copy, "gradlew"));
+    // The real compile checks build-logic's downloads against the root's verification metadata, so the copy does too.
+    // Only that file: a gradle/libs.versions.toml beside it would be imported as the catalog a second time.
+    mkdirSync(join(copy, "gradle"), { recursive: true });
+    symlinkSync(join(repoRoot, "gradle", "verification-metadata.xml"), join(copy, "gradle", "verification-metadata.xml"));
     const run = await gradleHere(copy)(["classes"]);
     expect(run.status, run.output).toBe(0);
     return join(copy, "build", "classes", "kotlin", "main");

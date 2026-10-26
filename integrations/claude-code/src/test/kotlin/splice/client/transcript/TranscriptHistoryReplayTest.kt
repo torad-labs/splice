@@ -2,6 +2,8 @@
 // files lists, and a history too large for the cache to keep still lists every session in the order of its file.
 // Oct 25, 2026, after review: a refresh reads only the lines appended since the last one, however many prompts the
 // history holds, so blanking out what it already read leaves its listing as the history was written.
+// Oct 25, 2026, second review: what a refresh read is overwritten with rows of the same length for a session Claude
+// Code never wrote, not blanked, so a refresh that read it again after its kept rows would list that session.
 package splice.client.transcript
 
 import org.junit.jupiter.api.Assertions.assertEquals
@@ -70,8 +72,9 @@ class TranscriptHistoryReplayTest {
         assertListed(sessions(0..PAST_THE_BOUND), refresh(index, listOf(root)))
     }
 
-    /** Each round blanks out every history a refresh has read, then appends to one. The refresh must list what a
-     *  fresh scan of the same rows, as Claude Code wrote them, lists. One that read a line again would lose its row. */
+    /** Each round overwrites every line a refresh has read with a row for a session Claude Code never wrote, then
+     *  appends to one history. The refresh must list what a fresh scan of the rows as Claude Code wrote them lists.
+     *  One that read those lines again would list that session as well, after its kept rows or in place of them. */
     @Test
     fun `a refresh reads only the lines appended since the last one`() = repeat(CASES) { case ->
         val heads = List(random.nextInt(1, MAX_ROOTS + 1)) { HEADS.random(random) }
@@ -85,7 +88,7 @@ class TranscriptHistoryReplayTest {
         val index = TranscriptHistoryIndex(clock)
         assertEquals(freshScan(written), refresh(index, roots), "case $case, first scan")
         repeat(random.nextInt(1, MAX_ROUNDS + 1)) { round ->
-            roots.forEach(::blank)
+            roots.forEach(::overwrite)
             val at = random.nextInt(roots.size)
             val rows = history.rows(ids, random.nextInt(1, MAX_APPENDED_ROWS + 1))
             listOf(roots[at], written[at]).forEach { append(it, rows) }
@@ -104,21 +107,25 @@ class TranscriptHistoryReplayTest {
         append(root, prompts(0 until newest) + prompts(0 until BUSY_IDS).repeat(BUSY_PROMPTS_EACH))
         assertListed(sessions(0 until newest), refresh(index, listOf(root)))
 
-        blank(root)
+        overwrite(root)
         append(root, prompts(newest..newest))
 
         assertListed(sessions(0..newest), refresh(index, listOf(root)))
     }
 
-    /** Overwrites every byte of the root's history with a space, keeping its newlines, its length and its stamp: a
-     *  refresh has no reason to read it again, and one that did would find no row in it. */
-    private fun blank(root: SessionHistoryRoot) {
+    /** Overwrites each line of the root's history with a row of the same length for a session Claude Code never wrote,
+     *  keeping the file's newlines, its length and its stamp. A refresh has no reason to read these bytes again, and
+     *  one that did would list that session. A line too short for the row, such as "{not json", is left as it was;
+     *  every generated line that names a session is longer. */
+    private fun overwrite(root: SessionHistoryRoot) {
         val file = root.dir.resolve("history.jsonl")
         if (!Files.exists(file)) return
         val stamp = Files.getLastModifiedTime(file)
-        val bytes = Files.readAllBytes(file)
-        val newline = '\n'.code.toByte()
-        Files.write(file, ByteArray(bytes.size) { if (bytes[it] == newline) newline else ' '.code.toByte() })
+        val lines = Files.readString(file).split('\n').map { line ->
+            val room = line.encodeToByteArray().size - READ_AGAIN_ROW.length
+            if (room < 0) line else READ_AGAIN_ROW.dropLast(1) + " ".repeat(room) + "}"
+        }
+        Files.writeString(file, lines.joinToString("\n"))
         Files.setLastModifiedTime(file, stamp)
     }
 
@@ -212,6 +219,9 @@ private val JUNK = listOf(
     "{\"display\":\"a prompt that names no session\",\"timestamp\":3}\n",
     "{\"sessionId\":\"not an id\",\"display\":\"a session id that cannot be one\",\"timestamp\":4}\n",
 )
+
+/** A row for a session Claude Code never wrote, padded with spaces before its brace to fill a line already read. */
+private const val READ_AGAIN_ROW = """{"sessionId":"read-again"}"""
 
 private const val PROJECT = "/work/atlas"
 private const val ID_DIGITS = 12

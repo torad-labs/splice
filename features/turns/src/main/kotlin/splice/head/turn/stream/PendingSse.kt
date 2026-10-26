@@ -1,12 +1,15 @@
 // NEW: V4-446 — one bounded decision before a streaming turn commits its HTTP status.
 package splice.head.turn.stream
 
-import io.ktor.http.HttpStatusCode
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.withTimeoutOrNull
+import splice.core.failure.ClientWire
+import splice.core.failure.FailureCause
+import splice.core.failure.Moment
+import splice.core.failure.Position
 import splice.core.perf.TurnPerf
 import splice.core.util.ElapsedClock
-import splice.core.wire.RateLimitReply
+import splice.core.wire.NativeReply
 import splice.head.wire.ClientAnswer
 import splice.head.wire.FrameRecording
 import splice.head.wire.TurnTrace
@@ -25,8 +28,8 @@ internal class PendingSse(
 ) {
     internal sealed class Decision {
         data object Stream : Decision()
-        data class Overflow(val body: String) : Decision()
-        data class Refused(val reply: RateLimitReply) : Decision()
+        data class Overflow(val body: String, val status: Int, val shouldRetry: Boolean?) : Decision()
+        data class Refused(val reply: NativeReply) : Decision()
     }
 
     @Volatile private var progressAccepted = commitProgress
@@ -38,11 +41,11 @@ internal class PendingSse(
 
     suspend fun model(frame: String) {
         if (structural(frame) && output.stageModel(frame)) return
-        val overflow = OverflowFrame.body(frame)
+        val overflow = OverflowFrame.body(frame)?.let(::overflowAnswer)
         if (overflow == null) {
             choice.complete(Decision.Stream)
-        } else if (choice.complete(Decision.Overflow(overflow))) {
-            trace?.collectedAnswer { ClientAnswer(HttpStatusCode.BadRequest.value, overflow) }
+        } else if (choice.complete(overflow)) {
+            trace?.collectedAnswer { ClientAnswer(overflow.status, overflow.body) }
         }
         if (choice.await() !is Decision.Stream) return
         output.writeModel(frame)
@@ -72,7 +75,7 @@ internal class PendingSse(
     }
 
     /** The provider's status remains ours until a client-visible stream has actually been chosen. */
-    fun refuse(reply: RateLimitReply): Boolean {
+    fun refuse(reply: NativeReply): Boolean {
         val selected = choice.complete(Decision.Refused(reply))
         if (selected) trace?.collectedAnswer { ClientAnswer(reply.status, reply.body) }
         return selected
@@ -97,4 +100,14 @@ internal class PendingSse(
 
     private fun structural(frame: String): Boolean =
         frame.startsWith("event: message_start\n") || frame.startsWith("event: ping\n")
+
+    /** A prompt that outgrew the window, met while the status is still splice's to choose, answers as ClientWire
+     *  says: with the status Claude Code compacts on where it gives one, or else in band like any other frame. */
+    private fun overflowAnswer(body: String): Decision.Overflow? {
+        val answer = ClientWire.answer(
+            FailureCause.Provider.TooLong(limitTokens = null, whileAnswering = false),
+            Position(Moment.BEFORE_COMMIT, streamBegan = true),
+        )
+        return answer.status?.let { Decision.Overflow(body, it, answer.shouldRetry) }
+    }
 }

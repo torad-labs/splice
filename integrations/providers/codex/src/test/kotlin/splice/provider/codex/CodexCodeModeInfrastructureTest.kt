@@ -7,7 +7,7 @@ import org.junit.jupiter.api.Assertions.assertFalse
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.params.ParameterizedTest
 import org.junit.jupiter.params.provider.ValueSource
-import splice.core.turn.FailureCause
+import splice.core.failure.PersistedCause
 import splice.core.turn.TurnOutcome
 import splice.upstream.RoundResult
 import splice.upstream.codemode.CodeModeCell
@@ -50,8 +50,8 @@ class CodexCodeModeInfrastructureTest : CodeModeBridgeTestSupport() {
         }.turn()
         assertTrue(result is TurnOutcome.Failure)
         if (atStartup) {
-            assertEquals(FailureCause.INTERNAL, (result as TurnOutcome.Failure).cause)
-            assertFalse(result.traits.deterministic)
+            assertEquals(PersistedCause.INTERNAL, (result as TurnOutcome.Failure).cause.persisted)
+            assertFalse(result.cause.deterministic)
             assertTrue(logLines.any { "PROTOCOL/IO" in it })
             manager.interceptor(turn(), disableParallel = false).intercept(BASE_REQUEST, RecordingSink()) {
                 error("startup retry must reuse the persisted source")
@@ -62,7 +62,7 @@ class CodexCodeModeInfrastructureTest : CodeModeBridgeTestSupport() {
             assertFalse(closed)
             return@runTest
         }
-        assertTrue((result as TurnOutcome.Failure).message.contains("PROTOCOL/IO"))
+        assertTrue((result as TurnOutcome.Failure).evidence.message.contains("PROTOCOL/IO"))
         val record = stateFiles.records().single()
         assertEquals("LOST", record.getValue("phase").jsonPrimitive.content)
         var retryPost = ""

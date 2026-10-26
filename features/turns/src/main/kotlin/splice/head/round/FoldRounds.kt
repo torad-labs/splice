@@ -7,6 +7,7 @@
 package splice.head.round
 
 import kotlinx.serialization.json.JsonObject
+import splice.core.failure.ClientWire
 import splice.core.turn.TurnOutcome
 import splice.core.turn.Usage
 import splice.head.wire.BufferingWireSink
@@ -34,11 +35,9 @@ internal class FoldRounds(
 
     /** The fold re-anchor line: round [attempt] (zero-based) died mid-stream and is being retried. */
     suspend fun noteReanchor(attempt: Int, failure: TurnOutcome.Failure) {
-        log("[$key] fold re-anchor ${attempt + 1}: ${failure.type.wireName} mid-round; retrying\n")
-        log.retry(
-            "[$key] fold re-anchor ${attempt + 1}: ${failure.type.wireName} mid-round; retrying",
-            failure.message,
-        )
+        val type = ClientWire.ownType(failure.cause).wireName
+        log("[$key] fold re-anchor ${attempt + 1}: $type mid-round; retrying\n")
+        log.retry("[$key] fold re-anchor ${attempt + 1}: $type mid-round; retrying", failure.evidence.message)
     }
 
     /** Health for the rounds this fold absorbed, once the turn ends on something other than a failure. */

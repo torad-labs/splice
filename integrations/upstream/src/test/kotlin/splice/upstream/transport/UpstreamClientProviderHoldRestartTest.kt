@@ -19,7 +19,7 @@ import splice.core.usage.PlanLimit
 import splice.core.util.ElapsedClock
 import splice.core.util.LogSink
 import splice.core.util.WallClock
-import splice.core.wire.RateLimitReply
+import splice.core.wire.NativeReply
 import splice.upstream.retry.FileProviderHoldStore
 import splice.upstream.retry.ProviderHold
 import splice.upstream.retry.RateLimitCooldown
@@ -90,7 +90,7 @@ class UpstreamClientProviderHoldRestartTest {
         restarted.clearRateLimitCooldown()
 
         assertEquals(
-            observer.rateLimitReply,
+            observer.native,
             restarted.credentialCooldown(mapOf("x-api-key" to "synthetic-a"))?.rateLimitReply,
             "the provider's word survives the restart",
         )
@@ -104,7 +104,7 @@ class UpstreamClientProviderHoldRestartTest {
         val store = FileProviderHoldStore(dir.resolve("hold.json"), LogSink {})
         store.save(
             ProviderHold(101L, null).also {
-                it.rateLimitReply = RateLimitReply("synthetic refusal", emptyMap())
+                it.rateLimitReply = NativeReply("synthetic refusal", emptyMap())
             },
         )
         var elapsed = 0L

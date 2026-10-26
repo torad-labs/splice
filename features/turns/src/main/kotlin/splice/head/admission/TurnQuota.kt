@@ -16,7 +16,7 @@ import splice.core.usage.QuotaFull
 import splice.core.util.Cancellables
 import splice.core.util.JsonScalars
 import splice.core.util.JsonWire
-import splice.core.wire.RateLimitReply
+import splice.core.wire.NativeReply
 import splice.head.usage.QuotaTracker
 import splice.head.usage.TrackedAccountQuota
 import splice.upstream.credentials.AccountPool
@@ -53,7 +53,7 @@ internal class TurnQuota(
     }
 
     /** Preserve the provider status, error type and headers. Only its JSON message gains the takeover explanation. */
-    fun withStandby(reply: RateLimitReply?, sentence: String?): RateLimitReply? {
+    fun withStandby(reply: NativeReply?, sentence: String?): NativeReply? {
         if (reply == null || sentence == null) return reply
         return Cancellables.runCatchingCancellable {
             val body = Json.parseToJsonElement(reply.body) as? JsonObject ?: return@runCatchingCancellable reply

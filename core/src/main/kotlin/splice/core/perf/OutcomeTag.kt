@@ -20,6 +20,8 @@
 // suffix is not known until the call site.
 package splice.core.perf
 
+import splice.core.failure.ClientWire
+import splice.core.failure.FailureCause
 import splice.core.model.TurnBill
 import splice.core.turn.ErrorType
 
@@ -83,7 +85,11 @@ public enum class OutcomeTag(public val wire: String) {
  *  choice of constant mattered when it does not. */
 public object OutcomeTags {
 
-    /** `failure:<wire>` — a turn that ended on a typed Failure. */
+    /** `failure:<wire>` — a turn that ended on a typed Failure, under the type its cause reads as once content
+     *  reached the client (ClientWire), whatever the client was told before content. */
+    public fun failure(cause: FailureCause): String = failure(ClientWire.ownType(cause))
+
+    /** `failure:<wire>` for a reader that matches rows by the type they were written under. */
     public fun failure(type: ErrorType): String = FAILURE_PREFIX + type.wireName
 
     /** `error:<kind>` — a locally-classified refusal whose kind is a fixed string. */

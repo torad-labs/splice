@@ -12,12 +12,12 @@ package splice.usage.perf
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
+import splice.core.failure.PersistedCause
 import splice.core.model.TurnBill
 import splice.core.model.TurnPrice
 import splice.core.perf.OutcomeTag
 import splice.core.perf.OutcomeTags
 import splice.core.perf.PerfKeys
-import splice.core.turn.FailureCause
 import splice.usage.UsageBilling
 import splice.usage.UsageHead
 import splice.usage.UsageHeadLookup
@@ -47,18 +47,23 @@ private val REFUSED_SPEND_KEYS = UNREPORTED_SPEND_KEYS - PerfKeys.UPSTREAM_REQ_B
  *  a new cause is decided here. A model refusal or a filtered generation is not one: the model answered. */
 private object ProviderRefusal {
     fun before(row: PerfRow): Boolean =
-        refusal(FailureCause.entries.firstOrNull { it.name == row.cause }) &&
+        refusal(PersistedCause.entries.firstOrNull { it.name == row.cause }) &&
             (row.fields[PerfKeys.EVENTS_IN] ?: 0L) == 0L && PerfKeys.FIRST_DELTA !in row.fields
 
-    private fun refusal(cause: FailureCause?): Boolean = when (cause) {
-        FailureCause.UPSTREAM_STATUS_4XX, FailureCause.VENDOR_RATE_LIMITED, FailureCause.VENDOR_QUOTA_EXHAUSTED,
-        FailureCause.AUTH_MISSING, FailureCause.AUTH_REFRESH_FAILED, FailureCause.REQUEST_TOO_LARGE,
+    private fun refusal(cause: PersistedCause?): Boolean = when (cause) {
+        PersistedCause.UPSTREAM_STATUS_4XX, PersistedCause.VENDOR_RATE_LIMITED, PersistedCause.VENDOR_QUOTA_EXHAUSTED,
+        PersistedCause.AUTH_MISSING, PersistedCause.AUTH_REFRESH_FAILED, PersistedCause.REQUEST_TOO_LARGE,
         -> true
-        FailureCause.UPSTREAM_STALLED, FailureCause.UPSTREAM_TRUNCATED, FailureCause.UPSTREAM_CONN_RESET,
-        FailureCause.UPSTREAM_STATUS_5XX, FailureCause.UPSTREAM_REPORTED, FailureCause.MODEL_REFUSED,
-        FailureCause.CONTENT_FILTERED, FailureCause.TOOL_TEAR, FailureCause.DIALECT_UNSUPPORTED,
-        FailureCause.CODE_MODE_PROTOCOL, FailureCause.INTERNAL, FailureCause.POOL_EXHAUSTED,
-        FailureCause.ADMISSION_FULL, null,
+        PersistedCause.UPSTREAM_STALLED, PersistedCause.UPSTREAM_TRUNCATED, PersistedCause.UPSTREAM_CONN_RESET,
+        PersistedCause.UPSTREAM_STATUS_5XX, PersistedCause.UPSTREAM_REPORTED, PersistedCause.MODEL_REFUSED,
+        PersistedCause.CONTENT_FILTERED, PersistedCause.TOOL_TEAR, PersistedCause.DIALECT_UNSUPPORTED,
+        PersistedCause.CODE_MODE_PROTOCOL, PersistedCause.INTERNAL, PersistedCause.POOL_EXHAUSTED,
+        PersistedCause.ADMISSION_FULL, null,
+        -> false
+        // Slice 1's new names. A refused connection, a declined request and a stopped turn were never the provider
+        // refusing the request; a hold that outlasted its bound and an unfinished compaction are splice's own.
+        PersistedCause.CONNECT_REFUSED, PersistedCause.DECLINED, PersistedCause.STOPPED,
+        PersistedCause.HOLD_OUTLASTED, PersistedCause.COMPACTION_UNFINISHED,
         -> false
     }
 }

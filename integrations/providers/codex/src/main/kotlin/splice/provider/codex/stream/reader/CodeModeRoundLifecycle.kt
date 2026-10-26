@@ -38,7 +38,7 @@ internal class CodeModeRoundLifecycle(
         val rejected = CodeModeRejection.outcome(error)
         localFailure = rejected
         sourceInterrupted = false
-        capture.source.fail(rejected.message)
+        capture.source.fail(rejected.evidence.message)
         try {
             if (capture.itemComplete) {
                 Cancellables.runCatchingBestEffort { capture.interrupted() }.onFailure { failure ->

@@ -7,13 +7,17 @@ import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertSame
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.Timeout
+import splice.core.failure.FailureEvidence
 import splice.upstream.RedirectableRoundPost
 import splice.upstream.RoundResult
+import splice.upstream.failure.FailureSource
+import splice.upstream.failure.UpstreamFailureClassifier
 import splice.upstream.sse.WireSink
 import splice.upstream.transport.UpstreamFailed
 
 private const val REFUSAL_STATUS = 400
 private const val REFUSAL_LAYERS = 4
+private const val REFUSAL_BODY = """{"detail":"Bad Request"}"""
 
 /**
  * Oct 4, 6:31 AM CT: a code-mode source post the upstream refused with HTTP 400 reached Claude Code as
@@ -67,7 +71,9 @@ class CodeModeUpstreamRefusalTest : CodeModeStatementStreamSupport() {
     /** Posts through [first] until post number [refuseFrom], which the upstream refuses as the retry loop does once
      *  it gives up: an UpstreamFailed with the status and the attempts it spent. */
     private class Refusing(private val first: GatedPost, private val refuseFrom: Int) : RedirectableRoundPost {
-        val refusal = UpstreamFailed("""{"detail":"Bad Request"}""", REFUSAL_STATUS, REFUSAL_LAYERS)
+        val refusal = UpstreamFailureClassifier.classify(FailureSource.HTTP, REFUSAL_BODY, REFUSAL_STATUS).let {
+            UpstreamFailed(it.cause, FailureEvidence(it.message, REFUSAL_STATUS, body = REFUSAL_BODY), REFUSAL_LAYERS)
+        }
         var refused = 0
         private var posts = 0
 

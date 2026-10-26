@@ -7,11 +7,14 @@ package splice.head.transport
 
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Job
+import splice.core.failure.FailureCause
+import splice.core.failure.FailureEvidence
+import splice.core.failure.Moment
+import splice.core.failure.Position
+import splice.core.failure.Unreach
 import splice.core.perf.PerfKeys
-import splice.core.turn.FailureCause
-import splice.core.turn.FailurePhase
-import splice.core.turn.FailureTraits
 import splice.core.turn.TurnOutcome
+import splice.core.util.LoopbackOverride
 import splice.head.turn.TurnDrive
 import splice.upstream.ClientFrameEmitted
 import splice.upstream.RoundBody
@@ -129,26 +132,20 @@ internal class SseRoundDriver(
         // still reaches names the same failure (V4-164: one describer for both).
         val detail = TransportFailureReason.of(e, upstreamUrl)
         return TurnOutcome.Failure(
-            "upstream connection failed ($detail); retry",
+            // V4-117: a failed connection, not a stall and not a truncation, and the layers that can repair it
+            // are the L1 retry ones. A Path cause, so the G20 health split counts it local: the upstream reported
+            // nothing, the socket did. An unreachable path keeps the tag this failure would have carried had it
+            // escaped: an unrecovered tear stays greppable as conn-reset in the perf row, which is the only string
+            // in the journal that names this failure class.
+            cause = FailureCause.Path.Unreachable(Unreach.RESET_BEFORE_REPLY, LoopbackOverride.isLoopback(upstreamUrl)),
+            // COMMITTED, and this is one of the few sites that KNOWS rather than guesses: the guards above only
+            // reach here when no content frame was emitted and the stream was read, which is the pre-content
+            // window by construction rather than by assumption.
+            at = Position(Moment.COMMITTED, streamBegan = true),
+            evidence = FailureEvidence("upstream connection failed ($detail); retry"),
             // Deliberately EMPTY, and the whole reason the gates above are what they are: nothing
             // was shown to the client, so the continuation is a restart and not a replay.
             partial = TurnOutcome.PartialRound(),
-            traits = FailureTraits(
-                // Locally synthesized: the upstream reported nothing, the socket did (G20 health split).
-                providerReported = false,
-                // The ending keeps the tag this failure would have carried had it escaped: an
-                // unrecovered tear stays greppable as conn-reset in the perf row, which is the only
-                // string in the journal that names this failure class.
-                connReset = true,
-            ),
-            // V4-117: UPSTREAM_CONN_RESET. The comment two lines up already says it — the
-            // upstream reported nothing and the socket did — which is a failed connection, not a
-            // stall and not a truncation, and the layers that can repair it are the L1 retry ones.
-            cause = FailureCause.UPSTREAM_CONN_RESET,
-            // FIRST_BYTE, and this is one of the few sites that KNOWS rather than guesses: the
-            // guards above only reach here when no content frame was emitted and the stream was
-            // read, which is the pre-content window by construction rather than by assumption.
-            phase = FailurePhase.FIRST_BYTE,
         )
     }
 }

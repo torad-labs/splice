@@ -37,11 +37,15 @@ import org.junit.jupiter.api.TestInstance
 import org.junit.jupiter.api.io.TempDir
 import org.junit.jupiter.params.ParameterizedTest
 import org.junit.jupiter.params.provider.ValueSource
+import splice.core.failure.FailureCause
+import splice.core.failure.FailureEvidence
+import splice.core.failure.Moment
+import splice.core.failure.Position
+import splice.core.failure.ProtocolFault
+import splice.core.failure.Stall
 import splice.core.perf.OutcomeTag
 import splice.core.perf.PerfKeys
 import splice.core.perf.TurnPerf
-import splice.core.turn.FailureCause
-import splice.core.turn.FailurePhase
 import splice.core.turn.ReasoningDisplay
 import splice.core.turn.ResponseShape
 import splice.core.turn.RoundText
@@ -349,10 +353,10 @@ class TurnPerfRowTest {
                 TurnOutcome.Success(hasToolUse = false, incomplete = false, usage = Usage())
             } catch (_: SocketException) {
                 TurnOutcome.Failure(
-                    "synthetic reset",
-                    cause = FailureCause.UPSTREAM_STALLED,
+                    cause = FailureCause.Path.Stalled(Stall.IDLE),
+                    at = Position(Moment.MID_CONTENT, streamBegan = true),
+                    evidence = FailureEvidence("synthetic reset"),
                     partial = TurnOutcome.PartialRound(text = RoundText(bodyText = "synthetic", emittedText = true)),
-                    phase = FailurePhase.MID_OUTPUT,
                 )
             }
             RoundResult.Outcome(outcome)
@@ -469,9 +473,9 @@ class TurnFinishTest {
             rig.finish.finishTurn(
                 drive,
                 TurnOutcome.Failure(
-                    "upstream stalled",
-                    cause = FailureCause.UPSTREAM_STALLED,
-                    phase = FailurePhase.MID_OUTPUT,
+                    cause = FailureCause.Path.Stalled(Stall.IDLE),
+                    at = Position(Moment.MID_CONTENT, streamBegan = true),
+                    evidence = FailureEvidence("upstream stalled"),
                 ),
             )
         } finally {
@@ -492,9 +496,9 @@ class TurnFinishTest {
             rig.finish.finishTurn(
                 drive,
                 TurnOutcome.Failure(
-                    "upstream stalled",
-                    cause = FailureCause.UPSTREAM_STALLED,
-                    phase = FailurePhase.MID_OUTPUT,
+                    cause = FailureCause.Path.Stalled(Stall.IDLE),
+                    at = Position(Moment.MID_CONTENT, streamBegan = true),
+                    evidence = FailureEvidence("upstream stalled"),
                     layers = 3,
                 ),
             )
@@ -601,10 +605,12 @@ class TurnFinishTest {
             rig.finish.finishTurn(
                 drive,
                 TurnOutcome.Failure(
-                    "code-mode runtime failed: IllegalStateException: worker pool exhausted; " +
-                        "accepted results=3; source was not rerun",
-                    cause = FailureCause.CODE_MODE_PROTOCOL,
-                    phase = FailurePhase.MID_OUTPUT,
+                    cause = FailureCause.Splice.Protocol(ProtocolFault.CODE_MODE_START),
+                    at = Position(Moment.MID_CONTENT, streamBegan = true),
+                    evidence = FailureEvidence(
+                        "code-mode runtime failed: IllegalStateException: worker pool exhausted; " +
+                            "accepted results=3; source was not rerun",
+                    ),
                 ),
             )
         } finally {

@@ -37,6 +37,9 @@ import io.ktor.server.request.uri
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.serialization.json.JsonObject
 import splice.core.client.SESSION_HEADER
+import splice.core.failure.Decline
+import splice.core.failure.FailureCause
+import splice.core.failure.StoppedBy
 import splice.core.parse.AnthropicTurnBody
 import splice.core.perf.PerfKeys
 import splice.core.perf.TurnPerf
@@ -75,7 +78,10 @@ internal sealed class Preparation {
         /** Transfers the raw request to its trace without retaining a second post-handoff owner. */
         fun takeInbound(): ClientInbound? = inbound.also { inbound = null }
     }
-    data class Rejected(val message: String) : Preparation()
+
+    /** Refused before anything is recorded of it: [cause] decides the answer (ClientWire at admission), and
+     *  [message] is what the client reads. */
+    data class Rejected(val cause: FailureCause.Splice, val message: String) : Preparation()
 
     /** Answered by the proxy itself: the activity side query (ActivityLabel). No upstream turn. */
     data class Local(val text: String, val model: String, val sessionId: String?, val stream: Boolean) : Preparation()
@@ -173,13 +179,15 @@ internal class TurnPreparation(
      *  session and messages. The re-send is answered here and never built or sent upstream; the 400
      *  ends the client's turn with no further request (the probe on Claude Code 2.1.283). */
     private fun refusalOf(parsed: AnthropicTurnBody, sessionId: String?): Preparation.Rejected? = when {
-        !provider.catalog.contains(parsed.typed.model) ->
-            Preparation.Rejected(provider.catalog.refusals.message(parsed.typed.model, provider.key))
+        !provider.catalog.contains(parsed.typed.model) -> Preparation.Rejected(
+            FailureCause.Splice.Declined(Decline.UnknownModel(parsed.typed.model)),
+            provider.catalog.refusals.message(parsed.typed.model, provider.key),
+        )
         !parsed.typed.stream && deps.traffic.liveTurns.refusesResend(sessionId, parsed.raw) -> {
             deps.log("[${provider.key}] re-send of a stopped turn refused (${who(sessionId)}no upstream turn)\n")
-            Preparation.Rejected("${provider.key}: $OPERATOR_STOPPED")
+            Preparation.Rejected(FailureCause.Splice.Stopped(StoppedBy.CONSOLE), "${provider.key}: $OPERATOR_STOPPED")
         }
-        else -> provider.requestRefusal(parsed)?.let { Preparation.Rejected(it) }
+        else -> provider.requestRefusal(parsed)?.let { Preparation.Rejected(it.cause, it.message) }
     }
 
     /** V4-265: a working session's own turn is its activity sample, at the side query's pace; see
@@ -334,7 +342,10 @@ internal class TurnPreparation(
             "[${provider.key}] request rejected: invalid request body " +
                 "(${body.bytes} bytes read, $declared declared, $why)\n",
         )
-        return Preparation.Rejected("invalid request body")
+        return Preparation.Rejected(
+            FailureCause.Splice.Declined(Decline.BadBody(body.bytes.toLong(), declared.toLongOrNull())),
+            "invalid request body",
+        )
     }
 
     // V4-100: SESSION_TAG_CHARS is the ONE session-tag width (declared in TurnDrive.kt, same

@@ -11,8 +11,9 @@ import org.junit.jupiter.api.Assertions.assertFalse
 import org.junit.jupiter.api.Assertions.assertNotEquals
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
+import splice.core.failure.ClientWire
+import splice.core.failure.PersistedCause
 import splice.core.turn.ErrorType
-import splice.core.turn.FailureCause
 import splice.core.turn.TurnOutcome
 
 class InBandErrorClassifiedTest {
@@ -27,10 +28,10 @@ class InBandErrorClassifiedTest {
             """{"error":{"code":500,"message":"Context size has been exceeded.","type":"server_error"}}""",
         )
 
-        assertEquals(FailureCause.UPSTREAM_STATUS_5XX, f.cause)
-        assertEquals(ErrorType.OVERLOADED, f.type)
-        assertTrue(f.message.contains("KV cache is full"), f.message)
-        assertFalse(f.traits.permanent, "a 5xx heals: advertised as retryable")
+        assertEquals(PersistedCause.UPSTREAM_STATUS_5XX, f.cause.persisted)
+        assertEquals(ErrorType.OVERLOADED, ClientWire.ownType(f.cause))
+        assertTrue(f.evidence.message.contains("KV cache is full"), f.evidence.message)
+        assertFalse(f.cause.permanent, "a 5xx heals: advertised as retryable")
     }
 
     // V4-167. Mutant: never carry the verdict (V4-164). A typed vendor error that identical bytes
@@ -39,7 +40,7 @@ class InBandErrorClassifiedTest {
     fun `a typed in-band error the same bytes reproduce is not advertised as retryable`() = runTest {
         val f = failureOf("""{"error":{"message":"Invalid prompt: the prompt was flagged","type":"invalid_prompt"}}""")
 
-        assertTrue(f.traits.permanent)
+        assertTrue(f.cause.permanent)
     }
 
     // V4-167. Mutant: any integer code is a status (V4-164). A vendor's own code "1301" read as
@@ -48,7 +49,7 @@ class InBandErrorClassifiedTest {
     fun `a vendor's own numeric code is its kind, not an HTTP status`() = runTest {
         val f = failureOf("""{"error":{"code":"1301","message":"the request was rejected"}}""")
 
-        assertNotEquals(FailureCause.UPSTREAM_STATUS_5XX, f.cause)
+        assertNotEquals(PersistedCause.UPSTREAM_STATUS_5XX, f.cause.persisted)
     }
 
     @Test
@@ -59,9 +60,9 @@ class InBandErrorClassifiedTest {
                 """"context_length_exceeded"}}""",
         )
 
-        assertEquals(FailureCause.REQUEST_TOO_LARGE, f.cause)
-        assertEquals(ErrorType.INVALID_REQUEST, f.type)
-        assertTrue(f.message.contains("prompt is too long"), f.message)
+        assertEquals(PersistedCause.REQUEST_TOO_LARGE, f.cause.persisted)
+        assertEquals(ErrorType.INVALID_REQUEST, ClientWire.ownType(f.cause))
+        assertTrue(f.evidence.message.contains("prompt is too long"), f.evidence.message)
     }
 
     @Test
@@ -71,8 +72,8 @@ class InBandErrorClassifiedTest {
                 """"rate_limit_exceeded"}}""",
         )
 
-        assertEquals(FailureCause.VENDOR_RATE_LIMITED, f.cause)
-        assertEquals(ErrorType.RATE_LIMIT, f.type)
+        assertEquals(PersistedCause.VENDOR_RATE_LIMITED, f.cause.persisted)
+        assertEquals(ErrorType.RATE_LIMIT, ClientWire.ownType(f.cause))
     }
 
     // The byte-identity half: a shape the classifier has no rule for keeps the cause, and so the
@@ -81,10 +82,10 @@ class InBandErrorClassifiedTest {
     fun `an unrecognised in-band error keeps the cause and wire it had`() = runTest {
         val f = failureOf("""{"error":{"message":"something the classifier has no rule for"}}""")
 
-        assertEquals(FailureCause.UPSTREAM_REPORTED, f.cause)
-        assertEquals("chat backend: something the classifier has no rule for", f.message)
+        assertEquals(PersistedCause.UPSTREAM_REPORTED, f.cause.persisted)
+        assertEquals("chat backend: something the classifier has no rule for", f.evidence.message)
         // V4-167. Mutant: carry the verdict for every event. One with no type and no status keeps the
         // retryable wire V4-164 promised it.
-        assertFalse(f.traits.permanent)
+        assertFalse(f.cause.permanent)
     }
 }

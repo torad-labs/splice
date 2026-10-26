@@ -1,7 +1,11 @@
 // NEW: ChatGPT Codex request limitations, kept at the provider boundary rather than in the Responses dialect.
 package splice.provider.codex.request
 
+import splice.core.failure.Decline
+import splice.core.failure.FailureCause
+import splice.core.failure.RequestFeature
 import splice.core.wire.AnthropicRequest
+import splice.upstream.RequestRefusal
 
 private const val SCHEMA_TOOL = "StructuredOutput"
 
@@ -9,15 +13,18 @@ private const val SCHEMA_TOOL = "StructuredOutput"
 internal object CodexRequestConstraints {
     /** Official Codex sends auto. Other choices have no established ChatGPT backend support on this path.
      *  A forced schema tool is implemented by strict schema-only output and translated back into its tool input. */
-    fun refusal(body: AnthropicRequest): String? {
+    fun refusal(body: AnthropicRequest): RequestRefusal? {
         val choice = body.toolChoice ?: return null
         val schemaTool = body.tools.any { it.name == SCHEMA_TOOL && it.inputSchema != null }
         if (choice.type == "auto") return null
         return if (schemaTool && schemaChoice(body)) {
             null
         } else {
-            "The ChatGPT Codex backend's support for the requested tool_choice is unverified on this path; " +
-                "splice cannot guarantee that choice and will not replace it with auto."
+            RequestRefusal(
+                FailureCause.Splice.Declined(Decline.Untranslatable(RequestFeature.TOOL_CHOICE)),
+                "The ChatGPT Codex backend's support for the requested tool_choice is unverified on this path; " +
+                    "splice cannot guarantee that choice and will not replace it with auto.",
+            )
         }
     }
 

@@ -18,6 +18,7 @@ import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -63,12 +64,15 @@ private const val DESCRIBE_CHARS = 300
 /** The answer budget a request asks for when a test names none. */
 private const val DEFAULT_MAX_TOKENS = 1024
 
-/** What the client sends: one user message, streamed unless [stream] is false, in session [session]. */
+/** What the client sends: one user message, streamed unless [stream] is false, in session [session]. [extra] adds
+ *  top-level body fields, such as an output format or a tool choice, and [bearer] replaces the head's own token. */
 public data class ClientRequest(
     val text: String = "Say something.",
     val stream: Boolean = true,
     val session: String = UUID.randomUUID().toString(),
     val maxTokens: Int = DEFAULT_MAX_TOKENS,
+    val extra: JsonObject = JsonObject(emptyMap()),
+    val bearer: String = INFERENCE_TOKEN,
 )
 
 /** One server-sent event as the client parsed it. [name] is null for a data-only event. */
@@ -261,6 +265,9 @@ private data class Progress(val answer: ClientAnswer, val ended: Boolean)
 public class ClientStream internal constructor() {
     private val progress = MutableStateFlow(Progress(ClientAnswer(0, emptyMap(), emptyList(), "", cut = false), false))
 
+    /** The request's own work, set once it starts. */
+    @Volatile internal var call: Job? = null
+
     /** True once the answer ended or its connection dropped. */
     public val finished: Boolean get() = progress.value.ended
 
@@ -273,6 +280,11 @@ public class ClientStream internal constructor() {
 
     /** Returns the whole answer once it ended. */
     public suspend fun finish(): ClientAnswer = progress.first { it.ended }.answer
+
+    /** Hangs up, as Claude Code does when it abandons a request: the connection closes with the answer unread. */
+    public fun hangUp() {
+        call?.cancel()
+    }
 
     internal fun update(change: (ClientAnswer) -> ClientAnswer) {
         progress.update { it.copy(answer = change(it.answer)) }
@@ -325,7 +337,7 @@ public class ClientReader(
     /** Sends [request] and returns at once with the answer as it arrives. */
     public fun open(request: ClientRequest = ClientRequest()): ClientStream {
         val stream = ClientStream()
-        scope.launch { read(request, stream) }
+        stream.call = scope.launch { read(request, stream) }
         return stream
     }
 
@@ -337,7 +349,7 @@ public class ClientReader(
     private suspend fun read(request: ClientRequest, stream: ClientStream) {
         val failure = runCatching {
             http.preparePost("http://127.0.0.1:$port/v1/messages") {
-                header("Authorization", "Bearer $INFERENCE_TOKEN")
+                header("Authorization", "Bearer ${request.bearer}")
                 header("anthropic-version", ANTHROPIC_VERSION)
                 header("User-Agent", CLIENT_AGENT)
                 header(SESSION_HEADER, request.session)
@@ -379,5 +391,6 @@ public class ClientReader(
                 put("content", request.text)
             }
         }
+        request.extra.forEach { (name, value) -> put(name, value) }
     }.toString()
 }

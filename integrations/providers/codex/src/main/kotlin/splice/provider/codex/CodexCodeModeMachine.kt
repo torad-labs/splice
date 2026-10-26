@@ -4,9 +4,11 @@ package splice.provider.codex
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.withContext
-import splice.core.turn.FailureCause
-import splice.core.turn.FailurePhase
-import splice.core.turn.FailureTraits
+import splice.core.failure.FailureCause
+import splice.core.failure.FailureEvidence
+import splice.core.failure.Moment
+import splice.core.failure.Position
+import splice.core.failure.ProtocolFault
 import splice.core.turn.TurnOutcome
 import splice.core.turn.UsageField
 import splice.core.turn.noRequestUsage
@@ -113,11 +115,10 @@ internal class CodexCodeModeMachine(
         val served = previous?.calls ?: calls
         if (served.isEmpty()) {
             return TurnOutcome.Failure(
-                "code-mode has no client calls to emit",
-                traits = FailureTraits(deterministic = true),
+                cause = FailureCause.Splice.Protocol(ProtocolFault.CODE_MODE_STATE),
+                at = Position(Moment.MID_CONTENT, streamBegan = true),
+                evidence = FailureEvidence("code-mode has no client calls to emit"),
                 salvagedUsage = noRequestUsage,
-                cause = FailureCause.CODE_MODE_PROTOCOL,
-                phase = FailurePhase.MID_OUTPUT,
             )
         }
         if (previous == null) {

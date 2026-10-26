@@ -4,6 +4,7 @@ import kotlinx.coroutines.test.runTest
 import kotlinx.serialization.json.JsonObject
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Test
+import splice.core.failure.ClientWire
 import splice.core.index.WireBlockIndex
 import splice.core.turn.ErrorType
 import splice.core.turn.GatewayCustomCall
@@ -44,7 +45,7 @@ class UnsupportedCustomCallTest {
         ).run(JsonObject(emptyMap()), fold = null, reanchor = null)
         assertEquals(1, finishes.size)
         val failure = finishes.single() as TurnOutcome.Failure
-        assertEquals(ErrorType.INVALID_REQUEST, failure.type)
+        assertEquals(ErrorType.INVALID_REQUEST, ClientWire.ownType(failure.cause))
         assertEquals(billed, failure.salvagedUsage)
     }
 

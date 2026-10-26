@@ -78,7 +78,7 @@ public object CodeModeGatewayNativeProbe {
                     when (outcome) {
                         is RoundResult.Outcome -> buildJsonObject {
                             put("kind", outcome.outcome::class.simpleName)
-                            (outcome.outcome as? TurnOutcome.Failure)?.let { put("message", it.message) }
+                            (outcome.outcome as? TurnOutcome.Failure)?.let { put("message", it.evidence.message) }
                         }
                         is RoundResult.Ended -> buildJsonObject { put("kind", "Ended") }
                     },

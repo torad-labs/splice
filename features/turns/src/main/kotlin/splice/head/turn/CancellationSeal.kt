@@ -14,6 +14,8 @@ package splice.head.turn
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.withContext
+import splice.core.failure.FailureCause
+import splice.core.failure.StoppedBy
 import splice.core.perf.OutcomeTag
 import splice.core.perf.OutcomeTags
 import splice.core.turn.ErrorType
@@ -105,7 +107,7 @@ internal class CancellationSeal(
         } else {
             val ending = endingOf(drive, cause)
             if (isRestart(cause) && !drive.channel.clientGone.get()) {
-                withContext(NonCancellable) { drive.emitter.emitError(ending.type, ending.message) }
+                withContext(NonCancellable) { drive.emitter.emitError(ending.cause, ending.message) }
             }
             drive.trace?.failureSentence(ending.message)
             telemetry.recordPerf(drive, ending.outcome)
@@ -116,7 +118,7 @@ internal class CancellationSeal(
      *  [local] bumps the head's own error count: a cancel the head or its watchdog caused, never the
      *  operator's stop. */
     private data class Ending(
-        val type: ErrorType,
+        val cause: FailureCause,
         val message: String,
         val kind: String,
         val detail: String,
@@ -129,7 +131,7 @@ internal class CancellationSeal(
         return when {
             // The operator's stop is permanent and never advertises a retry.
             generateSequence(cause) { it.cause }.take(CAUSE_DEPTH).any { it is OperatorStop } -> Ending(
-                type = ErrorType.INVALID_REQUEST,
+                cause = FailureCause.Splice.Stopped(StoppedBy.CONSOLE),
                 message = "${provider.key}: $OPERATOR_STOPPED",
                 kind = "stopped",
                 detail = ": the operator stopped the turn",
@@ -137,7 +139,7 @@ internal class CancellationSeal(
                 local = false,
             )
             isRestart(cause) -> Ending(
-                type = ErrorType.OVERLOADED,
+                cause = FailureCause.Splice.Stopped(StoppedBy.RESTART),
                 message = HEAD_RESTART_SENTENCE,
                 kind = "restarted",
                 detail = ": the head ended this request before closing its engine",
@@ -149,20 +151,20 @@ internal class CancellationSeal(
             // turns splice gave up on, and so a quiet model does not read as an overloaded provider (console
             // BUILD row 46). The client keeps the overloaded error type, which is the retryable shape.
             fired is splice.upstream.retry.WatchdogFired.TotalCap -> Ending(
-                type = ErrorType.OVERLOADED,
+                cause = fired.cause,
                 message = renderer.spoken(ErrorType.OVERLOADED, fired.retryMessage),
                 kind = "turn-cap",
                 detail = ": no upstream progress within the limit, so splice gave up on the turn",
                 outcome = OutcomeTag.TURN_CAP.wire,
                 local = true,
             )
-            fired != null -> cancelled("${provider.key}: splice idle watchdog ended the round; retry")
-            else -> cancelled("${provider.key}: splice turn cancelled; retry")
+            fired != null -> cancelled(fired.cause, "${provider.key}: splice idle watchdog ended the round; retry")
+            else -> cancelled(FailureCause.Splice.Internal(), "${provider.key}: splice turn cancelled; retry")
         }
     }
 
-    private fun cancelled(message: String): Ending = Ending(
-        type = ErrorType.OVERLOADED,
+    private fun cancelled(why: FailureCause, message: String): Ending = Ending(
+        cause = why,
         message = message,
         kind = "cancelled",
         detail = ": turn cancelled before terminal",
@@ -172,7 +174,7 @@ internal class CancellationSeal(
 
     private suspend fun sealConnected(drive: TurnDrive, ending: Ending) {
         try {
-            drive.emitter.emitError(ending.type, ending.message)
+            drive.emitter.emitError(ending.cause, ending.message)
             drive.trace?.failureSentence(ending.message)
             log(telemetry.errTurn(ending.kind, drive, ending.detail))
             telemetry.recordPerf(drive, ending.outcome)

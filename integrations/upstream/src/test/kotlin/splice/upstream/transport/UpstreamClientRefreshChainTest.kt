@@ -115,7 +115,7 @@ class UpstreamClientRefreshChainTest {
 
         val failure = assertEnds<UpstreamFailed> { postOnce(clientOver(engine), auth, perf) }
 
-        assertEquals(401, failure.status)
+        assertEquals(401, failure.evidence.status)
         assertEquals(listOf("Bearer tok-old", "Bearer tok-new"), seenAuth.toList())
         assertEquals(1, auth.refreshCalls.get(), "the refreshedOnce budget bounds the loop at one")
         assertEquals(1L, perf.snapshot().counters[PerfKeys.REFRESHES])
@@ -129,7 +129,7 @@ class UpstreamClientRefreshChainTest {
 
         val failure = assertEnds<UpstreamFailed> { postOnce(clientOver(engine), auth, perf) }
 
-        assertEquals(401, failure.status)
+        assertEquals(401, failure.evidence.status)
         assertEquals(listOf("Bearer tok-old"), seenAuth.toList(), "nothing to reissue with: no second call")
         assertEquals(1, auth.refreshCalls.get())
         assertEquals(1L, perf.snapshot().counters[PerfKeys.ATTEMPTS])

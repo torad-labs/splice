@@ -39,8 +39,8 @@ class ResponsesHeldSummaryTest {
 
         assertTrue(outcome is TurnOutcome.Failure, "held summary chars must trip the shared capacity guard")
         val failure = outcome as TurnOutcome.Failure
-        assertTrue(failure.message.contains("exceeded max buffered size"), failure.message)
-        assertFalse(failure.traits.providerReported)
+        assertTrue(failure.evidence.message.contains("exceeded max buffered size"), failure.evidence.message)
+        assertFalse(failure.cause.providerReported)
         assertFalse(sink.calls.any { it.startsWith("text#") }, "a full summary budget cannot admit the next answer")
         assertFalse(sink.calls.any { it.startsWith("redacted:") })
     }
@@ -63,8 +63,8 @@ class ResponsesHeldSummaryTest {
 
         assertTrue(outcome is TurnOutcome.Failure, "the shared sum reaches the cap although each surface is below it")
         val failure = outcome as TurnOutcome.Failure
-        assertTrue(failure.message.contains("exceeded max buffered size"), failure.message)
-        assertFalse(failure.traits.providerReported)
+        assertTrue(failure.evidence.message.contains("exceeded max buffered size"), failure.evidence.message)
+        assertFalse(failure.cause.providerReported)
         assertFalse(visible(sink).contains("answer"), "a later event cannot bypass the aggregate character budget")
         assertFalse(sink.calls.any { it.startsWith("redacted:") })
     }

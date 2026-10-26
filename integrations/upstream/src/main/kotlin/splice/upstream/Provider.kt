@@ -81,9 +81,9 @@ public interface Provider : ProviderIdentity {
     /** The Anthropic-compatible client owns retry and fallback for a native rate-limit response. */
     public val relayRateLimitReplies: Boolean get() = false
 
-    /** A caller constraint this provider cannot honor, answered through admission's invalid-request path.
+    /** A caller constraint this provider cannot honor, answered at admission as its cause decides.
      *  Null preserves normal admission. This is evaluated before building or sending an upstream turn. */
-    public fun requestRefusal(body: AnthropicTurnBody): String? = null
+    public fun requestRefusal(body: AnthropicTurnBody): RequestRefusal? = null
 
     public fun buildTurn(body: AnthropicTurnBody, compact: Boolean, sessionId: String?): BuiltTurn
 

@@ -161,8 +161,8 @@ internal class CodeModeItemSourceCapture(
     } else {
         when (outcome) {
             is TurnOutcome.Failure ->
-                "failure cause=${outcome.cause} permanent=${outcome.traits.permanent} " +
-                    "provider=${outcome.traits.providerReported}"
+                "failure cause=${outcome.cause.persisted} permanent=${outcome.cause.permanent} " +
+                    "provider=${outcome.cause.providerReported}"
             is TurnOutcome.ClientAbandoned -> "client abandoned"
             is TurnOutcome.Success -> when {
                 outcome.incomplete -> "incomplete ${outcome.shape.outputShape}"

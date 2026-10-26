@@ -14,9 +14,9 @@ import org.junit.jupiter.api.Assertions.assertFalse
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.io.TempDir
-import splice.core.turn.FailureCause
-import splice.core.turn.FailurePhase
-import splice.core.turn.FailureTraits
+import splice.core.failure.FailureEvidence
+import splice.core.failure.Moment
+import splice.core.failure.Position
 import splice.core.turn.ReasoningDisplay
 import splice.core.turn.TurnMeta
 import splice.core.turn.TurnOutcome
@@ -166,34 +166,31 @@ class ClassifierRefusalDeliveryTest {
 
     @Test
     fun `every failure cause uses the error channel after partial output`() = runTest {
-        for (cause in FailureCause.entries) {
-            for (deterministic in listOf(false, true)) {
-                val frames = mutableListOf<String>()
-                val emitter = SseEmitterFactory().create(
-                    write = { frames.add(it) },
-                    model = "claude-splice",
-                    usagePayload = { buildJsonObject {} },
-                    streaming = StreamWiring(contentReached = { true }),
-                )
-                emitter.addTextBlock("partial")
-                pipeline().finishStream(
-                    emitter,
-                    TurnOutcome.Failure(
-                        "failure diagnostic",
-                        cause,
-                        FailurePhase.MID_OUTPUT,
-                        traits = FailureTraits(deterministic = deterministic),
-                    ),
-                    meta,
-                    elapsedMs = 1,
-                )
-                assertTrue(frames.last().startsWith("event: error\n"), "$cause: $frames")
-                assertFalse(emitter.endedCleanly, "$cause")
-                assertTrue(
-                    frames.none { it.startsWith("event: message_delta") || it.startsWith("event: message_stop") },
-                )
-                assertTrue(frames.filter { it.contains("text_delta") }.all { it.contains("\"text\":\"partial\"") })
-            }
+        for (cause in everyLeaf) {
+            val frames = mutableListOf<String>()
+            val emitter = SseEmitterFactory().create(
+                write = { frames.add(it) },
+                model = "claude-splice",
+                usagePayload = { buildJsonObject {} },
+                streaming = StreamWiring(contentReached = { true }),
+            )
+            emitter.addTextBlock("partial")
+            pipeline().finishStream(
+                emitter,
+                TurnOutcome.Failure(
+                    cause = cause,
+                    at = Position(Moment.MID_CONTENT, streamBegan = true),
+                    evidence = FailureEvidence("failure diagnostic"),
+                ),
+                meta,
+                elapsedMs = 1,
+            )
+            assertTrue(frames.last().startsWith("event: error\n"), "$cause: $frames")
+            assertFalse(emitter.endedCleanly, "$cause")
+            assertTrue(
+                frames.none { it.startsWith("event: message_delta") || it.startsWith("event: message_stop") },
+            )
+            assertTrue(frames.filter { it.contains("text_delta") }.all { it.contains("\"text\":\"partial\"") })
         }
     }
 }

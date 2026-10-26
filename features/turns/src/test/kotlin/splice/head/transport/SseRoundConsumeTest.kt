@@ -38,6 +38,8 @@ import org.junit.jupiter.api.io.TempDir
 import splice.core.auth.AuthDescription
 import splice.core.auth.Credentials
 import splice.core.auth.RefreshableAuthProvider
+import splice.core.failure.ClientWire
+import splice.core.failure.FailureCause
 import splice.core.model.ModelCatalog
 import splice.core.model.ModelEntry
 import splice.core.perf.PerfKeys
@@ -107,7 +109,7 @@ private class NoopTerminal : TurnTerminal, WireSink by RecordingSink2() {
 
     override suspend fun ensureStarted() = Unit
     override suspend fun emitTerminal(hasToolUse: Boolean, incomplete: Boolean, usage: Usage) = Unit
-    override suspend fun emitError(type: ErrorType, message: String, permanent: Boolean) = Unit
+    override suspend fun emitError(cause: FailureCause, message: String) = Unit
     override fun abandon() = Unit
 }
 
@@ -431,10 +433,17 @@ class SseRoundConsumeTest {
             // and the G2 auth diagnosis was skipped — an undiagnosable generic error instead.
             val second = consume.read(inputs, fetch("zero_event_auth"))
             val failure = second as TurnOutcome.Failure
-            assertEquals(ErrorType.AUTHENTICATION, failure.type, "zero-event auth body must classify: $failure")
-            assertTrue(failure.message.contains("claudex login"), "login hint expected: ${failure.message}")
+            assertEquals(
+                ErrorType.AUTHENTICATION,
+                ClientWire.ownType(failure.cause),
+                "zero-event auth body must classify: $failure",
+            )
+            assertTrue(
+                failure.evidence.message.contains("claudex login"),
+                "login hint expected: ${failure.evidence.message}",
+            )
             // Control: attempt 1's verdict must stay untouched — its round had real events.
-            assertFalse(first is TurnOutcome.Failure && first.type == ErrorType.AUTHENTICATION)
+            assertFalse(first is TurnOutcome.Failure && ClientWire.ownType(first.cause) == ErrorType.AUTHENTICATION)
         } finally {
             inputs.turnJob.cancel()
             drive.slot.release()

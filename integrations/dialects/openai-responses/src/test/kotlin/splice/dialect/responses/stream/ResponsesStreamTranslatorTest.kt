@@ -17,6 +17,7 @@ import org.junit.jupiter.api.Assertions.assertFalse
 import org.junit.jupiter.api.Assertions.assertInstanceOf
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
+import splice.core.failure.ClientWire
 import splice.core.index.WireBlockIndex
 import splice.core.turn.ErrorType
 import splice.core.turn.SharedSummaryParts
@@ -309,8 +310,8 @@ class ResponsesStreamTranslatorTest {
         )
         val failure = outcome as TurnOutcome.Failure
         // overflow classification survives via the SAME classifier (v29 P0 fix)
-        assertEquals(ErrorType.INVALID_REQUEST, failure.type)
-        assertTrue(failure.message.contains("prompt is too long"))
+        assertEquals(ErrorType.INVALID_REQUEST, ClientWire.ownType(failure.cause))
+        assertTrue(failure.evidence.message.contains("prompt is too long"))
         assertTrue(sink.calls.contains("text#0:still read"))
     }
 
@@ -346,8 +347,8 @@ class ResponsesStreamTranslatorTest {
             RecordingSink(),
         )
         val failure = outcome as TurnOutcome.Failure
-        assertEquals(ErrorType.OVERLOADED, failure.type)
-        assertTrue(failure.message.contains("truncated"))
+        assertEquals(ErrorType.OVERLOADED, ClientWire.ownType(failure.cause))
+        assertTrue(failure.evidence.message.contains("truncated"))
     }
 
     @Test
@@ -368,8 +369,8 @@ class ResponsesStreamTranslatorTest {
             ctx(fired = WatchdogFired.Idle(idleMs = 200_000, sawClientFrame = true, limitMs = 180_000)),
         ).driveTurn(emptyList<JsonObject>().asFlow(), RecordingSink())
         val failure = outcome as TurnOutcome.Failure
-        assertEquals(ErrorType.OVERLOADED, failure.type)
-        assertTrue(failure.message.contains("180s idle cap"))
+        assertEquals(ErrorType.OVERLOADED, ClientWire.ownType(failure.cause))
+        assertTrue(failure.evidence.message.contains("180s idle cap"))
     }
 
     @Test
@@ -470,9 +471,9 @@ class ResponsesStreamTranslatorTest {
             RecordingSink(),
         )
         val failure = outcome as TurnOutcome.Failure
-        assertEquals(ErrorType.INVALID_REQUEST, failure.type)
-        assertTrue(failure.traits.providerReported)
-        assertTrue(failure.message.contains("content filter"))
+        assertEquals(ErrorType.INVALID_REQUEST, ClientWire.ownType(failure.cause))
+        assertTrue(failure.cause.providerReported)
+        assertTrue(failure.evidence.message.contains("content filter"))
     }
 
     @Test
@@ -845,7 +846,7 @@ class ResponsesRunawayGuardTest {
 
         val outcome = ResponsesStreamTranslator(ctx()).driveTurn(events, sink)
         val failure = outcome as TurnOutcome.Failure
-        assertTrue(failure.message.contains("exceeded max buffered size"), failure.message)
+        assertTrue(failure.evidence.message.contains("exceeded max buffered size"), failure.evidence.message)
         assertEquals(BufferCapacity.MAX_TOOL_INDEX_ENTRIES, sink.calls.count { it.startsWith("openTool") })
         assertEquals(BufferCapacity.MAX_TOOL_INDEX_ENTRIES + 1, emitted, "guard must stop collection")
     }
@@ -863,7 +864,7 @@ class ResponsesRunawayGuardTest {
 
         val outcome = ResponsesStreamTranslator(ctx()).driveTurn(events, sink)
         val failure = outcome as TurnOutcome.Failure
-        assertTrue(failure.message.contains("exceeded max buffered size"), failure.message)
+        assertTrue(failure.evidence.message.contains("exceeded max buffered size"), failure.evidence.message)
         assertEquals(20, sink.calls.count { it.startsWith("json#") })
     }
 
@@ -889,9 +890,9 @@ class ResponsesRunawayGuardTest {
         }
         val outcome = ResponsesStreamTranslator(ctx()).driveTurn(events, sink)
         val failure = outcome as TurnOutcome.Failure
-        assertEquals(ErrorType.API_ERROR, failure.type)
-        assertFalse(failure.traits.providerReported, "the runaway verdict is LOCAL — never provider-attributed")
-        assertTrue(failure.message.contains("exceeded max buffered size"), failure.message)
+        assertEquals(ErrorType.API_ERROR, ClientWire.ownType(failure.cause))
+        assertFalse(failure.cause.providerReported, "the runaway verdict is LOCAL — never provider-attributed")
+        assertTrue(failure.evidence.message.contains("exceeded max buffered size"), failure.evidence.message)
         // consumption stopped at the latch: 20 x 1M reaches the cap, later deltas never emit
         val deltas = sink.calls.count { it.startsWith("text#") }
         assertTrue(deltas in 20..21, "expected the guard to stop the stream at the cap, saw $deltas deltas")
@@ -917,8 +918,8 @@ class ResponsesToolArgsValidationTest {
             RecordingSink(),
         )
         val failure = outcome as TurnOutcome.Failure
-        assertEquals(ErrorType.API_ERROR, failure.type)
-        assertTrue(failure.message.contains("malformed JSON"), failure.message)
+        assertEquals(ErrorType.API_ERROR, ClientWire.ownType(failure.cause))
+        assertTrue(failure.evidence.message.contains("malformed JSON"), failure.evidence.message)
     }
 
     @Test
@@ -934,7 +935,8 @@ class ResponsesToolArgsValidationTest {
             ).asFlow(),
             RecordingSink(),
         )
-        assertTrue((outcome as TurnOutcome.Failure).message.contains("empty arguments"), outcome.message)
+        val failure = outcome as TurnOutcome.Failure
+        assertTrue(failure.evidence.message.contains("empty arguments"), failure.evidence.message)
     }
 
     @Test
@@ -979,10 +981,10 @@ class ResponsesRefusalHonestyTest {
             RecordingSink(),
         )
         val f = outcome as TurnOutcome.Failure
-        assertEquals(ErrorType.INVALID_REQUEST, f.type)
-        assertTrue(f.traits.providerReported)
-        assertTrue(f.message.contains("Refusing: policy."), f.message)
-        assertTrue(!f.message.contains("stopped by content filter"), f.message)
+        assertEquals(ErrorType.INVALID_REQUEST, ClientWire.ownType(f.cause))
+        assertTrue(f.cause.providerReported)
+        assertTrue(f.evidence.message.contains("Refusing: policy."), f.evidence.message)
+        assertTrue(!f.evidence.message.contains("stopped by content filter"), f.evidence.message)
         assertEquals(null, f.partial)
     }
 
@@ -1005,8 +1007,8 @@ class ResponsesRefusalHonestyTest {
             RecordingSink(),
         )
         val f = outcome as TurnOutcome.Failure
-        assertTrue(f.traits.providerReported, "the model's own refusal is provider-reported, not a local verdict")
-        assertTrue(f.traits.permanent, "a deterministic refusal must be permanent — see V4-122 item 11")
+        assertTrue(f.cause.providerReported, "the model's own refusal is provider-reported, not a local verdict")
+        assertTrue(f.cause.permanent, "a deterministic refusal must be permanent — see V4-122 item 11")
     }
 
     @Test
@@ -1021,9 +1023,9 @@ class ResponsesRefusalHonestyTest {
             sink,
         )
         val failure = outcome as TurnOutcome.Failure
-        assertEquals(ErrorType.INVALID_REQUEST, failure.type)
-        assertTrue(failure.traits.providerReported, "the BACKEND sent the refusal — G20 provenance is upstream")
-        assertTrue(failure.message.contains("I won't do that."), failure.message)
+        assertEquals(ErrorType.INVALID_REQUEST, ClientWire.ownType(failure.cause))
+        assertTrue(failure.cause.providerReported, "the BACKEND sent the refusal — G20 provenance is upstream")
+        assertTrue(failure.evidence.message.contains("I won't do that."), failure.evidence.message)
         // A refusal is deterministic: no salvage may ride it, or the re-anchor loop re-POSTs it.
         assertEquals(null, failure.partial)
     }
@@ -1043,9 +1045,9 @@ class ResponsesRefusalHonestyTest {
             RecordingSink(),
         )
         val failure = outcome as TurnOutcome.Failure
-        assertEquals(ErrorType.INVALID_REQUEST, failure.type)
-        assertTrue(failure.traits.providerReported)
-        assertTrue(failure.message.contains("Refusing: policy."), failure.message)
+        assertEquals(ErrorType.INVALID_REQUEST, ClientWire.ownType(failure.cause))
+        assertTrue(failure.cause.providerReported)
+        assertTrue(failure.evidence.message.contains("Refusing: policy."), failure.evidence.message)
     }
 
     @Test
@@ -1061,7 +1063,7 @@ class ResponsesRefusalHonestyTest {
             RecordingSink(),
         )
         val failure = outcome as TurnOutcome.Failure
-        assertEquals(1, Regex("Nope\\.").findAll(failure.message).count(), failure.message)
+        assertEquals(1, Regex("Nope\\.").findAll(failure.evidence.message).count(), failure.evidence.message)
     }
 
     // must_not: an empty refusal part, and an ordinary text turn, must be completely unaffected.
@@ -1130,7 +1132,7 @@ class ResponsesRefusalHonestyTest {
         } + completed
         val outcome = ResponsesStreamTranslator(ctx()).driveTurn(frames.asFlow(), RecordingSink())
         val f = outcome as TurnOutcome.Failure
-        assertTrue(f.message.contains("I won't do that. I won't do anything illegal."), f.message)
+        assertTrue(f.evidence.message.contains("I won't do that. I won't do anything illegal."), f.evidence.message)
     }
 
     // THE MISSING CARRIER. ResponseRefusalDoneEvent ("emitted when refusal text is finalized")
@@ -1147,9 +1149,9 @@ class ResponsesRefusalHonestyTest {
             RecordingSink(),
         )
         val f = outcome as TurnOutcome.Failure
-        assertEquals(ErrorType.INVALID_REQUEST, f.type)
-        assertTrue(f.traits.providerReported, "the BACKEND finalized the refusal — G20 provenance is upstream")
-        assertTrue(f.message.contains("I won't do that."), f.message)
+        assertEquals(ErrorType.INVALID_REQUEST, ClientWire.ownType(f.cause))
+        assertTrue(f.cause.providerReported, "the BACKEND finalized the refusal — G20 provenance is upstream")
+        assertTrue(f.evidence.message.contains("I won't do that."), f.evidence.message)
         assertEquals(null, f.partial)
     }
 
@@ -1169,7 +1171,7 @@ class ResponsesRefusalHonestyTest {
             RecordingSink(),
         )
         val f = outcome as TurnOutcome.Failure
-        assertEquals(1, Regex("Nope\\.").findAll(f.message).count(), f.message)
+        assertEquals(1, Regex("Nope\\.").findAll(f.evidence.message).count(), f.evidence.message)
     }
 
     // A NON-EMPTY refusal part beside real prose. HEAD returned Success with the text; failing the
@@ -1189,9 +1191,9 @@ class ResponsesRefusalHonestyTest {
             RecordingSink(),
         )
         val f = outcome as TurnOutcome.Failure
-        assertEquals(ErrorType.INVALID_REQUEST, f.type)
-        assertTrue(f.traits.providerReported)
-        assertTrue(f.message.contains("but I stop here"), f.message)
+        assertEquals(ErrorType.INVALID_REQUEST, ClientWire.ownType(f.cause))
+        assertTrue(f.cause.providerReported)
+        assertTrue(f.evidence.message.contains("but I stop here"), f.evidence.message)
         assertEquals(null, f.partial)
     }
 }
@@ -1220,8 +1222,8 @@ class ResponsesItemDoneToolArgsTest {
             RecordingSink(),
         )
         val f = outcome as TurnOutcome.Failure
-        assertEquals(ErrorType.API_ERROR, f.type)
-        assertTrue(f.message.contains("tool call"), f.message)
+        assertEquals(ErrorType.API_ERROR, ClientWire.ownType(f.cause))
+        assertTrue(f.evidence.message.contains("tool call"), f.evidence.message)
     }
 
     @Test
@@ -1285,8 +1287,8 @@ class ResponsesItemDoneToolArgsTest {
             RecordingSink(),
         )
         val f = assertInstanceOf(TurnOutcome.Failure::class.java, outcome, "swept truncated args must not grade clean")
-        assertEquals(ErrorType.API_ERROR, f.type)
-        assertTrue(f.message.contains("tool call"), f.message)
+        assertEquals(ErrorType.API_ERROR, ClientWire.ownType(f.cause))
+        assertTrue(f.evidence.message.contains("tool call"), f.evidence.message)
     }
 
     // DR-107 (sweep-2): a second output_item.added(function_call) at an already-open output_index
@@ -1322,7 +1324,7 @@ class ResponsesItemDoneToolArgsTest {
         assertTrue(firstClose in 0 until secondOpen, "evicted block must close before the new open: ${sink.calls}")
         // Validation: the evicted block's truncated args latch CX-01 — the turn must not grade clean.
         val f = assertInstanceOf(TurnOutcome.Failure::class.java, outcome, "evicted truncated args must latch")
-        assertTrue(f.message.contains("tool call"), f.message)
+        assertTrue(f.evidence.message.contains("tool call"), f.evidence.message)
     }
 
     // DR-107 rider: the same eviction orphaned an open TEXT block when a function_call reused its
@@ -1451,10 +1453,14 @@ class ResponsesStringErrorTest {
         )
         val failure = assertInstanceOf(TurnOutcome.Failure::class.java, outcome)
         assertTrue(
-            failure.message.contains("rate limit exceeded, slow down"),
-            "the vendor's text must survive to the classifier and the surfaced line: ${failure.message}",
+            failure.evidence.message.contains("rate limit exceeded, slow down"),
+            "the vendor's text must survive to the classifier and the surfaced line: ${failure.evidence.message}",
         )
-        assertEquals(ErrorType.RATE_LIMIT, failure.type, "the classifier must see the vendor signal")
+        assertEquals(
+            ErrorType.RATE_LIMIT,
+            ClientWire.ownType(failure.cause),
+            "the classifier must see the vendor signal",
+        )
     }
 
     @Test
@@ -1466,7 +1472,7 @@ class ResponsesStringErrorTest {
             RecordingSink(),
         )
         val failure = assertInstanceOf(TurnOutcome.Failure::class.java, outcome)
-        assertTrue(failure.message.contains("backend proxy timeout"), failure.message)
+        assertTrue(failure.evidence.message.contains("backend proxy timeout"), failure.evidence.message)
     }
 
     @Test
@@ -1478,7 +1484,7 @@ class ResponsesStringErrorTest {
             RecordingSink(),
         )
         val failure = assertInstanceOf(TurnOutcome.Failure::class.java, outcome)
-        assertTrue(failure.message.contains("boom"), failure.message)
+        assertTrue(failure.evidence.message.contains("boom"), failure.evidence.message)
     }
 
     @Test

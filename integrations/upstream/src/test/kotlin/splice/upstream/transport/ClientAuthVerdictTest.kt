@@ -50,7 +50,7 @@ class ClientAuthVerdictTest {
 
         val failure = assertEnds<UpstreamFailed> { forward(answering(HttpStatusCode.Unauthorized), auth) }
 
-        assertEquals(401, failure.status)
+        assertEquals(401, failure.evidence.status)
         assertFalse(auth.describe().present, "upstream rejected the forwarded login")
     }
 

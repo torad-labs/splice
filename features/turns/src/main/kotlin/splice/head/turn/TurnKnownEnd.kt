@@ -2,6 +2,8 @@
 // (concentration, 2026-08-19) so emitFailure is not billed for this surface. Same-package.
 package splice.head.turn
 
+import splice.core.failure.ClientWire
+import splice.core.failure.FailureCause
 import splice.core.perf.OutcomeTag
 import splice.core.perf.PerfKeys
 import splice.core.turn.ErrorType
@@ -13,9 +15,6 @@ import splice.head.admission.TurnQuota
 import splice.head.perf.PerfFailure
 import splice.head.pipeline.FailureRenderer
 import splice.upstream.Provider
-import splice.upstream.failure.FailureSource
-import splice.upstream.failure.ForeignCredential
-import splice.upstream.failure.UpstreamFailureClassifier
 import splice.upstream.transport.UpstreamFailed
 
 internal class TurnKnownEnd(
@@ -43,58 +42,50 @@ internal class TurnKnownEnd(
         telemetry.recordPerf(drive, OutcomeTag.AUTH_MISSING.wire)
         health.local() // no upstream call ever happened: missing local credentials
         drive.emitter.emitError(
-            ErrorType.AUTHENTICATION,
+            FailureCause.Splice.NoLogin(provider.loginCommand.ifEmpty { null }),
             "${provider.key}: no upstream credentials${failures.loginHint()}",
         )
     }
 
-    /** The upstream host's own refusal after retries, or the local hold standing in for it. */
+    /** The upstream host's own refusal after retries. Its cause was read once, where the retry loop gave up; V4-242's
+     *  rule is in that reading: a 401 naming a credential the failing attempt did not send is the upstream's own
+     *  failure, never the user's sign-in (ForeignCredential). */
     suspend fun emitFailed(drive: TurnDrive, e: UpstreamFailed) {
-        // V4-242: a 401 naming a credential the account did not send is the upstream's failure, never
-        // the user's sign-in (ForeignCredential); the credential it compares is the one sent.
-        val sent = (drive.account?.account?.auth ?: provider.auth).credentials()
-        val read = UpstreamFailureClassifier.classify(FailureSource.HTTP, e.body, e.status)
-        val failure = ForeignCredential.upstreamsOwn(read, e.body, sent)
-        val detail = "type=${failure.type.wireName} status=${e.status} msg=${failure.message.take(ERR_SNIPPET)}"
+        val cause = e.cause
+        val type = ClientWire.ownType(cause)
+        val status = e.evidence.status
+        val detail = "type=${type.wireName} status=$status msg=${e.evidence.message.take(ERR_SNIPPET)}"
         val outcome = endingTag(drive, e)
         log(telemetry.errTurn(outcome.wire, drive, detail))
         // V4-59: the code rides OUTSIDE the snippet bound on purpose. Bounding the presented
         // line instead pushed the appended login hint past ERR_SNIPPET, silently dropping the
         // one part of this message that tells the operator what to DO — caught by the existing
         // login-hint test, which is exactly what it is for.
-        val classified = renderer.present(failure.type, failure.message)
+        val classified = renderer.present(type, e.evidence.message)
         val boundedMessage = "[${classified.code}] ${classified.body.take(ERR_SNIPPET)}"
-        val standby = if (failure.type == ErrorType.RATE_LIMIT) quotas?.standbyRefusal(drive.account) else null
-        val message = message(failure.type, boundedMessage, standby)
+        val standby = if (type == ErrorType.RATE_LIMIT) quotas?.standbyRefusal(drive.account) else null
+        val message = message(type, boundedMessage, standby)
         // The emitter first decides the pending HTTP status. Record the resulting trace and
         // perf row in finally, so a dead-client write still counts the exact failure, its cause,
         // and the retry loop's attempt count. The pre-commit 400 must not leave a 200 trace.
-        accountFailure(e, failure.type)
-        e.rateLimitReply?.let { reply -> drive.rateLimitRelay?.relay(quotas?.withStandby(reply, standby) ?: reply) }
-        // V4-81: translated failures retain the emitter's wire type and permanence.
+        accountFailure(e, type)
+        e.native?.let { reply -> drive.rateLimitRelay?.relay(quotas?.withStandby(reply, standby) ?: reply) }
+        // V4-81: the emitter asks ClientWire for the wire type, which keeps a permanent cause's own.
         // Native 429s choose HTTP refusal above while status remains uncommitted; classified
         // context overflow before client content can still choose HTTP 400.
         try {
-            drive.emitter.emitError(failure.type, message, permanent = !failure.transient)
+            drive.emitter.emitError(cause, message)
         } finally {
-            drive.markPermanent(!failure.transient)
-            e.status?.takeIf { !e.localHold }?.let { drive.perf.setCount(PerfKeys.PROVIDER_STATUS, it.toLong()) }
+            drive.markPermanent(cause.permanent)
+            status?.let { drive.perf.setCount(PerfKeys.PROVIDER_STATUS, it.toLong()) }
             telemetry.recordPerf(
                 drive,
                 outcome.wire,
-                failure.type == ErrorType.RATE_LIMIT,
-                PerfFailure(
-                    cause = failure.cause.name,
-                    layers = e.layers,
-                    // V4-444: the provider's own words, or nothing. A local hold never asked the upstream and no status
-                    // means no answer came back; otherwise ForeignCredential judges from the reading BEFORE its own
-                    // rewrite, whose clause splice wrote for the CLIENT and would sit wrongly under this label.
-                    providerMessage = if (e.localHold || e.status == null) {
-                        null
-                    } else {
-                        ForeignCredential.upstreamsWords(e.body, read, sent)
-                    },
-                ),
+                type == ErrorType.RATE_LIMIT,
+                // V4-444: the provider's own words, or nothing: no status means no answer came back, and
+                // ForeignCredential judged them from the reading BEFORE its own rewrite, whose clause splice
+                // wrote for the CLIENT and would sit wrongly under this label.
+                PerfFailure(cause = cause.persisted.name, layers = e.layers, providerMessage = e.evidence.said),
             )
         }
     }
@@ -107,10 +98,8 @@ internal class TurnKnownEnd(
         }
 
     private fun accountFailure(error: UpstreamFailed, type: ErrorType) {
-        if (error.localHold) health.local() else health.provider()
-        if (error.planLimit == null && type == ErrorType.RATE_LIMIT) {
-            if (error.localHold) health.cooldownHeld() else health.rateLimited()
-        }
+        health.provider()
+        if (error.planLimit == null && type == ErrorType.RATE_LIMIT) health.rateLimited()
     }
 
     /** V4-419: the tag an upstream failure ends the turn on. One caused by a spent plan window ends
@@ -126,8 +115,8 @@ internal class TurnKnownEnd(
      *  ([splice.head.admission.ExhaustedAccountAdmission]). */
     private fun endingTag(drive: TurnDrive, failed: UpstreamFailed): OutcomeTag {
         val plan = failed.planLimit ?: return when {
-            failed.rateLimitReply != null -> OutcomeTag.RATE_LIMIT_RELAYED
-            failed.status == HttpStatus.TOO_MANY_REQUESTS -> OutcomeTag.RATE_LIMITED
+            failed.native != null -> OutcomeTag.RATE_LIMIT_RELAYED
+            failed.evidence.status == HttpStatus.TOO_MANY_REQUESTS -> OutcomeTag.RATE_LIMITED
             else -> OutcomeTag.UPSTREAM_FAILED
         }
         drive.trace?.failureSentence(OutcomeSentences.planLimit(plan))

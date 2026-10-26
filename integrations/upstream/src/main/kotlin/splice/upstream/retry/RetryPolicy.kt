@@ -23,6 +23,7 @@ import splice.core.wire.HttpStatus
 import splice.upstream.ClientFrameEmitted
 import splice.upstream.RetryNotice
 import splice.upstream.failure.FailureRules
+import splice.upstream.failure.HttpEnding
 import splice.upstream.transport.PostContext
 import splice.upstream.transport.RetryOutcome
 import splice.upstream.transport.TransportFailures
@@ -79,10 +80,11 @@ internal class RetryRules(private val maxRetries: Int) {
         // A credential the vendor named dead (VendorRefusals.isAuthFailure) and still refused once a refresh ran is
         // the client's authentication failure, in the vendor's own words: xAI's expiry 403 read as an invalid
         // request. One the freshness rule kept from a refresh keeps its status, since that 403 is no expiry (V4-38).
-        val status = if (refreshed && last?.vendorAuth == true) HttpStatus.UNAUTHORIZED else last?.status
+        val status = if (refreshed && last?.vendor?.deadCredential == true) HttpStatus.UNAUTHORIZED else last?.status
         // V4-117: [layers] is the loop's own attempt count at the moment it gave up — passed IN
         // rather than counted here, because this file decides and never counts (see the header).
-        return UpstreamFailed(last?.text.orEmpty(), status, layers)
+        val ending = HttpEnding(last?.text.orEmpty(), status, last?.sent)
+        return UpstreamFailed(ending.cause, ending.evidence, layers)
     }
 
     /** Native passthrough replies retain their wire; translated providers retain the plan presentation. */
@@ -92,13 +94,14 @@ internal class RetryRules(private val maxRetries: Int) {
         layers: Int,
         onRetry: RetryNotice,
     ): UpstreamFailed {
-        val reply = last.rateLimitReply
+        val reply = last.native
         cooldown.rateLimitReply = reply
         val planned = last.planLimit?.let { cooldown.planHold.hold(it, onRetry) }
         cooldown.arm(planned ?: last.retryAfterMs ?: DEFAULT_RATE_LIMIT_COOLDOWN_MS)
         val limit = last.planLimit.takeIf { reply != null || planned != null }
         val body = reply?.body ?: limit?.let(cooldown.planHold::clientBody) ?: last.text
-        return UpstreamFailed(body, last.status, layers, planLimit = limit).also { it.rateLimitReply = reply }
+        val ending = HttpEnding(body, last.status, last.sent)
+        return UpstreamFailed(ending.cause, ending.evidence, layers, planLimit = limit, native = reply)
     }
 
     /** A long non-429 pushback protects followers only after this observer finishes its retry budget.
@@ -125,7 +128,7 @@ internal class RetryRules(private val maxRetries: Int) {
             return RetryPlan(RetryDecision.GIVE_UP, refreshedOnce)
         }
         val refreshable =
-            failureRules.isAuthRefreshableFailure(failed.status, failed.vendorAuth) &&
+            failureRules.isAuthRefreshableFailure(failed.status, failed.vendor.deadCredential) &&
                 ctx.auth.allowRefreshAfterFailure(failed.status, failed.text) &&
                 !refreshedOnce
         val perf = ctx.observers.perf
@@ -173,8 +176,8 @@ internal class RetryRules(private val maxRetries: Int) {
      */
     private fun fixedVerdict(failed: RetryOutcome.Failed, nextRefreshed: Boolean): String? = when {
         // The vendor module named this refusal (VendorRefusals): its own plan, never the generic curve.
-        failed.refusal != null -> "is a known refusal (no retry: ${failed.refusal.why})"
-        nextRefreshed && failureRules.isAuthRefreshableFailure(failed.status, failed.vendorAuth) ->
+        failed.vendor.refusal != null -> "is a known refusal (no retry: ${failed.vendor.refusal.why})"
+        nextRefreshed && failureRules.isAuthRefreshableFailure(failed.status, failed.vendor.deadCredential) ->
             "rejected the credential again after a refresh (no retry: the bytes would be identical)"
         // V4-233: the upstream named a PLAN window spent until an instant; a re-send before it meets
         // the same answer. A burst 429 carries no such statement and keeps V4-61's 15s schedule.

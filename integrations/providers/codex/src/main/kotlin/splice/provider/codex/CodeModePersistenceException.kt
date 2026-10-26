@@ -1,9 +1,12 @@
 // NEW: distinguishes local durable-state failures from upstream or JavaScript runtime failures.
 package splice.provider.codex
 
+import splice.core.failure.FailureCause
+import splice.core.failure.FailureEvidence
+import splice.core.failure.Moment
+import splice.core.failure.Position
+import splice.core.failure.ProtocolFault
 import splice.core.memory.HeapCapacityException
-import splice.core.turn.FailureCause
-import splice.core.turn.FailurePhase
 import splice.core.turn.TurnOutcome
 import splice.core.turn.noRequestUsage
 import splice.core.util.SafeFailureText
@@ -24,11 +27,12 @@ internal class CodeModePersistenceException(cause: IOException, diskFull: Boolea
     }
 
     fun outcome(): TurnOutcome.Failure = TurnOutcome.Failure(
-        message,
         // V4-117: CODE_MODE_PROTOCOL — the state file we wrote could not be read back, and the
-        // source is deliberately NOT rerun. No upstream layer can repair a local persistence fault.
-        cause = FailureCause.CODE_MODE_PROTOCOL,
-        phase = FailurePhase.MID_OUTPUT,
+        // source is deliberately NOT rerun. No upstream layer can repair a local persistence fault,
+        // and a later turn may find the disk or the heap free again.
+        cause = FailureCause.Splice.Protocol(ProtocolFault.CODE_MODE_START),
+        at = Position(Moment.MID_CONTENT, streamBegan = true),
+        evidence = FailureEvidence(message),
         salvagedUsage = noRequestUsage,
     )
 }

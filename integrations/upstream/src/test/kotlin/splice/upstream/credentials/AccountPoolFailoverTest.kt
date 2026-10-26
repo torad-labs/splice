@@ -17,7 +17,7 @@ import splice.core.auth.RefreshableAuthProvider
 import splice.core.usage.PlanLimit
 import splice.core.util.ElapsedClock
 import splice.core.util.WallClock
-import splice.core.wire.RateLimitReply
+import splice.core.wire.NativeReply
 import splice.upstream.retry.FileProviderHoldStore
 import splice.upstream.retry.MAX_RATE_LIMIT_COOLDOWN_MS
 import splice.upstream.retry.RateLimitCooldown
@@ -36,7 +36,7 @@ class AccountPoolFailoverTest {
 
     private fun wallSeconds(): Long = System.currentTimeMillis() / 1_000L
 
-    private fun reply(label: String): RateLimitReply = RateLimitReply(
+    private fun reply(label: String): NativeReply = NativeReply(
         """{"type":"error","error":{"type":"rate_limit_error","message":"limit reached for $label"}}""",
         mapOf("anthropic-ratelimit-unified-status" to listOf("rejected")),
     )

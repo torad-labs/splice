@@ -2,7 +2,7 @@
 package splice.head.admission
 
 import splice.core.util.WallClock
-import splice.core.wire.RateLimitReply
+import splice.core.wire.NativeReply
 import splice.upstream.retry.RetryAfter
 
 /** How long a client refused for a limit sleeps before it asks again. */
@@ -27,7 +27,7 @@ internal class ClientRecheck(private val wallClock: WallClock = WallClock(System
     }
 
     /** The provider's own 429, with its two retry deadlines brought within the recheck and every other byte kept. */
-    fun reply(reply: RateLimitReply): RateLimitReply {
+    fun reply(reply: NativeReply): NativeReply {
         val now = wallClock()
         return reply.copy(
             headers = reply.headers.mapValues { (name, values) ->

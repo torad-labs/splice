@@ -87,20 +87,20 @@ internal class TurnFinish(
             drive,
             outcomeTag,
             failure = PerfFailure(
-                cause = failure?.cause?.name,
+                cause = failure?.cause?.persisted?.name,
                 layers = failure?.layers ?: 0,
                 // V4-444: the upstream's own words, under G20's own flag: providerReported is set ONLY where a
                 // translator parsed an error the upstream actually sent, which is exactly the question the row's
                 // label asks. A gateway-authored downgrade (the Success-with-error-terminal arm above) carries no
                 // flag and so writes nothing here, which is right — those sentences are splice's.
-                providerMessage = failure?.takeIf { it.traits.providerReported }?.message?.take(ERR_SNIPPET),
+                providerMessage = failure?.takeIf { it.cause.providerReported }?.evidence?.message?.take(ERR_SNIPPET),
             ),
         )
     }
 
     /** The classified decision survives a terminal write that escapes to the conn-reset recorder. */
     private fun markPermanence(drive: TurnDrive, failure: TurnOutcome.Failure?) {
-        failure?.let { drive.markPermanent(it.traits.permanent) }
+        failure?.let { drive.markPermanent(it.cause.permanent) }
     }
 
     private fun markCodeMode(drive: TurnDrive, outcome: TurnOutcome) {

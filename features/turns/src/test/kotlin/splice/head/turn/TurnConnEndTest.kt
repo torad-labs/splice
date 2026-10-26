@@ -35,6 +35,9 @@ import org.junit.jupiter.api.io.TempDir
 import splice.core.auth.AuthDescription
 import splice.core.auth.Credentials
 import splice.core.auth.RefreshableAuthProvider
+import splice.core.failure.ClientWire
+import splice.core.failure.FailureCause
+import splice.core.failure.FailureEvidence
 import splice.core.index.WireBlockIndex
 import splice.core.model.ModelCatalog
 import splice.core.model.ModelEntry
@@ -71,6 +74,8 @@ import splice.upstream.Provider
 import splice.upstream.ProviderLocations
 import splice.upstream.ProviderName
 import splice.upstream.ProviderTuning
+import splice.upstream.failure.FailureSource
+import splice.upstream.failure.UpstreamFailureClassifier
 import splice.upstream.retry.InflightGate
 import splice.upstream.retry.LiveLimit
 import splice.upstream.retry.TurnWatchdog
@@ -98,9 +103,11 @@ private class ConnEndRecordingTerminal : TurnTerminal {
     override var hasEnded: Boolean = false
         private set
 
-    override suspend fun emitError(type: ErrorType, message: String, permanent: Boolean) {
-        errorType = type
-        errorPermanent = permanent
+    override suspend fun emitError(cause: FailureCause, message: String) {
+        // What the emitter was handed before slice 1, now read from the cause: its own type, and whether a re-send
+        // repeats it.
+        errorType = ClientWire.ownType(cause)
+        errorPermanent = cause.permanent || cause.deterministic
         errorMessage = message
         hasEnded = true
     }
@@ -344,30 +351,31 @@ class TurnConnEndTest {
         assertEquals("1", divergence)
     }
 
+    // The local-hold cases went with the hold itself (failure-handling slice 1): every ending that reaches here is
+    // the provider's own answer.
     @org.junit.jupiter.params.ParameterizedTest
-    @org.junit.jupiter.params.provider.CsvSource("false,false,1,0", "true,false,0,1", "false,true,0,0", "true,true,0,0")
+    @org.junit.jupiter.params.provider.CsvSource("false,1", "true,0")
     fun `final rate accounting excludes plan holds and absorbed diagnostic events`(
-        held: Boolean,
         plan: Boolean,
         providerTurns: Long,
-        heldTurns: Long,
     ) = runBlocking {
-        val rig = Rig("rate-$held-$plan")
+        val rig = Rig("rate-$plan")
         val drive = rig.drive()
         repeat(3) { rig.health.provider() }
         repeat(5) { rig.health.local() }
         val p = provider()
         val ending = TurnKnownEnd(p, rig.log, rig.telemetry, TurnFailures(p), rig.health)
+        val body = """{"error":{"type":"rate_limit_error","message":"synthetic rate limit"}}"""
+        val read = UpstreamFailureClassifier.classify(FailureSource.HTTP, body, 429)
         val failure = splice.upstream.transport.UpstreamFailed(
-            """{"error":{"type":"rate_limit_error","message":"synthetic rate limit"}}""",
-            429,
+            read.cause,
+            FailureEvidence(read.message, 429, body = body),
             planLimit = if (plan) splice.core.usage.PlanLimit("five_hour", 1000) else null,
-            localHold = held,
         )
         try {
             ending.emitFailed(drive, failure)
             assertEquals(providerTurns, rig.health.rateLimitSnapshot().providerTurns)
-            assertEquals(heldTurns, rig.health.rateLimitSnapshot().heldTurns)
+            assertEquals(0L, rig.health.rateLimitSnapshot().heldTurns)
         } finally {
             drive.slot.release()
             assertEquals(true, AsyncFileIo.drain())

@@ -6,6 +6,7 @@ import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.yield
 import splice.core.auth.AuthDescription
+import splice.core.auth.ClientAuthProvider
 import splice.core.auth.Credentials
 import splice.core.auth.RefreshableAuthProvider
 import splice.core.model.ModelCatalog
@@ -29,6 +30,7 @@ import splice.upstream.Waiter
 import splice.upstream.retry.InflightGate
 import splice.upstream.transport.RetryPacing
 import splice.upstream.transport.UpstreamClient
+import java.net.URI
 import java.nio.file.Path
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.CopyOnWriteArrayList
@@ -51,13 +53,18 @@ private const val PROVIDER_ACCOUNT = "scripted-account"
  * The knobs a test may set on a head. [maxInflight] and [maxQueued] are the gate's limits, 0 for no limit, so a
  * head that refuses a third request is `HeadShape(maxInflight = 1, maxQueued = 1)`. [retries] is the upstream
  * client's attempt budget. [budget] is every watchdog tier and the upstream deadline: far longer than any test's
- * virtual wait, so no watchdog fires unless a test shortens it.
+ * virtual wait, so no watchdog fires unless a test shortens it. [firstOutput] shortens only the tier a round is held
+ * to before the client saw content, and [progressCap] only the whole turn's no-progress limit, so a test can make
+ * one of them fire and not the other. [relayed] puts a [PathRelay] between the head and the provider.
  */
 public data class HeadShape(
     val maxInflight: Int = 0,
     val maxQueued: Int = 0,
     val retries: Int = 2,
     val budget: Duration = BUDGET_HOURS.hours,
+    val firstOutput: Duration = budget,
+    val progressCap: Duration = budget,
+    val relayed: Boolean = false,
 )
 
 /**
@@ -83,6 +90,7 @@ public class ScriptedHead internal constructor(
     /** The head's admission gate. */
     public val gate: InflightGate,
     private val lines: List<String>,
+    private val wiring: HeadWiring,
 ) {
     /** One reader per port the head listened on, so a stream opened before a restart keeps its connection. */
     private val readers = ConcurrentHashMap<Int, ClientReader>()
@@ -95,6 +103,13 @@ public class ScriptedHead internal constructor(
 
     /** Lines the head logged, in order. */
     public val log: List<String> get() = lines.toList()
+
+    /** The JSONL file the head writes each turn's perf row to. */
+    public val perfFile: Path get() = wiring.perfFile
+
+    /** The relay between the head and the provider; a test makes it refuse new connections. Fails on a head built
+     *  without [HeadShape.relayed]. */
+    public val relay: PathRelay get() = checkNotNull(wiring.relay) { "this head was built without a relay" }
 
     /** Returns once [count] requests wait in the gate's queue. The gate signals nothing when one joins, so this
      *  looks again each time the test's coroutine runs. */
@@ -121,6 +136,7 @@ public class ScriptedHead internal constructor(
         } finally {
             readers.values.forEach(ClientReader::close)
             readers.clear()
+            wiring.relay?.close()
         }
     }
 
@@ -130,6 +146,9 @@ public class ScriptedHead internal constructor(
     }
 }
 
+/** Where a head's records go and the relay it reaches the provider through, when it has one. */
+internal data class HeadWiring(val perfFile: Path, val relay: PathRelay?)
+
 /** The scripted provider's credential: always there, never refused. */
 private class ScriptedAuth : RefreshableAuthProvider {
     override suspend fun credentials(): Credentials = Credentials.Bearer(PROVIDER_TOKEN, PROVIDER_ACCOUNT)
@@ -137,6 +156,34 @@ private class ScriptedAuth : RefreshableAuthProvider {
     override suspend fun refresh(): Credentials = credentials()
 
     override suspend fun describe(): AuthDescription = AuthDescription(present = true, kind = "scripted")
+}
+
+/** A login that is gone: no credential to send and none to refresh, so a turn ends before any provider request. */
+private class SignedOutAuth : RefreshableAuthProvider {
+    override suspend fun credentials(): Credentials? = null
+
+    override suspend fun refresh(): Credentials? = null
+
+    override suspend fun describe(): AuthDescription = AuthDescription(present = false, kind = "scripted")
+}
+
+/** The login a head signs its provider requests with. */
+internal enum class HeadLogin {
+    /** The scripted provider's own credential. */
+    SCRIPTED,
+
+    /** None: the head's login is gone. */
+    SIGNED_OUT,
+
+    /** The caller's own, forwarded on each turn, as a head that serves a LAN share's nodes takes it. */
+    FORWARDED,
+    ;
+
+    fun auth(key: String): RefreshableAuthProvider = when (this) {
+        SCRIPTED -> ScriptedAuth()
+        SIGNED_OUT -> SignedOutAuth()
+        FORWARDED -> ClientAuthProvider(key)
+    }
 }
 
 /** Builds heads of each API type in front of one [provider], on [time], storing what they keep under [tmp]. */
@@ -161,6 +208,19 @@ public class ScriptedHeads(private val tmp: Path, public val time: VirtualTime) 
             ScriptedChatProvider(tuning, ChatQuirks(tuning.key).withStreamUsageToml(true).withReplayReasoning(true))
         }
 
+    /** An OpenAI Chat Completions head whose login is gone. */
+    public suspend fun signedOutChat(shape: HeadShape = HeadShape()): ScriptedHead =
+        head("signed-out", shape, HeadLogin.SIGNED_OUT) { tuning, _ ->
+            ScriptedChatProvider(tuning, ChatQuirks(tuning.key))
+        }
+
+    /** An Anthropic Messages passthrough head with no login of its own: each turn runs on the caller's
+     *  (HeadPolicy.forwardClientAuth), as on a head a LAN share's nodes reach. */
+    public suspend fun forwardingAnthropic(shape: HeadShape = HeadShape()): ScriptedHead =
+        head("forwarding", shape, HeadLogin.FORWARDED) { tuning, _ ->
+            PassthroughProvider(tuning, PassthroughQuirks(tuning.key))
+        }
+
     /** An OpenAI Responses head over HTTP. */
     public suspend fun responses(shape: HeadShape = HeadShape()): ScriptedHead =
         head("responses", shape) { tuning, log -> ScriptedResponsesProvider(tuning, webSocket = false, log) }
@@ -168,6 +228,13 @@ public class ScriptedHeads(private val tmp: Path, public val time: VirtualTime) 
     /** An OpenAI Responses head whose rounds ride the websocket. */
     public suspend fun responsesOverWebSocket(shape: HeadShape = HeadShape()): ScriptedHead =
         head("responses-ws", shape) { tuning, log -> ScriptedResponsesProvider(tuning, webSocket = true, log) }
+
+    /** A head of [kind] whose provider [build] makes, for a provider this file does not build, such as a codex head. */
+    public suspend fun custom(
+        kind: String,
+        shape: HeadShape = HeadShape(),
+        build: (ProviderTuning, LogSink) -> Provider,
+    ): ScriptedHead = head(kind, shape, HeadLogin.SCRIPTED, build)
 
     /** Releases the provider's holds, stops every head, closes the clock and stops the provider. */
     public suspend fun stop() {
@@ -184,6 +251,7 @@ public class ScriptedHeads(private val tmp: Path, public val time: VirtualTime) 
     private suspend fun head(
         kind: String,
         shape: HeadShape,
+        login: HeadLogin = HeadLogin.SCRIPTED,
         build: (ProviderTuning, LogSink) -> Provider,
     ): ScriptedHead {
         provider.start()
@@ -200,30 +268,35 @@ public class ScriptedHeads(private val tmp: Path, public val time: VirtualTime) 
             clock = time.elapsed,
         )
         val base = headDeps(tmp, upstream, log, gate, HeadDeps.HeadSeams(time.elapsed, waiter, time.ticker))
+        val suffix = "-$key-${built.incrementAndGet()}"
         val deps = base.copy(
             traffic = base.traffic.copy(liveTurns = liveTurns),
-            stores = headStores(tmp, suffix = "-$key-${built.incrementAndGet()}"),
-            policy = base.policy.copy(stopDrainMs = 0),
+            stores = headStores(tmp, suffix = suffix),
+            policy = base.policy.copy(stopDrainMs = 0, forwardClientAuth = login == HeadLogin.FORWARDED),
         )
-        val server = HeadServer(build(tuning(key, shape), log), listenPort = 0, deps = deps)
-        val head = ScriptedHead(server, waiter, "claude-$key--$MODEL", liveTurns, gate, lines)
+        val relay = if (shape.relayed) PathRelay(URI(provider.baseUrl).port) else null
+        val baseUrl = relay?.let { "http://127.0.0.1:${it.port}" } ?: provider.baseUrl
+        val server = HeadServer(build(tuning(key, shape, baseUrl, login), log), listenPort = 0, deps = deps)
+        val wiring = HeadWiring(tmp.resolve("perf$suffix.jsonl"), relay)
+        val head = ScriptedHead(server, waiter, "claude-$key--$MODEL", liveTurns, gate, lines, wiring)
         heads += head
         head.start()
         return head
     }
 
-    private fun tuning(key: String, shape: HeadShape): ProviderTuning = ProviderTuning(
-        name = ProviderName(key = key, label = key),
-        catalog = ModelCatalog(
-            discoveryPrefix = "claude-$key--",
-            models = listOf(ModelEntry(MODEL, label = "Scripted", contextWindow = CONTEXT_WINDOW)),
-            defaultContextWindow = CONTEXT_WINDOW,
-        ),
-        pinnedModel = MODEL,
-        auth = ScriptedAuth(),
-        locations = ProviderLocations(baseUrl = provider.baseUrl),
-        watchdog = WatchdogBudget(shape.budget, shape.budget, shape.budget),
-    )
+    private fun tuning(key: String, shape: HeadShape, baseUrl: String, login: HeadLogin): ProviderTuning =
+        ProviderTuning(
+            name = ProviderName(key = key, label = key),
+            catalog = ModelCatalog(
+                discoveryPrefix = "claude-$key--",
+                models = listOf(ModelEntry(MODEL, label = "Scripted", contextWindow = CONTEXT_WINDOW)),
+                defaultContextWindow = CONTEXT_WINDOW,
+            ),
+            pinnedModel = MODEL,
+            auth = login.auth(key),
+            locations = ProviderLocations(baseUrl = baseUrl),
+            watchdog = WatchdogBudget(shape.firstOutput, shape.budget, shape.progressCap),
+        )
 }
 
 /**

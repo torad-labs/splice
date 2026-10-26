@@ -1,8 +1,10 @@
 package splice.provider.codex.stream.drive
 
-import splice.core.turn.FailureCause
-import splice.core.turn.FailurePhase
-import splice.core.turn.FailureTraits
+import splice.core.failure.FailureCause
+import splice.core.failure.FailureEvidence
+import splice.core.failure.Moment
+import splice.core.failure.Position
+import splice.core.failure.ProtocolFault
 import splice.core.turn.GatewayCustomCall
 import splice.core.turn.TurnOutcome
 import splice.core.turn.noRequestUsage
@@ -38,15 +40,14 @@ internal class CodeModeDriveProtocol(private val config: CodeModeBridgeConfig) {
 
     fun failure(message: String): TurnOutcome.Failure =
         TurnOutcome.Failure(
-            message,
-            traits = FailureTraits(deterministic = true),
             // V4-117: every path through this helper is the code-mode machine reporting its own
             // protocol state, so they share ONE cause rather than each borrowing an upstream one.
             // The type PARAMETER this used to take is gone with the hand-picked type itself: the
             // callers were choosing between INVALID_REQUEST and API_ERROR for the same cause, which
             // is exactly the second author the derived type removes.
-            cause = FailureCause.CODE_MODE_PROTOCOL,
-            phase = FailurePhase.MID_OUTPUT,
+            cause = FailureCause.Splice.Protocol(ProtocolFault.CODE_MODE_STATE),
+            at = Position(Moment.MID_CONTENT, streamBegan = true),
+            evidence = FailureEvidence(message),
             salvagedUsage = noRequestUsage,
         )
 }

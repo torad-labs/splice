@@ -25,6 +25,7 @@ import splice.upstream.Provider
 import splice.upstream.ProviderIdentity
 import splice.upstream.ProviderTuning
 import splice.upstream.ReanchorPolicy
+import splice.upstream.RequestRefusal
 import splice.upstream.StreamTranslator
 import splice.upstream.ToolNameShortener
 import splice.upstream.TurnSignals
@@ -62,7 +63,7 @@ public abstract class ResponsesProvider(
      *  HERE, never on shared state. */
     protected open fun perTurnHeaders(meta: TurnMeta): Map<String, String> = emptyMap()
 
-    override fun requestRefusal(body: AnthropicTurnBody): String? =
+    override fun requestRefusal(body: AnthropicTurnBody): RequestRefusal? =
         splice.dialect.responses.request.ResponsesOutputSchema.refusal(body.typed, body.raw)
 
     override fun buildTurn(body: AnthropicTurnBody, compact: Boolean, sessionId: String?): BuiltTurn {

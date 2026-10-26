@@ -26,15 +26,17 @@ package splice.dialect.anthropic
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.takeWhile
 import kotlinx.serialization.json.JsonObject
-import splice.core.turn.FailureCause
-import splice.core.turn.FailurePhase
+import splice.core.failure.FailureCause
+import splice.core.failure.FailureEvidence
+import splice.core.failure.Moment
+import splice.core.failure.Position
+import splice.core.failure.Tear
 import splice.core.turn.ResponseShape
 import splice.core.turn.RoundText
 import splice.core.turn.TurnOutcome
 import splice.upstream.StreamTranslator
 import splice.upstream.ToolNameShortener
 import splice.upstream.failure.TerminalStates
-import splice.upstream.failure.WordsAfterContent
 import splice.upstream.retry.FIRST_OUTPUT_TIER
 import splice.upstream.retry.MID_OUTPUT_TIER
 import splice.upstream.retry.MS_PER_S
@@ -126,8 +128,7 @@ public class PassthroughStreamTranslator(
     // Ordering enforced by the shared spi.terminalPrecedence (a FINISHED turn beats a late
     // watchdog fire — preferring watchdog here discarded successful kimi turns and burned quota).
     private fun terminalOutcome(): TurnOutcome = TerminalStates(
-        providerFailure = WordsAfterContent.of(terminal.providerFailure(), clientSawContent())
-            ?.copy(salvagedUsage = usage.toUsage()),
+        providerFailure = terminal.providerFailure()?.copy(salvagedUsage = usage.toUsage()),
         finished = terminal.finished,
         watchdogFired = ctx.watchdogFired(),
     ).terminalPrecedence(
@@ -151,13 +152,15 @@ public class PassthroughStreamTranslator(
      *  decision rather than this branch's. [partialRound] is deliberately the SAME builder
      *  [unfinishedOutcome] uses, so a continuation and a success read identical buffers. */
     private fun stalledOutcome(fired: WatchdogFired): TurnOutcome = TurnOutcome.Failure(
-        when (fired) {
-            is WatchdogFired.TotalCap -> fired.retryMessage
-            is WatchdogFired.Idle -> "${quirks.providerTag}: ${stallDetail(fired)}; retry"
-        },
+        cause = fired.cause,
+        at = Position(Moment.MID_CONTENT, streamBegan = true),
+        evidence = FailureEvidence(
+            when (fired) {
+                is WatchdogFired.TotalCap -> fired.retryMessage
+                is WatchdogFired.Idle -> "${quirks.providerTag}: ${stallDetail(fired)}; retry"
+            },
+        ),
         partial = if (fired is WatchdogFired.Idle) partialRound() else null,
-        cause = FailureCause.UPSTREAM_STALLED,
-        phase = FailurePhase.MID_OUTPUT,
     )
 
     /** The stall line names the TIER that fired and the number it compared, never a generic
@@ -179,14 +182,27 @@ public class PassthroughStreamTranslator(
         if (ctx.clientGone()) {
             TurnOutcome.ClientAbandoned()
         } else {
+            val partial = partialRound()
             TurnOutcome.Failure(
+                // V4-117: two shapes in one expression, so two causes — the same split its chat twin
+                // makes. A TRUNCATION is the upstream going quiet; an UNRECOGNISED throwable is not
+                // attributed to the upstream at all, because the evidence below already refuses to
+                // report an undiagnosed failure under a diagnosis.
+                cause = if (unexpected != null) {
+                    FailureCause.Splice.Internal()
+                } else {
+                    FailureCause.Path.Torn(Tear.NO_TERMINAL, toolOpen = partial.toolTearOpen)
+                },
+                at = Position(Moment.MID_CONTENT, streamBegan = true),
                 // An UNRECOGNISED throwable says so in its own words rather than borrowing the
                 // truncation sentence: "truncated" is a diagnosis, and reporting a failure we did
                 // not diagnose under a diagnosis is the mislabelling the generic arm exists to
                 // avoid. Both endings are the same Failure and both carry the salvage — only the
                 // sentence the client reads differs, and it differs by telling the truth.
-                unexpected?.let { "${quirks.providerTag}: upstream stream failed ($it)$UNEXPECTED_TAIL" }
-                    ?: "${quirks.providerTag}: stream ended without a terminal event (truncated); retry",
+                evidence = FailureEvidence(
+                    unexpected?.let { "${quirks.providerTag}: upstream stream failed ($it)$UNEXPECTED_TAIL" }
+                        ?: "${quirks.providerTag}: stream ended without a terminal event (truncated); retry",
+                ),
                 // The SALVAGE, and the reason this failure is now recoverable at all. Without it
                 // `partial` defaulted to null, which Provider.reanchorPolicy reads as "this
                 // dialect cannot continue" — so a truncated stream on THIS dialect (every OAuth
@@ -195,13 +211,7 @@ public class PassthroughStreamTranslator(
                 // wire is at a clean block boundary here (closeAll ran above), so a continuation
                 // may APPEND. Measured 2026-09-16: three deepseek truncations in one minute, at
                 // 196, 44 and 989 content frames already delivered, every one of them terminal.
-                partial = partialRound(),
-                // V4-117: two shapes in one expression, so two causes — the same split its chat twin
-                // makes. A TRUNCATION is the upstream going quiet; an UNRECOGNISED throwable is not
-                // attributed to the upstream at all, because the comment above already refuses to
-                // report an undiagnosed failure under a diagnosis.
-                cause = if (unexpected != null) FailureCause.INTERNAL else FailureCause.UPSTREAM_TRUNCATED,
-                phase = FailurePhase.MID_OUTPUT,
+                partial = partial,
             )
         }
 

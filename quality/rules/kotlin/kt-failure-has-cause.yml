@@ -6,10 +6,14 @@
 # in a free-text sentence nobody can grep (V4-116's scar, live on claude-deepseek).
 #
 # V4-117 splits the two axes: FailureCause is the TRUTH (what actually happened to the round) and
-# ErrorType stays the WIRE TYPE (the retry class RetryMatrix chooses FROM the cause, never
-# hand-picked at the site). A construction that omits the cause re-merges them by default, which is
-# the bug this rule forbids — every site must state what happened, and the matrix decides what the
-# client is told.
+# ErrorType stays the WIRE TYPE (the retry class chosen FROM the cause, never hand-picked at the
+# site). A construction that omits the cause re-merges them by default, which is the bug this rule
+# forbids — every site must state what happened, and the wire table decides what the client is told.
+#
+# Failure-handling slice 1 (2026-10-26) made the cause the sealed splice.core.failure.FailureCause
+# (a Provider, Path or Splice leaf) and the wire table ClientWire, which reads it for every status,
+# type and x-should-retry. The compiler now rejects a Failure with no cause at all; this rule keeps
+# it named at the site, so `cause =` is what a reader greps for.
 #
 # kt-failure-has-cause reds any TurnOutcome.Failure(...) whose argument list carries no `cause =`.
 # The files: glob covers every source tree a construction lives in today (dialect-*, provider-*,
@@ -19,9 +23,11 @@ id: kt-failure-has-cause
 language: kotlin
 severity: error
 message: >-
-  V4-117: every TurnOutcome.Failure states its FailureCause — the cause is what actually happened
-  (the truth), the ErrorType is the retry class RetryMatrix chooses FROM it. Add
-  `cause = FailureCause.<X>`; choose X by reading the site, never by copying its ErrorType.
+  V4-117: every TurnOutcome.Failure names its cause, a leaf of the sealed
+  splice.core.failure.FailureCause (Provider, Path or Splice) — what actually happened, decided
+  at the site. ClientWire chooses what the client is told FROM it. Add
+  `cause = FailureCause.<Family>.<Leaf>(…)`; choose the leaf by reading the site, never by
+  working back from the wire type you want.
 files:
   - "**/src/main/**/*.kt"
   - "**/src/main/**/*.kts"

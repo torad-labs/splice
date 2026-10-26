@@ -39,7 +39,7 @@ class CodeModeSaveFailureTextTest {
 
         val failure = assertThrows<CodeModePersistenceException> { store.save(oneRecord, emptyList()) }
 
-        val text = failure.outcome().message
+        val text = failure.outcome().evidence.message
         assertTrue(text.contains("disk") && text.contains("full"), text)
         assertTrue(text.contains("source was not rerun"), text)
     }
@@ -50,7 +50,7 @@ class CodeModeSaveFailureTextTest {
 
         val failure = assertThrows<CodeModePersistenceException> { store.save(oneRecord, emptyList()) }
 
-        val text = failure.outcome().message
+        val text = failure.outcome().evidence.message
         assertFalse(text.contains("full"), text)
         assertTrue(text.contains("not-a-dir"), text)
         assertTrue(text.contains("source was not rerun"), text)
@@ -62,6 +62,6 @@ class CodeModeSaveFailureTextTest {
 
         val failure = assertThrows<CodeModePersistenceException> { store.save(oneRecord, emptyList()) }
 
-        assertFalse(failure.outcome().message.contains("full"), failure.outcome().message)
+        assertFalse(failure.outcome().evidence.message.contains("full"), failure.outcome().evidence.message)
     }
 }

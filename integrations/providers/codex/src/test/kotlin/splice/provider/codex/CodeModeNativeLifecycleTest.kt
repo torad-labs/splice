@@ -227,7 +227,7 @@ class CodeModeNativeLifecycleTest : CodeModeBridgeTestSupport() {
             RoundResult.Outcome(outcome(waitCall("lost", "stable")))
         }.turn()
         assertTrue(result is TurnOutcome.Failure)
-        assertTrue((result as? TurnOutcome.Failure)?.message?.contains("source was not rerun") == true)
+        assertTrue((result as? TurnOutcome.Failure)?.evidence?.message?.contains("source was not rerun") == true)
         restored.onHeadStop()
     }
 

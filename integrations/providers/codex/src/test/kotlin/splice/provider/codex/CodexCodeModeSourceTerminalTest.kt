@@ -13,7 +13,7 @@ import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.Timeout
 import org.junit.jupiter.params.ParameterizedTest
 import org.junit.jupiter.params.provider.ValueSource
-import splice.core.turn.FailureCause
+import splice.core.failure.PersistedCause
 import splice.core.turn.TurnOutcome
 import splice.core.util.JsonScalars
 import splice.provider.codex.stream.CodeModeRejection
@@ -32,9 +32,9 @@ class CodexCodeModeSourceTerminalTest : CodeModeStatementStreamSupport() {
             IllegalStateException("synthetic private checkpoint bytes")
         }
         val outcome = CodeModeRejection.outcome(error)
-        assertFalse(outcome.message.contains("synthetic private checkpoint bytes"))
-        assertTrue(outcome.message.contains("source was not rerun"))
-        assertEquals(FailureCause.CODE_MODE_PROTOCOL, outcome.cause)
+        assertFalse(outcome.evidence.message.contains("synthetic private checkpoint bytes"))
+        assertTrue(outcome.evidence.message.contains("source was not rerun"))
+        assertEquals(PersistedCause.CODE_MODE_PROTOCOL, outcome.cause.persisted)
     }
 
     @ParameterizedTest
@@ -127,8 +127,8 @@ class CodexCodeModeSourceTerminalTest : CodeModeStatementStreamSupport() {
                     .intercept(BASE_REQUEST, RecordingSink(), post).turn()
                 assertEquals(0, escaped, "splice-local source validation must not become transport failure")
                 assertTrue(outcome is TurnOutcome.Failure, outcome.toString())
-                assertEquals(FailureCause.CODE_MODE_PROTOCOL, (outcome as TurnOutcome.Failure).cause)
-                assertFalse(outcome.message.contains("upstream source failed"))
+                assertEquals(PersistedCause.CODE_MODE_PROTOCOL, (outcome as TurnOutcome.Failure).cause.persisted)
+                assertFalse(outcome.evidence.message.contains("upstream source failed"))
                 assertTrue(
                     registryOf(manager).startup.entries.isEmpty(),
                     "rejection before ready must release admission",

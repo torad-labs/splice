@@ -26,9 +26,10 @@ import org.junit.jupiter.api.io.TempDir
 import splice.codemode.CodeModeWorkerReclamation
 import splice.codemode.SCRIPT_DEADLINE_MS
 import splice.codemode.host.PoolLimits
+import splice.core.failure.ClientWire
+import splice.core.failure.PersistedCause
 import splice.core.index.WireBlockIndex
 import splice.core.turn.ErrorType
-import splice.core.turn.FailureCause
 import splice.core.turn.GatewayCustomCall
 import splice.core.turn.ResponseShape
 import splice.core.turn.RoundHandoffs
@@ -79,9 +80,9 @@ class CodeModeBridgeRuntimeTest {
             assertTrue(outcome is TurnOutcome.Failure)
             val failure = outcome as TurnOutcome.Failure
             assertEquals(upstreamUsage, failure.salvagedUsage)
-            assertEquals(ErrorType.OVERLOADED, failure.type)
-            assertEquals(FailureCause.INTERNAL, failure.cause)
-            assertFalse(failure.traits.deterministic)
+            assertEquals(ErrorType.OVERLOADED, ClientWire.ownType(failure.cause))
+            assertEquals(PersistedCause.INTERNAL, failure.cause.persisted)
+            assertFalse(failure.cause.deterministic)
             // Reload through the public bridge, so checkpoint and patch layouts share one recovery contract.
             runtime().use { recovered ->
                 var posted = ""
@@ -93,8 +94,8 @@ class CodeModeBridgeRuntimeTest {
                 assertTrue(retry is TurnOutcome.Success, retry.toString())
                 assertEquals("1", completedOutput(posted), "the failed boot's retained source must be retryable")
             }
-            assertFalse(failure.message.contains("private source marker"))
-            assertFalse(failure.message.contains("cancelled"))
+            assertFalse(failure.evidence.message.contains("private source marker"))
+            assertFalse(failure.evidence.message.contains("cancelled"))
             reclamation.assertReclaimed(runtime)
         }
     }
@@ -123,8 +124,8 @@ class CodeModeBridgeRuntimeTest {
             yield()
             child.destroy()
             val first = pending.await()
-            assertEquals(ErrorType.OVERLOADED, first.type, first.message)
-            assertFalse(first.traits.deterministic)
+            assertEquals(ErrorType.OVERLOADED, ClientWire.ownType(first.cause), first.evidence.message)
+            assertFalse(first.cause.deterministic)
             var posted = ""
             val retry = manager.interceptor(turn(), disableParallel = false)
                 .interceptOutcome(BRIDGE_BASE_REQUEST, Sink()) {
@@ -206,7 +207,7 @@ class CodeModeBridgeRuntimeTest {
             val source = "//" + "é".repeat(32_768)
             val failure = bridge(runtime).interceptor(turn(), disableParallel = false)
                 .interceptOutcome(BRIDGE_BASE_REQUEST, Sink()) { outer(source) } as TurnOutcome.Failure
-            assertTrue(failure.message.contains("source exceeds"), failure.message)
+            assertTrue(failure.evidence.message.contains("source exceeds"), failure.evidence.message)
             assertEquals(upstreamUsage, failure.salvagedUsage)
             assertTrue(occupied.advance() is CodeModeStep.Calls)
             occupied.close()

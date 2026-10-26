@@ -18,10 +18,12 @@ import org.junit.jupiter.api.io.TempDir
 import org.junit.jupiter.params.ParameterizedTest
 import org.junit.jupiter.params.provider.CsvSource
 import org.junit.jupiter.params.provider.ValueSource
+import splice.core.failure.FailureCause
+import splice.core.failure.FailureEvidence
+import splice.core.failure.Moment
+import splice.core.failure.Position
+import splice.core.failure.Tear
 import splice.core.reasoning.ReasoningReplay
-import splice.core.turn.FailureCause
-import splice.core.turn.FailurePhase
-import splice.core.turn.FailureTraits
 import splice.core.turn.GatewayCustomCall
 import splice.core.turn.ResponseShape
 import splice.core.turn.RoundHandoffs
@@ -95,10 +97,9 @@ class CodexCodeModeReanchorTest {
             when (posts++) {
                 0 -> outer("first")
                 1 -> TurnOutcome.Failure(
-                    "upstream interrupted",
-                    cause = FailureCause.UPSTREAM_REPORTED,
-                    phase = FailurePhase.MID_OUTPUT,
-                    traits = FailureTraits(providerReported = true),
+                    cause = FailureCause.Provider.Unrecognized(clientError = false),
+                    at = Position(Moment.MID_CONTENT, streamBegan = true),
+                    evidence = FailureEvidence("upstream interrupted"),
                     partial = TurnOutcome.PartialRound(text = RoundText(bodyText = "visible", emittedText = true)),
                 )
                 else -> TurnOutcome.Success(false, false, Usage(23, 2), shape = ResponseShape(messageClosed = true))
@@ -120,13 +121,16 @@ class CodexCodeModeReanchorTest {
         val strategy = strategy(runtime, { finished = it }) {
             if (posts++ == 0) {
                 TurnOutcome.Failure(
-                    "synthetic prose transport tear",
-                    cause = if (mode == "first-byte") {
-                        FailureCause.UPSTREAM_CONN_RESET
+                    cause = FailureCause.Path.Torn(
+                        if (mode == "first-byte") Tear.RESET else Tear.NO_TERMINAL,
+                        toolOpen = false,
+                    ),
+                    at = if (mode == "first-byte") {
+                        Position(Moment.COMMITTED, streamBegan = true)
                     } else {
-                        FailureCause.UPSTREAM_TRUNCATED
+                        Position(Moment.MID_CONTENT, streamBegan = true)
                     },
-                    phase = if (mode == "first-byte") FailurePhase.FIRST_BYTE else FailurePhase.MID_OUTPUT,
+                    evidence = FailureEvidence("synthetic prose transport tear"),
                     partial = TurnOutcome.PartialRound(
                         text = RoundText(
                             bodyText = if (mode == "prose") "visible synthetic prose" else "",

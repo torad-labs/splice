@@ -5,10 +5,12 @@ import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertNull
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
+import splice.core.failure.FailureCause
+import splice.core.failure.FailureEvidence
+import splice.core.failure.Moment
+import splice.core.failure.Position
 import splice.core.perf.PerfKeys
 import splice.core.turn.AbsorbedRounds
-import splice.core.turn.FailureCause
-import splice.core.turn.FailurePhase
 import splice.core.turn.TurnOutcome
 import splice.core.turn.Usage
 import splice.core.turn.UsageHistory
@@ -31,9 +33,9 @@ class TurnBillTest {
     @Test
     fun `an unreported failure cannot stamp four measured zeros`() {
         val unreported = TurnOutcome.Failure(
-            "synthetic failure",
-            cause = FailureCause.UPSTREAM_REPORTED,
-            phase = FailurePhase.MID_OUTPUT,
+            cause = FailureCause.Provider.Unrecognized(clientError = false),
+            at = Position(Moment.MID_CONTENT, streamBegan = true),
+            evidence = FailureEvidence("synthetic failure"),
         ).salvagedUsage
         assertTrue(TurnBill.counters(unreported).isEmpty())
     }

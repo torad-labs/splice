@@ -78,13 +78,11 @@ class UpstreamClientBodyPlanLimitTest {
         val failure = assertEnds<UpstreamFailed> { client.posted(ctx(bodyReader, notices), "{}") { "unreachable" } }
 
         assertEquals(1, calls.get(), "today this is 4 attempts and about 45 s of holds")
-        assertEquals(429, failure.status)
-        assertTrue(
-            failure.body.contains("7-day window is used up until ${LocalTimeText().at(reset)}"),
-            failure.body,
-        )
-        assertFalse(ISO_INSTANT.containsMatchIn(failure.body), "the reset is not an ISO instant: ${failure.body}")
-        assertFalse(failure.body.contains('—'), "no em dash in text the client shows: ${failure.body}")
+        assertEquals(429, failure.evidence.status)
+        val body = failure.evidence.body.orEmpty()
+        assertTrue(body.contains("7-day window is used up until ${LocalTimeText().at(reset)}"), body)
+        assertFalse(ISO_INSTANT.containsMatchIn(body), "the reset is not an ISO instant: $body")
+        assertFalse(body.contains('—'), "no em dash in text the client shows: $body")
         assertEquals(PlanLimit("seven_day", reset), client.planHold)
         assertTrue(client.planHoldForMs > (SIX_DAYS_S - 10) * MS, "held to the named reset: ${client.planHoldForMs}")
         assertTrue(client.rateLimitedForMs in 1L..MAX_RATE_LIMIT_COOLDOWN_MS, "the horizon keeps NF-01's clamp")
@@ -106,7 +104,7 @@ class UpstreamClientBodyPlanLimitTest {
         }
 
         assertEquals(4, calls.get(), "V4-61: every attempt in the budget is spent")
-        assertEquals(burst, failure.body)
+        assertEquals(burst, failure.evidence.body)
         assertEquals(0L, client.planHoldForMs)
         assertNull(client.planHold)
     }

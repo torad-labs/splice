@@ -148,7 +148,7 @@ internal class SseRoundConsume(
      *  running upstream. */
     private fun streamEnded(drive: TurnDrive, outcome: TurnOutcome) {
         val bill = (outcome as? TurnOutcome.Success)?.usage
-        val upstreamFinished = bill != null || (outcome as? TurnOutcome.Failure)?.traits?.providerReported == true
+        val upstreamFinished = bill != null || (outcome as? TurnOutcome.Failure)?.cause?.providerReported == true
         if (upstreamFinished) drive.route?.finished(bill)
         drive.perf.mark(PerfKeys.STREAM_END)
     }

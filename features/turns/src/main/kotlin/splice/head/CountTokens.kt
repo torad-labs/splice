@@ -6,10 +6,13 @@
 package splice.head
 
 import io.ktor.http.ContentType
+import io.ktor.http.HttpHeaders
 import io.ktor.server.application.ApplicationCall
 import io.ktor.server.response.respondText
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
+import splice.core.failure.Decline
+import splice.core.failure.FailureCause
 import splice.core.perf.PromptTokenEstimate
 import splice.core.util.JsonWire
 import splice.head.admission.AdmissionGate
@@ -32,21 +35,28 @@ internal class CountTokens(
         // pre-flight sizing for minutes (review 2026-07-22). Memory stays bounded by the
         // materialization gate (fastFail: contention 529s instead of queueing, so a count_tokens
         // flood cannot camp the shared heap budget) plus the maxRequestBytes cap.
+        var readBytes = 0L
         val prepared = admission.materializeBodyOrRespond(call, Materializing(fastFail = true)) {
             when (val read = bodyReader.receiveBodyBounded(call, deps.policy.maxRequestBytes())) {
                 // The 413 is the gate's to write, so the cap travels back as the case it is.
                 is BodyRead.TooLarge -> Materialized.TooLarge(read.limit)
-                is BodyRead.Received -> Materialized.Done(
-                    bodyParse.parse(read.body.text).map {
-                        PromptTokenEstimate.forRequest(read.body.bytes.toLong(), it.typed)
-                    },
-                )
+                is BodyRead.Received -> {
+                    readBytes = read.body.bytes.toLong()
+                    Materialized.Done(
+                        bodyParse.parse(read.body.text).map { PromptTokenEstimate.forRequest(readBytes, it.typed) },
+                    )
+                }
             }
         } ?: return
         // Both success and invalid-body replies publish only after materialization returned its loan.
         val estimate = prepared.getOrNull()
         if (estimate == null) {
-            responses.respondInvalidRequest(call, "invalid request body")
+            val declared = call.request.headers[HttpHeaders.ContentLength]?.toLongOrNull()
+            responses.respondRefusal(
+                call,
+                FailureCause.Splice.Declined(Decline.BadBody(readBytes, declared)),
+                "invalid request body",
+            )
             return
         }
         // Unicode-safe: UTF-8 bytes / 3 includes structural/tool overhead; images and documents count flat, not by base64 length.

@@ -110,7 +110,7 @@ class AccountTurnTimeoutTest {
             assertEquals(callsBeforeContinuation, rig.calls, "the expired continuation must make zero upstream calls")
             assertEquals(1, rig.calls, "only the completed prior POST reached upstream")
             assertEquals(expected, actual, "use the translator's total-cap explanation and salvage policy")
-            assertFalse(actual.traits.providerReported)
+            assertFalse(actual.cause.providerReported)
             assertNull(actual.partial, "whole-turn expiry must not offer another continuation")
             assertEquals(attemptsBeforeContinuation, drive.perf.snapshot().counters[PerfKeys.ATTEMPTS])
             assertEquals(30_000L, drive.perf.snapshot().marks[PerfKeys.STREAM_END])

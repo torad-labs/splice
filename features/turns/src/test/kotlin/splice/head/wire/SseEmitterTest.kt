@@ -10,6 +10,10 @@ import kotlinx.serialization.json.put
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
+import splice.core.failure.FailureCause
+import splice.core.failure.ProtocolFault
+import splice.core.failure.RefusedBy
+import splice.core.failure.Stall
 import splice.core.index.WireBlockIndex
 import splice.core.perf.TurnPerf
 import splice.core.turn.ErrorType
@@ -105,7 +109,7 @@ class SseEmitterTest {
         e.emitTerminal(false, false, Usage())
         val count = frames.size
         e.emitTerminal(false, false, Usage())
-        e.emitError(ErrorType.API_ERROR, "late") // after ended: swallowed
+        e.emitError(FailureCause.Provider.Unrecognized(clientError = false), "late") // after ended: swallowed
         assertEquals(count, frames.size)
         assertTrue(frames.last().startsWith("event: message_stop"))
     }
@@ -114,7 +118,7 @@ class SseEmitterTest {
     fun `error path emits a single error event and seals`() = runTest {
         val (frames, e) = collector()
         e.openText()
-        e.emitError(ErrorType.OVERLOADED, "upstream stalled")
+        e.emitError(FailureCause.Path.Stalled(Stall.IDLE), "upstream stalled")
         assertTrue(frames.last().startsWith("event: error\n"))
         assertTrue(frames.last().contains("overloaded_error"))
         e.emitTerminal(false, false, Usage())
@@ -124,7 +128,7 @@ class SseEmitterTest {
     @Test
     fun `a permanent failure is an error event without assistant text or a clean stop`() = runTest {
         val (frames, e) = collector()
-        e.emitError(ErrorType.INVALID_REQUEST, "nothing was executed", permanent = true)
+        e.emitError(FailureCause.Splice.Protocol(ProtocolFault.CODE_MODE_STATE), "nothing was executed")
         assertEquals(
             listOf(
                 "event: error\ndata: {\"type\":\"error\",\"error\":{" +
@@ -143,7 +147,7 @@ class SseEmitterTest {
         val idx = e.openTool("toolu_1", "Read")
         e.inputJsonDelta(idx, "{}")
         e.closeBlock(idx)
-        e.emitError(ErrorType.INVALID_REQUEST, "generation blocked", permanent = true)
+        e.emitError(FailureCause.Provider.Refused(RefusedBy.FILTER), "generation blocked")
         assertTrue(frames.last().startsWith("event: error"))
         assertTrue(frames.none { it.startsWith("event: message_delta") || it.startsWith("event: message_stop") })
         assertTrue(frames.none { it.contains("text_delta") })
@@ -255,7 +259,7 @@ class SseEmitterTest {
         }
         assertTrue(cancelled != null, "mid-terminal cancellation must propagate")
         assertTrue(!emitter.hasEnded, "a cancelled terminal must not read as ended")
-        emitter.emitError(ErrorType.OVERLOADED, "turn cancelled; retry")
+        emitter.emitError(FailureCause.Splice.Internal(), "turn cancelled; retry")
         assertTrue(emitter.hasEnded, "the seal after a cancelled terminal must land")
         assertTrue(frames.any { it.startsWith("event: error") && it.contains("turn cancelled") })
     }
@@ -280,11 +284,13 @@ class SseEmitterTest {
             messageId = "synthetic-message",
         )
         try {
-            withContext(writing) { emitter.emitError(ErrorType.OVERLOADED, "splice watchdog ended this turn; retry") }
+            withContext(writing) {
+                emitter.emitError(FailureCause.Path.Stalled(Stall.IDLE), "splice watchdog ended this turn; retry")
+            }
         } catch (_: CancellationException) {
             // PendingSseWriter waits before writing; its synchronous flush cannot reopen a delivered frame.
         }
-        emitter.emitError(ErrorType.OVERLOADED, "splice turn cancelled; retry")
+        emitter.emitError(FailureCause.Splice.Internal(), "splice turn cancelled; retry")
         assertEquals(1, writer.toString().split("event: error").size - 1)
         assertTrue(writer.toString().contains("splice watchdog ended this turn; retry"))
         assertTrue(!writer.toString().contains("splice turn cancelled; retry"))
@@ -319,7 +325,7 @@ class SseEmitterTest {
         assertTrue(thrown != null, "a client-gone IOException mid-terminal must propagate")
         assertTrue(emitter.hasEnded, "a client-gone terminal stays sealed ENDED")
         val before = frames.size
-        emitter.emitError(ErrorType.API_ERROR, "conn reset")
+        emitter.emitError(FailureCause.Provider.Unrecognized(clientError = false), "conn reset")
         assertEquals(before, frames.size) // emitError no-ops: nothing new on the wire
     }
 
@@ -377,12 +383,13 @@ class SseEmitterTest {
     // TurnPipeline); a fifth ending could be added without it, and TurnFinish had to snapshot perf
     // on every turn just to feed it. It lives here now, at the one place an error frame can be
     // written, so these cells are the seam's own proof rather than a policy mirrored from it. The
-    // rule's TABLE (which types remap, which are exempt) is pinned next door in TurnKnownEndTest;
-    // what these cells add is that the emitter actually CONSULTS the table, on the frame it writes.
+    // rule's TABLE (which types remap, which are exempt) is ClientWire's, pinned over every leaf by
+    // ClientWireTodayPropertyTest; what these cells add is that the emitter actually CONSULTS it, on
+    // the frame it writes, with where the stream stood.
     //
-    // MUTATION PROOF (recorded in the ledger): replace `PreContentWireType.of(type, contentReached(),
-    // permanent)` at SseEmitter.emitError with the bare `type` and the two relabel cells below go
-    // red BY NAME while the exempt cell stays green — so this pins the RULE's application, not the
+    // MUTATION PROOF (recorded in the ledger): replace `ClientWire.answer(cause, at).type` at
+    // SseEmitter.emitError with `ClientWire.ownType(cause)` and the relabel cell below goes red BY
+    // NAME while the exempt cells stay green — so this pins the RULE's application, not the
     // constant OVERLOADED. The lambda being a FUNCTION is separately load-bearing: make it a
     // snapshot at construction and the "content arrives first" cell goes red.
     private fun errorTypeIn(frames: List<String>): String =
@@ -399,7 +406,7 @@ class SseEmitterTest {
                 messageId = "msg_fixed",
                 streaming = StreamWiring(contentReached = { false }),
             )
-            e.emitError(ErrorType.API_ERROR, "upstream: broke")
+            e.emitError(FailureCause.Provider.Unrecognized(clientError = false), "upstream: broke")
 
             assertTrue(
                 errorTypeIn(frames).contains("\"type\":\"${ErrorType.OVERLOADED.wireName}\""),
@@ -424,7 +431,7 @@ class SseEmitterTest {
         )
         e.openText()
         reached = true
-        e.emitError(ErrorType.API_ERROR, "upstream: broke after content")
+        e.emitError(FailureCause.Provider.Unrecognized(clientError = false), "upstream: broke after content")
 
         assertTrue(
             errorTypeIn(frames).contains("\"type\":\"${ErrorType.API_ERROR.wireName}\""),
@@ -442,7 +449,7 @@ class SseEmitterTest {
             messageId = "msg_fixed",
             streaming = StreamWiring(contentReached = { false }),
         )
-        e.emitError(ErrorType.API_ERROR, "upstream: model refused", permanent = true)
+        e.emitError(FailureCause.Provider.Unrecognized(clientError = true), "upstream: model refused")
 
         assertTrue(
             errorTypeIn(frames).contains("\"type\":\"${ErrorType.API_ERROR.wireName}\""),
@@ -456,7 +463,7 @@ class SseEmitterTest {
         // compaction replay have no counter, and a path that cannot PROVE the client has read
         // nothing must not be handed a relabel it cannot justify. Its types stay as they were.
         val (frames, e) = collector()
-        e.emitError(ErrorType.API_ERROR, "local answer failed")
+        e.emitError(FailureCause.Provider.Unrecognized(clientError = false), "local answer failed")
 
         assertTrue(
             errorTypeIn(frames).contains("\"type\":\"${ErrorType.API_ERROR.wireName}\""),

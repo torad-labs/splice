@@ -21,13 +21,19 @@ import org.junit.jupiter.api.Test
 import splice.core.auth.AuthDescription
 import splice.core.auth.Credentials
 import splice.core.auth.RefreshableAuthProvider
+import splice.core.failure.ClientWire
+import splice.core.failure.FailureCause
+import splice.core.failure.FailureEvidence
+import splice.core.failure.Lift
+import splice.core.failure.LoginOwner
+import splice.core.failure.Moment
+import splice.core.failure.Position
+import splice.core.failure.Stall
 import splice.core.index.WireBlockIndex
 import splice.core.model.ModelCatalog
 import splice.core.model.ModelEntry
 import splice.core.parse.AnthropicParse
 import splice.core.turn.ErrorType
-import splice.core.turn.FailureCause
-import splice.core.turn.FailurePhase
 import splice.core.turn.ReasoningDisplay
 import splice.core.turn.RoundText
 import splice.core.turn.SharedSummaryParts
@@ -56,13 +62,18 @@ private fun previousBody(): JsonObject = Json.parseToJsonElement(
 ).jsonObject
 
 // V4-117: this helper varies the CAUSE, not the type. The controller decides on the failure's type
-// (`type !in RETRYABLE`), and the type is DERIVED from (cause, phase) — so a cause is the only way
-// to state the case. The default maps to the same OVERLOADED this helper defaulted to, and callers
+// (`type !in RETRYABLE`), and the type is DERIVED from the cause — so a cause is the only way to
+// state the case. The default maps to the same OVERLOADED this helper defaulted to, and callers
 // that passed API_ERROR or RATE_LIMIT map to causes deriving those types exactly.
 private fun failureWith(
-    cause: FailureCause = FailureCause.UPSTREAM_STALLED,
+    cause: FailureCause = FailureCause.Path.Stalled(Stall.IDLE),
     partial: TurnOutcome.PartialRound? = TurnOutcome.PartialRound(text = RoundText(bodyText = "The fix is to")),
-) = TurnOutcome.Failure("boom", cause = cause, phase = FailurePhase.MID_OUTPUT, partial = partial)
+) = TurnOutcome.Failure(
+    cause = cause,
+    at = Position(Moment.MID_CONTENT, streamBegan = true),
+    evidence = FailureEvidence("boom"),
+    partial = partial,
+)
 
 private val controller = ResponsesReanchorPolicy(
     decodeReasoningEnvelope = { env ->
@@ -250,9 +261,9 @@ class ResponsesReanchorPolicyTest {
         // it — the classifier never produced one either — so keeping it would have pinned a wire type
         // that nothing in the tree can construct, which is the opposite of a wall.
         val refused = listOf(
-            FailureCause.UPSTREAM_STATUS_4XX,
-            FailureCause.AUTH_MISSING,
-            FailureCause.REQUEST_TOO_LARGE,
+            FailureCause.Provider.Rejected(staleReasoning = false),
+            FailureCause.Provider.AuthRejected(LoginOwner.SPLICE),
+            FailureCause.Provider.TooLong(limitTokens = null, whileAnswering = false),
         )
         for (cause in refused) {
             assertNull(
@@ -279,7 +290,7 @@ class ResponsesReanchorPolicyTest {
     @Test
     fun `an api_error failure is retryable too`() {
         val next = controller.continuationForFailure(
-            ReanchorRound(previousBody(), failureWith(cause = FailureCause.UPSTREAM_REPORTED), 0),
+            ReanchorRound(previousBody(), failureWith(cause = FailureCause.Provider.Unrecognized(false)), 0),
         )
         assertNotNull(next)
     }
@@ -295,7 +306,7 @@ class ResponsesReanchorPolicyTest {
         // here, because a mid-stream SSE frame never carried one, and no cooldown is armed by it —
         // every arm site is status-gated and this dialect references the cooldown nowhere in code.
         val next = controller.continuationForFailure(
-            ReanchorRound(previousBody(), failureWith(cause = FailureCause.VENDOR_RATE_LIMITED), 0),
+            ReanchorRound(previousBody(), failureWith(FailureCause.Provider.Limited(Lift.Unstated, null)), 0),
         )
         assertNotNull(next, "a mid-stream rate limit must earn a continuation on this dialect too")
     }
@@ -306,7 +317,7 @@ class ResponsesReanchorPolicyTest {
         // OVERLOADED, so the ceiling that bounds OVERLOADED bounds it too — never a blind re-POST loop.
         assertNull(
             controller.continuationForFailure(
-                ReanchorRound(previousBody(), failureWith(cause = FailureCause.VENDOR_RATE_LIMITED), 5),
+                ReanchorRound(previousBody(), failureWith(FailureCause.Provider.Limited(Lift.Unstated, null)), 5),
             ),
         )
     }
@@ -439,7 +450,7 @@ class ResponsesReanchorPartialTest {
             NullSink(),
         )
         val failure = outcome as TurnOutcome.Failure
-        assertEquals(ErrorType.OVERLOADED, failure.type)
+        assertEquals(ErrorType.OVERLOADED, ClientWire.ownType(failure.cause))
         val partial = failure.partial
         assertNotNull(partial)
         assertEquals("The fix is to", partial!!.text.bodyText)
@@ -458,7 +469,7 @@ class ResponsesReanchorPartialTest {
             NullSink(),
         )
         val failure = outcome as TurnOutcome.Failure
-        assertTrue(failure.traits.providerReported)
+        assertTrue(failure.cause.providerReported)
         assertEquals("half an ans", failure.partial?.text?.bodyText)
     }
 
@@ -474,8 +485,8 @@ class ResponsesReanchorPartialTest {
             NullSink(),
         )
         val failure = outcome as TurnOutcome.Failure
-        assertEquals(ErrorType.API_ERROR, failure.type)
-        assertTrue(failure.traits.providerReported)
+        assertEquals(ErrorType.API_ERROR, ClientWire.ownType(failure.cause))
+        assertTrue(failure.cause.providerReported)
         assertNull(failure.partial)
         assertNull(controller.continuationForFailure(ReanchorRound(previousBody(), failure, attempt = 0)))
     }
@@ -496,7 +507,7 @@ class ResponsesReanchorPartialTest {
             NullSink(),
         )
         val failure = outcome as TurnOutcome.Failure
-        assertTrue(failure.traits.providerReported)
+        assertTrue(failure.cause.providerReported)
         assertNull(failure.partial, "a deterministic failure must not carry a re-POSTable partial")
         assertNull(controller.continuationForFailure(ReanchorRound(previousBody(), failure, attempt = 0)))
     }
@@ -515,7 +526,7 @@ class ResponsesReanchorPartialTest {
             NullSink(),
         )
         val failure = outcome as TurnOutcome.Failure
-        assertTrue(failure.traits.providerReported)
+        assertTrue(failure.cause.providerReported)
         assertEquals("half an ans", failure.partial?.text?.bodyText, "transient flat error must keep its salvage")
         val continuation = controller.continuationForFailure(ReanchorRound(previousBody(), failure, attempt = 0))
         assertNotNull(continuation, "a transient flat error must earn a re-POST")
@@ -554,7 +565,7 @@ class ResponsesReanchorPartialTest {
             NullSink(),
         )
         val failure = outcome as TurnOutcome.Failure
-        assertEquals(ErrorType.INVALID_REQUEST, failure.type)
+        assertEquals(ErrorType.INVALID_REQUEST, ClientWire.ownType(failure.cause))
         assertNull(failure.partial)
         assertNull(controller.continuationForFailure(ReanchorRound(previousBody(), failure, attempt = 0)))
     }

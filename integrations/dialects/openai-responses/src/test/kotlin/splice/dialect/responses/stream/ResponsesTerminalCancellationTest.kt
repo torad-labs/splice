@@ -18,7 +18,7 @@ import org.junit.jupiter.api.Assertions.assertNull
 import org.junit.jupiter.api.Assertions.assertSame
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
-import splice.core.turn.FailureCause
+import splice.core.failure.PersistedCause
 import splice.core.turn.TurnOutcome
 import splice.upstream.sse.WireSink
 import java.io.IOException
@@ -116,7 +116,7 @@ class ResponsesTerminalCancellationTest {
             assertEquals(100L, outcome.salvagedUsage.inputTokens)
             assertEquals(7L, outcome.salvagedUsage.outputTokens)
             assertNull(outcome.partial, "billing must not turn a permanent ending into a re-anchor")
-            assertTrue(outcome.traits.permanent)
+            assertTrue(outcome.cause.permanent)
         }
     }
 
@@ -132,8 +132,11 @@ class ResponsesTerminalCancellationTest {
         assertEquals(100L, outcome.salvagedUsage.inputTokens)
         assertEquals(7L, outcome.salvagedUsage.outputTokens)
         assertNull(outcome.partial, "a cleanup fault never regenerates already completed source")
-        assertEquals(FailureCause.INTERNAL, outcome.cause)
-        assertTrue(outcome.message.contains("response cleanup failed"), "cleanup failure stays visible on the outcome")
+        assertEquals(PersistedCause.INTERNAL, outcome.cause.persisted)
+        assertTrue(
+            outcome.evidence.message.contains("response cleanup failed"),
+            "cleanup failure stays visible on the outcome",
+        )
     }
 
     @Test
@@ -190,7 +193,7 @@ class ResponsesTerminalCancellationTest {
             emit(TERMINAL_WITH_USAGE)
         }
         val outcome = ResponsesStreamTranslator(ctx()).driveTurn(events, sink) as TurnOutcome.Failure
-        assertEquals(FailureCause.TOOL_TEAR, outcome.cause)
+        assertEquals(PersistedCause.TOOL_TEAR, outcome.cause.persisted)
         assertEquals(100L, outcome.salvagedUsage.inputTokens)
     }
 

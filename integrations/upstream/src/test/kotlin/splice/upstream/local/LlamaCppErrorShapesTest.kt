@@ -9,8 +9,8 @@ import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertFalse
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
+import splice.core.failure.PersistedCause
 import splice.core.turn.ErrorType
-import splice.core.turn.FailureCause
 import splice.upstream.failure.FailureSource
 import splice.upstream.failure.UpstreamFailureClassifier
 
@@ -32,7 +32,7 @@ class LlamaCppErrorShapesTest {
 
         assertEquals(ErrorType.API_ERROR, f.type)
         assertTrue(f.transient)
-        assertEquals(FailureCause.UPSTREAM_STATUS_5XX, f.cause)
+        assertEquals(PersistedCause.UPSTREAM_STATUS_5XX, f.cause.persisted)
         assertTrue(f.message.startsWith("Loading model; the local model server has not finished loading"), f.message)
     }
 
@@ -48,7 +48,7 @@ class LlamaCppErrorShapesTest {
         )
 
         assertEquals(ErrorType.INVALID_REQUEST, f.type)
-        assertEquals(FailureCause.REQUEST_TOO_LARGE, f.cause)
+        assertEquals(PersistedCause.REQUEST_TOO_LARGE, f.cause.persisted)
         assertEquals(listOf("270000", "262144"), clientOverflowParse.find(f.message)?.groupValues?.drop(1), f.message)
     }
 
@@ -66,7 +66,7 @@ class LlamaCppErrorShapesTest {
 
         assertEquals(ErrorType.API_ERROR, f.type)
         assertTrue(f.transient)
-        assertEquals(FailureCause.UPSTREAM_STATUS_5XX, f.cause)
+        assertEquals(PersistedCause.UPSTREAM_STATUS_5XX, f.cause.persisted)
         assertTrue(f.message.contains("KV cache is full"), f.message)
         assertFalse(f.message.contains("prompt is too long"), f.message)
     }

@@ -3,10 +3,13 @@ package splice.provider.codex
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
+import splice.core.failure.FailureCause
+import splice.core.failure.FailureEvidence
+import splice.core.failure.Moment
+import splice.core.failure.Position
+import splice.core.failure.ProtocolFault
 import splice.core.model.TurnBill
 import splice.core.perf.PerfKeys
-import splice.core.turn.FailureCause
-import splice.core.turn.FailurePhase
 import splice.core.turn.TurnOutcome
 import splice.core.turn.Usage
 import splice.core.turn.UsageField
@@ -23,9 +26,9 @@ class CodeModeUsageObservationTest {
         val endings = listOf(
             success(Usage(origin = UsageOrigin(localStep = true))),
             TurnOutcome.Failure(
-                "synthetic local",
-                cause = FailureCause.CODE_MODE_PROTOCOL,
-                phase = FailurePhase.MID_OUTPUT,
+                cause = FailureCause.Splice.Protocol(ProtocolFault.CODE_MODE_START),
+                at = Position(Moment.MID_CONTENT, streamBegan = true),
+                evidence = FailureEvidence("synthetic local"),
                 salvagedUsage = noRequestUsage,
             ),
         )
@@ -121,9 +124,9 @@ class CodeModeUsageObservationTest {
         val rounds = CodeModeOutcomeAccumulator()
         rounds.absorb(success(Usage(outputTokens = 3, reported = setOf(UsageField.OUTPUT))))
         val failure = TurnOutcome.Failure(
-            "synthetic",
-            cause = FailureCause.UPSTREAM_REPORTED,
-            phase = FailurePhase.MID_OUTPUT,
+            cause = FailureCause.Provider.Unrecognized(clientError = false),
+            at = Position(Moment.MID_CONTENT, streamBegan = true),
+            evidence = FailureEvidence("synthetic"),
         )
         val result = rounds.finish(failure) as TurnOutcome.Failure
         assertEquals(mapOf(PerfKeys.OUT_TOKENS to 3L), TurnBill.counters(result.salvagedUsage))

@@ -16,6 +16,7 @@ import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.TestInstance
+import splice.core.failure.ClientWire
 import splice.core.turn.ErrorType
 import splice.core.turn.TurnOutcome
 import splice.dialect.responses.responsesTestTranslator
@@ -74,24 +75,24 @@ class ScenarioIntegrationTest {
     fun `failed - honest classified failure`() {
         val (outcome, _) = drive("failed")
         val f = outcome as TurnOutcome.Failure
-        assertEquals(ErrorType.API_ERROR, f.type)
-        assertTrue(f.message.contains("boom upstream"))
+        assertEquals(ErrorType.API_ERROR, ClientWire.ownType(f.cause))
+        assertTrue(f.evidence.message.contains("boom upstream"))
     }
 
     @Test
     fun `overflow_sse - rewrites to prompt is too long via the shared classifier`() {
         val (outcome, _) = drive("overflow_sse")
         val f = outcome as TurnOutcome.Failure
-        assertEquals(ErrorType.INVALID_REQUEST, f.type)
-        assertTrue(f.message.contains("prompt is too long"))
+        assertEquals(ErrorType.INVALID_REQUEST, ClientWire.ownType(f.cause))
+        assertTrue(f.evidence.message.contains("prompt is too long"))
     }
 
     @Test
     fun `truncated - overloaded failure, never a clean end`() {
         val (outcome, _) = drive("truncated")
         val f = outcome as TurnOutcome.Failure
-        assertEquals(ErrorType.OVERLOADED, f.type)
-        assertTrue(f.message.contains("truncated"))
+        assertEquals(ErrorType.OVERLOADED, ClientWire.ownType(f.cause))
+        assertTrue(f.evidence.message.contains("truncated"))
     }
 
     @Test

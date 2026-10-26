@@ -15,6 +15,9 @@ import kotlinx.serialization.json.put
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
+import splice.core.failure.FailureCause
+import splice.core.failure.Lift
+import splice.core.failure.RefusedBy
 import splice.core.turn.ErrorType
 import splice.core.turn.Usage
 import splice.upstream.transport.BufferCapacity
@@ -33,7 +36,7 @@ class CollectingTerminalTest {
     @Test
     fun `a permanent failure returns an error status and body without assistant content`() = runTest {
         val t = terminal()
-        t.emitError(ErrorType.INVALID_REQUEST, "generation blocked", permanent = true)
+        t.emitError(FailureCause.Provider.Refused(RefusedBy.FILTER), "generation blocked")
         assertEquals(400, t.httpStatus())
         val body = t.responseBody()
         assertEquals("error", body["type"]?.jsonPrimitive?.content)
@@ -118,13 +121,12 @@ class CollectingTerminalTest {
     // `stream:false` there is no committed 200 and no in-band event: the HTTP status IS the
     // information, and relabelling it would be a lie about a condition that did not happen — a
     // genuine 429 shipped as a 529 with rate-limit headers attached, or a buffered api_error
-    // claiming an overload. The rule was relocated to SseEmitter.emitError precisely so
-    // that this terminal cannot inherit it: the two are separate implementations of TurnTerminal,
-    // so there is no shared code path to forget about.
+    // claiming an overload. ClientWire keeps the rule to the positions of a streamed answer, and
+    // this terminal asks it at Moment.NON_STREAM, where every cause answers with its own type.
     @Test
     fun `a buffered rate limit keeps its real 429 instead of the streaming relabel`() = runTest {
         val t = terminal()
-        t.emitError(ErrorType.RATE_LIMIT, "upstream: quota exhausted")
+        t.emitError(FailureCause.Provider.Limited(Lift.Unstated, window = null), "upstream: quota exhausted")
         assertEquals(429, t.httpStatus())
         assertEquals(
             ErrorType.RATE_LIMIT.wireName,
@@ -135,13 +137,13 @@ class CollectingTerminalTest {
     @Test
     fun `a buffered api error keeps its real 502, permanent or not`() = runTest {
         val remappable = terminal()
-        remappable.emitError(ErrorType.API_ERROR, "upstream: broke")
+        remappable.emitError(FailureCause.Provider.Unrecognized(clientError = false), "upstream: broke")
         assertEquals(ERROR_STATUS, remappable.httpStatus())
 
-        // The parameter the streaming terminal reads is DELIBERATELY INERT here: the collect path
+        // The permanence the streaming terminal reads is DELIBERATELY INERT here: the collect path
         // has no retryable event to relabel, so permanence changes nothing about its status.
         val permanent = terminal()
-        permanent.emitError(ErrorType.API_ERROR, "upstream: model refused", permanent = true)
+        permanent.emitError(FailureCause.Provider.Unrecognized(clientError = true), "upstream: model refused")
         assertEquals(ERROR_STATUS, permanent.httpStatus())
         assertEquals(
             ErrorType.API_ERROR.wireName,

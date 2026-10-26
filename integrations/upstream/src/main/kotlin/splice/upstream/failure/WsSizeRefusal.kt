@@ -1,7 +1,7 @@
 // NEW: a 4xx for a body the WebSocket peer already refused as too large is that refusal again, read as an overflow.
 package splice.upstream.failure
 
-import splice.core.turn.FailureCause
+import splice.core.failure.FailureCause
 import splice.core.wire.HttpStatus
 import splice.upstream.transport.PostContext
 import splice.upstream.transport.RetryOutcome
@@ -24,7 +24,7 @@ internal object WsSizeRefusal {
             failed.status != HttpStatus.TOO_MANY_REQUESTS
         if (!sizeRefusal) return failed
         val own = UpstreamFailureClassifier.classify(FailureSource.HTTP, failed.text, failed.status)
-        if (own.cause == FailureCause.REQUEST_TOO_LARGE) return failed
+        if (own.cause is FailureCause.Provider.TooLong) return failed
         return failed.copy(text = envelope(failed.status))
     }
 

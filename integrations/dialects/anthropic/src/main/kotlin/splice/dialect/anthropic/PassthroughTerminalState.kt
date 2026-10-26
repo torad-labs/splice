@@ -6,9 +6,13 @@
 package splice.dialect.anthropic
 
 import kotlinx.serialization.json.JsonObject
-import splice.core.turn.FailureCause
-import splice.core.turn.FailurePhase
-import splice.core.turn.FailureTraits
+import splice.core.failure.FailureCause
+import splice.core.failure.FailureEvidence
+import splice.core.failure.Lift
+import splice.core.failure.LoginOwner
+import splice.core.failure.Moment
+import splice.core.failure.Position
+import splice.core.failure.RefusedBy
 import splice.core.turn.TurnOutcome
 import splice.core.util.JsonScalars
 import splice.upstream.failure.UpstreamFailureClassifier
@@ -27,7 +31,7 @@ internal class PassthroughTerminalState(
 
     internal var incomplete = false
     internal var finished = false
-    private var failureCause: FailureCause? = null
+    private var failureCause: FailureCause.Provider? = null
     private var failureMessage: String = ""
 
     // NF-06: latched when BufferCapacity trips; never provider-reported (the verdict is local).
@@ -67,16 +71,15 @@ internal class PassthroughTerminalState(
      *  the frame-shape knowledge) — same classification, same order, receiver became argument. */
     internal fun onError(type: String, message: String) {
         // V4-117: the verdict is a CAUSE now. Each arm names the condition the vendor's own error
-        // type describes, and the wire type follows from it — the mapping below derives exactly the
-        // ErrorType this table used to name by hand (overloaded → OVERLOADED, rate_limit →
-        // RATE_LIMIT, authentication → AUTHENTICATION, invalid_request → INVALID_REQUEST, and an
-        // unrecognised type → API_ERROR via UPSTREAM_REPORTED).
+        // type describes, and ClientWire derives the wire type from it — exactly the ErrorType this
+        // table used to name by hand (overloaded → OVERLOADED, rate_limit → RATE_LIMIT, authentication →
+        // AUTHENTICATION, invalid_request → INVALID_REQUEST, and an unrecognised type → API_ERROR).
         failureCause = when (type) {
-            "overloaded_error" -> FailureCause.UPSTREAM_STATUS_5XX
-            "rate_limit_error" -> FailureCause.VENDOR_RATE_LIMITED
-            "authentication_error" -> FailureCause.AUTH_MISSING
-            "invalid_request_error" -> FailureCause.UPSTREAM_STATUS_4XX
-            else -> FailureCause.UPSTREAM_REPORTED
+            "overloaded_error" -> FailureCause.Provider.Overloaded(Lift.Unstated, loading = false)
+            "rate_limit_error" -> FailureCause.Provider.Limited(Lift.Unstated, window = null)
+            "authentication_error" -> FailureCause.Provider.AuthRejected(LoginOwner.SPLICE)
+            "invalid_request_error" -> FailureCause.Provider.Rejected(staleReasoning = false)
+            else -> FailureCause.Provider.Unrecognized(clientError = false)
         }
         failureMessage = message.ifEmpty { "error" }
     }
@@ -86,35 +89,28 @@ internal class PassthroughTerminalState(
         // NF-06: a tripped runaway valve outranks the provider slot — the buffers were truncated.
         runawayGuard?.let {
             TurnOutcome.Failure(
-                it,
-                traits = FailureTraits(
-                    providerReported = false,
-                    // V4-81: permanent, and it is the same argument the responses dialect's runaway arm
-                    // makes by construction — the valve trips on the GENERATION ITSELF hitting its
-                    // truncation bound, so re-sending the identical request reproduces the identical
-                    // overrun. Marking it permanent is what stops the pre-content rule advertising a
-                    // condition a retry cannot change as transient. This is the last of the four
-                    // siblings (responses refusal, responses content-filter, chat refusal, chat
-                    // content-filter); the sweep is closed.
-                    permanent = true,
-                ),
-                cause = FailureCause.TOOL_TEAR,
-                phase = FailurePhase.MID_OUTPUT,
+                // splice's own guard, never provider-reported. V4-81: permanent, and it is the same argument the
+                // responses dialect's runaway arm makes by construction — the valve trips on the GENERATION ITSELF
+                // hitting its truncation bound, so re-sending the identical request reproduces the identical
+                // overrun. Marking it permanent is what stops the pre-content rule advertising a condition a retry
+                // cannot change as transient.
+                cause = FailureCause.Provider.ToolTear(runaway = true, permanent = true),
+                at = Position(Moment.MID_CONTENT, streamBegan = true),
+                evidence = FailureEvidence(it),
             )
         } ?: failureCause?.let {
             // a signal the BACKEND sent — an upstream SSE error event (e.g. overloaded_error) or
             // a non-clean stop_reason (CX-07, see [PassthroughFailureRules.stopReasonFailure]) —
             // provider-reported (G20)
             TurnOutcome.Failure(
-                "${quirks.providerTag}: $failureMessage",
-                traits = FailureTraits(providerReported = true, permanent = it == FailureCause.MODEL_REFUSED),
                 // V4-117: the CAUSE the two producers above latched (onError's vendor type, or
                 // stopReasonFailure's stop_reason verdict), carried through untouched. An earlier
                 // draft hard-coded UPSTREAM_REPORTED here and threw both verdicts away, which seven
                 // tests caught: every SSE error arrived as API_ERROR regardless of what the vendor
                 // had called it.
                 cause = it,
-                phase = FailurePhase.MID_OUTPUT,
+                at = Position(Moment.MID_CONTENT, streamBegan = true),
+                evidence = FailureEvidence("${quirks.providerTag}: $failureMessage"),
             )
         }
 }
@@ -151,16 +147,16 @@ private class PassthroughFailureRules {
      * discriminator values COUNTED needs a per-turn telemetry channel the dialects do not have (see the
      * ledger note on W4-A) and is proposed as its own item rather than smuggled in here.
      */
-    // V4-117: a CAUSE per arm, not a type. The arms derive their wire types from the cause (refusal →
-    // INVALID_REQUEST since b21329586, pause_turn → OVERLOADED, context-exceeded → INVALID_REQUEST),
-    // and the overflow arm reads the classifier's own cause rather than re-stating its type.
-    fun stopReasonFailure(reason: String, details: JsonObject?): Pair<FailureCause, String>? = when (reason) {
-        "refusal" -> FailureCause.MODEL_REFUSED to refusalMessage(details)
-        "pause_turn" ->
-            FailureCause.UPSTREAM_STATUS_5XX to "backend paused the turn (stop_reason=pause_turn); retry"
-        "model_context_window_exceeded" -> UpstreamFailureClassifier.overflowFailure(CONTEXT_EXCEEDED_MESSAGE).let {
-            it.cause to it.message
-        }
+    // V4-117: a CAUSE per arm, not a type. ClientWire derives the wire types from the cause (refusal →
+    // INVALID_REQUEST since b21329586, pause_turn → OVERLOADED, context-exceeded → INVALID_REQUEST), and the
+    // overflow arm keeps the classifier's own words for an overflow.
+    fun stopReasonFailure(reason: String, details: JsonObject?): Pair<FailureCause.Provider, String>? = when (reason) {
+        "refusal" -> FailureCause.Provider.Refused(RefusedBy.MODEL) to refusalMessage(details)
+        "pause_turn" -> FailureCause.Provider.Overloaded(Lift.Unstated, loading = false) to
+            "backend paused the turn (stop_reason=pause_turn); retry"
+        "model_context_window_exceeded" ->
+            FailureCause.Provider.TooLong(limitTokens = null, whileAnswering = true) to
+                UpstreamFailureClassifier.overflowFailure(CONTEXT_EXCEEDED_MESSAGE).message
         else -> null
     }
 

@@ -11,7 +11,7 @@ import splice.core.turn.TurnMeta
 import splice.core.turn.TurnOutcome
 import splice.core.turn.Usage
 import splice.core.turn.noRequestUsage
-import splice.core.wire.RateLimitReply
+import splice.core.wire.NativeReply
 import splice.head.perf.SourceRowHold
 import splice.head.pipeline.TurnPipeline
 import splice.head.round.RoundUsage
@@ -147,7 +147,7 @@ internal data class TurnDrive(
 
     /** Chooses an HTTP refusal only while the responder still owns an uncommitted status. */
     fun interface RateLimitRelay {
-        fun relay(reply: RateLimitReply): Boolean
+        fun relay(reply: NativeReply): Boolean
     }
     var rateLimitRelay: RateLimitRelay? = null
     var upstreamAccepted: splice.upstream.StreamStart? = null

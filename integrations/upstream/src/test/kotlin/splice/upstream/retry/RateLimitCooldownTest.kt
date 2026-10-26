@@ -17,7 +17,7 @@ import splice.core.perf.TurnPerf
 import splice.core.usage.PlanLimit
 import splice.core.util.ElapsedClock
 import splice.core.util.WallClock
-import splice.core.wire.RateLimitReply
+import splice.core.wire.NativeReply
 import splice.upstream.RetryNotice
 import splice.upstream.RoundBody
 import splice.upstream.StreamRead
@@ -553,7 +553,7 @@ class RateLimitCooldownOuterTurnTest {
                 1 -> cooldown.markUnavailable(60_000L)
                 2 -> cooldown.captureProviderReset("""{"resets_in_seconds":60}""")
                 3 -> cooldown.planHold.hold(PlanLimit("seven_day", 61L), RetryNotice { })
-                4 -> cooldown.rateLimitReply = RateLimitReply("synthetic refusal", emptyMap())
+                4 -> cooldown.rateLimitReply = NativeReply("synthetic refusal", emptyMap())
             }
             val horizon = cooldown.remainingMs()
             val selection = cooldown.unavailableForMs()
@@ -578,7 +578,7 @@ class RateLimitCooldownOuterTurnTest {
         cooldown.markUnavailable(60_000L)
         cooldown.captureProviderReset("""{"resets_in_seconds":60}""")
         cooldown.planHold.hold(PlanLimit("seven_day", 61L), RetryNotice { })
-        cooldown.rateLimitReply = RateLimitReply("synthetic refusal", emptyMap())
+        cooldown.rateLimitReply = NativeReply("synthetic refusal", emptyMap())
         val accepted = cooldown.acceptance()
 
         accepted()
@@ -635,8 +635,8 @@ class RateLimitCooldownOuterTurnTest {
 
         val failure = assertEnds<UpstreamFailed> { client.posted(context, "{}") { "unreachable" } }
 
-        assertEquals(503, failure.status)
-        assertEquals("provider-specific failure", failure.body)
+        assertEquals(503, failure.evidence.status)
+        assertEquals("provider-specific failure", failure.evidence.message)
         assertEquals(1, calls.get())
         assertTrue(notices.contains("upstream turn wait budget exhausted before attempt 2/3"))
     }
@@ -680,8 +680,8 @@ class RateLimitCooldownOuterTurnTest {
             } else {
                 val failure = assertEnds<UpstreamFailed> { client.posted(context, "{}") { "unreachable" } }
                 assertEquals(2, calls.get(), "round two may attempt once but cannot spend a new retry budget")
-                assertEquals(503, failure.status)
-                assertEquals("round two unavailable", failure.body)
+                assertEquals(503, failure.evidence.status)
+                assertEquals("round two unavailable", failure.evidence.message)
             }
         }
     }

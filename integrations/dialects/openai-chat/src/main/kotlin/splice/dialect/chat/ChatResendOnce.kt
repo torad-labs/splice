@@ -23,7 +23,7 @@ public object ChatResendOnce : ReanchorPolicy {
         round.requestBody.takeIf { round.attempt == 0 && resendable(round) }
 
     private fun resendable(round: ReanchorRound): Boolean =
-        round.failure.traits.permanent && round.failure.partial?.let(::nothingSent) == true
+        round.failure.cause.permanent && round.failure.partial?.let(::nothingSent) == true
 
     private fun nothingSent(round: TurnOutcome.PartialRound): Boolean =
         !round.hasToolUse && !round.text.emittedText && !round.text.emittedThinking

@@ -8,6 +8,8 @@
 // abandon(); a stream that never started + failure still emits an honest error frame.
 package splice.head.pipeline
 
+import splice.core.failure.ClientWire
+import splice.core.failure.FailureCause
 import splice.core.perf.OutcomeTag
 import splice.core.perf.OutcomeTags
 import splice.core.turn.CONN_RESET_OUTCOME
@@ -52,27 +54,27 @@ internal class TurnPipeline(
     ): String {
         when (outcome) {
             is TurnOutcome.Failure -> {
+                val cause = outcome.cause
+                val type = ClientWire.ownType(cause)
                 if (meta.compact) {
-                    compact.recordStreamError(meta, elapsedMs, outcome.type.wireName)
+                    compact.recordStreamError(meta, elapsedMs, type.wireName)
                 }
-                val spoken = failures.spoken(outcome.type, outcome.message, outcome.cause)
-                val message = if (outcome.traits.deterministic && !outcome.traits.providerReported) {
+                val spoken = failures.spoken(type, outcome.evidence.message, cause)
+                val message = if (cause.deterministic && !cause.providerReported) {
                     OutcomeSentences.of(outcome) + ". " + spoken
                 } else {
                     spoken
                 }
                 // Failures belong to the error channel, including refusals and failures after
                 // partial output. A text block and a clean stop would record them as an answer.
-                emitter.emitError(
-                    outcome.type,
-                    message,
-                    permanent = outcome.traits.permanent || outcome.traits.deterministic,
-                )
+                // The emitter asks ClientWire what the client reads, from the cause and how far the
+                // stream had got.
+                emitter.emitError(cause, message)
                 // V4-67: a tear the gateway converted into an outcome keeps the conn-reset tag it
                 // would have carried had it escaped to TurnConnEnd. That tag is the only string in
                 // the journal that names this failure class, and the row that made a torn stream
                 // continuable is the row that would otherwise have hidden its successor.
-                return if (outcome.traits.connReset) CONN_RESET_OUTCOME else OutcomeTags.failure(outcome.type)
+                return if (cause is FailureCause.Path.Unreachable) CONN_RESET_OUTCOME else OutcomeTags.failure(cause)
             }
             is TurnOutcome.ClientAbandoned -> {
                 emitter.abandon()

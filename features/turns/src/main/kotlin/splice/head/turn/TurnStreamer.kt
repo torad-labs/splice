@@ -208,8 +208,8 @@ internal class TurnStreamer(
             }
             is PendingSse.Decision.Overflow -> {
                 running.await()
-                call.response.header("x-should-retry", "false")
-                call.respondText(choice.body, ContentType.Application.Json, HttpStatusCode.BadRequest)
+                choice.shouldRetry?.let { call.response.header("x-should-retry", it.toString()) }
+                call.respondText(choice.body, ContentType.Application.Json, HttpStatusCode.fromValue(choice.status))
             }
         }
     }

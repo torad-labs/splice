@@ -10,8 +10,11 @@ import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertFalse
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
-import splice.core.turn.FailureCause
-import splice.core.turn.FailurePhase
+import splice.core.failure.FailureCause
+import splice.core.failure.FailureEvidence
+import splice.core.failure.Moment
+import splice.core.failure.Position
+import splice.core.failure.ProtocolFault
 import splice.core.turn.RoundHandoffs
 import splice.core.turn.TurnOutcome
 import splice.core.turn.Usage
@@ -34,9 +37,9 @@ class CodexCodeModeLifecycleTest : CodeModeBridgeTestSupport() {
                         outerOutcome()
                     } else {
                         TurnOutcome.Failure(
-                            "down",
-                            cause = FailureCause.CODE_MODE_PROTOCOL,
-                            phase = FailurePhase.MID_OUTPUT,
+                            cause = FailureCause.Splice.Protocol(ProtocolFault.CODE_MODE_START),
+                            at = Position(Moment.MID_CONTENT, streamBegan = true),
+                            evidence = FailureEvidence("down"),
                         )
                     },
                 )
@@ -77,9 +80,9 @@ class CodexCodeModeLifecycleTest : CodeModeBridgeTestSupport() {
                         1 -> outerOutcome("outer-1")
                         2 -> outerOutcome("outer-2")
                         else -> TurnOutcome.Failure(
-                            "down",
-                            cause = FailureCause.CODE_MODE_PROTOCOL,
-                            phase = FailurePhase.MID_OUTPUT,
+                            cause = FailureCause.Splice.Protocol(ProtocolFault.CODE_MODE_START),
+                            at = Position(Moment.MID_CONTENT, streamBegan = true),
+                            evidence = FailureEvidence("down"),
                         )
                     },
                 )
@@ -154,7 +157,7 @@ class CodexCodeModeLifecycleTest : CodeModeBridgeTestSupport() {
 
         assertTrue(outcome is TurnOutcome.Failure)
         assertEquals(2, runtime.starts)
-        assertTrue((outcome as TurnOutcome.Failure).message.contains("round limit"))
+        assertTrue((outcome as TurnOutcome.Failure).evidence.message.contains("round limit"))
     }
 
     @Test

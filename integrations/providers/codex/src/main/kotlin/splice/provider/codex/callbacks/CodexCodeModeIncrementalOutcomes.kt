@@ -1,7 +1,10 @@
 package splice.provider.codex.callbacks
 
-import splice.core.turn.FailureCause
-import splice.core.turn.FailurePhase
+import splice.core.failure.FailureCause
+import splice.core.failure.FailureEvidence
+import splice.core.failure.Moment
+import splice.core.failure.Position
+import splice.core.failure.ProtocolFault
 import splice.core.turn.TurnOutcome
 import splice.core.turn.noRequestUsage
 import splice.provider.codex.CodeModeAdvanceRequest
@@ -23,9 +26,10 @@ internal object CodexCodeModeIncrementalOutcomes {
             }
         }
         return TurnOutcome.Failure(
-            message = "Code-mode is waiting for outstanding client tool results",
-            cause = FailureCause.CODE_MODE_PROTOCOL,
-            phase = FailurePhase.MID_OUTPUT,
+            // Not a verdict on the recorded state: the outstanding results may still arrive.
+            cause = FailureCause.Splice.Protocol(ProtocolFault.CODE_MODE_START),
+            at = Position(Moment.MID_CONTENT, streamBegan = true),
+            evidence = FailureEvidence("Code-mode is waiting for outstanding client tool results"),
             salvagedUsage = noRequestUsage,
         )
     }

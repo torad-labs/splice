@@ -18,6 +18,7 @@ import org.junit.jupiter.api.Assertions.assertNotNull
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Assertions.fail
 import org.junit.jupiter.api.Test
+import splice.core.failure.ClientWire
 import splice.core.index.WireBlockIndex
 import splice.core.turn.ErrorType
 import splice.core.turn.TurnOutcome
@@ -218,8 +219,8 @@ class PassthroughStreamTranslatorTest {
         cases.forEach { (wire, expected) ->
             val outcome = drive(Rec(), ev("""{"type":"error","error":{"type":"$wire","message":"boom"}}"""))
             val f = outcome as TurnOutcome.Failure
-            assertEquals(expected, f.type, "for $wire")
-            assertTrue(f.message.contains("boom"))
+            assertEquals(expected, ClientWire.ownType(f.cause), "for $wire")
+            assertTrue(f.evidence.message.contains("boom"))
         }
     }
 
@@ -231,8 +232,8 @@ class PassthroughStreamTranslatorTest {
             ev("""{"type":"content_block_delta","index":0,"delta":{"type":"text_delta","text":"partial"}}"""),
         )
         val f = outcome as TurnOutcome.Failure
-        assertEquals(ErrorType.OVERLOADED, f.type)
-        assertTrue(f.message.contains("truncated"))
+        assertEquals(ErrorType.OVERLOADED, ClientWire.ownType(f.cause))
+        assertTrue(f.evidence.message.contains("truncated"))
     }
 
     @Test
@@ -479,9 +480,9 @@ class PassthroughStreamTranslatorTest {
         }
         val outcome = PassthroughStreamTranslator(ctx(), KIMI).driveTurn(events, sink)
         val failure = outcome as TurnOutcome.Failure
-        assertEquals(ErrorType.API_ERROR, failure.type)
-        assertFalse(failure.traits.providerReported, "the runaway verdict is LOCAL — never provider-attributed")
-        assertTrue(failure.message.contains("exceeded max buffered size"), failure.message)
+        assertEquals(ErrorType.API_ERROR, ClientWire.ownType(failure.cause))
+        assertFalse(failure.cause.providerReported, "the runaway verdict is LOCAL — never provider-attributed")
+        assertTrue(failure.evidence.message.contains("exceeded max buffered size"), failure.evidence.message)
         // V4-81: the runaway verdict is PERMANENT, and the reason is the shape of the valve rather
         // than the shape of the error: it trips on the GENERATION ITSELF hitting the truncation
         // bound, so re-sending the identical request reproduces the identical overrun. Without this
@@ -489,7 +490,7 @@ class PassthroughStreamTranslatorTest {
         // re-send until its retry budget ran out — for a turn that cannot change. The other three
         // siblings (responses refusal, responses content-filter, chat refusal/content-filter) are
         // marked the same way; this pin closes the sweep.
-        assertTrue(failure.traits.permanent, "a tripped runaway valve is not healed by a retry")
+        assertTrue(failure.cause.permanent, "a tripped runaway valve is not healed by a retry")
         val deltas = sink.calls.count { it.startsWith("text:") }
         assertTrue(deltas in 20..21, "expected the guard to stop the stream at the cap, saw $deltas deltas")
     }
@@ -536,20 +537,20 @@ class PassthroughStreamTranslatorTest {
             "the salvage must ride the outcome, or no controller can ever resume this round",
         )
         assertFalse(
-            failure.message.contains("truncated"),
-            "an UNDIAGNOSED failure must not borrow a diagnosis: ${failure.message}",
+            failure.evidence.message.contains("truncated"),
+            "an UNDIAGNOSED failure must not borrow a diagnosis: ${failure.evidence.message}",
         )
         assertTrue(
-            failure.message.contains(ABACUS_CODE),
-            "the raw vendor text is kept verbatim so the next incident is answerable: ${failure.message}",
+            failure.evidence.message.contains(ABACUS_CODE),
+            "the raw vendor text is kept verbatim so the next incident is answerable: ${failure.evidence.message}",
         )
         assertTrue(
-            failure.message.contains(NEVER_SEEN_CLASS),
-            "and the throwable's own class is named, so a bug of ours stays tellable: ${failure.message}",
+            failure.evidence.message.contains(NEVER_SEEN_CLASS),
+            "and the throwable's own class is named, so a bug of ours stays tellable: ${failure.evidence.message}",
         )
         assertEquals(
             ErrorType.OVERLOADED,
-            failure.type,
+            ClientWire.ownType(failure.cause),
             "the generic path keeps the retryable wire class this dialect already uses",
         )
         assertNotNull(
@@ -581,20 +582,20 @@ class PassthroughStopReasonHonestyTest {
     @Test
     fun `stop_reason refusal is an honest provider-reported failure, never a clean success`() = runTest {
         val f = turnEndingWith("refusal") as TurnOutcome.Failure
-        assertEquals(ErrorType.INVALID_REQUEST, f.type)
-        assertTrue(f.traits.providerReported, "the BACKEND sent stop_reason=refusal — G20 provenance is upstream")
-        assertTrue(f.message.contains("blocked by the upstream safety classifier"), f.message)
-        assertTrue(f.message.contains("stop_reason=refusal"), f.message)
-        assertTrue(f.message.contains("did not provide a refusal category or explanation"), f.message)
-        assertTrue(f.traits.permanent)
+        assertEquals(ErrorType.INVALID_REQUEST, ClientWire.ownType(f.cause))
+        assertTrue(f.cause.providerReported, "the BACKEND sent stop_reason=refusal — G20 provenance is upstream")
+        assertTrue(f.evidence.message.contains("blocked by the upstream safety classifier"), f.evidence.message)
+        assertTrue(f.evidence.message.contains("stop_reason=refusal"), f.evidence.message)
+        assertTrue(f.evidence.message.contains("did not provide a refusal category or explanation"), f.evidence.message)
+        assertTrue(f.cause.permanent)
     }
 
     @Test
     fun `stop_reason pause_turn is a retryable overloaded failure, not a finished answer`() = runTest {
         val f = turnEndingWith("pause_turn") as TurnOutcome.Failure
-        assertEquals(ErrorType.OVERLOADED, f.type)
-        assertTrue(f.traits.providerReported)
-        assertTrue(f.message.contains("paused"), f.message)
+        assertEquals(ErrorType.OVERLOADED, ClientWire.ownType(f.cause))
+        assertTrue(f.cause.providerReported)
+        assertTrue(f.evidence.message.contains("paused"), f.evidence.message)
     }
 
     // The item's own wording named only refusal + pause_turn. This third value is a HARD truncation
@@ -603,10 +604,10 @@ class PassthroughStopReasonHonestyTest {
     @Test
     fun `stop_reason model_context_window_exceeded triggers client compaction`() = runTest {
         val f = turnEndingWith("model_context_window_exceeded") as TurnOutcome.Failure
-        assertEquals(ErrorType.INVALID_REQUEST, f.type)
-        assertTrue(f.traits.providerReported)
-        assertTrue(f.message.contains("prompt is too long"), f.message)
-        assertTrue(f.message.contains("context window"), f.message)
+        assertEquals(ErrorType.INVALID_REQUEST, ClientWire.ownType(f.cause))
+        assertTrue(f.cause.providerReported)
+        assertTrue(f.evidence.message.contains("prompt is too long"), f.evidence.message)
+        assertTrue(f.evidence.message.contains("context window"), f.evidence.message)
     }
 
     // must_not: a false Failure on working traffic is worse than the silent success it replaces.
@@ -631,8 +632,8 @@ class PassthroughStopReasonHonestyTest {
             ev("""{"type":"message_stop"}"""),
         )
         val f = outcome as TurnOutcome.Failure
-        assertEquals(ErrorType.RATE_LIMIT, f.type)
-        assertTrue(f.message.contains("slow down"), f.message)
+        assertEquals(ErrorType.RATE_LIMIT, ClientWire.ownType(f.cause))
+        assertTrue(f.evidence.message.contains("slow down"), f.evidence.message)
     }
 
     // The reverse of the first-latch test above. onError assigns failureType UNCONDITIONALLY, so a
@@ -647,9 +648,9 @@ class PassthroughStopReasonHonestyTest {
             ev("""{"type":"message_stop"}"""),
         )
         val f = outcome as TurnOutcome.Failure
-        assertEquals(ErrorType.OVERLOADED, f.type)
-        assertTrue(f.message.contains("try later"), f.message)
-        assertTrue(f.traits.providerReported)
+        assertEquals(ErrorType.OVERLOADED, ClientWire.ownType(f.cause))
+        assertTrue(f.evidence.message.contains("try later"), f.evidence.message)
+        assertTrue(f.cause.providerReported)
     }
 
     // NEUTRAL: an upstream that SIGNS and VERIFIES must never receive a synthesized signature back.
@@ -677,7 +678,7 @@ class PassthroughStopReasonHonestyTest {
             Rec(),
         )
         val f = outcome as TurnOutcome.Failure
-        assertTrue(f.message.startsWith("claude-splice: "), f.message)
+        assertTrue(f.evidence.message.startsWith("claude-splice: "), f.evidence.message)
     }
 }
 
@@ -704,7 +705,7 @@ class PassthroughRunawayCancellationTest {
 
         val outcome = PassthroughStreamTranslator(ctx(), KIMI).driveTurn(events, Rec())
         val failure = outcome as TurnOutcome.Failure
-        assertTrue(failure.message.contains("exceeded max buffered size"), failure.message)
+        assertTrue(failure.evidence.message.contains("exceeded max buffered size"), failure.evidence.message)
         assertEquals(BufferCapacity.MAX_TOOL_INDEX_ENTRIES + 1, emitted, "guard must stop collection")
     }
 
@@ -738,7 +739,7 @@ class PassthroughRunawayCancellationTest {
 
         val outcome = PassthroughStreamTranslator(ctx(), KIMI).driveTurn(events, sink)
         val failure = outcome as TurnOutcome.Failure
-        assertTrue(failure.message.contains("exceeded max buffered size"), failure.message)
+        assertTrue(failure.evidence.message.contains("exceeded max buffered size"), failure.evidence.message)
         assertEquals(20, sink.calls.count { it.startsWith("json:") })
     }
 

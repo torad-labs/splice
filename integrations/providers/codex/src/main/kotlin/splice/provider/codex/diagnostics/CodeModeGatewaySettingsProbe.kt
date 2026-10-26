@@ -134,7 +134,7 @@ internal class CodeModeGatewaySettingsProbe(
             "outcome",
             when (result) {
                 is RoundResult.Ended -> "Ended"
-                is RoundResult.Outcome -> (result.outcome as? TurnOutcome.Failure)?.message
+                is RoundResult.Outcome -> (result.outcome as? TurnOutcome.Failure)?.evidence?.message
                     ?: result.outcome::class.simpleName.orEmpty()
             },
         )

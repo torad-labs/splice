@@ -2,6 +2,7 @@
 // so the observability file is not billed for this render. Same-package.
 package splice.head.turn
 
+import splice.core.failure.ClientWire
 import splice.core.turn.TurnMeta
 import splice.core.turn.TurnOutcome
 import splice.core.util.ERR_SNIPPET
@@ -25,7 +26,8 @@ internal class TurnLine(
             is TurnOutcome.Success ->
                 " ok out=${outcome.usage.outputTokens} tool=${outcome.hasToolUse} incomplete=${outcome.incomplete}\n"
             is TurnOutcome.Failure ->
-                " FAILURE type=${outcome.type.wireName} msg=${outcome.message.take(ERR_SNIPPET)}\n"
+                " FAILURE type=${ClientWire.ownType(outcome.cause).wireName} " +
+                    "msg=${outcome.evidence.message.take(ERR_SNIPPET)}\n"
             is TurnOutcome.ClientAbandoned -> " client-abandoned\n"
         }
     }

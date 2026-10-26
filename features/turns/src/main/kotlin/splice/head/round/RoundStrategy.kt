@@ -7,9 +7,12 @@
 package splice.head.round
 
 import kotlinx.serialization.json.JsonObject
+import splice.core.failure.FailureCause
+import splice.core.failure.FailureEvidence
+import splice.core.failure.Moment
+import splice.core.failure.Position
+import splice.core.failure.ProtocolFault
 import splice.core.perf.TurnPerf
-import splice.core.turn.FailureCause
-import splice.core.turn.FailurePhase
 import splice.core.turn.TurnOutcome
 import splice.upstream.FoldPolicy
 import splice.upstream.InterceptedRoundPost
@@ -112,10 +115,10 @@ internal class RoundStrategy(
         val name = outcome.handoffs.customCalls.first().name.ifEmpty { "<unnamed>" }
         return RoundResult.Outcome(
             TurnOutcome.Failure(
-                "upstream returned an unsupported custom tool call: $name",
+                cause = FailureCause.Splice.Protocol(ProtocolFault.DIALECT_UNSUPPORTED),
+                at = Position(Moment.MID_CONTENT, streamBegan = true),
+                evidence = FailureEvidence("upstream returned an unsupported custom tool call: $name"),
                 partial = TurnOutcome.PartialRound(usage = outcome.usage),
-                cause = FailureCause.DIALECT_UNSUPPORTED,
-                phase = FailurePhase.MID_OUTPUT,
             ),
         )
     }

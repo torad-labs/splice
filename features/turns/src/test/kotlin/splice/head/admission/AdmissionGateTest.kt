@@ -40,6 +40,8 @@ import splice.core.auth.RefreshableAuthProvider
 import splice.core.budget.BudgetBlock
 import splice.core.budget.HeadBudget
 import splice.core.client.SESSION_HEADER
+import splice.core.failure.Decline
+import splice.core.failure.FailureCause
 import splice.core.memory.HeapBudget
 import splice.core.model.ModelCatalog
 import splice.core.model.ModelEntry
@@ -349,7 +351,7 @@ class AdmissionGateTest {
         val deps = headDeps(tmp)
         val admission = AdmissionGate(testProvider, deps, AdmissionWindow(), AdmissionResponses())
         val preparations = listOf(
-            Preparation.Rejected("synthetic rejection"),
+            Preparation.Rejected(FailureCause.Splice.Declined(Decline.BadBody(0L, null)), "synthetic rejection"),
             Preparation.Local("synthetic answer", "synthetic-model", null, false),
             Preparation.Replay(FrameRecording(), "synthetic-key", null, "synthetic-model"),
         )

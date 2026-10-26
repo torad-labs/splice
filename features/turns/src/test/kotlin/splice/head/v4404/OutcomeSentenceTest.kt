@@ -27,6 +27,14 @@ import org.junit.jupiter.params.provider.ValueSource
 import splice.core.auth.AuthDescription
 import splice.core.auth.Credentials
 import splice.core.auth.RefreshableAuthProvider
+import splice.core.failure.ClientWire
+import splice.core.failure.FailureCause
+import splice.core.failure.FailureEvidence
+import splice.core.failure.Moment
+import splice.core.failure.PersistedCause
+import splice.core.failure.Position
+import splice.core.failure.ProtocolFault
+import splice.core.failure.RefusedBy
 import splice.core.index.WireBlockIndex
 import splice.core.model.ModelCatalog
 import splice.core.model.ModelEntry
@@ -36,9 +44,6 @@ import splice.core.perf.TurnPerf
 import splice.core.storage.ActivityDays
 import splice.core.turn.CONN_RESET_OUTCOME
 import splice.core.turn.ErrorType
-import splice.core.turn.FailureCause
-import splice.core.turn.FailurePhase
-import splice.core.turn.FailureTraits
 import splice.core.turn.ReasoningDisplay
 import splice.core.turn.TurnMeta
 import splice.core.turn.TurnOutcome
@@ -82,6 +87,8 @@ import splice.upstream.ProviderName
 import splice.upstream.ProviderTuning
 import splice.upstream.Ticker
 import splice.upstream.TurnSignals
+import splice.upstream.failure.FailureSource
+import splice.upstream.failure.UpstreamFailureClassifier
 import splice.upstream.retry.InflightGate
 import splice.upstream.retry.LiveLimit
 import splice.upstream.retry.TurnWatchdog
@@ -115,7 +122,7 @@ private class RecordingTerminal : TurnTerminal {
     override var hasEnded: Boolean = false
         private set
 
-    override suspend fun emitError(type: ErrorType, message: String, permanent: Boolean) {
+    override suspend fun emitError(cause: FailureCause, message: String) {
         hasEnded = true
     }
 
@@ -132,6 +139,9 @@ private class RecordingTerminal : TurnTerminal {
     override suspend fun addTextBlock(text: String) = Unit
     override suspend fun addRedactedThinking(data: String) = Unit
 }
+
+/** After content: where the translators place every failure they build. */
+private val MID = Position(Moment.MID_CONTENT, streamBegan = true)
 
 class OutcomeSentenceTest {
 
@@ -220,19 +230,25 @@ class OutcomeSentenceTest {
             val deps = headDeps(tmp.resolve("stores-$reported"))
             var errorMessage: String? = null
             val terminal = object : TurnTerminal by RecordingTerminal() {
-                override suspend fun emitError(type: ErrorType, message: String, permanent: Boolean) {
+                override suspend fun emitError(cause: FailureCause, message: String) {
                     errorMessage = message
                 }
             }
             val drive = rig.drive().copy(emitter = terminal)
             val failure = TurnOutcome.Failure(
-                message = "code-mode runtime failed: IllegalStateException at SyntheticCell.kt:83; " +
-                    "accepted results=0; source was not rerun",
-                cause = if (reported) FailureCause.UPSTREAM_STATUS_4XX else FailureCause.CODE_MODE_PROTOCOL,
-                phase = FailurePhase.TERMINAL,
-                traits = FailureTraits(providerReported = reported, deterministic = !reported, permanent = true),
+                // The provider's verdict on the request, or splice's own recorded state that cannot go on.
+                cause = if (reported) {
+                    FailureCause.Provider.Rejected(staleReasoning = false)
+                } else {
+                    FailureCause.Splice.Protocol(ProtocolFault.CODE_MODE_STATE)
+                },
+                at = MID,
+                evidence = FailureEvidence(
+                    "code-mode runtime failed: IllegalStateException at SyntheticCell.kt:83; " +
+                        "accepted results=0; source was not rerun",
+                ),
             )
-            assertEquals(ErrorType.INVALID_REQUEST, failure.type)
+            assertEquals(ErrorType.INVALID_REQUEST, ClientWire.ownType(failure.cause))
             val finish = TurnFinish(
                 ElapsedClock { 5L },
                 rig.log,
@@ -250,7 +266,7 @@ class OutcomeSentenceTest {
                 assertTrue(checkNotNull(errorMessage).startsWith(localSentence + ". "), errorMessage)
             }
             assertTrue("[SPLICE-INVALID-REQUEST]" in checkNotNull(errorMessage))
-            assertTrue(failure.message in checkNotNull(errorMessage))
+            assertTrue(failure.evidence.message in checkNotNull(errorMessage))
         }
     }
 
@@ -266,16 +282,15 @@ class OutcomeSentenceTest {
             TurnSignals(watchdogFired = { null }, clientGone = { false }),
         ).driveTurn(flowOf(event), RecordingTerminal())
         val failure = outcome as? TurnOutcome.Failure ?: error("provider error must fail")
-        assertTrue(failure.traits.providerReported)
-        assertEquals(ErrorType.INVALID_REQUEST, failure.type)
+        assertTrue(failure.cause.providerReported)
+        assertEquals(ErrorType.INVALID_REQUEST, ClientWire.ownType(failure.cause))
         assertTrue(OutcomeSentences.of(failure).startsWith("the provider rejected"))
     }
 
     @Test
     fun `every local cause fits its whole human action before a clipped card diagnostic`() {
-        for (cause in FailureCause.entries) {
-            val failure = TurnOutcome.Failure("synthetic", cause, FailurePhase.TERMINAL)
-            val sentence = OutcomeSentences.of(failure)
+        for (cause in PersistedCause.entries) {
+            val sentence = OutcomeSentences.local(cause)
             assertTrue(sentence.startsWith("splice "), "$cause: $sentence")
             assertTrue("; " in sentence, "$cause: $sentence")
             assertTrue(sentence.length < 150, "$cause: the card would clip its action")
@@ -298,7 +313,11 @@ class OutcomeSentenceTest {
                 rig.telemetry,
             ).finishTurn(
                 drive,
-                TurnOutcome.Failure("synthetic", FailureCause.CODE_MODE_PROTOCOL, FailurePhase.TERMINAL),
+                TurnOutcome.Failure(
+                    cause = FailureCause.Splice.Protocol(ProtocolFault.CODE_MODE_START),
+                    at = MID,
+                    evidence = FailureEvidence("synthetic"),
+                ),
             )
         } finally {
             drive.slot.release()
@@ -309,24 +328,24 @@ class OutcomeSentenceTest {
     @Test
     fun `provider content refusals keep the cause and provider words without calling them an outage`() {
         val cyber = TurnOutcome.Failure(
-            "upstream: cyber_policy this request was flagged. Try rephrasing.",
-            FailureCause.CONTENT_FILTERED,
-            FailurePhase.MID_OUTPUT,
-            traits = FailureTraits(providerReported = true, permanent = true),
+            cause = FailureCause.Provider.Refused(RefusedBy.POLICY),
+            at = MID,
+            evidence = FailureEvidence("upstream: cyber_policy this request was flagged. Try rephrasing."),
         )
         assertEquals(
             "OpenAI refused the request under its cybersecurity check. This request was flagged. Try rephrasing.",
             OutcomeSentences.of(cyber),
         )
-        val generic = cyber.copy(message = "upstream: generation stopped by content filter")
+        val generic = cyber.copy(evidence = FailureEvidence("upstream: generation stopped by content filter"))
         val sentence = OutcomeSentences.of(generic)
         assertTrue("content check" in sentence, sentence)
         assertTrue("cybersecurity" !in sentence, sentence)
-        for (failure in listOf(cyber, generic, cyber.copy(cause = FailureCause.MODEL_REFUSED))) {
+        for (failure in listOf(cyber, generic, cyber.copy(cause = FailureCause.Provider.Refused(RefusedBy.MODEL)))) {
             val words = OutcomeSentences.of(failure)
             assertTrue("failed on its side" !in words && "retry in a moment" !in words, words)
         }
-        val quiet = cyber.copy(traits = cyber.traits.copy(providerReported = false))
+        // Origin is the cause's family, never the words: the same words under splice's own failure are splice's.
+        val quiet = cyber.copy(cause = FailureCause.Splice.Internal())
         assertTrue(OutcomeSentences.of(quiet).startsWith("splice "))
     }
 
@@ -461,8 +480,8 @@ class OutcomeSentenceTest {
         var wireMessage: String? = null
         var wireType: ErrorType? = null
         val terminal = object : TurnTerminal by RecordingTerminal() {
-            override suspend fun emitError(type: ErrorType, message: String, permanent: Boolean) {
-                wireType = type
+            override suspend fun emitError(cause: FailureCause, message: String) {
+                wireType = ClientWire.ownType(cause)
                 wireMessage = message
             }
         }
@@ -504,8 +523,8 @@ class OutcomeSentenceTest {
         )
         var wireType: ErrorType? = null
         val terminal = object : TurnTerminal by RecordingTerminal() {
-            override suspend fun emitError(type: ErrorType, message: String, permanent: Boolean) {
-                wireType = type
+            override suspend fun emitError(cause: FailureCause, message: String) {
+                wireType = ClientWire.ownType(cause)
                 throw java.io.IOException("synthetic server socket closed")
             }
         }
@@ -545,7 +564,9 @@ class OutcomeSentenceTest {
         val knownEnd = TurnKnownEnd(provider, rig.log, rig.telemetry, TurnFailures(provider), HeadHealthCounters())
         val drive = rig.drive()
         try {
-            val failure = UpstreamFailed("""{"error":{"message":"boom"}}""", status = 502, layers = 3)
+            val body = """{"error":{"message":"boom"}}"""
+            val read = UpstreamFailureClassifier.classify(FailureSource.HTTP, body, 502)
+            val failure = UpstreamFailed(read.cause, FailureEvidence(read.message, 502, body = body), layers = 3)
             knownEnd.emitFailed(drive, failure)
         } finally {
             drive.slot.release()

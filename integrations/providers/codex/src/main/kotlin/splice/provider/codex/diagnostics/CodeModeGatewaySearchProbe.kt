@@ -49,7 +49,7 @@ internal class CodeModeGatewaySearchProbe(
                     )
                 }
                 outcomes += when (result) {
-                    is RoundResult.Outcome -> (result.outcome as? TurnOutcome.Failure)?.message
+                    is RoundResult.Outcome -> (result.outcome as? TurnOutcome.Failure)?.evidence?.message
                         ?: result.outcome::class.simpleName.orEmpty()
                     is RoundResult.Ended -> "Ended"
                 }

@@ -10,8 +10,9 @@ import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertFalse
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
+import splice.core.failure.ClientWire
+import splice.core.failure.PersistedCause
 import splice.core.turn.ErrorType
-import splice.core.turn.FailureCause
 import splice.core.turn.TurnOutcome
 import splice.provider.codex.history.CodeModeUpstreamHistory
 import splice.provider.codex.state.CodeModeStateJournal
@@ -79,9 +80,9 @@ class CodexCodeModeStartupFailureTest : CodeModeBridgeTestSupport() {
             .intercept(BASE_REQUEST, RecordingSink()) {
                 RoundResult.Outcome(outerOutcome())
             }.turn() as TurnOutcome.Failure
-        assertTrue(failed.traits.deterministic)
-        assertEquals(FailureCause.CODE_MODE_PROTOCOL, failed.cause)
-        assertEquals(ErrorType.INVALID_REQUEST, failed.type)
+        assertTrue(failed.cause.deterministic)
+        assertEquals(PersistedCause.CODE_MODE_PROTOCOL, failed.cause.persisted)
+        assertEquals(ErrorType.INVALID_REQUEST, ClientWire.ownType(failed.cause))
         manager.interceptor(turn(), disableParallel = false)
             .intercept(BASE_REQUEST, RecordingSink()) { RoundResult.Outcome(completedOutcome()) }
         assertEquals(1, runtime.starts)
@@ -95,8 +96,8 @@ class CodexCodeModeStartupFailureTest : CodeModeBridgeTestSupport() {
             .intercept(BASE_REQUEST, RecordingSink()) {
                 RoundResult.Outcome(outerOutcome())
             }.turn() as TurnOutcome.Failure
-        assertTrue(failed.traits.deterministic)
-        assertEquals(ErrorType.INVALID_REQUEST, failed.type)
+        assertTrue(failed.cause.deterministic)
+        assertEquals(ErrorType.INVALID_REQUEST, ClientWire.ownType(failed.cause))
         assertEquals("LOST", stateFiles.records().single().getValue("phase").jsonPrimitive.content)
         manager.interceptor(turn(), disableParallel = false)
             .intercept(BASE_REQUEST, RecordingSink()) { RoundResult.Outcome(completedOutcome()) }
@@ -148,8 +149,8 @@ class CodexCodeModeStartupFailureTest : CodeModeBridgeTestSupport() {
             .intercept(BASE_REQUEST, RecordingSink()) {
                 RoundResult.Outcome(outerOutcome())
             }.turn() as TurnOutcome.Failure
-        assertEquals(ErrorType.OVERLOADED, failed.type)
-        assertFalse(failed.traits.deterministic)
+        assertEquals(ErrorType.OVERLOADED, ClientWire.ownType(failed.cause))
+        assertFalse(failed.cause.deterministic)
         assertEquals("LOST", stateFiles.records().single().getValue("phase").jsonPrimitive.content)
         val restored = bridge(runtime)
         restored.interceptor(turn(), disableParallel = false)
@@ -214,8 +215,8 @@ class CodexCodeModeStartupFailureTest : CodeModeBridgeTestSupport() {
             .intercept(BASE_REQUEST, RecordingSink()) {
                 RoundResult.Outcome(outerOutcome())
             }.turn() as TurnOutcome.Failure
-        assertEquals(ErrorType.OVERLOADED, failed.type)
-        assertFalse(failed.traits.deterministic)
+        assertEquals(ErrorType.OVERLOADED, ClientWire.ownType(failed.cause))
+        assertFalse(failed.cause.deterministic)
         val retry = manager.interceptor(turn(), disableParallel = false)
             .intercept(BASE_REQUEST, RecordingSink()) { RoundResult.Outcome(completedOutcome()) }.turn()
         assertTrue(retry is TurnOutcome.Success)
@@ -257,8 +258,8 @@ class CodexCodeModeStartupFailureTest : CodeModeBridgeTestSupport() {
         )
         val outcome = driver.drive(context, outer(), codeModeBody(BASE_REQUEST), outerOutcome())
         assertTrue(outcome is TurnOutcome.Failure)
-        assertEquals(ErrorType.OVERLOADED, (outcome as TurnOutcome.Failure).type)
-        assertFalse(outcome.traits.deterministic)
+        assertEquals(ErrorType.OVERLOADED, ClientWire.ownType((outcome as TurnOutcome.Failure).cause))
+        assertFalse(outcome.cause.deterministic)
         assertTrue(sink.tools.isEmpty())
         assertEquals("LOST", stateFiles.records().single().getValue("phase").jsonPrimitive.content)
         assertTrue(active.startup.entries.isEmpty(), "a stopped admission cannot retain a dispatch ticket")
@@ -270,9 +271,9 @@ class CodexCodeModeStartupFailureTest : CodeModeBridgeTestSupport() {
         val first = RecordingSink()
         val failed = manager.interceptor(turn(), disableParallel = false)
             .intercept(BASE_REQUEST, first) { RoundResult.Outcome(outerOutcome()) }.turn() as TurnOutcome.Failure
-        assertEquals(ErrorType.OVERLOADED, failed.type)
-        assertEquals(FailureCause.INTERNAL, failed.cause)
-        assertFalse(failed.traits.deterministic)
+        assertEquals(ErrorType.OVERLOADED, ClientWire.ownType(failed.cause))
+        assertEquals(PersistedCause.INTERNAL, failed.cause.persisted)
+        assertFalse(failed.cause.deterministic)
         assertTrue(first.tools.isEmpty())
         assertEquals(0, runtime.executed.size)
         val kept = stateFiles.records().single()

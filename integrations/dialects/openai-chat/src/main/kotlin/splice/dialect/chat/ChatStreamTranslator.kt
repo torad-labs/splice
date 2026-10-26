@@ -16,13 +16,15 @@ package splice.dialect.chat
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.takeWhile
 import kotlinx.serialization.json.JsonObject
-import splice.core.turn.FailureCause
-import splice.core.turn.FailurePhase
+import splice.core.failure.FailureCause
+import splice.core.failure.FailureEvidence
+import splice.core.failure.Moment
+import splice.core.failure.Position
+import splice.core.failure.Tear
 import splice.core.turn.RoundText
 import splice.core.turn.TurnOutcome
 import splice.upstream.StreamTranslator
 import splice.upstream.failure.TerminalStates
-import splice.upstream.failure.WordsAfterContent
 import splice.upstream.retry.FIRST_OUTPUT_TIER
 import splice.upstream.retry.MID_OUTPUT_TIER
 import splice.upstream.retry.MS_PER_S
@@ -121,13 +123,15 @@ public class ChatStreamTranslator(private val ctx: ChatTurnContext) : StreamTran
      *  The stall line names the TIER and the number it compared; "upstream stalled" alone left the
      *  operator unable to tell a 300s mid-output verdict from a 20s stall-tier one. */
     private fun stalledOutcome(fired: WatchdogFired): TurnOutcome = TurnOutcome.Failure(
-        when (fired) {
-            is WatchdogFired.TotalCap -> fired.retryMessage
-            is WatchdogFired.Idle -> "chat: ${stallDetail(fired)}; retry"
-        },
+        cause = fired.cause,
+        at = Position(Moment.MID_CONTENT, streamBegan = true),
+        evidence = FailureEvidence(
+            when (fired) {
+                is WatchdogFired.TotalCap -> fired.retryMessage
+                is WatchdogFired.Idle -> "chat: ${stallDetail(fired)}; retry"
+            },
+        ),
         partial = if (fired is WatchdogFired.Idle) partialRound() else null,
-        cause = FailureCause.UPSTREAM_STALLED,
-        phase = FailurePhase.MID_OUTPUT,
     )
 
     private fun unfinishedOutcome(): TurnOutcome =
@@ -137,26 +141,33 @@ public class ChatStreamTranslator(private val ctx: ChatTurnContext) : StreamTran
             // The SALVAGE, and the reason a truncation is recoverable at all: without it `partial`
             // defaults to null, which reads as "this dialect cannot continue" — so the connect-phase
             // and G5 budgets sat unused behind a 2xx that EOFed early.
+            val partial = partialRound()
             TurnOutcome.Failure(
+                // V4-117: TWO shapes in ONE expression, so two causes. A TRUNCATION is the upstream
+                // going quiet with content already delivered. An UNRECOGNISED throwable is not
+                // attributed to the upstream at all — stamping a path cause on it would borrow a
+                // cause it has not earned, which is the refusal Internal exists to make.
+                cause = if (unexpected != null) {
+                    FailureCause.Splice.Internal()
+                } else {
+                    FailureCause.Path.Torn(Tear.NO_TERMINAL, toolOpen = partial.toolTearOpen)
+                },
+                at = Position(Moment.MID_CONTENT, streamBegan = true),
                 // An UNRECOGNISED throwable says so in its own words rather than borrowing the
                 // truncation sentence: "truncated" is a diagnosis, and reporting an undiagnosed
                 // failure under one is the mislabelling the generic arm exists to avoid.
-                unexpected?.let { "chat: upstream stream failed ($it); retry" }
-                    ?: "chat: stream ended without a finish_reason (truncated); retry",
-                partial = partialRound(),
-                // V4-117: TWO shapes in ONE expression, so two causes. A TRUNCATION is the upstream
-                // going quiet with content already delivered. An UNRECOGNISED throwable is not
-                // attributed to the upstream at all — stamping UPSTREAM_* on it would borrow a
-                // cause it has not earned, which is the refusal INTERNAL exists to make.
-                cause = if (unexpected != null) FailureCause.INTERNAL else FailureCause.UPSTREAM_TRUNCATED,
-                phase = FailurePhase.MID_OUTPUT,
+                evidence = FailureEvidence(
+                    unexpected?.let { "chat: upstream stream failed ($it); retry" }
+                        ?: "chat: stream ended without a finish_reason (truncated); retry",
+                ),
+                partial = partial,
             )
         }
 
-    /** The backend's failure as the turn ends it: words after content (WordsAfterContent), and an unknown vendor
-     *  code before any content carries its round, so ChatResendOnce sends the request once more. */
+    /** The backend's failure as the turn ends it: an unknown vendor code before any content carries its round, so
+     *  ChatResendOnce sends the request once more. */
     private fun providerFailure(): TurnOutcome.Failure? =
-        WordsAfterContent.of(terminal.providerFailure(), clientSawContent())?.copy(
+        terminal.providerFailure()?.copy(
             salvagedUsage = usage.toUsage(),
             partial = partialRound().takeIf { terminal.resendsOnce() && !clientSawContent() },
         )

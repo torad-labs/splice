@@ -20,7 +20,7 @@ import splice.core.perf.TimedWork
 import splice.core.perf.TurnPerfTiming
 import splice.core.usage.PlanLimit
 import splice.core.wire.HttpStatus
-import splice.core.wire.RateLimitReply
+import splice.core.wire.NativeReply
 import splice.upstream.CredentialHeaders
 import splice.upstream.RetryNotice
 import splice.upstream.StreamRead
@@ -110,11 +110,12 @@ internal sealed class RetryOutcome<out T> {
         /** V4-233: a 429 whose unified headers name a spent plan window, read here because the
          *  headers die with the response like the body does. Null for every other failure. */
         val planLimit: PlanLimit? = null,
-        val rateLimitReply: RateLimitReply? = null,
-        /** A refusal the vendor module knows (VendorRefusals): the retry loop gives up on it at once. */
-        val refusal: VendorRefusal? = null,
-        /** The vendor module named this status a dead credential (VendorRefusals.isAuthFailure); a 401 needs no name. */
-        val vendorAuth: Boolean = false,
+        /** The provider's own 429, kept for a client that reads it natively. */
+        val native: NativeReply? = null,
+        val vendor: VendorReading = VendorReading(),
+        /** The credential this attempt sent, so the loop's exit can tell a 401 naming another key (ForeignCredential)
+         *  without the secret leaving the attempt's own process. */
+        val sent: Credentials? = null,
     ) : RetryOutcome<Nothing>() {
         /** A 429 the same login cannot outwait: a named plan window, or a pushback past [ceilingMs], the 15s ceiling
          *  unless a warm session has more of its wait left (V4-61). */
@@ -122,3 +123,7 @@ internal sealed class RetryOutcome<out T> {
             status == HttpStatus.TOO_MANY_REQUESTS && (planLimit != null || (retryAfterMs ?: 0L) > ceilingMs)
     }
 }
+
+/** What the vendor module (VendorRefusals) said of one failed answer: a [refusal] it knows, which the retry loop gives
+ *  up on at once, and whether it named the status a dead credential ([deadCredential]); a 401 needs no name. */
+internal data class VendorReading(val refusal: VendorRefusal? = null, val deadCredential: Boolean = false)

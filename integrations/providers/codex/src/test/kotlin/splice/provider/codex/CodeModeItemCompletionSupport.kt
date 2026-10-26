@@ -4,9 +4,12 @@ import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.jsonObject
+import splice.core.failure.FailureCause
+import splice.core.failure.FailureEvidence
+import splice.core.failure.Moment
+import splice.core.failure.Position
+import splice.core.failure.Tear
 import splice.core.reasoning.ReasoningReplay
-import splice.core.turn.FailureCause
-import splice.core.turn.FailurePhase
 import splice.core.turn.RoundHandoffs
 import splice.core.turn.RoundText
 import splice.core.turn.TurnOutcome
@@ -110,9 +113,9 @@ abstract class CodeModeItemCompletionSupport : CodeModeStatementStreamSupport() 
                 return RoundResult.Outcome(
                     when (ending) {
                         "failure" -> TurnOutcome.Failure(
-                            "synthetic provider failure",
-                            cause = FailureCause.UPSTREAM_CONN_RESET,
-                            phase = FailurePhase.MID_OUTPUT,
+                            cause = FailureCause.Path.Torn(Tear.RESET, toolOpen = false),
+                            at = Position(Moment.MID_CONTENT, streamBegan = true),
+                            evidence = FailureEvidence("synthetic provider failure"),
                             salvagedUsage = Usage(inputTokens = 100, outputTokens = 7),
                         )
                         "identity" -> snapshot.copy(

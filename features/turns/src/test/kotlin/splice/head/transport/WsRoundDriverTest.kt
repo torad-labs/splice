@@ -57,15 +57,17 @@ import splice.core.auth.AuthDescription
 import splice.core.auth.CredentialKey
 import splice.core.auth.Credentials
 import splice.core.auth.RefreshableAuthProvider
+import splice.core.failure.FailureCause
+import splice.core.failure.FailureEvidence
+import splice.core.failure.Moment
+import splice.core.failure.PersistedCause
+import splice.core.failure.Position
 import splice.core.model.ModelCatalog
 import splice.core.model.ModelEntry
 import splice.core.parse.AnthropicTurnBody
 import splice.core.perf.PerfKeys
 import splice.core.perf.TurnPerf
 import splice.core.perf.WsAttemptTiming
-import splice.core.turn.ErrorType
-import splice.core.turn.FailureCause
-import splice.core.turn.FailurePhase
 import splice.core.turn.ReasoningDisplay
 import splice.core.turn.TurnMeta
 import splice.core.turn.TurnOutcome
@@ -313,7 +315,7 @@ private class RecordingTerminal : TurnTerminal, WireSink by RecordingSink2() {
 
     override suspend fun ensureStarted() = Unit
     override suspend fun emitTerminal(hasToolUse: Boolean, incomplete: Boolean, usage: Usage) = Unit
-    override suspend fun emitError(type: ErrorType, message: String, permanent: Boolean) = Unit
+    override suspend fun emitError(cause: FailureCause, message: String) = Unit
     override fun abandon() = Unit
 }
 
@@ -371,7 +373,7 @@ private class ThrowingStartTerminal(
 
     override suspend fun ensureStarted(): Unit = throw failure
     override suspend fun emitTerminal(hasToolUse: Boolean, incomplete: Boolean, usage: Usage) = Unit
-    override suspend fun emitError(type: ErrorType, message: String, permanent: Boolean) = Unit
+    override suspend fun emitError(cause: FailureCause, message: String) = Unit
     override fun abandon() = Unit
 }
 
@@ -1598,9 +1600,9 @@ class WsRoundDriverTest {
             log = {},
             classifyZeroEvent = ZeroEventClassifier { _, _, _, _ ->
                 TurnOutcome.Failure(
-                    "the classifier reclassified this round as failed",
-                    cause = FailureCause.UPSTREAM_REPORTED,
-                    phase = FailurePhase.MID_OUTPUT,
+                    cause = FailureCause.Provider.Unrecognized(clientError = false),
+                    at = Position(Moment.MID_CONTENT, streamBegan = true),
+                    evidence = FailureEvidence("the classifier reclassified this round as failed"),
                 )
             },
         )
@@ -1750,8 +1752,12 @@ class WsRoundFailureTest(@param:TempDir private val tmp: Path) {
         val result = drive.drive(inputs, runner, flowOf(ev(POLICY_REFUSAL)))
 
         val outcome = (result as? WsRoundResult.Streamed)?.outcome as? TurnOutcome.Failure
-        assertEquals(FailureCause.CONTENT_FILTERED, outcome?.cause, "the refusal was not the round's ending: $result")
-        assertEquals(true, outcome?.traits?.permanent, "a refusal re-sent is the identical refusal")
+        assertEquals(
+            PersistedCause.CONTENT_FILTERED,
+            outcome?.cause?.persisted,
+            "the refusal was not the round's ending: $result",
+        )
+        assertEquals(true, outcome?.cause?.permanent, "a refusal re-sent is the identical refusal")
         assertEquals(1, runner.endedNotOk, "the refused round clears its chain")
         inputs.drive.slot.release()
     }

@@ -8,6 +8,7 @@ import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertFalse
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
+import splice.core.failure.ClientWire
 import splice.core.turn.ErrorType
 import splice.core.turn.TurnOutcome
 import splice.upstream.transport.BufferCapacity
@@ -191,7 +192,7 @@ class ChatStreamTranslatorTest {
             Rec(),
         )
         val f = outcome as TurnOutcome.Failure
-        assertTrue(f.message.contains("model overloaded"))
+        assertTrue(f.evidence.message.contains("model overloaded"))
     }
 
     // --- real-vendor-shaped fixtures: explicit JSON nulls + prompt-cache tokens (Bug 1 / Bug 2) ---
@@ -232,8 +233,8 @@ class ChatStreamTranslatorTest {
             Rec(),
         )
         val f = outcome as TurnOutcome.Failure
-        assertEquals(ErrorType.OVERLOADED, f.type)
-        assertTrue(f.message.contains("truncated"))
+        assertEquals(ErrorType.OVERLOADED, ClientWire.ownType(f.cause))
+        assertTrue(f.evidence.message.contains("truncated"))
     }
 
     @Test
@@ -305,7 +306,7 @@ class ChatStreamTranslatorTest {
             Rec(),
         )
         val f = outcome as TurnOutcome.Failure
-        assertEquals(ErrorType.OVERLOADED, f.type)
+        assertEquals(ErrorType.OVERLOADED, ClientWire.ownType(f.cause))
     }
 
     @Test
@@ -315,8 +316,8 @@ class ChatStreamTranslatorTest {
             ev("""{"choices":[{"delta":{},"finish_reason":"content_filter"}]}"""),
         )
         val f = outcome as TurnOutcome.Failure
-        assertEquals(ErrorType.INVALID_REQUEST, f.type)
-        assertTrue(f.message.contains("content filter"))
+        assertEquals(ErrorType.INVALID_REQUEST, ClientWire.ownType(f.cause))
+        assertTrue(f.evidence.message.contains("content filter"))
     }
 
     @Test
@@ -476,8 +477,8 @@ class ChatToolArgsValidationTest {
             Rec(),
         )
         val failure = outcome as TurnOutcome.Failure
-        assertEquals(ErrorType.API_ERROR, failure.type)
-        assertTrue(failure.message.contains("malformed JSON"), failure.message)
+        assertEquals(ErrorType.API_ERROR, ClientWire.ownType(failure.cause))
+        assertTrue(failure.evidence.message.contains("malformed JSON"), failure.evidence.message)
     }
 
     @Test
@@ -490,7 +491,7 @@ class ChatToolArgsValidationTest {
             Rec(),
         )
         val failure = outcome as TurnOutcome.Failure
-        assertTrue(failure.message.contains("empty arguments"), failure.message)
+        assertTrue(failure.evidence.message.contains("empty arguments"), failure.evidence.message)
     }
 
     @Test
@@ -535,8 +536,8 @@ class ChatRefusalHonestyTest {
         )
         val f = outcome as TurnOutcome.Failure
         assertTrue(
-            f.message.contains("I can't help with that. I won't help with anything illegal."),
-            "the separating space frame must survive: ${f.message}",
+            f.evidence.message.contains("I can't help with that. I won't help with anything illegal."),
+            "the separating space frame must survive: ${f.evidence.message}",
         )
     }
 
@@ -562,9 +563,9 @@ class ChatRefusalHonestyTest {
             sink,
         )
         val f = outcome as TurnOutcome.Failure
-        assertEquals(ErrorType.INVALID_REQUEST, f.type)
-        assertTrue(f.traits.providerReported, "the BACKEND populated `refusal` — G20 provenance is upstream")
-        assertTrue(f.message.contains("I can't help with that request."), f.message)
+        assertEquals(ErrorType.INVALID_REQUEST, ClientWire.ownType(f.cause))
+        assertTrue(f.cause.providerReported, "the BACKEND populated `refusal` — G20 provenance is upstream")
+        assertTrue(f.evidence.message.contains("I can't help with that request."), f.evidence.message)
         // the refusal is the VERDICT, not content: nothing was written to the wire as text
         assertFalse(sink.calls.any { it.startsWith("text:") }, sink.calls.toString())
     }
@@ -578,9 +579,9 @@ class ChatRefusalHonestyTest {
             ev("""{"choices":[{"message":{"refusal":"Sorry, I cannot do that."},"finish_reason":"stop"}]}"""),
         )
         val f = outcome as TurnOutcome.Failure
-        assertEquals(ErrorType.INVALID_REQUEST, f.type)
-        assertTrue(f.traits.providerReported)
-        assertTrue(f.message.contains("Sorry, I cannot do that."), f.message)
+        assertEquals(ErrorType.INVALID_REQUEST, ClientWire.ownType(f.cause))
+        assertTrue(f.cause.providerReported)
+        assertTrue(f.evidence.message.contains("Sorry, I cannot do that."), f.evidence.message)
     }
 
     // Backends repeat the whole refusal on the final message after streaming it. It must appear ONCE.
@@ -591,7 +592,7 @@ class ChatRefusalHonestyTest {
             ev("""{"choices":[{"message":{"refusal":"No."},"finish_reason":"stop"}]}"""),
         )
         val f = outcome as TurnOutcome.Failure
-        assertEquals(1, Regex("No\\.").findAll(f.message).count(), f.message)
+        assertEquals(1, Regex("No\\.").findAll(f.evidence.message).count(), f.evidence.message)
     }
 
     // must_not / the documented risk on the item: a vendor emitting an EMPTY refusal on every frame
@@ -674,8 +675,8 @@ class ChatRefusalHonestyTest {
         val outcome = ChatStreamTranslator(ctx()).driveTurn(frames.asFlow(), Rec())
         val f = outcome as TurnOutcome.Failure
         assertTrue(
-            f.message.contains("I can't help with that. I can't help with anything illegal."),
-            f.message,
+            f.evidence.message.contains("I can't help with that. I can't help with anything illegal."),
+            f.evidence.message,
         )
     }
 
@@ -688,7 +689,7 @@ class ChatRefusalHonestyTest {
             ev("""{"choices":[{"delta":{"refusal":"No."}}]}"""),
             ev("""{"choices":[{"delta":{},"finish_reason":"stop"}]}"""),
         )
-        assertTrue((outcome as TurnOutcome.Failure).message.contains("No. No."), outcome.message)
+        assertTrue((outcome as TurnOutcome.Failure).evidence.message.contains("No. No."), outcome.evidence.message)
     }
 
     // The refusal branch was deliberately ranked ABOVE the pre-existing contentFiltered branch.
@@ -701,9 +702,9 @@ class ChatRefusalHonestyTest {
             ev("""{"choices":[{"delta":{"refusal":"I refuse."},"finish_reason":"content_filter"}]}"""),
         )
         val f = outcome as TurnOutcome.Failure
-        assertEquals(ErrorType.INVALID_REQUEST, f.type)
-        assertTrue(f.traits.providerReported)
-        assertTrue(f.message.contains("I refuse."), f.message)
+        assertEquals(ErrorType.INVALID_REQUEST, ClientWire.ownType(f.cause))
+        assertTrue(f.cause.providerReported)
+        assertTrue(f.evidence.message.contains("I refuse."), f.evidence.message)
     }
 
     // Prose already delivered, THEN a refusal. Failing the whole turn is correct under L3 (the
@@ -721,9 +722,9 @@ class ChatRefusalHonestyTest {
             sink,
         )
         val f = outcome as TurnOutcome.Failure
-        assertEquals(ErrorType.INVALID_REQUEST, f.type)
-        assertTrue(f.traits.providerReported)
-        assertTrue(f.message.contains("but I stop here"), f.message)
+        assertEquals(ErrorType.INVALID_REQUEST, ClientWire.ownType(f.cause))
+        assertTrue(f.cause.providerReported)
+        assertTrue(f.evidence.message.contains("but I stop here"), f.evidence.message)
         assertTrue(sink.calls.contains("text:Sure, here goes. "), sink.calls.toString())
     }
 }
@@ -748,7 +749,7 @@ class ChatRunawayGuardTest {
 
         val outcome = ChatStreamTranslator(ctx()).driveTurn(events, Rec())
         val failure = outcome as TurnOutcome.Failure
-        assertTrue(failure.message.contains("exceeded max buffered size"), failure.message)
+        assertTrue(failure.evidence.message.contains("exceeded max buffered size"), failure.evidence.message)
         assertTrue(emitted < BufferCapacity.MAX_TOOL_INDEX_ENTRIES, "guard must stop collection: $emitted")
     }
 
@@ -765,7 +766,7 @@ class ChatRunawayGuardTest {
 
         val outcome = ChatStreamTranslator(ctx()).driveTurn(events, Rec())
         val failure = outcome as TurnOutcome.Failure
-        assertTrue(failure.message.contains("exceeded max buffered size"), failure.message)
+        assertTrue(failure.evidence.message.contains("exceeded max buffered size"), failure.evidence.message)
         assertTrue(emitted < 25, "guard must stop collection: $emitted")
     }
 
@@ -783,8 +784,8 @@ class ChatRunawayGuardTest {
 
         val outcome = ChatStreamTranslator(ctx()).driveTurn(events, Rec())
         val failure = outcome as TurnOutcome.Failure
-        assertEquals(ErrorType.API_ERROR, failure.type)
-        assertFalse(failure.traits.providerReported)
+        assertEquals(ErrorType.API_ERROR, ClientWire.ownType(failure.cause))
+        assertFalse(failure.cause.providerReported)
         assertTrue(emitted < 25, "the guard must unwind the upstream, not drain it; emitted=$emitted")
     }
 }

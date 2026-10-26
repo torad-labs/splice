@@ -2,14 +2,17 @@
 // (concentration, 2026-08-19) so emitFailure is not billed for this surface. Same-package.
 package splice.head.turn
 
+import splice.core.failure.FailureCause
+import splice.core.failure.Tear
+import splice.core.failure.Unreach
 import splice.core.perf.OutcomeTag
 import splice.core.perf.PerfKeys
 import splice.core.turn.CONN_RESET_KIND
 import splice.core.turn.CONN_RESET_OUTCOME
 import splice.core.turn.CodeModeDivergenceMarker
-import splice.core.turn.ErrorType
 import splice.core.util.ERR_SNIPPET
 import splice.core.util.LogSink
+import splice.core.util.LoopbackOverride
 import splice.head.HeadHealthCounters
 import splice.head.perf.PerfFailure
 import splice.upstream.Provider
@@ -74,20 +77,18 @@ internal class TurnConnEnd(
         drive.markPermanent(false)
         telemetry.recordPerf(drive, OutcomeTag.UPSTREAM_FRAME_TOO_LARGE.wire)
         health.provider()
-        // V4-81: the wire type is the EMITTER's decision now, so this arm passes permanence
-        // explicitly — and this is the one arm where the answer needed deciding rather than
-        // reading. AN OVERSIZED FRAME IS TRANSIENT (permanent = false): the frame size is a
-        // property of the RESPONSE the upstream host chose to send, not of the request we sent,
-        // so a re-send buys a genuinely different response and can come back small. Contrast
-        // TurnEnding's unparseable base_url, which is a property of our own config and
-        // reproduces exactly — that one is permanent. The emitter still owns the other half:
-        // an oversized event can be met either side of content, and after content the type is
-        // left alone because the client is already finalizing what it holds. The message and
+        // V4-81: the wire type is the emitter's decision (ClientWire), and this is the one arm where
+        // the cause's permanence needed deciding rather than reading. AN OVERSIZED FRAME IS TRANSIENT
+        // (Torn is never permanent): the frame size is a property of the RESPONSE the upstream host
+        // chose to send, not of the request we sent, so a re-send buys a genuinely different response
+        // and can come back small. Contrast TurnEnding's unparseable base_url, which is a property of
+        // our own config and reproduces exactly — that one is permanent. The emitter still owns the
+        // other half: an oversized event can be met either side of content, and after content the
+        // type is left alone because the client is already finalizing what it holds. The message and
         // the telemetry type are unchanged.
         drive.emitter.emitError(
-            ErrorType.API_ERROR,
+            FailureCause.Path.Torn(Tear.OVERSIZED_EVENT, toolOpen = false),
             "upstream sent an oversized streaming event; retry",
-            permanent = false,
         )
     }
 
@@ -128,12 +129,18 @@ internal class TurnConnEnd(
         val boundedDetail = detail.take(ERR_SNIPPET - RETRY_HINT.length)
         drive.trace?.failureSentence("$boundedDetail$RETRY_HINT")
         // DR-128: account BEFORE the emit — see the frame-too-large arm above.
-        val cause = if (drive.perfCounter(PerfKeys.REFUSED_RUNTIME_PORT) > 0) "CONNECT_REFUSED" else null
-        telemetry.recordPerf(drive, CONN_RESET_OUTCOME, failure = PerfFailure(cause = cause))
-        health.local()
-        drive.emitter.emitError(
-            ErrorType.OVERLOADED,
-            "${provider.key}: upstream connection failed ($boundedDetail); retry",
+        val refused = drive.perfCounter(PerfKeys.REFUSED_RUNTIME_PORT) > 0
+        val cause = FailureCause.Path.Unreachable(
+            if (refused) Unreach.REFUSED else Unreach.RESET_BEFORE_REPLY,
+            local = LoopbackOverride.isLoopback(provider.upstreamUrl),
         )
+        // The row names a cause only for a refused runtime port, as it always has.
+        telemetry.recordPerf(
+            drive,
+            CONN_RESET_OUTCOME,
+            failure = PerfFailure(cause = cause.persisted.name.takeIf { refused }),
+        )
+        health.local()
+        drive.emitter.emitError(cause, "${provider.key}: upstream connection failed ($boundedDetail); retry")
     }
 }

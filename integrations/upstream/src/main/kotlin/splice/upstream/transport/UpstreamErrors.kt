@@ -9,8 +9,10 @@
 // Same package, so every `import splice.upstream.transport.UpstreamFailed` resolves unchanged.
 package splice.upstream.transport
 
+import splice.core.failure.FailureCause
+import splice.core.failure.FailureEvidence
 import splice.core.usage.PlanLimit
-import splice.core.wire.RateLimitReply
+import splice.core.wire.NativeReply
 
 /** The sealed vocabulary of an upstream call's endings that are neither a delivered round nor a decision the
  *  loop makes (the whole-turn wait is [UpstreamPost.TurnWaitExhausted]). */
@@ -47,10 +49,12 @@ internal class RequestWriteStalled(public val stalledMs: Long, cause: Throwable)
     }
 }
 
-/** The upstream host's own HTTP failure once retries are spent. */
+/** The upstream host's own HTTP failure once retries are spent: what it reads as ([cause]), decided once at the
+ *  loop's exit (RetryRules.giveUp), and what it left for the journal and the perf row ([evidence]). Nothing past
+ *  the loop reads the body again. */
 public class UpstreamFailed(
-    public val body: String,
-    public val status: Int? = null,
+    public val cause: FailureCause.Provider,
+    public val evidence: FailureEvidence,
     /** V4-117: how many upstream ATTEMPTS the retry loop made before it gave up, stamped HERE
      *  because this is the loop's own fact at the moment the last attempt failed — the perf row
      *  records it as layers=<n>. It is a RECORD, not a prediction: the matrix could say a failure is
@@ -62,11 +66,6 @@ public class UpstreamFailed(
      *  thing that crosses to the turn's ending, which records a plan-limit outcome and speaks the reset.
      *  Null for every other failure, a burst 429 with no named reset included. */
     public val planLimit: PlanLimit? = null,
-    /** A synthetic cooldown refusal, not a response sent by the provider. Nothing raises one since Oct 26, when
-     *  turns stopped being refused for another turn's rate limit; it and the held-turn count it feeds go with the
-     *  failure-handling redesign's error types. */
-    public val localHold: Boolean = false,
-) : UpstreamEnding() {
-    public var rateLimitReply: RateLimitReply? = null
-        internal set
-}
+    /** The provider's own 429, relayed whole to a client that reads it natively (the passthrough dialect). */
+    public val native: NativeReply? = null,
+) : UpstreamEnding()

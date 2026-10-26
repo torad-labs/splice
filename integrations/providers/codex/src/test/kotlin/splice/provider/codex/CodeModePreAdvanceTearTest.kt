@@ -10,7 +10,7 @@ import org.junit.jupiter.api.Assertions.assertNull
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.Timeout
-import splice.core.turn.FailureCause
+import splice.core.failure.PersistedCause
 import splice.core.turn.TurnOutcome
 import splice.upstream.RedirectableRoundPost
 import splice.upstream.RoundResult
@@ -36,8 +36,8 @@ class CodeModePreAdvanceTearTest : CodeModeStatementStreamSupport() {
         try {
             val outcome = manager.interceptor(turn(), disableParallel = false)
                 .intercept(BASE_REQUEST, initial, post).turn() as TurnOutcome.Failure
-            assertEquals(FailureCause.INTERNAL, outcome.cause)
-            assertFalse(outcome.traits.deterministic)
+            assertEquals(PersistedCause.INTERNAL, outcome.cause.persisted)
+            assertFalse(outcome.cause.deterministic)
             assertNull(outcome.partial)
             assertFalse(initial.callback.isCompleted)
             assertTrue(stateFiles.records().isEmpty(), "there was no script to admit or lose")

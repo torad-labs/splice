@@ -21,6 +21,7 @@ import kotlinx.serialization.json.jsonObject
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
+import splice.core.failure.ClientWire
 import splice.core.index.WireBlockIndex
 import splice.core.parse.AnthropicParse
 import splice.core.turn.TurnOutcome
@@ -42,7 +43,7 @@ private val UPDATING = System.getenv("UPDATE_GOLDENS") == "true"
  *  [TurnOutcome.Failure] is splice's own bookkeeping, so freezing its whole `toString` would red this wall
  *  for a defaulted internal field while no byte the client sees had changed. */
 private fun failureSubject(failure: TurnOutcome.Failure): String =
-    "${failure.type.wireName} ${failure.message}"
+    "${ClientWire.ownType(failure.cause).wireName} ${failure.evidence.message}"
 
 private fun assertGolden(name: String, actual: String, subject: String = "what Kimi receives") {
     val file = GOLDEN_DIR.resolve(name)

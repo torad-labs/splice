@@ -462,7 +462,7 @@ class CodexCodeModeBridgeTest : CodeModeBridgeTestSupport() {
         val outcome = bridge(runtime).interceptor(turn(), outer(), disableParallel = false)
             .intercept(BASE_REQUEST, RecordingSink()) { RoundResult.Outcome(outerOutcome()) }.turn()
         assertTrue(outcome is TurnOutcome.Failure)
-        assertTrue((outcome as TurnOutcome.Failure).message.contains("not in the current tool catalog"))
+        assertTrue((outcome as TurnOutcome.Failure).evidence.message.contains("not in the current tool catalog"))
         assertEquals(1, runtime.cell.advances)
     }
 

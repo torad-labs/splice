@@ -77,10 +77,11 @@ internal class AdmissionGate(
         val slot = when (val admission = gate.acquire(session)) {
             is InflightGate.Admission.Acquired -> admission.slot
             InflightGate.Admission.AtCapacity -> {
-                log("[${provider.key}] admission rejected: gateway at capacity (queued=${gate.snapshot().queued})\n")
+                val full = gate.snapshot()
+                log("[${provider.key}] admission rejected: gateway at capacity (queued=${full.queued})\n")
                 beforeRefusal?.ended()
                 refusals.refused(OutcomeTag.AT_CAPACITY, session)
-                responses.respondAtCapacity(call, "gateway at capacity")
+                responses.respondAtCapacity(call, full.limit, "gateway at capacity")
                 return null
             }
         }

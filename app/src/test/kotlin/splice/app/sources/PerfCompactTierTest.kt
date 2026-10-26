@@ -7,10 +7,10 @@ import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.io.TempDir
+import splice.core.failure.PersistedCause
 import splice.core.perf.OutcomeTag
 import splice.core.perf.OutcomeTags
 import splice.core.turn.ErrorType
-import splice.core.turn.FailureCause
 import splice.usage.UsageHead
 import splice.usage.UsageHeadSinks
 import splice.usage.UsageHeadWarn
@@ -34,8 +34,8 @@ class PerfCompactTierTest {
 
     private fun cause(i: Int): String? = when {
         i % 11 != 0 -> null
-        i % 22 == 0 -> FailureCause.UPSTREAM_STALLED.name
-        else -> FailureCause.UPSTREAM_TRUNCATED.name
+        i % 22 == 0 -> PersistedCause.UPSTREAM_STALLED.name
+        else -> PersistedCause.UPSTREAM_TRUNCATED.name
     }
 
     /** One request: header facts and ids that are unique per row, the waits the tests read, and numeric noise. */

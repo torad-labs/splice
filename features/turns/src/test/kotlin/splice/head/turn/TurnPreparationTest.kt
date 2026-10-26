@@ -199,7 +199,8 @@ class TurnPreparationTest {
                     post("/v1/messages") {
                         val result = preparation.prepareTurn(call, TurnPerf()).prepared()
                         assertTrue(result is Preparation.Rejected, result.toString())
-                        AdmissionResponses().respondInvalidRequest(call, (result as Preparation.Rejected).message)
+                        val rejected = result as Preparation.Rejected
+                        AdmissionResponses().respondRefusal(call, rejected.cause, rejected.message)
                     }
                 }
             }

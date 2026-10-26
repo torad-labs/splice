@@ -12,6 +12,7 @@
 package splice.head.round
 
 import kotlinx.serialization.json.JsonObject
+import splice.core.failure.ClientWire
 import splice.core.perf.PerfKeys
 import splice.core.perf.TurnPerf
 import splice.core.perf.TurnPerfTiming
@@ -94,12 +95,10 @@ internal class ReanchorRunner(
                 if (fromScratch) "restarting the round from scratch" else "continuing from partial output"
             // V4-242: with the round's own words, which name what ended it (a peer's close code and
             // reason, a stall's cap); the wire type alone read "overloaded_error" for all of them.
-            val why = "${failure.type.wireName} mid-stream (${failure.message})"
+            val type = ClientWire.ownType(failure.cause).wireName
+            val why = "$type mid-stream (${failure.evidence.message})"
             log("[$key] re-anchor ${attempt + 1}: $why; $restarted\n")
-            log.retry(
-                "[$key] re-anchor ${attempt + 1}: ${failure.type.wireName} mid-stream; $restarted",
-                failure.message,
-            )
+            log.retry("[$key] re-anchor ${attempt + 1}: $type mid-stream; $restarted", failure.evidence.message)
             // V4-116 (5): the continuation is SPENT here — right where the loop commits to another
             // POST and the counter that names it moves. Stamped at the same point as [attempt] on
             // purpose: a number that could disagree with the loop's own count is worse than no

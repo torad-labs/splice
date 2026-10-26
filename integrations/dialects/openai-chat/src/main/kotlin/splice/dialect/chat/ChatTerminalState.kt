@@ -4,9 +4,11 @@
 // passthrough dialect's PassthroughFailureRules idiom (commit 6868086).
 package splice.dialect.chat
 
-import splice.core.turn.FailureCause
-import splice.core.turn.FailurePhase
-import splice.core.turn.FailureTraits
+import splice.core.failure.FailureCause
+import splice.core.failure.FailureEvidence
+import splice.core.failure.Moment
+import splice.core.failure.Position
+import splice.core.failure.RefusedBy
 import splice.core.turn.TurnOutcome
 import splice.upstream.failure.ClassifiedFailure
 import splice.upstream.failure.FailureSource
@@ -23,8 +25,9 @@ internal class ChatTerminalState(private val toolCalls: ChatToolCalls) {
     internal var contentFiltered = false
     internal var failure: ClassifiedFailure? = null
 
-    // V4-167: whether the error event's verdict is one a re-send reproduces — see onError.
-    private var failurePermanent = false
+    // V4-167: whether the error event carried a status or a vendor kind, so its verdict stands as the
+    // classifier scored it — see onError.
+    private var failureTyped = false
 
     // CX-08 (L3): OpenAI carries a model refusal in a DEDICATED `refusal` field on the streamed
     // delta and on the final message — never in `content`. Unread, the one text that explains the
@@ -52,7 +55,7 @@ internal class ChatTerminalState(private val toolCalls: ChatToolCalls) {
         // V4-167: a verdict the vendor TYPED or gave a status is carried as the classifier scored it,
         // as ResponsesTerminalDecision has since V4-81, so a deterministic error is not advertised as
         // retryable. An event with neither keeps the wire V4-164 promised it: retryable, as before.
-        failurePermanent = !classified.transient && (status != null || kind.isNotBlank())
+        failureTyped = status != null || kind.isNotBlank()
     }
 
     /** Whether the failure this state reports is the backend's own error with a vendor code on no list, the one
@@ -76,67 +79,49 @@ internal class ChatTerminalState(private val toolCalls: ChatToolCalls) {
         val runaway = runawayGuard
         val reported = failure
         return when {
-            runaway != null -> TurnOutcome.Failure(
-                runaway,
-                traits = FailureTraits(providerReported = false),
-                cause = FailureCause.TOOL_TEAR,
-                phase = FailurePhase.MID_OUTPUT,
-            )
+            // splice's own size guard tripped on what the backend sent: a local verdict (G20).
+            runaway != null -> failed(FailureCause.Provider.ToolTear(runaway = true), runaway)
             // CX-01: a terminated turn whose tool arguments are corrupt must not reach the client
             // as a Success — provider-reported (the backend produced the bytes), so it retries.
-            toolCalls.toolArgsInvalid != null -> TurnOutcome.Failure(
+            toolCalls.toolArgsInvalid != null -> failed(
+                FailureCause.Provider.ToolTear(runaway = false),
                 "chat backend: ${toolCalls.toolArgsInvalid} in tool call; retry",
-                traits = FailureTraits(providerReported = true),
-                cause = FailureCause.TOOL_TEAR,
-                phase = FailurePhase.MID_OUTPUT,
             )
-            reported != null ->
-                TurnOutcome.Failure(
-                    "chat backend: ${reported.message}",
-                    traits = FailureTraits(providerReported = true, permanent = failurePermanent),
-                    // V4-164: the classifier's cause, carried through untouched — the passthrough
-                    // dialect's rule (PassthroughTerminalState: "an earlier draft hard-coded
-                    // UPSTREAM_REPORTED here and threw both verdicts away"). An event with no
-                    // recognisable shape still lands on UPSTREAM_REPORTED, from the classifier's
-                    // own floor, so an unknown in-band error keeps exactly the wire it had.
-                    cause = reported.cause,
-                    phase = FailurePhase.MID_OUTPUT,
-                )
+            // V4-164: the classifier's verdict, carried through — the passthrough dialect's rule
+            // (PassthroughTerminalState: "an earlier draft hard-coded UPSTREAM_REPORTED here and threw
+            // both verdicts away"). An event with no recognisable shape still lands on the classifier's
+            // own floor, so an unknown in-band error keeps exactly the wire it had.
+            reported != null -> failed(reportedCause(reported), "chat backend: ${reported.message}")
             // CX-08: the backend populated `refusal` — a censored generation whose STATED REASON is
             // the only honest verdict available. Ranked above the content_filter branch below
             // because it carries the model's own words instead of a generic phrase; it outranks
             // `finished` for the same reason content_filter does (the same frame sets both).
             // isNotBlank, not isNotEmpty: a buffer of only whitespace fragments must still read as
-            // "no refusal" now that fragments are accepted verbatim (round-2 review).
-            refusalBuf.isNotBlank() -> TurnOutcome.Failure(
-                "chat backend: model refused. $refusalBuf",
-                traits = FailureTraits(
-                    providerReported = true,
-                    // the `refusal` the backend sent, not a local verdict (G20)
-                    // V4-81, the responses dialect's sibling (found by sweeping rather than by being
-                    // told): a refusal reproduces exactly, so advertising it as transient buys the same
-                    // refusal again — see PreContentWireType. The two dialects answer the same question
-                    // the same way or the behaviour depends on which head the operator happens to run.
-                    permanent = true,
-                ),
-                cause = FailureCause.MODEL_REFUSED,
-                phase = FailurePhase.TERMINAL,
-            )
+            // "no refusal" now that fragments are accepted verbatim (round-2 review). V4-81, the
+            // responses dialect's sibling: a refusal reproduces exactly, so the leaf is permanent and
+            // the two dialects answer the same question the same way.
+            refusalBuf.isNotBlank() ->
+                failed(FailureCause.Provider.Refused(RefusedBy.MODEL), "chat backend: model refused. $refusalBuf")
             // finish_reason=content_filter is a CENSORED turn — a clean end_turn would let a
             // blocked generation masquerade as complete (honesty invariant); it outranks
-            // `finished` (the same frame sets both). Retry an api_error honestly.
-            contentFiltered -> TurnOutcome.Failure(
+            // `finished` (the same frame sets both). V4-81: the identical prompt is filtered identically.
+            contentFiltered -> failed(
+                FailureCause.Provider.Refused(RefusedBy.FILTER),
                 "chat backend: generation stopped by content filter",
-                traits = FailureTraits(
-                    providerReported = true,
-                    // finish_reason the backend sent, not a local verdict (G20)
-                    permanent = true,
-                ),
-                // V4-81: the identical prompt is filtered identically.
-                cause = FailureCause.CONTENT_FILTERED,
-                phase = FailurePhase.TERMINAL,
             )
             else -> null
         }
     }
+
+    /** The classifier's verdict as this event carries it: an event with neither status nor kind keeps V4-164's
+     *  retryable wire, so a failure no table names stays one a re-send can change (see onError). */
+    private fun reportedCause(reported: ClassifiedFailure): FailureCause.Provider = reported.inBand.let {
+        if (it is FailureCause.Provider.Unrecognized && !failureTyped) FailureCause.Provider.Unrecognized(false) else it
+    }
+
+    private fun failed(cause: FailureCause, message: String): TurnOutcome.Failure = TurnOutcome.Failure(
+        cause = cause,
+        at = Position(Moment.MID_CONTENT, streamBegan = true),
+        evidence = FailureEvidence(message),
+    )
 }

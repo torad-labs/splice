@@ -7,8 +7,8 @@
 package splice.head.turn
 
 import io.ktor.http.URLParserException
+import splice.core.failure.FailureCause
 import splice.core.perf.OutcomeTag
-import splice.core.turn.ErrorType
 import splice.core.util.LogSink
 import splice.head.HeadHealthCounters
 import splice.upstream.transport.SseFrameTooLarge
@@ -81,9 +81,8 @@ internal class TurnEnding(
                 // type it stays RETRYABLE, which is the pre-V4-81 behaviour and never worse than it;
                 // widening the set is a deliberate act that needs its own named entry here.
                 drive.emitter.emitError(
-                    ErrorType.API_ERROR,
+                    FailureCause.Splice.Internal(escaped = true, permanent = permanent),
                     "splice: internal gateway error; retry",
-                    permanent = permanent,
                 )
             }
             else -> throw e // Errors (OOM etc.) are not turn failures — never masked

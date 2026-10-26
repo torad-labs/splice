@@ -4,21 +4,21 @@
 // not the count, so the test runs here, in the one read of the window, and the page shows what the daemon counted.
 package splice.usage.perf
 
+import splice.core.failure.PersistedCause
 import splice.core.perf.OutcomeTag
 import splice.core.perf.OutcomeTags
 import splice.core.perf.PerfKeys
 import splice.core.turn.ErrorType
-import splice.core.turn.FailureCause
 
 /** What a row says, read the one way every test of it reads it. */
 internal object RowReads {
     fun overloaded(row: PerfRow): Boolean = row.outcome == OutcomeTags.failure(ErrorType.OVERLOADED)
 
-    fun caused(row: PerfRow, cause: FailureCause): Boolean = row.cause == cause.name
+    fun caused(row: PerfRow, cause: PersistedCause): Boolean = row.cause == cause.name
 
     /** Neither cut short nor given up: the upstream's own overloaded and nothing more specific. */
     fun unexplained(row: PerfRow): Boolean =
-        row.cause != FailureCause.UPSTREAM_TRUNCATED.name && row.cause != FailureCause.UPSTREAM_STALLED.name
+        row.cause != PersistedCause.UPSTREAM_TRUNCATED.name && row.cause != PersistedCause.UPSTREAM_STALLED.name
 
     /** The silence a request held mid-answer at or over [floorMs], or 0: it must have begun after the first byte. */
     fun silence(row: PerfRow, floorMs: Long): Long {
@@ -36,7 +36,7 @@ internal enum class TurnsTest(val wire: String) {
     GAVE_UP("gaveup") {
         override fun matches(row: PerfRow, silenceFloorMs: Long?): Boolean =
             row.outcome == OutcomeTag.TURN_CAP.wire ||
-                (RowReads.overloaded(row) && RowReads.caused(row, FailureCause.UPSTREAM_STALLED))
+                (RowReads.overloaded(row) && RowReads.caused(row, PersistedCause.UPSTREAM_STALLED))
     },
 
     /** The upstream said overloaded and nothing more specific happened to the answer. */
@@ -48,7 +48,7 @@ internal enum class TurnsTest(val wire: String) {
     /** The upstream answered overloaded because its stream was cut short. */
     CUT_OFF("cutoff") {
         override fun matches(row: PerfRow, silenceFloorMs: Long?): Boolean =
-            RowReads.overloaded(row) && RowReads.caused(row, FailureCause.UPSTREAM_TRUNCATED)
+            RowReads.overloaded(row) && RowReads.caused(row, PersistedCause.UPSTREAM_TRUNCATED)
     },
 
     /** A silence at or over the floor that began after the first byte, so it was waited through mid-answer. */

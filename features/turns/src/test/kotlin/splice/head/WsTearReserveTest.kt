@@ -24,10 +24,10 @@ import org.junit.jupiter.api.io.TempDir
 import splice.core.auth.AuthDescription
 import splice.core.auth.Credentials
 import splice.core.auth.RefreshableAuthProvider
+import splice.core.failure.FailureCause
 import splice.core.model.ModelCatalog
 import splice.core.model.ModelEntry
 import splice.core.perf.TurnPerf
-import splice.core.turn.ErrorType
 import splice.core.turn.ReasoningDisplay
 import splice.core.turn.TurnMeta
 import splice.core.turn.TurnOutcome
@@ -80,7 +80,7 @@ private class RecordingTerminal : TurnTerminal, WireSink by RecordingSink2() {
 
     override suspend fun ensureStarted() = Unit
     override suspend fun emitTerminal(hasToolUse: Boolean, incomplete: Boolean, usage: Usage) = Unit
-    override suspend fun emitError(type: ErrorType, message: String, permanent: Boolean) = Unit
+    override suspend fun emitError(cause: FailureCause, message: String) = Unit
     override fun abandon() = Unit
 }
 

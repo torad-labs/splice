@@ -10,8 +10,11 @@ import kotlinx.serialization.json.jsonObject
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
-import splice.core.turn.FailureCause
-import splice.core.turn.FailurePhase
+import splice.core.failure.FailureCause
+import splice.core.failure.FailureEvidence
+import splice.core.failure.Moment
+import splice.core.failure.Position
+import splice.core.failure.Tear
 import splice.core.turn.TurnOutcome
 import splice.core.turn.Usage
 import splice.core.turn.UsageField
@@ -24,9 +27,9 @@ class CodeModeBatchBillingTest : CodeModeResponseBatchSupport() {
     fun `one failed response has one durable usage owner after both sealed items and restart`() = runTest {
         verify(
             TurnOutcome.Failure(
-                "synthetic source failure",
-                cause = FailureCause.UPSTREAM_CONN_RESET,
-                phase = FailurePhase.MID_OUTPUT,
+                cause = FailureCause.Path.Torn(Tear.RESET, toolOpen = false),
+                at = Position(Moment.MID_CONTENT, streamBegan = true),
+                evidence = FailureEvidence("synthetic source failure"),
                 salvagedUsage = usage(),
             ),
         )
@@ -43,9 +46,9 @@ class CodeModeBatchBillingTest : CodeModeResponseBatchSupport() {
         val manager = bridge(host)
         val terminal = CompletableDeferred<Unit>()
         val ending = TurnOutcome.Failure(
-            "synthetic",
-            cause = FailureCause.UPSTREAM_CONN_RESET,
-            phase = FailurePhase.MID_OUTPUT,
+            cause = FailureCause.Path.Torn(Tear.RESET, toolOpen = false),
+            at = Position(Moment.MID_CONTENT, streamBegan = true),
+            evidence = FailureEvidence("synthetic"),
             salvagedUsage = usage(),
         )
         val post = BatchPost(host, terminalGate = terminal, ending = ending)

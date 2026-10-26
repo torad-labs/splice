@@ -105,14 +105,13 @@ public data class PlanLimit(
         }
 
     /** V4-234: what every refusal of this spent window tells the client, in one place: the window, the
-     *  reset the upstream named, and that the session waits for it. [holding] is the gateway's own
-     *  clause when it is holding the turn too (a follower's fail-fast). No em dash, and none of the
+     *  reset the upstream named, and that the session waits for it. No em dash, and none of the
      *  phrases Claude Code reads as stop-waiting, because the reset is what decides the wait.
      *  V4-425: the developer reads this text in their terminal, so the reset is said through [times]
      *  (the machine's month, day, clock time and zone), never as the ISO instant a file would carry. */
-    public fun refusal(holding: String? = null, times: LocalTimeText = LocalTimeText()): String =
+    public fun refusal(times: LocalTimeText = LocalTimeText()): String =
         "Rate limit exceeded: the upstream reports this plan's $windowWords window is used up until " +
-            "${times.at(resetEpochSeconds)}${holding?.let { ", and $it" }.orEmpty()}. " +
+            "${times.at(resetEpochSeconds)}. " +
             "The session waits and resumes after the reset."
 }
 

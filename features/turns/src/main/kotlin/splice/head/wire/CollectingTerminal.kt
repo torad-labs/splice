@@ -8,8 +8,11 @@
 package splice.head.wire
 
 import kotlinx.serialization.json.JsonObject
+import splice.core.failure.ClientWire
+import splice.core.failure.FailureCause
+import splice.core.failure.Moment
+import splice.core.failure.Position
 import splice.core.index.WireBlockIndex
-import splice.core.turn.ErrorType
 import splice.core.turn.Usage
 import splice.core.util.JsonScalars
 import splice.core.wire.ErrorEnvelope
@@ -50,9 +53,10 @@ internal class CollectingTerminal(
 
     /** The single JSON body to write back (a terminal message or an error envelope). Never null
      *  after a driven turn — a turn always ends in emitTerminal or emitError; the fallback covers
-     *  only a torn drive that somehow emitted neither. */
+     *  only a torn drive that somehow emitted neither, a failure splice cannot attribute, whose
+     *  status the default above already holds. */
     public fun responseBody(): JsonObject = body ?: errorEnvelope(
-        ErrorType.API_ERROR.wireName,
+        ClientWire.ownType(FailureCause.Splice.Internal(escaped = true)).wireName,
         "splice: gateway produced no response; retry",
     )
 
@@ -78,12 +82,12 @@ internal class CollectingTerminal(
         if (!ended.compareAndSet(false, true)) return
         if (content.toolInputCapacityExceeded) {
             degraded = "buffered_capacity"
-            body = errorEnvelope(
-                ErrorType.API_ERROR.wireName,
+            // splice's own size guard tripped on the provider's tool call: a runaway tear.
+            fail(
+                FailureCause.Provider.ToolTear(runaway = true),
                 "splice: response exceeded max buffered size; aborting",
                 usagePayload(usage),
             )
-            status = statusFor(ErrorType.API_ERROR)
             return
         }
         val blocks = content.contentBlocks()
@@ -97,12 +101,11 @@ internal class CollectingTerminal(
             // turn even though it failed honestly, and the internal usage store already recorded
             // it; the wire response must not be the one place that accounting goes missing.
             degraded = "malformed_tool_input"
-            body = errorEnvelope(
-                ErrorType.API_ERROR.wireName,
+            fail(
+                FailureCause.Provider.ToolTear(runaway = false),
                 "splice: malformed tool_use input from upstream; retry",
                 usagePayload(usage),
             )
-            status = statusFor(ErrorType.API_ERROR)
             return
         }
         body = envelope.terminalMessageJson(
@@ -124,18 +127,16 @@ internal class CollectingTerminal(
      *  (TurnTerminal.endedCleanly). Default false stood while collect never detached. */
     override val endedCleanly: Boolean get() = cleanEnding.get()
 
-    /** V4-81: [permanent] is accepted and DELIBERATELY UNUSED here — the pre-content wire-type
-     *  rule is a streaming rule and does not apply to a buffered response. On `stream:false` the
+    /** V4-81: the pre-content wire-type rule is a streaming rule and does not apply to a buffered
+     *  response, so ClientWire answers this sink at [Moment.NON_STREAM]. On `stream:false` the
      *  client has read nothing yet by construction, but the response it is about to read is a
      *  single HTTP status, not an in-band SSE event: there is no retryable event to relabel, and
      *  the status IS the information (429 rate_limit_error, 502 api_error). Applying the rule here
      *  would ship a genuine 429 as a 529 with rate-limit headers attached and turn every buffered
-     *  api_error into a lie about an overload that did not happen. The signature carries the
-     *  parameter only because the interface does. */
-    override suspend fun emitError(type: ErrorType, message: String, permanent: Boolean) {
+     *  api_error into a lie about an overload that did not happen. */
+    override suspend fun emitError(cause: FailureCause, message: String) {
         if (!ended.compareAndSet(false, true)) return
-        body = errorEnvelope(type.wireName, message)
-        status = statusFor(type)
+        fail(cause, message, usage = null, streamBegan = false)
     }
 
     override fun abandon() {
@@ -151,16 +152,12 @@ internal class CollectingTerminal(
     private fun errorEnvelope(type: String, message: String, usage: JsonObject? = null): JsonObject =
         ErrorEnvelope.of(type, message, usage)
 
-    // ErrorType -> HTTP status. api_error maps to 502 to match the Node non-stream path's
-    // upstream-error/empty-model response; the rest mirror the Anthropic status conventions.
-    private fun statusFor(type: ErrorType): Int = when (type) {
-        ErrorType.INVALID_REQUEST -> HttpStatus.BAD_REQUEST
-        ErrorType.AUTHENTICATION -> HttpStatus.UNAUTHORIZED
-        ErrorType.PERMISSION -> HttpStatus.FORBIDDEN
-        ErrorType.NOT_FOUND -> HttpStatus.NOT_FOUND
-        ErrorType.RATE_LIMIT -> HttpStatus.TOO_MANY_REQUESTS
-        ErrorType.OVERLOADED -> HttpStatus.OVERLOADED
-        ErrorType.API_ERROR -> HttpStatus.BAD_GATEWAY
+    /** Ends the collect as [cause]'s failure: its real status and type (ClientWire at NON_STREAM). [streamBegan] is
+     *  what this sink can see: true once it collected content, false where it cannot tell. */
+    private fun fail(cause: FailureCause, message: String, usage: JsonObject?, streamBegan: Boolean = true) {
+        val answer = ClientWire.answer(cause, Position(Moment.NON_STREAM, streamBegan))
+        body = errorEnvelope(answer.type.wireName, message, usage)
+        status = answer.status ?: HttpStatus.BAD_GATEWAY
     }
 }
 

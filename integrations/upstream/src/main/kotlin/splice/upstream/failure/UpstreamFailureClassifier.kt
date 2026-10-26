@@ -11,8 +11,11 @@ import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
 import kotlinx.serialization.json.longOrNull
-import splice.core.turn.ErrorType
-import splice.core.turn.FailureCause
+import splice.core.failure.FailureCause
+import splice.core.failure.Lift
+import splice.core.failure.LoginOwner
+import splice.core.failure.RefusedBy
+import splice.core.failure.ServerFault
 import splice.core.util.Cancellables
 import splice.core.util.JsonScalars
 import splice.core.wire.HttpStatus
@@ -137,30 +140,30 @@ public object UpstreamFailureClassifier {
             message = LlamaCppErrors.explain(err, code, message)
         }
         if (parsed.isFailure && gatewayHtmlRe.containsMatchIn(message)) {
-            val type = if (status == HttpStatus.BAD_GATEWAY) ErrorType.OVERLOADED else ErrorType.API_ERROR
-            return ExtractResult.Gateway(
-                ClassifiedFailure(
-                    type,
-                    "upstream $status (gateway)",
-                    transient = status != null && status >= HttpStatus.INTERNAL_SERVER_ERROR,
-                    cause = gatewayCause(status),
-                ),
-            )
+            return ExtractResult.Gateway(ClassifiedFailure("upstream $status (gateway)", gatewayCause(status)))
         }
         return ExtractResult.Fields(message, code)
     }
 
-    /** The cause for an HTML body that is not a vendor envelope at all: a 5xx is the upstream
-     *  failing BEHIND the middlebox, and anything else is an in-band report we cannot attribute
-     *  further. Its own function because inlining the choice pushed [extractHttpError] one branch
-     *  past detekt's cyclomatic ceiling — the decision belongs here anyway, since it is a rule about
-     *  status classes rather than a step of parsing. */
-    private fun gatewayCause(status: Int?): FailureCause =
-        if (status != null && status >= HttpStatus.INTERNAL_SERVER_ERROR) {
-            FailureCause.UPSTREAM_STATUS_5XX
-        } else {
-            FailureCause.UPSTREAM_REPORTED
-        }
+    /** The cause for an HTML body that is not a vendor envelope at all: a 502 is the gateway's own overload, any
+     *  other 5xx the upstream failing BEHIND the middlebox, and anything else an in-band report we cannot
+     *  attribute further, which a re-send repeats. Its own function because inlining the choice pushed
+     *  [extractHttpError] one branch past detekt's cyclomatic ceiling — the decision belongs here anyway, since it
+     *  is a rule about status classes rather than a step of parsing. */
+    private fun gatewayCause(status: Int?): FailureCause.Provider = when {
+        status == HttpStatus.BAD_GATEWAY -> FailureCause.Provider.Overloaded(Lift.Unstated, loading = false)
+        status != null && status >= HttpStatus.INTERNAL_SERVER_ERROR -> statusFloor(status)
+        else -> FailureCause.Provider.Unrecognized(clientError = true)
+    }
+
+    /** What an error status names when nothing sharper did: a 5xx is the server's own failure (a 504 its gateway's
+     *  timeout), a 403 the provider's refusal of this caller, and any other 4xx its verdict on the request. */
+    private fun statusFloor(status: Int): FailureCause.Provider = when {
+        status == HttpStatus.GATEWAY_TIMEOUT -> FailureCause.Provider.ServerError(ServerFault.GATEWAY_TIMEOUT)
+        status >= HttpStatus.INTERNAL_SERVER_ERROR -> FailureCause.Provider.ServerError(ServerFault.INTERNAL)
+        status == HttpStatus.FORBIDDEN -> FailureCause.Provider.Forbidden()
+        else -> FailureCause.Provider.Rejected(staleReasoning = false)
+    }
 
     // the ordered cascade IS the ported contract — overflow, then rate, then auth, then status floors.
     private fun classifyContent(fields: ExtractResult.Fields, status: Int?): ClassifiedFailure {
@@ -176,23 +179,11 @@ public object UpstreamFailureClassifier {
             // that could never complete). invalid_request_error is terminal to the client, and the
             // vendor's own remedy text ("try rephrasing") rides along untouched.
             fields.code.lowercase() in FailureCodes.POLICY_REFUSAL_CODES ->
-                ClassifiedFailure(
-                    ErrorType.INVALID_REQUEST,
-                    msg.take(MAX_MESSAGE),
-                    cause = FailureCause.CONTENT_FILTERED,
-                )
+                ClassifiedFailure(msg.take(MAX_MESSAGE), FailureCause.Provider.Refused(RefusedBy.POLICY))
             status == HttpStatus.TOO_MANY_REQUESTS || rateRe.containsMatchIn(blob) ->
-                ClassifiedFailure(
-                    ErrorType.RATE_LIMIT,
-                    msg.take(MAX_MESSAGE),
-                    cause = FailureCause.VENDOR_RATE_LIMITED,
-                )
+                ClassifiedFailure(msg.take(MAX_MESSAGE), FailureCause.Provider.Limited(Lift.Unstated, window = null))
             status == HttpStatus.UNAUTHORIZED || authRe.containsMatchIn(blob) ->
-                ClassifiedFailure(
-                    ErrorType.AUTHENTICATION,
-                    msg.take(MAX_MESSAGE),
-                    cause = FailureCause.AUTH_MISSING,
-                )
+                ClassifiedFailure(msg.take(MAX_MESSAGE), FailureCause.Provider.AuthRejected(LoginOwner.SPLICE))
             // Overload: a 502 from the gateway, or capacity by CODE SHAPE. The ChatGPT backend
             // reports "model at capacity" as HTTP 503 or an in-stream response.failed whose code is
             // server_is_overloaded / slow_down — codex-rs names exactly those two (PR #31058, which
@@ -204,10 +195,8 @@ public object UpstreamFailureClassifier {
             // surfaces as OVERLOADED (529 / overloaded_error): the type Claude Code retries on.
             fields.isOverload(status) ->
                 ClassifiedFailure(
-                    ErrorType.OVERLOADED,
                     msg.take(MAX_MESSAGE),
-                    transient = true,
-                    cause = FailureCause.UPSTREAM_STATUS_5XX,
+                    FailureCause.Provider.Overloaded(Lift.Unstated, loading = false),
                 )
             else -> statusFallback(status, msg, fields.code)
         }
@@ -244,9 +233,8 @@ public object UpstreamFailureClassifier {
     public fun overflowFailure(msg: String): ClassifiedFailure {
         val message = if (promptTooLongRe.containsMatchIn(msg)) msg else "prompt is too long: $msg"
         return ClassifiedFailure(
-            ErrorType.INVALID_REQUEST,
             message.take(MAX_MESSAGE),
-            cause = FailureCause.REQUEST_TOO_LARGE,
+            FailureCause.Provider.TooLong(limitTokens = null, whileAnswering = false),
         )
     }
 
@@ -270,25 +258,13 @@ public object UpstreamFailureClassifier {
     }
 
     private fun statusFallback(status: Int?, msg: String, code: String): ClassifiedFailure = when {
-        status != null && status >= HttpStatus.INTERNAL_SERVER_ERROR ->
-            ClassifiedFailure(
-                ErrorType.API_ERROR,
-                msg.take(MAX_MESSAGE),
-                transient = true,
-                cause = FailureCause.UPSTREAM_STATUS_5XX,
-            )
         status != null && status >= HttpStatus.BAD_REQUEST ->
-            ClassifiedFailure(
-                ErrorType.INVALID_REQUEST,
-                msg.take(MAX_MESSAGE),
-                cause = FailureCause.UPSTREAM_STATUS_4XX,
-            )
+            ClassifiedFailure(msg.take(MAX_MESSAGE), statusFloor(status))
         else -> ClassifiedFailure(
-            ErrorType.API_ERROR,
             msg.take(MAX_MESSAGE),
-            transient = statuslessTransience(code, msg),
-            // No status at all — the in-band case, and the one the row's brief did not name.
-            cause = FailureCause.UPSTREAM_REPORTED,
+            // No status at all — the in-band case, and the one the row's brief did not name. A re-send can change
+            // it only when the vendor's words name a transient condition.
+            FailureCause.Provider.Unrecognized(clientError = !statuslessTransience(code, msg)),
             // A code on neither list is unknown: one re-send, then the honest message. A deterministic code
             // never re-sends, and no code at all is judged by the text heuristics above.
             retryOnce = code.isNotBlank() &&

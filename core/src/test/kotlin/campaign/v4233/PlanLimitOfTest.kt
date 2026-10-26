@@ -101,7 +101,7 @@ class PlanLimitOfTest {
     }
 
     @Test
-    fun `every refusal of a spent window is one sentence, naming the window, the reset and any hold`() {
+    fun `every refusal of a spent window is one sentence, naming the window and the reset`() {
         val limit = PlanLimit("five_hour", now)
         val times = LocalTimeText(ZoneId.of("America/Chicago"))
         val reset = "Sep 21, 9:13 AM CDT"
@@ -110,11 +110,6 @@ class PlanLimitOfTest {
             "Rate limit exceeded: the upstream reports this plan's 5-hour window is used up until $reset. " +
                 "The session waits and resumes after the reset.",
             limit.refusal(times = times),
-        )
-        assertEquals(
-            "Rate limit exceeded: the upstream reports this plan's 5-hour window is used up until $reset, " +
-                "and this gateway is holding retries for 90s. The session waits and resumes after the reset.",
-            limit.refusal(holding = "this gateway is holding retries for 90s", times = times),
         )
     }
 }

@@ -26,7 +26,7 @@ import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.withContext
 import splice.core.model.ClientWindows
 import splice.core.util.JsonWire
-import splice.core.wire.RateLimitReply
+import splice.core.wire.NativeReply
 import splice.head.ClientWindowWitness
 import splice.head.admission.ClientRecheck
 import splice.head.admission.TurnQuota
@@ -102,7 +102,7 @@ internal class CollectTurn(
         channel: ClientChannel,
     ) {
         val built = inputs.built
-        var nativeReply: RateLimitReply? = null
+        var nativeReply: NativeReply? = null
         inputs.trace?.collectedAnswer {
             ClientAnswer(
                 nativeReply?.status ?: terminal.httpStatus(),
@@ -193,7 +193,7 @@ internal class CollectTurn(
         inputs: TurnInputs,
         drive: TurnDrive,
         terminal: CollectingTerminal,
-        nativeReply: RateLimitReply?,
+        nativeReply: NativeReply?,
     ) {
         val headers = nativeReply?.headers
         if (headers == null) {

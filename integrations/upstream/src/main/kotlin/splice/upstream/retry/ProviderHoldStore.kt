@@ -17,13 +17,13 @@ import splice.core.util.JsonScalars
 import splice.core.util.JsonWire
 import splice.core.util.LogSink
 import splice.core.util.SecureFile
-import splice.core.wire.RateLimitReply
+import splice.core.wire.NativeReply
 import java.nio.file.Files
 import java.nio.file.Path
 
 /** The provider's word, as wall instants in epoch seconds; either half may be absent. */
 public data class ProviderHold(val providerResetAtEpochSeconds: Long?, val plan: PlanLimit?) {
-    public var rateLimitReply: RateLimitReply? = null
+    public var rateLimitReply: NativeReply? = null
         internal set
     val isEmpty: Boolean get() = providerResetAtEpochSeconds == null && plan == null
 }
@@ -84,7 +84,7 @@ public class FileProviderHoldStore(
         return Cancellables.runCatchingCancellable {
             val root = Json.parseToJsonElement(Files.readString(path)).jsonObject
             ProviderHold(JsonScalars.long(root, RESET_AT), plan(root[PLAN] as? JsonObject)).also { hold ->
-                root[REPLY]?.let { hold.rateLimitReply = Json.decodeFromJsonElement(RateLimitReply.serializer(), it) }
+                root[REPLY]?.let { hold.rateLimitReply = Json.decodeFromJsonElement(NativeReply.serializer(), it) }
             }
         }.onFailure {
             log("[provider-hold] ignoring unreadable hold (${it::class.simpleName}); the provider will say again\n")
@@ -111,7 +111,7 @@ public class FileProviderHoldStore(
     private fun json(hold: ProviderHold): String = JsonWire.string(
         buildJsonObject {
             hold.providerResetAtEpochSeconds?.let { put(RESET_AT, it) }
-            hold.rateLimitReply?.let { put(REPLY, Json.encodeToJsonElement(RateLimitReply.serializer(), it)) }
+            hold.rateLimitReply?.let { put(REPLY, Json.encodeToJsonElement(NativeReply.serializer(), it)) }
             hold.plan?.let { limit ->
                 putJsonObject(PLAN) {
                     put(CLAIM, limit.claim)
@@ -141,7 +141,7 @@ internal fun interface HoldChange {
 internal class ProviderHolds(private val store: ProviderHoldStore?) {
     private var resetAt: Long? = null
     private var plan: PlanLimit? = null
-    private var reply: RateLimitReply? = null
+    private var reply: NativeReply? = null
     private var generation = 0L
 
     /** Posting and acceptance share the refusal writers' monitor, never a clock comparison. */
@@ -159,7 +159,7 @@ internal class ProviderHolds(private val store: ProviderHoldStore?) {
         write()
     }
 
-    var rateLimitReply: RateLimitReply?
+    var rateLimitReply: NativeReply?
         @Synchronized
         get() = reply
 

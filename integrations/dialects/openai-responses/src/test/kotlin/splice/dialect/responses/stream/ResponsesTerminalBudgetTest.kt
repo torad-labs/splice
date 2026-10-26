@@ -12,9 +12,11 @@ import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.params.ParameterizedTest
 import org.junit.jupiter.params.provider.ValueSource
+import splice.core.failure.ClientWire
+import splice.core.failure.Moment
+import splice.core.failure.PersistedCause
+import splice.core.failure.Position
 import splice.core.turn.ErrorType
-import splice.core.turn.FailureCause
-import splice.core.turn.FailurePhase
 import splice.core.turn.TurnOutcome
 import splice.core.util.JsonScalars
 import splice.dialect.responses.reasoning.ReasoningEnvelopeEncoder
@@ -92,11 +94,11 @@ class ResponsesTerminalBudgetTest {
     private fun assertLocalCapacityFailure(outcome: TurnOutcome) {
         assertTrue(outcome is TurnOutcome.Failure, "terminal additions must not bypass the shared char limit")
         val failure = outcome as TurnOutcome.Failure
-        assertEquals("upstream: response exceeded max buffered size; aborting", failure.message)
-        assertEquals(ErrorType.API_ERROR, failure.type)
-        assertEquals(FailureCause.TOOL_TEAR, failure.cause)
-        assertEquals(FailurePhase.MID_OUTPUT, failure.phase)
-        assertFalse(failure.traits.providerReported, "shared-capacity rejection is local")
+        assertEquals("upstream: response exceeded max buffered size; aborting", failure.evidence.message)
+        assertEquals(ErrorType.API_ERROR, ClientWire.ownType(failure.cause))
+        assertEquals(PersistedCause.TOOL_TEAR, failure.cause.persisted)
+        assertEquals(Position(Moment.MID_CONTENT, streamBegan = true), failure.at)
+        assertFalse(failure.cause.providerReported, "shared-capacity rejection is local")
         assertEquals(7, failure.salvagedUsage.inputTokens)
         assertEquals(11, failure.salvagedUsage.outputTokens)
     }

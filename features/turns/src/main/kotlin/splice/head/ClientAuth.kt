@@ -11,6 +11,8 @@ import io.ktor.server.application.ApplicationCall
 import splice.core.auth.BearerScheme
 import splice.core.auth.ForeignHostLog
 import splice.core.auth.LoopbackHost
+import splice.core.failure.Decline
+import splice.core.failure.FailureCause
 import splice.core.perf.LivenessProbe
 import splice.head.admission.AdmissionResponses
 import splice.head.transport.ListValuedHeaders
@@ -183,7 +185,11 @@ internal class ClientAuth(
     private suspend fun authorizeUpstream(call: ApplicationCall): Boolean {
         // Header presence only REFUSES dispatch. No credential or body can turn it into hidden work.
         if (call.request.headers.getAll(LivenessProbe.PROBE_HEADER_NAME) != null) {
-            responses.respondInvalidRequest(call, "a liveness probe does not dispatch a turn")
+            responses.respondRefusal(
+                call,
+                FailureCause.Splice.Declined(Decline.LivenessProbe),
+                "a liveness probe does not dispatch a turn",
+            )
             return false
         }
         if (!authorize(call)) return false

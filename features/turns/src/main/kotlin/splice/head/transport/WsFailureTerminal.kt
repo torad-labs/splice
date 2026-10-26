@@ -2,7 +2,7 @@
 package splice.head.transport
 
 import kotlinx.serialization.json.JsonObject
-import splice.core.turn.FailureCause
+import splice.core.failure.PersistedCause
 import splice.core.util.JsonScalars
 import splice.upstream.failure.FailureSource
 import splice.upstream.failure.UpstreamFailureClassifier
@@ -24,6 +24,6 @@ internal class WsFailureTerminal(evt: JsonObject) {
      *  identical refusal (2026-10-04, 2:18 to 2:21 and 6:05 PM CT), so the round ends on it instead. The
      *  classifier that names the refusal on every other path decides, so no code list lives here. */
     fun policyRefusal(): Boolean =
-        UpstreamFailureClassifier.classify(FailureSource.SSE, "$code $message", code = code.ifEmpty { null }).cause ==
-            FailureCause.CONTENT_FILTERED
+        UpstreamFailureClassifier.classify(FailureSource.SSE, "$code $message", code = code.ifEmpty { null })
+            .cause.persisted == PersistedCause.CONTENT_FILTERED
 }

@@ -70,8 +70,8 @@ class UpstreamClientPlanLimitTest {
         val failure = assertEnds<UpstreamFailed> { client.posted(ctx(forwarded, notices), "{}") { "unreachable" } }
 
         assertEquals(1, calls.get(), "a spent plan window is not re-sent before the reset it named")
-        assertEquals(429, failure.status)
-        assertOurSentence(failure.body, reset)
+        assertEquals(429, failure.evidence.status)
+        assertOurSentence(failure.evidence.body.orEmpty(), reset)
         assertEquals(PlanLimit("five_hour", reset), client.planHold, "the hold is the upstream's own reset, exactly")
         assertTrue(
             client.planHoldForMs in (HOUR_S - 10) * MS..HOUR_S * MS,
@@ -100,7 +100,7 @@ class UpstreamClientPlanLimitTest {
             }
 
             assertEquals(3, calls.get(), "V4-61: every attempt in the budget is spent")
-            assertEquals(PLAN_BODY, failure.body, "the upstream's words pass through unchanged")
+            assertEquals(PLAN_BODY, failure.evidence.body, "the upstream's words pass through unchanged")
             assertEquals(0L, client.planHoldForMs)
             assertNull(client.planHold)
         }
@@ -127,7 +127,7 @@ class UpstreamClientPlanLimitTest {
             }
 
             assertEquals(3, calls.get(), "no named reset, no plan hold: V4-61's schedule")
-            assertEquals(PLAN_BODY, failure.body)
+            assertEquals(PLAN_BODY, failure.evidence.body)
             assertEquals(0L, client.planHoldForMs)
         }
 
@@ -154,7 +154,7 @@ class UpstreamClientPlanLimitTest {
             client.posted(ctx(forwarded, notices), "{}") { "unreachable" }
         }
         assertEquals(2, calls.get(), "the next turn reaches the provider, held by nothing the first one armed")
-        assertOurSentence(next.body, reset)
+        assertOurSentence(next.evidence.body.orEmpty(), reset)
 
         limited.set(false)
         assertEquals("ok", client.posted(ctx(forwarded, notices), "{}") { "ok" })

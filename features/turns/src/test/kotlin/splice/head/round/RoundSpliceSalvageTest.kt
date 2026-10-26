@@ -9,11 +9,13 @@ package splice.head.round
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertNull
 import org.junit.jupiter.api.Test
+import splice.core.failure.FailureCause
+import splice.core.failure.FailureEvidence
+import splice.core.failure.Moment
+import splice.core.failure.Position
 import splice.core.model.ModelRates
 import splice.core.model.TurnBill
 import splice.core.turn.AbsorbedRounds
-import splice.core.turn.FailureCause
-import splice.core.turn.FailurePhase
 import splice.core.turn.RoundText
 import splice.core.turn.TurnOutcome
 import splice.core.turn.Usage
@@ -26,9 +28,9 @@ class RoundSpliceSalvageTest {
     private val rounds = RoundSplice()
 
     private fun failure(partialUsage: Usage?): TurnOutcome.Failure = TurnOutcome.Failure(
-        message = "upstream died",
-        cause = FailureCause.UPSTREAM_REPORTED,
-        phase = FailurePhase.MID_OUTPUT,
+        cause = FailureCause.Provider.Unrecognized(clientError = false),
+        at = Position(Moment.MID_CONTENT, streamBegan = true),
+        evidence = FailureEvidence("upstream died"),
         partial = partialUsage?.let { TurnOutcome.PartialRound(usage = it) },
     )
 

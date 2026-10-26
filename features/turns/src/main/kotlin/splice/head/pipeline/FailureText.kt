@@ -27,8 +27,9 @@ import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
+import splice.core.failure.FailureCause
+import splice.core.failure.RefusedBy
 import splice.core.turn.ErrorType
-import splice.core.turn.FailureCause
 import splice.core.util.ERR_SNIPPET
 
 /** A failure as the client should read it: a stable, greppable [code] and a human [body]. */
@@ -79,7 +80,7 @@ internal class FailureRenderer {
     }
 
     private fun prose(message: String, cause: FailureCause?): String = clauseBreaks(message).let {
-        if (cause == FailureCause.MODEL_REFUSED) it else it.take(ERR_SNIPPET)
+        if (cause is FailureCause.Provider.Refused && cause.by == RefusedBy.MODEL) it else it.take(ERR_SNIPPET)
     }
 
     /** The one field worth showing: our own fail-fast and the OpenAI-shaped bodies use `detail`, an

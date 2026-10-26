@@ -62,8 +62,8 @@ internal class SealedDrive(
             failure is UpstreamAuthMissing -> account.markCredentialMissing()
             // V4-242: a 401 naming a credential the account did not send refused someone else's, so the
             // account's own stays usable (ForeignCredential; the upstream's 2026-09-25 outage shape).
-            failure is UpstreamFailed && failure.status == HttpStatusCode.Unauthorized.value &&
-                !ForeignCredential.named(failure.body, account.account.auth.credentials()) ->
+            failure is UpstreamFailed && failure.evidence.status == HttpStatusCode.Unauthorized.value &&
+                !ForeignCredential.named(failure.evidence.body, account.account.auth.credentials()) ->
                 account.markCredentialUnavailable()
         }
     }

@@ -12,6 +12,7 @@ import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.Timeout
 import org.junit.jupiter.api.io.TempDir
+import splice.core.failure.ClientWire
 import splice.core.index.WireBlockIndex
 import splice.core.turn.ErrorType
 import splice.core.turn.GatewayCustomCall
@@ -60,8 +61,8 @@ internal class CodeModeWorkerLossTest {
             real.close()
             runtime.release.complete(Unit)
             val failure = pending.await() as TurnOutcome.Failure
-            assertEquals(ErrorType.OVERLOADED, failure.type)
-            assertFalse(failure.traits.deterministic)
+            assertEquals(ErrorType.OVERLOADED, ClientWire.ownType(failure.cause))
+            assertFalse(failure.cause.deterministic)
             var continued = ""
             val retry = manager.interceptor(turn(id), disableParallel = false).interceptOutcome(body(id), Sink()) {
                 continued = it

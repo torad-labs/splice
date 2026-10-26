@@ -11,7 +11,7 @@ import io.ktor.server.application.ApplicationCall
 import io.ktor.server.response.header
 import io.ktor.server.response.respond
 import io.ktor.server.response.respondText
-import splice.core.turn.ErrorType
+import splice.core.failure.FailureCause
 import splice.core.turn.Usage
 import splice.core.turn.UsageField
 import splice.core.util.JsonWire
@@ -167,7 +167,7 @@ internal class LocalResponses(
             wiring.usagePayloadBuilderFor(provider.catalog, model, deps.stores.clientWindows.windowFor(sessionId)),
         )
         terminal.emitError(
-            ErrorType.OVERLOADED,
+            FailureCause.Splice.CompactionUnfinished,
             "${provider.key}: the compaction this retry followed did not finish; retry",
         )
         call.respondText(
@@ -190,7 +190,7 @@ internal class LocalResponses(
             ),
         )
         emitter.emitError(
-            ErrorType.OVERLOADED,
+            FailureCause.Splice.CompactionUnfinished,
             "${provider.key}: the compaction this retry followed did not finish; retry",
         )
     }

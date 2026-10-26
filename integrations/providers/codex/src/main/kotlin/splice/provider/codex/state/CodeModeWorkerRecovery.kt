@@ -1,8 +1,10 @@
 // NEW: a local worker cut preserves completed evidence and reaches the client's existing retry path.
 package splice.provider.codex.state
 
-import splice.core.turn.FailureCause
-import splice.core.turn.FailurePhase
+import splice.core.failure.FailureCause
+import splice.core.failure.FailureEvidence
+import splice.core.failure.Moment
+import splice.core.failure.Position
 import splice.core.turn.TurnOutcome
 import splice.core.turn.noRequestUsage
 import splice.provider.codex.CodeModeRecord
@@ -13,9 +15,9 @@ internal class CodeModeWorkerRecovery(private val registry: CodexCodeModeRegistr
         val detail = "code-mode worker was stopped; accepted results=${record.results.size}; source was not rerun"
         registry.lose(record, detail)
         return TurnOutcome.Failure(
-            detail,
-            cause = FailureCause.INTERNAL,
-            phase = FailurePhase.MID_OUTPUT,
+            cause = FailureCause.Splice.Internal(),
+            at = Position(Moment.MID_CONTENT, streamBegan = true),
+            evidence = FailureEvidence(detail),
             salvagedUsage = noRequestUsage,
         )
     }

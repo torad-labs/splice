@@ -25,10 +25,11 @@ import io.ktor.client.statement.HttpStatement
 import io.ktor.http.ContentType
 import io.ktor.http.contentType
 import io.ktor.http.isSuccess
+import splice.core.auth.Credentials
 import splice.core.perf.UpstreamAttemptTiming
 import splice.core.util.WallClock
 import splice.core.wire.HttpStatus
-import splice.core.wire.RateLimitReply
+import splice.core.wire.NativeReply
 import splice.upstream.RoundBody
 import splice.upstream.StreamStart
 import splice.upstream.UpstreamHandler
@@ -108,13 +109,18 @@ internal class UpstreamRequest(
             }
             return statement.execute { response ->
                 timing?.headersDelivered()
-                executeResponse(response, ctx, accepted, handler, wire.recorder)
+                sentWith(executeResponse(response, ctx, accepted, handler, wire.recorder), auth.credentials)
             }
         } finally {
             token?.let { bridge?.release(it) }
             bodyToken?.let { bodies.release(it) }
         }
     }
+
+    /** [outcome], remembering on a failure the credential the attempt sent (ForeignCredential reads it at the
+     *  loop's exit). */
+    private fun <T> sentWith(outcome: RetryOutcome<T>, sent: Credentials): RetryOutcome<T> =
+        if (outcome is RetryOutcome.Failed) outcome.copy(sent = sent) else outcome
 
     private suspend fun <T> executeResponse(
         resp: HttpResponse,
@@ -154,8 +160,8 @@ internal class UpstreamRequest(
                 } else {
                     null
                 },
-                rateLimitReply = if (ctx.relayRateLimitReplies && realStatus == HttpStatus.TOO_MANY_REQUESTS) {
-                    RateLimitReply(
+                native = if (ctx.relayRateLimitReplies && realStatus == HttpStatus.TOO_MANY_REQUESTS) {
+                    NativeReply(
                         text,
                         resp.headers.entries().filter { (name, _) ->
                             name.equals("retry-after", ignoreCase = true) ||
@@ -166,8 +172,7 @@ internal class UpstreamRequest(
                 } else {
                     null
                 },
-                refusal = refusal,
-                vendorAuth = vendor?.isAuthFailure(status, text) == true,
+                vendor = VendorReading(refusal, deadCredential = vendor?.isAuthFailure(status, text) == true),
             )
             ctx.observeQuotaRefusal(realStatus, answeredAt, failed.planLimit)
             WsSizeRefusal.read(ctx, failed)

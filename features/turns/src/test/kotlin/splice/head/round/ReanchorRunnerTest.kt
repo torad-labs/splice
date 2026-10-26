@@ -15,10 +15,12 @@ import org.junit.jupiter.api.Assertions.assertNull
 import org.junit.jupiter.api.Assertions.assertSame
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
+import splice.core.failure.FailureCause
+import splice.core.failure.FailureEvidence
+import splice.core.failure.Moment
+import splice.core.failure.Position
+import splice.core.failure.Stall
 import splice.core.perf.TurnPerf
-import splice.core.turn.FailureCause
-import splice.core.turn.FailurePhase
-import splice.core.turn.FailureTraits
 import splice.core.turn.RoundHandoffs
 import splice.core.turn.RoundText
 import splice.core.turn.ToolSearchCall
@@ -77,7 +79,7 @@ private class Harness {
         finished = outcome
         when (outcome) {
             is TurnOutcome.Success -> emitter.emitTerminal(outcome.hasToolUse, outcome.incomplete, outcome.usage)
-            is TurnOutcome.Failure -> emitter.emitError(outcome.type, outcome.message)
+            is TurnOutcome.Failure -> emitter.emitError(outcome.cause, outcome.evidence.message)
             is TurnOutcome.ClientAbandoned -> emitter.abandon()
         }
     }
@@ -95,10 +97,9 @@ private fun retryableFailure(
     hasToolUse: Boolean = false,
     toolTearOpen: Boolean = false,
 ) = TurnOutcome.Failure(
-    "mid-stream death",
-    cause = FailureCause.UPSTREAM_STALLED,
-    phase = FailurePhase.MID_OUTPUT,
-    traits = FailureTraits(providerReported = true),
+    cause = FailureCause.Path.Stalled(Stall.IDLE),
+    at = Position(Moment.MID_CONTENT, streamBegan = true),
+    evidence = FailureEvidence("mid-stream death"),
     partial = TurnOutcome.PartialRound(
         text = RoundText(thinkingText = thinkingText, bodyText = bodyText, emittedText = bodyText.isNotEmpty()),
         hasToolUse = hasToolUse,

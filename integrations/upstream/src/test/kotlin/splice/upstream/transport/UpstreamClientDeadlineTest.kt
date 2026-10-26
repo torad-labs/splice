@@ -79,7 +79,7 @@ class UpstreamClientDeadlineTest {
             ) { "ok" }
         }
 
-        assertEquals(503, failure.status)
+        assertEquals(503, failure.evidence.status)
         assertEquals(1, calls.get())
         assertTrue(waits.isEmpty(), "800 ms cannot fit the remaining 100 ms")
         assertEquals(1L, perf.snapshot().counters[PerfKeys.ATTEMPTS])

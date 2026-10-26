@@ -55,6 +55,7 @@ import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.buildJsonArray
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
+import splice.core.failure.ClientWire
 import splice.core.turn.DEFAULT_MAX_CONTINUATIONS
 import splice.core.turn.ErrorType
 import splice.core.turn.TurnOutcome
@@ -101,7 +102,7 @@ public class PassthroughReanchorPolicy(
      *  client may already be running. Both fall back to the honest error. */
     private fun eligible(round: ReanchorRound, partial: TurnOutcome.PartialRound): Boolean = when {
         round.attempt >= maxContinuations -> false
-        round.failure.type !in RETRYABLE -> false
+        ClientWire.ownType(round.failure.cause) !in RETRYABLE -> false
         partial.toolTearOpen || partial.hasToolUse -> false
         else -> true
     }

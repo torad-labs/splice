@@ -3,8 +3,8 @@
 // terminal emit.
 package splice.head.pipeline
 
+import splice.core.failure.FailureCause
 import splice.core.perf.OutcomeTag
-import splice.core.turn.ErrorType
 import splice.core.turn.ModelTextPicker
 import splice.core.turn.TurnMeta
 import splice.core.turn.TurnOutcome
@@ -54,7 +54,7 @@ internal class StreamPromote(
                 // ends terminally leaves the session growing until it dies, which is the stall
                 // this ending exists to prevent; the client's backoff bounds the re-sends.
                 emitter.emitError(
-                    ErrorType.OVERLOADED,
+                    FailureCause.Provider.Empty(reasoningOnly = outcome.shape.endedInReasoning),
                     "splice: compact returned no content from model; retry (upstream ${outcome.shape.outputShape})",
                 )
                 PromoteVerdict(OutcomeTag.EMPTY_COMPACT.wire)
@@ -83,7 +83,7 @@ internal class StreamPromote(
                 // recovering from it; overloaded_error is retried on a backoff. The WORDS are
                 // unchanged, including the upstream shape, because they are the diagnosis.
                 emitter.emitError(
-                    ErrorType.OVERLOADED,
+                    FailureCause.Provider.Empty(reasoningOnly = outcome.shape.endedInReasoning),
                     "splice: model returned no content (empty response); retry (upstream ${outcome.shape.outputShape})",
                 )
                 PromoteVerdict(OutcomeTag.EMPTY_MODEL.wire)

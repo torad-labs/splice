@@ -7,7 +7,7 @@
 package splice.head.wire
 
 import kotlinx.serialization.json.JsonObject
-import splice.core.turn.ErrorType
+import splice.core.failure.FailureCause
 import splice.core.turn.Usage
 import splice.upstream.sse.WireSink
 import java.util.concurrent.atomic.AtomicLong
@@ -56,12 +56,10 @@ internal interface TurnTerminal : WireSink {
     /** The ONLY clean ending — implementors derive the stop_reason literal internally (L3). */
     public suspend fun emitTerminal(hasToolUse: Boolean, incomplete: Boolean, usage: Usage)
 
-    /** The ONLY failure ending — a retryable, honestly-typed error the client can act on.
-     *
-     *  [permanent] (V4-81) says NO retry can change this verdict; the pre-content rule then leaves
-     *  the type alone rather than advertising a repeatable failure as transient. Defaulted false,
-     *  so a caller that does not know keeps the retryable reading it always had. */
-    public suspend fun emitError(type: ErrorType, message: String, permanent: Boolean = false)
+    /** The ONLY failure ending — an honestly-typed error the client can act on. [cause] decides what the client
+     *  reads, through ClientWire at the moment this terminal stands in (V4-81: a cause no retry can change keeps
+     *  its real type before content); [message] is what it says. */
+    public suspend fun emitError(cause: FailureCause, message: String)
 
     /** Client vanished before any ending: seal with nothing emitted (never an error/terminal). */
     public fun abandon()

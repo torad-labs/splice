@@ -20,7 +20,7 @@ import java.io.IOException
 class ResponsesTruncatedEndingTest {
     private suspend fun ending(events: Flow<JsonObject>): String {
         val outcome = ResponsesStreamTranslator(ctx()).driveTurn(events, RecordingSink())
-        return (outcome as TurnOutcome.Failure).message
+        return (outcome as TurnOutcome.Failure).evidence.message
     }
 
     private fun tornAfterOutput(tear: IOException): Flow<JsonObject> = flow {

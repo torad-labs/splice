@@ -5,9 +5,12 @@ import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertNull
 import org.junit.jupiter.api.Assertions.assertSame
 import org.junit.jupiter.api.Test
+import splice.core.failure.FailureCause
+import splice.core.failure.FailureEvidence
+import splice.core.failure.Moment
+import splice.core.failure.Position
+import splice.core.failure.Stall
 import splice.core.turn.CacheWrite
-import splice.core.turn.FailureCause
-import splice.core.turn.FailurePhase
 import splice.core.turn.TurnOutcome
 import splice.core.turn.Usage
 import splice.core.turn.UsageField
@@ -57,9 +60,9 @@ internal class CodeModeClientContextsTest {
     fun `a failed round's salvage and a finished source round are each the newest context`() {
         val contexts = CodeModeClientContexts { null }
         val failure = TurnOutcome.Failure(
-            "torn",
-            cause = FailureCause.UPSTREAM_STALLED,
-            phase = FailurePhase.MID_OUTPUT,
+            cause = FailureCause.Path.Stalled(Stall.IDLE),
+            at = Position(Moment.MID_CONTENT, streamBegan = true),
+            evidence = FailureEvidence("torn"),
             salvagedUsage = Usage(900, 2, 300),
         )
         assertSame(failure, contexts.report("a", failure), "a failure reaches the client unchanged")

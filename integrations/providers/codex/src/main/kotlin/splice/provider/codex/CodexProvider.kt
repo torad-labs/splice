@@ -19,6 +19,7 @@ import splice.dialect.responses.websocket.CODEX_TURN_STATE_HEADER
 import splice.provider.codex.request.CodexRequestConstraints
 import splice.upstream.BuiltTurn
 import splice.upstream.ProviderTuning
+import splice.upstream.RequestRefusal
 import splice.upstream.transport.UpstreamResponse
 
 public class CodexProvider(
@@ -46,7 +47,7 @@ public class CodexProvider(
     /** codex-rs's per-turn routing/session headers — the measurement is in CodexRoutingHeaders. */
     override fun perTurnHeaders(meta: TurnMeta): Map<String, String> = routing.forTurn(meta)
 
-    override fun requestRefusal(body: AnthropicTurnBody): String? =
+    override fun requestRefusal(body: AnthropicTurnBody): RequestRefusal? =
         super.requestRefusal(body) ?: CodexRequestConstraints.refusal(body.typed)
 
     /** This path sees numeric max_tokens, not whether the caller chose it or Claude CLI supplied its default.

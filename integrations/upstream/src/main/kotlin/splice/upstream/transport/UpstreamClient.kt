@@ -263,7 +263,7 @@ public class UpstreamClient(
         t0: Long,
     ): LoopStep<Nothing> {
         state.lastErr = failed
-        val nativeRefusal = ctx.nativePool && failed.rateLimitReply != null
+        val nativeRefusal = ctx.nativePool && failed.native != null
         return if (nativeRefusal && failed.waitCannotHelp(state.sameLoginWaitMs(ctx))) {
             val failure = state.rules.rateLimitFailure(failed, state.cooldown, state.sent, ctx.onRetry)
             LoopStep.Done(UpstreamPost.Refused(failure))

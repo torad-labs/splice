@@ -11,8 +11,11 @@ import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertFalse
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
-import splice.core.turn.FailureCause
-import splice.core.turn.FailurePhase
+import splice.core.failure.FailureCause
+import splice.core.failure.FailureEvidence
+import splice.core.failure.Moment
+import splice.core.failure.Position
+import splice.core.failure.Stall
 import splice.core.turn.ReasoningDisplay
 import splice.core.turn.TurnMeta
 import splice.core.turn.TurnOutcome
@@ -39,9 +42,9 @@ private fun meta(compact: Boolean) = TurnMeta(
 )
 
 private val stalled = TurnOutcome.Failure(
-    "splice: upstream stream stalled, aborted; retry",
-    cause = FailureCause.UPSTREAM_STALLED,
-    phase = FailurePhase.MID_OUTPUT,
+    cause = FailureCause.Path.Stalled(Stall.IDLE),
+    at = Position(Moment.MID_CONTENT, streamBegan = true),
+    evidence = FailureEvidence("splice: upstream stream stalled, aborted; retry"),
 )
 
 class TurnLineWatchdogVerdictTest {

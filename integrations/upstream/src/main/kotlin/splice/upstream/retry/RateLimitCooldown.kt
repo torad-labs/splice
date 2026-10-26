@@ -36,7 +36,7 @@ package splice.upstream.retry
 
 import splice.core.util.ElapsedClock
 import splice.core.util.WallClock
-import splice.core.wire.RateLimitReply
+import splice.core.wire.NativeReply
 import splice.upstream.RetryNotice
 import splice.upstream.StreamStart
 import java.time.Instant
@@ -72,7 +72,7 @@ public class RateLimitCooldown public constructor(
     private val holds = ProviderHolds(store)
 
     /** A native refusal belongs to this cooldown's credential, never to another caller on the head. */
-    public var rateLimitReply: RateLimitReply?
+    public var rateLimitReply: NativeReply?
         get() = holds.rateLimitReply
         set(value) { holds.rateLimitReply = value }
 

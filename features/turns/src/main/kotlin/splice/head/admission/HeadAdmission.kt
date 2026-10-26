@@ -73,7 +73,7 @@ internal class HeadAdmission(
         // Only a Ready turn names a live row. settle already returned Local/Replay/Collected ownership,
         // including a borrowed handle whose row still belongs to its independent source.
         when (prepared) {
-            is Preparation.Rejected -> responses.respondInvalidRequest(call, prepared.message)
+            is Preparation.Rejected -> responses.respondRefusal(call, prepared.cause, prepared.message)
             is Preparation.Local -> driver.answerLocally(call, prepared, admitted.perf)
             is Preparation.Replay -> {
                 // settle returned this retry's candidate before it follows the independently held drive.

@@ -50,7 +50,7 @@ class CodexCodeModeTransitionPersistenceTest : CodeModeBridgeTestSupport() {
         val outcome = bridge(runtime).interceptor(turn(), outer(), disableParallel = false)
             .intercept(BASE_REQUEST, RecordingSink()) { RoundResult.Outcome(outerOutcome()) }.turn()
         assertTrue(outcome is TurnOutcome.Failure)
-        val message = (outcome as TurnOutcome.Failure).message
+        val message = (outcome as TurnOutcome.Failure).evidence.message
         assertTrue(message.contains("IllegalStateException: worker pool exhausted"), message)
         assertTrue(message.contains("accepted results=0"), message)
         assertFalse(message.contains("call ids="), message)
@@ -63,7 +63,7 @@ class CodexCodeModeTransitionPersistenceTest : CodeModeBridgeTestSupport() {
             disableParallel = false,
         ).intercept(BASE_REQUEST, RecordingSink()) { RoundResult.Outcome(outerOutcome("other-call")) }.turn()
         assertTrue(privateOutcome is TurnOutcome.Failure)
-        val privateMessage = (privateOutcome as TurnOutcome.Failure).message
+        val privateMessage = (privateOutcome as TurnOutcome.Failure).evidence.message
         assertTrue("IllegalStateException: message withheld" in privateMessage, privateMessage)
         assertTrue(" at CodexCodeModeTransitionPersistenceTest.kt:" in privateMessage, privateMessage)
         assertFalse("PRIVATE_TOOL_RESULT" in privateMessage, "private worker text must never enter the log")
@@ -339,7 +339,8 @@ class CodexCodeModeTransitionPersistenceTest : CodeModeBridgeTestSupport() {
     private fun assertPersistenceFailure(round: RoundResult) {
         val outcome = round.turn()
         assertTrue(outcome is TurnOutcome.Failure)
-        assertTrue((outcome as TurnOutcome.Failure).message.contains("could not be saved"), outcome.message)
+        val failure = outcome as TurnOutcome.Failure
+        assertTrue(failure.evidence.message.contains("could not be saved"), failure.evidence.message)
     }
 
     private class FailingSaveRuntime(

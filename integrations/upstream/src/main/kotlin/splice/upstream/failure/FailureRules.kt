@@ -10,7 +10,8 @@
 // shared predicate that is easy to find is harder to re-implement.
 package splice.upstream.failure
 
-import splice.core.turn.FailureCause
+import splice.core.failure.FailureCause
+import splice.core.failure.RefusedBy
 import splice.core.util.ERR_SNIPPET
 import splice.core.wire.HttpStatus
 
@@ -55,8 +56,9 @@ public class FailureRules {
     private fun policyRefused(status: Int, text: String): Boolean =
         status in HttpStatus.BAD_REQUEST until HttpStatus.INTERNAL_SERVER_ERROR &&
             status != HttpStatus.TOO_MANY_REQUESTS &&
-            UpstreamFailureClassifier.classify(FailureSource.HTTP, text, status).cause ==
-            FailureCause.CONTENT_FILTERED
+            UpstreamFailureClassifier.classify(FailureSource.HTTP, text, status).cause.let {
+                it is FailureCause.Provider.Refused && it.by == RefusedBy.POLICY
+            }
 
     /** A 400 invalid_request_error whose message names a field of the body (`messages.342.content.0.thinking.
      *  estimated_tokens: Extra inputs are not permitted`). The vendor validated the bytes we sent, and the same
@@ -81,8 +83,7 @@ public class FailureRules {
     private fun overflowed(status: Int, text: String): Boolean =
         status in HttpStatus.BAD_REQUEST until HttpStatus.INTERNAL_SERVER_ERROR &&
             status != HttpStatus.TOO_MANY_REQUESTS &&
-            UpstreamFailureClassifier.classify(FailureSource.HTTP, text, status).cause ==
-            FailureCause.REQUEST_TOO_LARGE
+            UpstreamFailureClassifier.classify(FailureSource.HTTP, text, status).cause is FailureCause.Provider.TooLong
 }
 
 // 499 stays local: nothing answers with it, it is only the top of the 4xx window tested above.

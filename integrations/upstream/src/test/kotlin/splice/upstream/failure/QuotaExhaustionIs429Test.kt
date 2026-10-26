@@ -84,7 +84,11 @@ class QuotaExhaustionIs429Test {
             client.posted(ctx(QuotaAuth(declared = true, refreshes), notices), "{}") { "unreachable" }
         }
 
-        assertEquals(HttpStatus.TOO_MANY_REQUESTS, thrown.status, "the rewrite is what every layer above reads")
+        assertEquals(
+            HttpStatus.TOO_MANY_REQUESTS,
+            thrown.evidence.status,
+            "the rewrite is what every layer above reads",
+        )
         assertTrue(client.rateLimitedForMs > 0L, "a quota wall must mark its login limited like a 429")
         assertEquals(0, refreshes.get(), "billing is not auth: no refresh may be spent on a quota wall")
         assertTrue(
@@ -103,7 +107,11 @@ class QuotaExhaustionIs429Test {
             client.posted(ctx(QuotaAuth(declared = false, refreshes), notices), "{}") { "unreachable" }
         }
 
-        assertEquals(HttpStatus.TOO_MANY_REQUESTS, thrown.status, "deepseek answers Insufficient Balance as 402")
+        assertEquals(
+            HttpStatus.TOO_MANY_REQUESTS,
+            thrown.evidence.status,
+            "deepseek answers Insufficient Balance as 402",
+        )
         assertTrue(client.rateLimitedForMs > 0L, "and it arms the horizon the same way")
         assertEquals(0, refreshes.get())
         assertTrue(
@@ -121,7 +129,7 @@ class QuotaExhaustionIs429Test {
             client.posted(ctx(QuotaAuth(declared = false, refreshes), notices), "{}") { "unreachable" }
         }
 
-        assertEquals(403, thrown.status, "an undeclared 403 keeps today's behaviour exactly")
+        assertEquals(403, thrown.evidence.status, "an undeclared 403 keeps today's behaviour exactly")
         assertEquals(0L, client.rateLimitedForMs, "and must NOT arm the horizon")
         assertEquals(0, refreshes.get())
         assertTrue(notices.none { it.contains("quota exhaustion") }, "no rewrite notice for an ordinary 403")

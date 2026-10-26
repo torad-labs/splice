@@ -121,9 +121,12 @@ internal class ReanchorContinuation(
     fun gaveUp(outcome: TurnOutcome, attempts: Int): TurnOutcome {
         val failure = outcome as? TurnOutcome.Failure ?: return outcome
         if (attempts <= 0) return outcome
+        val said = failure.evidence.message
         return failure.copy(
-            message = "${failure.message.removeSuffix(RETRY_ADVICE)}; splice re-anchored it " +
-                "${attempts}x from the salvage, then gave up; retry",
+            evidence = failure.evidence.copy(
+                message = "${said.removeSuffix(RETRY_ADVICE)}; splice re-anchored it ${attempts}x from the salvage, " +
+                    "then gave up; retry",
+            ),
         )
     }
 }

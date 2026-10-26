@@ -33,6 +33,11 @@ import org.junit.jupiter.api.BeforeAll
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.TestInstance
 import org.junit.jupiter.api.io.TempDir
+import splice.core.failure.FailureCause
+import splice.core.failure.FailureEvidence
+import splice.core.failure.Moment
+import splice.core.failure.Position
+import splice.core.failure.Tear
 import splice.core.model.ModelCatalog
 import splice.core.model.ModelEntry
 import splice.core.model.ModelRates
@@ -43,8 +48,6 @@ import splice.core.perf.PerfKeys
 import splice.core.perf.TurnPerf
 import splice.core.perf.WsAttemptTiming
 import splice.core.turn.CacheWrite
-import splice.core.turn.FailureCause
-import splice.core.turn.FailurePhase
 import splice.core.turn.ReasoningDisplay
 import splice.core.turn.TurnMeta
 import splice.core.turn.TurnOutcome
@@ -545,9 +548,9 @@ class TurnUsageStampTest {
         val drive = rig.drive()
         val source = Usage(inputTokens = 1_400, outputTokens = 12, cachedTokens = 1_100)
         val local = TurnOutcome.Failure(
-            "synthetic boot failure",
-            cause = FailureCause.INTERNAL,
-            phase = FailurePhase.MID_OUTPUT,
+            cause = FailureCause.Splice.Internal(),
+            at = Position(Moment.MID_CONTENT, streamBegan = true),
+            evidence = FailureEvidence("synthetic boot failure"),
             salvagedUsage = source.followedBy(noRequestUsage),
         )
         try {
@@ -652,9 +655,9 @@ class TurnUsageStampTest {
     @Test
     fun `a posting row keeps reported raw salvage when its source ends after the successful step`() = runBlocking {
         val failure = TurnOutcome.Failure(
-            "synthetic source ended",
-            cause = splice.core.turn.FailureCause.UPSTREAM_TRUNCATED,
-            phase = splice.core.turn.FailurePhase.MID_OUTPUT,
+            cause = FailureCause.Path.Torn(Tear.NO_TERMINAL, toolOpen = false),
+            at = Position(Moment.MID_CONTENT, streamBegan = true),
+            evidence = FailureEvidence("synthetic source ended"),
             salvagedUsage = Usage(inputTokens = 50, outputTokens = 7),
         )
         val split = failure.copy(
@@ -718,9 +721,9 @@ class TurnUsageStampTest {
             val resumed = rig.drive()
             try {
                 val failure = TurnOutcome.Failure(
-                    "source torn",
-                    cause = splice.core.turn.FailureCause.UPSTREAM_TRUNCATED,
-                    phase = splice.core.turn.FailurePhase.MID_OUTPUT,
+                    cause = FailureCause.Path.Torn(Tear.NO_TERMINAL, toolOpen = false),
+                    at = Position(Moment.MID_CONTENT, streamBegan = true),
+                    evidence = FailureEvidence("source torn"),
                     partial = TurnOutcome.PartialRound(usage = Usage(outputTokens = 7)),
                 )
                 val raw = rig.stamp.stampIndependent(failure) as TurnOutcome.Failure

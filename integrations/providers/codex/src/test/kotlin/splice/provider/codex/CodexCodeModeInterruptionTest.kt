@@ -106,8 +106,8 @@ class CodexCodeModeInterruptionTest : CodeModeBridgeTestSupport() {
                 error("must not post fabricated evidence")
             }.turn()
         assertTrue(outcome is TurnOutcome.Failure)
-        assertTrue((outcome as TurnOutcome.Failure).message.contains("not exposed"))
-        assertTrue(outcome.traits.deterministic, "a bridge verdict is the same on every retry")
+        assertTrue((outcome as TurnOutcome.Failure).evidence.message.contains("not exposed"))
+        assertTrue(outcome.cause.deterministic, "a bridge verdict is the same on every retry")
         assertEquals(state, stateFiles.text())
         assertEquals(1, runtime.cell.advances)
     }

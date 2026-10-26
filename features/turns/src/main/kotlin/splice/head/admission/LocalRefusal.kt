@@ -9,14 +9,12 @@
 // from HeadAdmission (concentration, Oct 12).
 package splice.head.admission
 
-import io.ktor.http.ContentType
-import io.ktor.http.HttpStatusCode
 import io.ktor.server.application.ApplicationCall
-import io.ktor.server.response.header
-import io.ktor.server.response.respondText
 import splice.core.auth.AuthProvider
+import splice.core.failure.Decline
+import splice.core.failure.FailureCause
+import splice.core.failure.PreflightKind
 import splice.core.perf.OutcomeTag
-import splice.core.turn.ErrorType
 import splice.head.HeadDeps
 import splice.head.transport.CallerCredential
 import splice.head.turn.Preparation
@@ -47,10 +45,10 @@ internal class PreDriveRefusals(
         val meta = prepared.built.meta
         val message = admission.compactionPreflight.refusal(meta, prepared.built.requestBody, prepared.hasPriorExchange)
             ?: return false
-        val tag = when {
-            meta.compact -> OutcomeTag.COMPACTION_PREFLIGHT_COMPACT_OVERFLOW
-            prepared.hasPriorExchange -> OutcomeTag.COMPACTION_PREFLIGHT_COMPACTABLE
-            else -> OutcomeTag.COMPACTION_PREFLIGHT_FIRST_EXCHANGE
+        val (tag, kind) = when {
+            meta.compact -> OutcomeTag.COMPACTION_PREFLIGHT_COMPACT_OVERFLOW to PreflightKind.COMPACT_OVERFLOW
+            prepared.hasPriorExchange -> OutcomeTag.COMPACTION_PREFLIGHT_COMPACTABLE to PreflightKind.COMPACTABLE
+            else -> OutcomeTag.COMPACTION_PREFLIGHT_FIRST_EXCHANGE to PreflightKind.FIRST_EXCHANGE
         }
         trace?.failureSentence(message)
         driver.recordLocalRefusal(
@@ -59,9 +57,9 @@ internal class PreDriveRefusals(
             admitted.t0,
             LocalRefusal(tag.wire, message, trace),
         )
-        call.response.header("x-should-retry", "false")
         admitted.close()
-        responses.respondInvalidRequest(call, message)
+        // x-should-retry false (ClientWire): the client answers this bound by compacting, not by re-sending.
+        responses.respondRefusal(call, FailureCause.Splice.Declined(Decline.Preflight(kind)), message)
         return true
     }
 
@@ -114,14 +112,10 @@ internal class PreDriveRefusals(
             admitted.t0,
             LocalRefusal(OutcomeTag.AUTH_MISSING.wire, message, trace),
         )
-        // 503, not retried: a login coming back here is this machine's to do, so the node shows the sentence at once.
-        call.response.header("x-should-retry", "false")
+        // 503, not retried (ClientWire): a login coming back here is this machine's to do, so the node shows the
+        // sentence at once.
         admitted.close()
-        call.respondText(
-            AdmissionErrorBody.render(ErrorType.API_ERROR.wireName, message),
-            ContentType.Application.Json,
-            HttpStatusCode.ServiceUnavailable,
-        )
+        responses.respondRefusal(call, FailureCause.Splice.Declined(Decline.NoSharedLogin), message)
         return true
     }
 }

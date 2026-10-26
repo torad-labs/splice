@@ -2,6 +2,8 @@
 // so the catch-boundary file is not billed for the classifier's subsystems. Same-package.
 package splice.head.transport
 
+import splice.core.failure.ClientWire
+import splice.core.failure.FailureCause
 import splice.core.turn.ErrorType
 import splice.core.turn.TurnOutcome
 import splice.core.util.ERR_SNIPPET
@@ -43,7 +45,7 @@ internal class ZeroEventFailure(
             telemetry.errTurn(
                 "zero-event",
                 drive,
-                "was=${outcome.type.wireName} classified=${classified.type.wireName} " +
+                "was=${ClientWire.ownType(outcome.cause).wireName} classified=${classified.type.wireName} " +
                     "snippet=\"${snippet.take(ERR_SNIPPET).replace("\n", "\\n").replace("\r", "")}\"",
             ),
         )
@@ -58,12 +60,22 @@ internal class ZeroEventFailure(
         // the field on any future broadening of this path (code-review 2026-07-24).
         // V4-117: the cause is adopted from the classifier rather than the type being overwritten.
         // This line used to be the boundary's SECOND author of the wire type; now the classifier
-        // names the cause (it is the one holding the code, the status and the body) and the derived
-        // type follows from it plus the phase, so the failure and the wire cannot disagree.
+        // names the cause (it is the one holding the code, the status and the body) and the wire
+        // follows from it (ClientWire), so the failure and the wire cannot disagree. The body
+        // arrived in band, so a 5xx it names reads as the in-band overload. A Provider leaf, so the
+        // G20 health split counts it the provider's.
         return outcome.copy(
-            cause = classified.cause,
-            message = message,
-            traits = outcome.traits.copy(providerReported = true),
+            cause = adopted(classified.inBand, outcome.cause),
+            evidence = outcome.evidence.copy(message = message),
         )
     }
+
+    /** An unknown failure keeps whether a re-send repeats it from the round's own verdict, which is what the wire
+     *  before content has always read for it; every other classified leaf brings its own. */
+    private fun adopted(classified: FailureCause.Provider, round: FailureCause): FailureCause.Provider =
+        if (classified is FailureCause.Provider.Unrecognized) {
+            FailureCause.Provider.Unrecognized(clientError = round.permanent || round.deterministic)
+        } else {
+            classified
+        }
 }

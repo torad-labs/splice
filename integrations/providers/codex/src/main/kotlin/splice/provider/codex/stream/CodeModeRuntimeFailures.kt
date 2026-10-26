@@ -1,8 +1,11 @@
 package splice.provider.codex.stream
 
-import splice.core.turn.FailureCause
-import splice.core.turn.FailurePhase
-import splice.core.turn.FailureTraits
+import splice.core.failure.FailureCause
+import splice.core.failure.FailureEvidence
+import splice.core.failure.Moment
+import splice.core.failure.Position
+import splice.core.failure.ProtocolFault
+import splice.core.failure.Tear
 import splice.core.turn.TurnOutcome
 import splice.core.turn.noRequestUsage
 import splice.core.util.SafeFailureText
@@ -22,11 +25,10 @@ internal class CodeModeRuntimeFailures(private val registry: CodexCodeModeRegist
         record.cellStartedAt = null
         registry.lose(record, message)
         return TurnOutcome.Failure(
-            message,
-            traits = FailureTraits(deterministic = true),
+            cause = FailureCause.Splice.Protocol(ProtocolFault.CODE_MODE_STATE),
+            at = Position(Moment.MID_CONTENT, streamBegan = true),
+            evidence = FailureEvidence(message),
             salvagedUsage = noRequestUsage,
-            cause = FailureCause.CODE_MODE_PROTOCOL,
-            phase = FailurePhase.MID_OUTPUT,
         )
     }
 
@@ -44,9 +46,9 @@ internal class CodeModeRuntimeFailures(private val registry: CodexCodeModeRegist
             val message = "upstream code-mode source interrupted; ${lostMessage(record)}"
             registry.lose(record, message)
             error.verdict ?: TurnOutcome.Failure(
-                message,
-                cause = FailureCause.UPSTREAM_CONN_RESET,
-                phase = FailurePhase.MID_OUTPUT,
+                cause = FailureCause.Path.Torn(Tear.RESET, toolOpen = false),
+                at = Position(Moment.MID_CONTENT, streamBegan = true),
+                evidence = FailureEvidence(message),
             )
         }
         is CodeModeWorkerLostException -> {

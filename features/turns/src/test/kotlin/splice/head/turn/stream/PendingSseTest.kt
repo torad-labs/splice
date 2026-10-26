@@ -14,7 +14,7 @@ import org.junit.jupiter.params.provider.ValueSource
 import splice.core.perf.PerfKeys
 import splice.core.perf.TurnPerf
 import splice.core.util.ElapsedClock
-import splice.core.wire.RateLimitReply
+import splice.core.wire.NativeReply
 import splice.head.wire.FrameRecording
 import java.io.IOException
 import java.io.StringWriter
@@ -99,7 +99,7 @@ class PendingSseTest {
         )
         pending.model("event: message_start\ndata: {}\n\n")
         pending.progress(progressLine())
-        val reply = RateLimitReply("synthetic refusal", mapOf("retry-after" to listOf("86400")))
+        val reply = NativeReply("synthetic refusal", mapOf("retry-after" to listOf("86400")))
         assertTrue(pending.refuse(reply))
         pending.model("event: error\ndata: {}\n\n")
         pending.finish()
@@ -125,7 +125,7 @@ class PendingSseTest {
         val pending = gate()
         pending.finish()
         pending.attach(StringWriter())
-        assertFalse(pending.refuse(RateLimitReply("synthetic refusal", emptyMap())))
+        assertFalse(pending.refuse(NativeReply("synthetic refusal", emptyMap())))
         assertEquals(PendingSse.Decision.Stream, pending.decide())
     }
 

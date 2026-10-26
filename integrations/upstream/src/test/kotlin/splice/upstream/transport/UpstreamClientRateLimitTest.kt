@@ -115,9 +115,9 @@ class NativeRateLimitHeadersTest {
             extraHeaders = { emptyMap() },
         ).also { it.relayRateLimitReplies = true }
         val failure = assertEnds<UpstreamFailed> { client.posted(context(), "{}") { "unreachable" } }
-        assertEquals(429, failure.status)
-        assertEquals(native, failure.body)
-        assertEquals(retained, failure.rateLimitReply?.headers)
+        assertEquals(429, failure.evidence.status)
+        assertEquals(native, failure.evidence.body)
+        assertEquals(retained, failure.native?.headers)
         assertEquals(listOf(15_000L, 15_000L, 15_000L), floors, "a long Retry-After waits the 15s ceiling (V4-61)")
         assertEquals(4, attempts, "the budget's four attempts")
     }
@@ -142,7 +142,7 @@ class UpstreamClientRateLimitTest {
             it.providerAnswerObserver = ProviderAnswerObserver { status, at -> answers += status to at }
         }
         val failure = assertEnds<UpstreamFailed> { client.posted(context, "{}") { "unreachable" } }
-        assertEquals(403, failure.status)
+        assertEquals(403, failure.evidence.status)
         assertTrue(answers.isNotEmpty())
         assertTrue(answers.all { it.first == 403 && it.second > 0L })
     }
@@ -232,8 +232,12 @@ class UpstreamClientRateLimitTest {
         val again = assertEnds<UpstreamFailed> {
             client.posted(context("synthetic-refused"), "{}") { "unreachable" }
         }
-        assertEquals(429, again.status)
-        assertEquals("synthetic refusal", again.body, "the refused credential's next turn hears the provider itself")
+        assertEquals(429, again.evidence.status)
+        assertEquals(
+            "synthetic refusal",
+            again.evidence.body,
+            "the refused credential's next turn hears the provider itself",
+        )
         assertEquals(listOf("synthetic-refused", "synthetic-healthy", "synthetic-new", "synthetic-refused"), sent)
         assertEquals(
             listOf("synthetic-healthy", "synthetic-new"),
@@ -283,8 +287,8 @@ class UpstreamClientRateLimitTest {
             clock = ElapsedClock { elapsed },
         )
         val observer = assertEnds<UpstreamFailed> { postOnce(client) }
-        assertEquals(503, observer.status)
-        assertEquals("server busy", observer.body)
+        assertEquals(503, observer.evidence.status)
+        assertEquals("server busy", observer.evidence.body)
         assertEquals(2, calls.get())
         assertEquals(60_000L, client.rateLimitedForMs)
     }
@@ -339,8 +343,8 @@ class UpstreamClientRateLimitTest {
         )
 
         val observer = assertEnds<UpstreamFailed> { client.posted(context(), "{}") { "unreachable" } }
-        assertEquals(429, observer.status)
-        assertEquals("slow down", observer.body)
+        assertEquals(429, observer.evidence.status)
+        assertEquals("slow down", observer.evidence.body)
         // V4-48: a pushback at or under the 15s ceiling is WAITED OUT and retried, not surrendered.
         assertEquals(3, calls.get(), "a short 429 is retried, not surrendered")
         assertTrue(waiter.waits.isNotEmpty(), "the pushback is waited out rather than skipped")
@@ -445,8 +449,12 @@ class UpstreamClientRateLimitTest {
         assertEquals(20_000L, client.rateLimitedForMs, "no Retry-After: the 20s default")
         val next = assertEnds<UpstreamFailed> { postOnce(client) }
         assertEquals(2, calls.get(), "the next post reaches the provider, held by nothing another post armed")
-        assertEquals(429, next.status)
-        assertEquals("""{"detail":"Rate limit exceeded"}""", next.body, "the provider's own answer, not splice's")
+        assertEquals(429, next.evidence.status)
+        assertEquals(
+            """{"detail":"Rate limit exceeded"}""",
+            next.evidence.body,
+            "the provider's own answer, not splice's",
+        )
         now += 21_000
         assertEquals(0L, client.rateLimitedForMs)
     }
@@ -490,7 +498,8 @@ class UpstreamClientRateLimitTest {
         val client = clientOver(engine, clock = { now })
         val armed = assertEnds<UpstreamFailed> { postOnce(client) }
         assertEquals(1, calls.get())
-        assertTrue(armed.body.contains("86400"), "true pushback surfaces in the upstream body: ${armed.body}")
+        val armedBody = armed.evidence.body.orEmpty()
+        assertTrue(armedBody.contains("86400"), "true pushback surfaces in the upstream body: $armedBody")
         assertEquals(120_000L, client.rateLimitedForMs, "the horizon clamps to the ceiling, not 24h")
         now += 121_000
         assertEquals(0L, client.rateLimitedForMs)

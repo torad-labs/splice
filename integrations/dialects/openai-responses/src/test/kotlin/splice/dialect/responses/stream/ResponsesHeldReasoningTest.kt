@@ -28,8 +28,8 @@ class ResponsesHeldReasoningTest {
 
         assertTrue(outcome is TurnOutcome.Failure, "aggregate held prefixes must trip the stream guard")
         val failure = outcome as TurnOutcome.Failure
-        assertTrue(failure.message.contains("exceeded max buffered size"), failure.message)
-        assertFalse(failure.traits.providerReported, "local capacity rejection is not a provider failure")
+        assertTrue(failure.evidence.message.contains("exceeded max buffered size"), failure.evidence.message)
+        assertFalse(failure.cause.providerReported, "local capacity rejection is not a provider failure")
         assertFalse(sink.calls.any { it.startsWith("text#") }, "the next event cannot bypass a full pending buffer")
         assertNoReasoningRows(sink)
     }

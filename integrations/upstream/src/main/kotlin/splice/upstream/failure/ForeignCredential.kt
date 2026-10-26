@@ -10,8 +10,8 @@ package splice.upstream.failure
 
 import kotlinx.serialization.json.JsonPrimitive
 import splice.core.auth.Credentials
-import splice.core.turn.ErrorType
-import splice.core.turn.FailureCause
+import splice.core.failure.FailureCause
+import splice.core.failure.ServerFault
 import splice.core.util.ERR_SNIPPET
 import splice.core.util.JsonWire
 
@@ -61,17 +61,16 @@ public object ForeignCredential {
     }
 
     /** [read] as the upstream's own when it is an authentication failure whose [body] names a
-     *  credential [sent] cannot be: an API error, transient because the upstream refused itself and may
-     *  stop, in words that say so. Anything else is [read] unchanged. */
+     *  credential [sent] cannot be: the provider failing its own check (ServerError FOREIGN_KEY), which a
+     *  re-send may clear because the upstream refused itself, in words that say so. Anything else is [read]
+     *  unchanged. */
     public fun upstreamsOwn(read: ClassifiedFailure, body: String?, sent: Credentials?): ClassifiedFailure {
-        if (read.type != ErrorType.AUTHENTICATION || !named(body, sent)) return read
+        if (read.cause !is FailureCause.Provider.AuthRejected || !named(body, sent)) return read
         return read.copy(
-            type = ErrorType.API_ERROR,
             // The star run is shortened, so the upstream's sentence fits the client's snippet whole.
             message = "the upstream rejected a credential this account did not send: " +
                 read.message.replace(STAR_RUN, SHORT_STARS),
-            transient = true,
-            cause = FailureCause.UPSTREAM_REPORTED,
+            cause = FailureCause.Provider.ServerError(ServerFault.FOREIGN_KEY),
         )
     }
 

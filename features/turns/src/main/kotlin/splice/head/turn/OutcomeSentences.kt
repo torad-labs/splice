@@ -13,11 +13,12 @@
 // the restart notice uses two complete sentences. Policy refusals retain the provider's own words.
 package splice.head.turn
 
+import splice.core.failure.ClientWire
+import splice.core.failure.PersistedCause
 import splice.core.perf.OutcomeTag
 import splice.core.perf.OutcomeTags
 import splice.core.turn.CONN_RESET_OUTCOME
 import splice.core.turn.ErrorType
-import splice.core.turn.FailureCause
 import splice.core.turn.TurnOutcome
 import splice.core.usage.PlanLimit
 import splice.core.util.LocalTimeText
@@ -120,13 +121,13 @@ internal object OutcomeSentences {
         "this plan's ${limit.windowWords.take(MAX_WINDOW_WORDS)} window is used up until " +
             "${times.at(limit.resetEpochSeconds)}; $WAIT_FOR_RESET"
 
-    /** Origin is carried by the outcome, never inferred from the client's retry type. */
+    /** Origin is carried by the outcome's cause, never inferred from the client's retry type. */
     fun of(failure: TurnOutcome.Failure): String = when {
-        !failure.traits.providerReported -> local(failure.cause)
-        failure.cause == FailureCause.CONTENT_FILTERED -> contentRefusal(failure.message)
-        failure.cause == FailureCause.MODEL_REFUSED ->
+        !failure.cause.providerReported -> local(failure.cause.persisted)
+        failure.cause.persisted == PersistedCause.CONTENT_FILTERED -> contentRefusal(failure.evidence.message)
+        failure.cause.persisted == PersistedCause.MODEL_REFUSED ->
             "the model declined to answer; ask for a different task"
-        else -> typed(failure.type)
+        else -> typed(ClientWire.ownType(failure.cause))
     }
 
     private fun contentRefusal(message: String): String {
@@ -148,38 +149,53 @@ internal object OutcomeSentences {
     private const val INTERNAL_FAILURE =
         "splice could not complete this request; retry, and if it repeats read the daemon log around this turn's time"
 
-    // Coverage is enumerated from FailureCause.entries by OutcomeSentenceTest, including card-length bounds.
-    private val localSentences: Map<FailureCause, String> = mapOf(
-        FailureCause.CODE_MODE_PROTOCOL to
+    // Coverage is enumerated from PersistedCause.entries by OutcomeSentenceTest, including card-length bounds.
+    // Slice 2 of the failure-handling redesign moves every one of these words into SpliceLines.
+    private val localSentences: Map<PersistedCause, String> = mapOf(
+        PersistedCause.CODE_MODE_PROTOCOL to
             "splice could not complete this session's code-mode step; " +
             "start a new session, and if it repeats read the daemon log",
-        FailureCause.UPSTREAM_STALLED to UNFINISHED,
-        FailureCause.UPSTREAM_TRUNCATED to UNFINISHED,
-        FailureCause.UPSTREAM_CONN_RESET to
+        PersistedCause.UPSTREAM_STALLED to UNFINISHED,
+        PersistedCause.UPSTREAM_TRUNCATED to UNFINISHED,
+        PersistedCause.UPSTREAM_CONN_RESET to
             "splice lost the connection to the provider mid-request; retry the request",
-        FailureCause.MODEL_REFUSED to
+        PersistedCause.MODEL_REFUSED to
             "splice ended the request because the model declined to answer; ask for a different task",
-        FailureCause.CONTENT_FILTERED to
+        PersistedCause.CONTENT_FILTERED to
             "splice ended the request because the model's content filter stopped the answer; ask for a different task",
-        FailureCause.DIALECT_UNSUPPORTED to
+        PersistedCause.DIALECT_UNSUPPORTED to
             "splice cannot deliver this model's tool call through this connection; choose another model, then retry",
-        FailureCause.AUTH_MISSING to CREDENTIALS,
-        FailureCause.AUTH_REFRESH_FAILED to CREDENTIALS,
-        FailureCause.VENDOR_RATE_LIMITED to UNAVAILABLE_ACCOUNT,
-        FailureCause.VENDOR_QUOTA_EXHAUSTED to UNAVAILABLE_ACCOUNT,
-        FailureCause.POOL_EXHAUSTED to UNAVAILABLE_ACCOUNT,
-        FailureCause.REQUEST_TOO_LARGE to
+        PersistedCause.AUTH_MISSING to CREDENTIALS,
+        PersistedCause.AUTH_REFRESH_FAILED to CREDENTIALS,
+        PersistedCause.VENDOR_RATE_LIMITED to UNAVAILABLE_ACCOUNT,
+        PersistedCause.VENDOR_QUOTA_EXHAUSTED to UNAVAILABLE_ACCOUNT,
+        PersistedCause.POOL_EXHAUSTED to UNAVAILABLE_ACCOUNT,
+        PersistedCause.REQUEST_TOO_LARGE to
             "splice refused a request larger than this model can accept; compact the conversation, then retry",
-        FailureCause.ADMISSION_FULL to
+        PersistedCause.ADMISSION_FULL to
             "splice has no room to run this request yet; wait for a running request to finish, then retry",
-        FailureCause.UPSTREAM_STATUS_4XX to INTERNAL_FAILURE,
-        FailureCause.UPSTREAM_STATUS_5XX to INTERNAL_FAILURE,
-        FailureCause.UPSTREAM_REPORTED to INTERNAL_FAILURE,
-        FailureCause.TOOL_TEAR to INTERNAL_FAILURE,
-        FailureCause.INTERNAL to INTERNAL_FAILURE,
+        PersistedCause.UPSTREAM_STATUS_4XX to INTERNAL_FAILURE,
+        PersistedCause.UPSTREAM_STATUS_5XX to INTERNAL_FAILURE,
+        PersistedCause.UPSTREAM_REPORTED to INTERNAL_FAILURE,
+        PersistedCause.TOOL_TEAR to INTERNAL_FAILURE,
+        PersistedCause.INTERNAL to INTERNAL_FAILURE,
+        // The five names slice 1 added. No round outcome carries one yet, and each still has its sentence.
+        PersistedCause.CONNECT_REFUSED to
+            "splice could not reach the provider's address, so nothing was sent; start the provider or check its " +
+            "address, then retry",
+        PersistedCause.HOLD_OUTLASTED to
+            "splice held this turn for longer than it may, waiting for the provider; retry the request",
+        PersistedCause.COMPACTION_UNFINISHED to
+            "splice found that the compaction this request followed did not finish; retry the compaction",
+        PersistedCause.DECLINED to
+            "splice refused this request before sending it; change the request, then retry",
+        PersistedCause.STOPPED to
+            "splice stopped this turn because the operator asked, and it is not retried; send the request again " +
+            "if it is still wanted",
     )
 
-    private fun local(cause: FailureCause): String = localSentences.getValue(cause)
+    /** What a failure splice concluded on its own says, by the name its perf row stores. */
+    internal fun local(cause: PersistedCause): String = localSentences.getValue(cause)
 
     private fun typed(type: ErrorType): String = when (type) {
         ErrorType.INVALID_REQUEST ->

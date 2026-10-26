@@ -12,10 +12,9 @@ import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.params.ParameterizedTest
 import org.junit.jupiter.params.provider.ValueSource
+import splice.core.failure.ClientWire
+import splice.core.failure.PersistedCause
 import splice.core.turn.ErrorType
-import splice.core.turn.FailureCause
-import splice.upstream.failure.FailureSource
-import splice.upstream.failure.UpstreamFailureClassifier
 import splice.upstream.transport.PostContext
 import splice.upstream.transport.UpstreamFailed
 import splice.upstream.transport.assertEnds
@@ -55,23 +54,22 @@ class WsSizeRefusalTest {
     fun `a 400 for a body the WebSocket peer refused as too large is sent once and reads as prompt is too long`() =
         runTest {
             val sent = send(HttpStatusCode.BadRequest, sizeRefused = true)
-            val read = UpstreamFailureClassifier.classify(FailureSource.HTTP, sent.failure.body, sent.failure.status)
+            val read = sent.failure
 
             assertEquals(1, sent.calls, "the same bytes are refused again; a re-send only delays the compaction")
-            assertEquals(FailureCause.REQUEST_TOO_LARGE, read.cause)
-            assertEquals(ErrorType.INVALID_REQUEST, read.type)
-            assertFalse(read.transient, "the client must not retry it")
-            assertTrue(read.message.startsWith("prompt is too long"), read.message)
-            assertEquals(400, sent.failure.status, "the upstream's status stays the turn's")
+            assertEquals(PersistedCause.REQUEST_TOO_LARGE, read.cause.persisted)
+            assertEquals(ErrorType.INVALID_REQUEST, ClientWire.ownType(read.cause))
+            assertTrue(read.cause.permanent, "the client must not retry it")
+            assertTrue(read.evidence.message.startsWith("prompt is too long"), read.evidence.message)
+            assertEquals(400, read.evidence.status, "the upstream's status stays the turn's")
         }
 
     @Test
     fun `the same 400 with no WebSocket refusal before it keeps its retries`() = runTest {
         val sent = send(HttpStatusCode.BadRequest, sizeRefused = false)
-        val read = UpstreamFailureClassifier.classify(FailureSource.HTTP, sent.failure.body, sent.failure.status)
 
         assertTrue(sent.calls > 1, "calls=${sent.calls}")
-        assertEquals(FailureCause.UPSTREAM_STATUS_4XX, read.cause)
+        assertEquals(PersistedCause.UPSTREAM_STATUS_4XX, sent.failure.cause.persisted)
     }
 
     /** A rate limit heals with time and owns the cooldown, and a 5xx is the server's own failure: neither says
@@ -80,9 +78,9 @@ class WsSizeRefusalTest {
     @ValueSource(ints = [429, 500])
     fun `a refusal that is not about the body keeps its own path after a WebSocket size refusal`(code: Int) = runTest {
         val sent = send(HttpStatusCode.fromValue(code), sizeRefused = true, body = """{"error":{"message":"busy"}}""")
-        val read = UpstreamFailureClassifier.classify(FailureSource.HTTP, sent.failure.body, sent.failure.status)
+        val read = sent.failure.cause
 
-        assertTrue(read.cause != FailureCause.REQUEST_TOO_LARGE, "status $code read as $read")
+        assertTrue(read.persisted != PersistedCause.REQUEST_TOO_LARGE, "status $code read as $read")
         if (code == 500) assertTrue(sent.calls > 1, "a 5xx is retried: calls=${sent.calls}")
     }
 
@@ -93,7 +91,9 @@ class WsSizeRefusalTest {
                 """"type":"invalid_request_error","code":"context_length_exceeded"}}"""
             val sent = send(HttpStatusCode.BadRequest, sizeRefused = true, body = own)
 
+            val told = sent.failure.evidence.message
             assertEquals(1, sent.calls)
-            assertEquals(own, sent.failure.body)
+            assertTrue("Your input exceeds the context window of this model." in told, told)
+            assertFalse("1009" in told, "the upstream named its own overflow, so splice's sentence stays out: $told")
         }
 }

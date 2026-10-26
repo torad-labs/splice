@@ -10,7 +10,7 @@ import splice.core.usage.PlanLimit
 import splice.core.util.ElapsedClock
 import splice.core.util.LogSink
 import splice.core.util.WallClock
-import splice.core.wire.RateLimitReply
+import splice.core.wire.NativeReply
 import splice.upstream.RetryNotice
 import java.nio.file.Files
 import java.nio.file.Path
@@ -116,7 +116,7 @@ class ProviderHoldRestartTest {
         val accepted = first.acceptance()
         val resetAt = wall / MS + SIX_DAYS_S
         val plan = PlanLimit("seven_day", resetAt)
-        val reply = RateLimitReply("synthetic refusal", emptyMap())
+        val reply = NativeReply("synthetic refusal", emptyMap())
         first.refused(weeklyBody(resetAt))
         first.planHold.hold(plan, RetryNotice { })
         first.rateLimitReply = reply

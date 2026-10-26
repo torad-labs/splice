@@ -71,7 +71,7 @@ class UpstreamFailurePlanLimitTest {
 
         val failure = assertEnds<UpstreamFailed> { client(engine).posted(ctx(bodyReader), "{}") { "unreachable" } }
 
-        assertEquals(429, failure.status)
+        assertEquals(429, failure.evidence.status)
         assertEquals(PlanLimit("seven_day", reset), failure.planLimit)
     }
 
@@ -108,7 +108,7 @@ class UpstreamFailurePlanLimitTest {
         val failure = assertEnds<UpstreamFailed> { client(engine).posted(ctx(bodyReader), "{}") { "unreachable" } }
 
         assertEquals(4, calls.get(), "V4-61's schedule is untouched")
-        assertEquals(429, failure.status)
+        assertEquals(429, failure.evidence.status)
         assertNull(failure.planLimit)
     }
 }

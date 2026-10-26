@@ -34,6 +34,8 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
+import splice.core.failure.FailureCause
+import splice.core.failure.Stall
 import splice.core.turn.WatchdogBudget
 import splice.core.util.ElapsedClock
 import splice.core.util.LogSink
@@ -54,13 +56,20 @@ import kotlin.time.Duration
 import kotlin.time.Duration.Companion.milliseconds
 
 public sealed class WatchdogFired {
+    /** What a round's own outcome names a turn that ended on this verdict: a provider silent past a tier, or the
+     *  turn's whole no-progress budget spent. */
+    public abstract val cause: FailureCause
+
     /** [sawClientFrame] names the FAMILY of tier that judged the silence — false: the first-output
      *  tier ([WatchdogBudget.firstByteTimeout]), true: a mid-output tier — and [limitMs] is that
      *  tier's cap, so a terminal message can name the number that fired. V4-116 added a THIRD tier
      *  inside the mid-output family ([WatchdogBudget.stallReanchor], read as a min against
      *  [WatchdogBudget.streamIdle]); a holder that needs to tell the two apart compares [limitMs]
      *  against streamIdle, which is what TurnWatchdog's own hold line does. */
-    public data class Idle(val idleMs: Long, val sawClientFrame: Boolean, val limitMs: Long) : WatchdogFired()
+    public data class Idle(val idleMs: Long, val sawClientFrame: Boolean, val limitMs: Long) : WatchdogFired() {
+        override val cause: FailureCause
+            get() = FailureCause.Path.Stalled(if (sawClientFrame) Stall.IDLE else Stall.FIRST_BYTE)
+    }
 
     /** Legacy type name. The final turn boundary measures silence since protocol progress. */
     public data class TotalCap(val elapsedMs: Long) : WatchdogFired() {
@@ -68,6 +77,9 @@ public sealed class WatchdogFired {
             internal set
         public var limitMs: Long = elapsedMs
             internal set
+
+        override val cause: FailureCause
+            get() = FailureCause.Splice.TurnBudgetSpent(limitMs, beforeFirstAttempt = false)
 
         /** Shared by the stream outcome and cancellation seal on every transport. */
         public val retryMessage: String

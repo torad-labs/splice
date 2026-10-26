@@ -24,15 +24,15 @@ import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.TestInstance
 import org.junit.jupiter.api.assertThrows
 import org.junit.jupiter.api.io.TempDir
+import splice.core.failure.FailureCause
+import splice.core.failure.FailureEvidence
+import splice.core.failure.Moment
+import splice.core.failure.Position
 import splice.core.index.WireBlockIndex
 import splice.core.model.ModelCatalog
 import splice.core.model.ModelEntry
 import splice.core.perf.PerfKeys
 import splice.core.perf.TurnPerf
-import splice.core.turn.ErrorType
-import splice.core.turn.FailureCause
-import splice.core.turn.FailurePhase
-import splice.core.turn.FailureTraits
 import splice.core.turn.ReasoningDisplay
 import splice.core.turn.RoundText
 import splice.core.turn.TurnMeta
@@ -45,7 +45,7 @@ import splice.core.util.AsyncFileIo
 import splice.core.util.ElapsedClock
 import splice.core.util.LogSink
 import splice.core.util.WallClock
-import splice.core.wire.RateLimitReply
+import splice.core.wire.NativeReply
 import splice.dialect.responses.ReasoningSettings
 import splice.head.HeadHealthCounters
 import splice.head.TestResponsesProvider
@@ -72,6 +72,8 @@ import splice.upstream.credentials.AccountPool
 import splice.upstream.credentials.AccountQuotaSource
 import splice.upstream.credentials.PoolAccount
 import splice.upstream.credentials.Selection
+import splice.upstream.failure.FailureSource
+import splice.upstream.failure.UpstreamFailureClassifier
 import splice.upstream.retry.InflightGate
 import splice.upstream.retry.LiveLimit
 import splice.upstream.retry.RateLimitCooldown
@@ -100,7 +102,7 @@ private class BranchlessFakeAuth : splice.core.auth.RefreshableAuthProvider {
 private class DeadClientTerminal : TurnTerminal {
     override val hasEnded: Boolean = true
     override suspend fun emitTerminal(hasToolUse: Boolean, incomplete: Boolean, usage: Usage) = Unit
-    override suspend fun emitError(type: ErrorType, message: String, permanent: Boolean): Unit =
+    override suspend fun emitError(cause: FailureCause, message: String): Unit =
         throw IOException("client hung up mid error frame")
     override fun abandon() = Unit
     override suspend fun openText() = WireBlockIndex(0)
@@ -121,7 +123,7 @@ private class DeadClientSuccessTerminal : TurnTerminal {
     override val hasEnded: Boolean = false
     override suspend fun emitTerminal(hasToolUse: Boolean, incomplete: Boolean, usage: Usage): Unit =
         throw IOException("client hung up mid terminal frame")
-    override suspend fun emitError(type: ErrorType, message: String, permanent: Boolean): Unit =
+    override suspend fun emitError(cause: FailureCause, message: String): Unit =
         throw IOException("client hung up mid error frame")
     override fun abandon() = Unit
     override suspend fun openText() = WireBlockIndex(0)
@@ -140,7 +142,7 @@ private class DeadClientSuccessTerminal : TurnTerminal {
 private class CancellationDuringSealTerminal(private val emission: CancellationException) : TurnTerminal {
     override val hasEnded: Boolean = false
     override suspend fun emitTerminal(hasToolUse: Boolean, incomplete: Boolean, usage: Usage) = Unit
-    override suspend fun emitError(type: ErrorType, message: String, permanent: Boolean): Unit = throw emission
+    override suspend fun emitError(cause: FailureCause, message: String): Unit = throw emission
     override fun abandon() = Unit
     override suspend fun openText() = WireBlockIndex(0)
     override suspend fun openThinking() = WireBlockIndex(0)
@@ -158,7 +160,7 @@ private class CancellationDuringSealTerminal(private val emission: CancellationE
 private class ConnectedTerminal : TurnTerminal {
     override val hasEnded: Boolean = false
     override suspend fun emitTerminal(hasToolUse: Boolean, incomplete: Boolean, usage: Usage) = Unit
-    override suspend fun emitError(type: ErrorType, message: String, permanent: Boolean) = Unit
+    override suspend fun emitError(cause: FailureCause, message: String) = Unit
     override fun abandon() = Unit
     override suspend fun openText() = WireBlockIndex(0)
     override suspend fun openThinking() = WireBlockIndex(0)
@@ -246,7 +248,7 @@ class TurnEndingAccountingTest {
 
         fun hold(index: Int) {
             val cooldown = accounts[index].cooldown
-            cooldown.rateLimitReply = RateLimitReply("synthetic refusal", emptyMap())
+            cooldown.rateLimitReply = NativeReply("synthetic refusal", emptyMap())
             cooldown.arm(30_000L)
         }
     }
@@ -331,7 +333,7 @@ class TurnEndingAccountingTest {
     @Test
     fun `upstream-failed records perf + provider health despite a dead client - DR-128`() {
         val rig = EndingRig("dr128-upstream")
-        emitExpectingDeadClient(rig, UpstreamFailed("""{"error":{"type":"api_error"}}""", 500))
+        emitExpectingDeadClient(rig, upstreamFailed("""{"error":{"type":"api_error"}}""", 500))
         rig.assertRecorded("error:upstream-failed")
         assertEquals(1L, rig.health.snapshot().providerError, "G20 must still see the upstream failure")
     }
@@ -621,10 +623,10 @@ class TurnFailurePermanenceTest {
             val drive = rig.drive(DeadClientSuccessTerminal(), clientGone = false)
             try {
                 val outcome = TurnOutcome.Failure(
-                    "synthetic upstream verdict",
-                    FailureCause.UPSTREAM_REPORTED,
-                    FailurePhase.MID_OUTPUT,
-                    traits = FailureTraits(permanent = permanent),
+                    // the provider's unnamed verdict, which a re-send repeats when it was on the request
+                    cause = FailureCause.Provider.Unrecognized(clientError = permanent),
+                    at = Position(Moment.MID_CONTENT, streamBegan = true),
+                    evidence = FailureEvidence("synthetic upstream verdict"),
                 )
                 val torn = assertThrows<IOException> { runBlocking { finish.finishTurn(drive, outcome) } }
                 assertThrows<IOException> { runBlocking { rig.ending.emitFailure(drive, torn) } }
@@ -679,10 +681,9 @@ class TurnFailurePermanenceTest {
                 finish.finishTurn(
                     drive,
                     TurnOutcome.Failure(
-                        "synthetic upstream verdict",
-                        FailureCause.UPSTREAM_REPORTED,
-                        FailurePhase.MID_OUTPUT,
-                        traits = FailureTraits(permanent = permanent),
+                        cause = FailureCause.Provider.Unrecognized(clientError = permanent),
+                        at = Position(Moment.MID_CONTENT, streamBegan = true),
+                        evidence = FailureEvidence("synthetic upstream verdict"),
                     ),
                 )
                 AsyncFileIo.drain()
@@ -726,7 +727,7 @@ class TurnFailurePermanenceTest {
     fun `classified http permanence survives a dead client's error write`() {
         for ((status, expected) in listOf(500 to 0L, 400 to 1L)) {
             val rig = EndingRig("http-permanence-$status", tmp, accountingProvider())
-            emitExpectingDeadClient(rig, UpstreamFailed("""{"error":{"type":"api_error"}}""", status))
+            emitExpectingDeadClient(rig, upstreamFailed("""{"error":{"type":"api_error"}}""", status))
             AsyncFileIo.drain()
             assertEquals(expected, rowCount(Files.readAllLines(rig.perfFile).single(), "failure_permanent"))
         }
@@ -770,6 +771,12 @@ private fun emitExpectingDeadClient(rig: EndingRig, e: Throwable, clientGone: Bo
     } finally {
         drive.slot.release()
     }
+}
+
+/** The ending the retry loop gives up with on [body] at [status], read the way it reads its last failure. */
+private fun upstreamFailed(body: String, status: Int): UpstreamFailed {
+    val read = UpstreamFailureClassifier.classify(FailureSource.HTTP, body, status)
+    return UpstreamFailed(read.cause, FailureEvidence(read.message, status, body = body))
 }
 
 private fun rowCount(row: String, key: String): Long? =

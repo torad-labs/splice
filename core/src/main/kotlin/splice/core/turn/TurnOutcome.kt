@@ -5,6 +5,9 @@
 package splice.core.turn
 
 import kotlinx.serialization.json.JsonObject
+import splice.core.failure.FailureCause
+import splice.core.failure.FailureEvidence
+import splice.core.failure.Position
 
 /** Suppressed on an actual upstream I/O tear so connection-reset telemetry retains the
  * branch-divergence fact even when no [TurnOutcome] can return from the post. */
@@ -76,16 +79,16 @@ public sealed class TurnOutcome {
     ) : TurnOutcome()
 
     public data class Failure(
-        val message: String,
-        /** V4-117: WHY this turn failed. REQUIRED, with no default, so the compiler is the wall:
-         *  a site that forgets it does not compile, which is stronger than the ast-grep rule that
-         *  used to police this. The value is the truth about the turn, never what the client is
-         *  told — see [phase] and the derived [type]. */
+        /** Why this turn failed, decided where the failure was decided. Required, with no default, so a site that
+         *  forgets it does not compile. ClientWire reads it for every status, type and x-should-retry the client is
+         *  told, and its persisted name is what the perf row stores. */
         val cause: FailureCause,
-        /** V4-117: HOW FAR the turn had got, as the site knows it. The boundary — which alone
-         *  knows whether a client frame actually went out — corrects this with copy(phase = ...),
-         *  and [type] follows, so nobody authors the wire type. */
-        val phase: FailurePhase,
+        /** Where the turn stood when it failed, as the site knows it. The boundary, which alone knows whether a client
+         *  frame went out, decides the moment the client is answered at. */
+        val at: Position,
+        /** What the failure left for the journal, the trace and the perf row: today's sentence and the provider's
+         *  status. It decides nothing. */
+        val evidence: FailureEvidence,
         /** What the round had produced when it died — null when the dialect does not support
          *  mid-stream re-anchoring or the turn was cancelled (watchdog). Rides the outcome the
          *  same way Success buffers do (P2-MACH); the gateway never reads envelope contents. */
@@ -94,24 +97,13 @@ public sealed class TurnOutcome {
          *  failed — carried so the usage store and perf row do not under-report the exact turns
          *  that ran the most upstream rounds (review-pr 2026-07-24). Zero when no salvage. */
         val salvagedUsage: Usage = Usage(reported = emptySet()),
-        /** Provider-reported, deterministic, permanent and connection-tear marks of this failure. */
-        val traits: FailureTraits = FailureTraits(),
         /** V4-117: how many upstream attempts the retry loop made before this failure, stamped by
          *  the LOOP (UpstreamFailed.layers) and carried here so the perf row can record it as
          *  layers=<n>. Zero is the honest default: a failure that never reached the loop — a
          *  watchdog, a refusal, a locally-decided verdict — genuinely had no attempts to report, and
          *  a caller that has no count must not be forced to invent one. */
         val layers: Int = 0,
-    ) : TurnOutcome() {
-
-        /** V4-117: DERIVED, never passed. The retry class the client keys on is a function of what
-         *  went wrong and how far the turn had got, so the site states the cause and the phase and
-         *  this follows — which is what makes it impossible for a failure and the wire to disagree.
-         *  It used to be a constructor argument, hand-picked at twenty-seven sites, and the emitter
-         *  relabelled it again for the pre-content case; now there is one author and the pre-content
-         *  rule is a property of [WireType] that the phase alone selects. */
-        val type: ErrorType get() = WireType.of(cause, phase)
-    }
+    ) : TurnOutcome()
 
     /** The salvageable state of a round that failed mid-stream, for continuation re-anchoring:
      *  the wire is already at a clean block boundary (translators closeAll before the terminal
@@ -155,40 +147,6 @@ public data class NativeDeliverySnapshot(
     val afterExec: List<JsonObject>? = null,
     /** Native recovery material in confirmed message delivery order. */
     val deliveredPrefix: List<JsonObject>? = null,
-)
-
-/** What kind of failure a [TurnOutcome.Failure] is, for health attribution and for the retry rule. */
-public data class FailureTraits(
-    /** True when a genuine upstream-reported error produced this failure (an error event/body
-     *  the provider actually sent); false for locally-synthesized verdicts (watchdog stall,
-     *  truncation-without-terminal). Drives the G20 health split — the old OVERLOADED-implies-
-     *  local heuristic misattributed passthrough overloaded_error (review 2026-07-19). */
-    val providerReported: Boolean = false,
-    /** A verdict the same request cannot change, such as an unavailable code-mode record.
-     *  Delivered through the error channel with permanence preserved; never rendered as an answer. */
-    val deterministic: Boolean = false,
-    /** V4-81: NO retry can change this verdict — an identical re-send reproduces it exactly.
-     *
-     *  Also covers provider verdicts that do not carry the local [deterministic] marker. This is
-     *  what the pre-content wire-type rule reads. Advertising such a failure as transient is
-     *  the expensive lie: RetryPolicy arms a cooldown only for RATE_LIMITED, so with
-     *  CLAUDE_CODE_RETRY_WATCHDOG=1 a relabelled permanent failure makes the client re-send the
-     *  identical bytes up to 300 times, six upstream attempts each, for a verdict that cannot
-     *  move. Set from the classifier's `transient = false` (UpstreamFailureClassifier), from a
-     *  deterministic refusal (ResponsesTerminalDecision), and from the local base_url parse —
-     *  the operator law "always a retry armed" is about failures a retry can HEAL.
-     *
-     *  Defaulted false: every construction that does not know stays exactly as it was, and the
-     *  rule treats "unknown" as retryable, which is today's behavior. */
-    val permanent: Boolean = false,
-    /** V4-67: a connection tear the GATEWAY synthesized into an outcome (SseRoundDriver
-     *  .tearOutcome) rather than letting it escape to the conn-reset surface. Carried so the
-     *  ending keeps the [CONN_RESET_OUTCOME] tag whatever path it finishes through: a
-     *  converted tear that no controller continues is finished by the pipeline, and without
-     *  this it recorded `failure:overloaded_error` — leaving the one string that names this
-     *  failure class absent from the perf row it is grepped in. Defaulted false, so every
-     *  other construction of this type is byte-unchanged. */
-    val connReset: Boolean = false,
 )
 
 /** What the completed upstream response held. */

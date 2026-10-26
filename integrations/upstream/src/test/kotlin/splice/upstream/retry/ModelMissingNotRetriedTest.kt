@@ -21,7 +21,8 @@ import splice.upstream.transport.posted
 
 class ModelMissingNotRetriedTest {
 
-    private data class Answered(val body: String, val log: List<String>)
+    /** [message]: what the turn ends with, read from the runtime's answer. */
+    private data class Answered(val message: String, val log: List<String>)
 
     private suspend fun answeredWith(body: String): Answered {
         val log = mutableListOf<String>()
@@ -33,7 +34,7 @@ class ModelMissingNotRetriedTest {
             onRetry = RetryNotice { log += it },
         )
         val ended = assertEnds<UpstreamFailed> { clientOver(engine).posted(ctx, "{}") { "ok" } }
-        return Answered(ended.body, log)
+        return Answered(ended.evidence.message, log)
     }
 
     private fun Answered.saysModelMissing() = log.any { "does not serve the requested model" in it }
@@ -45,7 +46,7 @@ class ModelMissingNotRetriedTest {
 
         val answered = answeredWith(ollama)
 
-        assertTrue("try pulling it first" in answered.body, answered.body)
+        assertTrue("try pulling it first" in answered.message, answered.message)
         assertTrue(answered.saysModelMissing(), "${answered.log}")
     }
 

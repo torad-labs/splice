@@ -1,8 +1,6 @@
 package splice.provider.codex.stream.reader
 
 import kotlinx.coroutines.CancellationException
-import splice.core.turn.FailureCause
-import splice.core.turn.FailurePhase
 import splice.core.turn.TurnOutcome
 import splice.core.util.Cancellables
 import splice.core.util.LogSink
@@ -75,21 +73,15 @@ internal class CodeModeReaderOutcomes(
             capture.source.fail(SOURCE_DISPOSED)
             return@synchronized outcome
         }
-        lifecycle.sourceInterrupted = capture.unfinished &&
-            (outcome as? TurnOutcome.Failure)?.cause in SOURCE_TEAR_CAUSES
+        lifecycle.sourceInterrupted = capture.unfinished && CodeModeReaderFailures.tornSource(outcome)
         // The capture loses a source its terminal does not certify, which closes the cell a client step may still be
         // advancing. Set first, so that step ends as a torn source's step does, or with a permanent failure as it is.
         lifecycle.executionLost = !sourceInterrupted && capture.rejects(outcome)
-        permanentEnding = (outcome as? TurnOutcome.Failure)?.takeIf { sourceLost && it.traits.permanent }
+        permanentEnding = (outcome as? TurnOutcome.Failure)?.takeIf { sourceLost && it.cause.permanent }
         Cancellables.runCatchingBestEffort { capture.finish(outcome) }
             .getOrElse { return@synchronized lifecycle.reject(it) }
         if (sourceInterrupted && outcome is TurnOutcome.Failure) {
-            outcome.copy(
-                cause = FailureCause.UPSTREAM_CONN_RESET,
-                phase = FailurePhase.MID_OUTPUT,
-                traits = outcome.traits.copy(deterministic = false),
-                partial = null,
-            )
+            CodeModeReaderFailures.interrupted(outcome)
         } else {
             outcome
         }
@@ -126,9 +118,3 @@ internal class CodeModeReaderOutcomes(
         CodeModeReaderFailures.outcome(error, admitted = capture.record != null)
     }
 }
-
-private val SOURCE_TEAR_CAUSES = setOf(
-    FailureCause.UPSTREAM_CONN_RESET,
-    FailureCause.UPSTREAM_TRUNCATED,
-    FailureCause.UPSTREAM_STALLED,
-)

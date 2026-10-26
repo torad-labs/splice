@@ -8,8 +8,8 @@ import org.junit.jupiter.api.Assertions.assertSame
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 import splice.core.auth.Credentials
+import splice.core.failure.PersistedCause
 import splice.core.turn.ErrorType
-import splice.core.turn.FailureCause
 
 class ForeignCredentialTest {
     private val bearer = Credentials.Bearer("eyFakeSignInToken.v4242", "acct-v4242")
@@ -67,7 +67,7 @@ class ForeignCredentialTest {
 
         assertEquals(ErrorType.API_ERROR, failure.type)
         assertTrue(failure.transient, "the upstream refused itself and may stop")
-        assertEquals(FailureCause.UPSTREAM_REPORTED, failure.cause)
+        assertEquals(PersistedCause.UPSTREAM_REPORTED, failure.cause.persisted)
         assertEquals(UNAUTHORIZED, failure.status)
         assertEquals(
             "the upstream rejected a credential this account did not send: Incorrect API key provided: " +

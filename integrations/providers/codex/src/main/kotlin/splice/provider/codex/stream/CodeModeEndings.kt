@@ -11,8 +11,10 @@
 package splice.provider.codex.stream
 
 import kotlinx.coroutines.currentCoroutineContext
-import splice.core.turn.FailureCause
-import splice.core.turn.FailurePhase
+import splice.core.failure.FailureCause
+import splice.core.failure.FailureEvidence
+import splice.core.failure.Moment
+import splice.core.failure.Position
 import splice.core.turn.TurnOutcome
 import splice.upstream.transport.StreamTornBeforeClient
 import splice.upstream.transport.UpstreamEnding
@@ -46,8 +48,8 @@ internal object CodeModeEndings {
         (currentCoroutineContext()[CodeModeEndingKey]?.ending as? StreamTornBeforeClient)?.cause
 
     fun placeholder(): TurnOutcome.Failure = TurnOutcome.Failure(
-        "upstream ended the round before its outcome; the turn ends on the ending",
-        cause = FailureCause.INTERNAL,
-        phase = FailurePhase.MID_OUTPUT,
+        cause = FailureCause.Splice.Internal(),
+        at = Position(Moment.MID_CONTENT, streamBegan = true),
+        evidence = FailureEvidence("upstream ended the round before its outcome; the turn ends on the ending"),
     )
 }

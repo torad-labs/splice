@@ -1,7 +1,9 @@
 package splice.provider.codex.stream.batch
 
-import splice.core.turn.FailureCause
-import splice.core.turn.FailurePhase
+import splice.core.failure.FailureCause
+import splice.core.failure.FailureEvidence
+import splice.core.failure.Moment
+import splice.core.failure.Position
 import splice.core.turn.TurnOutcome
 import splice.core.turn.noRequestUsage
 import splice.provider.codex.CodeModeAdvanceRequest
@@ -52,9 +54,9 @@ internal class CodeModeRuntimeDispatch(
         stream?.localFailure != null -> checkNotNull(stream.localFailure)
         stream?.sourceInterrupted == true -> stream.outcome()
         else -> TurnOutcome.Failure(
-            record.error.orEmpty(),
-            cause = FailureCause.INTERNAL,
-            phase = FailurePhase.MID_OUTPUT,
+            cause = FailureCause.Splice.Internal(),
+            at = Position(Moment.MID_CONTENT, streamBegan = true),
+            evidence = FailureEvidence(record.error.orEmpty()),
             salvagedUsage = noRequestUsage,
         )
     }

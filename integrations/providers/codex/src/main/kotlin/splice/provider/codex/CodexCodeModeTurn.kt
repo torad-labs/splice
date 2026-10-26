@@ -3,14 +3,10 @@ package splice.provider.codex
 
 import kotlinx.coroutines.currentCoroutineContext
 import splice.core.perf.PerfKeys
-import splice.core.turn.FailureCause
-import splice.core.turn.FailurePhase
-import splice.core.turn.FailureTraits
 import splice.core.turn.GatewayCustomCall
 import splice.core.turn.HeadStopKey
 import splice.core.turn.HeadStopSignal
 import splice.core.turn.TurnOutcome
-import splice.core.turn.noRequestUsage
 import splice.core.util.LogSink
 import splice.provider.codex.branch.CodeModeOwnerPlacement
 import splice.provider.codex.branch.CodeModePlacedOwner
@@ -21,6 +17,7 @@ import splice.provider.codex.state.CodeModeTurnNotes
 import splice.provider.codex.state.diagnostics.CodeModeNativeRejection
 import splice.provider.codex.stream.CodeModeLiveRound
 import splice.provider.codex.stream.CodeModeRecoveryHistory
+import splice.provider.codex.stream.CodeModeRejection
 import splice.provider.codex.stream.CodeModeRunInput
 import splice.provider.codex.stream.CodeModeUpstreamPost
 import splice.provider.codex.stream.batch.CodeModeBatchHistory
@@ -151,7 +148,7 @@ internal class CodexCodeModeTurn(
         body: CodeModeBody,
     ): TurnOutcome {
         val completedHistory = branch.canonicalize(context, body, wire.callbackIds(body))
-        completedHistory.error?.let { return failure(it) }
+        completedHistory.error?.let { return CodeModeRejection.state(it) }
         val canonicalBody = checkNotNull(completedHistory.body)
         reconcile(context, canonicalBody)
         return decide(context, initialOuter, canonicalBody, placement.find(context, canonicalBody))
@@ -214,13 +211,4 @@ internal class CodexCodeModeTurn(
 
     internal fun abandon(owner: CodeModeRecord, error: String, rejection: CodeModeNativeRejection?) =
         placement.abandon(owner, error, rejection)
-
-    private fun failure(message: String): TurnOutcome.Failure =
-        TurnOutcome.Failure(
-            message,
-            traits = FailureTraits(deterministic = true),
-            cause = FailureCause.CODE_MODE_PROTOCOL,
-            phase = FailurePhase.MID_OUTPUT,
-            salvagedUsage = noRequestUsage,
-        )
 }

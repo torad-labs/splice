@@ -16,6 +16,7 @@
 package splice.dialect.responses.reasoning
 
 import kotlinx.serialization.json.JsonObject
+import splice.core.failure.ClientWire
 import splice.core.turn.DEFAULT_MAX_CONTINUATIONS
 import splice.core.turn.ErrorType
 import splice.core.turn.TurnOutcome
@@ -74,8 +75,8 @@ internal class ResponsesReanchorPolicy(
     private fun eligible(round: ReanchorRound, partial: TurnOutcome.PartialRound): Boolean = when {
         round.attempt >= maxContinuations -> false
         // A permanent failure that still carried a partial is an unknown vendor code: one re-send, no more.
-        round.failure.traits.permanent && round.attempt >= 1 -> false
-        round.failure.type !in RETRYABLE -> false
+        round.failure.cause.permanent && round.attempt >= 1 -> false
+        ClientWire.ownType(round.failure.cause) !in RETRYABLE -> false
         partial.toolTearOpen || partial.hasToolUse -> false
         else -> true
     }

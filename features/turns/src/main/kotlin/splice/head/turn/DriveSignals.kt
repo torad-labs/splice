@@ -3,6 +3,7 @@
 // Same-package.
 package splice.head.turn
 
+import splice.core.failure.ClientWire
 import splice.core.perf.PerfKeys
 import splice.core.perf.TurnPerf
 import splice.core.util.LogSink
@@ -30,10 +31,10 @@ internal class DriveSignals(
             onRoundFailure = { f ->
                 // Absorbed round failures still count for the G20 health split (code-review 2026-07-24).
                 log(
-                    "[${provider.key}] mid-stream ${f.type.wireName} absorbed by " +
-                        "re-anchor: ${f.message.take(ROUND_FAILURE_SNIPPET)}\n",
+                    "[${provider.key}] mid-stream ${ClientWire.ownType(f.cause).wireName} absorbed by " +
+                        "re-anchor: ${f.evidence.message.take(ROUND_FAILURE_SNIPPET)}\n",
                 )
-                if (f.traits.providerReported) health.provider() else health.local()
+                if (f.cause.providerReported) health.provider() else health.local()
             },
             onSearchRound = { perf.setCount(PerfKeys.SEARCH_ROUNDS, it.toLong()) },
             onReanchor = { fromScratch ->

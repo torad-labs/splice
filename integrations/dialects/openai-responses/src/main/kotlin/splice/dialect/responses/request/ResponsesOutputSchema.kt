@@ -5,8 +5,12 @@ import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
+import splice.core.failure.Decline
+import splice.core.failure.FailureCause
+import splice.core.failure.RequestFeature
 import splice.core.util.JsonScalars
 import splice.core.wire.AnthropicRequest
+import splice.upstream.RequestRefusal
 
 /** Claude Code's schema tool: returned schema text must reach the client as this tool's JSON input. */
 internal const val STRUCTURED_OUTPUT_TOOL = "StructuredOutput"
@@ -36,11 +40,17 @@ internal object ResponsesOutputSchema {
             body.tools.firstOrNull { it.name == STRUCTURED_OUTPUT_TOOL && it.inputSchema != null }?.name
         }
 
-    /** Checked before request construction, through the provider's explicit admission refusal. */
-    fun refusal(body: AnthropicRequest, raw: JsonObject): String? {
+    /** Checked before request construction, through the provider's explicit admission refusal: each refusal is a
+     *  request feature this standard cannot carry, Declined before any provider sees it. */
+    fun refusal(body: AnthropicRequest, raw: JsonObject): RequestRefusal? {
         val native = nativeFormat(raw)
-        return nativeRefusal(native) ?: toolRefusal(body, native) ?: choiceRefusal(body)
+        return nativeRefusal(native)?.let { refused(RequestFeature.OUTPUT_FORMAT, it) }
+            ?: toolRefusal(body, native)?.let { refused(RequestFeature.STRUCTURED_OUTPUT, it) }
+            ?: choiceRefusal(body)?.let { refused(RequestFeature.TOOL_CHOICE, it) }
     }
+
+    private fun refused(what: RequestFeature, message: String): RequestRefusal =
+        RequestRefusal(FailureCause.Splice.Declined(Decline.Untranslatable(what)), message)
 
     private fun nativeRefusal(native: JsonElement?): String? = when {
         native == null -> null

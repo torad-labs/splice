@@ -32,8 +32,10 @@ import kotlinx.coroutines.flow.firstOrNull
 import kotlinx.coroutines.flow.takeWhile
 import kotlinx.coroutines.withContext
 import kotlinx.serialization.json.JsonObject
-import splice.core.turn.FailureCause
-import splice.core.turn.FailurePhase
+import splice.core.failure.FailureCause
+import splice.core.failure.FailureEvidence
+import splice.core.failure.Moment
+import splice.core.failure.Position
 import splice.core.turn.SharedSummaryParts
 import splice.core.turn.TurnOutcome
 import splice.core.util.Cancellables
@@ -184,9 +186,9 @@ internal class ResponsesStreamTranslator(
             return terminal.copy(partial = null, salvagedUsage = partial.usage + terminal.salvagedUsage)
         }
         return TurnOutcome.Failure(
-            "splice: response cleanup failed (${SafeFailureText.render(error)})",
-            cause = FailureCause.INTERNAL,
-            phase = FailurePhase.MID_OUTPUT,
+            cause = FailureCause.Splice.Internal(),
+            at = Position(Moment.MID_CONTENT, streamBegan = true),
+            evidence = FailureEvidence("splice: response cleanup failed (${SafeFailureText.render(error)})"),
             salvagedUsage = ResponsesOutcomePayload(ctx).usageOf(state),
         )
     }
@@ -246,7 +248,7 @@ internal class ResponsesStreamTranslator(
         val failure = outcome as? TurnOutcome.Failure ?: return outcome
         val e = unexpected ?: return outcome
         return if (ctx.signals.watchdogFired() == null) {
-            failure.copy(message = "splice: upstream stream failed ($e); retry")
+            failure.copy(evidence = failure.evidence.copy(message = "splice: upstream stream failed ($e); retry"))
         } else {
             outcome
         }

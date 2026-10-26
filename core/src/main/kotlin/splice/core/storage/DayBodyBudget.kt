@@ -4,6 +4,7 @@
 // allocation in the Oct 25 17:59-18:04 CT JFR. Now one lock hold lists the directory once and moves that listing by
 // its own grants, listing again after its own deletions. The pattern and the pack endings are built once, and the
 // default free-space probe keeps its FileStore.
+// 2026-10-26, on review: a call joins the hold when its directory is the hold's on disk, however its path spells it.
 package splice.core.storage
 
 import splice.core.util.Cancellables
@@ -76,8 +77,9 @@ public class DayBodyBudget(
 
     /** Runs [action] under the lock every writer of [dir] takes first, so inside one hold only this budget changes
      *  the packs and index files it counts. The hold's first admission lists [dir], later ones add the hold's own
-     *  grants to that listing, and a deletion lists again. Bytes written without a grant inside the same hold, or
-     *  admissions continued there after a granted write failed, go unseen until the hold ends. */
+     *  grants to that listing, and a deletion lists again. A call joins the hold when its directory is [dir] on disk,
+     *  however its path spells it. Bytes written without a grant inside the same hold, or admissions continued there
+     *  after a granted write failed, go unseen until the hold ends. */
     public fun <T> withLock(dir: Path, action: DayDirectoryAction<T>): T = DayDirectoryLock(dir).withLock {
         if (held.get() != null) {
             action()
@@ -137,7 +139,7 @@ public class DayBodyBudget(
 
     /** The listing this thread's hold keeps for [dir], or one of its own for a call outside any hold or for another
      *  directory. */
-    private fun hold(dir: Path): DayHold = held.get()?.takeIf { it.dir == dir } ?: DayHold(dir)
+    private fun hold(dir: Path): DayHold = held.get()?.takeIf { it.lists(dir) } ?: DayHold(dir)
 
     /** Deletes every head's files of one day: the index, every rolled generation, its lock, its bodies and
      *  their markers. */
@@ -202,10 +204,14 @@ public class DayBodyBudget(
     /** One listing of [dir] for one hold of its lock: each dated body pack with its size, and each date's index bytes
      *  over every head and rolled generation. It is taken at first use, moved by the hold's own grants, and
      *  forgotten before a deletion, so the next use lists again. */
-    private inner class DayHold(val dir: Path) {
+    private inner class DayHold(private val dir: Path) {
         private val packs = ArrayList<BodyDay>()
         private val index = HashMap<LocalDate, Long>()
         private var listed = false
+
+        /** Whether [other] is the directory this listing reads, by the same text or as the same directory on disk. Not
+         *  by the text its lock reads (DayMutationLock): through a symlink and back up, that text names another one. */
+        fun lists(other: Path): Boolean = other == dir || Files.isDirectory(other) && Files.isSameFile(other, dir)
 
         /** Every dated body pack in [dir], of every head and both formats. */
         fun packs(): List<BodyDay> {
@@ -222,7 +228,8 @@ public class DayBodyBudget(
         /** [bytes] granted to [pack], which its writer appends before anything in this hold is admitted again. */
         fun granted(pack: Path, bytes: Long) {
             if (!listed) return
-            val at = packs.indexOfFirst { it.pack == pack }
+            // By name: the pack is in this listing's one directory, however the caller's path spells it.
+            val at = packs.indexOfFirst { it.pack.fileName == pack.fileName }
             if (at >= 0) {
                 packs[at] = packs[at].copy(bytes = packs[at].bytes + bytes)
                 return

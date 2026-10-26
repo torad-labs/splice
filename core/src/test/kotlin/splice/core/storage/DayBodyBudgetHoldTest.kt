@@ -9,6 +9,7 @@
 // dated index files pass the index cap.
 // Oct 26, 2026, on review: some calls are for the second directory, and run A makes them inside its hold of the
 // first. Such a call must list its own directory, and what it grants or deletes must not move the hold's listing.
+// Oct 26, 2026, on review again: the hold and each call spell their directory six ways, one through the other's link.
 package splice.core.storage
 
 import org.junit.jupiter.api.Assertions.assertEquals
@@ -83,8 +84,13 @@ private const val V1_SHARE = 3
 private const val MARKER_SHARE = 2
 private const val BODY_SHARE = 12
 
-// why: how often a call is for the other directory; the rest stay on the held one, whose listing the hold keeps
-private const val OTHER_SHARE = 4
+// why: how often a call is for the other directory, often enough that it too fills to its caps; the rest stay on the
+// held one, whose listing the hold keeps
+private const val OTHER_SHARE = 8
+
+// why: each directory keeps an empty subdirectory and a link to its twin's, so either can be spelled through the other
+private const val SUB_DIR = "sub"
+private const val TWIN_LINK = "twin"
 
 // why: how often a line, and a body, is asked for with the volume near the floor; a body below it evicts every
 // completed day before it is refused, so it comes less often and leaves the cases older days to evict
@@ -104,6 +110,19 @@ private val DAY_NAME = Regex("(.+)-(\\d{4}-\\d{2}-\\d{2})\\.jsonl(\\.\\d+|\\.bod
 
 private val MARKER = (BODY_BUDGET_EVICTED_REASON + "\n").toByteArray()
 
+/** [dir] relative to the working directory, where the filesystem reads that as [dir] too, and else [dir] itself:
+ *  where the working directory's own path runs through a symlink, its `..` would lead the filesystem elsewhere than
+ *  the lock, which reads every path by its text. */
+private fun relative(dir: Path): Path {
+    val relative = Path.of("").toAbsolutePath().relativize(dir)
+    return if (Files.exists(relative) && Files.isSameFile(relative, dir)) relative else dir
+}
+
+/** [dir] spelled through its twin's link to [dir]'s own subdirectory and back up: [dir] on disk, while the lock, which
+ *  reads the text, takes it for the twin. */
+private fun throughTwin(dir: Path): Path =
+    dir.resolveSibling(DIRS.single { it != dir.fileName.toString() }).resolve(TWIN_LINK).resolve("..")
+
 class DayBodyBudgetHoldTest {
     @Test
     fun `one hold over calls for its directory and another decides each as a hold per call would and passes no cap`(
@@ -120,7 +139,7 @@ class DayBodyBudgetHoldTest {
                 assertEquals(each[i + 1].outcome, one[i + 1].outcome, "$step decides as a hold of its own would")
                 assertEquals(each[i + 1].files, one[i + 1].files, "$step leaves the files a hold of its own would")
                 for (decisions in listOf(one, each)) capped(case, admission, decisions[i + 1], step)
-                outcomes(admission, one[i + 1].outcome, one[i].files, one[i + 1].files, case.start.keys)
+                outcomes(case, admission, one[i + 1].outcome, one[i].files, one[i + 1].files)
                     .forEach { counts[it] = counts.getValue(it) + 1 }
             }
             listOf("one-$n", "each-$n").forEach { remove(root.resolve(it)) }
@@ -134,6 +153,11 @@ class DayBodyBudgetHoldTest {
      *  left. */
     private fun run(root: Path, case: HoldCase, oneHold: Boolean): List<HoldDecision> {
         DIRS.forEach { Files.createDirectory(root.resolve(it)) }
+        // The link the through-the-twin spelling of each directory passes, to that directory's own subdirectory.
+        for (dir in DIRS) {
+            Files.createDirectory(root.resolve(dir).resolve(SUB_DIR))
+            Files.createSymbolicLink(throughTwin(root.resolve(dir)).parent, root.resolve(dir).resolve(SUB_DIR))
+        }
         case.start.forEach { (name, bytes) ->
             val file = root.resolve(name)
             if (name.endsWith(DAY_BODY_EVICTED_SUFFIX)) Files.write(file, MARKER) else Files.write(file, zeros(bytes))
@@ -152,13 +176,14 @@ class DayBodyBudgetHoldTest {
         val ask = { admission: HoldAdmission ->
             free = admission.free
             now = admission.now
-            val dir = root.resolve(admission.dir)
-            // Every writer takes its directory's lock first. Inside run A's hold this nests and opens no hold of its
-            // own, so a call for the other directory is made while the held directory's hold is open.
+            val dir = admission.spelling.of(root.resolve(admission.dir))
+            // Every writer takes its directory's lock first, however it spells the directory. Inside run A's hold this
+            // nests and opens no hold of its own, so a call for the other directory, or for the held one spelled
+            // otherwise than the hold, is made while the held directory's hold is open.
             HoldDecision(budget.withLock(dir) { decide(budget, dir, admission) }, files(root))
         }
         val decided = if (oneHold) {
-            budget.withLock(root.resolve(HELD_DIR)) { case.admissions.map(ask) }
+            budget.withLock(case.hold.of(root.resolve(HELD_DIR))) { case.admissions.map(ask) }
         } else {
             case.admissions.map(ask)
         }
@@ -186,13 +211,13 @@ class DayBodyBudgetHoldTest {
         return GRANTED
     }
 
-    /** What one admission showed, read from its outcome and from the files before and after it. */
+    /** What one admission of [case] showed, read from its outcome and from the files before and after it. */
     private fun outcomes(
+        case: HoldCase,
         admission: HoldAdmission,
         outcome: String,
         before: Map<String, Long>,
         after: Map<String, Long>,
-        built: Set<String>,
     ): List<HoldOutcome> {
         val deleted = (before.keys - after.keys).isNotEmpty()
         val shown = when {
@@ -204,7 +229,7 @@ class DayBodyBudgetHoldTest {
             admission.body -> {
                 // A pack an earlier grant of the case created, which this step's grant now adds to.
                 val key = "${admission.dir}/${admission.name}"
-                val created = key !in built && key in before && dated(key, pack = true)
+                val created = key !in case.start && key in before && dated(key, pack = true)
                 mapOf(
                     HoldOutcome.BODY_GRANT to (outcome == GRANTED),
                     HoldOutcome.EVICTION to deleted,
@@ -220,7 +245,22 @@ class DayBodyBudgetHoldTest {
                 HoldOutcome.FLOOR_REFUSAL to (outcome == FLOOR_REACHED),
             )
         }
-        return shown.filterValues { it }.keys.toList()
+        return shown.filterValues { it }.keys.toList() + spelled(case, admission, outcome, deleted)
+    }
+
+    /** What a call for the held directory showed when run A made it under another spelling than its hold's, so that it
+     *  had to join the hold all the same. */
+    private fun spelled(
+        case: HoldCase,
+        admission: HoldAdmission,
+        outcome: String,
+        deleted: Boolean,
+    ): List<HoldOutcome> {
+        if (admission.dir != HELD_DIR || admission.spelling == case.hold) return emptyList()
+        return listOfNotNull(
+            HoldOutcome.GRANT_SPELLED_OTHERWISE.takeIf { outcome == GRANTED },
+            HoldOutcome.DELETION_SPELLED_OTHERWISE.takeIf { deleted },
+        )
     }
 
     /** A granted body leaves its directory's dated packs within the body cap, and a granted line leaves its directory's
@@ -272,7 +312,8 @@ class DayBodyBudgetHoldTest {
 }
 
 /** What the floor counts, each at least OUTCOME_FLOOR times across the cases. The first eight are calls for the held
- *  directory, the last three calls for the other one, which run A makes inside its hold of the held one. */
+ *  directory, the next three calls for the other one, which run A makes inside its hold of the held one, and the last
+ *  two calls for the held directory spelled otherwise than run A's hold. */
 private enum class HoldOutcome {
     BODY_GRANT,
     EVICTION,
@@ -285,12 +326,27 @@ private enum class HoldOutcome {
     OTHER_DIRECTORY_GRANT,
     OTHER_DIRECTORY_DELETION,
     OTHER_DIRECTORY_CAP_REFUSAL,
+    GRANT_SPELLED_OTHERWISE,
+    DELETION_SPELLED_OTHERWISE,
 }
 
-/** One admission in the directory [dir]: a body chunk of [bytes] for the pack [name], or an index line of [bytes] for
- *  the day file [name], asked while the volume has [free] usable bytes and the clock reads [now]. */
+/** How run A's hold, or one call, names its directory, an absolute path. Every spelling names that directory on disk.
+ *  The lock reads all but the last as that directory too, and the last as its twin. */
+private enum class Spelling(val of: (Path) -> Path) {
+    AS_IS({ it }),
+    DOT_AFTER({ it.resolve(".") }),
+    DOT_BEFORE({ it.resolveSibling(".").resolve(it.fileName) }),
+    THROUGH_PARENT({ it.resolve("..").resolve(it.fileName) }),
+    RELATIVE(::relative),
+    THROUGH_TWIN(::throughTwin),
+}
+
+/** One admission in the directory [dir], named as [spelling] spells it: a body chunk of [bytes] for the pack [name],
+ *  or an index line of [bytes] for the day file [name], asked while the volume has [free] usable bytes and the clock
+ *  reads [now]. */
 private data class HoldAdmission(
     val dir: String,
+    val spelling: Spelling,
     val body: Boolean,
     val name: String,
     val bytes: Long,
@@ -302,11 +358,12 @@ private data class HoldAdmission(
 private data class HoldDecision(val outcome: String, val files: Map<String, Long>)
 
 /** One generated case: the two directories it starts from, each file by its directory and name with its size, its two
- *  caps and its admissions. */
+ *  caps, how run A's hold spells the held directory, and its admissions. */
 private class HoldCase(random: Random) {
     val heads: List<String> = HEADS.take(random.nextInt(2, HEADS.size + 1))
     val bodyCap: Long = random.nextLong(BODY_CAP_MIN, BODY_CAP_MAX + 1)
     val indexCap: Long = random.nextLong(INDEX_CAP_MIN, INDEX_CAP_MAX + 1)
+    val hold: Spelling = Spelling.entries.random(random)
     val start: Map<String, Long> = HashMap<String, Long>().also { files ->
         for (dir in DIRS) directory(files, random, dir)
     }
@@ -342,16 +399,17 @@ private class HoldCase(random: Random) {
     }
 
     /** A body chunk for one of the day file's packs, or an index line for the day file itself, in the held directory
-     *  or now and then the other one. */
+     *  or now and then the other one, which the call spells any of the ways. */
     private fun admission(random: Random, now: Long): HoldAdmission {
         val dir = if (random.nextInt(ODDS) < OTHER_SHARE) OTHER_DIR else HELD_DIR
+        val spelling = Spelling.entries.random(random)
         val day = dayFile(random, now)
         val body = random.nextInt(ODDS) < BODY_SHARE
         val bytes = random.nextLong(1, (if (body) CHUNK_MAX_BYTES else LINE_MAX_BYTES) + 1)
         val low = random.nextInt(ODDS) < if (body) LOW_FREE_BODY_SHARE else LOW_FREE_SHARE
         val free = if (low) random.nextLong(FLOOR + 2 * bytes) else PLENTY
         val name = if (body) packOf(random, day) else day
-        return HoldAdmission(dir, body, name, bytes, free, now)
+        return HoldAdmission(dir, spelling, body, name, bytes, free, now)
     }
 
     /** A day file's name, mostly for today or yesterday by [now], sometimes for any day of the directory, and now

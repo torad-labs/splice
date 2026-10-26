@@ -19,7 +19,7 @@ private const val SAY_AGAIN_MS = 600_000L
 private const val MAX_NAMED_SESSIONS = 64
 
 /** What a line calls a refused request that carried no session header. */
-private const val NO_SESSION = "a request that named no session"
+private const val UNNAMED_SESSION = "a request that named no session"
 
 /** Why a head refused a session's local credential, as its line says it. */
 internal enum class KeyRefusal(val says: String) {
@@ -63,7 +63,7 @@ internal class RefusedKeyLog(private val log: LogSink, private val clock: Elapse
         if (last != null && now - last < SAY_AGAIN_MS) return null
         if (last == null && !roomFor(now)) return countLine()
         named[key] = now
-        val subject = name?.let { "session '$it'" } ?: NO_SESSION
+        val subject = name?.let { "session '$it'" } ?: UNNAMED_SESSION
         return "[auth] refused $subject: ${why.says}\n"
     }
 

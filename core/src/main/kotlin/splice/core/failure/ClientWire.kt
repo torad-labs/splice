@@ -82,14 +82,15 @@ public object ClientWire {
         return WireAnswer(why?.let(::refusalStatus) ?: statusOf(own), own, why?.let(::refusalRetry))
     }
 
-    /** The three refusals whose status is not their type's own. */
+    /** The refusals whose status is not their type's own. */
     private fun refusalStatus(why: Decline): Int? = when (why) {
-        is Decline.TooLarge -> HttpStatus.CONTENT_TOO_LARGE
+        is Decline.TooLarge, is Decline.Unfit -> HttpStatus.CONTENT_TOO_LARGE
         Decline.ReadTimeout -> HttpStatus.REQUEST_TIMEOUT
         // A login coming back to this head is this machine's to do, so the node shows the sentence at once.
         Decline.NoSharedLogin -> HttpStatus.SERVICE_UNAVAILABLE
         Decline.HeapBusy, is Decline.Budget, is Decline.Preflight, is Decline.BadBody, is Decline.UnknownModel,
-        Decline.ForeignHost, Decline.BadLocalKey, Decline.LivenessProbe, is Decline.Untranslatable,
+        Decline.ForeignHost, Decline.BadLocalKey, is Decline.SpliceKeyAsLogin, Decline.LivenessProbe,
+        is Decline.Untranslatable,
         -> null
     }
 
@@ -97,9 +98,9 @@ public object ClientWire {
      *  bound, which the client answers by compacting, and a shared turn with no login here. */
     private fun refusalRetry(why: Decline): Boolean? = when (why) {
         is Decline.Preflight, Decline.NoSharedLogin -> false
-        is Decline.TooLarge, Decline.HeapBusy, is Decline.Budget, is Decline.BadBody, Decline.ReadTimeout,
-        is Decline.UnknownModel, Decline.ForeignHost, Decline.BadLocalKey, Decline.LivenessProbe,
-        is Decline.Untranslatable,
+        is Decline.TooLarge, is Decline.Unfit, Decline.HeapBusy, is Decline.Budget, is Decline.BadBody,
+        Decline.ReadTimeout, is Decline.UnknownModel, Decline.ForeignHost, Decline.BadLocalKey,
+        is Decline.SpliceKeyAsLogin, Decline.LivenessProbe, is Decline.Untranslatable,
         -> null
     }
 
@@ -170,10 +171,10 @@ private object OwnTypes {
     private fun declined(why: Decline): ErrorType = when (why) {
         Decline.HeapBusy -> ErrorType.OVERLOADED
         is Decline.Budget, Decline.ForeignHost -> ErrorType.PERMISSION
-        Decline.BadLocalKey -> ErrorType.AUTHENTICATION
+        Decline.BadLocalKey, is Decline.SpliceKeyAsLogin -> ErrorType.AUTHENTICATION
         Decline.NoSharedLogin -> ErrorType.API_ERROR
-        is Decline.TooLarge, is Decline.Preflight, is Decline.BadBody, Decline.ReadTimeout, is Decline.UnknownModel,
-        Decline.LivenessProbe, is Decline.Untranslatable,
+        is Decline.TooLarge, is Decline.Unfit, is Decline.Preflight, is Decline.BadBody, Decline.ReadTimeout,
+        is Decline.UnknownModel, Decline.LivenessProbe, is Decline.Untranslatable,
         -> ErrorType.INVALID_REQUEST
     }
 }

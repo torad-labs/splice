@@ -57,6 +57,10 @@ internal class Spoken(private val time: LocalTimeText) {
 
     fun count(n: Long, unit: String): String = if (n == 1L) "1 $unit" else "$n ${unit}s"
 
+    /** Names as a sentence lists them: "A", "A and B", "A, B and C". */
+    fun list(names: List<String>): String =
+        if (names.size < 2) names.joinToString("") else names.dropLast(1).joinToString(", ") + " and " + names.last()
+
     /** What a turn that waits [waitMs] from [now] says it does: a wait of an hour or more is said as a clock time. */
     fun retry(waitMs: Long, now: Instant): String = when {
         waitMs < MS_PER_SECOND -> "This turn tries again now."
@@ -67,10 +71,11 @@ internal class Spoken(private val time: LocalTimeText) {
     /** A token count with its thousands marked: "262,144". */
     fun tokens(n: Long): String = String.format(Locale.US, "%,d", n)
 
-    /** A size in megabytes, or in kilobytes below one. */
+    /** A size in megabytes, in kilobytes below one, and in bytes below a kilobyte: a small limit is said as it is. */
     fun bytes(n: Long): String {
         val mb = n / BYTES_PER_MB
         return when {
+            n < BYTES_PER_KB -> count(n, "byte")
             mb >= WHOLE_MB -> "${mb.roundToLong()} MB"
             mb >= 1.0 -> String.format(Locale.US, "%.1f MB", mb).replace(".0 MB", " MB")
             else -> "${(n + BYTES_PER_KB - 1) / BYTES_PER_KB} KB"
@@ -407,17 +412,20 @@ internal class DeclineSentences(private val spoken: Spoken) {
             is Decline.Untranslatable -> Said(untranslatable(why.what, head))
             Decline.HeapBusy -> Said("splice is short of memory right now", next = Next.Resend(SEND_AGAIN))
             Decline.ReadTimeout -> Said("This request took too long to reach splice", next = Next.Resend(SEND_AGAIN))
-            is Decline.BadBody, Decline.ForeignHost, Decline.BadLocalKey, Decline.LivenessProbe, Decline.NoSharedLogin,
+            is Decline.BadBody, is Decline.Unfit, Decline.ForeignHost, Decline.BadLocalKey, is Decline.SpliceKeyAsLogin,
+            Decline.LivenessProbe, Decline.NoSharedLogin,
             -> local(why, facts)
         }
     }
 
-    /** Refusals about the request's own arrival and its caller. */
+    /** Refusals about the request itself, its arrival and its caller. */
     private fun local(why: Decline, facts: LineFacts): Said = when (why) {
-        is Decline.BadBody -> Said("This request reached splice incomplete")
+        is Decline.BadBody -> Said(arrived(why))
+        is Decline.Unfit -> Said("This request needs more memory than splice can give one request")
         Decline.ForeignHost -> Said("splice answers only requests addressed to this machine")
         Decline.BadLocalKey ->
             Said("This session's splice key is not valid", next = Next.Then("Start the session again from splice."))
+        is Decline.SpliceKeyAsLogin -> ownKey(why, facts)
         Decline.LivenessProbe -> Said("This request was a liveness probe, so no turn was started")
         Decline.NoSharedLogin -> Said(
             "${facts.head} on this machine has no free login for a turn shared from another machine, " +
@@ -427,6 +435,28 @@ internal class DeclineSentences(private val spoken: Spoken) {
         is Decline.Untranslatable, Decline.HeapBusy, Decline.ReadTimeout,
         -> said(why, facts)
     }
+
+    /** Incomplete only where fewer bytes arrived than the request declared: a body that arrived whole did not parse. */
+    private fun arrived(why: Decline.BadBody): String {
+        val declared = why.declaredBytes
+        return if (declared != null && why.readBytes < declared) {
+            "This request reached splice incomplete"
+        } else {
+            "splice could not parse this request"
+        }
+    }
+
+    /** Splice's key in the login's place: the variables that put it there are what the person unsets. */
+    private fun ownKey(why: Decline.SpliceKeyAsLogin, facts: LineFacts): Said = Said(
+        "This session sent splice's own key where your ${facts.providerName ?: "own"} login belongs",
+        next = Next.Then(
+            if (why.variables.isEmpty()) {
+                "Start the session again from a shell that does not set it."
+            } else {
+                "Unset ${spoken.list(why.variables)} in the shell that launched it, then start the session again."
+            },
+        ),
+    )
 
     /** Both sizes where the request's own is known and over the limit; the limit alone otherwise. */
     private fun tooLarge(why: Decline.TooLarge): Said {

@@ -324,15 +324,15 @@ public data class ModelCatalog(
     public val refusals: Refusals get() = Refusals(live())
 
     public class Refusals internal constructor(private val catalog: ModelCatalog) {
-        public fun message(model: String, head: String): String {
+        /** The model a refusal of [model] names: the one a tier maps to when [model] reaches an unmapped tier, since
+         *  that is the model the head's roster has to serve (the tier stays unmapped, never replaced by another), else
+         *  the model as the request named it, unwrapped. */
+        public fun unserved(model: String): String {
             val id = catalog.unwrap(model)
             val missing = catalog.unmappedTiers.entries.firstOrNull { (slot, mapped) ->
                 id == mapped || id == slot || id.startsWith("claude-$slot-")
             }
-            return missing?.let { (slot, mapped) ->
-                "$slot maps to $mapped, which is not offered by head $head in its current roster; " +
-                    "the tier stays unmapped, never replaced by another model"
-            } ?: "this head proxies its own models only; got $id"
+            return missing?.value ?: id
         }
     }
 }

@@ -182,11 +182,22 @@ private fun Random.decline(now: Instant): Decline = pick(
         Decline.HeapBusy,
         Decline.Budget(limit = pick(DOLLARS), resetsAt = now.plusSeconds(nextLong(86_400L))),
         Decline.Preflight(pick(PreflightKind.entries), windowTokens = pick(listOf(131_072L, 262_144L))),
-        Decline.BadBody(readBytes = 12L, declaredBytes = pick(listOf(null, 40L))),
+        Decline.BadBody(readBytes = 12L, declaredBytes = pick(listOf(null, 12L, 40L))),
         Decline.ReadTimeout,
         Decline.UnknownModel(pick(MODELS)),
         Decline.ForeignHost,
+        Decline.Unfit(weight = pick(listOf(212_992L, 96_468_992L)), limit = pick(listOf(131_072L, 67_108_864L))),
         Decline.BadLocalKey,
+        Decline.SpliceKeyAsLogin(
+            pick(
+                listOf(
+                    emptyList(),
+                    listOf("ANTHROPIC_API_KEY"),
+                    listOf("ANTHROPIC_AUTH_TOKEN", "ANTHROPIC_CUSTOM_HEADERS"),
+                    listOf("ANTHROPIC_AUTH_TOKEN", "ANTHROPIC_API_KEY", "ANTHROPIC_CUSTOM_HEADERS"),
+                ),
+            ),
+        ),
         Decline.LivenessProbe,
         Decline.NoSharedLogin,
         Decline.Untranslatable(pick(RequestFeature.entries)),
@@ -443,6 +454,40 @@ class SpliceLinesPropertyTest {
             }
         }
     }
+
+    @Test
+    fun `a size or a limit under a kilobyte is said in bytes, as it is`() {
+        val random = Random(9)
+        val lines = SpliceLines(LocalTimeText(ZoneId.of("America/Chicago")))
+        val atAdmission = Position(Moment.ADMISSION, streamBegan = false)
+        repeat(RUNS) {
+            val limit = 1L + random.nextLong(1_022L)
+            val bytes = random.pick(listOf(null, limit + 1L + random.nextLong(1_023L - limit)))
+            val cause = FailureCause.Splice.Declined(Decline.TooLarge(bytes, limit))
+            val facts = random.facts(random.instant())
+            val said = lines.ending(cause, atAdmission, ClientWire.answer(cause, atAdmission), facts)
+            assertTrue("the ${inBytes(limit)} splice accepts" in said.text, "a $limit-byte limit: ${said.text}")
+            bytes?.let { assertTrue("is ${inBytes(it)}, more than" in said.text, "a $it-byte request: ${said.text}") }
+        }
+    }
+
+    @Test
+    fun `a request is said to have arrived incomplete only when fewer bytes arrived than it declared`() {
+        val random = Random(10)
+        val lines = SpliceLines(LocalTimeText(ZoneId.of("America/Chicago")))
+        val atAdmission = Position(Moment.ADMISSION, streamBegan = false)
+        repeat(RUNS) {
+            val read = random.nextLong(1_000_000L)
+            val declared = random.pick(listOf(null, read, read + 1L + random.nextLong(1_000_000L), read / 2))
+            val cause = FailureCause.Splice.Declined(Decline.BadBody(read, declared))
+            val facts = random.facts(random.instant())
+            val said = lines.ending(cause, atAdmission, ClientWire.answer(cause, atAdmission), facts)
+            val short = declared != null && read < declared
+            assertEquals(short, "incomplete" in said.text, "$read bytes read of $declared declared: ${said.text}")
+        }
+    }
+
+    private fun inBytes(n: Long): String = if (n == 1L) "1 byte" else "$n bytes"
 
     /** Runs [check] over endings, wait lines, quiet lines and notes built from generated inputs. */
     private fun forEveryLine(seed: Int, check: (SpliceLine, LineFacts, List<String>, String) -> Unit) {

@@ -6,8 +6,12 @@ import java.time.Instant
 
 /** Why splice refused a request before any provider saw it. Each case carries only the facts its site has. */
 public sealed class Decline {
-    /** The body is over the head's size limit, or over what the heap can hold at once. */
+    /** The body is over the head's size limit of [limit] bytes; [bytes] is its size where the request declared it. */
     public data class TooLarge(val bytes: Long?, val limit: Long) : Decline()
+
+    /** The body is within the size limit, but holding it takes more of the heap than one request may have: [weight]
+     *  bytes against [limit]. A weight is not the request's size, so its line names neither. */
+    public data class Unfit(val weight: Long, val limit: Long) : Decline()
 
     /** The heap is busy with other bodies; this one fits once they are done. */
     public data object HeapBusy : Decline()
@@ -35,6 +39,11 @@ public sealed class Decline {
 
     /** The local gateway credentials were missing or wrong. */
     public data object BadLocalKey : Decline()
+
+    /** One of splice's own keys reached a head that forwards the caller's own login, in that login's place:
+     *  [variables] are the launching environment's variables that put it there, which the person unsets
+     *  (ClientAuth.allowUnlessOwnKey). */
+    public data class SpliceKeyAsLogin(val variables: List<String>) : Decline()
 
     /** A liveness probe, which never dispatches a turn. */
     public data object LivenessProbe : Decline()

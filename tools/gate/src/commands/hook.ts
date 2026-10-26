@@ -24,7 +24,8 @@
 // directory (prepush-tree.ts) to the commit, so a half-finished edit in the shared checkout never reddens a push and the
 // build output of the last push is still there. It lints the tip's subject, then scopes the push to its own diff
 // (prepush-scope.ts, selector.ts): the ladder rows whose inputs the diff touches run, and gradle runs the changed modules
-// and their dependents, in parallel, through the slot. The full ladder is a push to main's.
+// and their dependents, in parallel, through the slot. The full ladder is a push to main's. :app:codeModePackagedTest, which
+// reruns the code-mode suites against the fat jar, runs only when the push can change what the worker loads (packaged-worker.ts).
 //
 // A PUSH THAT CANNOT PASS STOPS ITS GRADLE RUN, OR NEVER STARTS IT. The legs that read no code (title, attribution, no-Python,
 // ast-grep walls) run first, and gradle starts only once they pass: stopping a run also ends the warm pre-push daemon. A direct
@@ -46,6 +47,7 @@ import { acquireRunSentinel, describeOpenRun } from "../lib/sentinel.ts";
 import { parseModuleGraph } from "../lib/selector.ts";
 import { ktlintOver, type LintVerdict, lintable, type StagedLint, stagedLinters } from "../lib/lint-staged.ts";
 import { preparePrePushTree, type PrePushTree } from "../lib/prepush-tree.ts";
+import { APP_CHECK, PACKAGED_TEST, packagedTestReason } from "../lib/packaged-worker.ts";
 import { appendPushTiming, type PushTiming, readProfile } from "../lib/prepush-timing.ts";
 import { isoSeconds } from "../lib/slot.ts";
 import { exitStatusOf } from "../lib/status.ts";
@@ -103,8 +105,9 @@ export interface GateRun {
 
 /** Runs gradle tasks and returns their exit and output. The default runs them through the gate's slot. */
 /** Runs gradle tasks. [root] is the tree they run in; a runner built for one tree may ignore it. [cancel] ends the run at
- *  once: the runner stops gradle and returns the exit of a run ended by a signal (128+signum). */
-export type GateRunner = (tasks: readonly string[], root?: string, cancel?: AbortSignal) => Promise<GateRun>;
+ *  once: the runner stops gradle and returns the exit of a run ended by a signal (128+signum). [options] are the gradle
+ *  options the judgement adds to this run, such as a task it excludes. */
+export type GateRunner = (tasks: readonly string[], root?: string, cancel?: AbortSignal, options?: readonly string[]) => Promise<GateRun>;
 
 export interface HookDeps {
   readonly gate?: GateRunner;
@@ -312,8 +315,9 @@ export async function judgedRun(
   tasks: readonly string[],
   rivalLive: () => boolean = liveGradleElsewhere,
   cancel?: AbortSignal,
+  options: readonly string[] = [],
 ): Promise<Judged> {
-  const first = await run(tasks, root, cancel);
+  const first = await run(tasks, root, cancel, options);
   if (first.status === 0 || cancelledBySignal(first.status) || cancel?.aborted || !isCollision(first.output, root, modules, rivalLive)) {
     return { ...first, reran: false, collidedAgain: false };
   }
@@ -321,7 +325,7 @@ export async function judgedRun(
   // Every requested task printed its result, so the collision kept none of them from judging: there is nothing to rerun.
   if (again.length === 0) return { ...first, reran: false, collidedAgain: false };
   console.error(`  ! collision: another gradle run in this checkout held a shared file; rerunning ${again.length} task(s) once`);
-  const second = await run(again, root, cancel);
+  const second = await run(again, root, cancel, options);
   const collidedAgain = second.status !== 0 && !cancelledBySignal(second.status) && isCollision(second.output, root, modules, rivalLive);
   return { ...second, reran: true, collidedAgain };
 }
@@ -420,10 +424,10 @@ export function ktlintFullRunReason(changed: readonly string[]): string | undefi
 
 /** Gradle tasks through the gradle slot (one gradle per tree). The slot is the gate's own verb, so the lock is the
  *  gate's lock. Output is echoed to stderr as it arrives when [echo] is set. [extraOptions] go beside the pre-push options on
- *  every run, a collision's rerun included. A raised [cancel] sends the slot SIGTERM: it forwards the signal to gradle's
- *  process group and holds the slot until the group is gone (runUnderSlot). */
+ *  every run, a collision's rerun included, and so do the [options] a run is handed. A raised [cancel] sends the slot SIGTERM:
+ *  it forwards the signal to gradle's process group and holds the slot until the group is gone (runUnderSlot). */
 export function slotRunner(lay: Layout, label: string, echo: boolean, extraOptions: readonly string[] = []): GateRunner {
-  return async (tasks, _root, cancel) => {
+  return async (tasks, _root, cancel, options = []) => {
     const jdk = resolveJdk21();
     if ("error" in jdk) throw new Error(jdk.error);
     const proc = Bun.spawn(
@@ -434,6 +438,7 @@ export function slotRunner(lay: Layout, label: string, echo: boolean, extraOptio
         label,
         "--",
         ...(label === "pre-push" ? [...PRE_PUSH_GRADLE_OPTIONS, ...extraOptions] : []),
+        ...options,
         ...tasks,
       ],
       {
@@ -661,15 +666,21 @@ async function judgeIn(
     return 1;
   }
   const modules = gradleModules(root);
+  const graph = readModuleGraph(root);
   const scope = prePushScope({
     legs,
     modules: modules.map((module) => module.path),
     moduleOf: (file) => moduleOf(modules, file),
     changed,
-    graph: readModuleGraph(root),
+    graph,
   });
-  const scopeClause = `; scope: ${scope.summary}`;
+  // The packaged code-mode test reruns the worker's suites against the fat jar. A push that cannot change what the worker loads
+  // from that jar skips it, and the verdict says so; one that can runs it, and the log names the path that decided.
+  const packaged = scope.gradle.includes(APP_CHECK) ? packagedVerdict(lay.repoRoot, root, refs, modules, graph, changed) : undefined;
+  const skipPackaged = packaged?.runs === false;
+  const scopeClause = `; scope: ${scope.summary}${skipPackaged ? `; ${PACKAGED_TEST} skipped: ${PACKAGED_SKIPPED}` : ""}`;
   console.error(`── scope: ${scope.summary} ──`);
+  if (packaged !== undefined) console.error(`── ${PACKAGED_TEST} ${packaged.runs ? `runs: ${packaged.why}` : `skipped: ${PACKAGED_SKIPPED}`} ──`);
 
   // ktlint is not run per module on every push (the plugin's lint step is never cached, so each of up to 31 modules in scope re-linted
   // every source it has, however little the push touched). It runs once over the Kotlin the push changes, in the modules gradle would
@@ -748,7 +759,8 @@ async function judgeIn(
     }, deps.movedPollMs ?? MOVED_POLL_MS);
     try {
       const runner = deps.gate ?? slotRunner(judgeLay, "pre-push", true, batchKtlint ? KTLINT_TASKS.map((task) => `--exclude-task=${task}`) : []);
-      judged = await judgedRun(runner, root, modules, scope.gradle, deps.rivalLive, stopper.signal);
+      const options = skipPackaged ? [`--exclude-task=${PACKAGED_TEST}`] : [];
+      judged = await judgedRun(runner, root, modules, scope.gradle, deps.rivalLive, stopper.signal, options);
     } finally {
       clearInterval(watch);
     }
@@ -805,6 +817,26 @@ async function judgeIn(
     console.error(`pre-push: name the sha and git sends exactly what the gate judged: ${explicitPush(remoteName, pushed)}`);
   }
   return 1;
+}
+
+const PACKAGED_SKIPPED = "nothing the push changes can change what the code-mode worker loads";
+
+/** Whether the push runs the packaged code-mode test, and why it does. What the judgement cannot read keeps the test, a
+ *  judgement that throws included: the push runs one more task rather than fail on a question of load. */
+function packagedVerdict(
+  repoRoot: string,
+  root: string,
+  refs: readonly PushedRef[],
+  modules: readonly GradleModule[],
+  graph: ReturnType<typeof readModuleGraph>,
+  changed: readonly string[],
+): { readonly runs: true; readonly why: string } | { readonly runs: false } {
+  try {
+    const why = packagedTestReason({ root, modules, graph, changed, before: (path) => textBefore(repoRoot, refs, path) });
+    return why === undefined ? { runs: false } : { runs: true, why };
+  } catch (error) {
+    return { runs: true, why: `what the worker loads cannot be read: ${errorText(error)}` };
+  }
 }
 
 /** The batched ktlint over [files], printed like a direct leg. True when it found something or could not judge; [onRed] hears that
@@ -915,12 +947,27 @@ function movedRefs(root: string, refs: readonly PushedRef[]): string[] {
 export function pushedPaths(root: string, refs: readonly { tip: string; remote: string }[]): string[] {
   const paths = new Set<string>();
   for (const ref of refs) {
-    const base = ZERO_SHA.test(ref.remote) ? gitText(root, ["merge-base", "origin/main", ref.tip]) : ref.remote;
+    const base = pushBase(root, ref);
     const diff = git(root, ["diff", "--name-only", "--no-renames", "-z", base, ref.tip]);
     if (diff.status !== 0) throw new Error(`git diff ${base} ${ref.tip} failed: ${diff.stderr.trim()}`);
     for (const path of diff.stdout.toString("utf8").split("\0")) if (path !== "") paths.add(path);
   }
   return [...paths].sort();
+}
+
+/** The commit a pushed ref is judged against: the sha it moves from, or a new branch's merge base with origin/main. Throws
+ *  when git cannot say. */
+function pushBase(root: string, ref: { readonly tip: string; readonly remote: string }): string {
+  return ZERO_SHA.test(ref.remote) ? gitText(root, ["merge-base", "origin/main", ref.tip]) : ref.remote;
+}
+
+/** A path's text in the commit a pushed ref moves from, for a path the push deleted; undefined when no ref's base holds it. */
+function textBefore(root: string, refs: readonly PushedRef[], path: string): string | undefined {
+  for (const ref of refs) {
+    const shown = git(root, ["show", `${pushBase(root, ref)}:${path}`]);
+    if (shown.status === 0) return shown.stdout.toString("utf8");
+  }
+  return undefined;
 }
 
 /** The module law, read from the file the build enforces. */

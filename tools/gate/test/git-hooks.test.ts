@@ -839,6 +839,118 @@ describe("pre-push scopes the gate to the pushed diff", () => {
   });
 });
 
+// Load cut 4 of the temple plan of 2026-10-19, approved by Marcos: :app:codeModePackagedTest reruns the code-mode suites against
+// the fat jar, and a push whose changes cannot change what the code-mode worker loads from that jar skips it. Which paths decide
+// is packaged-worker.test.ts's to pin; this pins what the push does with the answer.
+describe("pre-push runs the packaged code-mode test only when the push can change what the worker loads", () => {
+  const MODULES = [
+    [":core", "core"],
+    [":integrations-upstream", "integrations/upstream"],
+    [":integrations-dialects-openai-responses", "integrations/dialects/openai-responses"],
+    [":integrations-codemode", "integrations/codemode"],
+    [":integrations-providers-codex", "integrations/providers/codex"],
+    [":features-turns", "features/turns"],
+    [":app", "app"],
+  ] as const;
+  const WORKER_FILE = "integrations/codemode/src/main/kotlin/splice/codemode/WorkerSession.kt";
+  const FEATURE_FILE = "features/turns/src/main/kotlin/splice/head/TurnDriver.kt";
+  const SKIPPED = "; :app:codeModePackagedTest skipped: nothing the push changes can change what the code-mode worker loads";
+
+  /** A scratch repository with the worker's modules, a feature module and :app, mapped and lawed as the real ones are, and an
+   *  app build that declares the packaged run. That scaffold is origin/main, so a push is judged by its own commits. */
+  const workerRepo = (): string => {
+    const root = wallsRepo();
+    const settings = MODULES.flatMap(([path, dir]) => [`include("${path}")`, `project("${path}").projectDir = file("${dir}")`]);
+    writeFile(root, "settings.gradle.kts", ['rootProject.name = "scratch"', ...settings, ""].join("\n"));
+    writeFile(
+      root,
+      "gradle/module-law.txt",
+      [
+        ":core ->",
+        ":integrations-upstream -> :core",
+        ":integrations-dialects-openai-responses -> :core :integrations-upstream",
+        ":integrations-codemode -> :core :integrations-upstream",
+        ":integrations-providers-codex -> :core :integrations-upstream :integrations-dialects-openai-responses",
+        ":features-turns -> :core :integrations-upstream",
+        "",
+      ].join("\n"),
+    );
+    writeFile(
+      root,
+      "app/build.gradle.kts",
+      'val codeModePackagedTest = tasks.register<Test>("codeModePackagedTest") {\n    filter {\n        includeTestsMatching("CodeModeLanguagesTest")\n    }\n}\n',
+    );
+    writeFile(root, WORKER_FILE, "package splice.codemode\n\nclass WorkerSession\n");
+    writeFile(root, FEATURE_FILE, "package splice.head\n\nclass TurnDriver\n");
+    git(root, ["add", "--", "settings.gradle.kts", "app", "integrations", "features"]);
+    git(root, ["add", "-f", "--", "gradle/module-law.txt"]);
+    commit(root, "chore(test): the worker's modules");
+    git(root, ["update-ref", "refs/remotes/origin/main", "HEAD"]);
+    return root;
+  };
+
+  const change = (root: string, path: string, text: string): void => {
+    writeFile(root, path, text);
+    git(root, ["add", "--", path]);
+    commit(root, "chore(test): a change");
+  };
+
+  interface Run {
+    readonly tasks: readonly string[];
+    readonly options: readonly string[];
+  }
+
+  /** A gradle that records each run's tasks and options, and answers with [answers] in turn, then green. */
+  const recording =
+    (runs: Run[], answers: { status: number; output: string }[] = []): GateRunner =>
+    async (tasks, _at, _cancel, options = []) => {
+      runs.push({ tasks: [...tasks], options: [...options] });
+      return answers[runs.length - 1] ?? { status: 0, output: "BUILD SUCCESSFUL\n" };
+    };
+
+  test("RED: a push confined to code the worker never loads runs gradle without the packaged test, and the verdict says so", async () => {
+    const root = workerRepo();
+    change(root, FEATURE_FILE, "package splice.head\n\nclass TurnDriver(val turns: Int)\n");
+    const runs: Run[] = [];
+    const { result, text } = await captured(() => prePush(lay(root), pushOf(root, head(root)), { gate: recording(runs), openRun: () => null, legs: NO_LEGS }));
+    expect(result).toBe(0);
+    expect(runs.map((run) => run.options)).toEqual([["--exclude-task=:app:codeModePackagedTest"]]);
+    expect(runs[0]?.tasks).toContain(":app:check");
+    expect(text.split("\n").find((line) => line.startsWith("PRE-PUSH: PASS"))).toEndWith(SKIPPED);
+  });
+
+  test("RED: a push that changes the worker's code runs the packaged test, and says which path decided", async () => {
+    const root = workerRepo();
+    change(root, WORKER_FILE, "package splice.codemode\n\nclass WorkerSession(val id: Int)\n");
+    const runs: Run[] = [];
+    const { result, text } = await captured(() => prePush(lay(root), pushOf(root, head(root)), { gate: recording(runs), openRun: () => null, legs: NO_LEGS }));
+    expect(result).toBe(0);
+    expect(runs.map((run) => run.options)).toEqual([[]]);
+    expect(text).toContain(`── :app:codeModePackagedTest runs: ${WORKER_FILE} is in :integrations-codemode`);
+    expect(text).not.toContain(SKIPPED);
+  });
+
+  test("RED: a collision's rerun skips the packaged test as the first run did", async () => {
+    const root = workerRepo();
+    change(root, FEATURE_FILE, "package splice.head\n\nclass TurnDriver(val turns: Int)\n");
+    const runs: Run[] = [];
+    const gate = recording(runs, [{ status: 1, output: EOF_TRACE }]);
+    const { result, text } = await captured(() => prePush(lay(root), pushOf(root, head(root)), { gate, openRun: () => null, legs: NO_LEGS, rivalLive: () => true }));
+    expect(result).toBe(0);
+    expect(text).toContain("passed on the rerun after a collision");
+    expect(runs.map((run) => run.options)).toEqual([["--exclude-task=:app:codeModePackagedTest"], ["--exclude-task=:app:codeModePackagedTest"]]);
+  });
+
+  test("a push whose gradle has no :app:check excludes nothing, since the packaged test is not in its graph", async () => {
+    const root = oneModule();
+    const runs: Run[] = [];
+    const { result, text } = await captured(() => prePush(lay(root), pushOf(root, head(root)), { gate: recording(runs), openRun: () => null, legs: NO_LEGS }));
+    expect(result).toBe(0);
+    expect(runs.map((run) => run.options)).toEqual([[]]);
+    expect(text).not.toContain("codeModePackagedTest");
+  });
+});
+
 describe("a collision reruns the tasks once, and a second collision fails", () => {
   const modulesOf = (root: string) => gradleModules(root);
 

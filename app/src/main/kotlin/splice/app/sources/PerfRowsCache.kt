@@ -149,7 +149,25 @@ internal class PerfRowsCache(
 
     private fun generation(path: Path, attributes: PerfFileStamp, priority: Int): PerfCachedGeneration {
         val key = attributes.identity(path)
-        generations[key]?.let {
+        // why: PerfStats archives a rotated `.1` by copying it, so the archive is a new identity over bytes this cache
+        // already holds under `.1`'s old one, which the rename that follows leaves with no file. Until Oct 25, 2026
+        // each rotation decoded the 64 MiB generation again and kept the dead copy at `.1`'s priority, above every
+        // older archive, so the trim evicted older generations' rows first. Now the copy takes over the generation
+        // that held the most of its bytes: one that rotated twice between two reads was last read while live, so only
+        // part of it is held. A stamp of the old file proves nothing about the new one, so only readState's
+        // complete-prefix hash keeps a taken entry's rows, and any other bytes reset it. Re-pathing the entry also
+        // re-points its PerfGenerationRef, so whole rows read by spot follow the archive, as they follow a rename. No
+        // function is added here: the class has 14, and TooManyFunctions reports at 15.
+        val held = generations[key] ?: generations.entries
+            .filter { (old, entry) -> entry.copiedTo(attributes.version.size, old) }
+            .maxByOrNull { it.value.complete }
+            ?.let { (old, entry) ->
+                generations.remove(old)
+                generations[key] = entry
+                entry.changeTime = null
+                entry
+            }
+        held?.let {
             it.priority = priority
             it.path = path
             trim()

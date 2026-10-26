@@ -96,4 +96,18 @@ internal class PerfCachedGeneration(path: Path, var priority: Int, entries: Perf
     }
 
     fun changed(nextSize: Long, nextModified: FileTime): Boolean = nextSize != size || nextModified != modified
+
+    /** Whether a new file of [size] bytes may be a copy of this generation, taken before a rename left this
+     *  generation's name holding another file, as PerfStats.archiveRolled copies `.1` before JsonlSink renames the
+     *  live file over it. The copy holds every byte this generation held when it was last read, and any written to it
+     *  after, so it is at least [complete] long. This only names a candidate: the reader's prefix proof decides. [held]
+     *  is this generation's identity; a name that is gone holds it no more. */
+    fun <T : Any> copiedTo(size: Long, held: T): Boolean {
+        if (complete <= 0L || complete > size) return false
+        return try {
+            PerfFileStamp(path).identity(path) != held
+        } catch (_: IOException) {
+            true
+        }
+    }
 }

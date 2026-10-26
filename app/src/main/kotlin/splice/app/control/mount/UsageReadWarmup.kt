@@ -37,8 +37,13 @@ private const val KEEP_WARM_MS = 300_000L
 // why: a failed refresh costs only the next open its own read, which is what it would have done anyway.
 private const val KEEP_WARM_BEST_EFFORT = "the next economics read does the work this refresh would have"
 
-// why: without hourly history, prepare the same 24-hour window a request with no explicit cutoff defaults to.
-private const val DEFAULT_REQUEST_WINDOW_MS = 86_400_000L
+// why: the console never asks further back on its own. Usage's week starts at local midnight six days back (usage.js
+// slices()), which a fall-back day pushes to 7 days 59 minutes (23:59 on Nov 7, 2026 in Chicago), and two hours cover
+// any zone's shift; Requests and the summary ask 7d. Warming from the oldest hourly total decoded every archive back to
+// it at each start: after the Oct 25 18:53 CT start claudex read its requests 15.9 s after start and claude-splice
+// 20.1 s, against 2 to 3.5 s for the other heads. The 24-hour default made a head without a week of totals load again
+// on its first Usage open. An older ask still widens the window, through State.wanted.
+private const val CONSOLE_WEEK_MS = (7L * 24 + 2) * 3_600_000L
 
 /** Application-owned preparation changes only when readers may answer, never their stored facts or arithmetic. */
 internal class UsageReadWarmup(
@@ -108,7 +113,7 @@ internal class UsageReadWarmup(
             try {
                 // one turn at the permit for both: a head's request window starts on its own totals, never behind every
                 // other head's, so its Requests is ready a whole totals read sooner (splice-lead, Oct 12)
-                admission.withPermit { loadTotals(head, state).onSuccess { read -> loadWindow(head, state, read) } }
+                admission.withPermit { loadTotals(head, state).onSuccess { loadWindow(head, state) } }
             } finally {
                 synchronized(state) { state.loading = false }
             }
@@ -133,13 +138,13 @@ internal class UsageReadWarmup(
         return economics
     }
 
-    /** The request window, right after this head's hourly totals: it starts at the oldest hour those totals hold. */
-    private suspend fun loadWindow(head: UsageHead, state: State, economics: EconomicsRead?) {
+    /** The request window, read right after this head's hourly totals: it covers the console's week, and goes further
+     *  back only once a page asks (State.wanted). */
+    private suspend fun loadWindow(head: UsageHead, state: State) {
         val context = currentCoroutineContext()
         val loaded = Cancellables.runCatchingCancellable {
             context.ensureActive()
-            val first = (economics as? EconomicsRead.Rows)?.rows?.minOfOrNull { it.hour }
-                ?: (clock() - DEFAULT_REQUEST_WINDOW_MS)
+            val first = clock() - CONSOLE_WEEK_MS
             var since: Long
             do {
                 context.ensureActive()

@@ -20,6 +20,8 @@
 // A TORN LINE KEEPS ITS PLACE (Oct 23, 2026): each line skipped inside the window reaches the hourly totals with
 // its leading ts and the rotation second of the archive it lies in (PerfTear), not only the ones that could be
 // probes, so the backfill leaves out the hours a tear could belong to instead of refusing every hour.
+//
+// A COPIED ARCHIVE KEEPS ITS DECODE (Oct 25, 2026): `.1`'s archive copy takes over the rows `.1` held (PerfRowsCache).
 package splice.app.sources
 
 import kotlinx.serialization.json.Json
@@ -124,9 +126,9 @@ public class PerfRowsFileSource internal constructor(
     }
 
     /** Both sides are read together, so lost or clock-shifted evidence cannot justify subtraction. Read from the
-     *  compact rows, which keep every figure an hour is rebuilt from (PerfProjectedKeys), so the window the warmup
-     *  reads next from the oldest of those hours is already decoded: the startup scan decoded every line twice, whole
-     *  for the totals and compact for the window (claude-splice's 445 MB file on desk d, Oct 12). */
+     *  compact rows, which keep every figure an hour is rebuilt from (PerfProjectedKeys), so the totals and the
+     *  warmup's week window (UsageReadWarmup) read one tier: the startup scan decoded every line twice, whole for the
+     *  totals and compact for the window (claude-splice's 445 MB file on desk d, Oct 12). */
     @Synchronized
     internal fun economicsEvidence(sinceMs: Long): EconomicsPerfEvidence {
         val stamp = files.stamp()

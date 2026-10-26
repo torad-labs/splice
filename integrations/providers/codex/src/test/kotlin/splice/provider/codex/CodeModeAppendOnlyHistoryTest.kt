@@ -47,9 +47,11 @@ import kotlin.time.Duration.Companion.minutes
 
 private const val RUNS = 120
 
-/** Each sweep drives 120 or more generated conversations, so its wall time follows the machine: from 8.6 s to past
- *  runTest's one-minute default on Oct 25, when load reached 156 on 16 threads. A real hang still fails here. */
-private val SWEEP_TIMEOUT = 5.minutes
+/** Each sweep drives 120 or more generated conversations, so its wall time follows the machine, and the bound is a
+ *  hang guard, never a speed check. On Oct 25 a sweep took 8.6 s, then past runTest's one-minute default at load 156
+ *  on 16 threads, then past five minutes in the 11:38 PM CT pre-push at load 67 to 86, where all six sweeps ran 1 to
+ *  15 times slower than the run before. A real hang still fails here. */
+private val SWEEP_TIMEOUT = 30.minutes
 
 /** Seeds a wider run broke under the draws below, kept so they stay fixed. A draw moved or added in a stream moves
  *  every seed after it to another conversation, so a new decision draws only in runs that did not exist before. */

@@ -16,6 +16,7 @@
 //     seat, a CI cancel and a supervisor all stop a run, and the shell script dies of it in
 //     milliseconds. That is why gradle is orchestrated asynchronously below (:98-131).
 import { existsSync, readFileSync, readdirSync, rmSync, writeFileSync } from "node:fs";
+import { availableParallelism, loadavg } from "node:os";
 import { dirname, join, sep } from "node:path";
 import { takeExclusive } from "./flock.ts";
 import type { Layout } from "./repo.ts";
@@ -26,8 +27,22 @@ export const SLOT_TIMEOUT_EXIT = 75;
  *  daemon when another idle one is compatible with it, so a pair with equal JVM args kept culling each other and the next push started
  *  a cold one. A marker in the pre-push tree's JVM args makes its daemon incompatible with the checkout's: each stays warm. */
 const PRE_PUSH_LABEL = "pre-push";
-/** Projects the pre-push tree builds at once; hostshield's own cap (6) stays the ceiling for every other build. */
-const PRE_PUSH_WORKERS = 3;
+/** The pre-push tree's gradle workers are sized to the idle cores, within these bounds; hostshield's own cap (6) is the ceiling. */
+const PRE_PUSH_WORKER_FLOOR = 2;
+const PRE_PUSH_WORKER_CAP = 6;
+/** Projects the full gate builds at once, on CI and locally alike. */
+const GATE_OF_RECORD_WORKERS = 3;
+
+/** One gradle worker per idle core (hardware threads minus the one-minute load average, rounded down), never fewer than 2 nor more
+ *  than 6. More workers save no CPU per verdict: on a saturated machine they only take it from the seats, so at load 120 on 16
+ *  threads the pre-push tree runs at the floor (temple plan 2026-10-19, in place of simon's fix 2). */
+export function prePushWorkers(machine: Machine): number {
+  return Math.min(PRE_PUSH_WORKER_CAP, Math.max(PRE_PUSH_WORKER_FLOOR, Math.floor(machine.cores - machine.load)));
+}
+
+function readMachine(): Machine {
+  return { cores: availableParallelism(), load: loadavg()[0] ?? 0 };
+}
 /** -Xms256m: with no -Xms a JVM's starting heap is 1/64 of the machine's RAM, which here (124 GB) is past the 1536m cap, so
  *  each daemon started at its whole cap and buildgate measured it as anon memory however little it held. The periodic GC hands
  *  an idle daemon's heap back: the Kotlin daemon sits idle through every test leg of a push. */
@@ -64,6 +79,14 @@ export interface SlotOptions {
   readonly pollMs?: number;
   /** How long a signalled build's process group has to leave before it is killed outright. */
   readonly groupGraceMs?: number;
+  /** The machine's hardware threads and one-minute load average, read when gradle starts. Overridable so the tests can name a machine. */
+  readonly machine?: () => Machine;
+}
+
+/** What sizes the pre-push tree's gradle workers: the machine's hardware threads and its one-minute load average. */
+export interface Machine {
+  readonly cores: number;
+  readonly load: number;
 }
 
 export function lockPath(layout: Layout, env: Record<string, string | undefined> = Bun.env): string {
@@ -288,7 +311,15 @@ export async function runUnderSlot(options: SlotOptions): Promise<number> {
   try {
     if (joint) console.error(`gradle-slot: ${label} waits for buildgate admission`);
     else console.error(`gradle-slot: ${label} holds the slot — gradle busy`);
-    child = spawnGradle(options.layout.buildRoot, args, env, buildgate, label, joint ? { lock, label } : undefined);
+    let maxWorkers: number | undefined;
+    if (label === PRE_PUSH_LABEL) {
+      const machine = (options.machine ?? readMachine)();
+      maxWorkers = prePushWorkers(machine);
+      console.error(`gradle-slot: ${label} runs ${maxWorkers} gradle workers (${machine.cores} threads, load ${machine.load.toFixed(1)})`);
+    } else if (label === "gate-of-record") {
+      maxWorkers = GATE_OF_RECORD_WORKERS;
+    }
+    child = spawnGradle(options.layout.buildRoot, args, env, buildgate, label, joint ? { lock, label } : undefined, maxWorkers);
     if (received) signalGroup(child, received);
     await child.exited;
     // The first process ending is not the build ending. After a signal, hold the slot until the group is empty.
@@ -312,6 +343,7 @@ function spawnGradle(
   buildgate: string | null,
   label: string,
   admission?: { readonly lock: string; readonly label: string },
+  maxWorkers?: number,
 ): Bun.Subprocess {
   // The child inherits the caller's environment, as it does under bash — gradle needs JAVA_HOME,
   // HOME and PATH, and `buildgate` refuses without HOME. `env` is already that merge (runUnderSlot).
@@ -335,10 +367,10 @@ function spawnGradle(
   // run in buildgate.slice, which hostshield makes earlyoom's first victim, so here one project at a time.
   // The pre-push tree is the exception: its longest tasks (the app and turns test suites, then the kover and detekt
   // tasks of every module the diff reaches) are independent of each other and ran one after another, 395 s of
-  // gradle on a catalog push. Three workers overlap them while the build gate's admission still bounds the machine.
-  // Keep the full gate's worker count at the same bound on both CI and local runs without changing local parallelism.
+  // gradle on a catalog push. Its workers overlap them, one per idle core (prePushWorkers), while the build gate's
+  // admission still bounds the machine. The full gate keeps one bound on CI and locally without changing local parallelism.
   const parallel = childEnv.CI || label === PRE_PUSH_LABEL ? ["--parallel"] : [];
-  if (label === PRE_PUSH_LABEL || label === "gate-of-record") parallel.push(`--max-workers=${PRE_PUSH_WORKERS}`);
+  if (maxWorkers !== undefined) parallel.push(`--max-workers=${maxWorkers}`);
   // `command -v buildgate` — resolved against the child's PATH, because buildgate is this MACHINE's
   // memory-containment wrapper and nothing in the tree provides it. Calling it unconditionally is
   // what took every gradle leg on CI down with `buildgate: command not found` (gradle-slot.sh:37-42).

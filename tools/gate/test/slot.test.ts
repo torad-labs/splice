@@ -176,7 +176,26 @@ describe("the gradle slot", () => {
     expect(readFileSync(ci.receipt, "utf8")).toContain("ARGS:--parallel --no-daemon help");
     const push = fakeBuildRoot();
     await runUnderSlot({ layout: push.layout, label: "pre-push", args: ["help"], env: { CI: "", PATH: push.path } });
-    expect(readFileSync(push.receipt, "utf8")).toContain("--parallel --max-workers=3");
+    expect(readFileSync(push.receipt, "utf8")).toMatch(/--parallel --max-workers=\d+ /);
+  });
+
+  // In place of more gradle workers for the pre-push tree (simon's fix 2): on a saturated machine extra workers only take CPU from
+  // the seats, so the tree gets one worker per idle core, never fewer than 2 or more than 6 (temple plan 2026-10-19).
+  test("the pre-push tree's gradle gets one worker per idle core, never fewer than 2 nor more than 6", async () => {
+    const workers = async (cores: number, load: number): Promise<string> => {
+      const push = fakeBuildRoot();
+      await runUnderSlot({ layout: push.layout, label: "pre-push", args: ["help"], env: { CI: "", PATH: push.path }, machine: () => ({ cores, load }) });
+      return /--max-workers=(\d+)/.exec(readFileSync(push.receipt, "utf8"))?.[1] ?? "no --max-workers";
+    };
+    // 16 threads at load 120, the plan's own case: no core is idle, so the floor.
+    expect(await workers(16, 120)).toBe("2");
+    expect(await workers(16, 14.5)).toBe("2");
+    // 3.6 idle cores make 3 workers; a whole idle core is needed for each.
+    expect(await workers(16, 12.4)).toBe("3");
+    expect(await workers(8, 3)).toBe("5");
+    // An idle machine stops at the cap.
+    expect(await workers(16, 0.3)).toBe("6");
+    expect(await workers(4, 0)).toBe("4");
   });
 
   test("the shell script's flock and this CLI's cannot both hold the slot", async () => {

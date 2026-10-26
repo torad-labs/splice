@@ -3,7 +3,9 @@
 // this mount's.
 package splice.app.control.mount
 
+import io.ktor.http.ContentType
 import io.ktor.server.application.ApplicationCall
+import io.ktor.server.response.respondBytes
 import io.ktor.server.routing.Route
 import io.ktor.server.routing.get
 import io.ktor.server.routing.post
@@ -19,6 +21,7 @@ import splice.app.control.api.ControlAudit
 import splice.app.control.api.HeadResolver
 import splice.app.control.api.fleet.HeadRoutes
 import splice.core.util.JsonScalars
+import splice.core.util.JsonWire
 import splice.core.wire.ControlFields.KEY
 import splice.core.wire.ControlFields.LABEL
 import splice.diagnostics.logs.HeadLogSource
@@ -66,7 +69,7 @@ internal class FleetMount(
         }
         route.get("/api/heads") { guard.guarded(call) { listHeads.handle(call) } }
         route.post("/api/heads/{head}/{action}") { guard.guarded(call) { headRoutes.headAction(call) } }
-        route.get("/api/logs") { guard.guarded(call) { ControlReplies.respond(call, daemonLogJson(call)) } }
+        route.get("/api/logs") { guard.guarded(call) { respondDaemonLog(call) } }
         route.get("/api/logs/{head}") {
             guard.guarded(call) {
                 headRoutes.logsJson(call, ControlReplies.tail(call, DEFAULT_LOG_TAIL, LOG_MAX_LINES))
@@ -74,13 +77,15 @@ internal class FleetMount(
         }
     }
 
-    /** The /api/logs body: the unfiltered tail, in /api/logs/{head}'s shape without a key. */
-    private fun daemonLogJson(call: ApplicationCall): String {
-        val lines = daemonLog.tail(ControlReplies.tail(call, DEFAULT_LOG_TAIL, LOG_MAX_LINES)).split("\n")
-        return buildJsonObject {
+    /** The /api/logs body: the unfiltered tail, in /api/logs/{head}'s shape without a key, answered as
+     *  HeadOperations.logsJson answers it: the lines as the log holds them, one exact-size array, no String. */
+    private suspend fun respondDaemonLog(call: ApplicationCall) {
+        val lines = daemonLog.tailLines(ControlReplies.tail(call, DEFAULT_LOG_TAIL, LOG_MAX_LINES))
+        val body = buildJsonObject {
             put("path", daemonLog.path())
             putJsonArray("lines") { lines.filter { it.isNotEmpty() }.forEach { add(JsonPrimitive(it)) } }
-        }.toString()
+        }
+        call.respondBytes(JsonWire.bytes(body), ContentType.Application.Json)
     }
 
     /** The /api/status body: the registry rows, each with its family from the declared roster. */

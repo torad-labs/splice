@@ -13,6 +13,7 @@ import java.nio.file.Files
 import java.nio.file.Path
 import java.nio.file.StandardCopyOption
 import java.nio.file.StandardOpenOption
+import java.util.Arrays
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.atomic.AtomicInteger
 
@@ -297,40 +298,50 @@ public object JsonlSink {
      *
      * The offset is computed on the RAW BYTES, never on the decoded string: a char index would
      * desynchronise the caller's baseline on any multibyte line.
+     *
+     * [containing] keeps only the lines that hold it, and [limit] only the newest that many of those, both decided
+     * on the raw bytes before a line is decoded (log-tail-copies, Oct 25). A 10,000-line console poll allocated
+     * about 99 MB: it decoded the whole 4 MiB window into one String, inflated to UTF-16 by a single U+2026, cut it
+     * twice, and made a String of every head's line in order to keep one head's. Only kept lines are decoded now,
+     * and they are the lines the decoded window gave. No ASCII byte occurs inside a UTF-8 sequence (RFC 3629), so
+     * CR, LF and an ASCII [containing] sit at the same places in the bytes as in the text; and the JDK decoder never
+     * folds a CR or LF into a malformed sequence, so a line decoded alone reads as it did inside the window. A
+     * [containing] beyond ASCII is matched as its UTF-8 bytes, which is String.contains for any text without a lone
+     * surrogate or the U+FFFD that malformed bytes decode to.
      */
-    public fun readTailAt(file: Path, maxBytes: Int): TailAt =
-        FileChannel.open(file, StandardOpenOption.READ).use { ch ->
+    public fun readTailAt(
+        file: Path,
+        maxBytes: Int,
+        containing: String? = null,
+        limit: Int = Int.MAX_VALUE,
+    ): TailAt {
+        require(limit >= 0) { "a tail keeps zero or more lines, not $limit" }
+        return FileChannel.open(file, StandardOpenOption.READ).use { ch ->
             val size = ch.size()
             if (size <= 0L) return@use TailAt(emptyList(), 0L)
             val readFrom = (size - maxBytes.toLong()).coerceAtLeast(0L)
-            val len = (size - readFrom).toInt()
-            val buf = ByteBuffer.allocate(len)
-            ch.position(readFrom)
-            while (buf.hasRemaining()) {
-                if (ch.read(buf) < 0) break
-            }
-            buf.flip()
-            val raw = ByteArray(buf.remaining()).also { buf.get(it) }
-            val lastNewline = raw.indexOfLast { it == NEWLINE_BYTE }
-            val completeEnd = if (lastNewline < 0) readFrom else readFrom + lastNewline + 1
-            TailAt(linesOf(raw, readFrom), completeEnd)
+            val window = TailWindow(windowBytes(ch, readFrom, (size - readFrom).toInt()), readFrom)
+            TailAt(window.lines(containing?.toByteArray(StandardCharsets.UTF_8), limit), window.completeEnd())
         }
+    }
 
-    private fun linesOf(raw: ByteArray, readFrom: Long): List<String> {
-        val text = String(raw, StandardCharsets.UTF_8)
-        // Mid-file start: drop the leading partial line (no newline at all -> nothing complete).
-        val complete = if (readFrom > 0L) text.substringAfter('\n', missingDelimiterValue = "") else text
-        // Trailing tear: a torn write (disk-full mid-append) leaves bytes with no closing newline;
-        // every well-formed record ends in '\n', so drop a non-newline-terminated trailing remnant.
-        val whole = if (complete.endsWith('\n')) complete else complete.substringBeforeLast('\n', "")
-        return whole.lineSequence().filter { it.isNotEmpty() }.toList()
+    /** The [len] bytes from [readFrom], read [READ_SLICE_BYTES] at a time into one array; fewer when the file
+     *  shrank under the read, which keeps what it read. */
+    private fun windowBytes(ch: FileChannel, readFrom: Long, len: Int): ByteArray {
+        val raw = ByteArray(len)
+        val buffer = ByteBuffer.wrap(raw)
+        var more = true
+        while (more && buffer.position() < len) {
+            buffer.limit(buffer.position() + minOf(READ_SLICE_BYTES, len - buffer.position()))
+            more = ch.read(buffer, readFrom + buffer.position()) >= 0
+        }
+        return if (buffer.position() < len) raw.copyOf(buffer.position()) else raw
     }
 
     // why: PerfStats (V4-133) takes this as its own default so a caller that wants a SMALL cap for
     // a test does not have to duplicate the number — one source, the same law const-single-source
     // enforces for every other repeated constant.
     public const val DEFAULT_MAX_BYTES: Long = 64L * 1024 * 1024
-    private const val NEWLINE_BYTE = '\n'.code.toByte()
 
     // DR-178: three orders of magnitude above a healthy hold (stat + maybe-rename + append) and far
     // below the multi-second parking that harms the lane. Deliberately much tighter than
@@ -344,3 +355,61 @@ public object JsonlSink {
  *  byte offset just past the last of them — the baseline a --follow caller adopts so it neither
  *  re-prints nor skips. [completeEnd] is the window start when the window holds no newline at all. */
 public data class TailAt(val lines: List<String>, val completeEnd: Long)
+
+/** One read of a file's trailing window, [readFrom] its offset in the file. Its whole lines are found by walking the
+ *  raw bytes backward from the last LF, so a line is decoded only when the caller keeps it, and the walk ends as soon
+ *  as the caller holds all it asked for. */
+private class TailWindow(private val raw: ByteArray, private val readFrom: Long) {
+    // What follows the last LF is a torn tail, a write still landing or cut short (the ENOSPC case): never read.
+    private val lastNewline = raw.lastIndexOf(NEWLINE_BYTE)
+
+    // A window that starts inside the file cannot tell a whole first line from the end of a cut one, so it drops
+    // through its first LF either way. A window from byte 0 keeps its first line.
+    private val floor = if (readFrom > 0L) raw.indexOf(NEWLINE_BYTE) + 1 else 0
+
+    /** The absolute offset just past the last LF; the window start when it holds none. */
+    fun completeEnd(): Long = readFrom + (lastNewline + 1)
+
+    /** The newest [limit] non-empty lines that hold [needle], every line when it is null, oldest first. A line ends at
+     *  a CR or an LF byte: with empty lines dropped, that is lineSequence's split on CRLF, LF and a lone CR. */
+    fun lines(needle: ByteArray?, limit: Int): List<String> {
+        val kept = ArrayList<String>()
+        var end = lastNewline
+        var index = lastNewline - 1
+        while (index >= floor - 1 && kept.size < limit) {
+            if (index < floor || isLineEnd(raw[index])) {
+                if (end > index + 1 && holds(index + 1, end, needle)) {
+                    kept.add(String(raw, index + 1, end - index - 1, StandardCharsets.UTF_8))
+                }
+                end = index
+            }
+            index--
+        }
+        kept.reverse()
+        return kept
+    }
+
+    private fun isLineEnd(byte: Byte): Boolean = byte == NEWLINE_BYTE || byte == CARRIAGE_RETURN_BYTE
+
+    /** Whether raw[start, end) holds [needle]'s bytes; an absent or empty needle is held by every line. */
+    private fun holds(start: Int, end: Int, needle: ByteArray?): Boolean {
+        if (needle == null || needle.isEmpty()) return true
+        val lastStart = end - needle.size
+        var at = start
+        while (at <= lastStart && !matchesAt(at, needle)) at++
+        return at <= lastStart
+    }
+
+    private fun matchesAt(at: Int, needle: ByteArray): Boolean =
+        raw[at] == needle[0] && Arrays.equals(raw, at, at + needle.size, needle, 0, needle.size)
+}
+
+private const val NEWLINE_BYTE = '\n'.code.toByte()
+
+// why: a line also ends at a lone CR, as lineSequence reads it.
+private const val CARRIAGE_RETURN_BYTE = '\r'.code.toByte()
+
+// why: a read into a heap buffer goes through a temporary direct buffer of the read's size, which the JDK then caches
+// per thread with no size cap (sun/nio/ch/IOUtil.java read, Util.java bufferCache), so a 4 MiB read leaves a 4 MiB
+// direct buffer cached on the thread that made it. Reads of at most this size keep that buffer small.
+private const val READ_SLICE_BYTES = 64 * 1024

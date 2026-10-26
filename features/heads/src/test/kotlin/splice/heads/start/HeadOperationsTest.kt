@@ -2,9 +2,11 @@ package splice.heads.start
 
 import io.ktor.client.request.get
 import io.ktor.client.request.post
+import io.ktor.client.statement.bodyAsBytes
 import io.ktor.client.statement.bodyAsText
 import io.ktor.http.ContentType
 import io.ktor.http.HttpStatusCode
+import io.ktor.http.contentType
 import io.ktor.server.response.respondText
 import io.ktor.server.routing.get
 import io.ktor.server.routing.post
@@ -14,6 +16,7 @@ import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
 import org.junit.jupiter.api.Assertions.assertEquals
+import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 import splice.heads.HeadAudit
 import splice.heads.HeadOperations
@@ -107,7 +110,7 @@ class HeadOperationsTest {
 
     @Test
     fun `the log route answers the resolved head's tail, blank lines dropped`() = testApplication {
-        val target = RecordingTarget(running = true, logs = "first\n\nsecond\n", path = "/logs/codex.log")
+        val target = RecordingTarget(running = true, logs = listOf("first", "", "second"), path = "/logs/codex.log")
         val operations = operations(mutableListOf(), target)
         application {
             routing {
@@ -123,6 +126,26 @@ class HeadOperationsTest {
             response.bodyAsText(),
         )
         assertEquals(42, target.tailAsked, "the route asks for the tail it was given")
+    }
+
+    @Test
+    fun `the log route sends each line as one JSON string, escapes and non-ASCII byte for byte`() = testApplication {
+        val lines = listOf("say \"hi\" \\ back", "tab\there", "\u0001ctl", "", "é … 😀")
+        val target = RecordingTarget(running = true, logs = lines, path = "/logs/codex.log")
+        val operations = operations(mutableListOf(), target)
+        application {
+            routing {
+                get("/api/logs/{head}") { operations.logsJson(call, 10_000) }
+            }
+        }
+
+        val response = client.get("/api/logs/claude-codex")
+
+        assertEquals(HttpStatusCode.OK, response.status)
+        assertTrue(response.contentType()?.match(ContentType.Application.Json) == true, "${response.contentType()}")
+        val body = """{"key":"claude-codex","path":"/logs/codex.log",""" +
+            """"lines":["say \"hi\" \\ back","tab\there","\u0001ctl","é … 😀"]}"""
+        assertEquals(body, String(response.bodyAsBytes(), Charsets.UTF_8), "the body's UTF-8 bytes")
     }
 
     @Test
@@ -154,7 +177,7 @@ class HeadOperationsTest {
 
     private class RecordingTarget(
         private var running: Boolean,
-        private val logs: String = "",
+        private val logs: List<String> = emptyList(),
         private val path: String = "",
     ) : HeadTarget {
         var tailAsked: Int = 0
@@ -176,7 +199,7 @@ class HeadOperationsTest {
 
         override fun status(): JsonObject = buildJsonObject { put("running", running) }
 
-        override fun tailLogs(tail: Int): String {
+        override fun tailLogs(tail: Int): List<String> {
             tailAsked = tail
             return logs
         }

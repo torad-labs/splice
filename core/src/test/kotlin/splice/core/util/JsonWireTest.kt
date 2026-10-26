@@ -235,4 +235,18 @@ class JsonWireTest {
             assertEquals(text.toByteArray(Charsets.UTF_8).size.toLong(), JsonWire.byteSize(text), text)
         }
     }
+
+    // log-tail-copies (Oct 25): the log routes answer a whole body with its length, built without a String.
+    @Test
+    fun `a whole body is the legacy tree wire's UTF-8 bytes, exactly, however many scratch drains it takes`() {
+        val golden = """{"text":"café 🐉\nquote \" and slash \\",""" +
+            """"tool":{"input":{"nested":[{"tab":"\t"}],"number":1.0,"null":null}}}"""
+        assertArrayEquals(golden.toByteArray(Charsets.UTF_8), JsonWire.bytes(Json.parseToJsonElement(golden)))
+        for (text in listOf("", "ASCII", "café", "🧪", "\uD800", "\uDC00", "\uD800x\uDC00", "\u0000\n\t\"\\")) {
+            val tree = JsonPrimitive(text)
+            assertArrayEquals(tree.toString().toByteArray(Charsets.UTF_8), JsonWire.bytes(tree), text)
+        }
+        val log = JsonArray(List(10_000) { JsonPrimitive("[claudex] row $it says \"hi\" … 🧪") })
+        assertArrayEquals(log.toString().toByteArray(Charsets.UTF_8), JsonWire.bytes(log))
+    }
 }

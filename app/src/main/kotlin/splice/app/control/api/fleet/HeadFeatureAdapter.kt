@@ -24,7 +24,7 @@ internal class HeadFeatureAdapter(
 
             override fun status(): JsonObject = resolver.status(managed)
 
-            override fun tailLogs(tail: Int): String = managed.sources.logs.tail(tail)
+            override fun tailLogs(tail: Int): List<String> = managed.sources.logs.tailLines(tail)
 
             override fun logPath(): String = managed.sources.logs.path()
         }

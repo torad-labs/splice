@@ -6,6 +6,7 @@ package splice.diagnostics.logs
 import splice.core.util.Cancellables
 import splice.core.util.JsonlSink
 import splice.core.util.SafeFailureText
+import splice.core.util.TailAt
 import java.nio.file.Files
 import java.nio.file.Path
 
@@ -13,14 +14,15 @@ public class LogFileSource(
     private val logFile: Path,
     private val headTag: String? = null,
 ) : HeadLogSource {
+    override fun tail(lines: Int): String = tailLines(lines).joinToString("\n")
+
     // DR-68 (class law, display flavor): an absent or UNREADABLE log degrades to one explicit
     // in-band line instead of a silently blank dashboard/`splice logs` — the daemon.log itself
     // may be the unreadable file, so the surface IS the returned text.
-    override fun tail(lines: Int): String {
-        if (lines <= 0) return ""
-        return Cancellables.runCatchingCancellable {
-            renderLines(JsonlSink.readTail(logFile, LOG_TAIL_BYTES), lines)
-        }.getOrElse { failure -> unreadable(failure) }
+    override fun tailLines(lines: Int): List<String> {
+        if (lines <= 0) return emptyList()
+        return Cancellables.runCatchingCancellable { window(lines).lines }
+            .getOrElse { failure -> listOf(unreadable(failure)) }
     }
 
     /** DR-135: the --follow discontinuity re-baseline — [tail]'s text AND the byte offset the
@@ -30,8 +32,8 @@ public class LogFileSource(
      *  re-baselines again next poll rather than advancing over unread bytes. */
     internal fun tailAt(lines: Int): LogRebase =
         Cancellables.runCatchingCancellable {
-            val at = JsonlSink.readTailAt(logFile, LOG_TAIL_BYTES)
-            LogRebase(renderLines(at.lines, lines), at.completeEnd)
+            val at = window(lines)
+            LogRebase(at.lines.joinToString("\n"), at.completeEnd)
         }.getOrElse { failure -> LogRebase(unreadable(failure), 0L) }
 
     /** DR-68 (class law, display flavor): one explicit in-band line instead of a silently blank
@@ -48,13 +50,11 @@ public class LogFileSource(
         }
     }
 
-    /** One definition of the head filter and the line cap, so [tail] and [tailAt] cannot drift. */
-    private fun renderLines(lines: List<String>, keep: Int): String =
-        lines.asSequence()
-            .filter { headTag == null || headTag in it }
-            .toList()
-            .takeLast(keep.coerceAtMost(LOG_MAX_LINES))
-            .joinToString("\n")
+    /** One definition of the head filter and the line cap, so [tailLines] and [tailAt] cannot drift: the newest [keep]
+     *  of this head's lines in the trailing window, at most LOG_MAX_LINES. The filter and the cap run on the window's
+     *  bytes, so a poll decodes only the lines it returns (log-tail-copies, Oct 25). */
+    private fun window(keep: Int): TailAt =
+        JsonlSink.readTailAt(logFile, LOG_TAIL_BYTES, headTag, keep.coerceAtMost(LOG_MAX_LINES))
 
     override fun path(): String = logFile.toString()
 

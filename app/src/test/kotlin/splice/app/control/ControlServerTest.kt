@@ -11,8 +11,11 @@ import io.ktor.client.request.header
 import io.ktor.client.request.patch
 import io.ktor.client.request.post
 import io.ktor.client.request.setBody
+import io.ktor.client.statement.bodyAsBytes
 import io.ktor.client.statement.bodyAsText
+import io.ktor.http.ContentType
 import io.ktor.http.HttpStatusCode
+import io.ktor.http.contentType
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.test.runTest
 import kotlinx.serialization.json.Json
@@ -51,6 +54,7 @@ import splice.usage.perf.PerfRowsWindow
 import splice.usage.quota.HeadUsageSource
 import splice.usage.quota.RateLimitView
 import splice.usage.quota.UsageView
+import java.nio.file.Files
 import java.nio.file.Path
 import java.util.concurrent.CountDownLatch
 import java.util.concurrent.TimeUnit
@@ -114,6 +118,7 @@ class ControlServerTest {
 
     private lateinit var control: ControlServer
     private lateinit var key: String
+    private lateinit var paths: StatePaths
     private val port: Int get() = control.listeningPort
     private val client = HttpClient(CIO) { expectSuccess = false }
     private val json = Json { ignoreUnknownKeys = true }
@@ -140,7 +145,7 @@ class ControlServerTest {
 
     @BeforeAll
     fun setUp(@TempDir tmp: Path) {
-        val paths = StatePaths(baseOverride = tmp.resolve("state"))
+        paths = StatePaths(baseOverride = tmp.resolve("state"))
         val mgmt = MgmtKey(paths)
         key = mgmt.get()
         val managed = codexManagedHead(head, perfNow, fakePerf, fakePerfRows)
@@ -410,6 +415,16 @@ class ControlServerTest {
         val logs = json.parseToJsonElement(authed("/api/logs/codex?tail=10")).jsonObject
         assertEquals("codex", logs["key"]?.jsonPrimitive?.content)
         assertTrue(logs["lines"]!!.jsonArray.any { it.jsonPrimitive.content.contains("line one") })
+    }
+
+    @Test
+    fun `the daemon log route answers daemon_log's newest whole lines with its path`() = runTest {
+        val log = Files.createDirectories(paths.logsDir).resolve("daemon.log")
+        Files.writeString(log, "splice starting\n[codex] said \"hi\"\n\n[hub] waiting …\n[codex] torn, no newline yet")
+        val response = client.get("http://127.0.0.1:$port/api/logs?tail=2") { header("Authorization", "Bearer $key") }
+        assertTrue(response.contentType()?.match(ContentType.Application.Json) == true, "${response.contentType()}")
+        val lines = """["[codex] said \"hi\"","[hub] waiting …"]"""
+        assertEquals("""{"path":"$log","lines":$lines}""", String(response.bodyAsBytes(), Charsets.UTF_8))
     }
 
     @Test

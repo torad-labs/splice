@@ -143,6 +143,36 @@ public object JsonWire {
         }
     }
 
+    /** The bytes [write] streams, whole, in one array of exactly [byteSize]: for a reply that must be complete before
+     *  it is sent and carries its length, at the cost of the body alone, with no String and no growing buffer.
+     *  why: the console's 10,000-line log poll built its 1.3 MB body as a String, then encoded it (Oct 25). */
+    public fun bytes(element: JsonElement): ByteArray {
+        val sink = ExactBytes(Math.toIntExact(byteSize(element)))
+        write(element, sink)
+        return sink.whole()
+    }
+
+    /** One array filled to the size counted before the write. A count the writer disagrees with fails loudly instead
+     *  of answering a short or padded body. */
+    private class ExactBytes(size: Int) : OutputStream() {
+        private val bytes = ByteArray(size)
+        private var filled = 0
+
+        override fun write(b: Int) {
+            bytes[filled++] = b.toByte()
+        }
+
+        override fun write(b: ByteArray, off: Int, len: Int) {
+            System.arraycopy(b, off, bytes, filled, len)
+            filled += len
+        }
+
+        fun whole(): ByteArray {
+            check(filled == bytes.size) { "the JSON wire wrote $filled bytes of the ${bytes.size} it counted" }
+            return bytes
+        }
+    }
+
     /** Counts the same escaped spans as the writer, without encoding them into UTF-8 scratch. */
     public fun byteSize(element: JsonElement): Long {
         val counter = SizeWire()

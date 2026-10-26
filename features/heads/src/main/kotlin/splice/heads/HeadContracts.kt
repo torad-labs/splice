@@ -21,8 +21,8 @@ public interface HeadTarget {
     /** Projects the status of this same resolved runtime instance. */
     public fun status(): JsonObject
 
-    /** Reads the requested tail from this same resolved runtime instance. */
-    public fun tailLogs(tail: Int): String
+    /** The newest [tail] lines of this same resolved runtime instance, oldest first. */
+    public fun tailLogs(tail: Int): List<String>
 
     /** Returns the log path for this same resolved runtime instance. */
     public fun logPath(): String

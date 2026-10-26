@@ -36,7 +36,7 @@ class StartHeadTest {
                 put("running", running)
             }
 
-            override fun tailLogs(tail: Int): String = ""
+            override fun tailLogs(tail: Int): List<String> = emptyList()
 
             override fun logPath(): String = ""
         }

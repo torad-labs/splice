@@ -4,11 +4,13 @@ package splice.heads
 import io.ktor.http.ContentType
 import io.ktor.http.HttpStatusCode
 import io.ktor.server.application.ApplicationCall
+import io.ktor.server.response.respondBytes
 import io.ktor.server.response.respondText
 import kotlinx.serialization.json.add
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
 import kotlinx.serialization.json.putJsonArray
+import splice.core.util.JsonWire
 import splice.core.wire.ControlFields.KEY
 import splice.heads.start.StartHead
 
@@ -46,19 +48,20 @@ public class HeadOperations(
         call.respondText(target.status().toString(), ContentType.Application.Json)
     }
 
-    /** Returns the byte-exact log payload for one resolved head. */
+    /** Returns the byte-exact log payload for one resolved head.
+     *  why: the console asks for 10,000 lines every 5 s while a log is open, a body of about 1.3 MB. JsonWire
+     *  writes the bytes JsonObject.toString would make straight into one array of their exact size, with no String
+     *  and no encoding copy beside it, and the reply keeps its Content-Length. */
     public suspend fun logsJson(call: ApplicationCall, tail: Int) {
         val name = call.parameters["head"].orEmpty()
         val target = resolver.resolveOrRespond(call, name) ?: return
-        val lines = target.tailLogs(tail).split("\n").filter { it.isNotEmpty() }
-        call.respondText(
-            buildJsonObject {
-                put(KEY, name)
-                put("path", target.logPath())
-                putJsonArray("lines") { lines.forEach { add(it) } }
-            }.toString(),
-            ContentType.Application.Json,
-        )
+        val lines = target.tailLogs(tail)
+        val body = buildJsonObject {
+            put(KEY, name)
+            put("path", target.logPath())
+            putJsonArray("lines") { lines.filter { it.isNotEmpty() }.forEach { add(it) } }
+        }
+        call.respondBytes(JsonWire.bytes(body), ContentType.Application.Json)
     }
 }
 

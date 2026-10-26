@@ -5,6 +5,8 @@
 // its own grants, listing again after its own deletions. The pattern and the pack endings are built once, and the
 // default free-space probe keeps its FileStore.
 // 2026-10-26, on review: a call joins the hold when its directory is the hold's on disk, however its path spells it.
+// 2026-10-26, on review again: a hold whose own path the filesystem cannot resolve is the directory of no other
+// spelling, so a call spelled otherwise lists its own directory and is decided as it would be outside the hold.
 package splice.core.storage
 
 import splice.core.util.Cancellables
@@ -78,8 +80,9 @@ public class DayBodyBudget(
     /** Runs [action] under the lock every writer of [dir] takes first, so inside one hold only this budget changes
      *  the packs and index files it counts. The hold's first admission lists [dir], later ones add the hold's own
      *  grants to that listing, and a deletion lists again. A call joins the hold when its directory is [dir] on disk,
-     *  however its path spells it. Bytes written without a grant inside the same hold, or admissions continued there
-     *  after a granted write failed, go unseen until the hold ends. */
+     *  however its path spells it. A [dir] the filesystem cannot resolve, which the lock still takes by its text, is
+     *  the directory of no other spelling, so such a call lists its own. Bytes written without a grant inside the same
+     *  hold, or admissions continued there after a granted write failed, go unseen until the hold ends. */
     public fun <T> withLock(dir: Path, action: DayDirectoryAction<T>): T = DayDirectoryLock(dir).withLock {
         if (held.get() != null) {
             action()
@@ -210,8 +213,16 @@ public class DayBodyBudget(
         private var listed = false
 
         /** Whether [other] is the directory this listing reads, by the same text or as the same directory on disk. Not
-         *  by the text its lock reads (DayMutationLock): through a symlink and back up, that text names another one. */
-        fun lists(other: Path): Boolean = other == dir || Files.isDirectory(other) && Files.isSameFile(other, dir)
+         *  by the text its lock reads (DayMutationLock): through a symlink and back up, that text names another one.
+         *  The lock also takes a [dir] that no directory answers to, through a name that is not there, a regular file
+         *  or a link to nothing and back up. The comparison then fails, and nothing is that directory on disk. */
+        fun lists(other: Path): Boolean = other == dir || sameDirectory(other)
+
+        private fun sameDirectory(other: Path): Boolean = try {
+            Files.isDirectory(other) && Files.isSameFile(other, dir)
+        } catch (_: IOException) {
+            false
+        }
 
         /** Every dated body pack in [dir], of every head and both formats. */
         fun packs(): List<BodyDay> {

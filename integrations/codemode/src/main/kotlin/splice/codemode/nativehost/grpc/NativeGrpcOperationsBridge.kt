@@ -1,11 +1,7 @@
 package splice.codemode.nativehost.grpc
 
 import com.google.protobuf.DynamicMessage
-import io.grpc.StatusRuntimeException
-import io.opentelemetry.context.Context
-import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
-import kotlinx.coroutines.CoroutineStart
 import kotlinx.coroutines.launch
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
@@ -16,7 +12,7 @@ import kotlinx.serialization.json.put
 import splice.codemode.nativehost.NATIVE_RESOURCE_LIMITS_CAPABILITY
 import splice.codemode.nativehost.NATIVE_YIELD_CAPABILITY
 import splice.codemode.nativehost.NativeOperation
-import splice.codemode.nativehost.trace.NativeTraceElement
+import splice.codemode.nativehost.grpc.command.NativeGrpcCommandRunner
 import splice.core.util.JsonScalars
 import splice.upstream.failure.CODE_MODE_SESSION_CLOSED_ERROR
 import java.io.IOException
@@ -30,6 +26,8 @@ internal class NativeGrpcOperationsBridge(
     private val delegates: NativeGrpcDelegates,
     private val sink: NativeGrpcRunSink,
 ) {
+    private val commands = NativeGrpcCommandRunner(scope, sink)
+
     fun send(frame: JsonObject, operation: NativeOperation?) {
         when (val type = JsonScalars.str(frame, "type")) {
             "connection/hello" -> hello()
@@ -50,7 +48,7 @@ internal class NativeGrpcOperationsBridge(
         if (JsonScalars.str(request, "method") == "session/open") {
             val message = NativeGrpcRequests.open(request)
             operation?.markDispatched()
-            launch(id, null, "session opening", owner = operation) {
+            commands.launch(id, null, "session opening", owner = operation) {
                 sessions.open(alias, message)
                 buildJsonObject { put("type", "session/ready"); put("sessionId", alias) }
             }
@@ -79,11 +77,11 @@ internal class NativeGrpcOperationsBridge(
                     mapOf("session_id" to session.id, "cell_id" to cell),
                 )
                 owner?.markDispatched()
-                launch(id, session, "termination", owner = owner) { terminate(session, cell, message) }
+                commands.launch(id, session, "termination", owner = owner) { terminate(session, cell, message) }
             }
             "session/shutdown" -> {
                 owner?.markDispatched()
-                launch(id, session, "session shutdown") {
+                commands.launch(id, session, "session shutdown") {
                     sessions.close(session.localId)
                     sink.invalidate(session, IOException("CodeMode session closed"))
                     closed(session.localId)
@@ -113,48 +111,6 @@ internal class NativeGrpcOperationsBridge(
         return value
     }
 
-    private fun launch(
-        id: Long,
-        session: NativeGrpcSession?,
-        activity: String,
-        owner: NativeOperation? = null,
-        action: NativeGrpcCommand,
-    ) {
-        val task = scope.launch(
-            traceContext(owner),
-            start = CoroutineStart.LAZY,
-        ) {
-            try {
-                sink.emit(NativeGrpcFrames.response(id, action.execute()))
-            } catch (cancelled: CancellationException) {
-                throw cancelled
-            } catch (error: StatusRuntimeException) {
-                sink.emit(NativeGrpcFrames.failed(id, NativeGrpcErrors.render(error, activity)))
-                NativeGrpcErrors.invalidate(sink, session, error)
-            } catch (error: NativeGrpcProtocolException) {
-                sink.emit(NativeGrpcFrames.failed(id, error.diagnostic))
-                NativeGrpcErrors.invalidate(sink, session, error)
-            } catch (error: IOException) {
-                sink.emit(NativeGrpcFrames.failed(id, NativeGrpcErrors.render(error, activity)))
-            } catch (error: IllegalArgumentException) {
-                sink.emit(NativeGrpcFrames.failed(id, NativeGrpcErrors.render(error, activity)))
-            } catch (error: IllegalStateException) {
-                sink.emit(NativeGrpcFrames.failed(id, NativeGrpcErrors.render(error, activity)))
-            }
-        }
-        val cancellation = owner?.response?.invokeOnCompletion { error ->
-            if (error is CancellationException) task.cancel(error)
-        }
-        task.invokeOnCompletion {
-            cancellation?.dispose()
-            if (owner?.response?.isCancelled == true) owner.discard()
-        }
-        task.start()
-    }
-
-    private fun traceContext(owner: NativeOperation?): NativeTraceElement =
-        NativeTraceElement(owner?.traceContext ?: Context.root())
-
     private fun closed(alias: String): JsonObject = buildJsonObject {
         put("type", "session/closed")
         put("sessionId", alias)
@@ -177,8 +133,4 @@ internal class NativeGrpcOperationsBridge(
             },
         )
     }
-}
-
-internal fun interface NativeGrpcCommand {
-    suspend fun execute(): JsonObject
 }

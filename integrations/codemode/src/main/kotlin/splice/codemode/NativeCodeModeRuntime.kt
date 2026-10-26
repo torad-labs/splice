@@ -8,18 +8,12 @@ import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
 import splice.codemode.host.PoolLimits
-import splice.codemode.nativehost.NativeCell
 import splice.codemode.nativehost.NativeCellAdmission
-import splice.codemode.nativehost.NativeCellLease
 import splice.codemode.nativehost.NativeConnection
 import splice.codemode.nativehost.NativeConnectionClosed
-import splice.codemode.nativehost.NativeFrames
 import splice.codemode.nativehost.NativeHostArtifact
 import splice.codemode.nativehost.NativeHostLaunch
-import splice.codemode.nativehost.NativePendingStart
-import splice.codemode.nativehost.NativePreparedSession
 import splice.codemode.nativehost.NativeRequests
-import splice.codemode.nativehost.sessions.NativeLogicalCell
 import splice.codemode.nativehost.sessions.NativeLogicalControl
 import splice.codemode.nativehost.sessions.NativeLogicalSession
 import splice.codemode.nativehost.sessions.NativeLogicalSessions
@@ -27,7 +21,6 @@ import splice.codemode.nativehost.sessions.NativeSessionConnection
 import splice.codemode.nativehost.trace.NativeTraceContext
 import splice.codemode.nativehost.trace.NativeTracing
 import splice.core.util.Cancellables
-import splice.core.util.JsonScalars
 import splice.upstream.LifecycleScope
 import splice.upstream.codemode.CodeModeCell
 import splice.upstream.codemode.CodeModeManual
@@ -37,9 +30,6 @@ import splice.upstream.codemode.NativeCodeModeCell
 import splice.upstream.codemode.NativeCodeModeLifecycle
 import splice.upstream.codemode.NativeCodeModeOptions
 import splice.upstream.codemode.ProcessDispatchers
-import splice.upstream.failure.CodeModeCapacityException
-import splice.upstream.failure.CodeModeStartException
-import splice.upstream.failure.CodeModeToolException
 import java.io.IOException
 import java.util.concurrent.atomic.AtomicBoolean
 
@@ -59,6 +49,7 @@ public class NativeCodeModeRuntime(
     private val admission = NativeCellAdmission(limits, cellHeapMb)
     private val sessions =
         NativeLogicalSessions(NativeSessionConnection(::activeConnection), admission.heapBytes, maxYieldTimeMs)
+    private val starter = NativeCellStarter(scope, admission, sessions)
 
     @Volatile private var connection: NativeConnection? = null
 
@@ -120,65 +111,7 @@ public class NativeCodeModeRuntime(
         options: NativeCodeModeOptions,
     ): NativeCodeModeCell = NativeTraceContext.preserve {
         require(sessionKey.isNotBlank()) { "Native code-mode session key is required" }
-        val prepared = beforeDispatch(sessionKey)
-        val lease = prepared.lease
-        var transferred = false
-        var started: NativePendingStart? = null
-        try {
-            val host = prepared.host
-            val sessionId = prepared.sessionId
-            // A failure from this point can follow execution. It must never authorize a source retry.
-            val operation = host.prepare(execute = true)
-            started = NativePendingStart(host, sessionId, operation)
-            host.events.expect(operation.id, sessionId, lease)
-            host.dispatch(
-                operation,
-                NativeRequests.execute(
-                    sessionId,
-                    source,
-                    definitions,
-                    options,
-                ),
-            )
-            val accepted = NativeFrames.value(operation.response.await())
-            val cellId = JsonScalars.str(accepted, "cellId") ?: throw IOException("Native host did not accept a cell")
-            val raw = NativeCell(cellId, sessionId, host, scope, operation, definitions, lease)
-            NativeLogicalCell(raw, prepared.owner, prepared.binding, cellId).also {
-                transferred = true
-            }
-        } finally {
-            if (!transferred) abandon(started, lease)
-        }
-    }
-
-    private fun abandon(started: NativePendingStart?, lease: NativeCellLease) {
-        if (started == null || !started.operation.wasDispatched()) {
-            started?.let { it.host.discard(it.operation) }
-            lease.close()
-        } else {
-            scope.launch {
-                try {
-                    Cancellables.runCatchingBestEffort {
-                        NativeFrames.value(started.operation.response.await())
-                        started.host.send(NativeRequests.control("operation/abandon", started.operation.id))
-                    }
-                } finally {
-                    lease.close()
-                }
-            }
-        }
-    }
-
-    private suspend fun beforeDispatch(sessionKey: String): NativePreparedSession = try {
-        val owner = logicalSession(sessionKey)
-        val binding = owner.request()
-        NativePreparedSession(owner, binding, admission.reserve())
-    } catch (error: CodeModeToolException) {
-        throw error
-    } catch (error: CodeModeCapacityException) {
-        throw error
-    } catch (error: IOException) {
-        throw CodeModeStartException(error)
+        starter.start(sessionKey, source, definitions, options)
     }
 
     /** The same logical owner is retained by foreground cells, controls and session expiry. */

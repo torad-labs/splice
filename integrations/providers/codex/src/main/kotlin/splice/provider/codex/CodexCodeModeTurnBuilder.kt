@@ -21,6 +21,7 @@ import splice.dialect.responses.request.ImageDisposition
 import splice.dialect.responses.request.ResponsesToolResultMedia
 import splice.provider.codex.branch.CodeModeClearedCandidates
 import splice.provider.codex.callbacks.CodeModeClientToolValues
+import splice.provider.codex.callbacks.CodeModeLegacyMarkers
 import splice.provider.codex.catalog.CodeModeCatalogMessages
 import splice.provider.codex.request.CodexCodeModeInstructions
 import splice.upstream.BuiltTurn
@@ -210,26 +211,6 @@ internal class CodexCodeModeTurnBuilder(
 /** A document (or an unknown block) has no wire shape on this path at all — not the ordinary one
  *  either — so its marker names that rather than a delivery that did not happen. */
 private const val DOCUMENT_REASON = "this content type cannot ride to the model on this path"
-
-/** The V4-178 rendering, byte for byte: what a record written by the daemon before V4-179 holds as
- *  an accepted result's text. It exists only so that record's replays still compare equal; a marker
- *  the model reads comes from [CodexCodeModeTurnBuilder]. */
-private class CodeModeLegacyMarkers {
-    fun resultText(toolUseId: String, part: ContentBlock): String = when (part) {
-        is TextBlock -> part.text
-        is ImageBlock -> omitted(toolUseId, "image", part.source)
-        is DocumentBlock -> omitted(toolUseId, "document", part.source)
-        is RedactedThinkingBlock, is ThinkingBlock, is ToolResultBlock, is ToolUseBlock, is UnknownBlock ->
-            omitted(toolUseId, "non-text content", null)
-    }
-
-    private fun omitted(toolUseId: String, kind: String, source: MediaSource?): String {
-        val media = source?.mediaType?.takeIf { it.isNotEmpty() } ?: kind
-        val size = (source?.data?.length?.let { ", $it base64 chars" } ?: source?.url?.let { ", url $it" }).orEmpty()
-        return "[$kind omitted by splice code-mode from tool_result $toolUseId: $media$size. A " +
-            "splice_exec script reads tool results as text only; call the tool outside code mode to see it]"
-    }
-}
 
 /**
  * Which upstream models are offered the runner. A model runs code mode when the BACKEND marks it

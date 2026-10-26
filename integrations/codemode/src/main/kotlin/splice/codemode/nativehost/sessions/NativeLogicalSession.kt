@@ -12,7 +12,6 @@ import kotlinx.coroutines.supervisorScope
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
-import splice.codemode.nativehost.NativeConnection
 import splice.codemode.nativehost.NativeFrames
 import splice.codemode.nativehost.NativeRequests
 import splice.codemode.nativehost.NativeSessionBinding
@@ -120,8 +119,4 @@ internal class NativeLogicalSession(
         shutdown.complete(Unit)
         binding.also { binding = null }
     }
-}
-
-internal fun interface NativeSessionConnection {
-    suspend fun current(): NativeConnection
 }

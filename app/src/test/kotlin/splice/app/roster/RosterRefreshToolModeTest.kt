@@ -8,6 +8,7 @@ import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.Timeout
 import org.junit.jupiter.api.io.TempDir
 import splice.app.TokenUrlRefreshCall
+import splice.app.provider.CodexCodeModeAssembly
 import splice.app.provider.CodexResponsesArm
 import splice.app.provider.HeadModelsSource
 import splice.app.provider.ModelRosters
@@ -66,7 +67,7 @@ class RosterRefreshToolModeTest {
             {},
             TokenUrlRefreshCall { _, _ -> RefreshAttempt.Denied("synthetic-denied") },
             // This finite roster fixture owns no interactive session registry or perpetual poll.
-            sessionAlive = CodeModeSessionAlive { null },
+            codeMode = CodexCodeModeAssembly(paths, this, {}, sessionAlive = CodeModeSessionAlive { null }),
         ).codexOAuthProvider(context(paths, provider, rosters), "Synthetic")
         val body = AnthropicParse.parseAnthropicBody(MODE_BODY)
         try {

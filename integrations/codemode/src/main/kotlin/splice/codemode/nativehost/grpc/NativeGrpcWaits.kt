@@ -9,12 +9,12 @@ import kotlinx.serialization.json.JsonObject
 import splice.codemode.nativehost.NativeOperation
 import splice.codemode.nativehost.grpc.state.NativeGrpcWaitRun
 import splice.codemode.nativehost.grpc.state.NativeGrpcWaitSlots
-import splice.core.util.Cancellables
 import java.io.IOException
 import java.util.UUID
 import java.util.concurrent.ConcurrentHashMap
 
-/** Retiring a wait includes the host's CancelWait acknowledgement before a replacement is released. */
+/** One Wait per observed operation: it holds its cell's slot while the host waits, and its outcome is emitted
+ *  once. Cancelling or yielding a live wait goes to [NativeGrpcWaitInterrupts]. */
 internal class NativeGrpcWaits(
     private val channel: NativeGrpcChannel,
     private val scope: CoroutineScope,
@@ -22,6 +22,7 @@ internal class NativeGrpcWaits(
 ) {
     private val active = ConcurrentHashMap<Long, NativeGrpcWaitRun>()
     private val slots = NativeGrpcWaitSlots()
+    private val interrupts = NativeGrpcWaitInterrupts(channel, scope, sink, active)
 
     fun start(operation: Long, session: NativeGrpcSession, input: JsonObject, owner: NativeOperation?) {
         val wait = UUID.randomUUID().toString()
@@ -93,7 +94,7 @@ internal class NativeGrpcWaits(
                 true
             }
         }
-        if (observing && run.yieldRequested) scope.launch { yieldObservation(run.operation) }
+        if (observing && run.yieldRequested) scope.launch { interrupts.yieldObservation(run.operation) }
         return observing
     }
 
@@ -139,105 +140,11 @@ internal class NativeGrpcWaits(
         }
     }
 
-    suspend fun cancel(operation: Long) {
-        val run = beginRetirement(operation) ?: return
-        finishRetirement(run)
-    }
+    suspend fun cancel(operation: Long) = interrupts.cancel(operation)
 
-    fun cancelObservation(operation: Long) {
-        val run = beginRetirement(operation) ?: return
-        scope.launch { finishRetirement(run) }
-    }
+    fun cancelObservation(operation: Long) = interrupts.cancelObservation(operation)
 
-    private fun beginRetirement(operation: Long): NativeGrpcWaitRun? {
-        val run = active[operation] ?: return null
-        synchronized(run) {
-            if (run.finished || run.retiring) return null
-            run.retiring = true
-            run.claim?.deactivate()
-        }
-        return run
-    }
-
-    private suspend fun finishRetirement(run: NativeGrpcWaitRun) {
-        try {
-            run.cancelAndJoin()
-            if (run.waiting) {
-                NativeGrpcDeadlines.startup("wait cancellation") {
-                    channel.unary(
-                        NativeGrpcRequest(
-                            "CancelWait",
-                            NativeGrpcWire.message(
-                                "CancelWaitRequest",
-                                mapOf("session_id" to run.session.id, "wait_id" to run.wait),
-                            ),
-                            run.session.route,
-                            null,
-                        ),
-                    )
-                }
-            }
-            synchronized(run) {
-                if (!run.finished) {
-                    run.finished = true
-                    sink.emit(run.response ?: NativeGrpcFrames.failed(run.operation, "CodeMode wait cancelled"))
-                }
-            }
-        } catch (cancelled: CancellationException) {
-            throw cancelled
-        } catch (error: StatusRuntimeException) {
-            failedRetirement(run, error)
-        } catch (error: NativeGrpcProtocolException) {
-            failedRetirement(run, error)
-        } finally {
-            run.claim?.release()
-            active.remove(run.operation, run)
-        }
-    }
-
-    private fun failedRetirement(run: NativeGrpcWaitRun, error: Throwable) {
-        sink.invalidate(
-            run.session,
-            NativeGrpcProtocolException(
-                "failed to retire canceled gRPC code-mode wait: ${NativeGrpcErrors.render(error, "wait cancellation")}",
-                invalidatesSession = true,
-            ),
-        )
-    }
-
-    suspend fun yieldObservation(operation: Long): Boolean {
-        val run = active[operation] ?: return false
-        val waiting = synchronized(run) {
-            if (!run.finished) run.yieldRequested = true
-            run.waiting
-        }
-        if (waiting) {
-            Cancellables.runCatchingBestEffort {
-                try {
-                    NativeGrpcDeadlines.startup("yield observation") {
-                        channel.unary(
-                            NativeGrpcRequest(
-                                "YieldObservation",
-                                NativeGrpcWire.message(
-                                    "YieldObservationRequest",
-                                    mapOf("session_id" to run.session.id, "wait_id" to run.wait),
-                                ),
-                                run.session.route,
-                                null,
-                            ),
-                        )
-                    }
-                } catch (error: NativeGrpcProtocolException) {
-                    if (error.invalidatesSession) sink.invalidate(run.session, error)
-                } catch (error: StatusRuntimeException) {
-                    if (NativeGrpcDeadlines.invalidatesRequest(error, run.session.route != null)) {
-                        sink.invalidate(run.session, error)
-                    }
-                }
-            }
-        }
-        return true
-    }
+    suspend fun yieldObservation(operation: Long): Boolean = interrupts.yieldObservation(operation)
 
     fun failed(session: NativeGrpcSession, error: Throwable) {
         active.values.filter { it.session === session }.forEach { run ->

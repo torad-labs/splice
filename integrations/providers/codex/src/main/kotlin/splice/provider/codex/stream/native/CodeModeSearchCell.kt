@@ -21,10 +21,6 @@ import splice.upstream.codemode.NativeCodeModeCell
 import splice.upstream.codemode.search.CodeModeSearchCorpus
 import java.math.BigInteger
 
-private fun interface NativeSearchObservation {
-    suspend fun next(): CodeModeStep
-}
-
 /** Discovery stays local; freeform strings cross the Anthropic tool boundary in its input object field. */
 internal class CodeModeSearchCell(private val delegate: NativeCodeModeCell, turn: CodexCodeModeBridge.Turn) :
     NativeCodeModeCell {

@@ -222,7 +222,23 @@ internal object Concentration {
     // medians they are measured against. The tree got worse; this records it, on splice-lead's decision, so the
     // recovered work lands. The decomposition is owed by the seat that landed the recovery, after this push, worst
     // file first, and this number follows each file down as it leaves the band. 16 -> 29.
-    const val RATCHET_MAX_HIGH = 29
+    // 2026-10-25, last: the decomposition owed above, worst file first, behavior unchanged, measured with a port of
+    // this law's census over this commit's tree. Eleven files leave by seams of their own. NativeGrpcWaits.kt 4.88 ->
+    // 1.74 gives its cancels, its retirement and its yield to NativeGrpcWaitInterrupts.kt. NativeGrpcDelegates.kt 4.68
+    // -> 1.92 gives the delegate and its answering to splice.codemode.nativehost.grpc.delegate.
+    // NativeGrpcExecutionsRun.kt 4.54 -> 1.42 gives the run and the reading of its Execute stream to grpc.execution.
+    // CodeModeGatewaySearchRequests.kt 4.19 -> 1.90 gives its catalog and its transcript a file each.
+    // NativeGrpcOperationsBridge.kt 4.18 -> 1.96 gives the run of a host command to grpc.command. CodexResponsesArm.kt
+    // 3.67 -> 1.58 gives code mode's half to CodexCodeModeAssembly.kt. NativeCodeModeRuntime.kt 3.18 -> 2.50 gives a
+    // cell's start to NativeCellStarter.kt. CodexCodeModeTurnBuilder.kt 3.09 -> 2.82 gives the V4-178 markers to
+    // splice.provider.codex.callbacks. WebhookSender.kt 3.01 -> 1.08 gives the receiver's answer to WebhookAnswers.kt.
+    // NativeLogicalSession.kt 3.13 -> 2.80 and CodeModeSearchCell.kt 3.01 -> 2.78 each give their port a file. Two
+    // leave by neighbourhood, their C unchanged. NativeGrpcExecutions.kt 3.05 -> 2.30, because the three new
+    // grpc packages import its own and so vote in its denominator (39.2 -> 52.0), and CodeModeHeap.kt in
+    // splice.provider.codex.state 3.01 -> 2.90 (56.8 -> 59.0). The entry above counted CodeModeHeap.kt among the files
+    // unchanged since 785f9cce8, but a647799d3 changed it. The new files read 0.33 to 2.22, and the band is the 16
+    // files of 785f9cce8. 29 -> 16.
+    const val RATCHET_MAX_HIGH = 16
 
     /** THE PACKAGE-SCALE BASELINE — the worst package's FILE COUNT. The package is named here so
      *  the diff reads without running anything, but the NAME is not gated: a different package

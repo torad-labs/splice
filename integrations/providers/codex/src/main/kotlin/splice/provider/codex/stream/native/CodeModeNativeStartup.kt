@@ -104,11 +104,15 @@ internal class CodeModeNativeStartup(private val registry: CodexCodeModeRegistry
         owner: String,
     ): CodeModeHeldNativeCell {
         val id = checkNotNull(invocation.cellId)
-        val terminal = registry.completed(record.key, record.conversationId).firstOrNull {
-            it.nativeCellId == id && it.nativeCompleted && it.phase == CodeModePhase.COMPLETED
-        }
+        val recorded = registry.completed(record.key, record.conversationId).filter { it.nativeCellId == id }
+        val terminal = recorded.firstOrNull { it.nativeCompleted && it.phase == CodeModePhase.COMPLETED }
         terminal?.let { registry.nativeCells.completed(owner, id, it.origin.outerCallId) }
         registry.nativeCells.takeRetained(owner, id)?.let { return it }
+        // A cell recorded running whose engine this process never held was lost with the process that ran it.
+        // Codex's missing-cell result would mark it completed; the wait fails as lost, and its source is not rerun.
+        check(terminal != null || recorded.isEmpty() || registry.nativeCells.owns(owner, id)) {
+            "Native cell is unavailable; its source was not rerun"
+        }
         val control = host.controlNativeSession(owner, id) ?: return registry.nativeCells.take(owner, id)
         return CodeModeHeldNativeCell(control, terminal?.origin?.outerCallId ?: record.origin.outerCallId)
     }

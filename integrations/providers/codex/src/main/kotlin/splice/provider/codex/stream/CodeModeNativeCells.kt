@@ -13,6 +13,9 @@ import java.util.concurrent.ConcurrentHashMap
 internal class CodeModeNativeCells : AutoCloseable {
     private val cells = ConcurrentHashMap<Pair<String, String>, CodeModeHeldNativeCell>()
     private val completed = ConcurrentHashMap<Pair<String, String>, String>()
+
+    /** Every cell this process handed to the pool since its session opened, including one a wait now observes. */
+    private val owned = ConcurrentHashMap.newKeySet<Pair<String, String>>()
     private val sessions = ConcurrentHashMap<String, String>()
     private val aliases = ConcurrentHashMap<String, String>()
 
@@ -35,7 +38,11 @@ internal class CodeModeNativeCells : AutoCloseable {
         val held = CodeModeHeldNativeCell(cell, notificationCallId)
         val previous = cells.putIfAbsent(key to cell.cellId, held)
         check(previous == null || previous.cell === cell) { "Native cell identity is already owned" }
+        owned += key to cell.cellId
     }
+
+    /** Whether this process ever held [id]'s engine; a durable running id it never held was lost with its process. */
+    fun owns(key: String, id: String): Boolean = (key to id) in owned
 
     fun takeRetained(key: String, id: String): CodeModeHeldNativeCell? = cells.remove(key to id)
 
@@ -51,6 +58,7 @@ internal class CodeModeNativeCells : AutoCloseable {
         val ended = cells.entries.filter { it.key.first == key }
         ended.forEach { (id, held) -> if (cells.remove(id, held)) held.cell.close() }
         completed.keys.removeIf { it.first == key }
+        owned.removeIf { it.first == key }
         sessions.remove(key)
         aliases.entries.removeIf { it.value == key }
     }
@@ -59,6 +67,7 @@ internal class CodeModeNativeCells : AutoCloseable {
         val ending = cells.values.toList()
         cells.clear()
         completed.clear()
+        owned.clear()
         sessions.clear()
         aliases.clear()
         ending.forEach { it.cell.close() }

@@ -1,6 +1,9 @@
 // NEW: V4-457 bounded content-addressed daily trace body pack.
 // 2026-10-05: it writes the v2 store only, each chunk a zstd frame, deduplicated on the raw chunk's digest. A pack
 // that reaches its budget says so once in daemon.log.
+// 2026-10-25: a chunk is stored from its chunker's buffer under the digest the chunker took, and copied only when
+// the pack does not hold it yet. Every chunk was copied before put looked it up, and the pack holds nearly every chunk
+// of a conversation's history.
 package splice.head.trace.body
 
 import kotlinx.serialization.json.JsonArray
@@ -10,6 +13,7 @@ import kotlinx.serialization.json.int
 import kotlinx.serialization.json.jsonPrimitive
 import kotlinx.serialization.json.long
 import kotlinx.serialization.json.put
+import splice.core.memory.HeapCapacityException
 import splice.core.storage.DayBodyBudget
 import splice.core.storage.DayBodyCapacityException
 import splice.core.storage.TRACE_BODY_MAX_BYTES
@@ -114,11 +118,14 @@ internal class TraceBodyPack(
         return intact
     }
 
-    fun put(bytes: ByteArray): JsonObject {
-        val digest = MessageDigest.getInstance("SHA-256").digest(bytes)
+    /** Stores bytes[0, length), whose SHA-256 is [digest], as one entry, or names the current entry that already holds
+     *  them, with no copy. A new chunk is copied for its zstd frame under a heap reservation of its length, so the
+     *  caller may refill [bytes] once this returns. */
+    fun put(bytes: ByteArray, length: Int = bytes.size, digest: ByteArray = sha256(bytes, length)): JsonObject {
         val hash = HEX.formatHex(digest)
-        index.offset(hash)?.let { offset -> reference(hash, offset, bytes.size).takeIf(::current)?.let { return it } }
-        val (header, stored) = FORMAT.encode(bytes, digest)
+        index.offset(hash)?.let { offset -> reference(hash, offset, length).takeIf(::current)?.let { return it } }
+        val copy = index.heap.reserve(length.toLong()) ?: throw HeapCapacityException()
+        val (header, stored) = copy.use { FORMAT.encode(bytes.copyOf(length), digest) }
         val offset = index.end + HEADER_BYTES
         try {
             budget.admit(file, HEADER_BYTES + stored.size.toLong())
@@ -129,12 +136,20 @@ internal class TraceBodyPack(
         channel.position(index.end)
         TracePackBytes.write(channel, header)
         TracePackBytes.write(channel, stored)
-        val part = reference(hash, offset, bytes.size)
+        val part = reference(hash, offset, length)
         index.end = offset + stored.size
         index.tail = part
         if (!index.full) index.put(hash, offset, TracePackBytes.checksum(stored))
         return part
     }
+
+    /** Records that the chunk [length] bytes long digesting to [digest] followed [previous]'s (TracePackIndex). */
+    fun follow(previous: String, digest: ByteArray, length: Int) {
+        index.follow(previous, digest, length)
+    }
+
+    /** The follower last recorded for [hash]'s chunk, or 0 for none (TracePackIndex.follower). */
+    fun follower(hash: String): Long = index.follower(hash)
 
     override fun close() {
         Cancellables.withCleanup({ channel.close() }) { held?.release() }
@@ -192,4 +207,8 @@ internal class TraceBodyPack(
         put("offset", offset)
         put("bytes", length)
     }
+
+    /** The SHA-256 of bytes[0, length), for a caller that has not taken it. */
+    private fun sha256(bytes: ByteArray, length: Int): ByteArray =
+        MessageDigest.getInstance("SHA-256").apply { update(bytes, 0, length) }.digest()
 }

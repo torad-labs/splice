@@ -2,6 +2,9 @@
 // 2026-10-05: chunks are indexed in primitive arrays, a digest prefix to an entry's offset, under a hard entry
 // cap. Each entry was a map node holding a hex key and a JSON reference charged at 1 KiB, and a v2 pack holds about
 // 220 thousand entries when its day fills 1 GiB: about 220 MiB of heap per head, on a 2 GiB daemon.
+// 2026-10-25: each slot also records the chunk that followed its chunk when this writer last stored them, which the
+// chunker guesses its next cut from (TraceChunker). It lives in the table's own slots, so the entry cap bounds it, the
+// table lease charges it, and a new day or pack generation clears it.
 package splice.head.trace.body
 
 import kotlinx.serialization.json.JsonArray
@@ -11,6 +14,7 @@ import splice.core.memory.HeapJson
 import splice.core.memory.HeapOwners
 import splice.core.memory.HeapReservations
 import splice.upstream.memory.JvmHeap
+import java.nio.ByteBuffer
 import java.util.HexFormat
 import java.util.UUID
 import java.util.WeakHashMap
@@ -18,15 +22,24 @@ import java.util.WeakHashMap
 // why: a hash key, JSON reference fields, map nodes and table growth coexist for each weak-literal entry.
 private const val TRACE_INDEX_ENTRY_BYTES = 1024L
 
-// why: the most chunks one pack indexes, so its table stops at 2^20 slots of two longs and an int, 20 MiB per head. The
-// 2026-10-05 traffic fills a 1 GiB pack at about 220 thousand entries, so only a day of tiny entries meets this.
+// why: the most chunks one pack indexes, so its table stops at 2^20 slots of three longs and an int, 28 MiB per head.
+// The 2026-10-05 traffic fills a 1 GiB pack at about 220 thousand entries, so only a day of tiny entries meets this.
 internal const val TRACE_PACK_MAX_ENTRIES: Int = 1 shl 19
 
 // why: the first table; it doubles whenever it would pass half full.
 private const val TRACE_INDEX_FIRST_SLOTS = 1 shl 10
 
-// why: two longs and an int per slot: the digest prefix, the entry's offset and its stored payload's CRC32C.
-private const val TRACE_INDEX_SLOT_BYTES = 2L * Long.SIZE_BYTES + Int.SIZE_BYTES
+// why: three longs and an int per slot: the digest prefix, the entry's offset, its chunk's follower and its stored
+// payload's CRC32C.
+private const val TRACE_INDEX_SLOT_BYTES = 3L * Long.SIZE_BYTES + Int.SIZE_BYTES
+
+// why: a follower keeps its chunk's length minus one in its low 16 bits, CHUNK_MAX - 1 at most, and the first 48 bits
+// of the chunk's SHA-256 above them. A false match, once in 2^48 guesses, moves one cut: a dedup miss, never a wrong
+// body.
+internal const val TRACE_FOLLOWER_LENGTH_BITS: Int = 16
+
+// why: the low TRACE_FOLLOWER_LENGTH_BITS bits of a follower, its length minus one.
+internal const val TRACE_FOLLOWER_LENGTH_MASK: Long = (1L shl TRACE_FOLLOWER_LENGTH_BITS) - 1
 
 // why: a digest's first 16 hex digits are its first 8 bytes, which key the slot.
 private const val TRACE_INDEX_KEY_DIGITS = 16
@@ -50,6 +63,10 @@ internal class TracePackIndex(val heap: HeapReservations = JvmHeap.budget) {
 
     // The CRC32C this writer took of each entry's stored payload, or 0 while it has not taken one.
     private var checks = IntArray(0)
+
+    // The chunk that followed each slot's chunk when this writer last stored them, packed as TRACE_FOLLOWER_LENGTH_BITS
+    // says, or 0 for none.
+    private var followers = LongArray(0)
 
     // The index outlives every table it grows through, so it owns the table's charge.
     private val tableLease = HeapOwners.charge(this, heap, 0L)
@@ -82,21 +99,29 @@ internal class TracePackIndex(val heap: HeapReservations = JvmHeap.budget) {
         val oldKeys = keys
         val oldOffsets = offsets
         val oldChecks = checks
+        val oldFollowers = followers
         keys = LongArray(slots)
         offsets = LongArray(slots)
         checks = IntArray(slots)
+        followers = LongArray(slots)
         size = 0
         for (slot in oldKeys.indices) {
-            if (oldKeys[slot] != 0L) place(oldKeys[slot], oldOffsets[slot], oldChecks[slot], replace = true)
+            if (oldKeys[slot] != 0L) {
+                followers[place(oldKeys[slot], oldOffsets[slot], oldChecks[slot], replace = true)] = oldFollowers[slot]
+            }
         }
     }
 
     /** Names [offset] for [hash], whose stored payload has CRC32C [check]; an admitted entry replaces what a colliding
      *  or stale slot named. */
-    fun put(hash: String, offset: Long, check: Int) = place(key(hash), offset, check, replace = true)
+    fun put(hash: String, offset: Long, check: Int) {
+        place(key(hash), offset, check, replace = true)
+    }
 
     /** Names [offset] for [hash] unless an earlier entry already holds that digest. */
-    fun putIfAbsent(hash: String, offset: Long) = place(key(hash), offset, 0, replace = false)
+    fun putIfAbsent(hash: String, offset: Long) {
+        place(key(hash), offset, 0, replace = false)
+    }
 
     /** The CRC32C taken of the payload at [offset] while the table names it for [hash], or 0 when none was taken. */
     fun check(hash: String, offset: Long): Int = slotOf(hash, offset)?.let { checks[it] } ?: 0
@@ -106,10 +131,22 @@ internal class TracePackIndex(val heap: HeapReservations = JvmHeap.budget) {
         slotOf(hash, offset)?.let { checks[it] = check }
     }
 
+    /** Records the chunk [length] bytes long that digests to [digest] as the one that followed [previous]'s chunk,
+     *  while the table names [previous]: a chunk the table does not name keeps no follower, and none is inserted. */
+    fun follow(previous: String, digest: ByteArray, length: Int) {
+        if (length !in 1..CHUNK_MAX) return
+        val slot = slotOf(previous) ?: return
+        followers[slot] = (ByteBuffer.wrap(digest).long and TRACE_FOLLOWER_LENGTH_MASK.inv()) or (length - 1L)
+    }
+
+    /** The follower last recorded for [hash]'s chunk, or 0 for none. */
+    fun follower(hash: String): Long = slotOf(hash)?.let { followers[it] } ?: 0L
+
     fun clear() {
         keys.fill(0L)
         offsets.fill(0L)
         checks.fill(0)
+        followers.fill(0L)
         size = 0
         literals.clear()
         recent.clear()
@@ -122,25 +159,28 @@ internal class TracePackIndex(val heap: HeapReservations = JvmHeap.budget) {
         literals[text] = parts
     }
 
-    private fun place(key: Long, offset: Long, check: Int, replace: Boolean) {
+    /** The slot that names [key] once this returns. */
+    private fun place(key: Long, offset: Long, check: Int, replace: Boolean): Int {
         var slot = slot(key)
         while (keys[slot] != 0L && keys[slot] != key) slot = (slot + 1) and (keys.size - 1)
         if (keys[slot] == 0L) {
             keys[slot] = key
             size++
         } else if (!replace) {
-            return
+            return slot
         }
         offsets[slot] = offset
         checks[slot] = check
+        return slot
     }
 
-    private fun slotOf(hash: String, offset: Long): Int? {
+    /** The slot naming [hash], and naming the entry at [offset] when one is given. */
+    private fun slotOf(hash: String, offset: Long? = null): Int? {
         if (size == 0) return null
         val key = key(hash)
         var slot = slot(key)
         while (keys[slot] != 0L && keys[slot] != key) slot = (slot + 1) and (keys.size - 1)
-        return slot.takeIf { keys[it] == key && offsets[it] == offset }
+        return slot.takeIf { keys[it] == key && (offset == null || offsets[it] == offset) }
     }
 
     private fun slot(key: Long): Int = (key xor (key ushr Int.SIZE_BITS)).toInt() and (keys.size - 1)

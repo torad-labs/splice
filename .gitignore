@@ -85,3 +85,4 @@ credentials.json
 /.codex/
 # verifier harnesses, receipts and measurements: never committed (operator rule), so a seat's files here are never unlanded work
 /captures/
+/.Codex/tmp/

@@ -69,8 +69,9 @@ public class TurnKey(private val management: MgmtKey) {
     }
 }
 
-// Versioned so a future change of what this key opens can re-derive every session's key at once.
-private const val TURN_SCOPE = "splice:turn-access:v1"
+// Versioned so a future change of what this key opens can re-derive every session's key at once. RetiredKeys derives a
+// retired management key's turn key with it.
+internal const val TURN_SCOPE = "splice:turn-access:v1"
 
 // The turn key as one `Authorization` header line, 0600, for `curl -H @file`: the statusline command
 // names this path instead of carrying a bearer in settings.json and in curl's argv.

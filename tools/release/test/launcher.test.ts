@@ -59,10 +59,10 @@ describe("the launch shim", () => {
   // JW-01, JW-04), UF-01 and UF-02, one UF-03 arm per selector the shim's unitDefaults() names, and
   // UF-04 and UF-05, V4-258's boot-log flag, V4-457's OOM flags, the heap ceiling, V4-218's three HOME arms, the
   // wrapped-HOME arms, the CLI console arm, and the two launch-busy arms (six concurrent launches, and a 529 tried
-  // again), the earlier-daemon arm, and the LAN node's inherited token arm.
+  // again), the earlier-daemon arm, the LAN node's inherited token arm, and the retired key's arm.
   test("the rehearsal is the script's arms, all of them", () => {
-    expect(ARM_NAMES.length).toBe(6 + 2 + SELECTORS.length + 2 + 1 + 1 + 1 + 3 + 5 + 1 + 1 + 1 + 2 + 2 + 1 + 1 + 1);
-    expect(ARM_NAMES.length).toBe(40);
+    expect(ARM_NAMES.length).toBe(6 + 2 + SELECTORS.length + 2 + 1 + 1 + 1 + 3 + 5 + 1 + 1 + 1 + 2 + 2 + 1 + 1 + 1 + 1);
+    expect(ARM_NAMES.length).toBe(41);
     expect(ARM_NAMES.filter((name) => name.startsWith("UF-03")).length).toBe(SELECTORS.length);
     expect(ARM_NAMES.filter((name) => name.startsWith("V4-218")).length).toBe(3);
     for (const marker of ["JW-01", "JW-04", "UF-01", "UF-02", "UF-04", "UF-05", "V4-258", "V4-457", "V4-218"]) {

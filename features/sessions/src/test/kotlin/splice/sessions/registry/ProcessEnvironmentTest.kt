@@ -87,54 +87,67 @@ class ProcessEnvironmentTest {
         assertEquals(SessionRoute.Unknown, env.route(99, heads), "no such process reads as no environment")
     }
 
-    // Key rotation (Oct 26, 2026): a session launched before the key helper holds its turn key in
-    // ANTHROPIC_AUTH_TOKEN, which a rotated key strands, so it is relaunched before the rotation. What tells it is
-    // whether its environment holds that variable with a value; the value is a credential and is never kept.
+    // Key rotation (Oct 26, 2026): a session launched before the key helper holds one of splice's keys in
+    // ANTHROPIC_AUTH_TOKEN, which a rotated key strands, so it is relaunched. A head that forwards the person's own
+    // login leaves his own token in that variable, so what tells is whether its value is one of splice's keys: the
+    // caller's match is handed the variable's own value, and an empty one, which Claude Code reads as unset, holds
+    // no key.
     @Test
-    fun `whether an environment holds a variable is answered by its name and a value, never what the value is`(
+    fun `whether an environment's variable holds a value the caller's test accepts is answered from that value alone`(
         @TempDir root: Path,
     ) {
-        environ(root, 61, "HOME=/home/me", "ANTHROPIC_AUTH_TOKEN=a-turn-key", "SPLICE=1")
-        environ(root, 62, "ANTHROPIC_AUTH_TOKEN_X=1", "X_ANTHROPIC_AUTH_TOKEN=1", "ANTHROPIC_AUTH=1")
-        environ(root, 63, "HOME=/home/me", "ANTHROPIC_AUTH_TOKEN=")
+        environ(root, 61, "HOME=/home/me", "$TOKEN=$KEY", "SPLICE=1")
+        environ(root, 62, "${TOKEN}_X=$KEY", "X$TOKEN=$KEY", "ANTHROPIC_AUTH=$KEY")
+        environ(root, 63, "HOME=/home/me", "$TOKEN=")
         environ(root, 64)
         val env = environment(root)
-        assertEquals(true, env.carries(61, TOKEN))
-        assertEquals(false, env.carries(62, TOKEN), "a look-alike name is not the variable")
-        assertEquals(false, env.carries(63, TOKEN), "an empty value holds no key: Claude Code reads it as unset")
-        assertEquals(null, env.carries(64, TOKEN), "an empty environment was not read")
-        assertEquals(null, env.carries(99, TOKEN), "no such process: nothing was read")
+        val isKey = ProcessEnvironment.CredentialMatch { it == KEY }
+        assertEquals(true, env.holds(61, TOKEN, isKey))
+        assertEquals(false, env.holds(61, TOKEN) { it == "the-persons-own-login" }, "another value is not the key")
+        assertEquals(false, env.holds(62, TOKEN, isKey), "a look-alike name is not the variable")
+        assertEquals(false, env.holds(63, TOKEN) { true }, "an empty value holds no key: Claude Code reads it as unset")
+        assertEquals(null, env.holds(64, TOKEN, isKey), "an empty environment was not read")
+        assertEquals(null, env.holds(99, TOKEN, isKey), "no such process: nothing was read")
     }
 
     // The scan is a parser of whatever block the kernel hands back, so the answer is checked against a plain model
-    // of it over generated blocks: entries split at NUL, a name ends at the first `=`, and a value must not be empty.
+    // of it over generated blocks: entries split at NUL, a name ends at the first `=`, a value must not be empty, and
+    // the value tested is the variable's own. A block that names the variable twice is no environment a shell or
+    // Claude Code makes, and the goal says nothing of one, so none is generated.
     @Test
     fun `the answer agrees with the plain reading of any environment block`(@TempDir root: Path) {
         val random = Random(SEED)
         val env = environment(root)
-        repeat(GENERATED_BLOCKS) { n ->
-            val pid = 1000L + n
+        var pid = 1000L
+        while (pid < 1000L + GENERATED_BLOCKS) {
             val entries = List(random.nextInt(MAX_ENTRIES)) { generatedEntry(random) }
+            val named = entries.filter { it.substringBefore('=', "") == TOKEN }
+            if (named.size > 1) continue
             environ(root, pid, *entries.toTypedArray())
             val block = entries.joinToString("\u0000")
-            val modelled = block.split('\u0000').any { entry ->
-                entry.substringBefore('=', "") == TOKEN && entry.length > TOKEN.length + 1
-            }
-            val expected = if (block.isEmpty()) null else modelled
-            assertEquals(expected, env.carries(pid, TOKEN)) { "block ${entries.map { it.take(40) }}" }
+            val expected = if (block.isEmpty()) null else named.singleOrNull()?.substringAfter('=') == KEY
+            assertEquals(expected, env.holds(pid, TOKEN) { it == KEY }) { "block ${entries.map { it.take(40) }}" }
+            pid++
         }
     }
 
-    /** One entry, as likely to be the variable or a near miss of it as anything else, with a value or none. */
+    /** One entry, as likely to be the variable or a near miss of it as anything else, with the key, a value or none. */
     private fun generatedEntry(random: Random): String {
         val names = listOf(TOKEN, "${TOKEN}_X", "X$TOKEN", TOKEN.dropLast(1), "ANTHROPIC_AUTH", "HOME", "", "=")
         val name = names[random.nextInt(names.size)]
-        val value = buildString { repeat(random.nextInt(4)) { append(VALUE_CHARS.random(random)) } }
+        val value = if (random.nextInt(3) == 0) {
+            KEY
+        } else {
+            buildString { repeat(random.nextInt(4)) { append(VALUE_CHARS.random(random)) } }
+        }
         return if (random.nextBoolean()) "$name=$value" else name + value
     }
 }
 
 private const val TOKEN = "ANTHROPIC_AUTH_TOKEN"
+
+// why: the value the caller's test accepts, with an `=` inside it and a character UTF-8 spells in two bytes
+private const val KEY = "k=éy"
 
 // why: a fixed seed, so a failing block is the same block on the next run
 private const val SEED = 20261026L

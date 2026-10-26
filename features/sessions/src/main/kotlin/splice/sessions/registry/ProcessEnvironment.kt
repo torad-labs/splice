@@ -8,8 +8,8 @@
 // foreign entry (a credential) is skipped to its NUL byte by byte and is never buffered and never decoded.
 // Everything else — unreadable, empty, a splice launch with no record — is UNKNOWN ("unknown head"). The MCP plan
 // reads one more key the same way, CLAUDE_CONFIG_DIR, to know which config home a session runs under. Key rotation
-// (Oct 26, 2026) asks only whether a session holds ANTHROPIC_AUTH_TOKEN with a value: that entry's name is matched and
-// its value is seen, never kept, since it is a credential. On macOS, which has no /proc, the same block comes from ps
+// (Oct 26, 2026) asks whether a session's ANTHROPIC_AUTH_TOKEN is one of splice's keys: that value is a credential, so
+// it is handed to the caller's test and kept nowhere. On macOS, which has no /proc, the same block comes from ps
 // (DarwinPs) and is scanned the same way.
 package splice.sessions.registry
 
@@ -45,11 +45,19 @@ public class ProcessEnvironment(
         return read[CONFIG_HOME_VARIABLE]?.takeIf { it.isNotBlank() }?.let { Paths.get(it) } ?: vanilla
     }
 
-    /** Whether [pid]'s environment holds [variable] with a value, which Claude Code reads as set (an empty one it
-     *  reads as unset), or null when the environment could not be read. Only the name is matched: the value is a
-     *  credential, seen and never kept. */
-    public fun carries(pid: Long, variable: String): Boolean? =
-        entries(pid, listOf("$variable=".toByteArray()), keepValues = false)?.containsKey(variable)
+    /** Whether [pid]'s environment holds [variable] with a value [match] accepts, or null when the environment could
+     *  not be read. An empty value, which Claude Code reads as unset, is never matched. The value is a credential: it
+     *  goes to [match] and is kept nowhere. */
+    public fun holds(pid: Long, variable: String, match: CredentialMatch): Boolean? {
+        val read = entries(pid, listOf("$variable=".toByteArray())) ?: return null
+        return read[variable]?.takeIf { it.isNotEmpty() }?.let(match::matches) ?: false
+    }
+
+    /** Whether a variable's value, a credential, is the one its caller looks for. It sees the value and keeps it
+     *  nowhere. */
+    public fun interface CredentialMatch {
+        public fun matches(value: String): Boolean
+    }
 
     /** How [pid] reaches its provider: the head its launch declared, when [headOf] still names that head on the
      *  declared port; DIRECT for a readable environment of a process splice never launched; else UNKNOWN. */
@@ -75,11 +83,10 @@ public class ProcessEnvironment(
 
     /** The wanted entries, or null when the environment was not READ: the file could not be opened or
      *  failed mid-stream (the entries seen so far are not the environment), or it held no byte at all
-     *  (the kernel's answer for a zombie), which is no evidence the process lacks SPLICE=1. Without [keepValues], a
-     *  wanted entry is there only when it has a value, and every value read is empty. */
-    private fun entries(pid: Long, keys: List<ByteArray>, keepValues: Boolean = true): Map<String, String>? {
-        if (darwin.here) return darwinEntries(pid, keys, keepValues)
-        val scan = EnvironScan(keys, keepValues)
+     *  (the kernel's answer for a zombie), which is no evidence the process lacks SPLICE=1. */
+    private fun entries(pid: Long, keys: List<ByteArray>): Map<String, String>? {
+        if (darwin.here) return darwinEntries(pid, keys)
+        val scan = EnvironScan(keys)
         val read = Cancellables.runCatchingCancellable {
             Files.newInputStream(procRoot.resolve(pid.toString()).resolve("environ")).use(scan::read)
         }
@@ -88,9 +95,9 @@ public class ProcessEnvironment(
 
     /** The wanted entries of the block ps gave, or null when ps could not read the process or macOS hid its
      *  environment (an empty block), as for an unreadable /proc environ. */
-    private fun darwinEntries(pid: Long, keys: List<ByteArray>, keepValues: Boolean): Map<String, String>? {
+    private fun darwinEntries(pid: Long, keys: List<ByteArray>): Map<String, String>? {
         val block = darwin.environ(pid) ?: return null
-        val scan = EnvironScan(keys, keepValues)
+        val scan = EnvironScan(keys)
         scan.read(ByteArrayInputStream(block))
         return scan.found.takeIf { scan.bytes > 0 }
     }
@@ -98,14 +105,10 @@ public class ProcessEnvironment(
 
 /** One pass over a NUL-separated environment block. An entry is buffered only while every byte so
  *  far is a prefix of a wanted key (after the key fully matched, the value follows); the first
- *  diverging byte drops the buffer and the rest of that entry is discarded unread. Without [keepValues] nothing past
- *  a key is buffered: a value byte only marks the key's name found, with an empty value. */
-private class EnvironScan(private val wanted: List<ByteArray>, private val keepValues: Boolean = true) {
+ *  diverging byte drops the buffer and the rest of that entry is discarded unread. */
+private class EnvironScan(private val wanted: List<ByteArray>) {
     private val entry = ByteArrayOutputStream()
     private var matching: List<ByteArray> = wanted
-
-    /** Without [keepValues], the name whose key matched in full in this entry: what its value bytes mark found. */
-    private var named: String? = null
 
     /** The wanted entries seen so far, key to value. */
     val found: MutableMap<String, String> = mutableMapOf()
@@ -130,22 +133,12 @@ private class EnvironScan(private val wanted: List<ByteArray>, private val keepV
             if (matching.isNotEmpty() && entry.size() > 0) emit()
             entry.reset()
             matching = wanted
-            named = null
             return
         }
-        named?.let { found[it] = "" }
         if (matching.isEmpty()) return
         val at = entry.size()
         matching = matching.filter { key -> at >= key.size || key[at] == b }
         if (matching.isEmpty()) entry.reset() else entry.write(b.toInt())
-        if (!keepValues) matching.firstOrNull { it.size == entry.size() }?.let(::name)
-    }
-
-    /** [key] matched in full: its name is kept, and the entry's buffer and matching end, so its value is never kept. */
-    private fun name(key: ByteArray) {
-        named = String(key, Charsets.UTF_8).removeSuffix("=")
-        entry.reset()
-        matching = emptyList()
     }
 
     private fun emit() {

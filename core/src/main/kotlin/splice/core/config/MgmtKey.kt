@@ -49,6 +49,10 @@ public class MgmtKey(
      *  root this instance was built with (a test's temp dir, never the operator's live one). */
     internal val keyFile: Path get() = statePaths.mgmtKeyFile
 
+    /** The keys a rotation retired, beside this one: one store per daemon, so the rotation that retires a key and
+     *  every head that checks for one see the same keys. */
+    public val retired: RetiredKeys = RetiredKeys(statePaths)
+
     public fun get(): String = replaced ?: initial
 
     /**

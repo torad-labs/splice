@@ -11,6 +11,7 @@ import splice.app.LifecycleWiring
 import splice.app.cli.AdminSupport
 import splice.app.control.HEADER_WRITTEN
 import splice.app.control.MCP_REPLACED
+import splice.app.control.RETIRED_KEPT
 import splice.core.terminal.TerminalOutput
 import splice.core.util.EnvReader
 import splice.core.util.JsonScalars
@@ -95,6 +96,13 @@ internal class RotateKeyCommand(
         }
         JsonScalars.str(answer, "turn_header")?.takeIf { it != HEADER_WRITTEN }?.let {
             out.line("splice: the turn-key file was not rewritten ($it); `splice restart` rewrites it.")
+        }
+        JsonScalars.str(answer, "retired_keys")?.takeIf { it != RETIRED_KEPT }?.let {
+            out.line(
+                "splice: the old keys could not be kept as retired ($it), so a session that still holds the old turn " +
+                    "key may send it on to a head that forwards your own login, and `splice sessions relaunch` " +
+                    "won't find that session.",
+            )
         }
         out.line("splice: the console signs in again with `splice console`.")
         JsonScalars.str(answer, "key_file")?.let {

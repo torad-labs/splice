@@ -167,6 +167,10 @@ internal class ClientAuth(
      * The values checked are the values [forwardedClientHeaders] sends, read from it (v0.4.0 review):
      * checking `headers[name]`, the FIRST line, while the forwarder sends the first NON-BLANK one let
      * an empty line ahead of the key pass the check and the key ride upstream.
+     *
+     * A key a rotation retired counts as splice's too (PR #247 review round 4): a session launched before the key
+     * helper holds its old turn key after `splice rotate-key`, and forwarding that key brought back the vendor's 401
+     * and Claude Code's re-sends of it.
      */
 
     /** [authorize] for a call that goes upstream (a turn). On a head that only forwards, a caller
@@ -195,7 +199,9 @@ internal class ClientAuth(
 
     private suspend fun allowUnlessOwnKey(call: ApplicationCall): Boolean {
         val carriers = forwardedClientHeaders(call).filterValues { value ->
-            value.split(authDelimiterRe).any { matchesInferenceToken(it) || matchesOperatorToken(it) }
+            value.split(authDelimiterRe).any {
+                matchesInferenceToken(it) || matchesOperatorToken(it) || deps.tokens.retired(it)
+            }
         }.keys
         if (carriers.isEmpty()) return true
         val headers = carriers.joinToString(", ")

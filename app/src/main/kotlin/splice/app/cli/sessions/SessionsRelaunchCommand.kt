@@ -4,12 +4,17 @@
 // by its own id on the command and the model it runs on, whose launch hands it the helper (SessionContinue.relaunch).
 // The daemon leaves a working session, one waiting on an answer and one holding words he has not sent where they are,
 // and this command does not relaunch the session it runs in. Each session left is named with why, and the run fails
-// while any is left, so it is run again until it passes. No key is printed: the management key goes only into the
-// request's Authorization header, and a session's planted key is only seen to be there (ProcessEnvironment.carries).
+// while any is left, so it is run again until it passes. A session counts only when its ANTHROPIC_AUTH_TOKEN is one of
+// splice's keys: the management key, the turn key made from it, or one a rotation retired (RetiredKeys). A head that
+// forwards the person's own login leaves his own token there, and a LAN node's launch plants a word that opens nothing;
+// a relaunch hands neither anything, so neither is relaunched or left (PR #247 review round 4). No key is printed: the
+// management key goes only into the request's Authorization header, and a session's token is only compared
+// (ProcessEnvironment.holds).
 package splice.app.cli.sessions
 
 import kotlinx.serialization.json.Json
 import splice.app.cli.AdminSupport
+import splice.core.config.RetiredKeys
 import splice.core.terminal.TerminalOutput
 import splice.core.util.EnvReader
 import splice.core.util.JsonScalars
@@ -23,6 +28,7 @@ import splice.sessions.registry.ProcessEnvironment
 import splice.sessions.registry.SessionAvailability
 import splice.sessions.registry.SessionRecord
 import splice.sessions.registry.SessionSource
+import splice.topology.TopologyStatePaths
 import java.net.URLEncoder
 
 private const val VERB = "splice sessions relaunch"
@@ -68,24 +74,45 @@ internal class SessionsRelaunchCommand(
             stop("the session registry could not be listed (${local.shown(unlisted)})")
             return 1
         }
-        val read = listing.sessions.filter(::runsOnAHead).associateWith { environment.carries(pidOf(it), PLANTED) }
-        read.filterValues { it == null }.keys.forEach(::unread)
-        val planted = read.filterValues { it == true }.keys.toList()
-        if (planted.isEmpty()) {
-            out.line("$VERB: no running session on a splice head holds a turn key in its environment; nothing to do.")
-            return 0
+        val onHeads = listing.sessions.filter(::runsOnAHead)
+        return if (onHeads.isEmpty()) nothingToDo() else relaunchHolders(onHeads)
+    }
+
+    /** Each session in [onHeads] whose token is one of splice's keys is relaunched, but the one this command runs in. A
+     *  token is splice's only when it is one of those keys, so the management key is read before any token is. */
+    private fun relaunchHolders(onHeads: List<SessionRecord>): Int {
+        val key = managementKey() ?: return 1
+        val keys = RetiredKeys(TopologyStatePaths(env).current())
+        val read = onHeads.associateWith { record ->
+            environment.holds(pidOf(record), PLANTED) { keys.ownKey(it, key) }
         }
+        // an environment not read: the process is gone, or not this user's, or macOS hides it
+        read.filterValues { it == null }.keys.forEach { record ->
+            out.line(
+                "  could not read the environment of ${shown(record)}, so whether it holds one of splice's keys " +
+                    "is not known",
+            )
+        }
+        val planted = read.filterValues { it == true }.keys.toList()
+        if (planted.isEmpty()) return nothingToDo()
         val own = ancestors.pids()
         val (mine, others) = planted.partition { pidOf(it) in own }
         mine.forEach(::ownSession)
-        val relaunched = relaunchAll(others)
+        val relaunched = relaunchAll(key, others)
         return summary(relaunched, left = planted.size - relaunched)
+    }
+
+    private fun nothingToDo(): Int {
+        out.line(
+            "$VERB: no running session on a splice head holds one of splice's keys in its environment; nothing to do.",
+        )
+        return 0
     }
 
     /** The run's last line. It fails while any session is left, so it is run again until it passes. */
     private fun summary(relaunched: Int, left: Int): Int {
         val rest = if (left == 0) {
-            "no running session holds a turn key in its environment any more"
+            "no running session holds one of splice's keys in its environment any more"
         } else {
             "left $left where they are. Run it again once they can be relaunched"
         }
@@ -98,11 +125,6 @@ internal class SessionsRelaunchCommand(
 
     private fun pidOf(record: SessionRecord): Long = checkNotNull(record.process.pid)
 
-    /** Its environment could not be read: the process is gone, or not this user's, or macOS hides it. */
-    private fun unread(record: SessionRecord) {
-        out.line("  could not read the environment of ${shown(record)}, so whether it holds a turn key is not known")
-    }
-
     /** This command runs in it: its relaunch would end the client waiting on this command's answer. */
     private fun ownSession(record: SessionRecord) {
         val id = local.shown(checkNotNull(record.sessionId))
@@ -113,8 +135,7 @@ internal class SessionsRelaunchCommand(
     }
 
     /** Each relaunch asked in turn, and the count the daemon relaunched. */
-    private fun relaunchAll(records: List<SessionRecord>): Int {
-        val key = (if (records.isEmpty()) null else managementKey()) ?: return 0
+    private fun relaunchAll(key: String, records: List<SessionRecord>): Int {
         val port = AdminSupport.controlPort(env)
         var relaunched = 0
         for (record in records) {

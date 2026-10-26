@@ -22,7 +22,7 @@
 // one left in the daemon-state file.
 import { chmodSync, copyFileSync, existsSync, mkdirSync, readFileSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { execFileSync } from "node:child_process";
-import { randomUUID } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 import { join } from "node:path";
 import { shimMarkers } from "./shim.ts";
 import { makeSandbox, writeStub } from "./sandbox.ts";
@@ -871,24 +871,31 @@ const ARMS: readonly Arm[] = [
     // and Claude Code retries. A token the person set themselves rides on.
     name: "a LAN node's token inherited from its session is dropped, and the caller's own token kept",
     run: async (ctx) => {
-      const capture = join(ctx.dir, "token-capture");
-      const stub = join(ctx.dir, "token-stub");
-      writeStub(stub,
-        'import { writeFileSync } from "node:fs";\n' +
-        "writeFileSync(process.argv[2], JSON.stringify(process.env.ANTHROPIC_AUTH_TOKEN ?? null));\n",
-      );
-      const seen = async (inherited: string): Promise<unknown> => {
-        rmSync(capture, { force: true });
-        ctx.daemon.forget();
-        ctx.daemon.recipe = [stub, capture].map((word) => `A ${word}`).join("\n") + "\n";
-        const run = await ctx.launch({ ...ctx.harness, ANTHROPIC_AUTH_TOKEN: inherited });
-        ctx.daemon.recipe = undefined;
-        return run.code === 0 ? JSON.parse(read(capture)) : `no launch: ${run.output}`;
-      };
-      const lan = await seen("splice-lan");
+      const lan = await inheritedTokenSeen(ctx, "splice-lan");
       if (lan !== null) return `an inherited splice-lan must be dropped, the launched program saw ${JSON.stringify(lan)}`;
-      const own = await seen("sk-ant-the-person");
+      const own = await inheritedTokenSeen(ctx, "sk-ant-the-person");
       return own === "sk-ant-the-person" ? null : `the caller's own token must ride on, it saw ${JSON.stringify(own)}`;
+    },
+  },
+  {
+    // Key rotation (Oct 26, 2026): a session launched before the key helper holds the turn key a rotation retired. A
+    // command launched from inside it, such as plain `claude` through a head that forwards the caller's own login, must
+    // not send that key ahead of the login: it opens nothing, Anthropic refuses it 401 and Claude Code retries (PR #247,
+    // review round 4). The daemon keeps each retired key's SHA-256 beside the management key, and the shim drops an
+    // inherited token whose digest is there. A token the person set themselves rides on.
+    name: "a key a rotation retired, inherited from a session launched before it, is dropped",
+    run: async (ctx) => {
+      const retired = `retired-turn-key-${"5".repeat(48)}`;
+      const digests = join(ctx.stateDir, "retired-keys");
+      writeFileSync(digests, `${createHash("sha256").update(retired).digest("hex")}\n`, { mode: 0o600 });
+      try {
+        const old = await inheritedTokenSeen(ctx, retired);
+        if (old !== null) return `an inherited retired key must be dropped, the launched program saw ${JSON.stringify(old)}`;
+        const own = await inheritedTokenSeen(ctx, "sk-ant-the-person");
+        return own === "sk-ant-the-person" ? null : `the caller's own token must ride on, it saw ${JSON.stringify(own)}`;
+      } finally {
+        rmSync(digests, { force: true });
+      }
     },
   },
   {
@@ -933,6 +940,23 @@ const ARMS: readonly Arm[] = [
     },
   },
 ];
+
+/** What a program the shim launches sees in ANTHROPIC_AUTH_TOKEN when the shell that ran the shim held [inherited], as a
+ *  session's environment hands it on to a command started inside it: null when it saw none, or why nothing launched. */
+async function inheritedTokenSeen(ctx: Ctx, inherited: string): Promise<unknown> {
+  const capture = join(ctx.dir, "token-capture");
+  const stub = join(ctx.dir, "token-stub");
+  writeStub(stub,
+    'import { writeFileSync } from "node:fs";\n' +
+    "writeFileSync(process.argv[2], JSON.stringify(process.env.ANTHROPIC_AUTH_TOKEN ?? null));\n",
+  );
+  rmSync(capture, { force: true });
+  ctx.daemon.forget();
+  ctx.daemon.recipe = [stub, capture].map((word) => `A ${word}`).join("\n") + "\n";
+  const run = await ctx.launch({ ...ctx.harness, ANTHROPIC_AUTH_TOKEN: inherited });
+  ctx.daemon.recipe = undefined;
+  return run.code === 0 ? JSON.parse(read(capture)) : `no launch: ${run.output}`;
+}
 
 /** Every arm's name, in order — the rehearsal's inventory, for a count that cannot drift from it. */
 export const ARM_NAMES: readonly string[] = ARMS.map((arm) => arm.name);

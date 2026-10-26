@@ -103,10 +103,13 @@ public data class HeadDeps(
 
     /** The head's two bearer credentials, one per role, read each time a request is checked: a management key
      *  replaced while the head runs (`splice rotate-key`, Oct 26, 2026) changes both at once, so the old ones open
-     *  nothing from that moment and the new ones open everything they should. */
-    public class HeadTokens(turnKey: Current, managementKey: Current) {
+     *  nothing from that moment and the new ones open everything they should. The keys a rotation retired stay known
+     *  as splice's ([retired]), so a head that forwards the caller's own login refuses one as it refuses a current
+     *  one. The daemon's heads are built with the daemon's store of them; a head with none knows no retired key. */
+    public class HeadTokens(turnKey: Current, managementKey: Current, retiredKey: Retired = Retired { false }) {
         private val turn = turnKey
         private val management = managementKey
+        private val retiredKeys = retiredKey
 
         /** Per-install bearer used by local Claude clients for their TURNS (the turn key). Never use a
          *  source-known sentinel here. */
@@ -118,9 +121,18 @@ public data class HeadDeps(
          *  environment cannot read what the head sent upstream on other sessions' behalf. */
         public val operatorToken: String get() = management()
 
+        /** Whether [presented] is a key of splice's that a rotation retired: it opens nothing here, and it is never a
+         *  login a head may forward. */
+        public fun retired(presented: String): Boolean = retiredKeys(presented)
+
         /** One of the two credentials as it is now. */
         public fun interface Current {
             public operator fun invoke(): String
+        }
+
+        /** Whether a presented value is one of splice's keys that a rotation retired. */
+        public fun interface Retired {
+            public operator fun invoke(presented: String): Boolean
         }
     }
 

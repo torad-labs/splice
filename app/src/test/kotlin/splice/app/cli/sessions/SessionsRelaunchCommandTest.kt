@@ -12,7 +12,9 @@ import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.io.TempDir
 import splice.core.config.MgmtKey
+import splice.core.config.RetiredKeys
 import splice.core.config.StatePaths
+import splice.core.config.TurnKey
 import splice.core.process.LaunchOwners
 import splice.core.terminal.TerminalOutput
 import splice.sessions.registry.DarwinPs
@@ -30,8 +32,8 @@ import java.nio.file.Files
 import java.nio.file.Path
 import java.util.concurrent.CopyOnWriteArrayList
 
-// why: what a session launched before the helper holds; the command must never print it
-private const val PLANTED = "ANTHROPIC_AUTH_TOKEN=turn-key-from-before-the-helper"
+// why: the person's own Anthropic login, which a head that forwards the caller's credential leaves in the session
+private const val OWN_LOGIN = "sk-ant-oat01-the-persons-own-login"
 
 private const val RELAUNCHED = """{"session_id":"s-101","head":"relay"}"""
 private const val WORKING = """{"error":"it is working; relaunch it once its turn ends","reason":"working"}"""
@@ -50,13 +52,14 @@ class SessionsRelaunchCommandTest {
 
     @Test
     fun `each running session on a head that holds a planted key is relaunched, and no other`() {
+        val planted = planted()
         val sessions = listOf(
-            session("builder", 101, SessionRoute.Head("relay"), PLANTED),
+            session("builder", 101, SessionRoute.Head("relay"), planted),
             session("launched-with-helper", 102, SessionRoute.Head("relay"), "HOME=/home/me"),
-            session("direct", 103, SessionRoute.Direct, PLANTED),
-            session("exited", 104, SessionRoute.Head("relay"), PLANTED, SessionAvailability.GONE),
-            session("me", 105, SessionRoute.Head("relay"), PLANTED),
-            session("busy", 106, SessionRoute.Head("codex"), PLANTED, SessionAvailability.STALE),
+            session("direct", 103, SessionRoute.Direct, planted),
+            session("exited", 104, SessionRoute.Head("relay"), planted, SessionAvailability.GONE),
+            session("me", 105, SessionRoute.Head("relay"), planted),
+            session("busy", 106, SessionRoute.Head("codex"), planted, SessionAvailability.STALE),
         )
         val stand = standIn(mapOf("s-101" to (200 to RELAUNCHED), "s-106" to (409 to WORKING)))
 
@@ -67,7 +70,32 @@ class SessionsRelaunchCommandTest {
         assertTrue(said.any { "builder" in it && "relaunched" in it && "relay" in it }, "$said")
         assertTrue(said.any { "busy" in it && "it is working; relaunch it once its turn ends" in it }, "$said")
         assertTrue(said.any { "me" in it && "-r s-105" in it }, "its own session is named, with its resume: $said")
-        assertTrue(said.none { "turn-key-from-before-the-helper" in it || daemonKey() in it }, "no key: $said")
+        assertTrue(said.none { turnKey() in it || daemonKey() in it }, "no key: $said")
+    }
+
+    // Only a session holding one of splice's keys was planted it: the turn key, the management key a session launched
+    // before the turn key holds, or one a rotation retired. A head that forwards the person's own login runs a session
+    // whose ANTHROPIC_AUTH_TOKEN is his own credential, and a LAN node's session holds the word its launch plants there.
+    // A relaunch hands neither anything new and would end them on every run, so they are left alone and pass the run.
+    @Test
+    fun `only a session holding a key of splice's is relaunched, and a person's own token is left alone`() {
+        val keys = MgmtKey(statePaths())
+        val retiredTurnKey = TurnKey(keys).get()
+        RetiredKeys(statePaths()).retire(keys.get())
+        keys.replace()
+        val sessions = listOf(
+            session("retired", 101, SessionRoute.Head("relay"), "ANTHROPIC_AUTH_TOKEN=$retiredTurnKey"),
+            session("before-the-split", 102, SessionRoute.Head("relay"), "ANTHROPIC_AUTH_TOKEN=${keys.get()}"),
+            session("own-login", 103, SessionRoute.Head("claude"), "ANTHROPIC_AUTH_TOKEN=$OWN_LOGIN"),
+            session("lan-node", 104, SessionRoute.Head("relay"), "ANTHROPIC_AUTH_TOKEN=splice-lan"),
+        )
+        val stand = standIn(mapOf("s-101" to (200 to RELAUNCHED), "s-102" to (200 to RELAUNCHED)))
+
+        val exit = relaunch(sessions, ownPids = emptySet())
+
+        assertEquals(listOf("s-101", "s-102"), stand.asked, "$said")
+        assertEquals(0, exit, "a session holding none of splice's keys is not left, so the run passes: $said")
+        assertTrue(said.none { OWN_LOGIN in it || retiredTurnKey in it || keys.get() in it }, "no key: $said")
     }
 
     @Test
@@ -85,8 +113,8 @@ class SessionsRelaunchCommandTest {
     @Test
     fun `a daemon older than the relaunch is named once, and nothing more is asked of it`() {
         val sessions = listOf(
-            session("builder", 101, SessionRoute.Head("relay"), PLANTED),
-            session("reviewer", 107, SessionRoute.Head("relay"), PLANTED),
+            session("builder", 101, SessionRoute.Head("relay"), planted()),
+            session("reviewer", 107, SessionRoute.Head("relay"), planted()),
         )
         val stand = standIn(emptyMap())
 
@@ -125,7 +153,15 @@ class SessionsRelaunchCommandTest {
         ).run()
     }
 
-    private fun daemonKey(): String = MgmtKey(StatePaths(baseOverride = tmp.resolve("state"))).get()
+    private fun statePaths(): StatePaths = StatePaths(baseOverride = tmp.resolve("state"))
+
+    private fun daemonKey(): String = MgmtKey(statePaths()).get()
+
+    /** The turn key the daemon hands a session it launches, made from its management key. */
+    private fun turnKey(): String = TurnKey(MgmtKey(statePaths())).get()
+
+    /** The entry a session launched before the key helper holds: its turn key, which the command must never print. */
+    private fun planted(): String = "ANTHROPIC_AUTH_TOKEN=${turnKey()}"
 
     private fun standIn(answers: Map<String, Pair<Int, String>>): StandInDaemon =
         StandInDaemon(daemonKey(), answers).also { daemon = it }

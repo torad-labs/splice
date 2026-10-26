@@ -46,6 +46,7 @@ import java.nio.file.Files
 // The words of the rotation's answer that `splice rotate-key` reads (RotateKeyCommand).
 internal const val HEADER_WRITTEN = "written"
 internal const val MCP_REPLACED = "replaced"
+internal const val RETIRED_KEPT = "kept"
 
 /** The upgrade and restart ports, kept to [ConsolePorts]' discipline: each is assigned by ConsoleWiring after the
  *  server is constructed, read at CALL time through a lambda, and NULL MEANS UNWIRED, answered with a named 5xx. */
@@ -81,25 +82,42 @@ internal class KeyRotation(
 ) {
     private val turnKey = TurnKey(mgmtKey)
 
+    /** One rotation at a time, so each one keeps the key it replaces: two at once could both keep the first key, and
+     *  the key minted between them would then be neither current nor known as splice's. */
+    private val rotating = Any()
+
     /** The key is replaced first: a failure after it is reported in the answer, never undone, because the old key is
-     *  the one that was exposed. */
-    fun rotate(): JsonObject {
+     *  the one that was exposed. Only the old key's record as a retired key comes before it, so no moment passes in
+     *  which that key is neither current nor known as splice's. */
+    fun rotate(): JsonObject = synchronized(rotating) {
+        val retired = retireCurrent()
         mgmtKey.replace()
         val header = rewriteHeader()
         val mcp = replaceMcpAccess()
         val removed = listOf(CONSOLE_LAUNCH_PAGE, DASHBOARD_PAGE).filter(::deleted)
         log(
             "[mgmt-key] the management key was replaced; the old key and its turn key are refused from now on " +
-                "(turn-key file: ${LogSafe.str(header)}, MCP access key: ${LogSafe.str(mcp)}, " +
-                "pages removed: ${LogSafe.list(removed)})\n",
+                "(kept as retired: ${LogSafe.str(retired)}, turn-key file: ${LogSafe.str(header)}, " +
+                "MCP access key: ${LogSafe.str(mcp)}, pages removed: ${LogSafe.list(removed)})\n",
         )
-        return buildJsonObject {
+        buildJsonObject {
             put("replaced", true)
             put("key_file", statePaths.mgmtKeyFile.toString())
+            put("retired_keys", retired)
             put("turn_header", header)
             put("mcp_access", mcp)
             putJsonArray("pages_removed") { removed.forEach { add(it) } }
         }
+    }
+
+    /** Keeps the key about to be replaced, and the turn key made from it, known as splice's ([MgmtKey.retired]), so the
+     *  launch shim, a forwarding head and `splice sessions relaunch` still know them once they open nothing. A failure
+     *  is reported and the rotation goes on: the old key is replaced whether or not it is kept. */
+    private fun retireCurrent(): String = try {
+        mgmtKey.retired.retire(mgmtKey.get())
+        RETIRED_KEPT
+    } catch (e: IOException) {
+        SafeFailureText.render(e)
     }
 
     private fun rewriteHeader(): String = try {

@@ -51,6 +51,17 @@ private const val DRAFT = "the draft that must survive the rotation"
 private const val TURN_BODY = """{"model":"claude-relay--relay-model","max_tokens":16,""" +
     """"messages":[{"role":"user","content":"$DRAFT"}],"stream":true}"""
 
+private const val FORWARD_BODY = """{"model":"claude-forward--forward-model","max_tokens":16,""" +
+    """"messages":[{"role":"user","content":"$DRAFT"}],"stream":true}"""
+
+// why: the person's own Anthropic login, which a head that forwards the caller's credential exists to send on
+private const val OWN_LOGIN = "sk-ant-oat01-the-persons-own-login"
+
+// why: the words of the head's refusal of one of splice's own keys, which say what to unset
+private const val OWN_KEY_REFUSAL = "are not upstream credentials"
+
+private const val TURN_CALL = "POST /v1/messages"
+
 // The pages an older `splice console` and the removed `splice dashboard` left in the state folder.
 private val OLD_PAGES = listOf("console-open.html", "dashboard-open.html")
 
@@ -84,6 +95,49 @@ class KeyRotationDaemonTest {
                     val answer = rig.relaunch("no-such-session", rig.managementKey())
                     assertEquals(404, answer.status, answer.text)
                     assertTrue("no running session" in answer.text, answer.text)
+                } finally {
+                    rig.stop()
+                }
+            }
+        }
+    }
+
+    // A session launched before the key helper still holds the turn key a rotation retired, and a launch from inside it
+    // onto a head that forwards the person's own Anthropic login carries that key unless something drops it. The head
+    // still knows it as splice's: it is refused there, with the words that say what to unset, and never sent to the
+    // vendor, which answers it 401 while Claude Code sends it again until its caller gives up (Oct 13). The person's own
+    // login still rides, so the head is seen forwarding.
+    @Test
+    fun `a key the rotation retired is refused as splice's own on a head that forwards the caller's login`(
+        @TempDir tmp: Path,
+    ) {
+        UserHome.within(tmp) {
+            runBlocking {
+                val rig = Rig(tmp, forwarding = true)
+                try {
+                    rig.start()
+                    val oldMgmt = rig.managementKey()
+                    val oldTurn = shellOutput(launchWithHelper(rig, oldMgmt))
+                    val said = mutableListOf<String>()
+                    val exit = rig.rotateKey(said)
+                    val turnKey = rig.forwardedTurn(oldTurn)
+                    val managementKey = rig.forwardedTurn(oldMgmt)
+                    val own = rig.forwardedTurn(OWN_LOGIN)
+                    assertAll(
+                        { assertEquals(0, exit, "splice rotate-key: $said") },
+                        { assertEquals(401, turnKey.status, "the retired turn key: ${turnKey.text}") },
+                        { assertTrue(OWN_KEY_REFUSAL in turnKey.text, turnKey.text) },
+                        {
+                            assertEquals(401, managementKey.status, "the retired management key: ${managementKey.text}")
+                        },
+                        { assertTrue(OWN_KEY_REFUSAL in managementKey.text, managementKey.text) },
+                        { assertEquals(200, own.status, "the person's own login rides: ${own.text}") },
+                        {
+                            assertEquals(listOf("Bearer $OWN_LOGIN"), rig.upstream.credentials) {
+                                "only the person's own login reached the vendor"
+                            }
+                        },
+                    )
                 } finally {
                     rig.stop()
                 }
@@ -170,11 +224,13 @@ private data class Launched(val env: Map<String, String>, val unset: List<String
 private data class Answer(val status: Int, val text: String)
 
 /** One daemon with one gateway head that checks the turn key (an Anthropic passthrough on an API key held by splice),
- *  its recording upstream, and the files a person's machine holds beside it. */
-private class Rig(private val tmp: Path) {
+ *  its recording upstream, and the files a person's machine holds beside it. With [forwarding], a second head on the
+ *  same upstream holds no credential and forwards the caller's own login. */
+private class Rig(private val tmp: Path, private val forwarding: Boolean = false) {
     val upstream = RecordingAnthropic()
     private val controlPort = TestPorts.reserve()
     private val headPort = TestPorts.reserve()
+    private val forwardPort by lazy { TestPorts.reserve() }
     private val statePaths = StatePaths(baseOverride = tmp.resolve("state"))
 
     // the materializer writes only into a dir named like an isolated Claude Code config dir
@@ -207,7 +263,7 @@ private class Rig(private val tmp: Path) {
             discovery_prefix = "claude-relay--"
             pinned_model = "relay-model"
             claude = { command = "claude-relay", config_dir = "${configDir.esc()}" }
-            """.trimIndent(),
+            """.trimIndent() + if (forwarding) "\n\n" + forwardingHead() else "",
         )
         daemon = Daemon(
             topology = TopologyLoader.parse(Files.readString(toml)),
@@ -216,8 +272,26 @@ private class Rig(private val tmp: Path) {
             refreshCall = { _, _ -> RefreshAttempt.Denied("test-denied") },
         )
         daemon.start()
-        awaitListening(controlPort, headPort)
+        if (forwarding) awaitListening(controlPort, headPort, forwardPort) else awaitListening(controlPort, headPort)
     }
+
+    /** A head that holds no credential of its own and forwards the caller's (auth kind "client"). */
+    private fun forwardingHead(): String =
+        """
+        [providers.forward]
+        dialect = "anthropic-passthrough"
+        base_url = "${upstream.baseUrl}"
+        auth = { kind = "client" }
+        [[providers.forward.models]]
+        id = "forward-model"
+        context_window = 128000
+
+        [heads.forward]
+        provider = "forward"
+        port = $forwardPort
+        discovery_prefix = "claude-forward--"
+        pinned_model = "forward-model"
+        """.trimIndent()
 
     suspend fun stop() {
         if (::daemon.isInitialized) daemon.stop()
@@ -254,6 +328,18 @@ private class Rig(private val tmp: Path) {
             header("x-api-key", key)
             header("Content-Type", "application/json")
             setBody(TURN_BODY)
+        }
+        return Answer(reply.status.value, reply.bodyAsText())
+    }
+
+    /** A turn on the head that forwards the caller's login, as Claude Code sends it with [credential] in
+     *  ANTHROPIC_AUTH_TOKEN. */
+    suspend fun forwardedTurn(credential: String): Answer {
+        val reply = client.post("http://127.0.0.1:$forwardPort/v1/messages") {
+            header("Authorization", "Bearer $credential")
+            header("anthropic-version", "2023-06-01")
+            header("Content-Type", "application/json")
+            setBody(FORWARD_BODY)
         }
         return Answer(reply.status.value, reply.bodyAsText())
     }
@@ -309,15 +395,20 @@ private class Rig(private val tmp: Path) {
 private class RecordingAnthropic {
     private val server = HttpServer.create(InetSocketAddress("127.0.0.1", 0), 0)
     private val pool = Executors.newCachedThreadPool()
-    private val received = CopyOnWriteArrayList<Pair<String, String>>()
+    private val received = CopyOnWriteArrayList<Received>()
     val baseUrl get() = "http://127.0.0.1:${server.address.port}"
 
     /** The turns that reached it, each body in order. A call the daemon makes on its own, such as its model list, is
      *  not a turn. */
-    val turns: List<String> get() = received.filter { it.first == "POST /v1/messages" }.map { it.second }
+    val turns: List<String> get() = received.filter { it.call == TURN_CALL }.map { it.body }
+
+    /** The Authorization each turn reached it with: whose credential the vendor was sent. */
+    val credentials: List<String> get() = received.filter { it.call == TURN_CALL }.map { it.authorization }
 
     /** Each call as "METHOD path", in order: what a failed count names. */
-    val calls: List<String> get() = received.map { it.first }
+    val calls: List<String> get() = received.map { it.call }
+
+    private data class Received(val call: String, val body: String, val authorization: String)
 
     init {
         server.executor = pool
@@ -331,7 +422,9 @@ private class RecordingAnthropic {
     }
 
     private fun handle(ex: HttpExchange) {
-        received.add("${ex.requestMethod} ${ex.requestURI.path}" to ex.requestBody.readBytes().toString(Charsets.UTF_8))
+        val body = ex.requestBody.readBytes().toString(Charsets.UTF_8)
+        val authorization = ex.requestHeaders.getFirst("Authorization").orEmpty()
+        received.add(Received("${ex.requestMethod} ${ex.requestURI.path}", body, authorization))
         ex.responseHeaders.add("Content-Type", "text/event-stream")
         ex.sendResponseHeaders(200, 0)
         val frames = listOf(

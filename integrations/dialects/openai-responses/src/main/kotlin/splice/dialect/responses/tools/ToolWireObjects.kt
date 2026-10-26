@@ -160,7 +160,7 @@ private const val FIELD_STRICT = "strict"
 private const val FIELD_DEFER_LOADING = "defer_loading"
 private const val FIELD_EXECUTION = "execution"
 private const val TYPE_FUNCTION = "function"
-private const val TYPE_TOOL_SEARCH = "tool_search"
+private const val TYPE_TOOL_SEARCH = splice.upstream.ToolSearchWire.NAME
 private const val EXECUTION_CLIENT = "client"
 
 private const val TOOL_SEARCH_DESC_HEAD = "# Tool discovery\n\n" +

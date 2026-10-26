@@ -108,6 +108,8 @@ public class CodeModeArgumentJson internal constructor(source: String) {
     }
 }
 
+// why: this parser ports serde_json, which Codex 0.164 pins at 1.0.149, and serde_json's
+// Deserializer starts at `remaining_depth: 128`, so nesting deeper than 128 fails in both.
 private const val JSON_RECURSION_LIMIT = 128
 private const val NUMBER_VALUE_TOKEN = "\$serde_json::private::Number"
 private const val RAW_VALUE_TOKEN = "\$serde_json::private::RawValue"

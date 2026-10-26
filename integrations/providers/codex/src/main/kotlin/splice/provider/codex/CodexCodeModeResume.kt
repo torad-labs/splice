@@ -121,7 +121,9 @@ internal class CodexCodeModeResume(
             context.turn.rendering.media,
             CodeModeClientOutputDigests.capture(context, supplied.results.keys),
         )
-        record.progress.pending.firstOrNull { it.name !in context.turn.tools }?.let { pending ->
+        record.progress.pending.firstOrNull {
+            it.name !in context.turn.tools && it.clientId !in record.results
+        }?.let { pending ->
             val message = "code-mode tool '${pending.name}' is no longer in the current tool catalog"
             return reject(record, context, body, hasExtraContent, message)
         }

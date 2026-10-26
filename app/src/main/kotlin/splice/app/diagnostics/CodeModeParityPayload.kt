@@ -8,6 +8,8 @@ import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
 import splice.core.util.JsonScalars
 import splice.upstream.codemode.CodeModeStep
+import splice.upstream.codemode.NativeCodeModeTiming
+import java.time.Duration
 
 internal object CodeModeParityPayload {
     fun outcome(cellId: String, step: CodeModeStep): JsonObject = buildJsonObject {
@@ -17,8 +19,10 @@ internal object CodeModeParityPayload {
             buildJsonObject {
                 put("cell_id", cellId)
                 put("content_items", JsonArray(content(step)))
-                put("code_mode_host_duration_ns", 0)
+                val timing = timing(step)
+                timing?.hostDuration?.let { put("code_mode_host_duration_ns", nanos(it)) }
                 if (kind == "Result") {
+                    timing?.resultBufferedFor?.let { put("result_buffered_for_ns", nanos(it)) }
                     put(
                         "error_text",
                         (step as? CodeModeStep.Completed)?.error?.let(::JsonPrimitive) ?: JsonNull,
@@ -27,6 +31,15 @@ internal object CodeModeParityPayload {
             },
         )
     }
+
+    private fun timing(step: CodeModeStep): NativeCodeModeTiming? = when (step) {
+        is CodeModeStep.Yielded -> step.timing
+        is CodeModeStep.Completed -> step.timing
+        is CodeModeStep.Calls, is CodeModeStep.Notified, is CodeModeStep.WaitingForResults -> null
+    }
+
+    private fun nanos(duration: Duration): String = duration.seconds.toBigInteger()
+        .multiply(1_000_000_000L.toBigInteger()).add(duration.nano.toBigInteger()).toString()
 
     private fun kind(step: CodeModeStep): String = when (step) {
         is CodeModeStep.Yielded -> "Yielded"

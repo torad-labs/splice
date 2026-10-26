@@ -1,0 +1,41 @@
+{
+  "schema": 1,
+  "command": [
+    "gh",
+    "api",
+    "repos/openai/codex/actions/artifacts/12478021627/zip"
+  ],
+  "workflow": {
+    "artifacts_url": "https://api.github.com/repos/openai/codex/actions/runs/39894017941/artifacts",
+    "conclusion": "success",
+    "event": "push",
+    "head_branch": "rust-v0.164.0",
+    "head_sha": "6aaac694803004a63c6f393d153c96d22521a6b9",
+    "html_url": "https://github.com/openai/codex/actions/runs/39894017941",
+    "id": 39894017941,
+    "name": "rust-release",
+    "path": ".github/workflows/rust-release.yml",
+    "status": "completed"
+  },
+  "artifact": {
+    "archive_download_url": "https://api.github.com/repos/openai/codex/actions/artifacts/12478021627/zip",
+    "digest": "sha256:5a130e472fad72f3640e371629f55b9aceb31255101e1a74e87de88c19d69719",
+    "expired": false,
+    "id": 12478021627,
+    "name": "aarch64-apple-darwin-signed-binaries",
+    "size_in_bytes": 134502514,
+    "workflow_run": {
+      "head_branch": "rust-v0.164.0",
+      "head_repository_id": 965415649,
+      "head_sha": "6aaac694803004a63c6f393d153c96d22521a6b9",
+      "id": 39894017941,
+      "repository_id": 965415649
+    }
+  },
+  "verifiedArchiveSha256": "5a130e472fad72f3640e371629f55b9aceb31255101e1a74e87de88c19d69719",
+  "extractedMember": "codex-code-mode-host",
+  "extractedSha256": "416721e33af8822041dc650793512b3e58d43e0be4f3a5c6187eb4dfaad3148a",
+  "releaseExecutableSha256": "416721e33af8822041dc650793512b3e58d43e0be4f3a5c6187eb4dfaad3148a",
+  "identical": true,
+  "sourceRevision": "6aaac694803004a63c6f393d153c96d22521a6b9"
+}

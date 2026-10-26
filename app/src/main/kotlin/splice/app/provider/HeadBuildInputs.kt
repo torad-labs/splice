@@ -44,7 +44,11 @@ internal class HeadBuildInputs(
     private val localProbe: LocalProbeInputs = LocalProbeInputs(),
 ) {
     private val localModels = ConcurrentHashMap<String, List<DiscoveredModel>>()
-    private val headModels = HeadDiscoveredModels { key -> localModels[key] ?: discovered.forHead(key) }
+    private val headModels = object : HeadDiscoveredModels {
+        override fun forHead(key: String): List<DiscoveredModel> = localModels[key] ?: discovered.forHead(key)
+        override fun metadataForHead(key: String): List<DiscoveredModel> =
+            localModels[key] ?: discovered.metadataForHead(key)
+    }
 
     internal fun resolveHeadConfig(
         head: HeadConfig,

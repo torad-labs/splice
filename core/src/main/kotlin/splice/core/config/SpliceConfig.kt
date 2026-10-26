@@ -121,6 +121,22 @@ public class SpliceConfig internal constructor(
     /** Whether code mode's journal reaches the disk. Off keeps it in memory only. Read LIVE, per save. */
     public val keepCodeModeWork: Boolean get() = bool(Knob.KEEP_CODE_MODE_WORK)
 
+    /** Foreground exec observation budget, overridden by an individual exec pragma. */
+    public val codeModeDefaultExecYieldTimeMs: Long get() = long(Knob.CODE_MODE_DEFAULT_EXEC_YIELD_TIME_MS)
+
+    /** Whether descriptions precede namespace guidance in Code Mode's tool catalog. */
+    public val codeModeToolDescriptionFirst: Boolean get() = bool(Knob.CODE_MODE_TOOL_DESCRIPTION_FIRST)
+
+    /** Whether Code Mode headers include handler, host and overhead timing. */
+    public val codeModeShowCellOverhead: Boolean get() = bool(Knob.CODE_MODE_SHOW_CELL_OVERHEAD)
+
+    /** Optional larger schema declaration budget; absent retains the source default. */
+    public val codeModeToolInputSchemaMaxBytes: Long?
+        get() = m[Knob.CODE_MODE_TOOL_INPUT_SCHEMA_MAX_BYTES.key] as? Long
+
+    /** Whether the selected model's unified image budget replaces legacy detail guidance. */
+    public val codeModeUnifiedImageBudget: Boolean get() = bool(Knob.CODE_MODE_UNIFIED_IMAGE_BUDGET)
+
     public val upstreamRetries: Int get() = long(Knob.UPSTREAM_RETRIES).toInt()
     public val upstreamTimeoutMs: Long get() = long(Knob.UPSTREAM_TIMEOUT_MS)
     public val firstByteTimeoutMs: Long get() = long(Knob.FIRST_BYTE_TIMEOUT_MS)

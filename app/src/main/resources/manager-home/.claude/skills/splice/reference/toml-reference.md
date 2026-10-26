@@ -21,6 +21,11 @@ ModelDiscoveryConfig.kt, ChatEffortVocabularyConfig.kt; core/src/main/kotlin/spl
   `context_window`), the `[compaction]` tables, and `[daemon]` `mcp_share`, `update_channel`, `auto_update`.
 - **Strings, numbers, booleans.** Strings are quoted, integers bare, booleans `true`/`false` unquoted. Values
   under `[defaults]` and `[heads.<key>.overrides]` are always quoted strings, even numbers.
+- **Code Mode controls** belong only in `[heads.<key>.overrides]` and require a restart:
+  `codeModeDefaultExecYieldTimeMs = "30000"`, `codeModeToolDescriptionFirst = "false"`,
+  `codeModeShowCellOverhead = "false"`, and `codeModeUnifiedImageBudget = "false"` are the defaults.
+  Optional `codeModeToolInputSchemaMaxBytes = "16000"` raises the declaration budget above the bundled minimum.
+  Exec pragmas override the ordinary observation budget; yielding never cancels the script.
 - **Inline or table form.** `quirks = { a = true }` and `[providers.x.quirks]` are the same table. TOML forbids
   adding a sub-table (such as `tool_surface`) to an inline table, so use the table form then.
 

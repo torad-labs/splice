@@ -19,6 +19,7 @@ import splice.core.config.ConfigService
 import splice.core.config.StatePaths
 import splice.core.model.DiscoveredModel
 import splice.core.model.ModelEntry
+import splice.core.model.ModelRuntimeMetadata
 import splice.core.parse.AnthropicParse
 import splice.core.topology.AuthConfig
 import splice.core.topology.AuthKind
@@ -71,11 +72,13 @@ class RosterRefreshToolModeTest {
         try {
             val direct = wired.provider.buildTurn(body, false, "synthetic-session")
             assertFalse(direct.requestBody.toString().contains("\"name\":\"exec\""))
-            listed = listOf(DiscoveredModel(MODE_MODEL, toolMode = "code_mode_only"))
+            listed = listOf(
+                DiscoveredModel(MODE_MODEL, runtimeMetadata = ModelRuntimeMetadata(toolMode = "code_mode_only")),
+            )
             rosters.resolve(mapOf("synthetic" to provider))
             val marked = wired.provider.buildTurn(body, false, "synthetic-session")
             assertTrue(marked.requestBody.toString().contains("\"name\":\"exec\""), marked.requestBody.toString())
-            listed = listOf(DiscoveredModel(MODE_MODEL, toolMode = "function"))
+            listed = listOf(DiscoveredModel(MODE_MODEL, runtimeMetadata = ModelRuntimeMetadata(toolMode = "function")))
             rosters.resolve(mapOf("synthetic" to provider))
             val unmarked = wired.provider.buildTurn(body, false, "synthetic-session")
             assertFalse(unmarked.requestBody.toString().contains("\"name\":\"exec\""))

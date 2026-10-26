@@ -22,6 +22,7 @@ import splice.core.model.DiscoveredModel
 import splice.core.model.HeadDiscoveredModels
 import splice.core.model.ModelCatalog
 import splice.core.model.ModelEntry
+import splice.core.model.ModelRuntimeMetadata
 import splice.core.parse.AnthropicParse
 import splice.core.topology.AuthConfig
 import splice.core.topology.AuthKind
@@ -43,7 +44,14 @@ class CodexResponsesArmTest {
     fun `codex oauth path pins responses url routing quirks accounts and code-mode on`(@TempDir tmp: Path) = runTest {
         val primaryFile = writeAccounts(tmp)
         // V4-441: exec comes from the backend's own mark, which discovery carried from its model list.
-        val ctx = context(tmp, primaryFile, listOf(DiscoveredModel("gpt-6-astra", toolMode = "code_mode_only")))
+        val ctx =
+            context(
+                tmp,
+                primaryFile,
+                listOf(
+                    DiscoveredModel("gpt-6-astra", runtimeMetadata = ModelRuntimeMetadata(toolMode = "code_mode_only")),
+                ),
+            )
         assertTrue(ctx.providerCfg.codeModeEnabled)
         val wired = CodexResponsesArm(
             StatePaths(baseOverride = tmp.resolve("state")).also { Files.createDirectories(it.stateDir) },
@@ -78,7 +86,9 @@ class CodexResponsesArmTest {
         assertEquals(1, logged.count { it.contains("[code-mode] no model is marked code_mode_only") }, "$logged")
         assertTrue(logged.single { it.contains("[code-mode]") }.startsWith("[codex]"), "$logged")
 
-        roster = listOf(DiscoveredModel("gpt-6-astra", toolMode = "code_mode_only"))
+        roster = listOf(
+            DiscoveredModel("gpt-6-astra", runtimeMetadata = ModelRuntimeMetadata(toolMode = "code_mode_only")),
+        )
         val after = wired.provider.buildTurn(body, false, "session-1")
         assertTrue(after.requestBody.toString().contains("\"name\":\"exec\""), "the refreshed roster marks it")
         assertEquals(1, logged.count { it.contains("[code-mode]") }, "said once, at start: $logged")

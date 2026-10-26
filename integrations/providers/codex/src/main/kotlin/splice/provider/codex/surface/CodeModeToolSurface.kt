@@ -10,8 +10,12 @@ import splice.dialect.responses.ResponsesFunctionNamespace
 import splice.provider.codex.CODE_MODE_FIELD_INPUT
 import splice.provider.codex.CODE_MODE_FIELD_TYPE
 import splice.provider.codex.CODE_MODE_TOOL_NAME
-import splice.provider.codex.CodeModeWaitTool
+import splice.provider.codex.CodeModeToolPolicy
+import splice.provider.codex.catalog.CodeModeCatalogMessages
+import splice.provider.codex.catalog.CodeModeWaitTool
 import splice.upstream.codemode.CodeModeManual
+import splice.upstream.codemode.CodeModeToolDefinitions
+import splice.upstream.codemode.CodeModeToolSearch
 import java.util.concurrent.ConcurrentHashMap
 
 /** The declaration and reachable manual share one per-wire collision log. */
@@ -27,25 +31,40 @@ internal class CodeModeToolSurface(private val log: LogSink) {
      *  manual's deferred note and is found and called through `ALL_TOOLS` and `tools`. The lite list
      *  arrives grouped into the `functions` namespace and leaves grouped the same way (V4-390): exec
      *  rides inside it, as codex's does. */
-    fun injectTool(request: JsonObject, clientTools: Set<String>): JsonObject {
+    fun injectTool(
+        request: JsonObject,
+        clientTools: Set<String>,
+        policy: CodeModeToolPolicy = CodeModeToolPolicy(),
+    ): JsonObject {
         val input = request[CODE_MODE_FIELD_INPUT] as? JsonArray ?: return request
         val index = input.indexOfFirst { string(it as? JsonObject, CODE_MODE_FIELD_TYPE) == "additional_tools" }
         val item = input.getOrNull(index) as? JsonObject
         val tools = item?.get("tools") as? JsonArray
         require(item != null && tools != null) { "code mode requires the Responses lite additional_tools item" }
-        val (functions, hosted) = namespace.members(tools).partition {
-            string(it as? JsonObject, CODE_MODE_FIELD_TYPE) == "function"
-        }
         val reachable = reachable(clientTools)
-        val nested = functions.mapNotNull { it as? JsonObject }.map { tool ->
-            CodeModeManual.NestedTool(string(tool, "name"), string(tool, "description"), tool["parameters"])
-        }.filter { it.name in reachable }
-        val deferred = (reachable - nested.map(CodeModeManual.NestedTool::name).toSet()).isNotEmpty()
-        val beside = hosted.filterNot { string(it as? JsonObject, CODE_MODE_FIELD_TYPE) == "tool_search" }
-        val exec = execTool(CodeModeManual.description(nested, deferred))
+        val messages = CodeModeCatalogMessages(policy.modelMessages)
+        val enabled = CodeModeToolDefinitions.collect(tools).filter {
+            it.codeModeName in reachable || it.codeModeName == CodeModeToolSearch.NAME
+        }.map { CodeModeManual.withInputBudget(it, policy.inputSchemaMaxBytes) }
+        val nested = messages.namespacePrefixes.prompt(messages.functions(enabled))
+        val deferred = (reachable - nested.map { it.codeModeName }.toSet()).isNotEmpty()
+        val beside = namespace.members(tools).filterNot {
+            string(it as? JsonObject, CODE_MODE_FIELD_TYPE) in setOf("function", "custom", "namespace", "tool_search")
+        }
+        val exec = execTool(
+            CodeModeManual.description(
+                nested,
+                deferred,
+                CodeModeManual.DescriptionOptions(
+                    defaultYieldTimeMs = policy.defaultExecYieldTimeMs,
+                    imageDetailVisible = policy.imageDetailVisible,
+                    messages = messages.exec,
+                ),
+            ),
+        )
         // Codex registers both native handlers together (spec_plan.rs:932-936); yielded cells
         // must retain an advertised wait tool even though client tools live inside exec.
-        val surface = namespace.group(JsonArray(listOf(exec, CodeModeWaitTool.declaration()) + beside))
+        val surface = namespace.group(JsonArray(listOf(exec, CodeModeWaitTool.declaration(messages, log)) + beside))
         val replaced = JsonObject(item + ("tools" to surface))
         val rebuilt = input.mapIndexed { position, element -> if (position == index) replaced else element }
         return JsonObject(request + (CODE_MODE_FIELD_INPUT to JsonArray(rebuilt)))

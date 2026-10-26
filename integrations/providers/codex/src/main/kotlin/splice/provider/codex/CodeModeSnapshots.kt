@@ -11,6 +11,8 @@ import splice.provider.codex.state.CodeModeReplayAnchors
 import splice.provider.codex.stream.CodeModeSourceState
 import splice.provider.codex.stream.batch.CodeModeNativeBatch
 import splice.upstream.codemode.CodeModeResult
+import splice.upstream.codemode.CodeModeResultDisposition
+import splice.upstream.codemode.CodeModeResultOrigin
 
 @Serializable
 internal data class CodeModePersistedState(
@@ -94,7 +96,22 @@ internal data class CodeModeResultSnapshot(
     val media: List<JsonElement>? = null,
     /** Optional v1 exact-wire item hash; absent legacy data never invents the client's original text. */
     val clientOutputDigest: String? = null,
+    /** Null is the original rejection contract; new ordinary tool output records its value disposition. */
+    val disposition: String? = null,
+    val origin: String? = null,
+    val payload: JsonElement? = null,
 ) {
     fun restore(id: String): CodeModeAcceptedResult =
-        CodeModeAcceptedResult(CodeModeResult(id, output, isError), media, clientOutputDigest)
+        CodeModeAcceptedResult(
+            CodeModeResult(
+                id,
+                output,
+                isError,
+                payload,
+                disposition?.let(CodeModeResultDisposition::valueOf) ?: CodeModeResultDisposition.REJECT,
+                origin?.let(CodeModeResultOrigin::valueOf) ?: CodeModeResultOrigin.GENERIC,
+            ),
+            media,
+            clientOutputDigest,
+        )
 }

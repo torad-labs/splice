@@ -1,4 +1,5 @@
-// NEW: Oct 12, 2026 — what RosterCache answers when asked for a head's kept list. Split from RosterCache, which reads and writes the file.
+// NEW: Oct 12, 2026 — what RosterCache answers when asked for a head's kept list. Split from RosterCache, which
+// reads and writes the file.
 package splice.models.discovery
 
 import splice.core.model.DiscoveredModel
@@ -6,7 +7,10 @@ import splice.core.model.DiscoveredModel
 /** A head's kept list, or why there is none to stand in for its endpoint. */
 public sealed class KeptRoster {
     /** The list the endpoint published last, at the URL it is asked at now. */
-    public data class Kept(val models: List<DiscoveredModel>) : KeptRoster()
+    public data class Kept(
+        val models: List<DiscoveredModel>,
+        val metadata: List<DiscoveredModel> = models,
+    ) : KeptRoster()
 
     /** No list was ever kept for this head. */
     public data object None : KeptRoster()

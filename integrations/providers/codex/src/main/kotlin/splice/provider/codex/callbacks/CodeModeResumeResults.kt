@@ -57,6 +57,6 @@ internal class CodeModeResumeResults(private val validation: CodexCodeModeValida
         .filter { it.clientId in record.results }
         .map { pending ->
             val result = record.results.getValue(pending.clientId)
-            CodeModeResult(pending.runtimeId, result.output, result.isError)
+            result.copy(id = pending.runtimeId)
         }
 }

@@ -1,4 +1,4 @@
 {
   "extends": "../gate/tsconfig.json",
-  "include": ["*.ts"]
+  "include": ["*.ts", "current-cli/**/*.ts", "current-client/**/*.ts"]
 }

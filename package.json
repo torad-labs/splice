@@ -13,7 +13,12 @@
     "gate:audit": "bun tools/gate audit",
     "test:hooks": "bun test tools/gate/test/hook.test.ts",
     "codemode:readiness": "bun tools/codemode-parity readiness",
+    "codemode:readiness-bounded": "bun tools/codemode-parity readiness-bounded",
     "codemode:qualify": "bun tools/codemode-parity qualify",
+    "codemode:qualify-current": "bun tools/codemode-parity qualify-current",
+    "codemode:attest-install-current": "bun tools/codemode-parity attest-install-current",
+    "codemode:inventory": "bun tools/codemode-parity/current-inventory.ts",
+    "codemode:inventory-check": "bun tools/codemode-parity inventory-check",
     "codemode:attest-install": "bun tools/codemode-parity attest-install",
     "codemode:reference": "bun tools/codemode-parity/reference-suite.ts",
     "test:codemode-qualification": "bun test tools/codemode-parity",
@@ -29,9 +34,12 @@
   },
   "devDependencies": {
     "@ast-grep/cli": "0.45.3",
+    "@grpc/grpc-js": "1.14.6",
+    "@grpc/proto-loader": "0.8.1",
     "@playwright/test": "1.63.0",
-    "@typescript/native": "npm:typescript@^7.0.2",
     "@types/bun": "^1.3.9",
+    "@typescript/native": "npm:typescript@^7.0.2",
+    "@xterm/headless": "5.5.0",
     "typescript": "^5.9.3"
   },
   "trustedDependencies": [

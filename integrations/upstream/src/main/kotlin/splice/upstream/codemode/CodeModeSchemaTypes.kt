@@ -8,18 +8,18 @@ import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
 import splice.core.util.JsonWire
 
-/** JSON Schema to the TypeScript type codex renders; a rendering past [MAX_RENDERED_SCHEMA_BYTES]
+/** JSON Schema to the TypeScript type codex renders; a rendering past [DEFAULT_INPUT_SCHEMA_MAX_BYTES]
  *  becomes `unknown`, exactly as codex bounds it. */
 internal object CodeModeSchemaTypes {
-    fun render(schema: JsonElement): String {
-        val rendered = SchemaTypeRenderer(schema).render(schema)
-        return if (SchemaText.bytes(rendered) > MAX_RENDERED_SCHEMA_BYTES) UNKNOWN else rendered
+    fun render(schema: JsonElement, maxBytes: Int = DEFAULT_INPUT_SCHEMA_MAX_BYTES): String {
+        val rendered = SchemaTypeRenderer(schema, maxBytes).render(schema)
+        return if (SchemaText.bytes(rendered) > maxBytes) UNKNOWN else rendered
     }
 }
 
 /** One render pass with codex's three budgets: per-path ref depth, total ref expansions, work bytes. */
-internal class SchemaTypeRenderer(private val root: JsonElement) {
-    private val budget = RenderBudget()
+internal class SchemaTypeRenderer(private val root: JsonElement, maxBytes: Int = DEFAULT_INPUT_SCHEMA_MAX_BYTES) {
+    private val budget = RenderBudget(maxBytes)
     private val objects = SchemaObjectRenderer(this, budget)
     private var nestedResourceDepth = 0
     private val activeRefExpansions = HashMap<String, Int>()
@@ -156,7 +156,7 @@ internal class SchemaTypeRenderer(private val root: JsonElement) {
             budget.exhaust()
             UNKNOWN
         } else {
-            value.let(JsonWire::string)
+            JsonWire.string(CodeModeText.jsonValue(value))
         }
 }
 
@@ -165,7 +165,7 @@ internal class SchemaObjectRenderer(private val types: SchemaTypeRenderer, priva
     fun render(map: JsonObject): String {
         val required = (map["required"] as? JsonArray).orEmpty().mapNotNull(SchemaText::string)
         val properties = map["properties"] as? JsonObject ?: JsonObject(emptyMap())
-        val sorted = properties.entries.sortedBy { it.key }
+        val sorted = properties.entries.sortedWith(compareBy(CodeModeText.order) { it.key })
         return if (sorted.any { SchemaText.hasPropertyDescription(it.value) }) {
             described(map, properties, sorted, required)
         } else {
@@ -194,7 +194,7 @@ internal class SchemaObjectRenderer(private val types: SchemaTypeRenderer, priva
         required: List<String>,
     ): Boolean {
         val description = SchemaText.string((value as? JsonObject)?.get("description")).orEmpty()
-        val commented = description.lines().map(String::trim).filter(String::isNotEmpty).all { line ->
+        val commented = CodeModeText.lines(description).map(CodeModeText::trim).filter(String::isNotEmpty).all { line ->
             SchemaText.bytes(line) + COMMENT_PREFIX_BYTES <= budget.remaining && budget.pushLine(lines, "  // $line")
         }
         if (!commented) return false
@@ -250,8 +250,8 @@ internal class SchemaObjectRenderer(private val types: SchemaTypeRenderer, priva
 }
 
 /** Intermediate strings are charged as they are built, so repeated refs cannot allocate unbounded copies. */
-internal class RenderBudget {
-    var remaining: Int = MAX_RENDER_WORK_BYTES
+internal class RenderBudget(maxBytes: Int = DEFAULT_INPUT_SCHEMA_MAX_BYTES) {
+    var remaining: Int = (maxBytes.toLong() * RENDER_WORK_MULTIPLIER).coerceAtMost(Int.MAX_VALUE.toLong()).toInt()
         private set
     var exhausted: Boolean = false
         private set
@@ -282,8 +282,8 @@ private const val MAX_LOCAL_REF_EXPANSIONS_PER_PATH = 2
 private const val MAX_TOTAL_LOCAL_REF_EXPANSIONS = 32
 
 // why: codex's MAX_RENDERED_SCHEMA_BYTES — one tool's declaration past this is `unknown`, not a wall of text.
-private const val MAX_RENDERED_SCHEMA_BYTES = 16_000
-private const val MAX_RENDER_WORK_BYTES = MAX_RENDERED_SCHEMA_BYTES * 4
+internal const val DEFAULT_INPUT_SCHEMA_MAX_BYTES = 16_000
+private const val RENDER_WORK_MULTIPLIER = 4
 
 // why: codex charges `description_line.len() + 5` before pushing "  // " and the line.
 private const val COMMENT_PREFIX_BYTES = 5

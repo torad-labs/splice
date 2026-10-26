@@ -122,7 +122,7 @@ internal enum class CodeModeWeight {
         json(record.origin.outer) + text(record.origin.source) + record.progress.pending.sumOf(::call) +
         record.results.entries.sumOf { (id, result) ->
             text(id) + text(result.output) + record.accepted.media(id).orEmpty().sumOf(::json) +
-                clientOutputDigest(record.accepted.clientOutputDigest(id))
+                clientOutputDigest(record.accepted.clientOutputDigest(id)) + (result.payload?.let(::json) ?: 0L)
         } + text(record.progress.output.orEmpty()) + text(record.progress.completionError.orEmpty()) +
         text(record.error.orEmpty()) +
         record.carry.segments.sumOf(::segment) + record.carry.continuity.sumOf(::json) +
@@ -144,7 +144,7 @@ internal enum class CodeModeWeight {
         json(record.outer) + text(record.source) + record.pending.sumOf(::call) +
         record.results.entries.sumOf { (id, result) ->
             text(id) + text(result.output) + result.media.orEmpty().sumOf(::json) +
-                clientOutputDigest(result.clientOutputDigest)
+                clientOutputDigest(result.clientOutputDigest) + (result.payload?.let(::json) ?: 0L)
         } + text(record.output.orEmpty()) + text(record.error.orEmpty()) +
         record.nativeSegments.sumOf(::segment) + record.continuity.sumOf(::json) +
         record.continuityReplay.sumOf(::segment) + record.nativeAfterExec.orEmpty().sumOf(::json) +

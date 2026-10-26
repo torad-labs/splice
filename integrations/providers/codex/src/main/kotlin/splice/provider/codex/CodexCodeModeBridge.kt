@@ -4,12 +4,14 @@ package splice.provider.codex
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonObject
 import splice.core.turn.GatewayCustomCall
+import splice.provider.codex.catalog.CodeModeTurnCatalog
 import splice.provider.codex.history.CodeModeUpstreamHistory
 import splice.provider.codex.state.CodeModeSessionEnd
 import splice.provider.codex.state.diagnostics.CodeModeNativeRetirement
 import splice.provider.codex.stream.CodeModeRoundInterceptor
 import splice.provider.codex.stream.CodeModeRuntimeRun
 import splice.upstream.RoundInterceptor
+import splice.upstream.codemode.CodeModeManual
 import splice.upstream.codemode.CodeModeResult
 import kotlin.time.Duration
 import kotlin.time.Duration.Companion.minutes
@@ -33,8 +35,13 @@ public class CodexCodeModeBridge(
         /** How the results' images and legacy markers render (V4-179). */
         val rendering: CodeModeResultRendering = CodeModeResultRendering(),
         /** V4-388: each client tool's description, for the cell's `ALL_TOOLS`. */
-        val descriptions: Map<String, String> = emptyMap(),
-    )
+        /** Raw, current-execution schemas and metadata, including the enabled ranked discovery function. */
+        val catalog: CodeModeTurnCatalog = CodeModeTurnCatalog(),
+    ) {
+        val descriptions: Map<String, String> get() = catalog.descriptions
+        val toolDefinitions: List<CodeModeManual.NestedTool> get() = catalog.definitions
+        val toolPolicy: CodeModeToolPolicy get() = catalog.policy
+    }
 
     private val json = Json {
         encodeDefaults = true
@@ -92,6 +99,9 @@ public class CodexCodeModeBridge(
 
     public fun injectTool(request: JsonObject, clientTools: Set<String>): JsonObject =
         wire.injectTool(request, clientTools)
+
+    public fun injectTool(request: JsonObject, clientTools: Set<String>, policy: CodeModeToolPolicy): JsonObject =
+        wire.injectTool(request, clientTools, policy)
 
     public fun onHeadStop() {
         driver.streams.stop()

@@ -32,8 +32,10 @@ import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.JsonPrimitive
 import splice.core.model.ModelEntry
 import splice.core.model.ModelRates
+import splice.core.model.ModelRuntimeMetadata
 import splice.core.model.ModelTierSuffix
 import splice.core.topology.ModelDiscoveryConfig
 import splice.core.util.Cancellables
@@ -56,8 +58,13 @@ internal data class UpstreamModel(
     public val rates: ModelRates? = null,
     /** The endpoint's `tool_mode` for it (the Codex backend: `code_mode_only` for the models it trains on the
      *  one-`exec` surface), or null when it publishes none (V4-441). */
-    public val toolMode: String? = null,
+    public val runtimeMetadata: ModelRuntimeMetadata = ModelRuntimeMetadata(),
 ) {
+    public val toolMode: String? get() = runtimeMetadata.toolMode
+    public val supportsImageDetailOriginal: Boolean get() = runtimeMetadata.supportsImageDetailOriginal
+    public val modelMessages: JsonObject? get() = runtimeMetadata.modelMessages
+    public val useResponsesLite: Boolean get() = runtimeMetadata.useResponsesLite
+
     /** The id and every spelling the endpoint says resolves to it. */
     public val spellings: List<String> get() = listOf(id) + aliases
 }
@@ -130,7 +137,12 @@ internal class UpstreamRosterParser(private val json: Json = Json { ignoreUnknow
         aliases = strings(row["aliases"]),
         unusable = unusable(row),
         rates = ListedPricing.of(row),
-        toolMode = JsonScalars.str(row, "tool_mode"),
+        runtimeMetadata = ModelRuntimeMetadata(
+            supportsImageDetailOriginal = row["supports_image_detail_original"] == JsonPrimitive(true),
+            modelMessages = row["model_messages"] as? JsonObject,
+            useResponsesLite = row["use_responses_lite"] == JsonPrimitive(true),
+            toolMode = JsonScalars.str(row, "tool_mode"),
+        ),
     )
 
     /** What the row itself says against serving a Claude Code turn, in the three forms endpoints use

@@ -154,9 +154,9 @@ zstd_request_body = true
 # code_mode = false
 # The JAR-bundled runner fills existing host JVMs to four session engines before starting another.
 # These code-mode-only overrides retain the defaults shown when omitted (chatgpt-oauth + responses).
-#   code_mode_workers = 6      maximum on-demand host JVMs, with four session-owned engines per host
+#   code_mode_workers = 6      admission budgets, with four concurrent native cells per budget
 # retired: code_mode_timeout_ms — remove this key; native exec/wait yield_time_ms observes cells without cancelling them.
-#   code_mode_heap = 512       MiB for each host JVM heap; each session's native heap has its own 384 MiB cap
+#   code_mode_heap = 512       MiB reserved per cell for admission accounting; the bundled host owns its actual heap
 #   code_mode_memory_mb = 24576 head-wide reservation including collector/native headroom; idle engines evict first
 # The default admits 21 concurrent sessions: 6 host reservations x 1152 MiB + 21 engines x 832 MiB = 24384 MiB.
 # A 22nd would reserve 25216 MiB and is refused without evicting a live or fresh-unknown parked cell.
@@ -607,6 +607,12 @@ command = "claudex"
 # config_dir = "~/claude-accounts/claudex"   # this head's Claude Code config folder; default ~/.claude-<head key>
 [heads.claudex.overrides]
 maxInflight = "100"            # the concurrency this account has tolerated in daily use (fan-outs included)
+# Code Mode controls are per-head overrides and require a restart. Omitted keys retain Codex's defaults.
+# codeModeDefaultExecYieldTimeMs = "30000" # ordinary exec observation; a first-line pragma overrides it
+# codeModeToolDescriptionFirst = "false" # tool instructions precede namespace guidance when true
+# codeModeShowCellOverhead = "false" # show handler, host and overhead timing in native tool output
+# codeModeToolInputSchemaMaxBytes = "16000" # optional larger declaration budget; the bundled minimum still applies
+# codeModeUnifiedImageBudget = "false" # hide legacy detail guidance for a selected lite/original-capable model
 # progressLine (bool, default true, HOT) is the other knob worth knowing on THIS head. A wire
 # that has gone quiet for 30s carries a short line from splice saying how long the turn has been
 # running and whether the model has produced anything yet — the codex rows reason for minutes with

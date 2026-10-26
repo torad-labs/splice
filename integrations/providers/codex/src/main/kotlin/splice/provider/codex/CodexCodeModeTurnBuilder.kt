@@ -4,6 +4,7 @@ package splice.provider.codex
 import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.JsonPrimitive
 import splice.core.parse.AnthropicTurnBody
 import splice.core.util.JsonScalars
 import splice.core.wire.ContentBlock
@@ -19,10 +20,14 @@ import splice.core.wire.UnknownBlock
 import splice.dialect.responses.request.ImageDisposition
 import splice.dialect.responses.request.ResponsesToolResultMedia
 import splice.provider.codex.branch.CodeModeClearedCandidates
+import splice.provider.codex.callbacks.CodeModeClientToolValues
+import splice.provider.codex.catalog.CodeModeCatalogMessages
 import splice.provider.codex.request.CodexCodeModeInstructions
 import splice.upstream.BuiltTurn
 import splice.upstream.codemode.CodeModeManual
 import splice.upstream.codemode.CodeModeResult
+import splice.upstream.codemode.CodeModeResultDisposition
+import splice.upstream.codemode.CodeModeToolDefinitions
 
 /** [media] is the dialect's own tool_result image renderer (V4-179): the bridge renders a result's
  *  follow-ups ONCE with the same policy the ordinary path applies, persists them on the record and
@@ -33,7 +38,10 @@ internal class CodexCodeModeTurnBuilder(
     private val media: ResponsesToolResultMedia,
     models: Collection<String>? = null,
     private val codeModeOnly: CodeModeOnlyModels = NoCodeModeOnlyModels,
+    private val originalImageModels: CodeModeOriginalImageModels = NoCodeModeOriginalImageModels,
+    private val settings: CodexCodeModeSettings = CodexCodeModeSettings(),
 ) {
+    private val catalogs = splice.provider.codex.catalog.CodeModeTurnCatalogs(settings, originalImageModels)
     private val operatorModels: Set<String> = CodexCodeModeModels.normalize(models.orEmpty())
 
     /** The provider's compaction flag is deliberately absent: the bridge rides a compaction exactly as it rides a
@@ -50,6 +58,8 @@ internal class CodexCodeModeTurnBuilder(
         }
         require(!sessionId.isNullOrBlank()) { "code mode requires a client session id" }
         val cleared = CodeModeClearedCandidates.read(body)
+        val toolPolicy = catalogs.policy(body, built)
+        val messages = CodeModeCatalogMessages(toolPolicy.modelMessages)
         val turn = CodexCodeModeBridge.Turn(
             sessionId = sessionId,
             conversationKey = built.meta.scope.conversationKey.orEmpty(),
@@ -61,10 +71,14 @@ internal class CodexCodeModeTurnBuilder(
                 legacyResults(body),
                 cleared,
             ),
-            descriptions = descriptions(body),
+            catalog = splice.provider.codex.catalog.CodeModeTurnCatalog(
+                messages.functions(catalogs.definitions(body, built.requestBody)),
+                toolPolicy,
+                descriptions(body),
+            ),
         )
         val disableParallel = body.typed.toolChoice?.disableParallelToolUse == true
-        val surface = manager.injectTool(built.requestBody, turn.tools)
+        val surface = manager.injectTool(built.requestBody, turn.tools, turn.toolPolicy)
         return built.copy(
             meta = built.meta.copy(tools = built.meta.tools.copy(codeMode = true)),
             requestBody = CodexCodeModeInstructions.append(surface, disableParallel),
@@ -108,10 +122,14 @@ internal class CodexCodeModeTurnBuilder(
      *  turn rides in is an opaque lambda a test cannot look inside. */
     internal fun toolResults(body: AnthropicTurnBody): List<CodeModeResult> = bridgeResults(body).map { block ->
         val dispositions = media.followUps(block).dispositions.iterator()
+        val output = block.content.joinToString("") { part -> resultText(block.toolUseId, part, dispositions) }
+        val value = CodeModeClientToolValues.value(block)
         CodeModeResult(
             id = block.toolUseId,
-            output = block.content.joinToString("") { part -> resultText(block.toolUseId, part, dispositions) },
+            output = output,
             isError = block.isError == true,
+            disposition = CodeModeResultDisposition.TOOL_OUTPUT,
+            payload = value?.takeUnless { it == output }?.let(::JsonPrimitive),
         )
     }
 
@@ -119,7 +137,11 @@ internal class CodexCodeModeTurnBuilder(
      *  with its TypeScript declaration, so a tool the manual defers still shows the cell its arguments. */
     internal fun descriptions(body: AnthropicTurnBody): Map<String, String> = body.typed.tools.associate { tool ->
         tool.name to CodeModeManual.augmented(
-            CodeModeManual.NestedTool(tool.name, tool.description.orEmpty(), tool.inputSchema),
+            CodeModeManual.NestedTool(
+                tool.name,
+                tool.description.orEmpty(),
+                CodeModeToolDefinitions.parameters(tool.inputSchema ?: CodeModeToolDefinitions.emptyInputSchema),
+            ),
         )
     }
 

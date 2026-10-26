@@ -1,0 +1,118 @@
+import { createHash } from "node:crypto";
+import { closeSync, mkdirSync, openSync, readFileSync, readlinkSync, readdirSync, writeFileSync, writeSync } from "node:fs";
+import { basename, join } from "node:path";
+import xterm from "@xterm/headless";
+import { nativeCompletion } from "./native-events";
+import type { CliProcess, NativeCompletion } from "./types";
+
+interface TerminalOptions {
+  argv: string[];
+  cwd: string;
+  home: string;
+  directory: string;
+  expectedHostSha256: string;
+  expectedCliSha256: string;
+  timeoutMs: number;
+}
+
+function descendants(pid: number): number[] {
+  const pending = [pid], found = new Set<number>();
+  while (pending.length && found.size < 128) {
+    const current = pending.pop()!;
+    try {
+      for (const task of readdirSync(`/proc/${current}/task`)) {
+        let children: string;
+        try { children = readFileSync(`/proc/${current}/task/${task}/children`, "utf8"); } catch { continue; }
+        for (const value of children.trim().split(/\s+/)) {
+          const child = Number(value);
+          if (child > 0 && !found.has(child)) { found.add(child); pending.push(child); }
+        }
+      }
+    } catch { /* A child may exit between the native event and this ownership observation. */ }
+  }
+  return [...found];
+}
+
+/** A real PTY and terminal-query emulator; neither ANSI text nor quiet time establishes completion. */
+export async function runTerminal(options: TerminalOptions): Promise<{
+  completion: NativeCompletion; hostProcesses: Array<{ pid: number; sha256: string }>; cliProcess: CliProcess;
+}> {
+  if (process.platform !== "linux") throw Error("Current executable/child attestation requires Linux /proc");
+  if (typeof Bun.Terminal !== "function") throw Error("A Bun.Terminal-compatible runtime is required");
+  mkdirSync(options.directory, { recursive: true, mode: 0o700 });
+  const raw = openSync(join(options.directory, "terminal.raw"), "w", 0o600);
+  const events = openSync(join(options.directory, "terminal-events.jsonl"), "w", 0o600);
+  const emulator = new xterm.Terminal({ cols: 120, rows: 40, scrollback: 10000, allowProposedApi: true });
+  const record = (kind: string, data: string | Uint8Array) => {
+    const bytes = Buffer.from(data);
+    writeSync(events, JSON.stringify({ kind, at_ms: Date.now(), raw_base64: bytes.toString("base64"), bytes: bytes.length }) + "\n");
+  };
+  let terminal: Bun.Terminal | undefined;
+  emulator.onData(value => { if (terminal && !terminal.closed) { record("terminal_query_reply", value); terminal.write(value); } });
+  terminal = new Bun.Terminal({
+    cols: 120, rows: 40, name: "xterm-256color",
+    data(_terminal, bytes) { writeSync(raw, bytes); record("pty_output", bytes); emulator.write(bytes); },
+  });
+  const environment: Record<string, string | undefined> = { ...process.env, CODEX_HOME: options.home, TERM: "xterm-256color" };
+  // The owned provider has no auth and talks only to loopback; do not give the reference inherited API credentials.
+  for (const name of ["OPENAI_API_KEY", "CODEX_API_KEY", "CODEX_INTERNAL_API_KEY", "OPENAI_BASE_URL", "CHATGPT_BASE_URL"]) delete environment[name];
+  let child: Bun.Subprocess | undefined;
+  let cliIdentity: Omit<CliProcess, "exit"> | undefined;
+  let completion: NativeCompletion | null = null;
+  let completedAt: number | undefined;
+  let sentExit = false, confirmedExit = false;
+  const hosts = new Map<number, string>();
+  const started = Date.now();
+  const screen = () => {
+    const buffer = emulator.buffer.active;
+    return Array.from({ length: buffer.length }, (_, index) => buffer.getLine(index)?.translateToString(true) ?? "").join("\n");
+  };
+  try {
+    child = Bun.spawn(options.argv, { cwd: options.cwd, env: environment, terminal });
+    const stat = readFileSync(`/proc/${child.pid}/stat`, "utf8");
+    const startTicks = stat.slice(stat.lastIndexOf(")") + 2).split(" ")[19];
+    const sha256 = createHash("sha256").update(readFileSync(`/proc/${child.pid}/exe`)).digest("hex");
+    if (!startTicks || !/^[0-9]+$/.test(startTicks) || sha256 !== options.expectedCliSha256) throw Error("Actual interactive CLI process identity differs");
+    cliIdentity = { pid: child.pid, sha256, startTicks };
+    while (child.exitCode === null) {
+      for (const pid of descendants(child.pid)) {
+        if (hosts.has(pid)) continue;
+        try {
+          if (!basename(readlinkSync(`/proc/${pid}/exe`)).startsWith("codex-code-mode-host")) continue;
+          const sha256 = createHash("sha256").update(readFileSync(`/proc/${pid}/exe`)).digest("hex");
+          if (sha256 === options.expectedHostSha256) hosts.set(pid, sha256);
+        } catch { /* Observation is retried while the controlled client owns its child. */ }
+      }
+      if (!completedAt) {
+        completion = nativeCompletion(options.home);
+        if (completion) {
+          completedAt = Date.now();
+          await Bun.sleep(150);
+          if (child.exitCode === null && !terminal.closed) { record("exit_after_native_completion", "\x04"); terminal.write("\x04"); sentExit = true; }
+        } else if (Date.now() - started > options.timeoutMs) throw Error("No authentic completed native turn before timeout");
+      } else {
+        if (sentExit && !confirmedExit && screen().includes("Press Ctrl-D again to exit")) {
+          record("confirmed_exit_after_native_completion", "\x04"); terminal.write("\x04"); confirmedExit = true;
+        }
+        if (Date.now() - completedAt > 10000) throw Error("Interactive client did not exit after native completion");
+      }
+      await Bun.sleep(50);
+    }
+    const exit = await child.exited;
+    if (!completion || exit !== 0) throw Error(`Client exit ${exit} without a successful native turn`);
+    if (!hosts.size) throw Error("The actual client did not expose a child executing the pinned native host bytes");
+    await new Promise<void>(resolve => emulator.write("", resolve));
+    writeFileSync(join(options.directory, "terminal-screen.txt"), screen() + "\n", { mode: 0o600 });
+    return { completion, hostProcesses: [...hosts].map(([pid, sha256]) => ({ pid, sha256 })), cliProcess: { ...cliIdentity, exit } };
+  } finally {
+    if (child && child.exitCode === null) {
+      child.kill("SIGTERM");
+      await Promise.race([child.exited, Bun.sleep(2000)]);
+      if (child.exitCode === null) { child.kill("SIGKILL"); await child.exited; }
+    }
+    await new Promise<void>(resolve => emulator.write("", resolve));
+    writeFileSync(join(options.directory, "process.json"), JSON.stringify({ ...cliIdentity, pid: child?.pid, exit: child?.exitCode, signal: child?.signalCode }) + "\n", { mode: 0o600 });
+    writeFileSync(join(options.directory, "terminal-screen.txt"), screen() + "\n", { mode: 0o600 });
+    terminal.close(); emulator.dispose(); closeSync(raw); closeSync(events);
+  }
+}

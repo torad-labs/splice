@@ -36,5 +36,9 @@ public class CodeModeFunctionPrefixes(prefixes: Map<String, String>, available: 
         tool.metadata.namespace == null || tool.metadata.namespace in setOf("", "functions")
 }
 
+// why: Codex 0.164 gives the default-namespace prefixes one 256-byte combined budget,
+// `remaining = 256usize` in functions_namespace_function_prefixes.rs.
 private const val FUNCTION_PREFIX_BYTES = 256
+
+// why: Codex joins each prefix to its description with "\n\n" and charges those 2 bytes to the budget.
 private const val PARAGRAPH_SEPARATOR_BYTES = 2

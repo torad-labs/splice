@@ -1,0 +1,11 @@
+{
+  "schema": 1,
+  "cases": 157303,
+  "inputsSha256": "18458f4258b9bb8aa80e04bed64bb54ee032823eaebe859172b9dc05984c61f7",
+  "stringInputsSha256": "f1f24f38c6a71794d228d7e2689b7fa57a493ea71dc4fd869fec316845a9d95e",
+  "groups": {
+    "json-value-bytes": 155124,
+    "json-ignored-value": 924,
+    "json-value-string": 1255
+  }
+}

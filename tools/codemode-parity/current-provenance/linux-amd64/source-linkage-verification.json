@@ -1,0 +1,22 @@
+{
+  "schema": 1,
+  "command": [
+    "/home/marcos/Documents/dev/projects/splice/artifacts/codemode-current-parity-2026-10-25/native-upgrade-0.164.0/cosign-linux-amd64",
+    "verify-blob",
+    "--bundle",
+    "/home/marcos/Documents/dev/projects/splice/artifacts/codemode-current-parity-2026-10-25/native-upgrade-0.164.0/linux-amd64/codex-code-mode-host-x86_64-unknown-linux-musl.sigstore",
+    "--certificate-identity",
+    "https://github.com/openai/codex/.github/workflows/rust-release.yml@refs/tags/rust-v0.164.0",
+    "--certificate-oidc-issuer",
+    "https://token.actions.githubusercontent.com",
+    "--certificate-github-workflow-sha",
+    "6aaac694803004a63c6f393d153c96d22521a6b9",
+    "/home/marcos/Documents/dev/projects/splice/artifacts/codemode-current-parity-2026-10-25/native-upgrade-0.164.0/linux-amd64/codex-code-mode-host-x86_64-unknown-linux-musl"
+  ],
+  "exitCode": 0,
+  "stdout": "",
+  "stderr": "Verified OK\n",
+  "sourceRevision": "6aaac694803004a63c6f393d153c96d22521a6b9",
+  "executableSha256": "8ee4f472e92ac226a189e98998633b2d07f989f208515750764db660369f2926",
+  "bundleSha256": "a61eb6c4ab76ca70596e23a69ad00c5cd46be0c8da97b5c4e397fdf66a01df96"
+}

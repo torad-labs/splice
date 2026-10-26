@@ -2,6 +2,7 @@ import { randomBytes } from "node:crypto";
 import { readFile, writeFile, mkdir, readdir, stat, readlink } from "node:fs/promises";
 import { resolve } from "node:path";
 import { NativeReference } from "./native-reference";
+import { CurrentGrpcReference } from "./current-grpc-reference";
 import { runtimeCases, runRuntimeCase } from "./runtime-cases";
 import { artifact, contractFindings, harnessHash, identity, localSealKey, requiredCaseIds,
   sealReceipt, sha256, structuralFindings, rawArtifactFindings, type Receipt, type CaseEvidence } from "./qualification";
@@ -18,6 +19,7 @@ import { runNativeGatewayCases } from "./native-gateway-cases";
 import { candidateCommand } from "./candidate-command";
 import { assertCandidateWorkerLoss } from "./candidate-loss";
 import { resolveEvidenceDirectory } from "./evidence-location";
+import { currentReadiness, loadCurrentInputs } from "./current-readiness";
 
 const directory = import.meta.dir;
 const repo = resolve(directory, "../..");
@@ -29,12 +31,16 @@ for (let i = 0; i < args.length; i += 2) {
   if (!name?.startsWith("--") || !value || value.startsWith("--") || options.has(name)) throw new Error("arguments must be unique --name VALUE pairs");
   options.set(name, value);
 }
-const known = ["--candidate-jar", "--candidate-host", "--reference-host", "--baseline-jar", "--java", "--evidence", "--installed-pid", "--host-pid", "--jar-fd"];
+const known = ["--candidate-jar", "--candidate-host", "--reference-host", "--baseline-jar", "--java", "--evidence", "--installed-pid", "--host-pid", "--jar-fd", "--source-repo"];
 for (const option of options.keys()) if (!known.includes(option)) throw new Error(`unknown option ${option}`);
 let evidence = resolve(options.get("--evidence") ?? defaultEvidence);
 let evidenceSelected = false;
 const progressPath = resolve(directory, "progress.json");
 const lock = await Bun.file(resolve(directory, "reference-lock.json")).json();
+const currentFloor = command === "qualify-floor-current";
+const currentInputs = currentFloor ? await loadCurrentInputs(options.get("--source-repo")) : undefined;
+if (currentInputs?.findings.length) throw new Error(currentInputs.findings.join("; "));
+const activeReferenceHash = currentInputs?.lock.nativeHostSha256 ?? lock.nativeExecutableSha256;
 const contractBytes = await readFile(resolve(directory, "contract.json"));
 const contract = JSON.parse(contractBytes.toString("utf8"));
 const contractProblems = contractFindings(contract);
@@ -57,9 +63,10 @@ if (git.exitCode !== 0) throw new Error("qualification seal requires a Git check
 const keyPath = resolve(repo, git.stdout.toString().trim(), "codemode-parity-seal.key");
 const currentExpected = async (receipt: Receipt) => ({
   contractSha256: sha256(await readFile(resolve(directory, "contract.json"))),
-  harnessSha256: await harnessHash(directory), referenceSha256: lock.nativeExecutableSha256,
+  harnessSha256: await harnessHash(directory), referenceSha256: activeReferenceHash,
   candidateJarSha256: (await identity(options.get("--candidate-jar") ?? receipt.candidateJar.path)).sha256,
   candidateNativeHostSha256: (await identity(options.get("--candidate-host") ?? receipt.candidateNativeHost.path)).sha256,
+  ...(currentInputs ? { requireVerifiedSource: true, sourceRevision: currentInputs.lock.sourceRevision, provenanceSha256: currentInputs.lock.nativeProvenanceSha256 } : {}),
 });
 async function verifyFiles(receipt: Receipt): Promise<string[]> {
   const findings: string[] = [];
@@ -76,7 +83,7 @@ async function verifyFiles(receipt: Receipt): Promise<string[]> {
   }
   return findings;
 }
-async function productionIdentity(host: NativeReference, jarHash: string, nativeHash: string): Promise<any> {
+async function productionIdentity(host: Pick<NativeReference, "pid">, jarHash: string, nativeHash: string): Promise<any> {
   if (!host.pid) throw new Error("candidate adapter has no live process");
   const jarFds: string[] = [];
   for (const fd of await readdir(`/proc/${host.pid}/fd`)) {
@@ -107,7 +114,7 @@ async function qualify(): Promise<void> {
   const candidateJar = await identity(required("--candidate-jar"));
   const candidateNativeHost = await identity(required("--candidate-host"));
   const java = required("--java");
-  if (reference.sha256 !== lock.nativeExecutableSha256) throw new Error("reference executable differs from the pinned native oracle");
+  if (reference.sha256 !== activeReferenceHash) throw new Error("reference executable differs from the pinned native oracle");
   if (contractProblems.length) throw new Error(contractProblems.join("; "));
   await mkdir(evidence, { recursive: true });
   const key = await localSealKey(keyPath, true);
@@ -116,12 +123,14 @@ async function qualify(): Promise<void> {
     artifacts: [], findings: [missingDimensions[id] ?? "Not executed in this run."] }));
   const receipt: Receipt = { schema: 1, runId, startedAt: new Date().toISOString(), finishedAt: "",
     contractSha256, harnessSha256: currentHarnessHash, reference, candidateJar, candidateNativeHost,
-    referenceSourceLinkage: "unproven", cases, qualified: false, seal: "" };
+    referenceSourceLinkage: currentInputs ? "verified" : "unproven",
+    ...(currentInputs ? { referenceSourceEvidence: { sourceRevision: currentInputs.lock.sourceRevision,
+      provenance: await artifact(resolve(repo, currentInputs.lock.nativeProvenanceDefault)) } } : {}), cases, qualified: false, seal: "" };
   for (const test of runtimeCases) {
     const item = cases.find(entry => entry.id === test.id)!;
     item.findings = [];
     for (const side of ["reference", "candidate"] as const) {
-      const host = side === "reference" ? new NativeReference(reference.path) :
+      const host = side === "reference" ? (currentFloor ? new CurrentGrpcReference(reference.path) : new NativeReference(reference.path)) :
         new NativeReference(java, candidateCommand(java, candidateJar.path, candidateNativeHost.path).slice(1));
       let failure: string | null = null, observedIdentity: any = null;
       if (side === "candidate") host.crashNativeHost = async () => {
@@ -140,6 +149,7 @@ async function qualify(): Promise<void> {
         executableSha256: side === "reference" ? reference.sha256 : candidateJar.sha256,
         nativeHostSha256: side === "reference" ? reference.sha256 : candidateNativeHost.sha256,
         observedIdentity, failure, transcript: host.transcript, stderr: host.stderr,
+        ...(host instanceof CurrentGrpcReference ? { referenceTransport: "grpc+stdio", rawGrpc: host.rawGrpc } : {}),
       }, null, 2) + "\n");
       item.artifacts.push(await artifact(path));
     }
@@ -148,10 +158,15 @@ async function qualify(): Promise<void> {
     console.log(`${item.state === "executed" ? "EXECUTED" : "UNQUALIFIED"} ${item.id}`);
   }
   await runNativeGatewayCases(java, candidateJar.path, candidateNativeHost.path, evidence, runId, cases);
+  // This is the preserved historical formatter regression, not the current formatter claim.
+  // The current core verifier additionally executes the exact current output/adapter/truncation source.
   await runFormatterCases(java, candidateJar.path, evidence, runId, cases);
-  await runAudioCases(java, candidateJar.path, evidence, runId, cases);
+  await runAudioCases(java, candidateJar.path, evidence, runId, cases, currentInputs?.lock.sourceRevision);
   await runGatewayCases(java, candidateJar.path, evidence, runId, cases);
-  await runPackagingCase(java, candidateJar.path, candidateNativeHost.sha256, evidence, runId, cases);
+  await runPackagingCase(java, candidateJar.path, candidateNativeHost.sha256, evidence, runId, cases, currentInputs ? {
+    release: currentInputs.lock.release, sourceRevision: currentInputs.lock.sourceRevision,
+    platforms: Object.fromEntries(currentInputs.provenance!.artifacts.map(item => [item.platform, item.sha256])),
+  } : undefined);
   await runInteractiveCases(candidateJar.path, evidence, runId, cases);
   if (options.has("--baseline-jar")) {
     const item = cases.find(entry => entry.id === "evidence.failing-baseline")!;
@@ -181,8 +196,8 @@ async function qualify(): Promise<void> {
   const findings = [...contractProblems, ...structuralFindings(receipt, await currentExpected(receipt), key), ...await verifyFiles(receipt)];
   receipt.qualified = findings.length === 0; receipt.seal = sealReceipt(receipt, key);
   await writeFile(resolve(evidence, "receipt.json"), JSON.stringify(receipt, null, 2) + "\n");
-  await writeProgress(receipt, findings);
-  console.log(`${receipt.qualified ? "QUALIFIED" : "UNQUALIFIED"}: ${cases.filter(item => item.state === "executed").length}/${requiredCaseIds.length} required families executed successfully.`);
+  if (!currentFloor) await writeProgress(receipt, findings);
+  console.log(`${receipt.qualified ? "BOUNDED_REGRESSION_PASSED" : "UNQUALIFIED"}: ${cases.filter(item => item.state === "executed").length}/${requiredCaseIds.length} frozen regression families; current completeness requires a separate source-inventory receipt.`);
   if (findings.length) console.log(findings.join("\n"));
   process.exitCode = findings.length ? 1 : 0;
 }
@@ -196,7 +211,7 @@ async function readiness(): Promise<void> {
     findings.push(...await verifyFiles(receipt!));
   } catch (error) { findings.push(error instanceof Error ? error.message : String(error)); }
   await writeProgress(receipt, findings);
-  console.log(`${findings.length ? "UNQUALIFIED" : "QUALIFIED"}: ${requiredCaseIds.length} required families; ${findings.length} finding(s).`);
+  console.log(`${findings.length ? "UNQUALIFIED" : "BOUNDED_REGRESSION_PASSED"}: ${requiredCaseIds.length} frozen families; ${findings.length} finding(s). This is historical bounded evidence, not current completeness.`);
   if (findings.length) console.log(findings.join("\n"));
   process.exitCode = findings.length ? 1 : 0;
 }
@@ -217,19 +232,27 @@ async function attestInstall(): Promise<void> {
   if (remaining.length) console.log(remaining.join("\n")); process.exitCode = remaining.length ? 1 : 0;
 }
 try {
-  if (!["qualify", "readiness", "attest-install"].includes(command)) {
-    throw new Error("usage: bun tools/codemode-parity [readiness|qualify|attest-install] [--name VALUE ...]");
+  if (!["qualify", "readiness", "readiness-bounded", "attest-install", "qualify-floor-current", "qualify-current", "attest-install-current", "inventory-check"].includes(command)) {
+    throw new Error("usage: bun tools/codemode-parity [readiness|readiness-bounded|qualify|qualify-current|attest-install|inventory-check] [--name VALUE ...]");
   }
-  if (command === "readiness" || command === "attest-install") {
+  if (command === "readiness-bounded" || command === "attest-install") {
     evidence = await resolveEvidenceDirectory(options.get("--evidence"), progressPath, defaultEvidence);
   }
   evidenceSelected = true;
-  if (command === "qualify") await qualify();
-  else if (command === "readiness") await readiness();
+  if (command === "qualify" || command === "qualify-floor-current") await qualify();
+  else if (command === "readiness") await currentReadiness(options);
+  else if (command === "qualify-current") { const { qualifyCurrent } = await import("./current-qualify"); await qualifyCurrent(options); }
+  else if (command === "attest-install-current") { const { attestCurrentInstallation } = await import("./current-qualify"); await attestCurrentInstallation(options); }
+  else if (command === "inventory-check") {
+    const inputs = await loadCurrentInputs(options.get("--source-repo"));
+    console.log(`${inputs.findings.length ? "FAIL" : "INVENTORY_CURRENT"}: ${inputs.inventory.units.length} source units; ${inputs.findings.length} finding(s). Inventory validity is not product parity.`);
+    if (inputs.findings.length) console.log(inputs.findings.join("\n")); process.exitCode = inputs.findings.length ? 1 : 0;
+  }
+  else if (command === "readiness-bounded") await readiness();
   else if (command === "attest-install") await attestInstall();
 } catch (error) {
   const finding = error instanceof Error ? error.message : String(error);
   // Preserve malformed progress unchanged: erasing its pointer could select an unrelated older receipt next time.
-  if (evidenceSelected) await writeProgress(undefined, [finding]);
+  if (evidenceSelected && !["readiness", "qualify-current", "attest-install-current", "inventory-check", "qualify-floor-current"].includes(command)) await writeProgress(undefined, [finding]);
   console.error(`UNQUALIFIED: ${finding}`); process.exitCode = 1;
 }

@@ -31,8 +31,11 @@ internal class CodexCodeModeWire(
 
     private val omissions = CodeModeHistoryOmissions(log, retireNative)
 
-    fun injectTool(request: JsonObject, clientTools: Set<String>): JsonObject =
-        toolSurface.injectTool(request, clientTools)
+    fun injectTool(
+        request: JsonObject,
+        clientTools: Set<String>,
+        policy: CodeModeToolPolicy = CodeModeToolPolicy(),
+    ): JsonObject = toolSurface.injectTool(request, clientTools, policy)
 
     /** The round as code mode reads it: parsed once here, and read as that one tree after. */
     fun body(round: RoundBody): CodeModeBody = CodeModeBody(round, json)
@@ -171,7 +174,10 @@ private const val TYPE_TOOL_SEARCH_CALL = "tool_search_call"
 private const val TYPE_TOOL_SEARCH_OUTPUT = "tool_search_output"
 private val TOOL_SEARCH_ITEMS = setOf(TYPE_TOOL_SEARCH_CALL, TYPE_TOOL_SEARCH_OUTPUT)
 
-/** Whether an earlier turn's reasoning rides back to the model, asked at each post so a change acts on the next round. */
+/**
+ * Whether an earlier turn's reasoning rides back to the model, asked at each post so a change acts on the next
+ * round.
+ */
 public fun interface CodeModeReplayReasoning {
     public fun now(): Boolean
 }

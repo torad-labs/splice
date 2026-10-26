@@ -11,7 +11,7 @@ const supported = {
   "darwin-aarch64": "b4b3a741c08ae62495ba8d0326c821ddf7001068518c7cf98fd8bc791d1d18e8",
   "windows-amd64": "85a4c05b832f4fa9ff4fd0b04582fd9496c971baad86ab54b277358023f24590",
 };
-export async function runPackagingCase(java: string, jar: string, nativeHostSha256: string, evidence: string, runId: string, cases: CaseEvidence[]): Promise<void> {
+export async function runPackagingCase(java: string, jar: string, nativeHostSha256: string, evidence: string, runId: string, cases: CaseEvidence[], expected?: { release: string; sourceRevision: string; platforms: Record<string, string> }): Promise<void> {
   const family = cases.find(item => item.id === "packaging.native-host")!;
   const observations: any[] = [];
   family.findings = [];
@@ -22,7 +22,7 @@ export async function runPackagingCase(java: string, jar: string, nativeHostSha2
     assert.equal(new Set(entries).size, entries.length, "duplicate native jar entries are forbidden");
     const current = `${process.platform === "win32" ? "windows" : process.platform}-${process.arch === "x64" ? "amd64" : process.arch === "arm64" ? "aarch64" : process.arch}`;
     let shippedCurrent = false;
-    for (const [target, pinned] of Object.entries(supported)) {
+    for (const [target, pinned] of Object.entries(expected?.platforms ?? supported)) {
       const prefix = `splice/codemode/native/${target}/`;
       const shipped = entries.filter(name => name.startsWith(prefix));
       if (!shipped.length) { observations.push({ target, shipped: false, executed: false }); continue; }
@@ -31,7 +31,8 @@ export async function runPackagingCase(java: string, jar: string, nativeHostSha2
       const values = new Map(properties.split(/\r?\n/).filter(line => line && !line.startsWith("#")).map(line => {
         const equals = line.indexOf("="); assert.ok(equals > 0); return [line.slice(0, equals).trim(), line.slice(equals + 1).trim()];
       }));
-      assert.equal(values.get("sha256"), pinned); assert.equal(values.get("release"), "0.159.1");
+      assert.equal(values.get("sha256"), pinned); assert.equal(values.get("release"), expected?.release ?? "0.159.1");
+      if (expected) assert.equal(values.get("sourceRevision"), expected.sourceRevision, `${target} packaged source provenance`);
       const bytes = gunzipSync(zipEntry(jar, prefix + "codex-code-mode-host.gz"));
       assert.equal(sha256(bytes), pinned, `${target} payload is not the pinned supported host`);
       if (target === current) { assert.equal(pinned, nativeHostSha256); shippedCurrent = true; }

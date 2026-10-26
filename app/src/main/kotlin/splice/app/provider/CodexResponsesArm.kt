@@ -24,14 +24,18 @@ import splice.oauth.OAuthAccountFiles
 import splice.provider.codex.CodeModeBridgeConfig
 import splice.provider.codex.CodeModeJournaling
 import splice.provider.codex.CodeModeOnlyModels
+import splice.provider.codex.CodeModeOriginalImageModels
 import splice.provider.codex.CodeModeReplayReasoning
 import splice.provider.codex.CodeModeStateLocation
 import splice.provider.codex.CodexAuthProvider
 import splice.provider.codex.CodexCodeModeBridge
+import splice.provider.codex.CodexCodeModeConfiguration
 import splice.provider.codex.CodexCodeModeWiring
 import splice.provider.codex.CodexOAuthEndpoints
 import splice.provider.codex.CodexProvider
 import splice.provider.codex.CodexQuirks
+import splice.provider.codex.catalog.CodeModeModelCatalog
+import splice.provider.codex.catalog.CodeModeModelMetadata
 import splice.provider.codex.state.lease.CodeModeCellLease
 import splice.provider.codex.state.lease.CodeModeSessionAlive
 import splice.provider.codex.state.lease.CodeModeSessionIdle
@@ -96,16 +100,34 @@ internal class CodexResponsesArm(
                 // config as it stands then, so all four fold knobs are live.
                 foldConfig = LiveFoldConfig { quirksOverlay.foldConfigFrom(cfg.current()) },
                 accountIdHeader = providerCfg.quirks.accountIdHeader,
-                codeMode = CodexCodeModeWiring(
-                    bridge = codeModeBridge(ctx)?.also { codeModeHeads += ctx.key },
-                    models = ctx.providerCfg.quirks.codeModeModels,
-                    onlyModels = backendCodeModeOnly(ctx),
-                ),
+                codeMode = codeModeWiring(ctx),
             ),
             auth,
             accounts,
         )
     }
+
+    private fun codeModeWiring(ctx: ProviderBuild): CodexCodeModeWiring = CodexCodeModeWiring(
+        bridge = codeModeBridge(ctx)?.also { codeModeHeads += ctx.key },
+        models = ctx.providerCfg.quirks.codeModeModels,
+        onlyModels = backendCodeModeOnly(ctx),
+        originalImageModels = CodeModeOriginalImageModels {
+            ctx.roster.discovered.metadataForHead(ctx.key).filter { it.supportsImageDetailOriginal }
+                .flatMap { it.spellings }
+        },
+        settings = CodexCodeModeConfiguration.read(ctx.cfg).copy(
+            modelCatalog = CodeModeModelCatalog {
+                ctx.roster.discovered.metadataForHead(ctx.key).flatMap { model ->
+                    val metadata = CodeModeModelMetadata(
+                        model.modelMessages,
+                        model.supportsImageDetailOriginal,
+                        model.useResponsesLite,
+                    )
+                    model.spellings.map { it to metadata }
+                }.toMap()
+            },
+        ),
+    )
 
     /** V4-441: the models the backend marks `code_mode_only`, read from the head's roster at each turn so a
      *  refresh while the daemon runs reaches the next one. With none known at start (no answer and no kept

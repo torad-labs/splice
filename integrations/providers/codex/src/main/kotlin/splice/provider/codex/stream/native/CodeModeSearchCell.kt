@@ -131,4 +131,6 @@ internal class CodeModeSearchCell(private val delegate: NativeCodeModeCell, turn
     }
 }
 
+// why: Codex 0.164's code-mode yield defaults, DEFAULT_EXEC_YIELD_TIME_MS and DEFAULT_WAIT_YIELD_TIME_MS
+// in code-mode-protocol/src/runtime.rs, are both 10_000 ms.
 private const val DEFAULT_SEARCH_OBSERVATION_MS = 10_000L

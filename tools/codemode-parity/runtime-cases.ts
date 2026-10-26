@@ -1,8 +1,8 @@
 import assert from "node:assert/strict";
-import { NativeReference, type HostFrame } from "./native-reference";
+import { type RuntimeDriver, type HostFrame } from "./native-reference";
 import { explicitYieldSource } from "./programs";
 
-export type RuntimeCase = { id: string; destroysHost?: boolean; fullFamily?: boolean; run(host: NativeReference): Promise<void> };
+export type RuntimeCase = { id: string; destroysHost?: boolean; fullFamily?: boolean; run(host: RuntimeDriver): Promise<void> };
 const session = "parity-main";
 const tool = (name: string) => ({ name, tool_name: { name, namespace: null }, description: name,
   kind: "function", input_schema: { type: "object" }, output_schema: null });
@@ -14,18 +14,18 @@ const outcome = (value: any): any => value.Result ?? value.Yielded ?? value.Term
   value.outcome?.LiveCell?.Result ?? value.outcome?.LiveCell?.Yielded ?? value.outcome?.LiveCell?.Terminated ??
   value.outcome?.MissingCell?.Result ?? value.outcome?.MissingCell?.Terminated;
 const texts = (value: any): string[] => outcome(value).content_items.filter((item: any) => item.type === "input_text").map((item: any) => item.text);
-const execute = async (host: NativeReference, source: string, options: { tools?: string[]; yieldMs?: number; maxTokens?: number; session?: string } = {}) => {
+const execute = async (host: RuntimeDriver, source: string, options: { tools?: string[]; yieldMs?: number; maxTokens?: number; session?: string } = {}) => {
   const op = host.operation({ method: "session/execute", sessionId: options.session ?? session,
     request: { tool_call_id: `cell-${host.transcript.length}`, enabled_tools: (options.tools ?? []).map(tool), source,
       yield_time_ms: options.yieldMs ?? 1000, max_output_tokens: options.maxTokens ?? 1000 } });
   const started = ok(await op.response);
   return { id: op.id, cellId: started.cellId, initial: async () => ok(await host.wait(frame => frame.type === "execute/initialResponse" && frame.id === op.id)) };
 };
-const wait = async (host: NativeReference, cellId: string, yieldMs = 1000) => ok(await host.operation({
+const wait = async (host: RuntimeDriver, cellId: string, yieldMs = 1000) => ok(await host.operation({
   method: "session/wait", sessionId: session, request: { cell_id: cellId, yield_time_ms: yieldMs },
 }).response);
-const delegate = (host: NativeReference) => host.wait(frame => frame.type === "delegate/request");
-const reply = (host: NativeReference, frame: HostFrame, result: any) => host.send({ type: "delegate/response", id: frame.id,
+const delegate = (host: RuntimeDriver) => host.wait(frame => frame.type === "delegate/request");
+const reply = (host: RuntimeDriver, frame: HostFrame, result: any) => host.send({ type: "delegate/response", id: frame.id,
   result: { status: "ok", value: { type: "tool/result", result } } });
 const invokeName = (frame: HostFrame) => frame.request?.invocation?.tool_name?.name;
 
@@ -168,6 +168,6 @@ export const runtimeCases: RuntimeCase[] = [
   } },
 ];
 
-export async function runRuntimeCase(host: NativeReference, test: RuntimeCase): Promise<void> {
+export async function runRuntimeCase(host: RuntimeDriver, test: RuntimeCase): Promise<void> {
   await host.hello(); await host.open(session); await test.run(host);
 }

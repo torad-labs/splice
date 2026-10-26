@@ -1,0 +1,7 @@
+{
+  "id": 667994967,
+  "name": "codex-x86_64-unknown-linux-musl.sigstore",
+  "browser_download_url": "https://github.com/openai/codex/releases/download/rust-v0.164.0/codex-x86_64-unknown-linux-musl.sigstore",
+  "digest": "sha256:772d7471f5e72260884112474c33e30c9d7b7cb4570e5eb34c9af7253d623d86",
+  "size": 8509
+}

@@ -1,6 +1,7 @@
 // NEW: validates outer scripts, runtime calls, and retry-safe client result batches for code mode.
 package splice.provider.codex
 
+import kotlinx.serialization.json.JsonPrimitive
 import splice.core.turn.GatewayCustomCall
 import splice.core.util.JsonScalars
 import splice.upstream.codemode.CodeModeCall
@@ -17,8 +18,17 @@ internal class CodexCodeModeValidation(private val config: CodeModeBridgeConfig)
         value.length <= config.bounds.maxOutputChars && CodeModeLimits.fitsText(value)
 
     /** A client result enters bounded: an oversized output is truncated with the marker, never rejected. */
-    fun admit(result: CodeModeResult): CodeModeResult =
-        result.copy(output = CodeModeLimits.boundedText(result.output, config.bounds.maxOutputChars))
+    fun admit(result: CodeModeResult): CodeModeResult {
+        val payload = result.payload as? JsonPrimitive
+        return result.copy(
+            output = CodeModeLimits.boundedText(result.output, config.bounds.maxOutputChars),
+            payload = if (payload?.isString == true) {
+                JsonPrimitive(CodeModeLimits.boundedText(payload.content, config.bounds.maxOutputChars))
+            } else {
+                result.payload
+            },
+        )
+    }
 
     fun outer(
         call: GatewayCustomCall,
@@ -28,7 +38,7 @@ internal class CodexCodeModeValidation(private val config: CodeModeBridgeConfig)
         call.name !in setOf(CODE_MODE_TOOL_NAME, LEGACY_CODE_MODE_TOOL_NAME, CODE_MODE_WAIT_TOOL_NAME) ->
             "unsupported custom tool call '${call.name.ifEmpty { "<unnamed>" }}'"
         call.callId.isBlank() -> "exec call is missing call_id"
-        call.input.isBlank() -> "exec call is missing JavaScript input"
+        call.input.isBlank() && call.name == LEGACY_CODE_MODE_TOOL_NAME -> "exec call is missing JavaScript input"
         call.input.length > config.bounds.maxSourceChars || !CodeModeLimits.fitsText(call.input) ->
             "exec source exceeds the size limit"
         else -> null
@@ -91,10 +101,13 @@ internal class CodexCodeModeValidation(private val config: CodeModeBridgeConfig)
         val accepted = record.results[prior.id] ?: return false
         val cleared = turn.rendering.verifiedCleared[record.id]?.contains(prior.id) == true
         val media = record.accepted.media(prior.id)
+        // Transport disposition is server-owned; an old receipt keeps its original contract on replay.
+        val payload = if (prior.disposition == accepted.disposition) prior.payload else accepted.payload
+        val receipt = prior.copy(payload = payload, disposition = accepted.disposition, origin = accepted.origin)
         return when {
             cleared -> accepted.isError != prior.isError
-            media == null -> accepted != prior && accepted != turn.rendering.legacy.firstOrNull { it.id == prior.id }
-            else -> accepted != prior || media != turn.rendering.media[prior.id].orEmpty()
+            media == null -> accepted != receipt && accepted != turn.rendering.legacy.firstOrNull { it.id == prior.id }
+            else -> accepted != receipt || media != turn.rendering.media[prior.id].orEmpty()
         }
     }
 

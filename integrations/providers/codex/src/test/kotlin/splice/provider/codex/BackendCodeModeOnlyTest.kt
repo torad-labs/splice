@@ -8,14 +8,15 @@ package splice.provider.codex
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Test
 import splice.core.model.DiscoveredModel
+import splice.core.model.ModelRuntimeMetadata
 
 class BackendCodeModeOnlyTest : CodeModeBridgeTestSupport() {
 
     /** The marks the backend's catalog carried on 2026-09-29: seven listed rows and gpt-5.5, which has none. */
     private val backend = listOf(
-        DiscoveredModel("gpt-6.1-sol", toolMode = "code_mode_only"),
-        DiscoveredModel("gpt-6-luna", toolMode = "code_mode_only"),
-        DiscoveredModel("gpt-5.6-terra", toolMode = "code_mode_only"),
+        DiscoveredModel("gpt-6.1-sol", runtimeMetadata = ModelRuntimeMetadata(toolMode = "code_mode_only")),
+        DiscoveredModel("gpt-6-luna", runtimeMetadata = ModelRuntimeMetadata(toolMode = "code_mode_only")),
+        DiscoveredModel("gpt-5.6-terra", runtimeMetadata = ModelRuntimeMetadata(toolMode = "code_mode_only")),
         DiscoveredModel("gpt-5.5"),
     )
 
@@ -81,7 +82,7 @@ class BackendCodeModeOnlyTest : CodeModeBridgeTestSupport() {
         roster = listOf(DiscoveredModel("gpt-5.5"))
         val builder = builder()
         assertEquals(false, offered(builder, "gpt-5.5"), "not marked when the builder was made")
-        roster = listOf(DiscoveredModel("gpt-5.5", toolMode = "code_mode_only"))
+        roster = listOf(DiscoveredModel("gpt-5.5", runtimeMetadata = ModelRuntimeMetadata(toolMode = "code_mode_only")))
         assertEquals(true, offered(builder, "gpt-5.5"), "the backend marked it since: the next turn follows")
         roster = emptyList()
         assertEquals(false, offered(builder, "gpt-5.5"), "and unmarked again")

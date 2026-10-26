@@ -78,6 +78,8 @@ internal class ConfigCoercion(private val envReader: EnvReader) {
     // [BoolKnobWords]'s since V4-286.
     private val unlimitedKnobs = setOf(Knob.MAX_INFLIGHT, Knob.MAX_QUEUED)
     private val unlimitedWords = setOf("", "unlimited", "off", "none")
+    private val codeModeCounts =
+        setOf(Knob.CODE_MODE_DEFAULT_EXEC_YIELD_TIME_MS, Knob.CODE_MODE_TOOL_INPUT_SCHEMA_MAX_BYTES)
 
     // A flat table of floors/clamps — splitting it would scatter the contract (port fidelity).
     fun normalize(
@@ -220,6 +222,7 @@ internal class ConfigCoercion(private val envReader: EnvReader) {
 
     private fun coerceNumber(knob: Knob, raw: String?): Long? {
         val s = raw.toString().trim().lowercase()
+        if (knob in codeModeCounts) return s.toLongOrNull()?.takeIf { it >= 0 }
         // maxInflight AND maxQueued both treat <=0 as unlimited in InflightGate — accept
         // the same named sentinels so PATCH/env maxQueued=unlimited is not rejected.
         return if (knob in unlimitedKnobs && s in unlimitedWords) {

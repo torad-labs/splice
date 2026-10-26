@@ -49,12 +49,12 @@ async function command(argv: string[], input?: string): Promise<{ argv: string[]
     return { argv, stdout, stderr, exitCode };
   } finally { clearTimeout(timer); }
 }
-async function upstream(path: string): Promise<string> {
-  const result = await command(["git", "-C", sourceRoot, "show", `${revision}:${path}`]);
+async function upstream(path: string, sourceRevision = revision): Promise<string> {
+  const result = await command(["git", "-C", sourceRoot, "show", `${sourceRevision}:${path}`]);
   assert.equal(result.exitCode, 0, result.stderr);
   return result.stdout;
 }
-function policy(source: string): string {
+export function extractTruncationPolicy(source: string): string {
   const enumeration = source.slice(source.indexOf("pub enum TruncationPolicy {"));
   const methods = source.slice(source.indexOf("impl TruncationPolicy {"), source.indexOf("impl Mul<f64> for TruncationPolicy {"));
   const multiply = source.slice(source.indexOf("impl Mul<f64> for TruncationPolicy {"));
@@ -62,7 +62,7 @@ function policy(source: string): string {
   return "use std::ops::Mul;\n#[derive(Clone, Copy)]\n" + enumeration.slice(0, enumeration.indexOf("\n}") + 2) +
     "\n" + methods + multiply.slice(0, multiply.indexOf("\n}") + 2) + "\n";
 }
-export async function runFormatterCases(java: string, jar: string, evidence: string, runId: string, cases: CaseEvidence[]): Promise<void> {
+export async function runFormatterCases(java: string, jar: string, evidence: string, runId: string, cases: CaseEvidence[], sourceRevision = revision): Promise<void> {
   const family = cases.find(item => item.id === "runtime.output-content")!;
   const nativeHostFindings = [...family.findings];
   const directory = resolve(evidence, `${runId}.native-core-formatter`);
@@ -70,9 +70,9 @@ export async function runFormatterCases(java: string, jar: string, evidence: str
   const findings: string[] = [];
   try {
     const files = [
-      ["native-string.rs", await upstream("codex-rs/utils/string/src/truncate.rs")],
-      ["native-output.rs", await upstream("codex-rs/utils/output-truncation/src/lib.rs")],
-      ["native-policy.rs", policy(await upstream("codex-rs/protocol/src/protocol.rs"))],
+      ["native-string.rs", await upstream("codex-rs/utils/string/src/truncate.rs", sourceRevision)],
+      ["native-output.rs", await upstream("codex-rs/utils/output-truncation/src/lib.rs", sourceRevision)],
+      ["native-policy.rs", extractTruncationPolicy(await upstream("codex-rs/protocol/src/protocol.rs", sourceRevision))],
       ["oracle.rs", await readFile(resolve(import.meta.dir, "rust-oracle.rs"), "utf8")],
     ];
     for (const [name, source] of files) {
@@ -91,7 +91,7 @@ export async function runFormatterCases(java: string, jar: string, evidence: str
     const candidateInput = candidateInputs.map(value => JSON.stringify(value)).join("\n") + "\n";
     const candidate = await command(candidateCommand(java, jar, "--format-fixture", runId), candidateInput);
     const path = resolve(directory, "comparison.json");
-    await writeFile(path, JSON.stringify({ schema: 1, runId, sourceRevision: revision, binaryToStandaloneLinkage: "unproven",
+    await writeFile(path, JSON.stringify({ schema: 1, runId, sourceRevision, binaryToStandaloneLinkage: "unproven",
       sourcePolicy: "Exact upstream algorithms and policy methods; protocol data types only are shimmed. Audio fixture uses invalid-URL byte-count fallback.",
       sourceHashes: files.map(([name, source]) => ({ name, sha256: sha256(source!) })), input, native, candidateInput, candidate, expected }, null, 2) + "\n");
     family.artifacts.push(await artifact(path));

@@ -2,6 +2,7 @@ import { spawn, type ChildProcessWithoutNullStreams } from "node:child_process";
 
 export type HostFrame = Record<string, any>;
 export type TraceEvent = { at: number; direction: "sent" | "received" | "harness"; frame: HostFrame };
+export type RuntimeDriver = Pick<NativeReference, "pid" | "transcript" | "stderr" | "recordFault" | "crashNativeHost" | "wait" | "operation" | "send" | "hello" | "open" | "stop">;
 
 /** The reference is the real Codex host, not a JavaScript simulation of it. */
 export class NativeReference {

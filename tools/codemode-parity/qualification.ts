@@ -24,6 +24,7 @@ export type Receipt = {
   contractSha256: string; harnessSha256: string;
   reference: Identity; candidateJar: Identity; candidateNativeHost: Identity;
   referenceSourceLinkage: "unproven" | "verified";
+  referenceSourceEvidence?: { sourceRevision: string; provenance: Artifact };
   cases: CaseEvidence[]; installed?: { pid: number; jarFd: string; jarSha256: string; hostPid: number; hostExeSha256: string };
   qualified: boolean; seal: string;
 };
@@ -52,12 +53,14 @@ export async function harnessHash(directory: string): Promise<string> {
     for (const entry of await readdir(path, { withFileTypes: true })) {
       const next = resolve(path, entry.name);
       if (entry.isDirectory()) await walk(next);
-      else if (/\.(?:ts|json|rs)$/.test(entry.name) && entry.name !== "progress.json" && entry.name !== "contract.json") files.push(next);
+      else if (/\.(?:ts|json|jsonl|rs|kt|sh|toml|lock)$/.test(entry.name) && !/^progress(?:-current)?\.json$/.test(entry.name) && entry.name !== "contract.json") files.push(next);
     }
   };
   await walk(directory);
   // Imported archive reader is part of the executable harness identity too.
   files.push(resolve(directory, "../release/src/lib/zip.ts"));
+  files.push(resolve(directory, "../../package.json"), resolve(directory, "../../bun.lock"),
+    resolve(directory, "../../integrations/codemode/src/main/resources/splice/codemode/native/grpc/codex.code_mode.v1.proto"));
   const hash = createHash("sha256");
   for (const file of files.sort()) hash.update(relative(directory, file) + "\0").update(await readFile(file)).update("\0");
   return hash.digest("hex");
@@ -80,6 +83,8 @@ export function sealReceipt(receipt: Receipt, key: Uint8Array): string {
 export function structuralFindings(receipt: any, expected: {
   runId?: string; contractSha256: string; harnessSha256: string;
   referenceSha256: string; candidateJarSha256: string; candidateNativeHostSha256: string;
+  requireVerifiedSource?: boolean; sourceRevision?: string; provenanceSha256?: string;
+  requireInstalled?: boolean; requireRunnerQualified?: boolean;
   now?: number; maxAgeMs?: number;
 }, key: Uint8Array): string[] {
   const findings: string[] = [];
@@ -90,7 +95,12 @@ export function structuralFindings(receipt: any, expected: {
   if (receipt.reference?.sha256 !== expected.referenceSha256) findings.push("reference executable hash mismatch");
   if (receipt.candidateJar?.sha256 !== expected.candidateJarSha256) findings.push("candidate jar hash mismatch");
   if (receipt.candidateNativeHost?.sha256 !== expected.candidateNativeHostSha256) findings.push("candidate native host hash mismatch");
-  if (receipt.referenceSourceLinkage !== "unproven") findings.push("binary-to-source linkage is not established by this harness");
+  if (receipt.referenceSourceLinkage === "verified") {
+    const proof = receipt.referenceSourceEvidence;
+    if (!proof || !/^[a-f0-9]{40}$/.test(proof.sourceRevision) || typeof proof.provenance?.path !== "string" ||
+      !/^[a-f0-9]{64}$/.test(proof.provenance?.sha256) || !Number.isSafeInteger(proof.provenance?.bytes) || proof.provenance.bytes < 1 ||
+      expected.sourceRevision && proof.sourceRevision !== expected.sourceRevision || expected.provenanceSha256 && proof.provenance.sha256 !== expected.provenanceSha256) findings.push("verified binary-to-source linkage lacks matching actual provenance evidence");
+  } else if (receipt.referenceSourceLinkage !== "unproven" || expected.requireVerifiedSource) findings.push("current qualification requires verified binary-to-source linkage");
   const start = Date.parse(receipt.startedAt), finish = Date.parse(receipt.finishedAt), now = expected.now ?? Date.now();
   if (!Number.isFinite(start) || !Number.isFinite(finish) || finish < start || finish > now + 1000 || start < now - (expected.maxAgeMs ?? 86_400_000)) findings.push("stale or malformed evidence time");
   const cases: any[] = Array.isArray(receipt.cases) ? receipt.cases : [];
@@ -99,6 +109,7 @@ export function structuralFindings(receipt: any, expected: {
   for (const item of cases) {
     if (!requiredCaseIds.includes(item?.id)) { findings.push(`unknown case ${String(item?.id)}`); continue; }
     if (item.runId !== receipt.runId) findings.push(`${item.id}: stale run evidence`);
+    if (item.id === "evidence.installed-identity" && expected.requireInstalled === false) continue;
     if (item.state !== "executed" || !Array.isArray(item.findings) || item.findings.length) findings.push(`${item.id}: not executed successfully`);
     if (!verifiers[item.id as CaseId] || item.verifier !== verifiers[item.id as CaseId]) findings.push(`${item.id}: no executable verifier`);
     if (!Array.isArray(item.artifacts) || !item.artifacts.length || item.artifacts.some((entry: any) =>
@@ -106,12 +117,12 @@ export function structuralFindings(receipt: any, expected: {
     if ("pass" in item || "status" in item || "skipped" in item) findings.push(`${item.id}: manually asserted result fields are forbidden`);
   }
   const installed = receipt.installed;
-  if (!installed || !Number.isSafeInteger(installed.pid) || !Number.isSafeInteger(installed.hostPid) ||
+  if (expected.requireInstalled !== false && (!installed || !Number.isSafeInteger(installed.pid) || !Number.isSafeInteger(installed.hostPid) ||
     typeof installed.jarFd !== "string" || !new RegExp(`^/proc/${installed.pid}/fd/[0-9]+$`).test(installed.jarFd) ||
-    installed.jarSha256 !== expected.candidateJarSha256 || installed.hostExeSha256 !== expected.candidateNativeHostSha256) findings.push("installed open jar/native executable identity is missing or mismatched");
+    installed.jarSha256 !== expected.candidateJarSha256 || installed.hostExeSha256 !== expected.candidateNativeHostSha256)) findings.push("installed open jar/native executable identity is missing or mismatched");
   const expectedSeal = sealReceipt(receipt, key);
   if (typeof receipt.seal !== "string" || !/^[a-f0-9]{64}$/.test(receipt.seal) || !timingSafeEqual(Buffer.from(receipt.seal, "hex"), Buffer.from(expectedSeal, "hex"))) findings.push("unsealed or modified receipt; asserted PASS is not execution evidence");
-  if (receipt.qualified !== true) findings.push("runner did not qualify this candidate");
+  if (expected.requireRunnerQualified !== false && receipt.qualified !== true) findings.push("runner did not qualify this candidate");
   return findings;
 }
 export async function localSealKey(path: string, create: boolean): Promise<Uint8Array> {

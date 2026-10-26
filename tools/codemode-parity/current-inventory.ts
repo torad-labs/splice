@@ -1,0 +1,269 @@
+import { mkdtemp, mkdir, readFile, writeFile, rm } from "node:fs/promises";
+import { dirname, relative, resolve } from "node:path";
+import { tmpdir } from "node:os";
+import { sha256 } from "./qualification";
+import { resolveCurrentSource } from "./current-source";
+import { foreignMemberScope, type ForeignScope, type ForeignScopeIssue, type GeneratedScopeResolution, type RepresentationScope } from "./current-foreign-scope";
+
+export type SourceUnit = {
+  id: string; file: string; kind: string; label: string; line: number;
+  start: number; end: number; sha256: string; ownership: "native-host" | "ported";
+  requiredBy?: string[];
+  foreignScope?: ForeignScope;
+  representation?: RepresentationScope;
+  nativeScope?: ForeignScope;
+};
+export type SourceFile = { path: string; gitBlob: string; sha256: string; discovery: "crate" | "module" | "consumer" | "dependency"; units: number };
+export type CurrentInventory = {
+  schema: 2; generator: string; sourceRevision: string; sourceTree: string; sourceCargoLockSha256: string;
+  astGrepVersion: string; discoveredCrates: string[]; files: SourceFile[]; units: SourceUnit[];
+  grpcMethods: string[]; globalHelpers: string[]; denominatorSha256: string;
+  foreignScopeDiagnostics?: ForeignScopeIssue[];
+  generatedScopeResolutions?: GeneratedScopeResolution[];
+};
+const marker = /code[_-]mode|CodeMode|codeMode/;
+const testPath = /(?:^|\/)(?:tests?|benches|examples)(?:\/|\.)|(?:_tests|_test|_test_support|test_support)\.rs$/;
+const kinds = ["function_item", "function_signature_item", "struct_item", "enum_item", "enum_variant", "field_declaration",
+  "ordered_field_declaration_list", "type_item", "const_item", "static_item", "trait_item", "mod_item", "macro_definition", "impl_item"];
+const jsKinds = ["function_declaration", "function_expression", "method_definition", "arrow_function", "class_declaration", "variable_declarator"];
+const tsKinds = ["interface_declaration", "type_alias_declaration", "property_signature", "method_signature", "function_signature", "enum_declaration"];
+type GitFile = { path: string; blob: string; source: string };
+type Match = { ruleId: string; file: string; text: string; range: { byteOffset: { start: number; end: number }; start: { line: number } } };
+/** Imported source helpers can carry CodeMode behavior without mentioning CodeMode in their own names. */
+function dependencyClosure(blobs: GitFile[], primary: GitFile[]): Map<string, { names: Set<string>; owners: Set<"native-host" | "ported">; roots: Set<string> }> {
+  const manifests = blobs.filter(file => /\/Cargo\.toml$/.test(file.path)).map(file => ({ root: dirname(file.path), name: file.source.match(/\bname\s*=\s*"([^"]+)"/)?.[1]?.replaceAll("-", "_") }));
+  const owner = (path: string) => manifests.filter(crate => path.startsWith(crate.root + "/")).sort((left, right) => right.root.length - left.root.length)[0];
+  const index = new Map<string, Array<{ file: GitFile; kind: string; name: string }>>();
+  for (const file of blobs.filter(file => file.path.endsWith(".rs") && !testPath.test(file.path))) {
+    const crate = owner(file.path); if (!crate) continue;
+    for (const declaration of file.source.matchAll(/\b(fn|struct|enum|type|trait|const)\s+([A-Za-z_]\w*)/g)) {
+      const key = `${crate.root}:${declaration[2]}`; const entries = index.get(key) ?? [];
+      entries.push({ file, kind: declaration[1]!, name: declaration[2]! }); index.set(key, entries);
+    }
+  }
+  const found = new Map<string, { names: Set<string>; owners: Set<"native-host" | "ported">; roots: Set<string> }>();
+  const queue: Array<{ file: GitFile; ownership: "native-host" | "ported"; root: string; onlyImport?: string }> = primary.map(file => ({ file, ownership: nativeOwnership(file.path) ? "native-host" as const : "ported" as const, root: file.path }));
+  const seen = new Set<string>();
+  while (queue.length) {
+    const { file, ownership, root, onlyImport } = queue.shift()!; const visited = `${file.path}:${ownership}:${root}:${onlyImport ?? "all"}`; if (seen.has(visited)) continue; seen.add(visited);
+    const imports = [...file.source.matchAll(/(?:^|\n)\s*(?:pub(?:\([^)]*\))?\s+)?use\s+([^;]+);/g)].map(statement => statement[1]!.trim());
+    const useImports = new Set(imports);
+    // A fully qualified helper call need not have a use declaration. Discover
+    // its exact module before AST member selection; never search every same-name
+    // constructor in the crate as an approximation of a qualified path.
+    for (const match of file.source.matchAll(/\b(?:crate|codex_\w+)(?:::[A-Za-z_]\w*)+/g)) {
+      const parts = match[0].split("::"), crate = parts[0] === "crate" ? owner(file.path) : manifests.find(crate => crate.name === parts[0]);
+      if (!crate) continue;
+      const base = `${crate.root}/src/${parts.slice(1,-1).join("/")}`;
+      if (blobs.some(candidate => candidate.path === base + ".rs" || candidate.path === base + "/mod.rs" || parts.length === 2 && candidate.path === `${crate.root}/src/lib.rs`)) imports.push(match[0]);
+    }
+    for (const importPath of [...new Set(imports)]) {
+      const prefix = importPath.split("::")[0]!;
+      if (onlyImport && !new RegExp(`\\b${onlyImport}\\b`).test(importPath)) continue;
+      const crate = prefix === "crate" ? owner(file.path) : manifests.find(crate => crate.name === prefix);
+      if (!crate) continue;
+      const entries = importPath.includes("{") ? importPath.slice(importPath.indexOf("{") + 1, importPath.lastIndexOf("}")).split(",") : [importPath];
+      const moduleParts = importPath.replace(/::\{[\s\S]*/, "").split("::").slice(1, importPath.includes("{") ? undefined : -1);
+      const moduleBase = `${crate.root}/src/${moduleParts.join("/")}`;
+      const moduleFile = blobs.find(candidate => candidate.path === moduleBase + ".rs" || candidate.path === moduleBase + "/mod.rs" || !moduleParts.length && candidate.path === `${crate.root}/src/lib.rs`);
+      for (const imported of entries) {
+        const name = imported.trim().split(/\s+as\s+/)[0]!.split("::").at(-1)!;
+        if (!/^[A-Za-z_]\w*$/.test(name)) continue;
+        const candidates = index.get(`${crate.root}:${name}`) ?? [];
+        const direct = moduleFile ? candidates.filter(candidate => candidate.file.path === moduleFile.path) : [];
+        const declarations = !useImports.has(importPath) && direct.length ? direct : candidates;
+        if (moduleFile && !primary.some(item => item.path === moduleFile.path) &&
+          new RegExp(`(?:^|\\n)\\s*(?:pub(?:\\([^)]*\\))?\\s+)?use\\s+[^;]*\\b${name}\\b[^;]*;`).test(moduleFile.source)) {
+          const item = found.get(moduleFile.path) ?? { names: new Set<string>(), owners: new Set<"native-host" | "ported">(), roots: new Set<string>() };
+          item.names.add(name); item.owners.add(ownership); item.roots.add(root); found.set(moduleFile.path, item); queue.push({ file: moduleFile, ownership, root, onlyImport: name });
+        }
+        for (const declaration of declarations) {
+          // Stateful application framework types are the adapter boundary, not all of Codex itself.
+          if (declaration.kind !== "fn" && !/^codex_(?:code_mode|protocol|tools|utils_)/.test(crate.name ?? "")) continue;
+          if (primary.some(item => item.path === declaration.file.path)) continue;
+          const item = found.get(declaration.file.path) ?? { names: new Set<string>(), owners: new Set<"native-host" | "ported">(), roots: new Set<string>() };
+          item.names.add(name); item.owners.add(ownership); item.roots.add(root); found.set(declaration.file.path, item);
+          queue.push({ file: declaration.file, ownership, root });
+        }
+      }
+    }
+  }
+  return found;
+}
+
+async function command(argv: string[], cwd: string, input?: string): Promise<Buffer> {
+  const child = Bun.spawn(argv, { cwd, stdin: input === undefined ? "ignore" : "pipe", stdout: "pipe", stderr: "pipe" });
+  if (input !== undefined && child.stdin && typeof child.stdin !== "number") { child.stdin.write(input); child.stdin.end(); }
+  const [bytes, error, code] = await Promise.all([new Response(child.stdout).arrayBuffer(), new Response(child.stderr).text(), child.exited]);
+  if (code !== 0) throw new Error(`${argv[0]} failed (${code}): ${error.trim()}`);
+  return Buffer.from(bytes);
+}
+
+/** Read immutable Git objects, never the potentially old/different checked-out source. */
+async function sourceFiles(sourceRepo: string, revision: string): Promise<GitFile[]> {
+  const tree = (await command(["git", "ls-tree", "-rz", "-r", revision, "codex-rs"], sourceRepo)).toString("utf8");
+  const entries = tree.split("\0").filter(Boolean).map(row => {
+    const [metadata, path] = row.split("\t"); const [mode, type, blob] = metadata!.split(" ");
+    return { path: path!, blob: blob!, type, mode };
+  }).filter(item => item.type === "blob" && /(?:\.(?:rs|js|proto)|Cargo\.toml|Cargo\.lock)$/.test(item.path));
+  const bytes = await command(["git", "cat-file", "--batch"], sourceRepo, entries.map(item => item.blob).join("\n") + "\n");
+  let offset = 0;
+  return entries.map(entry => {
+    const newline = bytes.indexOf(10, offset); if (newline < 0) throw new Error("incomplete git blob header");
+    const [blob, type, length] = bytes.subarray(offset, newline).toString().split(" ");
+    const size = Number(length); if (blob !== entry.blob || type !== "blob" || !Number.isSafeInteger(size)) throw new Error(`invalid Git blob ${entry.path}`);
+    offset = newline + 1; const source = bytes.subarray(offset, offset + size).toString("utf8"); offset += size + 1;
+    return { ...entry, source };
+  });
+}
+
+function unitLabel(kind: string, text: string): string {
+  if (["function_item", "function_signature_item"].includes(kind)) return text.match(/\bfn\s+([\w$]+)/)?.[1] ?? "";
+  if (kind === "field_declaration") return text.match(/^(?:pub(?:\([^)]*\))?\s+)?([\w$]+)\s*:/)?.[1] ?? text.trim().split("\n")[0]!;
+  const declared = text.match(/\b(?:fn|struct|enum|type|const|static|trait|mod|macro_rules!|function|class)\s+([\w$]+)/)?.[1];
+  return declared ?? text.trim().split(/\n|\{|=>/)[0]!.trim().slice(0, 140);
+}
+export function astRules(): string {
+  return [["Rust", [...kinds, "attribute_item", "identifier", "type_identifier", "scoped_identifier", "scoped_type_identifier", "field_expression", "call_expression", "use_declaration", "parameter", "let_declaration", "struct_expression", "field_initializer", "shorthand_field_initializer"]], ["JavaScript", jsKinds], ["TypeScript", tsKinds]].flatMap(([language, entries]) => (entries as string[]).map(kind =>
+    JSON.stringify({ id: kind, language, severity: "hint", message: kind, rule: { kind } }))).join("\n---\n");
+}
+function nativeOwnership(file: string): boolean {
+  // The client adapter crate is NOT in the host binary. Its remote/gRPC logic must be ported/probed.
+  return /^codex-rs\/code-mode-(?:host|runtime)\//.test(file) ||
+    /^codex-rs\/code-mode-protocol\//.test(file) && !/\/(?:description|json_schema_types)\.rs$/.test(file);
+}
+export function inventoryDigest(inventory: Pick<CurrentInventory, "sourceRevision" | "sourceTree" | "files" | "units" | "grpcMethods" | "globalHelpers" | "foreignScopeDiagnostics" | "generatedScopeResolutions">): string {
+  return sha256(JSON.stringify({ sourceRevision: inventory.sourceRevision, sourceTree: inventory.sourceTree, files: inventory.files,
+    units: inventory.units, grpcMethods: inventory.grpcMethods, globalHelpers: inventory.globalHelpers, foreignScopeDiagnostics: inventory.foreignScopeDiagnostics ?? [], generatedScopeResolutions: inventory.generatedScopeResolutions ?? [] }));
+}
+
+/** Scope is discovered from the entire reference object tree, not a hand maintained module list. */
+export async function generateCurrentInventory(sourceRepo: string, revision: string, repo = resolve(import.meta.dir, "../..")): Promise<CurrentInventory> {
+  if (!/^[a-f0-9]{40}$/.test(revision)) throw new Error("current inventory requires an exact source commit");
+  const [tree, blobs, astVersion] = await Promise.all([
+    command(["git", "rev-parse", `${revision}^{tree}`], sourceRepo), sourceFiles(sourceRepo, revision),
+    command([resolve(repo, "node_modules/.bin/ast-grep"), "--version"], repo),
+  ]);
+  const crates = blobs.filter(file => /\/Cargo\.toml$/.test(file.path) && /name\s*=\s*"[^"]*code-mode[^"]*"/.test(file.source))
+    .map(file => dirname(file.path)).sort();
+  if (!crates.length) throw new Error("reference has no discovered CodeMode crates");
+  const selected = blobs.filter(file => /\.(?:rs|js|proto)$/.test(file.path) && !testPath.test(file.path) &&
+    (crates.some(crate => file.path.startsWith(crate + "/")) || marker.test(file.path) || marker.test(file.source)));
+  const dependencies = dependencyClosure(blobs, selected.filter(file => crates.some(crate => file.path.startsWith(crate + "/")) || marker.test(file.path)));
+  for (const file of blobs) if (dependencies.has(file.path) && !selected.some(item => item.path === file.path)) selected.push(file);
+  const temporary = await mkdtemp(resolve(tmpdir(), "splice-reference-inventory-"));
+  const embedded: Array<{ file: string; path: string; offset: number }> = [];
+  const files: SourceFile[] = [], units: SourceUnit[] = [], grpcMethods: string[] = [], globalHelpers: string[] = [];
+  try {
+    for (const file of selected) {
+      const destination = resolve(temporary, file.path); await mkdir(dirname(destination), { recursive: true }); await writeFile(destination, file.source);
+      if (file.path.endsWith(".rs")) for (const literal of file.source.matchAll(/r(#{0,16})"([\s\S]*?)"\1/g)) {
+        if (!/\b(?:type|interface|declare)\s+\w/.test(literal[2]!)) continue;
+        const offset = Buffer.byteLength(file.source.slice(0, literal.index! + 2 + literal[1]!.length));
+        const path = resolve(temporary, `${file.path}.embedded-${offset}.ts`);
+        await writeFile(path, literal[2]!); embedded.push({ file: file.path, path, offset });
+      }
+    }
+    const scan = Bun.spawn([resolve(repo, "node_modules/.bin/ast-grep"), "scan", "--inline-rules", astRules(), "--json=compact", "--no-ignore", "hidden", temporary], { cwd: repo, stdout: "pipe", stderr: "pipe" });
+    const [stdout, stderr, exit] = await Promise.all([new Response(scan.stdout).text(), new Response(scan.stderr).text(), scan.exited]);
+    if (exit !== 0) throw new Error(`reference AST extraction failed: ${stderr}`);
+    const matches: Match[] = JSON.parse(stdout);
+    const testRanges = matches.filter(item => item.ruleId === "mod_item" && (/^\s*(?:pub\s+)?mod\s+(?:tests|test)\b/.test(item.text) ||
+      /#\[cfg\(test\)\]\s*$/.test(Buffer.from(selected.find(file => file.path === relative(temporary, item.file))?.source ?? "").subarray(Math.max(0, item.range.byteOffset.start - 100), item.range.byteOffset.start).toString())));
+    const semanticMatches = matches.filter(item => !testRanges.some(test => test.file === item.file && test.range.byteOffset.start <= item.range.byteOffset.start && test.range.byteOffset.end >= item.range.byteOffset.end));
+    const manifests = blobs.filter(file => /\/Cargo\.toml$/.test(file.path));
+    const foreignSelection = foreignMemberScope(selected, semanticMatches, temporary, crates, manifests);
+    const nativeSelection = foreignMemberScope(selected, semanticMatches, temporary, crates, manifests, crates.filter(crate => /code-mode-(?:host|runtime)$/.test(crate)));
+    const foreignScopes = foreignSelection.selections;
+    for (const file of selected.sort((left, right) => left.path.localeCompare(right.path))) {
+      const sourceBytes = Buffer.from(file.source);
+      const discovery = crates.some(crate => file.path.startsWith(crate + "/")) ? "crate" : marker.test(file.path) ? "module" : dependencies.has(file.path) ? "dependency" : "consumer";
+      const before = units.length;
+      const found = matches.filter(item => relative(temporary, item.file) === file.path);
+      const tests = found.filter(item => item.ruleId === "mod_item" && (/^\s*(?:pub\s+)?mod\s+(?:tests|test)\b/.test(item.text) ||
+        /#\[cfg\(test\)\]\s*$/.test(sourceBytes.subarray(Math.max(0, item.range.byteOffset.start - 100), item.range.byteOffset.start).toString())));
+      const scoped = found.filter(item => (kinds.includes(item.ruleId) || jsKinds.includes(item.ruleId)) && !tests.some(test => test.range.byteOffset.start <= item.range.byteOffset.start && test.range.byteOffset.end >= item.range.byteOffset.end));
+      const roots = scoped.filter(item => (marker.test(item.text) || dependencies.get(file.path)?.names.has(unitLabel(item.ruleId, item.text))) && item.ruleId !== "impl_item" && item.ruleId !== "mod_item");
+      // Follow helper calls within a dependency file as well as its imported public entrypoint.
+      if (discovery === "dependency") for (let index = 0; index < roots.length; index++) {
+        for (const candidate of scoped) if (["function_item", "const_item", "static_item", "type_item", "struct_item", "enum_item", "impl_item"].includes(candidate.ruleId) && !roots.includes(candidate)) {
+          const name = unitLabel(candidate.ruleId, candidate.text);
+          if (candidate.ruleId === "impl_item") {
+            if (["struct_item", "enum_item", "type_item"].includes(roots[index]!.ruleId) && new RegExp(`\\b${unitLabel(roots[index]!.ruleId, roots[index]!.text)}\\b`).test(candidate.text.slice(0, candidate.text.indexOf("{")))) roots.push(candidate);
+          } else if (/^[A-Za-z_]\w*$/.test(name) && new RegExp(candidate.ruleId === "function_item" ? `(?<![.\\w])${name}\\s*\\(` : `\\b${name}\\b`).test(roots[index]!.text)) roots.push(candidate);
+        }
+      }
+      const covers = (root: Match, item: Match) => {
+        if (root.range.byteOffset.start > item.range.byteOffset.start || root.range.byteOffset.end < item.range.byteOffset.end) return false;
+        // A shared Config/Feature enum can mention CodeMode without making its unrelated fields CodeMode behavior.
+        if (["struct_item", "enum_item", "trait_item"].includes(root.ruleId) && root !== item &&
+          !marker.test(unitLabel(root.ruleId, root.text))) return marker.test(item.text);
+        return true;
+      };
+      const emit = (kind: string, text: string, start: number, end: number, line: number) => units.push({
+        id: `${file.path}#${kind}@${start}`, file: file.path, kind, label: unitLabel(kind, text), line, start, end,
+        sha256: sha256(text), ownership: (nativeOwnership(file.path) && (!/^codex-rs\/code-mode-protocol\/src\/.*\.rs$/.test(file.path) || nativeSelection.selections.get(`${file.path}#${kind}@${start}`)?.state === "required")) || discovery === "dependency" && dependencies.get(file.path)?.owners.size === 1 && dependencies.get(file.path)?.owners.has("native-host") && nativeSelection.selections.get(`${file.path}#${kind}@${start}`)?.state === "required" ? "native-host" : "ported",
+        ...(discovery === "dependency" ? { requiredBy: [...dependencies.get(file.path)!.roots].sort() } : {}),
+        ...(["dependency", "consumer"].includes(discovery) && foreignScopes.has(`${file.path}#${kind}@${start}`) ? { foreignScope: foreignScopes.get(`${file.path}#${kind}@${start}`)! } : {}),
+        ...(foreignSelection.representations.has(`${file.path}#${kind}@${start}`) ? { representation: foreignSelection.representations.get(`${file.path}#${kind}@${start}`)! } : {}),
+        ...(nativeSelection.selections.get(`${file.path}#${kind}@${start}`)?.state === "required" ? { nativeScope: nativeSelection.selections.get(`${file.path}#${kind}@${start}`)! } : {}),
+      });
+      // The file unit binds anonymous closures, embedded programs and schema attributes too.
+      emit("source-file", file.source, 0, Buffer.byteLength(file.source), 1);
+      for (const item of scoped) {
+        // Retain all foreign Rust declarations in the census. Their exact AST
+        // member applicability remains separate; a selected sibling does not
+        // turn every foreign declaration into a porting/coverage obligation.
+        if (!file.path.endsWith(".rs") && (discovery === "consumer" || discovery === "dependency") && !roots.some(root => covers(root, item)) &&
+          foreignScopes.get(`${file.path}#${item.ruleId}@${item.range.byteOffset.start}`)?.state !== "required") continue;
+        emit(item.ruleId, item.text, item.range.byteOffset.start, item.range.byteOffset.end, item.range.start.line + 1);
+      }
+      for (const literal of embedded.filter(item => item.file === file.path)) for (const item of matches.filter(match => match.file === literal.path)) {
+        const start = literal.offset + item.range.byteOffset.start;
+        emit(`typescript-${item.ruleId}`, item.text, start, literal.offset + item.range.byteOffset.end, sourceBytes.subarray(0, start).toString().split("\n").length);
+      }
+      if (file.path.endsWith(".proto")) {
+        // Proto is not supported by ast-grep. Its grammar's named schema members are enumerated separately.
+        const clean = file.source.replace(/\/\*[\s\S]*?\*\//g, value => value.replace(/[^\n]/g, " ")).replace(/\/\/[^\n]*/g, value => " ".repeat(value.length));
+        const declaration = /\b(rpc|message|enum|service|oneof)\s+(\w+)|\b(?:repeated\s+|optional\s+)?[.\w]+\s+(\w+)\s*=\s*\d+|\b(\w+)\s*=\s*\d+/g;
+        for (const item of clean.matchAll(declaration)) {
+          const kind = item[1] ? `proto-${item[1]}` : item[3] ? "proto-field" : "proto-enum-value";
+          const label = item[2] ?? item[3] ?? item[4]!; const start = item.index!;
+          emit(kind, item[0], start, start + item[0].length, clean.slice(0, start).split("\n").length);
+          units.at(-1)!.label = label; if (kind === "proto-rpc") grpcMethods.push(label);
+        }
+      }
+      if (/\/runtime\/globals\.rs$/.test(file.path)) {
+        for (const item of file.source.matchAll(/(?:set_global|register_global|register_function)\([^\n]*?"([A-Za-z_$][\w$]*)"/g)) globalHelpers.push(item[1]!);
+      }
+      files.push({ path: file.path, gitBlob: file.blob, sha256: sha256(file.source), discovery, units: units.length - before });
+    }
+    units.sort((left, right) => left.id.localeCompare(right.id));
+    const base = { sourceRevision: revision, sourceTree: tree.toString().trim(), files, units, foreignScopeDiagnostics: foreignSelection.unresolved, generatedScopeResolutions: foreignSelection.generated,
+      grpcMethods: [...new Set(grpcMethods)].sort(), globalHelpers: [...new Set(globalHelpers)].sort() };
+    return { schema: 2, generator: "git-object-tree+ast-grep-declarations+import-member-closure-v9", sourceCargoLockSha256: sha256(blobs.find(file => file.path === "codex-rs/Cargo.lock")?.source ?? ""),
+      astGrepVersion: astVersion.toString().trim(), discoveredCrates: crates, ...base, denominatorSha256: inventoryDigest(base) };
+  } finally { await rm(temporary, { recursive: true, force: true }); }
+}
+
+export function inventoryFindings(generated: CurrentInventory, committed: CurrentInventory): string[] {
+  const findings: string[] = [];
+  if (committed?.schema !== 2 || generated.sourceRevision !== committed.sourceRevision || generated.sourceTree !== committed.sourceTree) findings.push("current reference source revision/tree changed; regenerate and disposition the new reference");
+  if (!Array.isArray(committed?.units) || !Array.isArray(committed?.files)) return [...findings, "malformed current source inventory"];
+  const expected = new Set(generated.units.map(item => item.id)), recorded = new Set(committed.units.map(item => item.id));
+  for (const id of expected) if (!recorded.has(id)) findings.push(`omitted reference unit: ${id}`);
+  for (const id of recorded) if (!expected.has(id)) findings.push(`unknown reference unit: ${id}`);
+  if (recorded.size !== committed.units.length) findings.push("duplicate reference inventory unit");
+  if (generated.denominatorSha256 !== committed.denominatorSha256 || inventoryDigest(committed) !== committed.denominatorSha256) findings.push("reference denominator or source hashes changed; hand edited/shrunken inventories are forbidden");
+  if (generated.astGrepVersion !== committed.astGrepVersion || generated.generator !== committed.generator) findings.push("reference inventory generator identity changed");
+  if (generated.sourceCargoLockSha256 !== committed.sourceCargoLockSha256 || JSON.stringify(generated.discoveredCrates) !== JSON.stringify(committed.discoveredCrates)) findings.push("reference dependency lock or discovered crate inventory changed");
+  return findings;
+}
+
+if (import.meta.main) {
+  const [sourceRepo, destination = resolve(import.meta.dir, "current-inventory.json")] = process.argv.slice(2);
+  const lock = JSON.parse(await readFile(resolve(import.meta.dir, "current-reference.json"), "utf8"));
+  const inventory = await generateCurrentInventory(await resolveCurrentSource(lock, sourceRepo), lock.sourceRevision);
+  await writeFile(destination, JSON.stringify(inventory, null, 2) + "\n");
+  console.log(`Generated ${inventory.units.length} units in ${inventory.files.length} files from ${inventory.discoveredCrates.length} discovered CodeMode crates; ${inventory.grpcMethods.length} RPCs; ${inventory.denominatorSha256}`);
+}

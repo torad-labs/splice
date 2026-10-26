@@ -3,44 +3,77 @@
 package splice.upstream.codemode
 
 import kotlinx.serialization.json.JsonElement
+import splice.upstream.codemode.description.CodeModeDescriptions
+import splice.upstream.codemode.description.CodeModeSamples
 
 public object CodeModeManual {
     /** codex-rs code-mode-protocol PUBLIC_TOOL_NAME. */
     public const val TOOL_NAME: String = "exec"
+    public const val DEFAULT_EXEC_YIELD_TIME_MS: Long = splice.core.config.DEFAULT_CODE_MODE_EXEC_YIELD_MS
 
     /** codex-rs execute_spec.rs CODE_MODE_FREEFORM_GRAMMAR, byte for byte. */
     public const val GRAMMAR: String = "\nstart: pragma_source | plain_source\n" +
         "pragma_source: PRAGMA_LINE NEWLINE SOURCE\nplain_source: SOURCE\n\n" +
         "PRAGMA_LINE: /[ \\t]*\\/\\/ @exec:[^\\r\\n]*/\nNEWLINE: /\\r?\\n/\nSOURCE: /[\\s\\S]+/\n"
 
-    private const val DEFERRED_GUIDANCE: String =
-        "Some deferred nested tools may be omitted from this description. They are still available on the " +
-            "global `tools` object and listed in `ALL_TOOLS`.\n" +
-            "To find one, filter `ALL_TOOLS` by `name` and `description`."
+    /** Function tools receive objects; freeform tools receive their unmodified string input. */
+    public enum class Kind { FUNCTION, FREEFORM }
 
-    private val template: String = checkNotNull(javaClass.getResourceAsStream("exec-description.txt")) {
-        "missing bundled exec manual template"
-    }.bufferedReader(Charsets.UTF_8).use { it.readText().trimEnd() }
+    public enum class Discovery { CATALOG, RANKED_SEARCH }
 
-    /** One nested tool as the manual renders it: its client name, description and argument schema. */
-    public data class NestedTool(val name: String, val description: String, val inputSchema: JsonElement?)
+    /** Metadata retained separately from a tool's stable callable name and schemas. */
+    public data class Metadata(
+        val kind: Kind = Kind.FUNCTION,
+        val namespace: String? = null,
+        val namespaceDescription: String? = null,
+        val inputSchemaMaxBytes: Int? = null,
+        val codeModeInputSchemaMaxBytes: Int? = null,
+        val freeformSyntax: String? = null,
+    )
 
-    /** build_exec_tool_description(code_mode_only = true): the template, the deferred-tool note when the
-     *  surface withheld tools, then one section per tool in name order. */
-    public fun description(enabled: List<NestedTool>, deferred: Boolean): String {
-        // No streaming paragraph: a script runs only once its whole item has arrived (CodeModeSourceBuffer), so the
-        // model writes ordinary JavaScript, as Codex's manual tells it to, with no names it may not redeclare.
-        val sections = mutableListOf(template)
-        if (deferred) sections += DEFERRED_GUIDANCE
-        val byName = enabled.associateBy(NestedTool::name)
-        val nested = nestedNames(byName.keys).map { section(byName.getValue(it)) }
-        if (nested.isNotEmpty()) sections += nested.joinToString("\n\n")
-        return sections.joinToString("\n\n")
+    /** A raw tool definition. [codeModeName] also preserves Codex's namespace underscore edge cases. */
+    public data class NestedTool(
+        val name: String,
+        val description: String,
+        val inputSchema: JsonElement?,
+        val outputSchema: JsonElement? = null,
+        val metadata: Metadata = Metadata(),
+    ) {
+        val codeModeName: String get() = CodeModeManual.codeModeName(name, metadata.namespace)
     }
+
+    /** Model-owned optional text replaces only its corresponding section; empty strings suppress it. */
+    public data class Messages(
+        val execDescription: String? = null,
+        val deferredGuidance: String? = null,
+        val mcpPreamble: String? = null,
+    )
+
+    public data class DescriptionOptions(
+        val defaultYieldTimeMs: Long = DEFAULT_EXEC_YIELD_TIME_MS,
+        val codeModeOnly: Boolean = true,
+        val imageDetailVisible: Boolean = true,
+        val discovery: Discovery = Discovery.CATALOG,
+        val messages: Messages = Messages(),
+    )
+
+    /** Current build_exec_tool_description, including guidance and MCP types for an empty catalog. */
+    public fun description(
+        enabled: List<NestedTool>,
+        deferred: Boolean,
+        options: DescriptionOptions = DescriptionOptions(),
+    ): String = CodeModeDescriptions.description(enabled, deferred, options)
 
     /** The nested tools in name order, the first of any two that normalize to one identifier kept —
      *  the manual and the runtime's `tools` object both come from this one rule. */
-    public fun nestedNames(names: Collection<String>): List<String> = names.sorted().distinctBy(::identifier)
+    public fun nestedNames(names: Collection<String>): List<String> = names.sortedWith(CodeModeText.order)
+        .filter { it != TOOL_NAME && it != "wait" }
+        .distinctBy(::identifier)
+
+    public fun codeModeName(name: String, namespace: String?): String = when (namespace) {
+        null, "", "functions" -> name
+        else -> if (namespace.endsWith('_') || name.startsWith('_')) "$namespace$name" else "${namespace}__$name"
+    }
 
     /** normalize_code_mode_identifier: every code point outside `[A-Za-z_$][A-Za-z0-9_$]*` becomes `_`. */
     public fun identifier(toolKey: String): String {
@@ -56,20 +89,34 @@ public object CodeModeManual {
 
     /** augment_tool_definition: the description `ALL_TOOLS` carries — the tool's own description, then
      *  its TypeScript declaration, so a deferred tool the manual omits still shows its arguments. */
-    public fun augmented(tool: NestedTool): String = sample(tool, identifier(tool.name))
+    public fun augmented(tool: NestedTool): String = CodeModeSamples.render(tool)
 
-    private fun section(tool: NestedTool): String {
-        val global = identifier(tool.name)
-        val heading = if (global == tool.name) "### `$global`" else "### `$global` (`${tool.name}`)"
-        val sample = sample(tool, global).trim()
-        return if (sample.isEmpty()) heading else "$heading\n$sample"
+    public fun waitDescription(): String {
+        val wait = CodeModeDescriptions.wait.trim()
+        return "Waits on a yielded `$TOOL_NAME` cell and returns new output or completion.\n$wait"
     }
 
-    /** render_code_mode_sample: the description, then the tool's TypeScript declaration. Claude Code
-     *  tools declare no output schema, so every result is `Promise<unknown>` as codex renders it. */
-    private fun sample(tool: NestedTool, global: String): String {
-        val input = tool.inputSchema?.let(CodeModeSchemaTypes::render) ?: "unknown"
-        val declaration = "declare const tools: { $global(args: $input): Promise<unknown>; };"
-        return "${tool.description}\n\nexec tool declaration:\n```ts\n$declaration\n```"
-    }
+    public fun withInputBudget(tool: NestedTool, codeModeMaxBytes: Int?): NestedTool = tool.copy(
+        metadata = tool.metadata.copy(
+            inputSchemaMaxBytes = maxOf(
+                DEFAULT_INPUT_SCHEMA_MAX_BYTES,
+                tool.metadata.inputSchemaMaxBytes ?: 0,
+                codeModeMaxBytes ?: 0,
+            ),
+        ),
+    )
+
+    /** Runtime catalogs carry augmented descriptions, then drop schemas already rendered into them. */
+    public fun prepare(tools: List<NestedTool>, toolDescriptionFirst: Boolean = false): List<NestedTool> = tools
+        .filter { it.codeModeName != TOOL_NAME && it.codeModeName != "wait" }
+        .map { tool ->
+            val description = CodeModeSamples.withNamespace(tool, toolDescriptionFirst)
+            val definition = withInputBudget(
+                tool,
+                tool.metadata.codeModeInputSchemaMaxBytes,
+            ).copy(description = description)
+            tool.copy(description = augmented(definition), inputSchema = null, outputSchema = null)
+        }
+        .sortedWith(compareBy(CodeModeText.order, NestedTool::codeModeName))
+        .distinctBy(NestedTool::codeModeName)
 }

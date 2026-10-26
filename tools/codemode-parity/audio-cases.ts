@@ -4,6 +4,9 @@ import { resolve } from "node:path";
 import { spawn } from "node:child_process";
 import { artifact, type CaseEvidence } from "./qualification";
 import { candidateCommand } from "./candidate-command";
+import { capturedCommand } from "./current-command";
+import { resolveCurrentSource } from "./current-source";
+import { assertRustDependencyClosure, matchingRustToolchain, rustCompiler } from "./current-rust-build";
 
 const sourceRoot = "/home/marcos/Documents/dev/infra/coding/codex";
 const revision = "17a9df60e420b58e3edc55efb1bb052e39492bbc";
@@ -39,15 +42,19 @@ async function command(argv: string[], input?: string, timeoutMs = 60_000): Prom
   child.stdin.end(input);
   try { return await finished; } finally { clearTimeout(timer); }
 }
-export async function prepareAudioOracle(directory: string): Promise<any> {
+export async function prepareAudioOracle(directory: string, sourceRevision = revision): Promise<any> {
   await mkdir(directory, { recursive: true });
+  if (sourceRevision !== revision) {
+    const current = JSON.parse(await readFile(resolve(import.meta.dir, "current-reference.json"), "utf8"));
+    if (sourceRevision === current.sourceRevision) return prepareCurrentAudioOracle(directory, current);
+  }
   const sources: Array<[string, string]> = [
     ["native-string.rs", "codex-rs/utils/string/src/truncate.rs"],
     ["native-cache.rs", "codex-rs/utils/cache/src/lib.rs"],
     ["native-audio.rs", "codex-rs/utils/audio/src/lib.rs"],
   ];
   for (const [target, path] of sources) {
-    const source = await command(["git", "-C", sourceRoot, "show", `${revision}:${path}`]); assert.equal(source.exitCode, 0, source.stderr);
+    const source = await command(["git", "-C", sourceRoot, "show", `${sourceRevision}:${path}`]); assert.equal(source.exitCode, 0, source.stderr);
     await writeFile(resolve(directory, target), source.stdout);
   }
   await writeFile(resolve(directory, "oracle.rs"), await readFile(resolve(import.meta.dir, "audio-oracle.rs")));
@@ -57,14 +64,55 @@ export async function prepareAudioOracle(directory: string): Promise<any> {
   assert.equal(build.exitCode, 0, build.stderr);
   return build;
 }
+
+/** The historical oracle above remains bounded to its original source and dependency context. */
+async function prepareCurrentAudioOracle(directory: string, pin: { sourceRevision: string; tag: string; repository: string }): Promise<any> {
+  const save = async (name: string, value: string | Uint8Array) => writeFile(resolve(directory, name), value);
+  const sourceRepository = await resolveCurrentSource(pin);
+  const sources: Array<[string, string]> = [
+    ["native-string.rs", "codex-rs/utils/string/src/truncate.rs"], ["native-cache.rs", "codex-rs/utils/cache/src/lib.rs"],
+    ["native-audio.rs", "codex-rs/utils/audio/src/lib.rs"], ["official-Cargo.lock", "codex-rs/Cargo.lock"],
+    ["official-workspace-Cargo.toml", "codex-rs/Cargo.toml"], ["official-audio-Cargo.toml", "codex-rs/utils/audio/Cargo.toml"],
+    ["official-cache-Cargo.toml", "codex-rs/utils/cache/Cargo.toml"], ["official-config-Cargo.toml", "codex-rs/config/Cargo.toml"],
+  ];
+  const sourceArtifacts = [];
+  for (const [target, path] of sources) {
+    const source = await capturedCommand(["git", "-C", sourceRepository, "show", `${pin.sourceRevision}:${path}`], directory);
+    assert.equal(source.exitCode, 0, source.stderr); await save(target, source.stdout);
+    sourceArtifacts.push({ source: path, artifact: await artifact(resolve(directory, target)) });
+  }
+  await save("oracle.rs", await readFile(resolve(import.meta.dir, "audio-oracle.rs")));
+  await save("Cargo.toml", await readFile(resolve(import.meta.dir, "current-audio.toml")));
+  const projectLock = await readFile(resolve(import.meta.dir, "current-audio.lock"), "utf8");
+  assertRustDependencyClosure(await readFile(resolve(directory, "official-Cargo.lock"), "utf8"), projectLock);
+  await save("Cargo.lock", projectLock);
+  const compiler = await matchingRustToolchain(directory, false, save);
+  const flags = ["-Cdebug-assertions=no", "-Coverflow-checks=no"];
+  const environment = { ...Object.fromEntries(Object.entries(process.env).filter((entry): entry is [string, string] => typeof entry[1] === "string")),
+    RUSTFLAGS: flags.join(" "), CARGO_ENCODED_RUSTFLAGS: flags.join("\x1f"), CARGO_PROFILE_DEV_DEBUG_ASSERTIONS: "false", CARGO_PROFILE_DEV_OVERFLOW_CHECKS: "false" };
+  const argv = ["cargo", `+${rustCompiler.toolchain}`, "build", "--offline", "--locked", "--manifest-path", resolve(directory, "Cargo.toml")];
+  let build = await capturedCommand(argv, directory, undefined, 180_000, environment);
+  if (build.exitCode !== 0 && /no matching package|failed to download|attempting to make an HTTP request/i.test(build.stderr)) {
+    await save("offline-cache-miss.json", JSON.stringify(build, null, 2) + "\n");
+    const fetched = await capturedCommand(["cargo", `+${rustCompiler.toolchain}`, "fetch", "--locked", "--manifest-path", resolve(directory, "Cargo.toml")], directory, undefined, 180_000, environment);
+    await save("dependency-bootstrap.json", JSON.stringify(fetched, null, 2) + "\n"); assert.equal(fetched.exitCode, 0, fetched.stderr);
+    build = await capturedCommand(argv, directory, undefined, 180_000, environment);
+  }
+  await save("build.json", JSON.stringify(build, null, 2) + "\n"); assert.equal(build.exitCode, 0, build.stderr);
+  const features = await capturedCommand(["cargo", `+${rustCompiler.toolchain}`, "tree", "--offline", "--locked", "--manifest-path", resolve(directory, "Cargo.toml"), "-e", "features"], directory, undefined, 60_000, environment);
+  await save("features.json", JSON.stringify(features, null, 2) + "\n"); assert.equal(features.exitCode, 0, features.stderr);
+  await save("source-context.json", JSON.stringify({ sourceRevision: pin.sourceRevision, sourceRepository, compiler: compiler.compiler, flags, sources: sourceArtifacts,
+    manifest: await artifact(resolve(directory, "Cargo.toml")), lock: await artifact(resolve(directory, "Cargo.lock")), features: await artifact(resolve(directory, "features.json")) }, null, 2) + "\n");
+  return build;
+}
 type Sample = { name: string; mime: string; path: string };
-export async function runAudioCases(java: string, jar: string, evidence: string, runId: string, cases: CaseEvidence[]): Promise<void> {
+export async function runAudioCases(java: string, jar: string, evidence: string, runId: string, cases: CaseEvidence[], sourceRevision = revision): Promise<void> {
   const family = cases.find(item => item.id === "runtime.output-content")!;
   const directory = resolve(evidence, `${runId}.native-audio`);
   const samples: Sample[] = [];
   const observations: any[] = [];
   try {
-    await prepareAudioOracle(directory);
+    await prepareAudioOracle(directory, sourceRevision);
     for (const [name, mime, codec, extension] of [
       ["wav", "audio/wav", "pcm_s16le", "wav"], ["mp3", "audio/mpeg", "libmp3lame", "mp3"],
       ["m4a", "audio/mp4", "aac", "m4a"], ["ogg", "audio/ogg", "libopus", "ogg"], ["webm", "audio/webm", "libopus", "webm"],
@@ -100,7 +148,7 @@ export async function runAudioCases(java: string, jar: string, evidence: string,
       }
     }
     const candidate = await command(candidateCommand(java, jar, "--format-fixture", runId), inputs.map(input => JSON.stringify(input)).join("\n") + "\n");
-    await writeFile(resolve(directory, "comparison.json"), JSON.stringify({ schema: 1, runId, revision, samples: observations, native, inputs, candidate }, null, 2) + "\n");
+    await writeFile(resolve(directory, "comparison.json"), JSON.stringify({ schema: 1, runId, revision: sourceRevision, samples: observations, native, inputs, candidate }, null, 2) + "\n");
     assert.equal(candidate.exitCode, 0, candidate.stderr);
     const rows = candidate.stdout.trim().split("\n").map((line: string) => JSON.parse(line)); assert.equal(rows.length, inputs.length);
     for (let index = 0; index < rows.length; index++) {
@@ -109,7 +157,8 @@ export async function runAudioCases(java: string, jar: string, evidence: string,
       assert.deepEqual(rows[index].content.slice(1), expected, `native audio duration budget mismatch ${samples[Math.floor(index / 2)]!.name} at ${inputs[index].maxOutputTokens}`);
     }
   } catch (error) { family.findings.push(`Native audio oracle: ${error instanceof Error ? error.message : String(error)}`); }
-  for (const name of ["oracle.rs", "Cargo.toml", "Cargo.lock", "native-audio.rs", "native-cache.rs", "native-string.rs", "build.json", "native-output.json", "comparison.json", "target/debug/native-audio-oracle"]) {
+  for (const name of ["oracle.rs", "Cargo.toml", "Cargo.lock", "native-audio.rs", "native-cache.rs", "native-string.rs", "build.json", "native-output.json", "comparison.json", "target/debug/native-audio-oracle",
+    ...(sourceRevision === revision ? [] : ["official-Cargo.lock", "official-workspace-Cargo.toml", "official-audio-Cargo.toml", "official-cache-Cargo.toml", "official-config-Cargo.toml", "compiler.json", "features.json", "source-context.json"])]) {
     try { family.artifacts.push(await artifact(resolve(directory, name))); } catch { /* Failure is already a qualification finding. */ }
   }
   for (const sample of samples) family.artifacts.push(await artifact(sample.path));

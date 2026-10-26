@@ -16,10 +16,15 @@ public data class DiscoveredModel(
     val contextWindow: Long? = null,
     val aliases: List<String> = emptyList(),
     val rates: ModelRates? = null,
-    val toolMode: String? = null,
     /** Backend-published serve ceiling, distinct from its default compaction window. */
     val maxContextWindow: Long? = null,
+    val runtimeMetadata: ModelRuntimeMetadata = ModelRuntimeMetadata(),
 ) {
+    public val toolMode: String? get() = runtimeMetadata.toolMode
+    public val supportsImageDetailOriginal: Boolean get() = runtimeMetadata.supportsImageDetailOriginal
+    public val modelMessages: kotlinx.serialization.json.JsonObject? get() = runtimeMetadata.modelMessages
+    public val useResponsesLite: Boolean get() = runtimeMetadata.useResponsesLite
+
     /** Whether the endpoint runs this model on the one-`exec` code-mode surface (V4-441): its `tool_mode`
      *  is `code_mode_only`, which is how the Codex backend marks the models it trained on that surface. */
     public val codeModeOnly: Boolean get() = toolMode == TOOL_MODE_CODE_MODE_ONLY
@@ -27,6 +32,14 @@ public data class DiscoveredModel(
     /** [id] and every alias. */
     public val spellings: List<String> get() = listOf(id) + aliases
 }
+
+/** Optional runtime facts retained as one published snapshot, independently of picker eligibility. */
+public data class ModelRuntimeMetadata(
+    val supportsImageDetailOriginal: Boolean = false,
+    val modelMessages: kotlinx.serialization.json.JsonObject? = null,
+    val useResponsesLite: Boolean = false,
+    val toolMode: String? = null,
+)
 
 /** The `tool_mode` the Codex backend publishes for a model it runs on the code-mode surface alone. */
 internal const val TOOL_MODE_CODE_MODE_ONLY: String = "code_mode_only"
@@ -36,4 +49,7 @@ internal const val TOOL_MODE_CODE_MODE_ONLY: String = "code_mode_only"
  *  and the one the console validates an edit against see the same models. */
 public fun interface HeadDiscoveredModels {
     public fun forHead(key: String): List<DiscoveredModel>
+
+    /** Metadata may also describe hidden models selected explicitly, without adding them to the picker. */
+    public fun metadataForHead(key: String): List<DiscoveredModel> = forHead(key)
 }

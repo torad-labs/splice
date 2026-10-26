@@ -6,6 +6,8 @@ import splice.provider.codex.CodeModeAcceptedResult
 import splice.provider.codex.CodeModeRecordSnapshot
 import splice.provider.codex.CodeModeResultSnapshot
 import splice.upstream.codemode.CodeModeResult
+import splice.upstream.codemode.CodeModeResultDisposition
+import splice.upstream.codemode.CodeModeResultOrigin
 import java.util.Collections
 
 /** Acceptance order is durable sequence order. A result and its media never disagree on keys. */
@@ -66,12 +68,14 @@ internal class CodeModeAccepted(entries: Map<String, CodeModeAcceptedResult> = e
             val proof = CodeModeWeight.STORED.clientOutputDigest(
                 held.clientOutputDigest?.takeIf { it === prior.clientOutputDigest },
             )
-            output + media + proof
+            val payload = held.payload?.takeIf { it === prior.result.payload }?.let(CodeModeWeight.STORED::json) ?: 0L
+            output + media + proof + payload
         }
 
     private fun acceptedBytes(result: CodeModeResult, media: List<JsonElement>, clientOutputDigest: String?): Long =
         CodeModeWeight.STORED.text(result.output) + media.sumOf(CodeModeWeight.STORED::json) +
-            CodeModeWeight.STORED.clientOutputDigest(clientOutputDigest)
+            CodeModeWeight.STORED.clientOutputDigest(clientOutputDigest) +
+            (result.payload?.let(CodeModeWeight.STORED::json) ?: 0L)
 
     fun copy(): CodeModeAccepted = CodeModeAccepted(entries)
 
@@ -87,6 +91,14 @@ internal class CodeModeAccepted(entries: Map<String, CodeModeAcceptedResult> = e
     }
 
     fun snapshot(): Map<String, CodeModeResultSnapshot> = entries.mapValues { (_, entry) ->
-        CodeModeResultSnapshot(entry.result.output, entry.result.isError, entry.media, entry.clientOutputDigest)
+        CodeModeResultSnapshot(
+            entry.result.output,
+            entry.result.isError,
+            entry.media,
+            entry.clientOutputDigest,
+            entry.result.disposition.takeUnless { it == CodeModeResultDisposition.REJECT }?.name,
+            entry.result.origin.takeUnless { it == CodeModeResultOrigin.GENERIC }?.name,
+            entry.result.payload,
+        )
     }
 }

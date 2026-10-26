@@ -73,7 +73,7 @@ internal class ModelRosters(
 
     private val cache = RosterCache(statePaths)
 
-    private val byHead = ConcurrentHashMap<String, List<DiscoveredModel>>()
+    private val byHead = ConcurrentHashMap<String, KeptRoster.Kept>()
 
     /** Each head's last fallback line: the hourly refresh says it again only when it changed. A forwarded Claude login
      *  and a local runtime are never asked, so their line printed every hour (the field audit, Oct 13). */
@@ -82,7 +82,9 @@ internal class ModelRosters(
 
     /** What [key]'s provider published most recently, or last published when it did not answer. Empty
      *  before [resolve], and for a head whose provider discovered nothing. */
-    override fun forHead(key: String): List<DiscoveredModel> = byHead[key].orEmpty()
+    override fun forHead(key: String): List<DiscoveredModel> = byHead[key]?.models.orEmpty()
+
+    override fun metadataForHead(key: String): List<DiscoveredModel> = byHead[key]?.metadata.orEmpty()
 
     /** Ask every head's provider at once — [heads] maps a head key to the provider AS THAT HEAD
      *  RESOLVES IT (legacy knobs applied), because that is the endpoint its turns dial — and hold the
@@ -99,12 +101,12 @@ internal class ModelRosters(
         while (isActive && ticker.awaitTick(REFRESH_INTERVAL_MS)) resolve(heads)
     }
 
-    private suspend fun modelsFor(key: String, provider: ProviderConfig): List<DiscoveredModel> {
+    private suspend fun modelsFor(key: String, provider: ProviderConfig): KeptRoster.Kept {
         val answer = withTimeoutOrNull(deadline) {
             runInterruptible(ProcessDispatchers().io()) { ask(key, provider) }
         } ?: Discovery.Unavailable(provider.rosterUrl, "no answer within $deadline")
         return when (answer) {
-            is Discovery.Found -> answer.models.also {
+            is Discovery.Found -> KeptRoster.Kept(answer.models, answer.metadata).also {
                 keep(key, answer)
                 log("[$key] models: ${listed(answer, provider)}\n")
             }
@@ -130,12 +132,15 @@ internal class ModelRosters(
 
     /** The list [provider] published last, or nothing — said once, either way, with where it was asked
      *  when the reason does not already say, and why no kept list stood in when none did. */
-    private fun fallback(key: String, provider: ProviderConfig, missed: Discovery.Unavailable): List<DiscoveredModel> {
+    private fun fallback(key: String, provider: ProviderConfig, missed: Discovery.Unavailable): KeptRoster.Kept {
         val at = missed.url?.takeUnless { it in missed.reason }?.let { " (asked at $it)" }.orEmpty()
-        val kept = byHead[key]?.takeIf { it.isNotEmpty() }?.let { KeptRoster.Kept(it) } ?: cache.read(key, provider)
+        val kept = byHead[key]?.takeIf { it.models.isNotEmpty() || it.metadata.isNotEmpty() } ?: cache.read(
+            key,
+            provider,
+        )
         val line = "[$key] models: ${missed.reason}$at; ${instead(kept)}\n"
         if (said.put(key, line) != line) log(line)
-        return (kept as? KeptRoster.Kept)?.models.orEmpty()
+        return (kept as? KeptRoster.Kept) ?: KeptRoster.Kept(emptyList())
     }
 
     private fun instead(kept: KeptRoster): String = when (kept) {

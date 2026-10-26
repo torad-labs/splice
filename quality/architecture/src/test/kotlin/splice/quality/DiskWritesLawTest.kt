@@ -609,6 +609,10 @@ private val SHIPPED_SITES: Map<String, Map<String, Int>> = mapOf(
     "integrations/providers/muse/src/main/kotlin/splice/provider/muse/MuseMintPersistence.kt" to mapOf(
         "writeAtomic0600(" to 1,
     ),
+    // Muse's gateway route moves (Oct 26): one atomic owner-only write of the whole map per move.
+    "integrations/providers/muse/src/main/kotlin/splice/provider/muse/MuseGatewayRoutes.kt" to mapOf(
+        "writeAtomic0600(" to 1,
+    ),
     "integrations/topology/src/main/kotlin/splice/topology/TopologyLoader.kt" to mapOf("createNew0600(" to 1),
     "integrations/upstream/src/main/kotlin/splice/upstream/credentials/CredentialLock.kt" to mapOf(
         "FileChannel.open(" to 1,

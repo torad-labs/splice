@@ -26,10 +26,15 @@ public object CodeModeToolDefinitions {
     }
 
     private fun namespace(spec: JsonObject): List<CodeModeManual.NestedTool> {
-        val metadata = CodeModeManual.Metadata(
-            namespace = JsonScalars.str(spec, "name"),
-            namespaceDescription = JsonScalars.str(spec, "description"),
-        )
+        val name = JsonScalars.str(spec, "name")
+        // Codex's default namespace (DEFAULT_FUNCTION_NAMESPACE, codex-rs/protocol/src/tool_name.rs) holds plain
+        // functions, which the wire only groups, so its members read as the flat list's do and the manual sorts them
+        // the same way. codeModeName already reads the namespace as none.
+        val metadata = if (name == CodeModeManual.DEFAULT_FUNCTION_NAMESPACE) {
+            CodeModeManual.Metadata()
+        } else {
+            CodeModeManual.Metadata(namespace = name, namespaceDescription = JsonScalars.str(spec, "description"))
+        }
         return (spec["tools"] as? JsonArray).orEmpty().mapNotNull {
             (it as? JsonObject)?.let { tool ->
                 definition(tool, metadata)

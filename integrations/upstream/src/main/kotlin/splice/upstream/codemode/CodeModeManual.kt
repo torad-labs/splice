@@ -9,6 +9,9 @@ import splice.upstream.codemode.description.CodeModeSamples
 public object CodeModeManual {
     /** codex-rs code-mode-protocol PUBLIC_TOOL_NAME. */
     public const val TOOL_NAME: String = "exec"
+
+    /** codex-rs protocol DEFAULT_FUNCTION_NAMESPACE: a tool in it is a plain function, named without a prefix. */
+    public const val DEFAULT_FUNCTION_NAMESPACE: String = "functions"
     public const val DEFAULT_EXEC_YIELD_TIME_MS: Long = splice.core.config.DEFAULT_CODE_MODE_EXEC_YIELD_MS
 
     /** codex-rs execute_spec.rs CODE_MODE_FREEFORM_GRAMMAR, byte for byte. */
@@ -71,7 +74,7 @@ public object CodeModeManual {
         .distinctBy(::identifier)
 
     public fun codeModeName(name: String, namespace: String?): String = when (namespace) {
-        null, "", "functions" -> name
+        null, "", DEFAULT_FUNCTION_NAMESPACE -> name
         else -> if (namespace.endsWith('_') || name.startsWith('_')) "$namespace$name" else "${namespace}__$name"
     }
 

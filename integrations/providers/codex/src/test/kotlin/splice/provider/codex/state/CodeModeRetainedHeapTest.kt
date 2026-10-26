@@ -21,6 +21,7 @@ import splice.provider.codex.CodeModeStateLocation
 import splice.provider.codex.CodexCodeModeRegistry
 import splice.upstream.memory.JvmHeap
 import java.lang.management.ManagementFactory
+import java.lang.management.MemoryType
 import java.lang.ref.Reference
 import java.nio.file.Files
 import java.nio.file.Path
@@ -32,6 +33,7 @@ import kotlin.time.Duration.Companion.minutes
 
 private const val RETAINED_ATTEMPTS = 139
 private const val RETAINED_PAYLOAD_BYTES = 1024 * 1024
+private const val WARM_PAYLOAD_BYTES = 1024
 private const val RETAINED_CHILD_SECONDS = 120L
 
 // why: two admissions in flight reserve at most about 89 MiB of the 128 MiB ledger (request 6.5, record 2, snapshot 4
@@ -63,6 +65,12 @@ class CodeModeRetainedHeapTest {
             "-XX:ActiveProcessorCount=4",
             "-XX:+ExitOnOutOfMemoryError",
             "-XX:+HeapDumpOnOutOfMemoryError",
+            // The JDK caches reflection and method handles through soft references, and G1 leaves dead objects in
+            // regions it does not compact. Kept or dropped at random, they moved the live reading over 200 KB around
+            // graphs the ledger charged the same in every run. Here a soft reference not touched since the
+            // last collection is cleared, and a full collection compacts every region.
+            "-XX:SoftRefLRUPolicyMSPerMB=0",
+            "-XX:MarkSweepDeadRatio=0",
             "-XX:HeapDumpPath=${dir.resolve("retained.hprof")}",
             "-cp",
             System.getProperty("java.class.path"),
@@ -102,12 +110,15 @@ object CodeModeRetainedHeapProbe {
             )
         }
         try {
-            // The first admission on a registry initializes the save path's classes and caches on the heap; one small
-            // admission each runs before the baseline, so the live reading counts retained graphs and nothing else.
-            registries.forEachIndexed { index, registry -> warm(registry, index) }
+            // The first admission on a registry initializes the save path's classes and caches on the heap. One small
+            // admission each runs before the baseline, on the workers the run uses, so the live reading counts
+            // retained graphs and nothing else.
+            check(run(registries, "warm", registries.size, WARM_PAYLOAD_BYTES).all { it }) {
+                "the warm-up admissions must be kept"
+            }
             val before = settled()
             // Only the counts outlive the run: a refusal's exception and stack trace would read as retained heap.
-            val outcomes = run(registries)
+            val outcomes = run(registries, "retained", RETAINED_ATTEMPTS, RETAINED_PAYLOAD_BYTES)
             val completed = outcomes.count { it }
             val refused = outcomes.count { !it }
             val after = settled()
@@ -137,14 +148,23 @@ object CodeModeRetainedHeapProbe {
     }
 
     /** One worker per registry: both heads admit at once against the shared ledger, one admission each in flight.
-     *  Each attempt answers whether it completed; false is a heap refusal. */
-    private fun run(registries: List<CodexCodeModeRegistry>): List<Boolean> {
+     *  Each attempt answers whether it completed; false is a heap refusal. The workers are platform threads, so what
+     *  one caches for itself ends with it. Virtual threads left their carriers' I/O buffers and the scheduler's
+     *  queues behind, about 48 KB of retained heap that no graph holds. */
+    private fun run(
+        registries: List<CodexCodeModeRegistry>,
+        name: String,
+        attempts: Int,
+        payloadBytes: Int,
+    ): List<Boolean> {
         val start = CountDownLatch(1)
-        return Executors.newVirtualThreadPerTaskExecutor().use { executor ->
+        return Executors.newThreadPerTaskExecutor(Thread.ofPlatform().factory()).use { executor ->
             val workers = registries.mapIndexed { head, registry ->
                 executor.submit<List<Pair<Int, Boolean>>> {
                     check(start.await(RETAINED_CHILD_SECONDS, TimeUnit.SECONDS))
-                    (head until RETAINED_ATTEMPTS step registries.size).map { index -> index to admit(registry, index) }
+                    (head until attempts step registries.size).map { index ->
+                        index to admit(registry, name, index, payloadBytes)
+                    }
                 }
             }
             start.countDown()
@@ -152,11 +172,11 @@ object CodeModeRetainedHeapProbe {
         }
     }
 
-    private fun admit(registry: CodexCodeModeRegistry, index: Int): Boolean {
+    private fun admit(registry: CodexCodeModeRegistry, name: String, index: Int, payloadBytes: Int): Boolean {
         // Model the already admitted request owner before any source payload is materialized.
-        val request = JvmHeap.budget.reserve(HeapWeights.request(RETAINED_PAYLOAD_BYTES.toLong())) ?: return false
+        val request = JvmHeap.budget.reserve(HeapWeights.request(payloadBytes.toLong())) ?: return false
         return request.use {
-            val record = record(index)
+            val record = record(name, index, payloadBytes)
             try {
                 check(registry.add(record)) { "synthetic retention must not reject through another policy" }
                 registry.complete(record, "done")
@@ -170,15 +190,10 @@ object CodeModeRetainedHeapProbe {
         }
     }
 
-    private fun warm(registry: CodexCodeModeRegistry, index: Int) {
-        val record = CodeModeRecords.of("warm-$index", index)
-        check(registry.add(record)) { "the warm-up admission must be kept" }
-        registry.complete(record, "done")
-    }
-
-    private fun record(index: Int): CodeModeRecord = CodeModeRecords.of("retained-$index", index).also {
-        it.carry.continuity = listOf(JsonPrimitive("x".repeat(RETAINED_PAYLOAD_BYTES)))
-    }
+    private fun record(name: String, index: Int, payloadBytes: Int): CodeModeRecord =
+        CodeModeRecords.of("$name-$index", index).also {
+            it.carry.continuity = listOf(JsonPrimitive("x".repeat(payloadBytes)))
+        }
 
     /** The ledger's charge and the JVM's live heap once every unreachable owner is collected and refunded. */
     private fun settled(): RetainedHeapReading = runBlocking {
@@ -189,10 +204,18 @@ object CodeModeRetainedHeapProbe {
             withTimeoutOrNull(SETTLE_QUIET) { budget.available.first { it != seen } }
                 ?: return@runBlocking RetainedHeapReading(
                     budget.limitBytes - seen,
-                    ManagementFactory.getMemoryMXBean().heapMemoryUsage.used,
+                    liveAfterCollection(),
                 )
         }
         error("the ledger never settled")
+    }
+
+    /** The heap in use right after a full collection. The second collection clears the soft references touched
+     *  just before the first; heapMemoryUsage would also count what the settle wait allocated after it. */
+    private fun liveAfterCollection(): Long {
+        repeat(2) { System.gc() }
+        return ManagementFactory.getMemoryPoolMXBeans().filter { it.type == MemoryType.HEAP }
+            .sumOf { it.collectionUsage?.used ?: 0L }
     }
 }
 

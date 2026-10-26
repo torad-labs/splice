@@ -37,6 +37,11 @@ private val WEB_SCHEMES = setOf("http", "https")
 /** Opens a login URL; tests record the request without starting an operating-system process. */
 public fun interface BrowserOpener {
     public fun open(url: String): Boolean
+
+    /** Opens [page], a file splice wrote on this machine for a browser to load, such as `splice console`'s owner-only
+     *  launch page. Only the page's own address reaches the opener; what it carries stays in the file. A link from a
+     *  provider never comes here: it goes to [open], which takes a web link alone. */
+    public fun openPage(page: Path): Boolean = open(page.toUri().toString())
 }
 
 /** V4-132: the console's login-id/poll seam over [DeviceLoginFlow] and [OAuthLoginFlow] — what
@@ -71,13 +76,43 @@ public class SystemBrowserOpener(private val output: TerminalOutput) : BrowserOp
      *  The guard is set by the shared Gradle test task, so any future test reaching this path fails
      *  loudly and names itself instead of opening a window on someone's desktop. */
     override fun open(url: String): Boolean {
+        refuseInTests(url)
+        return linkCommand(url)?.let(::launch) ?: false
+    }
+
+    /** Oct 26, 2026: the page `splice console` wrote, by its file address. From Oct 19 it went through [open] and was
+     *  refused with the provider links, so `splice console` opened nothing and printed the page's path. */
+    override fun openPage(page: Path): Boolean {
+        val url = page.toUri().toString()
+        refuseInTests(url)
+        return pageCommand(page)?.let(::launch) ?: false
+    }
+
+    /** What [open] hands this desktop's opener for [url]. The URL may come straight from a provider's JSON (a device
+     *  flow's verification link), so only a web link gets a command; a file:, smb: or custom scheme from a hostile
+     *  endpoint never reaches the operating system's handler. */
+    internal fun linkCommand(url: String): List<String>? = if (webLink(url)) desktopCommand(url) else null
+
+    /** What [openPage] hands this desktop's opener for [page]: the page's own file address, which splice built. */
+    internal fun pageCommand(page: Path): List<String>? = desktopCommand(page.toUri().toString())
+
+    /** `open` on a Mac, `xdg-open` on Linux and the other Unixes, and no command elsewhere. */
+    private fun desktopCommand(url: String): List<String>? {
+        val os = System.getProperty("os.name").lowercase()
+        return when {
+            os.contains("mac") -> listOf("open", url)
+            os.contains("nux") || os.contains("nix") -> listOf("xdg-open", url)
+            else -> null
+        }
+    }
+
+    private fun refuseInTests(url: String) {
         if (System.getProperty(NO_SYSTEM_BROWSER) != null) {
             error(
                 "a test reached the real system browser (host=${host(url)}); inject a BrowserOpener " +
                     "fake, or override the flow's login seam (SetupCommand.loginHead)",
             )
         }
-        return launch(url)
     }
 
     /** Host only — an authorize URL carries the PKCE challenge and state, which never belong in a
@@ -90,17 +125,8 @@ public class SystemBrowserOpener(private val output: TerminalOutput) : BrowserOp
     private fun webLink(url: String): Boolean = Cancellables.runCatchingCancellable { java.net.URI.create(url) }
         .fold(onSuccess = { it.host != null && it.scheme?.lowercase() in WEB_SCHEMES }, onFailure = { false })
 
-    private fun launch(url: String): Boolean = Cancellables.runCatchingCancellable {
-        // The URL may come straight from a provider's JSON (a device flow's verification link), so only a web link
-        // reaches the operating system's handler; a file:, smb: or custom scheme from a hostile endpoint never does.
-        if (!webLink(url)) return false
-        val os = System.getProperty("os.name").lowercase()
-        val cmd = when {
-            os.contains("mac") -> listOf("open", url)
-            os.contains("nux") || os.contains("nix") -> listOf("xdg-open", url)
-            else -> return false
-        }
-        ProcessBuilder(cmd).redirectOutput(ProcessBuilder.Redirect.DISCARD)
+    private fun launch(command: List<String>): Boolean = Cancellables.runCatchingCancellable {
+        ProcessBuilder(command).redirectOutput(ProcessBuilder.Redirect.DISCARD)
             .redirectError(ProcessBuilder.Redirect.DISCARD).start()
         true
     }.onFailure { output.line("splice: the browser did not open. Use the link below to sign in.") }

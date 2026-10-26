@@ -26,6 +26,8 @@
 // (prepush-scope.ts, selector.ts): the ladder rows whose inputs the diff touches run, and gradle runs the changed modules
 // and their dependents, in parallel, through the slot. The full ladder is a push to main's. :app:codeModePackagedTest, which
 // reruns the code-mode suites against the fat jar, runs only when the push can change what the worker loads (packaged-worker.ts).
+// Pushes of one branch queue in the push lane (push-lane.ts): only the newest queued push is judged, an older one whose commit it
+// carried is told so and sends nothing, and when the newest fails the next older one is judged.
 //
 // A PUSH THAT CANNOT PASS STOPS ITS GRADLE RUN, OR NEVER STARTS IT. The legs that read no code (title, attribution, no-Python,
 // ast-grep walls) run first, and gradle starts only once they pass: stopping a run also ends the warm pre-push daemon. A direct
@@ -46,7 +48,8 @@ import { type Layout, layout } from "../lib/repo.ts";
 import { acquireRunSentinel, describeOpenRun } from "../lib/sentinel.ts";
 import { parseModuleGraph } from "../lib/selector.ts";
 import { ktlintOver, type LintVerdict, lintable, type StagedLint, stagedLinters } from "../lib/lint-staged.ts";
-import { preparePrePushTree, type PrePushTree } from "../lib/prepush-tree.ts";
+import { preparePrePushTree, type PrePushTree, takePrePushTreeNow } from "../lib/prepush-tree.ts";
+import { type Lane, type LaneOptions, type LaneOutcome, openLane } from "../lib/push-lane.ts";
 import { APP_CHECK, PACKAGED_TEST, packagedTestReason } from "../lib/packaged-worker.ts";
 import { appendPushTiming, type PushTiming, readProfile } from "../lib/prepush-timing.ts";
 import { isoSeconds } from "../lib/slot.ts";
@@ -127,6 +130,8 @@ export interface HookDeps {
   readonly rivalLive?: () => boolean;
   /** The linters pre-commit runs over the staged Kotlin. The real ones when absent. */
   readonly lint?: StagedLint;
+  /** Who a push in the push lane is, how the lane tells a queued push still runs, and how often it looks. */
+  readonly lane?: LaneOptions;
 }
 
 export interface Judged extends GateRun {
@@ -589,9 +594,25 @@ export async function prePush(lay: Layout, stdin: string, deps: HookDeps = {}, r
     console.error("pre-push: only deletions; nothing to judge");
     return 0;
   }
+  // One update of a branch the remote has queues in the push lane (push-lane.ts), which judges only the newest queued push.
+  const only = refs.length === 1 ? refs[0] : undefined;
+  const take = (sha: string): PrePushTree | undefined => (deps.tree === undefined ? takePrePushTreeNow(lay.repoRoot, sha) : deps.tree(lay.repoRoot, sha));
+  const lane =
+    only === undefined ? undefined : openLane(lay.repoRoot, { remoteName, remoteRef: only.remoteRef, tip: only.tip, remote: only.remote }, take, deps.lane);
+  let verdict = 1;
+  try {
+    verdict = await judgeTips(lay, refs, deps, started, remoteName, lane);
+    return verdict;
+  } finally {
+    if (verdict === 0) lane?.passed();
+    else lane?.leave();
+  }
+}
+
+async function judgeTips(lay: Layout, refs: readonly PushedRef[], deps: HookDeps, started: number, remoteName: string, lane: Lane | undefined): Promise<number> {
   // Each distinct tip is judged on its own, as a clean checkout of that commit.
   for (const tip of [...new Set(refs.map((ref) => ref.tip))]) {
-    const code = await judgeTip(lay, tip, refs.filter((ref) => ref.tip === tip), refs, deps, started, remoteName);
+    const code = await judgeTip(lay, tip, refs.filter((ref) => ref.tip === tip), refs, deps, started, remoteName, lane);
     if (code !== 0) return code;
   }
   // The last look, right before the hook hands git its verdict: every ref git named, not only the tip just judged. A tip
@@ -616,6 +637,7 @@ async function judgeTip(
   deps: HookDeps,
   started: number,
   remoteName: string,
+  lane?: Lane,
 ): Promise<number> {
   const subject = gitText(lay.repoRoot, ["log", "-1", "--format=%s", tip]);
   console.error(`── pr title (${subject}) ──`);
@@ -627,17 +649,45 @@ async function judgeTip(
   let tree: PrePushTree;
   const waitStarted = performance.now();
   try {
-    tree = (deps.tree ?? preparePrePushTree)(lay.repoRoot, tip);
+    if (lane === undefined) tree = (deps.tree ?? preparePrePushTree)(lay.repoRoot, tip);
+    else {
+      const turn = await lane.queue();
+      if (turn.kind !== "judge") return laneEnd(lay.repoRoot, turn, tip, refs[0], remoteName);
+      tree = turn.tree;
+    }
   } catch (error) {
     console.error(`pre-push: ✗ cannot check the pushed commit out: ${errorText(error)}`);
     return 1;
   }
   console.error(`pre-push timing: build tree ${(tree.setupMs / 1000).toFixed(1)} s to move to the sha, ${((performance.now() - waitStarted - tree.setupMs) / 1000).toFixed(1)} s waiting for it`);
   try {
-    return await judgeIn(lay, tree.path, tip, refs, pushed, deps, started, remoteName);
+    const code = await judgeIn(lay, tree.path, tip, refs, pushed, deps, started, remoteName);
+    // A push in the lane is marked passed before its tree frees, so a push queued beside it waits for git to send this one,
+    // rather than take the tree and judge a push the remote would then refuse.
+    if (code === 0) lane?.passed();
+    return code;
   } finally {
     tree.release();
   }
+}
+
+/** The verdict of a push the lane ends before any judgement. Either its commit is on the remote branch already, carried there by a
+ *  newer push, or the branch moved past the old value git will send, so the remote would refuse it. Git has nothing it can send
+ *  either way, so both exit 1. */
+function laneEnd(repoRoot: string, turn: Exclude<LaneOutcome, { kind: "judge" }>, tip: string, ref: PushedRef | undefined, remoteName: string): number {
+  const branch = `${printableRemote(remoteName)}/${(ref?.remoteRef ?? "").replace(/^refs\/heads\//, "")}`;
+  if (turn.kind === "carried") {
+    console.log(`PRE-PUSH: CARRIED — ${tip.slice(0, 9)} is on ${branch} already, inside ${turn.by.slice(0, 9)}, which another queued push sent; nothing is left to send`);
+    return 1;
+  }
+  console.log(`PRE-PUSH: FAIL — ${branch} moved to ${turn.now.slice(0, 9)} while this push waited, so the remote would refuse its old value ${(ref?.remote ?? "").slice(0, 9)}`);
+  const onTop = git(repoRoot, ["merge-base", "--is-ancestor", turn.now, tip]).status === 0;
+  console.error(
+    onTop
+      ? `pre-push: push again: ${tip.slice(0, 9)} already holds ${turn.now.slice(0, 9)}, and a new push starts from it`
+      : `pre-push: fetch, put ${tip.slice(0, 9)} on top of ${turn.now.slice(0, 9)}, and push again`,
+  );
+  return 1;
 }
 
 async function judgeIn(

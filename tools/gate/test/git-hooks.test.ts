@@ -33,6 +33,8 @@ import {
 import type { LintVerdict } from "../src/lib/lint-staged.ts";
 import type { Leg } from "../src/lib/prepush-scope.ts";
 import { parseProfile, type PushTiming } from "../src/lib/prepush-timing.ts";
+import { preparePrePushTree } from "../src/lib/prepush-tree.ts";
+import { type LaneOptions, ownerOf } from "../src/lib/push-lane.ts";
 import { type Layout, layout } from "../src/lib/repo.ts";
 
 const { repoRoot } = layout();
@@ -948,6 +950,251 @@ describe("pre-push runs the packaged code-mode test only when the push can chang
     expect(result).toBe(0);
     expect(runs.map((run) => run.options)).toEqual([[]]);
     expect(text).not.toContain("codeModePackagedTest");
+  });
+});
+
+// Load cut 2 of the temple plan of 2026-10-19, approved by Marcos: seats push one shared branch, so pushes queue behind the one
+// being judged, and each holds the commits below it. Only the newest queued push is judged; an older one is told its commit was
+// carried; when the newest fails, the next older one is judged. A push stands for its git process: it is queued while that runs.
+describe("the push lane judges only the newest queued push of a branch", () => {
+  const ON_ORIGIN = "refs/remotes/origin/feat";
+
+  /** A scratch repository whose branch is on origin at the scaffold, with three commits above it, each holding the one before. */
+  const laneRepo = (): { root: string; base: string; chain: [string, string, string] } => {
+    const root = wallsRepo();
+    const base = head(root);
+    git(root, ["update-ref", ON_ORIGIN, base]);
+    const chain: string[] = [];
+    for (const n of [1, 2, 3]) {
+      writeFile(root, TARGET, CLEAN.replace("out.close()", `out.close() // ${n}`));
+      git(root, ["add", TARGET]);
+      commit(root, `chore(test): lane commit ${n}`);
+      chain.push(head(root));
+    }
+    return { root, base, chain: chain as [string, string, string] };
+  };
+
+  /** git's stdin for a push of [tip] by its sha, as the seats push, to a branch the remote holds at [base]. */
+  const laneStdin = (tip: string, base: string): string => `${tip} ${tip} refs/heads/feat ${base}\n`;
+
+  /** A push whose git process is the [n]th fake one, running while [live] holds n. */
+  const pushOwner = (n: number, live: ReadonlySet<number>): LaneOptions => ({
+    owner: { pid: 4_000_000 + n, start: "lane-test" },
+    alive: (owner) => live.has(owner.pid - 4_000_000),
+    pollMs: 10,
+  });
+
+  /** A green gradle that records which commit each run judged, red for [red], and that finishes only once [hold] settles. */
+  const judging =
+    (judged: string[], red: ReadonlySet<string> = new Set(), hold: Promise<void> = Promise.resolve()): GateRunner =>
+    async (_tasks, at) => {
+      const sha = Bun.spawnSync(["git", "rev-parse", "HEAD"], { cwd: at, stdout: "pipe" }).stdout.toString().trim();
+      judged.push(sha);
+      await hold;
+      return red.has(sha) ? { status: 1, output: COMPILE_RED } : { status: 0, output: "BUILD SUCCESSFUL\n" };
+    };
+
+  /** [fn]'s result and every line printed meanwhile; [fn] reads the lines as they come, to wait for one. */
+  async function printing<T>(fn: (lines: readonly string[]) => Promise<T>): Promise<{ result: T; text: string }> {
+    const lines: string[] = [];
+    const log = console.log;
+    const err = console.error;
+    console.log = (...args: unknown[]) => void lines.push(args.map(String).join(" "));
+    console.error = (...args: unknown[]) => void lines.push(args.map(String).join(" "));
+    try {
+      return { result: await fn(lines), text: lines.join("\n") };
+    } finally {
+      console.log = log;
+      console.error = err;
+    }
+  }
+
+  const until = async (what: string, done: () => boolean): Promise<void> => {
+    const deadline = Date.now() + 10_000;
+    while (!done()) {
+      if (Date.now() > deadline) throw new Error(`timed out waiting for ${what}`);
+      await Bun.sleep(5);
+    }
+  };
+
+  const short = (sha: string): string => sha.slice(0, 9);
+  const waitsFor = (lines: readonly string[], older: string, newer: string): boolean =>
+    lines.some((line) => line.includes(`push lane: ${short(older)} waits; ${short(newer)}`));
+
+  test("RED: of three queued pushes that each hold the one before, only the newest is judged, and the older two are told they were carried", async () => {
+    const { root, base, chain } = laneRepo();
+    const [c1, c2, c3] = chain;
+    const live = new Set([1, 2, 3]);
+    const judged: string[] = [];
+    const held = preparePrePushTree(root, base);
+    const { result, text } = await printing(async (lines) => {
+      const pushes = chain.map((tip, at) =>
+        prePush(lay(root), laneStdin(tip, base), { gate: judging(judged), openRun: () => null, legs: NO_LEGS, lane: pushOwner(at + 1, live) }),
+      );
+      try {
+        await until("both older pushes to wait for the newest", () => waitsFor(lines, c1, c3) && waitsFor(lines, c2, c3));
+      } finally {
+        held.release();
+      }
+      const newest = await pushes[2];
+      // git sends the newest: origin's branch moves to it, and its git process ends.
+      git(root, ["update-ref", ON_ORIGIN, c3]);
+      live.delete(3);
+      return [await pushes[0], await pushes[1], newest];
+    });
+    expect(judged).toEqual([c3]);
+    expect(result).toEqual([1, 1, 0]);
+    for (const tip of [c1, c2]) expect(text).toContain(`PRE-PUSH: CARRIED — ${short(tip)} is on origin/feat already, inside ${short(c3)}`);
+  });
+
+  test("RED: when the newest queued push fails, the next older one is judged, and the oldest is carried by it", async () => {
+    const { root, base, chain } = laneRepo();
+    const [c1, c2, c3] = chain;
+    const live = new Set([1, 2, 3]);
+    const judged: string[] = [];
+    const held = preparePrePushTree(root, base);
+    const { result, text } = await printing(async (lines) => {
+      const pushes = chain.map((tip, at) =>
+        prePush(lay(root), laneStdin(tip, base), { gate: judging(judged, new Set([c3])), openRun: () => null, legs: NO_LEGS, lane: pushOwner(at + 1, live) }),
+      );
+      try {
+        await until("both older pushes to wait for the newest", () => waitsFor(lines, c1, c3) && waitsFor(lines, c2, c3));
+      } finally {
+        held.release();
+      }
+      const newest = await pushes[2];
+      const middle = await pushes[1];
+      git(root, ["update-ref", ON_ORIGIN, c2]);
+      live.delete(2);
+      return [await pushes[0], middle, newest];
+    });
+    expect(judged).toEqual([c3, c2]);
+    expect(result).toEqual([1, 0, 1]);
+    expect(text).toContain(`PRE-PUSH: CARRIED — ${short(c1)} is on origin/feat already, inside ${short(c2)}`);
+  });
+
+  test("RED: a push queued behind one that lands without its commit is refused before it is judged, since the remote would refuse it", async () => {
+    const root = wallsRepo();
+    const base = head(root);
+    git(root, ["update-ref", ON_ORIGIN, base]);
+    writeFile(root, TARGET, CLEAN.replace("out.close()", "out.close() // x"));
+    git(root, ["add", TARGET]);
+    commit(root, "chore(test): one seat's commit");
+    const x = head(root);
+    git(root, ["checkout", "-q", "-b", "other", base]);
+    writeFile(root, TARGET, CLEAN.replace("out.close()", "out.close() // y"));
+    git(root, ["add", TARGET]);
+    commit(root, "chore(test): another seat's commit, beside it");
+    const y = head(root);
+    const live = new Set([1, 2]);
+    const judged: string[] = [];
+    let finishX = (): void => {};
+    const gate = judging(judged, new Set(), new Promise<void>((resolve) => (finishX = resolve)));
+    try {
+      const { result, text } = await printing(async (lines) => {
+        const pushX = prePush(lay(root), laneStdin(x, base), { gate, openRun: () => null, legs: NO_LEGS, lane: pushOwner(1, live) });
+        await until("x to be judged", () => judged.length === 1);
+        const pushY = prePush(lay(root), laneStdin(y, base), { gate, openRun: () => null, legs: NO_LEGS, lane: pushOwner(2, live) });
+        await until("y to wait in the lane", () => lines.some((line) => line.includes(`push lane: ${short(y)}`)));
+        finishX();
+        const xCode = await pushX;
+        git(root, ["update-ref", ON_ORIGIN, x]);
+        live.delete(1);
+        return [xCode, await pushY];
+      });
+      expect(judged).toEqual([x]);
+      expect(result).toEqual([0, 1]);
+      expect(text).toContain(`PRE-PUSH: FAIL — origin/feat moved to ${short(x)} while this push waited`);
+    } finally {
+      finishX();
+    }
+  });
+
+  test("RED: a queued push waits while the git process of a newer one runs, and is judged once it ends without landing", async () => {
+    const { root, base, chain } = laneRepo();
+    const [c1, c2] = chain;
+    const newerGit = Bun.spawn(["sleep", "60"]);
+    const newer = ownerOf(newerGit.pid);
+    const self = ownerOf(process.pid);
+    if (newer === undefined || self === undefined) throw new Error("no /proc to read the processes from");
+    const judged: string[] = [];
+    const held = preparePrePushTree(root, base);
+    try {
+      const { result } = await printing(async (lines) => {
+        const deps = { gate: judging(judged), openRun: () => null, legs: NO_LEGS };
+        const pushNewer = prePush(lay(root), laneStdin(c2, base), { ...deps, lane: { owner: newer, pollMs: 10 } });
+        const pushOlder = prePush(lay(root), laneStdin(c1, base), { ...deps, lane: { owner: self, pollMs: 10 } });
+        await until("the older push to wait for the newer", () => waitsFor(lines, c1, c2));
+        held.release();
+        const newerCode = await pushNewer;
+        await Bun.sleep(100);
+        const whileSending = [...judged];
+        // The newer push's git ends and origin's branch stays where it was: its send failed.
+        newerGit.kill();
+        await newerGit.exited;
+        return { whileSending, codes: [await pushOlder, newerCode] };
+      });
+      expect(result.whileSending).toEqual([c2]);
+      expect(judged).toEqual([c2, c1]);
+      expect(result.codes).toEqual([0, 0]);
+    } finally {
+      held.release();
+      newerGit.kill();
+    }
+  });
+
+  test("RED: a push that passed but whose git never finishes sending holds the lane no longer than the send bound", async () => {
+    const { root, base, chain } = laneRepo();
+    const [c1, c2] = chain;
+    const live = new Set([1, 2]);
+    const judged: string[] = [];
+    const held = preparePrePushTree(root, base);
+    const bounded = (n: number): LaneOptions => ({ ...pushOwner(n, live), sendWaitMs: 300 });
+    const { result } = await printing(async (lines) => {
+      const deps = { gate: judging(judged), openRun: () => null, legs: NO_LEGS };
+      const pushNewer = prePush(lay(root), laneStdin(c2, base), { ...deps, lane: bounded(2) });
+      const pushOlder = prePush(lay(root), laneStdin(c1, base), { ...deps, lane: bounded(1) });
+      try {
+        await until("the older push to wait for the newer", () => waitsFor(lines, c1, c2));
+      } finally {
+        held.release();
+      }
+      // The newer push passes, and its git never ends: origin's branch never moves.
+      const older = await Promise.race([pushOlder, Bun.sleep(5_000).then(() => "still waiting")]);
+      live.delete(2);
+      return [older, await pushNewer, await pushOlder];
+    });
+    expect(judged).toEqual([c2, c1]);
+    expect(result).toEqual([0, 0, 0]);
+  });
+
+  test("RED: a lane the hook cannot keep leaves the push on today's path, judged as before", async () => {
+    const { root, base, chain } = laneRepo();
+    const [c1] = chain;
+    // The lane's folder is a file, so the lane cannot keep a push in it.
+    mkdirSync(join(root, ".git", "splice-prepush"), { recursive: true });
+    writeFileSync(join(root, ".git", "splice-prepush", "lane"), "");
+    const judged: string[] = [];
+    const { result } = await printing(() =>
+      prePush(lay(root), laneStdin(c1, base), { gate: judging(judged), openRun: () => null, legs: NO_LEGS, lane: pushOwner(1, new Set([1])) }),
+    );
+    expect(result).toBe(0);
+    expect(judged).toEqual([c1]);
+  });
+
+  test("RED: a remote-tracking branch that held the commit before the push queued is not taken as the push landing", async () => {
+    const { root, base, chain } = laneRepo();
+    const [c1, c2] = chain;
+    // origin's branch went back to the scaffold after this checkout last saw it at c2: git connects and reads the scaffold,
+    // while the remote-tracking branch still says c2.
+    git(root, ["update-ref", ON_ORIGIN, c2]);
+    const judged: string[] = [];
+    const { result, text } = await printing(() =>
+      prePush(lay(root), laneStdin(c1, base), { gate: judging(judged), openRun: () => null, legs: NO_LEGS, lane: pushOwner(1, new Set([1])) }),
+    );
+    expect(text).not.toContain("CARRIED");
+    expect(judged).toEqual([c1]);
+    expect(result).toBe(0);
   });
 });
 

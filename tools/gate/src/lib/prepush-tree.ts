@@ -47,13 +47,31 @@ export const PRE_PUSH_TREE = "tree";
 /** The tree a local `gate run` judges HEAD in. It is not the pre-push tree, so a half-hour gate never makes a push wait. */
 export const GATE_TREE = "gate";
 
-/** Moves the persistent tree [name] to [sha] and returns it, locked. Throws when git cannot, or when the lock stays busy. */
-export function preparePrePushTree(repoRoot: string, sha: string, waitMs: number = LOCK_WAIT_MS, name: string = PRE_PUSH_TREE): PrePushTree {
+/** Where the build trees, their locks and the push lane live: under the git directory every worktree shares. */
+export function prePushHome(repoRoot: string): string {
   const common = must(repoRoot, ["rev-parse", "--git-common-dir"]);
   const home = join(isAbsolute(common) ? common : resolve(repoRoot, common), "splice-prepush");
   mkdirSync(home, { recursive: true });
+  return home;
+}
+
+/** Moves the persistent tree [name] to [sha] and returns it, locked. Throws when git cannot, or when the lock stays busy. */
+export function preparePrePushTree(repoRoot: string, sha: string, waitMs: number = LOCK_WAIT_MS, name: string = PRE_PUSH_TREE): PrePushTree {
+  const home = prePushHome(repoRoot);
   const slot = takeExclusive(join(home, `${name}.lock`), waitMs);
   if (slot === undefined) throw new Error(`the ${name === PRE_PUSH_TREE ? "pre-push" : name} build tree stayed busy for ${Math.round(waitMs / 1000)} s`);
+  return moveTree(repoRoot, home, name, sha, slot);
+}
+
+/** The pre-push tree moved to [sha] and locked, when no one holds it now; undefined, at once, when someone does. Throws when git
+ *  cannot move it. A caller that waits does so between calls, so its process keeps running while it waits. */
+export function takePrePushTreeNow(repoRoot: string, sha: string): PrePushTree | undefined {
+  const home = prePushHome(repoRoot);
+  const slot = takeExclusive(join(home, `${PRE_PUSH_TREE}.lock`), 0);
+  return slot === undefined ? undefined : moveTree(repoRoot, home, PRE_PUSH_TREE, sha, slot);
+}
+
+function moveTree(repoRoot: string, home: string, name: string, sha: string, slot: { release(): void }): PrePushTree {
   const started = performance.now();
   const path = join(home, name);
   try {

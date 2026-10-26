@@ -2,7 +2,8 @@
 // someone saves or edits a file once a minute, not every 5 s (Oct 25: nine routes every 5 s, in a hidden tab too, with
 // rounds piling up behind a slow splice). What he reads on a command's card stays as current as it was where it moves: a
 // command that starts or appears outside the page, a session that starts on it, his own Start, a tab he comes back to,
-// and a read that failed. A pane he opens is never read again under him, and a page he leaves is gone from the tab.
+// and each list that failed to read, wherever the page shows it. A pane he opens is never read again under him, and a
+// page he leaves is gone from the tab.
 // Through the real page in Chromium on a clock the test holds, against a daemon that answers as splice does. No test here
 // counts requests: each judges what the page shows, or what the tab still holds.
 import { afterAll, beforeAll, beforeEach, expect, test } from "bun:test";
@@ -18,6 +19,9 @@ const CARD = 'article.card.h[data-open="alpha"]';
 const world = {
   running: false, label: "Alpha One", url: "https://api.alpha.example", signedOut: false, beta: false,
   sessions: [] as Record<string, unknown>[],
+  // the projects splice has seen, the runtime on this computer that answers alpha's provider ("" when none does), and
+  // each command's own settings in splice.toml
+  projects: [] as Record<string, unknown>[], runtime: "", own: {} as Record<string, Record<string, unknown>>,
   // the routes that answer 500, as a route that threw or a daemon on its way down does
   fail: new Set<string>(),
   // each route asked since the test cleared it: it only tells a test that a round has gone out, and is never judged
@@ -73,11 +77,16 @@ const server = Bun.serve({
       ] });
     }
     if (path === "/api/sessions") return Response.json({ sessions: world.sessions });
-    if (path === "/api/projects") return Response.json({ projects: [] });
-    if (path === "/api/models/local") return Response.json({ providers: [] });
+    if (path === "/api/projects") return Response.json({ projects: world.projects, folders: [] });
+    if (path.startsWith("/api/projects/") && path.endsWith("/files")) return Response.json({ files: [] });
+    if (path === "/api/models/local") {
+      return Response.json({ providers: world.runtime
+        ? [{ provider: "alpha-co", url: world.url, runtime: world.runtime, version: "0.3.30", models: [] }]
+        : [] });
+    }
     if (path === "/api/claude-head") return Response.json({ mode: "wrapped", shim_path: "/home/u/.local/bin/claude", resolves_to: "/home/u/.local/bin/claude" });
     if (path === "/api/add/profiles") return Response.json({ profiles: [] });
-    if (path === "/api/config") return Response.json({});
+    if (path === "/api/config") return Response.json({ layers: { perHead: world.own } });
     if (path === "/api/doctor/fix/start-alpha" && req.method === "POST") {
       world.running = true;
       return Response.json({});
@@ -99,7 +108,10 @@ afterAll(async () => {
 beforeEach(() => {
   for (const release of releases.splice(0)) release();
   held = null;
-  Object.assign(world, { running: false, label: "Alpha One", url: "https://api.alpha.example", signedOut: false, beta: false, sessions: [] });
+  Object.assign(world, {
+    running: false, label: "Alpha One", url: "https://api.alpha.example", signedOut: false, beta: false, sessions: [],
+    projects: [], runtime: "", own: {},
+  });
   world.fail.clear();
   world.asked.clear();
 });
@@ -138,16 +150,18 @@ const cardOf = (page: Page, key = "alpha") =>
     const card = document.querySelector(sel);
     return card ? [...card.querySelectorAll(".meta > span")].map((s) => s.textContent ?? "") : null;
   }, `article.card.h[data-open="${key}"]`);
-// The card once it reads as wanted, or after 5 s of real time, whichever comes first.
-async function cardReading(page: Page, want: string[], key = "alpha") {
+// What [read] finds on the page once it is as wanted, or after 5 s of real time, whichever comes first.
+async function showing(page: Page, read: (page: Page) => Promise<unknown>, want: unknown) {
   const give = Date.now() + 5_000;
-  let seen = await cardOf(page, key);
+  let seen = await read(page);
   while (JSON.stringify(seen) !== JSON.stringify(want) && Date.now() < give) {
     await Bun.sleep(50);
-    seen = await cardOf(page, key);
+    seen = await read(page);
   }
   return seen;
 }
+// The card once it reads as wanted, or after 5 s of real time, whichever comes first.
+const cardReading = (page: Page, want: string[], key = "alpha") => showing(page, (p) => cardOf(p, key), want);
 // The Models page on a screen too narrow to open a command beside its list. A pane holds a draft, and the page reads
 // nothing under a draft, so with one open nothing below would be tested. Loaded, then held: its clock stands still.
 async function open(): Promise<Page> {
@@ -260,22 +274,66 @@ test("A change made just after a read of the lists shows a minute on, whichever 
   }
 }, 60_000);
 
-test("A list that failed to read is read again at the next tick, never kept for a minute", async () => {
-  world.running = true;
-  world.signedOut = true;
-  const page = await open();
-  try {
-    expect(await cardOf(page)).toEqual(["Signed out", "Alpha One"]);
-    // the minute's read of the lists: doctor and the roster answer 500 while heads and topology answer
-    world.fail.add("/api/doctor").add("/api/models");
-    await stepUntilAsked(page, "/api/doctor");
-    world.fail.clear();
-    await step(page, 5_000);
-    expect(await cardReading(page, ["Signed out", "Alpha One"])).toEqual(["Signed out", "Alpha One"]);
-  } finally {
-    await page.close();
-  }
-}, 60_000);
+// Each list the minute's read asks but topology, whose failure leaves every list as it was: where the page shows it, and
+// what it shows once read. A read that failed shows something else until the lists are read again: the card's model
+// reads None, a signed-out command reads Ready, the claude switch goes, a local runtime reads as its TOML key, the
+// projects read none, and a command's own settings leave its pane. [look] goes where that shows, once they are read.
+const LISTS: {
+  route: string; what: string; world: Partial<typeof world>;
+  look?: (page: Page) => Promise<void>; read: (page: Page) => Promise<unknown>; answer: unknown;
+}[] = [
+  { route: "/api/models", what: "the roster", world: { running: true }, read: (page) => cardOf(page), answer: ["Ready", "Alpha One"] },
+  {
+    route: "/api/doctor", what: "doctor's checks", world: { running: true, signedOut: true },
+    read: (page) => cardOf(page), answer: ["Signed out", "Alpha One"],
+  },
+  {
+    route: "/api/claude-head", what: "where plain claude goes", world: {},
+    read: (page) => page.evaluate(() => [...document.querySelectorAll('#claude [aria-pressed="true"]')].map((b) => b.textContent)),
+    answer: ["Through splice"],
+  },
+  {
+    // alpha served by LM Studio on this computer, under a provider name splice has no word for
+    route: "/api/models/local", what: "the local runtimes", world: { running: true, runtime: "LM Studio", url: "http://127.0.0.1:1234" },
+    read: (page) => page.evaluate((sel) => document.querySelector(`${sel} .prov`)?.textContent ?? null, CARD),
+    answer: "LM Studio",
+  },
+  {
+    route: "/api/projects", what: "the projects", world: {
+      projects: [{ id: "/home/u/src/splice", name: "splice", label: "splice", source: "repo", folder: null, root: "/home/u/src/splice", compaction: [] }],
+    },
+    look: (page) => page.locator('[data-act="view"][data-v="projects"]').click(),
+    read: (page) => page.evaluate(() => [...document.querySelectorAll(".proj-list .pname")].map((n) => n.textContent)),
+    answer: ["splice"],
+  },
+  {
+    // alpha holds its own Requests at once in splice.toml, which its pane lists under its own settings
+    route: "/api/config", what: "the settings", world: { own: { alpha: { maxInflight: 4 } } },
+    look: async (page) => {
+      await page.locator(`${CARD} .chip`).click();
+      await page.locator(".pane").waitFor({ timeout: 5_000 });
+    },
+    read: (page) => page.evaluate(() => [...document.querySelectorAll(".pane .kn .lbl[data-row]")].map((l) => l.textContent)),
+    answer: ["Requests at once"],
+  },
+];
+for (const list of LISTS) {
+  test(`A failed read of ${list.what} is read again at the next tick, never kept for a minute (${list.route})`, async () => {
+    Object.assign(world, list.world);
+    const page = await open();
+    try {
+      // the minute's read of the lists: this one answers 500, alone, while every other read answers
+      world.fail.add(list.route);
+      await stepUntilAsked(page, list.route);
+      world.fail.clear();
+      await step(page, 5_000);
+      await list.look?.(page);
+      expect(await showing(page, list.read, list.answer)).toEqual(list.answer);
+    } finally {
+      await page.close();
+    }
+  }, 60_000);
+}
 
 test("A command opened while a tick's reads are out keeps its pane as it was drawn", async () => {
   const page = await open();

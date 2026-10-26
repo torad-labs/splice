@@ -170,8 +170,11 @@ abstract class McpHostFixture {
         return json.parseToJsonElement(reply.body!!).jsonObject
     }
 
-    protected fun text(answer: JsonObject): String =
-        (answer["result"]!!.jsonObject["content"] as JsonArray)[0].jsonObject["text"]!!.jsonPrimitive.content
+    // A call that came back as an error names that error, not a NullPointerException on its missing result.
+    protected fun text(answer: JsonObject): String {
+        val result = checkNotNull(answer["result"]) { "the call returned no result: $answer" }
+        return (result.jsonObject["content"] as JsonArray)[0].jsonObject["text"]!!.jsonPrimitive.content
+    }
 
     protected fun status(name: String): JsonObject =
         json.parseToJsonElement(host.statusJson()).jsonObject["servers"]!!.jsonObject[name]!!.jsonObject

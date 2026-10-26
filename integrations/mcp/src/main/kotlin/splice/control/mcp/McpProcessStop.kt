@@ -20,6 +20,9 @@ internal sealed class McpProcessContainmentState {
 
     object Absent : McpProcessContainmentState()
 
+    /** systemd no longer knows the scope and its root has exited, so nothing in it can still run. */
+    object Removed : McpProcessContainmentState()
+
     object Unknown : McpProcessContainmentState()
 }
 
@@ -48,6 +51,7 @@ internal class McpProcessGeneration(
         val members = when (val state = containmentState()) {
             is McpProcessContainmentState.Present -> state.containment.members().orEmpty()
             McpProcessContainmentState.Absent,
+            McpProcessContainmentState.Removed,
             McpProcessContainmentState.Unknown,
             -> emptyList()
         }
@@ -60,7 +64,9 @@ internal class McpProcessGeneration(
         if (root.isAlive || descendants.any(ProcessHandle::isAlive)) return true
         return when (val state = containmentState()) {
             is McpProcessContainmentState.Present -> state.containment.members()?.any(ProcessHandle::isAlive) ?: true
-            McpProcessContainmentState.Absent -> false
+            McpProcessContainmentState.Absent,
+            McpProcessContainmentState.Removed,
+            -> false
             McpProcessContainmentState.Unknown -> true
         }
     }
@@ -103,7 +109,37 @@ private data class McpStopWait(
     val interrupted: Boolean,
 )
 
-internal class McpProcessStop {
+/** `systemctl --user show <unit> -p ControlGroup --value`: the scope's cgroup, blank when systemd knows no such
+ *  unit, null when systemd could not be asked. A seam, because when systemd registers or removes a scope is not a
+ *  test's to order. */
+internal fun interface McpScopeLookup {
+    fun controlGroup(unit: String): String?
+}
+
+/** Asks the user's systemd manager, within [CONTAINMENT_LOOKUP_MS]. */
+internal class SystemdScopeLookup : McpScopeLookup {
+    override fun controlGroup(unit: String): String? = try {
+        val lookup = ProcessBuilder(
+            "systemctl",
+            "--user",
+            "show",
+            unit,
+            "-p",
+            "ControlGroup",
+            "--value",
+        ).redirectErrorStream(true).start()
+        if (!lookup.waitFor(CONTAINMENT_LOOKUP_MS, TimeUnit.MILLISECONDS)) {
+            lookup.destroyForcibly()
+            null
+        } else {
+            lookup.inputStream.bufferedReader().use { it.readText() }.trim().takeIf { lookup.exitValue() == 0 }
+        }
+    } catch (_: IOException) {
+        null
+    }
+}
+
+internal class McpProcessStop(private val scopes: McpScopeLookup = SystemdScopeLookup()) {
     private val ownershipLock = Any()
     private val unresolved = mutableSetOf<McpProcessGeneration>()
 
@@ -164,33 +200,20 @@ internal class McpProcessStop {
 
     private fun containment(process: ProcessHandle, unit: String?): McpProcessContainmentState {
         if (unit == null) return McpProcessContainmentState.Absent
-        val child = (scope(unit) ?: cgroup(process.pid())?.takeIf { it.substringAfterLast('/') == unit })
-            ?.takeIf(String::isNotBlank)
-            ?: return McpProcessContainmentState.Unknown
-        return McpProcessContainmentState.Present(
-            McpProcessContainment(Path.of("/sys/fs/cgroup").resolve(child.removePrefix("/"))),
-        )
-    }
-
-    /** A launch-created scope names the cgroup even when its root already reparented a stdin-owning worker. */
-    private fun scope(unit: String): String? = try {
-        val lookup = ProcessBuilder(
-            "systemctl",
-            "--user",
-            "show",
-            unit,
-            "-p",
-            "ControlGroup",
-            "--value",
-        ).redirectErrorStream(true).start()
-        if (!lookup.waitFor(CONTAINMENT_LOOKUP_MS, TimeUnit.MILLISECONDS)) {
-            lookup.destroyForcibly()
-            null
-        } else {
-            lookup.inputStream.bufferedReader().use { it.readText() }.trim().takeIf { lookup.exitValue() == 0 }
+        // A launch-created scope names the cgroup even when its root already reparented a stdin-owning worker.
+        val answer = scopes.controlGroup(unit)
+        val child = answer?.takeIf(String::isNotBlank)
+            ?: cgroup(process.pid())?.takeIf { it.substringAfterLast('/') == unit }
+        return when {
+            child != null -> McpProcessContainmentState.Present(
+                McpProcessContainment(Path.of("/sys/fs/cgroup").resolve(child.removePrefix("/"))),
+            )
+            // systemd answered that it knows no such scope. While the root lives, that is a scope not registered
+            // yet. Once the root has exited nothing can register it, and a scope systemd no longer knows holds no
+            // process.
+            answer != null && !process.isAlive -> McpProcessContainmentState.Removed
+            else -> McpProcessContainmentState.Unknown
         }
-    } catch (_: IOException) {
-        null
     }
 
     private fun cgroup(pid: Long): String? = try {

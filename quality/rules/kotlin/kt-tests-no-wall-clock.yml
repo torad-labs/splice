@@ -127,7 +127,7 @@
 #   do (`while (!Files.exists(ready)) delay(10)`).
 #     integrations/claude-code/src/test/kotlin/splice/client/login/LoginHookScriptSafetyTest.kt    (16)
 #     integrations/mcp/src/test/kotlin/splice/control/mcp/McpHostLifecycleTest.kt                   (4)
-#     integrations/providers/codex/src/test/kotlin/splice/provider/codex/CodexAuthTest.kt                     (3)
+#     integrations/providers/codex/src/test/kotlin/splice/provider/codex/auth/CodexAuthTest.kt                (3)
 #     integrations/providers/kimi/src/test/kotlin/splice/provider/kimi/KimiAuthProviderTest.kt          (2)
 #     integrations/providers/grok/src/test/kotlin/splice/provider/grok/GrokAuthRefreshRecoveryTest.kt   (1)
 #     core/src/test/kotlin/splice/core/util/AsyncFileIoTest.kt                             (1)

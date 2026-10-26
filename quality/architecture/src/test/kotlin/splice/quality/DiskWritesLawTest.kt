@@ -571,7 +571,7 @@ private val SHIPPED_SITES: Map<String, Map<String, Int>> = mapOf(
     // The first OAuth account's name, documented in the primary.name README row.
     "integrations/oauth/src/main/kotlin/splice/oauth/OAuthPrimaryAccount.kt" to mapOf("writeAtomic0600(" to 1),
     "integrations/oauth/src/main/kotlin/splice/oauth/OAuthLoginReservation.kt" to mapOf("FileChannel.open(" to 1),
-    "integrations/providers/codex/src/main/kotlin/splice/provider/codex/CodexAuthProvider.kt" to mapOf(
+    "integrations/providers/codex/src/main/kotlin/splice/provider/codex/auth/CodexAuthProvider.kt" to mapOf(
         "writeAtomic0600(" to 1,
     ),
     // The same per-conversation file now has an atomic checkpoint plus forced cell-delta appends.

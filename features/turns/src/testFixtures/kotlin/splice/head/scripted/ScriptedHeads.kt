@@ -10,22 +10,17 @@ import splice.core.auth.Credentials
 import splice.core.auth.RefreshableAuthProvider
 import splice.core.model.ModelCatalog
 import splice.core.model.ModelEntry
-import splice.core.turn.ReasoningDisplay
 import splice.core.turn.WatchdogBudget
 import splice.core.util.LogSink
 import splice.dialect.anthropic.PassthroughProvider
 import splice.dialect.anthropic.PassthroughQuirks
 import splice.dialect.chat.ChatQuirks
-import splice.dialect.responses.ReasoningSettings
-import splice.dialect.responses.ResponsesProvider
 import splice.head.HeadDeps
 import splice.head.HeadServer
 import splice.head.awaitListening
 import splice.head.headDeps
 import splice.head.headStores
 import splice.head.turn.LiveTurns
-import splice.provider.openai.OpenAiChatProvider
-import splice.provider.openai.OpenAiQuirks
 import splice.upstream.Provider
 import splice.upstream.ProviderLocations
 import splice.upstream.ProviderName
@@ -144,20 +139,6 @@ private class ScriptedAuth : RefreshableAuthProvider {
     override suspend fun describe(): AuthDescription = AuthDescription(present = true, kind = "scripted")
 }
 
-/** A Responses head on the OpenAI platform's profile, whose rounds ride the websocket when [webSocket] is on. */
-private class ScriptedResponsesProvider(
-    tuning: ProviderTuning,
-    private val webSocket: Boolean,
-    log: LogSink,
-) : ResponsesProvider(
-    tuning,
-    ReasoningSettings(ReasoningDisplay.TEXT, replay = false, effort = "high", summary = "detailed"),
-    OpenAiQuirks().defaultQuirks().withWebSocketToml(webSocket),
-    log = log,
-) {
-    override val supportsWebSocket: Boolean get() = webSocket
-}
-
 /** Builds heads of each API type in front of one [provider], on [time], storing what they keep under [tmp]. */
 public class ScriptedHeads(private val tmp: Path, public val time: VirtualTime) {
     /** The provider every head built here talks to. */
@@ -172,12 +153,12 @@ public class ScriptedHeads(private val tmp: Path, public val time: VirtualTime) 
 
     /** An OpenAI Chat Completions head on a hosted vendor's profile. */
     public suspend fun chat(shape: HeadShape = HeadShape()): ScriptedHead =
-        head("chat", shape) { tuning, _ -> OpenAiChatProvider(tuning, ChatQuirks(tuning.key)) }
+        head("chat", shape) { tuning, _ -> ScriptedChatProvider(tuning, ChatQuirks(tuning.key)) }
 
     /** An OpenAI Chat Completions head on a local runtime's profile: usage in the stream, reasoning replayed. */
     public suspend fun localChat(shape: HeadShape = HeadShape()): ScriptedHead =
         head("local", shape) { tuning, _ ->
-            OpenAiChatProvider(tuning, ChatQuirks(tuning.key).withStreamUsageToml(true).withReplayReasoning(true))
+            ScriptedChatProvider(tuning, ChatQuirks(tuning.key).withStreamUsageToml(true).withReplayReasoning(true))
         }
 
     /** An OpenAI Responses head over HTTP. */

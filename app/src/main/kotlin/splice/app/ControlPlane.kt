@@ -19,6 +19,7 @@ import splice.app.control.ControlReadings
 import splice.app.control.ControlRuntime
 import splice.app.control.ControlServer
 import splice.app.control.FailedHeads
+import splice.app.control.KeyRotation
 import splice.app.control.ManagedHead
 import splice.app.daemon.BootedTopology
 import splice.app.head.HeadProbeReadings
@@ -238,6 +239,7 @@ internal class ControlPlane(
         srv.ports.compaction = compactionInstructions
         srv.ports.claudeLogins = claudeLogin.owner
         srv.ports.quotaReadFailures = quotaReadFailures
+        srv.ports.lifecycle.keyRotation = KeyRotation(daemon.mgmtKey, daemon.mcpAccess, statePaths, log)
         providerAssembly.claudePoolChanges.onJoined = LoginJoined { head -> srv.limitResume?.joined(head) }
         providerAssembly.claudePoolChanges.watch(probeScope, log)
         srv.ports.budgetSpending = console.budgets

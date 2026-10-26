@@ -22,7 +22,7 @@ public class Cli {
                     "wire <head> [--last N] [--json]|peer <verb>|share [on|off|status]|remote [add|remove]|" +
                     "trace <head> [--last N] [--session S] [--turn ID] [--json] [--purge]|" +
                     "restart [--now]|console [<action>]|mcp install temple [options]|" +
-                    "login <head> [--label <name> [--discard]]|key <set|list|unset>|" +
+                    "login <head> [--label <name> [--discard]]|key <set|list|unset>|rotate-key|" +
                     "logs [--head <key>] [--tail N] [--follow]|" +
                     "install|uninstall|init|doctor [--json [--with-logs] [--out FILE]]|daemon|version]",
             )

@@ -105,7 +105,7 @@ private fun headDeps(tmp: Path, mirrorReasoning: Boolean = false) = HeadDeps(
         gate = InflightGate({ 1 }),
         liveTurns = LiveTurns(),
     ),
-    tokens = HeadDeps.HeadTokens(inferenceToken = "test-inference-token", operatorToken = "test-operator-token"),
+    tokens = HeadDeps.HeadTokens(turnKey = { "test-inference-token" }, managementKey = { "test-operator-token" }),
     log = {},
     stores = headStores(tmp),
     quotaBundle = noQuota(),

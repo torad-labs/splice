@@ -6,6 +6,7 @@ package splice.app.control.mount
 
 import io.ktor.http.ContentType
 import io.ktor.http.HttpStatusCode
+import io.ktor.server.application.ApplicationCall
 import io.ktor.server.response.respondText
 import io.ktor.server.routing.Route
 import io.ktor.server.routing.get
@@ -91,10 +92,25 @@ internal class LifecycleMount(
                 }
             }
         }
+        // Key rotation (Oct 26, 2026): `splice rotate-key`. The answer is paths and words, never a key.
+        route.post("/api/mgmt-key/rotate") { guard.guarded(call) { rotateKey(call) } }
         route.get("/api/upgrade") { guard.guarded(call) { upgradeRoute.upgradeJson(call, ports.lifecycle.upgrade) } }
         route.post("/api/upgrade") { guard.guarded(call) { upgradeRuns.start(call) } }
         route.get("/api/upgrade/run") { guard.guarded(call) { upgradeRuns.status(call) } }
         route.post("/api/upgrade/check") { guard.guarded(call) { upgradeChecks.check(call) } }
+    }
+
+    private suspend fun rotateKey(call: ApplicationCall) {
+        val rotation = ports.lifecycle.keyRotation
+        if (rotation == null) {
+            call.respondText(
+                """{"error":"this daemon cannot replace its management key"}""",
+                ContentType.Application.Json,
+                HttpStatusCode.ServiceUnavailable,
+            )
+            return
+        }
+        call.respondText(rotation.rotate().toString(), ContentType.Application.Json, HttpStatusCode.OK)
     }
 }
 

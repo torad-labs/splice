@@ -152,7 +152,7 @@ class HeadTraceTest {
                 gate = InflightGate(maxInflight = { 4 }, maxQueued = { 4 }),
                 log = {},
             ).copy(
-                tokens = HeadDeps.HeadTokens(inferenceToken = MGMT_KEY, operatorToken = "test-operator-token"),
+                tokens = HeadDeps.HeadTokens(turnKey = { MGMT_KEY }, managementKey = { "test-operator-token" }),
                 stores = headStores(tmp, suffix = "-$id", trace = trace),
             ),
         )

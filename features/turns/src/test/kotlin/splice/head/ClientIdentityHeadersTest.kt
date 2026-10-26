@@ -217,7 +217,7 @@ class ClientIdentityHeadersTest {
                 gate = InflightGate({ 1 }),
             ).copy(
                 policy = HeadDeps.HeadPolicy(forwardClientAuth = clientAuth),
-            ).copy(tokens = HeadDeps.HeadTokens(inferenceToken = TURN_KEY, operatorToken = MANAGEMENT_KEY)),
+            ).copy(tokens = HeadDeps.HeadTokens(turnKey = { TURN_KEY }, managementKey = { MANAGEMENT_KEY })),
         )
         val client = HttpClient(CIO)
         try {

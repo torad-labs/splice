@@ -85,7 +85,8 @@ internal class HeadServerFactory(
             listenPort = ctx.head.port,
             inherited = adopted.head(key),
             deps = HeadDeps(
-                tokens = HeadDeps.HeadTokens(inferenceToken = turnKey.get(), operatorToken = mgmtKey.get()),
+                // read per request, so a key replaced while the head runs is the only one it accepts from then on
+                tokens = HeadDeps.HeadTokens(turnKey = { turnKey.get() }, managementKey = { mgmtKey.get() }),
                 // NO DEFAULTS on these two bundles (V4-105 items 1 and 2): the NULLABILITY is the
                 // feature — a head may legitimately run without economics or quota, and the tests
                 // that decline them say so through ONE testFixtures builder — but a DEFAULT let a

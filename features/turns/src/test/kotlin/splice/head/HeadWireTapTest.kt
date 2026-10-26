@@ -145,7 +145,7 @@ class HeadWireTapTest {
             ).copy(
                 policy = HeadDeps.HeadPolicy(forwardClientAuth = forwardClientAuth),
             ).copy(
-                tokens = HeadDeps.HeadTokens(inferenceToken = TURN_KEY, operatorToken = MGMT_KEY),
+                tokens = HeadDeps.HeadTokens(turnKey = { TURN_KEY }, managementKey = { MGMT_KEY }),
                 stores = headStores(
                     tmp,
                     suffix = "-${heads.size}",

@@ -97,7 +97,7 @@ public fun headDeps(
         // passes its own with `.copy(traffic = traffic.copy(liveTurns = …))`.
         liveTurns = LiveTurns(),
     ),
-    tokens = HeadDeps.HeadTokens(inferenceToken = "test-inference-token", operatorToken = "test-operator-token"),
+    tokens = HeadDeps.HeadTokens(turnKey = { "test-inference-token" }, managementKey = { "test-operator-token" }),
     log = log,
     stores = headStores(tmp),
     quotaBundle = noQuota(),

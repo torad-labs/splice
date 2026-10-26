@@ -52,6 +52,7 @@ import splice.core.turn.CONN_RESET_OUTCOME
 import splice.core.turn.WatchdogBudget
 import splice.dialect.anthropic.PassthroughProvider
 import splice.dialect.anthropic.PassthroughQuirks
+import splice.head.HeadDeps
 import splice.head.HeadServer
 import splice.head.headDeps
 import splice.head.headStores
@@ -398,7 +399,10 @@ class MidStreamTearContinuesTest {
                 it.copy(
                     // This rig carries its OWN bearer and keys its store files per head, so both come from
                     // the site rather than the fixture's defaults.
-                    tokens = it.tokens.copy(inferenceToken = INFERENCE_TOKEN),
+                    tokens = HeadDeps.HeadTokens(
+                        turnKey = { INFERENCE_TOKEN },
+                        managementKey = { it.tokens.operatorToken },
+                    ),
                     stores = headStores(tmp, suffix = "-$id"),
                 )
             },

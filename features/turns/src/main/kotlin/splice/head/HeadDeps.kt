@@ -101,17 +101,28 @@ public data class HeadDeps(
         require(!policy.mirrorReasoning) { "mirrorReasoning is operator-locked off" }
     }
 
-    /** The head's two bearer credentials, one per role. */
-    public data class HeadTokens(
+    /** The head's two bearer credentials, one per role, read each time a request is checked: a management key
+     *  replaced while the head runs (`splice rotate-key`, Oct 26, 2026) changes both at once, so the old ones open
+     *  nothing from that moment and the new ones open everything they should. */
+    public class HeadTokens(turnKey: Current, managementKey: Current) {
+        private val turn = turnKey
+        private val management = managementKey
+
         /** Per-install bearer used by local Claude clients for their TURNS (the turn key). Never use a
          *  source-known sentinel here. */
-        val inferenceToken: String,
+        public val inferenceToken: String get() = turn()
+
         /** The management key: the ONLY credential this head's operator routes accept (GET /wire), and
          *  still accepted for turns so a session launched before the v0.4.0 key split keeps working. It
          *  is never what a launched client is handed — that is [inferenceToken] — so a session's
          *  environment cannot read what the head sent upstream on other sessions' behalf. */
-        val operatorToken: String,
-    )
+        public val operatorToken: String get() = management()
+
+        /** One of the two credentials as it is now. */
+        public fun interface Current {
+            public operator fun invoke(): String
+        }
+    }
 
     /** Where a head's turns go and what is in flight: the client that posts them upstream, the gate that admits
      *  them, and the registry of the live streaming ones. */

@@ -201,7 +201,7 @@ private fun testDeps(tmp: java.nio.file.Path): HeadDeps = HeadDeps(
         gate = InflightGate({ 0 }),
         liveTurns = LiveTurns(),
     ),
-    tokens = HeadDeps.HeadTokens(inferenceToken = "test-inference-token", operatorToken = "test-operator-token"),
+    tokens = HeadDeps.HeadTokens(turnKey = { "test-inference-token" }, managementKey = { "test-operator-token" }),
     log = {},
     stores = HeadDeps.HeadStores(
         usageStore = UsageStore(tmp.resolve("u.json"), tmp.resolve("r.json")),

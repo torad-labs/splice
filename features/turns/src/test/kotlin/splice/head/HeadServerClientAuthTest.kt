@@ -153,7 +153,7 @@ class HeadServerClientAuthTest {
                 // (the port is not known until the bind) so two heads in one test never share a
                 // usage file. Two keys, as production wires them: the turn key a launched client
                 // holds, and the management key.
-                tokens = HeadDeps.HeadTokens(inferenceToken = TURN_KEY, operatorToken = MGMT_KEY),
+                tokens = HeadDeps.HeadTokens(turnKey = { TURN_KEY }, managementKey = { MGMT_KEY }),
                 stores = headStores(tmp, suffix = "-${heads.size}"),
             ),
         )

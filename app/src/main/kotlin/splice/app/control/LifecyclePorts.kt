@@ -27,4 +27,8 @@ internal class LifecyclePorts {
      *  NULL IS NOT "ASSUME SUPERVISED". The route refuses an unwired probe: choosing the unit for a
      *  daemon started by hand would drain it without a successor. */
     var supervised: DaemonSupervised? = null
+
+    /** Key rotation (Oct 26, 2026): `splice rotate-key`'s replacement of the management key. Null answers a named
+     *  503, and the key stays as it was. */
+    var keyRotation: KeyRotation? = null
 }

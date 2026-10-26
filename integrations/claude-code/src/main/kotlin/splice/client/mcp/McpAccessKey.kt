@@ -68,6 +68,17 @@ public class McpAccessKey(
         return replacement
     }
 
+    /** Key rotation (Oct 26, 2026): the management key was just replaced in this process, so the publication it bound
+     *  is revoked now, not at the next start, and a fresh one is published under the new key. A source with no
+     *  persisted state derives its bearer from the key and follows it with nothing to do. */
+    public fun managementReplaced() {
+        val held = publication ?: return
+        synchronized(this) {
+            adopted = false
+            adopt(held)
+        }
+    }
+
     /** An unreadable publication refuses every bearer: MCP fails closed, the rest of the daemon keeps serving. */
     public fun matchesBearer(header: String?): Boolean {
         val presented = BearerScheme.bearerToken(header)?.toByteArray(UTF_8) ?: return false

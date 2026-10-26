@@ -84,6 +84,18 @@ tasks.test {
     )
 }
 
+// THE PARITY CLIENT. tools/codemode-parity runs these wrappers as the client it races against the reference client, and
+// every call they make runs this module's classes. They are neither production code nor tests, so they live in a source
+// set of their own, compiled against main with its internal declarations visible and never run by a Test task. The tool
+// compiles the same files against the fat jar with -Xfriend-paths; `check` compiles them here, so a change to a class
+// they call fails the module's own check and not the next parity run.
+val parityClient = sourceSets.create("parityClient")
+// Association is what test has with main: main's classes and compile classpath, and its internal declarations.
+kotlin.target.compilations.named("parityClient") {
+    associateWith(kotlin.target.compilations.getByName("main"))
+}
+tasks.named("check") { dependsOn(parityClient.classesTaskName) }
+
 // The compiled runtime suite, for :app's codeModePackagedTest to rerun with the shipped fat jar as the
 // worker classpath: a language, global or service registration that shading adds or loses shows only
 // there. Before LAYOUT-01 the suite lived in :app and that task ran it directly.

@@ -62,7 +62,9 @@ export async function runCurrentClient(java: string, jar: string, nativeHost: st
     await save("reference-build.json", JSON.stringify(build, null, 2) + "\n"); assert.equal(build.exitCode, 0, build.stderr);
     const after = await capturedCommand(["git", "-C", source, "status", "--porcelain", "--untracked-files=all"], directory); assert.equal(after.exitCode, 0); assert.equal(after.stdout, "", "reference source was modified during build");
     const cleanAfter = await save("source-clean-after.txt", after.stdout);
-    const wrapperSources = await Promise.all(["ClientCandidate", "ClientCandidateLogical", "ClientCandidateWait", "ClientCandidateOpening"].map(async name => save(`${name}.kt`, await readFile(resolve(import.meta.dir, `current-client/${name}.kt`)))));
+    // The wrappers are integrations-codemode's parityClient source set, where that module's check compiles them too.
+    const wrapperDirectory = resolve(import.meta.dir, "../../integrations/codemode/src/parityClient/kotlin");
+    const wrapperSources = await Promise.all(["ClientCandidate", "ClientCandidateLogical", "ClientCandidateWait", "ClientCandidateOpening"].map(async name => save(`${name}.kt`, await readFile(resolve(wrapperDirectory, `${name}.kt`)))));
     const wrapper = await compileCandidateWrapper(java, jar, wrapperSources.map(source => source.path), directory);
     result.artifacts.push(wrapper.compilerArchive, wrapper.build, await artifact(wrapper.jar));
     const binaryPath = resolve(directory, "reference-client"); await copyFile(resolve(target, "debug/splice-current-client-witness"), binaryPath); await chmod(binaryPath, 0o755);

@@ -1,7 +1,7 @@
 // NEW: merge freshly refreshed tokens onto the existing auth.json. Split from
 // CodexAuthProvider.kt so the refresh ladder is not billed for a JSON fold
 // (concentration HIGH, 2026-08-19). persistRotation and writeSecure stay put.
-package splice.provider.codex
+package splice.provider.codex.auth
 
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonObject
@@ -17,6 +17,7 @@ import splice.core.util.LogSink
 import splice.core.util.SafeFailureText
 import splice.core.util.WallClock
 import splice.core.util.WallClockIso
+import splice.provider.codex.RefreshedTokens
 import java.nio.file.Files
 import java.nio.file.Path
 

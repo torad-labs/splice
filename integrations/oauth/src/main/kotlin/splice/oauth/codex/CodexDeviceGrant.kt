@@ -19,7 +19,7 @@ import splice.core.util.JsonScalars
 import splice.core.wire.HttpStatus
 import splice.oauth.LoginIo
 import splice.oauth.MS_PER_S
-import splice.provider.codex.CodexOAuth
+import splice.provider.codex.auth.CodexOAuth
 import splice.upstream.Waiter
 
 // why: OpenAI's device codes live 15 minutes (codex-rs/login device_code_auth.rs), so polling past that is pointless.

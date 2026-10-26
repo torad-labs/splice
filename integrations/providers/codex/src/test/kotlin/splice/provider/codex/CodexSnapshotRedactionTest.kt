@@ -4,6 +4,7 @@ package splice.provider.codex
 import org.junit.jupiter.api.Assertions.assertFalse
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
+import splice.provider.codex.auth.CodexAuthJson
 
 class CodexSnapshotRedactionTest {
     @Test

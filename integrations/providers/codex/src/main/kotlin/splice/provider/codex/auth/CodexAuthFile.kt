@@ -1,7 +1,7 @@
 // NEW: best-effort mtime probe for the invalid_grant latch gate, plus the
 // public Codex OAuth endpoint constants (moved from CodexOAuth.kt so that
 // class drops below 1.8, 2026-08-19). Shared by doRefresh() and describe().
-package splice.provider.codex
+package splice.provider.codex.auth
 
 import splice.core.auth.CredentialFileDigest
 import splice.core.auth.CredentialFileIdentity

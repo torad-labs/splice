@@ -170,9 +170,9 @@ modules at revision `pre-public-port-baseline`. Regenerate with:
 | 37 | features/turns/src/test/kotlin/splice/head/reasoning/ReplayMirrorTest.kt |
 | 38 | features/turns/src/test/kotlin/splice/head/wire/SseEmitterTest.kt |
 | 39 | features/turns/src/test/kotlin/splice/head/usage/UsageTest.kt |
-| 40 | integrations/providers/codex/src/main/kotlin/splice/provider/codex/CodexAuthProvider.kt |
-| 41 | integrations/providers/codex/src/main/kotlin/splice/provider/codex/CodexOAuth.kt |
-| 42 | integrations/providers/codex/src/test/kotlin/splice/provider/codex/CodexAuthTest.kt |
+| 40 | integrations/providers/codex/src/main/kotlin/splice/provider/codex/auth/CodexAuthProvider.kt |
+| 41 | integrations/providers/codex/src/main/kotlin/splice/provider/codex/auth/CodexOAuth.kt |
+| 42 | integrations/providers/codex/src/test/kotlin/splice/provider/codex/auth/CodexAuthTest.kt |
 | 43 | integrations/upstream/src/main/kotlin/splice/upstream/retry/InflightGate.kt |
 | 44 | integrations/upstream/src/main/kotlin/splice/upstream/retry/SingleFlight.kt |
 | 45 | integrations/upstream/src/main/kotlin/splice/upstream/transport/UpstreamClient.kt |

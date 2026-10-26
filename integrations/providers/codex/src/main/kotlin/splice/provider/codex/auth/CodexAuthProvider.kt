@@ -9,7 +9,7 @@
 // expiry comes from its own `exp` claim (decodeJwtClaims), not a stored `expires` field, so
 // auth.json's shape stays byte-identical to the real codex CLI's. G17 two-tier as in grok/kimi:
 // above the stale floor the request never waits on the refresh round trip.
-package splice.provider.codex
+package splice.provider.codex.auth
 
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Job
@@ -32,7 +32,7 @@ import splice.core.util.LogSink
 import splice.core.util.SecureFile
 import splice.core.util.WallClock
 import splice.core.util.WallClockIso
-import splice.provider.codex.auth.CodexPlanLimitBody
+import splice.provider.codex.RefreshedTokens
 import splice.upstream.LifecycleScope
 import splice.upstream.codemode.ProcessDispatchers
 import splice.upstream.credentials.AccountCredentialIdentitySource

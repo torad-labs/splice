@@ -23,7 +23,7 @@ import splice.core.util.LogSink
 import splice.oauth.codex.LoginCodex
 import splice.oauth.grok.LoginGrok
 import splice.oauth.kimi.LoginKimi
-import splice.provider.codex.CodexAuthProvider
+import splice.provider.codex.auth.CodexAuthProvider
 import splice.provider.grok.GrokAuthProvider
 import splice.provider.kimi.KimiAuthProvider
 import splice.provider.kimi.KimiDeviceIdentity

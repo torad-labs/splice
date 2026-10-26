@@ -21,7 +21,7 @@ import splice.core.terminal.TerminalOutput
 import splice.core.topology.AuthKind
 import splice.core.util.LogSink
 import splice.oauth.codex.LoginCodex
-import splice.provider.codex.CodexOAuth
+import splice.provider.codex.auth.CodexOAuth
 import splice.provider.grok.GrokOAuth
 import splice.provider.kimi.KimiOAuth
 import splice.upstream.credentials.AccountLabelPolicy

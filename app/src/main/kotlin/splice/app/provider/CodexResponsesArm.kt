@@ -10,10 +10,10 @@ import splice.core.util.HeadScopedLogs
 import splice.core.util.LogSink
 import splice.dialect.responses.stream.LiveFoldConfig
 import splice.oauth.OAuthAccountFiles
-import splice.provider.codex.CodexAuthProvider
-import splice.provider.codex.CodexOAuthEndpoints
 import splice.provider.codex.CodexProvider
 import splice.provider.codex.CodexQuirks
+import splice.provider.codex.auth.CodexAuthProvider
+import splice.provider.codex.auth.CodexOAuthEndpoints
 import splice.topology.TopologyLoader
 import splice.upstream.ProviderLocations
 import splice.upstream.ProviderName

@@ -1,5 +1,5 @@
 // NEW: a real lock-open failure in the queued prefetch must reach the head log, not a later test.
-package splice.provider.codex
+package splice.provider.codex.auth
 
 import kotlinx.coroutines.CoroutineExceptionHandler
 import kotlinx.coroutines.CoroutineScope

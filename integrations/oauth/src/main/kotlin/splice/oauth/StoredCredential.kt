@@ -25,7 +25,7 @@ import splice.core.topology.AuthKind
 import splice.core.topology.AuthKindRegistry
 import splice.core.topology.ProviderConfig
 import splice.core.util.EnvReader
-import splice.provider.codex.CodexCredentialShape
+import splice.provider.codex.auth.CodexCredentialShape
 import splice.provider.grok.GrokCredentialShape
 import splice.provider.kimi.KimiCredentialShape
 import splice.provider.muse.MuseCredentialShape

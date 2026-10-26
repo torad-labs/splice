@@ -1,6 +1,6 @@
 // NEW: Oct 10, 2026 — two ChatGPT accounts on one command are told apart on Accounts. Auth description carries the
 // proved email for default naming, while user id, account id and token material remain masked.
-package splice.provider.codex
+package splice.provider.codex.auth
 
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers

@@ -1,6 +1,6 @@
 // DR-59 absence-class arms for the codex auth chain, in their own class so CodexAuthTest stays
 // under detekt's LargeClass ceiling (ConfigServiceAbsenceTest precedent).
-package splice.provider.codex
+package splice.provider.codex.auth
 
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel

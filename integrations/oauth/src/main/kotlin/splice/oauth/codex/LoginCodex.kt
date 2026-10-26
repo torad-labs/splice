@@ -16,8 +16,8 @@ import splice.oauth.OAuthAccountIdentity
 import splice.oauth.OAuthAccountLabel
 import splice.oauth.OAuthAccountLabels
 import splice.oauth.TokenExchange
-import splice.provider.codex.CodexOAuth
-import splice.provider.codex.CodexOAuthEndpoints
+import splice.provider.codex.auth.CodexOAuth
+import splice.provider.codex.auth.CodexOAuthEndpoints
 import java.nio.file.Path
 import java.security.SecureRandom
 import java.time.Instant

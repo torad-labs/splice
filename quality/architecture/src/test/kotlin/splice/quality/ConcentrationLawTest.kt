@@ -253,8 +253,15 @@ internal object Concentration {
      *  2026-10-25, later: splice.provider.codex becomes the worst at 31. It held 29 at 785f9cce8; the recovery
      *  (a647799d3) added CodeModeToolPolicy.kt and CodexCodeModeSettings.kt and removed CodeModeWaitTool.kt, and
      *  f6f443847 added CodeModeLoadedTools.kt. Measured by the pre-push's run of this law on e28d00d1f and recorded
-     *  on splice-lead's decision; moving a file out is part of the decomposition owed above. 30 -> 31. */
-    const val PACKAGE_MAX_FILES = 31
+     *  on splice-lead's decision; moving a file out is part of the decomposition owed above. 30 -> 31.
+     *
+     *  2026-10-26: that move. Six Codex sign-in files leave splice.provider.codex for splice.provider.codex.auth,
+     *  beside CodexPlanLimitBody.kt: CodexAuthDescribe, CodexAuthFile, CodexAuthJson, CodexAuthProvider,
+     *  CodexCredentialShape and CodexOAuth. RefreshedTokens.kt stays, because it also holds the quirk profile.
+     *  splice.provider.codex falls 31 -> 25 and auth holds 7. The worst is now 30, held by four packages:
+     *  splice.provider.codex.diagnostics, splice.head.wire, splice.upstream.codemode and
+     *  splice.codemode.nativehost.grpc. Band HIGH keeps its 16 files. Measured on 63f0aadee with the move. 31 -> 30. */
+    const val PACKAGE_MAX_FILES = 30
 
     /** Where a shrunk baseline is re-recorded by hand. */
     const val THIS_LAW = "quality/architecture/src/test/kotlin/splice/quality/ConcentrationLawTest.kt"

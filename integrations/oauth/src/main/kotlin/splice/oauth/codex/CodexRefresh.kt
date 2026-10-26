@@ -26,8 +26,8 @@ import splice.oauth.AuthHttpClientFactory
 import splice.oauth.RefreshRetry
 import splice.oauth.RefreshStep
 import splice.oauth.refreshRetryableStatus
-import splice.provider.codex.CodexOAuthEndpoints
 import splice.provider.codex.RefreshedTokens
+import splice.provider.codex.auth.CodexOAuthEndpoints
 
 // FILE SCOPE ON PURPOSE (Kotlin style law relocation, 2026-08-15): the lazy client is the default
 // argument of [CodexRefresh.refresh], so it must stay a per-JVM singleton. Held as a member it

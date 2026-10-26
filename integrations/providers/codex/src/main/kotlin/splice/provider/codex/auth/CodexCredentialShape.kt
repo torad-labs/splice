@@ -1,5 +1,5 @@
 // NEW: chatgpt-oauth auth.json — tokens.access_token / tokens.refresh_token, expiry from the JWT exp.
-package splice.provider.codex
+package splice.provider.codex.auth
 
 import kotlinx.serialization.json.JsonObject
 import splice.core.auth.CredentialExpiry

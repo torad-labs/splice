@@ -2,7 +2,7 @@
 // CodexAuthProvider.kt so the refresh ladder is not billed for display
 // formatting (concentration HIGH, 2026-08-19). synthesizeExpiryMs stays
 // on the provider (sh_01).
-package splice.provider.codex
+package splice.provider.codex.auth
 
 import kotlinx.serialization.json.JsonObject
 import splice.core.auth.ACCOUNT_REF_FIELD
@@ -17,6 +17,7 @@ import splice.core.util.Cancellables
 import splice.core.util.JsonScalars
 import splice.core.util.LogSink
 import splice.core.util.SafeFailureText
+import splice.provider.codex.RefreshedTokens
 import java.nio.file.Files
 import java.nio.file.Path
 

@@ -6,7 +6,7 @@
 // account_id from the id_token JWT claim https://api.openai.com/auth.chatgpt_account_id; cached
 // read keyed on path+mtime+TTL; single-flight refresh; introspection never exposes token
 // material (masked account id). SEAM: the HTTP client + env reader + clock are injected.
-package splice.provider.codex
+package splice.provider.codex.auth
 
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonObject

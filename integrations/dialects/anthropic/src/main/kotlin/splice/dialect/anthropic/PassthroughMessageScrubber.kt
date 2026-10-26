@@ -54,11 +54,13 @@ import splice.core.turn.SpliceSignatures
 import splice.core.util.DaemonLog
 import splice.core.util.JsonScalars
 import splice.core.util.LogSink
+import splice.core.wire.UnknownBlock
 import splice.upstream.ToolNameShortener
 import splice.upstream.memory.MessageFragments
 import java.util.concurrent.ConcurrentHashMap
 
 private const val SIGNATURE_FIELD = "signature"
+private const val TOOL_NAME = "tool_name"
 private const val TYPE_REDACTED_THINKING = "redacted_thinking"
 private const val DATA = "data"
 
@@ -139,10 +141,11 @@ internal class PassthroughMessageScrubber(
         )
     }
 
-    /** Keep an accepted block (cache_control stripped, tool_result inner content filtered) or drop. */
+    /** Keep an accepted block (cache_control stripped, tool_result inner content filtered), say what a
+     *  disallowed tool_reference meant, or drop. */
     private fun scrubBlock(block: JsonObject): JsonObject? {
         val type = JsonScalars.strOrEmpty(block[TYPE])
-        quirks.request.blockAllowlist?.let { if (type !in it) return dropDisallowed(type) }
+        quirks.request.blockAllowlist?.let { if (type !in it) return disallowed(type, block) }
         if (isDropped(type, block)) return null
         return rebuildBlock(block, type)
     }
@@ -183,9 +186,23 @@ internal class PassthroughMessageScrubber(
         return true
     }
 
-    /** Drops the block, reporting its type once. An allowlist is only ever as good as the evidence
-     *  it was derived from, and the honest way to hold that is to say out loud what it is costing. */
-    private fun dropDisallowed(type: String): JsonObject? {
+    /** A block this head's allowlist excludes. A `tool_reference` becomes the sentence its client meant
+     *  (2026-10-26): Claude Code answers ToolSearch with one reference per tool whose schema it just
+     *  loaded, and passthrough forwards the client's tools as the model's own, so the model is told the
+     *  tool is loaded under the name it was offered. Dropped, the reference read "1 content block(s)
+     *  omitted", and kimi session ffb9aeb2 searched for SendMessage four times without calling it.
+     *
+     *  Every other block, and a reference whose name is not a plain tool name, is dropped and its type
+     *  reported once. An allowlist is only ever as good as the evidence it was derived from, and the
+     *  honest way to hold that is to say out loud what it is costing. */
+    private fun disallowed(type: String, block: JsonObject): JsonObject? {
+        UnknownBlock(block).loadedTool?.let { loaded ->
+            val offered = UnknownBlock(JsonObject(block + (TOOL_NAME to JsonPrimitive(names.shorten(loaded)))))
+            return buildJsonObject {
+                put(TYPE, TYPE_TEXT)
+                put(TEXT, offered.omissionMarker(quirks.providerTag, toolsCallable = true))
+            }
+        }
         if (droppedLogged.add(type)) {
             log(
                 "[${quirks.providerTag}] content block '$type' is absent from this head's " +

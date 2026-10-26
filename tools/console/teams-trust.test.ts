@@ -43,7 +43,11 @@ const server = Bun.serve({
       answered.push(await req.json() as Row);
       return Response.json({ session_id: "ffffffff-1" });
     }
-    if (path === "/api/teams/t1/slots/reviewer/start") return Response.json(start.body, { status: start.status });
+    if (path === "/api/teams/t1/slots/reviewer/start") {
+      // a terminal that closed gives its slot back by the time the daemon says so, as the page's next read finds it
+      if (start.body.reason === "closed") teams = team(null);
+      return Response.json(start.body, { status: start.status });
+    }
     if (path.startsWith("/api/")) return Response.json({});
     const file = join(consoleDir, path.slice(1));
     return existsSync(file) && file.startsWith(consoleDir) ? new Response(Bun.file(file)) : new Response("no", { status: 404 });
@@ -115,15 +119,16 @@ test("Yes sends its own choice and label, then the start goes on and the member 
   }
 }, 60_000);
 
-test("No closes the terminal: the member reads Not started with its folder kept on the card", async () => {
+test("No closes the terminal: the member reads Not started and Terminal closed, with its folder kept on the card", async () => {
   teams = team("ffffffff-1"); sessions = []; answered.length = 0;
   start = { status: 409, body: { error: "that slot's terminal has closed", reason: "closed" } };
   await shoot("no", async (p) => {
     await reviewer(p).locator(".answers .act", { hasText: "No, exit" }).click({ timeout: 20_000 });
-    teams = team(null);
     await expect(reviewer(p).locator(".word")).toHaveText("Not started", { timeout: 20_000 });
     await expect(reviewer(p).locator(".cmd")).toHaveText("/work/website");
-    await expect(reviewer(p)).not.toContainText("closed");
+    // why it did not come up, in the console's words, never the daemon's sentence (marlin p223, fin, Oct 13)
+    await expect(reviewer(p)).toContainText("Terminal closed");
+    await expect(reviewer(p)).not.toContainText("has closed");
     teams = team("ffffffff-1");
   });
 }, 120_000);

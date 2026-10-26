@@ -1,6 +1,6 @@
 // A request whose source round splice cut (code mode) carries no tokens; the next request of its session carries them.
 // The Requests page says so on both sides, through the real page against a stub daemon: a door from the cut request to the
-// one that took its tokens ("Counted on the next request"), the way back on that one ("with 1 earlier request"), and a
+// one that took its tokens ("Counted on the next request"), the way back on that one ("Counts 1 earlier request"), and a
 // plain "No usage reported" for a finished request with no tokens and no carrier in the list.
 import { afterAll, beforeAll, test } from "bun:test";
 import { chromium, expect, type Browser } from "@playwright/test";
@@ -74,7 +74,7 @@ test("a cut request names the one that took its tokens, that one names it back, 
     await expect(card("cutrow")).toContainText("Counted on the next request");
     expect(await card("cutrow").locator("button.door").getAttribute("data-open")).toBe("codex:carrier");
     // the carrier: the way back, and its own tokens still drawn
-    await expect(card("carrier")).toContainText("with 1 earlier request");
+    await expect(card("carrier")).toContainText("Counts 1 earlier request");
     expect(await card("carrier").locator("button.door").getAttribute("data-open")).toBe("codex:cutrow");
     await expect(card("carrier")).toContainText("tokens in");
     // a finished request with no tokens and no carrier in the list says so plainly, with no door
@@ -91,7 +91,7 @@ test("a cut request names the one that took its tokens, that one names it back, 
       expect(await card(t).locator("button.door").count()).toBe(0);
     }
     for (const t of ["pairC", "pairD"]) {
-      await expect(card(t)).toContainText("with 1 earlier request");
+      await expect(card(t)).toContainText("Counts 1 earlier request");
       expect(await card(t).locator("button.door").count()).toBe(0);
     }
 

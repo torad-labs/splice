@@ -1,7 +1,8 @@
 // Marlin's Teams-by-project walk of Oct 12 (78056fbbd), fin's cuts and hitstop's eye pass, through the real Teams page
 // against a stub daemon answering in the routes' own shapes: a member last heard on another day reads that day's weekday;
-// a role that already reads Lead carries no Lead tag; a member with no requests shows no tokens; an empty chat and an
-// empty activity panel are as tall as their one line; in day theme a tab's needs dot takes the key's day ink.
+// a role that already reads Lead carries no Lead tag; a member with no requests shows no tokens; an empty activity
+// panel is as tall as its one line, and an empty chat only as tall as the column beside it; in day theme a tab's needs
+// dot takes the key's day ink.
 import { afterAll, beforeAll, expect as bunExpect, test } from "bun:test";
 import { chromium, expect, type Browser, type Page } from "@playwright/test";
 import { existsSync } from "node:fs";
@@ -81,13 +82,27 @@ test("a member with no requests shows no tokens, and one with requests does", ()
   await expect(member(p, "builder").locator(".use")).toContainText("tokens");
 }), 60_000);
 
-test("an empty chat and an empty activity panel are as tall as their one line, not the screen", () => onTeams(async (p) => {
-  await expect(p.locator(".talk .empty")).toHaveText("No messages");
-  for (const panel of [".talk", ".feed"]) {
-    const box = await p.locator(panel).boundingBox();
-    bunExpect(box!.height).toBeLessThan(200);
-  }
-}), 60_000);
+// Beside the members the chat runs the whole height of the column next to it, so no hole opens under either side
+// (splice-sessions, Oct 13); empty, it still never takes a screen of empty card, and an empty activity panel is as tall
+// as its one line (hitstop's eye pass, Oct 12). At 3828 the column beside it is the members; at 1440, the members with
+// the activity under them.
+for (const width of [3828, 1440]) {
+  test(`at ${width} an empty chat runs only the height of the column beside it, and an empty activity panel is its one line`, () => onTeams(async (p) => {
+    await expect(p.locator(".talk .empty")).toHaveText("No messages");
+    await expect(p.locator(".feed .flow > .empty")).toBeVisible();
+    const m = await p.evaluate(() => {
+      const box = (s: string) => {
+        const b = document.querySelector(s)!.getBoundingClientRect();
+        return { left: b.left, top: b.top, bottom: b.bottom, height: b.height };
+      };
+      return { members: box(".members"), talk: box(".talk"), feed: box(".feed") };
+    });
+    bunExpect(m.feed.height).toBeLessThan(200);
+    const column = [m.members, m.feed].filter((b) => b.left < m.talk.left); // what reads to the chat's left
+    bunExpect(Math.abs(m.talk.top - m.members.top)).toBeLessThanOrEqual(1);
+    bunExpect(Math.abs(m.talk.bottom - Math.max(...column.map((b) => b.bottom)))).toBeLessThanOrEqual(1);
+  }, "night", width), 60_000);
+}
 
 test("in day theme a tab's needs dot takes the key's day ink", () => onTeams(async (p) => {
   const dot = await p.locator(".tab.needs").first().evaluate((el) => getComputedStyle(el, "::before").backgroundColor);

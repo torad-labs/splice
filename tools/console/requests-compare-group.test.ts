@@ -61,6 +61,8 @@ async function open(): Promise<Page> {
   return p;
 }
 const card = (p: Page, t: string) => p.locator(`article[data-open="alpha:${t}"]`);
+/** The requests the list holds, by their door: a card still reading has none. */
+const listed = (p: Page) => p.locator("article.card.rq").evaluateAll((els) => els.map((e) => e.getAttribute("data-open")));
 
 test("Compare models is a group before No project, titles its rows by that name, has no Open session, and is asked for as project=compare", async () => {
   withCompare = true;
@@ -74,9 +76,9 @@ test("Compare models is a group before No project, titles its rows by that name,
     expect(names.indexOf("Compare models")).toBeGreaterThan(-1);
     expect(names.indexOf("Compare models")).toBeLessThan(names.indexOf("No project"));
     await p.locator(".pmenu button", { hasText: "Compare models" }).click();
-    await expect(card(p, "t-web")).toHaveCount(0, { timeout: 10_000 });
+    // the pick shows the list reading at once (c5f1e1aa8), and the answer then holds the Compare send alone
+    await expect.poll(() => listed(p), { timeout: 10_000 }).toEqual(["alpha:t-cmp"]);
     expect(asked.at(-1)).toBe("compare");
-    expect(await p.locator("article.card.rq").evaluateAll((els) => els.map((e) => e.getAttribute("data-open")))).toEqual(["alpha:t-cmp"]);
     await card(p, "t-cmp").locator(".name").click();
     await expect(p.locator("a", { hasText: "Open session" })).toHaveCount(0);
     expect(new URL(p.url()).searchParams.get("project")).toBe("compare");
@@ -92,8 +94,7 @@ test("No project lists only the project-less requests, never a Compare send", as
     await expect(card(p, "t-cmp")).toBeVisible({ timeout: 20_000 });
     await p.locator("#pickline .ppick").click();
     await p.locator(".pmenu button", { hasText: "No project" }).click();
-    await expect(card(p, "t-web")).toHaveCount(0, { timeout: 10_000 });
-    expect(await p.locator("article.card.rq").evaluateAll((els) => els.map((e) => e.getAttribute("data-open")))).toEqual(["alpha:t-loose"]);
+    await expect.poll(() => listed(p), { timeout: 10_000 }).toEqual(["alpha:t-loose"]);
   } finally {
     await p.context().close();
   }

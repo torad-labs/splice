@@ -1,16 +1,27 @@
 // How a dollar figure reads, on the page that draws it (fin, Oct 12): a tiny reply keeps two significant digits instead
-// of collapsing to "<$0.0001", a cent and up is cents, and Requests' rows say the same under a cent.
+// of collapsing to "<$0.0001", a cent and up is cents, and Requests' rows say the same under a cent. Requests' row is
+// read off the page, against a stub daemon serving one request that cost a hundredth of a cent.
 import { afterAll, beforeAll, expect, test } from "bun:test";
-import { chromium, type Browser } from "@playwright/test";
+import { chromium, expect as see, type Browser } from "@playwright/test";
 import { existsSync } from "node:fs";
 import { join } from "node:path";
 import { layout } from "../gate/src/lib/repo.ts";
 
 const consoleDir = join(layout().repoRoot, "app/src/main/resources/console");
+const tiny = {
+  turn: "tiny", turn_id: "tiny", ts: Date.now() - 20_000, outcome: "ok", model: "m", session: "aaaaaaaa", total: 900, attempts: 1,
+  retries: 0, account: "work-key", in_tokens: 600, out_tokens: 300, cost_usd: 0.000122, cost_reason: null,
+};
+const answers: Record<string, unknown> = {
+  "/api/heads": { heads: [{ key: "alpha", label: "alpha" }] },
+  "/api/perf/turns": { heads: [{ key: "alpha", label: "alpha", count: 1, returned: 1, truncated: false, rows: [tiny],
+    usage: { models: [], accounts: [], sessions: [] } }] },
+};
 const server = Bun.serve({
   port: 0,
   fetch(req) {
     const path = new URL(req.url).pathname;
+    if (path in answers) return Response.json(answers[path]);
     if (path.startsWith("/api/")) return Response.json({});
     const file = join(consoleDir, path.slice(1));
     return existsSync(file) && file.startsWith(consoleDir) ? new Response(Bun.file(file)) : new Response("no", { status: 404 });
@@ -43,11 +54,10 @@ test("a dollar figure keeps two significant digits under a cent, and Requests sa
     await page.goto(`http://127.0.0.1:${server.port}/requests.html`);
     const read = await page.evaluate((xs) => xs.map((x) => dollars(x)), CASES.map(([v]) => v));
     expect(read).toEqual(CASES.map(([, w]) => w));
-    expect(await page.evaluate(() => money(0.000122))).toBe("≈$0.00012");
+    await see(page.locator('article[data-open="alpha:tiny"]')).toContainText("≈$0.00012", { timeout: 15_000 });
   } finally {
     await page.close();
   }
 }, 30_000);
 
 declare const dollars: (v: number) => string;
-declare const money: (v: number) => string;

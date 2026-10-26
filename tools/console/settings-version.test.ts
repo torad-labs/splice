@@ -276,7 +276,7 @@ test("with requests in flight Restart splice arms: Mid-request, a chip per agent
     await pane.getByRole("button", { name: "Restart splice" }).click();
     const armed = pane.locator(".vcard .armed");
     await expect(armed.locator(".said").first()).toHaveText("Mid-request", { timeout: 10_000 });
-    await expect(armed.locator(".said.then")).toHaveText("· 45 s to finish, then cut");
+    await expect(armed.locator(".said.then")).toHaveText("· 45 s to finish, then stopped");
     await expect(pane.getByRole("button", { name: "Check" })).toHaveCount(0);
     await expect(armed.locator("a.chip")).toHaveText(["changelog-pass", "5a5a5a5a"]);
     await expect(armed.locator("a.chip").first()).toHaveAttribute("href", "sessions.html#114e6cb0-9c3a-4d26-b259-f2b7f24ab56c");
@@ -293,7 +293,7 @@ test("with requests in flight Restart splice arms: Mid-request, a chip per agent
   }
 }, 30_000);
 
-test("a restart nothing would bring it back from is refused in the console's words, not the daemon's", async () => {
+test("a restart nothing is set to start again from is refused in the console's words, not the daemon's", async () => {
   const page = await version(NEVER_CHECKED);
   try {
     const pane = page.locator(".pane");
@@ -302,7 +302,7 @@ test("a restart nothing would bring it back from is refused in the console's wor
       body: { error: "nothing will restart this daemon: it was not started by systemd, so a drain would leave it down" },
     };
     await pane.getByRole("button", { name: "Restart splice" }).click();
-    await expect(pane.locator(".vcard .said")).toHaveText("Nothing would bring it back", { timeout: 10_000 });
+    await expect(pane.locator(".vcard .said")).toHaveText("Nothing is set to start it again", { timeout: 10_000 });
     await expect(pane).not.toContainText("systemd");
     await expect(pane.getByRole("button", { name: "Restart splice" })).toBeEnabled();
   } finally {

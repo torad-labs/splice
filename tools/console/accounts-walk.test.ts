@@ -1,6 +1,7 @@
 // Marlin's Accounts walk of Oct 12, ruled via splice-lead, through the real page against a stub daemon that answers in
 // the routes' own shapes: failed requests that reported no usage are failed, never "with no price"; the key in use shows
-// its masked tail from /api/auth, and its date only when its variable has held two keys; a window whose reset went by
+// its masked tail from /api/auth, and its date only when its variable has held two keys, the key it replaced folded into
+// one line on its card; a window whose reset went by
 // reads "Ended"; a plan card with no reading reads "Not read", and "No limits reported" only when the provider answered
 // with none; the order rail's numbers keep night's ink in day theme, where their socket is still dark.
 import { afterAll, beforeAll, expect as bunExpect, test } from "bun:test";
@@ -106,10 +107,13 @@ test("a day of failed requests reads $0 of the budget with the failures beside i
   }
 }), 30_000);
 
-test("the key in use shows its masked tail, and a date only where its variable has held two keys", () => onPage(async (page) => {
+test("the key in use shows its masked tail, a date only where its variable has held two keys, and the key it replaced as one line on its card", () => onPage(async (page) => {
+  const dayOf = (ms: number) => new Date(ms).toLocaleDateString("en-US", { month: "short", day: "numeric" });
   const names = (await page.locator("article.card .name").allInnerTexts()).map((t) => t.replace(/\s+/g, " ").trim());
-  bunExpect(names).toContain(`DEEPSEEK_API_KEY …9c21 · ${new Date(now - 2 * HOUR).toLocaleDateString("en-US", { month: "short", day: "numeric" })}`);
-  bunExpect(names.filter((n) => n.startsWith("DEEPSEEK_API_KEY"))).toHaveLength(2);
+  bunExpect(names).toContain(`DEEPSEEK_API_KEY …9c21 · ${dayOf(now - 2 * HOUR)}`);
+  // a replaced key has nothing to act on, so it folds into one quiet line on the card of the key now in use (marlin, Oct 12)
+  bunExpect(names.filter((n) => n.startsWith("DEEPSEEK_API_KEY"))).toHaveLength(1);
+  await expect(page.locator("article.card", { hasText: "DEEPSEEK_API_KEY" })).toContainText(`Replaced an earlier key · ${dayOf(now - 30 * 24 * HOUR)}`);
   bunExpect(names).toContain("SPLIT_KEY");
   bunExpect(names.join(" ")).not.toContain("sk-a");
 }), 30_000);

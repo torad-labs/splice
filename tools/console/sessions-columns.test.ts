@@ -64,28 +64,42 @@ test("the open session stays on screen while the list scrolls", async () => {
   expect(m.pane!.bottom).toBeLessThanOrEqual(m.vh);
 }, 30_000);
 
-// His project tiles at 3394 (splice-lead, Oct 12): twelve projects crowd the row. A short name is never cut ("twork"
-// read "tw…"), and the tile left alone on the wrapped line stops at its cap rather than crossing the page.
-test("in a crowded tile row a short name is whole and a lone wrapped tile stops at its cap", async () => {
-  const names = ["temple", "splice", "grailseeker-backend", "Splice-CPO", "hostshield", "assistant", "Splice-Animator",
+// His project tiles at 3394 (splice-lead, Oct 12; marlin, Oct 13): each tile is its own content's width on every line,
+// left-aligned and never grown to fill, so a short name is never cut ("twork" read "tw…") and a tile on the wrapped
+// line never stretches across the page; only a name past 32rem is cut. Since the root type grows slower on wide screens
+// (Oct 15), his twelve tiles fit on one line at 3394, so this row holds twice as many to wrap.
+test("in a crowded tile row each tile is its own content's width, a short name whole, and the wrapped line's tiles never grow to fill it", async () => {
+  const twelve = ["temple", "splice", "grailseeker-backend", "Splice-CPO", "hostshield", "assistant", "Splice-Animator",
     "Splice-Writer", "twork", "qgre-engine-labs", "grailseeker-console"];
+  const names = [...twelve, ...twelve.map((p) => `${p}-two`)];
   sessions = [...names.flatMap((p, i) => [row(100 + 2 * i, p, { status: "working" }), row(101 + 2 * i, p)]),
     { ...row(200, "loose"), project: undefined, cwd: "/home/notes" }];
   const page = await browser.newPage({ viewport: { width: 3394, height: 1889 } });
   try {
     await page.goto(`http://127.0.0.1:${server.port}/sessions.html`);
-    await page.locator(".ptile").nth(names.length).waitFor({ timeout: 15_000 });
-    const tiles = await page.evaluate(() => {
+    await page.locator(".ptile").nth(names.length + 1).waitFor({ timeout: 15_000 }); // Every project, each one, No project
+    const { cap, rowLeft, tiles } = await page.evaluate(() => {
       const rem = parseFloat(getComputedStyle(document.documentElement).fontSize);
-      return [...document.querySelectorAll(".ptile")].map((t) => {
-        const n = t.querySelector(".tname")!;
-        return { name: n.textContent!, cut: n.scrollWidth > n.clientWidth + 1, rem: t.getBoundingClientRect().width / rem, top: t.getBoundingClientRect().top };
-      });
+      return {
+        cap: 32 * rem,
+        rowLeft: document.querySelector(".ptiles")!.getBoundingClientRect().left,
+        tiles: [...document.querySelectorAll<HTMLElement>(".ptile")].map((t) => {
+          const n = t.querySelector(".tname")!;
+          const box = t.getBoundingClientRect();
+          // the width the tile's own content asks for, with nothing around it to grow or squeeze it
+          t.style.width = "max-content";
+          t.style.maxWidth = "none";
+          const own = t.getBoundingClientRect().width;
+          t.style.width = t.style.maxWidth = "";
+          return { name: n.textContent!, cut: n.scrollWidth > n.clientWidth + 1, width: box.width, own, top: box.top, left: box.left };
+        }),
+      };
     });
-    expect(tiles.filter((t) => [...t.name].length <= 12 && t.cut).map((t) => t.name)).toEqual([]);
-    const last = tiles.at(-1)!;
-    expect(tiles.filter((t) => t.top === last.top)).toHaveLength(1); // the row wrapped, leaving one tile on the line
-    expect(last.rem).toBeLessThanOrEqual(40.1);
+    const lines = [...new Set(tiles.map((t) => t.top))];
+    expect(lines.length).toBeGreaterThan(1); // the row is crowded enough to wrap
+    expect(tiles.filter((t) => Math.abs(t.width - Math.min(t.own, cap)) > 1).map((t) => t.name)).toEqual([]);
+    expect(tiles.filter((t) => t.own <= cap && t.cut).map((t) => t.name)).toEqual([]);
+    for (const top of lines) expect(Math.min(...tiles.filter((t) => t.top === top).map((t) => t.left))).toBeCloseTo(rowLeft, 0);
   } finally {
     sessions = columns;
     await page.close();

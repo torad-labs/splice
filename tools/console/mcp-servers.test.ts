@@ -93,12 +93,13 @@ test("a shared server reads Used by its commands and its last call; one splice c
     expect(shared).toContain("Used by");
     expect(shared).toContain("claude-splice");
     expect(shared).toContain("claudex");
-    expect(shared).toContain("Until restart");
+    // a command still on an older copy of the config joins Used by, and takes the server at its next session (fin, Oct 12)
     expect(shared).toContain("claude-grok");
+    expect(shared).toContain("Next session");
     expect(shared).toContain("Last call");
     expect(await row(page, "linear").innerText()).not.toContain("Used by");
     const words: Record<string, string> = {
-      postgres: "Per agent", filesystem: "Per project", github: "Plugin-owned", memory: "Added in",
+      postgres: "Per session", filesystem: "Per project", github: "Plugin-owned", memory: "Added in",
     };
     for (const [name, word] of Object.entries(words)) {
       const text = await row(page, name).innerText();

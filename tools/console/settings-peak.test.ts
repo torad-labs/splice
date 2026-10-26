@@ -1,7 +1,8 @@
 // Settings' "Many agents at once": a busy command's day holds more requests than one read returns, so the daemon works
 // out its peak over the whole day and the page draws that figure. The commands that ran lead as cards, the ones that
-// held nothing collapse to a line, and a setting some commands override spreads those commands across the width
-// (Marcos's verdict on this pane, Oct 11). Through the real page against a stub daemon.
+// held nothing collapse to a line (Marcos's verdict on this pane, Oct 11), and the commands that hold their own value
+// for a setting read as chips that lie across its card and wrap inside it, never cut (gap 457, Oct 13). Through the real
+// page against a stub daemon.
 import { afterAll, beforeAll, test } from "bun:test";
 import { chromium, expect, type Browser } from "@playwright/test";
 import { existsSync } from "node:fs";
@@ -110,42 +111,44 @@ for (const width of [3828, 1440]) {
   }, 30_000);
 }
 
-/** Where the four commands that override a setting sit, measured against the block that holds them. */
-async function overrideShape(page: Awaited<ReturnType<typeof open>>) {
+/** Where the four commands holding their own value sit, as chips, measured against the card that holds them. */
+async function chipShape(page: Awaited<ReturnType<typeof open>>) {
   return page.evaluate(() => {
-    const ctl = [...document.querySelectorAll(".kn .ctl.col")].find((c) => c.querySelectorAll(".over").length >= 4)!;
-    const cells = [...ctl.querySelectorAll(".over")].map((e) => e.getBoundingClientRect());
-    const box = ctl.closest(".kcard")!.getBoundingClientRect();
+    const owners = [...document.querySelectorAll(".kn .owners")].find((o) => o.querySelectorAll(".chip.own").length >= 4)!;
+    const chips = [...owners.querySelectorAll(".chip.own")];
+    const cells = chips.map((e) => e.getBoundingClientRect());
+    const box = owners.closest(".kcard")!.getBoundingClientRect();
     return {
       cols: new Set(cells.map((b) => Math.round(b.left))).size,
       rows: new Set(cells.map((b) => Math.round(b.top))).size,
-      inside: cells.every((b) => b.right <= box.right + 1),
-      fills: (Math.max(...cells.map((b) => b.right)) - box.left) / box.width,
+      inside: cells.every((b) => b.left >= box.left - 1 && b.right <= box.right + 1),
+      whole: chips.every((e) => e.scrollWidth <= e.clientWidth + 1), // no chip's name or value is cut
     };
   });
 }
 
-test("at 3828 the commands that override a setting lie across its block, not stacked in one column", async () => {
+test("at 3828 the commands that hold their own value lie side by side as chips in their card, not stacked in one column", async () => {
   const page = await open(3828, 2130);
   try {
-    await expect(page.locator(".kn .over").first()).toBeVisible({ timeout: 15_000 });
-    const m = await overrideShape(page);
+    await expect(page.locator(".kn .owners .chip.own")).toHaveCount(4, { timeout: 15_000 });
+    const m = await chipShape(page);
     expect(m.cols).toBeGreaterThan(1); // side by side, never a column of four
     expect(m.rows).toBeLessThan(4);
-    expect(m.fills).toBeGreaterThan(0.6); // and they use the block they were given
     expect(m.inside).toBe(true);
+    expect(m.whole).toBe(true);
   } finally {
     await page.close();
   }
 }, 30_000);
 
-test("at 1440 the same commands wrap inside their block instead of running past its edge", async () => {
+test("at 1440 the same chips wrap inside their card instead of running past its edge, and none is cut", async () => {
   const page = await open(1440, 900);
   try {
-    await expect(page.locator(".kn .over").first()).toBeVisible({ timeout: 15_000 });
-    const m = await overrideShape(page);
+    await expect(page.locator(".kn .owners .chip.own")).toHaveCount(4, { timeout: 15_000 });
+    const m = await chipShape(page);
     expect(m.rows).toBeGreaterThan(1);
     expect(m.inside).toBe(true);
+    expect(m.whole).toBe(true);
   } finally {
     await page.close();
   }

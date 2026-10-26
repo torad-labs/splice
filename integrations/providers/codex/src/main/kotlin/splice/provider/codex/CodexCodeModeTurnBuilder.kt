@@ -24,10 +24,8 @@ import splice.provider.codex.callbacks.CodeModeClientToolValues
 import splice.provider.codex.catalog.CodeModeCatalogMessages
 import splice.provider.codex.request.CodexCodeModeInstructions
 import splice.upstream.BuiltTurn
-import splice.upstream.codemode.CodeModeManual
 import splice.upstream.codemode.CodeModeResult
 import splice.upstream.codemode.CodeModeResultDisposition
-import splice.upstream.codemode.CodeModeToolDefinitions
 
 /** [media] is the dialect's own tool_result image renderer (V4-179): the bridge renders a result's
  *  follow-ups ONCE with the same policy the ordinary path applies, persists them on the record and
@@ -58,7 +56,8 @@ internal class CodexCodeModeTurnBuilder(
         }
         require(!sessionId.isNullOrBlank()) { "code mode requires a client session id" }
         val cleared = CodeModeClearedCandidates.read(body)
-        val toolPolicy = catalogs.policy(body, built)
+        val loaded = CodeModeLoadedTools(body).names(bridgeResults(body))
+        val toolPolicy = catalogs.policy(body, built).copy(loadedNames = loaded)
         val messages = CodeModeCatalogMessages(toolPolicy.modelMessages)
         val turn = CodexCodeModeBridge.Turn(
             sessionId = sessionId,
@@ -122,7 +121,7 @@ internal class CodexCodeModeTurnBuilder(
      *  turn rides in is an opaque lambda a test cannot look inside. */
     internal fun toolResults(body: AnthropicTurnBody): List<CodeModeResult> = bridgeResults(body).map { block ->
         val dispositions = media.followUps(block).dispositions.iterator()
-        val output = block.content.joinToString("") { part -> resultText(block.toolUseId, part, dispositions) }
+        val output = block.content.joinToString("") { part -> resultText(body, block.toolUseId, part, dispositions) }
         val value = CodeModeClientToolValues.value(block)
         CodeModeResult(
             id = block.toolUseId,
@@ -135,15 +134,8 @@ internal class CodexCodeModeTurnBuilder(
 
     /** V4-388: each client tool's `ALL_TOOLS` description as codex's augment_tool_definition writes it —
      *  with its TypeScript declaration, so a tool the manual defers still shows the cell its arguments. */
-    internal fun descriptions(body: AnthropicTurnBody): Map<String, String> = body.typed.tools.associate { tool ->
-        tool.name to CodeModeManual.augmented(
-            CodeModeManual.NestedTool(
-                tool.name,
-                tool.description.orEmpty(),
-                CodeModeToolDefinitions.parameters(tool.inputSchema ?: CodeModeToolDefinitions.emptyInputSchema),
-            ),
-        )
-    }
+    internal fun descriptions(body: AnthropicTurnBody): Map<String, String> =
+        CodeModeLoadedTools(body).let { tools -> body.typed.tools.associate { it.name to tools.described(it) } }
 
     /** V4-179: each bridge result's follow-up items, rendered once here and nowhere else. */
     internal fun toolMedia(body: AnthropicTurnBody): Map<String, List<JsonElement>> =
@@ -181,14 +173,20 @@ internal class CodexCodeModeTurnBuilder(
      *  reason (unsupported source, below the vendor floor), in the renderer's words. Either way the
      *  script itself reads text only — function_call_output.output is string-only and a script
      *  return is a string. */
-    private fun resultText(toolUseId: String, part: ContentBlock, dispositions: Iterator<ImageDisposition>): String =
-        when (part) {
-            is TextBlock -> part.text
-            is ImageBlock -> imageMarker(toolUseId, part.source, dispositions.next())
-            is DocumentBlock -> omitted(toolUseId, "document", part.source, DOCUMENT_REASON)
-            is RedactedThinkingBlock, is ThinkingBlock, is ToolResultBlock, is ToolUseBlock, is UnknownBlock ->
-                omitted(toolUseId, "non-text content", null, DOCUMENT_REASON)
-        }
+    private fun resultText(
+        body: AnthropicTurnBody,
+        toolUseId: String,
+        part: ContentBlock,
+        dispositions: Iterator<ImageDisposition>,
+    ): String = when (part) {
+        is TextBlock -> part.text
+        is ImageBlock -> imageMarker(toolUseId, part.source, dispositions.next())
+        is DocumentBlock -> omitted(toolUseId, "document", part.source, DOCUMENT_REASON)
+        is UnknownBlock -> CodeModeLoadedTools(body).text(part)
+            ?: omitted(toolUseId, "non-text content", null, DOCUMENT_REASON)
+        is RedactedThinkingBlock, is ThinkingBlock, is ToolResultBlock, is ToolUseBlock ->
+            omitted(toolUseId, "non-text content", null, DOCUMENT_REASON)
+    }
 
     private fun imageMarker(toolUseId: String, source: MediaSource?, disposition: ImageDisposition): String =
         if (disposition.delivered) {

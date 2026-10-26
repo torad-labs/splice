@@ -43,11 +43,14 @@ internal class CodeModeToolSurface(private val log: LogSink) {
         require(item != null && tools != null) { "code mode requires the Responses lite additional_tools item" }
         val reachable = reachable(clientTools)
         val messages = CodeModeCatalogMessages(policy.modelMessages)
+        // A tool loaded mid-conversation stays callable (the cell's `tools` is the whole catalog) but out of the
+        // manual and out of the deferred check, so the manual is the one the turns before the load sent.
+        val documented = reachable - policy.loadedNames
         val enabled = CodeModeToolDefinitions.collect(tools).filter {
-            it.codeModeName in reachable || it.codeModeName == CodeModeToolSearch.NAME
+            it.codeModeName in documented || it.codeModeName == CodeModeToolSearch.NAME
         }.map { CodeModeManual.withInputBudget(it, policy.inputSchemaMaxBytes) }
         val nested = messages.namespacePrefixes.prompt(messages.functions(enabled))
-        val deferred = (reachable - nested.map { it.codeModeName }.toSet()).isNotEmpty()
+        val deferred = (documented - nested.map { it.codeModeName }.toSet()).isNotEmpty()
         val beside = namespace.members(tools).filterNot {
             string(it as? JsonObject, CODE_MODE_FIELD_TYPE) in setOf("function", "custom", "namespace", "tool_search")
         }

@@ -297,9 +297,11 @@ class McpHostLifecycleTest : McpHostFixture() {
         assertEquals(200, crashed.status)
         val err = json.parseToJsonElement(crashed.body!!).jsonObject
         assertEquals("9", err["id"]!!.jsonPrimitive.content)
+        // The crash can land before or after the host confirms the write; either way the person is told the
+        // outcome is unknown and the call was not replayed.
         assertTrue(
             err["error"]!!.jsonObject["message"]!!.jsonPrimitive.content
-                .contains("operation outcome unknown, not replayed"),
+                .contains("outcome unknown, not replayed"),
             crashed.body,
         )
         val again = text(call(b, 2, "echo", "y")).substringBefore(" ")

@@ -3,11 +3,12 @@
 // reach the real write path through this fixture rather than a widened production API.
 package splice.oauth
 
+import kotlinx.coroutines.runBlocking
 import splice.core.terminal.TerminalOutput
 import java.nio.file.Path
 
 class SignInPersistence {
     /** Persists [authJson] for [account] exactly as a completed sign-in does, recording its label. */
     fun persist(path: Path, authJson: String, account: OAuthLoginAccount?): Boolean =
-        LoginIo(TerminalOutput {}).persistIfSignedIn(path, authJson, account)
+        runBlocking { LoginIo(TerminalOutput {}).persistIfSignedIn(path, authJson, account) }
 }

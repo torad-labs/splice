@@ -16,6 +16,7 @@ import splice.core.terminal.TerminalOutput
 import splice.core.util.Cancellables
 import splice.core.util.SafeFailureText
 import splice.core.util.SecureFile
+import splice.upstream.credentials.CredentialLock
 import java.nio.file.Files
 import java.nio.file.NoSuchFileException
 import java.nio.file.Path
@@ -169,7 +170,7 @@ internal class LoginIo(
      *  Fail-closed on an unparseable body too: a credential file whose token we cannot read is not
      *  one to call a successful login. Nothing is written on refusal — the previous credential, if
      *  any, is left intact rather than replaced by a worthless one. */
-    internal fun persistIfSignedIn(
+    internal suspend fun persistIfSignedIn(
         path: Path,
         authJson: String,
         account: OAuthLoginAccount? = null,
@@ -186,7 +187,10 @@ internal class LoginIo(
         }
         val target = Cancellables.runCatchingCancellable {
             if (account == null || account.primary) {
-                writeCredentialFile(path, mergedOntoDisk(path, parsed))
+                // Under the lock a refresh of this file holds, so a refresh granted during the sign-in persists first
+                // and the sign-in lands over it. The lock file sits beside the credential, so its folder comes first.
+                Files.createDirectories(path.toAbsolutePath().parent)
+                CredentialLock.withLock(path) { writeCredentialFile(path, mergedOntoDisk(path, parsed)) }
                 path
             } else {
                 persistLabeled(path, account, parsed)

@@ -2,6 +2,7 @@
 // new account. Server half of the console's "Sign in again" on a pooled first account.
 package splice.oauth
 
+import kotlinx.coroutines.runBlocking
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertFalse
 import org.junit.jupiter.api.Assertions.assertThrows
@@ -27,7 +28,7 @@ class PrimaryLabelLoginTest {
         val account = OAuthAccountFiles().loginAccount(AuthKind.ChatgptOAuth, primary, "primary")
         val replacement = """{"tokens":{"access_token":"replacement-primary"}}"""
 
-        assertTrue(loginIo.persistIfSignedIn(primary, replacement, account))
+        assertTrue(runBlocking { loginIo.persistIfSignedIn(primary, replacement, account) })
 
         assertTrue(account.primary)
         assertEquals(replacement, Files.readString(primary))

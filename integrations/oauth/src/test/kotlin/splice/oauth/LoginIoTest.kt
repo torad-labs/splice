@@ -3,6 +3,11 @@
 // field splice does not write was dropped: the SH-10 class the provider refreshes already merge against.
 package splice.oauth
 
+import kotlinx.coroutines.CompletableDeferred
+import kotlinx.coroutines.CoroutineStart
+import kotlinx.coroutines.async
+import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.test.runTest
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.jsonObject
@@ -11,7 +16,14 @@ import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.io.TempDir
+import splice.core.auth.Credentials
+import splice.core.auth.RefreshAttempt
+import splice.core.auth.RefreshCall
 import splice.core.terminal.TerminalOutput
+import splice.core.topology.AuthKind
+import splice.provider.codex.RefreshedTokens
+import splice.provider.codex.auth.CodexAuthProvider
+import splice.provider.codex.auth.CodexOAuth
 import java.nio.file.Files
 import java.nio.file.Path
 import java.nio.file.attribute.PosixFilePermissions
@@ -54,9 +66,61 @@ class LoginIoTest {
         assertEquals(JsonObject(mapOf("access_token" to Json.parseToJsonElement("\"new\""))), read(primary))
     }
 
-    private fun signIn(primary: Path, authJson: String): Pair<Boolean, String> {
+    // PR #247 round 6, finding 4: the sign-in wrote the primary file outside the lock the daemon's refresh holds, so
+    // a refresh of the old account granted during the sign-in wrote that account back after "signed in" was printed.
+    @Test
+    fun `a sign-in landing while the old account's refresh posts is what the head serves after both`(
+        @TempDir tmp: Path,
+    ) = runTest {
+        val primary = tmp.resolve("codex.json")
+        Files.writeString(primary, """{"tokens":{"access_token":"old-access","refresh_token":"old-refresh"}}""")
+        val posting = CompletableDeferred<Unit>()
+        val granted = CompletableDeferred<Unit>()
+        val head = CodexAuthProvider(
+            primary,
+            authCacheMs = 0L,
+            refreshCall = RefreshCall {
+                posting.complete(Unit)
+                granted.await()
+                RefreshAttempt.Granted(RefreshedTokens("old-access-2", "old-refresh-2", idToken = null))
+            },
+        )
+        val refreshing = async { head.refresh() }
+        posting.await()
+
+        val signIn = CodexOAuth().authJsonFromTokens(
+            idToken = null,
+            accessToken = "new-access",
+            refreshToken = "new-refresh",
+            apiKey = null,
+            nowIso = "2026-10-26T00:00:00Z",
+        )
+        val account = OAuthAccountFiles().loginAccount(AuthKind.ChatgptOAuth, primary, requestedLabel = null)
+        val signedIn = async(start = CoroutineStart.UNDISPATCHED) {
+            LoginIo(TerminalOutput {}).persistIfSignedIn(primary, signIn.toString(), account)
+        }
+        granted.complete(Unit)
+        refreshing.await()
+
+        assertTrue(signedIn.await())
+        assertEquals("new-access", (head.credentials() as? Credentials.Bearer)?.token, "the head serves the sign-in")
+        assertEquals(signIn["tokens"], read(primary)["tokens"], "the file holds the sign-in's tokens, refresh too")
+    }
+
+    // The lock file sits beside the credential, so a first sign-in makes the folder before it locks.
+    @Test
+    fun `a first sign-in into a folder that does not exist yet still signs in`(@TempDir tmp: Path) {
+        val primary = tmp.resolve("auth").resolve("codex.json")
+
+        val (signedIn, out) = signIn(primary, """{"access_token":"new"}""")
+
+        assertTrue(signedIn, out)
+        assertEquals("new", read(primary)["access_token"]?.jsonPrimitive?.content)
+    }
+
+    private fun signIn(primary: Path, authJson: String): Pair<Boolean, String> = runBlocking {
         val out = StringBuilder()
-        return LoginIo(TerminalOutput { out.appendLine(it) }).persistIfSignedIn(primary, authJson) to out.toString()
+        LoginIo(TerminalOutput { out.appendLine(it) }).persistIfSignedIn(primary, authJson) to out.toString()
     }
 
     private fun read(path: Path) = Json.parseToJsonElement(Files.readString(path)).jsonObject

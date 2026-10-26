@@ -1,6 +1,7 @@
 // NEW: muse twins of the kimi reservation cases in AccountLoginTest.
 package splice.oauth
 
+import kotlinx.coroutines.runBlocking
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
@@ -29,7 +30,9 @@ class AccountLoginMuseTest {
         Files.writeString(primary, original)
         val account = OAuthAccountFiles().loginAccount(AuthKind.MuseOAuth, primary, "work")
         assertTrue(
-            LoginIo(TerminalOutput {}).persistIfSignedIn(primary, """{"access_token":"backup-secret"}""", account),
+            runBlocking {
+                LoginIo(TerminalOutput {}).persistIfSignedIn(primary, """{"access_token":"backup-secret"}""", account)
+            },
         )
         assertEquals(original, Files.readString(primary))
         val target = dir.resolve("muse-oauth/muse.json/work.json")
@@ -75,11 +78,13 @@ class AccountLoginMuseTest {
             }
             assertEquals("OAuth account label already has a login in progress", refused.reason)
             assertTrue(
-                LoginIo(TerminalOutput {}).persistIfSignedIn(
-                    primary,
-                    """{"access_token":"replacement-secret"}""",
-                    requireNotNull(first.account),
-                ),
+                runBlocking {
+                    LoginIo(TerminalOutput {}).persistIfSignedIn(
+                        primary,
+                        """{"access_token":"replacement-secret"}""",
+                        requireNotNull(first.account),
+                    )
+                },
             )
             val saved = Json.parseToJsonElement(
                 Files.readString(store.poolDir(AuthKind.MuseOAuth, primary).resolve("work.json")),

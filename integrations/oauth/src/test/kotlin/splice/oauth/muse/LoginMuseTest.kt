@@ -2,6 +2,7 @@
 // login-end key mint, and the mint's never-fail-the-login contract.
 package splice.oauth.muse
 
+import kotlinx.coroutines.runBlocking
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.buildJsonObject
@@ -49,7 +50,7 @@ class LoginMuseTest {
         )
         assertTrue(written.contains("acct-token-fake"))
         assertTrue(written.contains("\"schema\""))
-        assertTrue(loginIo.persistIfSignedIn(primary, written, spec.account))
+        assertTrue(runBlocking { loginIo.persistIfSignedIn(primary, written, spec.account) })
         kotlinx.coroutines.runBlocking { spec.afterPersist(primary, spec.account) }
         val onDisk = Json.parseToJsonElement(Files.readString(primary)).jsonObject
         assertEquals("acct-token-fake", onDisk.getValue("access_token").jsonPrimitive.content)
@@ -60,7 +61,9 @@ class LoginMuseTest {
     fun `muse failed mint leaves a valid-but-unminted credential`(@TempDir tmp: Path) {
         val path = tmp.resolve("muse-unminted.json")
         val spec = LoginMuse(TerminalOutput {}) { _, _ -> MuseMintAttempt.Denied("no-key") }.spec("claude-muse", path)
-        assertTrue(loginIo.persistIfSignedIn(path, """{"access_token":"acct-token-fake"}""", spec.account))
+        assertTrue(
+            runBlocking { loginIo.persistIfSignedIn(path, """{"access_token":"acct-token-fake"}""", spec.account) },
+        )
         kotlinx.coroutines.runBlocking { spec.afterPersist(path, spec.account) }
         val unminted = Json.parseToJsonElement(Files.readString(path)).jsonObject
         assertEquals("acct-token-fake", unminted.getValue("access_token").jsonPrimitive.content)
@@ -121,7 +124,9 @@ class LoginMuseTest {
             modes += mode
             MuseMintAttempt.Denied("held")
         }.spec("claude-muse", path)
-        assertTrue(loginIo.persistIfSignedIn(path, """{"access_token":"acct-token-fake"}""", spec.account))
+        assertTrue(
+            runBlocking { loginIo.persistIfSignedIn(path, """{"access_token":"acct-token-fake"}""", spec.account) },
+        )
         kotlinx.coroutines.runBlocking { spec.afterPersist(path, spec.account) }
         assertEquals(listOf(MuseMintMode.ONBOARD), modes)
     }
@@ -139,7 +144,7 @@ class LoginMuseTest {
         }.spec("claude-muse", primary, "work")
         try {
             assertTrue(
-                loginIo.persistIfSignedIn(primary, """{"access_token":"backup-acct"}""", spec.account),
+                runBlocking { loginIo.persistIfSignedIn(primary, """{"access_token":"backup-acct"}""", spec.account) },
             )
             kotlinx.coroutines.runBlocking { spec.afterPersist(primary, spec.account) }
             assertEquals("""{"access_token":"primary-secret"}""", Files.readString(primary))
@@ -156,7 +161,9 @@ class LoginMuseTest {
     fun `a throwing muse mint after persist does not fail the login`(@TempDir tmp: Path) {
         val path = tmp.resolve("muse.json")
         val spec = LoginMuse(TerminalOutput {}) { _, _ -> error("mint exploded") }.spec("claude-muse", path)
-        assertTrue(loginIo.persistIfSignedIn(path, """{"access_token":"acct-token-fake"}""", spec.account))
+        assertTrue(
+            runBlocking { loginIo.persistIfSignedIn(path, """{"access_token":"acct-token-fake"}""", spec.account) },
+        )
         assertDoesNotThrow {
             kotlinx.coroutines.runBlocking { spec.afterPersist(path, spec.account) }
         }
@@ -199,7 +206,9 @@ class LoginMuseTest {
     fun `an IOException from muse mint after persist does not fail the login`(@TempDir tmp: Path) {
         val path = tmp.resolve("muse.json")
         val spec = LoginMuse(TerminalOutput {}) { _, _ -> throw java.io.IOException("disk") }.spec("claude-muse", path)
-        assertTrue(loginIo.persistIfSignedIn(path, """{"access_token":"acct-token-fake"}""", spec.account))
+        assertTrue(
+            runBlocking { loginIo.persistIfSignedIn(path, """{"access_token":"acct-token-fake"}""", spec.account) },
+        )
         assertDoesNotThrow {
             kotlinx.coroutines.runBlocking { spec.afterPersist(path, spec.account) }
         }

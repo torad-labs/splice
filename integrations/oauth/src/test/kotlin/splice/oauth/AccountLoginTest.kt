@@ -1,5 +1,6 @@
 package splice.oauth
 
+import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.test.runTest
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonObject
@@ -40,6 +41,9 @@ class AccountLoginTest {
     lateinit var dir: Path
 
     private val loginIo = LoginIo(TerminalOutput {})
+
+    private fun persist(path: Path, authJson: String, account: OAuthLoginAccount): Boolean =
+        runBlocking { loginIo.persistIfSignedIn(path, authJson, account) }
 
     @Test
     fun `pooled OAuth providers expose conservative credential file evidence`() {
@@ -166,7 +170,7 @@ class AccountLoginTest {
         val account = OAuthAccountFiles().loginAccount(AuthKind.GrokOAuth, primary, requestedLabel = null)
         val providerJson = """{"tokens":{"access_token":"primary-secret"},"expires":123}"""
 
-        assertTrue(loginIo.persistIfSignedIn(primary, providerJson, account))
+        assertTrue(persist(primary, providerJson, account))
 
         assertTrue(account.primary)
         assertEquals(providerJson, Files.readString(primary))
@@ -183,7 +187,7 @@ class AccountLoginTest {
         val account = OAuthAccountFiles().loginAccount(AuthKind.KimiOAuth, primary, "work")
         val providerJson = """{"access_token":"backup-secret","refresh_token":"rotating"}"""
 
-        assertTrue(loginIo.persistIfSignedIn(primary, providerJson, account))
+        assertTrue(persist(primary, providerJson, account))
 
         assertEquals(original, Files.readString(primary))
         val target = dir.resolve("kimi-oauth/kimi.json/work.json")
@@ -209,7 +213,7 @@ class AccountLoginTest {
         val account = OAuthAccountFiles().loginAccount(AuthKind.ChatgptOAuth, primary, requestedLabel = null)
         val replacement = """{"tokens":{"access_token":"replacement-primary"}}"""
 
-        assertTrue(loginIo.persistIfSignedIn(primary, replacement, account))
+        assertTrue(persist(primary, replacement, account))
 
         assertTrue(account.primary)
         assertEquals(replacement, Files.readString(primary))
@@ -256,7 +260,7 @@ class AccountLoginTest {
 
         assertEquals("grok-3", automatic.resolvedLabel())
         assertEquals("grok-2", explicit.resolvedLabel())
-        assertTrue(loginIo.persistIfSignedIn(primary, """{"access_token":"synthetic-grok"}""", explicit))
+        assertTrue(persist(primary, """{"access_token":"synthetic-grok"}""", explicit))
         assertTrue(Files.exists(pool.resolve("grok-2.json")))
         val archive = requireNotNull(explicit.setAsideQuota())
         assertTrue(archive.fileName.toString().startsWith("grok-2-quota.json.orphaned-"))
@@ -280,7 +284,7 @@ class AccountLoginTest {
             assertEquals("$base-5", account.resolvedLabel())
             assertFalse(account.tokenDerivedLabel)
             assertEquals("$base-2", explicit.resolvedLabel())
-            assertTrue(loginIo.persistIfSignedIn(primary, """{"access_token":"synthetic"}""", explicit))
+            assertTrue(persist(primary, """{"access_token":"synthetic"}""", explicit))
             val archived = requireNotNull(explicit.setAsideQuota())
             assertTrue(Files.isSymbolicLink(archived))
             assertEquals(dir.resolve("$base-gone"), Files.readSymbolicLink(archived))
@@ -291,7 +295,7 @@ class AccountLoginTest {
         val spec = LoginKimi().spec("kimi", primary, "auto")
         val account = requireNotNull(spec.account)
 
-        assertTrue(loginIo.persistIfSignedIn(primary, """{"access_token":"kimi-secret"}""", account))
+        assertTrue(persist(primary, """{"access_token":"kimi-secret"}""", account))
 
         val pool = store.poolDir(AuthKind.KimiOAuth, primary)
         val persistedIdentity = KimiDeviceIdentity(deviceIdPath = pool.resolve("kimi-5-device_id"))
@@ -323,7 +327,7 @@ class AccountLoginTest {
         Files.createDirectories(pool)
         Files.writeString(pool.resolve("$expected-quota.json"), "{}")
 
-        assertTrue(loginIo.persistIfSignedIn(primary, authJson, account))
+        assertTrue(persist(primary, authJson, account))
         assertTrue(Files.exists(pool.resolve("$persisted.json")))
         assertFalse(Files.exists(pool.resolve("$expected.json")))
         assertFalse(Files.exists(pool.resolve("auto.json")))
@@ -392,7 +396,7 @@ class AccountLoginTest {
             }
             assertEquals("OAuth account label already has a login in progress", refused.reason)
             assertTrue(
-                loginIo.persistIfSignedIn(
+                persist(
                     primary,
                     """{"access_token":"replacement-secret"}""",
                     requireNotNull(first.account),
@@ -430,8 +434,8 @@ class AccountLoginTest {
         val secondAccount = requireNotNull(second.account)
 
         assertEquals(listOf("kimi-2", "kimi-3"), listOf(firstAccount.resolvedLabel(), secondAccount.resolvedLabel()))
-        assertTrue(loginIo.persistIfSignedIn(primary, """{"access_token":"first-secret"}""", firstAccount))
-        assertTrue(loginIo.persistIfSignedIn(primary, """{"access_token":"second-secret"}""", secondAccount))
+        assertTrue(persist(primary, """{"access_token":"first-secret"}""", firstAccount))
+        assertTrue(persist(primary, """{"access_token":"second-secret"}""", secondAccount))
 
         val pool = OAuthAccountFiles().poolDir(AuthKind.KimiOAuth, primary)
         val firstSaved = Json.parseToJsonElement(Files.readString(pool.resolve("kimi-2.json"))).jsonObject
@@ -446,7 +450,7 @@ class AccountLoginTest {
         Files.writeString(grokPrimary, "{}")
         val grok = requireNotNull(LoginGrok().spec("grok", grokPrimary, "auto").account)
         assertTrue(
-            loginIo.persistIfSignedIn(
+            persist(
                 grokPrimary,
                 """{"tokens":{"access_token":"grok-secret"}}""",
                 grok,
@@ -465,7 +469,7 @@ class AccountLoginTest {
         )
         val kimi = requireNotNull(LoginKimi().spec("kimi", kimiPrimary, "auto").account)
         assertEquals("kimi-3", kimi.resolvedLabel())
-        assertTrue(loginIo.persistIfSignedIn(kimiPrimary, """{"access_token":"kimi-secret"}""", kimi))
+        assertTrue(persist(kimiPrimary, """{"access_token":"kimi-secret"}""", kimi))
         assertTrue(Files.exists(dir.resolve("kimi-oauth/kimi.json/kimi-3.json")))
         assertFalse(Files.exists(dir.resolve("kimi-oauth/kimi.json/auto.json")))
     }

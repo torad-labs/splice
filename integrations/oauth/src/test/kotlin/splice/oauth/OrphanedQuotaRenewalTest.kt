@@ -1,5 +1,6 @@
 package splice.oauth
 
+import kotlinx.coroutines.runBlocking
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
@@ -34,7 +35,9 @@ class OrphanedQuotaRenewalTest {
         val account = OAuthAccountFiles().loginAccount(kind, primary, label)
         val printed = StringBuilder()
 
-        val ok = LoginIo(TerminalOutput { printed.appendLine(it) }).persistIfSignedIn(primary, token, account)
+        val ok = runBlocking {
+            LoginIo(TerminalOutput { printed.appendLine(it) }).persistIfSignedIn(primary, token, account)
+        }
 
         assertTrue(ok, printed.toString())
         val archived = account.setAsideQuota()
@@ -51,7 +54,7 @@ class OrphanedQuotaRenewalTest {
         assertEquals("fresh-account-usage", Files.readString(quota))
         Files.delete(pool.resolve("$label.json"))
         val second = OAuthAccountFiles().loginAccount(kind, primary, label)
-        assertTrue(LoginIo(TerminalOutput {}).persistIfSignedIn(primary, token, second))
+        assertTrue(runBlocking { LoginIo(TerminalOutput {}).persistIfSignedIn(primary, token, second) })
         val nextArchive = requireNotNull(second.setAsideQuota())
         assertTrue(nextArchive != archived)
         assertEquals("fresh-account-usage", Files.readString(nextArchive))
@@ -66,7 +69,7 @@ class OrphanedQuotaRenewalTest {
         val quota = pool.resolve("$label-quota.json")
         Files.createSymbolicLink(quota, target)
         val account = OAuthAccountFiles().loginAccount(kind, primary, label)
-        val ok = LoginIo(TerminalOutput {}).persistIfSignedIn(primary, token, account)
+        val ok = runBlocking { LoginIo(TerminalOutput {}).persistIfSignedIn(primary, token, account) }
 
         assertTrue(ok)
         assertTrue(Files.isSymbolicLink(account.setAsideQuota()))
@@ -87,7 +90,9 @@ class OrphanedQuotaRenewalTest {
         val account = OAuthAccountFiles().loginAccount(kind, primary, label)
         val printed = StringBuilder()
 
-        val ok = LoginIo(TerminalOutput { printed.appendLine(it) }).persistIfSignedIn(primary, token, account)
+        val ok = runBlocking {
+            LoginIo(TerminalOutput { printed.appendLine(it) }).persistIfSignedIn(primary, token, account)
+        }
 
         assertFalse(ok)
         assertTrue(Files.isSymbolicLink(linked))
@@ -105,7 +110,7 @@ class OrphanedQuotaRenewalTest {
         Files.writeString(pool.resolve("$label-quota.json"), "current quota")
         val account = OAuthAccountFiles().loginAccount(kind, primary, label)
 
-        assertTrue(LoginIo(TerminalOutput {}).persistIfSignedIn(primary, token, account))
+        assertTrue(runBlocking { LoginIo(TerminalOutput {}).persistIfSignedIn(primary, token, account) })
         assertEquals(null, account.setAsideQuota())
         assertEquals("current quota", Files.readString(pool.resolve("$label-quota.json")))
     }

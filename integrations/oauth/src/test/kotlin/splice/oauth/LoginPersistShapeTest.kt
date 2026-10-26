@@ -34,9 +34,9 @@ import java.util.Base64
 
 class LoginPersistShapeTest {
 
-    private fun persist(path: Path, authJson: String): Pair<Boolean, String> {
+    private fun persist(path: Path, authJson: String): Pair<Boolean, String> = runBlocking {
         val out = StringBuilder()
-        return LoginIo(TerminalOutput { out.appendLine(it) }).persistIfSignedIn(path, authJson) to out.toString()
+        LoginIo(TerminalOutput { out.appendLine(it) }).persistIfSignedIn(path, authJson) to out.toString()
     }
 
     @Test

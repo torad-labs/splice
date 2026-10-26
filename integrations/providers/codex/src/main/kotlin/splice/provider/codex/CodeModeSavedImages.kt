@@ -33,9 +33,9 @@ internal object CodeModeSavedImages {
     /** [item] when it is an image whose data URL admission cut, with the prefix it kept and the count of chars it
      *  cut from the whole tool value. */
     private fun cut(item: JsonElement): CutImage? {
-        val image = (item as? JsonObject)?.takeIf { JsonScalars.str(it, FIELD_TYPE) == TYPE_INPUT_IMAGE } ?: return null
+        val image = (item as? JsonObject)?.takeIf { JsonScalars.str(it, KEY_TYPE) == TYPE_INPUT_IMAGE } ?: return null
         val url = JsonScalars.str(image, FIELD_IMAGE_URL)
-            ?.takeIf { it.startsWith(DATA_PREFIX) && it.endsWith(MARKER_END) }
+            ?.takeIf { it.startsWith(DATA_URL_SCHEME) && it.endsWith(MARKER_END) }
         val start = url?.lastIndexOf(MARKER_START) ?: -1
         val gone = url?.takeIf { start >= 0 }?.substring(start + MARKER_START.length)?.removeSuffix(MARKER_END)
             ?.toIntOrNull()
@@ -46,7 +46,7 @@ internal object CodeModeSavedImages {
     private fun imageUrls(element: JsonElement): List<String> = when (element) {
         is JsonObject -> {
             val own = JsonScalars.str(element, FIELD_IMAGE_URL)
-                ?.takeIf { JsonScalars.str(element, FIELD_TYPE) == TYPE_INPUT_IMAGE }
+                ?.takeIf { JsonScalars.str(element, KEY_TYPE) == TYPE_INPUT_IMAGE }
             listOfNotNull(own) + element.values.flatMap(::imageUrls)
         }
         is JsonArray -> element.flatMap(::imageUrls)
@@ -57,9 +57,9 @@ internal object CodeModeSavedImages {
 }
 
 private const val FIELD_IMAGE_URL = "image_url"
-private const val FIELD_TYPE = "type"
+private const val KEY_TYPE = "type"
 private const val TYPE_INPUT_IMAGE = "input_image"
-private const val DATA_PREFIX = "data:"
+private const val DATA_URL_SCHEME = "data:"
 private const val BASE64_MARK = ";base64,"
 
 // why: the marker CodeModeLimits.boundedText writes after what it cut: " [truncated N chars]".

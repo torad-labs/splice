@@ -92,6 +92,10 @@ import java.util.concurrent.atomic.AtomicBoolean
 import kotlin.time.Duration.Companion.milliseconds
 import kotlin.time.Duration.Companion.seconds
 
+/** A frame that queues behind held deltas, where message_stop would release them at once. */
+private const val HELD_BLOCK_STOP =
+    "event: content_block_stop\ndata: {\"type\":\"content_block_stop\",\"index\":0}\n\n"
+
 /** One TurnFinish with observable instruments; [tag] isolates each test's files. */
 private class Rig(tmp: Path, tag: String, clock: ElapsedClock = ElapsedClock { 5L }) {
     val logs = mutableListOf<String>()
@@ -194,7 +198,9 @@ class TurnPerfRowTest {
                         clock,
                     )
                 }
-                drive.channel.timedClientWrite("event: message_stop\ndata: {}\n\n", drive.perf, clock)
+                // Fix 2, Oct 26: this frame was message_stop, which now releases the tail at once. A block stop queues
+                // behind the held deltas, so the row is still recorded while its tail is paced.
+                drive.channel.timedClientWrite(HELD_BLOCK_STOP, drive.perf, clock)
             }
             launch(start = CoroutineStart.UNDISPATCHED) {
                 if (cancelBeforeRecording) currentCoroutineContext().cancel()

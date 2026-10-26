@@ -12,8 +12,14 @@
 //   - Only a visible model delta (text or thinking) ever starts a wait: when it arrives within one tick
 //     of the last visible delta, or carries a large update that needs subdivision. Ordinary token deltas
 //     after a quiet stretch leave at once. Large updates release slices over successive ticks.
-//   - Once anything is held, EVERY frame queues behind it, so the wire order is the emitter's order:
-//     a content_block_stop, a tool call or message_stop never passes a held delta.
+//   - Once anything is held, every later frame queues behind it, so the wire order is the emitter's order:
+//     a content_block_stop never passes a held delta.
+//   - A frame that starts a tool call (a tool_use or server_tool_use block) or ends the message (a message_delta
+//     carrying a stop_reason, or message_stop) never waits: everything held leaves at once, ahead of it, so the order
+//     still holds and Claude Code starts the tool and ends the turn the moment splice has the frame. Fix 2, Oct 26:
+//     on claude-splice, Oct 25, 6 to 11 PM CT (21,215 turns), a turn ended 67 ms after the upstream's last byte at
+//     p50 and 923 ms at p99, while the pacer's longest hold per turn was 131 ms and 944 ms. A burst that more text
+//     or thinking follows is paced as before.
 //   - Each tick releases enough visible deltas to finish what is held within [windowMs] of the oldest
 //     one's arrival, and never fewer than [floorPerTick]. A burst spreads evenly over the window;
 //     a steady stream up to floorPerTick deltas a tick is never lagged by more than a tick; a held
@@ -23,6 +29,7 @@
 package splice.head.wire
 
 import kotlinx.coroutines.channels.Channel
+import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonElement
@@ -45,6 +52,12 @@ private const val DELTA_EVENT = "event: content_block_delta\n"
 private const val TEXT_DELTA = "text_delta"
 private const val THINKING_DELTA = "thinking_delta"
 private val VISIBLE_TYPES = setOf(TEXT_DELTA, THINKING_DELTA)
+
+// The frames that release everything held: a tool call's block start and the message's end.
+private const val BLOCK_START_EVENT = "event: content_block_start\n"
+private const val MESSAGE_DELTA_EVENT = "event: $MESSAGE_DELTA\n"
+private const val MESSAGE_STOP_EVENT = "event: $MESSAGE_STOP\n"
+private val TOOL_BLOCK_TYPES = setOf("tool_use", "server_tool_use")
 
 /** Holds the frames a burst queues and decides which leave each tick. Every member except
  *  [awaitSignal] and [finish] runs under the channel's writeMutex, which is what makes the queue safe. */
@@ -78,12 +91,14 @@ internal class DeltaPacer(
     /** Set when the turn's last frame is written: the loop releases what is held, then stops. */
     @Volatile private var finishing = false
 
-    /** Queues [frame] when it has to wait and answers true; false means write it now. Only a model
-     *  frame ([modelOutput]) can be a visible delta: the pinger's status line never starts a wait. */
+    /** Queues [frame] when it has to wait and answers true; false means write it now, after whatever [takeAll] still
+     *  holds. Only a model frame ([modelOutput]) can be a visible delta: the pinger's status line never starts a wait.
+     *  A frame that starts a tool call or ends the message never waits behind a burst: it answers false, so the
+     *  caller writes everything held at once, then it. */
     fun hold(frame: String, perf: TurnPerf, modelOutput: Boolean, nowMs: Long): Boolean {
         val visible = modelOutput && isVisibleDelta(frame)
         val slices = if (active && visible) VisibleDeltaSplitter.split(frame) else null
-        if (slices == null && !mustWait(visible, nowMs)) {
+        if (slices == null && !mustWait(frame, visible, nowMs)) {
             if (visible) lastVisibleMs = nowMs
             return false
         }
@@ -150,9 +165,9 @@ internal class DeltaPacer(
     /** A frame that is not a visible delta rides free; a delta needs budget left this tick. */
     private fun leaves(next: Held, spent: Int, budget: Int): Boolean = !next.visible || spent < budget
 
-    private fun mustWait(visible: Boolean, nowMs: Long): Boolean = when {
+    private fun mustWait(frame: String, visible: Boolean, nowMs: Long): Boolean = when {
         !active -> false
-        queue.isNotEmpty() -> true
+        queue.isNotEmpty() -> !EndingFields.releases(frame)
         else -> visible && tooSoon(nowMs)
     }
 
@@ -206,6 +221,39 @@ private object DeltaFields {
     // over what it cannot read.
     private fun parsed(data: String): DeltaRead? = try {
         DELTA_JSON.decodeFromString(DeltaFrame.serializer(), data).delta
+    } catch (_: IllegalArgumentException) {
+        null
+    }
+}
+
+/** A block start's `content_block.type`, decoded like [DeltaRead]. */
+@Serializable
+private data class BlockTypeRead(val type: JsonElement? = null)
+
+/** A message delta's `delta.stop_reason`, decoded like [DeltaRead]. */
+@Serializable
+private data class StopReasonRead(@SerialName("stop_reason") val stopReason: JsonElement? = null)
+
+/** The two fields of a frame the release rule reads; every other key is skipped. */
+@Serializable
+private data class EndingFrame(
+    @SerialName("content_block") val contentBlock: BlockTypeRead? = null,
+    val delta: StopReasonRead? = null,
+)
+
+/** Reads whether a frame starts a tool call or ends the message: the frames that release everything held. Only a
+ *  block start or a message delta is decoded, and only while something is held. */
+private object EndingFields {
+    fun releases(frame: String): Boolean = when {
+        frame.startsWith(MESSAGE_STOP_EVENT) -> true
+        frame.startsWith(BLOCK_START_EVENT) -> JsonScalars.str(read(frame)?.contentBlock?.type) in TOOL_BLOCK_TYPES
+        frame.startsWith(MESSAGE_DELTA_EVENT) -> !JsonScalars.str(read(frame)?.delta?.stopReason).isNullOrEmpty()
+        else -> false
+    }
+
+    // Data that is not JSON, or fields of another shape, release nothing: the frame queues as every frame did.
+    private fun read(frame: String): EndingFrame? = try {
+        DELTA_JSON.decodeFromString(EndingFrame.serializer(), frame.substringAfter("data:", ""))
     } catch (_: IllegalArgumentException) {
         null
     }

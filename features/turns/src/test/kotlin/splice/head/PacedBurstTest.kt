@@ -294,27 +294,31 @@ class PacedBurstTest {
         assertEquals(end, time.nowMs, "nothing held: the turn ends without waiting a tick")
     }
 
+    // Fix 2, Oct 26: this test pinned a tool call and message_stop waiting behind the held deltas; a tool call now
+    // releases everything held at once. The wire order it checked stays.
     @Test
-    fun `a block stop, a tool call and message_stop never pass a held delta`() = runBlocking {
+    fun `a server tool call releases every held frame at once, and no frame passes a held delta`() = runBlocking {
         val pacing = channel.launchPacer(this, Job(), FrameTicker(time), time.clock, LostClient("claude-splice", {}))
+        val toolCall = "event: content_block_start\ndata: {\"type\":\"content_block_start\",\"index\":1," +
+            "\"content_block\":{\"type\":\"server_tool_use\",\"id\":\"srvtoolu_1\",\"name\":\"web_search\"}}\n\n"
         val sent = buildList {
             add(structural("message_start"))
             add(structural("content_block_start"))
             repeat(60) { add(delta(it)) }
             add(structural("content_block_stop"))
-            add(structural("content_block_start"))
+            add(toolCall)
             add(delta(60, "input_json_delta", "partial_json"))
             add(structural("content_block_stop"))
             add(structural("message_delta"))
             add(structural("message_stop"))
         }
         sent.forEach { write(it) }
-        assertTrue(written.none { it.frame.startsWith("event: message_stop") }, "the stop waits behind the held deltas")
-        channel.finishPacing(pacing, time.clock)
 
+        assertEquals(sent.size, written.size, "the tool call released every held frame at once, before any tick")
+        assertTrue(written.all { it.atMs == 0L }, "nothing waited for a tick: ${written.map { it.atMs }.distinct()}")
         assertEquals(sent, written.map { it.frame }, "the wire order is the order the frames were written in")
-        val lastDelta = written.indexOfLast { it.frame.contains("thinking_delta") }
-        assertTrue(written.last().atMs >= written[lastDelta].atMs)
+        channel.finishPacing(pacing, time.clock)
+        assertEquals(sent, written.map { it.frame }, "and the turn ends with nothing left to write")
     }
 
     @Test

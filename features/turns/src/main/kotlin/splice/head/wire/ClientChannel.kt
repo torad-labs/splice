@@ -19,8 +19,10 @@
 // PACED (V4-456, 2026-10-01): a provider that sends a whole thinking summary in one read used to reach
 // Claude Code in one frame. While a streaming turn's release loop runs ([launchPacer]), a visible delta
 // arriving within a tick of the last one is held by [DeltaPacer], every later frame queues behind it,
-// and the loop writes them out spread over a bounded window. Recording and trace still see every
-// frame at the moment it is written here; only the socket write waits.
+// and the loop writes them out spread over a bounded window. A frame that starts a tool call or ends the
+// message releases everything held at once (fix 2, 2026-10-26), so the tool starts and the turn ends the
+// moment splice has that frame. Recording and trace still see every frame at the moment it is written
+// here; only the socket write waits.
 package splice.head.wire
 
 import kotlinx.coroutines.CoroutineScope
@@ -163,8 +165,9 @@ internal class ClientChannel(
             if (modelOutput) ModelAccounting.count(frame, perf)
             return
         }
-        // A release loop that stopped (a cancelled turn, a ticker that ended) can leave frames behind:
-        // they go first, so the wire order stays the order they were written in.
+        // Frames still held go first, so the wire order stays the order they were written in: everything a
+        // burst held when this frame starts a tool call or ends the message, or what a release loop that
+        // stopped (a cancelled turn, a ticker that ended) left behind.
         pacer.takeAll(clock()).forEach { socketWrite(it.frame, it.perf, clock) }
         if (socketWrite(frame, perf, clock)) {
             perf.maxCount(PerfKeys.OUT_HOLD_MAX_MS, 0)

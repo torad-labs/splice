@@ -323,12 +323,18 @@ private class CancellingAttemptRunner(private val cancel: CancellationException)
     var endedNotOk = 0
     var bypassed = 0
 
+    /** Every body the head handed a send before the cancellation landed: the text that frame carried. */
+    val bodies = mutableListOf<String>()
+
     override suspend fun attempt(
         bodyJson: String,
         meta: TurnMeta,
         turnHeaders: Map<String, String>,
         creds: Credentials,
-    ): WsRound? = throw cancel
+    ): WsRound? {
+        bodies += bodyJson
+        throw cancel
+    }
 
     override fun isFailureTerminal(event: JsonObject): Boolean = false
 
@@ -339,6 +345,23 @@ private class CancellingAttemptRunner(private val cancel: CancellationException)
     override fun roundBypassed(meta: TurnMeta) {
         bypassed += 1
     }
+}
+
+/** A transport that declines every round, as one does with no chain key, a busy or unreachable connection, or a failed
+ *  prefill: each round rides SSE. */
+private class DecliningRunner : WsRoundRunner {
+    override suspend fun attempt(
+        bodyJson: String,
+        meta: TurnMeta,
+        turnHeaders: Map<String, String>,
+        creds: Credentials,
+    ): WsRound? = null
+
+    override fun isFailureTerminal(event: JsonObject): Boolean = false
+
+    override fun roundEnded(meta: TurnMeta, ok: Boolean) = Unit
+
+    override fun roundBypassed(meta: TurnMeta) = Unit
 }
 
 private class ThrowingStartTerminal(
@@ -1110,7 +1133,7 @@ class WsRoundDriverTest {
     private fun provider(runner: WsRoundRunner): Provider = WsDriverFixture(tmp, mock.baseUrl).provider(runner)
 
     private fun head(
-        runner: ScriptedRunner,
+        runner: WsRoundRunner,
         bridge: CodexCodeModeBridge? = null,
         log: (String) -> Unit = {},
     ): HeadServer = HeadServer(
@@ -1150,9 +1173,14 @@ class WsRoundDriverTest {
         val h = head(runner)
         runBlocking { h.start() }
         try {
-            assertTrue(turn(h.port, "wide é — 漢字 🐉").contains("event: message_stop"), "the round completed")
-            assertEquals(1, runner.endedOk, "the websocket served the round, not SSE")
-            val sent = runner.bodies.single()
+            val before = mock.upstreamBodies.size
+            val answer = turn(h.port, "wide é — 漢字 🐉")
+            assertTrue(answer.contains("event: message_stop"), "the round completed")
+            // An SSE fallback would stamp the same number and hide a missing websocket count, so the round must be the
+            // websocket's: the client read its text, and the SSE upstream received nothing.
+            assertTrue(answer.contains("late text"), "the client read the websocket round's text: $answer")
+            assertEquals(emptyList<Pair<String, String>>(), mock.upstreamBodies.drop(before), "no SSE request")
+            val sent = runner.bodies.last()
             val bytes = sent.toByteArray(Charsets.UTF_8).size.toLong()
             assertTrue(bytes > sent.length, "wide characters make bytes outnumber characters")
             assertTrue(AsyncFileIo.drain(), "the count reached its perf row")
@@ -1161,6 +1189,58 @@ class WsRoundDriverTest {
         } finally {
             runBlocking { h.stop() }
         }
+    }
+
+    /** A round the websocket transport declines rides SSE, and the SSE post counts it from the bytes it writes: the
+     *  row's upstream_req_bytes is the UTF-8 size of the JSON the SSE upstream received, wide characters at their
+     *  width. */
+    @Test
+    fun `a round the websocket declines is counted by the SSE post that serves it`() {
+        val h = head(DecliningRunner())
+        runBlocking { h.start() }
+        try {
+            val answer = turn(h.port, "wide é — 漢字 🐉")
+            assertTrue(answer.contains("ok after auth"), "SSE served the round: $answer")
+            val posted = mock.upstreamBodies.last().second
+            val bytes = posted.toByteArray(Charsets.UTF_8).size.toLong()
+            assertTrue(bytes > posted.length, "wide characters make bytes outnumber characters")
+            assertTrue(AsyncFileIo.drain(), "the count reached its perf row")
+            val row = ev(Files.readString(tmp.resolve("perf-$built.jsonl")).trim())
+            assertEquals(bytes.toString(), row[PerfKeys.UPSTREAM_REQ_BYTES]?.toString())
+        } finally {
+            runBlocking { h.stop() }
+        }
+    }
+
+    /** A turn cancelled while its websocket send is in flight may already have put the frame on the wire, so the round
+     *  still counts what that send carried: upstream_req_bytes is the UTF-8 size of the text the runner was handed. */
+    @Test
+    fun `a websocket send cut by a cancellation still counts the body it carried`() = runTest {
+        val cancel = CancellationException("cancelled mid-send")
+        val runner = CancellingAttemptRunner(cancel)
+        val cold = coldFlowInputs(RecordingTerminal(), this)
+        val inputs = cold.copy(body = RoundBody.Text("""{"input":"wide é — 漢字 🐉"}"""))
+        val driver = WsRoundDriver(
+            provider(runner),
+            log = {},
+            classifyZeroEvent = ZeroEventClassifier { _, outcome, _, _ -> outcome },
+        )
+        var thrown: CancellationException? = null
+
+        try {
+            driver.run(inputs)
+        } catch (failure: CancellationException) {
+            thrown = failure
+        } finally {
+            inputs.turnJob.cancel()
+            inputs.drive.slot.release()
+        }
+
+        assertSame(cancel, thrown, "the genuine cancellation must propagate unchanged")
+        val sent = runner.bodies.last()
+        val bytes = sent.toByteArray(Charsets.UTF_8).size.toLong()
+        assertTrue(bytes > sent.length, "wide characters make bytes outnumber characters")
+        assertEquals(bytes, inputs.drive.perf.snapshot().counters[PerfKeys.UPSTREAM_REQ_BYTES])
     }
 
     @OptIn(ExperimentalCoroutinesApi::class)

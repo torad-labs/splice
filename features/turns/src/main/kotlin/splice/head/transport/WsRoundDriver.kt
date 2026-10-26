@@ -78,7 +78,7 @@ internal class WsRoundDriver(
             // Credentials come from the provider's auth surface, NOT from a WS-side refresh: L5
             // keeps the single-flight 401 refresh in UpstreamClient, so a missing/expired
             // credential here simply rides SSE and gets refreshed there.
-            val acquired = roundAcquire.acquire(runner, drive, sentText(drive, inputs.body))
+            val acquired = acquireCounted(runner, drive, inputs.body)
             if (acquired == null) {
                 // SSE is about to serve this round, so the conversation advances outside any chain.
                 runner.roundBypassed(drive.meta)
@@ -170,13 +170,19 @@ internal class WsRoundDriver(
         }
     }
 
-    /** The text this round sends, once its size is on the turn's perf row. A websocket round never encodes bytes, so
-     *  this one count over the text it sends is its size. A bypass to SSE stamps the same number again from the bytes
-     *  it writes. */
-    private fun sentText(drive: TurnDrive, body: RoundBody): String {
+    /** The round the websocket took, or null when SSE serves it. A websocket round never encodes bytes, so a round it
+     *  took counts the text it was handed, and so does one whose send threw after its frame may have gone out. SSE
+     *  counts a round it serves from the bytes its post writes, so a declined round is never counted here. */
+    private suspend fun acquireCounted(runner: WsRoundRunner, drive: TurnDrive, body: RoundBody): WsAcquiredRound? {
         val text = body.text
-        drive.perf.setCount(PerfKeys.UPSTREAM_REQ_BYTES, body.byteSize())
-        return text
+        var declined = false
+        try {
+            val acquired = roundAcquire.acquire(runner, drive, text)
+            declined = acquired == null
+            return acquired
+        } finally {
+            if (!declined) drive.perf.setCount(PerfKeys.UPSTREAM_REQ_BYTES, body.byteSize())
+        }
     }
 
     /** The abort must run even after its owner is cancelled, but must not throw through Job's handlers.

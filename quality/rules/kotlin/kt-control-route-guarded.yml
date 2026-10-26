@@ -41,6 +41,11 @@
 #     console lead brief). They serve only the packaged drawing (HTML, CSS, JS, fonts) by a plain name
 #     (ConsoleMount's ASSET pattern) and carry no data: every number on a page comes from the keyed /api/* rows,
 #     with the management key `splice console` hands the page in its address fragment. `/dashboard` stays red.
+#   2026-10-26: `/api/console/key`, where a console page trades the single-use code `splice console` handed it in the
+#     address fragment for the console key (ConsoleKey). The page holds no key yet, so this row must open with none.
+#     It answers only a code a keyed call to `/api/console/code` minted, once, within two minutes, and what it answers
+#     is the console key, never the management key; every other call gets a 401 that carries nothing. The fragment
+#     stopped carrying the management key that day, after a browser tool printed such an address into a conversation.
 # The allowlist is a PATH regex, so it is anchored per route and cannot be widened by accident; an
 # entry admits exactly the path it spells.
 #
@@ -116,4 +121,4 @@ rule:
           regex: '\bguarded\s*\('
     # ALLOWLIST — see the dated entries in this rule's header. One anchored alternative per route.
     - not:
-        regex: '^(?:[A-Za-z_][A-Za-z0-9_]*\.)?(get|post|put|patch|delete|head|options|route)\(\s*(?:path\s*=\s*)?"(/health|/|/\{asset\.\.\.\})"'
+        regex: '^(?:[A-Za-z_][A-Za-z0-9_]*\.)?(get|post|put|patch|delete|head|options|route)\(\s*(?:path\s*=\s*)?"(/health|/|/\{asset\.\.\.\}|/api/console/key)"'

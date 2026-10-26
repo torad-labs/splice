@@ -72,7 +72,8 @@ internal class PeerGuard(
 
 /** Runs [MgmtRoute] only after the bearer matched the management key or the key of the route's [Door]:
  *  the MCP access key opens only the /mcp/{name} routes, and a launched session's turn key only the
- *  routes its own hooks call. */
+ *  routes its own hooks call. The console key ([ConsoleKey], Oct 26, 2026) opens what the management key
+ *  opens here, so a browser never holds the management key itself; like it, it opens no [Door.PEER] row. */
 internal class ControlGuard(
     private val mgmtKey: MgmtKey,
     audit: ControlAudit,
@@ -83,6 +84,8 @@ internal class ControlGuard(
     internal val mcpAccessKey: McpAccessKey = McpAccessKey(source = mgmtKey::get),
     /** The registered peers whose keys open [Door.PEER]; null admits no peer key at all. */
     internal val peers: PeerStore? = null,
+    /** What the console holds instead of the management key, and the single-use codes `splice console` hands it. */
+    internal val console: ConsoleKey = ConsoleKey(mgmtKey),
 ) {
 
     // v0.4.0: the credential a launched session holds opens its OWN hooks' routes and nothing else.
@@ -141,12 +144,7 @@ internal class ControlGuard(
             call.respondText(keylessNotice, ContentType.Text.Plain)
             return
         }
-        val authorized = mgmtKey.matchesBearer(header) || when (door) {
-            Door.MANAGEMENT, Door.PEER -> false
-            Door.MCP -> mcpAccessKey.matchesBearer(header)
-            Door.SESSION -> turnKey.matchesBearer(header)
-        }
-        if (!authorized) {
+        if (!admits(header, door)) {
             call.respondText(
                 buildJsonObject { put("error", "unauthorized") }.toString(),
                 ContentType.Application.Json,
@@ -156,4 +154,11 @@ internal class ControlGuard(
         }
         Cancellables.runCatchingBestEffort { block() }.onFailure { routeFailure.answer(call, it) }
     }
+
+    /** The management key and the console key open every [door] that reaches here; a scoped key opens only its own. */
+    private fun admits(header: String?, door: Door): Boolean = mgmtKey.matchesBearer(header) || when (door) {
+        Door.MANAGEMENT, Door.PEER -> false
+        Door.MCP -> mcpAccessKey.matchesBearer(header)
+        Door.SESSION -> turnKey.matchesBearer(header)
+    } || console.matchesBearer(header)
 }

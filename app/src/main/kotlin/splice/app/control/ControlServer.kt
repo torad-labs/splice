@@ -171,8 +171,9 @@ internal class ControlServer(
     private val launchSessions = LaunchSessions(sessions, ports, config.statePaths)
     private val launch = LaunchMount(heads, resolver, launchService, audit, log, guard, launchSessions)
 
-    // Oct 10, 2026: the console's pages at /, open rows that carry no data (ConsoleMount).
-    private val console = ConsoleMount()
+    // Oct 10, 2026: the console's pages at /, open rows that carry no data (ConsoleMount). Oct 26, 2026: and its
+    // sign-in, a single-use code traded for the console key, so no address carries a key.
+    private val console = ConsoleMount(guard)
 
     // Oct 19, 2026: named peers (docs/specs/peer-messaging.md 3), over the store the guard admits peer keys from.
     private val peers: PeersMount? = sessions?.let { source ->

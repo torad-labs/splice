@@ -60,8 +60,9 @@ be a hosted provider. Never read, print, copy, summarize or send:
 - `../keys.toml` (the API keys), `../key-ledger.json`, and anything under `../auth/` (login tokens).
 - Anything in splice's state folder: `~/.splice/state`, or `~/.claude-codex/state` on installs older than
   0.4.0, or the folder `[daemon] state_dir` names in `splice.toml`. It holds the management key
-  (`mgmt-key`), the console's sign-in page (`console-open.html`, which carries that key) and other
-  credentials. Ask splice instead: `splice status`, `splice sessions` and `splice logs` read it for you.
+  (`mgmt-key`), the console's sign-in page (`console-open.html`, which carries a single-use sign-in
+  code) and other credentials. Ask splice instead: `splice status`, `splice sessions` and `splice logs`
+  read it for you.
 - Any key, token or password you meet anywhere else, in `splice.toml`, a log line or a command's output.
   Name the setting it belongs to, never its value.
 

@@ -13,6 +13,7 @@ import splice.app.TraceWiring
 import splice.app.cli.auth.KeyCommand
 import splice.app.cli.auth.LoginCommand
 import splice.app.cli.setup.SetupCommand
+import splice.app.cli.status.CONSOLE_NO_BROWSER
 import splice.app.cli.status.ConsoleCommand
 import splice.app.cli.status.ConsolePilotCommand
 import splice.app.cli.status.StatusCommand
@@ -154,11 +155,15 @@ public sealed class Command {
 
     public data object Status : Command() { override suspend fun run(): Int = success { StatusCommand().status() } }
 
-    /** `splice console`: opens the console in the browser, unlocked. `splice console <action>` (Oct 16, 2026) drives
-     *  the console a person has open: look at it, tap, type, move between pages and point at things. */
+    /** `splice console`: opens the console in the browser, signed in; `--no-browser` prints the sign-in page's address
+     *  instead (Oct 26, 2026). `splice console <action>` (Oct 16, 2026) drives the console a person has open: look at
+     *  it, tap, type, move between pages and point at things. */
     public data class Console(val args: List<String> = emptyList()) : Command() {
-        override suspend fun run(): Int =
-            if (args.isEmpty()) outcomeExitCode(ConsoleCommand().open()) else ConsolePilotCommand().run(args)
+        override suspend fun run(): Int = when (args) {
+            emptyList<String>() -> outcomeExitCode(ConsoleCommand().open())
+            listOf(CONSOLE_NO_BROWSER) -> outcomeExitCode(ConsoleCommand().open(openBrowser = false))
+            else -> ConsolePilotCommand().run(args)
+        }
     }
 
     /** `splice restart [--now]`: waits for compactions in flight unless [now] (V4-216). */

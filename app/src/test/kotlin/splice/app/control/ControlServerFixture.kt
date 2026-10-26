@@ -8,12 +8,14 @@ import splice.app.control.api.ControlAudit
 import splice.app.control.api.ControlHealthReport
 import splice.app.control.api.HeadReadiness
 import splice.app.control.api.HeadSignals
+import splice.app.control.mount.ConsoleKey
 import splice.app.control.mount.ControlGuard
 import splice.configuration.topology.TopologyStale
 import splice.core.config.ConfigService
 import splice.core.config.Knob
 import splice.core.config.MgmtKey
 import splice.core.util.LogSink
+import splice.core.util.WallClock
 import splice.core.version.ClientVersionTracker
 import splice.head.admission.AdmissionErrorBody
 import splice.http.ingress.HeapIngress
@@ -61,8 +63,13 @@ internal fun topologyHealthFor(
     clientVersions = ClientVersionTracker(),
 )
 
-/** What guards a rig's control server: the management key it accepts and the log its audit lines go to. */
-internal class ControlAuth(private val mgmtKey: MgmtKey, val log: LogSink) {
+/** What guards a rig's control server: the management key it accepts, the log its audit lines go to, and the clock the
+ *  console's single-use codes expire by. */
+internal class ControlAuth(
+    private val mgmtKey: MgmtKey,
+    val log: LogSink,
+    private val clock: WallClock = WallClock(System::currentTimeMillis),
+) {
     /** The same guard ControlPlane builds: the production request cap, read from its one knob. */
     fun guard(): ControlGuard = ControlGuard(
         mgmtKey,
@@ -74,6 +81,7 @@ internal class ControlAuth(private val mgmtKey: MgmtKey, val log: LogSink) {
             AdmissionErrorBody,
             readIdleMs = { Knob.INGRESS_READ_IDLE_MS.count() },
         ),
+        console = ConsoleKey(mgmtKey, clock),
     )
 }
 

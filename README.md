@@ -246,7 +246,7 @@ file and one rename, links the command and handles the restart. `--live`, or yes
 prompt, checks the saved head through its installed command. A failed check diagnoses the
 failure and leaves the head saved. A refusal before the save leaves your file byte-identical.
 
-The control plane's data and control API need a secret key and answer only on this machine. `/health` reports the version without a key. Sessions get a weaker turn key shared across the install, which opens every head's turn, status-line and resume-hook routes, but not management routes. The key lives at `~/.splice/state/mgmt-key` (installs made before v0.4.0 keep theirs at `~/.claude-codex/state/mgmt-key`, which splice keeps reading in place).
+The control plane's data and control API need a secret key and answer only on this machine. `/health` reports the version without a key. Sessions get a weaker turn key shared across the install, which opens every head's turn, status-line and resume-hook routes, but not management routes. The console holds a key of its own, which opens what the console reads and changes. `splice console` signs a browser in with a single-use code that expires after two minutes, so no address it opens carries a key, and `splice console --no-browser` prints the sign-in page's file address for a browser you open yourself. The management key lives at `~/.splice/state/mgmt-key` (installs made before v0.4.0 keep theirs at `~/.claude-codex/state/mgmt-key`, which splice keeps reading in place).
 
 ### Projects and Compare in the console
 
@@ -615,7 +615,7 @@ Each of these is password-equivalent. See [credential locations](#credential-loc
 | Kimi's `device_id` beside its credential, `<label>-device_id` beside a labelled account's, or `~/.splice/state/<head>-device_id` for a Kimi API-key head | A random id Kimi's API asks for; not a credential | Only you (0600) | Written once, kept | `KimiDeviceIdentity.kt` |
 | `~/.config/splice/keys.toml` and its empty `keys.toml.lock` | API keys from `splice key set`, a head's `login` or a key-capture hook | Only you for `keys.toml` (0600); the empty lock gets your umask | Keys until `splice key unset`; the lock is never removed | `KeyStore.kt` |
 | `~/.splice/state/mgmt-key` | The management key that opens the control plane | Only you (0600) | Kept; replaced only when missing or unreadable | `MgmtKey.kt` |
-| `~/.splice/state/console-open.html` | The page `splice console` opens; its address carries the management key after `#`, which never reaches the daemon | Only you (0600) | Replaced by each `splice console` | `ConsoleCommand.kt` |
+| `~/.splice/state/console-open.html` | The page `splice console` opens; its address carries a single-use sign-in code after `#`, never a key. The code signs one browser in within two minutes and then opens nothing | Only you (0600) | Replaced by each `splice console` | `ConsoleCommand.kt` |
 | `~/.splice/state/turn-auth-header` | A launched session's turn key, derived one way from the management key | Only you (0600) | Rewritten when the management key changes | `TurnKey.kt` |
 | `~/.config/splice/peers/<name>/peer.key` | A peer's own key, which opens only that peer's `/api/peers/self` routes; the daemon keeps only its SHA-256, in `peer.json` | Only you (0600, in a 0700 folder) | Until `splice peer rotate` replaces it or `splice peer revoke` deletes the folder | `PeerStore.kt` |
 | `~/.config/splice/peers/<name>/webhook.secret` and `webhook.bearer` | The secret a peer's webhook pushes are signed with, and the optional bearer copied from `--bearer-file` for the receiver | Only you (0600) | Until the webhook is set again, cleared, or the peer revoked | `PeerStore.kt` |
@@ -933,7 +933,7 @@ If splice can no longer match a completed script to the conversation (the record
 
 Every head using that provider shares the setting, and it is read only when the daemon boots: finish ongoing work, edit TOML, then run `splice restart` for a **full daemon restart**. A head restart alone does not reload TOML. Finish code-mode work before toggling or restarting: pending JavaScript execution cannot survive a daemon restart, and splice never reruns the lost source automatically.
 
-A single tool result larger than the runner's 64 KiB text frame is truncated at admission behind a `[truncated N chars]` marker and the turn completes.
+A single tool result larger than the runner's 64 KiB text frame is truncated at admission behind a `[truncated N chars]` marker and the turn completes. Only its text is cut: an image in it reaches the model whole, with the MIME type and base64 Claude Code sent, in the script's output and on every later turn.
 
 ## Why you might not want splice
 

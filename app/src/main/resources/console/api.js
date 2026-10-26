@@ -1,16 +1,31 @@
-// What every console page shares to reach splice: the management key, handed over once by `splice console` in the
-// address fragment (#k=…, which never reaches the daemon or a log) and kept in this browser, and one call that sends it.
+// What every console page shares to reach splice: the console key, kept in this browser, and one call that sends it.
+// `splice console` hands a page a single-use code in the address fragment (#c=…, which never reaches the daemon or a
+// log). The page takes it out of the address before anything else and trades it once, in a POST body, for the console
+// key (Oct 26, 2026), so an address that a history, a log or a browser tool keeps holds a code that is spent or expired
+// and opens nothing. Until then the address carried the management key itself (#k=…), and on Sep 29 a browser tool
+// printed one into a conversation that went to a model provider: such an address is still cleared, and its key is
+// never kept or sent.
 "use strict";
 
 const API = (() => {
   const STORE = "splice-console-key";
-  const handed = /^#k=([^&/]+)$/.exec(location.hash);
-  if (handed) {
-    localStorage.setItem(STORE, decodeURIComponent(handed[1]));
-    history.replaceState(history.state, "", `${location.pathname}${location.search}`); // not left in view or history
+  const handed = /^#([ck])=([^&/]*)$/.exec(location.hash);
+  if (handed) history.replaceState(history.state, "", `${location.pathname}${location.search}`); // not left in view or history
+  // Every call waits for the trade, so none goes out keyless, or with an older key, while the page is being signed in.
+  const signedIn = handed?.[1] === "c" ? trade(handed[2]) : Promise.resolve();
+  async function trade(code) {
+    try {
+      const res = await fetch("/api/console/key", {
+        method: "POST", cache: "no-store", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ code }),
+      });
+      const key = res.ok ? (await res.json())?.key : null;
+      if (typeof key === "string" && key) localStorage.setItem(STORE, key);
+    } catch {
+      // A daemon that did not answer signs nothing in, as a refused code does: the key this browser held stays.
+    }
   }
   // A 401 means this browser holds no key splice takes: every page is locked the same way, its body set aside for the
-  // one way back, `splice console` with Copy, which hands the key over again whatever lost it (fin, Marlin, Oct 12).
+  // one way back, `splice console` with Copy, which signs this browser in again whatever lost it (fin, Marlin, Oct 12).
   function lock() {
     const main = document.querySelector("main.page");
     if (!main || main.querySelector(".lockedby")) return;
@@ -32,11 +47,12 @@ const API = (() => {
   let pending = 0;
   // Every answer comes back as { ok, status, body }; a refused or unreachable call is an answer too, never a throw.
   async function call(method, path, body, extra, signal, keepalive) {
-    const init = { method, signal, keepalive, headers: { Authorization: `Bearer ${localStorage.getItem(STORE) || ""}`, ...extra } };
-    if (body !== undefined) { init.headers["Content-Type"] = "application/json"; init.body = JSON.stringify(body); }
     const counted = !path.startsWith("/api/console/pilot");
     if (counted) pending++;
     try {
+      await signedIn;
+      const init = { method, signal, keepalive, headers: { Authorization: `Bearer ${localStorage.getItem(STORE) || ""}`, ...extra } };
+      if (body !== undefined) { init.headers["Content-Type"] = "application/json"; init.body = JSON.stringify(body); }
       const res = await fetch(path, init);
       const text = await res.text();
       let parsed = null;

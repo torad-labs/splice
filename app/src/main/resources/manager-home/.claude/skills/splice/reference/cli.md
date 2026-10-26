@@ -347,16 +347,18 @@ Source: `features/lifecycle/.../upgrade/UpgradeCommand.kt:1-110`, `UpgradeArgs.k
 ### console
 
 ```
-splice console
+splice console [--no-browser]
 ```
 
-Starts the daemon if it is not running, writes a redirect page in the state folder (mode 0600) and opens it in the
-person's browser. The page carries the management key in the URL fragment, which never reaches the daemon or a
-log; the key is never printed. If no browser opens, the verb prints the page's `file://` path to open by hand.
-It exits 1 if the daemon cannot start, or the management key is unreadable or absent (then
+Starts the daemon if it is not running, asks it for a single-use sign-in code, writes a page in the state folder
+(mode 0600) that redirects to the console with that code, and opens it in the person's browser. The page and its
+address carry the code, never a key, and the console trades the code once for its own key. A spent code, or one
+older than two minutes, opens nothing. If no browser opens, or with `--no-browser`, the verb prints the page's
+`file://` path to open by hand within two minutes. It exits 1 if the daemon cannot start, if the daemon is older
+than the CLI and hands out no code (then `splice restart`), or if the management key is unreadable or absent (then
 `splice restart` creates it). You never need it: the person opens the console from their own terminal.
 
-Source: `app/.../cli/status/ConsoleCommand.kt:1-55`.
+Source: `app/.../cli/status/ConsoleCommand.kt`, `app/.../control/mount/ConsoleKey.kt`.
 
 ```
 splice console snapshot                          the page, and every control on it with a ref (e1, e2, ...)
@@ -488,7 +490,7 @@ There is no verb that removes splice. `splice uninstall --all` removes wrapper l
 | `splice logs --follow` | Never exits; blocks your pane |
 | `splice daemon`, `splice start` | Runs or starts the daemon in your shell; a second daemon is refused, and a foreground one ties up the pane |
 | `splice trace --purge` | Deletes a head's trace files; not undoable |
-| Bare `splice console` | Opens a browser on the person's desktop with the key in the URL. Its actions (`splice console snapshot`, ...) are yours |
+| Bare `splice console` | Opens a browser on the person's desktop and signs it in with a single-use code. Its actions (`splice console snapshot`, ...) are yours |
 | Anything that reads `keys.toml`, `auth/`, `key-ledger.json`, `mgmt-key` or a peer's `peers/<name>/` files | `cat`, `grep`, `cp`, a script: denied when the command names the file; a glob can still slip past (see operations.md, section 2). A key you meet in output is named by its setting, never repeated |
 
 Source: manager-home `CLAUDE.md` (what you may do, secrets, ask first); `SetupCommand.kt:1-5` (non-TTY defaults);

@@ -23,10 +23,14 @@ Source: `README.md` "How it works"; `app/src/main/resources/splice.example.toml:
 splice console
 ```
 
-1. The CLI starts the daemon if it is down, writes a redirect page (mode 0600) in the state folder, and opens it in the browser.
-2. The page carries the management key in the URL **fragment** (`#k=...`), which never reaches the daemon or a log. The
-   console stores it in that browser's local storage and removes it from the address bar. Every call then sends it as Bearer.
-3. With no browser, the verb prints the redirect page's `file://` path. The bare address `http://127.0.0.1:3096` lands signed out.
+1. The CLI starts the daemon if it is down, asks it for a single-use sign-in code, writes a page (mode 0600) in the state
+   folder that redirects to the console with that code, and opens the page in the browser.
+2. The page carries only the code, in the URL **fragment** (`#c=...`), never a key. The console takes it out of the
+   address bar at once and trades it, once, for the console's own key, which it keeps in that browser's local storage and
+   sends as Bearer on every call. A code signs in one browser, once, within two minutes. A spent or expired code opens
+   nothing, so an address a history or a tool kept is harmless.
+3. With no browser, or with `splice console --no-browser`, the verb prints the page's `file://` path, to open within
+   two minutes. The bare address `http://127.0.0.1:3096` lands signed out.
 4. A page showing **Locked** with `splice console` and a Copy button means this browser holds no key splice accepts (a 401).
    The person runs `splice console` again.
 
@@ -34,7 +38,7 @@ You never run bare `splice console` and never ask for the key. If it says the ke
 creates it (ask first). To show or do something on the page the person already has open, use its actions (next
 section).
 
-Source: `app/.../cli/status/ConsoleCommand.kt:1-55`, `app/src/main/resources/console/api.js:1-30`.
+Source: `app/.../cli/status/ConsoleCommand.kt`, `app/.../control/mount/ConsoleKey.kt`, `app/src/main/resources/console/api.js`.
 
 ## Showing and doing things in the console
 

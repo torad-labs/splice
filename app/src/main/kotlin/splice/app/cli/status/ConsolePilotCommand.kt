@@ -20,9 +20,9 @@ import splice.daemonclient.ControlReply
 import splice.daemonclient.MgmtKeyRead
 import splice.daemonclient.PostReading
 
-/** The actions `splice console` takes, as its usage line prints them. */
+/** The actions `splice console` takes, as its usage line prints them, after the one flag the bare command takes. */
 internal const val CONSOLE_PILOT_USAGE: String =
-    "[snapshot | read [target] | tap <target> | fill <target> <text> | select <target> <option> | " +
+    "[--no-browser | snapshot | read [target] | tap <target> | fill <target> <text> | select <target> <option> | " +
         "press <key> [target] | hover <target> | scroll <target|up|down|top|bottom> | " +
         "highlight <target>... [--note TEXT] | highlight --clear | goto <page|back>] [--json] [-- <words as typed>]"
 

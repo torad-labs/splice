@@ -47,7 +47,7 @@ internal class CodeModeToolSurface(private val log: LogSink) {
         // manual and out of the deferred check, so the manual is the one the turns before the load sent.
         val documented = reachable - policy.loadedNames
         val enabled = CodeModeToolDefinitions.collect(tools).filter {
-            it.codeModeName in documented || it.codeModeName == CodeModeToolSearch.NAME
+            it.codeModeName in documented || it.codeModeName == CodeModeToolSearch.FUNCTION_NAME
         }.map { CodeModeManual.withInputBudget(it, policy.inputSchemaMaxBytes) }
         val nested = messages.namespacePrefixes.prompt(messages.functions(enabled))
         val deferred = (documented - nested.map { it.codeModeName }.toSet()).isNotEmpty()

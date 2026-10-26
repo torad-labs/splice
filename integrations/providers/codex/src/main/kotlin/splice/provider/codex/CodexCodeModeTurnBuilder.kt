@@ -249,6 +249,6 @@ internal object CodexCodeModeModels {
 }
 
 private const val FIELD_INPUT = "input"
-private const val FIELD_TOOLS = "tools"
+internal const val FIELD_TOOLS = "tools"
 private const val FIELD_TYPE = "type"
-private const val TYPE_ADDITIONAL_TOOLS = "additional_tools"
+internal const val TYPE_ADDITIONAL_TOOLS = "additional_tools"

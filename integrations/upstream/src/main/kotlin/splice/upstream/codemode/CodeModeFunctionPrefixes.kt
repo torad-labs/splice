@@ -26,7 +26,7 @@ public class CodeModeFunctionPrefixes(prefixes: Map<String, String>, available: 
         val prefix = prepared[tool.name]?.takeIf {
             tool.metadata.namespace != "" && defaultNamespace(
                 tool,
-            ) && tool.codeModeName != CodeModeToolSearch.NAME
+            ) && tool.codeModeName != CodeModeToolSearch.FUNCTION_NAME
         }
             ?: return@map tool
         tool.copy(description = if (tool.description.isEmpty()) prefix else "$prefix\n\n${tool.description}")

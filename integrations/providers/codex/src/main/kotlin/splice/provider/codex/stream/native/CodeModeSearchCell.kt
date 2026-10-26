@@ -56,7 +56,9 @@ internal class CodeModeSearchCell(private val delegate: NativeCodeModeCell, turn
             currentCoroutineContext().ensureActive()
             val step = next.next()
             if (step !is CodeModeStep.Calls) return step
-            val (local, client) = step.calls.partition { it.name == CodeModeToolSearch.NAME || unrepresentable(it) }
+            val (local, client) = step.calls.partition {
+                it.name == CodeModeToolSearch.FUNCTION_NAME || unrepresentable(it)
+            }
             val exposed = step.copy(
                 calls = client.map { call ->
                     if (call.kind == CodeModeManual.Kind.FREEFORM) {
@@ -85,7 +87,7 @@ internal class CodeModeSearchCell(private val delegate: NativeCodeModeCell, turn
             }
             "tool `${call.name}` expects $expected"
         }
-        val index = requireNotNull(search) { "unknown tool `${CodeModeToolSearch.NAME}`" }
+        val index = requireNotNull(search) { "unknown tool `${CodeModeToolSearch.FUNCTION_NAME}`" }
         val result = presentation(index.search(CodeModeSearchArguments.validate(call.arguments)))
         CodeModeResult(call.id, JsonWire.string(result), payload = result)
     } catch (error: IllegalArgumentException) {
@@ -121,7 +123,7 @@ internal class CodeModeSearchCell(private val delegate: NativeCodeModeCell, turn
     }
 
     private fun catalog(turn: CodexCodeModeBridge.Turn): CodeModeRankedSearch? {
-        if (turn.toolDefinitions.none { it.codeModeName == CodeModeToolSearch.NAME }) return null
+        if (turn.toolDefinitions.none { it.codeModeName == CodeModeToolSearch.FUNCTION_NAME }) return null
         val deferred = turn.toolDefinitions.filter { it.codeModeName in turn.toolPolicy.deferredNames }
         return CodeModeRankedSearch(
             CodeModeSearchCorpus.entries(deferred),

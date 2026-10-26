@@ -19,7 +19,7 @@ import splice.core.util.LogSink
 import splice.models.discovery.Discovery
 import java.nio.file.Path
 import java.util.concurrent.CountDownLatch
-import kotlin.time.Duration.Companion.milliseconds
+import kotlin.time.Duration.Companion.seconds
 
 private const val LIST_URL = "https://api.example.test/v1/models"
 
@@ -34,8 +34,11 @@ class ModelRostersTest {
     private val log = LogSink { synchronized(lines) { lines += it } }
     private val chat = listOf(DiscoveredModel("m-chat", contextWindow = 256_000), DiscoveredModel("m-2"))
 
+    // These sources answer in-process at once, so the deadline only has to outlast a loaded machine: at 200 ms,
+    // three of four heads missed it during the Oct 25 pre-push, while the source that never answers still costs
+    // exactly one deadline.
     private fun rosters(tmp: Path, source: HeadModelsSource) =
-        ModelRosters(StatePaths(baseOverride = tmp), log, source, deadline = 200.milliseconds)
+        ModelRosters(StatePaths(baseOverride = tmp), log, source, deadline = 5.seconds)
 
     @Test
     fun `a head's answer is its roster, and is kept for the next start`(@TempDir tmp: Path) = runBlocking {

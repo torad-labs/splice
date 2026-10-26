@@ -43,8 +43,13 @@ import splice.upstream.RoundResult
 import splice.upstream.codemode.CodeModeResult
 import splice.upstream.codemode.CodeModeStep
 import kotlin.random.Random
+import kotlin.time.Duration.Companion.minutes
 
 private const val RUNS = 120
+
+/** Each sweep drives 120 or more generated conversations, so its wall time follows the machine: from 8.6 s to past
+ *  runTest's one-minute default on Oct 25, when load reached 156 on 16 threads. A real hang still fails here. */
+private val SWEEP_TIMEOUT = 5.minutes
 
 /** Seeds a wider run broke under the draws below, kept so they stay fixed. A draw moved or added in a stream moves
  *  every seed after it to another conversation, so a new decision draws only in runs that did not exist before. */
@@ -78,20 +83,22 @@ private const val CLEARED = "[Old tool result content cleared]"
 class CodeModeAppendOnlyHistoryTest : CodeModeBridgeTestSupport() {
 
     @Test
-    fun `an append-only conversation keeps every script and only ever extends what GPT was sent`() = runTest {
-        val failures = ((0 until RUNS) + KEPT).mapNotNull { seed -> Conversation(seed, rewinds = false).broke() }
-        assertTrue(failures.isEmpty(), "${failures.size} conversations broke:\n" + failures.joinToString("\n"))
-    }
+    fun `an append-only conversation keeps every script and only ever extends what GPT was sent`() =
+        runTest(timeout = SWEEP_TIMEOUT) {
+            val failures = ((0 until RUNS) + KEPT).mapNotNull { seed -> Conversation(seed, rewinds = false).broke() }
+            assertTrue(failures.isEmpty(), "${failures.size} conversations broke:\n" + failures.joinToString("\n"))
+        }
 
     @Test
-    fun `a rewound conversation falls back once, keeps every script, and then only extends again`() = runTest {
-        val failures = ((0 until RUNS) + KEPT).mapNotNull { seed -> Conversation(seed, rewinds = true).broke() }
-        assertTrue(failures.isEmpty(), "${failures.size} conversations broke:\n" + failures.joinToString("\n"))
-    }
+    fun `a rewound conversation falls back once, keeps every script, and then only extends again`() =
+        runTest(timeout = SWEEP_TIMEOUT) {
+            val failures = ((0 until RUNS) + KEPT).mapNotNull { seed -> Conversation(seed, rewinds = true).broke() }
+            assertTrue(failures.isEmpty(), "${failures.size} conversations broke:\n" + failures.joinToString("\n"))
+        }
 
     @Test
     fun `a conversation restarting on its own build's store keeps every script and only extends what GPT was sent`() =
-        runTest {
+        runTest(timeout = SWEEP_TIMEOUT) {
             val failures = ((0 until RUNS) + KEPT_OWN).mapNotNull { seed ->
                 Conversation(seed, seed % 2 == 1, Store.OWN).broke()
             }
@@ -100,7 +107,7 @@ class CodeModeAppendOnlyHistoryTest : CodeModeBridgeTestSupport() {
 
     @Test
     fun `a conversation restarting after a rollback keeps every script and only extends what GPT was sent`() =
-        runTest {
+        runTest(timeout = SWEEP_TIMEOUT) {
             val failures = ((0 until RUNS) + KEPT_ROLLED_BACK).mapNotNull { seed ->
                 Conversation(seed, seed % 2 == 1, Store.ROLLED_BACK).broke()
             }
@@ -109,7 +116,7 @@ class CodeModeAppendOnlyHistoryTest : CodeModeBridgeTestSupport() {
 
     @Test
     fun `a conversation hiding GPT's reasoning keeps every script and only extends what GPT was sent`() =
-        runTest {
+        runTest(timeout = SWEEP_TIMEOUT) {
             val failures = (0 until RUNS).mapNotNull { seed ->
                 Conversation(seed, seed % 2 == 1, Store.entries[seed % Store.entries.size], reveals = false).broke()
             }
@@ -118,7 +125,7 @@ class CodeModeAppendOnlyHistoryTest : CodeModeBridgeTestSupport() {
 
     @Test
     fun `a conversation whose old tool results are cleared keeps every script and only extends what GPT was sent`() =
-        runTest {
+        runTest(timeout = SWEEP_TIMEOUT) {
             val failures = (0 until RUNS).mapNotNull { seed ->
                 Conversation(seed, seed % 2 == 1, Store.entries[seed % Store.entries.size], trims = true).broke()
             }

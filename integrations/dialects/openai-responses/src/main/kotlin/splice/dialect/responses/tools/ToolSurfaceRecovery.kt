@@ -154,7 +154,7 @@ internal class ToolSurfaceRecovery {
 private const val FIELD_TYPE = "type"
 private const val FIELD_TOOLS = "tools"
 private const val FIELD_DEFER_LOADING = "defer_loading"
-private const val TYPE_TOOL_SEARCH = splice.upstream.ToolSearchWire.NAME
+private const val TYPE_TOOL_SEARCH = splice.upstream.ToolSearchWire.TOOL_SEARCH_NAME
 private const val TYPE_TOOL_SEARCH_CALL = "tool_search_call"
 private const val TYPE_TOOL_SEARCH_OUTPUT = "tool_search_output"
 private const val TYPE_REASONING = "reasoning"

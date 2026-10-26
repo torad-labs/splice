@@ -9,7 +9,7 @@ import kotlinx.serialization.json.putJsonObject
 
 /** Schemas and guidance for the function form used by nested ranked discovery. */
 public object CodeModeToolSearch {
-    public const val NAME: String = splice.upstream.ToolSearchWire.NAME
+    public const val FUNCTION_NAME: String = splice.upstream.ToolSearchWire.TOOL_SEARCH_NAME
 
     // why: Codex rust-v0.164.0 tools/src/tool_discovery.rs:7 sets TOOL_SEARCH_DEFAULT_LIMIT = 8.
     public const val DEFAULT_LIMIT: Int = 8
@@ -62,7 +62,7 @@ public object CodeModeToolSearch {
     }
 
     public fun definition(parameters: JsonObject? = null): CodeModeManual.NestedTool = CodeModeManual.NestedTool(
-        NAME,
+        FUNCTION_NAME,
         GUIDANCE,
         parameters ?: inputSchema,
         outputSchema,

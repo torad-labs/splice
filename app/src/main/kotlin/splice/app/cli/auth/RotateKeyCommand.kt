@@ -9,6 +9,8 @@ import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonObject
 import splice.app.LifecycleWiring
 import splice.app.cli.AdminSupport
+import splice.app.control.HEADER_WRITTEN
+import splice.app.control.MCP_REPLACED
 import splice.core.terminal.TerminalOutput
 import splice.core.util.EnvReader
 import splice.core.util.JsonScalars
@@ -20,10 +22,6 @@ import splice.daemonclient.PostReading
 
 // why: a rotation writes three small files and one publication; a daemon busy with turns still answers well inside this
 private const val ROTATE_MS = 30_000
-
-// The daemon's answer, as KeyRotation writes it: the MCP access key's outcome and the header file's.
-private const val MCP_REPLACED = "replaced"
-private const val HEADER_WRITTEN = "written"
 
 /** `splice rotate-key`: the one command that replaces the management key. [daemon] answers whether a daemon serves
  *  the control port, starting it when none does, as `splice console` does. */

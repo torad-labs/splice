@@ -69,6 +69,14 @@ public const val CODE_MODE_DIR: String = "code-mode"
  *  `heads/<key>/`. One spelling for the dialect that writes it and Your data, which counts and clears it. */
 public const val REASONING_DIR: String = "reasoning"
 
+/** The page `splice console` writes in the state folder and opens (ConsoleCommand). Until Oct 26, 2026 its address
+ *  carried the management key, so a key rotation deletes it too (KeyRotation). One spelling for both. */
+public const val CONSOLE_LAUNCH_PAGE: String = "console-open.html"
+
+/** The page the removed `splice dashboard` wrote, with the management key in its redirect. Nothing writes it any
+ *  more; `splice console` and a key rotation delete the one an older splice left. */
+public const val DASHBOARD_PAGE: String = "dashboard-open.html"
+
 private const val STATE_LEAF: String = "state"
 
 /** The daemon's management key, the one file only an install that has run holds: the evidence of state. */

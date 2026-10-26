@@ -163,7 +163,7 @@ private val verbs: Map<String, CommandRegistration> = mapOf(
         CommandFactory { a -> Command.Key(a.drop(1)) },
     ),
     // Oct 26, 2026: replaces the management key while the daemon runs, stranding no session (RotateKeyCommand).
-    "rotate-key" to CommandRegistration("", CommandFactory.Alone(RotateKey)),
+    "rotate-key" to CommandRegistration("", CommandFactory.Alone(Command.RotateKey)),
     "logs" to CommandRegistration(
         "[--head <key>] [--tail N] [--follow]",
         CommandFactory { a -> Command.Logs(a.drop(1)) },

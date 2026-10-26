@@ -15,6 +15,8 @@ package splice.app.cli.status
 import kotlinx.serialization.json.Json
 import splice.app.LifecycleWiring
 import splice.app.cli.AdminSupport
+import splice.core.config.CONSOLE_LAUNCH_PAGE
+import splice.core.config.DASHBOARD_PAGE
 import splice.core.config.StatePaths
 import splice.core.terminal.TerminalOutput
 import splice.core.util.JsonScalars
@@ -28,14 +30,8 @@ import splice.oauth.SystemBrowserOpener
 import java.nio.file.Files
 import java.nio.file.Path
 
-/** The sign-in page's name in the state folder; rewritten on every run, never read back. */
-internal const val CONSOLE_LAUNCH_PAGE = "console-open.html"
-
 /** `splice console --no-browser`: writes the page and prints its address instead of opening the desktop's browser. */
 internal const val CONSOLE_NO_BROWSER = "--no-browser"
-
-// The page the removed `splice dashboard` wrote, with the management key in its redirect. Nothing writes it any more.
-private const val DASHBOARD_PAGE = "dashboard-open.html"
 
 // A daemon busy with turns still hands out a code well inside this.
 private const val MINT_MS = 10_000

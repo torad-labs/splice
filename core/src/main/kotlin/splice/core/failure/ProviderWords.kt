@@ -6,6 +6,10 @@ package splice.core.failure
 
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonElement
+import kotlinx.serialization.json.JsonNull
+import kotlinx.serialization.json.JsonPrimitive
+import kotlinx.serialization.json.booleanOrNull
+import kotlinx.serialization.json.doubleOrNull
 
 /** Words the provider said about a failure, cut to what a person may read. */
 @JvmInline
@@ -79,12 +83,17 @@ public object ProviderWordsFilter {
         return ProviderWords(fitted(kept))
     }
 
-    /** [text] read as JSON, or null when it is not JSON as a whole. */
+    /** [text] read as JSON, or null when it is not JSON as a whole. The parser takes any unquoted token as a value, so
+     *  a single word (a refusal's category given alone) is read as a sentence unless it is one of JSON's own values. */
     private fun json(text: String): JsonElement? = try {
-        Json.parseToJsonElement(text)
+        Json.parseToJsonElement(text).takeUnless { it is JsonPrimitive && bareWord(it) }
     } catch (_: IllegalArgumentException) {
         null
     }
+
+    /** An unquoted token that is no number, boolean or null: a word, which JSON only reads as a value leniently. */
+    private fun bareWord(value: JsonPrimitive): Boolean =
+        !value.isString && value !is JsonNull && value.booleanOrNull == null && value.doubleOrNull == null
 
     /** [sentence] with its ids, keys and paths dropped, or null when it must go whole or nothing readable is left. */
     private fun kept(sentence: String): String? {

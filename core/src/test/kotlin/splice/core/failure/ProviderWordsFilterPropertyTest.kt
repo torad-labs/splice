@@ -74,6 +74,16 @@ private fun Random.pick(from: List<String>): String = from[nextInt(from.size)]
 
 private fun Random.sentence(): String = "${pick(SUBJECTS)} ${pick(PREDICATES)}."
 
+/** One word of two to six consonant-vowel syllables, which spells none of JSON's literals and no word the filter cuts
+ *  (those need a t, a w or two consonants in a row), sometimes capitalized or joined by an underscore. */
+private fun Random.word(): String {
+    val consonants = "bcdfgklmnprsvz"
+    val vowels = "aeiou"
+    val syllables = { (1..2 + nextInt(5)).joinToString("") { "${consonants.random(this)}${vowels.random(this)}" } }
+    val word = if (nextInt(4) == 0) "${syllables()}_${syllables()}" else syllables()
+    return if (nextBoolean()) word.replaceFirstChar(Char::uppercaseChar) else word
+}
+
 private fun Random.uuid(): String {
     val hex = "0123456789abcdef"
     fun part(n: Int) = (1..n).map { hex[nextInt(hex.length)] }.joinToString("")
@@ -111,6 +121,20 @@ class ProviderWordsFilterPropertyTest {
         }
         assertNull(ProviderWordsFilter.of(null))
         assertNull(words("   "))
+    }
+
+    // A provider may say one word: a refusal's category with no explanation, or a bare "Forbidden". It is a sentence a
+    // person can read, and only JSON's own values (a number, true, false, null, a quoted string) are JSON as a whole.
+    @Test
+    fun `a single word is a sentence, not JSON`() {
+        val random = Random(7)
+        repeat(RUNS) {
+            val word = random.word()
+
+            assertEquals("$word.", words(word), word)
+        }
+        listOf("cyber", "future_category", "Forbidden").forEach { assertEquals("$it.", words(it), it) }
+        listOf("null", "false", "-1.5e3").forEach { assertNull(words(it), it) }
     }
 
     @Test

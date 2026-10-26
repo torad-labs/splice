@@ -15,6 +15,11 @@
 // `[x]` takes the next word unless it is a flag; `<x...>` takes every following word up to the next
 // flag; everything after `--` is positional. A word it cannot place (after a flag the client does not
 // list, or a positional) is withheld, never guessed: an unlisted flag fails closed, not open.
+//
+// Oct 26, 2026 (a relaunch brings a session back as it was): the same grammar reads the words a session was started
+// with back into the words that resume it. The relaunch of Oct 26 resumed every session on `-r <id> --model <model>`
+// alone, so reviews came back without their agent. A resume keeps every option and drops every prompt, so a session
+// never gets its first prompt again, and a word the grammar cannot place stops the relaunch the same way it is withheld.
 package splice.client
 
 public object ClaudeArgv {
@@ -69,7 +74,99 @@ public object ClaudeArgv {
         if (expects == Expects.VALUE || expects == Expects.VALUES) word else withheld(word)
 
     private fun withheld(word: String): String = "<${word.length} chars withheld>"
+
+    /** The words that resume [session] from [args], the words its client was started with after the program: every
+     *  option kept as given and in order, the prompt and everything after `--` dropped, and whatever picks or starts
+     *  another conversation dropped, then `-r` [session] and, when it is known, `--model` [model] in place of the model
+     *  it was started with. Null when a word cannot be placed, since it could be the prompt, and when an option misses
+     *  the value it needs, since it would take the resume's own words. */
+    public fun resumed(args: List<String>, session: String, model: String?): List<String>? {
+        val drop = if (model == null) OTHER_SESSION else OTHER_SESSION + MODEL_FLAG
+        val kept = ArrayList<String>(args.size)
+        var at = 0
+        while (at < args.size) {
+            val word = args[at]
+            val read = when {
+                word == END_OF_OPTIONS -> Read(emptyList(), args.size)
+                !isFlag(word) -> Read(emptyList(), at + 1)
+                word.startsWith(LONG) -> longWords(args, at, drop)
+                else -> shortWords(args, at, drop)
+            } ?: return null
+            kept += read.words
+            at = read.next
+        }
+        return kept + listOf(RESUME_FLAG, session) + model?.let { listOf(MODEL_FLAG, it) }.orEmpty()
+    }
+
+    /** The long option at [at] and the values it takes, kept as given or dropped when [drop] names it. Null when the
+     *  client does not list it and a bare word follows, which could be its value or the prompt. */
+    private fun longWords(args: List<String>, at: Int, drop: Set<String>): Read? {
+        val name = args[at].substringBefore('=')
+        val takes = OPTIONS[name]?.takes
+        val next = if (takes == null || '=' in args[at]) at + 1 else valuesAfter(args, at + 1, takes)
+        val unplaced = if (takes == null) bare(args, next) else next > args.size
+        return when {
+            unplaced -> null
+            name in drop -> Read(emptyList(), next)
+            else -> Read(args.subList(at, next), next)
+        }
+    }
+
+    /** The short flag at [at], or a cluster of them, letter by letter: switches, until the first letter that takes a
+     *  value ends it, with the rest of the word, or else the words after it, as that value. Each letter comes back as a
+     *  flag of its own, a value glued to it as given. */
+    private fun shortWords(args: List<String>, at: Int, drop: Set<String>): Read? {
+        val word = args[at]
+        val letters = word.drop(1).map { "-$it" }
+        val stop = letters.indexOfFirst { OPTIONS[it]?.takes != Takes.NOTHING }
+        if (stop < 0) return Read(letters - drop, at + 1)
+        val letter = letters[stop]
+        val takes = OPTIONS[letter]?.takes ?: return unlistedShort(args, at)
+        val rest = word.substring(stop + 2)
+        val next = if (rest.isEmpty()) valuesAfter(args, at + 1, takes) else at + 1
+        val switches = letters.take(stop) - drop
+        return when {
+            next > args.size -> null
+            letter in drop -> Read(switches, next)
+            rest.isEmpty() -> Read(switches + letter + args.subList(at + 1, next), next)
+            else -> Read(switches + (letter + rest), next)
+        }
+    }
+
+    /** A short flag the client does not list: alone, it is kept unless a bare word follows that it could take; in a
+     *  cluster, the letters after it could be its value, so the word cannot be read. */
+    private fun unlistedShort(args: List<String>, at: Int): Read? =
+        if (args[at].length > 2 || bare(args, at + 1)) null else Read(listOf(args[at]), at + 1)
+
+    /** The index past the values an option that [takes] them reads from [from] on, the way the client reads them: one
+     *  word whatever it is, a word unless it is a flag, or one word and then every word up to the next flag. Past the
+     *  end when the option needs a value and none is left. */
+    private fun valuesAfter(args: List<String>, from: Int, takes: Takes): Int = when (takes) {
+        Takes.NOTHING -> from
+        Takes.OPTIONAL -> if (bare(args, from)) from + 1 else from
+        Takes.ONE -> from + 1
+        Takes.MANY -> {
+            var next = from + 1
+            while (bare(args, next)) next++
+            next
+        }
+    }
+
+    /** Whether the word at [index] is there and is no flag, so an option before it may take it as a value. */
+    private fun bare(args: List<String>, index: Int): Boolean = args.getOrNull(index)?.let { !isFlag(it) } ?: false
 }
+
+/** The words read from one place in an argv, and where the next read starts. */
+private data class Read(val words: List<String>, val next: Int)
+
+private const val MODEL_FLAG = "--model"
+private const val RESUME_FLAG = "-r"
+
+/** What picks or starts another conversation, in every spelling: a resume names its session itself. */
+private val OTHER_SESSION = setOf(
+    "-c", "--continue", "-r", "--resume", "--session-id", "--fork-session", "-p", "--print", "--from-pr", "--teleport",
+    "--cloud", "-w", "--worktree", "--tmux",
+)
 
 private enum class Takes { NOTHING, ONE, OPTIONAL, MANY }
 

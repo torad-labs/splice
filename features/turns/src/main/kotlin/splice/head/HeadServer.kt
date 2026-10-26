@@ -27,6 +27,7 @@ import splice.core.head.CompactionHold
 import splice.core.head.Head
 import splice.core.head.HeadHealth
 import splice.core.usage.QuotaFull
+import splice.core.util.HeadScopedLogs
 import splice.head.admission.AdmissionErrorBody
 import splice.head.admission.AdmissionGate
 import splice.head.admission.AdmissionResponses
@@ -90,6 +91,8 @@ public class HeadServer(
         responses,
         ForeignHostLog("the ${provider.key} head", deps.log),
         forwardsOnly = provider.auth is ClientAuthProvider,
+        // Under the head's key, so `splice logs --head` and the console's per-head log show which head refused whom.
+        refusedKeys = RefusedKeyLog(HeadScopedLogs.headScopedLog(provider.key, deps.log), deps.seams.clock),
     )
     private val bodyReader = RequestBodyReader(deps.policy.requestReadTimeoutMs)
     private val bodyParse = AnthropicBodyParse()

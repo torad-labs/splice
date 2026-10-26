@@ -11,6 +11,7 @@ import io.ktor.server.application.ApplicationCall
 import splice.core.auth.BearerScheme
 import splice.core.auth.ForeignHostLog
 import splice.core.auth.LoopbackHost
+import splice.core.client.SESSION_HEADER
 import splice.core.failure.Decline
 import splice.core.failure.FailureCause
 import splice.core.perf.LivenessProbe
@@ -69,6 +70,9 @@ internal class ClientAuth(
     /** The head holds no credential of its own (ClientAuthProvider): every upstream credential is
      *  the caller's, so a call that presents none has nothing upstream could accept. */
     private val forwardsOnly: Boolean = false,
+    /** Where a refused local credential is said (Oct 26, 2026). HeadServer's writes under the head's key; this default
+     *  writes the same lines to [deps]'s log as they are, for a ClientAuth a test builds around a seam. */
+    private val refusedKeys: RefusedKeyLog = RefusedKeyLog(deps.log, deps.seams.clock),
 ) {
     // Splits each forwarded value into scheme/credential/parameter tokens for the own-key check.
     // The FULL RFC 7235 delimiter class, not just whitespace (third DR-30 redo): auth-params
@@ -102,6 +106,14 @@ internal class ClientAuth(
         // session launched before the v0.4.0 split keeps working until it is relaunched.
         val presented = presentedCredential(call)
         if (matchesInferenceToken(presented) || matchesOperatorToken(presented)) return true
+        // Said, with why and never with the key (Oct 26, 2026): this refusal wrote nothing, and a session that day's
+        // key rotation stranded was refused for 19 minutes while daemon.log stayed quiet.
+        val why = when {
+            !carriesCredential(call) -> KeyRefusal.NO_CREDENTIAL
+            presented != null && deps.tokens.retired(presented) -> KeyRefusal.RETIRED
+            else -> KeyRefusal.NOT_SPLICES
+        }
+        refusedKeys.refused(call.request.headers[SESSION_HEADER], why)
         responses.respondUnauthorized(call)
         return false
     }
@@ -190,7 +202,10 @@ internal class ClientAuth(
         }
         if (!authorize(call)) return false
         val accepted = !forwardsCallersOnly() || carriesCredential(call)
-        if (!accepted) responses.respondUnauthorized(call)
+        if (!accepted) {
+            refusedKeys.refused(call.request.headers[SESSION_HEADER], KeyRefusal.NO_CREDENTIAL)
+            responses.respondUnauthorized(call)
+        }
         return accepted
     }
 

@@ -29,6 +29,11 @@ private const val COMPACT_TRIGGER = "prompt is too long"
 /** What a line must not say once the person has seen the answer begin: that the provider sent nothing. */
 private val SENT_NOTHING = listOf("before answering", "before sending anything", "did not start answering")
 
+/** What a line must not say before any of the answer reached the person: that the answer they never saw was cut off,
+ *  or stopped in its middle. A provider that began its stream and closed it before its text arrived left them with no
+ *  answer at all (slice 2 finding 21: 105 of 120 cut-off runs said "cut off" to a client that had seen no text). */
+private val ANSWER_SEEN = listOf("cut off", "mid-answer")
+
 /** Launch commands of the shipped heads, and the ones operators named (final-design.md section 10, subject). */
 private val HEADS = listOf(
     "claude-muse", "claudex", "claudeor", "claude-glml53", "claude-deepseek", "claude-kimi", "claude-splice",
@@ -450,6 +455,28 @@ class SpliceLinesPropertyTest {
             listOf(ending, resumes).forEach { line ->
                 SENT_NOTHING.forEach { said ->
                     assertFalse(said in line.text, "$cause after the answer began says \"$said\": ${line.text}")
+                }
+            }
+        }
+    }
+
+    @Test
+    fun `a path line said before any of the answer reached the client never says the answer was cut off`() {
+        val random = Random(11)
+        val lines = SpliceLines(LocalTimeText(ZoneId.of("America/Chicago")))
+        val retries = listOf(Recovery.RetryIn(15_000L), Recovery.AskAgain, Recovery.OtherLogin)
+        repeat(RUNS * 2) {
+            val now = random.instant()
+            val cause = random.pathCause()
+            val facts = random.facts(now)
+            val unseen = Position(random.pick(Moment.entries - Moment.MID_CONTENT), random.nextBoolean())
+
+            val ending = lines.ending(cause, unseen, random.answer(cause, unseen), facts)
+            val retried = lines.waiting(WaitLine(cause, random.pick(retries)), facts)
+
+            listOf(ending, retried).forEach { line ->
+                ANSWER_SEEN.forEach { said ->
+                    assertFalse(said in line.text, "$cause at $unseen says \"$said\": ${line.text}")
                 }
             }
         }

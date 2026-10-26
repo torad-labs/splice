@@ -2,9 +2,12 @@
 // (final-design.md section 10).
 package splice.core.failure
 
-/** The three ways the path to a provider breaks. Once the answer began, the person saw it start: a connection that
- *  closed reads as the answer cut off and a reply that never came as silence mid-answer, whatever leaf the transport
- *  chose (a reset past the handoff is RESET_BEFORE_REPLY wherever it lands, TurnConnEnd.emitConnReset). */
+/** The three ways the path to a provider breaks, said as the person saw them. Once the answer began, the person saw it
+ *  start: a connection that closed reads as the answer cut off and a reply that never came as silence mid-answer,
+ *  whatever leaf the transport chose (a reset past the handoff is RESET_BEFORE_REPLY wherever it lands,
+ *  TurnConnEnd.emitConnReset). Before any of the answer reached them, there is no answer to call cut off or silent in
+ *  its middle, whatever the provider's stream had begun: a close reads as one before answering, and a silence as an
+ *  answer that did not start in time (slice 2 finding 21, where a cut that landed before its text said "cut off"). */
 internal object PathSentences {
     fun said(cause: FailureCause.Path, at: Position, facts: LineFacts, ongoing: Boolean): Said {
         val head = facts.head
@@ -12,9 +15,10 @@ internal object PathSentences {
         val what = when (cause) {
             is FailureCause.Path.Unreachable -> unreachable(cause, head, answering, ongoing)
             is FailureCause.Path.Torn -> torn(cause, head, answering, ongoing)
-            is FailureCause.Path.Stalled -> when (cause.tier) {
-                Stall.FIRST_BYTE -> if (answering) silent(head, ongoing) else "$head did not start answering in time"
-                Stall.IDLE -> silent(head, ongoing)
+            is FailureCause.Path.Stalled -> if (answering) {
+                silent(head, ongoing)
+            } else {
+                "$head did not start answering in time"
             }
         }
         return Said(what, next = Next.Resend(SEND_AGAIN))
@@ -47,16 +51,12 @@ internal object PathSentences {
         else -> "$side is not running"
     }
 
-    private fun torn(cause: FailureCause.Path.Torn, head: String, answering: Boolean, ongoing: Boolean): String =
-        when (cause.why) {
-            Tear.RESET, Tear.SOCKET_CLOSED, Tear.NO_TERMINAL -> cut(head, ongoing, cause.toolOpen)
-            Tear.NO_EVENTS -> if (answering) {
-                cut(head, ongoing, cause.toolOpen)
-            } else {
-                "$head closed the connection before sending anything"
-            }
-            Tear.OVERSIZED_EVENT -> "$head sent a stream event larger than splice accepts"
-        }
+    private fun torn(cause: FailureCause.Path.Torn, head: String, answering: Boolean, ongoing: Boolean): String = when {
+        cause.why == Tear.OVERSIZED_EVENT -> "$head sent a stream event larger than splice accepts"
+        answering -> cut(head, ongoing, cause.toolOpen)
+        cause.why == Tear.NO_EVENTS -> "$head closed the connection before sending anything"
+        else -> "$head closed the connection before answering"
+    }
 
     private fun cut(head: String, ongoing: Boolean, toolOpen: Boolean): String {
         val cut = if (ongoing) "was cut off" else "kept getting cut off"

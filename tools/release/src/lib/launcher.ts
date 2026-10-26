@@ -123,18 +123,25 @@ const read = (path: string): string => (existsSync(path) ? readFileSync(path, "u
 const SIXTEEN_GIB = 16 * 1024 * 1024 * 1024;
 const THIRTY_TWO_MIB = 32 * 1024 * 1024;
 
+/** The real JDK the heap arm asks, found once, when this module loads and before any rehearsal starts: resolveJdk21 runs
+ *  `java -version` synchronously, and inside an arm that would hold the event loop the mock daemons answer from (Arm). */
+const REAL_JDK = resolveJdk21();
+
 /** The heap sizes a real JVM settles on when started with `flags`, as -XX:+PrintFlagsFinal prints them, run behind
- *  `limit` (a command prefix, empty for none). */
-function finalFlags(
+ *  `limit` (a command prefix, empty for none). Spawned, never run synchronously, for the same reason as REAL_JDK: each of
+ *  the rehearsals running side by side would wait for a /health that cannot be answered while the JVM starts. */
+async function finalFlags(
   java: string,
   flags: readonly string[],
   limit: readonly string[],
-): { MaxHeapSize?: number; G1HeapRegionSize?: number } {
-  const argv = [...limit, java, ...flags, "-XX:+PrintFlagsFinal", "-version"];
-  const printed = execFileSync(argv[0] ?? java, argv.slice(1), {
-    encoding: "utf8",
-    stdio: ["ignore", "pipe", "ignore"],
+): Promise<{ MaxHeapSize?: number; G1HeapRegionSize?: number }> {
+  const proc = Bun.spawn([...limit, java, ...flags, "-XX:+PrintFlagsFinal", "-version"], {
+    stdin: "ignore",
+    stdout: "pipe",
+    stderr: "ignore",
   });
+  const printed = await new Response(proc.stdout).text();
+  await proc.exited;
   const value = (name: string): number | undefined => {
     const match = new RegExp(`^\\s*\\S+\\s+${name}\\s+:?=\\s+(\\d+)`, "m").exec(printed);
     return match ? Number(match[1]) : undefined;
@@ -440,14 +447,13 @@ const ARMS: readonly Arm[] = [
       const runs = read(ctx.captures.javaArgv).split("\n").filter(Boolean).map((line) => JSON.parse(line) as string[]);
       const daemon = runs.find((javaArgv) => javaArgv.includes("daemon"));
       if (daemon === undefined) return `the raw spawn never ran the daemon: ${JSON.stringify(runs)}`;
-      const jdk = resolveJdk21();
-      if ("error" in jdk) return jdk.error;
-      const java = join(jdk.javaHome, "bin", "java");
+      if ("error" in REAL_JDK) return REAL_JDK.error;
+      const java = join(REAL_JDK.javaHome, "bin", "java");
       // -Xlog would open the sandbox's GC log; everything else the daemon is given goes to the JVM as it is.
       const flags = daemon.slice(0, daemon.indexOf("-jar")).filter((flag) => !flag.startsWith("-Xlog"));
-      const daemonHeap = finalFlags(java, flags, limit);
+      const daemonHeap = await finalFlags(java, flags, limit);
       // 75% of the memory the JVM sees, the machine's or its limit's, by the JVM's own reading of it.
-      const machine = finalFlags(java, ["-XX:+UseG1GC", "-XX:MaxRAMPercentage=75"], limit);
+      const machine = await finalFlags(java, ["-XX:+UseG1GC", "-XX:MaxRAMPercentage=75"], limit);
       if (daemonHeap.MaxHeapSize === undefined || machine.MaxHeapSize === undefined) {
         return `the JVM did not report MaxHeapSize: ${JSON.stringify({ daemonHeap, machine })}`;
       }

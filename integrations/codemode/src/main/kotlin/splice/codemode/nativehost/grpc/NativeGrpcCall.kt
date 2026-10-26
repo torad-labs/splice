@@ -7,6 +7,9 @@ import io.grpc.Status
 
 internal const val NATIVE_GRPC_ROUTE_HEADER: String = "x-code-mode-route"
 internal const val NATIVE_GRPC_BUFFERED_HEADER: String = "codex-code-mode-result-buffered-for-ns"
+
+// why: Codex rust-v0.164.0 code-mode-protocol/src/grpc/mod.rs:9 sets MAX_IDENTIFIER_BYTES = 256, and
+// code-mode/src/grpc_session/mod.rs:129 refuses a route token longer than 256 bytes.
 internal const val NATIVE_GRPC_MAX_IDENTIFIER_BYTES: Int = 256
 
 internal data class NativeGrpcRequest(

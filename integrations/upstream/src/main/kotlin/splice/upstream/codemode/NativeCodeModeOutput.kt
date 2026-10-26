@@ -115,5 +115,10 @@ private const val NATIVE_MILLIS_PER_SECOND: Float = 1_000f
 // why: Codex rounds the default wall-time header to one decimal place before rendering it.
 private const val NATIVE_TENTHS: Float = 10f
 private val NATIVE_NANOS_PER_SECOND: Long = java.util.concurrent.TimeUnit.SECONDS.toNanos(1)
+
+// why: for a non-negative x, floor(x + 0.5) rounds half away from zero like Rust's f32::round, which Codex
+// rust-v0.164.0 core/src/tools/code_mode/output.rs:27 applies to the wall time in tenths.
 private const val NATIVE_ROUNDING_HALF: Double = 0.5
+
+// why: Codex rust-v0.164.0 core/src/tools/code_mode/output.rs:64 prints the overhead header's seconds with {:.3}.
 private const val OVERHEAD_PLACES = 3

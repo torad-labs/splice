@@ -39,6 +39,8 @@ internal object SearchDeunicode {
 
 // deunicode's repr(C) Ptr consists of two inline bytes (or a little-endian u16 offset) and one length byte.
 private const val POINTER_BYTES = 3
+
+// why: deunicode 1.6.2 src/lib.rs:155 reads the string from Ptr.chr itself when its length is 2 or less.
 private const val INLINE_BYTES = 2
 
 // DEL itself uses the table; upstream's ASCII fast path is strictly less than 0x7f.

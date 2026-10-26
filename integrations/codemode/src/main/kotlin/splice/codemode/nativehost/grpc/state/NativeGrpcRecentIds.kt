@@ -2,6 +2,7 @@ package splice.codemode.nativehost.grpc.state
 
 import java.util.UUID
 
+// why: Codex rust-v0.164.0 code-mode/src/grpc_session/state.rs:15 sets MAX_RECENT_CALLBACK_IDS = 4_096.
 private const val NATIVE_GRPC_RECENT_IDS: Int = 4_096
 
 /** Matches the per-session recent callback ledgers in the official gRPC client. */

@@ -283,6 +283,9 @@ private const val MAX_TOTAL_LOCAL_REF_EXPANSIONS = 32
 
 // why: codex's MAX_RENDERED_SCHEMA_BYTES — one tool's declaration past this is `unknown`, not a wall of text.
 internal const val DEFAULT_INPUT_SCHEMA_MAX_BYTES = 16_000
+
+// why: Codex rust-v0.164.0 code-mode-protocol/src/json_schema_types.rs:16 sets RENDER_WORK_MULTIPLIER = 4, and :50
+// gives each render a work budget of four times its byte cap.
 private const val RENDER_WORK_MULTIPLIER = 4
 
 // why: codex charges `description_line.len() + 5` before pushing "  // " and the line.

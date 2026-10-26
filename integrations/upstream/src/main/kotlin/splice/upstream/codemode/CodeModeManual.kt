@@ -12,7 +12,10 @@ public object CodeModeManual {
 
     /** codex-rs protocol DEFAULT_FUNCTION_NAMESPACE: a tool in it is a plain function, named without a prefix. */
     public const val DEFAULT_FUNCTION_NAMESPACE: String = "functions"
-    public const val DEFAULT_EXEC_YIELD_TIME_MS: Long = splice.core.config.DEFAULT_CODE_MODE_EXEC_YIELD_MS
+
+    // why: Codex's configured foreground exec budget, codex-rs/core/src/config/mod.rs:1206 at rust-v0.164.0. A head's
+    // own value comes from its codeModeDefaultExecYieldTimeMs knob; this is the fallback where none is passed.
+    public const val DEFAULT_EXEC_YIELD_TIME_MS: Long = 30_000L
 
     /** codex-rs execute_spec.rs CODE_MODE_FREEFORM_GRAMMAR, byte for byte. */
     public const val GRAMMAR: String = "\nstart: pragma_source | plain_source\n" +

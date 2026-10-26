@@ -211,7 +211,18 @@ internal object Concentration {
     // enters the band with its Collected arm at 3.17 while borderline peers (TraceSearch 3.26 -> 3.27,
     // CodexCodeModeHistory 3.17, PeerCommand 3.0) cross for neighbourhood reasons alone — measured on the
     // tree at faf48077a+lawfix by the train's own run. The tree got worse; this records it. 13 -> 16.
-    const val RATCHET_MAX_HIGH = 16
+    // 2026-10-25, later: the recovered code-mode work, the native port and the recovery commit after the deleted
+    // .git folder, lands its entrants at once, measured by the pre-push's run of this law on e28d00d1f. The native
+    // port added NativeGrpcWaits.kt 4.88, NativeGrpcDelegates.kt 4.68, NativeGrpcExecutionsRun.kt 4.54,
+    // NativeGrpcOperationsBridge.kt 4.18, NativeLogicalSession.kt 3.13 and NativeGrpcExecutions.kt 3.05 (b2bf59fbe)
+    // and CodeModeSearchCell.kt 3.01 (2ada6dde7), and the recovery added CodeModeGatewaySearchRequests.kt 4.19
+    // (a647799d3). NativeCodeModeRuntime.kt 3.18 (b2bf59fbe), CodexResponsesArm.kt 3.67 (a647799d3) and
+    // CodexCodeModeTurnBuilder.kt 3.09 (a647799d3, f6f443847) grew in place. Every other file in the band is
+    // unchanged since 785f9cce8, so any of them that crossed 3.0 did so by neighbourhood, as the new files moved the
+    // medians they are measured against. The tree got worse; this records it, on splice-lead's decision, so the
+    // recovered work lands. The decomposition is owed by the seat that landed the recovery, after this push, worst
+    // file first, and this number follows each file down as it leaves the band. 16 -> 29.
+    const val RATCHET_MAX_HIGH = 29
 
     /** THE PACKAGE-SCALE BASELINE — the worst package's FILE COUNT. The package is named here so
      *  the diff reads without running anything, but the NAME is not gated: a different package
@@ -221,8 +232,13 @@ internal object Concentration {
      *  2026-10-25: DetachOwner.kt moved from splice.head.turn into splice.head.wire for the held-answer
      *  collect-replay feature; turn returns to its recorded count and wire — already the runner-up clump
      *  with ClientChannel/CollectingTerminal/TurnWiring — becomes the worst at 30. Measured on the tree at
-     *  faf48077a+lawfix by this suite's own run; the move beats leaving turn at 31 pre-split. 29 -> 30. */
-    const val PACKAGE_MAX_FILES = 30
+     *  faf48077a+lawfix by this suite's own run; the move beats leaving turn at 31 pre-split. 29 -> 30.
+     *
+     *  2026-10-25, later: splice.provider.codex becomes the worst at 31. It held 29 at 785f9cce8; the recovery
+     *  (a647799d3) added CodeModeToolPolicy.kt and CodexCodeModeSettings.kt and removed CodeModeWaitTool.kt, and
+     *  f6f443847 added CodeModeLoadedTools.kt. Measured by the pre-push's run of this law on e28d00d1f and recorded
+     *  on splice-lead's decision; moving a file out is part of the decomposition owed above. 30 -> 31. */
+    const val PACKAGE_MAX_FILES = 31
 
     /** Where a shrunk baseline is re-recorded by hand. */
     const val THIS_LAW = "quality/architecture/src/test/kotlin/splice/quality/ConcentrationLawTest.kt"

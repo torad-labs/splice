@@ -10,6 +10,8 @@ import splice.codemode.nativehost.grpc.state.NativeGrpcPendingCallback
 import java.io.IOException
 import java.util.UUID
 
+// why: Codex rust-v0.164.0 code-mode-protocol/src/host/mod.rs:13 sets MAX_PENDING_DELEGATE_CALLS = 1_024, which
+// code-mode/src/grpc_session/state.rs:229 and :267 compare with pending invocations plus notifications.
 private const val NATIVE_GRPC_PENDING_CALLBACKS: Int = 1_024
 private const val NATIVE_GRPC_EXECUTION_KEY: String = "execution_id"
 private const val NATIVE_GRPC_CELL_KEY: String = "cell_id"

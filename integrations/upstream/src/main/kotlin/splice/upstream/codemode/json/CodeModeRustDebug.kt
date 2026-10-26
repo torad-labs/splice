@@ -45,6 +45,7 @@ internal object CodeModeRustDebug {
     }
 }
 
+// why: Rust's Debug escape prints a code point in hex, and rust-debug-escape-ranges.txt lists its ranges in hex.
 private const val RUST_HEX_RADIX = 16
 
 private val SHORT_ESCAPES =

@@ -105,7 +105,11 @@ private class JsonStringReader(private val source: String, start: Int, private v
         throw CodeModeJsonFailure(reason, start, CodeModeJsonBytes.offset(source, start) + 1)
 }
 
+// why: a JSON unicode escape has exactly four hex digits (RFC 8259 section 7); serde_json 1.0.149
+// src/read.rs:1075 decodes four.
 private const val HEX_DIGITS = 4
+
+// why: those escape digits are hexadecimal (RFC 8259 section 7), so they parse in base 16.
 private const val HEX_RADIX = 16
 private const val ASCII_HEX_DIGITS = "0123456789abcdefABCDEF"
 private const val JSON_STRING_EOF = "EOF while parsing a string"

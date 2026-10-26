@@ -79,7 +79,13 @@ private val WAIT_FIELDS =
         WAIT_TOKEN_FIELD,
         CODE_MODE_WAIT_ARGUMENTS_TERMINATE,
     )
+
+// why: ExecWaitArgs defaults yield_time_ms to DEFAULT_WAIT_YIELD_TIME_MS = 10_000 (Codex rust-v0.164.0
+// core/src/tools/code_mode/wait_handler.rs:32, code-mode-protocol/src/runtime.rs:16).
 private const val WAIT_YIELD_MS = 10_000L
+
+// why: an absent or null max_tokens resolves to DEFAULT_MAX_OUTPUT_TOKENS = 10_000 (Codex rust-v0.164.0
+// core/src/unified_exec/mod.rs:74, through resolve_max_tokens at :221).
 private const val WAIT_OUTPUT_TOKENS = 10_000L
 
 private const val WAIT_CELL_ID = "cell_id"

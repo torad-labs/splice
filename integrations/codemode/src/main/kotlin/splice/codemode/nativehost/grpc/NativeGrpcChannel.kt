@@ -16,6 +16,8 @@ import kotlin.coroutines.resumeWithException
 
 // why: Codex core/code_mode_host.rs detects an unresponsive host after a 30 s idle ping plus a 10 s timeout.
 private const val NATIVE_GRPC_KEEP_ALIVE_SECONDS = 30L
+
+// why: Codex rust-v0.164.0 core/src/code_mode_host.rs:72 sets the HTTP/2 keep-alive timeout to 10 seconds.
 private const val NATIVE_GRPC_KEEP_ALIVE_TIMEOUT_SECONDS = 10L
 
 /** Real gRPC streams retain independent flow control, status, metadata and explicit cancellation. */

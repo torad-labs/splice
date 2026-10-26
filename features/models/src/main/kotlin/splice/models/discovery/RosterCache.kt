@@ -113,4 +113,6 @@ private data class CachedModel(
     )
 }
 
+// why: the first versioned layout of a kept roster's runtime metadata. A file written before it has no
+// metadata_version, which reads as 0, so its picker rows stay usable and its metadata reads as unknown.
 private const val MODEL_METADATA_VERSION = 1

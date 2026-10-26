@@ -68,10 +68,25 @@ internal object CodeModeTokenHash {
     private fun mix(hash: Int, word: Int): Int = (Integer.rotateLeft(hash, FXHASH_ROTATE) xor word) * FXHASH_SEED
 }
 
+// why: bm25 2.3.2's corpus-fitted builder defaults k1 to 1.2 (src/embedder.rs:231), and Codex rust-v0.164.0
+// core/src/tools/handlers/tool_search.rs:172 builds with it unchanged.
 private const val BM25_K1 = 1.2f
+
+// why: the same builder defaults b to 0.75 (bm25 2.3.2 src/embedder.rs:232).
 private const val BM25_B = 0.75f
+
+// why: bm25 2.3.2's IDF is ln(1 + (N - n + 0.5) / (n + 0.5)) (src/scorer.rs:104-106).
 private const val BM25_HALF = 0.5f
+
+// why: bm25 2.3.2 uses FALLBACK_AVGDL = 256.0 (src/embedder.rs:129) for an empty corpus or a non-positive average
+// length (src/embedder.rs:144, :217).
 private const val BM25_FALLBACK_LENGTH = 256f
+
+// why: fxhash 0.2.1 lib.rs:45 sets ROTATE = 5, the left rotation applied before each word is mixed in.
 private const val FXHASH_ROTATE = 5
+
+// why: fxhash 0.2.1 lib.rs:47 sets SEED32 = 0x27220a95, the low 32 bits of SEED64 (lib.rs:46).
 private const val FXHASH_SEED = 0x27220a95
+
+// why: FxHasher32 mixes 4-byte words, then any trailing bytes one at a time (fxhash 0.2.1 lib.rs:74-83).
 private const val FXHASH_WORD_BYTES = 4

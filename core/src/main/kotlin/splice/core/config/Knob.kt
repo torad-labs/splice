@@ -6,9 +6,6 @@
 // anthropicUpstream + claudeCredentialsPath keys (nothing read them; claudithos leftovers).
 package splice.core.config
 
-/** Codex's configured foreground exec budget; the protocol's separate fallback remains ten seconds. */
-public const val DEFAULT_CODE_MODE_EXEC_YIELD_MS: Long = 30_000
-
 // KnobKind + knobsByKey + restartRequiredKnobKeys live in KnobKind.kt
 // (concentration, 2026-08-19).
 
@@ -118,35 +115,37 @@ public enum class Knob(
     // Per-head Code Mode controls are read when the provider is built, like the source session configuration.
     CODE_MODE_DEFAULT_EXEC_YIELD_TIME_MS(
         "codeModeDefaultExecYieldTimeMs",
-        emptyList(),
-        KnobDefault.Count(DEFAULT_CODE_MODE_EXEC_YIELD_MS),
+        listOf(), // head-only: no env alias
+        // Codex's configured foreground exec budget (codex-rs/core/src/config/mod.rs:1206 at rust-v0.164.0); the
+        // protocol's own fallback in code-mode-protocol/src/runtime.rs stays ten seconds.
+        KnobDefault.Count(30_000L),
         restartRequired = true,
         headOnly = true,
     ),
     CODE_MODE_TOOL_DESCRIPTION_FIRST(
         "codeModeToolDescriptionFirst",
-        emptyList(),
+        listOf(), // head-only: no env alias
         KnobDefault.Flag(false),
         restartRequired = true,
         headOnly = true,
     ),
     CODE_MODE_SHOW_CELL_OVERHEAD(
         "codeModeShowCellOverhead",
-        emptyList(),
+        listOf(), // head-only: no env alias
         KnobDefault.Flag(false),
         restartRequired = true,
         headOnly = true,
     ),
     CODE_MODE_TOOL_INPUT_SCHEMA_MAX_BYTES(
         "codeModeToolInputSchemaMaxBytes",
-        emptyList(),
+        listOf(), // head-only: no env alias
         KnobDefault.NoCount,
         restartRequired = true,
         headOnly = true,
     ),
     CODE_MODE_UNIFIED_IMAGE_BUDGET(
         "codeModeUnifiedImageBudget",
-        emptyList(),
+        listOf(), // head-only: no env alias
         KnobDefault.Flag(false),
         restartRequired = true,
         headOnly = true,

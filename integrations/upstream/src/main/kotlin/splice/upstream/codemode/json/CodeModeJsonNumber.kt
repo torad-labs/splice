@@ -96,5 +96,8 @@ internal class CodeModeJsonNumber(private val source: String, private val offset
 
 private val JSON_NUMBER = Json
 private val NEGATIVE_INTEGER_MAGNITUDE = BigInteger.valueOf(Long.MIN_VALUE).negate()
+
+// why: serde_json 1.0.149's default f64_from_parts (src/de.rs:639) uses POW10, 1e0 through 1e308 (src/de.rs:1307),
+// and divides by 1e308 past it (src/de.rs:666).
 private const val MAX_DECIMAL_POWER = 308
 private val POWERS_OF_TEN = DoubleArray(MAX_DECIMAL_POWER + 1) { "1e$it".toDouble() }

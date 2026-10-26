@@ -79,4 +79,6 @@ internal class CodeModeGatewaySearchProbe(
         }
 }
 
+// why: the last stage index. Stage 0 posts the original catalog; stages 1 and 2 post the changed catalog with
+// the results of every client tool call handed out so far. The port chose the count.
 private const val SEARCH_RESULT_STAGES = 2

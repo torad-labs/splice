@@ -12,9 +12,16 @@ import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.atomic.AtomicBoolean
 import kotlin.random.Random
 
+// why: Codex rust-v0.164.0 code-mode/src/grpc_session/mod.rs:143 gives up session admission after 4 retries.
 private const val NATIVE_GRPC_ADMISSION_RETRIES: Int = 4
+
+// why: Codex rust-v0.164.0 code-mode/src/grpc_session/mod.rs:155 computes the backoff as 50_u64 << (retries - 1).
 private const val NATIVE_GRPC_RETRY_BASE_MS: Long = 50
+
+// why: Codex rust-v0.164.0 code-mode/src/grpc_session/mod.rs:156 scales each backoff by random_range(0.9..1.1).
 private const val NATIVE_GRPC_RETRY_JITTER_MIN: Double = 0.9
+
+// why: the exclusive upper end of that random_range(0.9..1.1) jitter (code-mode/src/grpc_session/mod.rs:156).
 private const val NATIVE_GRPC_RETRY_JITTER_MAX: Double = 1.1
 
 /** Admission retries never include Execute; stream failure invalidates only its owning session. */

@@ -6,7 +6,7 @@ import splice.upstream.codemode.search.SearchEnglishStemmer
 import splice.upstream.codemode.search.SearchWords
 
 /** Codex's default English tokenizer: transliterate, lowercase, split, remove stopwords, then stem. */
-public object CodeModeSearchTokenizer {
+internal object CodeModeSearchTokenizer {
     private val stopwords: Set<String> = checkNotNull(
         javaClass.getResourceAsStream("search-stopwords.txt"),
     ) { "Missing CodeMode search stopwords" }.bufferedReader(Charsets.UTF_8).use { it.readLines().toSet() }

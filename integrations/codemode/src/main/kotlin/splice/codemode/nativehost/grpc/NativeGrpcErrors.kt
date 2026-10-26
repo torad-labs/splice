@@ -13,6 +13,8 @@ private const val NATIVE_GRPC_ERROR_SUFFIX = "..."
 
 // why: A UTF-8 continuation byte starts with binary10; truncation backs up to the code-point boundary.
 private const val NATIVE_UTF8_PREFIX_MASK = 0xc0
+
+// why: a UTF-8 continuation byte is 10xxxxxx (RFC 3629 section 3), so it reads 0x80 under the 0xc0 mask.
 private const val NATIVE_UTF8_CONTINUATION_PREFIX = 0x80
 
 /** Only native RPC statuses and explicitly authored API diagnostics bypass throwable-message redaction. */

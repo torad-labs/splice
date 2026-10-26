@@ -30,7 +30,13 @@ internal object CodeModeJsonFloat {
     }
 }
 
+// why: 17 significant digits round-trip any f64; zmij 1.0.19, the float writer of the serde_json 1.0.149 Codex
+// pins, sets the f64 MAX_DIGITS10 to 17 (src/traits.rs:22).
 private const val MAX_F64_DIGITS = 17
+
+// why: zmij 1.0.19 src/lib.rs:1009 writes an f64 in plain notation when its decimal exponent is in -5..=15.
 private const val MIN_PLAIN_FLOAT_EXPONENT = -5
+
+// why: the upper end of that -5..=15 plain-notation range (zmij 1.0.19 src/lib.rs:1009).
 private const val MAX_PLAIN_FLOAT_EXPONENT = 15
 private val PLAIN_FLOAT_EXPONENTS = MIN_PLAIN_FLOAT_EXPONENT..MAX_PLAIN_FLOAT_EXPONENT

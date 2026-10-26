@@ -141,4 +141,6 @@ internal class CodeModeGatewaySettingsProbe(
     }
 }
 
+// why: the configured case's codeModeToolInputSchemaMaxBytes, other than the 16_000 default (Codex rust-v0.164.0
+// code-mode-protocol/src/json_schema_types.rs:13); the port chose the number.
 private const val CUSTOM_SCHEMA_BUDGET = 18_000

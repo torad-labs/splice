@@ -10,6 +10,8 @@ import kotlinx.serialization.json.putJsonObject
 /** Schemas and guidance for the function form used by nested ranked discovery. */
 public object CodeModeToolSearch {
     public const val NAME: String = splice.upstream.ToolSearchWire.NAME
+
+    // why: Codex rust-v0.164.0 tools/src/tool_discovery.rs:7 sets TOOL_SEARCH_DEFAULT_LIMIT = 8.
     public const val DEFAULT_LIMIT: Int = 8
     public const val GUIDANCE: String =
         "Use `await tools.tool_search({query: \"...\", limit: 8})` for BM25-ranked discovery of deferred tools " +

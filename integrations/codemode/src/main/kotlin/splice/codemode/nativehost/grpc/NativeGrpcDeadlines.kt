@@ -51,6 +51,9 @@ internal object NativeGrpcDeadlines {
 
 // deadline.rs adds 60 seconds to the operation's runtime budget; operations.rs adds one second to yields.
 private const val NATIVE_GRPC_OBSERVATION_OVERHEAD_MS = 61_000uL
+
+// why: Codex rust-v0.164.0 code-mode/src/grpc_session/deadline.rs:7 sets TRANSPORT_TIMEOUT to 60 seconds, which
+// startup (deadline.rs:14) adds to a zero runtime budget (deadline.rs:93).
 private const val NATIVE_GRPC_TRANSPORT_MS = 60_000L
 
 // Protocol default, distinct from the current core handler's configured 30-second foreground default.

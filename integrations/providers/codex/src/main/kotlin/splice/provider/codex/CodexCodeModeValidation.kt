@@ -1,6 +1,7 @@
 // NEW: validates outer scripts, runtime calls, and retry-safe client result batches for code mode.
 package splice.provider.codex
 
+import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonPrimitive
 import splice.core.turn.GatewayCustomCall
 import splice.core.util.JsonScalars
@@ -17,13 +18,15 @@ internal class CodexCodeModeValidation(private val config: CodeModeBridgeConfig)
     fun fitsOutput(value: String): Boolean =
         value.length <= config.bounds.maxOutputChars && CodeModeLimits.fitsText(value)
 
-    /** A client result enters bounded: an oversized output is truncated with the marker, never rejected. */
+    /** A client result enters bounded: an oversized output is truncated with the marker, never rejected. Its tool
+     *  value, the one a script reads, is bounded in its text alone: each image in it enters whole, since a cut data
+     *  URL is an image no provider can read ([CodeModeLimits.boundedValue]). */
     fun admit(result: CodeModeResult): CodeModeResult {
         val payload = result.payload as? JsonPrimitive
         return result.copy(
             output = CodeModeLimits.boundedText(result.output, config.bounds.maxOutputChars),
             payload = if (payload?.isString == true) {
-                JsonPrimitive(CodeModeLimits.boundedText(payload.content, config.bounds.maxOutputChars))
+                JsonPrimitive(CodeModeLimits.boundedValue(payload.content, config.bounds.maxOutputChars))
             } else {
                 result.payload
             },
@@ -104,11 +107,19 @@ internal class CodexCodeModeValidation(private val config: CodeModeBridgeConfig)
         // Transport disposition is server-owned; an old receipt keeps its original contract on replay.
         val payload = if (prior.disposition == accepted.disposition) prior.payload else accepted.payload
         val receipt = prior.copy(payload = payload, disposition = accepted.disposition, origin = accepted.origin)
+        val same = accepted == receipt || accepted == receipt.copy(payload = savedCut(receipt.payload))
         return when {
             cleared -> accepted.isError != prior.isError
-            media == null -> accepted != receipt && accepted != turn.rendering.legacy.firstOrNull { it.id == prior.id }
-            else -> accepted != receipt || media != turn.rendering.media[prior.id].orEmpty()
+            media == null -> !same && accepted != turn.rendering.legacy.firstOrNull { it.id == prior.id }
+            else -> !same || media != turn.rendering.media[prior.id].orEmpty()
         }
+    }
+
+    /** [payload] as admission saved it before Oct 26, 2026, when it cut a tool value whole, its images included. A
+     *  result saved that way is the same result replayed now with its images whole, so the upgrade forks nothing. */
+    private fun savedCut(payload: JsonElement?): JsonElement? {
+        val value = (payload as? JsonPrimitive)?.takeIf(JsonPrimitive::isString) ?: return payload
+        return JsonPrimitive(CodeModeLimits.boundedText(value.content, config.bounds.maxOutputChars))
     }
 
     private fun pendingFrameProblem(record: CodeModeRecord, current: Map<String, CodeModeResult>): String? {

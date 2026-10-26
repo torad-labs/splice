@@ -29,6 +29,38 @@ public object CodeModeLimits {
         return value.substring(0, end) + if (withMarker) marker(value.length - end) else ""
     }
 
+    /** A tool value as [CodeModeToolOutputs.content] joins its items, one per line, bounded like [boundedText] in its
+     *  text alone. A line that is a data URL is media, and media cut short is a file no provider can read: a script
+     *  that passed a cut image to `image()` sent it on every later turn (Oct 26, 2026). So each data URL stays whole
+     *  where it stood and spends none of the budget, and a value that holds none is [boundedText] of it. */
+    public fun boundedValue(value: String, maxChars: Int = Int.MAX_VALUE): String {
+        val lines = value.split('\n')
+        val text = lines.filterNot(::isDataUrl)
+        if (text.size == lines.size) return boundedText(value, maxChars)
+        val alone = text.joinToString("\n")
+        return if (alone.length <= maxChars && fitsText(alone)) value else withMedia(lines, alone, maxChars)
+    }
+
+    /** [lines] with their text cut where [boundedText] cuts [text], their text alone, and each data URL left whole. */
+    private fun withMedia(lines: List<String>, text: String, maxChars: Int): String {
+        val withMarker = maxChars >= marker(text.length).length
+        val end = prefixEnd(text, maxChars, withMarker)
+        val cut = if (withMarker) marker(text.length - end) else ""
+        val kept = mutableListOf<String>()
+        var start = 0
+        for (line in lines) {
+            if (isDataUrl(line)) {
+                kept += line
+                continue
+            }
+            if (start <= end) kept += if (start + line.length < end) line else line.substring(0, end - start) + cut
+            start += line.length + 1
+        }
+        return kept.joinToString("\n")
+    }
+
+    private fun isDataUrl(line: String): Boolean = line.startsWith("data:") && ";base64," in line
+
     /** The end of the longest prefix that, with its own marker when [withMarker], fits both budgets. */
     private fun prefixEnd(value: String, maxChars: Int, withMarker: Boolean): Int {
         var bytes = 0

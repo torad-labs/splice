@@ -128,7 +128,11 @@ internal class CodexCodeModeHistoryCodec(private val json: Json) {
         val waiting = string(record.origin.outer, FIELD_TYPE) == "function_call"
         put(FIELD_TYPE, if (waiting) "function_call_output" else TYPE_CUSTOM_OUTPUT)
         put(FIELD_CALL_ID, record.origin.outerCallId)
-        put(FIELD_OUTPUT, record.progress.nativeOutput ?: JsonPrimitive(record.progress.output.orEmpty()))
+        put(
+            FIELD_OUTPUT,
+            record.progress.nativeOutput?.let { CodeModeSavedImages.whole(it, record) }
+                ?: JsonPrimitive(record.progress.output.orEmpty()),
+        )
     }
 
     fun callId(element: JsonElement): String? =

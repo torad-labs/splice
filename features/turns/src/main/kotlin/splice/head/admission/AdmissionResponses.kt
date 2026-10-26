@@ -13,6 +13,7 @@ import io.ktor.server.application.ApplicationCall
 import io.ktor.server.response.header
 import io.ktor.server.response.respondText
 import splice.core.auth.LoopbackHost
+import splice.core.budget.BudgetBlock
 import splice.core.failure.ClientWire
 import splice.core.failure.Decline
 import splice.core.failure.FailureCause
@@ -126,8 +127,8 @@ internal class AdmissionResponses {
     }
 
     /** V4-133 review: the head's `block` budget is reached (see HeadAdmission.refuseIfOverBudget). */
-    suspend fun respondBudgetBlocked(call: ApplicationCall, message: String) {
-        respondRefusal(call, FailureCause.Splice.Declined(Decline.Budget), message)
+    suspend fun respondBudgetBlocked(call: ApplicationCall, block: BudgetBlock) {
+        respondRefusal(call, FailureCause.Splice.Declined(Decline.Budget(block.limit, block.resetsAt)), block.message)
     }
 
     /** The mgmt-key front door's refusal (see [ClientAuth.authorize]). */

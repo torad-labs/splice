@@ -23,6 +23,7 @@ import splice.core.failure.LoginOwner
 import splice.core.failure.Moment
 import splice.core.failure.Position
 import splice.core.turn.ErrorType
+import java.time.Instant
 
 class TurnKnownEndTest {
 
@@ -63,7 +64,8 @@ class TurnKnownEndTest {
     @Test
     fun `a type the client already retries rides through untouched`() {
         assertEquals(ErrorType.OVERLOADED, beforeContent(FailureCause.Provider.Overloaded(Lift.Unstated, false)))
-        assertEquals(ErrorType.PERMISSION, beforeContent(FailureCause.Splice.Declined(Decline.Budget)))
+        val budget = Decline.Budget(limit = "\$20.00", resetsAt = Instant.parse("2026-10-27T05:00:00Z"))
+        assertEquals(ErrorType.PERMISSION, beforeContent(FailureCause.Splice.Declined(budget)))
     }
 
     @Test

@@ -65,7 +65,7 @@ internal class BudgetLedger(
         val reached = seededTally(now)?.takeIf { it.usd >= limit.usd } ?: return null
         if (limit.action == KnobWords.BUDGET_WARN) warnOnce(now, limit.usd)
         return reached.takeIf { limit.action == KnobWords.BUDGET_BLOCK }
-            ?.let { BudgetText.refusal(head, it, limit.usd) }
+            ?.let { BudgetText.refusal(head, it, limit.usd, Instant.ofEpochMilli(context.dayStart(it.day + 1))) }
     }
 
     override fun spent(atMs: Long, model: String, counters: Map<String, Long>) = spentOn(null, atMs, model, counters)

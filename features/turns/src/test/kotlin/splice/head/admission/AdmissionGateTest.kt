@@ -88,6 +88,7 @@ import splice.upstream.transport.UpstreamClient
 import java.io.IOException
 import java.nio.file.Files
 import java.nio.file.Path
+import java.time.Instant
 import java.util.concurrent.CountDownLatch
 import java.util.concurrent.TimeUnit
 import kotlin.time.Duration.Companion.seconds
@@ -541,7 +542,8 @@ class AdmissionGateTest {
         val required = splice.core.memory.HeapWeights.request(body.toByteArray().size.toLong())
         val heap = RequestMaterializationGate(heap = HeapBudget(JvmHeap.limitBytes, required))
         val budget = object : HeadBudget {
-            override fun admit(): BudgetBlock = BudgetBlock("synthetic budget refusal", "synthetic limit")
+            override fun admit(): BudgetBlock =
+                BudgetBlock("synthetic budget refusal", "synthetic limit", "\$1.00", Instant.EPOCH)
             override fun spent(atMs: Long, model: String, counters: Map<String, Long>) = Unit
         }
         val deps = headDeps(tmp).copy(

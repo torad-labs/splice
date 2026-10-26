@@ -52,6 +52,7 @@ import splice.upstream.ProviderName
 import splice.upstream.ProviderTuning
 import java.nio.file.Files
 import java.nio.file.Path
+import java.time.Instant
 import java.util.UUID
 import java.util.concurrent.CopyOnWriteArrayList
 import java.util.concurrent.atomic.AtomicInteger
@@ -83,6 +84,8 @@ class HeadBudgetTest(@param:TempDir private val root: Path) {
             val block = BudgetBlock(
                 message = "head 'codex' has spent \$2.00 today (UTC) against its \$2.00 daily budget",
                 detail = "spent_usd=2.00 limit_usd=2.00 unpriced_turns=0",
+                limit = "\$2.00",
+                resetsAt = Instant.parse("2026-10-27T05:00:00Z"),
             )
             val rig = BudgetRig(root, RecordingBudget(block))
             try {
@@ -130,7 +133,12 @@ class HeadBudgetTest(@param:TempDir private val root: Path) {
     @Test
     fun `a Compare send is weighed by the same budget, and its refusal leaves an Over budget row flagged Compare`() =
         runBlocking {
-            val block = BudgetBlock(message = "head spent its budget", detail = "spent_usd=2.00 limit_usd=2.00")
+            val block = BudgetBlock(
+                message = "head spent its budget",
+                detail = "spent_usd=2.00 limit_usd=2.00",
+                limit = "\$2.00",
+                resetsAt = Instant.parse("2026-10-27T05:00:00Z"),
+            )
             val rig = BudgetRig(root, RecordingBudget(block))
             try {
                 rig.start()

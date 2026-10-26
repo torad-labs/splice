@@ -14,6 +14,7 @@ import splice.core.failure.Stall
 import splice.core.failure.StoppedBy
 import splice.core.failure.Tear
 import splice.core.failure.Unreach
+import java.time.Instant
 
 /** One of every leaf, deterministic ones included. A leaf added later belongs here too. */
 internal val everyLeaf: List<FailureCause> = listOf(
@@ -35,7 +36,7 @@ internal val everyLeaf: List<FailureCause> = listOf(
     FailureCause.Path.Stalled(Stall.IDLE),
     FailureCause.Splice.NoLogin(loginCommand = null),
     FailureCause.Splice.AtCapacity(limit = 4),
-    FailureCause.Splice.Declined(Decline.Budget),
+    FailureCause.Splice.Declined(Decline.Budget(limit = "\$20.00", resetsAt = Instant.parse("2026-10-27T05:00:00Z"))),
     FailureCause.Splice.TurnBudgetSpent(budgetMs = 900_000L, beforeFirstAttempt = false),
     FailureCause.Splice.HoldOutlasted(Outlast.MAX_HOLD, FailureCause.Provider.Limited(Lift.Unstated, null), null),
     FailureCause.Splice.CompactionUnfinished,

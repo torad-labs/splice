@@ -52,6 +52,7 @@ import splice.upstream.transport.UpstreamClient
 import java.net.InetSocketAddress
 import java.nio.file.Files
 import java.nio.file.Path
+import java.time.Instant
 import kotlin.time.Duration.Companion.seconds
 
 private const val TOKEN = "test-inference-token"
@@ -78,7 +79,8 @@ private class ApiKeyAuth : RefreshableAuthProvider {
 }
 
 private object Refusing : HeadBudget {
-    override fun admit(): BudgetBlock = BudgetBlock("the day's budget is spent", "spent=1 limit=1")
+    override fun admit(): BudgetBlock =
+        BudgetBlock("the day's budget is spent", "spent=1 limit=1", "\$1.00", Instant.EPOCH)
     override fun spent(atMs: Long, model: String, counters: Map<String, Long>) = Unit
 }
 

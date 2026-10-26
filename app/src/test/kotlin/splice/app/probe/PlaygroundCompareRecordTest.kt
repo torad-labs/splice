@@ -30,6 +30,7 @@ import splice.diagnostics.playground.PlaygroundResult
 import splice.head.usage.CompareAnswer
 import splice.head.usage.CompareSends
 import java.nio.file.Path
+import java.time.Instant
 
 @OptIn(ExperimentalCoroutinesApi::class)
 class PlaygroundCompareRecordTest {
@@ -91,7 +92,7 @@ class PlaygroundCompareRecordTest {
     fun `a blocked budget refuses a Compare send before anything is posted`() = runTest {
         val fixture = fixture(backgroundScope)
         val registry = fixture.second
-        val block = BudgetBlock("head spent its budget", "spent_usd=2.00 limit_usd=2.00")
+        val block = BudgetBlock("head spent its budget", "spent_usd=2.00 limit_usd=2.00", "\$2.00", Instant.EPOCH)
         val refusing = object : CompareSends {
             override fun admit(model: String, account: String?) = block
 

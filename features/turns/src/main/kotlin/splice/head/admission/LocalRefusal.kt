@@ -43,8 +43,9 @@ internal class PreDriveRefusals(
         trace: TurnTrace?,
     ): Boolean {
         val meta = prepared.built.meta
-        val message = admission.compactionPreflight.refusal(meta, prepared.built.requestBody, prepared.hasPriorExchange)
+        val refused = admission.compactionPreflight.refusal(meta, prepared.built.requestBody, prepared.hasPriorExchange)
             ?: return false
+        val message = refused.detail
         val (tag, kind) = when {
             meta.compact -> OutcomeTag.COMPACTION_PREFLIGHT_COMPACT_OVERFLOW to PreflightKind.COMPACT_OVERFLOW
             prepared.hasPriorExchange -> OutcomeTag.COMPACTION_PREFLIGHT_COMPACTABLE to PreflightKind.COMPACTABLE
@@ -59,7 +60,11 @@ internal class PreDriveRefusals(
         )
         admitted.close()
         // x-should-retry false (ClientWire): the client answers this bound by compacting, not by re-sending.
-        responses.respondRefusal(call, FailureCause.Splice.Declined(Decline.Preflight(kind)), message)
+        responses.respondRefusal(
+            call,
+            FailureCause.Splice.Declined(Decline.Preflight(kind, refused.windowTokens)),
+            message,
+        )
         return true
     }
 
@@ -88,7 +93,7 @@ internal class PreDriveRefusals(
             LocalRefusal(OutcomeTag.BUDGET_BLOCKED.wire, block.detail, trace, named),
         )
         admitted.close()
-        responses.respondBudgetBlocked(call, block.message)
+        responses.respondBudgetBlocked(call, block)
         return true
     }
 

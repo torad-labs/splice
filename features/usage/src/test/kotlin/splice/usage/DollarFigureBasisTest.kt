@@ -18,6 +18,7 @@ import splice.usage.statusline.SessionCostSource
 import splice.usage.statusline.StatuslineRenderer
 import splice.usage.statusline.StatuslineSpend
 import splice.usage.statusline.StatuslineWarn
+import java.time.Instant
 
 class DollarFigureBasisTest {
 
@@ -56,7 +57,7 @@ class DollarFigureBasisTest {
     @Test
     fun `the budget refusal and the budget warning say the day's spend is an estimate`() {
         val tally = DayTally(day = 0L).apply { add(2.5) }
-        val refusal = BudgetText.refusal("codex", tally, limit = 2.0).message
+        val refusal = BudgetText.refusal("codex", tally, limit = 2.0, resetsAt = Instant.EPOCH).message
         val warning = BudgetText.warning("codex", spent = 1.0, limit = 1.0)
 
         listOf(refusal, warning).forEach { text ->

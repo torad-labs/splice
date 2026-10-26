@@ -8,11 +8,12 @@ package splice.usage.budgets
 
 import splice.core.budget.BudgetBlock
 import splice.usage.ApiCostText
+import java.time.Instant
 
 internal object BudgetText {
     /** The block refusal: the head, the day's spend, the limit, when it lifts, how to lift it now, and
      *  how many of today's turns it could not count. */
-    fun refusal(head: String, tally: DayTally, limit: Double): BudgetBlock {
+    fun refusal(head: String, tally: DayTally, limit: Double, resetsAt: Instant): BudgetBlock {
         val uncounted = when {
             tally.unpriced == 0L -> ""
             tally.inexactRows > 0L -> " ${tally.unpriced} turns could not be priced from their reported usage."
@@ -33,6 +34,8 @@ internal object BudgetText {
                 "$uncounted$partial",
             detail = "${amounts(tally.usd, limit)} unpriced_turns=${tally.unpriced}" +
                 if (partial.isEmpty()) "" else " spend_complete=false",
+            limit = ApiCostText.limit(limit),
+            resetsAt = resetsAt,
         )
     }
 

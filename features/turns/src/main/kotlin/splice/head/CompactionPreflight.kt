@@ -12,7 +12,7 @@ import splice.head.perf.PerfStats
  * A refusal needs a preserved, backend-measured prefix and a text-only growth bound. Cold, rewritten
  * or media-bearing histories go upstream; bytes/3 cannot justify blocking a real conversation. */
 internal class CompactionPreflight(private val catalog: ModelCatalog, private val perf: PerfStats) {
-    fun refusal(meta: TurnMeta, request: JsonObject, hasPriorExchange: Boolean): String? {
+    fun refusal(meta: TurnMeta, request: JsonObject, hasPriorExchange: Boolean): Oversize? {
         val budget = CompactionBudgets.forRow(catalog, meta.route.originalModel) ?: return null
         val window = budget.serveWindow
         val estimate = perf.measuredInputs.estimate(
@@ -37,6 +37,10 @@ internal class CompactionPreflight(private val catalog: ModelCatalog, private va
                 "$request cannot fit here. Resume on a model with a larger context window, " +
                 "or start a fresh conversation."
         }
-        return if (bound > window - allowance) "prompt is too long: $explanation" else null
+        return if (bound > window - allowance) Oversize("prompt is too long: $explanation", window) else null
     }
 }
+
+/** A request the preflight refuses: [detail] is the log's account of the bound, and [windowTokens] is the model's
+ *  window, which the client's line names (SpliceLines). */
+internal data class Oversize(val detail: String, val windowTokens: Long)

@@ -3,8 +3,9 @@
 // longer Gear-scanned again: on Oct 25, 92.6% of claude-splice's 12 GB of body text went through the scan while 11.6%
 // was new. These pin what no guess may change. Every body reads back exactly, and is stored as exactly the chunks the
 // plain Gear rule cuts, written here from its definition: over busy days whose sessions push each other's bodies out of
-// the four remembered ones, across a resume from a body whose cut a missed guess's rescan found, and under follower
-// records that lie.
+// the four remembered ones, across a resume from a body whose cut a missed guess's rescan found, under follower records
+// that lie, CHUNK_MAX long ones that only the digest refuses included, and across a missed guess over 64 KiB that holds
+// no Gear boundary.
 package splice.head.trace.body
 
 import kotlinx.serialization.json.Json
@@ -55,6 +56,18 @@ private const val RESCAN_SEED = 1025
 
 // why: a char no generated text holds, so a body cut back there shares exactly the chars before it.
 private const val CUT_MARK = "§"
+
+// why: plain ASCII, one byte each with no escape, so a run of one is a run of one byte value.
+private val RUN_CANDIDATES = 'a'..'z'
+
+// why: two whole CHUNK_MAX chunks of a run, the first of them opening with the quote.
+private const val RUN_PROBE_CHARS = 2 * CHUNK_MAX
+
+// why: the first run body is 200 KiB of one char, three CHUNK_MAX chunks and a remainder, and the second runs 140 KiB
+// of another char past the chunk they share, so its missed guess buffers a whole CHUNK_MAX of it.
+private const val RUN_CHARS = 200 * 1024
+private const val RUN_TAIL_CHARS = 140 * 1024
+private const val LONG_LIE_SEED = 2604
 
 class TraceChunkPredictionTest {
     @Test
@@ -132,6 +145,72 @@ class TraceChunkPredictionTest {
         assertEquals(emptyList<String>(), mismatches)
     }
 
+    @Test
+    fun `a follower CHUNK_MAX long that the bytes after it do not digest to moves no cut, fresh or resumed`(
+        @TempDir dir: Path,
+    ) {
+        val oracle = Oracle()
+        // The rule cuts a run of one such char only at CHUNK_MAX, so its first chunk is a real chunk that long.
+        val run = oracle.runChars(1).single().toString().repeat(RUN_PROBE_CHARS)
+        val bases = LIE_TEXT_CHARS.mapIndexed { at, chars -> Prose.mixed(Random(LIE_SEED + at), chars) }
+        val edited = bases.mapIndexed { at, base -> edits(base, Random(LIE_SEED - at)) }
+        val texts = bases + edited.flatten() + run
+        val expected = texts.associateWith(oracle::chunks)
+        val held = texts.flatMap { spans(oracle.literal(it)) }
+        // Every chunk the pack holds is said to be followed by CHUNK_MAX bytes: under random digests, then under the
+        // run's chunk. The end check passes any guess CHUNK_MAX long and prose cuts far shorter, so only the digest
+        // refuses these.
+        val random = Random(LONG_LIE_SEED)
+        val long = spans(oracle.literal(run)).first().digest
+        val lies = listOf(held.map { random.nextBytes(SHA_BYTES) }, held.map { long }).map { digests ->
+            held.mapIndexed { at, span -> Lie(span.hash, digests[at], CHUNK_MAX) }
+        }
+        val index = TracePackIndex(syntheticHeapBudget())
+        val budget = DayBodyBudget(minFreeBytes = 0, clock = WallClock { NOW })
+        val mismatches = TraceBodyPack(dir.resolve("$DAY.bodies2"), index, budget = budget).use { pack ->
+            val encoder = Encoder(pack, index)
+            texts.forEach { encoder.encode(it) }
+            lies.flatMapIndexed { kind, told ->
+                val lie = { told.forEach { it.tell(pack) } }
+                val freshMisses = texts.filter { text ->
+                    lie()
+                    chunksOf(encoder.encode(text).first) != expected[text]
+                }
+                val resumedMisses = bases.indices.filter { bases[it].length >= CHUNK_MAX }.flatMap { at ->
+                    RESUMED_EDITS.map { edited[at][it] }.filter { text ->
+                        encoder.remember(bases[at])
+                        lie()
+                        chunksOf(encoder.resumed(text)) != expected[text]
+                    }
+                }
+                freshMisses.map { "lie $kind: a ${it.length}-char literal encoded whole" } +
+                    resumedMisses.map { "lie $kind: a ${it.length}-char literal resumed" }
+            }
+        }
+        assertEquals(emptyList<String>(), mismatches)
+    }
+
+    @Test
+    fun `a missed guess over 64 KiB with no Gear boundary is cut at CHUNK_MAX and reads back exactly`(
+        @TempDir dir: Path,
+    ) {
+        val oracle = Oracle()
+        val (first, second) = oracle.runChars(2).map(Char::toString)
+        // Both bodies open with the quote and CHUNK_MAX - 1 of the first char, which the rule cuts at CHUNK_MAX. The
+        // first records 64 KiB of that char as the chunk after it. The second shares one char too few to resume from
+        // the first, so it guesses that chunk and misses on 64 KiB of the second char, which hold no Gear boundary:
+        // only the rescan's cut at CHUNK_MAX stores them.
+        val texts = listOf(first.repeat(RUN_CHARS), first.repeat(CHUNK_MAX - 1) + second.repeat(RUN_TAIL_CHARS))
+        val records = texts.mapIndexed { at, text -> turn("t$at", text) }
+        val day = dir.resolve(DAY)
+        val bodies = TraceBodies(heap = syntheticHeapBudget(), log = LogSink {})
+        val lines = records.map { bodies.encode(it, day) }
+        Files.write(day, joined(lines))
+        val read = TraceRows(heap = syntheticHeapBudget()).turns(dir, HEAD, TraceAsk(last = records.size))
+        val back = read.mapNotNull { it.turn }
+        assertEquals(emptyList<String>(), oracle.mismatches("runs", records, lines.map(::parsed), back))
+    }
+
     private fun turn(id: String, body: String): JsonObject = buildJsonObject {
         put("kind", "turn")
         put("turn", id)
@@ -197,6 +276,13 @@ private class Oracle(private val heap: HeapReservations = syntheticHeapBudget())
         ByteArrayOutputStream().also { TraceLiteral.encode(text, it, heap) }.toByteArray()
 
     fun chunks(text: String): List<Chunk> = PlainGear.chunks(literal(text))
+
+    /** The first [count] chars whose runs the plain rule cuts only at CHUNK_MAX. Over 64 equal bytes Gear's value is
+     *  the same at every byte after, so a run has a boundary at every byte or at none, and nearly every byte has
+     *  none. */
+    fun runChars(count: Int): List<Char> = RUN_CANDIDATES.asSequence().filter { char ->
+        chunks(char.toString().repeat(RUN_PROBE_CHARS)).dropLast(1).all { it.bytes == CHUNK_MAX }
+    }.take(count).toList()
 
     fun chars(records: List<JsonObject>): Long =
         records.sumOf { record -> BODY_FIELDS.sumOf { (section, field) -> body(record, section, field)?.length ?: 0 } }

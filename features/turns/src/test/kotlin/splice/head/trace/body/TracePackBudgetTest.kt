@@ -14,6 +14,7 @@ import org.junit.jupiter.api.io.TempDir
 import splice.core.memory.HeapBudget
 import splice.core.memory.HeapCapacityException
 import splice.core.storage.DayBodyBudget
+import java.lang.ref.Reference
 import java.nio.file.Files
 import java.nio.file.Path
 import java.util.Base64
@@ -24,6 +25,9 @@ private const val DIGEST_BYTES = 32
 
 // why: a fixed seed, so the incompressible body is the same bytes on every run.
 private const val SEED = 20_261_005L
+
+// why: what the literal writer reserves while it feeds a chunker, its char block and byte batch (TraceLiteral).
+private const val LITERAL_WRITER_BYTES = 4 * 1024L
 
 class TracePackBudgetTest {
     @Test
@@ -90,6 +94,34 @@ class TracePackBudgetTest {
             }
             val hash = pack.put(fresh).getValue("hash").jsonPrimitive.content
             assertEquals(TracePackBytes.hashOf(fresh), hash, "once the heap has room, the refused chunk stores")
+        }
+    }
+
+    @Test
+    fun `a stored text encodes again through a new chunker when the heap has no room to copy any of its chunks`(
+        @TempDir dir: Path,
+    ) {
+        val file = dir.resolve("synthetic-2026-09-18.jsonl.bodies2")
+        val noise = ByteArray(CHUNK_MAX * 2).also { Random(SEED).nextBytes(it) }
+        val text = Base64.getEncoder().encodeToString(noise)
+        // The index, the chunker and the literal writer share one heap, as TraceBodies.literal builds them.
+        val heap = splice.head.syntheticHeapBudget()
+        TraceBodyPack(file, TracePackIndex(heap), budget = DayBodyBudget(minFreeBytes = 0)).use { pack ->
+            val first = TraceChunker(pack, heap)
+            TraceLiteral.encode(text, first, heap, 0, first.cuts)
+            val stored = first.finish()
+            val size = Files.size(file)
+            // TraceBodies.literal builds the chunker, and with it the buffer it holds for the whole literal, first.
+            val again = TraceChunker(pack, heap)
+            // The daemon's other owners leave the literal writer its batch and one byte less than the shortest chunk
+            // the rule cuts, so no chunk of the text has room for a copy while it is fed.
+            checkNotNull(heap.reserve(heap.available.value - (LITERAL_WRITER_BYTES + CHUNK_MIN - 1))).use {
+                TraceLiteral.encode(text, again, heap, 0, again.cuts)
+                assertEquals(stored, again.finish(), "every chunk the pack holds is named with no copy")
+            }
+            // The first chunker's buffer keeps its charge until here, so no refund of it made room for a copy.
+            Reference.reachabilityFence(first)
+            assertEquals(size, Files.size(file), "a text the pack holds appends nothing")
         }
     }
 

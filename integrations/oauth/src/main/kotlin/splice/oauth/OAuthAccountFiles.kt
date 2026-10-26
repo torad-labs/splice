@@ -7,6 +7,7 @@ import splice.core.auth.AccountRef
 import splice.core.topology.AuthKind
 import splice.core.util.Cancellables
 import splice.core.util.LogSink
+import splice.upstream.credentials.CredentialLock
 import java.nio.file.Files
 import java.nio.file.LinkOption
 import java.nio.file.Path
@@ -265,7 +266,7 @@ public class OAuthAccountFiles(private val json: Json = Json { ignoreUnknownKeys
      *  requires the file's `splice_account_label` to match its own filename, so a rename that only
      *  moved the file would make discovery refuse that login on the very next boot. Reuses [decorated] (via
      *  [writes]) for that re-embedding and its label-syntax check, rather than re-deriving them. */
-    public fun relabel(kind: AuthKind.OAuth, primaryFile: Path, label: String, newLabel: String): Path {
+    public suspend fun relabel(kind: AuthKind.OAuth, primaryFile: Path, label: String, newLabel: String): Path {
         if (label == PRIMARY) refuse("the primary account cannot be relabeled")
         // Both names come from a request and name files under the pool, so both pass the one label rule first.
         validation.requireLabel(label)
@@ -281,10 +282,15 @@ public class OAuthAccountFiles(private val json: Json = Json { ignoreUnknownKeys
         if (label != newLabel && Files.exists(dir.resolve("$newLabel$JSON_SUFFIX"), LinkOption.NOFOLLOW_LINKS)) {
             refuse("an OAuth account is already labeled '$newLabel'")
         }
-        // Unreadable and unparseable both refuse below by the same name.
-        val parsed = validation.jsonObjectOrNull(credential) ?: refuse("credential for '$label' is not valid JSON")
-        val destination = writes.writeLabeled(kind, dir, newLabel, parsed)
-        if (destination != credential) Files.delete(credential)
+        // Under the lock every refresh of this file holds across its read, POST and write: a refresh in flight
+        // writes its rotated tokens first and they move with the account, instead of re-creating the old file.
+        val destination = CredentialLock.withLock(credential) {
+            // Unreadable and unparseable both refuse below by the same name.
+            val parsed = validation.jsonObjectOrNull(credential) ?: refuse("credential for '$label' is not valid JSON")
+            val written = writes.writeLabeled(kind, dir, newLabel, parsed)
+            if (written != credential) Files.delete(credential)
+            written
+        }
         val quota = dir.resolve("$label-quota$JSON_SUFFIX")
         if (label != newLabel && Files.isRegularFile(quota, LinkOption.NOFOLLOW_LINKS)) {
             Files.move(quota, dir.resolve("$newLabel-quota$JSON_SUFFIX"))

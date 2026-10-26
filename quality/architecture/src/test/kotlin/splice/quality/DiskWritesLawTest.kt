@@ -344,7 +344,9 @@ private val SHIPPED_SITES: Map<String, Map<String, Int>> = mapOf(
     "integrations/claude-code/src/main/kotlin/splice/client/mcp/PluginFlagVerdicts.kt" to
         mapOf("writeAtomic0600(" to 1),
     "core/src/main/kotlin/splice/core/config/KeyStore.kt" to mapOf("FileChannel.open(" to 1, "writeAtomic0600(" to 1),
-    "core/src/main/kotlin/splice/core/config/MgmtKey.kt" to mapOf("writeAtomic0600(" to 1),
+    // Oct 26: the first-run mint and the on-purpose replace (key rotation) write the same key file, in the mgmt-key
+    // README row.
+    "core/src/main/kotlin/splice/core/config/MgmtKey.kt" to mapOf("writeAtomic0600(" to 2),
     "core/src/main/kotlin/splice/core/config/TurnKey.kt" to mapOf("writeAtomic0600(" to 1),
     "core/src/main/kotlin/splice/core/model/ClientWindows.kt" to mapOf("Files.move(" to 1, "Files.writeString(" to 1),
     // The economics backfill's covered edge kept across restarts, documented in the perf backfill edge README row.

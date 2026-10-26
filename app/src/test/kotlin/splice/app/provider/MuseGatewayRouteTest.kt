@@ -1,18 +1,25 @@
 // Goal: a request goes out on a new gateway route whenever its conversation's previous request never finished, so it
 // never queues behind a generation that may still be running there. A request never finished when Muse's gateway gave
 // up on it, when its stream broke and splice sent it again or resumed it, or when its turn ended while Meta was still
-// generating it. A conversation that meets none of these keeps its one route, so its cache stays pinned, and a
-// restarted daemon keeps every conversation on the route it last moved to.
+// generating it. A request whose connection failed before the whole request was written never reached Meta, so it
+// leaves nothing running there and moves nothing. A conversation also leaves a slow route: when a warm turn (at least
+// half its input read from Meta's cache) got Meta's headers more than 60 s after its request was written whole, the
+// next request goes out on a new route. A cold turn keeps its route, where it just wrote its cache, and so does a turn
+// whose time went into writing the request. A conversation that meets none of these keeps its one route, so its cache
+// stays pinned, and a restarted daemon keeps every conversation on the route it last moved to.
 //
 // Oct 26, 02:37 to 02:55 CT: Meta answered a claude-muse turn 504 gateway_timeout after 184 s. splice re-sent the same
 // request on the same x-meta-ai-gateway-session-id within a second, and that request and the four after it waited
 // behind the generation for 18 minutes. After a turn the client aborted, the next warm turn of the session waited over
-// 30 s 6 times in 33, against 2 to 3% after a normal turn. These drive a real claude-muse head, built from its topology
-// the way the daemon builds it, over a local gateway that answers each request by the route it rides.
+// 30 s 6 times in 33, against 2 to 3% after a normal turn. After a warm turn that waited over 60 s for Meta's headers,
+// the session's next warm turn within 20 minutes was slow 34.7% of the time, against 1.3% after a fast one, while other
+// sessions on other routes ran fast. These drive a real claude-muse head, built from its topology the way the daemon
+// builds it, over a local gateway that answers each request by the route it rides.
 package splice.app.provider
 
 import io.ktor.client.HttpClient
 import io.ktor.client.engine.cio.CIO
+import io.ktor.client.engine.okhttp.OkHttpConfig
 import io.ktor.client.request.HttpRequestBuilder
 import io.ktor.client.request.bearerAuth
 import io.ktor.client.request.header
@@ -51,6 +58,7 @@ import splice.head.HeadDeps
 import splice.head.HeadServer
 import splice.head.awaitListening
 import splice.head.headDeps
+import splice.provider.muse.MuseHeaderWait
 import splice.provider.muse.MuseKeyMintCall
 import splice.provider.muse.MuseMintAttempt
 import splice.topology.TopologyLoader
@@ -58,6 +66,7 @@ import splice.upstream.Provider
 import splice.upstream.Waiter
 import splice.upstream.transport.RetryPacing
 import splice.upstream.transport.UpstreamClient
+import splice.upstream.transport.UpstreamTransport
 import java.nio.file.Files
 import java.nio.file.Path
 import java.util.concurrent.TimeUnit
@@ -70,6 +79,13 @@ private const val CALM = "sess-calm"
 
 // The daemon's own default for upstreamRetries.
 private const val TRIES = 4
+
+// One upstream post's whole budget. Meta's holds below pass on the clock the route reads, never in real time.
+private const val UPSTREAM_TIMEOUT_MS = 60_000L
+
+// A minute and a half: past the 60 s a warm request may wait for Meta's headers, inside the 30 to 180 s the slow warm
+// turns of Oct 17 to 26 waited.
+private const val SLOW_MS = 90_000L
 private const val TURN_WAIT_MS = 30_000L
 private const val IDLE_WAIT_S = 30L
 private const val IDLE_POLL_MS = 10L
@@ -258,6 +274,82 @@ class MuseGatewayRouteTest {
             }
         }
 
+    @Test
+    fun `a request whose connection was refused before it was written keeps its route, and so does the next turn`(
+        @TempDir root: Path,
+    ) = runBlocking {
+        museHead(root) { rig ->
+            val route = rig.firstRoute(CONVERSATION)
+            // Meta's address stops taking connections, and takes them again while splice waits to retry.
+            rig.gateway.refuseConnections()
+
+            val turn = rig.turn(CONVERSATION, 2)
+
+            // The refused request never reached Meta, so nothing of it runs on the route.
+            val retried = turn.routes
+            assertEquals(listOf(route), retried, "the retry reaches Meta on the conversation's route: $retried")
+            assertTrue(turn.answered, "the client gets the answer: ${turn.sse}")
+            val later = rig.turn(CONVERSATION, 3)
+            assertEquals(listOf(route), later.routes, "turn 3 rides the route the conversation never had to leave")
+        }
+    }
+
+    @Test
+    fun `a warm turn whose headers Meta held past a minute moves its conversation to a new route`(@TempDir root: Path) =
+        runBlocking {
+            museHead(root) { rig ->
+                val route = rig.firstRoute(CONVERSATION)
+                // Turn 2 reads most of its input from Meta's cache on the route, and Meta holds its headers 90 s.
+                rig.gateway.waits.holdNextHeaders(SLOW_MS)
+
+                val slow = rig.turn(CONVERSATION, 2)
+
+                assertEquals(listOf(route), slow.routes, "the slow turn is sent once, on its route: ${slow.routes}")
+                assertTrue(slow.answered, "the slow turn is answered: ${slow.sse}")
+                val next = rig.turn(CONVERSATION, 3)
+                val moved = next.routes.singleOrNull()
+                assertNotNull(moved, "turn 3 is sent once: ${next.routes}")
+                assertNotEquals(route, moved, "turn 3 leaves the route where Meta held a warm turn: ${next.routes}")
+                assertTrue(next.answered, "turn 3 is answered: ${next.sse}")
+                val later = rig.turn(CONVERSATION, 4)
+                assertEquals(listOf(moved), later.routes, "turn 4 rides the route the conversation moved to")
+            }
+        }
+
+    @Test
+    fun `a cold turn whose headers Meta held past a minute keeps the route where it wrote its cache`(
+        @TempDir root: Path,
+    ) = runBlocking {
+        museHead(root) { rig ->
+            // The conversation's first turn reads none of its input from Meta's cache, and Meta holds its headers 90 s.
+            rig.gateway.waits.holdNextHeaders(SLOW_MS)
+            val route = rig.firstRoute(CONVERSATION)
+
+            val next = rig.turn(CONVERSATION, 2)
+
+            assertEquals(listOf(route), next.routes, "turn 2 rides the route turn 1 wrote its cache on: ${next.routes}")
+            assertTrue(next.answered, "turn 2 is answered: ${next.sse}")
+        }
+    }
+
+    @Test
+    fun `a warm turn whose request took past a minute to write and was answered at once keeps its route`(
+        @TempDir root: Path,
+    ) = runBlocking {
+        museHead(root) { rig ->
+            val route = rig.firstRoute(CONVERSATION)
+            // Turn 2's request takes 90 s to write, and Meta answers it the moment it has all of it.
+            rig.gateway.waits.slowNextWrite(SLOW_MS)
+            val slow = rig.turn(CONVERSATION, 2)
+            assertEquals(listOf(route), slow.routes, "turn 2 is sent once, on its route: ${slow.routes}")
+            assertTrue(slow.answered, "the slowly written turn is answered: ${slow.sse}")
+
+            val next = rig.turn(CONVERSATION, 3)
+
+            assertEquals(listOf(route), next.routes, "Meta answered at once, so turn 3 keeps the route: ${next.routes}")
+        }
+    }
+
     /** A claude-muse head over a fresh [MetaGatewayUpstream], up for [block] and torn down after it. */
     private suspend fun museHead(root: Path, block: suspend (MuseRig) -> Unit) {
         val gateway = MetaGatewayUpstream()
@@ -277,14 +369,21 @@ class MuseGatewayRouteTest {
 
     /** A claude-muse head started over [root]'s state the way the daemon starts it, with a provider of its own: what a
      *  restarted daemon builds. The daemon drains for 45 s before it cuts a turn that is still running; the cut is the
-     *  same at any length, so this head cuts at once. */
+     *  same at any length, so this head cuts at once. Its upstream client is the daemon's, with Meta's waits played on
+     *  the head's clock inside its transport, and every wait splice makes before a retry ends at once, with Meta's
+     *  address listening again if it had stopped. */
     private suspend fun startHead(root: Path, gateway: MetaGatewayUpstream, scope: CoroutineScope): HeadServer {
+        val transport = UpstreamTransport().defaultClient(UPSTREAM_TIMEOUT_MS)
+        val engine = transport.engine.config
+        check(engine is OkHttpConfig) { "the head's upstream client runs on OkHttp" }
+        engine.addNetworkInterceptor(gateway.waits)
         val deps = headDeps(
             tmp = root,
             upstream = UpstreamClient(
-                totalTimeoutMs = 60_000L,
+                totalTimeoutMs = UPSTREAM_TIMEOUT_MS,
                 maxRetries = TRIES,
-                pacing = RetryPacing(waiter = Waiter { }),
+                client = transport,
+                pacing = RetryPacing(waiter = Waiter { gateway.listen() }),
             ),
         )
         val head = HeadServer(
@@ -297,8 +396,9 @@ class MuseGatewayRouteTest {
         return head
     }
 
-    /** The Muse provider the daemon builds for a claude-muse head pointed at [gateway], signed in with a minted key.
-     *  The key mint is never reached: every answer here is a gateway's, never a refused key's. */
+    /** The Muse provider the daemon builds for a claude-muse head pointed at [gateway], signed in with a minted key,
+     *  timing Meta's answers by the clock [MetaWaits] moves against the default 60 s. The key mint is never reached:
+     *  every answer here is a gateway's, never a refused key's. */
     private fun provider(root: Path, gateway: MetaGatewayUpstream, scope: CoroutineScope): Provider {
         val paths = StatePaths(baseOverride = root.resolve("state"))
         val authFile = root.resolve("muse-auth.json")
@@ -330,7 +430,7 @@ class MuseGatewayRouteTest {
             scope,
             log = log,
             refreshCall = TokenUrlRefreshCall { _, _ -> RefreshAttempt.Denied("synthetic") },
-            museArm = MuseResponsesArm(paths, log, scope, noMint),
+            museArm = MuseResponsesArm(paths, log, scope, noMint, MuseHeaderWait(clock = gateway.waits.clock)),
         ).buildProvider(
             ProviderBuild(
                 key = "claude-muse",

@@ -143,12 +143,13 @@ internal class SseRoundConsume(
     }
 
     /** The stream ended with an outcome of its own. When the upstream said the last word on the request (the response
-     *  completed, or the upstream reported why it failed), the request no longer runs there. Anything else (a client
-     *  gone, a reaped round, a stream that stopped with no terminal) leaves it possibly still running upstream. */
+     *  completed, with the bill it reported, or the upstream reported why it failed), the request no longer runs there.
+     *  Anything else (a client gone, a reaped round, a stream that stopped with no terminal) leaves it possibly still
+     *  running upstream. */
     private fun streamEnded(drive: TurnDrive, outcome: TurnOutcome) {
-        val upstreamFinished =
-            outcome is TurnOutcome.Success || (outcome as? TurnOutcome.Failure)?.traits?.providerReported == true
-        if (upstreamFinished) drive.route?.finished()
+        val bill = (outcome as? TurnOutcome.Success)?.usage
+        val upstreamFinished = bill != null || (outcome as? TurnOutcome.Failure)?.traits?.providerReported == true
+        if (upstreamFinished) drive.route?.finished(bill)
         drive.perf.mark(PerfKeys.STREAM_END)
     }
 }

@@ -89,8 +89,11 @@ internal class UpstreamRequest(
     ): RetryOutcome<T> {
         val postedAtMs = auth.postedAtMs
         val timing = ctx.observers.perf?.let(::UpstreamAttemptTiming)
+        val route = ctx.recovery.route
+        // The vendor's route hears the write and the headers the timing hears, perf observed or not.
+        val marks = if (timing == null && route == null) null else AttemptMarks(timing, route)
         val bridge = client.attributes.getOrNull(upstreamTimingBridgeKey)
-        val token = timing?.let { bridge?.register(it) }
+        val token = marks?.let { bridge?.register(it) }
         val bodies = client.attributes.getOrNull(upstreamBodyBridgeKey)
         val bodyToken = bodies?.register(wire.bodyBytes)
         try {

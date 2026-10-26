@@ -18,6 +18,7 @@ import splice.dialect.responses.tools.ToolSearchMode
 import splice.oauth.muse.MuseRefresh
 import splice.provider.muse.MUSE_CONTINUES_REASONING_ONLY
 import splice.provider.muse.MuseGatewayRoutes
+import splice.provider.muse.MuseHeaderWait
 import splice.provider.muse.MuseKeyMintCall
 import splice.upstream.CredentialHeaders
 import splice.upstream.ProviderLocations
@@ -35,6 +36,8 @@ internal class MuseResponsesArm(
     private val log: LogSink,
     probeScope: CoroutineScope,
     mintCall: MuseKeyMintCall = MuseRefresh(),
+    /** How long Meta may hold a warm request's headers before a conversation leaves its gateway route. */
+    private val headerWait: MuseHeaderWait = MuseHeaderWait(),
 ) {
     private val museOAuth = MuseOAuth(probeScope, log, mintCall)
     private val quirksOverlay = QuirksOverlay()
@@ -64,7 +67,7 @@ internal class MuseResponsesArm(
                 quirks = quirks,
                 headers = headers,
                 toolNames = toolNames,
-                routes = MuseGatewayRoutes(stateDir, log),
+                routes = MuseGatewayRoutes(stateDir, log, headerWait),
             ),
         )
         return Wired(provider, default.auth, wiredAccounts(accounts, headers))

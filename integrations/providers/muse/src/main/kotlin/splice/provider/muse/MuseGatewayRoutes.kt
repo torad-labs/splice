@@ -4,18 +4,28 @@
 // conversation's prompt cache lives there. A request sent there while a generation is still running on it waits
 // behind that generation. On Oct 26 a re-send 0.2 s after a 504 gateway_timeout, and the four requests after it,
 // waited 18 minutes. After a turn the client aborted, the next warm turn waited over 30 s 6 times in 33, against 2
-// to 3% after a normal turn. So a request goes out on a new route whenever its conversation's previous request never
-// finished: the gateway gave up on it, its stream broke and the turn sent it again or resumed it, or its turn ended
-// while Meta was still generating it. Every later request rides the new route, across daemon restarts.
+// to 3% after a normal turn. So a request goes out on a new route whenever its conversation's previous request reached
+// Meta whole and never finished: the gateway gave up on it, its stream broke and the turn sent it again or resumed it,
+// or its turn ended while Meta was still generating it. A request whose connection failed before it was written whole
+// left nothing running there, and moves nothing.
+//
+// A place can also go slow for a stretch while others run fast. After a warm turn waited over 60 s for Meta's headers,
+// the session's next warm turn within 20 minutes was slow 34.7% of the time, against 1.3% after a fast one. So a
+// conversation also leaves a route where Meta held a warm request's headers past the limit after it had all of the
+// request, trading the stretch for one cold turn. A cold request keeps its route, where it just wrote its cache. Every
+// later request rides the new route, across daemon restarts.
 package splice.provider.muse
 
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.buildJsonObject
+import splice.core.turn.Usage
 import splice.core.util.Cancellables
+import splice.core.util.ElapsedClock
 import splice.core.util.JsonScalars
 import splice.core.util.JsonWire
 import splice.core.util.LogSink
+import splice.core.util.MonoClock
 import splice.core.util.SafeFailureText
 import splice.core.util.SecureFile
 import splice.core.wire.HttpStatus
@@ -25,6 +35,7 @@ import java.nio.file.Files
 import java.nio.file.Path
 import java.security.MessageDigest
 import java.util.UUID
+import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicReference
 
 // why: the header Meta's gateway routes a request by.
@@ -52,10 +63,25 @@ private const val UUID_VERSION_FOUR = 0x4000L
 // why: clear the upper UUID variant bits before setting the RFC variant on the second half.
 private const val UUID_VARIANT_MASK = 0x3FFF_FFFF_FFFF_FFFFL
 
+// why: the longest Meta may hold a warm request's headers after the request was written whole (the President, Oct 26).
+// A warm turn waits 4 s for them at the median and 11 s at the 90th percentile; a slow route held them 30 to 180 s.
+private const val HEADER_WAIT_LIMIT_MS = 60_000L
+
+/** How long Meta may hold a warm request's headers after it has all of the request, [limitMs], before the conversation
+ *  leaves that route, and the [clock] that times the wait. */
+public data class MuseHeaderWait(
+    val limitMs: Long = HEADER_WAIT_LIMIT_MS,
+    val clock: ElapsedClock = ElapsedClock(MonoClock::nowMs),
+)
+
 /** The route each conversation of one Muse head rides. A conversation starts on a route derived from its key, so it
  *  lands in the same place on every turn and after every restart with nothing stored. One that had to leave a route
  *  rides a new one from then on, and [stateDir] keeps that move for the next daemon. */
-public class MuseGatewayRoutes(stateDir: Path?, private val log: LogSink) {
+public class MuseGatewayRoutes(
+    stateDir: Path?,
+    private val log: LogSink,
+    private val headerWait: MuseHeaderWait = MuseHeaderWait(),
+) {
     private val file: Path? = stateDir?.resolve(MOVES_FILE)
     private val moves: LinkedHashMap<String, String> = load()
 
@@ -63,7 +89,7 @@ public class MuseGatewayRoutes(stateDir: Path?, private val log: LogSink) {
     public fun headers(conversation: String): Map<String, String> = mapOf(ROUTE_HEADER to current(conversation))
 
     /** The route of one turn of [conversation]: it follows that turn's requests and moves the conversation when one of
-     *  them may still be running where it was sent. */
+     *  them may still be running where it was sent, or Meta held a warm one's headers past [headerWait]'s limit. */
     public fun route(conversation: String): VendorRoute = TurnRoute(conversation)
 
     private fun current(conversation: String): String =
@@ -133,17 +159,47 @@ public class MuseGatewayRoutes(stateDir: Path?, private val log: LogSink) {
         log("[muse] could not save the gateway route moves at $path ($why); they hold until a restart")
     }
 
-    /** One turn's requests. The one sent last is unfinished until Meta answers it or ends its stream, and a request
-     *  Meta never finished may still be generating where it was sent. So whenever the turn sends again, or ends, with
-     *  its last request unfinished, the conversation leaves that route first. */
+    /** At least half of the request's input was read from Meta's cache, so its cache was already on the route. */
+    private fun warm(usage: Usage): Boolean = usage.inputTokens > 0 && usage.cachedTokens * 2 >= usage.inputTokens
+
+    /** One turn's requests. The one sent last is unfinished from when Meta has all of it until Meta answers it or ends
+     *  its stream, and a request Meta never finished may still be generating where it was sent. So whenever the turn
+     *  sends again, or ends, with its last request unfinished, the conversation leaves that route first. A request Meta
+     *  finished moves it too, when Meta held its headers past the limit while its cache was warm there. */
     private inner class TurnRoute(private val conversation: String) : VendorRoute {
+        /** The route the request sent last rides. */
+        @Volatile private var sent: String? = null
+
+        /** That route, while Meta has all of the request and has not finished it. */
         private val unfinished = AtomicReference<String?>(null)
+
+        /** When the request sent last went out whole, and how long after that its headers came, on [headerWait]'s
+         *  clock. */
+        @Volatile private var writtenAt: Long? = null
+
+        @Volatile private var heldMs: Long? = null
+
+        /** The turn is over. The transport hears a request went out whole on its own thread, so a turn the client left
+         *  while the request's last bytes went out ends before it hears that, and leaves that request behind. */
+        @Volatile private var ended = false
 
         override fun sending(): Map<String, String> {
             leftBehind("the turn sends again")
             val route = current(conversation)
-            unfinished.set(route)
+            sent = route
+            writtenAt = null
+            heldMs = null
             return mapOf(ROUTE_HEADER to route)
+        }
+
+        override fun written() {
+            writtenAt = headerWait.clock()
+            unfinished.set(sent)
+            if (ended) leftBehind("the turn ended")
+        }
+
+        override fun headersArrived() {
+            heldMs = writtenAt?.let { at -> headerWait.clock() - at }
         }
 
         /** An answer finishes its request, except the gateway giving up, which leaves the generation behind it. */
@@ -151,11 +207,18 @@ public class MuseGatewayRoutes(stateDir: Path?, private val log: LogSink) {
             if (!gaveUp(status, body)) unfinished.set(null)
         }
 
-        override fun finished() {
+        override fun finished(usage: Usage?) {
             unfinished.set(null)
+            val route = sent ?: return
+            val held = heldMs?.takeIf { it > headerWait.limitMs } ?: return
+            val bill = usage?.takeIf(::warm) ?: return
+            val why = "Meta held the headers of a warm request there ${TimeUnit.MILLISECONDS.toSeconds(held)} s " +
+                "after it had all of it (${bill.cachedTokens} of ${bill.inputTokens} input tokens cached)"
+            leave(conversation, route, why)
         }
 
         override fun turnEnded() {
+            ended = true
             leftBehind("the turn ended")
         }
 

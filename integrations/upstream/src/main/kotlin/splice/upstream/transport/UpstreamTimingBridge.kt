@@ -1,4 +1,5 @@
-// NEW: V4-456 — carries attempt timing across Ktor's OkHttp conversion without changing the wire.
+// NEW: V4-456 — carries attempt timing across Ktor's OkHttp conversion without changing the wire. Since Oct 26, 2026 it
+// carries the attempt's marks, which tell the vendor's route the same milestones the timing hears.
 package splice.upstream.transport
 
 import io.ktor.util.AttributeKey
@@ -6,7 +7,6 @@ import okhttp3.Call
 import okhttp3.EventListener
 import okhttp3.Interceptor
 import okhttp3.Response
-import splice.core.perf.UpstreamAttemptTiming
 import java.util.UUID
 import java.util.concurrent.ConcurrentHashMap
 
@@ -14,11 +14,11 @@ import java.util.concurrent.ConcurrentHashMap
  *  only as far as this application interceptor. It becomes a typed tag and is removed before any
  *  network interceptor or socket write. The caller releases registrations on every exit. */
 internal class UpstreamTimingBridge : Interceptor, EventListener.Factory {
-    private val pending = ConcurrentHashMap<String, UpstreamAttemptTiming>()
+    private val pending = ConcurrentHashMap<String, AttemptMarks>()
 
-    fun register(timing: UpstreamAttemptTiming): String {
+    fun register(marks: AttemptMarks): String {
         val token = UUID.randomUUID().toString()
-        pending[token] = timing
+        pending[token] = marks
         return token
     }
 
@@ -28,22 +28,22 @@ internal class UpstreamTimingBridge : Interceptor, EventListener.Factory {
 
     override fun create(call: Call): EventListener {
         val token = call.request().header(UPSTREAM_TIMING_HEADER)
-        val timing = token?.let(pending::get) ?: return EventListener.NONE
-        return HeaderEvents(timing)
+        val marks = token?.let(pending::get) ?: return EventListener.NONE
+        return HeaderEvents(marks)
     }
 
-    private class HeaderEvents(private val timing: UpstreamAttemptTiming) : EventListener() {
+    private class HeaderEvents(private val marks: AttemptMarks) : EventListener() {
         override fun responseHeadersStart(call: Call) {
-            timing.headersStarted()
+            marks.headersStarted()
         }
     }
 
     override fun intercept(chain: Interceptor.Chain): Response {
         val request = chain.request()
         val token = request.header(UPSTREAM_TIMING_HEADER)
-        val timing = token?.let(pending::remove) ?: return chain.proceed(request)
+        val marks = token?.let(pending::remove) ?: return chain.proceed(request)
         val marked = request.newBuilder().removeHeader(UPSTREAM_TIMING_HEADER)
-            .tag<UpstreamAttemptTiming>(timing).build()
+            .tag<AttemptMarks>(marks).build()
         return chain.proceed(marked)
     }
 }

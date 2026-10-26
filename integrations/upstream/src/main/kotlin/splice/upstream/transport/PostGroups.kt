@@ -35,7 +35,8 @@ public fun interface ProviderAnswerObserver {
 public data class PostRecovery(
     val clientFrameEmitted: ClientFrameEmitted = ClientFrameEmitted { true },
     val amendBodyOnFailure: BodyAmendment = BodyAmendment { _, _, _ -> null },
-    /** The turn's route, asked for each attempt's headers and told every answer that is not a stream. */
+    /** The turn's route, asked for each attempt's headers and told when the request went out whole, when its
+     *  response's headers came, and every answer that is not a stream. */
     val route: VendorRoute? = null,
 )
 

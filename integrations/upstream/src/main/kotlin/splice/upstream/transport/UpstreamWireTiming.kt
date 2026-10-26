@@ -11,23 +11,22 @@ import okio.BufferedSink
 import okio.BufferedSource
 import okio.ForwardingSource
 import okio.buffer
-import splice.core.perf.UpstreamAttemptTiming
 
 /** Network-side observation, before event decoding or synchronous downstream delivery. */
 internal class UpstreamWireTiming : Interceptor {
     override fun intercept(chain: Interceptor.Chain): Response {
         val request = chain.request()
-        val timing = request.tag<UpstreamAttemptTiming>() ?: return chain.proceed(request)
+        val marks = request.tag<AttemptMarks>() ?: return chain.proceed(request)
         val body = request.body ?: return chain.proceed(request)
-        val marked = request.newBuilder().method(request.method, WrittenBody(body, timing)).build()
+        val marked = request.newBuilder().method(request.method, WrittenBody(body, marks)).build()
         val response = chain.proceed(marked)
         val responseBody = response.body
-        return response.newBuilder().body(FirstByteBody(responseBody, timing)).build()
+        return response.newBuilder().body(FirstByteBody(responseBody, marks)).build()
     }
 
     private class WrittenBody(
         private val body: RequestBody,
-        private val timing: UpstreamAttemptTiming,
+        private val marks: AttemptMarks,
     ) : RequestBody() {
         override fun contentType(): MediaType? = body.contentType()
         override fun contentLength(): Long = body.contentLength()
@@ -38,18 +37,18 @@ internal class UpstreamWireTiming : Interceptor {
             body.writeTo(sink)
             // writeTo alone can leave the request's tail in okio's buffer. Flush it to the socket first.
             sink.flush()
-            timing.written()
+            marks.written()
         }
     }
 
-    private class FirstByteBody(body: ResponseBody, timing: UpstreamAttemptTiming) : ResponseBody() {
+    private class FirstByteBody(body: ResponseBody, marks: AttemptMarks) : ResponseBody() {
         private val type = body.contentType()
         private val length = body.contentLength()
         private val observed = object : ForwardingSource(body.source()) {
             override fun read(sink: Buffer, byteCount: Long): Long {
-                timing.readStarted()
+                marks.readStarted()
                 val count = super.read(sink, byteCount)
-                if (count > 0) timing.firstByte()
+                if (count > 0) marks.firstByte()
                 return count
             }
         }.buffer()

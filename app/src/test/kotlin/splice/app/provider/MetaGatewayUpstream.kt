@@ -4,24 +4,35 @@
 // can also carry a generation that is still running: its request is streamed the start of an answer that never ends
 // while the test runs, or whose connection breaks under it, and every later request on that route waits behind it
 // until the gateway gives up. A route can also finish one response with no answer in it, and leave nothing running.
-// Every other route streams the turn's answer.
+// Every other route streams the turn's answer. Meta keeps a conversation's prompt cache on the route it rides, so the
+// first answer on a route reads none of its input from the cache, and every later one reads most of it. Meta's address
+// can also stop taking connections for a moment, and Meta can take minutes to answer, which MetaWaits plays.
 //
 // It speaks HTTP/1.1 over plain sockets, one request per connection, so a broken stream is what a network that drops a
 // connection sends: a reset, never a clean end of the body.
 package splice.app.provider
 
+import okhttp3.Interceptor
+import okhttp3.MediaType
+import okhttp3.RequestBody
+import okhttp3.Response
+import okio.BufferedSink
+import splice.core.testing.TestPorts
+import splice.core.util.ElapsedClock
 import splice.core.wire.HttpStatus
 import java.io.BufferedInputStream
 import java.io.IOException
 import java.io.InputStream
 import java.io.OutputStream
 import java.net.InetAddress
+import java.net.InetSocketAddress
 import java.net.ServerSocket
 import java.net.Socket
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.CopyOnWriteArrayList
 import java.util.concurrent.CountDownLatch
 import java.util.concurrent.Executors
+import java.util.concurrent.atomic.AtomicLong
 
 /** What every route that is not stuck answers. */
 internal const val META_ANSWER = "Meta answered."
@@ -34,6 +45,10 @@ private const val ROUTE_HEADER = "x-meta-ai-gateway-session-id"
 // Connections the gateway queues before it accepts them; a test opens a handful at most.
 private const val BACKLOG = 50
 
+// The input every request bills, and how much of it Meta reads from the cache of a route that has answered before.
+private const val INPUT_TOKENS = 1_000
+private const val CACHED_TOKENS = 900
+
 /** Meta's 504 body, verbatim from the Oct 26 trace. */
 private const val GATEWAY_TIMEOUT_BODY =
     """{"error":{"code":"gateway_timeout","message":"The response stream did not start before the server """ +
@@ -43,29 +58,35 @@ private const val ITEM_ADDED = """{"type":"response.output_item.added","output_i
 private const val PARTIAL_DELTA = """{"type":"response.output_text.delta","output_index":0,"delta":"$META_PARTIAL"}"""
 private const val ANSWER_DELTA = """{"type":"response.output_text.delta","output_index":0,"delta":"$META_ANSWER"}"""
 private const val ITEM_DONE = """{"type":"response.output_item.done","output_index":0}"""
-private const val COMPLETED =
-    """{"type":"response.completed","response":{"id":"resp_meta","status":"completed","output":[],""" +
-        """"usage":{"input_tokens":3,"output_tokens":3}}}"""
 
 internal class MetaGatewayUpstream {
     /** The route each request rode, in arrival order; null for a request that named none. */
     val routes: MutableList<String?> = CopyOnWriteArrayList()
+
+    /** How long Meta takes, as the head's clock reads it. */
+    val waits = MetaWaits()
 
     private val stuck = ConcurrentHashMap.newKeySet<String>()
     private val starting = ConcurrentHashMap.newKeySet<String>()
     private val breakingBeforeAnswer = ConcurrentHashMap.newKeySet<String>()
     private val breakingMidAnswer = ConcurrentHashMap.newKeySet<String>()
     private val empty = ConcurrentHashMap.newKeySet<String>()
+    private val cached = ConcurrentHashMap.newKeySet<String>()
     private val breakNow = CountDownLatch(1)
     private val stopped = CountDownLatch(1)
     private val pool = Executors.newCachedThreadPool()
-    private val server = ServerSocket(0, BACKLOG, InetAddress.getByName("127.0.0.1"))
+
+    // A port nothing else is handed while the gateway stops listening on it (kt-tests-bind-port-zero).
+    private val port = TestPorts.reserve()
+    private val listening = Any()
+    private var server = bind()
 
     /** Where a Muse provider points: the Responses API root, which it extends with /responses. */
-    val baseUrl: String get() = "http://127.0.0.1:${server.localPort}/v1"
+    val baseUrl: String get() = "http://127.0.0.1:$port/v1"
 
     init {
-        pool.execute { acceptAll() }
+        val first = server
+        pool.execute { acceptAll(first) }
     }
 
     /** A generation is running on [route] and has not started its stream, so every request that rides it waits behind
@@ -103,18 +124,43 @@ internal class MetaGatewayUpstream {
         empty += route
     }
 
+    /** Nothing listens at Meta's address from now on, so a connection to it is refused before a byte of its request is
+     *  written, until [listen]. */
+    fun refuseConnections() {
+        synchronized(listening) { server.close() }
+    }
+
+    /** Meta's address listens again, when it had stopped. */
+    fun listen() {
+        synchronized(listening) {
+            if (!server.isClosed || stopped.count == 0L) return
+            val again = bind()
+            server = again
+            pool.execute { acceptAll(again) }
+        }
+    }
+
     fun stop() {
-        stopped.countDown()
-        server.close()
+        synchronized(listening) {
+            stopped.countDown()
+            server.close()
+        }
         pool.shutdownNow()
     }
 
-    private fun acceptAll() {
+    /** A listener on the gateway's one port. A listener that stopped leaves the connections it closed in TIME_WAIT on
+     *  that port, so the next one binds beside them. */
+    private fun bind(): ServerSocket = ServerSocket().apply {
+        reuseAddress = true
+        bind(InetSocketAddress(InetAddress.getByName("127.0.0.1"), port), BACKLOG)
+    }
+
+    private fun acceptAll(listener: ServerSocket) {
         while (true) {
             val socket = try {
-                server.accept()
+                listener.accept()
             } catch (_: IOException) {
-                // The gateway is stopping.
+                // The gateway stopped listening.
                 return
             }
             pool.execute { serve(socket) }
@@ -139,7 +185,7 @@ internal class MetaGatewayUpstream {
     private fun answer(socket: Socket, route: String?) {
         val out = socket.getOutputStream()
         when {
-            route == null -> stream(out)
+            route == null -> stream(out, route)
             route in stuck -> gatewayTimeout(out)
             starting.remove(route) -> {
                 stuck += route
@@ -160,10 +206,10 @@ internal class MetaGatewayUpstream {
             }
             empty.remove(route) -> {
                 sseHead(out)
-                send(out, COMPLETED)
+                send(out, completed(route))
                 endChunks(out)
             }
-            else -> stream(out)
+            else -> stream(out, route)
         }
     }
 
@@ -176,10 +222,19 @@ internal class MetaGatewayUpstream {
         out.flush()
     }
 
-    private fun stream(out: OutputStream) {
+    private fun stream(out: OutputStream, route: String?) {
         sseHead(out)
-        listOf(ITEM_ADDED, ANSWER_DELTA, ITEM_DONE, COMPLETED).forEach { event -> send(out, event) }
+        listOf(ITEM_ADDED, ANSWER_DELTA, ITEM_DONE, completed(route)).forEach { event -> send(out, event) }
         endChunks(out)
+    }
+
+    /** The response's last event, billing what Meta read from the cache of [route]: none the first time the route
+     *  answers, when Meta writes the cache there, and most of the input on every answer after. */
+    private fun completed(route: String?): String {
+        val read = if (route != null && !cached.add(route)) CACHED_TOKENS else 0
+        return """{"type":"response.completed","response":{"id":"resp_meta","status":"completed","output":[],""" +
+            """"usage":{"input_tokens":$INPUT_TOKENS,"input_tokens_details":{"cached_tokens":$read},""" +
+            """"output_tokens":3}}}"""
     }
 
     /** The start of an answer, then a stream that stays open while Meta generates the rest, which it never finishes
@@ -254,5 +309,51 @@ internal class MetaGatewayUpstream {
             if (c < 0 || c == '\n'.code) return line.toString()
             if (c != '\r'.code) line.append(c.toChar())
         }
+    }
+}
+
+/**
+ * How long Meta takes, on the clock the head times Meta's answers by. A test cannot keep a socket waiting for a minute,
+ * so a wait of Meta's is a step of that clock, taken in the head's own transport at the point the head would have
+ * waited: [holdNextHeaders] steps it after the next request's last byte and before its headers are read, and
+ * [slowNextWrite] before that request's last byte. The head installs it as its innermost network interceptor, so the
+ * body it wraps is the one the connection writes, around every mark the head itself makes of the write.
+ */
+internal class MetaWaits : Interceptor {
+    private val now = AtomicLong()
+    private val holdNext = AtomicLong()
+    private val slowWriteNext = AtomicLong()
+
+    /** The clock the head times Meta by. */
+    val clock: ElapsedClock = ElapsedClock { now.get() }
+
+    /** Meta holds the next request's headers for [ms] after it has all of the request. */
+    fun holdNextHeaders(ms: Long) {
+        holdNext.set(ms)
+    }
+
+    /** The next request takes [ms] to write, and Meta answers it the moment it has all of it. */
+    fun slowNextWrite(ms: Long) {
+        slowWriteNext.set(ms)
+    }
+
+    override fun intercept(chain: Interceptor.Chain): Response {
+        val request = chain.request()
+        val body = request.body ?: return chain.proceed(request)
+        val slow = slowWriteNext.getAndSet(0)
+        val hold = holdNext.getAndSet(0)
+        if (slow == 0L && hold == 0L) return chain.proceed(request)
+        val timed = object : RequestBody() {
+            override fun contentType(): MediaType? = body.contentType()
+
+            override fun contentLength(): Long = body.contentLength()
+
+            override fun writeTo(sink: BufferedSink) {
+                now.addAndGet(slow)
+                body.writeTo(sink)
+                now.addAndGet(hold)
+            }
+        }
+        return chain.proceed(request.newBuilder().method(request.method, timed).build())
     }
 }

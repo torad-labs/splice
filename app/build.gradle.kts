@@ -85,6 +85,8 @@ dependencies {
     testImplementation(libs.kotlinx.coroutines.test)
     testImplementation(libs.ktor.client.cio)
     testImplementation(libs.ktor.client.mock)
+    // The engine under every head's upstream client: a test plays an upstream's waits inside the head's own transport.
+    testImplementation(libs.ktor.client.okhttp)
     testImplementation(libs.ktor.server.test.host) {
         exclude(group = "io.ktor", module = "ktor-client-apache5")
     }

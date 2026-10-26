@@ -6,19 +6,31 @@
 // refusals in its own module.
 package splice.upstream
 
+import splice.core.turn.Usage
+
 /** One turn's route upstream, from [Provider.route]. The transport and the head say what happened to each request it
  *  routed; which of those means the conversation must leave its route is the vendor's to know. */
 public interface VendorRoute {
-    /** The headers that route the request about to be sent. From here that request may be running upstream until
-     *  [answered] or [finished] hears how it ended, and one sent after it is routed knowing whether it did. */
+    /** The headers that route the request about to be sent. */
     public fun sending(): Map<String, String>
+
+    /** The request went out whole. From here it may be running upstream until [answered] or [finished] hears how it
+     *  ended, and one sent after it is routed knowing whether it did. A request that failed before this never reached
+     *  the upstream whole, so nothing of it runs there. Called on the transport's thread, possibly after [turnEnded]
+     *  when the turn ended while the request's last bytes went out. */
+    public fun written()
+
+    /** The upstream's response headers for the request arrived, after [written] when it went out whole. Called on the
+     *  transport's thread, again for each later response to the same request, such as a redirect's. */
+    public fun headersArrived()
 
     /** The upstream answered the request with [status] and [body] instead of a stream. Whether that answer ended what
      *  the request started upstream is the vendor's to know. */
     public fun answered(status: Int, body: String)
 
-    /** The upstream ended the stream with its own last word: the response completed, or it reported its failure. */
-    public fun finished()
+    /** The upstream ended the stream with its own last word: the response completed, with [usage] the bill it reported
+     *  for the request, or it reported its failure, with [usage] null. */
+    public fun finished(usage: Usage?)
 
     /** The turn is over, whichever way it ended. A request still counted as running is one the turn left behind.
      *  Must not throw: it runs in the finally that settles the turn. */

@@ -1,4 +1,9 @@
 // NEW: rolling trace-body capacity and body-only eviction shared across every head.
+// 2026-10-26: admission listed and statted the trace directory for each new body chunk, compiled the date pattern
+// for each directory entry and found the volume's mount again at each free-space probe, 3.85% of the daemon's
+// allocation in the Oct 25 17:59-18:04 CT JFR. Now one lock hold lists the directory once and moves that listing by
+// its own grants, listing again after its own deletions. The pattern and the pack endings are built once, and the
+// default free-space probe keeps its FileStore.
 package splice.core.storage
 
 import splice.core.util.Cancellables
@@ -7,6 +12,7 @@ import splice.core.util.SecureFile
 import splice.core.util.WallClock
 import java.io.IOException
 import java.nio.channels.FileChannel
+import java.nio.file.FileStore
 import java.nio.file.Files
 import java.nio.file.LinkOption.NOFOLLOW_LINKS
 import java.nio.file.Path
@@ -36,6 +42,13 @@ private const val FLOOR_REACHED = "trace volume free-space floor reached"
 
 private const val INDEX_CAP_REACHED = "shared trace index budget exhausted by the day being written"
 
+/** How a day's v2 and v1 body packs end: the day file's `.jsonl`, then the format's suffix. */
+private const val DAY_PACK_V2_ENDING = ".jsonl$DAY_BODY_V2_SUFFIX"
+private const val DAY_PACK_V1_ENDING = ".jsonl$DAY_BODY_SUFFIX"
+
+/** A day file's name once any rolled generation is cut off, `<head>-<yyyy-MM-dd>.jsonl`, with its date. */
+private val DAY_DATE = Regex(".+-(\\d{4}-\\d{2}-\\d{2})\\.jsonl")
+
 /** The usable bytes on the volume containing a trace directory. */
 public fun interface DayVolumeSpace {
     public fun available(dir: Path): Long
@@ -48,34 +61,55 @@ public class DayBodyCapacityException(public val reason: String) : IOException(r
 public class DayBodyBudget(
     public val maxBytes: Long = TRACE_BODY_MAX_BYTES,
     private val minFreeBytes: Long = TRACE_BODY_MIN_FREE_BYTES,
-    private val space: DayVolumeSpace = DayVolumeSpace { Files.getFileStore(it).usableSpace },
+    private val space: DayVolumeSpace = KeptVolumeSpace(),
     private val clock: WallClock = WallClock(System::currentTimeMillis),
     private val force: JsonlForce = JsonlForce { _, channel -> channel.force(true) },
     private val indexMaxBytes: Long = TRACE_INDEX_MAX_BYTES,
 ) {
+    // The listing this thread's outermost withLock keeps, absent outside one.
+    private val held = ThreadLocal<DayHold>()
+
     init {
         require(maxBytes > 0)
         require(minFreeBytes >= 0)
     }
 
-    public fun <T> withLock(dir: Path, action: DayDirectoryAction<T>): T =
-        DayDirectoryLock(dir).withLock(action)
+    /** Runs [action] under the lock every writer of [dir] takes first, so inside one hold only this budget changes
+     *  the packs and index files it counts. The hold's first admission lists [dir], later ones add the hold's own
+     *  grants to that listing, and a deletion lists again. Bytes written without a grant inside the same hold, or
+     *  admissions continued there after a granted write failed, go unseen until the hold ends. */
+    public fun <T> withLock(dir: Path, action: DayDirectoryAction<T>): T = DayDirectoryLock(dir).withLock {
+        if (held.get() != null) {
+            action()
+        } else {
+            held.set(DayHold(dir))
+            try {
+                action()
+            } finally {
+                held.remove()
+            }
+        }
+    }
 
     /** Existing chunks need no admission. Only new compressed bytes, including their framing, reach here. */
     public fun admit(pack: Path, bytes: Long): Unit = withLock(pack.parent) {
         require(bytes >= 0)
-        if (evicted(dayFile(pack))) throw DayBodyCapacityException(BODY_BUDGET_EVICTED_REASON)
+        val day = dayFile(pack)
+        if (evicted(day)) throw DayBodyCapacityException(BODY_BUDGET_EVICTED_REASON)
         if (bytes > maxBytes) throw DayBodyCapacityException("shared rolling trace body budget exhausted")
-        var days = inventory(pack.parent)
+        val hold = hold(pack.parent)
         val today = Instant.ofEpochMilli(clock()).atZone(ZoneOffset.UTC).toLocalDate()
-        val active = dateOf(dayFile(pack))
-        while (!fits(pack.parent, days.sumOf { it.bytes }, bytes)) {
+        val active = dateOf(day.fileName.toString())
+        while (!fits(pack.parent, hold.packs().sumOf { it.bytes }, bytes)) {
+            val days = hold.packs()
             val oldest = days.filter { it.date.isBefore(today) && it.date != active }.minByOrNull { it.date }
                 ?: throw DayBodyCapacityException(reason(pack.parent, bytes))
             // A whole completed UTC day goes together, across every head and both body formats.
-            days.filter { it.date == oldest.date }.forEach(::evict)
-            days = inventory(pack.parent)
+            val gone = days.filter { it.date == oldest.date }
+            hold.changed()
+            gone.forEach(::evict)
         }
+        hold.granted(pack, bytes)
     }
 
     public fun evicted(day: Path): Boolean =
@@ -89,25 +123,21 @@ public class DayBodyBudget(
         val available = space.available(day.parent)
         if (available < minFreeBytes || bytes > available - minFreeBytes) return FLOOR_REACHED
         val today = Instant.ofEpochMilli(clock()).atZone(ZoneOffset.UTC).toLocalDate()
-        val active = dateOf(day)
-        var days = indexDays(day.parent)
-        while (days.sumOf { it.second } > indexMaxBytes - bytes) {
-            val oldest = days.map { it.first }.filter { it.isBefore(today) && it != active }.minOrNull()
+        val active = dateOf(day.fileName.toString())
+        val hold = hold(day.parent)
+        while (hold.index().values.sum() > indexMaxBytes - bytes) {
+            val oldest = hold.index().keys.filter { it.isBefore(today) && it != active }.minOrNull()
                 ?: return INDEX_CAP_REACHED
+            hold.changed()
             removeDay(day.parent, oldest)
-            days = indexDays(day.parent)
         }
+        hold.lined(active, bytes)
         return null
     }
 
-    /** Each JSONL index file's day and size, every rolled generation included; body packs and markers are not
-     *  the index. */
-    private fun indexDays(dir: Path): List<Pair<LocalDate, Long>> =
-        DirectoryEntries.of(dir).mapNotNull { file ->
-            val date = dateOf(file) ?: return@mapNotNull null
-            val attributes = Files.readAttributes(file, "basic:size,isRegularFile", NOFOLLOW_LINKS)
-            if (attributes["isRegularFile"] == true) date to attributes["size"] as Long else null
-        }
+    /** The listing this thread's hold keeps for [dir], or one of its own for a call outside any hold or for another
+     *  directory. */
+    private fun hold(dir: Path): DayHold = held.get()?.takeIf { it.dir == dir } ?: DayHold(dir)
 
     /** Deletes every head's files of one day: the index, every rolled generation, its lock, its bodies and
      *  their markers. */
@@ -127,18 +157,6 @@ public class DayBodyBudget(
             FLOOR_REACHED
         } else {
             "shared rolling trace body budget exhausted"
-        }
-
-    private fun inventory(dir: Path): List<BodyDay> =
-        DirectoryEntries.of(dir).mapNotNull { file ->
-            val suffix = listOf(DAY_BODY_V2_SUFFIX, DAY_BODY_SUFFIX).firstOrNull {
-                file.fileName.toString().endsWith(".jsonl$it")
-            } ?: return@mapNotNull null
-            val day = file.resolveSibling(file.fileName.toString().removeSuffix(suffix))
-            val date = dateOf(day) ?: return@mapNotNull null
-            val attributes = Files.readAttributes(file, "basic:size,isRegularFile", NOFOLLOW_LINKS)
-            if (attributes["isRegularFile"] != true) return@mapNotNull null
-            BodyDay(day, date, file, attributes["size"] as Long)
         }
 
     private fun evict(body: BodyDay) {
@@ -169,9 +187,9 @@ public class DayBodyBudget(
         pack.fileName.toString().removeSuffix(DAY_BODY_V2_SUFFIX).removeSuffix(DAY_BODY_SUFFIX),
     )
 
-    private fun dateOf(day: Path): LocalDate? {
-        val name = DayGenerations.base(day.fileName.toString())
-        val date = Regex(".+-(\\d{4}-\\d{2}-\\d{2})\\.jsonl").matchEntire(name)?.groupValues?.get(1) ?: return null
+    /** The date of the day file or rolled generation named [name], or null when it names no real UTC day. */
+    private fun dateOf(name: String): LocalDate? {
+        val date = DAY_DATE.matchEntire(DayGenerations.base(name))?.groupValues?.get(1) ?: return null
         return try {
             LocalDate.parse(date)
         } catch (_: java.time.format.DateTimeParseException) {
@@ -180,4 +198,96 @@ public class DayBodyBudget(
     }
 
     private data class BodyDay(val day: Path, val date: LocalDate, val pack: Path, val bytes: Long)
+
+    /** One listing of [dir] for one hold of its lock: each dated body pack with its size, and each date's index bytes
+     *  over every head and rolled generation. It is taken at first use, moved by the hold's own grants, and
+     *  forgotten before a deletion, so the next use lists again. */
+    private inner class DayHold(val dir: Path) {
+        private val packs = ArrayList<BodyDay>()
+        private val index = HashMap<LocalDate, Long>()
+        private var listed = false
+
+        /** Every dated body pack in [dir], of every head and both formats. */
+        fun packs(): List<BodyDay> {
+            list()
+            return packs
+        }
+
+        /** Each date's index bytes in [dir]: every head's day file and its rolled generations. */
+        fun index(): Map<LocalDate, Long> {
+            list()
+            return index
+        }
+
+        /** [bytes] granted to [pack], which its writer appends before anything in this hold is admitted again. */
+        fun granted(pack: Path, bytes: Long) {
+            if (!listed) return
+            val at = packs.indexOfFirst { it.pack == pack }
+            if (at >= 0) {
+                packs[at] = packs[at].copy(bytes = packs[at].bytes + bytes)
+                return
+            }
+            val created = bodyDay(pack, pack.fileName.toString(), bytes)
+            if (created != null) packs += created
+        }
+
+        /** A line of [bytes] granted to a day file dated [date], or to an undated one when it is null. */
+        fun lined(date: LocalDate?, bytes: Long) {
+            if (listed && date != null) index[date] = index.getOrDefault(date, 0L) + bytes
+        }
+
+        /** A file this listing counts is about to be deleted. */
+        fun changed() {
+            listed = false
+        }
+
+        private fun list() {
+            if (listed) return
+            packs.clear()
+            index.clear()
+            for (file in DirectoryEntries.of(dir)) count(file, file.fileName.toString())
+            listed = true
+        }
+
+        /** Counts [file], named [name], when it is a dated body pack or a dated index file, and only when it is a
+         *  regular file. */
+        private fun count(file: Path, name: String) {
+            val body = bodyDay(file, name, 0L)
+            val date = body?.date ?: dateOf(name) ?: return
+            // The attribute-name overload: a class literal is reflection to kt-no-reflection-in-production.
+            val attributes = Files.readAttributes(file, "basic:size,isRegularFile", NOFOLLOW_LINKS)
+            if (attributes["isRegularFile"] != true) return
+            val size = attributes["size"] as Long
+            if (body != null) {
+                packs += body.copy(bytes = size)
+            } else {
+                index[date] = index.getOrDefault(date, 0L) + size
+            }
+        }
+
+        /** [file], named [name], as a body pack of [bytes] whose day file has a date, or null when it is none. */
+        private fun bodyDay(file: Path, name: String, bytes: Long): BodyDay? {
+            val suffix = when {
+                name.endsWith(DAY_PACK_V2_ENDING) -> DAY_BODY_V2_SUFFIX
+                name.endsWith(DAY_PACK_V1_ENDING) -> DAY_BODY_SUFFIX
+                else -> return null
+            }
+            val day = name.removeSuffix(suffix)
+            val date = dateOf(day) ?: return null
+            return BodyDay(file.resolveSibling(day), date, file, bytes)
+        }
+    }
+
+    /** The default free-space probe. It keeps the FileStore of the last directory asked about: building one reads the
+     *  whole mount table, while its usable space is one statvfs of that directory's own path at each call, so every
+     *  answer, and a missing directory's NoSuchFileException, is as fresh as a new store's. */
+    private class KeptVolumeSpace : DayVolumeSpace {
+        @Volatile
+        private var kept: Pair<Path, FileStore>? = null
+
+        override fun available(dir: Path): Long {
+            val store = kept?.takeIf { it.first == dir }?.second ?: Files.getFileStore(dir).also { kept = dir to it }
+            return store.usableSpace
+        }
+    }
 }

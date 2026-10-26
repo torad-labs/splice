@@ -18,6 +18,7 @@ import splice.core.storage.DayBodyBudget
 import splice.core.storage.DayBodyCapacityException
 import splice.core.storage.DayVolumeSpace
 import splice.core.util.WallClock
+import splice.head.syntheticHeapBudget
 import java.nio.file.Files
 import java.nio.file.Path
 import java.time.Instant
@@ -26,6 +27,12 @@ import java.time.Instant
 private const val ROLLING_FIXTURE_BYTES = 256L
 private const val ROLLING_FIXTURE_FLOOR = 64L
 private val ROLLING_NOW = Instant.parse("2026-10-05T12:00:00Z").toEpochMilli()
+
+// why: every synthetic index file holds this many bytes, so an index cap counts files
+private const val INDEX_FILE_BYTES = 4096L
+
+// why: more than any line a short synthetic record makes, and less than one head's day of index files
+private const val LINE_MARGIN = 8192L
 
 class TraceRollingBudgetTest {
     @Test
@@ -101,6 +108,51 @@ class TraceRollingBudgetTest {
         assertEquals(BODY_BUDGET_EVICTED_REASON, body(reopened)["reason"]?.jsonPrimitive?.content)
         assertFalse(Files.exists(TracePackFormat.V2.pack(oldest)), "a stale writer never resurrects an evicted pack")
     }
+
+    @Test
+    fun `past the index cap the oldest completed day goes whole across heads and today and the day being written stay`(
+        @TempDir dir: Path,
+    ) {
+        val oldest = listOf("a", "b").flatMap { head ->
+            val day = dir.resolve("$head-2026-10-03.jsonl")
+            listOf("", ".1", ".2").map { index(dir.resolve("${day.fileName}$it")) } + listOf(
+                Files.createFile(dir.resolve("${day.fileName}.lock")),
+                Files.write(TracePackFormat.V2.pack(day), ByteArray(ROLLING_FIXTURE_BYTES.toInt())),
+                Files.writeString(dir.resolve("${day.fileName}.bodies-evicted"), BODY_BUDGET_EVICTED_REASON + "\n"),
+            )
+        }
+        val kept = listOf("a", "b").flatMap { head ->
+            listOf("2026-10-04", "2026-10-05").map { date -> index(dir.resolve("$head-$date.jsonl")) }
+        } + listOf(
+            Files.createFile(dir.resolve("b-2026-10-04.jsonl.lock")),
+            Files.write(dir.resolve("b-2026-10-04.jsonl.bodies2"), ByteArray(ROLLING_FIXTURE_BYTES.toInt())),
+        )
+        // The four index files of today and yesterday, and room for any line one short record makes.
+        val today = dir.resolve("a-2026-10-05.jsonl")
+        val bodies = TraceBodies(budget = indexBudget(4 * INDEX_FILE_BYTES + LINE_MARGIN), heap = syntheticHeapBudget())
+        val line = encoded(bodies, today, "synthetic record past the index cap")
+        assertEquals(record("synthetic record past the index cap"), bodies.hydrate(line, today))
+        oldest.forEach { assertFalse(Files.exists(it), "$it goes with its whole day") }
+        kept.forEach { assertTrue(Files.exists(it), "$it stays: its day is the newest past day or today") }
+        // Now only today and the day being written hold index bytes, and together they fill the cap.
+        val before = Files.list(dir).use { it.toList() }
+        val full = TraceBodies(budget = indexBudget(4 * INDEX_FILE_BYTES), heap = syntheticHeapBudget())
+        val refused = assertThrows(DayBodyCapacityException::class.java) {
+            encoded(full, dir.resolve("a-2026-10-04.jsonl"), "synthetic record for yesterday")
+        }
+        assertEquals("shared trace index budget exhausted by the day being written", refused.reason)
+        before.forEach { assertTrue(Files.exists(it), "$it stays: a refusal deletes nothing") }
+    }
+
+    private fun indexBudget(cap: Long): DayBodyBudget = DayBodyBudget(
+        Long.MAX_VALUE,
+        0,
+        DayVolumeSpace { Long.MAX_VALUE },
+        WallClock { ROLLING_NOW },
+        indexMaxBytes = cap,
+    )
+
+    private fun index(file: Path): Path = Files.write(file, ByteArray(INDEX_FILE_BYTES.toInt()))
 
     private fun budget(capacity: Long): DayBodyBudget =
         DayBodyBudget(capacity, 0, DayVolumeSpace { Long.MAX_VALUE }, WallClock { ROLLING_NOW })

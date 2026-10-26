@@ -2,6 +2,7 @@ package splice.core.storage
 
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertFalse
+import org.junit.jupiter.api.Assertions.assertNull
 import org.junit.jupiter.api.Assertions.assertThrows
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
@@ -10,7 +11,9 @@ import splice.core.util.JsonlForce
 import splice.core.util.WallClock
 import java.io.IOException
 import java.nio.file.Files
+import java.nio.file.NoSuchFileException
 import java.nio.file.Path
+import java.nio.file.StandardOpenOption
 import java.time.Instant
 import java.time.LocalDate
 
@@ -149,6 +152,47 @@ class DayBodyBudgetTest {
         assertFalse(Files.exists(current))
         assertFalse(Files.exists(current.resolveSibling("${current.fileName}.tmp")))
         assertEquals(emptySet<String>(), DayFileStores(dir).prefixes())
+    }
+
+    @Test
+    fun `the default free-space probe reads each directory as it is at each call`(@TempDir root: Path) {
+        val first = Files.createDirectory(root.resolve("first"))
+        val day = first.resolve("a-2026-10-05.jsonl")
+        val absent = root.resolve("absent").resolve("a-2026-10-05.jsonl")
+        val budget = DayBodyBudget(minFreeBytes = 0, clock = WallClock { BODY_TEST_NOW })
+        assertNull(budget.admitIndex(day, 1), "a directory that exists has room above a zero floor")
+        assertThrows(NoSuchFileException::class.java, { budget.admitIndex(absent, 1) }, "right after another probe")
+        assertNull(budget.admitIndex(day, 1), "the first directory is read again, not the missing one")
+        Files.delete(first)
+        assertThrows(NoSuchFileException::class.java, { budget.admitIndex(day, 1) }, "once its directory is deleted")
+        Files.createDirectory(first)
+        assertNull(budget.admitIndex(day, 1), "the recreated directory has room again")
+        val floor = DayBodyBudget(minFreeBytes = Long.MAX_VALUE / 2, clock = WallClock { BODY_TEST_NOW })
+        assertEquals("trace volume free-space floor reached", floor.admitIndex(day, 1))
+    }
+
+    @Test
+    fun `bytes written between two holds count in the next one however the first one ended`(@TempDir dir: Path) {
+        val current = pack(day(dir, "a", "2026-10-05"))
+        val budget = DayBodyBudget(
+            BODY_TEST_BYTES * 2,
+            0,
+            DayVolumeSpace { Long.MAX_VALUE },
+            WallClock { BODY_TEST_NOW },
+        )
+        budget.withLock(dir) { budget.admit(current, 1) }
+        assertThrows(IOException::class.java) {
+            budget.withLock(dir) {
+                budget.admit(current, 1)
+                throw IOException("synthetic failed write")
+            }
+        }
+        // Another writer fills today's pack to the cap while no hold is open.
+        Files.write(current, ByteArray(BODY_TEST_BYTES.toInt()), StandardOpenOption.APPEND)
+        val refused = assertThrows(DayBodyCapacityException::class.java) {
+            budget.withLock(dir) { budget.admit(current, 1) }
+        }
+        assertEquals("shared rolling trace body budget exhausted", refused.reason)
     }
 
     private fun day(dir: Path, head: String, date: String): Path =

@@ -273,21 +273,16 @@ class UpstreamClientBackoffTest {
         }
     }
 
+    // A turn waits only on its own failure, never on another turn's (Marcos, Oct 26): a login another turn marks
+    // limited while this one waits out its own transport failure does not stop this turn's retry.
     @Test
-    fun `a planned retry refused by a new credential hold records no resend`() = runTest {
+    fun `a planned retry still goes out when another turn marks the login limited during its wait`() = runTest {
         for (kind in FailureKind.entries) {
             val fixture = Fixture(kind)
             val hold = RateLimitCooldown(ElapsedClock { fixture.elapsed })
             fixture.afterWait = { hold.arm(60_000L) }
 
-            val failure = assertEnds<UpstreamFailed> { fixture.postWithHold(hold) }
-
-            assertEquals(429, failure.status)
-            assertEquals(1, fixture.calls.get())
-            assertEquals(1, fixture.waits.size)
-            assertEquals(1L, fixture.perf.snapshot().counters[PerfKeys.ATTEMPTS])
-            assertNull(fixture.perf.snapshot().counters[PerfKeys.RETRIES])
-            assertNull(fixture.perf.snapshot().counters[PerfKeys.POST_SEND_RETRIES])
+            assertEquals("ok", fixture.postWithHold(hold), "$kind: the retry reaches the provider and gets its answer")
         }
     }
 

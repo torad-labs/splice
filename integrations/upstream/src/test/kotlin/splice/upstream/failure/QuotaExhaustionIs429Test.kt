@@ -85,7 +85,7 @@ class QuotaExhaustionIs429Test {
         }
 
         assertEquals(HttpStatus.TOO_MANY_REQUESTS, thrown.status, "the rewrite is what every layer above reads")
-        assertTrue(client.rateLimitedForMs > 0L, "a quota wall must arm the follower horizon like a 429")
+        assertTrue(client.rateLimitedForMs > 0L, "a quota wall must mark its login limited like a 429")
         assertEquals(0, refreshes.get(), "billing is not auth: no refresh may be spent on a quota wall")
         assertTrue(
             notices.any { it.contains("403 is a quota exhaustion") && it.contains("${HttpStatus.TOO_MANY_REQUESTS}") },

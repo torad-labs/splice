@@ -68,9 +68,6 @@ class NativeRateLimitHeadersTest {
                 assertEquals(horizon, cooldown.remainingMs(), "late headers cannot erase the newer refusal")
                 assertEquals(selection, cooldown.unavailableForMs())
                 assertEquals(reset, cooldown.providerUnavailableForMs())
-                val follower = assertEnds<UpstreamFailed> { client.posted(context(), "{}") { "unreachable" } }
-                assertTrue(follower.localHold && follower.status == 429, "the follower stays local")
-                assertEquals(2, requests)
                 elapsed += horizon
                 assertEquals(0L, cooldown.remainingMs(), "the original horizon expires without being extended")
             } finally {
@@ -117,16 +114,12 @@ class NativeRateLimitHeadersTest {
             auth = fakeAuth,
             extraHeaders = { emptyMap() },
         ).also { it.relayRateLimitReplies = true }
-        val observer = assertEnds<UpstreamFailed> { client.posted(context(), "{}") { "unreachable" } }
-        val follower = assertEnds<UpstreamFailed> { client.posted(context(), "{}") { "unreachable" } }
-        for (failure in listOf(observer, follower)) {
-            assertEquals(429, failure.status)
-            assertEquals(native, failure.body)
-            assertEquals(retained, failure.rateLimitReply?.headers)
-        }
-        assertTrue(follower.localHold)
+        val failure = assertEnds<UpstreamFailed> { client.posted(context(), "{}") { "unreachable" } }
+        assertEquals(429, failure.status)
+        assertEquals(native, failure.body)
+        assertEquals(retained, failure.rateLimitReply?.headers)
         assertEquals(listOf(15_000L, 15_000L, 15_000L), floors, "a long Retry-After waits the 15s ceiling (V4-61)")
-        assertEquals(4, attempts, "the budget's four attempts, and the held follower never reaches upstream")
+        assertEquals(4, attempts, "the budget's four attempts")
     }
 }
 
@@ -194,13 +187,13 @@ class UpstreamClientRateLimitTest {
         assertEnds<UpstreamFailed> { client.posted(observedContext(), "{}") { "unreachable" } }
         release.complete(Unit)
         assertEquals("ok", older.await())
-        val follower = assertEnds<UpstreamFailed> { client.posted(observedContext(), "{}") { "unreachable" } }
-        assertEquals(listOf(200, 429), answers.map { it.first }, "completion and local holds are not provider answers")
+        assertEquals(listOf(200, 429), answers.map { it.first }, "completion is not a provider answer")
         assertTrue(answers.all { it.second > 0L })
         assertTrue(answers[1].second >= answers[0].second)
-        assertEquals(native, follower.body, "completion is not a newer provider acceptance")
-        assertEquals(listOf("true"), follower.rateLimitReply?.headers?.get("x-should-retry"))
-        assertEquals(2, requests, "the follower uses the credential's latest native refusal")
+        val kept = client.credentialCooldown(mapOf("x-api-key" to "k"))?.rateLimitReply
+        assertEquals(native, kept?.body, "completion is not a newer provider acceptance")
+        assertEquals(listOf("true"), kept?.headers?.get("x-should-retry"))
+        assertTrue(client.rateLimitedForMs > 0L, "the login still reads limited after the older body finishes")
     }
 
     @Test
@@ -236,17 +229,18 @@ class UpstreamClientRateLimitTest {
         assertEnds<UpstreamFailed> { client.posted(context("synthetic-refused"), "{}") { "unreachable" } }
         assertEquals("ok", client.posted(context("synthetic-healthy"), "{}") { "ok" })
         assertEquals("ok", client.posted(context("synthetic-new"), "{}") { "ok" })
-        val follower = assertEnds<UpstreamFailed> {
+        val again = assertEnds<UpstreamFailed> {
             client.posted(context("synthetic-refused"), "{}") { "unreachable" }
         }
-        assertTrue(follower.localHold)
-        assertEquals(listOf("synthetic-refused", "synthetic-healthy", "synthetic-new"), sent)
+        assertEquals(429, again.status)
+        assertEquals("synthetic refusal", again.body, "the refused credential's next turn hears the provider itself")
+        assertEquals(listOf("synthetic-refused", "synthetic-healthy", "synthetic-new", "synthetic-refused"), sent)
         assertEquals(
             listOf("synthetic-healthy", "synthetic-new"),
             accepted,
             "refusals never permit early stream progress",
         )
-        assertEquals(4, snapshots, "each attempt resolves headers once, including the local identity check")
+        assertEquals(4, snapshots, "each attempt resolves headers once, and sends that snapshot")
     }
 
     @Test
@@ -270,11 +264,11 @@ class UpstreamClientRateLimitTest {
         assertEquals("ok", postOnce(client))
         assertEquals(2, calls.get(), "the observer retries upstream, not a synthetic local 429")
         assertEquals(15_000L, elapsed)
-        assertEquals(0L, client.rateLimitedForMs, "a recovered request leaves no follower cooldown")
+        assertEquals(0L, client.rateLimitedForMs, "a recovered request leaves its login unlimited")
     }
 
     @Test
-    fun `an exhausted non-429 pushback preserves its status and protects followers`() = runTest {
+    fun `an exhausted non-429 pushback preserves its status and marks its login limited`() = runTest {
         var elapsed = 0L
         val calls = AtomicInteger()
         val engine = MockEngine {
@@ -293,9 +287,6 @@ class UpstreamClientRateLimitTest {
         assertEquals("server busy", observer.body)
         assertEquals(2, calls.get())
         assertEquals(60_000L, client.rateLimitedForMs)
-        val follower = assertEnds<UpstreamFailed> { postOnce(client) }
-        assertEquals(429, follower.status)
-        assertEquals(2, calls.get(), "the follower is held without an upstream request")
     }
 
     @Test
@@ -317,12 +308,10 @@ class UpstreamClientRateLimitTest {
         assertEquals(3, calls.get(), "every attempt in the budget is spent before the turn fails")
         assertEquals(listOf(15_000L, 15_000L), capture.minDelays, "the floor is 15s on every retry of a bare 429")
         assertTrue(client.rateLimitedForMs > 0L, "exhaustion arms the horizon")
-        assertEnds<UpstreamFailed> { postOnce(client) }
-        assertEquals(3, calls.get(), "a follower inside the armed horizon must not reach upstream")
     }
 
     @Test
-    fun `a waitable 429 is waited out, then followers fail fast`() = runTest {
+    fun `a waitable 429 is waited out and retried before the turn gives up`() = runTest {
         val calls = AtomicInteger()
         val waiter = RecordingWaiter()
         val notices = mutableListOf<String>()
@@ -355,15 +344,6 @@ class UpstreamClientRateLimitTest {
         // V4-48: a pushback at or under the 15s ceiling is WAITED OUT and retried, not surrendered.
         assertEquals(3, calls.get(), "a short 429 is retried, not surrendered")
         assertTrue(waiter.waits.isNotEmpty(), "the pushback is waited out rather than skipped")
-
-        val waitsAfterObserver = waiter.waits.size
-        val follower = assertEnds<UpstreamFailed> { client.posted(context(), "{}") { "unreachable" } }
-        assertEquals(3, calls.get(), "a follower must fail fast without reaching upstream")
-        // V4-46: STRICTER than the word it replaced. The follower body must identify the GATEWAY as
-        // the holder of the interval — that is the property the row guarantees — where the old
-        // contains("cooldown") merely pinned a vocabulary word.
-        assertTrue(follower.body.contains("this gateway is holding retries"), follower.body)
-        assertEquals(waitsAfterObserver, waiter.waits.size, "a follower fails fast; only the observer waited")
         assertEquals(1_000L, cooldown.remainingMs())
         assertEquals(0L, cooldown.unavailableForMs())
     }
@@ -384,7 +364,7 @@ class UpstreamClientRateLimitTest {
         // DR-47: seconds*1000 past Long.MAX wrapped NEGATIVE, which read as "tiny pushback" — the
         // give-up branch never fired, the curve retried on a negative floor, and the cooldown armed
         // an already-expired horizon. Saturation turns it into the absurd-pushback case above: one
-        // attempt, with follower protection clamped at the NF-01 ceiling.
+        // attempt, with the login's horizon clamped at the NF-01 ceiling.
         var elapsed = 0L
         val calls = AtomicInteger()
         val capture = Capture()
@@ -397,16 +377,13 @@ class UpstreamClientRateLimitTest {
         assertEquals(1, calls.get(), "saturated pushback must give up, not retry on a wrapped-negative floor")
         assertTrue(capture.minDelays.isEmpty())
         assertEquals(120_000L, client.rateLimitedForMs)
-        assertEnds<UpstreamFailed> { postOnce(client) }
-        assertEquals(1, calls.get(), "a retryable 5xx pushback must protect followers")
         elapsed += 121_000L
-        assertEnds<UpstreamFailed> { postOnce(client) }
-        assertEquals(2, calls.get(), "the bounded follower protection must expire")
+        assertEquals(0L, client.rateLimitedForMs, "the saturated horizon is bounded and expires")
     }
 
     @Test
     fun `http-date retry-after is honoured - arms the cooldown like its seconds twin`() = runTest {
-        // NF-04: a date ~30s out behaves exactly like "Retry-After: 30" — the shared cooldown is
+        // NF-04: a date ~30s out behaves exactly like "Retry-After: 30" — the login's horizon is
         // armed for the SERVED horizon, whichever exit the turn leaves by.
         val httpDate = java.time.format.DateTimeFormatter.RFC_1123_DATE_TIME
             .format(java.time.ZonedDateTime.now(java.time.ZoneOffset.UTC).plusSeconds(30))
@@ -420,11 +397,9 @@ class UpstreamClientRateLimitTest {
         assertEnds<UpstreamFailed> { postOnce(client) }
         assertEquals(1, calls.get()) // V4-61: 15s retry does not fit the 5s harness budget; gives up armed
         now += 20_000 // past the 20s no-header default but inside the served ~30s
-        assertEnds<UpstreamFailed> { postOnce(client) }
-        assertEquals(1, calls.get(), "a date-form pushback must arm its horizon, not the 20s guess")
+        assertTrue(client.rateLimitedForMs > 0L, "a date-form pushback must arm its horizon, not the 20s guess")
         now += 20_000 // comfortably past the served horizon (margin for test wall-clock drift)
-        assertEnds<UpstreamFailed> { postOnce(client) }
-        assertEquals(2, calls.get())
+        assertEquals(0L, client.rateLimitedForMs)
     }
 
     @Test
@@ -451,11 +426,12 @@ class UpstreamClientRateLimitTest {
         assertEquals(6, calls.get(), "a past date clamps to 0 — no cooldown, no 20s fallback")
     }
 
-    // Shared 429 cooldown (2026-07-19 storm): one post's rate-limit discovery teaches the whole
-    // client — the observer and all followers terminate without multiplying the retry wave.
+    // A 429 marks its login limited, which names the limit on status and steers new sessions to a free
+    // login. It never stops the next post: each turn asks the provider itself and waits only on its own
+    // failure (Marcos, Oct 26), which retires the shared fail-fast of the 2026-07-19 storm.
 
     @Test
-    fun `429 arms a shared cooldown - followers fail fast with zero upstream calls`() = runTest {
+    fun `a 429 marks its login limited for 20s and the next post still asks the provider`() = runTest {
         var now = 0L
         val calls = AtomicInteger()
         val engine = MockEngine {
@@ -463,19 +439,16 @@ class UpstreamClientRateLimitTest {
             respond("""{"detail":"Rate limit exceeded"}""", HttpStatusCode.TooManyRequests, headersOf())
         }
         val client = clientOver(engine, clock = { now })
-        // V4-61: a 15s retry cannot fit the 5s harness budget, so the observer exits at once, ARMED
+        // V4-61: a 15s retry cannot fit the 5s harness budget, so the first post exits at once, ARMED
         assertEnds<UpstreamFailed> { postOnce(client) }
         assertEquals(1, calls.get())
-        // a follower during the cooldown fails fast: 429 body names the GATEWAY as the holder of the
-        // interval, no upstream call
-        val e = assertEnds<UpstreamFailed> { postOnce(client) }
-        assertEquals(1, calls.get())
-        assertEquals(429, e.status)
-        assertTrue(e.body.contains("this gateway is holding retries"), e.body)
-        // default cooldown (no Retry-After) expires after 20s — traffic is attempted again
+        assertEquals(20_000L, client.rateLimitedForMs, "no Retry-After: the 20s default")
+        val next = assertEnds<UpstreamFailed> { postOnce(client) }
+        assertEquals(2, calls.get(), "the next post reaches the provider, held by nothing another post armed")
+        assertEquals(429, next.status)
+        assertEquals("""{"detail":"Rate limit exceeded"}""", next.body, "the provider's own answer, not splice's")
         now += 21_000
-        assertEnds<UpstreamFailed> { postOnce(client) }
-        assertEquals(2, calls.get())
+        assertEquals(0L, client.rateLimitedForMs)
     }
 
     @Test
@@ -491,12 +464,11 @@ class UpstreamClientRateLimitTest {
         val client = clientOver(engine, clock = { now })
         assertEnds<UpstreamFailed> { postOnce(client) }
         assertEquals(1, calls.get()) // V4-61: 15s retry does not fit the 5s harness budget; gives up ARMED
+        assertEquals(30_000L, client.rateLimitedForMs, "the served 30s, verbatim")
         now += 25_000 // past the 20s default but inside the served 30s
-        assertEnds<UpstreamFailed> { postOnce(client) }
-        assertEquals(1, calls.get()) // still cooling — no upstream call
+        assertEquals(5_000L, client.rateLimitedForMs)
         now += 6_000 // past the 30s Retry-After
-        assertEnds<UpstreamFailed> { postOnce(client) }
-        assertEquals(2, calls.get()) // attempted again
+        assertEquals(0L, client.rateLimitedForMs)
     }
 
     @Test
@@ -519,16 +491,13 @@ class UpstreamClientRateLimitTest {
         val armed = assertEnds<UpstreamFailed> { postOnce(client) }
         assertEquals(1, calls.get())
         assertTrue(armed.body.contains("86400"), "true pushback surfaces in the upstream body: ${armed.body}")
-        now += 119_000 // inside the 120s ceiling — still failing fast
-        assertEnds<UpstreamFailed> { postOnce(client) }
-        assertEquals(1, calls.get())
-        now += 2_000 // 121s: the clamp has expired — traffic is attempted again, not in 24h
-        assertEnds<UpstreamFailed> { postOnce(client) }
-        assertEquals(2, calls.get())
+        assertEquals(120_000L, client.rateLimitedForMs, "the horizon clamps to the ceiling, not 24h")
+        now += 121_000
+        assertEquals(0L, client.rateLimitedForMs)
     }
 
     // UP-001: Retry-After on a non-retryable non-429 governs that request only. Retryable 408/5xx
-    // still arm local follower protection, without writing account-selection unavailability.
+    // still mark their login limited, without writing account-selection unavailability.
 
     @Test
     fun `a non-retryable 403 with a long retry-after does not arm the shared cooldown`() = runTest {

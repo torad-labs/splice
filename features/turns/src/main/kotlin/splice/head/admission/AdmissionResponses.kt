@@ -15,7 +15,6 @@ import io.ktor.server.response.respondText
 import splice.core.auth.LoopbackHost
 import splice.core.wire.ErrorEnvelope
 import splice.core.wire.HttpStatus
-import splice.core.wire.RateLimitReply
 import splice.http.ingress.IngressErrorBody
 import splice.upstream.credentials.AccountResetText
 import java.time.ZoneOffset
@@ -79,12 +78,6 @@ internal class AdmissionResponses {
             ContentType.Application.Json,
             HttpStatusCode(HttpStatus.TOO_MANY_REQUESTS, "Rate Limited"),
         )
-    }
-
-    /** The same credential receives the stored native answer, without a synthesized retry schedule. */
-    suspend fun respondProviderRateLimited(call: ApplicationCall, reply: RateLimitReply) {
-        reply.headers.forEach { (name, values) -> values.forEach { call.response.header(name, it) } }
-        call.respondText(reply.body, ContentType.Application.Json, HttpStatusCode.fromValue(reply.status))
     }
 
     private fun retryAfterDate(resetEpochSeconds: Long): String =

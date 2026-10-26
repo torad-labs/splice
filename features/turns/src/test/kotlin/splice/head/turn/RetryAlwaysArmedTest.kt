@@ -97,9 +97,9 @@ private val EXCLUDED: Map<ErrorType, String> = mapOf(
  *  is NOT a pass: the test fails by name and says a driver is owed. */
 private val DRIVER: Map<ErrorType, String?> = mapOf(
     // RATE_LIMIT is driven TWICE by design: the first turn meets the limit mid-stream, which arms
-    // the cooldown, and the SECOND is the one that is refused at admission with a real 429. That
-    // second turn is the operator's actual complaint and the recoverable shape V4-50 built.
-    ErrorType.RATE_LIMIT to "quota429+requota429",
+    // the cooldown, and the SECOND asks the provider itself (Marcos, Oct 26: a turn waits only on its
+    // own failure), so it must end exactly as recoverable as the first.
+    ErrorType.RATE_LIMIT to "quota429+quota429",
     ErrorType.OVERLOADED to "overload_503",
     ErrorType.AUTHENTICATION to "authfail",
     ErrorType.INVALID_REQUEST to "overflow_sse",
@@ -173,9 +173,8 @@ class RetryAlwaysArmedTest {
     }
 
     /** One error turn against [scenario]; returns the HTTP status and the body the client sees.
-     *  A scenario tagged "+re<name>" is driven twice, so the cooldown a first turn arms is what the
-     *  second turn is answered from — that second reply is the one the operator was complaining
-     *  about, and the first one is deliberately left as the committed-200 case. */
+     *  A scenario tagged "+re<name>" is driven twice, and the second reply is the one returned: the
+     *  turn that follows one which armed the cooldown, answered by the provider itself. */
     private suspend fun drive(scenario: String): Pair<Int, String> {
         val (first, again) = scenario.split("+").let { it.first() to it.getOrNull(1) }
         upstreamClient.clearRateLimitCooldown()
@@ -258,13 +257,13 @@ class RetryAlwaysArmedTest {
     }
 
     @Test
-    fun `the FIRST persistent-429 turn reaches the client retryable, and the next gets a real 429`() = runBlocking {
-        // V4-71. The wall's RATE_LIMIT row is driven as quota429+requota429, and drive() deliberately
+    fun `the FIRST persistent-429 turn reaches the client retryable, and so does the next`() = runBlocking {
+        // V4-71. The wall's RATE_LIMIT row is driven as quota429+quota429, and drive() deliberately
         // returns only the SECOND reply — so until now the FIRST 429 turn was never asserted on, and
         // it was the broken one. It reached the client as an in-stream rate_limit_error, which Claude
         // Code NEVER retries (in-band errors are retried only when they carry overloaded_error), so
-        // the operator's very first encounter with a persistent 429 died terminally and only the NEXT
-        // turn got the admission 429. This asserts the first turn on its own.
+        // the operator's very first encounter with a persistent 429 died terminally. This asserts the
+        // first turn on its own.
         upstreamClient.clearRateLimitCooldown()
         val (firstStatus, firstBody) = request("quota429")
 
@@ -287,10 +286,12 @@ class RetryAlwaysArmedTest {
         )
         assertTrue(firstBody.contains("SPLICE-RATE-LIMIT"), "the greppable code must survive: ${firstBody.take(240)}")
 
-        // (c) and this is what makes the first turn's shape matter: the same head, next turn, is now
-        // answered from the cooldown the first turn armed — a REAL 429 the client can act on.
-        val (nextStatus, nextBody) = request("requota429")
-        assertEquals(429, nextStatus, "the next turn must get a real 429, got: ${nextBody.take(240)}")
+        // (c) and this is what makes the first turn's shape matter: the same head's next turn asks the
+        // provider itself (Marcos, Oct 26), so when the limit still holds it ends in that same shape.
+        val (nextStatus, nextBody) = request("quota429")
+        assertEquals(200, nextStatus, "the next turn is sent and committed like the first: ${nextBody.take(240)}")
+        assertTrue(nextBody.contains("overloaded_error"), "the next 429 turn is retryable too: ${nextBody.take(240)}")
+        assertTrue(nextBody.contains("SPLICE-RATE-LIMIT"), "and still a rate limit: ${nextBody.take(240)}")
     }
 
     @Test

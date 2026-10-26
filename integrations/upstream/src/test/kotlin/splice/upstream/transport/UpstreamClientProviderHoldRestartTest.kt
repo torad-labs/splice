@@ -8,7 +8,6 @@ import io.ktor.http.headersOf
 import kotlinx.coroutines.test.runTest
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertFalse
-import org.junit.jupiter.api.Assertions.assertNull
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.io.TempDir
@@ -58,8 +57,10 @@ class UpstreamClientProviderHoldRestartTest {
         onRetry = { notices.add(it) },
     )
 
+    // Each turn asks the provider itself and waits only on its own failure (Marcos, Oct 26): the restored native
+    // refusal is the provider's word for status and selection, never a refusal of the credential's next turn.
     @Test
-    fun `a restarted native hold refuses only its credential and reprobes after the bounded ceiling`(
+    fun `a restarted native hold keeps the provider's word and never stops its credential's next turn`(
         @TempDir dir: Path,
     ) = runTest {
         val reset = System.currentTimeMillis() / MS + SIX_DAYS_S
@@ -80,32 +81,21 @@ class UpstreamClientProviderHoldRestartTest {
         val key = requireNotNull(CredentialKey.fromHeaders(mapOf("x-api-key" to "synthetic-a")))
         assertTrue(Files.exists(dir.resolve("hold-$key.json")))
 
-        var elapsed = 0L
         val attempts = mutableListOf<String>()
         val recovered = MockEngine { request ->
             attempts += requireNotNull(request.headers["x-api-key"])
             respond("ok", HttpStatusCode.OK, headersOf())
         }
-        val restarted = client(dir, recovered, ElapsedClock { elapsed })
+        val restarted = client(dir, recovered)
         restarted.clearRateLimitCooldown()
 
-        val follower = assertEnds<UpstreamFailed> {
-            restarted.posted(context("synthetic-a"), "{}") { "unreachable" }
-        }
-        assertTrue(follower.localHold)
-        assertEquals(429, follower.status)
-        assertEquals(native, follower.body)
-        assertEquals(observer.rateLimitReply, follower.rateLimitReply)
-        assertTrue(attempts.isEmpty(), "the restored credential's refusal makes zero upstream attempts")
-        assertEquals("ok", restarted.posted(context("synthetic-b"), "{}") { "ok" })
-        assertEquals(listOf("synthetic-b"), attempts, "another login on the same head is unaffected")
-
-        elapsed = 119_999L
-        assertEnds<UpstreamFailed> { restarted.posted(context("synthetic-a"), "{}") { "unreachable" } }
-        assertEquals(listOf("synthetic-b"), attempts)
-        elapsed = 120_001L
+        assertEquals(
+            observer.rateLimitReply,
+            restarted.credentialCooldown(mapOf("x-api-key" to "synthetic-a"))?.rateLimitReply,
+            "the provider's word survives the restart",
+        )
         assertEquals("ok", restarted.posted(context("synthetic-a"), "{}") { "ok" })
-        assertEquals(listOf("synthetic-b", "synthetic-a"), attempts, "the restored gate cannot extend on reads")
+        assertEquals(listOf("synthetic-a"), attempts, "the credential's next turn asks the provider itself, at once")
         assertFalse(Files.exists(dir.resolve("hold-$key.json")), "provider acceptance clears the native statement")
     }
 
@@ -122,11 +112,9 @@ class UpstreamClientProviderHoldRestartTest {
         val cooldown = RateLimitCooldown(ElapsedClock { elapsed }, WallClock { wall }, store)
         cooldown.clear()
         assertEquals(1_000L, cooldown.remainingMs())
-        checkNotNull(cooldown.heldFailure {})
         elapsed = 1_001L
         wall = 101_001L
         assertEquals(0L, cooldown.remainingMs())
-        assertNull(cooldown.heldFailure {})
         val expired = RateLimitCooldown(ElapsedClock { elapsed }, WallClock { wall }, store)
         expired.clear()
         assertEquals(0L, expired.remainingMs())
@@ -175,7 +163,6 @@ class UpstreamClientProviderHoldRestartTest {
         assertEquals("ok", restarted.posted(ctx(notices), "{}") { "ok" })
 
         assertEquals(1, calls.get(), "the first turn after the restart is the probe, and it went out")
-        assertTrue(notices.any { it.startsWith("plan hold: probing upstream") }, notices.toString())
         assertEquals(0L, restarted.providerResetForMs)
         assertEquals(0L, restarted.planHoldForMs)
         val key = requireNotNull(CredentialKey.fromHeaders(mapOf("x-api-key" to "k")))

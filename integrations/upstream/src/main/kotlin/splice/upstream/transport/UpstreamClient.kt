@@ -98,13 +98,13 @@ public class UpstreamClient(
         credentialCooldowns.clear()
     }
 
-    /** NF-01: remaining armed cooldown (0 when idle) — surfaced so doctor/status views can name
-     *  WHY a head is failing fast (NF-10/JW-11 read this). */
+    /** NF-01: how long a login still reads limited (0 when idle) — surfaced so doctor/status views can
+     *  name why (NF-10/JW-11 read this). It never holds a turn: each asks the provider itself. */
     public val rateLimitedForMs: Long get() = maxOf(cooldown.remainingMs(), credentialCooldowns.remainingMs)
 
     /** V4-50: how long the PROVIDER says it stays limited (0 when unknown) — the operator's real
      *  deadline, which is a different number from [rateLimitedForMs]. That one is splice's own
-     *  follower-protection horizon, clamped to MAX_RATE_LIMIT_COOLDOWN_MS; this one is the reset the
+     *  horizon on the login, clamped to MAX_RATE_LIMIT_COOLDOWN_MS; this one is the reset the
      *  429 body actually named, and it is the only one worth telling a client to come back at. */
     public val providerResetForMs: Long
         get() = maxOf(cooldown.providerUnavailableForMs(), credentialCooldowns.providerResetForMs)
@@ -188,11 +188,12 @@ public class UpstreamClient(
             ctx.onRetry("upstream turn wait budget exhausted before attempt ${state.attempt + 1}/${state.maxRetries}")
             return if (state.lastErr != null) state.gaveUp(ctx, state.rules) else LoopStep.TurnWaitExhausted
         }
+        // No hold another turn armed stops this attempt: each turn asks the provider itself (Marcos, Oct 26).
         val auth = state.credentials(ctx, credentialCooldowns, cooldown)
         return if (auth == null) {
             LoopStep.Done(UpstreamPost.Ended(UpstreamAuthMissing()))
         } else {
-            state.held(ctx, pacing) ?: attempt(ctx, body, state, block, auth)
+            attempt(ctx, body, state, block, auth)
         }
     }
 

@@ -4,10 +4,9 @@
 // persistent client sleeps once, until the plan comes back.
 //
 // It sits beside RateLimitCooldown, which owns one and clears it on restart, rather than inside it,
-// because that class is at detekt's function ceiling. The fail-fast horizon is NOT extended to the
-// reset: V4-47's load-bearing decision in RateLimitCooldown's header stands, so the horizon still
-// lifts at the clamp and the next turn is a probe that notices a top-up. What this adds is only the
-// deadline the CLIENT is told.
+// because that class is at detekt's function ceiling. It holds no turn: each turn asks the provider
+// itself (Marcos, Oct 26), so the next one notices a top-up. What this adds is only the deadline the
+// CLIENT is told and the window status reads.
 package splice.upstream.retry
 
 import splice.core.usage.PlanLimit
@@ -43,8 +42,7 @@ public class PlanHold internal constructor(
         }
         onRetry(
             "429 plan limit: the upstream names its ${limit.claim} window spent until " +
-                "${Instant.ofEpochSecond(limit.resetEpochSeconds)}; clients are told to come back then, " +
-                "and a turn after the cooldown lifts probes upstream",
+                "${Instant.ofEpochSecond(limit.resetEpochSeconds)}; clients are told to come back then",
         )
         return delayMs
     }
@@ -57,7 +55,7 @@ public class PlanHold internal constructor(
 
     /** An answered turn ends the hold: the window is open again (a top-up, or a reset that came
      *  early). A restart does not (V4-412): the upstream's statement outlives the process, and the
-     *  first turn after it probes anyway. */
+     *  first turn after it asks the provider anyway. */
     internal fun clear() {
         held.set(null)
         holds.plan(null)

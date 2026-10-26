@@ -4,10 +4,10 @@
 // held behind it read "wait for the limit to clear" with no time, though splice held the instant. V4-444: the
 // instant is COUNTED on both rows too (earliest_reset_epoch_seconds), since the console's list reads the perf
 // file and not the trace's sentence; a burst that names no reset counts none. Driven through a real
-// head over a local upstream, so it is the routes that record: the turn that meets the 429 (TurnKnownEnd) and the turn
-// refused at admission while the hold is live (HeadAdmission), read back from the trace the Turns page reads. A burst
-// 429 that names no reset must keep both of its old endings and their sentences. The machine's zone is set to Tokyo for
-// the run, so a sentence that still said Chicago's hour or "CT" cannot pass.
+// head over a local upstream, so it is the routes that record: each turn that meets the 429 (TurnKnownEnd), read back
+// from the trace the Turns page reads. Since Oct 26 no turn is held behind another's, so the next turn meets the 429
+// itself and must end the same way. A burst 429 that names no reset keeps its ending and sentence. The machine's zone
+// is set to Tokyo for the run, so a sentence that still said Chicago's hour or "CT" cannot pass.
 package splice.head
 
 import com.sun.net.httpserver.HttpServer
@@ -93,7 +93,7 @@ private class LimitedHead(tmp: Path, upstreamBody: String, retryAfterSeconds: In
             ex.requestBody.readAllBytes()
             val bytes = upstreamBody.toByteArray()
             ex.responseHeaders.add("Content-Type", "application/json")
-            // A hold past the 30 s admission wait is refused at admission; a shorter one is waited out.
+            // The burst's own pushback; with one try per turn no turn waits it out, and none waits on another's.
             retryAfterSeconds?.let { ex.responseHeaders.add("Retry-After", it.toString()) }
             ex.sendResponseHeaders(TOO_MANY_REQUESTS, bytes.size.toLong())
             ex.responseBody.use { it.write(bytes) }
@@ -189,7 +189,7 @@ private fun <T> inZone(zone: String, block: () -> T): T {
 class PlanLimitTurnEndingTest {
 
     @Test
-    fun `the turn that meets a spent plan window and the turn held behind it end plan-limit and name the reset`(
+    fun `every turn that meets a spent plan window ends plan-limit and names the reset`(
         @TempDir tmp: Path,
     ) = runBlocking {
         val reset = System.currentTimeMillis() / 1_000 + SIX_DAYS_S
@@ -199,9 +199,7 @@ class PlanLimitTurnEndingTest {
             inZone(TOKYO) {
                 runBlocking {
                     head.turn().bodyAsText()
-                    val refused = head.turn()
-                    assertEquals(TOO_MANY_REQUESTS, refused.status.value, "the second turn is refused at admission")
-                    refused.bodyAsText()
+                    head.turn().bodyAsText()
                 }
             }
             head.endings()
@@ -219,11 +217,10 @@ class PlanLimitTurnEndingTest {
             assertTrue("7-day" in sentence, "the window is named: $sentence")
             assertFalse("CT" in sentence || "wait a moment" in sentence, "the generic words came back: $sentence")
         }
-        assertEquals(said[0], said[1], "the held turn names the same instant, in the same words")
+        assertEquals(said[0], said[1], "the next turn names the same instant, in the same words")
         endings.forEach { ending ->
             assertEquals(reset, ending.resetCounted(), "the row counts when the window comes back: $ending")
-            // V4-444: and how long the window is, on BOTH endings — the turn the upstream refused and the one
-            // admission turned away behind the hold. The console names the window from this alone.
+            // V4-444: and how long the window is, on BOTH endings. The console names the window from this alone.
             assertEquals(
                 SEVEN_DAYS_S,
                 ending.windowCounted(),
@@ -233,14 +230,14 @@ class PlanLimitTurnEndingTest {
     }
 
     @Test
-    fun `a burst 429 that names no reset ends rate-limited in the loop and at admission alike`(
+    fun `a burst 429 that names no reset ends rate-limited on every turn`(
         @TempDir tmp: Path,
     ) = runBlocking {
         val head = LimitedHead(tmp, BURST_BODY, retryAfterSeconds = 90)
         head.start()
         val endings = try {
             head.turn().bodyAsText()
-            assertEquals(TOO_MANY_REQUESTS, head.turn().also { it.bodyAsText() }.status.value)
+            head.turn().bodyAsText()
             head.endings()
         } finally {
             head.close()

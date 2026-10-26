@@ -47,7 +47,7 @@ internal class RequestWriteStalled(public val stalledMs: Long, cause: Throwable)
     }
 }
 
-/** The upstream host's own HTTP failure once retries are spent, or a local hold standing in for one. */
+/** The upstream host's own HTTP failure once retries are spent. */
 public class UpstreamFailed(
     public val body: String,
     public val status: Int? = null,
@@ -55,15 +55,16 @@ public class UpstreamFailed(
      *  because this is the loop's own fact at the moment the last attempt failed — the perf row
      *  records it as layers=<n>. It is a RECORD, not a prediction: the matrix could say a failure is
      *  entitled to four layers and the loop might have spent one. Zero when no retry was tried (the
-     *  fail-fast and deadline paths), which is a real answer rather than a missing one. */
+     *  deadline path), which is a real answer rather than a missing one. */
     public val layers: Int = 0,
     /** V4-419: the spent PLAN window this failure is about, when the upstream named one and its reset is
-     *  still ahead: the 429 that met it (RetryRules.giveUp) and the followers held behind it
-     *  (RateLimitCooldown.heldFailure). Stamped here because the ending is the only thing that
-     *  crosses to the turn's ending, which records a plan-limit outcome and speaks the reset. Null for
-     *  every other failure, a burst 429 with no named reset included. */
+     *  still ahead: the 429 that met it (RetryRules.giveUp). Stamped here because the ending is the only
+     *  thing that crosses to the turn's ending, which records a plan-limit outcome and speaks the reset.
+     *  Null for every other failure, a burst 429 with no named reset included. */
     public val planLimit: PlanLimit? = null,
-    /** A synthetic cooldown refusal, not a response sent by the provider. */
+    /** A synthetic cooldown refusal, not a response sent by the provider. Nothing raises one since Oct 26, when
+     *  turns stopped being refused for another turn's rate limit; it and the held-turn count it feeds go with the
+     *  failure-handling redesign's error types. */
     public val localHold: Boolean = false,
 ) : UpstreamEnding() {
     public var rateLimitReply: RateLimitReply? = null

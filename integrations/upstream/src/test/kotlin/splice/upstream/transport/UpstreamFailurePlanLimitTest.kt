@@ -1,7 +1,7 @@
 // NEW: V4-419 at the transport. A failure caused by a spent PLAN window carries that window, so the turn's ending can
 // record a plan-limit outcome and speak the reset: the ending is the only thing that crosses from the retry loop
-// to the turn (RetryPolicy.giveUp returns it for the turn that met the 429, RateLimitCooldown.heldFailure for
-// the followers held behind it). Before this the window was dropped into the body text and the turn ended
+// to the turn (RetryPolicy.giveUp returns it for each turn that meets the 429; since Oct 26 no turn is held behind
+// another's, so every turn meets its own). Before this the window was dropped into the body text and the turn ended
 // error:upstream-failed, "wait a moment and retry", for a plan spent until a day six days out (Marlin, f7f1e9308;
 // daemon.log:39520). A burst 429 that names no reset carries nothing, so it keeps every path it had.
 package splice.upstream.transport
@@ -76,25 +76,6 @@ class UpstreamFailurePlanLimitTest {
     }
 
     @Test
-    fun `a follower held behind the plan hold carries the same window, at the same instant`() = runTest {
-        val calls = AtomicInteger()
-        val reset = secondsNow() + SIX_DAYS_S
-        val engine = MockEngine {
-            calls.incrementAndGet()
-            respond(usageLimitBody(reset), HttpStatusCode.TooManyRequests, headersOf())
-        }
-        val client = client(engine)
-        val first = assertEnds<UpstreamFailed> { client.posted(ctx(bodyReader), "{}") { "unreachable" } }
-
-        val follower = assertEnds<UpstreamFailed> { client.posted(ctx(bodyReader), "{}") { "unreachable" } }
-
-        assertEquals(1, calls.get(), "the follower never reached upstream")
-        assertEquals(429, follower.status)
-        assertEquals(PlanLimit("seven_day", reset), follower.planLimit)
-        assertEquals(first.planLimit, follower.planLimit)
-    }
-
-    @Test
     fun `an Anthropic unified-header window is carried the same way`() = runTest {
         val reset = secondsNow() + HOUR_S
         val engine = MockEngine {
@@ -117,23 +98,17 @@ class UpstreamFailurePlanLimitTest {
     }
 
     @Test
-    fun `a burst 429 that names no reset carries no window, and neither do its followers`() = runTest {
+    fun `a burst 429 that names no reset carries no window`() = runTest {
         val calls = AtomicInteger()
         val engine = MockEngine {
             calls.incrementAndGet()
             respond(BURST_BODY, HttpStatusCode.TooManyRequests, headersOf())
         }
-        val client = client(engine)
 
-        val first = assertEnds<UpstreamFailed> { client.posted(ctx(bodyReader), "{}") { "unreachable" } }
-        val attempts = calls.get()
-        val follower = assertEnds<UpstreamFailed> { client.posted(ctx(bodyReader), "{}") { "unreachable" } }
+        val failure = assertEnds<UpstreamFailed> { client(engine).posted(ctx(bodyReader), "{}") { "unreachable" } }
 
-        assertEquals(4, attempts, "V4-61's schedule is untouched")
-        assertEquals(attempts, calls.get(), "the follower failed fast, upstream unreached")
-        assertEquals(429, first.status)
-        assertEquals(429, follower.status)
-        assertNull(first.planLimit)
-        assertNull(follower.planLimit)
+        assertEquals(4, calls.get(), "V4-61's schedule is untouched")
+        assertEquals(429, failure.status)
+        assertNull(failure.planLimit)
     }
 }

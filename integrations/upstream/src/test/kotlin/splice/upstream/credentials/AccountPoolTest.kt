@@ -658,7 +658,7 @@ class AccountPoolTestAuthOnly {
         login.cooldown.acceptance()()
 
         assertEquals(0L, login.cooldown.unavailableForMs(), "a newer success ends local account exclusion")
-        assertEquals(0L, login.cooldown.remainingMs(), "a newer success ends follower fail-fast")
+        assertEquals(0L, login.cooldown.remainingMs(), "a newer success ends the login's limited horizon")
         assertEquals(0L, login.cooldown.providerUnavailableForMs(), "a newer success ends the reported reset")
         assertEquals(emptyMap<String, Long>(), pool.view(null).blockedUntilEpochSecondsByLabel)
         assertSame(

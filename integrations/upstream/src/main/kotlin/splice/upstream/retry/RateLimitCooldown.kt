@@ -1,15 +1,17 @@
-// PORT-OF: splice/spi/UpstreamClient.kt (rateLimitedUntilMs and every one of its touch points) @ 3879c4c — invariants unchanged: NF-01's clamp and escape hatch, latest-max arming, and the fail-fast 429 body byte-for-byte.
+// PORT-OF: splice/spi/UpstreamClient.kt (rateLimitedUntilMs and every one of its touch points) @ 3879c4c — invariants unchanged: NF-01's clamp and escape hatch, and latest-max arming.
 //
-// The shared 429 cooldown horizon (HD-25). Each pooled account owns one; legacy heads use the
-// UpstreamClient's instance. One turn's rate-limit discovery teaches concurrent turns on that
-// account, which then fail fast with 429
-// instead of independently burning its own attempts (2026-07-19 storm: ~650 turns x 4 attempts
-// against one limited account).
+// The shared 429 horizon (HD-25). Each pooled account owns one; legacy heads use the UpstreamClient's
+// instance. A turn that gives up on a 429 marks its login limited here, and the mark only steers
+// account selection and names the limit on status. It never holds or refuses another turn: each turn
+// asks the provider itself and waits only on its own failure (Marcos, Oct 26). Until then this horizon
+// made every later turn on the login sleep or fail fast with a 429 the provider never sent, and on
+// claude-splice the ten slowest turns of Oct 25, 6 to 11 PM CT, waited 45 s to 2.3 min on it and then
+// failed anyway.
 //
 // This is SHARED MUTABLE STATE, and that is exactly why every touch point moved together rather
-// than the state being split from its rules: the AtomicLong, the arming, the clamp, the fail-fast
-// exit, the doctor read and the restart escape hatch are all here, and nothing outside this file
-// names the horizon. The arming idiom used to be written TWICE — statusPlan's UP-001 arm and
+// than the state being split from its rules: the AtomicLong, the arming, the clamp, the doctor read
+// and the restart escape hatch are all here, and nothing outside this file names the horizon. The
+// arming idiom used to be written TWICE — statusPlan's UP-001 arm and
 // rateLimitedPlan's 429 arm each spelled out `clock() + minOf(pushback, MAX)` followed by
 // `accumulateAndGet(max)` — and is now [arm], called from both.
 //
@@ -17,17 +19,14 @@
 // clear() dropping an armed horizon through a real restart.
 //
 // V4-47 (2026-09-16): the provider's own reset is CAPTURED here and NAMED to the operator, but the
-// translated fail-fast horizon is deliberately NOT extended to it. THAT DECISION IS LOAD-BEARING — do not
-// "simplify" the re-probe away, and do not read the cycling as waste. Two reasons, hardest first.
-//  1. Restart is this file's ONLY escape hatch, so a fail-fast gate must live on state clear() can
-//     reach. Gate it on a horizon restart cannot clear and you rebuild the permanent poisoning
+// horizon is deliberately NOT extended to it. THAT DECISION IS LOAD-BEARING — do not "simplify" the
+// lift away. Two reasons, hardest first.
+//  1. Restart is this file's ONLY escape hatch, so what steers selection must live on state clear()
+//     can reach. Gate it on a horizon restart cannot clear and you rebuild the permanent poisoning
 //     NF-01 exists to prevent, with no operator escape short of killing the daemon. V4-412: the
-//     provider's reset and V4-233's plan hold alone gate nothing, so they are persisted and survive that
-//     call; only what gates (the horizon) lives on state clear() reaches.
-//  2. The bounded re-probe is what DETECTS THE OPERATOR TOPPING UP. Extending the horizon to the
-//     provider reset makes a head ignore a restored quota for hours — the head would refuse to try
-//     the very fix the message asks him to apply. One upstream request per two minutes, on a head
-//     that cannot serve him anyway, is a cheap price for noticing the moment it can.
+//     provider's reset and V4-233's plan hold are persisted and survive that call; the horizon is not.
+//  2. The bounded lift is what DETECTS THE OPERATOR TOPPING UP. Extending the horizon to the
+//     provider reset makes a pool steer away from a restored login for hours.
 // Native credential-scoped replies restore a bounded horizon from their live reset instead. Startup
 // keeps that horizon; it still expires at the same two-minute ceiling, never at a distant plan reset.
 //
@@ -36,14 +35,10 @@
 package splice.upstream.retry
 
 import splice.core.util.ElapsedClock
-import splice.core.util.LocalTimeText
 import splice.core.util.WallClock
-import splice.core.wire.ErrorEnvelope
-import splice.core.wire.HttpStatus
 import splice.core.wire.RateLimitReply
 import splice.upstream.RetryNotice
 import splice.upstream.StreamStart
-import splice.upstream.transport.UpstreamFailed
 import java.time.Instant
 import java.time.format.DateTimeParseException
 import java.util.concurrent.atomic.AtomicLong
@@ -66,9 +61,6 @@ public class RateLimitCooldown public constructor(
     /** V4-412: where the provider's word (its reset, the plan window it named spent) survives a
      *  restart; null keeps it in memory only, as before. The armed horizon is never stored. */
     store: ProviderHoldStore? = null,
-    /** V4-428: how a reset reads in the sentence a fail-fast turn hands the client (the machine's own
-     *  month, day, clock time and zone, as [PlanLimit.refusal] says it); tests name a zone. */
-    private val times: LocalTimeText = LocalTimeText(),
 ) {
     // Armed by any attempt that observes a 429; while armed, every post() fails fast with a
     // synthesized 429 and ZERO upstream calls. Benign write race: concurrent arms only differ by
@@ -106,7 +98,7 @@ public class RateLimitCooldown public constructor(
         get() = maxOf(0L, providerUnavailableUntilMs.get() - clock()).takeIf { it > 0L }
             ?.let { (wallClock() + it) / MS_PER_S }
 
-    /** Restart clears translated follower protection, retaining the provider's reporting facts.
+    /** Restart clears the translated horizon, retaining the provider's reporting facts.
      *  A retained native refusal keeps its credential's bounded horizon, including one restored from
      *  an unexpired reset. Startup cannot erase that refusal, and reads never extend the re-probe ceiling. */
     public fun clear() {
@@ -210,92 +202,24 @@ public class RateLimitCooldown public constructor(
     }
 
     /** NF-01: remaining armed cooldown (0 when idle) — surfaced so doctor/status views can name
-     *  WHY a head is failing fast (NF-10/JW-11 read this). */
+     *  WHY a login is marked limited (NF-10/JW-11 read this). */
     public fun remainingMs(): Long = maxOf(0L, rateLimitedUntilMs.get() - clock())
 
     /** UP-001's arming site: a retryable status carrying an absurd Retry-After arms the same
      *  horizon a 429 does. Reads the clock at the call, exactly as the inline
      *  `val until = clock() + minOf(...)` it replaced. NF-01: at most MAX_RATE_LIMIT_COOLDOWN_MS — the
-     *  full pushback rides in the upstream body the caller's GIVE_UP surfaces; only the fail-fast
+     *  full pushback rides in the upstream body the caller's GIVE_UP surfaces; only the
      *  horizon clamps, and the clamp and the latest-max accumulate live in this one place. */
     public fun arm(pushbackMs: Long): Unit = holds.refusing {
         val until = clock() + minOf(pushbackMs, MAX_RATE_LIMIT_COOLDOWN_MS)
         rateLimitedUntilMs.accumulateAndGet(until) { current, candidate -> maxOf(current, candidate) }
     }
 
-    /** The cooldown's fail-fast exit: a synthesized 429 (classifier parity with the real one)
-     *  returned BEFORE credentials/attempt work — an armed cooldown costs microseconds, not an
-     *  upstream request. The remaining wait rides in the message for the operator's grep.
-     *
-     *  V4-46: the body names the GATEWAY's interval and stops there, deliberately. This turn never
-     *  reached upstream, so it cannot know the provider's reset; the old wording ("gateway cooldown,
-     *  retry in Ns") read as an instruction to retry in Ns, which invited a retry that cannot
-     *  succeed while crowding out the real cause (a weekly quota wall resets in days, not seconds).
-     *  Two quantities had one sentence. Carrying the provider reset forward is a separate change —
-     *  it must be captured at ARM time, the only place both the 429 body and this cooldown are in
-     *  scope — so this message claims nothing it cannot support. Null when no cooldown is armed. */
-    public fun heldFailure(onRetry: RetryNotice): UpstreamFailed? {
-        val at = clock()
-        val remainingMs = rateLimitedUntilMs.get() - at
-        if (remainingMs <= 0) {
-            // V4-233: the clamp lifted while a plan window is still named spent, so this turn is the
-            // re-probe V4-47 keeps, and the log says which one it is.
-            planHold.live()?.let { plan ->
-                onRetry("plan hold: probing upstream ${planHold.forMs()}ms before the named ${plan.claim} reset")
-            }
-            return null
-        }
-        onRetry("rate-limit cooldown active (${remainingMs}ms remaining): failing fast, no upstream attempt")
-        rateLimitReply?.let { reply ->
-            return UpstreamFailed(reply.body, reply.status, planLimit = planHold.live(), localHold = true)
-                .also { it.rateLimitReply = reply }
-        }
-        val waitS = (remainingMs + MS_PER_S - 1) / MS_PER_S
-        val gatewayClause = "this gateway is holding retries for ${waitS}s"
-        val providerResetMs = providerUnavailableForMs()
-        val plan = planHold.live()
-        // V4-47: when the provider reset is KNOWN, name it and say plainly that the gateway interval
-        // is not a retry schedule. The live episode: Retry-After 5301000ms clamped to 120s, body
-        // reset 20:02:52Z hours away, and the operator retried three times on a countdown that could
-        // never satisfy him. The gateway clause stays in BOTH branches — it is the property V4-46
-        // guarantees and a test pins it.
-        // V4-233: a held PLAN window is the upstream's own statement, not a burst's stamp, so its
-        // reset is stated as the deadline. No em dash, and none of the client's stop phrases.
-        val detail = when {
-            plan != null -> plan.refusal(holding = gatewayClause, times = times)
-            providerResetMs > 0 -> {
-                // WALL base, not elapsed: providerResetMs is a DELAY, and printing it against the
-                // elapsed clock would name a 1970-era instant to the operator. V4-428: said as the
-                // person reads it (machine zone), never as the ISO instant the provider's body carried.
-                val resetsAt = times.at((wallClock() + providerResetMs) / MS_PER_S)
-                // V4-61: the window is REPORTED, not asserted as the deadline. muse stamps its 5h-window
-                // reset on burst 429s that clear in seconds (the operator's own re-send succeeded), so
-                // "waiting will not help" was a claim this turn could not support.
-                "Rate limit exceeded: $gatewayClause, and the upstream reports its quota window resets " +
-                    "at $resetsAt. If this keeps happening, that is the real deadline."
-            }
-            else -> "Rate limit exceeded: $gatewayClause to avoid a retry wave"
-        }
-        // V4-61: the ANTHROPIC ERROR ENVELOPE, not a hand-built {"detail":...}. This body is the
-        // classifier's structured input (TurnKnownEnd hands it to UpstreamFailureClassifier, which
-        // lifts error.message) and the presentation seam's (FailureText unwraps the same field) —
-        // so a failure splice synthesizes is shape-identical to one a real upstream sends, and our
-        // sentence reaches the operator as a sentence. The detail key was the one shape neither
-        // reader looked at, which is how our own words landed in his transcript as braces.
-        // V4-102: the same envelope the gateway sends, built by the same builder in core. This is
-        // the site that made the builder live in core rather than in the gateway's wire package —
-        // :upstream cannot import :daemon-head, so our own fail-fast body was free to drift from the
-        // shape the classifier reads. It no longer can.
-        val body = ErrorEnvelope.of("rate_limit_error", detail).toString()
-        // V4-419: a follower held behind a named plan window carries it, as the turn that met the 429 does.
-        return UpstreamFailed(body, HttpStatus.TOO_MANY_REQUESTS, planLimit = plan, localHold = true)
-    }
-
     /** Every 429 with retry budget left is WAITED OUT and retried here in splice — a short
      *  Retry-After honored as the floor, anything longer or absent at the 15s ceiling (V4-61). Two
      *  cases terminate instead: an exhausted budget, and a POOLED account facing a wait past the
      *  ceiling, which is evicted so the client's own retry lands on a healthy backup at once. Both
-     *  arm the shared local horizon so followers fail fast rather than reproducing the limit. A
+     *  mark the login limited, which steers account selection away from it. A
      *  short or missing wait never evicts an account and never invents a provider reset. */
     internal fun rateLimitedPlan(
         pushbackMs: Long?,
@@ -343,8 +267,8 @@ public class RateLimitCooldown public constructor(
     // likelier than a 5xx to hit every concurrent turn at once, so this trade is at its worst on a
     // busy head.
     //
-    // ARMING IS DELIBERATELY NOT DONE ON THIS PATH. Arming on the first 429 would fail every
-    // OTHER turn on the head for the whole interval this one is waiting out — clamped to 120s on
+    // ARMING IS DELIBERATELY NOT DONE ON THIS PATH. Arming on the first 429 would steer every
+    // cold session away from this login for the whole interval this turn waits out — clamped to 120s on
     // an 88-minute header — while this turn may well succeed at 15s. The horizon is armed once,
     // on exhaustion, by giveUpAndArm.
     // A warm session waits a pushback out up to its own wait left ([RateLimitTurn.sameLoginWaitMs]); an absent header
@@ -375,12 +299,12 @@ public class RateLimitCooldown public constructor(
         val header = pushbackMs?.let { "${it}ms" } ?: "ABSENT"
         onRetry(
             "429 rate limit: Retry-After header $header, " +
-                "arming ${minOf(pushback, MAX_RATE_LIMIT_COOLDOWN_MS)}ms follower protection",
+                "arming ${minOf(pushback, MAX_RATE_LIMIT_COOLDOWN_MS)}ms on this login",
         )
         if (pushback > MAX_RATE_LIMIT_COOLDOWN_MS) {
             onRetry(
                 "429 Retry-After ${pushback}ms exceeds the cooldown ceiling; " +
-                    "arming ${MAX_RATE_LIMIT_COOLDOWN_MS}ms follower protection",
+                    "arming ${MAX_RATE_LIMIT_COOLDOWN_MS}ms on this login",
             )
         }
         val providerWaitExceeded = pushbackMs != null && pushback > RETRY_AFTER_GIVE_UP_MS
@@ -393,17 +317,17 @@ public class RateLimitCooldown public constructor(
     }
 }
 
-// Cooldown length when a 429 carries no Retry-After (the ChatGPT backend's bare
-// {"detail":"Rate limit exceeded"}). Long enough to starve a herd, short enough that a
-// recovered account resumes within one client-retry cycle.
+// How long a 429 that carries no Retry-After (the ChatGPT backend's bare
+// {"detail":"Rate limit exceeded"}) marks its login limited for steering and status. Short
+// enough that a recovered account is chosen again within one client-retry cycle.
 internal const val DEFAULT_RATE_LIMIT_COOLDOWN_MS = 20_000L
 
 // NF-01: ceiling on the ARMED horizon, whatever the pushback says. ChatGPT quota errors
 // legitimately carry multi-day resets (142h observed 2026-07-26) and accumulateAndGet(max)
-// makes the longest value ever seen win permanently — one malformed pushback would poison
-// the head for every future turn with no operator escape short of killing the daemon.
-// 120s starves a herd but lets a recovered account resume inside one client-retry cycle;
-// the true pushback still reaches the operator in the surfaced upstream body.
+// makes the longest value ever seen win permanently — one malformed pushback would mark the
+// login limited, for steering and status, with no operator escape short of killing the daemon.
+// 120s lets a recovered account be chosen again inside one client-retry cycle; the true
+// pushback still reaches the operator in the surfaced upstream body.
 //
 // Internal since the client recheck (Oct 12): the client's deadline is now ClientRecheck's 30 s in :features-turns,
 // not this ceiling, so no other module reads it.

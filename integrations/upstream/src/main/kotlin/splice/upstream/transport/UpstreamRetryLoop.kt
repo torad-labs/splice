@@ -23,32 +23,17 @@ internal class RetryState(var cooldown: RateLimitCooldown, val t0: Long, val max
     /** The rules for THIS request's bound. */
     val rules = RetryRules(maxRetries)
 
-    /** The loop's own give-up: the last failure it saw, with the cooldown armed and followers protected. A pooled
-     *  login's 429 that waiting cannot fix is handed back, so the account handoff moves the turn to another login
-     *  before any byte reaches the client (§11's Oct deviation), for a translated pool as for the native one. */
+    /** The loop's own give-up: the last failure it saw, with the login marked limited. A pooled login's 429 that
+     *  waiting cannot fix is handed back, so the account handoff moves the turn to another login before any byte
+     *  reaches the client (§11's Oct deviation), for a translated pool as for the native one. */
     fun gaveUp(ctx: PostContext, rules: RetryRules): LoopStep<Nothing> {
         val failure = rules.giveUp(lastErr, cooldown, attempt, ctx.onRetry, refreshedOnce)
         val refused = ctx.pooled && lastErr?.waitCannotHelp() == true
         return LoopStep.Done(if (refused) UpstreamPost.Refused(failure) else UpstreamPost.Ended(failure))
     }
 
-    /** An armed hold ends the attempt before any request: a pooled login's hold is handed back to switch
-     *  credentials, every other hold ends the call. A warm session first waits a short hold out on its login, so
-     *  another session's rate limit does not move it (Marcos, Oct 19). Null when no hold is armed. */
-    suspend fun held(ctx: PostContext, pacing: RetryPacing): LoopStep<Nothing>? {
-        val holdMs = cooldown.remainingMs()
-        val turnLeftMs = ctx.limits.remainingTurnWait?.invoke() ?: Long.MAX_VALUE
-        if (cooldown.planHold.live() == null && holdMs in 1..minOf(warmWaitLeftMs(ctx), turnLeftMs - 1)) {
-            ctx.onRetry("warm session: waiting ${holdMs}ms for this login's rate-limit hold rather than move")
-            ctx.timedBackoff { pacing.pause(0, holdMs) }
-            ctx.limits.warmWait?.spend(holdMs)
-        }
-        val held = cooldown.heldFailure(ctx.onRetry) ?: return null
-        return LoopStep.Done(if (ctx.pooled) UpstreamPost.Refused(held) else UpstreamPost.Ended(held))
-    }
-
-    /** What is left of the turn's one wait on a warm session's login, whatever admission and the turn's earlier posts
-     *  already spent of it; 0 for a cold session. */
+    /** What is left of the turn's one wait on a warm session's login, whatever the turn's earlier posts already spent
+     *  of it; 0 for a cold session. */
     fun warmWaitLeftMs(ctx: PostContext): Long = ctx.limits.warmWait?.leftMs() ?: 0L
 
     /** The longest one 429's pushback is waited out on this login: the 15s ceiling, or a warm session's wait left. */

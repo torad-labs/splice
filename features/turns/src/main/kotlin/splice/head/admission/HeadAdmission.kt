@@ -30,12 +30,10 @@ internal class HeadAdmission(
     private val driver: TurnDriver,
 ) {
     // V4-50 reads a WALL instant because a reset is a calendar fact the client must be told in epoch
-    // seconds; [HeadDeps.clock] is an ElapsedClock and cannot answer that. The two admissions below take
-    // the clock as their own parameter, which is where a test injects one to refuse without sleeping.
+    // seconds; [HeadDeps.clock] is an ElapsedClock and cannot answer that. The admission below takes the
+    // clock as its own parameter, which is where a test injects one to refuse without sleeping.
     private val wallClock = WallClock(System::currentTimeMillis)
     private val keyAccounts = KeyAccount(preparation.provider.auth, deps.quotaBundle)
-    private val credentialHolds =
-        CredentialHoldAdmission(preparation.provider, deps, responses, driver, wallClock, keyAccounts)
     private val exhaustedAccounts = ExhaustedAccountAdmission(deps, responses, driver, wallClock)
     private val refusals = PreDriveRefusals(deps, admission, responses, driver)
 
@@ -131,8 +129,9 @@ internal class HeadAdmission(
         deps.traffic.liveTurns.admitted(admitted.slot, meta, prepared.messagesHash, admitted.perf, resume)
     }
 
-    /** Account selection through its two refusals, then the credential hold that admits the drive:
-     *  the tail of [serveReady] as one named step, since describe/registration/driver each own theirs. */
+    /** Account selection through its two refusals, then the drive: the tail of [serveReady] as one named step, since
+     *  describe/registration/driver each own theirs. No turn waits here on a hold another turn's rate limit armed: it
+     *  is sent, and waits only on its own failure (Marcos, Oct 26). */
     private suspend fun admitAccountAndDrive(
         call: ApplicationCall,
         prepared: Preparation.Ready,
@@ -152,7 +151,7 @@ internal class HeadAdmission(
                 callerCredentialKey = callerKey,
             )
         }
-        var account = when (selection) {
+        val account = when (selection) {
             null -> null
             is Selection.Chosen -> selection.account
             is Selection.Exhausted -> {
@@ -161,16 +160,7 @@ internal class HeadAdmission(
             }
         }
         try {
-            val hold = admitted.perf.timed(splice.core.perf.PerfKeys.CREDENTIAL_HOLD_MS) {
-                credentialHolds.admit(call, prepared, admitted, trace, account)
-            }
-            when (hold) {
-                is CredentialHoldAdmission.Outcome.Allowed -> {
-                    account = hold.account
-                    driveReady(call, prepared, admitted, trace, running(prepared, account, keyAccount))
-                }
-                CredentialHoldAdmission.Outcome.Refused -> Unit
-            }
+            driveReady(call, prepared, admitted, trace, running(prepared, account, keyAccount))
         } finally {
             if (!admitted.wasHandedOff()) account?.releaseCredentialProbe()
         }

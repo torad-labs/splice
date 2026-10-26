@@ -18,9 +18,7 @@ import splice.core.usage.PlanLimit
 import splice.core.util.ElapsedClock
 import splice.core.util.LocalTimeText
 import splice.upstream.retry.MAX_RATE_LIMIT_COOLDOWN_MS
-import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.atomic.AtomicInteger
-import java.util.concurrent.atomic.AtomicLong
 
 private const val MS = 1_000L
 private const val SIX_DAYS_S = 6L * 24 * 3_600
@@ -33,8 +31,9 @@ private fun liveBody(reset: Long) =
 
 /** V4-377 at the transport: a provider that names its spent window in the 429 BODY (the port's
  *  planLimitFromBody, which the codex provider implements) gets V4-233's plan hold: one attempt, our
- *  sentence naming the reset, a plan-hold notice, and a probe once the cooldown clamp lifts. The
- *  double reads the body the way codex does, so the vendor parse itself is pinned in provider-codex. */
+ *  sentence naming the reset, and a plan-hold notice. The next turn asks the provider itself (Marcos,
+ *  Oct 26), as UpstreamClientPlanLimitTest shows for the header-named window. The double reads the
+ *  body the way codex does, so the vendor parse itself is pinned in provider-codex. */
 class UpstreamClientBodyPlanLimitTest {
 
     /** A body-reading provider: the live body names a 7-day window; anything else names none. */
@@ -110,35 +109,5 @@ class UpstreamClientBodyPlanLimitTest {
         assertEquals(burst, failure.body)
         assertEquals(0L, client.planHoldForMs)
         assertNull(client.planHold)
-    }
-
-    @Test
-    fun `after the cooldown clamp lifts the next turn probes upstream once and an answer ends the hold`() = runTest {
-        val now = AtomicLong(0L)
-        val calls = AtomicInteger()
-        val limited = AtomicBoolean(true)
-        val reset = resetInSixDays()
-        val engine = MockEngine {
-            calls.incrementAndGet()
-            if (limited.get()) {
-                respond(liveBody(reset), HttpStatusCode.TooManyRequests, headersOf())
-            } else {
-                respond("ok", HttpStatusCode.OK, headersOf())
-            }
-        }
-        val notices = mutableListOf<String>()
-        val client = client(engine, ElapsedClock { now.get() })
-        assertEnds<UpstreamFailed> { client.posted(ctx(bodyReader, notices), "{}") { "unreachable" } }
-
-        assertEnds<UpstreamFailed> { client.posted(ctx(bodyReader, notices), "{}") { "unreachable" } }
-        assertEquals(1, calls.get(), "a follower inside the horizon never reaches upstream")
-
-        now.set(MAX_RATE_LIMIT_COOLDOWN_MS + 1)
-        limited.set(false)
-        assertEquals("ok", client.posted(ctx(bodyReader, notices), "{}") { "ok" })
-
-        assertEquals(2, calls.get(), "the turn after the lift is the probe, and it went out")
-        assertTrue(notices.any { it.startsWith("plan hold: probing upstream") }, notices.toString())
-        assertEquals(0L, client.planHoldForMs)
     }
 }

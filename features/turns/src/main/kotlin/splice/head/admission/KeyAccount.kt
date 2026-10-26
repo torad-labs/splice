@@ -49,8 +49,4 @@ internal class KeyAccount(private val auth: AuthProvider, private val quotas: He
             ?.let { print -> KeyNaming.Named(variable + KEY_ACCOUNT_SEPARATOR + print) }
             ?: KeyNaming.Missing
     }
-
-    /** The name alone, for a surface that records a name or nothing at all: null for both [KeyNaming.None] and
-     *  [KeyNaming.Missing], which is right where the alternative was already no account. */
-    suspend fun label(): String? = (naming() as? KeyNaming.Named)?.label
 }

@@ -1,6 +1,7 @@
 // NEW: V4-233 and V4-234 at the transport. A 429 whose unified headers name a spent PLAN window is
-// not re-sent before its reset, holds the head until that reset, and hands the client our sentence
-// naming it, so the reset and not the upstream's words decides whether the client waits. The same
+// not re-sent by the turn that met it, records that reset for status, and hands the client our sentence
+// naming it, so the reset and not the upstream's words decides whether the client waits. The next turn
+// still asks the provider itself (Marcos, Oct 26). The same
 // bytes from a provider that reads no plan family, or with no reset named, keep V4-61's schedule and
 // the upstream's own words exactly.
 package splice.upstream.transport
@@ -24,7 +25,6 @@ import splice.core.util.LocalTimeText
 import splice.upstream.retry.MAX_RATE_LIMIT_COOLDOWN_MS
 import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.atomic.AtomicInteger
-import java.util.concurrent.atomic.AtomicLong
 
 class UpstreamClientPlanLimitTest {
 
@@ -131,9 +131,10 @@ class UpstreamClientPlanLimitTest {
             assertEquals(0L, client.planHoldForMs)
         }
 
+    // A turn waits only on its own failure, never on another turn's (Marcos, Oct 26): the next turn on a spent
+    // window asks the provider itself, hears the window from its own refusal, and the first answer ends the hold.
     @Test
-    fun `followers fail fast naming the plan, the lift is a named probe, and an answer ends the hold`() = runTest {
-        val now = AtomicLong(0L)
+    fun `the next turn on a spent window asks the provider itself, and an answer ends the hold`() = runTest {
         val calls = AtomicInteger()
         val limited = AtomicBoolean(true)
         val reset = resetInAnHour()
@@ -146,21 +147,18 @@ class UpstreamClientPlanLimitTest {
             }
         }
         val notices = mutableListOf<String>()
-        val client = client(engine, ElapsedClock { now.get() })
+        val client = client(engine)
         assertEnds<UpstreamFailed> { client.posted(ctx(forwarded, notices), "{}") { "unreachable" } }
 
-        val follower = assertEnds<UpstreamFailed> {
+        val next = assertEnds<UpstreamFailed> {
             client.posted(ctx(forwarded, notices), "{}") { "unreachable" }
         }
-        assertEquals(1, calls.get(), "a follower inside the horizon never reaches upstream")
-        assertOurSentence(follower.body, reset)
+        assertEquals(2, calls.get(), "the next turn reaches the provider, held by nothing the first one armed")
+        assertOurSentence(next.body, reset)
 
-        now.set(MAX_RATE_LIMIT_COOLDOWN_MS + 1)
         limited.set(false)
         assertEquals("ok", client.posted(ctx(forwarded, notices), "{}") { "ok" })
 
-        assertEquals(2, calls.get(), "the turn after the lift is the probe, and it went out")
-        assertTrue(notices.any { it.startsWith("plan hold: probing upstream") }, notices.toString())
         assertEquals(0L, client.planHoldForMs, "an answered turn ends the hold")
         assertNull(client.planHold)
     }

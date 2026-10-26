@@ -20,7 +20,6 @@ import kotlinx.coroutines.runBlocking
 import org.junit.jupiter.api.AfterAll
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertFalse
-import org.junit.jupiter.api.Assertions.assertNotNull
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.BeforeAll
 import org.junit.jupiter.api.Test
@@ -48,7 +47,6 @@ import splice.upstream.credentials.PoolAccount
 import splice.upstream.retry.InflightGate
 import splice.upstream.retry.RateLimitCooldown
 import splice.upstream.transport.UpstreamClient
-import java.nio.file.Files
 import java.nio.file.Path
 import java.time.ZonedDateTime
 import java.time.format.DateTimeFormatter
@@ -230,8 +228,8 @@ class HeadServerCapacityTest {
 
     @Test
     fun `restart clears an armed 429 cooldown`() = runBlocking {
-        // NF-01: an upstream 429 arms the head-wide fail-fast horizon on the long-lived
-        // UpstreamClient; a control-plane restart must be a real escape hatch, not a no-op.
+        // NF-01: an upstream 429 marks the login limited on the long-lived UpstreamClient, which
+        // status and account steering read; a control-plane restart must clear it, not keep it.
         client.post("http://127.0.0.1:$port/v1/messages") {
             header("Content-Type", "application/json")
             setBody(
@@ -257,74 +255,9 @@ class HeadServerCapacityTest {
         assertEquals(0L, upstreamClient.rateLimitedForMs, "restart must clear the armed horizon")
     }
 
-    // V4-50: the turn AFTER the horizon is armed is the one the operator kept reporting. The test
-    // above pins the FIRST turn, which reaches upstream and is relayed as a 200 + SSE error frame
-    // because its response is already committed — that stays true and is asserted there. This one
-    // pins the SECOND turn, which never reaches upstream at all: it is refused at admission, where
-    // a status line is still ours to write.
-    //
-    // WHY THE STATUS IS THE ASSERTION AND NOT THE MESSAGE. Claude Code's retry-until-reset fires on
-    // an APIError with status 429 and reads the deadline off that response; an error frame inside a
-    // 200 is not an APIError, so before this row the client had nothing to retry on no matter how
-    // the text was worded. Three operator reports in one day were this, and each was first
-    // mistaken for a wording problem.
-    //
-    // RETRY-AFTER IS THE COOLDOWN LIFT (V4-61): the header names when this gateway next lets a
-    // request through — at most 120s — never the provider's window reset, which muse stamps on
-    // burst 429s that clear in seconds. The scenario's body still carries resets_in_seconds:60 and
-    // V4-47 still captures it; that value now rides in the message and the perf row, not the header.
-    @Test
-    fun `an armed cooldown refuses the next turn with a real 429 carrying the provider deadline`() = runBlocking {
-        upstreamClient.clearRateLimitCooldown()
-        client.post("http://127.0.0.1:$port/v1/messages") {
-            header("Content-Type", "application/json")
-            setBody(
-                """{"model":"claude-codex--gpt-5.6-sol","stream":true,"max_tokens":64,
-                    "system":"You are a test. SCENARIO:quota429",
-                    "messages":[{"role":"user","content":"go"}]}""",
-            )
-        }
-        assertTrue(upstreamClient.rateLimitedForMs > 0L, "precondition: the first turn must arm the horizon")
-
-        val refused = client.post("http://127.0.0.1:$port/v1/messages") {
-            header("Content-Type", "application/json")
-            setBody(
-                """{"model":"claude-codex--gpt-5.6-sol","stream":true,"max_tokens":64,
-                    "messages":[{"role":"user","content":"again"}]}""",
-            )
-        }
-        assertEquals(
-            RATE_LIMITED_STATUS,
-            refused.status.value,
-            "an armed head must refuse with a real 429, not a 200 carrying an error frame",
-        )
-        val body = refused.bodyAsText()
-        assertTrue(
-            body.contains("rate_limit_error"),
-            "the refusal keeps the Anthropic error shape, got: ${body.take(200)}",
-        )
-        assertNotNull(
-            refused.headers["Retry-After"],
-            "the refusal must carry Retry-After — the cooldown lift, when this gateway next lets a request through",
-        )
-        // V4-55: the refusal must also LEAVE A TRACE. Review of V4-50 found it wrote no perf row
-        // and no journal line, so a refused turn did not exist in splice's own telemetry — the
-        // exact blindness that made three operator reports of this failure unfalsifiable in one
-        // day, on the path built to answer them. The perf file is the assertable half here
-        // (this head discards the journal with log = {}); the append is best-effort on a bounded
-        // file lane, so it is polled rather than read once.
-        val perfFile = tmp.resolve("perf.jsonl")
-        val recorded = waitFor(15_000) {
-            Files.exists(perfFile) && Files.readString(perfFile).contains("error:rate-limited")
-        }
-        assertTrue(recorded, "the refusal must record a perf row; a refused turn with no trace is unfalsifiable")
-
-        upstreamClient.clearRateLimitCooldown()
-    }
-
-    // V4-77: THE POOLED TWIN OF THE ARM ABOVE, and the law is the same one. A head whose every
-    // OAuth account is blocked refuses at admission with a 429 — that part was already true — but
-    // it used to hand the client AllAccountsExhausted.earliestResetEpochSeconds RAW: the quota
+    // V4-77: a head whose every OAuth account is blocked refuses at admission with a 429. That part
+    // was already true, and since Oct 26 it is the only admission refusal a limit causes (a whole pool
+    // out waits for the failure-handling redesign's resume-at-reset). But it used to hand the client AllAccountsExhausted.earliestResetEpochSeconds RAW: the quota
     // resetsAt / provider unavailability, bounded only by seven days. Three days on the wire is the
     // turn dying either way (a non-persistent Claude Code aborts past 60s, a persistent one sleeps),
     // which is exactly what V4-61 reversed on the cooldown branch and what this arm now pins here.

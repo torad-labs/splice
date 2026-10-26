@@ -79,8 +79,9 @@ class ForwardedRateLimitTest {
         }
     }
 
+    // Each turn asks the provider itself (Marcos, Oct 26): a refused credential's next turn is sent, not replayed.
     @Test
-    fun `the locally replayed refusal keeps the proved account without an upstream attempt`() = runBlocking {
+    fun `every refused turn asks the provider itself and keeps the proved account`() = runBlocking {
         val names = HeadDeps.CredentialAccountNames { digest ->
             "held@example.invalid".takeIf { digest == key("synthetic-refused") }
         }
@@ -88,7 +89,7 @@ class ForwardedRateLimitTest {
         rig.head.start()
         try {
             repeat(2) { assertEquals(HttpStatusCode.TooManyRequests, rig.turn("synthetic-refused").first) }
-            assertEquals(1, rig.requests.size)
+            assertEquals(listOf("synthetic-refused", "synthetic-refused"), rig.requests)
             assertEquals(listOf("held@example.invalid", "held@example.invalid"), rig.accounts(2))
         } finally {
             rig.close()
@@ -182,16 +183,15 @@ class ForwardedRateLimitTest {
                         headers.getAll("anthropic-ratelimit-unified-extra"),
                     )
                 }
-                assertEquals(1, rig.requests.size, "the same credential's follower uses its stored refusal")
+                assertEquals(2, rig.requests.size, "the same credential's next turn asks the provider itself")
             } finally {
                 rig.close()
             }
         }
     }
 
-    // Since the admission wait (Oct 11): the turn that meets a headerless 429 gets it natively once its budget is spent
-    // (V4-61 backs off first while budget is left), and a LATER turn into the short hold it armed waits the hold out
-    // instead of replaying the refusal (CredentialHoldAdmission).
+    // The turn that meets a headerless 429 gets it natively once its budget is spent (V4-61 backs off first while
+    // budget is left). A later turn asks the provider itself: no turn waits on another's hold (Marcos, Oct 26).
     @Test
     fun `headerless 429 reaches the client natively once spent, holding no other login`() = runBlocking {
         val rig = LimitRig(directory, limits = false)
@@ -210,7 +210,7 @@ class ForwardedRateLimitTest {
     }
 
     @Test
-    fun `restart retains the scoped native refusal without an upstream attempt or holding another login`() =
+    fun `restart retains the scoped native refusal for status, and each later turn asks the provider`() =
         runBlocking {
             val first = LimitRig(directory)
             first.head.start()
@@ -219,25 +219,19 @@ class ForwardedRateLimitTest {
             } finally {
                 first.close()
             }
-            var elapsed = 0L
-            val restarted = LimitRig(directory, clock = ElapsedClock { elapsed })
+            val restarted = LimitRig(directory)
             restarted.head.start()
             try {
                 assertEquals("seven_day", restarted.upstream.planHold?.claim)
                 assertTrue(restarted.upstream.providerResetForMs > 0L)
-                val heldMs = restarted.upstream.rateLimitedForMs
-                assertTrue(heldMs > 0L, "startup retains the native credential's refusal")
+                assertTrue(restarted.upstream.rateLimitedForMs > 0L, "startup retains the native credential's refusal")
                 val (status, body, headers) = restarted.turn("synthetic-refused")
                 assertEquals(HttpStatusCode.TooManyRequests, status)
                 assertEquals(LIMIT_BODY, body)
                 first.assertRelayed(headers)
-                assertEquals(0, restarted.requests.size, "the persisted native refusal makes zero upstream attempts")
+                assertEquals(listOf("synthetic-refused"), restarted.requests, "the refused credential's turn is sent")
                 assertEquals(HttpStatusCode.OK, restarted.turn("synthetic-new-login").first)
-                assertEquals(listOf("synthetic-new-login"), restarted.requests)
-
-                elapsed = heldMs + 1
-                assertEquals(HttpStatusCode.TooManyRequests, restarted.turn("synthetic-refused").first)
-                assertEquals(listOf("synthetic-new-login", "synthetic-refused"), restarted.requests)
+                assertEquals(listOf("synthetic-refused", "synthetic-new-login"), restarted.requests)
             } finally {
                 restarted.close()
             }

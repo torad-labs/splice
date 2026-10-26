@@ -603,8 +603,8 @@ trace = "false"
 
 | File | What it holds | Who can read it | How long it stays | Written by |
 | --- | --- | --- | --- | --- |
-| A copy of another head's session beside it, `~/.claude/projects/<folder>/<new id>.jsonl` and its `<new id>/` subagent folder | With `projects` shared: `-r <id>` of a session whose replies name a model this head does not serve. The copy's rows name the new id and its replies this head's model, and its thinking is removed as above. The original is never written | Your umask | Until you delete it, or Claude Code's own cleanup removes it | `ResumeAcrossHeads.kt`, `SessionIdRetag.kt` |
-| A copy of another head's transcript in `~/.claude-<head>/projects/` | With `isolate = ["projects"]` on a head: resuming a session another head started copies its whole transcript, and its subagent files, into this head's tree | Your umask | Until you delete it | `ResumeAcrossHeads.kt` |
+| A copy of another head's session beside it, `~/.claude/projects/<folder>/<new id>.jsonl` and its `<new id>/` subagent folder | With `projects` shared: `-r <id>` of a session whose replies name a model this head does not serve. The copy's rows name the new id and its replies this head's model, and its thinking is removed as above. The original is never written. Each file is written first to a dotted file beside it, `.<name>.tmp`, or `.<name>.retag` for a subagent's, which no picker lists, and takes its name only once whole | Your umask | Until you delete it, or Claude Code's own cleanup removes it. A dotted file a halted daemon left stays until you delete it | `ResumeAcrossHeads.kt`, `SessionIdRetag.kt` |
+| A copy of another head's transcript in `~/.claude-<head>/projects/` | With `isolate = ["projects"]` on a head: resuming a session another head started copies its whole transcript, and its subagent files, into this head's tree. The transcript is written first to a dotted `.<id>.jsonl.tmp` beside it, which no picker lists, and takes its name only once whole | Your umask | Until you delete it. A dotted file a halted daemon left is replaced by the next resume of that session | `ResumeAcrossHeads.kt` |
 
 ### Credentials and keys
 

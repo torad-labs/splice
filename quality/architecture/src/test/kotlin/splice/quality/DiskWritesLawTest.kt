@@ -501,7 +501,7 @@ private val SHIPPED_SITES: Map<String, Map<String, Int>> = mapOf(
     ),
     "integrations/claude-code/src/main/kotlin/splice/client/resume/ResumeAcrossHeads.kt" to mapOf(
         "Files.copy(" to 3,
-        "Files.move(" to 1,
+        "Files.move(" to 3,
     ),
     // The retagged copy of a resumed session, in the same README row as ResumeAcrossHeads.
     "integrations/claude-code/src/main/kotlin/splice/client/resume/SessionIdRetag.kt" to

@@ -1,7 +1,6 @@
 // NEW: kernel socket rows are matched in reusable bytes before any row strings or keys exist.
 package splice.upstream.transport
 
-import java.io.BufferedInputStream
 import java.io.InputStream
 import java.nio.ByteOrder
 import java.nio.file.Path
@@ -43,35 +42,52 @@ private const val PROC_MAPPED_ZEROS = 10
 // why: each 0xff byte in the mapped-address marker is the unsigned byte maximum.
 private const val PROC_BYTE_MAX = 255
 
+// why: seq_file hands back at most one page of whole rows per read, so 8 KiB takes each read whole and keeps the
+// read count that BufferedInputStream's default buffer gave.
+private const val PROC_READ_CHUNK_BYTES = 8192
+
 internal class ProcSocketRows(keys: Set<SocketKey>) {
     private val tracked = keys.map { Tracked(it, End(it.local), End(it.remote)) }.toTypedArray()
     private val line = ByteArray(PROC_ROW_PREFIX_BYTES)
+    private val chunk = ByteArray(PROC_READ_CHUNK_BYTES)
     private val starts = IntArray(PROC_FIELDS)
     private val ends = IntArray(PROC_FIELDS)
     private val little = ByteOrder.nativeOrder() == ByteOrder.LITTLE_ENDIAN
+
+    // The row being read, carried from one chunk to the next so a row that straddles two reads continues: how many of
+    // its bytes line holds, and whether it is the header. Every read() starts in the header with nothing held.
+    private var kept = 0
+    private var onHeader = true
     var allocatedRows: Int = 0
         private set
 
+    // why: JDK 21's BufferedInputStream.read() takes its internal ReentrantLock on every call, so a read per byte was
+    // 220 of the 237 CPU samples under this method; the table is read a chunk at a time and scanned without a lock.
     fun read(input: InputStream): Map<SocketKey, Long> {
         val rows = HashMap<SocketKey, Long>()
-        val stream = BufferedInputStream(input)
-        var size = 0
-        var header = true
-        while (true) {
-            val byte = stream.read()
-            if (byte < 0) {
-                if (!header && size > 0) row(size, rows)
-                break
-            }
-            if (byte == '\n'.code) {
-                if (!header) row(size, rows)
-                header = false
-                size = 0
-            } else if (size < line.size) {
-                line[size++] = byte.toByte()
+        kept = 0
+        onHeader = true
+        var count = input.read(chunk)
+        while (count > 0) {
+            scan(count, rows)
+            count = input.read(chunk)
+        }
+        if (!onHeader && kept > 0) row(kept, rows)
+        return rows
+    }
+
+    private fun scan(count: Int, rows: MutableMap<SocketKey, Long>) {
+        var at = 0
+        while (at < count) {
+            val byte = chunk[at++]
+            if (byte == '\n'.code.toByte()) {
+                if (!onHeader) row(kept, rows)
+                onHeader = false
+                kept = 0
+            } else if (kept < line.size) {
+                line[kept++] = byte
             }
         }
-        return rows
     }
 
     private fun row(size: Int, rows: MutableMap<SocketKey, Long>) {

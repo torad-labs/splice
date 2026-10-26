@@ -1065,17 +1065,35 @@ describe("the architecture suite fingerprints WHICH paths are tracked, not git's
 });
 
 describe("a text-scanning law's content inputs are every tracked file, declared from git's tracked list", () => {
+  /** build-logic's classes, compiled by gradle from a scratch copy of build-logic's sources, so nothing outside the
+   *  copy moves while the probes run. Never the live build folder: the pre-push runs this suite beside its gradle leg in
+   *  the same tree, and that leg recompiles build-logic whenever one of its inputs changes, a version-catalog bump
+   *  included. A class file rewritten between two probes reran both tasks where the second had to be UP-TO-DATE
+   *  (d0b487075's red gateTests). Kotlin empties the output folder before it writes, so a copy taken during that compile
+   *  held no ReadSet and the probe's script failed on "Unresolved reference 'splice'" (a647799d3's red gateTests). A copy
+   *  taken before it would have tested the previous sha's classes. */
+  async function buildLogicClasses(): Promise<string> {
+    const scratch = dir("build-logic-copy-");
+    // The copy reads the version catalog at ../gradle/libs.versions.toml, as build-logic/settings.gradle.kts does.
+    linkWrapper(scratch);
+    const copy = join(scratch, "build-logic");
+    for (const entry of ["src", "build.gradle.kts", "settings.gradle.kts"]) {
+      cpSync(join(repoRoot, "build-logic", entry), join(copy, entry), { recursive: true });
+    }
+    cpSync(join(repoRoot, "gradle.properties"), join(copy, "gradle.properties"));
+    symlinkSync(join(repoRoot, "gradlew"), join(copy, "gradlew"));
+    const run = await gradleHere(copy)(["classes"]);
+    expect(run.status, run.output).toBe(0);
+    return join(copy, "build", "classes", "kotlin", "main");
+  }
+
   /** A real gradle run in a scratch repository: the build-logic classes the quality build uses (ReadSet) declare
    *  every tracked file as the inputs of a stamped task. */
-  function candidatesRepo(): string {
+  async function candidatesRepo(): Promise<string> {
+    const classes = await buildLogicClasses();
     const root = wallsRepo();
     linkWrapper(root);
     writeFile(root, "settings.gradle.kts", 'rootProject.name = "scratch"\n');
-    // A snapshot, never the live folder: the pre-push's gradle leg recompiles build-logic in this same tree while this
-    // suite runs, and a class file rewritten between two probes changes the tasks' implementation, so the second
-    // probe reran both tasks where it had to be UP-TO-DATE (d0b487075's red gateTests).
-    const classes = dir("build-logic-classes-");
-    cpSync(join(repoRoot, "build-logic", "build", "classes", "kotlin", "main"), classes, { recursive: true });
     writeFile(
       root,
       "build.gradle.kts",
@@ -1105,7 +1123,7 @@ describe("a text-scanning law's content inputs are every tracked file, declared 
   }
 
   test("RED: a content change to ANY tracked file reruns the task, a binary or a build-directory file included; an untracked change does not", async () => {
-    const root = candidatesRepo();
+    const root = await candidatesRepo();
     expect(await probe(root)).not.toContain(":probe UP-TO-DATE");
     expect(await probe(root)).toContain(":probe UP-TO-DATE");
 

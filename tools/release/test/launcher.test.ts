@@ -15,7 +15,7 @@ import { chmodSync, existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { layout } from "../../gate/src/lib/repo.ts";
-import { ARM_NAMES, SELECTORS, launcherRehearsal } from "../src/lib/launcher.ts";
+import { ARM_NAMES, HEAP_CEILING_ARM, SELECTORS, launcherRehearsal } from "../src/lib/launcher.ts";
 import { shimMarkers, shimPath } from "../src/lib/shim.ts";
 
 const { repoRoot } = layout();
@@ -36,6 +36,18 @@ function fixture(body: string): string {
 
 const MARKERS = 'SPLICE_GATEWAY_VERSION="0.0.0"\nSPLICE_SHIM_VERSION="shim-0"\n';
 
+/** Whether this machine can hold a process in an 8 GiB memory limit as this user, a systemd scope whose cgroup v2
+ *  memory.max reads 8 GiB, the way the memory-limit test runs the shim. */
+function userScopes(): boolean {
+  const memoryMax = 'read -r group </proc/self/cgroup && cat "/sys/fs/cgroup${group#0::}/memory.max"';
+  try {
+    const probe = Bun.spawnSync(["systemd-run", "--user", "--scope", "--quiet", "-p", "MemoryMax=8G", "--", "sh", "-c", memoryMax]);
+    return probe.exitCode === 0 && probe.stdout.toString().trim() === String(8 * 1024 * 1024 * 1024);
+  } catch {
+    return false;
+  }
+}
+
 describe("the launch shim", () => {
   test("the shipped shim is where the build stages it from, and carries both markers", () => {
     expect(existsSync(shipped), `${shipped} must exist — it is what :app:stageRelease stages`).toBe(true);
@@ -45,12 +57,12 @@ describe("the launch shim", () => {
   // The inventory, so an arm cannot be dropped in a refactor without this number moving: the six
   // behavioural arms of launcher-test.sh (port, port precedence, stale replace, env-key injection,
   // JW-01, JW-04), UF-01 and UF-02, one UF-03 arm per selector the shim's unitDefaults() names, and
-  // UF-04 and UF-05, V4-258's boot-log flag, V4-457's OOM flags, V4-218's three HOME arms, the wrapped-HOME arms,
-  // the CLI console arm, and the two launch-busy arms (six concurrent launches, and a 529 tried again), the earlier-daemon arm,
-  // and the LAN node's inherited token arm.
+  // UF-04 and UF-05, V4-258's boot-log flag, V4-457's OOM flags, the heap ceiling, V4-218's three HOME arms, the
+  // wrapped-HOME arms, the CLI console arm, and the two launch-busy arms (six concurrent launches, and a 529 tried
+  // again), the earlier-daemon arm, and the LAN node's inherited token arm.
   test("the rehearsal is the script's arms, all of them", () => {
-    expect(ARM_NAMES.length).toBe(6 + 2 + SELECTORS.length + 2 + 1 + 1 + 3 + 5 + 1 + 1 + 1 + 2 + 2 + 1 + 1 + 1);
-    expect(ARM_NAMES.length).toBe(39);
+    expect(ARM_NAMES.length).toBe(6 + 2 + SELECTORS.length + 2 + 1 + 1 + 1 + 3 + 5 + 1 + 1 + 1 + 2 + 2 + 1 + 1 + 1);
+    expect(ARM_NAMES.length).toBe(40);
     expect(ARM_NAMES.filter((name) => name.startsWith("UF-03")).length).toBe(SELECTORS.length);
     expect(ARM_NAMES.filter((name) => name.startsWith("V4-218")).length).toBe(3);
     for (const marker of ["JW-01", "JW-04", "UF-01", "UF-02", "UF-04", "UF-05", "V4-258", "V4-457", "V4-218"]) {
@@ -63,6 +75,17 @@ describe("the launch shim", () => {
   test.concurrent("every arm passes against the shipped shim", async () => {
     expect(await launcherRehearsal(shipped)).toBeNull();
   }, 180_000);
+
+  // A container, or a unit with MemoryMax, holds less memory than the machine, and the JVM takes its 75% from that
+  // limit. Inside an 8 GiB limit, where 75% is 6 GiB, the 16 GiB ceiling would let the heap outgrow the memory it may
+  // use. The limit is a real systemd scope, so the test needs systemd's user manager.
+  test.skipIf(!userScopes()).concurrent("inside an 8 GiB memory limit the daemon's heap ceiling is 75% of the limit", async () => {
+    expect(await launcherRehearsal(shipped, { arms: [HEAP_CEILING_ARM], memoryMax: "8G" })).toBeNull();
+  }, 60_000);
+
+  test("a rehearsal of an arm that does not exist is a refusal, not a pass", async () => {
+    expect(await launcherRehearsal(shipped, { arms: ["no such arm"] })).toContain("no arm is named");
+  });
 
   test.concurrent("ambient selectors cannot escape the rehearsal sandbox", async () => {
     const dir = mkdtempSync(join(tmpdir(), "release-shim-ambient-"));

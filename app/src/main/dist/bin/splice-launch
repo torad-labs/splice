@@ -14,7 +14,7 @@
 
 # Hand-paired with splice.core.SHIM_VERSION (core/src/main/kotlin/splice/core/Versions.kt)
 # — bump both together whenever this shim's behavior changes. No code generation.
-SPLICE_SHIM_VERSION="shim-22"
+SPLICE_SHIM_VERSION="shim-23"
 # Hand-paired with splice.core.GATEWAY_VERSION. Release acceptance verifies the marker.
 SPLICE_GATEWAY_VERSION="0.4.0"
 
@@ -310,17 +310,80 @@ JAR=${SPLICE_JAR:-${SPLICE_SHARE_DIR:-$SHIM_HOME/.local/share/splice}/splice.jar
 # shim-22: the java splice runs on. SPLICE_JAVA names one for a machine whose java on PATH is older than 21 for its own
 # work (an Android toolchain on 17); only splice's own JVM uses it, and the Claude Code this launcher execs keeps PATH.
 JAVA=${SPLICE_JAVA:-java}
+# shim-23: the heap's ceiling flags for SPLICE_JVM_OPTS below. 16 GiB where 75% of the memory the daemon may use
+# reaches it, otherwise the JVM's own 75%. That memory is the machine's RAM, MemTotal from /proc/meminfo on Linux or
+# hw.memsize on macOS, or the memory limit of this process's control group or of a group above it where one is lower:
+# a container, or a unit with MemoryMax, from which the JVM takes its own 75% too. Read with builtins; when nothing
+# reads as a number, the JVM's 75% stands. 22369622 KiB is the memory whose 75% is 16 GiB.
+heap_ceiling_flags() {
+  hcf_kb=""
+  if [ -r /proc/meminfo ]; then
+    while read -r hcf_key hcf_value _; do
+      if [ "$hcf_key" = "MemTotal:" ]; then
+        hcf_kb=$hcf_value
+        break
+      fi
+    done </proc/meminfo
+  else
+    hcf_bytes=$(sysctl -n hw.memsize 2>/dev/null) || hcf_bytes=""
+    case $hcf_bytes in '' | *[!0-9]*) ;; *) hcf_kb=$((hcf_bytes / 1024)) ;; esac
+  fi
+  # /proc/self/cgroup names the group on each hierarchy: "0::<path>" for cgroup v2, whose limit is memory.max, and
+  # "<n>:<controllers>:<path>" for v1, whose memory controller keeps it in memory.limit_in_bytes. "max", the v2 value
+  # with no limit, is not a number and is skipped.
+  if [ -r /proc/self/cgroup ]; then
+    while IFS=: read -r hcf_id hcf_controllers hcf_group; do
+      case $hcf_id:$hcf_controllers in
+        0:) hcf_root=/sys/fs/cgroup hcf_file=memory.max ;;
+        *:memory | *:memory,* | *,memory | *,memory,*) hcf_root=/sys/fs/cgroup/memory hcf_file=memory.limit_in_bytes ;;
+        *) continue ;;
+      esac
+      while :; do
+        hcf_limit=""
+        if [ -r "$hcf_root$hcf_group/$hcf_file" ]; then
+          read -r hcf_limit <"$hcf_root$hcf_group/$hcf_file" || hcf_limit=""
+        fi
+        case $hcf_limit in
+          '' | *[!0-9]*) ;;
+          *)
+            if [ -z "$hcf_kb" ] || [ $((hcf_limit / 1024)) -lt "$hcf_kb" ]; then
+              hcf_kb=$((hcf_limit / 1024))
+            fi
+            ;;
+        esac
+        case $hcf_group in '' | /) break ;; esac
+        hcf_group=${hcf_group%/*}
+      done
+    done </proc/self/cgroup
+  fi
+  case $hcf_kb in
+    '' | *[!0-9]*) printf '%s' "-XX:MaxRAMPercentage=75" ;;
+    *)
+      if [ "$hcf_kb" -ge 22369622 ]; then
+        printf '%s' "-Xmx16g -XX:G1HeapRegionSize=32m"
+      else
+        printf '%s' "-XX:MaxRAMPercentage=75"
+      fi
+      ;;
+  esac
+}
+
 # The daemon's JVM options, in ONE place: every daemon start runs `splice daemon` through this file (the user unit's
 # ExecStart, the cold start below, and the CLI's raw spawn in DaemonLaunch.kt), so this line is what every install
 # runs. Override with SPLICE_JVM_OPTS.
-# No heap ceiling (Marcos, Oct 17, 2026: splice can't have a budget): the heap may grow to 75% of RAM. 2 GB threw
-# OutOfMemoryError 20 times on Oct 2. What keeps the heap near its live data is how G1 sizes it, measured Oct 19 on
+# The heap's ceiling is 16 GiB, or 75% of RAM where that is less (Marcos, Oct 25, 2026, approving a cap near 16 GB:
+# "I dont want the cap to be the only way we keep things under control"; this replaces his Oct 17 "splice can't have
+# a budget"). On Oct 25 the 75% ceiling let committed heap reach 39 GiB on a 120 GiB machine while live data peaked
+# at 5.6 GiB, about a third of 16 GiB; 2 GB threw OutOfMemoryError 20 times on Oct 2. G1HeapRegionSize=32m keeps the
+# regions G1 picked under the old ceiling: under -Xmx16g alone it picks 8 MB, and every object of 4 MB or more, a
+# large request body among them, would be allocated humongous instead of from 16 MB up.
+# What keeps the heap near its live data is how G1 sizes it, measured Oct 19 on
 # the live daemon: about 3 GiB live after every collection sat in 10.5 GiB committed, because the default
 # MaxHeapFreeRatio=70 lets committed reach 3.3 times live, and boots peaked at 24 to 28 GiB because the default
 # GCTimeRatio=12 grows the heap rather than collect during the boot burst. Min/MaxHeapFreeRatio 20/40 hold committed
 # within 1.25 to 1.67 times live at each concurrent cycle, GCTimeRatio=4 lets a burst spend up to 20% of its time
 # collecting before the heap grows, and the 60s periodic collection returns an idle heap.
-SPLICE_JVM_OPTS=${SPLICE_JVM_OPTS:-"-XX:+UseG1GC -XX:MaxRAMPercentage=75 -Xms512m -XX:MinHeapFreeRatio=20 -XX:MaxHeapFreeRatio=40 -XX:GCTimeRatio=4 -XX:+UseStringDeduplication -XX:G1PeriodicGCInterval=60000"}
+SPLICE_JVM_OPTS=${SPLICE_JVM_OPTS:-"-XX:+UseG1GC $(heap_ceiling_flags) -Xms512m -XX:MinHeapFreeRatio=20 -XX:MaxHeapFreeRatio=40 -XX:GCTimeRatio=4 -XX:+UseStringDeduplication -XX:G1PeriodicGCInterval=60000"}
 # JW-01: the spawned JVM's output lands here, never /dev/null — a boot-dead daemon must leave a tailable stack trace.
 # One rolled generation at 1MB, same cap discipline as daemon.log.
 LOGS_DIR=$STATE_DIR/../logs

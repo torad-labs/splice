@@ -27,6 +27,7 @@ import { join } from "node:path";
 import { shimMarkers } from "./shim.ts";
 import { makeSandbox, writeStub } from "./sandbox.ts";
 import { exitStatusOf } from "../../../gate/src/lib/status.ts";
+import { resolveJdk21 } from "../../../gate/src/lib/jdk.ts";
 
 /** The selector env vars that mean "a harness's own daemon": the unit is never touched for these.
  *  The same nine the shim's `unitDefaults()` reads. */
@@ -84,9 +85,22 @@ interface Ctx {
   readonly captures: { java: string; javaArgv: string; unit: string; pwned: string; bootLog: string };
   readonly stateDir: string;
   readonly daemonState: string;
+  /** a memory limit, like systemd's MemoryMax=8G, that the arms sizing by memory run the shim and its JVM under, the
+   *  way a container or a unit with MemoryMax holds them; unset, they run under the machine's own memory */
+  readonly memoryMax?: string;
   launch(env: Record<string, string | undefined>, argv?: readonly string[], command?: string): Promise<Run>;
   cold(): void;
 }
+
+/** What one rehearsal runs: `arms` names the arms to run, in their order (all of them when unset), and `memoryMax` is
+ *  the memory limit of Ctx.memoryMax. */
+export interface RehearsalOptions {
+  readonly arms?: readonly string[];
+  readonly memoryMax?: string;
+}
+
+export const HEAP_CEILING_ARM =
+  "the daemon's heap ceiling is 16 GiB, or 75% of the memory the machine or its limit holds, where that is less";
 
 interface Run {
   readonly code: number;
@@ -105,6 +119,28 @@ interface Arm {
 }
 
 const read = (path: string): string => (existsSync(path) ? readFileSync(path, "utf8").trim() : "");
+
+const SIXTEEN_GIB = 16 * 1024 * 1024 * 1024;
+const THIRTY_TWO_MIB = 32 * 1024 * 1024;
+
+/** The heap sizes a real JVM settles on when started with `flags`, as -XX:+PrintFlagsFinal prints them, run behind
+ *  `limit` (a command prefix, empty for none). */
+function finalFlags(
+  java: string,
+  flags: readonly string[],
+  limit: readonly string[],
+): { MaxHeapSize?: number; G1HeapRegionSize?: number } {
+  const argv = [...limit, java, ...flags, "-XX:+PrintFlagsFinal", "-version"];
+  const printed = execFileSync(argv[0] ?? java, argv.slice(1), {
+    encoding: "utf8",
+    stdio: ["ignore", "pipe", "ignore"],
+  });
+  const value = (name: string): number | undefined => {
+    const match = new RegExp(`^\\s*\\S+\\s+${name}\\s+:?=\\s+(\\d+)`, "m").exec(printed);
+    return match ? Number(match[1]) : undefined;
+  };
+  return { MaxHeapSize: value("MaxHeapSize"), G1HeapRegionSize: value("G1HeapRegionSize") };
+}
 
 const ARMS: readonly Arm[] = [
   {
@@ -382,6 +418,45 @@ const ARMS: readonly Arm[] = [
         if (head === "splice" && JSON.stringify(daemon.slice(daemon.indexOf("daemon"))) !== JSON.stringify(argv)) {
           return "the admin daemon argv must remain unchanged";
         }
+      }
+      return null;
+    },
+  },
+  {
+    // The daemon's heap ceiling (Marcos, 2026-10-25, approving a cap near 16 GB: "I dont want the cap to be the only
+    // way we keep things under control"). The heap may grow to 16 GiB, or to 75% of the memory the machine or its
+    // limit holds where that is less, and where the 16 GiB ceiling applies G1 keeps the 32 MB regions it picked for the
+    // old 75% ceiling on a big machine, so only an object of 16 MB or more is humongous. The real JVM is asked, with the flags the shim gives the
+    // daemon, what ceiling it ends up with: what is checked is the heap the daemon gets, not the text of its flags.
+    name: HEAP_CEILING_ARM,
+    run: async (ctx) => {
+      // Under a memory limit the shim and both JVMs below run inside one systemd scope each, all holding the same limit.
+      const limit =
+        ctx.memoryMax === undefined ? [] : ["systemd-run", "--user", "--scope", "--quiet", "-p", `MemoryMax=${ctx.memoryMax}`, "--"];
+      ctx.cold();
+      const [runner, ...runnerArgs] = limit;
+      if (runner === undefined) await ctx.launch({ LAUNCHER_UNIT_PRESENT: "0" });
+      else await ctx.launch({ LAUNCHER_UNIT_PRESENT: "0" }, [...runnerArgs, ctx.shim], runner);
+      const runs = read(ctx.captures.javaArgv).split("\n").filter(Boolean).map((line) => JSON.parse(line) as string[]);
+      const daemon = runs.find((javaArgv) => javaArgv.includes("daemon"));
+      if (daemon === undefined) return `the raw spawn never ran the daemon: ${JSON.stringify(runs)}`;
+      const jdk = resolveJdk21();
+      if ("error" in jdk) return jdk.error;
+      const java = join(jdk.javaHome, "bin", "java");
+      // -Xlog would open the sandbox's GC log; everything else the daemon is given goes to the JVM as it is.
+      const flags = daemon.slice(0, daemon.indexOf("-jar")).filter((flag) => !flag.startsWith("-Xlog"));
+      const daemonHeap = finalFlags(java, flags, limit);
+      // 75% of the memory the JVM sees, the machine's or its limit's, by the JVM's own reading of it.
+      const machine = finalFlags(java, ["-XX:+UseG1GC", "-XX:MaxRAMPercentage=75"], limit);
+      if (daemonHeap.MaxHeapSize === undefined || machine.MaxHeapSize === undefined) {
+        return `the JVM did not report MaxHeapSize: ${JSON.stringify({ daemonHeap, machine })}`;
+      }
+      const ceiling = Math.min(SIXTEEN_GIB, machine.MaxHeapSize);
+      if (daemonHeap.MaxHeapSize !== ceiling) {
+        return `the daemon's heap ceiling is ${daemonHeap.MaxHeapSize} bytes, want ${ceiling} (16 GiB, or 75% of the memory: ${machine.MaxHeapSize})`;
+      }
+      if (ceiling === SIXTEEN_GIB && daemonHeap.G1HeapRegionSize !== THIRTY_TWO_MIB) {
+        return `under the 16 GiB ceiling G1's regions are ${daemonHeap.G1HeapRegionSize} bytes, want 32 MiB`;
       }
       return null;
     },
@@ -857,12 +932,15 @@ const ARMS: readonly Arm[] = [
 export const ARM_NAMES: readonly string[] = ARMS.map((arm) => arm.name);
 
 /**
- * Run every arm, in order, against `shim`. Returns the first problem, or null — the script exited
- * at the first failing arm and a later arm's premise is the earlier one's outcome.
+ * Run every arm, in order, against `shim`, or only the arms `options` names. Returns the first problem, or null — the
+ * script exited at the first failing arm and a later arm's premise is the earlier one's outcome.
  */
-export async function launcherRehearsal(shim: string): Promise<string | null> {
+export async function launcherRehearsal(shim: string, options: RehearsalOptions = {}): Promise<string | null> {
   const markers = shimMarkers(shim);
   if (markers instanceof Error) return markers.message;
+  const arms = options.arms === undefined ? ARMS : ARMS.filter((arm) => options.arms?.includes(arm.name));
+  const unknown = options.arms?.filter((name) => !ARM_NAMES.includes(name)) ?? [];
+  if (unknown.length > 0) return `launcher test: no arm is named ${JSON.stringify(unknown)}`;
 
   const sandbox = makeSandbox("release-launcher-");
   const dir = sandbox.dir;
@@ -927,6 +1005,7 @@ export async function launcherRehearsal(shim: string): Promise<string | null> {
       captures,
       stateDir,
       daemonState,
+      memoryMax: options.memoryMax,
       async launch(overrides, argv = [], command = shim) {
         const env: Record<string, string> = { ...base };
         for (const [key, value] of Object.entries(overrides)) {
@@ -947,7 +1026,7 @@ export async function launcherRehearsal(shim: string): Promise<string | null> {
       },
     };
 
-    for (const arm of ARMS) {
+    for (const arm of arms) {
       // A throw inside an arm (an unparseable recipe body, a capture that is not there) is that
       // arm's RED, not a stack trace out of the rehearsal: `release verify` reports a verdict.
       let problem: string | null;

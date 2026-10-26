@@ -3,7 +3,6 @@ package splice.upstream.codemode
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonElement
 import org.junit.jupiter.api.Assertions.assertEquals
-import org.junit.jupiter.api.Assertions.assertFalse
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 import splice.upstream.codemode.CodeModeManual.NestedTool
@@ -45,7 +44,10 @@ class CodeModeManualTest {
             manual,
         )
         assertTrue(manual.indexOf("### `foo`") < manual.indexOf("### `hidden_dynamic_tool`"), "name order")
-        assertFalse(manual.contains("Some deferred nested tools"), manual)
+        // Current Codex adds the deferred-tools note to every manual, withheld tools or not: its
+        // build_exec_tool_description takes the deferred list as an unused `_deferred_tools`
+        // (codex-rs/code-mode-protocol/src/description.rs @ rust-v0.164.0).
+        assertTrue(manual.contains("Some deferred nested tools may be omitted"), manual)
     }
 
     @Test

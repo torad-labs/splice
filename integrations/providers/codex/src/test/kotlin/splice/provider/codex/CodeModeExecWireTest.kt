@@ -14,10 +14,10 @@ import org.junit.jupiter.api.Test
 import splice.core.parse.AnthropicParse
 import splice.upstream.RoundResult
 
-/** what rides beside exec, when the manual says tools were withheld, and which outer names are ours. */
+/** what rides beside exec, the deferred note every manual carries, and which outer names are ours. */
 class CodeModeExecWireTest : CodeModeBridgeTestSupport() {
     @Test
-    fun `exec and native wait ride together and a withheld client tool gets the deferred note`() {
+    fun `exec and native wait ride together and the manual carries the deferred note, tools withheld or not`() {
         val bridge = bridge(ScriptedRuntime(ArrayDeque()))
         val eager = bridge.injectTool(REQUEST, setOf("Read"))
         // Codex registers both native handlers; client functions remain nested inside exec.
@@ -26,7 +26,9 @@ class CodeModeExecWireTest : CodeModeBridgeTestSupport() {
         val tools = entries[0].getValue("tools").jsonArray.map { it.jsonObject }
         assertEquals(listOf("custom", "function"), tools.map { it.getValue("type").jsonPrimitive.content })
         assertEquals(listOf("exec", "wait"), tools.map { it.getValue("name").jsonPrimitive.content })
-        assertFalse(manual(eager).contains("Some deferred nested tools"), manual(eager))
+        // Current Codex adds the note whether or not a tool was withheld: build_exec_tool_description takes the
+        // deferred list as an unused `_deferred_tools` (codex-rs/code-mode-protocol/src/description.rs @ rust-v0.164.0).
+        assertTrue(manual(eager).contains("Some deferred nested tools may be omitted"), manual(eager))
         assertEquals(REQUEST.getValue("input").jsonArray.drop(1), eager.getValue("input").jsonArray.drop(1))
 
         val withheld = bridge.injectTool(REQUEST, setOf("Read", "LSP"))

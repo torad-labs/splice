@@ -59,7 +59,7 @@ export function loadConfig(root: string): TypecheckConfig {
   if (!existsSync(path)) throw new WallError(`typecheck: ${CONFIG} is missing — refusing to report a pass for a census with no programs`);
   const raw = JSON.parse(readFileSync(path, "utf8")) as Partial<TypecheckConfig>;
   if (typeof raw.compiler !== "string" || !Array.isArray(raw.programs) || raw.programs.length === 0) {
-    throw new WallError(`typecheck: ${CONFIG} needs a compiler path and a non-empty programs list`);
+    throw new WallError(`typecheck: ${CONFIG} needs a compiler command and a non-empty programs list`);
   }
   return { compiler: raw.compiler, programs: raw.programs, excused: raw.excused ?? {}, baseline: raw.baseline ?? {} };
 }
@@ -73,7 +73,10 @@ export function trackedSources(root: string): string[] {
 
 function runProgram(root: string, compiler: string, program: string): ProgramResult {
   const started = performance.now();
-  const r = spawnSync(compiler, ["--noEmit", "--pretty", "false", "--listFiles", "-p", program], {
+  // The compiler runs by its plain command through bunx, never by its path, so hostshield's shim takes each run into
+  // the machine's check queue like every other heavy tool (Torad laws, Oct 19, 2026; PR #247 review r3). With
+  // --no-install, a compiler missing from the tree's node_modules is a census that cannot run, never a download.
+  const r = spawnSync("bunx", ["--no-install", compiler, "--noEmit", "--pretty", "false", "--listFiles", "-p", program], {
     cwd: root, encoding: "utf8", maxBuffer: 1 << 28,
   });
   if (r.error) throw new WallError(`typecheck: ${program}: could not start ${compiler} (${r.error.message})`);
@@ -98,13 +101,11 @@ function runProgram(root: string, compiler: string, program: string): ProgramRes
 }
 
 export function wall(root: string, config: TypecheckConfig = loadConfig(root)): Report {
-  const compiler = isAbsolute(config.compiler) ? config.compiler : join(root, config.compiler);
-  if (!existsSync(compiler)) throw new WallError(`typecheck: compiler ${config.compiler} is missing — install dependencies; a typecheck that cannot run is not a pass`);
   const tracked = trackedSources(root);
   if (tracked.length === 0) throw new WallError("typecheck: enumerated ZERO tracked TypeScript files — the source is gone");
   const trackedSet = new Set(tracked);
 
-  const results = config.programs.map((p) => runProgram(root, compiler, p));
+  const results = config.programs.map((p) => runProgram(root, config.compiler, p));
   const covered = new Set<string>();
   const byFile = new Map<string, Set<string>>();
   for (const res of results) {

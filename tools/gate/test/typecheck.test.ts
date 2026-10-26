@@ -5,13 +5,13 @@
 // grades a mutation it did not make is the failure this wall family exists to catch.
 import { describe, expect, test } from "bun:test";
 import { spawnSync } from "node:child_process";
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { type TypecheckConfig, WallError, loadConfig, trackedSources, wall } from "../src/lib/typecheck.ts";
 import { layout } from "../src/lib/repo.ts";
 
-const COMPILER = join(layout().repoRoot, loadConfig(layout().repoRoot).compiler);
+const COMPILER = loadConfig(layout().repoRoot).compiler;
 const TSCONFIG = JSON.stringify({ compilerOptions: { strict: true, noEmit: true, types: [], lib: ["ESNext"] }, include: ["src/**/*.ts"] });
 const CLEAN = "export const n: number = 1;\n";
 const BROKEN = 'export const n: number = "one";\n'; // exactly one TS2322
@@ -24,6 +24,10 @@ function write(root: string, path: string, text: string) {
 function fixture(files: Record<string, string>): string {
   const root = mkdtempSync(join(tmpdir(), "typecheck-"));
   spawnSync("git", ["-C", root, "init", "-q"]);
+  // The wall runs the compiler by its command (bunx --no-install tsc), which resolves from the tree's node_modules: the
+  // fixture borrows this repository's, so it grades with the compiler the repository pins, and git ignores the link.
+  symlinkSync(join(layout().repoRoot, "node_modules"), join(root, "node_modules"));
+  write(root, ".gitignore", "node_modules\n");
   write(root, "tsconfig.json", TSCONFIG);
   for (const [p, t] of Object.entries(files)) write(root, p, t);
   spawnSync("git", ["-C", root, "add", "-A"]);
@@ -104,7 +108,7 @@ describe("typecheck wall", () => {
   });
 
   test("a census that cannot run is exit 2, never a pass", () => {
-    for (const over of [{ programs: ["missing/tsconfig.json"] }, { compiler: "/nonexistent/tsc" }]) {
+    for (const over of [{ programs: ["missing/tsconfig.json"] }, { compiler: "no-such-typescript-compiler" }]) {
       const root = fixture({ "src/a.ts": CLEAN });
       try {
         expect(() => wall(root, config(over))).toThrow(WallError);

@@ -156,8 +156,12 @@ class CodeModeNativeLifecycleTest : CodeModeBridgeTestSupport() {
         assertEquals("text(1)", parsed.source)
     }
 
+    /** Codex rust-v0.164.0 drops a cell once its result is delivered (code-mode-runtime cell_actor/mod.rs:493 and 541,
+     *  session_runtime/mod.rs:306-308), so a later wait gets the missing-cell result (service.rs:148-155 and 416-424;
+     *  code-mode-host/tests/grpc_timing.rs:273-297), which core/src/tools/code_mode/mod.rs:288-292 and 308-313 render
+     *  as a failed script (core/tests/suite/code_mode.rs:5683-5695). */
     @Test
-    fun `an exhausted wait returns empty completed output after the native result was consumed`() = runTest {
+    fun `an exhausted wait reports the consumed native cell as not found without replaying its result`() = runTest {
         val cell = NativeCell(ArrayDeque(listOf(CodeModeStep.Yielded("stable", "one"), CodeModeStep.Completed("two"))))
         val bridge = bridge(NativeRuntime(ArrayDeque(listOf(cell))))
         var finalInput = JsonArray(emptyList())
@@ -181,7 +185,11 @@ class CodeModeNativeLifecycleTest : CodeModeBridgeTestSupport() {
             JsonScalars.str(it, "call_id") == "wait-2" &&
                 JsonScalars.str(it, "type") == "function_call_output"
         }
-        assertTrue(output.toString().contains("Script completed"))
+        val missing = Json.parseToJsonElement(
+            """[{"type":"input_text","text":"Script failed\nWall time 0.0 seconds\nOutput:\n"},""" +
+                """{"type":"input_text","text":"Script error:\nexec cell stable not found"}]""",
+        )
+        assertEquals(missing, output["output"])
         assertFalse(output.toString().contains("one"))
         assertFalse(output.toString().contains("two"))
         bridge.onHeadStop()

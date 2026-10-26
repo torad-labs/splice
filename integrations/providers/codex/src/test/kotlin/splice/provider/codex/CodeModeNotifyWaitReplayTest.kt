@@ -18,6 +18,7 @@ import splice.core.turn.RoundText
 import splice.core.turn.TurnOutcome
 import splice.core.turn.Usage
 import splice.core.util.JsonScalars
+import splice.provider.codex.catalog.CodeModeTurnCatalog
 import splice.upstream.RoundResult
 import splice.upstream.codemode.CodeModeCall
 import splice.upstream.codemode.CodeModeCell
@@ -50,7 +51,7 @@ class CodeModeNotifyWaitReplayTest : CodeModeBridgeTestSupport() {
             override suspend fun addTextBlock(text: String) { progress += text }
         }
         val initial = ArrayDeque(listOf(outcome(outer("exec")), outcome(waitCall(), waitPreface)))
-        val issued = bridge.interceptor(turn(), disableParallel = false).intercept(REQUEST, sink) {
+        val issued = bridge.interceptor(originalDetail(turn()), disableParallel = false).intercept(REQUEST, sink) {
             RoundResult.Outcome(initial.removeFirst())
         }.turn()
         assertTrue(issued is TurnOutcome.Success && issued.hasToolUse)
@@ -62,7 +63,7 @@ class CodeModeNotifyWaitReplayTest : CodeModeBridgeTestSupport() {
             """{"type":"function_call_output","call_id":"$id","output":"ok"}]}"""
         var finalInput = JsonArray(emptyList())
         val resumed = bridge.interceptor(
-            turn(id, "ok"),
+            originalDetail(turn(id, "ok")),
             disableParallel = false,
         ).intercept(followup, RecordingSink()) { body ->
             finalInput = Json.parseToJsonElement(body).jsonObject.getValue("input").jsonArray
@@ -79,6 +80,13 @@ class CodeModeNotifyWaitReplayTest : CodeModeBridgeTestSupport() {
         assertFalse(logLines.any { it.contains("interrupted extra=STEERING") })
         bridge.onHeadStop()
     }
+
+    /** The turn's gpt-6-astra takes original image detail in Codex rust-v0.164.0's catalog
+     *  (models-manager/models.json:4 and 14). Codex keeps `original` only for such a model
+     *  (core/src/tools/code_mode/mod.rs:271 and 286, tools/src/image_detail.rs:23-38), and a turn without a catalog
+     *  declares no such model. */
+    private fun originalDetail(turn: CodexCodeModeBridge.Turn): CodexCodeModeBridge.Turn =
+        turn.copy(catalog = CodeModeTurnCatalog(policy = CodeModeToolPolicy(supportsOriginal = true)))
 
     private fun nativeContent(): List<JsonObject> = listOf(
         buildJsonObject { put("type", "input_text"); put("text", "native-suffix") },

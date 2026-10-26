@@ -9,16 +9,17 @@
 // both killers forbidden to touch it). THE CAP IS THE LOAD-BEARING HALF: an adj only orders victims
 // once the box is already in trouble.
 //
-// THE SPLIT OF OWNERSHIP, stated as a contract rather than as one host's arrangement: THE HOST owns
-// [APP_MCP_SLICE] and the ceiling on it, because a cap is a policy about the whole box and only the
-// box's owner can size it; SPLICE owns the oom_score_adj of each child it spawns, because its
-// launcher is the only component that knows which pid is a hosted server and which is splice itself.
-// Neither half is optional and neither can be done by the other: a cap with no adj leaves the child
-// unkillable inside its cap, and an adj with no cap orders victims in a box already in trouble.
+// THE TWO HALVES: the cap on [APP_MCP_SLICE] bounds every hosted child together, and splice owns the
+// oom_score_adj of each child it spawns, because its launcher is the only component that knows which pid
+// is a hosted server and which is splice itself. Neither half is optional and neither can be done by the
+// other: a cap with no adj leaves the child unkillable inside its cap, and an adj with no cap orders
+// victims in a box already in trouble.
 //
-// splice therefore ships NO unit and NO slice file. It asks systemd for the cap at spawn time
-// ([placed] below) and says so in the log when the answer is that there is none, which is the only
-// honest thing to do about a requirement the host has not met.
+// Who lays the cap: Marcos ruled on Oct 25 that Host Shield vendors no splice, so splice's own install lays
+// app-mcp.slice and its ceiling beside an installed hub front, in ~/.local/share/systemd/user, and replaces
+// it on every install (13d0c35c1). A unit of the same name in ~/.config/systemd/user overrides it. Placement
+// still asks systemd for the cap at spawn time ([placed] below) and says so in the log when the answer is
+// that there is none.
 //
 // TWO THINGS MEASURED HERE, and both shape this class:
 //   - `systemd-run --user --scope` EXECS the command (verified: the spawned pid is the command's own,

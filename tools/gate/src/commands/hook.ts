@@ -26,9 +26,11 @@
 // (prepush-scope.ts, selector.ts): the ladder rows whose inputs the diff touches run, and gradle runs the changed modules
 // and their dependents, in parallel, through the slot. The full ladder is a push to main's.
 //
-// A PUSH THAT CANNOT PASS STOPS ITS GRADLE RUN. A direct leg that fails, or a branch that moved (looked at every 20 s while
-// gradle runs), fails the push however gradle ends, so the gate stops gradle at once and reports. A gradle red is never
-// stopped: --continue lists every failure at once. Each judged push appends one line to ~/.local/state/splice-gate/
+// A PUSH THAT CANNOT PASS STOPS ITS GRADLE RUN, OR NEVER STARTS IT. The legs that read no code (title, attribution, no-Python,
+// ast-grep walls) run first, and gradle starts only once they pass: stopping a run also ends the warm pre-push daemon. A direct
+// leg that fails, or a branch that moved (looked at before gradle starts and every 20 s while it runs), fails the push however
+// gradle ends, so the gate stops gradle at once, or never starts it, and reports. A gradle red is never stopped: --continue
+// lists every failure at once. Each judged push appends one line to ~/.local/state/splice-gate/
 // timings.jsonl (prepush-timing.ts): sha, scope, gradle seconds, configuration seconds, the ten slowest tasks, verdict.
 //
 // NOTHING HERE IS SKIPPABLE. There is no environment switch and no flag. `--no-verify` is the only bypass, and
@@ -383,6 +385,11 @@ function spawnEnv(extra: Record<string, string>): Record<string, string> {
 const PRE_PUSH_GRADLE_OPTIONS = ["--parallel", "--build-cache", "--continue", "--profile"];
 /** How often the branch is looked at while gradle runs: a push whose branch moved is refused at the end, so its run stops. */
 const MOVED_POLL_MS = 20_000;
+/** The ladder legs that read no code: the commit's title, its attribution trailers, the no-Python wall and the ast-grep walls. They
+ *  run before gradle starts, and gradle starts only once they pass. simon measured them at 6 to 22 s. Started beside gradle, a red one
+ *  stopped the run, and the stop also ended the warm pre-push daemon: four ended between 9:00 and 9:43 PM CT on Oct 19, three logging
+ *  "cancel requested but timed out", and a cold daemon costs a guessed 50 to 150 CPU-seconds (temple plan 2026-10-19, cut 3). */
+const NO_CODE_LEGS: ReadonlySet<string> = new Set(["prTitle", "attribution", "noPython", "gateRules"]);
 
 /** The ktlint tasks a module's `check` runs, by name. The plugin wires `check` to one task per source set and to the script task,
  *  never to the `ktlintCheck` aggregate (the dry run of the pre-push task list shows no aggregate in the graph), so excluding the
@@ -682,31 +689,55 @@ async function judgeIn(
     return RUN_ALREADY_OPEN_EXIT;
   }
 
-  // A push that cannot pass stops its gradle run. A red direct leg fails the push whatever gradle says, and a branch that moved
-  // fails it however gradle ends, so the run's remaining minutes would compute a verdict nobody reads. A gradle red is not
-  // such a verdict: --continue lists every failure at once, so a red gradle runs to the end.
+  // A push that cannot pass never runs gradle to the end. A red direct leg fails the push whatever gradle says, and a branch that
+  // moved fails it however gradle ends, so the run's remaining minutes would compute a verdict nobody reads. A gradle red is not
+  // such a verdict: --continue lists every failure at once, so a red gradle runs to the end. Gradle first WAITS for the legs that
+  // read no code (NO_CODE_LEGS), and a reason heard while it waits keeps it from starting at all: stopping a run that started also
+  // ends the warm pre-push daemon.
   const stopper = new AbortController();
-  let gradleRunning = scope.gradle.length > 0;
+  let gradlePhase: "waiting" | "running" | "done" = scope.gradle.length > 0 ? "waiting" : "done";
   let stoppedFor: string | undefined;
   const stopGradle = (reason: string): void => {
-    if (stoppedFor !== undefined || !gradleRunning) return;
+    if (stoppedFor !== undefined || gradlePhase === "done") return;
     stoppedFor = reason;
+    if (gradlePhase === "waiting") {
+      console.error(`  ! ${reason}: gradle will not start, because this push cannot pass`);
+      return;
+    }
     console.error(`  ! ${reason}: stopping gradle, because this push cannot pass`);
     stopper.abort();
   };
 
-  // The direct legs run alongside gradle, so a leg never waits for the slot. The verdict reads both.
-  if (scope.direct.length > 0) console.error("── direct legs (no gradle) ──");
   // A test leg that is one `bun test <dir>` run keeps only the test files the diff can affect.
   const directLegs = scope.direct.flatMap((leg) => narrowBunTest(root, leg, changed) ?? []);
-  const direct = runDirectLegs(root, directLegs, (leg) => stopGradle(`${leg.task} failed`));
+  const noCodeLegs = directLegs.filter((leg) => NO_CODE_LEGS.has(leg.task));
+  const codeLegs = directLegs.filter((leg) => !NO_CODE_LEGS.has(leg.task));
+  // Every other direct leg runs alongside gradle, so a leg never waits for the slot. The verdict reads both.
+  if (codeLegs.length > 0) console.error("── direct legs (no gradle) ──");
+  const direct = runDirectLegs(root, codeLegs, (leg) => stopGradle(`${leg.task} failed`));
   const linted =
     deps.ktlint === undefined || ktlintFiles.length === 0 ? Promise.resolve(false) : ktlintLeg(deps.ktlint, root, ktlintFiles, () => stopGradle("ktlint failed"));
+  let failedNoCode: Leg[] = [];
+  if (noCodeLegs.length > 0) {
+    console.error(`── ${noCodeLegs.map((leg) => leg.task).join(", ")}: they read no code, so they pass before gradle starts ──`);
+    failedNoCode = await runDirectLegs(root, noCodeLegs);
+    if (failedNoCode.length > 0) stopGradle(`${failedNoCode.map((leg) => leg.task).join(", ")} failed`);
+  }
   let judged: Judged | undefined;
   let movedWhile: string[] = [];
   let gradleSeconds: number | null = null;
+  // The branch is looked at once more before gradle starts: one that moved while the legs ran fails the push however gradle ends.
+  if (gradlePhase === "waiting" && stoppedFor === undefined) {
+    const movedBefore = movedRefs(lay.repoRoot, pushed);
+    if (movedBefore.length > 0) {
+      movedWhile = movedBefore;
+      stopGradle("the branch moved");
+    }
+  }
+  const notStarted = gradlePhase === "waiting" ? stoppedFor : undefined;
   const gradleStartedAt = Date.now();
-  if (scope.gradle.length > 0) {
+  if (gradlePhase === "waiting" && notStarted === undefined) {
+    gradlePhase = "running";
     console.error("── gate tier (gradle, scoped to the push) ──");
     const gradleStarted = performance.now();
     const watch = setInterval(() => {
@@ -720,20 +751,24 @@ async function judgeIn(
       judged = await judgedRun(runner, root, modules, scope.gradle, deps.rivalLive, stopper.signal);
     } finally {
       clearInterval(watch);
-      gradleRunning = false;
     }
     gradleSeconds = (performance.now() - gradleStarted) / 1000;
     const waited = /admitted after (\d+)s/.exec(judged.output)?.[1];
     console.error(`pre-push timing: gradle ${seconds(gradleStarted)}${waited === undefined ? "" : `, of which ${waited} s waiting for the build lock`}`);
   }
-  const failedLegs = [...(await direct), ...((await linted) ? [KTLINT_LEG] : [])];
+  gradlePhase = "done";
+  const failedLegs = [...failedNoCode, ...(await direct), ...((await linted) ? [KTLINT_LEG] : [])];
   const elapsed = seconds(started);
   // Gradle ended by OUR stop is cancelled, not red: only a run that ended by itself, or by a signal that is not ours, is judged.
   const gradleCancelled = stoppedFor !== undefined && judged !== undefined && cancelledBySignal(judged.status);
   const gradleRed = judged !== undefined && judged.status !== 0 && !gradleCancelled;
   const red = [...failedLegs.map((leg) => leg.task), ...(gradleRed ? ["gradle"] : [])];
   const moved = movedWhile.length > 0 ? movedWhile : red.length > 0 ? [] : movedRefs(lay.repoRoot, pushed);
-  const stoppedNote = gradleCancelled ? ` (gradle stopped after ${(gradleSeconds ?? 0).toFixed(1)} s: ${stoppedFor})` : "";
+  const stoppedNote = gradleCancelled
+    ? ` (gradle stopped after ${(gradleSeconds ?? 0).toFixed(1)} s: ${stoppedFor})`
+    : notStarted !== undefined
+      ? ` (gradle not started: ${notStarted})`
+      : "";
   const record = (verdict: string): void => {
     if (deps.timings === undefined) return;
     const profile = judged === undefined ? { configS: null, tasks: [] } : readProfile(root, gradleStartedAt);

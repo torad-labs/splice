@@ -546,22 +546,24 @@ describe("the moved-tip refusal", () => {
   });
 });
 
-describe("pre-push stops a gradle run whose push cannot pass, and records how long each push took", () => {
-  /** A gradle that runs until it is stopped, then ends as a run killed by SIGTERM does. */
-  const untilStopped: GateRunner = (_tasks, _at, cancel) =>
-    new Promise((resolve) => {
-      const stopped = () => resolve({ status: 143, output: "" });
-      if (cancel?.aborted) stopped();
-      else cancel?.addEventListener("abort", stopped, { once: true });
-    });
-  const oneModule = (): string => {
-    const root = wallsRepo();
-    writeFile(root, TARGET, CLEAN);
-    git(root, ["add", TARGET]);
-    commit(root, "chore(test): one module");
-    return root;
-  };
+/** A gradle that runs until it is stopped, then ends as a run killed by SIGTERM does. */
+const untilStopped: GateRunner = (_tasks, _at, cancel) =>
+  new Promise((resolve) => {
+    const stopped = () => resolve({ status: 143, output: "" });
+    if (cancel?.aborted) stopped();
+    else cancel?.addEventListener("abort", stopped, { once: true });
+  });
 
+/** A scratch repository whose one commit above the scaffold changes a file of `:core`. */
+const oneModule = (): string => {
+  const root = wallsRepo();
+  writeFile(root, TARGET, CLEAN);
+  git(root, ["add", TARGET]);
+  commit(root, "chore(test): one module");
+  return root;
+};
+
+describe("pre-push stops a gradle run whose push cannot pass, and records how long each push took", () => {
   test("RED: a direct leg that fails stops the gradle run at once, and the verdict says so", async () => {
     const root = oneModule();
     const red: Leg[] = [{ task: "redLeg", command: ["bun", "-e", "process.exit(3)"], inputs: ["**"] }];
@@ -682,6 +684,87 @@ describe("pre-push stops a gradle run whose push cannot pass, and records how lo
       { task: ":core:detekt", s: 0.4 },
     ]);
     expect(parseProfile("<html></html>")).toEqual({ configS: null, tasks: [] });
+  });
+});
+
+// Load cut 3 (temple plan 2026-10-19-load-cuts-splice-and-torad-main.md, approved by Marcos): the four legs that read no code run
+// and pass before gradle starts. Stopping a gradle run that already started also ends the warm pre-push daemon, so a red title
+// or attribution must never start one.
+describe("the legs that read no code run and pass before gradle starts", () => {
+  const NO_CODE = ["prTitle", "attribution", "noPython", "gateRules"] as const;
+  /** A ladder row that runs [script] in bun, from the tree the push is judged in. */
+  const bunLeg = (task: string, script: string): Leg => ({ task, command: ["bun", "-e", script], inputs: ["**"] });
+
+  test("RED: any of the four failing fails the push, and gradle is never asked", async () => {
+    for (const task of NO_CODE) {
+      const root = oneModule();
+      const calls: string[][] = [];
+      const lines: PushTiming[] = [];
+      const { result, text } = await captured(() =>
+        prePush(lay(root), pushOf(root, head(root)), {
+          gate: compiler(root, calls),
+          openRun: () => null,
+          legs: [bunLeg(task, "process.exit(3)")],
+          timings: (line) => void lines.push(line),
+        }),
+      );
+      expect(result, task).toBe(1);
+      expect(calls, task).toEqual([]);
+      expect(text, task).toContain(`pre-push: ✗ ${task} (gradle not started: ${task} failed)`);
+      expect(lines.map((line) => [line.verdict, line.gradleS]), task).toEqual([[`fail:${task}`, null]]);
+    }
+  });
+
+  test("RED: gradle starts only once all four have passed", async () => {
+    const root = oneModule();
+    const marks = dir("splice-hook-marks-");
+    const legs = NO_CODE.map((task) => bunLeg(task, `await Bun.sleep(300); await Bun.write(${JSON.stringify(join(marks, task))}, "done");`));
+    const seen: string[][] = [];
+    const gate: GateRunner = async (...args) => {
+      seen.push(NO_CODE.filter((task) => existsSync(join(marks, task))));
+      return await compiler(root)(...args);
+    };
+    const { result } = await captured(() => prePush(lay(root), pushOf(root, head(root)), { gate, openRun: () => null, legs }));
+    expect(result).toBe(0);
+    expect(seen).toEqual([[...NO_CODE]]);
+  });
+
+  test("a leg that reads code still runs beside gradle: gradle does not wait for it", async () => {
+    const root = oneModule();
+    const mark = join(dir("splice-hook-marks-"), "codeLeg");
+    const seen: boolean[] = [];
+    const gate: GateRunner = async (...args) => {
+      seen.push(existsSync(mark));
+      return await compiler(root)(...args);
+    };
+    const legs = [bunLeg("codeLeg", `await Bun.sleep(1500); await Bun.write(${JSON.stringify(mark)}, "done");`)];
+    const { result } = await captured(() => prePush(lay(root), pushOf(root, head(root)), { gate, openRun: () => null, legs }));
+    expect(result).toBe(0);
+    expect(seen).toEqual([false]);
+  });
+
+  test("RED: a leg beside them that fails before they finish keeps gradle from starting", async () => {
+    const root = oneModule();
+    const calls: string[][] = [];
+    const legs = [bunLeg("prTitle", "await Bun.sleep(1500);"), bunLeg("codeLeg", "process.exit(3)")];
+    const { result, text } = await captured(() => prePush(lay(root), pushOf(root, head(root)), { gate: compiler(root, calls), openRun: () => null, legs }));
+    expect(result).toBe(1);
+    expect(calls).toEqual([]);
+    expect(text).toContain("pre-push: ✗ codeLeg (gradle not started: codeLeg failed)");
+  });
+
+  test("RED: a branch that moves while they run keeps gradle from starting, and the push is refused as moved", async () => {
+    const root = oneModule();
+    const judged = head(root);
+    const calls: string[][] = [];
+    // The leg moves the pushed branch back to the scaffold, as a peer's command in the shared checkout can while the legs run.
+    const move = `GIT_CONFIG_GLOBAL=${JSON.stringify(EMPTY_GIT_CONFIG)} GIT_CONFIG_NOSYSTEM=1 git -C ${JSON.stringify(root)} update-ref ${branchRef(root)} refs/remotes/origin/main`;
+    const legs: Leg[] = [{ task: "attribution", command: ["bash", "-c", move], inputs: ["**"] }];
+    const { result, text } = await captured(() => prePush(lay(root), pushOf(root, judged), { gate: compiler(root, calls), openRun: () => null, legs }));
+    expect(result).toBe(1);
+    expect(calls).toEqual([]);
+    expect(text).toContain("the branch moved while the gate judged");
+    expect(text).toContain("(gradle not started: the branch moved)");
   });
 });
 

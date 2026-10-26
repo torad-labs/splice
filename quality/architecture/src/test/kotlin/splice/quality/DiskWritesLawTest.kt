@@ -397,9 +397,12 @@ private val SHIPPED_SITES: Map<String, Map<String, Int>> = mapOf(
     ),
     "features/lifecycle/src/main/kotlin/splice/lifecycle/upgrade/UpgradeLock.kt" to mapOf("FileChannel.open(" to 1),
     "features/lifecycle/src/main/kotlin/splice/lifecycle/upgrade/UpgradeRelease.kt" to mapOf("Files.write(" to 1),
-    // The MCP hub's units where none is installed, in the systemd/user README row, and its record of the units it
-    // wrote, in the mcp-hub/units-written row.
-    "features/lifecycle/src/main/kotlin/splice/lifecycle/hub/HubUnits.kt" to mapOf(
+    // Splice's own systemd user units, each staged in a temp file and moved into place, in the systemd/user README
+    // row, and the record of the hub units earlier installs wrote, rewritten as they retire, in the
+    // mcp-hub/units-written row.
+    "features/lifecycle/src/main/kotlin/splice/lifecycle/units/SpliceUnits.kt" to mapOf(
+        "Files.createTempFile(" to 1,
+        "Files.move(" to 1,
         "Files.write(" to 1,
         "writeAtomic0600(" to 1,
     ),

@@ -65,7 +65,7 @@ class Relay(
         HolderPersistence(changed, checkpoint),
     )
     private val resume = RelayResumeBinding(settlements)
-    internal val notifications = RelayNotifications(wireOutstanding)
+    internal val notifications = RelayNotifications(wireOutstanding, settlements)
     internal val inbound = RelayInbound(
         sessions,
         routes,
@@ -248,8 +248,12 @@ class Relay(
         wireOutstanding.values.any { it.session === session && it.clientId == id }
 }
 
-/** The notification path owns only request-id translation; it never changes a generation ledger. */
-internal class RelayNotifications(private val calls: Map<String, WireOutstanding>) {
+/** The notification path translates request ids. A forwarded cancel also settles the call it names: a server that keeps
+ *  MCP's cancellation rule sends no response for it, so nothing else would release it. */
+internal class RelayNotifications(
+    private val calls: Map<String, WireOutstanding>,
+    private val settlements: RelaySettlements,
+) {
     /** A notification is accepted only once its holder link accepted its complete wire message. */
     fun notify(holder: Holder, session: Session, msg: JsonObject): Boolean {
         val cancelled = Rpc.str(msg, Rpc.METHOD) == CANCELLED
@@ -257,7 +261,18 @@ internal class RelayNotifications(private val calls: Map<String, WireOutstanding
         val key = params?.takeIf { cancelled }?.get(REQUEST_ID)?.let { ownKey(holder, it, session) }
         if (cancelled && key == null) return true
         val text = key?.let { Rpc.encode(withRequestId(msg, requireNotNull(params), it)) } ?: Rpc.encode(msg)
-        return holder.link?.send(text) == true
+        val sent = holder.link?.send(text) == true
+        if (sent && key != null) settle(key)
+        return sent
+    }
+
+    /** Releases the cancelled call, and answers its POST once with no response in it: the client dropped that id. */
+    private fun settle(key: String) {
+        val call = calls[key] ?: return
+        val conn = call.conn
+        call.backendSettled = true
+        settlements.detached(key, call)
+        conn?.reply(ACCEPTED)
     }
 
     private fun ownKey(holder: Holder, id: JsonElement, session: Session): String? =

@@ -7,9 +7,13 @@ import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
 import kotlinx.serialization.json.put
 import org.junit.jupiter.api.Assertions.assertEquals
+import org.junit.jupiter.api.Assertions.assertThrows
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.io.TempDir
+import splice.core.memory.HeapBudget
+import splice.core.memory.HeapCapacityException
+import splice.core.storage.DayBodyBudget
 import java.nio.file.Files
 import java.nio.file.Path
 import java.util.Base64
@@ -58,6 +62,35 @@ class TracePackBudgetTest {
         assertEquals("true", body["truncated"]?.jsonPrimitive?.content)
         assertTrue(body["parts"] == null, "an incomplete JSON literal cannot be published as readable parts")
         assertEquals(encoded, bodies.hydrate(encoded, day))
+    }
+
+    @Test
+    fun `a stored chunk is reused when the heap has no room to copy it, and a new one is refused for heap capacity`(
+        @TempDir dir: Path,
+    ) {
+        val day = dir.resolve("synthetic-2026-09-18.jsonl")
+        val file = day.resolveSibling("${day.fileName}.bodies2")
+        val random = Random(SEED)
+        val held = ByteArray(CHUNK_MAX).also { random.nextBytes(it) }
+        val fresh = ByteArray(CHUNK_MAX).also { random.nextBytes(it) }
+        // Room for the index's first table and one chunk's copy, until the other owners below take it.
+        val heap = HeapBudget(heapLimitBytes = 1L shl 30, budgetBytes = 4L * CHUNK_MAX)
+        TraceBodyPack(file, TracePackIndex(heap), budget = DayBodyBudget(minFreeBytes = 0)).use { pack ->
+            val stored = pack.put(held)
+            val size = Files.size(file)
+            // The daemon's other owners take the heap down to one byte less than a chunk, so no chunk can be copied.
+            checkNotNull(heap.reserve(heap.available.value - (CHUNK_MAX - 1))).use {
+                assertEquals(stored, pack.put(held), "a chunk the pack holds is named without a copy")
+                assertThrows(
+                    HeapCapacityException::class.java,
+                    { pack.put(fresh) },
+                    "a new chunk is refused for heap, never as a full pack, which stores a body as an omission",
+                )
+                assertEquals(size, Files.size(file), "the refused chunk appends nothing")
+            }
+            val hash = pack.put(fresh).getValue("hash").jsonPrimitive.content
+            assertEquals(TracePackBytes.hashOf(fresh), hash, "once the heap has room, the refused chunk stores")
+        }
     }
 
     private fun encoded(bodies: TraceBodies, day: Path, text: String): JsonObject =

@@ -27,6 +27,7 @@ import splice.head.turn.TurnDrive
 import splice.head.turn.ZeroEventClassifier
 import splice.upstream.PathLiveness
 import splice.upstream.Provider
+import splice.upstream.RoundBody
 import splice.upstream.WsRoundAbort
 import splice.upstream.WsRoundRunner
 import splice.upstream.transport.HeaderRedaction
@@ -77,7 +78,7 @@ internal class WsRoundDriver(
             // Credentials come from the provider's auth surface, NOT from a WS-side refresh: L5
             // keeps the single-flight 401 refresh in UpstreamClient, so a missing/expired
             // credential here simply rides SSE and gets refreshed there.
-            val acquired = roundAcquire.acquire(runner, drive, inputs.body.text)
+            val acquired = roundAcquire.acquire(runner, drive, sentText(drive, inputs.body))
             if (acquired == null) {
                 // SSE is about to serve this round, so the conversation advances outside any chain.
                 runner.roundBypassed(drive.meta)
@@ -167,6 +168,15 @@ internal class WsRoundDriver(
             // stays an incomplete child of turnJob and the turn cannot finish.
             roundJob?.complete()
         }
+    }
+
+    /** The text this round sends, once its size is on the turn's perf row. A websocket round never encodes bytes, so
+     *  this one count over the text it sends is its size. A bypass to SSE stamps the same number again from the bytes
+     *  it writes. */
+    private fun sentText(drive: TurnDrive, body: RoundBody): String {
+        val text = body.text
+        drive.perf.setCount(PerfKeys.UPSTREAM_REQ_BYTES, body.byteSize())
+        return text
     }
 
     /** The abort must run even after its owner is cancelled, but must not throw through Job's handlers.

@@ -5,7 +5,6 @@ package splice.head.turn
 
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Job
-import splice.core.perf.PerfKeys
 import splice.core.util.LogSink
 import splice.head.round.RoundInterception
 import splice.head.round.RoundRunners
@@ -75,10 +74,10 @@ internal class TurnRoundRun(
         ).run(drive.requestBody, fold, reanchor, drive.perf)
     }
 
-    // The audit still sees exactly the bytes this round POSTs: byteSize counts them without encoding,
-    // and the wire tap reads the text only when a tap is actually open.
+    // The audit still sees exactly the bytes this round POSTs, and the wire tap reads the text only when a tap is
+    // actually open. The round's size on its perf row is stamped by the transport that sends the body, from what that
+    // transport produced, so nothing here walks the body to count it.
     private fun recordPost(drive: TurnDrive, body: RoundBody) {
-        drive.perf.setCount(PerfKeys.UPSTREAM_REQ_BYTES, body.byteSize())
         wireTap?.record(drive.meta, body.text, drive.sentTurnId())
     }
 }

@@ -147,6 +147,9 @@ public class UpstreamClient(
         var body = ctx.observers.perf?.timed(splice.core.perf.PerfKeys.OUTBOUND_PREP_MS) {
             prepared.forClient(this, ctx.observers)
         } ?: prepared.forClient(this, ctx.observers)
+        // The size on the turn's perf row is the length forClient just wrote, the JSON before any zstd, so reading it
+        // walks nothing. An amended resend keeps this first stamp.
+        ctx.observers.perf?.setCount(splice.core.perf.PerfKeys.UPSTREAM_REQ_BYTES, body.body.byteSize())
         val t0 = clock()
         val state = RetryState(ctx.limits.rateLimitCooldown ?: cooldown, t0, pacing.triesFor(maxRetries))
         while (state.attempt < state.maxRetries) {

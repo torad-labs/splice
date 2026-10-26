@@ -205,6 +205,9 @@ private class ScriptedRunner(
     var aborts = 0
     var perf: TurnPerf? = null
 
+    /** Every body the head handed a send, in order: the text the websocket carried. */
+    val bodies = mutableListOf<String>()
+
     override suspend fun attempt(
         bodyJson: String,
         meta: TurnMeta,
@@ -224,6 +227,7 @@ private class ScriptedRunner(
         creds: Credentials,
     ): WsRound {
         attempts += 1
+        bodies += bodyJson
         val selected = if (attempts == 1) events else continuationEvents
         val scripted = if (throwAfter == null) {
             flow {
@@ -1127,13 +1131,36 @@ class WsRoundDriverTest {
         sink: WireSink = RecordingSink2(),
     ): WsRoundInputs = WsDriverFixture(tmp, mock.baseUrl).inputs(emitter, scope, budget, sink)
 
-    private fun turn(port: Int): String = runBlocking {
+    private fun turn(port: Int, content: String = "hi"): String = runBlocking {
         client.post("http://127.0.0.1:$port/v1/messages") {
             setBody(
                 """{"model":"claude-codex--gpt-5.6-sol","stream":true,"max_tokens":100,
-                    "messages":[{"role":"user","content":"hi"}]}""",
+                    "messages":[{"role":"user","content":"$content"}]}""",
             )
         }.bodyAsText()
+    }
+
+    /** A websocket round sends text and never encodes bytes, so its row's upstream_req_bytes is the UTF-8 length of
+     *  the body the runner was handed: the value the console's request rows show for every websocket turn. */
+    @Test
+    fun `a websocket round's perf row counts the UTF-8 bytes of the body it sent`() {
+        val completed = """{"type":"response.completed","response":{"status":"completed",""" +
+            """"usage":{"input_tokens":10,"output_tokens":3}}}"""
+        val runner = ScriptedRunner(TEXT_ROUND + completed)
+        val h = head(runner)
+        runBlocking { h.start() }
+        try {
+            assertTrue(turn(h.port, "wide é — 漢字 🐉").contains("event: message_stop"), "the round completed")
+            assertEquals(1, runner.endedOk, "the websocket served the round, not SSE")
+            val sent = runner.bodies.single()
+            val bytes = sent.toByteArray(Charsets.UTF_8).size.toLong()
+            assertTrue(bytes > sent.length, "wide characters make bytes outnumber characters")
+            assertTrue(AsyncFileIo.drain(), "the count reached its perf row")
+            val row = ev(Files.readString(tmp.resolve("perf-$built.jsonl")).trim())
+            assertEquals(bytes.toString(), row[PerfKeys.UPSTREAM_REQ_BYTES]?.toString())
+        } finally {
+            runBlocking { h.stop() }
+        }
     }
 
     @OptIn(ExperimentalCoroutinesApi::class)

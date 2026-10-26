@@ -7,9 +7,13 @@
 // WireTree as JsonWire.string, so the two agree byte for byte by construction, and law 8's
 // request-byte golden cannot move.
 //
-// [bytes] is the one copy the transport keeps: an array of exactly [byteSize] bytes, filled in place.
-// On a 0.92 MB body that is about one body of allocation either way a body arrives, where the
-// buffered encode it replaced kept two copies of a tree and three of text (RequestBodyAllocationTest).
+// [bytes] writes the body once and keeps one exact copy. The write reads the text through core's bulk
+// UTF-8 writer when the text already exists, because a trace, a tap or an interceptor read it, and
+// streams the tree otherwise. It lands in blocks that are never humongous. [byteSize] is the length
+// that one write produced, so it costs nothing once [bytes] ran.
+// why: the size used to be counted first, so every round walked its whole body for a number the write
+// makes anyway, and existing text went through the JDK encoder's per-character buffer loop. The two
+// were about 7.6% of the daemon's sampled CPU on Oct 25.
 //
 // Two cases because the body arrives two ways: the runners hold the TREE they built, and an
 // interceptor hands back TEXT it composed. Neither is converted to reach the other.
@@ -17,92 +21,125 @@ package splice.upstream
 
 import kotlinx.serialization.json.JsonElement
 import splice.core.util.JsonWire
+import splice.core.util.Utf8Wire
 import java.io.OutputStream
-import java.nio.ByteBuffer
-import java.nio.CharBuffer
-import java.nio.charset.CodingErrorAction
+
+// why: an 8 KiB first block holds a small body whole, and it is one drain of the UTF-8 writer's scratch.
+private const val BODY_FIRST_BLOCK_BYTES = 8_192
+
+// why: 256 KiB is under G1's humongous threshold, half a region, on every region size from 1 MiB up.
+private const val BODY_BLOCK_CAP_BYTES = 262_144
+
+// why: no body has a negative length, so this marks one that no write or count has measured yet.
+private const val BODY_NOT_MEASURED = -1L
 
 public sealed class RoundBody {
     /** The body as JSON text. On [Tree] the first read SERIALISES the whole body, so read it only
      *  where the text is genuinely needed; it is then retained, because a retry must not re-encode. */
     public abstract val text: String
 
-    /** The body's UTF-8 bytes in one new array of exactly [byteSize] bytes. */
-    public abstract fun bytes(): ByteArray
+    /** The length the last [bytes] wrote, or the count [byteSize] made before any write. Writing the same
+     *  body again writes the same length. */
+    @Volatile
+    private var measured = BODY_NOT_MEASURED
 
-    /** The exact number of bytes [bytes] returns, computed once without encoding to an array. */
-    public abstract fun byteSize(): Long
+    /** The body's UTF-8 bytes in one new array: written once into blocks and copied once, keeping its length. */
+    public fun bytes(): ByteArray {
+        val blocks = BodyBlocks()
+        writeUtf8(blocks)
+        return blocks.whole().also { measured = it.size.toLong() }
+    }
+
+    /** The number of bytes [bytes] returns: what its one write produced, free once it ran. Asked before [bytes]
+     *  ever ran, it counts them without encoding, from the text when it exists and from the tree otherwise, and
+     *  keeps that count. */
+    public fun byteSize(): Long {
+        val known = measured
+        return if (known != BODY_NOT_MEASURED) known else countUtf8().also { measured = it }
+    }
+
+    /** Writes the body's UTF-8 to [output], once. */
+    protected abstract fun writeUtf8(output: OutputStream)
+
+    /** The number of bytes [writeUtf8] writes, counted without encoding them. */
+    protected abstract fun countUtf8(): Long
+
+    /** Text goes through core's writer, which spells every character as the JVM encoder does, the one-byte '?'
+     *  for a lone surrogate included, and reads the String in bulk copies rather than a character at a time. */
+    protected fun writeText(text: String, output: OutputStream) {
+        val utf8 = Utf8Wire(output)
+        utf8.write(text)
+        utf8.drain()
+    }
 
     /** What a runner holds: the request tree it assembled. [element] is readable so an interceptor
      *  that reads the request reads this tree instead of parsing its text back into another one. */
     public class Tree(public val element: JsonElement) : RoundBody() {
         private val serialized = lazy { JsonWire.string(element) }
-        private val size: Long by lazy {
-            if (serialized.isInitialized()) JsonWire.byteSize(serialized.value) else JsonWire.byteSize(element)
-        }
         override val text: String by serialized
 
         /** Reuse text an interceptor or trace already needed, including its original lone surrogates.
-         *  Otherwise stream the tree directly; neither path retains a mutable byte array. */
-        override fun bytes(): ByteArray =
-            if (serialized.isInitialized()) {
-                TextBytes.encode(serialized.value, size)
-            } else {
-                ExactBytes(size).also { JsonWire.write(element, it) }.filled()
-            }
+         *  Otherwise stream the tree directly; neither path builds a String to reach the bytes. */
+        override fun writeUtf8(output: OutputStream) {
+            if (serialized.isInitialized()) writeText(serialized.value, output) else JsonWire.write(element, output)
+        }
 
-        override fun byteSize(): Long = size
+        override fun countUtf8(): Long =
+            if (serialized.isInitialized()) JsonWire.byteSize(serialized.value) else JsonWire.byteSize(element)
     }
 
     /** What an interceptor hands back: text it composed itself, which has no tree to stream from. */
     public class Text(override val text: String) : RoundBody() {
-        private val size: Long by lazy { JsonWire.byteSize(text) }
+        override fun writeUtf8(output: OutputStream) {
+            writeText(text, output)
+        }
 
-        override fun bytes(): ByteArray = TextBytes.encode(text, size)
-
-        override fun byteSize(): Long = size
+        override fun countUtf8(): Long = JsonWire.byteSize(text)
     }
 
-    /** An output stream over one array sized in advance, so the bytes land where the caller keeps
-     *  them, with no growth and no closing copy. Writing past the end, or finishing short of it,
-     *  means JsonWire.byteSize and JsonWire.write disagreed, and both fail loudly. */
-    private class ExactBytes(size: Long) : OutputStream() {
-        private val bytes = ByteArray(Math.toIntExact(size))
-        private var position = 0
+    /** Where [bytes] writes a body before its one exact copy: blocks from 8 KiB doubling to a 256 KiB cap, so a
+     *  body of any size is held without regrowing one array, and no block is ever humongous. */
+    private class BodyBlocks : OutputStream() {
+        private val full = ArrayList<ByteArray>()
+        private var block = ByteArray(BODY_FIRST_BLOCK_BYTES)
+        private var filled = 0
+        private var total = 0L
 
-        override fun write(value: Int) {
-            bytes[position] = value.toByte()
-            position++
+        override fun write(byte: Int) {
+            if (filled == block.size) next()
+            block[filled++] = byte.toByte()
+            total++
         }
 
-        override fun write(buffer: ByteArray, offset: Int, length: Int) {
-            System.arraycopy(buffer, offset, bytes, position, length)
-            position += length
-        }
-
-        fun filled(): ByteArray {
-            check(position == bytes.size) { "wrote $position of ${bytes.size} sized bytes" }
-            return bytes
-        }
-    }
-
-    /** ASCII text uses the JDK's single copy. Wider text goes straight into an exact array.
-     *  REPLACE preserves String.getBytes' one-byte '?' for a lone surrogate; decoding those bytes
-     *  back to text would not preserve the original String. */
-    private object TextBytes {
-        fun encode(text: String, size: Long): ByteArray {
-            if (size == text.length.toLong()) return text.toByteArray(Charsets.UTF_8)
-            val bytes = ByteArray(Math.toIntExact(size))
-            val target = ByteBuffer.wrap(bytes)
-            val encoder = Charsets.UTF_8.newEncoder()
-                .onMalformedInput(CodingErrorAction.REPLACE)
-                .onUnmappableCharacter(CodingErrorAction.REPLACE)
-            val encoded = encoder.encode(CharBuffer.wrap(text), target, true)
-            val flushed = encoder.flush(target)
-            check(encoded.isUnderflow && flushed.isUnderflow && !target.hasRemaining()) {
-                "encoded ${target.position()} of ${bytes.size} sized bytes"
+        override fun write(bytes: ByteArray, offset: Int, length: Int) {
+            var from = offset
+            val end = offset + length
+            while (from < end) {
+                if (filled == block.size) next()
+                val step = minOf(end - from, block.size - filled)
+                System.arraycopy(bytes, from, block, filled, step)
+                filled += step
+                from += step
             }
+            total += length
+        }
+
+        /** Every byte written, in order, in one array of exactly their number. */
+        fun whole(): ByteArray {
+            val bytes = ByteArray(Math.toIntExact(total))
+            var at = 0
+            for (done in full) {
+                System.arraycopy(done, 0, bytes, at, done.size)
+                at += done.size
+            }
+            System.arraycopy(block, 0, bytes, at, filled)
             return bytes
+        }
+
+        private fun next() {
+            full += block
+            block = ByteArray(minOf(2 * block.size, BODY_BLOCK_CAP_BYTES))
+            filled = 0
         }
     }
 }

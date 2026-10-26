@@ -15,6 +15,7 @@
 // captured and still fails on attempt one: retrying our own bugs was never the law.
 package splice.upstream.transport
 
+import com.github.luben.zstd.Zstd
 import io.ktor.client.HttpClient
 import io.ktor.client.engine.mock.MockEngine
 import io.ktor.client.engine.mock.respond
@@ -33,6 +34,8 @@ import org.junit.jupiter.api.assertThrows
 import splice.core.auth.AuthDescription
 import splice.core.auth.Credentials
 import splice.core.auth.RefreshableAuthProvider
+import splice.core.perf.PerfKeys
+import splice.core.perf.TurnPerf
 import splice.upstream.ClientFrameEmitted
 import splice.upstream.RetryNotice
 import splice.upstream.StreamRead
@@ -508,5 +511,60 @@ class UnclassifiedTransportFailureTest {
                 lastAttempt = false,
             ),
         )
+    }
+}
+
+/** upstream_req_bytes, the request size the console's rows show, stamped by the post that encodes the body: the
+ *  UTF-8 length of the JSON it sends, with request compression off and on, never the compressed length. In its
+ *  own class for the reason the one above gives: UpstreamClientTransportTest sits close to LargeClass. */
+class UpstreamRequestBytesStampTest {
+
+    private val fakeAuth = object : RefreshableAuthProvider {
+        override suspend fun credentials(): Credentials? = Credentials.ApiKey("k", "x-api-key", "")
+        override suspend fun refresh(): Credentials? = null
+        override suspend fun describe(): AuthDescription = AuthDescription(true, "fake", emptyMap())
+    }
+
+    /** Characters of every UTF-8 width, so the JSON's byte length is not its character count. */
+    private val bodyJson = """{"model":"x","content":"héllo — 世界 🐉"}"""
+
+    /** One post of [bodyJson] with the turn's perf wired: what it stamped, and the bytes the engine received. */
+    private suspend fun post(zstd: Boolean): Pair<Long, ByteArray> {
+        var received: ByteArray? = null
+        val engine = MockEngine { request ->
+            received = (request.body as OutgoingContent.ByteArrayContent).bytes()
+            respond("ok", HttpStatusCode.OK, headersOf())
+        }
+        val perf = TurnPerf()
+        val client = UpstreamClient(
+            totalTimeoutMs = 5_000,
+            maxRetries = 3,
+            zstdRequestBody = zstd,
+            client = HttpClient(engine),
+            pacing = RetryPacing(backoff = { _, _ -> }, dnsBackoff = { _ -> }),
+        )
+        val context = PostContext(
+            url = "https://api.example.test/v1",
+            auth = fakeAuth,
+            extraHeaders = { emptyMap() },
+            observers = PostObservers(perf = perf),
+        )
+        client.posted(context, bodyJson) { "done" }
+        return perf.count(PerfKeys.UPSTREAM_REQ_BYTES) to checkNotNull(received) { "the engine received no body" }
+    }
+
+    @Test
+    fun `a post stamps the UTF-8 length of the JSON it sends, plain or compressed`() = runTest {
+        val json = bodyJson.toByteArray(Charsets.UTF_8)
+        assertTrue(json.size > bodyJson.length, "the body must tell UTF-8 bytes from UTF-16 characters")
+
+        val (plain, plainSent) = post(zstd = false)
+        assertArrayEquals(json, plainSent, "a plain post sends the JSON itself")
+        assertEquals(json.size.toLong(), plain, "upstream_req_bytes is the JSON's UTF-8 length")
+
+        val (compressed, compressedSent) = post(zstd = true)
+        assertArrayEquals(json, Zstd.decompress(compressedSent, json.size), "the compressed bytes are that JSON")
+        assertTrue(compressedSent.size != json.size, "the compressed length must differ from the JSON's")
+        assertEquals(json.size.toLong(), compressed, "upstream_req_bytes stays the JSON's length, never the compressed")
     }
 }

@@ -26,6 +26,7 @@ import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.jsonArray
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
+import kotlinx.serialization.json.long
 import org.junit.jupiter.api.AfterAll
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertNull
@@ -40,6 +41,7 @@ import splice.core.auth.Credentials
 import splice.core.auth.RefreshableAuthProvider
 import splice.core.model.ModelCatalog
 import splice.core.model.ModelEntry
+import splice.core.perf.PerfKeys
 import splice.core.storage.ActivityDays
 import splice.core.turn.WatchdogBudget
 import splice.core.util.AsyncFileIo
@@ -62,15 +64,18 @@ private const val MGMT_KEY = "mgmt-key-for-the-wire-test"
 /** The v0.4.0 turn key: what a launched session holds in its environment. */
 private const val TURN_KEY = "turn-key-for-the-wire-test"
 
-/** An Anthropic-shaped upstream that records every request BODY, append-only. */
+/** An Anthropic-shaped upstream that records every request BODY, and how many bytes it was, append-only. */
 private class BodyRecordingUpstream {
     val bodies = CopyOnWriteArrayList<String>()
+    val sizes = CopyOnWriteArrayList<Int>()
     private val server: HttpServer = HttpServer.create(InetSocketAddress("127.0.0.1", 0), 0)
     val baseUrl: String get() = "http://127.0.0.1:${server.address.port}"
 
     fun start() {
         server.createContext("/v1/messages") { ex: HttpExchange ->
-            bodies += ex.requestBody.readAllBytes().decodeToString()
+            val received = ex.requestBody.readAllBytes()
+            sizes += received.size
+            bodies += received.decodeToString()
             val body = buildString {
                 append("event: message_start\ndata: {\"type\":\"message_start\",")
                 append("\"message\":{\"usage\":{\"input_tokens\":1}}}\n\n")
@@ -229,6 +234,25 @@ class HeadWireTapTest {
             "a captured request names its trace",
         )
         assertTrue(payload.contains("\"key\":\"anthropic\""), payload)
+    }
+
+    /** upstream_req_bytes is the size the console's request rows show: the UTF-8 bytes the upstream received,
+     *  wide characters counted at their width. A traced head sends the bytes of the text its trace read; an
+     *  untraced head with no tap streams them from the tree. Both rows count what arrived. */
+    @Test
+    fun `a turn's perf row counts the bytes the upstream received, on a traced head and an untraced one`() {
+        for (traced in listOf(true, false)) {
+            val port = startHead(wireTap = null, traced = traced)
+            val before = upstream.sizes.size
+            assertEquals(HttpStatusCode.OK, turn(port, "wide é — 漢字 🐉"))
+            assertEquals(before + 1, upstream.sizes.size, "one turn, one upstream request")
+            val received = upstream.sizes[before].toLong()
+            assertTrue(received > upstream.bodies[before].length, "wide characters make bytes outnumber characters")
+
+            val row = perfRows(port).single()
+
+            assertEquals(received, row.getValue(PerfKeys.UPSTREAM_REQ_BYTES).jsonPrimitive.long, "traced=$traced")
+        }
     }
 
     @Test

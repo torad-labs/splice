@@ -47,8 +47,11 @@ internal class CodeModeWorkerLossTest {
                 ),
             )
             val initial = Sink()
-            manager.interceptor(turn(), disableParallel = false).interceptOutcome(body(), initial) { outer() }
-            val id = initial.ids.single()
+            val first = manager.interceptor(turn(), disableParallel = false)
+                .interceptOutcome(body(), initial) { outer() }
+            val id = checkNotNull(initial.ids.singleOrNull()) {
+                "the first round opened ${initial.ids} instead of one Read call, and ended as $first"
+            }
             val pending = async {
                 manager.interceptor(turn(id), disableParallel = false)
                     .interceptOutcome(body(id), Sink()) { completed() }

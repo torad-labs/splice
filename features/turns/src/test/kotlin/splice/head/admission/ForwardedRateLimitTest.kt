@@ -219,7 +219,9 @@ class ForwardedRateLimitTest {
             } finally {
                 first.close()
             }
-            val restarted = LimitRig(directory)
+            // The restarted head asks the same provider, whose weekly window has not moved. A rig built a second
+            // later must not name a later reset, or the provider's own reset could not be told from a rewritten one.
+            val restarted = LimitRig(directory, reset = first.reset)
             restarted.head.start()
             try {
                 assertEquals("seven_day", restarted.upstream.planHold?.claim)
@@ -275,10 +277,11 @@ private class LimitRig(
     private val limits: Boolean = true,
     clock: ElapsedClock = ElapsedClock { 0L },
     names: HeadDeps.CredentialAccountNames = HeadDeps.CredentialAccountNames { null },
+    /** When the provider's weekly window resets: one instant, named alike in every refusal until it lifts. */
+    val reset: Long = System.currentTimeMillis() / 1_000 + 86_400,
 ) {
     val requests = mutableListOf<String>()
     val refused = mutableListOf<String>()
-    private val reset = System.currentTimeMillis() / 1_000 + 86_400
     val limitHeaders = linkedMapOf(
         "anthropic-ratelimit-unified-status" to "rejected",
         "anthropic-ratelimit-unified-representative-claim" to "seven_day",

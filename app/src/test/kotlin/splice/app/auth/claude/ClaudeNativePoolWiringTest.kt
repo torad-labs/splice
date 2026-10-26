@@ -143,16 +143,11 @@ class ClaudeNativePoolWiringTest {
                 val first = nativeTurn(client, rig)
                 val second = nativeTurn(client, rig)
                 if (expiredStandby) {
-                    assertEquals(HttpStatusCode.TooManyRequests, first.status)
-                    val error = Json.parseToJsonElement(first.bodyAsText()).jsonObject.getValue("error").jsonObject
-                    assertEquals("rate_limit_error", error.getValue("type").jsonPrimitive.content)
-                    val message = error.getValue("message").jsonPrimitive.content
-                    assertTrue(message.contains("synthetic weekly limit"))
-                    assertTrue(message.contains("claude-splice cannot take over") && message.contains("expired"))
-                    assertTrue(message.contains("Run claude-splice once and Claude Code renews it."))
-                    assertEquals(HttpStatusCode.TooManyRequests, second.status)
-                    assertTrue(second.bodyAsText().contains("claude-splice cannot take over"))
-                    assertEquals(listOf("Bearer synthetic-native"), sent)
+                    // Each turn asks the provider itself (Marcos, Oct 26): the second turn is sent too, and the
+                    // limit that still holds reaches it in the provider's words, the same way as the first.
+                    assertWeeklyRefusal(first)
+                    assertWeeklyRefusal(second)
+                    assertEquals(listOf("Bearer synthetic-native", "Bearer synthetic-native"), sent)
                 } else {
                     assertEquals(HttpStatusCode.OK, first.status, first.bodyAsText())
                     assertEquals(HttpStatusCode.OK, second.status, second.bodyAsText())
@@ -172,6 +167,17 @@ class ClaudeNativePoolWiringTest {
             rig.close()
             upstream.stop()
         }
+    }
+
+    /** The weekly refusal Claude Code reads: the provider's 429, its type and words, and splice's remedy. */
+    private suspend fun assertWeeklyRefusal(turn: HttpResponse) {
+        assertEquals(HttpStatusCode.TooManyRequests, turn.status)
+        val error = Json.parseToJsonElement(turn.bodyAsText()).jsonObject.getValue("error").jsonObject
+        assertEquals("rate_limit_error", error.getValue("type").jsonPrimitive.content)
+        val message = error.getValue("message").jsonPrimitive.content
+        assertTrue(message.contains("synthetic weekly limit"))
+        assertTrue(message.contains("claude-splice cannot take over") && message.contains("expired"))
+        assertTrue(message.contains("Run claude-splice once and Claude Code renews it."))
     }
 
     private suspend fun nativeTurn(client: HttpClient, rig: ClaudeNativePoolFixture.Rig): HttpResponse =

@@ -42,7 +42,7 @@ const root = document.getElementById("models");
 KNOBS.wire(root, () => render());
 
 // ---------- what the daemon says ----------
-const data = { heads: [], topo: null, models: [], local: [], projects: [], sessions: [], doctor: null, claude: null, profiles: [], loaded: false, err: null, listsAt: 0, listsShape: "" };
+const data = { heads: [], topo: null, models: [], local: [], projects: [], sessions: [], doctor: null, claude: null, profiles: [], loaded: false, err: null, listsAt: 0, listsTicks: 0, listsShape: "" };
 // What he is doing: the open command and its unsaved draft, a new command in progress, the saved words.
 const ui = { rm: null, gone: new Set(), restartDue: false, sign: null, keyin: null, view: "commands", open: null, add: null, draft: null, said: null, pick: null, saving: false, restart: null,
   effOpen: false, logs: {}, logPath: {}, logWhy: {}, logq: "", logPaused: false, proj: null, projCmd: null, file: null, files: {}, more: new Set(), q: "", claudeSaid: null, fixing: {}, wide: true };
@@ -52,9 +52,12 @@ const ui = { rm: null, gone: new Set(), restartDue: false, sign: null, keyin: nu
  *  waiting on all of them in a row (walk on d0ec523b5). What has not landed reads Reading where it shows ([pending]).
  *  With [lists] false it asks only what moves, /api/heads and /api/sessions, and keeps the other seven as they were read:
  *  topology, models, claude-head, projects, doctor, local runtimes and config change when someone saves or edits a file.
- *  The page's own writes and Read again leave it true. A read of the lists records when it was and the commands it saw
- *  ([listsAt], [listsShape]); a failed read clears the time, so the first answer after splice comes back reads them all. */
+ *  The page's own writes and Read again leave it true. A read of the lists records when it asked them and the commands it
+ *  saw, and starts the count of ticks again ([listsAt], [listsShape], [listsTicks]). What failed is not the list: when any
+ *  of the seven fails, the time is cleared and the next round reads them all again, as the 5 s tick once did. */
 async function readAll({ draw, lists = true } = {}) {
+  const asked = Date.now();
+  if (lists) data.listsTicks = 0;
   const paths = lists ? ["/api/heads", "/api/topology", "/api/models", "/api/claude-head"] : ["/api/heads"];
   const [heads, topo, models, claude] = await Promise.all(paths.map((p) => API.get(p)));
   if (!heads.ok || (lists && !topo.ok)) {
@@ -69,7 +72,6 @@ async function readAll({ draw, lists = true } = {}) {
     data.topo = topo.body;
     data.models = models.body?.heads ?? [];
     data.claude = claude.ok ? claude.body : null;
-    data.listsAt = Date.now();
     data.listsShape = shape();
   }
   KNOBS.st.cmds = data.heads.map((h) => h.key);
@@ -80,27 +82,34 @@ async function readAll({ draw, lists = true } = {}) {
   const land = (what) => { data.pending?.delete(what); draw?.(); };
   const sessions = API.get("/api/sessions").then((r) => { data.sessions = r.body?.sessions ?? []; land("sessions"); });
   if (!lists) { await sessions; return; }
+  let whole = models.ok && claude.ok;
   await Promise.all([
     sessions,
-    API.get("/api/projects").then((r) => { data.projects = r.body?.projects ?? []; land("projects"); }),
-    API.get("/api/doctor").then((r) => { data.doctor = r.ok ? r.body : null; land("doctor"); }),
+    API.get("/api/projects").then((r) => { whole &&= r.ok; data.projects = r.body?.projects ?? []; land("projects"); }),
+    API.get("/api/doctor").then((r) => { whole &&= r.ok; data.doctor = r.ok ? r.body : null; land("doctor"); }),
     // what each local runtime says about its models, asked of the runtimes themselves (spec 9i)
     API.get("/api/models/local").then((r) => {
+      whole &&= r.ok;
       if (!r.ok && r.status !== 0) console.warn(`models: /api/models/local answered ${r.status}`);
       data.local = r.ok ? r.body?.providers ?? [] : [];
       land("local");
     }),
-    KNOBS.load().then((err) => { data.knobsErr = err; land("knobs"); }),
+    KNOBS.load().then((err) => { whole &&= !err; data.knobsErr = err; land("knobs"); }),
   ]);
+  data.listsAt = whole ? asked : 0;
 }
 const pending = (what) => !!data.pending?.has(what);
-// The 5 s tick reads the lists once they are a minute old, or in the round whose heads show a command start, stop, appear
-// or go: a card's word comes from doctor as well as heads, and a command started elsewhere would read Not started from
-// doctor's old daemon/head check for up to a minute. The shape is each command's key and whether it runs, and no more:
-// /api/heads also carries gate counters and pids that change on every call.
+// The 5 s tick reads the lists on the twelfth tick after they were asked, a minute. It counts ticks, because a minute
+// timed from when the answers landed, or from a timer that fired a few ms late, fell just short on the twelfth tick and
+// moved the read to the thirteenth, 65 s on. A round also reads them when they are a minute old by the clock, as in a tab
+// back from a browser that held its timers, after a read that failed, and when its heads show a command start, stop,
+// appear or go: a card's word comes from doctor as well as heads, and a command started elsewhere would read Not started
+// from doctor's old daemon/head check for up to a minute. The shape is each command's key and whether it runs, and no
+// more: /api/heads also carries gate counters and pids that change on every call.
+const TICK_MS = 5_000;
 const LISTS_MS = 60_000;
 const shape = () => data.heads.map((h) => `${h.key}:${Boolean(h.running)}`).join(" ");
-const listsDue = () => Date.now() - data.listsAt >= LISTS_MS || shape() !== data.listsShape;
+const listsDue = () => data.listsTicks >= LISTS_MS / TICK_MS || Date.now() - data.listsAt >= LISTS_MS || shape() !== data.listsShape;
 
 // ---------- the commands: the daemon's heads joined to the topology file and the model roster ----------
 const topology = () => data.topo?.topology ?? {};
@@ -1501,35 +1510,46 @@ async function init() {
     if (want && cmdByKey(want)) openCmd(want);
     else if (ui.wide && !ui.open) { const first = order(commandsOf())[0]; if (first) openCmd(first.key); }
   };
-  const profiles = API.get("/api/add/profiles").then((r) => { data.profiles = (r.body?.profiles ?? []).filter((p) => p.name !== "nvidia"); });
-  await readAll({ draw: () => { openFirst(); render(); } });
-  await profiles;
-  openFirst();
-  render();
-  if (location.hash === "#log") document.querySelector(".hlog")?.scrollIntoView({ block: "center", behavior: "instant" });
-  if (setting) document.querySelector(`.everyset [data-row="${CSS.escape(setting)}"]`)?.scrollIntoView({ block: "center", behavior: "instant" });
   // a locked console (api.js set body.locked on a 401) sends nothing until it is unlocked (gap 386b)
   const locked = () => document.body.classList.contains("locked");
-  setInterval(() => { if (ui.open && !ui.add && !ui.logPaused && !document.hidden && !locked()) readLog(ui.open); }, 5000);
   // THE PAGE ASKS ONLY WHILE IT CAN BE SEEN, AND NEVER WHILE ITS LAST ROUND IS ON ITS WAY (Oct 25). The tick read nine
   // routes every 5 s, in a tab nobody could see too, and started again before the last round had come back. A hidden tab,
   // a locked console, an edit in hand and a round still out each skip the tick, and a tab shown again reads at once. A
-  // round asks for the lists only when listsDue says so (readAll); the page's own writes read them all and are never
-  // skipped for a round in flight, since the round's answer could predate the write.
-  let polling = false;
+  // round asks for the lists when listsDue says so (readAll). When its heads show the commands moved, it reads the lists
+  // after its live reads, and only if the page may still ask then: a pane opened meanwhile holds a draft built from the
+  // lists, which a read under it would make look edited, and a tab hidden meanwhile asks nothing. The page's own writes
+  // read them all and are never skipped for a round in flight, since the round's answer could predate the write. The
+  // tick and the listener are set before the first read, while this page is the one shown, so the shell takes both away
+  // when it is left: set after the read, the listener could land once a page left mid-read was gone, and keep that page
+  // in the tab for good.
+  const mayAsk = () => !document.hidden && !locked() && !ui.draft && !ui.add && !ui.comp && !ui.saving && !ui.keyin && !ui.sign && !Object.keys(ui.fixing).length;
+  let polling = true; // the load below is the first round
   async function poll() {
-    if (polling || document.hidden || locked() || ui.draft || ui.add || ui.comp || ui.saving || ui.keyin || ui.sign || Object.keys(ui.fixing).length) return;
+    if (polling || !mayAsk()) return;
     polling = true;
     try {
-      await readAll({ lists: listsDue() });
-      if (!data.err && listsDue()) await readAll();
+      const lists = listsDue();
+      await readAll({ lists });
+      if (!lists && !data.err && listsDue() && mayAsk()) await readAll();
       render();
     } finally {
       polling = false;
     }
   }
-  setInterval(poll, 5000);
+  setInterval(() => { data.listsTicks++; poll(); }, TICK_MS);
   document.addEventListener("visibilitychange", poll);
+  const profiles = API.get("/api/add/profiles").then((r) => { data.profiles = (r.body?.profiles ?? []).filter((p) => p.name !== "nvidia"); });
+  try {
+    await readAll({ draw: () => { openFirst(); render(); } });
+    await profiles;
+  } finally {
+    polling = false;
+  }
+  openFirst();
+  render();
+  if (location.hash === "#log") document.querySelector(".hlog")?.scrollIntoView({ block: "center", behavior: "instant" });
+  if (setting) document.querySelector(`.everyset [data-row="${CSS.escape(setting)}"]`)?.scrollIntoView({ block: "center", behavior: "instant" });
+  setInterval(() => { if (ui.open && !ui.add && !ui.logPaused && !document.hidden && !locked()) readLog(ui.open); }, 5000);
 }
 init();
 

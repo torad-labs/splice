@@ -1,8 +1,10 @@
 // The Models page asks splice only while it can be seen, one round at a time, and reads the lists that change only when
 // someone saves or edits a file once a minute, not every 5 s (Oct 25: nine routes every 5 s, in a hidden tab too, with
 // rounds piling up behind a slow splice). What he reads on a command's card stays as current as it was where it moves: a
-// command that starts outside the page, his own Start, and a tab he comes back to. Through the real page in Chromium on a
-// clock the test holds, against a daemon that answers as splice does. No test here counts requests: each judges the card.
+// command that starts or appears outside the page, a session that starts on it, his own Start, a tab he comes back to,
+// and a read that failed. A pane he opens is never read again under him, and a page he leaves is gone from the tab.
+// Through the real page in Chromium on a clock the test holds, against a daemon that answers as splice does. No test here
+// counts requests: each judges what the page shows, or what the tab still holds.
 import { afterAll, beforeAll, beforeEach, expect, test } from "bun:test";
 import { chromium, type Browser, type Page } from "@playwright/test";
 import { existsSync } from "node:fs";
@@ -11,18 +13,66 @@ import { layout } from "../gate/src/lib/repo.ts";
 
 const consoleDir = join(layout().repoRoot, "app/src/main/resources/console");
 const CARD = 'article.card.h[data-open="alpha"]';
-// What the daemon says about its one command, alpha. A test changes it the way a terminal, a hand edit or a restart would.
-const world = { running: false, label: "Alpha One" };
+// What the daemon says about its command alpha, and beta once it is added. A test changes it the way a terminal, a hand
+// edit or a restart would.
+const world = {
+  running: false, label: "Alpha One", url: "https://api.alpha.example", signedOut: false, beta: false,
+  sessions: [] as Record<string, unknown>[],
+  // the routes that answer 500, as a route that threw or a daemon on its way down does
+  fail: new Set<string>(),
+  // each route asked since the test cleared it: it only tells a test that a round has gone out, and is never judged
+  asked: new Set<string>(),
+};
+// One route held until the test lets it answer, the way a slow listing holds a round open.
+let held: { path: string; arrived: () => void; until: Promise<void> } | null = null;
+const releases: (() => void)[] = [];
+function hold(path: string) {
+  let arrived = () => {}, release = () => {};
+  const asked = new Promise<void>((resolve) => { arrived = resolve; });
+  const until = new Promise<void>((resolve) => { release = resolve; });
+  held = { path, arrived, until };
+  releases.push(release);
+  return { asked, release };
+}
 const server = Bun.serve({
   port: 0,
-  fetch(req) {
+  async fetch(req) {
     const path = new URL(req.url).pathname;
-    if (path === "/api/heads") return Response.json({ heads: [{ key: "alpha", label: "claude-alpha", running: world.running, healthy: world.running }] });
-    if (path === "/api/topology") return Response.json({ topology: { heads: { alpha: { provider: "alpha-co" } }, providers: { "alpha-co": { base_url: "https://api.alpha.example" } } } });
-    if (path === "/api/models") return Response.json({ heads: [{ head: "alpha", pinned_model: null, models: [{ id: "alpha-one", label: world.label, resolved: true, slot: "opus" }] }] });
-    // a stopped command is a failed daemon/head check in doctor, which offers the fix that starts it
-    if (path === "/api/doctor") return Response.json({ checks: world.running ? [] : [{ id: "daemon/head alpha", status: "fail", detail: "alpha is not running", fix_id: "start-alpha" }] });
-    if (path === "/api/sessions") return Response.json({ sessions: [] });
+    world.asked.add(path);
+    const slow = held?.path === path ? held : null;
+    if (slow) {
+      held = null;
+      slow.arrived();
+      await slow.until;
+    }
+    if (world.fail.has(path)) return Response.json({ error: "failed" }, { status: 500 });
+    if (path === "/api/heads") {
+      return Response.json({ heads: [
+        { key: "alpha", label: "claude-alpha", running: world.running, healthy: world.running },
+        ...(world.beta ? [{ key: "beta", label: "claude-beta", running: true, healthy: true }] : []),
+      ] });
+    }
+    if (path === "/api/topology") {
+      return Response.json({ topology: {
+        heads: { alpha: { provider: "alpha-co" }, ...(world.beta ? { beta: { provider: "beta-co" } } : {}) },
+        providers: { "alpha-co": { base_url: world.url }, ...(world.beta ? { "beta-co": { base_url: "https://api.beta.example" } } : {}) },
+      } });
+    }
+    if (path === "/api/models") {
+      return Response.json({ heads: [
+        { head: "alpha", pinned_model: null, models: [{ id: "alpha-one", label: world.label, resolved: true, slot: "opus" }] },
+        ...(world.beta ? [{ head: "beta", pinned_model: null, models: [{ id: "beta-one", label: "Beta One", resolved: true, slot: "opus" }] }] : []),
+      ] });
+    }
+    // a stopped command is a failed daemon/head check in doctor, which offers the fix that starts it; a running command
+    // that lost its login is a failed auth check
+    if (path === "/api/doctor") {
+      return Response.json({ checks: [
+        ...(world.running ? [] : [{ id: "daemon/head alpha", status: "fail", detail: "alpha is not running", fix_id: "start-alpha" }]),
+        ...(world.signedOut ? [{ id: "auth/alpha", status: "fail", detail: "alpha is not signed in" }] : []),
+      ] });
+    }
+    if (path === "/api/sessions") return Response.json({ sessions: world.sessions });
     if (path === "/api/projects") return Response.json({ projects: [] });
     if (path === "/api/models/local") return Response.json({ providers: [] });
     if (path === "/api/claude-head") return Response.json({ mode: "wrapped", shim_path: "/home/u/.local/bin/claude", resolves_to: "/home/u/.local/bin/claude" });
@@ -42,12 +92,16 @@ beforeAll(async () => {
   browser = await chromium.launch({ executablePath: process.env.SCREEN_REVIEW_BROWSER || undefined, args: ["--no-sandbox"] });
 }, 20_000);
 afterAll(async () => {
+  for (const release of releases.splice(0)) release();
   await browser.close();
   server.stop(true);
 });
 beforeEach(() => {
-  world.running = false;
-  world.label = "Alpha One";
+  for (const release of releases.splice(0)) release();
+  held = null;
+  Object.assign(world, { running: false, label: "Alpha One", url: "https://api.alpha.example", signedOut: false, beta: false, sessions: [] });
+  world.fail.clear();
+  world.asked.clear();
 });
 
 // The page has no call on its way. A round is a chain of reads with no gap between them, so a page that shows none in
@@ -59,10 +113,17 @@ async function settled(page: Page) {
     await Bun.sleep(25);
   }
 }
-// The page's clock moves only here, so a 5 s tick comes when the test says and never on its own.
+// The page's clock moves only here, so a 5 s tick comes when the test says and never on its own. The clock then stands
+// a second or so past the tick, so every answer lands in page time after the tick that asked for it, as a real one does.
 async function step(page: Page, ms: number) {
   await page.clock.runFor(ms);
   await settled(page);
+}
+// Steps 5 s at a time until a round has asked [path], which is how a test knows the minute's read of the lists went out.
+async function stepUntilAsked(page: Page, path: string) {
+  world.asked.clear();
+  for (let i = 0; i < 15 && !world.asked.has(path); i++) await step(page, 5_000);
+  if (!world.asked.has(path)) throw new Error(`no round asked ${path} in 75 s of page time`);
 }
 // The tab goes out of view or comes back, as the browser does it: the page reads document.hidden, then hears the event.
 const setVisible = (page: Page, visible: boolean) =>
@@ -71,19 +132,19 @@ const setVisible = (page: Page, visible: boolean) =>
     Object.defineProperty(document, "visibilityState", { configurable: true, get: () => (v ? "visible" : "hidden") });
     document.dispatchEvent(new Event("visibilitychange"));
   }, visible);
-// What the alpha card says: its word, then its model.
-const cardOf = (page: Page) =>
+// What a command's card says: its word, then its model.
+const cardOf = (page: Page, key = "alpha") =>
   page.evaluate((sel) => {
     const card = document.querySelector(sel);
     return card ? [...card.querySelectorAll(".meta > span")].map((s) => s.textContent ?? "") : null;
-  }, CARD);
+  }, `article.card.h[data-open="${key}"]`);
 // The card once it reads as wanted, or after 5 s of real time, whichever comes first.
-async function cardReading(page: Page, want: string[]) {
+async function cardReading(page: Page, want: string[], key = "alpha") {
   const give = Date.now() + 5_000;
-  let seen = await cardOf(page);
+  let seen = await cardOf(page, key);
   while (JSON.stringify(seen) !== JSON.stringify(want) && Date.now() < give) {
     await Bun.sleep(50);
-    seen = await cardOf(page);
+    seen = await cardOf(page, key);
   }
   return seen;
 }
@@ -136,18 +197,132 @@ test("A command started outside the page reads Ready within one tick", async () 
   }
 }, 30_000);
 
+test("A command added outside the page shows its card with its model within one tick", async () => {
+  world.running = true;
+  const page = await open();
+  try {
+    expect(await cardOf(page, "beta")).toBeNull();
+    // added from a terminal: heads, topology and the roster all list beta at once
+    world.beta = true;
+    await step(page, 5_000);
+    expect(await cardReading(page, ["Ready", "Beta One"], "beta")).toEqual(["Ready", "Beta One"]);
+  } finally {
+    await page.close();
+  }
+}, 30_000);
+
+test("A session that starts or ends on a command shows on its card within one tick", async () => {
+  world.running = true;
+  const page = await open();
+  try {
+    expect(await cardOf(page)).toEqual(["Ready", "Alpha One"]);
+    world.sessions = [{ session_id: "s-1", head: "alpha", status: "working" }];
+    await step(page, 5_000);
+    expect(await cardReading(page, ["1 running", "Alpha One"])).toEqual(["1 running", "Alpha One"]);
+    world.sessions = [];
+    await step(page, 5_000);
+    expect(await cardReading(page, ["Ready", "Alpha One"])).toEqual(["Ready", "Alpha One"]);
+  } finally {
+    await page.close();
+  }
+}, 30_000);
+
 test("A change to the lists made outside the console shows within a minute", async () => {
   world.running = true;
   const page = await open();
   try {
     expect(await cardOf(page)).toEqual(["Ready", "Alpha One"]);
     world.label = "Alpha Two";
-    for (let s = 5; s <= 65; s += 5) await step(page, 5_000);
+    for (let s = 5; s <= 60; s += 5) await step(page, 5_000);
     expect(await cardReading(page, ["Ready", "Alpha Two"])).toEqual(["Ready", "Alpha Two"]);
   } finally {
     await page.close();
   }
 }, 60_000);
+
+test("A change made just after a read of the lists shows a minute on, whichever read it was", async () => {
+  const page = await open();
+  try {
+    // started from a terminal: the tick's heads show it moved, and the same round reads the lists after them
+    world.running = true;
+    await step(page, 5_000);
+    expect(await cardReading(page, ["Ready", "Alpha One"])).toEqual(["Ready", "Alpha One"]);
+    // renamed in splice.toml just after that read: twelve ticks on, a minute, the card shows it
+    world.label = "Alpha Two";
+    for (let i = 0; i < 12; i++) await step(page, 5_000);
+    expect(await cardReading(page, ["Ready", "Alpha Two"])).toEqual(["Ready", "Alpha Two"]);
+    // renamed again just after that minute's own read: the next minute shows it too
+    world.label = "Alpha Three";
+    for (let i = 0; i < 12; i++) await step(page, 5_000);
+    expect(await cardReading(page, ["Ready", "Alpha Three"])).toEqual(["Ready", "Alpha Three"]);
+  } finally {
+    await page.close();
+  }
+}, 60_000);
+
+test("A list that failed to read is read again at the next tick, never kept for a minute", async () => {
+  world.running = true;
+  world.signedOut = true;
+  const page = await open();
+  try {
+    expect(await cardOf(page)).toEqual(["Signed out", "Alpha One"]);
+    // the minute's read of the lists: doctor and the roster answer 500 while heads and topology answer
+    world.fail.add("/api/doctor").add("/api/models");
+    await stepUntilAsked(page, "/api/doctor");
+    world.fail.clear();
+    await step(page, 5_000);
+    expect(await cardReading(page, ["Signed out", "Alpha One"])).toEqual(["Signed out", "Alpha One"]);
+  } finally {
+    await page.close();
+  }
+}, 60_000);
+
+test("A command opened while a tick's reads are out keeps its pane as it was drawn", async () => {
+  const page = await open();
+  try {
+    expect(await cardOf(page)).toEqual(["Not started", "Alpha One"]);
+    // started from a terminal on a new address in splice.toml; the tick sees it move, and its sessions answer slowly
+    const slow = hold("/api/sessions");
+    world.running = true;
+    world.url = "https://api2.alpha.example";
+    await page.clock.runFor(5_000);
+    await slow.asked;
+    // he opens alpha while that round is out: its pane is drawn from what the page holds, and he touches nothing
+    await page.locator(`${CARD} .chip`).click();
+    await page.locator(".pane").waitFor({ timeout: 5_000 });
+    slow.release();
+    await settled(page);
+    expect(await page.locator(".pane").count()).toBe(1);
+    expect(await page.locator('.pane [data-act="save"]').count()).toBe(0);
+  } finally {
+    await page.close();
+  }
+}, 30_000);
+
+test("Models left while its first read is out leaves nothing of itself in the tab", async () => {
+  const page = await browser.newPage({ viewport: { width: 1024, height: 900 } });
+  try {
+    // a page this tab has already shown, so the way back to it from Models is quick
+    await page.goto(`http://127.0.0.1:${server.port}/compare.html`);
+    const toModels = page.locator('.side .nav a[href="models.html"]');
+    await toModels.waitFor({ timeout: 15_000 });
+    const slow = hold("/api/claude-head");
+    await toModels.click();
+    await slow.asked;
+    await page.evaluate(() => {
+      (window as unknown as { left: WeakRef<Element> }).left = new WeakRef(document.getElementById("models") as Element);
+    });
+    await page.locator('.side .nav a[href="compare.html"]').click();
+    await page.waitForURL(/compare\.html$/);
+    slow.release();
+    await settled(page);
+    const cdp = await page.context().newCDPSession(page);
+    await cdp.send("HeapProfiler.collectGarbage");
+    expect(await page.evaluate(() => (window as unknown as { left: WeakRef<Element> }).left.deref() === undefined)).toBe(true);
+  } finally {
+    await page.close();
+  }
+}, 30_000);
 
 test("Start on a stopped command's card brings it to Ready at once", async () => {
   const page = await open();

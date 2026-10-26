@@ -25,14 +25,20 @@ import java.nio.file.Path
 import java.security.MessageDigest
 
 public class TurnKey(private val management: MgmtKey) {
-    private val value: String by lazy { ScopedKey.derive(management.get(), TURN_SCOPE) }
+    /** The last derivation and the management key it came from. A replaced management key (rotation) no longer
+     *  matches it, so the next read derives the new turn key: every holder follows a rotation with no rebuild. */
+    @Volatile
+    private var derived: Derived? = null
 
-    public fun get(): String = value
+    public fun get(): String = derive(management.get())
+
+    private fun derive(mgmt: String): String =
+        derived?.keyFor(mgmt) ?: Derived(mgmt, ScopedKey.derive(mgmt, TURN_SCOPE)).also { derived = it }.key
 
     /** Constant-time bearer check, scheme parsing shared with [MgmtKey.matchesBearer]. */
     public fun matchesBearer(header: String?): Boolean {
         val presented = BearerScheme.bearerToken(header)?.toByteArray(UTF_8) ?: return false
-        val expected = value.toByteArray(UTF_8)
+        val expected = get().toByteArray(UTF_8)
         return presented.size == expected.size && MessageDigest.isEqual(presented, expected)
     }
 
@@ -41,15 +47,25 @@ public class TurnKey(private val management: MgmtKey) {
      * does not hold the current key and returned by path. Called where the path is PUT INTO a
      * command, so the file the command names always exists and always matches the key the daemon
      * compares against — a stale file after a rotation would 401 every statusline tick with nothing
-     * on disk saying why.
+     * on disk saying why. A session's key helper reads the same file for its turn key (Oct 26).
      */
     public fun headerFile(): Path {
         val path = management.keyFile.resolveSibling(TURN_AUTH_HEADER_FILE)
-        val wanted = "Authorization: Bearer $value\n"
-        // Unreadable means rewrite; writeAtomic0600 below throws on a real failure.
-        val current = PathProbe.text(path)
-        if (current != wanted) SecureFile.writeAtomic0600(path, wanted)
+        // A rotation can land between reading the key and writing the file, and a writer that read the old key
+        // would then put it back over the new one. So each write is checked against the key current after it, and
+        // written again until the two agree: the last write always names the key the daemon compares against.
+        do {
+            val mgmt = management.get()
+            val wanted = "Authorization: Bearer ${derive(mgmt)}\n"
+            // Unreadable means rewrite; writeAtomic0600 below throws on a real failure.
+            if (PathProbe.text(path) != wanted) SecureFile.writeAtomic0600(path, wanted)
+        } while (management.get() != mgmt)
         return path
+    }
+
+    /** One derivation, and the management key it came from. Not a data class: nothing may stringify a key. */
+    private class Derived(private val from: String, val key: String) {
+        fun keyFor(mgmt: String): String? = key.takeIf { from == mgmt }
     }
 }
 

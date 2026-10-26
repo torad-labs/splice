@@ -61,4 +61,23 @@ class TurnKeyTest {
         turn.headerFile()
         assertEquals("Authorization: Bearer ${turn.get()}\n", Files.readString(file))
     }
+
+    // Rotation (Oct 26): a running daemon replaces its management key, and every TurnKey built over it (the
+    // guard's, the heads', the share relay's) must follow at once: the old turn key opens nothing, the new one
+    // opens turns, and the header file a session's key helper reads names the new one.
+    @Test
+    fun `a replaced management key changes the turn key and its header file at once`(@TempDir tmp: Path) {
+        val mgmt = MgmtKey(paths(tmp), log = {})
+        val turn = TurnKey(mgmt)
+        val before = turn.get()
+        val file = turn.headerFile()
+        mgmt.replace()
+        val after = turn.get()
+        assertNotEquals(before, after)
+        assertFalse(turn.matchesBearer("Bearer $before"), "the old turn key opens nothing")
+        assertTrue(turn.matchesBearer("Bearer $after"))
+        assertEquals(after, TurnKey(mgmt).get(), "every holder of the management key derives the same key")
+        turn.headerFile()
+        assertEquals("Authorization: Bearer $after\n", Files.readString(file))
+    }
 }

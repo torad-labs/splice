@@ -142,4 +142,22 @@ class MgmtKeyTest {
         assertTrue(logs[0].contains("present but blank"), logs[0])
         assertTrue(logs[0].contains("if the replacement publishes, every existing bearer"), "V4-293: ${logs[0]}")
     }
+
+    // Rotation (Oct 26): a key that was shown somewhere it should not have been is replaced on purpose. The new
+    // key is minted over the file, 0600, and from that moment only it opens, in this daemon and the next start.
+    @Test
+    fun `a replaced key is a new 0600 key on disk, and only it opens`(@TempDir tmp: Path) {
+        val sp = paths(tmp)
+        val key = MgmtKey(sp, log = {})
+        val old = key.get()
+        key.replace()
+        val new = key.get()
+        assertNotEquals(old, new)
+        assertEquals(64, new.length, "32 random bytes hex")
+        assertEquals("$new\n", Files.readString(sp.mgmtKeyFile))
+        assertEquals("rw-------", PosixFilePermissions.toString(Files.getPosixFilePermissions(sp.mgmtKeyFile)))
+        assertFalse(key.matchesBearer("Bearer $old"), "the replaced key opens nothing")
+        assertTrue(key.matchesBearer("Bearer $new"))
+        assertEquals(new, MgmtKey(sp, log = {}).get(), "the next start serves the new key")
+    }
 }

@@ -28,7 +28,15 @@ public class MgmtKey(
     private val log: LogSink = LogSink(DaemonLog::write),
     private val clock: WallClock = WallClock(System::currentTimeMillis),
 ) {
-    private val value: String by lazy { ensure() }
+    private val initial: String by lazy { ensure() }
+
+    /** The key [replace] minted, once one has: from then on the only key served and matched. */
+    @Volatile
+    private var replaced: String? = null
+
+    /** Serializes the write of a replacement with its publication, so the key on disk and the key served are the
+     *  same one whichever of two replacements lands last. */
+    private val ioLock = Any()
 
     /** SH-12: non-null only when THIS process minted (fresh key). Doctor/status compare it to
      *  daemon uptime — a key minted minutes ago on an hours-old install is the rotated-bearer
@@ -41,7 +49,27 @@ public class MgmtKey(
      *  root this instance was built with (a test's temp dir, never the operator's live one). */
     internal val keyFile: Path get() = statePaths.mgmtKeyFile
 
-    public fun get(): String = value
+    public fun get(): String = replaced ?: initial
+
+    /**
+     * Replaces the key on purpose (rotation, Oct 26): mints a new one over the key file, 0600, and from then on
+     * serves and matches only it, so every bearer of the old key is refused, the old turn key with it ([TurnKey]
+     * derives from [get]). File first, memory second: when the write fails nothing changed, and the next start
+     * serves whatever the file holds.
+     */
+    public fun replace() {
+        val key = mint()
+        synchronized(ioLock) {
+            SecureFile.writeAtomic0600(statePaths.mgmtKeyFile, "$key\n")
+            replaced = key
+            mintedAtMs = clock()
+        }
+    }
+
+    private fun mint(): String {
+        val bytes = ByteArray(KEY_BYTES).also { SecureRandom().nextBytes(it) }
+        return bytes.joinToString("") { "%02x".format(it) }
+    }
 
     private fun ensure(): String {
         val path = statePaths.mgmtKeyFile
@@ -77,8 +105,7 @@ public class MgmtKey(
                     "hook) becomes invalid; re-copy the key from $path\n",
             )
         }
-        val bytes = ByteArray(KEY_BYTES).also { SecureRandom().nextBytes(it) }
-        val key = bytes.joinToString("") { "%02x".format(it) }
+        val key = mint()
         // Atomic 0600 write via the shared primitive (was an inline temp→chmod→move copy).
         SecureFile.writeAtomic0600(path, "$key\n")
         mintedAtMs = clock()
@@ -99,7 +126,7 @@ public class MgmtKey(
     public fun matchesBearer(header: String?): Boolean {
         val presented = BearerScheme.bearerToken(header) ?: return false
         val a = presented.toByteArray()
-        val b = value.toByteArray()
+        val b = get().toByteArray()
         return a.size == b.size && MessageDigest.isEqual(a, b)
     }
 }

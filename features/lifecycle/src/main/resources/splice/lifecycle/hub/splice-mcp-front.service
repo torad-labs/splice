@@ -1,3 +1,6 @@
+# splice-owned unit: splice's install lays this file and replaces it on every install, so an edit here does not last.
+# A unit of the same name in ~/.config/systemd/user overrides it, and setup and upgrade then leave the MCP hub to
+# that unit's owner.
 [Unit]
 Description=Splice MCP front independent of daemon restarts
 Requires=splice-mcp-front.socket

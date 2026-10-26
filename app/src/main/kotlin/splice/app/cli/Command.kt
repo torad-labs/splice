@@ -90,7 +90,7 @@ public sealed class Command {
         override suspend fun run(): Int {
             val env = EnvReader(System::getenv)
             val result = InstallWiring.command().install(target, env)
-            if (result == InstallResult.Linked) InstallWiring.hubUnits(target, env)
+            if (result == InstallResult.Linked) InstallWiring.layUnits(target, env)
             return when (result) {
                 InstallResult.Linked -> 0
                 InstallResult.Declined -> 1

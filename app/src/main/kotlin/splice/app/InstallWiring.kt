@@ -13,6 +13,9 @@ import splice.core.util.EnvReader
 import splice.core.util.LogSink
 import splice.launch.install.InstallCommand
 import splice.lifecycle.hub.HubUnits
+import splice.lifecycle.units.DAEMON_UNIT_NAME
+import splice.lifecycle.units.DaemonUnit
+import splice.lifecycle.units.SpliceUnits
 import splice.topology.TopologyLoader
 import splice.topology.TopologyStatePaths
 import java.nio.file.Files
@@ -22,23 +25,49 @@ internal object InstallWiring {
     /** The install verbs against the operator's terminal: stdout for progress, stderr for refusals. */
     fun command(): InstallCommand = InstallCommand(TerminalOutput(::println), TerminalOutput(System.err::println))
 
-    /** After `splice install --all` on Linux, with the MCP hub's front installed beside the jar: the hub's systemd units,
-     *  created only where none of that name is installed (HubUnits). */
-    fun hubUnits(target: String?, env: EnvReader) {
+    /** After `splice install --all` on Linux: splice's own systemd user units, laid where systemd looks for a user's
+     *  installed units (SpliceUnits). The daemon's runs the `splice` link this install made on the JDK it ran on, and
+     *  the MCP hub's are laid when its front is installed beside the jar. */
+    fun layUnits(target: String?, env: EnvReader) {
         if (target != null && target != "--all") return
-        units(env)?.install()
+        if (!linux()) return
+        val output = TerminalOutput(::println)
+        val folder = unitFolder(env, output)
+        val hub = if (frontInstalled(env)) HubUnits(folder, output).templates() else emptyMap()
+        val daemon = DaemonUnit(
+            Path.of(System.getProperty("java.home")),
+            InstallPaths(envReader = env).binDir.resolve("splice"),
+        )
+        val unit = daemon.bytes()
+        if (unit == null) daemon.refusal()?.let(output::line)
+        folder.lay(if (unit == null) hub else hub + (DAEMON_UNIT_NAME to unit))
     }
 
-    /** The MCP hub's units in the user's own systemd/user folder, on Linux with the hub's front installed beside the
-     *  jar; null anywhere else. Splice's record of the units it wrote lives in its own state, under mcp-hub. */
+    /** The MCP hub's units, on Linux with the hub's front installed beside the jar; null anywhere else. */
     fun units(env: EnvReader): HubUnits? {
-        if (!System.getProperty("os.name").startsWith("Linux")) return null
-        if (!Files.exists(InstallPaths(envReader = env).shareDir.resolve("splice-mcp-front"))) return null
-        val config = env("XDG_CONFIG_HOME")?.takeIf { it.isNotBlank() }?.let { Path.of(it) }
-            ?: UserHome.dir(env).resolve(".config")
-        val record = StatePaths(envReader = env).stateDir.resolve("mcp-hub").resolve("units-written")
-        return HubUnits(config.resolve("systemd").resolve("user"), record, TerminalOutput(::println))
+        if (!linux() || !frontInstalled(env)) return null
+        val output = TerminalOutput(::println)
+        return HubUnits(unitFolder(env, output), output)
     }
+
+    /** Splice's units folder under the user's data home, beneath the user's own folder under the config home, whose
+     *  units override splice's. The record of the copies splice once wrote into the latter lives in splice's state,
+     *  under mcp-hub. */
+    private fun unitFolder(env: EnvReader, output: TerminalOutput): SpliceUnits {
+        val home = UserHome.dir(env)
+        val data = env("XDG_DATA_HOME")?.takeIf { it.isNotBlank() }?.let { Path.of(it) }
+            ?: home.resolve(".local").resolve("share")
+        val config = env("XDG_CONFIG_HOME")?.takeIf { it.isNotBlank() }?.let { Path.of(it) }
+            ?: home.resolve(".config")
+        val record = StatePaths(envReader = env).stateDir.resolve("mcp-hub").resolve("units-written")
+        val user = Path.of("systemd", "user")
+        return SpliceUnits(data.resolve(user), config.resolve(user), record, output)
+    }
+
+    private fun linux(): Boolean = System.getProperty("os.name").startsWith("Linux")
+
+    private fun frontInstalled(env: EnvReader): Boolean =
+        Files.exists(InstallPaths(envReader = env).shareDir.resolve("splice-mcp-front"))
 
     /** `splice init`: the starter topology the install verbs read, written only when absent; the splice manager's folder
      *  beside it (ManagerHome), which install.sh installs by running init on every install; and on Linux the MCP hub
@@ -52,7 +81,7 @@ internal object InstallWiring {
         val stateDir = TopologyStatePaths(env).of(topology).stateDir
         ManagerHome(path, stateDir, LogSink { print(it) }).ensureBestEffort()
             ?.let { println("splice: the splice manager's folder is $it") }
-        if (System.getProperty("os.name").startsWith("Linux")) {
+        if (linux()) {
             val hubDir = StatePaths(envReader = env).stateDir.resolve("mcp-hub")
             McpFrontEnv(path.resolveSibling("mcp-front.env"))
                 .write(hubDir, AdminSupport.controlPort(topology, env))

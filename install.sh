@@ -553,8 +553,10 @@ elif [ ! -L "$CURRENT_LINK" ] && [ "$HAD_JAR" = 1 ]; then
     fi
   fi
 fi
+# The jar lands by a sibling copy and a rename, never a copy over splice.jar: after `splice upgrade` the live jar is a
+# link to it, so a running daemon may hold it open, and the JVM reads its classes from the file it opened.
 if mkdir -p "$RELEASE_DIR" &&
-  cp -p "$JAR_DST" "$RELEASE_DIR/splice.jar" &&
+  cp -p "$JAR_DST" "$RELEASE_DIR/.splice.jar.$$" && mv -f "$RELEASE_DIR/.splice.jar.$$" "$RELEASE_DIR/splice.jar" &&
   cp -p "$SHIM_DST" "$RELEASE_DIR/splice-launch" &&
   { [ "$HUB_INSTALLED" != 1 ] || { cp -p "$SHARE_DIR/splice-mcp-holder" "$SHARE_DIR/splice-mcp-front" "$RELEASE_DIR/"; }; } &&
   ln -sfn "$JAR_VERSION" "$CURRENT_LINK"; then

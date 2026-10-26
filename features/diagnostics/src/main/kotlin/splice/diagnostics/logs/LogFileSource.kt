@@ -14,15 +14,23 @@ public class LogFileSource(
     private val logFile: Path,
     private val headTag: String? = null,
 ) : HeadLogSource {
-    override fun tail(lines: Int): String = tailLines(lines).joinToString("\n")
-
     // DR-68 (class law, display flavor): an absent or UNREADABLE log degrades to one explicit
     // in-band line instead of a silently blank dashboard/`splice logs` — the daemon.log itself
     // may be the unreadable file, so the surface IS the returned text.
+    override fun tail(lines: Int): String {
+        if (lines <= 0) return ""
+        return Cancellables.runCatchingCancellable { window(lines).lines.joinToString("\n") }
+            .getOrElse { failure -> unreadable(failure) }
+    }
+
+    /** [tail]'s lines, cut as the log routes always cut its text: the window's own list on a read, and the in-band
+     *  notice split at each line feed with no empty piece. The notice names the log's path, which may hold a line
+     *  feed, and sending it as one entry changed both routes' JSON (log-tail-copies review, Oct 25). [tail] keeps
+     *  the notice whole, so `splice logs` prints it as before. */
     override fun tailLines(lines: Int): List<String> {
         if (lines <= 0) return emptyList()
         return Cancellables.runCatchingCancellable { window(lines).lines }
-            .getOrElse { failure -> listOf(unreadable(failure)) }
+            .getOrElse { failure -> unreadable(failure).split("\n").filter { it.isNotEmpty() } }
     }
 
     /** DR-135: the --follow discontinuity re-baseline — [tail]'s text AND the byte offset the
@@ -50,9 +58,9 @@ public class LogFileSource(
         }
     }
 
-    /** One definition of the head filter and the line cap, so [tailLines] and [tailAt] cannot drift: the newest [keep]
-     *  of this head's lines in the trailing window, at most LOG_MAX_LINES. The filter and the cap run on the window's
-     *  bytes, so a poll decodes only the lines it returns (log-tail-copies, Oct 25). */
+    /** One definition of the head filter and the line cap, so [tail], [tailLines] and [tailAt] cannot drift: the
+     *  newest [keep] of this head's lines in the trailing window, at most LOG_MAX_LINES. The filter and the cap run on
+     *  the window's bytes, so a poll decodes only the lines it returns (log-tail-copies, Oct 25). */
     private fun window(keep: Int): TailAt =
         JsonlSink.readTailAt(logFile, LOG_TAIL_BYTES, headTag, keep.coerceAtMost(LOG_MAX_LINES))
 

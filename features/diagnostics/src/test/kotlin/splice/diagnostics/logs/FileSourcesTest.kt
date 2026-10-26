@@ -7,8 +7,24 @@ import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.io.TempDir
 import java.nio.file.Files
 import java.nio.file.Path
+import java.nio.file.attribute.PosixFilePermissions
+import kotlin.random.Random
+
+// why: enough generated log paths that line feeds land first, last and side by side in a name and beside a CR, in
+// every log state, in well under a second
+private const val PATHS = 240
+
+// why: the sweep replays: a red names its case, and the same seed rebuilds it
+private const val SEED = 20_261_025
 
 class FileSourcesTest {
+    /** What a generated directory name is made of: plain text, and line feeds alone, side by side and beside a CR. A
+     *  name stays ASCII, so it encodes under whatever locale the test JVM runs with. */
+    private val namePieces = listOf("a", "b c", ".", "\n", "\n\n", "\r", "\r\n", "\n\r")
+
+    /** What a present log is made of: a head's lines, another head's, a blank line, a CRLF and a torn last line. */
+    private val logPieces = listOf("[claudex] one\n", "[grok] two\n", "\n", "[claudex] three\r\n", "[claudex] torn")
+
     @Test
     fun `log source filters a shared bounded tail without reading the whole file`(@TempDir dir: Path) {
         val file = dir.resolve("splice-log-source.log")
@@ -42,6 +58,56 @@ class FileSourcesTest {
         Files.writeString(missing, "[codex] one\n")
         assertEquals("", source.tail(0))
         assertEquals(emptyList<String>(), source.tailLines(0))
+    }
+
+    @Test
+    fun `every log path and state answers tailLines as the routes cut tail's text, and tail's notice whole`(
+        @TempDir dir: Path,
+    ) {
+        // The log routes sent tail's text cut at each line feed, empty pieces dropped. The notice names the log's path,
+        // and a path may hold line feeds of its own, so the cut can make it several entries (log-tail-copies review,
+        // Oct 25). tail keeps the notice whole, as splice logs prints it.
+        val random = Random(SEED)
+        repeat(PATHS) { case ->
+            val name = "$case " + List(random.nextInt(1, 6)) { namePieces.random(random) }.joinToString("")
+            val logs = dir.resolve(name).resolve("logs")
+            val log = logs.resolve("daemon.log")
+            val absent = "[logs unavailable: $log does not exist yet; the daemon creates it when it starts]"
+            val unreadable = "[logs unavailable: $log unreadable ("
+            if (case % 3 != 0) {
+                Files.createDirectories(logs)
+                Files.writeString(log, List(random.nextInt(0, 6)) { logPieces.random(random) }.joinToString(""))
+            }
+            when (case % 3) {
+                0 -> assertRoutesCutTail(log) { it == absent }
+                1 -> assertRoutesCutTail(log) { true }
+                else -> shut(logs) { assertRoutesCutTail(log) { it.startsWith(unreadable) && it.endsWith(")]") } }
+            }
+        }
+    }
+
+    /** For every head filter and line count, tailLines is the routes' cut of tail's text, split at each line feed with
+     *  the empty pieces dropped, and the text a positive count answers is one [answers] accepts. */
+    private fun assertRoutesCutTail(log: Path, answers: (String) -> Boolean) {
+        for (tag in listOf(null, "[claudex]")) {
+            for (lines in listOf(0, 1, 3, Int.MAX_VALUE)) {
+                val source = LogFileSource(log, tag)
+                val text = source.tail(lines)
+                val said = "$log, tag $tag, $lines lines: $text"
+                assertEquals(text.split("\n").filter { it.isNotEmpty() }, source.tailLines(lines), said)
+                assertTrue(lines <= 0 || answers(text), said)
+            }
+        }
+    }
+
+    /** Runs [block] with [dir] shut to everyone, so a read beneath it fails as unreadable, then opens it again. */
+    private fun shut(dir: Path, block: () -> Unit) {
+        Files.setPosixFilePermissions(dir, PosixFilePermissions.fromString("---------"))
+        try {
+            block()
+        } finally {
+            Files.setPosixFilePermissions(dir, PosixFilePermissions.fromString("rwx------"))
+        }
     }
 
     @Test

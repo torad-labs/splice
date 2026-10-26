@@ -25,8 +25,9 @@
 .sessions .pgroup { break-inside: avoid; }
 .sessions.open .list { display: none; }
 .sessions.open .pane { display: flex; }
-/* the other pages that load this sheet put their list beside the open item from 104rem, unless their own sheet says */
-@container (min-width: 104rem) { :not(.sessions) > .pane .close { display: none; } }
+/* Each page hides its Close only where it puts the list beside the open item, at the width its own sheet names (Models
+   90rem, Settings 84rem, Requests 120rem). One width kept here for every page hid Requests' Close from 104rem while its
+   open request still took the page up to 120rem, so at 1440 nothing brought the list back. */
 /* SESSIONS SITS SIDE BY SIDE FROM 122rem, so a row keeps its name and words whole: below it (1440, 115rem) the list has
    the page in two columns and an open session takes the page, with Close. kit.js sideBySide() reads the same number. */
 .page:has(> #sessions) { --side-by-side: 122; }

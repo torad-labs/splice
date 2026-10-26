@@ -1,8 +1,9 @@
 // A session whose transcript is gone is never a door to nothing (Marlin, Oct 12, from her Usage walk: "Open session"
 // led to a Sessions page reading "No sessions", with no reason). Through the real pages against a stub daemon:
-// Requests draws no Open session for a session Sessions no longer lists, Sessions reached for one it cannot find says
-// "No transcript" where the log would be, and a log that cannot be read says "Not read" with the daemon's words kept
-// off the page (fin's leak fix).
+// Requests opens every request's session, an ended agent's included, since Sessions finds ended agents in history
+// (splice-sessions, Oct 12), and Sessions reached for one it cannot find says "No transcript" where the log would be;
+// a log that cannot be read says "Not read" with the daemon's words kept off the page (fin's leak fix). An open request
+// always leaves a way back to the list: the list beside it, or Close where the request takes the page.
 import { afterAll, beforeAll, test } from "bun:test";
 import { chromium, expect, type Browser } from "@playwright/test";
 import { existsSync } from "node:fs";
@@ -53,7 +54,7 @@ afterAll(async () => {
   server.stop(true);
 });
 
-test("Requests opens a listed session, and draws no door for one Sessions no longer lists", async () => {
+test("Requests opens a listed session, and one Sessions no longer lists opens on No transcript, never on nothing", async () => {
   const page = await browser.newPage({ viewport: { width: 1440, height: 1000 } });
   try {
     await page.goto(`http://127.0.0.1:${server.port}/requests.html`);
@@ -61,13 +62,33 @@ test("Requests opens a listed session, and draws no door for one Sessions no lon
     await expect(page.locator(".pane a", { hasText: "Open session" })).toBeVisible();
     // below the two-column width an open pane takes the page, so the list comes back only once it closes
     await page.locator('.pane [data-act="close"]').click();
+    await expect(page.locator('article[data-open="alpha:t-gone"]')).toBeVisible();
     await page.locator('article[data-open="alpha:t-gone"]').click();
-    await expect(page.locator(".pane")).toBeVisible();
-    await expect(page.locator(".pane a", { hasText: "Open session" })).toHaveCount(0);
+    await page.locator(".pane a", { hasText: "Open session" }).click();
+    await expect(page.locator(".pane.missing .log .empty")).toHaveText("No transcript", { timeout: 15_000 });
   } finally {
     await page.close();
   }
 }, 30_000);
+
+test("at every width an open request leaves a way back to the list: the list beside it, or Close", async () => {
+  const page = await browser.newPage({ viewport: { width: 1440, height: 1000 } });
+  try {
+    await page.goto(`http://127.0.0.1:${server.port}/requests.html`);
+    await page.locator('article[data-open="alpha:t-live"]').click({ timeout: 15_000 });
+    const seen: { width: number; open: boolean; list: boolean; close: boolean }[] = [];
+    for (let width = 800; width <= 3900; width += 25) {
+      await page.setViewportSize({ width, height: 1000 });
+      await page.evaluate(() => new Promise((done) => requestAnimationFrame(() => requestAnimationFrame(done))));
+      seen.push({ width, open: await page.locator(".requests .pane").isVisible(), list: await page.locator(".requests .list").isVisible(),
+        close: await page.locator('.requests .pane [data-act="close"]').isVisible() });
+    }
+    expect(seen.filter((s) => !s.open)).toEqual([]);
+    expect(seen.filter((s) => !s.list && !s.close)).toEqual([]);
+  } finally {
+    await page.close();
+  }
+}, 60_000);
 
 test("Sessions reached for a session it cannot find says No transcript where the log would be", async () => {
   const page = await browser.newPage({ viewport: { width: 1440, height: 1000 } });

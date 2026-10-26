@@ -84,6 +84,7 @@
   .requests .list, .requests.open .list { display: flex; flex: 0 0 58rem; }
   .requests.open .pane { flex: 1 1 0; max-width: 112rem; position: sticky; top: calc(var(--bar-h) + 1rem); height: calc(100vh - 11rem - var(--bar-h)); overflow: hidden; }
   .requests.open .rqpane .scroll { overflow-y: auto; }
+  .requests .pane .close { display: none; } /* beside the list there is nothing to bring back; below 120rem Close does */
 }
 /* A WIDER SCREEN MUST NOT GIVE THE LIST LESS THAN A NARROW ONE. The column is a fraction of a 3828-wide screen while
    the page keeps tens of rem unused, so his widest screen was the one width where a row's meta line ran out of room

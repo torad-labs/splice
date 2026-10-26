@@ -60,7 +60,7 @@ import splice.upstream.memory.MessageFragments
 import java.util.concurrent.ConcurrentHashMap
 
 private const val SIGNATURE_FIELD = "signature"
-private const val TOOL_NAME = "tool_name"
+private const val TOOL_REFERENCE_NAME = "tool_name"
 private const val TYPE_REDACTED_THINKING = "redacted_thinking"
 private const val DATA = "data"
 
@@ -197,7 +197,8 @@ internal class PassthroughMessageScrubber(
      *  honest way to hold that is to say out loud what it is costing. */
     private fun disallowed(type: String, block: JsonObject): JsonObject? {
         UnknownBlock(block).loadedTool?.let { loaded ->
-            val offered = UnknownBlock(JsonObject(block + (TOOL_NAME to JsonPrimitive(names.shorten(loaded)))))
+            val name = JsonPrimitive(names.shorten(loaded))
+            val offered = UnknownBlock(JsonObject(block + (TOOL_REFERENCE_NAME to name)))
             return buildJsonObject {
                 put(TYPE, TYPE_TEXT)
                 put(TEXT, offered.omissionMarker(quirks.providerTag, toolsCallable = true))

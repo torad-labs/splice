@@ -97,7 +97,8 @@ internal class HostedServerSpawn(
             val delivered = writeBudget > Duration.ZERO &&
                 writer.request(codec.initializeRequest(id), id, process, writeBudget)
             val answer = if (delivered) await(slot, deadline.remaining()) else null
-            if (answer == null) return unavailable(id, delivered)
+            // A write refused with budget left met a child that is already gone: a failed start, not one given up on.
+            if (answer == null) return unavailable(id, delivered, delivered || deadline.remaining() <= Duration.ZERO)
             val result = answer["result"] as? JsonObject
             val initialization = result?.let { publication.publish(process, it, deadline.remaining()) }
             return initialization?.let(Result::Served)
@@ -110,12 +111,12 @@ internal class HostedServerSpawn(
         private suspend fun await(slot: Pending, budget: Duration): JsonObject? =
             if (budget > Duration.ZERO) withTimeoutOrNull(budget) { slot.answer.await() } else null
 
-        private fun unavailable(id: Long, delivered: Boolean): Result.Refused {
+        private fun unavailable(id: Long, delivered: Boolean, timedOut: Boolean): Result.Refused {
             pending.remove(id)
             val reason = if (delivered) "no initialize answer" else "could not write initialize"
             return Result.Refused(
                 reason,
-                McpResult.Refused("'$name' did not complete the MCP handshake", timedOut = true),
+                McpResult.Refused("'$name' did not complete the MCP handshake", timedOut = timedOut),
             )
         }
     }

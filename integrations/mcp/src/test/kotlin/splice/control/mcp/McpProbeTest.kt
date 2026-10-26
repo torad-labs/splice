@@ -48,6 +48,21 @@ class McpProbeTest {
     }
 
     @Test
+    fun `a child that is gone before its handshake could not be started, by kind`() = runBlocking {
+        // A contained child whose program is missing goes this way: systemd-run starts, its exec fails, and it
+        // exits, often before the initialize line is written. This launcher hands over a child that has already
+        // exited, so the write always meets a dead one.
+        val exited = McpProcessLauncher { spec ->
+            ProcessBuilder(listOf(spec.command) + spec.args).start().also { it.waitFor() }
+        }
+        val gone = buildJsonObject { put("gone", buildJsonObject { put("command", "true") }) }
+        val tested = McpHost(sharing, { gone }, McpHostConfig(), launcher = exited, log = { }).also { host = it }
+        val result = answer(tested.probe.test("gone").json())
+        assertEquals("false", result.getValue("ok").jsonPrimitive.content, "$result")
+        assertEquals("spawn", result.getValue("kind").jsonPrimitive.content, "$result")
+    }
+
+    @Test
     fun `a server that answers in time lists its tools and leaves no session behind`() = runBlocking {
         val tested = hostWith(McpHostConfig(requestTimeout = { 1.minutes }))
         val result = answer(tested.probe.test("fake").json())

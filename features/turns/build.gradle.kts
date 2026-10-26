@@ -40,6 +40,17 @@ dependencies {
     testFixturesImplementation(libs.zstd.jni) // CX-03: the mock decodes zstd like the real upstream
     testFixturesApi(project(":core")) // Public budget and logging types in the shared head builder
     testFixturesApi(project(":integrations-upstream")) // Public admission and transport types in that builder
+    // The scripted provider and the heads it serves (splice/head/scripted): a Ktor server standing in for each API
+    // type, the real provider of each type in front of it, and a client that reads what Claude Code would.
+    testFixturesImplementation(libs.ktor.server.core)
+    testFixturesImplementation(libs.ktor.server.netty)
+    testFixturesImplementation(libs.ktor.server.websockets)
+    testFixturesImplementation(libs.ktor.client.core)
+    testFixturesImplementation(libs.ktor.client.cio)
+    testFixturesImplementation(project(":integrations-dialects-anthropic"))
+    testFixturesImplementation(project(":integrations-dialects-openai-chat"))
+    testFixturesImplementation(project(":integrations-dialects-openai-responses"))
+    testFixturesImplementation(project(":integrations-providers-openai"))
 }
 
 tasks.test {

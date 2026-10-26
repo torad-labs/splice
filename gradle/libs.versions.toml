@@ -63,6 +63,8 @@ ktor-server-netty = { module = "io.ktor:ktor-server-netty", version.ref = "ktor"
 # inherited descriptor, and the classifier is linux-x86_64 because socket activation is systemd, so Linux, only.
 netty-transport-native-epoll = { module = "io.netty:netty-transport-native-epoll", version.ref = "netty" }
 ktor-server-sse = { module = "io.ktor:ktor-server-sse", version.ref = "ktor" }
+# Test fixtures only: the scripted provider answers a Responses head over its websocket the way a real backend does.
+ktor-server-websockets = { module = "io.ktor:ktor-server-websockets", version.ref = "ktor" }
 ktor-server-test-host = { module = "io.ktor:ktor-server-test-host", version.ref = "ktor" }
 ktor-client-core = { module = "io.ktor:ktor-client-core", version.ref = "ktor" }
 ktor-client-cio = { module = "io.ktor:ktor-client-cio", version.ref = "ktor" }

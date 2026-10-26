@@ -9,9 +9,11 @@
 //  - an in-band ending is written by TurnFinish with the translator's cause (ChatTerminalState, ChatStreamTranslator,
 //    PassthroughTerminalState);
 //  - a cancellation the head seals (stop, restart, the no-progress limit) and a local refusal write no cause.
-// Not reachable here, and said so rather than skipped in silence: VENDOR_QUOTA_EXHAUSTED, AUTH_REFRESH_FAILED,
-// POOL_EXHAUSTED and ADMISSION_FULL have no producer today (no site constructs them), the code-mode machine runs only
-// on a codex head with a runtime, and HoldOutlasted does not exist before slice 5.
+// Not reachable here, and said so rather than skipped in silence: AUTH_REFRESH_FAILED, POOL_EXHAUSTED and
+// ADMISSION_FULL have no producer today (no site constructs them), the code-mode machine runs only on a codex head
+// with a runtime, and HoldOutlasted does not exist before slice 5. Failure-handling slice 2 changed one name on
+// purpose: a 402 writes VENDOR_QUOTA_EXHAUSTED, the name of the payment it is, where slice 1 pinned the rate limit
+// every retry layer still sees.
 package splice.app.failure
 
 import kotlinx.coroutines.Dispatchers
@@ -210,12 +212,13 @@ class PersistedNamesTest {
     }
 
     @Test
-    fun `a payment the provider wants is a rate limit and writes VENDOR_RATE_LIMITED`(@TempDir tmp: Path) = runTest {
-        // UpstreamRequest.quotaExhaustedStatus answers a 402 as the 429 it is before the classifier reads it, so no
-        // site writes VENDOR_QUOTA_EXHAUSTED.
+    fun `a payment the provider wants writes VENDOR_QUOTA_EXHAUSTED`(@TempDir tmp: Path) = runTest {
+        // UpstreamRequest still answers a 402 as a 429 to every retry layer (V4-73), so the row keeps the rate-limit
+        // tag endingTag gives that status, and the turn ends on the payment the provider asked for (HttpEnding's
+        // NeedsPayment), whose persisted name is VENDOR_QUOTA_EXHAUSTED (final-design.md section 6).
         val ended = statusEnding(tmp, PAYMENT_REQUIRED, "billing_error", "Add credit to continue.", "payment_required")
         assertEquals(OutcomeTag.RATE_LIMITED.wire, ended.outcome)
-        assertEquals("VENDOR_RATE_LIMITED", ended.cause)
+        assertEquals("VENDOR_QUOTA_EXHAUSTED", ended.cause)
     }
 
     @Test

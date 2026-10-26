@@ -46,10 +46,10 @@ public data class ClassifiedFailure(
 
     /** The verdict as a stream's own error event carries it. A 5xx named in band is the overload the client
      *  re-sends, as the in-band table always read UPSTREAM_STATUS_5XX; over HTTP the same status is the api_error
-     *  a stream=false request answers 502 with. */
+     *  a stream=false request answers 502 with. The provider's words ride along either way. */
     val inBand: FailureCause.Provider
         get() = if (cause is FailureCause.Provider.ServerError) {
-            FailureCause.Provider.Overloaded(Lift.Unstated, loading = false)
+            FailureCause.Provider.Overloaded(Lift.Unstated, loading = false, cause.said)
         } else {
             cause
         }

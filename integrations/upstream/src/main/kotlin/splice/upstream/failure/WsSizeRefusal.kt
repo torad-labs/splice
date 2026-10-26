@@ -25,7 +25,9 @@ internal object WsSizeRefusal {
         if (!sizeRefusal) return failed
         val own = UpstreamFailureClassifier.classify(FailureSource.HTTP, failed.text, failed.status)
         if (own.cause is FailureCause.Provider.TooLong) return failed
-        return failed.copy(text = envelope(failed.status))
+        // The words the provider said were about a request it could not read, not about its size: the cause no
+        // longer quotes them, and they stay whole in the log.
+        return failed.copy(text = envelope(failed.status), vendor = failed.vendor.copy(said = null))
     }
 
     // The upstream's own body named nothing. The sentence states both refusals and carries no "N tokens > M",

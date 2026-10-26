@@ -8,6 +8,7 @@ import splice.core.failure.FailureCause
 import splice.core.failure.FailureEvidence
 import splice.core.failure.Moment
 import splice.core.failure.Position
+import splice.core.failure.ProviderWordsFilter
 import splice.core.failure.RefusedBy
 import splice.core.turn.TurnOutcome
 import splice.upstream.failure.ClassifiedFailure
@@ -100,8 +101,10 @@ internal class ChatTerminalState(private val toolCalls: ChatToolCalls) {
             // "no refusal" now that fragments are accepted verbatim (round-2 review). V4-81, the
             // responses dialect's sibling: a refusal reproduces exactly, so the leaf is permanent and
             // the two dialects answer the same question the same way.
-            refusalBuf.isNotBlank() ->
-                failed(FailureCause.Provider.Refused(RefusedBy.MODEL), "chat backend: model refused. $refusalBuf")
+            refusalBuf.isNotBlank() -> failed(
+                FailureCause.Provider.Refused(RefusedBy.MODEL, ProviderWordsFilter.of(refusalBuf.toString())),
+                "chat backend: model refused. $refusalBuf",
+            )
             // finish_reason=content_filter is a CENSORED turn — a clean end_turn would let a
             // blocked generation masquerade as complete (honesty invariant); it outranks
             // `finished` (the same frame sets both). V4-81: the identical prompt is filtered identically.
@@ -114,9 +117,10 @@ internal class ChatTerminalState(private val toolCalls: ChatToolCalls) {
     }
 
     /** The classifier's verdict as this event carries it: an event with neither status nor kind keeps V4-164's
-     *  retryable wire, so a failure no table names stays one a re-send can change (see onError). */
+     *  retryable wire, so a failure no table names stays one a re-send can change (see onError). The backend's words
+     *  ride either way. */
     private fun reportedCause(reported: ClassifiedFailure): FailureCause.Provider = reported.inBand.let {
-        if (it is FailureCause.Provider.Unrecognized && !failureTyped) FailureCause.Provider.Unrecognized(false) else it
+        if (it is FailureCause.Provider.Unrecognized && !failureTyped) it.copy(clientError = false) else it
     }
 
     private fun failed(cause: FailureCause, message: String): TurnOutcome.Failure = TurnOutcome.Failure(

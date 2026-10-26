@@ -39,8 +39,6 @@ import splice.core.util.WallClock
 import splice.core.wire.NativeReply
 import splice.upstream.RetryNotice
 import splice.upstream.StreamStart
-import java.time.Instant
-import java.time.format.DateTimeParseException
 import java.util.concurrent.atomic.AtomicLong
 
 /**
@@ -162,36 +160,11 @@ public class RateLimitCooldown public constructor(
      *  where the Retry-After header says only 5301000ms. The body is upstream-controlled text, so
      *  the result is bounded by MAX_PROVIDER_RESET_MS and the caller may always clear() it. */
     public fun captureProviderReset(body: String?) {
-        if (body == null) return
-        val epochSeconds = RESET_EPOCH_RE.find(body)?.groupValues?.get(1)?.toLongOrNull()
-        // The conventional rate-limit header's reset, when the body echoes it (OpenRouter's 429 carries
-        // error.metadata.headers.X-RateLimit-Reset). Its unit varies by vendor, so the digits say it: an
-        // epoch in milliseconds has 13 today and one in seconds 10, which three zeros make milliseconds.
-        val headerResetMs = RESET_HEADER_RE.find(body)?.groupValues?.get(1)
-            ?.padEnd(EPOCH_MS_DIGITS, '0')?.toLongOrNull()
-        val iso = RESET_ISO_RE.find(body)?.groupValues?.get(1)
-        val inSeconds = RESET_IN_RE.find(body)?.groupValues?.get(1)?.toLongOrNull()
-        // An absolute instant arrives on the WALL base and becomes a DELAY here; `resets_at` is the
-        // ChatGPT backend's epoch-seconds spelling of the same fact, and a duration is already a
-        // delay. Mixing the bases is the bug this shape prevents: an epoch millisecond compared
-        // against this class's elapsed clock reads as a reset decades out.
-        // The ISO branch collapses to null DELIBERATELY. It parses a timestamp out of an
-        // UPSTREAM-CONTROLLED 429 body on a best-effort basis: the epoch-seconds spelling above and
-        // the duration below are the other two candidates, and the caller already treats "no reset
-        // was named" as a first-class outcome — the refusal simply ships without a Retry-After and
-        // leaves the client its own backoff. A vendor emitting a malformed instant is not a splice
-        // failure to diagnose, and logging one per 429 would be noise on exactly the path an
-        // operator is already reading.
-        val absoluteWallMs = epochSeconds?.times(MS_PER_S)
-            ?: headerResetMs
-            ?: iso?.let {
-                try {
-                    Instant.parse(it).toEpochMilli()
-                } catch (_: DateTimeParseException) {
-                    null
-                }
-            }
-        val delayMs = absoluteWallMs?.minus(wallClock()) ?: inSeconds?.times(MS_PER_S) ?: return
+        // An ABSOLUTE instant arrives on the WALL base and becomes a DELAY here; a duration is already a delay.
+        // Mixing the bases is the bug this shape prevents: an epoch millisecond compared against this class's
+        // elapsed clock reads as a reset decades out. The spellings, and which wins, are ProviderReset's.
+        val wallNow = wallClock()
+        val delayMs = (ProviderReset.wallMs(body, wallNow) ?: return) - wallNow
         if (delayMs <= 0) return
         holds.refusing {
             providerUnavailableUntilMs.accumulateAndGet(clock() + minOf(delayMs, MAX_PROVIDER_RESET_MS)) { c, n ->
@@ -336,19 +309,3 @@ internal const val MAX_RATE_LIMIT_COOLDOWN_MS: Long = 120_000L
 // A saturated or hostile header must not poison reset reporting after the local re-probe opens.
 // Seven days preserves legitimate multi-day resets while bounding the reporting-only state too.
 private const val MAX_PROVIDER_RESET_MS = 604_800_000L
-
-// An epoch instant in milliseconds has 13 digits until the year 2286.
-private const val EPOCH_MS_DIGITS = 13
-
-// V4-47: the provider reset's spellings, tried in that order of authority. `resets_at` is
-// epoch SECONDS (the ChatGPT backend); the ISO form is what the muse body carries; `resets_in_seconds`
-// is a duration and therefore the weakest, since it is only as good as our clock at receipt.
-// `X-RateLimit-Reset` is the conventional header's name echoed in a body, quoted plainly or escaped
-// inside a string the vendor relayed.
-private val RESET_EPOCH_RE = Regex(""""resets_at"\s*:\s*(\d{9,})""")
-private val RESET_HEADER_RE = Regex(
-    """x-ratelimit-reset\\?"\s*:\s*\\?"?(\d{13}|\d{10})(?!\d)""",
-    RegexOption.IGNORE_CASE,
-)
-private val RESET_ISO_RE = Regex("""resets?\s+at\s+(\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?Z?)""")
-private val RESET_IN_RE = Regex(""""resets?_(?:in_seconds|in)"\s*:\s*(\d+)""")

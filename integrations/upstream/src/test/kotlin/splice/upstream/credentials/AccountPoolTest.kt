@@ -17,7 +17,6 @@ import splice.core.auth.RefreshableAuthProvider
 import splice.core.usage.QuotaSnapshot
 import splice.core.usage.QuotaWindow
 import splice.core.util.ElapsedClock
-import splice.core.util.LocalTimeText
 import splice.core.util.WallClock
 import splice.upstream.RetryNotice
 import splice.upstream.credentials.AccountCredentialIdentitySource.CredentialPresence
@@ -150,7 +149,6 @@ class AccountPoolTest {
         assertSame(backup, pool.chosen("session").account)
         val blocked = fixture.pool(primary).exhausted("blocked")
         assertEquals(605_800L, blocked.earliestResetEpochSeconds)
-        assertTrue(blocked.message.contains(LocalTimeText().at(605_800L)), blocked.message)
         fixture.advanceElapsed(120_000L)
         assertSame(backup, pool.chosen("session").account)
         assertSame(primary, pool.chosen(null).account)
@@ -248,8 +246,6 @@ class AccountPoolTest {
         val failure = pool.exhausted("session")
 
         assertEquals(2_000L, failure.earliestResetEpochSeconds)
-        assertTrue(failure.message.contains(LocalTimeText().at(2_000L)), failure.message)
-        assertFalse(failure.message.contains("reset is 2000"))
     }
 
     @Test

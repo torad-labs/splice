@@ -64,10 +64,9 @@ internal class RetryRules(private val maxRetries: Int) {
      *  or the bare-429 default when there was none.
      *
      *  V4-233: a 429 that names a spent PLAN window holds until the reset it named, and arms the
-     *  horizon toward it (still clamped). V4-234: whether the client waits is then decided by that
-     *  reset, never by the upstream's words, so the body the client gets is our sentence naming the
-     *  reset. The upstream's own words are already in the log (planRetry's notice). With no reset
-     *  named, the upstream's text passes through unchanged: waiting cannot fix a spend limit. */
+     *  horizon toward it (still clamped). The cause carries that reset and its window (HttpEnding), and
+     *  the line a person reads is written from the cause, never from the upstream's words, which stay
+     *  whole in the evidence and the log (planRetry's notice). */
     fun giveUp(
         last: RetryOutcome.Failed?,
         cooldown: RateLimitCooldown,
@@ -83,7 +82,7 @@ internal class RetryRules(private val maxRetries: Int) {
         val status = if (refreshed && last?.vendor?.deadCredential == true) HttpStatus.UNAUTHORIZED else last?.status
         // V4-117: [layers] is the loop's own attempt count at the moment it gave up — passed IN
         // rather than counted here, because this file decides and never counts (see the header).
-        val ending = HttpEnding(last?.text.orEmpty(), status, last?.sent)
+        val ending = HttpEnding(last, status)
         return UpstreamFailed(ending.cause, ending.evidence, layers)
     }
 
@@ -99,8 +98,7 @@ internal class RetryRules(private val maxRetries: Int) {
         val planned = last.planLimit?.let { cooldown.planHold.hold(it, onRetry) }
         cooldown.arm(planned ?: last.retryAfterMs ?: DEFAULT_RATE_LIMIT_COOLDOWN_MS)
         val limit = last.planLimit.takeIf { reply != null || planned != null }
-        val body = reply?.body ?: limit?.let(cooldown.planHold::clientBody) ?: last.text
-        val ending = HttpEnding(body, last.status, last.sent)
+        val ending = HttpEnding(last)
         return UpstreamFailed(ending.cause, ending.evidence, layers, planLimit = limit, native = reply)
     }
 

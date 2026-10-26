@@ -79,16 +79,11 @@ public fun interface ClientFrameEmitted {
 }
 
 /**
- * Retry diagnostics and ordered client status. Neither method decides whether to retry.
- * [invoke] also carries log-only decisions, such as giving up or omitting a malformed header.
+ * Retry diagnostics, for the log: each failed attempt, each decision, giving up, a malformed header omitted. It
+ * decides nothing, and nothing it carries reaches a client: a person reads only lines written from a cause.
  */
 public fun interface RetryNotice {
     public operator fun invoke(message: String)
-
-    /** Optional client status for an actual retry, separate from the existing diagnostic log.
-     * The raw failure lets the client sink render JSON as prose. Delivery is awaited before the
-     * next attempt, never launched in an unowned coroutine. Log-only sinks need not implement it. */
-    public suspend fun retry(action: String, reason: String) {}
 }
 
 /**

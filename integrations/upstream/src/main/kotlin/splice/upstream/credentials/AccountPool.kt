@@ -29,10 +29,8 @@ public sealed class Selection {
     public class Chosen(public val account: AccountSelection) : Selection()
 
     /** No account could start the turn; [earliestResetEpochSeconds] is the soonest any account
-     *  resets, null when no account reported a reset. */
-    public class Exhausted(public val earliestResetEpochSeconds: Long?) : Selection() {
-        public val message: String get() = AccountResetText.exhausted(earliestResetEpochSeconds)
-    }
+     *  resets, null when no account reported a reset. The line a person reads is written from it. */
+    public class Exhausted(public val earliestResetEpochSeconds: Long?) : Selection()
 }
 
 /** A head-local OAuth account pool. Each selection owns one immutable login choice and its probe lease. */

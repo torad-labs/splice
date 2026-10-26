@@ -12,7 +12,6 @@ package splice.upstream.retry
 import splice.core.usage.PlanLimit
 import splice.core.util.ElapsedClock
 import splice.core.util.WallClock
-import splice.core.wire.ErrorEnvelope
 import splice.upstream.RetryNotice
 import java.time.Instant
 import java.util.concurrent.atomic.AtomicReference
@@ -67,13 +66,6 @@ public class PlanHold internal constructor(
         val delayMs = limit.resetEpochSeconds * MS_PER_S - wallClock()
         if (delayMs > 0L) held.set(Held(clock() + delayMs, limit))
     }
-
-    /** V4-234: what a client is told when the upstream named a spent plan window. Our sentence
-     *  ([PlanLimit.refusal]), in the same envelope a real upstream sends, because whether a persistent
-     *  Claude Code keeps waiting is decided by the words it reads here, and the reset is the signal
-     *  that should decide it. Built here, beside the pooled refusal's class, under the pre-content
-     *  wall's written exemption for this file. */
-    internal fun clientBody(limit: PlanLimit): String = ErrorEnvelope.of("rate_limit_error", limit.refusal()).toString()
 }
 
 private data class Held(val untilMs: Long, val limit: PlanLimit)

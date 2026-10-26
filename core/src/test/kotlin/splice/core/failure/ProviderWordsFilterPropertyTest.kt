@@ -206,6 +206,22 @@ class ProviderWordsFilterPropertyTest {
         }
     }
 
+    // The filter reads only the head of a long body, since a page of tens of kilobytes held a turn's ending for
+    // minutes when its rules read it whole. A sentence that read stops inside is not what the provider said, so no
+    // part of it is quoted, wherever the read stops.
+    @Test
+    fun `a sentence the read stops inside is never quoted as a fragment`() {
+        val whole = "Your balance is too low to continue this request today."
+        for (padding in 1_500..2_500 step 7) {
+            val raw = "The upstream said " + "more ".repeat(padding / 5) + "here. $whole"
+
+            val kept = words(raw)
+
+            assertTrue(kept == null || kept == whole, "the sentence at ${raw.indexOf(whole)}: $kept")
+        }
+        assertEquals(whole, words("The upstream said more here. $whole"))
+    }
+
     @Test
     fun `an em dash is spoken as a clause break`() {
         assertEquals("The model is busy, try a smaller request.", words("The model is busy — try a smaller request"))

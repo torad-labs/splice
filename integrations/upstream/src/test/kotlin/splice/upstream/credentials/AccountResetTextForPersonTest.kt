@@ -1,7 +1,7 @@
-// NEW: V4-433 — AccountResetText.forPerson is the one place a reset becomes words for a client: the machine's own
-// month, day, clock time and zone abbreviation through LocalTimeText, "unknown" when none was named, clamped to the
-// four-digit year range so an absurd upstream instant cannot overflow the formatter. Handed a zone it says the reset in
-// that zone whatever the machine's is, the seam a test uses to name one.
+// NEW: V4-433 — AccountResetText.forPerson says a login's reset the way the doctor's account text shows it: the
+// machine's own month, day, clock time and zone abbreviation through LocalTimeText, "unknown" when none was named,
+// clamped to the four-digit year range so an absurd upstream instant cannot overflow the formatter. Handed a zone it
+// says the reset in that zone whatever the machine's is, the seam a test uses to name one.
 package splice.upstream.credentials
 
 import org.junit.jupiter.api.Assertions.assertEquals

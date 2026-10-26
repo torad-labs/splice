@@ -1,9 +1,9 @@
 // NEW: V4-233 and V4-234 at the transport. A 429 whose unified headers name a spent PLAN window is
-// not re-sent by the turn that met it, records that reset for status, and hands the client our sentence
-// naming it, so the reset and not the upstream's words decides whether the client waits. The next turn
-// still asks the provider itself (Marcos, Oct 26). The same
-// bytes from a provider that reads no plan family, or with no reset named, keep V4-61's schedule and
-// the upstream's own words exactly.
+// not re-sent by the turn that met it, records that reset for status, and ends on a cause naming the
+// reset and the window, so the line a person reads is written from the reset and never from the
+// upstream's words, which the evidence and the log keep whole (failure-handling slice 2). The next turn
+// still asks the provider itself (Marcos, Oct 26). The same bytes from a provider that reads no plan
+// family, or with no reset named, keep V4-61's schedule and the upstream's own words exactly.
 package splice.upstream.transport
 
 import io.ktor.client.HttpClient
@@ -19,10 +19,22 @@ import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 import splice.core.auth.ClientAuthProvider
 import splice.core.auth.RefreshableAuthProvider
+import splice.core.failure.ClientWire
+import splice.core.failure.FailureCause
+import splice.core.failure.Lift
+import splice.core.failure.LiftSource
+import splice.core.failure.LimitWindow
+import splice.core.failure.LineFacts
+import splice.core.failure.Moment
+import splice.core.failure.Position
+import splice.core.failure.RequestFacts
+import splice.core.failure.SPLICE_PREFIX
+import splice.core.failure.SpliceLines
 import splice.core.usage.PlanLimit
 import splice.core.util.ElapsedClock
 import splice.core.util.LocalTimeText
 import splice.upstream.retry.MAX_RATE_LIMIT_COOLDOWN_MS
+import java.time.Instant
 import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.atomic.AtomicInteger
 
@@ -47,13 +59,25 @@ class UpstreamClientPlanLimitTest {
 
     private fun resetInAnHour(): Long = System.currentTimeMillis() / MS + HOUR_S
 
-    private fun assertOurSentence(body: String, reset: Long) {
-        assertTrue(body.contains("5-hour window is used up until ${LocalTimeText().at(reset)}"), body)
-        assertFalse(ISO_INSTANT.containsMatchIn(body), "the reset is said as a person reads it, not as ISO: $body")
-        assertFalse(body.contains('—'), "no em dash in text the client shows: $body")
+    /** The ending [failure] names the spent five-hour window lifting at [reset], and the line a person reads of it
+     *  says that reset in the machine's zone, quotes none of the upstream's words, and is the trace's sentence. */
+    private fun assertTheLine(failure: UpstreamFailed, reset: Long) {
+        val cause = FailureCause.Provider.Limited(
+            Lift.At(Instant.ofEpochSecond(reset), firm = true, LiftSource.RESET_HEADER),
+            LimitWindow.FIVE_HOUR,
+        )
+        assertEquals(cause, failure.cause)
+        val at = Position(Moment.BEFORE_COMMIT, streamBegan = false)
+        val facts = LineFacts("claude-splice", null, null, local = false, RequestFacts(false, false), Instant.now())
+        val line = SpliceLines().ending(failure.cause, at, ClientWire.answer(failure.cause, at), facts)
+        val text = line.text
+        assertTrue(text.contains(LocalTimeText().at(reset)), "the reset in the machine's zone: $text")
+        assertFalse(ISO_INSTANT.containsMatchIn(text), "the reset is said as a person reads it, not as ISO: $text")
+        assertFalse(text.contains('—'), "no em dash in text the client shows: $text")
         CLIENT_STOP_PHRASES.forEach { phrase ->
-            assertFalse(body.lowercase().contains(phrase), "'$phrase' would end a persistent client's wait: $body")
+            assertFalse(text.lowercase().contains(phrase), "'$phrase' would end a persistent client's wait: $text")
         }
+        assertEquals(text, SPLICE_PREFIX + line.sentence, "the trace says what the client reads")
     }
 
     @Test
@@ -71,7 +95,8 @@ class UpstreamClientPlanLimitTest {
 
         assertEquals(1, calls.get(), "a spent plan window is not re-sent before the reset it named")
         assertEquals(429, failure.evidence.status)
-        assertOurSentence(failure.evidence.body.orEmpty(), reset)
+        assertEquals(PLAN_BODY, failure.evidence.body, "the evidence keeps the upstream's words whole")
+        assertTheLine(failure, reset)
         assertEquals(PlanLimit("five_hour", reset), client.planHold, "the hold is the upstream's own reset, exactly")
         assertTrue(
             client.planHoldForMs in (HOUR_S - 10) * MS..HOUR_S * MS,
@@ -154,7 +179,7 @@ class UpstreamClientPlanLimitTest {
             client.posted(ctx(forwarded, notices), "{}") { "unreachable" }
         }
         assertEquals(2, calls.get(), "the next turn reaches the provider, held by nothing the first one armed")
-        assertOurSentence(next.evidence.body.orEmpty(), reset)
+        assertTheLine(next, reset)
 
         limited.set(false)
         assertEquals("ok", client.posted(ctx(forwarded, notices), "{}") { "ok" })

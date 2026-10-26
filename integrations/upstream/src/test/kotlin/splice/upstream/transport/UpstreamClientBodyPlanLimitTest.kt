@@ -14,10 +14,21 @@ import org.junit.jupiter.api.Test
 import splice.core.auth.AuthDescription
 import splice.core.auth.Credentials
 import splice.core.auth.RefreshableAuthProvider
+import splice.core.failure.ClientWire
+import splice.core.failure.FailureCause
+import splice.core.failure.Lift
+import splice.core.failure.LiftSource
+import splice.core.failure.LimitWindow
+import splice.core.failure.LineFacts
+import splice.core.failure.Moment
+import splice.core.failure.Position
+import splice.core.failure.RequestFacts
+import splice.core.failure.SpliceLines
 import splice.core.usage.PlanLimit
 import splice.core.util.ElapsedClock
 import splice.core.util.LocalTimeText
 import splice.upstream.retry.MAX_RATE_LIMIT_COOLDOWN_MS
+import java.time.Instant
 import java.util.concurrent.atomic.AtomicInteger
 
 private const val MS = 1_000L
@@ -30,10 +41,11 @@ private fun liveBody(reset: Long) =
         """"resets_in_seconds":$SIX_DAYS_S,"limit_window_minutes":10080}}"""
 
 /** V4-377 at the transport: a provider that names its spent window in the 429 BODY (the port's
- *  planLimitFromBody, which the codex provider implements) gets V4-233's plan hold: one attempt, our
- *  sentence naming the reset, and a plan-hold notice. The next turn asks the provider itself (Marcos,
- *  Oct 26), as UpstreamClientPlanLimitTest shows for the header-named window. The double reads the
- *  body the way codex does, so the vendor parse itself is pinned in provider-codex. */
+ *  planLimitFromBody, which the codex provider implements) gets V4-233's plan hold: one attempt, a cause
+ *  naming the reset its body stated and the window, whose line says that reset, and a plan-hold notice.
+ *  The next turn asks the provider itself (Marcos, Oct 26), as UpstreamClientPlanLimitTest shows for the
+ *  header-named window. The double reads the body the way codex does, so the vendor parse itself is
+ *  pinned in provider-codex. */
 class UpstreamClientBodyPlanLimitTest {
 
     /** A body-reading provider: the live body names a 7-day window; anything else names none. */
@@ -79,10 +91,16 @@ class UpstreamClientBodyPlanLimitTest {
 
         assertEquals(1, calls.get(), "today this is 4 attempts and about 45 s of holds")
         assertEquals(429, failure.evidence.status)
-        val body = failure.evidence.body.orEmpty()
-        assertTrue(body.contains("7-day window is used up until ${LocalTimeText().at(reset)}"), body)
-        assertFalse(ISO_INSTANT.containsMatchIn(body), "the reset is not an ISO instant: $body")
-        assertFalse(body.contains('—'), "no em dash in text the client shows: $body")
+        assertEquals(liveBody(reset), failure.evidence.body, "the evidence keeps the provider's body whole")
+        val lift = Lift.At(Instant.ofEpochSecond(reset), firm = true, LiftSource.BODY)
+        assertEquals(FailureCause.Provider.Limited(lift, LimitWindow.WEEKLY), failure.cause)
+        val at = Position(Moment.BEFORE_COMMIT, streamBegan = false)
+        val facts =
+            LineFacts("claudex", "claudex login", null, local = false, RequestFacts(false, false), Instant.now())
+        val text = SpliceLines().ending(failure.cause, at, ClientWire.answer(failure.cause, at), facts).text
+        assertTrue(text.contains(LocalTimeText().at(reset)), "the reset in the machine's zone: $text")
+        assertFalse(ISO_INSTANT.containsMatchIn(text), "the reset is not an ISO instant: $text")
+        assertFalse(text.contains('—'), "no em dash in text the client shows: $text")
         assertEquals(PlanLimit("seven_day", reset), client.planHold)
         assertTrue(client.planHoldForMs > (SIX_DAYS_S - 10) * MS, "held to the named reset: ${client.planHoldForMs}")
         assertTrue(client.rateLimitedForMs in 1L..MAX_RATE_LIMIT_COOLDOWN_MS, "the horizon keeps NF-01's clamp")

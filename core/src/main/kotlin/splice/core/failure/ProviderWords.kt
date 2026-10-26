@@ -17,6 +17,12 @@ public object ProviderWordsFilter {
     /** The longest words a line may quote, period included. */
     private const val MAX_CHARS = 160
 
+    /** The most of a provider's text the rules below read. A quote is cut from its first readable sentence, and the
+     *  host and key rules backtrack across a run with no break, so a failed body of tens of kilobytes (a gateway
+     *  page, a run of one character) held a turn's ending for minutes when read whole. The sentence the read stops
+     *  inside is left out, since what is read of it is not what the provider said. */
+    private const val MAX_READ = 2_000
+
     private val SENTENCE_BREAK = Regex("""(?<=[.!?])\s+""")
     private val EM_DASH_CLAUSE = Regex("""\s*\x{2014}\s*""")
 
@@ -67,8 +73,9 @@ public object ProviderWordsFilter {
     /** The words a person may read out of [raw], or null when none are left. */
     public fun of(raw: String?): ProviderWords? {
         val text = raw?.trim()?.takeIf { it.isNotEmpty() && json(it) == null } ?: return null
-        val spoken = SPACES.replace(EM_DASH_CLAUSE.replace(text, ", "), " ")
-        val kept = spoken.split(SENTENCE_BREAK).firstNotNullOfOrNull(::kept) ?: return null
+        val spoken = SPACES.replace(EM_DASH_CLAUSE.replace(text.take(MAX_READ), ", "), " ")
+        val sentences = spoken.split(SENTENCE_BREAK).let { if (text.length > MAX_READ) it.dropLast(1) else it }
+        val kept = sentences.firstNotNullOfOrNull(::kept) ?: return null
         return ProviderWords(fitted(kept))
     }
 

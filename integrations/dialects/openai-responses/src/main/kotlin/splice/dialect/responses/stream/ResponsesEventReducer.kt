@@ -5,6 +5,7 @@ package splice.dialect.responses.stream
 
 import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonObject
+import splice.core.failure.ProviderWordsFilter
 import splice.core.util.JsonScalars
 import splice.dialect.responses.ResponsesTurnState
 import splice.dialect.responses.reasoning.ResponsesReasoningFold
@@ -118,13 +119,15 @@ internal class ResponsesEventReducer(
         // vendor's text, hiding its rate-limit/transient signal from the classifier and the
         // operator line. strOrEmpty reads the string form and stays "" for the object form.
         val stringError = JsonScalars.strOrEmpty((evt[KEY_RESPONSE] as? JsonObject)?.get(KEY_ERROR) ?: evt[KEY_ERROR])
-        val message = JsonScalars.strOrEmpty(e["message"])
-            .ifEmpty { stringError }
-            .ifEmpty { "upstream reported failure" }
+        val own = JsonScalars.strOrEmpty(e["message"]).ifEmpty { stringError }
+        val message = own.ifEmpty { "upstream reported failure" }
+        // The words a line may quote are the vendor's message field alone: never its code, and never the
+        // placeholder that stands in for a message it did not send.
         state.upstreamFailure = UpstreamFailureClassifier.classify(
             FailureSource.SSE,
             "$code $message",
             code = realCode.ifEmpty { null },
+            said = ProviderWordsFilter.of(own),
         )
         state.ending = "${word(JsonScalars.str(evt["type"]))} status=${word(JsonScalars.str(evt["status"]))} " +
             "code=${word(JsonScalars.str(e["code"]))} type=${word(if (e === evt) null else typeField)}"

@@ -20,11 +20,9 @@ internal object CodexRequestConstraints {
         return if (schemaTool && schemaChoice(body)) {
             null
         } else {
-            RequestRefusal(
-                FailureCause.Splice.Declined(Decline.Untranslatable(RequestFeature.TOOL_CHOICE)),
-                "The ChatGPT Codex backend's support for the requested tool_choice is unverified on this path; " +
-                    "splice cannot guarantee that choice and will not replace it with auto.",
-            )
+            // The backend's support for the choice is unverified on this path: splice cannot guarantee it, and
+            // will not replace it with auto.
+            RequestRefusal(FailureCause.Splice.Declined(Decline.Untranslatable(RequestFeature.TOOL_CHOICE)))
         }
     }
 

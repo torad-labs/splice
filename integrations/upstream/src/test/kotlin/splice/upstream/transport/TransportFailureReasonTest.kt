@@ -1,8 +1,10 @@
-// NEW: V4-164 — every transport failure splice knows is named by what happened on the socket and
-// against which endpoint. The operator's banner was "bonsai: upstream connection failed (no detail)
-// — retry": llama-server was down, and the JDK client's refused connect carries a null message.
-// V4-167: the connect cells use the JDK 21 client's own chains, measured, because every connect
-// failure it throws is a ConnectException and only the last link says which one it was.
+// NEW: V4-164 — every transport failure splice knows is named in the log by what happened on the
+// socket and against which endpoint. The operator's banner was "bonsai: upstream connection failed
+// (no detail) — retry": llama-server was down, and the JDK client's refused connect carries a null
+// message. V4-167: the connect cells use the JDK 21 client's own chains, measured, because every
+// connect failure it throws is a ConnectException and only the last link says which one it was.
+// Failure-handling slice 2: these are the log's words only; the line a person reads comes from the
+// cause (SpliceLines) and names no host.
 package splice.upstream.transport
 
 import org.junit.jupiter.api.Assertions.assertEquals
@@ -151,8 +153,8 @@ class TransportFailureReasonTest {
     }
 
     // The floor: an unknown class keeps its own text; with none, the line says in words what failed and
-    // against which endpoint, and the class rides only as a parenthetical (V4-349: a person reads the
-    // headline, never a fully qualified class name).
+    // against which endpoint, and the class rides only as a parenthetical (V4-349: whoever reads the log
+    // reads the headline first, never a fully qualified class name).
     @Test
     fun `an unknown failure keeps its text, and without one says in words that the connection failed`() {
         assertEquals("boom", reason(IOException("boom")))

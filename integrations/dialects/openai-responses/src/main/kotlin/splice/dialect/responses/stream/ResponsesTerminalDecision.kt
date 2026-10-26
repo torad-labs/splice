@@ -8,6 +8,7 @@ import splice.core.failure.FailureCause
 import splice.core.failure.FailureEvidence
 import splice.core.failure.Moment
 import splice.core.failure.Position
+import splice.core.failure.ProviderWordsFilter
 import splice.core.failure.RefusedBy
 import splice.core.failure.Tear
 import splice.core.turn.TurnOutcome
@@ -83,7 +84,10 @@ internal class ResponsesTerminalDecision(
     // bytes up to 300 times for the same refusal. The leaf carries it now, so no site can drop it.
     private fun refusalFailure(state: ResponsesTurnState): TurnOutcome.Failure? =
         state.refusalBuf.toString().takeIf { it.isNotBlank() }?.let {
-            failed(FailureCause.Provider.Refused(RefusedBy.MODEL), "upstream: model refused. $it")
+            failed(
+                FailureCause.Provider.Refused(RefusedBy.MODEL, ProviderWordsFilter.of(it)),
+                "upstream: model refused. $it",
+            )
         }
 
     // response.incomplete with a non-max_output_tokens reason is a CENSORED turn — a clean

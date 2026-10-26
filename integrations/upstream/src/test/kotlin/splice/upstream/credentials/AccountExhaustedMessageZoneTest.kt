@@ -1,19 +1,32 @@
-// NEW: V4-433 — the message a client prints when every account is exhausted says the earliest reset the way a person
-// reads it, the rule V4-419 gave the trace, V4-425 the plan refusal and V4-428 the burst 429. It carried the ISO instant
-// raw ("earliest reset is 2026-09-16T20:02:52Z"), so a machine in Tokyo read the evening where its own clock said
-// 5:02 AM. AccountResetText.format is the log and journal spelling and stays ISO. Each case names its zone; the words
-// around the time (the dash-free wording V4-234 fixed, no phrase that ends a persistent client's wait) and the
-// null case are pinned unchanged beside it.
+// NEW: V4-433, rewritten by failure-handling slice 2. The line a person reads when every login of a head is at its
+// limit says the earliest reset the pool names the way a person reads it: the machine's month, day, clock time and
+// zone abbreviation, never the ISO instant. V4-433 found "earliest reset is 2026-09-16T20:02:52Z" in what a client
+// printed, so a machine in Tokyo read the evening where its own clock said 5:02 AM. The pool no longer words it:
+// admission ends the turn on the limit the pool names, its earliest reset as AccountResetText.normalizedInstant reads
+// it and no window, and SpliceLines writes the line from that cause. Each case names its zone. AccountResetText.format
+// is the log and journal spelling and stays ISO.
 package splice.upstream.credentials
 
-import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertFalse
+import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
+import splice.core.failure.ClientWire
+import splice.core.failure.FailureCause
+import splice.core.failure.Lift
+import splice.core.failure.LiftSource
+import splice.core.failure.LineFacts
+import splice.core.failure.Moment
+import splice.core.failure.Position
+import splice.core.failure.RequestFacts
+import splice.core.failure.SpliceLines
+import splice.core.util.LocalTimeText
 import java.time.Instant
+import java.time.ZoneId
 import java.util.TimeZone
 
 private val MUSE_RESET = Instant.parse("2026-09-16T20:02:52Z").epochSecond
 private val ISO_INSTANT = Regex("""\d{4}-\d{2}-\d{2}T\d{2}:\d{2}""")
+private val CLOCK_TIME = Regex("""\d{1,2}:\d{2}""")
 
 // Claude Code 2.1.257's stop phrases, the list RateLimitRefusalClientContractTest sweeps.
 private val CLIENT_STOP_PHRASES = listOf(
@@ -37,31 +50,61 @@ private fun <T> inZone(zone: String, block: () -> T): T {
 }
 
 class AccountExhaustedMessageZoneTest {
+    private val facts =
+        LineFacts("claude", null, null, local = false, RequestFacts(false, false), Instant.ofEpochSecond(MUSE_RESET))
+
+    /** The line a turn ends with, before any answer, when every login is at its limit and the pool names [reset]. */
+    private fun said(reset: Long?, lines: SpliceLines): String {
+        val lift = reset?.let { Lift.At(AccountResetText.normalizedInstant(it), firm = true, LiftSource.RESET_HEADER) }
+        val cause = FailureCause.Provider.Limited(lift ?: Lift.Unstated, window = null)
+        val at = Position(Moment.BEFORE_COMMIT, streamBegan = false)
+        return lines.ending(cause, at, ClientWire.answer(cause, at), facts).text
+    }
+
+    private fun said(reset: Long?, zone: String) = said(reset, SpliceLines(LocalTimeText(ZoneId.of(zone))))
 
     @Test
-    fun `the earliest reset is said in the machine's hour and zone, not as an ISO instant`() {
-        val tokyo = inZone("Asia/Tokyo") { Selection.Exhausted(MUSE_RESET).message }
-        val chicago = inZone("America/Chicago") { Selection.Exhausted(MUSE_RESET).message }
+    fun `the earliest reset is said in the zone's hour and abbreviation, not as an ISO instant`() {
+        val tokyo = said(MUSE_RESET, "Asia/Tokyo")
+        val chicago = said(MUSE_RESET, "America/Chicago")
 
-        assertEquals("all OAuth accounts are exhausted; earliest reset is Sep 17, 5:02 AM JST", tokyo)
-        assertEquals("all OAuth accounts are exhausted; earliest reset is Sep 16, 3:02 PM CDT", chicago)
+        assertTrue("Sep 17, 5:02 AM JST" in tokyo, tokyo)
+        assertTrue("Sep 16, 3:02 PM CDT" in chicago, chicago)
         assertFalse(ISO_INSTANT.containsMatchIn(tokyo + chicago), "the reset is not an ISO instant: $tokyo $chicago")
     }
 
     @Test
-    fun `an exhausted pool that names no reset says unknown, as before`() {
-        val message = inZone("Asia/Tokyo") { Selection.Exhausted(null).message }
+    fun `no zone given reads the machine's own`() {
+        val tokyo = inZone("Asia/Tokyo") { said(MUSE_RESET, SpliceLines()) }
+        val chicago = inZone("America/Chicago") { said(MUSE_RESET, SpliceLines()) }
 
-        assertEquals("all OAuth accounts are exhausted; earliest reset is unknown", message)
+        assertTrue("Sep 17, 5:02 AM JST" in tokyo, tokyo)
+        assertTrue("Sep 16, 3:02 PM CDT" in chicago, chicago)
+    }
+
+    @Test
+    fun `a pool that names no reset says no time`() {
+        val line = said(null, "Asia/Tokyo")
+
+        assertFalse(CLOCK_TIME.containsMatchIn(line), "no reset was named, so no time is said: $line")
+    }
+
+    @Test
+    fun `a reset past the wire range is said as the range's end, and the line is still written`() {
+        val line = said(Long.MAX_VALUE, "UTC")
+
+        assertTrue("Dec 31, 11:59 PM UTC" in line, line)
     }
 
     @Test
     fun `the words around the time carry no dash and no stop phrase`() {
-        val message = inZone("Asia/Kolkata") { Selection.Exhausted(MUSE_RESET).message }
+        for (reset in listOf(MUSE_RESET, null)) {
+            val line = said(reset, "Asia/Kolkata")
 
-        assertFalse('—' in message, "no em dash in text the client shows: $message")
-        CLIENT_STOP_PHRASES.forEach { phrase ->
-            assertFalse(phrase in message.lowercase(), "'$phrase' would end a persistent client's wait: $message")
+            assertFalse('—' in line, "no em dash in text the client shows: $line")
+            CLIENT_STOP_PHRASES.forEach { phrase ->
+                assertFalse(phrase in line.lowercase(), "'$phrase' would end a persistent client's wait: $line")
+            }
         }
     }
 }

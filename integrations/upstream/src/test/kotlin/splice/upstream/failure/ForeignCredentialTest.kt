@@ -8,8 +8,17 @@ import org.junit.jupiter.api.Assertions.assertSame
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 import splice.core.auth.Credentials
+import splice.core.failure.ClientWire
+import splice.core.failure.FailureCause
+import splice.core.failure.LineFacts
+import splice.core.failure.Moment
 import splice.core.failure.PersistedCause
+import splice.core.failure.Position
+import splice.core.failure.RequestFacts
+import splice.core.failure.ServerFault
+import splice.core.failure.SpliceLines
 import splice.core.turn.ErrorType
+import java.time.Instant
 
 class ForeignCredentialTest {
     private val bearer = Credentials.Bearer("eyFakeSignInToken.v4242", "acct-v4242")
@@ -58,7 +67,7 @@ class ForeignCredentialTest {
     }
 
     @Test
-    fun `a foreign 401 becomes the upstream's own transient failure, in words that say so`() {
+    fun `a foreign 401 becomes the upstream's own transient failure`() {
         val body = rejection(FOREIGN)
         val classified = UpstreamFailureClassifier.classify(FailureSource.HTTP, body, UNAUTHORIZED)
         assertEquals(ErrorType.AUTHENTICATION, classified.type, "the classifier reads every 401 as the sign-in")
@@ -69,11 +78,29 @@ class ForeignCredentialTest {
         assertTrue(failure.transient, "the upstream refused itself and may stop")
         assertEquals(PersistedCause.UPSTREAM_REPORTED, failure.cause.persisted)
         assertEquals(UNAUTHORIZED, failure.status)
-        assertEquals(
-            "the upstream rejected a credential this account did not send: Incorrect API key provided: " +
-                "sk-test0****Zq9x. You can find your API key at https://platform.openai.com/account/api-keys.",
-            failure.message,
-        )
+        assertEquals(ServerFault.FOREIGN_KEY, (failure.cause as FailureCause.Provider.ServerError).fault)
+    }
+
+    // Slice 2: a person reads the line SpliceLines writes from the cause, and the log keeps the provider's own words.
+    // No sentence of splice's carries the masked key anywhere, and the words a line may quote hold no part of it.
+    @Test
+    fun `a foreign 401 carries no fragment of the key it names to a person, and the log keeps the provider's words`() {
+        val body = rejection(FOREIGN)
+        val classified = UpstreamFailureClassifier.classify(FailureSource.HTTP, body, UNAUTHORIZED)
+
+        val failure = ForeignCredential.upstreamsOwn(classified, body, bearer)
+
+        assertEquals(classified.message, failure.message, "the log reads what the provider said, and nothing added")
+        val said = failure.cause.said?.text.orEmpty()
+        listOf("sk-test0", "Zq9x", "*").forEach { fragment -> assertFalse(fragment in said, said) }
+        val at = Position(Moment.BEFORE_COMMIT, streamBegan = false)
+        val line = SpliceLines().ending(
+            failure.cause,
+            at,
+            ClientWire.answer(failure.cause, at),
+            LineFacts("claude-codex", "claude-codex login", null, false, RequestFacts(false, false), Instant.EPOCH),
+        ).text
+        listOf("sk-test0", "Zq9x", "*").forEach { fragment -> assertFalse(fragment in line, line) }
     }
 
     @Test

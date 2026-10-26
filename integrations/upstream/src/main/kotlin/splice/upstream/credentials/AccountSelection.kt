@@ -180,13 +180,11 @@ public class AccountSelection internal constructor(
 }
 
 /** One reset timestamp vocabulary for operator responses and turn logs. [format] is the ISO instant a log or journal
- *  line carries; [forPerson] says the same instant the way a person reads it, for a sentence a client prints. */
+ *  line carries; [forPerson] says the same instant the way a person reads it, for the doctor's account text. A turn's
+ *  line says its reset through SpliceLines, from the cause. */
 public object AccountResetText {
     private val earliestWireInstant = Instant.parse("0000-01-01T00:00:00Z")
     private val latestWireInstant = Instant.parse("9999-12-31T23:59:59Z")
-
-    internal fun exhausted(resetEpochSeconds: Long?): String =
-        "all OAuth accounts are exhausted; earliest reset is ${forPerson(resetEpochSeconds)}"
 
     /** Clamps reset evidence to the four-digit year range shared by prose and IMF-fixdate. */
     public fun normalizedInstant(resetEpochSeconds: Long): Instant =

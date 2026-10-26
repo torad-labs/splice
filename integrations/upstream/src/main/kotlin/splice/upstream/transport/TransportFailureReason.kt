@@ -14,6 +14,9 @@
 // V4-164 named the first link, so a DNS failure and an unroutable host both read "connection refused
 // … nothing is listening there" and sent the operator to start a server. And Ktor's timeout text
 // carries "[url=<the full request url>", which the detail now reports as host and port only.
+//
+// Failure-handling slice 2 (2026-10-26): the line is the log's. A person reads the line SpliceLines writes from the
+// turn's cause, which names no host, so nothing here is worded for a client.
 package splice.upstream.transport
 
 import io.ktor.utils.io.ClosedByteChannelException
@@ -32,7 +35,7 @@ import java.nio.channels.ClosedChannelException
 import java.nio.channels.UnresolvedAddressException
 import javax.net.ssl.SSLException
 
-/** Throwable -> one line naming the failure and the endpoint it happened against. */
+/** Throwable -> one log line naming the failure and the endpoint it happened against. */
 public object TransportFailureReason {
 
     /** [upstreamUrl] contributes host and port only — never a path or query, which can carry keys. */
@@ -47,7 +50,7 @@ public object TransportFailureReason {
             ?.replace(KTOR_URL, "url=$where")
         return when {
             // V4-349: with nothing to name and no text, the line still says what failed in words; the class
-            // rides as a parenthetical for whoever debugs it, never as the headline a person reads.
+            // rides as a parenthetical for whoever debugs it, never as the headline.
             named == null -> detail ?: unnamed(where, root)
             detail == null || named.contains(detail, ignoreCase = true) -> named
             else -> "$named: $detail"

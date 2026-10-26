@@ -14,6 +14,8 @@ import kotlinx.serialization.json.longOrNull
 import splice.core.failure.FailureCause
 import splice.core.failure.Lift
 import splice.core.failure.LoginOwner
+import splice.core.failure.ProviderWords
+import splice.core.failure.ProviderWordsFilter
 import splice.core.failure.RefusedBy
 import splice.core.failure.ServerFault
 import splice.core.util.Cancellables
@@ -87,12 +89,15 @@ public object UpstreamFailureClassifier {
      *  envelope's `error.code`/`error.type`), kept separate from the display text so provenance
      *  survives into the transience decision (DR-10 redo: flattening it into the text let free
      *  wording overrule a deterministic code). HTTP callers omit it — the body parse extracts
-     *  its own. */
+     *  its own. [said] is what the provider said that a person may read, which every cause carries: by default its
+     *  own message field in [text] ([saidIn]); a caller that rewrote [text] into splice's words hands the provider's
+     *  own instead, or null. */
     public fun classify(
         source: FailureSource,
         text: String?,
         status: Int? = null,
         code: String? = null,
+        said: ProviderWords? = saidIn(source, text),
     ): ClassifiedFailure {
         val raw = text.orEmpty()
         val extracted = if (source == FailureSource.HTTP) {
@@ -107,7 +112,7 @@ public object UpstreamFailureClassifier {
         // too: the status is still the upstream's, and all that failed was the body's parsing.
         return when (extracted) {
             is ExtractResult.Gateway -> extracted.failure
-            is ExtractResult.Fields -> classifyContent(extracted, status)
+            is ExtractResult.Fields -> classifyContent(extracted, status, said)
         }.copy(status = status)
     }
 
@@ -119,8 +124,8 @@ public object UpstreamFailureClassifier {
         val parsed = Cancellables.runCatchingCancellable {
             val j = lenient.parseToJsonElement(raw).jsonObject
             val err = j["error"]?.jsonObject
-            message = JsonScalars.str(err, "message")
-                ?: JsonScalars.str(j, "message")
+            message = JsonScalars.str(err, MESSAGE_FIELD)
+                ?: JsonScalars.str(j, MESSAGE_FIELD)
                 ?: raw
             // A STRING code is the vendor's verdict (cyber_policy, server_is_overloaded) and outranks the category
             // in `type`, as the in-stream readers take it: read type-first, a cyber_policy 400 under an
@@ -158,19 +163,42 @@ public object UpstreamFailureClassifier {
 
     /** What an error status names when nothing sharper did: a 5xx is the server's own failure (a 504 its gateway's
      *  timeout), a 403 the provider's refusal of this caller, and any other 4xx its verdict on the request. */
-    private fun statusFloor(status: Int): FailureCause.Provider = when {
-        status == HttpStatus.GATEWAY_TIMEOUT -> FailureCause.Provider.ServerError(ServerFault.GATEWAY_TIMEOUT)
-        status >= HttpStatus.INTERNAL_SERVER_ERROR -> FailureCause.Provider.ServerError(ServerFault.INTERNAL)
-        status == HttpStatus.FORBIDDEN -> FailureCause.Provider.Forbidden()
-        else -> FailureCause.Provider.Rejected(staleReasoning = false)
+    private fun statusFloor(status: Int, said: ProviderWords? = null): FailureCause.Provider = when {
+        status == HttpStatus.GATEWAY_TIMEOUT -> FailureCause.Provider.ServerError(ServerFault.GATEWAY_TIMEOUT, said)
+        status >= HttpStatus.INTERNAL_SERVER_ERROR -> FailureCause.Provider.ServerError(ServerFault.INTERNAL, said)
+        status == HttpStatus.FORBIDDEN -> FailureCause.Provider.Forbidden(said)
+        else -> FailureCause.Provider.Rejected(staleReasoning = false, said)
+    }
+
+    /** What the provider said in [text] that a person may read: the message field of an HTTP body (an error object's
+     *  message, an error that is itself a string, or a top-level message or detail), the body itself when it is no
+     *  JSON, and an in-band failure's own text, each through [ProviderWordsFilter]. Never the sentences this
+     *  classifier adds for the log (the quota suffix, llama-server's explanation, the gateway restatement). */
+    public fun saidIn(source: FailureSource, text: String?): ProviderWords? =
+        ProviderWordsFilter.of(if (source == FailureSource.HTTP) ownMessage(text.orEmpty()) else text)
+
+    /** The provider's own message field in an HTTP body [raw], or [raw] itself when it is not a JSON object, which
+     *  the filter keeps only when it is no JSON at all. */
+    private fun ownMessage(raw: String): String? {
+        // a body that is no JSON object is the provider's words as sent, which the filter judges whole
+        val body = try {
+            lenient.parseToJsonElement(raw) as? JsonObject
+        } catch (_: IllegalArgumentException) {
+            null
+        } ?: return raw
+        val error = body["error"]
+        return JsonScalars.str(error as? JsonObject, MESSAGE_FIELD)
+            ?: JsonScalars.strIfString(error).takeIf(String::isNotEmpty)
+            ?: JsonScalars.str(body, MESSAGE_FIELD)
+            ?: JsonScalars.str(body, "detail")
     }
 
     // the ordered cascade IS the ported contract — overflow, then rate, then auth, then status floors.
-    private fun classifyContent(fields: ExtractResult.Fields, status: Int?): ClassifiedFailure {
+    private fun classifyContent(fields: ExtractResult.Fields, status: Int?, said: ProviderWords?): ClassifiedFailure {
         val msg = fields.message
         val blob = "${fields.code} ${fields.message}"
         return when {
-            overflowRe.containsMatchIn(blob) -> overflowFailure(msg)
+            overflowRe.containsMatchIn(blob) -> overflowFailure(msg, said)
             // Provenance beats status: a content-policy refusal is a fact about the REQUEST, and the
             // vendor itself returns it as HTTP 400 when it arrives pre-stream. Mid-stream it comes
             // status-less, and DR-72's api_error verdict was still RETRYABLE on the client side —
@@ -179,11 +207,11 @@ public object UpstreamFailureClassifier {
             // that could never complete). invalid_request_error is terminal to the client, and the
             // vendor's own remedy text ("try rephrasing") rides along untouched.
             fields.code.lowercase() in FailureCodes.POLICY_REFUSAL_CODES ->
-                ClassifiedFailure(msg.take(MAX_MESSAGE), FailureCause.Provider.Refused(RefusedBy.POLICY))
+                ClassifiedFailure(msg.take(MAX_MESSAGE), FailureCause.Provider.Refused(RefusedBy.POLICY, said))
             status == HttpStatus.TOO_MANY_REQUESTS || rateRe.containsMatchIn(blob) ->
-                ClassifiedFailure(msg.take(MAX_MESSAGE), FailureCause.Provider.Limited(Lift.Unstated, window = null))
+                ClassifiedFailure(msg.take(MAX_MESSAGE), FailureCause.Provider.Limited(Lift.Unstated, null, said))
             status == HttpStatus.UNAUTHORIZED || authRe.containsMatchIn(blob) ->
-                ClassifiedFailure(msg.take(MAX_MESSAGE), FailureCause.Provider.AuthRejected(LoginOwner.SPLICE))
+                ClassifiedFailure(msg.take(MAX_MESSAGE), FailureCause.Provider.AuthRejected(LoginOwner.SPLICE, said))
             // Overload: a 502 from the gateway, or capacity by CODE SHAPE. The ChatGPT backend
             // reports "model at capacity" as HTTP 503 or an in-stream response.failed whose code is
             // server_is_overloaded / slow_down — codex-rs names exactly those two (PR #31058, which
@@ -196,9 +224,9 @@ public object UpstreamFailureClassifier {
             fields.isOverload(status) ->
                 ClassifiedFailure(
                     msg.take(MAX_MESSAGE),
-                    FailureCause.Provider.Overloaded(Lift.Unstated, loading = false),
+                    FailureCause.Provider.Overloaded(Lift.Unstated, loading = false, said),
                 )
-            else -> statusFallback(status, msg, fields.code)
+            else -> statusFallback(status, msg, fields.code, said)
         }
     }
 
@@ -230,11 +258,13 @@ public object UpstreamFailureClassifier {
         }
     }
 
-    public fun overflowFailure(msg: String): ClassifiedFailure {
+    /** An overflow in [msg], restated for the log in the words Claude Code compacts on; [said] is what the provider
+     *  said that a person may read, never that restatement. */
+    public fun overflowFailure(msg: String, said: ProviderWords? = null): ClassifiedFailure {
         val message = if (promptTooLongRe.containsMatchIn(msg)) msg else "prompt is too long: $msg"
         return ClassifiedFailure(
             message.take(MAX_MESSAGE),
-            FailureCause.Provider.TooLong(limitTokens = null, whileAnswering = false),
+            FailureCause.Provider.TooLong(limitTokens = null, whileAnswering = false, said),
         )
     }
 
@@ -257,14 +287,19 @@ public object UpstreamFailureClassifier {
         else -> isStatuslessTransient(message)
     }
 
-    private fun statusFallback(status: Int?, msg: String, code: String): ClassifiedFailure = when {
+    private fun statusFallback(
+        status: Int?,
+        msg: String,
+        code: String,
+        said: ProviderWords?,
+    ): ClassifiedFailure = when {
         status != null && status >= HttpStatus.BAD_REQUEST ->
-            ClassifiedFailure(msg.take(MAX_MESSAGE), statusFloor(status))
+            ClassifiedFailure(msg.take(MAX_MESSAGE), statusFloor(status, said))
         else -> ClassifiedFailure(
             msg.take(MAX_MESSAGE),
             // No status at all — the in-band case, and the one the row's brief did not name. A re-send can change
             // it only when the vendor's words name a transient condition.
-            FailureCause.Provider.Unrecognized(clientError = !statuslessTransience(code, msg)),
+            FailureCause.Provider.Unrecognized(clientError = !statuslessTransience(code, msg), said),
             // A code on neither list is unknown: one re-send, then the honest message. A deterministic code
             // never re-sends, and no code at all is judged by the text heuristics above.
             retryOnce = code.isNotBlank() &&
@@ -293,6 +328,8 @@ public object UpstreamFailureClassifier {
         data class Gateway(val failure: ClassifiedFailure) : ExtractResult()
     }
 
+    // The field an error envelope carries its sentence in, read by the classifier and by saidIn alike.
+    private const val MESSAGE_FIELD = "message"
     private const val MS_PER_S = 1000L
     private const val SECONDS_PER_MINUTE = 60L
     private const val SECONDS_PER_HOUR = 3600L

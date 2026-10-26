@@ -15,6 +15,8 @@ package splice.upstream.transport
 
 import splice.core.auth.Credentials
 import splice.core.auth.RefreshableAuthProvider
+import splice.core.failure.Lift
+import splice.core.failure.ProviderWords
 import splice.core.perf.PerfKeys
 import splice.core.perf.TimedWork
 import splice.core.perf.TurnPerfTiming
@@ -124,6 +126,16 @@ internal sealed class RetryOutcome<out T> {
     }
 }
 
-/** What the vendor module (VendorRefusals) said of one failed answer: a [refusal] it knows, which the retry loop gives
- *  up on at once, and whether it named the status a dead credential ([deadCredential]); a 401 needs no name. */
-internal data class VendorReading(val refusal: VendorRefusal? = null, val deadCredential: Boolean = false)
+/** What one failed answer says beyond its status. The vendor module (VendorRefusals) reads a [refusal] it knows, which
+ *  the retry loop gives up on at once, and whether it named the status a dead credential ([deadCredential]); a 401
+ *  needs no name. The answer itself says what a person may read of the provider's words ([said], through
+ *  ProviderWordsFilter and from the body as it came, before any rewrite of splice's), whether the provider asks for
+ *  [payment] (a 402, or a status its vendor names a quota exhaustion, which every retry layer still sees as the 429
+ *  V4-73 made it), and when the limit a 429 names lifts ([lift]). */
+internal data class VendorReading(
+    val refusal: VendorRefusal? = null,
+    val deadCredential: Boolean = false,
+    val said: ProviderWords? = null,
+    val payment: Boolean = false,
+    val lift: Lift = Lift.Unstated,
+)

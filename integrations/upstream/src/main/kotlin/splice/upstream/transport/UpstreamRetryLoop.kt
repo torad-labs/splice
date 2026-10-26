@@ -52,14 +52,6 @@ internal class RetryState(var cooldown: RateLimitCooldown, val t0: Long, val max
 
     // A retry plan counts only when dispatch survives the next attempt's budget, auth and hold checks.
     var pendingRetry: RetryKind? = null
-    var pendingNotice: RetryMessage? = null
-
-    /** Announce only after dispatch survived the budget, credential and hold checks. */
-    suspend fun announce(ctx: PostContext) {
-        val notice = pendingNotice ?: return
-        pendingNotice = null
-        ctx.onRetry.retry(notice.action, notice.reason)
-    }
 
     fun markResend(ctx: PostContext) {
         val retry = pendingRetry ?: return
@@ -125,12 +117,9 @@ internal class RetryState(var cooldown: RateLimitCooldown, val t0: Long, val max
         val amended = ctx.recovery.amendBodyOnFailure(outcome.status, outcome.text, bodyJson) ?: return null
         amendedOnce = true
         ctx.onRetry("amending request body after ${outcome.status} and retrying once")
-        pendingNotice = RetryMessage("amending request body after ${outcome.status} and retrying once", outcome.text)
         return LoopStep.Amend(amended)
     }
 }
-
-internal data class RetryMessage(val action: String, val reason: String)
 
 internal sealed class LoopStep<out T> {
     data class Done<T>(val result: UpstreamPost<T>) : LoopStep<T>()

@@ -5,8 +5,8 @@
 // formats a reset for a person builds this type, it does not spell a zone.
 //
 // Not for the wire: a file or a header reads the ISO instant or epoch its consumer expects, and this type
-// never touches those. A sentence a person reads is another matter, so the refusal a client prints for a
-// spent plan window (PlanLimit.refusal, V4-425) says its reset through this type too.
+// never touches those. A sentence a person reads is another matter, so the line a client prints for a
+// spent plan window (SpliceLines, from its cause, V4-425) says its reset through this type too.
 package splice.core.util
 
 import java.time.Instant

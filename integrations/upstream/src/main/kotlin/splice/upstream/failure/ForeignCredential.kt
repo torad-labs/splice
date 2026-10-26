@@ -27,10 +27,10 @@ public object ForeignCredential {
     }
 
     /** V4-444: the words the UPSTREAM itself said in [body], for a surface that labels them as its own (the console's
-     *  Requests list), or null when the sentence in [read] is not the upstream's. [read] must be the classifier's
-     *  reading BEFORE [upstreamsOwn] rewrites it: the classifier's own sentences (a gateway page, an overflow
-     *  restatement) and that rewrite are splice speaking, told apart by the body NOT containing them, a test no later
-     *  classifier arm can slip past and that needs no list of the arms. Bounded, with the credential [sent] masked. */
+     *  Requests list), or null when the sentence in [read] is not the upstream's. [read] is the classifier's reading:
+     *  its own sentences (a gateway page, an overflow restatement) are splice speaking, told apart by the body NOT
+     *  containing them, a test no later classifier arm can slip past and that needs no list of the arms. Bounded,
+     *  with the credential [sent] masked. */
     public fun upstreamsWords(body: String, read: ClassifiedFailure, sent: Credentials?): String? {
         val said = read.message.trim()
         return said.takeIf { it.isNotBlank() && spoke(body, it) }
@@ -62,19 +62,15 @@ public object ForeignCredential {
 
     /** [read] as the upstream's own when it is an authentication failure whose [body] names a
      *  credential [sent] cannot be: the provider failing its own check (ServerError FOREIGN_KEY), which a
-     *  re-send may clear because the upstream refused itself, in words that say so. Anything else is [read]
-     *  unchanged. */
+     *  re-send may clear because the upstream refused itself. Anything else is [read] unchanged.
+     *
+     *  Slice 2 of the failure-handling redesign: a person reads the line SpliceLines writes from the cause, which
+     *  names no key, so no sentence is written here. The message stays the provider's own, for the log. */
     public fun upstreamsOwn(read: ClassifiedFailure, body: String?, sent: Credentials?): ClassifiedFailure {
         if (read.cause !is FailureCause.Provider.AuthRejected || !named(body, sent)) return read
-        return read.copy(
-            // The star run is shortened, so the upstream's sentence fits the client's snippet whole.
-            message = "the upstream rejected a credential this account did not send: " +
-                read.message.replace(STAR_RUN, SHORT_STARS),
-            cause = FailureCause.Provider.ServerError(ServerFault.FOREIGN_KEY),
-        )
+        return read.copy(cause = FailureCause.Provider.ServerError(ServerFault.FOREIGN_KEY, read.cause.said))
     }
 
     private val MASKED = Regex("""([A-Za-z0-9_-]+)\*{4,}([A-Za-z0-9_-]+)""")
-    private val STAR_RUN = Regex("""\*{4,}""")
     private const val SHORT_STARS = "****"
 }

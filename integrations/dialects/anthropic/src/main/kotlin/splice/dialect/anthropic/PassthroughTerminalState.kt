@@ -12,6 +12,8 @@ import splice.core.failure.Lift
 import splice.core.failure.LoginOwner
 import splice.core.failure.Moment
 import splice.core.failure.Position
+import splice.core.failure.ProviderWords
+import splice.core.failure.ProviderWordsFilter
 import splice.core.failure.RefusedBy
 import splice.core.turn.TurnOutcome
 import splice.core.util.JsonScalars
@@ -74,12 +76,14 @@ internal class PassthroughTerminalState(
         // type describes, and ClientWire derives the wire type from it — exactly the ErrorType this
         // table used to name by hand (overloaded → OVERLOADED, rate_limit → RATE_LIMIT, authentication →
         // AUTHENTICATION, invalid_request → INVALID_REQUEST, and an unrecognised type → API_ERROR).
+        // Failure-handling slice 2: every arm carries the vendor's message field as a line may quote it.
+        val said = ProviderWordsFilter.of(message)
         failureCause = when (type) {
-            "overloaded_error" -> FailureCause.Provider.Overloaded(Lift.Unstated, loading = false)
-            "rate_limit_error" -> FailureCause.Provider.Limited(Lift.Unstated, window = null)
-            "authentication_error" -> FailureCause.Provider.AuthRejected(LoginOwner.SPLICE)
-            "invalid_request_error" -> FailureCause.Provider.Rejected(staleReasoning = false)
-            else -> FailureCause.Provider.Unrecognized(clientError = false)
+            "overloaded_error" -> FailureCause.Provider.Overloaded(Lift.Unstated, loading = false, said)
+            "rate_limit_error" -> FailureCause.Provider.Limited(Lift.Unstated, window = null, said)
+            "authentication_error" -> FailureCause.Provider.AuthRejected(LoginOwner.SPLICE, said)
+            "invalid_request_error" -> FailureCause.Provider.Rejected(staleReasoning = false, said)
+            else -> FailureCause.Provider.Unrecognized(clientError = false, said)
         }
         failureMessage = message.ifEmpty { "error" }
     }
@@ -149,26 +153,38 @@ private class PassthroughFailureRules {
      */
     // V4-117: a CAUSE per arm, not a type. ClientWire derives the wire types from the cause (refusal →
     // INVALID_REQUEST since b21329586, pause_turn → OVERLOADED, context-exceeded → INVALID_REQUEST), and the
-    // overflow arm keeps the classifier's own words for an overflow.
+    // overflow arm keeps the classifier's own words for an overflow. Failure-handling slice 2: the words beside each
+    // cause are the log's, naming what the backend sent and advising nothing; a person reads the line written from
+    // the cause, which quotes a refusal's category and explanation.
     fun stopReasonFailure(reason: String, details: JsonObject?): Pair<FailureCause.Provider, String>? = when (reason) {
-        "refusal" -> FailureCause.Provider.Refused(RefusedBy.MODEL) to refusalMessage(details)
-        "pause_turn" -> FailureCause.Provider.Overloaded(Lift.Unstated, loading = false) to
-            "backend paused the turn (stop_reason=pause_turn); retry"
+        "refusal" -> FailureCause.Provider.Refused(RefusedBy.MODEL, refusalSaid(details)) to refusalMessage(details)
+        "pause_turn" -> FailureCause.Provider.Overloaded(Lift.Unstated, loading = false) to "stop_reason=pause_turn"
         "model_context_window_exceeded" ->
             FailureCause.Provider.TooLong(limitTokens = null, whileAnswering = true) to
                 UpstreamFailureClassifier.overflowFailure(CONTEXT_EXCEEDED_MESSAGE).message
         else -> null
     }
 
-    private fun refusalMessage(details: JsonObject?): String = buildString {
-        append("generation was blocked by the upstream safety classifier (stop_reason=refusal).")
-        val category = JsonScalars.strIfString(details?.get("category")).takeIf { it.isNotBlank() }
-        val explanation = JsonScalars.strIfString(details?.get("explanation")).takeIf { it.isNotBlank() }
-        category?.let { append(" Refusal category: $it.") }
-        explanation?.let { append(" $it") }
-        if (category == null && explanation == null) {
-            append(" The upstream did not provide a refusal category or explanation.")
-        }
-        append(" Review the request before retrying.")
+    /** The log's account of a refusal: its stop reason, and the category and explanation the backend gave, whole. */
+    private fun refusalMessage(details: JsonObject?): String {
+        val category = detail(details, "category")?.let { " category=$it" }.orEmpty()
+        val explanation = detail(details, "explanation")?.let { ": $it" }.orEmpty()
+        return "stop_reason=refusal$category$explanation"
     }
+
+    /** What a line quotes of a refusal: the backend's explanation with the category it named, as the filter cuts
+     *  them, or either one alone where the backend gave only one. */
+    private fun refusalSaid(details: JsonObject?): ProviderWords? {
+        val category = detail(details, "category")
+        val explained = ProviderWordsFilter.of(detail(details, "explanation"))?.text?.removeSuffix(".")
+        val quote = when {
+            explained == null -> category
+            category == null -> explained
+            else -> "$explained ($category)"
+        }
+        return ProviderWordsFilter.of(quote)
+    }
+
+    private fun detail(details: JsonObject?, key: String): String? =
+        JsonScalars.strIfString(details?.get(key)).takeIf { it.isNotBlank() }
 }

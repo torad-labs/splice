@@ -37,10 +37,6 @@ internal class TransportSteps(
                 TransportFailureReason.of(e, ctx.url).take(ERR_SNIPPET),
         )
         if (!backoff(e, ctx, state.attempt, t0)) throw e
-        state.pendingNotice = RetryMessage(
-            "$label ${e::class.simpleName}, retrying attempt ${state.attempt + 2}/${state.maxRetries}",
-            TransportFailureReason.of(e, ctx.url),
-        )
         state.pendingRetry = if (phase == TransportFailurePhase.POST_SEND) RetryKind.POST_SEND else RetryKind.ORDINARY
         state.attempt += 1
         return LoopStep.Continue
@@ -62,10 +58,6 @@ internal class TransportSteps(
                 "${e::class.simpleName} ${TransportFailureReason.of(e, ctx.url).take(ERR_SNIPPET)}",
         )
         if (!backoff(e, ctx, state.attempt, t0)) return null
-        state.pendingNotice = RetryMessage(
-            "stream torn before first client frame, reissue ${state.streamReissues}/$MAX_STREAM_REISSUES",
-            "${e::class.simpleName}: ${TransportFailureReason.of(e, ctx.url)}",
-        )
         state.pendingRetry = RetryKind.ORDINARY
         return LoopStep.Continue // does NOT increment `attempt` — this budget is separate
     }

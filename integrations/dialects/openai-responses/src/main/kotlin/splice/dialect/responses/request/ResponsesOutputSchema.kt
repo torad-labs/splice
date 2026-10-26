@@ -41,42 +41,37 @@ internal object ResponsesOutputSchema {
         }
 
     /** Checked before request construction, through the provider's explicit admission refusal: each refusal is a
-     *  request feature this standard cannot carry, Declined before any provider sees it. */
+     *  request feature this standard cannot carry, Declined before any provider sees it. The line a person reads is
+     *  written from the cause, so no refusal here words one. */
     fun refusal(body: AnthropicRequest, raw: JsonObject): RequestRefusal? {
         val native = nativeFormat(raw)
-        return nativeRefusal(native)?.let { refused(RequestFeature.OUTPUT_FORMAT, it) }
-            ?: toolRefusal(body, native)?.let { refused(RequestFeature.STRUCTURED_OUTPUT, it) }
-            ?: choiceRefusal(body)?.let { refused(RequestFeature.TOOL_CHOICE, it) }
-    }
-
-    private fun refused(what: RequestFeature, message: String): RequestRefusal =
-        RequestRefusal(FailureCause.Splice.Declined(Decline.Untranslatable(what)), message)
-
-    private fun nativeRefusal(native: JsonElement?): String? = when {
-        native == null -> null
-        native !is JsonObject -> "Responses output format must be a JSON object"
-        JsonScalars.str(native, "type") != "json_schema" -> "Responses structured output requires a json_schema format"
-        native[SCHEMA_KEY] !is JsonObject -> "Responses json_schema format requires a schema object"
-        else -> null
-    }
-
-    private fun toolRefusal(body: AnthropicRequest, native: JsonElement?): String? {
-        val tool = body.tools.firstOrNull { it.name == STRUCTURED_OUTPUT_TOOL } ?: return null
-        return when {
-            tool.inputSchema == null -> "StructuredOutput requires an input_schema"
-            native is JsonObject && tool.inputSchema != native[SCHEMA_KEY] ->
-                "StructuredOutput input_schema and output format schema disagree"
-            else -> null
+        val refused = when {
+            !carriesFormat(native) -> RequestFeature.OUTPUT_FORMAT
+            !carriesTool(body, native) -> RequestFeature.STRUCTURED_OUTPUT
+            !carriesChoice(body) -> RequestFeature.TOOL_CHOICE
+            else -> return null
         }
+        return RequestRefusal(FailureCause.Splice.Declined(Decline.Untranslatable(refused)))
     }
 
-    private fun choiceRefusal(body: AnthropicRequest): String? {
-        val choice = body.toolChoice ?: return null
+    /** No output format, or a json_schema format object that holds a schema object. */
+    private fun carriesFormat(native: JsonElement?): Boolean = native == null ||
+        native is JsonObject && JsonScalars.str(native, "type") == "json_schema" && native[SCHEMA_KEY] is JsonObject
+
+    /** No StructuredOutput tool, or one with an input_schema that agrees with the output format's schema. */
+    private fun carriesTool(body: AnthropicRequest, native: JsonElement?): Boolean {
+        val tool = body.tools.firstOrNull { it.name == STRUCTURED_OUTPUT_TOOL } ?: return true
+        return tool.inputSchema != null && (native !is JsonObject || tool.inputSchema == native[SCHEMA_KEY])
+    }
+
+    /** No tool choice, or one this standard carries: a named tool the request declares, a required choice with a
+     *  declared tool, or a choice the standard knows. */
+    private fun carriesChoice(body: AnthropicRequest): Boolean {
+        val choice = body.toolChoice ?: return true
         return when (choice.type) {
-            "tool" ->
-                if (body.tools.any { it.name == choice.name }) null else "The selected tool must name a declared tool"
-            "any", "required" -> if (body.tools.isEmpty()) "Required tool choice needs a declared tool" else null
-            else -> if (choice.type in choices) null else "Unsupported Responses tool choice"
+            "tool" -> body.tools.any { it.name == choice.name }
+            "any", "required" -> body.tools.isNotEmpty()
+            else -> choice.type in choices
         }
     }
 

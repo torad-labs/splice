@@ -19,6 +19,9 @@ import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Assertions.fail
 import org.junit.jupiter.api.Test
 import splice.core.failure.ClientWire
+import splice.core.failure.FailureCause
+import splice.core.failure.ProviderWordsFilter
+import splice.core.failure.RefusedBy
 import splice.core.index.WireBlockIndex
 import splice.core.turn.ErrorType
 import splice.core.turn.TurnOutcome
@@ -579,15 +582,40 @@ class PassthroughStopReasonHonestyTest {
         ev("""{"type":"message_stop"}"""),
     )
 
+    // Failure-handling slice 2: the log names what the backend sent and adds no advice of splice's, and the line a
+    // person reads is written from the cause, which quotes nothing when the backend gave no category or explanation.
     @Test
     fun `stop_reason refusal is an honest provider-reported failure, never a clean success`() = runTest {
         val f = turnEndingWith("refusal") as TurnOutcome.Failure
         assertEquals(ErrorType.INVALID_REQUEST, ClientWire.ownType(f.cause))
         assertTrue(f.cause.providerReported, "the BACKEND sent stop_reason=refusal — G20 provenance is upstream")
-        assertTrue(f.evidence.message.contains("blocked by the upstream safety classifier"), f.evidence.message)
-        assertTrue(f.evidence.message.contains("stop_reason=refusal"), f.evidence.message)
-        assertTrue(f.evidence.message.contains("did not provide a refusal category or explanation"), f.evidence.message)
         assertTrue(f.cause.permanent)
+        assertEquals(FailureCause.Provider.Refused(RefusedBy.MODEL), f.cause)
+        assertTrue(f.evidence.message.endsWith(": stop_reason=refusal"), f.evidence.message)
+    }
+
+    // The refusal's category and explanation are the backend's own words about it: the line's quote holds both, cut
+    // to what a person may read, and the log keeps them whole.
+    @Test
+    fun `a refusal's category and explanation are what its line quotes, and the log keeps them whole`() = runTest {
+        val explanation = "This request asks for working exploit code against a named system."
+        val details = buildJsonObject {
+            put("category", "malware")
+            put("explanation", explanation)
+        }
+        val f = drive(
+            Rec(),
+            ev("""{"type":"content_block_start","index":0,"content_block":{"type":"text"}}"""),
+            ev("""{"type":"content_block_stop","index":0}"""),
+            ev("""{"type":"message_delta","delta":{"stop_reason":"refusal","stop_details":$details}}"""),
+            ev("""{"type":"message_stop"}"""),
+        ) as TurnOutcome.Failure
+
+        val quote = (f.cause as FailureCause.Provider.Refused).said?.text.orEmpty()
+        assertTrue(explanation.removeSuffix(".") in quote, "the explanation is quoted: $quote")
+        assertTrue("malware" in quote, "the category is quoted: $quote")
+        assertTrue(explanation in f.evidence.message, f.evidence.message)
+        assertTrue("malware" in f.evidence.message, f.evidence.message)
     }
 
     @Test
@@ -595,7 +623,38 @@ class PassthroughStopReasonHonestyTest {
         val f = turnEndingWith("pause_turn") as TurnOutcome.Failure
         assertEquals(ErrorType.OVERLOADED, ClientWire.ownType(f.cause))
         assertTrue(f.cause.providerReported)
-        assertTrue(f.evidence.message.contains("paused"), f.evidence.message)
+        assertEquals(null, (f.cause as FailureCause.Provider).said, "the backend said nothing a line could quote")
+        assertTrue(f.evidence.message.endsWith(": stop_reason=pause_turn"), f.evidence.message)
+    }
+
+    // Every error event's cause quotes the backend's own message field through ProviderWordsFilter, whatever its
+    // type, so no id, field path or retry advice reaches a line; the log keeps the message whole.
+    @Test
+    fun `an error event's cause quotes the provider's message through the filter, and the log keeps it`() = runTest {
+        val events = listOf(
+            "rate_limit_error" to "Number of requests has exceeded your per-minute rate limit.",
+            "overloaded_error" to "Overloaded",
+            "invalid_request_error" to "messages.3.content: tool_use ids were found without tool_result blocks.",
+            "api_error" to "Internal server error (request_id: req_011CUdJx8m2bWqvTnD3p).",
+            "authentication_error" to "invalid x-api-key",
+            "billing_error" to "Your credit balance is too low. Please retry once you have added credit.",
+        )
+        for ((type, message) in events) {
+            val error = buildJsonObject {
+                put("type", "error")
+                put(
+                    "error",
+                    buildJsonObject {
+                        put("type", type)
+                        put("message", message)
+                    },
+                )
+            }
+            val f = drive(Rec(), error) as TurnOutcome.Failure
+
+            assertEquals(ProviderWordsFilter.of(message), (f.cause as FailureCause.Provider).said, type)
+            assertTrue(message in f.evidence.message, "$type: ${f.evidence.message}")
+        }
     }
 
     // The item's own wording named only refusal + pause_turn. This third value is a HARD truncation

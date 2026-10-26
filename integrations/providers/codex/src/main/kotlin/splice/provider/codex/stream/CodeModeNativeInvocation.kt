@@ -1,11 +1,13 @@
 package splice.provider.codex.stream
 
-import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonNull
 import kotlinx.serialization.json.JsonObject
-import kotlinx.serialization.json.JsonPrimitive
-import splice.core.util.JsonScalars
+import splice.provider.codex.stream.arguments.CodeModeWaitArguments
+import splice.upstream.codemode.CodeModeText
 import splice.upstream.codemode.NativeCodeModeOptions
+import splice.upstream.codemode.json.CodeModeJson
+import splice.upstream.codemode.json.CodeModeJsonException
+import java.math.BigInteger
 
 /** Native observation controls are metadata, never a second executable program. */
 internal data class CodeModeNativeInvocation(
@@ -15,58 +17,109 @@ internal data class CodeModeNativeInvocation(
     val source: String? = null,
 )
 
+/** A model argument error is returned as that tool's output; it never loses or reruns source. */
+internal class CodeModeArgumentException(message: String, cause: IllegalArgumentException) :
+    IllegalArgumentException(message, cause)
+
+private fun interface CodeModeInvocationParse {
+    fun read(): CodeModeNativeInvocation
+}
+
 internal object CodeModeNativeInvocations {
-    private val json = Json
-    private val execFields = setOf("yield_time_ms", "max_output_tokens")
-    private val waitFields = setOf("cell_id", "yield_time_ms", "max_tokens", "terminate")
+    private val execFields =
+        setOf(EXEC_YIELD_FIELD, EXEC_TOKEN_FIELD)
 
-    fun exec(source: String): CodeModeNativeInvocation {
-        require(source.isNotBlank()) { "exec requires non-empty JavaScript source" }
+    fun exec(
+        source: String,
+        defaultYieldTimeMs: Long = NATIVE_DEFAULT_EXEC_YIELD_MS,
+    ): CodeModeNativeInvocation = parsed {
+        require(!CodeModeText.isBlank(source)) {
+            "exec expects raw JavaScript source text (non-empty). Provide JS only, optionally with first-line " +
+                "`// @exec: {\"yield_time_ms\": 10000, \"max_output_tokens\": 1000}`."
+        }
         val lines = source.split('\n', limit = 2)
-        val first = lines.first().trimStart()
-        if (!first.startsWith("// @exec:")) return CodeModeNativeInvocation(NativeCodeModeOptions(), source = source)
+        val first = CodeModeText.trimStart(lines.first())
+        if (!first.startsWith("// @exec:")) {
+            return@parsed CodeModeNativeInvocation(
+                NativeCodeModeOptions(yieldTimeMs = defaultYieldTimeMs),
+                source = source,
+            )
+        }
         val code = lines.getOrNull(1)
-        require(!code.isNullOrBlank()) { "exec pragma requires JavaScript on subsequent lines" }
-        val header = first.removePrefix("// @exec:").trim()
-        val options = requireNotNull(JsonScalars.objectOrNull(json, header)) { "Invalid @exec options" }
-        require(options.keys.all { it in execFields }) { "Unsupported @exec option" }
-        return CodeModeNativeInvocation(options(options, "max_output_tokens"), source = code)
+        require(code != null && !CodeModeText.isBlank(code)) {
+            "exec pragma must be followed by JavaScript source on subsequent lines"
+        }
+        val header = CodeModeText.trim(first.removePrefix("// @exec:"))
+        val options = requireNotNull(pragma(header) as? JsonObject) {
+            "exec pragma must be a JSON object with supported fields `yield_time_ms` and `max_output_tokens`"
+        }
+        val unknown = options.keys.firstOrNull { it !in execFields }
+        require(unknown == null) {
+            "exec pragma only supports `yield_time_ms` and `max_output_tokens`; got `$unknown`"
+        }
+        // The release Value map preserves field insertion order before either integer bound is checked.
+        val tokens = unsigned(options, EXEC_TOKEN_FIELD)
+        val yieldTime = unsigned(options, EXEC_YIELD_FIELD)
+        CodeModeNativeInvocation(
+            NativeCodeModeOptions(
+                integer(yieldTime, EXEC_YIELD_FIELD, defaultYieldTimeMs),
+                integer(tokens, EXEC_TOKEN_FIELD, NATIVE_DEFAULT_OUTPUT_TOKENS),
+            ),
+            source = code,
+        )
     }
 
-    fun wait(arguments: String): CodeModeNativeInvocation {
-        val value = requireNotNull(JsonScalars.objectOrNull(json, arguments)) { "Invalid wait arguments" }
-        require(value.keys.all { it in waitFields }) { "Unsupported wait argument" }
-        val id = JsonScalars.strIfString(value["cell_id"]).takeIf(String::isNotBlank)
-        requireNotNull(id) { "wait requires cell_id" }
-        return CodeModeNativeInvocation(options(value, "max_tokens"), id, terminate(value))
+    fun wait(arguments: String): CodeModeNativeInvocation = parsed { CodeModeWaitArguments.read(arguments) }
+
+    private fun unsigned(value: JsonObject, field: String): BigInteger? {
+        val supplied = value[field]?.takeUnless { it is JsonNull } ?: return null
+        val number = try {
+            CodeModeJson.unsigned(supplied, if (field == EXEC_YIELD_FIELD) "u64" else "usize")
+        } catch (error: CodeModeJsonException) {
+            throw IllegalArgumentException(
+                "exec pragma fields `yield_time_ms` and `max_output_tokens` must be non-negative safe integers: " +
+                    error.diagnostic,
+                error,
+            )
+        }
+        return number
     }
 
-    private fun terminate(value: JsonObject): Boolean {
-        val supplied = value["terminate"] ?: return false
-        val boolean = (supplied as? JsonPrimitive)?.takeUnless { it.isString }
-            ?.let(JsonScalars::str)?.toBooleanStrictOrNull()
-        return requireNotNull(boolean) { "wait terminate must be boolean" }
+    private fun integer(number: BigInteger?, field: String, default: Long): Long {
+        if (number == null) return default
+        require(number <= BigInteger.valueOf(MAX_NATIVE_SAFE_INTEGER)) {
+            "exec pragma field `$field` must be a non-negative safe integer"
+        }
+        return number.toLong()
     }
 
-    private fun options(value: JsonObject, tokenField: String): NativeCodeModeOptions = NativeCodeModeOptions(
-        integer(value, "yield_time_ms", NATIVE_DEFAULT_YIELD_MS),
-        integer(value, tokenField, NATIVE_DEFAULT_OUTPUT_TOKENS),
-    )
+    private fun pragma(header: String): kotlinx.serialization.json.JsonElement? {
+        if (header.isEmpty()) return null
+        return try {
+            CodeModeJson.parse(header)
+        } catch (error: CodeModeJsonException) {
+            throw IllegalArgumentException(
+                "exec pragma must be valid JSON with supported fields `yield_time_ms` and `max_output_tokens`: " +
+                    error.diagnostic,
+                error,
+            )
+        }
+    }
 
-    private fun integer(value: JsonObject, field: String, default: Long): Long {
-        val supplied = value[field]?.takeUnless { it is JsonNull } ?: return default
-        val number = (supplied as? JsonPrimitive)?.takeUnless { it.isString }?.let { JsonScalars.long(value, field) }
-        val valid = number != null && number in 0..MAX_NATIVE_SAFE_INTEGER
-        require(valid) { "Native option $field must be a non-negative safe integer" }
-        return checkNotNull(number)
+    private fun parsed(block: CodeModeInvocationParse): CodeModeNativeInvocation = try {
+        block.read()
+    } catch (error: IllegalArgumentException) {
+        throw CodeModeArgumentException(error.message.orEmpty(), error)
     }
 }
 
-// Pinned native exec and wait observation default is ten seconds.
-private const val NATIVE_DEFAULT_YIELD_MS = 10_000L
+private const val NATIVE_DEFAULT_EXEC_YIELD_MS = splice.upstream.codemode.CodeModeManual.DEFAULT_EXEC_YIELD_TIME_MS
 
 // Pinned native formatter defaults to ten thousand output tokens.
 private const val NATIVE_DEFAULT_OUTPUT_TOKENS = 10_000L
 
 // JavaScript integer values must remain exactly representable across JSON and native parsing.
 private const val MAX_NATIVE_SAFE_INTEGER = 9_007_199_254_740_991L
+
+private const val EXEC_YIELD_FIELD = "yield_time_ms"
+private const val EXEC_TOKEN_FIELD = "max_output_tokens"

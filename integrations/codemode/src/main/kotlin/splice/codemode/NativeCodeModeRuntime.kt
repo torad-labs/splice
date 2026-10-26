@@ -7,7 +7,6 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
-import kotlinx.coroutines.withTimeout
 import splice.codemode.host.PoolLimits
 import splice.codemode.nativehost.NativeCell
 import splice.codemode.nativehost.NativeCellAdmission
@@ -16,10 +15,17 @@ import splice.codemode.nativehost.NativeConnection
 import splice.codemode.nativehost.NativeConnectionClosed
 import splice.codemode.nativehost.NativeFrames
 import splice.codemode.nativehost.NativeHostArtifact
+import splice.codemode.nativehost.NativeHostLaunch
 import splice.codemode.nativehost.NativePendingStart
 import splice.codemode.nativehost.NativePreparedSession
 import splice.codemode.nativehost.NativeRequests
-import splice.codemode.nativehost.NativeSessionBinding
+import splice.codemode.nativehost.sessions.NativeLogicalCell
+import splice.codemode.nativehost.sessions.NativeLogicalControl
+import splice.codemode.nativehost.sessions.NativeLogicalSession
+import splice.codemode.nativehost.sessions.NativeLogicalSessions
+import splice.codemode.nativehost.sessions.NativeSessionConnection
+import splice.codemode.nativehost.trace.NativeTraceContext
+import splice.codemode.nativehost.trace.NativeTracing
 import splice.core.util.Cancellables
 import splice.core.util.JsonScalars
 import splice.upstream.LifecycleScope
@@ -33,8 +39,8 @@ import splice.upstream.codemode.NativeCodeModeOptions
 import splice.upstream.codemode.ProcessDispatchers
 import splice.upstream.failure.CodeModeCapacityException
 import splice.upstream.failure.CodeModeStartException
+import splice.upstream.failure.CodeModeToolException
 import java.io.IOException
-import java.util.UUID
 import java.util.concurrent.atomic.AtomicBoolean
 
 /** Executes full modules in the bundled Codex host while client callbacks retain their permission boundary. */
@@ -44,23 +50,36 @@ public class NativeCodeModeRuntime(
     private val ioDispatcher: CoroutineDispatcher = ProcessDispatchers().io(),
     private val spawn: WorkerSpawn = WorkerSpawn(ProcessBuilder::start),
     private val artifact: NativeHostArtifact = NativeHostArtifact(),
+    private val maxYieldTimeMs: Long? = null,
 ) : NativeCodeModeLifecycle {
     private val closed = AtomicBoolean()
     private val ownership = Any()
     private val scope = LifecycleScope(ioDispatcher)
     private val opening = Mutex()
-    private val sessions = java.util.concurrent.ConcurrentHashMap<String, NativeSessionBinding>()
     private val admission = NativeCellAdmission(limits, cellHeapMb)
+    private val sessions =
+        NativeLogicalSessions(NativeSessionConnection(::activeConnection), admission.heapBytes, maxYieldTimeMs)
 
     @Volatile private var connection: NativeConnection? = null
 
-    override suspend fun openNativeSession(sessionKey: String) {
-        require(sessionKey.isNotBlank()) { "Native code-mode session key is required" }
-        beforeDispatch(sessionKey).lease.close()
+    init {
+        require(maxYieldTimeMs == null || maxYieldTimeMs >= 0) { "Native session yield limit must be nonnegative" }
     }
 
-    override suspend fun start(source: String, tools: Set<String>, descriptions: Map<String, String>): CodeModeCell =
-        startSession("unaddressed-native-runtime", source, tools, descriptions)
+    override suspend fun openNativeSession(sessionKey: String): Unit = NativeTraceContext.preserve {
+        require(sessionKey.isNotBlank()) { "Native code-mode session key is required" }
+        logicalSession(sessionKey).initialize()
+    }
+
+    override suspend fun controlNativeSession(
+        sessionKey: String,
+        cellId: String,
+    ): NativeCodeModeCell = NativeTraceContext.preserve {
+        require(sessionKey.isNotBlank()) { "Native code-mode session key is required" }
+        val owner = logicalSession(sessionKey)
+        owner.initialize()
+        NativeLogicalControl(owner, cellId)
+    }
 
     override suspend fun startSession(
         sessionKey: String,
@@ -85,11 +104,22 @@ public class NativeCodeModeRuntime(
         tools: Set<String>,
         descriptions: Map<String, String>,
         options: NativeCodeModeOptions,
-    ): NativeCodeModeCell {
+    ): NativeCodeModeCell = startNativeSession(
+        sessionKey,
+        source,
+        CodeModeManual.nestedNames(tools).map { name ->
+            CodeModeManual.NestedTool(name, descriptions[name].orEmpty(), inputSchema = null)
+        },
+        options,
+    )
+
+    override suspend fun startNativeSession(
+        sessionKey: String,
+        source: String,
+        definitions: List<CodeModeManual.NestedTool>,
+        options: NativeCodeModeOptions,
+    ): NativeCodeModeCell = NativeTraceContext.preserve {
         require(sessionKey.isNotBlank()) { "Native code-mode session key is required" }
-        require(
-            options.maxOutputTokens <= Int.MAX_VALUE,
-        ) { "Native execute output budget exceeds protocol V1 i32 range" }
         val prepared = beforeDispatch(sessionKey)
         val lease = prepared.lease
         var transferred = false
@@ -106,13 +136,14 @@ public class NativeCodeModeRuntime(
                 NativeRequests.execute(
                     sessionId,
                     source,
-                    CodeModeManual.nestedNames(tools).associateWith { descriptions[it].orEmpty() },
+                    definitions,
                     options,
                 ),
             )
             val accepted = NativeFrames.value(operation.response.await())
             val cellId = JsonScalars.str(accepted, "cellId") ?: throw IOException("Native host did not accept a cell")
-            return NativeCell(cellId, sessionId, host, scope, requireNotNull(operation.initial), tools, lease).also {
+            val raw = NativeCell(cellId, sessionId, host, scope, operation, definitions, lease)
+            NativeLogicalCell(raw, prepared.owner, prepared.binding, cellId).also {
                 transferred = true
             }
         } finally {
@@ -128,9 +159,8 @@ public class NativeCodeModeRuntime(
             scope.launch {
                 try {
                     Cancellables.runCatchingBestEffort {
-                        val accepted = NativeFrames.value(started.operation.response.await())
-                        val id = requireNotNull(JsonScalars.str(accepted, "cellId"))
-                        started.host.operation(NativeRequests.terminate(started.sessionId, id)).response.await()
+                        NativeFrames.value(started.operation.response.await())
+                        started.host.send(NativeRequests.control("operation/abandon", started.operation.id))
                     }
                 } finally {
                     lease.close()
@@ -140,47 +170,31 @@ public class NativeCodeModeRuntime(
     }
 
     private suspend fun beforeDispatch(sessionKey: String): NativePreparedSession = try {
-        withTimeout(DEFAULT_WORKER_START_TIMEOUT_MS) {
-            opening.withLock {
-                check(!closed.get()) { "Native code-mode runtime is closed" }
-                val host = activeConnection()
-                val lease = admission.reserve()
-                var prepared = false
-                try {
-                    val sessionId = sessions[sessionKey]?.takeIf { it.host === host }?.id
-                        ?: UUID.randomUUID().toString().also { id ->
-                            NativeFrames.value(
-                                host.operation(NativeRequests.open(id, admission.heapBytes)).response.await(),
-                            )
-                            sessions[sessionKey] = NativeSessionBinding(host, id)
-                        }
-                    NativePreparedSession(host, sessionId, lease).also { prepared = true }
-                } finally {
-                    if (!prepared) lease.close()
-                }
-            }
-        }
+        val owner = logicalSession(sessionKey)
+        val binding = owner.request()
+        NativePreparedSession(owner, binding, admission.reserve())
+    } catch (error: CodeModeToolException) {
+        throw error
+    } catch (error: CodeModeCapacityException) {
+        throw error
     } catch (error: IOException) {
-        throw beforeDispatchFailure(error)
+        throw CodeModeStartException(error)
     }
 
-    private fun beforeDispatchFailure(error: IOException): IOException = when (error) {
-        is CodeModeCapacityException -> error
-        else -> CodeModeStartException(error)
-    }
+    /** The same logical owner is retained by foreground cells, controls and session expiry. */
+    internal fun logicalSession(key: String): NativeLogicalSession = sessions.session(key)
 
-    private suspend fun activeConnection(): NativeConnection {
+    private suspend fun activeConnection(): NativeConnection = opening.withLock {
         val current = connection
-        if (current != null && current.isAvailable()) return current
+        if (current != null && current.isAvailable()) return@withLock current
         current?.close()
-        return open()
+        open()
     }
 
     private fun retire(dead: NativeConnection) {
         synchronized(ownership) {
             if (connection === dead) {
                 connection = null
-                sessions.clear()
             }
         }
     }
@@ -189,10 +203,11 @@ public class NativeCodeModeRuntime(
         val host = synchronized(ownership) {
             check(!closed.get()) { "Native code-mode runtime is closed" }
             NativeConnection(
-                spawn(ProcessBuilder(artifact.resolve().toString(), "--listen", "stdio")),
+                spawn(NativeHostLaunch.command(artifact.resolve())),
                 scope,
                 ioDispatcher,
                 NativeConnectionClosed(::retire),
+                NativeTracing(),
             ).also { connection = it }
         }
         try {
@@ -225,7 +240,7 @@ public class NativeCodeModeRuntime(
                 host.afterExit(Runnable(artifact::close))
                 host.close()
             }
-            sessions.clear()
+            sessions.close()
             admission.closeAll()
             scope.cancel()
         }

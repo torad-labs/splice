@@ -22,9 +22,20 @@ internal object NativeOutput {
                 requireNotNull(JsonScalars.str(payload, "cell_id")) { "Native yield has no cell id" },
                 text,
                 content,
+                NativeTiming.decode(payload, completed = false),
             )
-            "Result" -> CodeModeStep.Completed(text, JsonScalars.str(payload, "error_text"), content)
-            "Terminated" -> CodeModeStep.Completed(text, content = content, terminated = true)
+            "Result" -> CodeModeStep.Completed(
+                text,
+                JsonScalars.str(payload, "error_text"),
+                content,
+                timing = NativeTiming.decode(payload, completed = true),
+            )
+            "Terminated" -> CodeModeStep.Completed(
+                text,
+                content = content,
+                terminated = true,
+                timing = NativeTiming.decode(payload, completed = false),
+            )
             else -> throw IOException("Unknown native observation variant: $kind")
         }
     }

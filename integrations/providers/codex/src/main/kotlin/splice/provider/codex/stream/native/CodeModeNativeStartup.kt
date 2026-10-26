@@ -5,12 +5,15 @@ import splice.provider.codex.CodeModePhase
 import splice.provider.codex.CodeModeRecord
 import splice.provider.codex.CodeModeRunContext
 import splice.provider.codex.CodexCodeModeRegistry
+import splice.provider.codex.catalog.CodeModeCatalogMessages
+import splice.provider.codex.stream.CodeModeArgumentException
 import splice.provider.codex.stream.CodeModeHeldNativeCell
 import splice.provider.codex.stream.CodeModeLiveRound
 import splice.provider.codex.stream.CodeModeNativeInvocation
 import splice.provider.codex.stream.CodeModeNativeInvocations
 import splice.provider.codex.stream.CodeModeNativeObservation
 import splice.upstream.codemode.CodeModeCell
+import splice.upstream.codemode.CodeModeManual
 import splice.upstream.codemode.CodeModeSourcePart
 import splice.upstream.codemode.NativeCodeModeLifecycle
 import java.io.IOException
@@ -35,20 +38,19 @@ internal class CodeModeNativeStartup(private val registry: CodexCodeModeRegistry
             }
         }
         val waiting = splice.core.util.JsonScalars.str(record.origin.outer, "name") == CODE_MODE_WAIT_TOOL_NAME
-        val invocation = if (waiting) CodeModeNativeInvocations.wait(source) else CodeModeNativeInvocations.exec(source)
-        val held = if (waiting) {
-            retained(record, invocation, owner)
+        validatePayload(record, waiting)
+        val invocation = if (waiting) {
+            CodeModeNativeInvocations.wait(source)
         } else {
-            require(invocation.options.maxOutputTokens <= Int.MAX_VALUE.toLong()) {
-                "Native exec output token budget exceeds the pinned host protocol range"
-            }
-            val cell = host.startNativeSession(
-                owner,
-                checkNotNull(invocation.source),
-                context.turn.tools,
-                context.turn.descriptions,
-                invocation.options,
+            CodeModeNativeInvocations.exec(
+                source,
+                context.turn.toolPolicy.defaultExecYieldTimeMs,
             )
+        }
+        val held = if (waiting) {
+            retained(host, record, invocation, owner).also { (it.cell as? CodeModeSearchCell)?.update(context.turn) }
+        } else {
+            val cell = execute(host, owner, invocation, context, record.origin.outerCallId)
             CodeModeHeldNativeCell(cell, record.origin.outerCallId)
         }
         registry.nativeCells.trackSession(record.key, owner, context.turn.sessionId)
@@ -59,10 +61,44 @@ internal class CodeModeNativeStartup(private val registry: CodexCodeModeRegistry
             invocation,
             registry.nativeCells,
             held.notificationCallId,
+            context.turn.toolPolicy,
         )
     }
 
-    private fun retained(
+    private suspend fun execute(
+        host: NativeCodeModeLifecycle,
+        owner: String,
+        invocation: CodeModeNativeInvocation,
+        context: CodeModeRunContext,
+        toolCallId: String,
+    ): splice.upstream.codemode.NativeCodeModeCell {
+        val options = invocation.options.copy(toolCallId = toolCallId)
+        return if (context.turn.toolDefinitions.isEmpty()) {
+            host.startNativeSession(
+                owner,
+                checkNotNull(invocation.source),
+                context.turn.tools,
+                context.turn.descriptions,
+                options,
+            )
+        } else {
+            val definitions = CodeModeCatalogMessages(
+                context.turn.toolPolicy.modelMessages,
+            ).namespacePrefixes.codeMode(
+                CodeModeManual.prepare(
+                    context.turn.toolDefinitions,
+                    context.turn.toolPolicy.toolDescriptionFirst,
+                ),
+            )
+            CodeModeSearchCell(
+                host.startNativeSession(owner, checkNotNull(invocation.source), definitions, options),
+                context.turn,
+            )
+        }
+    }
+
+    private suspend fun retained(
+        host: NativeCodeModeLifecycle,
         record: CodeModeRecord,
         invocation: CodeModeNativeInvocation,
         owner: String,
@@ -72,6 +108,23 @@ internal class CodeModeNativeStartup(private val registry: CodexCodeModeRegistry
             it.nativeCellId == id && it.nativeCompleted && it.phase == CodeModePhase.COMPLETED
         }
         terminal?.let { registry.nativeCells.completed(owner, id, it.origin.outerCallId) }
-        return registry.nativeCells.take(owner, id)
+        registry.nativeCells.takeRetained(owner, id)?.let { return it }
+        val control = host.controlNativeSession(owner, id) ?: return registry.nativeCells.take(owner, id)
+        return CodeModeHeldNativeCell(control, terminal?.origin?.outerCallId ?: record.origin.outerCallId)
+    }
+
+    private fun validatePayload(record: CodeModeRecord, waiting: Boolean) {
+        val outer = record.origin.outer
+        val name = splice.core.util.JsonScalars.str(outer, "name")
+        if (name == splice.provider.codex.LEGACY_CODE_MODE_TOOL_NAME) return
+        val type = splice.core.util.JsonScalars.str(outer, "type")
+        val namespace = splice.core.util.JsonScalars.str(outer, "namespace")
+        val expected = if (waiting) "function_call" else "custom_tool_call"
+        val validNamespace = namespace == null || namespace in setOf("", "functions")
+        val validType = type == null || type == expected
+        if (!validType || !validNamespace) {
+            val message = if (waiting) "wait expects JSON arguments" else "exec expects raw JavaScript source text"
+            throw CodeModeArgumentException(message, IllegalArgumentException(message))
+        }
     }
 }

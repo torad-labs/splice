@@ -9,6 +9,9 @@ import java.util.Locale
 import java.util.Properties
 import java.util.zip.GZIPInputStream
 
+internal const val NATIVE_HOST_RELEASE: String = "0.164.0"
+internal const val NATIVE_HOST_SOURCE_REVISION: String = "6aaac694803004a63c6f393d153c96d22521a6b9"
+
 /** A verified bundled host. It never searches PATH, a Codex installation, or a user-controlled cache. */
 public class NativeHostArtifact : AutoCloseable {
     private var directory: Path? = null
@@ -23,6 +26,7 @@ public class NativeHostArtifact : AutoCloseable {
         val manifest = javaClass.getResourceAsStream(root + "host.properties")
             ?: throw IOException("This splice artifact has no pinned native code-mode host for $platform")
         manifest.use(properties::load)
+        verifyManifest(properties)
         val expected = properties.getProperty("sha256")
             ?: throw IOException("Bundled native host has no SHA-256 identity")
         val temporary = createDirectory()
@@ -32,6 +36,17 @@ public class NativeHostArtifact : AutoCloseable {
         unpack(root, target, expected)
         executable = target
         return target
+    }
+
+    private fun verifyManifest(properties: Properties) {
+        val expected = mapOf(
+            "protocolVersion" to "1",
+            "release" to NATIVE_HOST_RELEASE,
+            "sourceRevision" to NATIVE_HOST_SOURCE_REVISION,
+        )
+        if (expected.any { (name, value) -> properties.getProperty(name) != value }) {
+            throw IOException("Bundled native host does not match the pinned Codex release and source")
+        }
     }
 
     private fun unpack(root: String, target: Path, expected: String) {

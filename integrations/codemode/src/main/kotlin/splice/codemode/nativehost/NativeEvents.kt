@@ -4,7 +4,7 @@ import kotlinx.coroutines.channels.Channel
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.jsonObject
 import splice.core.util.JsonScalars
-import splice.upstream.failure.CodeModeWorkerLostException
+import java.io.IOException
 import java.util.concurrent.ConcurrentHashMap
 
 /** Buffers delegates even if the host issues one before execution acceptance reaches its caller. */
@@ -15,7 +15,7 @@ internal class NativeEvents {
     private val expected = ConcurrentHashMap<Long, NativeOwnership>()
     private val earlyCompletions = ConcurrentHashMap.newKeySet<Pair<String, String>>()
 
-    @Volatile private var failure: CodeModeWorkerLostException? = null
+    @Volatile private var failure: IOException? = null
 
     fun cell(sessionId: String, id: String): Channel<JsonObject> = cells.computeIfAbsent(sessionId to id) {
         Channel<JsonObject>(Channel.UNLIMITED).also { channel -> failure?.let(channel::close) }
@@ -83,7 +83,7 @@ internal class NativeEvents {
         delegates.entries.removeIf { it.value == key }
     }
 
-    fun fail(error: CodeModeWorkerLostException) {
+    fun fail(error: IOException) {
         failure = error
         cells.values.forEach { it.close(error) }
         leases.values.forEach(NativeCellLease::close)
@@ -91,6 +91,18 @@ internal class NativeEvents {
         expected.values.forEach { it.lease.close() }
         expected.clear()
         earlyCompletions.clear()
+    }
+
+    fun failSession(sessionId: String, error: IOException) {
+        cells.forEach { (key, channel) -> if (key.first == sessionId) channel.close(error) }
+        leases.entries.forEach { (key, lease) ->
+            if (key.first == sessionId && leases.remove(key, lease)) lease.close()
+        }
+        expected.entries.forEach { (id, ownership) ->
+            if (ownership.sessionId == sessionId && expected.remove(id, ownership)) ownership.lease.close()
+        }
+        earlyCompletions.removeIf { it.first == sessionId }
+        delegates.entries.removeIf { it.value.first == sessionId }
     }
 }
 

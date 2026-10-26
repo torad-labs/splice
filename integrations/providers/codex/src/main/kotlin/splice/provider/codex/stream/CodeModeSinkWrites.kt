@@ -1,6 +1,8 @@
 // NEW: detached payload is bounded by protocol bytes, never an arbitrary delta-count queue.
 package splice.provider.codex.stream
 
+import kotlinx.coroutines.currentCoroutineContext
+import splice.upstream.codemode.CodeModeInvocationContextKey
 import splice.upstream.codemode.CodeModeLimits
 import splice.upstream.sse.WireSink
 
@@ -26,7 +28,16 @@ internal class CodeModeSinkWrites {
         val available = CodeModeLimits.MAX_FRAME_BYTES - pendingBytes - frameHeaderBytes
         require(bytes <= available) { "detached stream exceeds byte budget" }
         pendingBytes += bytes + frameHeaderBytes
-        pending.addLast(action)
+        val context = currentCoroutineContext()[CodeModeInvocationContextKey]
+        pending.addLast(
+            if (context == null) {
+                action
+            } else {
+                BufferedSinkWrite { target ->
+                    if (context.isActive) context.within { action.emit(target) }
+                }
+            },
+        )
     }
 
     /** Drops the writes still waiting for a client step: they belong to a draft no client will see. */

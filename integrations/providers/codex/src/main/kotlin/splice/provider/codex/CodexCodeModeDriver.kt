@@ -32,6 +32,7 @@ import splice.provider.codex.stream.batch.CodeModeRuntimeDispatch
 import splice.provider.codex.stream.drive.CodeModeDriveProtocol
 import splice.provider.codex.stream.drive.CodeModeDriveState
 import splice.upstream.failure.CodeModeCapacityException
+import splice.upstream.failure.CodeModeToolException
 import java.io.IOException
 
 internal class CodexCodeModeDriver(
@@ -269,7 +270,7 @@ internal class CodexCodeModeDriver(
             dispatch.start(record, context, stream)
         }
     } catch (error: CancellationException) {
-        registry.lose(record, "code-mode runtime start cancelled; source was not rerun", error)
+        cancelledStart(record, error)
         throw error
     } catch (error: CodeModePersistenceException) {
         throw error
@@ -277,6 +278,9 @@ internal class CodexCodeModeDriver(
         record to starter.capacity(record, error, machine)
     } catch (error: IOException) {
         record to failedStart(record, stream, error)
+    } catch (error: splice.provider.codex.stream.CodeModeArgumentException) {
+        registry.complete(record, error.message.orEmpty())
+        record to splice.provider.codex.stream.CodeModeLocalOutcome.success()
     } catch (_: IllegalArgumentException) {
         registry.lose(record, "code-mode runtime rejected its input; source was not rerun")
         record to protocol.failure(record.error.orEmpty())
@@ -284,12 +288,25 @@ internal class CodexCodeModeDriver(
         record to starter.failed(record, null)
     }
 
+    private fun cancelledStart(record: CodeModeRecord, error: CancellationException) {
+        if (record.phase != CodeModePhase.ACTIVE) return
+        // A native foreground observation may be preempted after its cell was safely adopted.
+        if (record.nativeRuntime && registry.cell(record) != null) return
+        registry.lose(record, "code-mode runtime start cancelled; source was not rerun", error)
+    }
+
     private suspend fun failedStart(
         record: CodeModeRecord,
         stream: CodeModeLiveRound?,
         error: IOException,
-    ): TurnOutcome =
-        if (stream?.sourceInterrupted == true) stream.outcome() else starter.failed(record, error)
+    ): TurnOutcome = when {
+        error is CodeModeToolException -> {
+            registry.complete(record, error.diagnostic)
+            splice.provider.codex.stream.CodeModeLocalOutcome.success()
+        }
+        stream?.sourceInterrupted == true -> stream.outcome()
+        else -> starter.failed(record, error)
+    }
 }
 
 internal const val CODE_MODE_RECORD_LOG_CHARS: Int = 8

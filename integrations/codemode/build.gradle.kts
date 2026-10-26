@@ -27,6 +27,12 @@ dependencies {
     api(project(":integrations-upstream"))
     implementation(libs.kotlinx.serialization.json)
     implementation(libs.kotlinx.coroutines.core)
+    // The official host serves one HTTP/2 connection over stdio. Protobuf presence preserves
+    // omitted inputs separately from explicit null; the older framed transport cannot.
+    implementation(libs.grpc.netty.shaded)
+    implementation(libs.protobuf.java)
+    implementation(libs.opentelemetry.api)
+    testImplementation(libs.opentelemetry.sdk.trace)
     implementation(libs.graaljs.polyglot)
     // The published aggregator declares platform POMs as runtime artifacts. Shadow consumes ZIPs,
     // so use its native JAR dependencies directly.

@@ -3,6 +3,7 @@ package splice.upstream.codemode
 
 import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonObject
+import kotlin.coroutines.CoroutineContext
 
 /** Splice-owned script execution. A yielded request is executed by the client, never by this runtime. */
 public interface CodeModeRuntime : AutoCloseable {
@@ -52,9 +53,39 @@ public interface CodeModeCell : AutoCloseable {
 
     /** Observe the same running cell for at most [yieldTimeMs], without restarting its source. */
     public suspend fun observe(yieldTimeMs: Long): CodeModeStep = advance()
+
+    /** Run callback delivery or its continuation under the invocation's live context, when one exists. */
+    public suspend fun <T> withInvocationContext(id: String, action: CodeModeInvocationAction<T>): T = action.run()
 }
 
-public data class CodeModeCall(val id: String, val name: String, val arguments: JsonObject)
+public fun interface CodeModeInvocationAction<T> {
+    public suspend fun run(): T
+}
+
+/** Only invocation context may accompany a buffered callback write; caller jobs and dispatchers do not. */
+public interface CodeModeInvocationContext : CoroutineContext.Element {
+    public val isActive: Boolean
+    public suspend fun <T> within(action: CodeModeInvocationAction<T>): T
+}
+
+public object CodeModeInvocationContextKey : CoroutineContext.Key<CodeModeInvocationContext>
+
+public data class CodeModeCall(
+    val id: String,
+    val name: String,
+    /** Compatibility view for clients that accept object-valued function inputs. */
+    val arguments: JsonObject,
+    /** Complete native input; primitive, array, null and freeform values retain their wire shape. */
+    val rawInput: JsonElement? = null,
+    val namespace: String? = null,
+    val kind: CodeModeManual.Kind = CodeModeManual.Kind.FUNCTION,
+    /** Original member name before namespace composition; never reconstruct it by splitting [name]. */
+    val originalName: String = name,
+)
+
+public enum class CodeModeResultDisposition { REJECT, TOOL_OUTPUT }
+
+public enum class CodeModeResultOrigin { GENERIC, MCP }
 
 public data class CodeModeResult(
     val id: String,
@@ -62,6 +93,8 @@ public data class CodeModeResult(
     val isError: Boolean = false,
     /** An explicitly typed native delegate value; absent values preserve [output] as client text. */
     val payload: JsonElement? = null,
+    val disposition: CodeModeResultDisposition = CodeModeResultDisposition.REJECT,
+    val origin: CodeModeResultOrigin = CodeModeResultOrigin.GENERIC,
 )
 
 public sealed class CodeModeStep {
@@ -84,6 +117,7 @@ public sealed class CodeModeStep {
         val cellId: String,
         val output: String,
         val content: List<JsonObject> = emptyList(),
+        val timing: NativeCodeModeTiming? = null,
     ) : CodeModeStep()
 
     public data class Completed(
@@ -91,5 +125,6 @@ public sealed class CodeModeStep {
         val error: String? = null,
         val content: List<JsonObject> = emptyList(),
         val terminated: Boolean = false,
+        val timing: NativeCodeModeTiming? = null,
     ) : CodeModeStep()
 }

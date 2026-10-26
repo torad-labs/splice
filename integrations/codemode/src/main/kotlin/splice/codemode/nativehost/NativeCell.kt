@@ -1,7 +1,9 @@
 package splice.codemode.nativehost
 
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.channels.ChannelResult
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.selects.select
 import kotlinx.coroutines.sync.Mutex
@@ -9,9 +11,12 @@ import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.yield
 import kotlinx.serialization.json.JsonObject
 import splice.core.util.Cancellables
+import splice.upstream.codemode.CodeModeInvocationAction
+import splice.upstream.codemode.CodeModeManual
 import splice.upstream.codemode.CodeModeResult
 import splice.upstream.codemode.CodeModeStep
 import splice.upstream.codemode.NativeCodeModeCell
+import java.math.BigInteger
 import java.util.concurrent.atomic.AtomicBoolean
 
 /** Delegate results resume their original promises; observing a yield never cancels execution. */
@@ -20,16 +25,16 @@ internal class NativeCell(
     private val sessionId: String,
     private val connection: NativeConnection,
     private val scope: CoroutineScope,
-    initial: CompletableDeferred<JsonObject>,
-    tools: Set<String>,
+    initial: NativeOperation,
+    definitions: List<CodeModeManual.NestedTool>,
     private val lease: NativeCellLease,
 ) : NativeCodeModeCell {
     override val cellId: String = "${connection.generation}:$wireCellId"
     private val closed = AtomicBoolean()
     private val advancing = Mutex()
-    private val callbacks = NativeCallbacks(connection, scope, tools)
+    private val callbacks = NativeCallbacks(connection, scope, definitions)
     private val readySteps = ArrayDeque<CodeModeStep>()
-    private var observation: CompletableDeferred<JsonObject>? = initial
+    private val observations = NativeObservations(connection, scope, sessionId, wireCellId, initial)
 
     override suspend fun advance(results: List<CodeModeResult>): CodeModeStep {
         submitResults(results)
@@ -38,25 +43,35 @@ internal class NativeCell(
 
     override suspend fun submitResults(results: List<CodeModeResult>): Unit = callbacks.submit(results)
 
-    override suspend fun observe(yieldTimeMs: Long): CodeModeStep = advancing.withLock {
-        require(yieldTimeMs >= 0) { "Native observation time must be nonnegative" }
+    override suspend fun <T> withInvocationContext(id: String, action: CodeModeInvocationAction<T>): T =
+        callbacks.withInvocationContext(id, action)
+
+    override suspend fun observe(yieldTimeMs: Long): CodeModeStep = observe(BigInteger.valueOf(yieldTimeMs))
+
+    override suspend fun observe(yieldTimeMs: BigInteger): CodeModeStep = advancing.withLock {
+        require(yieldTimeMs.signum() >= 0 && yieldTimeMs.bitLength() <= NATIVE_UINT64_BITS) {
+            "Native observation time must fit uint64"
+        }
         check(!closed.get() || readySteps.isNotEmpty()) { "Native cell is closed" }
-        observeLocked(yieldTimeMs)
+        try {
+            observeLocked(yieldTimeMs)
+        } catch (cancelled: CancellationException) {
+            // Buffered callbacks remain owned by the cell; only a canceled host wait needs retirement.
+            if (readySteps.isEmpty()) observations.cancelled()
+            throw cancelled
+        }
     }
 
-    private suspend fun observeLocked(yieldTimeMs: Long): CodeModeStep {
+    private suspend fun observeLocked(yieldTimeMs: BigInteger): CodeModeStep {
         if (readySteps.isEmpty()) {
-            val response = response(yieldTimeMs)
+            val response = observations.response(yieldTimeMs)
             while (readySteps.isEmpty()) {
                 select<Unit> {
-                    connection.events.cell(sessionId, wireCellId).onReceive { frame ->
-                        callbacks.consume(frame)?.let(readySteps::addLast)
+                    connection.events.cell(sessionId, wireCellId).onReceiveCatching { received ->
+                        consumeDelegate(received, response)
                     }
                     response.onAwait { frame ->
-                        observation = null
-                        val result = decode(frame)
-                        readySteps.addLast(result)
-                        if (result is CodeModeStep.Completed) release()
+                        acceptObservation(frame)
                     }
                 }
             }
@@ -65,20 +80,31 @@ internal class NativeCell(
         return if (step is CodeModeStep.Calls) batchCalls(step) else readySteps.removeFirst()
     }
 
-    private suspend fun response(yieldTimeMs: Long): CompletableDeferred<JsonObject> {
-        observation?.let { return it }
-        val operation = connection.prepare()
-        observation = operation.response
-        try {
-            connection.dispatch(operation, NativeRequests.wait(sessionId, wireCellId, yieldTimeMs))
-        } finally {
-            if (!operation.wasDispatched()) {
-                connection.discard(operation)
-                observation = null
-            }
+    private suspend fun consumeDelegate(
+        received: ChannelResult<JsonObject>,
+        response: CompletableDeferred<JsonObject>,
+    ) {
+        val frame = received.getOrNull()
+        if (frame != null) {
+            callbacks.consume(frame)?.let(readySteps::addLast)
+            return
         }
-        return operation.response
+        // A session failure can close callbacks after this request's specific error was already delivered.
+        if (response.isCompleted) {
+            acceptObservation(response.await())
+            return
+        }
+        throw checkNotNull(received.exceptionOrNull())
     }
+
+    private fun acceptObservation(frame: JsonObject) {
+        observations.consumed()
+        val result = decode(frame)
+        readySteps.addLast(result)
+        if (result is CodeModeStep.Completed) release()
+    }
+
+    override suspend fun yieldObservation(): Unit = observations.yieldObservation()
 
     /** Let the reader route the same native event-loop turn, then issue ready siblings in one client batch. */
     private suspend fun batchCalls(first: CodeModeStep.Calls): CodeModeStep.Calls {
@@ -118,12 +144,14 @@ internal class NativeCell(
 
     override suspend fun terminate(): CodeModeStep {
         check(!closed.get()) { "Native cell is closed" }
-        val operation = connection.operation(NativeRequests.terminate(sessionId, wireCellId))
-        return NativeOutput.decode(NativeFrames.value(operation.response.await())).also {
-            closed.set(true)
-            callbacks.close()
-            lease.close()
-            if (!advancing.isLocked) connection.events.release(sessionId, wireCellId)
+        val response = NativeUnaryOperations.response(connection, NativeRequests.terminate(sessionId, wireCellId))
+        return NativeOutput.decode(NativeFrames.value(response)).also { step ->
+            if (step !is CodeModeStep.Yielded) {
+                closed.set(true)
+                callbacks.close()
+                lease.close()
+                if (!advancing.isLocked) connection.events.release(sessionId, wireCellId)
+            }
         }
     }
 
@@ -139,7 +167,7 @@ internal class NativeCell(
             callbacks.close()
             scope.launch {
                 Cancellables.runCatchingBestEffort {
-                    connection.operation(NativeRequests.terminate(sessionId, wireCellId)).response.await()
+                    observations.abandon()
                 }
                 lease.close()
                 if (!advancing.isLocked) connection.events.release(sessionId, wireCellId)

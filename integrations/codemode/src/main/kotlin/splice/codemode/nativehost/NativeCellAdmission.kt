@@ -1,7 +1,10 @@
 package splice.codemode.nativehost
 
 import splice.codemode.host.PoolLimits
+import splice.codemode.nativehost.sessions.NativeLogicalSession
+import splice.codemode.nativehost.sessions.STALE_NATIVE_CELL_ERROR
 import splice.upstream.failure.CodeModeCapacityException
+import splice.upstream.failure.CodeModeToolException
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.atomic.AtomicBoolean
 
@@ -69,9 +72,20 @@ internal data class NativePendingStart(
 )
 
 internal data class NativePreparedSession(
-    val host: NativeConnection,
-    val sessionId: String,
+    val owner: NativeLogicalSession,
+    val binding: NativeSessionBinding,
     val lease: NativeCellLease,
-)
+) {
+    val host: NativeConnection get() = binding.host
+    val sessionId: String get() = binding.id
+}
 
-internal data class NativeSessionBinding(val host: NativeConnection, val id: String)
+internal data class NativeSessionBinding(val host: NativeConnection, val id: String, val generation: ULong = 1uL) {
+    fun publicCellId(cellId: String): String = if (generation == 1uL) cellId else "g$generation:$cellId"
+
+    fun remoteCellId(cellId: String): String {
+        if (generation == 1uL) return cellId
+        return cellId.removePrefix("g$generation:").takeIf { cellId.startsWith("g$generation:") }
+            ?: throw CodeModeToolException(STALE_NATIVE_CELL_ERROR)
+    }
+}

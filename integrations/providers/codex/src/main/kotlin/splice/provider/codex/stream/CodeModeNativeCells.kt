@@ -1,9 +1,12 @@
 package splice.provider.codex.stream
 
+import splice.provider.codex.CodeModeToolPolicy
 import splice.upstream.codemode.CodeModeCell
+import splice.upstream.codemode.CodeModeInvocationAction
 import splice.upstream.codemode.CodeModeResult
 import splice.upstream.codemode.CodeModeStep
 import splice.upstream.codemode.NativeCodeModeCell
+import java.math.BigInteger
 import java.util.concurrent.ConcurrentHashMap
 
 /** Live engines remain session-local. Durable ids describe lost engines after restart; they never replay source. */
@@ -34,9 +37,10 @@ internal class CodeModeNativeCells : AutoCloseable {
         check(previous == null || previous.cell === cell) { "Native cell identity is already owned" }
     }
 
-    fun take(key: String, id: String): CodeModeHeldNativeCell = cells.remove(key to id)
-        ?: completed[key to id]?.let { CodeModeHeldNativeCell(CodeModeTerminalNativeCell(id), it) }
-        ?: error("Native cell is unavailable; its source was not rerun")
+    fun takeRetained(key: String, id: String): CodeModeHeldNativeCell? = cells.remove(key to id)
+
+    fun take(key: String, id: String): CodeModeHeldNativeCell = takeRetained(key, id)
+        ?: CodeModeHeldNativeCell(CodeModeMissingNativeCell(id), completed[key to id].orEmpty())
 
     fun completed(key: String, id: String, notificationCallId: String) {
         completed[key to id] = notificationCallId
@@ -68,12 +72,16 @@ internal class CodeModeNativeObservation(
     val invocation: CodeModeNativeInvocation,
     private val retained: CodeModeNativeCells,
     val notificationCallId: String,
+    val toolPolicy: CodeModeToolPolicy = CodeModeToolPolicy(),
 ) : CodeModeCell {
     private var handedOff = false
     private var initial = true
     private var deferred: CodeModeStep.Yielded? = null
     private val notifications = StringBuilder()
     val cellId: String get() = cell.cellId
+
+    override suspend fun <T> withInvocationContext(id: String, action: CodeModeInvocationAction<T>): T =
+        cell.withInvocationContext(id, action)
 
     override suspend fun advance(results: List<CodeModeResult>): CodeModeStep {
         cell.submitResults(results)
@@ -84,7 +92,9 @@ internal class CodeModeNativeObservation(
         initial = false
         val queued = deferred
         deferred = null
-        return observed(queued ?: cell.observe(invocation.options.yieldTimeMs))
+        val step = queued ?: invocation.options.unsignedYieldTimeMs?.let { cell.observe(it) }
+            ?: cell.observe(invocation.options.yieldTimeMs)
+        return observed(step)
     }
 
     private fun observed(step: CodeModeStep): CodeModeStep {
@@ -112,6 +122,11 @@ internal class CodeModeNativeObservation(
         handedOff = true
     }
 
+    /** Foreground preemption closes its observation, while this retained owner keeps the same native cell. */
+    suspend fun yieldObservation() {
+        cell.yieldObservation()
+    }
+
     override fun close() {
         if (!handedOff) cell.close()
     }
@@ -119,16 +134,19 @@ internal class CodeModeNativeObservation(
 
 internal data class CodeModeHeldNativeCell(val cell: NativeCodeModeCell, val notificationCallId: String)
 
-/** Only a positively recorded terminal native cell can use this empty exhausted observation. */
-private class CodeModeTerminalNativeCell(override val cellId: String) : NativeCodeModeCell {
+/** Runtime service::missing_cell_response applies equally to unknown, exhausted and wrong-session ids. */
+private class CodeModeMissingNativeCell(override val cellId: String) : NativeCodeModeCell {
     override suspend fun submitResults(results: List<CodeModeResult>) {
         require(results.isEmpty()) { "A completed native cell owns no pending callback" }
     }
     override suspend fun advance(results: List<CodeModeResult>): CodeModeStep {
         submitResults(results)
-        return CodeModeStep.Completed("")
+        return missing()
     }
-    override suspend fun observe(yieldTimeMs: Long): CodeModeStep = CodeModeStep.Completed("")
-    override suspend fun terminate(): CodeModeStep = CodeModeStep.Completed("", terminated = true)
+    override suspend fun observe(yieldTimeMs: Long): CodeModeStep = missing()
+    override suspend fun observe(yieldTimeMs: BigInteger): CodeModeStep = missing()
+    override suspend fun terminate(): CodeModeStep = missing()
     override fun close() = Unit
+
+    private fun missing(): CodeModeStep = CodeModeStep.Completed("", error = "exec cell $cellId not found")
 }

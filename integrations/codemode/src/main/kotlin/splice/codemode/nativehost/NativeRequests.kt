@@ -9,69 +9,101 @@ import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
 import splice.upstream.codemode.CodeModeManual
 import splice.upstream.codemode.CodeModeResult
+import splice.upstream.codemode.CodeModeResultDisposition
+import splice.upstream.codemode.CodeModeToolOutputs
 import splice.upstream.codemode.NativeCodeModeOptions
+import java.math.BigInteger
 
 private const val NATIVE_METHOD: String = "method"
 private const val NATIVE_SESSION_ID: String = "sessionId"
 
 internal object NativeRequests {
+    fun control(type: String, id: Long): JsonObject = buildJsonObject {
+        put("type", type)
+        put("id", id)
+    }
+
     fun session(method: String, sessionId: String): JsonObject = buildJsonObject {
         put(NATIVE_METHOD, method)
         put(NATIVE_SESSION_ID, sessionId)
     }
 
-    fun open(sessionId: String, heapBytes: Long): JsonObject = buildJsonObject {
+    fun open(sessionId: String, heapBytes: Long, maxYieldTimeMs: Long? = null): JsonObject = buildJsonObject {
         put(NATIVE_METHOD, "session/open")
         put(NATIVE_SESSION_ID, sessionId)
-        put("cellExecutionLimits", buildJsonObject { put("maxHeapSizeBytes", heapBytes) })
+        put(
+            "cellExecutionLimits",
+            buildJsonObject {
+                put("maxHeapSizeBytes", heapBytes)
+                maxYieldTimeMs?.let { put("maxYieldTimeMs", it) }
+            },
+        )
     }
 
-    fun execute(sessionId: String, source: String, catalog: Map<String, String>, options: NativeCodeModeOptions) =
+    fun execute(
+        sessionId: String,
+        source: String,
+        catalog: List<CodeModeManual.NestedTool>,
+        options: NativeCodeModeOptions,
+    ) =
         buildJsonObject {
             put(NATIVE_METHOD, "session/execute")
             put(NATIVE_SESSION_ID, sessionId)
             put(
                 "request",
                 buildJsonObject {
-                    put("tool_call_id", java.util.UUID.randomUUID().toString())
+                    put("tool_call_id", options.toolCallId ?: java.util.UUID.randomUUID().toString())
                     put(
                         "enabled_tools",
                         buildJsonArray {
-                            catalog.forEach { (name, description) ->
-                                add(tool(name, description))
-                            }
+                            catalog.forEach { add(tool(it)) }
                         },
                     )
                     put("source", source)
-                    put("yield_time_ms", options.yieldTimeMs)
-                    put("max_output_tokens", options.maxOutputTokens)
+                    put(
+                        "yield_time_ms",
+                        JsonPrimitive(options.unsignedYieldTimeMs ?: BigInteger.valueOf(options.yieldTimeMs)),
+                    )
+                    put(
+                        "max_output_tokens",
+                        JsonPrimitive(options.unsignedMaxOutputTokens ?: BigInteger.valueOf(options.maxOutputTokens)),
+                    )
                 },
             )
         }
 
-    private fun tool(name: String, description: String): JsonObject = buildJsonObject {
-        put("name", CodeModeManual.identifier(name))
+    private fun tool(definition: CodeModeManual.NestedTool): JsonObject = buildJsonObject {
+        put("name", definition.codeModeName)
         put(
             "tool_name",
             buildJsonObject {
-                put("name", name)
-                put("namespace", JsonNull)
+                put("name", definition.name)
+                put("namespace", definition.metadata.namespace?.let(::JsonPrimitive) ?: JsonNull)
             },
         )
-        put("description", description)
-        put("kind", "function")
-        put("input_schema", JsonNull)
-        put("output_schema", JsonNull)
+        put("description", definition.description)
+        put(
+            "kind",
+            when (definition.metadata.kind) {
+                CodeModeManual.Kind.FUNCTION -> "function"
+                CodeModeManual.Kind.FREEFORM -> "freeform"
+            },
+        )
+        definition.inputSchema?.let { put("input_schema", it) }
+        definition.outputSchema?.let { put("output_schema", it) }
     }
 
-    fun wait(sessionId: String, cellId: String, yieldTimeMs: Long): JsonObject = buildJsonObject {
+    fun wait(sessionId: String, cellId: String, yieldTimeMs: Long): JsonObject =
+        wait(sessionId, cellId, BigInteger.valueOf(yieldTimeMs))
+
+    fun wait(sessionId: String, cellId: String, yieldTimeMs: BigInteger): JsonObject = buildJsonObject {
         put(NATIVE_METHOD, "session/wait")
         put(NATIVE_SESSION_ID, sessionId)
         put(
             "request",
             buildJsonObject {
                 put("cell_id", cellId)
-                put("yield_time_ms", yieldTimeMs)
+                put("yield_time_ms", JsonPrimitive(yieldTimeMs))
             },
         )
     }
@@ -88,7 +120,7 @@ internal object NativeRequests {
         put(
             "result",
             buildJsonObject {
-                if (result.isError) {
+                if (result.isError && result.disposition == CodeModeResultDisposition.REJECT) {
                     put("status", "error")
                     put("message", result.output)
                 } else {
@@ -97,7 +129,7 @@ internal object NativeRequests {
                         "value",
                         buildJsonObject {
                             put("type", "tool/result")
-                            put("result", result.payload ?: JsonPrimitive(result.output))
+                            put("result", CodeModeToolOutputs.value(result))
                         },
                     )
                 }

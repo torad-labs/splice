@@ -5,25 +5,64 @@ import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
 import splice.core.util.JsonScalars
-import java.util.Locale
-import kotlin.math.roundToInt
+import java.math.BigDecimal
+import java.math.RoundingMode
+import java.time.Duration
+import kotlin.math.floor
 
 /** Model-visible Codex output: bounded native content with its status and wall-clock header outside the budget. */
 public object NativeCodeModeOutput {
+    public data class FormatOptions(
+        val showCellOverhead: Boolean = false,
+        val handlerDurationMillis: Long? = null,
+    )
+
     public fun content(
         step: CodeModeStep,
         wallMillis: Long,
         maxOutputTokens: Int = 10_000,
         supportsOriginal: Boolean = true,
+        options: FormatOptions = FormatOptions(),
     ): List<JsonObject> {
         val items = items(step).map { item -> imageDetail(item, supportsOriginal) }.toMutableList()
-        if (step is CodeModeStep.Completed && step.error != null) {
-            items.add(textItem("Script error:\n${step.error}"))
-        }
-        val seconds = (wallMillis.toFloat() / NATIVE_MILLIS_PER_SECOND * NATIVE_TENTHS).roundToInt() /
-            NATIVE_TENTHS
-        val header = "${status(step)}\nWall time ${String.format(Locale.ROOT, "%.1f", seconds)} seconds\nOutput:\n"
+        val failure = (step as? CodeModeStep.Completed)?.takeUnless { it.terminated }?.error
+        if (failure != null) items.add(textItem("Script error:\n$failure"))
+        val header = header(step, wallMillis, options)
         return listOf(textItem(header)) + NativeCodeModeTruncation.content(items, maxOutputTokens)
+    }
+
+    private fun header(step: CodeModeStep, wallMillis: Long, options: FormatOptions): String {
+        val timing = when (step) {
+            is CodeModeStep.Completed -> step.timing
+            is CodeModeStep.Yielded -> step.timing
+            is CodeModeStep.Calls, is CodeModeStep.Notified, is CodeModeStep.WaitingForResults -> null
+        }
+        val host = timing?.hostDuration
+        val totalMillis = options.handlerDurationMillis
+        val showOverhead = options.showCellOverhead && totalMillis != null
+        val wall = if (showOverhead && host != null) {
+            val total = checkNotNull(totalMillis).toDouble() / NATIVE_MILLIS_PER_SECOND
+            val hostSeconds = seconds(host)
+            "${decimal(total, OVERHEAD_PLACES)} seconds (code-mode ${decimal(hostSeconds, OVERHEAD_PLACES)} seconds; " +
+                "overhead ${decimal(total - hostSeconds, OVERHEAD_PLACES)} seconds)"
+        } else {
+            val hostSeconds = host?.let {
+                it.seconds.toFloat() + it.nano.toFloat() / NATIVE_NANOS_PER_SECOND.toFloat()
+            }
+                ?: (wallMillis.toFloat() / NATIVE_MILLIS_PER_SECOND)
+            val rounded = floor((hostSeconds * NATIVE_TENTHS).toDouble() + NATIVE_ROUNDING_HALF).toFloat() /
+                NATIVE_TENTHS
+            "${decimal(rounded.toDouble(), 1)} seconds"
+        }
+        return "${status(step)}\nWall time $wall\nOutput:\n"
+    }
+
+    private fun seconds(duration: Duration): Double =
+        duration.seconds.toDouble() + duration.nano.toDouble() / NATIVE_NANOS_PER_SECOND
+
+    private fun decimal(value: Double, places: Int): String {
+        val rendered = BigDecimal(value).setScale(places, RoundingMode.HALF_EVEN).toPlainString()
+        return if (value.toRawBits() < 0 && !rendered.startsWith('-')) "-$rendered" else rendered
     }
 
     public fun textItem(value: String): JsonObject = buildJsonObject {
@@ -75,3 +114,6 @@ private const val NATIVE_MILLIS_PER_SECOND: Float = 1_000f
 
 // why: Codex rounds the default wall-time header to one decimal place before rendering it.
 private const val NATIVE_TENTHS: Float = 10f
+private val NATIVE_NANOS_PER_SECOND: Long = java.util.concurrent.TimeUnit.SECONDS.toNanos(1)
+private const val NATIVE_ROUNDING_HALF: Double = 0.5
+private const val OVERHEAD_PLACES = 3

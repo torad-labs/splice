@@ -46,6 +46,32 @@ class NativeCodeModeRuntimeTest {
     }
 
     @Test
+    fun `simultaneous session callbacks retain separate results when returned in reverse order`() = nativeProcessTest {
+        NativeCodeModeRuntime().use { runtime ->
+            val alpha = runtime.startSession("alpha", "text(await tools.Read({key:'alpha'}));", setOf("Read"))
+            val beta = runtime.startSession("beta", "text(await tools.Read({key:'beta'}));", setOf("Read"))
+            val alphaCall = async { (alpha.advance() as CodeModeStep.Calls).calls.single() }
+            val betaCall = async { (beta.advance() as CodeModeStep.Calls).calls.single() }
+            val a = alphaCall.await()
+            val b = betaCall.await()
+            assertEquals("{\"key\":\"alpha\"}", a.arguments.toString())
+            assertEquals("{\"key\":\"beta\"}", b.arguments.toString())
+            val betaResult = beta.advance(
+                listOf(
+                    CodeModeResult(b.id, "", payload = buildJsonObject { put("delegate", "beta"); put("value", 202) }),
+                ),
+            ) as CodeModeStep.Completed
+            val alphaResult = alpha.advance(
+                listOf(
+                    CodeModeResult(a.id, "", payload = buildJsonObject { put("delegate", "alpha"); put("value", 101) }),
+                ),
+            ) as CodeModeStep.Completed
+            assertEquals("{\"delegate\":\"beta\",\"value\":202}", betaResult.output)
+            assertEquals("{\"delegate\":\"alpha\",\"value\":101}", alphaResult.output)
+        }
+    }
+
+    @Test
     fun `parallel callbacks retain independent promises and fast dependent branch advances`() = nativeProcessTest {
         NativeCodeModeRuntime().use { runtime ->
             val source = """
@@ -201,7 +227,7 @@ class NativeCodeModeRuntimeTest {
             val source = "try { await tools.Read('wrong'); } catch(e) { text(String(e)); }"
             val result = runtime.startSession("invalid-input", source, setOf("Read")).advance()
             assertEquals(
-                "Client function tool Read requires a JSON object argument",
+                "tool `Read` expects a JSON object for arguments",
                 (result as CodeModeStep.Completed).output,
             )
         }

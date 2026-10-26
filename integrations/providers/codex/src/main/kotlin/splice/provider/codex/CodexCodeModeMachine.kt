@@ -2,13 +2,14 @@
 package splice.provider.codex
 
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.NonCancellable
+import kotlinx.coroutines.withContext
 import splice.core.turn.FailureCause
 import splice.core.turn.FailurePhase
 import splice.core.turn.FailureTraits
 import splice.core.turn.TurnOutcome
 import splice.core.turn.UsageField
 import splice.core.turn.noRequestUsage
-import splice.core.util.JsonWire
 import splice.provider.codex.callbacks.CodeModeCallIssuanceGuard
 import splice.provider.codex.callbacks.CodeModeCallIssuerEmitter
 import splice.provider.codex.callbacks.CodeModeCallIssuerPoison
@@ -16,6 +17,7 @@ import splice.provider.codex.callbacks.CodeModeCallIssuerRetry
 import splice.provider.codex.callbacks.CodexCodeModeCallIssuer
 import splice.provider.codex.callbacks.CodexCodeModeCallIssuerActions
 import splice.provider.codex.callbacks.CodexCodeModeIncrementalOutcomes
+import splice.provider.codex.stream.CodeModeClientCalls
 import splice.provider.codex.stream.CodeModeLiveRound
 import splice.provider.codex.stream.CodeModeLocalOutcome
 import splice.provider.codex.stream.CodeModeNativeObservation
@@ -29,8 +31,7 @@ import splice.provider.codex.stream.CodeModeStreamingCell
 import splice.upstream.codemode.CodeModeCell
 import splice.upstream.codemode.CodeModeResult
 import splice.upstream.codemode.CodeModeStep
-import splice.upstream.failure.CodeModeInfrastructureException
-import splice.upstream.failure.CodeModeTimeoutException
+import splice.upstream.failure.CodeModeToolException
 import splice.upstream.sse.WireSink
 import java.io.IOException
 
@@ -140,16 +141,12 @@ internal class CodexCodeModeMachine(
             }
         }
         cell?.let(nativeSteps::observation)?.delivered()
-        return replay(served, sink)
+        return replay(served, sink, cell)
     }
 
     /** Emit the prior recorded calls without touching the runtime's consumed cursor. */
-    suspend fun replay(calls: List<CodeModePending>, sink: WireSink): TurnOutcome {
-        calls.forEach { call ->
-            val index = sink.openTool(call.clientId, call.name)
-            sink.inputJsonDelta(index, JsonWire.string(call.arguments))
-            sink.closeBlock(index)
-        }
+    suspend fun replay(calls: List<CodeModePending>, sink: WireSink, cell: CodeModeCell? = null): TurnOutcome {
+        CodeModeClientCalls.emit(calls, sink, cell)
         return TurnOutcome.Success(
             hasToolUse = true,
             incomplete = false,
@@ -189,18 +186,14 @@ internal class CodexCodeModeMachine(
         registry.changes.edit(request.record) { it.progress.rounds++ }
         dispatchStep(request, cell, cell.advance(request.results))
     } catch (error: CancellationException) {
-        request.record.cellStartedAt = null
-        registry.lose(request.record, "code-mode cell cancelled: ${lostMessage(request.record)}", error)
+        cancelled(request.record, cell, error)
         throw error
     } catch (error: CodeModePersistenceException) {
         throw error
-    } catch (_: CodeModeTimeoutException) {
-        poison(request.record, "code-mode runtime timed out; ${lostMessage(request.record)}")
-    } catch (error: CodeModeInfrastructureException) {
-        poison(
-            request.record,
-            "code-mode infrastructure failure ${error.category}/${error.faultClass}; ${lostMessage(request.record)}",
-        )
+    } catch (error: CodeModeToolException) {
+        if (error.preserveCell) nativeSteps.observation(cell)?.handOff()
+        registry.complete(request.record, error.diagnostic)
+        CodeModeLocalOutcome.success()
     } catch (error: IOException) {
         failures.ioFailure(request.record, error)
     } catch (error: IllegalStateException) {
@@ -213,6 +206,34 @@ internal class CodexCodeModeMachine(
             "code-mode runtime failed: RuntimeException: message withheld; " +
                 "accepted results=${request.record.results.size}; source was not rerun",
         )
+    }
+
+    private suspend fun cancelled(record: CodeModeRecord, cell: CodeModeCell, cancellation: CancellationException) {
+        record.cellStartedAt = null
+        val native = nativeSteps.observation(cell)
+        if (native == null) {
+            registry.lose(record, "code-mode cell cancelled: ${lostMessage(record)}", cancellation)
+            return
+        }
+        withContext(NonCancellable) {
+            try {
+                native.yieldObservation()
+            } catch (error: CancellationException) {
+                // Keep the caller's original cancellation even if yielding itself was interrupted.
+                failedYield(record, cancellation, error)
+            } catch (error: IOException) {
+                failedYield(record, cancellation, error)
+            } catch (error: IllegalStateException) {
+                failedYield(record, cancellation, error)
+            } catch (error: IllegalArgumentException) {
+                failedYield(record, cancellation, error)
+            }
+        }
+    }
+
+    private fun failedYield(record: CodeModeRecord, cancellation: CancellationException, error: Exception) {
+        cancellation.addSuppressed(error)
+        registry.lose(record, "code-mode observation could not be yielded", cancellation)
     }
 
     private suspend fun dispatchStep(

@@ -16,7 +16,9 @@ import splice.core.util.Cancellables
 import splice.upstream.codemode.CodeModeResult
 import splice.upstream.codemode.CodeModeStep
 import splice.upstream.codemode.NativeCodeModeOptions
-import splice.upstream.failure.CodeModeWorkerLostException
+import splice.upstream.failure.CODE_MODE_RUNTIME_REPLACED_ERROR
+import splice.upstream.failure.CODE_MODE_SESSION_CLOSED_ERROR
+import splice.upstream.failure.CodeModeToolException
 import java.util.concurrent.Executors
 import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicReference
@@ -49,26 +51,39 @@ class NativeCodeModeRecoveryTest {
         NativeCodeModeRuntime(spawn = WorkerSpawn { builder -> builder.start().also(process::set) }).use { runtime ->
             val cell = runtime.startNativeSession(
                 "session",
-                "store('accepted', true); yield_control(); await new Promise(()=>{});",
-                emptySet(),
+                "store('accepted', true); await tools.checkpoint({});",
+                setOf("checkpoint"),
                 emptyMap(),
                 NativeCodeModeOptions(),
             )
-            assertTrue(cell.advance() is CodeModeStep.Yielded)
+            assertEquals("checkpoint", (cell.advance() as CodeModeStep.Calls).calls.single().name)
             process.get().destroyForcibly().waitFor()
             val failed = Cancellables.runCatchingBestEffort { cell.observe(RECOVERY_WAIT_MS) }
-            assertTrue(failed.exceptionOrNull() is CodeModeWorkerLostException)
+            assertTrue(failed.exceptionOrNull() is CodeModeToolException)
+            assertEquals(CODE_MODE_SESSION_CLOSED_ERROR, failed.exceptionOrNull()?.message)
+            val replaced = Cancellables.runCatchingBestEffort {
+                runtime.startNativeSession(
+                    "session",
+                    "store('must-not-run', true);",
+                    emptySet(),
+                    emptyMap(),
+                    NativeCodeModeOptions(),
+                )
+            }
+            assertTrue(replaced.exceptionOrNull() is CodeModeToolException)
+            assertEquals(CODE_MODE_RUNTIME_REPLACED_ERROR, replaced.exceptionOrNull()?.message)
             val fresh = runtime.startNativeSession(
                 "session",
-                "text(load('accepted')); text('new module');",
+                "text(load('accepted')); text(load('must-not-run')); text('new module');",
                 emptySet(),
                 emptyMap(),
                 NativeCodeModeOptions(),
             )
             assertNotEquals(cell.cellId, fresh.cellId)
             val stillFailed = Cancellables.runCatchingBestEffort { cell.observe(RECOVERY_WAIT_MS) }
-            assertTrue(stillFailed.exceptionOrNull() is CodeModeWorkerLostException)
-            assertEquals("undefined\nnew module", (fresh.advance() as CodeModeStep.Completed).output)
+            assertTrue(stillFailed.exceptionOrNull() is CodeModeToolException)
+            assertEquals("cell belongs to a stale code-mode host generation", stillFailed.exceptionOrNull()?.message)
+            assertEquals("undefined\nundefined\nnew module", (fresh.advance() as CodeModeStep.Completed).output)
         }
     }
 

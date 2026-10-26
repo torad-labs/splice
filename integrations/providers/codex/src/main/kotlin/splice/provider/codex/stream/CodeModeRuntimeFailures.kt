@@ -9,6 +9,8 @@ import splice.core.util.SafeFailureText
 import splice.provider.codex.CodeModeRecord
 import splice.provider.codex.CodexCodeModeRegistry
 import splice.provider.codex.state.CodeModeWorkerRecovery
+import splice.upstream.failure.CodeModeInfrastructureException
+import splice.upstream.failure.CodeModeTimeoutException
 import splice.upstream.failure.CodeModeWorkerLostException
 import java.io.IOException
 
@@ -32,6 +34,11 @@ internal class CodeModeRuntimeFailures(private val registry: CodexCodeModeRegist
         "completed client call ids=${record.results.keys}; source was not rerun"
 
     fun ioFailure(record: CodeModeRecord, error: IOException): TurnOutcome.Failure = when (error) {
+        is CodeModeTimeoutException -> poison(record, "code-mode runtime timed out; ${lostMessage(record)}")
+        is CodeModeInfrastructureException -> poison(
+            record,
+            "code-mode infrastructure failure ${error.category}/${error.faultClass}; ${lostMessage(record)}",
+        )
         is CodeModeSourceInterruptedException -> {
             record.cellStartedAt = null
             val message = "upstream code-mode source interrupted; ${lostMessage(record)}"

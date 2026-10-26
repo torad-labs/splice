@@ -1177,9 +1177,12 @@ function writeMocks(bin: string): void {
       '  process.stderr.write("Exception in thread main: kaboom-at-boot\\n");\n' +
       "  process.exit(1);\n" +
       "}\n" +
-      'writeFileSync(process.env.LAUNCHER_DAEMON_STATE, "new\\n");\n' +
       'if (process.env.LAUNCHER_JAVA_ARGV) appendFileSync(process.env.LAUNCHER_JAVA_ARGV, JSON.stringify(process.argv.slice(2)) + "\\n");\n' +
-      'if (process.env.LAUNCHER_JAVA_CAPTURE) appendFileSync(process.env.LAUNCHER_JAVA_CAPTURE, "spawned\\n");\n',
+      'if (process.env.LAUNCHER_JAVA_CAPTURE) appendFileSync(process.env.LAUNCHER_JAVA_CAPTURE, "spawned\\n");\n' +
+      // The captures are written before the daemon answers, as a real JVM's argv is fixed before it can: the shim
+      // returns at its first good health read, and on Oct 25, under a load of 150, it returned before the mock
+      // that had already answered wrote its argv, so an arm read "java never ran the daemon".
+      'writeFileSync(process.env.LAUNCHER_DAEMON_STATE, "new\\n");\n',
   );
   // V4-189: the supervisor unit, mocked. `cat <unit>` answers "the unit exists" only when
   // LAUNCHER_UNIT_PRESENT=1; `start <unit>` records the unit name and, when LAUNCHER_UNIT_BOOTS=1,

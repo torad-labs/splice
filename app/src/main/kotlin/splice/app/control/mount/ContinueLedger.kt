@@ -22,15 +22,11 @@ import splice.client.resume.ModelMoves
 import splice.client.resume.MovingTrust
 import splice.core.util.WallClock
 import splice.sessions.http.MoveLedger
+import splice.sessions.http.MovingSessionModel
 import splice.sessions.registry.SessionRecord
 import splice.sessions.transcript.ModelMove
 import java.nio.file.Path
 import java.util.concurrent.ConcurrentHashMap
-
-/** The model a session's row reported, read at the moment he pressed Continue on, before the move ends its client. */
-internal fun interface MovingSessionModel {
-    operator fun invoke(record: SessionRecord): String?
-}
 
 /** Continue on's ledger over [moves] and [moving]. */
 internal class ContinueLedger(

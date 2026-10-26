@@ -168,7 +168,17 @@ private val verbs: Map<String, CommandRegistration> = mapOf(
         "[--head <key>] [--tail N] [--follow]",
         CommandFactory { a -> Command.Logs(a.drop(1)) },
     ),
-    "sessions" to CommandRegistration("", CommandFactory.Alone(Command.Sessions)),
+    // Oct 26, 2026: `sessions relaunch` relaunches each session holding a planted turn key (SessionsRelaunchCommand).
+    "sessions" to CommandRegistration(
+        "[relaunch]",
+        CommandFactory { a ->
+            when {
+                a.size == 1 -> Command.Sessions
+                a.size == 2 && a[1] == "relaunch" -> Command.SessionsRelaunch
+                else -> null
+            }
+        },
+    ),
     "perf" to CommandRegistration("[--window 1h|24h|7d]", CommandFactory { a -> Command.Perf(a.drop(1)) }),
     "wire" to CommandRegistration(
         "<head> [--last N] [--json]",

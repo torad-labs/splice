@@ -1,6 +1,11 @@
 // NEW: Oct 10, 2026 (step 3, Continue on) — moving one session onto another command, by its own id.
 //
 //   POST /api/sessions/{id}/continue   {"head": "<key>", "model": "<id>"}   go on under that command's model
+//   POST /api/sessions/{id}/relaunch                                       go on as it was, launched anew
+//
+// A RELAUNCH (key rotation, Oct 26, 2026) is a move onto the command and the model a running session already runs
+// on, so its launch is made again: a session launched before the key helper holds a turn key that a rotated key
+// strands, and the new launch reads it through the helper. It is splice's, never his, so it never stops a turn.
 //
 // WHAT A MOVE IS. The session goes on under another head: Claude Code is ended where it runs and started again on the
 // chosen command with `-r <id>`, and that launch's cross-head resume makes a copy of the session beside it under a new
@@ -61,6 +66,8 @@ private const val MOVE_CLOSED = "its terminal is closed, so there is no client t
 private const val MOVE_NOT_OURS =
     "splice did not start this session, so it cannot move it from here; exit it and resume it on the other command"
 private const val MOVE_IN_FLIGHT = "it is already moving; wait for that move to answer"
+private const val RELAUNCH_WORKING = "it is working; relaunch it once its turn ends"
+private const val RELAUNCH_NO_HEAD = "it runs on no splice command, so there is none to relaunch it on"
 
 public class SessionContinue(
     private val drive: SessionDrive,
@@ -71,12 +78,16 @@ public class SessionContinue(
     /** Where a move that came back is kept, with what it left, read before it leaves, and which session has a move in
      *  flight: one ledger under every Continue on, so a session moves once at a time from any of them. */
     private val ledger: MoveLedger,
+    /** The model a session runs on, as its row reports it: what a relaunch resumes it on. */
+    private val models: MovingSessionModel = MovingSessionModel { null },
 ) {
     /** The client's own words for a turn in flight. */
     private val busy = setOf("working", "busy")
 
     /** Where a move ends: back on the command he picked, or on the one it left. */
     private val arrival = MoveArrival(commands, handover, ledger, registry)
+
+    private val plans = Plans()
 
     /** POST .../continue's body: the command (`head`) and, optionally, the model on it. */
     public suspend fun moveJson(session: String, body: String): JsonReply {
@@ -89,20 +100,43 @@ public class SessionContinue(
         return move(session, head, JsonScalars.str(obj, "model")?.takeIf(String::isNotBlank), clear)
     }
 
-    public suspend fun move(session: String, head: String, model: String?, clear: Boolean = false): JsonReply {
+    /** POST .../relaunch: the running session ended where it runs and resumed by its own id on the command it runs on,
+     *  on the model its row reports, as a move to another model on the same command goes on. Key rotation (Oct 26,
+     *  2026): a session launched before the key helper holds a turn key a rotation strands, and its relaunch is
+     *  launched with the helper. A relaunch is splice's, never his, so it stops nothing: a working session is
+     *  refused until its turn ends, and one waiting on an answer or holding words he has not sent is refused as a
+     *  move is. */
+    public suspend fun relaunch(session: String): JsonReply = moving(session, clear = false, Wanted.Relaunch)
+
+    public suspend fun move(session: String, head: String, model: String?, clear: Boolean = false): JsonReply =
+        moving(session, clear, Wanted.Onto(head, model))
+
+    /** The move [wanted] asks for, planned once this press holds [session]'s move alone. */
+    private suspend fun moving(session: String, clear: Boolean, wanted: Wanted): JsonReply {
         // what the move decides on, counted before anything reads the session: an act landing after it stops the move
         val ask = Ask(clear, drive.turns.acts(session))
         // the whole move is this press's alone, from its plan to its last word: a second plans nothing, types nothing
         if (!ledger.opens(session)) return Refusals.reply(HttpStatusCode.Conflict, MOVE_IN_FLIGHT)
         return try {
-            when (val plan = plan(session, head, model)) {
-                is Plan.Refused -> plan.reply
-                is Plan.Go -> go(plan.move, ask)
+            val planned = when (wanted) {
+                is Wanted.Onto -> plans.onto(session, wanted.head, wanted.model)
+                Wanted.Relaunch -> plans.relaunch(session)
+            }
+            when (planned) {
+                is Plan.Refused -> planned.reply
+                is Plan.Go -> go(planned.move, ask)
             }
         } finally {
             // a reply that did not come from the arrival left the grant and the pending mark open; the move closes too
             ledger.dropped(session)
         }
+    }
+
+    /** What a press asks for: the session onto another command or model, or launched again as it runs. */
+    private sealed class Wanted {
+        class Onto(val head: String, val model: String?) : Wanted()
+
+        data object Relaunch : Wanted()
     }
 
     /** What the press asked beyond the move: whether to empty the prompt, and the session's act count as it came. */
@@ -115,39 +149,60 @@ public class SessionContinue(
         class Go(val move: Move) : Plan()
     }
 
-    private fun plan(session: String, head: String, model: String?): Plan {
-        val record = live(session, orExited = true)
-            ?: return Plan.Refused(Refusals.reply(HttpStatusCode.NotFound, "no such session: $session"))
-        refusalToMove(record, head, model)?.let { return Plan.Refused(it) }
-        return when (val command = commands.forHead(head)) {
-            is StartCommand.Refused -> Plan.Refused(Refusals.reply(HttpStatusCode.Conflict, command.reason))
-            is StartCommand.Ready -> {
-                val resume = listOf("-r", session) + model?.let { listOf("--model", it) }.orEmpty()
-                val running = record.availability != SessionAvailability.GONE
-                val folder = record.process.cwd?.takeIf { Files.isDirectory(Path.of(it)) } ?: home.toString()
-                ledger.leaving(record, head, model)
-                Plan.Go(
-                    Move(
-                        session = session,
-                        head = head,
-                        from = record.head ?: head,
-                        argv = command.argv + resume,
-                        folder = folder,
-                        process = record.process.takeIf { running },
-                        working = running && record.status.state in busy,
-                    ),
-                )
+    /** What a press decides before anything is read from its pane or typed: the move it makes, or why not now. */
+    private inner class Plans {
+        /** Continue on: [session], running or exited, onto [head] and [model]. */
+        fun onto(session: String, head: String, model: String?): Plan {
+            val record = live(session, orExited = true)
+                ?: return Plan.Refused(Refusals.reply(HttpStatusCode.NotFound, "no such session: $session"))
+            if (record.head == head && model == null) {
+                return refused("it already runs on $head; pick another model on it")
+            }
+            return planOnto(session, record, head, model)
+        }
+
+        /** A relaunch: [session]'s running client, on the command and the model it runs on, only between its turns. */
+        fun relaunch(session: String): Plan {
+            val record = live(session)
+            val head = record?.head
+            return when {
+                record == null -> Plan.Refused(Refusals.reply(HttpStatusCode.NotFound, "no running session: $session"))
+                head == null -> refused(RELAUNCH_NO_HEAD, Refusal.HEAD_UNKNOWN)
+                record.status.state in busy -> refused(RELAUNCH_WORKING, Refusal.WORKING)
+                else -> planOnto(session, record, head, models(record))
             }
         }
-    }
 
-    /** Why this session cannot move to [head] now, or null when it can. */
-    private fun refusalToMove(record: SessionRecord, head: String, model: String?): JsonReply? = when {
-        record.head == head && model == null ->
-            Refusals.reply(HttpStatusCode.Conflict, "it already runs on $head; pick another model on it")
-        record.availability != SessionAvailability.GONE && record.status.waitingFor != null ->
-            Refusals.reply(HttpStatusCode.Conflict, "it is waiting on an answer; answer it before moving it")
-        else -> null
+        /** [record] moved onto [head] and [model], or why not now: it waits on an answer, or the command cannot
+         *  start. */
+        private fun planOnto(session: String, record: SessionRecord, head: String, model: String?): Plan {
+            if (record.availability != SessionAvailability.GONE && record.status.waitingFor != null) {
+                return refused("it is waiting on an answer; answer it before moving it")
+            }
+            return when (val command = commands.forHead(head)) {
+                is StartCommand.Refused -> refused(command.reason)
+                is StartCommand.Ready -> {
+                    val resume = listOf("-r", session) + model?.let { listOf("--model", it) }.orEmpty()
+                    val running = record.availability != SessionAvailability.GONE
+                    val folder = record.process.cwd?.takeIf { Files.isDirectory(Path.of(it)) } ?: home.toString()
+                    ledger.leaving(record, head, model)
+                    Plan.Go(
+                        Move(
+                            session = session,
+                            head = head,
+                            from = record.head ?: head,
+                            argv = command.argv + resume,
+                            folder = folder,
+                            process = record.process.takeIf { running },
+                            working = running && record.status.state in busy,
+                        ),
+                    )
+                }
+            }
+        }
+
+        private fun refused(sentence: String, reason: Refusal? = null): Plan =
+            Plan.Refused(Refusals.reply(HttpStatusCode.Conflict, sentence, reason))
     }
 
     /** A client still running is ended in its pane first; one already gone goes on in a new terminal. */
@@ -281,4 +336,10 @@ public class SessionContinue(
         "the terminal did not take it: " + SafeFailureText.render(failure),
         Refusal.REFUSED,
     )
+}
+
+/** The model a session's row reported, read at the moment Continue on or a relaunch was asked for, before it ends
+ *  the session's client. */
+public fun interface MovingSessionModel {
+    public operator fun invoke(record: SessionRecord): String?
 }

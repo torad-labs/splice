@@ -19,34 +19,17 @@ import splice.core.terminal.RED
 import splice.core.terminal.RESET
 import splice.core.terminal.TerminalOutput
 import splice.core.terminal.YELLOW
-import splice.core.topology.HeadConfig
 import splice.core.util.EnvReader
-import splice.core.util.SafeFailureText
 import splice.core.util.WallClock
-import splice.sessions.registry.ProcessEnvironment
-import splice.sessions.registry.RouteOfPid
 import splice.sessions.registry.SeenArrivalSessions
 import splice.sessions.registry.SessionAvailability
 import splice.sessions.registry.SessionRecord
-import splice.sessions.registry.SessionRegistry
 import splice.sessions.registry.SessionRoute
 import splice.sessions.registry.SessionSource
-import splice.topology.TopologyLoader
-import java.io.IOException
-import java.nio.file.Files
 
 private const val MS_PER_MINUTE = 60_000L
 private const val MINUTES_PER_HOUR = 60L
 private const val CWD_MAX = 48
-private val UNPRINTABLE: Set<Int> = setOf(
-    Character.CONTROL.toInt(),
-    Character.FORMAT.toInt(),
-    Character.LINE_SEPARATOR.toInt(),
-    Character.PARAGRAPH_SEPARATOR.toInt(),
-    Character.UNASSIGNED.toInt(),
-    Character.PRIVATE_USE.toInt(),
-    Character.SURROGATE.toInt(),
-)
 
 /** `splice sessions`. [output] is the listing, [errors] the one diagnostic: an unreadable topology. */
 public class SessionsCommand(
@@ -54,10 +37,11 @@ public class SessionsCommand(
     private val errors: TerminalOutput,
     private val accounts: SessionAccounts = SessionAccounts { emptyMap() },
 ) {
+    private val local = LocalSessions(errors)
 
     public fun sessions(
         envReader: EnvReader,
-        registry: SessionSource = defaultRegistry(envReader),
+        registry: SessionSource = local.registry(envReader),
         now: WallClock = WallClock { System.currentTimeMillis() },
     ): Boolean {
         val home = UserHome.dir(envReader).toString()
@@ -125,14 +109,8 @@ public class SessionsCommand(
 
     private fun shownName(s: SessionRecord): String? = s.name?.let(::clean)?.takeIf { it.isNotBlank() }
 
-    /** Registry text is Claude Code's, not ours: no control, format or unprintable character (C0,
-     *  C1, DEL, and the Unicode Cc/Cf/Zl/Zp classes) reaches the terminal, wherever it is printed. Read
-     *  by CODE POINT (V4-324): an emoji is two UTF-16 units and one printable character, and filtering
-     *  units dropped both halves of it, so `build 🚀` was offered as a SendMessage to `build `. Only a
-     *  surrogate standing alone is still SURROGATE here, and it goes. */
-    private fun clean(text: String): String = buildString {
-        text.codePoints().filter { Character.getType(it) !in UNPRINTABLE }.forEach { appendCodePoint(it) }
-    }
+    /** Registry text is Claude Code's, not ours, and is printed as [LocalSessions.shown] renders it. */
+    private fun clean(text: String): String = local.shown(text)
 
     private fun quoted(name: String): String = name.replace("\\", "\\\\").replace("\"", "\\\"")
 
@@ -146,36 +124,5 @@ public class SessionsCommand(
             minutes < MINUTES_PER_HOUR -> "$word ${minutes}m ago"
             else -> "$word ${minutes / MINUTES_PER_HOUR}h ago"
         }
-    }
-
-    private fun defaultRegistry(envReader: EnvReader): SessionSource {
-        val heads = readHeads(envReader)
-        val environment = ProcessEnvironment()
-        return SessionRegistry(
-            UserHome.claudeDir(envReader).resolve("sessions"),
-            RouteOfPid { pid ->
-                environment.route(pid) { port -> heads.entries.firstOrNull { it.value.port == port }?.key }
-            },
-        )
-    }
-
-    /** Read-only: an absent or malformed topology means every head reads "unknown"; nothing is
-     *  written (no starter file) and the listing itself never fails on it. */
-    private fun readHeads(envReader: EnvReader): Map<String, HeadConfig> {
-        val path = TopologyLoader.configPath(envReader)
-        return try {
-            TopologyLoader.parse(Files.readString(path)).heads
-        } catch (unreadable: IOException) {
-            unattributed(SafeFailureText.render(unreadable))
-        } catch (ignored: IllegalArgumentException) {
-            unattributed("malformed topology")
-        } catch (ignored: IllegalStateException) {
-            unattributed("malformed topology")
-        }
-    }
-
-    private fun unattributed(why: String): Map<String, HeadConfig> {
-        errors.line("splice sessions: topology not readable ($why); heads shown as unknown")
-        return emptyMap()
     }
 }

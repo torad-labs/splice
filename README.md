@@ -227,6 +227,7 @@ splice add-model      # put more of the curated OpenRouter models on an OpenRout
 splice models         # what each provider ACTUALLY serves, against your declared rows (--all, or one provider)
 splice upgrade        # verified upgrade to the latest release (--to vX, --now, --rollback)
 splice sessions       # the Claude Code sessions on this machine, joined to their heads
+splice sessions relaunch  # relaunch each session that still holds a turn key in its environment, on its own head, resumed
 splice perf           # per-head latency, failure and cache summary (--window 1h|24h|7d)
 splice wire <head>    # the request bodies a head sent upstream; only once you opt that head in
 splice trace <head>   # a head's full request/response trace from disk (--turn ID, --purge); on for every head
@@ -234,6 +235,7 @@ splice restart        # restart, after waiting for running compactions; --now sk
 splice init           # write a starter config with no head; install.sh already runs it
 splice install --all  # (re)link the wrapper commands
 splice key set|list|unset  # the API-key store, ~/.config/splice/keys.toml
+splice rotate-key     # replace the management key while the daemon runs; sessions on the key helper carry on
 splice logs           # the daemon log (--head <key>, --tail N, --follow)
 <head> login          # sign in a subscription head (claudex, claude-grok, claude-kimi, claude-muse)
 ```
@@ -246,7 +248,7 @@ file and one rename, links the command and handles the restart. `--live`, or yes
 prompt, checks the saved head through its installed command. A failed check diagnoses the
 failure and leaves the head saved. A refusal before the save leaves your file byte-identical.
 
-The control plane's data and control API need a secret key and answer only on this machine. `/health` reports the version without a key. Sessions get a weaker turn key shared across the install, which opens every head's turn, status-line and resume-hook routes, but not management routes. The console holds a key of its own, which opens what the console reads and changes. `splice console` signs a browser in with a single-use code that expires after two minutes, so no address it opens carries a key, and `splice console --no-browser` prints the sign-in page's file address for a browser you open yourself. The management key lives at `~/.splice/state/mgmt-key` (installs made before v0.4.0 keep theirs at `~/.claude-codex/state/mgmt-key`, which splice keeps reading in place).
+The control plane's data and control API need a secret key and answer only on this machine. `/health` reports the version without a key. Sessions get a weaker turn key shared across the install, which opens every head's turn, status-line and resume-hook routes, but not management routes. The console holds a key of its own, which opens what the console reads and changes. `splice console` signs a browser in with a single-use code that expires after two minutes, so no address it opens carries a key, and `splice console --no-browser` prints the sign-in page's file address for a browser you open yourself. The management key lives at `~/.splice/state/mgmt-key` (installs made before v0.4.0 keep theirs at `~/.claude-codex/state/mgmt-key`, which splice keeps reading in place). `splice rotate-key` replaces the management key while the daemon runs, and the old key and the turn key made from it are refused at once. A session splice launches reads its turn key through Claude Code's key helper, so after a rotation its next request reads the new key and goes on, on the same head, with nothing you typed lost. A session launched before the helper holds its turn key in its environment and is stranded by a rotation: run `splice sessions relaunch` first, which relaunches each one on its own head, resumed, and run it again until it reports none left. It leaves a session that is working, waiting on an answer or holding words you have not sent, and the session it runs in, where they are and names each.
 
 ### Projects and Compare in the console
 

@@ -42,6 +42,9 @@ class SessionContinueTest {
     private val kept = mutableListOf<Pair<String, ModelMove>>()
     private var leaving: ModelMove? = null
 
+    /** The model a session's row reports it runs on: what a relaunch resumes it on. */
+    private var runsOn: String? = "claude-fable-5-1"
+
     private val continueOn by lazy {
         SessionContinue(
             drive = SessionDrive(TerminalSource { SessionDriver(terminal, panes) }),
@@ -83,12 +86,15 @@ class SessionContinueTest {
                     open.remove(session)
                 }
             },
+            models = MovingSessionModel { runsOn },
         )
     }
 
     private val leadPane = SessionPane("%lead")
 
     private fun move(session: String, body: String) = runBlocking { continueOn.moveJson(session, body) }
+
+    private fun relaunch(session: String) = runBlocking { continueOn.relaunch(session) }
 
     /** The lead's client reports a turn in flight, as Claude Code writes it to its registry file. */
     private fun leadWorking() {
@@ -318,5 +324,49 @@ class SessionContinueTest {
         assertEquals("not_ours", notOurs.getValue("reason").jsonPrimitive.content)
         assertEquals(HttpStatusCode.BadRequest, move(LEAD, "{}").status)
         assertTrue(terminal.sent.isEmpty() && terminal.pressed.none { it.second == SessionKey.STOP })
+    }
+
+    // Key rotation (Oct 26, 2026): a session launched before the key helper holds a turn key a rotation strands, so
+    // it is relaunched first: ended where it runs and resumed by its own id on the command and the model it runs on,
+    // whose launch now hands it the helper.
+    @Test
+    fun `a relaunch ends the session where it runs and resumes it on its own command and model`() {
+        panes.remember(LEAD, leadPane)
+
+        val reply = relaunch(LEAD)
+
+        assertEquals(HttpStatusCode.OK, reply.status)
+        assertEquals(listOf(leadPane to "/exit"), terminal.sent)
+        val resumed = terminal.opened.single().command
+        assertEquals(listOf("claude-claude", "-r", LEAD, "--model", "claude-fable-5-1"), resumed)
+        assertEquals(listOf(LEAD to "claude"), cameOn)
+    }
+
+    @Test
+    fun `a relaunch of a session whose model is not known resumes it on the model its command starts on`() {
+        panes.remember(LEAD, leadPane)
+        runsOn = null
+
+        assertEquals(HttpStatusCode.OK, relaunch(LEAD).status)
+        assertEquals(listOf("claude-claude", "-r", LEAD), terminal.opened.single().command)
+    }
+
+    // A relaunch is splice's, never his: it waits for his turn to end rather than stopping it, and it never types
+    // over words he has not sent.
+    @Test
+    fun `a relaunch leaves a working session, or one holding his words, where it is`() {
+        panes.remember(LEAD, leadPane)
+        leadWorking()
+        val working = relaunch(LEAD)
+        assertEquals(HttpStatusCode.Conflict, working.status)
+        assertEquals("working", rig.json(working.body).getValue("reason").jsonPrimitive.content)
+        assertTrue(terminal.pressed.isEmpty(), "its turn is not stopped")
+
+        leadIdle()
+        terminal.screenText = "────────────── lead ─\n❯ half a thought\n──────────────\n"
+        val held = relaunch(LEAD)
+        assertEquals("draft", rig.json(held.body).getValue("reason").jsonPrimitive.content)
+        assertTrue(terminal.sent.isEmpty(), "nothing is typed over his words")
+        assertEquals(HttpStatusCode.NotFound, relaunch("no-such-session").status, "only a running session relaunches")
     }
 }

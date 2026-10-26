@@ -17,6 +17,10 @@
 - **Less code-mode registry bookkeeping.** Membership and expiry lookups use indexes, and journal appends reserve for their selected operation before a full checkpoint is encoded. Live response-time and memory effects remain to be measured.
 - **Sessions can run turns without the key that controls splice.** In 0.3.x, sessions other than
   `claude-splice` held that management key. Upgrade, rotate the key, then relaunch your sessions ([Security](#security), [Upgrading from 0.3.x](#upgrading-from-03x)).
+- **`splice rotate-key` replaces the management key while the daemon runs, and sessions carry on.** A session splice
+  launches reads its turn key through Claude Code's key helper, so after a rotation its next request reads the new
+  key and the turn goes on, on the same head, with nothing typed lost. `splice sessions relaunch` relaunches each
+  session launched before the helper on its own head, resumed; run it before the rotation.
 - **`splice upgrade`** fetches, verifies and stages a release, waits for in-flight turns, restarts
   the daemon and runs doctor. `--rollback` puts the previous release back.
 - **Account pools on the ChatGPT, Grok, Kimi, Muse and Claude heads.** OAuth heads add labelled
@@ -85,11 +89,10 @@ curl -fsSL https://github.com/torad-labs/splice/releases/download/v0.4.0/install
 - **Rotate the management key before relaunching sessions.** A 0.3.x session other than
   `claude-splice` still holds the management key and can run turns until rotation, but its old
   keyless status line is not answered by 0.4.0: it prints "splice updated: relaunch this session for its status line" instead of figures. Under 0.3.x the management key sat in those sessions'
-  environment, where the model's tools could print it into a transcript. Delete
-  `<state>/mgmt-key`, then stop the daemon: `systemctl --user stop splice.service` where a unit
-  runs it, otherwise end its process. Then run `splice restart` or launch any head. A fresh key
-  is minted and the old key is refused. Then relaunch each session. Its next launch writes the
-  current turn key to `turn-auth-header`; a session launched before rotation holds a stale key.
+  environment, where the model's tools could print it into a transcript. Run `splice rotate-key`:
+  the daemon replaces the key while it runs, and the old key is refused at once. Then run
+  `splice sessions relaunch`, which relaunches each 0.3.x session on its own head, resumed, until it
+  reports none left. Its new launch reads the current turn key through Claude Code's key helper.
 - **A provider on a loopback `base_url` with the `openai-chat` dialect is now a local runtime.** Ollama, LM Studio and vLLM rows
   are checked against what the runtime serves at boot: a row it does not list, or a
   `context_window` larger than it reports, is a config finding, so boot refuses and lists it with the file's

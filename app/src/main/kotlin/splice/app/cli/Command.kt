@@ -13,6 +13,7 @@ import splice.app.TraceWiring
 import splice.app.cli.auth.KeyCommand
 import splice.app.cli.auth.LoginCommand
 import splice.app.cli.auth.RotateKeyCommand
+import splice.app.cli.sessions.SessionsRelaunchCommand
 import splice.app.cli.setup.SetupCommand
 import splice.app.cli.status.CONSOLE_NO_BROWSER
 import splice.app.cli.status.ConsoleCommand
@@ -194,6 +195,12 @@ public sealed class Command {
     /** Key rotation (Oct 26, 2026): `splice rotate-key` replaces the management key in the running daemon. */
     internal data object RotateKey : Command() {
         override suspend fun run(): Int = RotateKeyCommand().run()
+    }
+
+    /** Key rotation (Oct 26, 2026): `splice sessions relaunch` relaunches each running session that holds a planted
+     *  turn key on its own head, resumed (SessionsRelaunchCommand). */
+    internal data object SessionsRelaunch : Command() {
+        override suspend fun run(): Int = SessionsRelaunchCommand().run()
     }
     public data class Perf(val args: List<String>) : Command() {
         override suspend fun run(): Int = outcomeExitCode(PerfWiring.command().perf(args, EnvReader(System::getenv)))

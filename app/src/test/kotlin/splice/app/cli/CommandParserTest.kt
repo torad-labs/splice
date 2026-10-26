@@ -125,6 +125,16 @@ class CommandParserTest {
         assertEquals(Command.AddModel, parser.parse(arrayOf("add-model")))
     }
 
+    // Key rotation (Oct 26, 2026): rotation day's first step is typed as `splice sessions relaunch`, and the listing
+    // stays `splice sessions` alone.
+    @Test
+    fun `sessions names one word, relaunch`() {
+        assertEquals(Command.Sessions, parser.parse(arrayOf("sessions")))
+        assertEquals(Command.SessionsRelaunch, parser.parse(arrayOf("sessions", "relaunch")))
+        assertEquals(null, parser.parse(arrayOf("sessions", "relaunch", "x")))
+        assertEquals(null, parser.parse(arrayOf("sessions", "relaunch", "--help")))
+    }
+
     // v0.4.0 compatibility statement (README "Compatibility"): the verbs a release ships are a contract
     // until the next minor release names the break. Frozen here rather than read from the table, so a
     // verb dropped from the table fails by name instead of vanishing from both sides. `daemon` and

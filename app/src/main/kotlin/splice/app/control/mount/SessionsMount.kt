@@ -13,6 +13,7 @@ import splice.core.config.ConfigService
 import splice.core.config.UserHome
 import splice.sessions.end.SessionEnd
 import splice.sessions.http.KeptActivity
+import splice.sessions.http.MovingSessionModel
 import splice.sessions.http.SessionContinue
 import splice.sessions.http.SessionHistoryRoute
 import splice.sessions.http.SessionRepoNameOf
@@ -55,6 +56,8 @@ internal class SessionsMount(
         registry = wiring.listed,
         home = UserHome.dir(),
         ledger = wiring.moveLedger,
+        // what a relaunch resumes a session on: the model its row reports
+        models = MovingSessionModel { record -> wiring.routes?.modelOf(record) },
     )
 
     /** End: the session closed where it runs, armed by what it would lose (SessionEnd, Marlin's p218 ruling). */
@@ -136,6 +139,13 @@ internal class SessionsMount(
                 val session = call.parameters["id"].orEmpty()
                 val body = call.receiveText()
                 withContext(fileIo) { continueOn.moveJson(session, body) }.send(call)
+            }
+        }
+        route.post("/api/sessions/{id}/relaunch") {
+            // key rotation: the session launched anew on the command and model it runs on, waited on as a move is
+            guard.guarded(call) {
+                val session = call.parameters["id"].orEmpty()
+                withContext(fileIo) { continueOn.relaunch(session) }.send(call)
             }
         }
     }

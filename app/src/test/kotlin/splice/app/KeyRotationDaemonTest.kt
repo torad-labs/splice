@@ -71,6 +71,26 @@ class KeyRotationDaemonTest {
         }
     }
 
+    // `splice sessions relaunch` asks the daemon to relaunch each session that holds a planted key, one at a time. Only
+    // the management key opens that, and a session the daemon does not see running is refused, so nothing is started.
+    @Test
+    fun `the relaunch route takes the management key and refuses a session that is not running`(@TempDir tmp: Path) {
+        UserHome.within(tmp) {
+            runBlocking {
+                val rig = Rig(tmp)
+                try {
+                    rig.start()
+                    assertEquals(401, rig.relaunch("no-such-session", "not-the-management-key").status)
+                    val answer = rig.relaunch("no-such-session", rig.managementKey())
+                    assertEquals(404, answer.status, answer.text)
+                    assertTrue("no running session" in answer.text, answer.text)
+                } finally {
+                    rig.stop()
+                }
+            }
+        }
+    }
+
     private suspend fun rotateUnderARunningSession(rig: Rig) {
         val oldMgmt = rig.managementKey()
         val helper = launchWithHelper(rig, oldMgmt)
@@ -234,6 +254,15 @@ private class Rig(private val tmp: Path) {
             header("x-api-key", key)
             header("Content-Type", "application/json")
             setBody(TURN_BODY)
+        }
+        return Answer(reply.status.value, reply.bodyAsText())
+    }
+
+    /** The daemon's relaunch of [session], as `splice sessions relaunch` asks for it with [key]. */
+    suspend fun relaunch(session: String, key: String): Answer {
+        val reply = client.post("http://127.0.0.1:$controlPort/api/sessions/$session/relaunch") {
+            header("Authorization", "Bearer $key")
+            setBody("{}")
         }
         return Answer(reply.status.value, reply.bodyAsText())
     }

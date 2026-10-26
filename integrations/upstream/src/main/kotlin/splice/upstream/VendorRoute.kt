@@ -9,11 +9,12 @@ package splice.upstream
 /** One turn's route upstream, from [Provider.route]. The transport and the head say what happened to each request it
  *  routed; which of those means the conversation must leave its route is the vendor's to know. */
 public interface VendorRoute {
-    /** The headers that route the request about to be sent. From here that request counts as still running upstream
-     *  until [answered] or [finished] hears how it ended. */
+    /** The headers that route the request about to be sent. From here that request may be running upstream until
+     *  [answered] or [finished] hears how it ended, and one sent after it is routed knowing whether it did. */
     public fun sending(): Map<String, String>
 
-    /** The upstream answered the request with [status] and [body] instead of a stream. */
+    /** The upstream answered the request with [status] and [body] instead of a stream. Whether that answer ended what
+     *  the request started upstream is the vendor's to know. */
     public fun answered(status: Int, body: String)
 
     /** The upstream ended the stream with its own last word: the response completed, or it reported its failure. */

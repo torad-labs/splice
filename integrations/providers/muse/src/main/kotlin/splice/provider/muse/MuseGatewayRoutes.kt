@@ -4,9 +4,9 @@
 // conversation's prompt cache lives there. A request sent there while a generation is still running on it waits
 // behind that generation. On Oct 26 a re-send 0.2 s after a 504 gateway_timeout, and the four requests after it,
 // waited 18 minutes. After a turn the client aborted, the next warm turn waited over 30 s 6 times in 33, against 2
-// to 3% after a normal turn. So a conversation leaves its route when the gateway gives up on a generation there, or
-// when a turn ends while Meta may still be generating it, and every later request rides the new route, across
-// daemon restarts.
+// to 3% after a normal turn. So a request goes out on a new route whenever its conversation's previous request never
+// finished: the gateway gave up on it, its stream broke and the turn sent it again or resumed it, or its turn ended
+// while Meta was still generating it. Every later request rides the new route, across daemon restarts.
 package splice.provider.muse
 
 import kotlinx.serialization.json.JsonObject
@@ -16,6 +16,7 @@ import splice.core.util.Cancellables
 import splice.core.util.JsonScalars
 import splice.core.util.JsonWire
 import splice.core.util.LogSink
+import splice.core.util.SafeFailureText
 import splice.core.util.SecureFile
 import splice.core.wire.HttpStatus
 import splice.upstream.VendorRoute
@@ -104,7 +105,10 @@ public class MuseGatewayRoutes(stateDir: Path?, private val log: LogSink) {
         val kept = LinkedHashMap<String, String>()
         val path = file?.takeIf { Files.exists(it) } ?: return kept
         val text = Cancellables.runCatchingCancellable { Files.readString(path) }
-            .onFailure { log("[muse] could not read the gateway route moves at $path (${it.message}); $FIRST_ROUTES") }
+            .onFailure { t ->
+                val why = SafeFailureText.render(t)
+                log("[muse] could not read the gateway route moves at $path ($why); $FIRST_ROUTES")
+            }
             .getOrNull()
         val saved = text?.let { JsonScalars.objectOrNull(museJson, it) }
         if (text != null && saved == null) {
@@ -122,33 +126,42 @@ public class MuseGatewayRoutes(stateDir: Path?, private val log: LogSink) {
         val json = buildJsonObject {
             moves.forEach { (conversation, route) -> put(conversation, JsonPrimitive(route)) }
         }
+        // CREDENTIAL-WRITE-EXEMPT[2026-10-26]: route moves by conversation key, a file only splice writes or reads.
         val failed = Cancellables.runCatchingBestEffort { SecureFile.writeAtomic0600(path, JsonWire.string(json)) }
             .exceptionOrNull() ?: return
-        log("[muse] could not save the gateway route moves at $path (${failed.message}); they hold until a restart")
+        val why = SafeFailureText.render(failed)
+        log("[muse] could not save the gateway route moves at $path ($why); they hold until a restart")
     }
 
-    /** One turn's requests. The one sent last counts as running at Meta until Meta answers it or ends its stream. */
+    /** One turn's requests. The one sent last is unfinished until Meta answers it or ends its stream, and a request
+     *  Meta never finished may still be generating where it was sent. So whenever the turn sends again, or ends, with
+     *  its last request unfinished, the conversation leaves that route first. */
     private inner class TurnRoute(private val conversation: String) : VendorRoute {
-        private val running = AtomicReference<String?>(null)
+        private val unfinished = AtomicReference<String?>(null)
 
         override fun sending(): Map<String, String> {
+            leftBehind("the turn sends again")
             val route = current(conversation)
-            running.set(route)
+            unfinished.set(route)
             return mapOf(ROUTE_HEADER to route)
         }
 
+        /** An answer finishes its request, except the gateway giving up, which leaves the generation behind it. */
         override fun answered(status: Int, body: String) {
-            val route = running.getAndSet(null) ?: return
-            if (gaveUp(status, body)) leave(conversation, route, "the gateway gave up on the generation there")
+            if (!gaveUp(status, body)) unfinished.set(null)
         }
 
         override fun finished() {
-            running.set(null)
+            unfinished.set(null)
         }
 
         override fun turnEnded() {
-            val route = running.getAndSet(null) ?: return
-            leave(conversation, route, "the turn ended while Meta may still be generating it")
+            leftBehind("the turn ended")
+        }
+
+        private fun leftBehind(what: String) {
+            val route = unfinished.getAndSet(null) ?: return
+            leave(conversation, route, "$what before Meta finished its last request there")
         }
     }
 }

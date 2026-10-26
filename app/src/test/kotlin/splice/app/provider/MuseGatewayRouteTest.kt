@@ -1,7 +1,8 @@
-// Goal: when Muse's gateway gives up on a generation, or a turn ends while Meta is still generating it, splice's next
-// request for that conversation goes to a new gateway route, so it never queues behind a generation that may still be
-// running there. A conversation that meets neither keeps its one route, so its cache stays pinned, and a restarted
-// daemon keeps every conversation on the route it last moved to.
+// Goal: a request goes out on a new gateway route whenever its conversation's previous request never finished, so it
+// never queues behind a generation that may still be running there. A request never finished when Muse's gateway gave
+// up on it, when its stream broke and splice sent it again or resumed it, or when its turn ended while Meta was still
+// generating it. A conversation that meets none of these keeps its one route, so its cache stays pinned, and a
+// restarted daemon keeps every conversation on the route it last moved to.
 //
 // Oct 26, 02:37 to 02:55 CT: Meta answered a claude-muse turn 504 gateway_timeout after 184 s. splice re-sent the same
 // request on the same x-meta-ai-gateway-session-id within a second, and that request and the four after it waited
@@ -187,6 +188,60 @@ class MuseGatewayRouteTest {
     }
 
     @Test
+    fun `a request sent again in its turn after its stream broke rides a new route`(@TempDir root: Path) =
+        runBlocking {
+            museHead(root) { rig ->
+                val route = rig.firstRoute(CONVERSATION)
+                rig.gateway.breakBeforeAnswer(route)
+
+                val turn = rig.turn(CONVERSATION, 2)
+
+                assertEquals(route, turn.routes.first(), "the turn is sent on its conversation's route: ${turn.routes}")
+                val resent = turn.routes.getOrNull(1)
+                assertNotNull(resent, "the broken stream is sent again in its turn: ${turn.routes}")
+                assertNotEquals(route, resent, "the re-send leaves the route Meta still generates on: ${turn.routes}")
+                assertTrue(turn.answered, "the client gets the answer: ${turn.sse}")
+                val later = rig.turn(CONVERSATION, 3)
+                assertEquals(listOf(resent), later.routes, "turn 3 rides the route the conversation moved to")
+            }
+        }
+
+    @Test
+    fun `a turn resumed after its stream broke mid-answer rides a new route`(@TempDir root: Path) = runBlocking {
+        museHead(root) { rig ->
+            val route = rig.firstRoute(CONVERSATION)
+            rig.gateway.breakMidAnswer(route)
+            val streaming = rig.startTurn(CONVERSATION, 2)
+            // The client has been streamed the start of the answer when the connection to Meta breaks.
+            streaming.awaitMidGeneration()
+            rig.gateway.breakHeld()
+
+            val turn = rig.seen(streaming)
+
+            assertEquals(route, turn.routes.first(), "the turn is sent on its conversation's route: ${turn.routes}")
+            val resumed = turn.routes.getOrNull(1)
+            assertNotNull(resumed, "the broken answer is resumed in its turn: ${turn.routes}")
+            assertNotEquals(route, resumed, "the resumed request leaves the route Meta still generates on")
+            assertTrue(turn.answered, "the client gets the answer: ${turn.sse}")
+        }
+    }
+
+    @Test
+    fun `a request sent again in its turn after Meta finished the one before keeps its route`(@TempDir root: Path) =
+        runBlocking {
+            museHead(root) { rig ->
+                val route = rig.firstRoute(CONVERSATION)
+                rig.gateway.answerEmptyOnce(route)
+
+                val turn = rig.turn(CONVERSATION, 2)
+
+                // Meta finished the empty answer, so nothing is running there and the cache is where it was.
+                assertEquals(listOf(route, route), turn.routes, "the re-send of an empty answer keeps its route")
+                assertTrue(turn.answered, "the client gets the answer: ${turn.sse}")
+            }
+        }
+
+    @Test
     fun `a conversation that left a timed-out route keeps its new route after a restart`(@TempDir root: Path) =
         runBlocking {
             museHead(root) { rig ->
@@ -311,11 +366,23 @@ private data class SeenTurn(val routes: List<String?>, val sse: String) {
             events.none { JsonScalars.str(it, "type") == "error" }
 }
 
-/** A turn the client is still reading: [job] is the client's request, and [midGeneration] completes once the client has
- *  been streamed the start of Meta's answer. */
-private class StreamingTurn(val job: Job, private val midGeneration: CompletableDeferred<Unit>) {
+/** A turn the client is still reading: [job] is the client's request, [midGeneration] completes once the client has
+ *  been streamed the start of Meta's answer, and [sse] is what it has been streamed so far. [routesBefore] counts the
+ *  requests the gateway had seen before the turn began. */
+private class StreamingTurn(
+    val job: Job,
+    val routesBefore: Int,
+    private val midGeneration: CompletableDeferred<Unit>,
+    private val sse: StringBuffer,
+) {
     suspend fun awaitMidGeneration() {
         withTimeout(TURN_WAIT_MS) { midGeneration.await() }
+    }
+
+    /** Everything the client was streamed, once the turn has ended. */
+    suspend fun ended(): String {
+        withTimeout(TURN_WAIT_MS) { job.join() }
+        return sse.toString()
     }
 }
 
@@ -364,17 +431,26 @@ private class MuseRig(
     /** Turn [n] of [session], read as it streams, the way Claude Code reads a turn the user may stop. */
     fun startTurn(session: String, n: Int): StreamingTurn {
         val midGeneration = CompletableDeferred<Unit>()
+        val sse = StringBuffer()
         val url = messagesUrl()
+        val before = gateway.routes.size
         val job = scope.launch {
             client.preparePost(url) { ask(session, n) }.execute { response ->
                 val body = response.bodyAsChannel()
                 while (true) {
                     val line = body.readLine() ?: break
+                    sse.append(line).append('\n')
                     if (META_PARTIAL in line) midGeneration.complete(Unit)
                 }
             }
         }
-        return StreamingTurn(job, midGeneration)
+        return StreamingTurn(job, before, midGeneration, sse)
+    }
+
+    /** What [turn] looked like from both ends, once it has ended. */
+    suspend fun seen(turn: StreamingTurn): SeenTurn {
+        val sse = turn.ended()
+        return SeenTurn(gateway.routes.drop(turn.routesBefore), sse)
     }
 
     /** Turn 1 of [session], answered on the route the conversation starts on, and that route. */

@@ -122,18 +122,23 @@ class LinesThroughHeadsTest {
         }
     }
 
-    // The provider's close reaches the turn either as a stream that ended without its finish or as a reset past the
-    // handoff, run to run. The person saw the answer start either way, so either way the line says it was cut off.
+    // The reply holds after its text until the client has it, so the person saw the answer start before the cut. A cut
+    // with no hold usually reached the head before the text it followed. The provider's close reaches the turn either
+    // as a stream that ended without its finish or as a reset past the handoff, run to run, and either way the line
+    // says it was cut off.
     @Test
     fun `a cut-off stream ends with the cut-off line`(@TempDir tmp: Path) = runTest {
         withScriptedHeads(tmp) {
-            provider.script(reply { chatText("partial words"); cut() })
+            provider.script(reply { chatText("partial words"); hold(); cut() })
             val head = chat()
             val stream = head.client.open()
             stream.awaitText("partial words")
+            provider.release()
 
             val answer = stream.finish()
 
+            assertEquals("partial words", answer.text, answer.describe())
+            assertTrue(answer.contentBeforeError, answer.describe())
             assertLine(answer, "cut off")
         }
     }

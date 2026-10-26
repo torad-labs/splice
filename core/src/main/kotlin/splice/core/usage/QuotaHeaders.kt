@@ -143,8 +143,13 @@ internal object EpochSeconds {
 }
 
 private const val UNIFIED = "anthropic-ratelimit-unified"
-private const val FIVE_HOUR_CLAIM = "five_hour"
-private const val SEVEN_DAY_CLAIM = "seven_day"
+
+/** Anthropic's unified claim of its five-hour window, as the quota headers and a plan limit spell it. */
+public const val FIVE_HOUR_CLAIM: String = "five_hour"
+
+/** Anthropic's unified claim of its seven-day window, and the opening of one model's seven-day claim. */
+public const val SEVEN_DAY_CLAIM: String = "seven_day"
+
 private const val PERCENT = 100.0
 private const val MILLIS = 1000L
 

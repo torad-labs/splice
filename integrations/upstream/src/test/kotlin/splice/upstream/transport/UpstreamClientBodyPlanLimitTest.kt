@@ -14,16 +14,13 @@ import org.junit.jupiter.api.Test
 import splice.core.auth.AuthDescription
 import splice.core.auth.Credentials
 import splice.core.auth.RefreshableAuthProvider
-import splice.core.failure.ClientWire
 import splice.core.failure.FailureCause
+import splice.core.failure.HeadVoice
 import splice.core.failure.Lift
 import splice.core.failure.LiftSource
 import splice.core.failure.LimitWindow
-import splice.core.failure.LineFacts
 import splice.core.failure.Moment
 import splice.core.failure.Position
-import splice.core.failure.RequestFacts
-import splice.core.failure.SpliceLines
 import splice.core.usage.PlanLimit
 import splice.core.util.ElapsedClock
 import splice.core.util.LocalTimeText
@@ -95,9 +92,7 @@ class UpstreamClientBodyPlanLimitTest {
         val lift = Lift.At(Instant.ofEpochSecond(reset), firm = true, LiftSource.BODY)
         assertEquals(FailureCause.Provider.Limited(lift, LimitWindow.WEEKLY), failure.cause)
         val at = Position(Moment.BEFORE_COMMIT, streamBegan = false)
-        val facts =
-            LineFacts("claudex", "claudex login", null, local = false, RequestFacts(false, false), Instant.now())
-        val text = SpliceLines().ending(failure.cause, at, ClientWire.answer(failure.cause, at), facts).text
+        val text = HeadVoice("claudex", "claudex login").anyTurn.ending(failure.cause, at).text
         assertTrue(text.contains(LocalTimeText().at(reset)), "the reset in the machine's zone: $text")
         assertFalse(ISO_INSTANT.containsMatchIn(text), "the reset is not an ISO instant: $text")
         assertFalse(text.contains('—'), "no em dash in text the client shows: $text")

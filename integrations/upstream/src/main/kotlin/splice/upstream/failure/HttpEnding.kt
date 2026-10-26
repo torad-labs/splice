@@ -5,7 +5,9 @@ import splice.core.failure.FailureCause
 import splice.core.failure.FailureEvidence
 import splice.core.failure.Lift
 import splice.core.failure.LimitWindow
+import splice.core.usage.FIVE_HOUR_CLAIM
 import splice.core.usage.PlanLimit
+import splice.core.usage.SEVEN_DAY_CLAIM
 import splice.upstream.transport.RetryOutcome
 import splice.upstream.transport.VendorReading
 
@@ -49,7 +51,3 @@ internal class HttpEnding(failed: RetryOutcome.Failed?, status: Int? = failed?.s
         }
     }
 }
-
-// Anthropic's unified claims, as PlanLimit's own reading of them spells them.
-private const val FIVE_HOUR_CLAIM = "five_hour"
-private const val SEVEN_DAY_CLAIM = "seven_day"

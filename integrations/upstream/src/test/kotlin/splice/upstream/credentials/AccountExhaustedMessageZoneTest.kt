@@ -3,25 +3,24 @@
 // zone abbreviation, never the ISO instant. V4-433 found "earliest reset is 2026-09-16T20:02:52Z" in what a client
 // printed, so a machine in Tokyo read the evening where its own clock said 5:02 AM. The pool no longer words it:
 // admission ends the turn on the limit the pool names, its earliest reset as AccountResetText.normalizedInstant reads
-// it and no window, and SpliceLines writes the line from that cause. Each case names its zone. AccountResetText.format
+// it and no window, and the head's voice writes the line from that cause. Each case names its zone. AccountResetText.format
 // is the log and journal spelling and stays ISO.
 package splice.upstream.credentials
 
 import org.junit.jupiter.api.Assertions.assertFalse
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
-import splice.core.failure.ClientWire
 import splice.core.failure.FailureCause
+import splice.core.failure.HeadVoice
 import splice.core.failure.Lift
 import splice.core.failure.LiftSource
-import splice.core.failure.LineFacts
 import splice.core.failure.Moment
 import splice.core.failure.Position
-import splice.core.failure.RequestFacts
-import splice.core.failure.SpliceLines
-import splice.core.util.LocalTimeText
+import splice.core.failure.VoiceFacts
+import java.time.Clock
 import java.time.Instant
 import java.time.ZoneId
+import java.time.ZoneOffset
 import java.util.TimeZone
 
 private val MUSE_RESET = Instant.parse("2026-09-16T20:02:52Z").epochSecond
@@ -50,18 +49,23 @@ private fun <T> inZone(zone: String, block: () -> T): T {
 }
 
 class AccountExhaustedMessageZoneTest {
-    private val facts =
-        LineFacts("claude", null, null, local = false, RequestFacts(false, false), Instant.ofEpochSecond(MUSE_RESET))
+    /** The head's voice, its times read in [zone], at the moment the pool's reset names. */
+    private fun voice(zone: ZoneId = ZoneId.systemDefault()) = HeadVoice(
+        "claude",
+        loginCommand = null,
+        VoiceFacts(zone = zone),
+        Clock.fixed(Instant.ofEpochSecond(MUSE_RESET), ZoneOffset.UTC),
+    )
 
     /** The line a turn ends with, before any answer, when every login is at its limit and the pool names [reset]. */
-    private fun said(reset: Long?, lines: SpliceLines): String {
+    private fun said(reset: Long?, voice: HeadVoice): String {
         val lift = reset?.let { Lift.At(AccountResetText.normalizedInstant(it), firm = true, LiftSource.RESET_HEADER) }
         val cause = FailureCause.Provider.Limited(lift ?: Lift.Unstated, window = null)
         val at = Position(Moment.BEFORE_COMMIT, streamBegan = false)
-        return lines.ending(cause, at, ClientWire.answer(cause, at), facts).text
+        return voice.anyTurn.ending(cause, at).text
     }
 
-    private fun said(reset: Long?, zone: String) = said(reset, SpliceLines(LocalTimeText(ZoneId.of(zone))))
+    private fun said(reset: Long?, zone: String) = said(reset, voice(ZoneId.of(zone)))
 
     @Test
     fun `the earliest reset is said in the zone's hour and abbreviation, not as an ISO instant`() {
@@ -75,8 +79,8 @@ class AccountExhaustedMessageZoneTest {
 
     @Test
     fun `no zone given reads the machine's own`() {
-        val tokyo = inZone("Asia/Tokyo") { said(MUSE_RESET, SpliceLines()) }
-        val chicago = inZone("America/Chicago") { said(MUSE_RESET, SpliceLines()) }
+        val tokyo = inZone("Asia/Tokyo") { said(MUSE_RESET, voice()) }
+        val chicago = inZone("America/Chicago") { said(MUSE_RESET, voice()) }
 
         assertTrue("Sep 17, 5:02 AM JST" in tokyo, tokyo)
         assertTrue("Sep 16, 3:02 PM CDT" in chicago, chicago)

@@ -19,17 +19,13 @@ import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 import splice.core.auth.ClientAuthProvider
 import splice.core.auth.RefreshableAuthProvider
-import splice.core.failure.ClientWire
 import splice.core.failure.FailureCause
+import splice.core.failure.HeadVoice
 import splice.core.failure.Lift
 import splice.core.failure.LiftSource
 import splice.core.failure.LimitWindow
-import splice.core.failure.LineFacts
 import splice.core.failure.Moment
 import splice.core.failure.Position
-import splice.core.failure.RequestFacts
-import splice.core.failure.SPLICE_PREFIX
-import splice.core.failure.SpliceLines
 import splice.core.usage.PlanLimit
 import splice.core.util.ElapsedClock
 import splice.core.util.LocalTimeText
@@ -68,8 +64,7 @@ class UpstreamClientPlanLimitTest {
         )
         assertEquals(cause, failure.cause)
         val at = Position(Moment.BEFORE_COMMIT, streamBegan = false)
-        val facts = LineFacts("claude-splice", null, null, local = false, RequestFacts(false, false), Instant.now())
-        val line = SpliceLines().ending(failure.cause, at, ClientWire.answer(failure.cause, at), facts)
+        val line = HeadVoice("claude-splice", loginCommand = null).anyTurn.ending(failure.cause, at)
         val text = line.text
         assertTrue(text.contains(LocalTimeText().at(reset)), "the reset in the machine's zone: $text")
         assertFalse(ISO_INSTANT.containsMatchIn(text), "the reset is said as a person reads it, not as ISO: $text")
@@ -77,7 +72,7 @@ class UpstreamClientPlanLimitTest {
         CLIENT_STOP_PHRASES.forEach { phrase ->
             assertFalse(text.lowercase().contains(phrase), "'$phrase' would end a persistent client's wait: $text")
         }
-        assertEquals(text, SPLICE_PREFIX + line.sentence, "the trace says what the client reads")
+        assertEquals(text, "[splice] " + line.sentence, "the trace says what the client reads")
     }
 
     @Test

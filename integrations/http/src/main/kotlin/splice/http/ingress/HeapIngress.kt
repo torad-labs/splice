@@ -9,7 +9,6 @@ import io.ktor.server.application.ApplicationCallPipeline
 import io.ktor.server.application.ApplicationStopPreparing
 import io.ktor.server.application.call
 import io.ktor.server.response.respondText
-import io.ktor.util.AttributeKey
 import io.ktor.utils.io.ByteReadChannel
 import io.ktor.utils.io.discard
 import io.netty.channel.ChannelPipeline
@@ -24,7 +23,6 @@ import splice.core.config.RequestByteCap
 import splice.core.failure.Decline
 import splice.core.memory.HeapCapacityException
 import splice.core.memory.HeapCategory
-import splice.core.memory.HeapLease
 import splice.core.memory.HeapReservations
 import splice.core.memory.HeapWeights
 import splice.core.util.Cancellables
@@ -33,13 +31,6 @@ import java.util.concurrent.atomic.AtomicBoolean
 
 private const val CODEC_HANDLER = "codec"
 private val connectionKey = io.netty.util.AttributeKey.valueOf<IngressOwnership>("splice.heap.ingress")
-private val leaseKey = AttributeKey<HeapLease>("splice.heap.request")
-
-/** The listener supplies its canonical pre-turn HTTP error renderer; transport never builds an SSE error. The words
- *  are the listener's to say: transport names only what it declined ([why]) and the error [type]. */
-public fun interface IngressErrorBody {
-    public fun render(type: String, why: Decline): String
-}
 
 /** Admission runs after the HTTP codec but before automatic continue and Ktor's body actor.
  *  Unknown-length bodies reserve the listener's cap. Refused bodies are never forwarded to Ktor.
@@ -109,7 +100,7 @@ public class HeapIngress(
             if (entry == null) {
                 proceed()
             } else {
-                entry.lease?.let { call.attributes.put(leaseKey, it) }
+                entry.lease?.let { call.attributes.put(IngressLeases.key, it) }
                 try {
                     if (entry.refusal == null) {
                         proceed()
@@ -168,9 +159,4 @@ public class HeapIngress(
             HttpStatusCode(status, if (large) "Content Too Large" else "Gateway At Capacity"),
         )
     }
-}
-
-/** The bridge from a routed call to the ingress charge bound before its request was wrapped. */
-public object IngressLeases {
-    public fun borrow(call: ApplicationCall): HeapLease? = call.attributes.getOrNull(leaseKey)?.share()
 }

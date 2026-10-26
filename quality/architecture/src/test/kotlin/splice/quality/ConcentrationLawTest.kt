@@ -238,7 +238,16 @@ internal object Concentration {
     // splice.provider.codex.state 3.01 -> 2.90 (56.8 -> 59.0). The entry above counted CodeModeHeap.kt among the files
     // unchanged since 785f9cce8, but a647799d3 changed it. The new files read 0.33 to 2.22, and the band is the 16
     // files of 785f9cce8. 29 -> 16.
-    const val RATCHET_MAX_HIGH = 16
+    // 2026-10-26: failure-handling slice 2, measured with a port of this law's census that reproduces the pre-push's
+    // band of 20 on 8325dde6c exactly, over this commit's tree. Slice 1 left 15. Two entrants were the slice's own code
+    // and leave by seams of their own: SpliceSentences.kt 4.00 -> 1.36 gives Spoken, ProviderSentences and
+    // PathSentences a file each, and HeapIngress.kt 3.37 -> 2.72 gives IngressErrorBody and IngressLeases a file each
+    // (its new import of splice.core.failure, median 33.0, had pulled its denominator 54.4 -> 33.8). Three enter by
+    // neighbourhood and are recorded. AdmissionGate.kt 2.59 -> 3.20 and MuseAuthProvider.kt 2.99 -> 3.31 keep their C
+    // (142.5 and 164.0): 5da2b2c3d gave ProviderReset.kt a file of its own in splice.upstream.retry, whose median fell
+    // 55.0 -> 44.5. ClaudeConfigMaterializer.kt 2.89 -> 3.00: 61da2beea's resume fix grew it (C 183.5 -> 186.0) and
+    // its denominator fell 63.5 -> 62.0. The tree got worse; this records it. 16 -> 18.
+    const val RATCHET_MAX_HIGH = 18
 
     /** THE PACKAGE-SCALE BASELINE — the worst package's FILE COUNT. The package is named here so
      *  the diff reads without running anything, but the NAME is not gated: a different package

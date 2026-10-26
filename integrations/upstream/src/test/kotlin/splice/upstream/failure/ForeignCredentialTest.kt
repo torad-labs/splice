@@ -8,17 +8,16 @@ import org.junit.jupiter.api.Assertions.assertSame
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 import splice.core.auth.Credentials
-import splice.core.failure.ClientWire
 import splice.core.failure.FailureCause
-import splice.core.failure.LineFacts
+import splice.core.failure.HeadVoice
 import splice.core.failure.Moment
 import splice.core.failure.PersistedCause
 import splice.core.failure.Position
-import splice.core.failure.RequestFacts
 import splice.core.failure.ServerFault
-import splice.core.failure.SpliceLines
 import splice.core.turn.ErrorType
+import java.time.Clock
 import java.time.Instant
+import java.time.ZoneOffset
 
 class ForeignCredentialTest {
     private val bearer = Credentials.Bearer("eyFakeSignInToken.v4242", "acct-v4242")
@@ -94,12 +93,8 @@ class ForeignCredentialTest {
         val said = failure.cause.said?.text.orEmpty()
         listOf("sk-test0", "Zq9x", "*").forEach { fragment -> assertFalse(fragment in said, said) }
         val at = Position(Moment.BEFORE_COMMIT, streamBegan = false)
-        val line = SpliceLines().ending(
-            failure.cause,
-            at,
-            ClientWire.answer(failure.cause, at),
-            LineFacts("claude-codex", "claude-codex login", null, false, RequestFacts(false, false), Instant.EPOCH),
-        ).text
+        val voice = HeadVoice("claude-codex", "claude-codex login", clock = Clock.fixed(Instant.EPOCH, ZoneOffset.UTC))
+        val line = voice.anyTurn.ending(failure.cause, at).text
         listOf("sk-test0", "Zq9x", "*").forEach { fragment -> assertFalse(fragment in line, line) }
     }
 

@@ -15,7 +15,7 @@ public data class RequestFacts(val compaction: Boolean, val firstExchange: Boole
  *  [loginCommand], the command that signs the head in, null where the client signs itself in; [providerName], the
  *  provider a person acts with (DeepSeek, xAI), null where none is named; [local], whether the head's model server runs
  *  on this machine; the [request]; and [now], from which a wait of an hour or more is said as a clock time. */
-public data class LineFacts(
+internal data class LineFacts(
     val head: String,
     val loginCommand: String?,
     val providerName: String?,
@@ -52,14 +52,14 @@ public enum class SessionNote { NEW_LOGIN, }
 
 /** Composes every [SpliceLine]: one line of one or two sentences, at most [MAX_LINE] characters, that says what
  *  happened and what happens next. Times read through [time], in the machine's zone with its abbreviation. */
-public class SpliceLines(time: LocalTimeText = LocalTimeText()) {
+internal class SpliceLines(time: LocalTimeText = LocalTimeText()) {
     private val spoken = Spoken(time)
     private val providers = ProviderSentences(spoken)
     private val splices = SpliceSentences(spoken)
 
     /** The line a failed turn ends with. [answer] is what the client is told (ClientWire.answer): a line says Claude
      *  Code sends the turn again only when [WireAnswer.clientResends] says it does, and otherwise says what to do. */
-    public fun ending(cause: FailureCause, at: Position, answer: WireAnswer, facts: LineFacts): SpliceLine {
+    fun ending(cause: FailureCause, at: Position, answer: WireAnswer, facts: LineFacts): SpliceLine {
         val said = said(cause, at, facts, ongoing = false)
         val next = when (val then = said.next) {
             is Next.Resend -> if (answer.clientResends) RESENDS else then.otherwise
@@ -70,7 +70,7 @@ public class SpliceLines(time: LocalTimeText = LocalTimeText()) {
     }
 
     /** The line that opens a recovery episode: what the turn met, and what it does about it. It quotes no provider. */
-    public fun waiting(wait: WaitLine, facts: LineFacts): SpliceLine {
+    fun waiting(wait: WaitLine, facts: LineFacts): SpliceLine {
         val resumes = wait.next == Recovery.Resume
         val at = Position(if (resumes) Moment.MID_CONTENT else Moment.BEFORE_COMMIT, streamBegan = resumes)
         val next = when (val then = wait.next) {
@@ -83,7 +83,7 @@ public class SpliceLines(time: LocalTimeText = LocalTimeText()) {
     }
 
     /** The line a quiet stretch of a turn shows on its heartbeat. */
-    public fun quiet(turn: QuietTurn, facts: LineFacts): SpliceLine {
+    fun quiet(turn: QuietTurn, facts: LineFacts): SpliceLine {
         val head = facts.head
         val what = when {
             turn.again && turn.answering -> "$head is still paused mid-answer"
@@ -95,7 +95,7 @@ public class SpliceLines(time: LocalTimeText = LocalTimeText()) {
     }
 
     /** The note a waiting session reads. */
-    public fun note(note: SessionNote, facts: LineFacts): SpliceLine = when (note) {
+    fun note(note: SessionNote, facts: LineFacts): SpliceLine = when (note) {
         SessionNote.NEW_LOGIN -> fit("${facts.head} has a new login", null, "Continue where you left off.")
     }
 
@@ -123,6 +123,11 @@ internal const val MAX_LINE = 240
 
 /** What a line says when the client sends the turn again by itself. */
 internal const val RESENDS = "Claude Code sends this turn again."
+
+/** What a line tells the person to do when the turn is theirs to send again: now, later, or after a time it names. */
+internal const val SEND_AGAIN = "Send the message again."
+internal const val SEND_LATER = "Send the message again later."
+internal const val SEND_AFTER = "Send the message again after that time."
 
 /** One line before it is fitted: what happened, as a sentence without its period; the provider's words it may quote,
  *  set only on refused, rejected, forbidden, payment and unrecognized lines; and what happens next. */

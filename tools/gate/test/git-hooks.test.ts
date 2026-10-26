@@ -2,8 +2,8 @@
 //
 // Every judgement runs in a scratch repository: a fresh `git init` in tmp, the walls, a settings file that maps one
 // module, and a node_modules symlink to the real one, so the pinned ast-grep is the one the gate runs. No test copies
-// the shared checkout. Gradle is a fake, `compiler`, that judges the scratch worktree's bytes, except the two root
-// script tests, which run the real gradle wrapper on a scratch settings file.
+// the shared checkout. Gradle is a fake, `compiler`, that judges the scratch worktree's bytes. The probes that need the real
+// gradle wrapper check gradle, not the hooks, and live in gradle-inputs.test.ts.
 import { afterAll, describe, expect, test } from "bun:test";
 import { cpSync, existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, statSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -30,7 +30,6 @@ import {
   scanMirror,
   shimText,
 } from "../src/commands/hook.ts";
-import { resolveJdk21 } from "../src/lib/jdk.ts";
 import type { LintVerdict } from "../src/lib/lint-staged.ts";
 import type { Leg } from "../src/lib/prepush-scope.ts";
 import { parseProfile, type PushTiming } from "../src/lib/prepush-timing.ts";
@@ -125,13 +124,6 @@ function wallsRepo(): string {
   return root;
 }
 
-/** The real gradle wrapper, reachable from a scratch repository by symlink (its jar and distribution are the repo's). */
-function linkWrapper(root: string): void {
-  symlinkSync(join(repoRoot, "gradlew"), join(root, "gradlew"));
-  rmSync(join(root, "gradle"), { recursive: true, force: true });
-  symlinkSync(join(repoRoot, "gradle"), join(root, "gradle"));
-}
-
 function writeFile(root: string, path: string, content: string): void {
   mkdirSync(dirname(join(root, path)), { recursive: true });
   writeFileSync(join(root, path), content);
@@ -158,34 +150,6 @@ function compiler(fallback: string, calls: string[][] = []): GateRunner {
     }
     if (lines.length > 0) return { status: 1, output: `> Task :core:compileKotlin FAILED\n${lines.join("\n")}\n` };
     return { status: 0, output: "BUILD SUCCESSFUL\n" };
-  };
-}
-
-/** The real gradle wrapper, run through the gradle slot in a scratch repository: the root script's configuration pass is
- *  the thing under test. The slot is runUnderSlot, the function `bun tools/gate slot` calls. The verb finds its layout
- *  from its own location, so a child process runs the function on the scratch layout,, and the slot's lock and
- *  holder file are the scratch repository's own, so this run never queues behind or overwrites a seat's build. */
-function gradleHere(root: string): GateRunner {
-  return async (tasks) => {
-    const jdk = resolveJdk21();
-    if ("error" in jdk) throw new Error(jdk.error);
-    const runner = join(dir("splice-hook-slot-"), "run-slot.ts");
-    writeFileSync(
-      runner,
-      [
-        `import { runUnderSlot } from ${JSON.stringify(join(repoRoot, "tools", "gate", "src", "lib", "slot.ts"))};`,
-        `const status = await runUnderSlot({`,
-        `  layout: { repoRoot: ${JSON.stringify(root)}, buildRoot: ${JSON.stringify(root)} },`,
-        `  label: "root-script-test",`,
-        `  args: ${JSON.stringify(tasks)},`,
-        `  env: { JAVA_HOME: ${JSON.stringify(jdk.javaHome)}, GRADLE_SLOT_LOCK: ${JSON.stringify(join(root, ".gradle-slot.lock"))} },`,
-        `});`,
-        `process.exit(status);`,
-      ].join("\n"),
-    );
-    const proc = Bun.spawn([process.execPath, runner], { cwd: root, stdout: "pipe", stderr: "pipe" });
-    const [out, err] = await Promise.all([new Response(proc.stdout).text(), new Response(proc.stderr).text()]);
-    return { status: await proc.exited, output: out + err };
   };
 }
 
@@ -1088,140 +1052,4 @@ describe("hook install", () => {
   test("a bun or gate path with a single quote stays one shell word", () => {
     expect(shimText("/opt/bun's/bun", "/r/index.ts", "pre-push")).toContain(`exec '/opt/bun'\\''s/bun' '/r/index.ts' hook pre-push "$@"`);
   });
-});
-
-describe("the architecture suite fingerprints WHICH paths are tracked, not git's index bytes", () => {
-  /** A real gradle run in a scratch repository whose task declares the very `trackedPathsDigest` the architecture suite
-   *  declares (read out of quality/architecture/build.gradle.kts, so a changed declaration is the one tested). */
-  function trackedPathsRepo(rawIndex = false): string {
-    const declaration = /val trackedPathsDigest = [\s\S]*?\n\}\n/.exec(
-      readFileSync(join(repoRoot, "quality", "architecture", "build.gradle.kts"), "utf8"),
-    )?.[0];
-    if (declaration === undefined) throw new Error("quality/architecture/build.gradle.kts declares no trackedPathsDigest");
-    const root = wallsRepo();
-    linkWrapper(root);
-    writeFile(root, "settings.gradle.kts", 'rootProject.name = "scratch"\n');
-    writeFile(
-      root,
-      "build.gradle.kts",
-      [
-        "import java.security.MessageDigest",
-        "val repoRoot = layout.projectDirectory",
-        declaration,
-        'tasks.register("probe") {',
-        rawIndex ? '    inputs.files(repoRoot.file(".git/index"))' : '    inputs.property("trackedPaths", trackedPathsDigest)',
-        '    val stamp = layout.buildDirectory.file("probe.stamp")',
-        "    outputs.file(stamp)",
-        '    doLast { stamp.get().asFile.apply { parentFile.mkdirs() }.writeText("ran") }',
-        "}",
-      ].join("\n"),
-    );
-    writeFile(root, "docs/tracked.md", "one\n");
-    git(root, ["add", "--", "settings.gradle.kts", "build.gradle.kts", "docs/tracked.md"]);
-    commit(root, "chore(test): tracked fixture");
-    return root;
-  }
-
-  async function probe(root: string): Promise<string> {
-    const run = await gradleHere(root)(["probe"]);
-    expect(run.status).toBe(0);
-    return run.output;
-  }
-
-  test("RED: staging a content change to an already tracked file leaves the suite UP-TO-DATE; adding or removing a tracked path reruns it", async () => {
-    const root = trackedPathsRepo();
-    expect(await probe(root)).not.toContain(":probe UP-TO-DATE");
-    expect(await probe(root)).toContain(":probe UP-TO-DATE");
-
-    // `git add` rewrites the index but git's tracked-path list is byte-identical.
-    writeFile(root, "docs/tracked.md", "two\n");
-    git(root, ["add", "docs/tracked.md"]);
-    expect(await probe(root)).toContain(":probe UP-TO-DATE");
-
-    writeFile(root, "docs/new.md", "new\n");
-    git(root, ["add", "docs/new.md"]);
-    expect(await probe(root)).not.toContain(":probe UP-TO-DATE");
-
-    git(root, ["rm", "-q", "--cached", "docs/new.md"]);
-    expect(await probe(root)).not.toContain(":probe UP-TO-DATE");
-  }, 600_000);
-});
-
-describe("a text-scanning law's content inputs are every tracked file, declared from git's tracked list", () => {
-  /** build-logic's classes, compiled by gradle from a scratch copy of build-logic's sources, so nothing outside the
-   *  copy moves while the probes run. Never the live build folder: the pre-push runs this suite beside its gradle leg in
-   *  the same tree, and that leg recompiles build-logic whenever one of its inputs changes, a version-catalog bump
-   *  included. A class file rewritten between two probes reran both tasks where the second had to be UP-TO-DATE
-   *  (d0b487075's red gateTests). Kotlin empties the output folder before it writes, so a copy taken during that compile
-   *  held no ReadSet and the probe's script failed on "Unresolved reference 'splice'" (a647799d3's red gateTests). A copy
-   *  taken before it would have tested the previous sha's classes. */
-  async function buildLogicClasses(): Promise<string> {
-    const scratch = dir("build-logic-copy-");
-    // The copy reads the version catalog at ../gradle/libs.versions.toml, as build-logic/settings.gradle.kts does.
-    linkWrapper(scratch);
-    const copy = join(scratch, "build-logic");
-    for (const entry of ["src", "build.gradle.kts", "settings.gradle.kts"]) {
-      cpSync(join(repoRoot, "build-logic", entry), join(copy, entry), { recursive: true });
-    }
-    cpSync(join(repoRoot, "gradle.properties"), join(copy, "gradle.properties"));
-    symlinkSync(join(repoRoot, "gradlew"), join(copy, "gradlew"));
-    // The real compile checks build-logic's downloads against the root's verification metadata, so the copy does too.
-    // Only that file: a gradle/libs.versions.toml beside it would be imported as the catalog a second time.
-    mkdirSync(join(copy, "gradle"), { recursive: true });
-    symlinkSync(join(repoRoot, "gradle", "verification-metadata.xml"), join(copy, "gradle", "verification-metadata.xml"));
-    const run = await gradleHere(copy)(["classes"]);
-    expect(run.status, run.output).toBe(0);
-    return join(copy, "build", "classes", "kotlin", "main");
-  }
-
-  /** A real gradle run in a scratch repository: the build-logic classes the quality build uses (ReadSet) declare
-   *  every tracked file as the inputs of a stamped task. */
-  async function candidatesRepo(): Promise<string> {
-    const classes = await buildLogicClasses();
-    const root = wallsRepo();
-    linkWrapper(root);
-    writeFile(root, "settings.gradle.kts", 'rootProject.name = "scratch"\n');
-    writeFile(
-      root,
-      "build.gradle.kts",
-      [
-        "buildscript { dependencies { classpath(files(" + JSON.stringify(classes) + ")) } }",
-        "val tracked = splice.lawsuite.ReadSet.trackedProvider(project)",
-        'val probe = tasks.register("probe") {',
-        '    val stamp = layout.buildDirectory.file("probe.stamp")',
-        "    outputs.file(stamp)",
-        '    doLast { stamp.get().asFile.apply { parentFile.mkdirs() }.writeText("ran") }',
-        "}",
-        'splice.lawsuite.ReadSet.declareInputs(project, probe, tracked, "candidates")',
-      ].join("\n"),
-    );
-    writeFile(root, "docs/read.md", "one\n");
-    writeFile(root, "assets/logo.png", "png one\n");
-    writeFile(root, "build/kept.md", "a tracked file under a build directory\n");
-    git(root, ["add", "-f", "--", "settings.gradle.kts", "build.gradle.kts", "docs/read.md", "assets/logo.png", "build/kept.md"]);
-    commit(root, "chore(test): candidates fixture");
-    return root;
-  }
-
-  async function probe(root: string): Promise<string> {
-    const run = await gradleHere(root)(["probe"]);
-    expect(run.status, run.output).toBe(0);
-    return run.output;
-  }
-
-  test("RED: a content change to ANY tracked file reruns the task, a binary or a build-directory file included; an untracked change does not", async () => {
-    const root = await candidatesRepo();
-    expect(await probe(root)).not.toContain(":probe UP-TO-DATE");
-    expect(await probe(root)).toContain(":probe UP-TO-DATE");
-
-    writeFile(root, "untracked.md", "not tracked\n");
-    expect(await probe(root)).toContain(":probe UP-TO-DATE");
-
-    for (const [path, text] of [["docs/read.md", "two\n"], ["assets/logo.png", "png two\n"], ["build/kept.md", "kept two\n"]] as const) {
-      writeFile(root, path, text);
-      git(root, ["add", "-f", path]);
-      expect(await probe(root)).not.toContain(":probe UP-TO-DATE");
-      expect(await probe(root)).toContain(":probe UP-TO-DATE");
-    }
-  }, 600_000);
 });

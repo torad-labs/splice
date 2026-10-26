@@ -197,6 +197,9 @@ val runtimeLegalTexts = run {
     }
 }
 val icuLicense = repositoryRoot.file("tools/release/licenses/icu-LICENSE.txt")
+// protobuf's own LICENSE, from github.com/protocolbuffers/protobuf at tag v25.9, the release that ships protobuf-java
+// 3.25.9. The jar carries no license file, so BSD-3-Clause's attribution reaches the bundle only from here.
+val protobufLicense = repositoryRoot.file("tools/release/licenses/protobuf-LICENSE.txt")
 val licenseFile = repositoryRoot.file("LICENSE")
 // PR 6: PROVENANCE.md lives under docs/ — the repository root keeps only the files GitHub itself
 // reads. Both consumers (the jar's META-INF copy below and stageRelease) read it from HERE.
@@ -214,10 +217,15 @@ val distDir = repositoryRoot.dir("dist")
 // attribution it does require is already emitted by generateThirdPartyLicenses. Added 2026-08-11
 // for com.github.luben:zstd-jni, the canonical JVM zstd binding (Kafka/Spark/Netty use it); the
 // alternatives cannot compress (aircompressor is decompress-only) or shell out to it anyway.
+// BSD-3-Clause added 2026-10-25 for com.google.protobuf:protobuf-java, which code mode's native gRPC transport needs
+// (integrations/codemode/build.gradle.kts). It is BSD 2-Clause plus a no-endorsement clause, which splice never
+// touches. Its jar carries no LICENSE, so generateThirdPartyLicenses bundles protobufLicense and
+// verifyReleaseCompliance checks the bundle holds it whole (splice-lead's decision).
 val allowedReleaseLicenses = setOf(
     "Apache License, Version 2.0",
     "BSD 2-Clause License",
     "BSD-2-Clause",
+    "BSD-3-Clause",
     "Apache Software License - Version 2.0",
     "Apache-2.0",
     "Eclipse Public License - Version 1.0",
@@ -309,9 +317,11 @@ val generateThirdPartyNotices = tasks.register("generateThirdPartyNotices") {
 
 val generateThirdPartyLicenses = tasks.register("generateThirdPartyLicenses") {
     val icu = icuLicense
+    val protobuf = protobufLicense
     val bundle = thirdPartyLicenses
     val legalTexts = runtimeLegalTexts
     inputs.file(icuLicense).withPathSensitivity(PathSensitivity.NONE)
+    inputs.file(protobufLicense).withPathSensitivity(PathSensitivity.NONE)
     // The license texts come from the CycloneDX plugin, so its version keys the cache: read from the one catalog entry
     // the plugins block applies, never a second literal a bump could miss.
     inputs.property("cyclonedxLicenseTexts", libs.versions.cyclonedx.get())
@@ -348,6 +358,12 @@ val generateThirdPartyLicenses = tasks.register("generateThirdPartyLicenses") {
             appendLine("ICU license and bundled third-party notices")
             appendLine("================================================================================")
             appendLine(icu.asFile.readText().trimEnd())
+            appendLine()
+            appendLine("================================================================================")
+            appendLine("com.google.protobuf:protobuf-java / LICENSE (BSD-3-Clause, protobuf v25.9)")
+            appendLine("================================================================================")
+            appendLine()
+            appendLine(protobuf.asFile.readText().trimEnd())
             legalTexts.get().filter { (_, name, _) -> "LICENSE" in name.uppercase() }
                 .forEach { (coordinate, name, text) ->
                     appendLine()
@@ -374,6 +390,7 @@ val verifyReleaseCompliance = tasks.register("verifyReleaseCompliance") {
     val releaseVersion = releaseVersionValue
     val releaseGroup = releaseGroupValue
     val allowedReleaseLicenses = allowedReleaseLicenses
+    val protobuf = protobufLicense
     val runtimeCoordinates = configurations.runtimeClasspath.get().incoming.resolutionResult.rootComponent.map { root ->
         val seen = LinkedHashSet<ResolvedComponentResult>()
         val pending = ArrayDeque(listOf(root))
@@ -388,6 +405,7 @@ val verifyReleaseCompliance = tasks.register("verifyReleaseCompliance") {
     }
     dependsOn(normalizeReleaseBom, copyReleaseLicenses, generateThirdPartyLicenses, generateThirdPartyNotices)
     inputs.files(bom, licenses, thirdPartyLicenses, thirdPartyNotices)
+    inputs.file(protobufLicense).withPathSensitivity(PathSensitivity.NONE)
     inputs.property("runtimeCoordinates", runtimeCoordinates)
     doLast {
         val bomJson = JsonSlurper().parse(bom.get().asFile) as Map<*, *>
@@ -450,6 +468,10 @@ val verifyReleaseCompliance = tasks.register("verifyReleaseCompliance") {
             "ICU License - ICU 1.8.1 to ICU 57.1",
             "Chinese/Japanese Word Break Dictionary Data",
         ).forEach { marker -> check(marker in licenseTexts) { "third-party license bundle missing $marker" } }
+        // BSD-3-Clause's attribution is the whole text, notice and disclaimer included, so the bundle holds it whole.
+        check(protobuf.asFile.readText().trimEnd() in licenseTexts) {
+            "third-party license bundle missing com.google.protobuf:protobuf-java's BSD-3-Clause LICENSE"
+        }
         val notices = thirdPartyNotices.get().asFile.readText()
         legalTexts.get().forEach { (coordinate, name, text) ->
             val bundle = if ("NOTICE" in name.uppercase()) notices else licenseTexts

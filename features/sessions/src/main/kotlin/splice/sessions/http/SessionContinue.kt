@@ -23,7 +23,9 @@
 // would type it. A terminal splice opened closes with its client, so the resume opens a new one. A session whose
 // client already exited opens a new one too.
 //
-// WHAT IS REFUSED. A session waiting on an answer: `/exit` would land in the question. One already on that command
+// WHAT IS REFUSED. A session waiting on an answer: `/exit` would land in the question. One running background shells,
+// at its prompt or once the move stopped its turn: `/exit` would land in "Background work is running", whose focused
+// answer stops that work (PR #247's fifth review). One already on that command
 // with no other model picked; another model on the same command is a move like any other (p176: his Opus week is
 // spent and Fable on the same plan has room).
 // One splice cannot reach (the refusals SessionDrive gives). One whose prompt holds words he has not sent: `/exit`
@@ -68,6 +70,8 @@ private const val MOVE_NOT_OURS =
 private const val MOVE_IN_FLIGHT = "it is already moving; wait for that move to answer"
 private const val RELAUNCH_WORKING = "it is working; relaunch it once its turn ends"
 private const val RELAUNCH_BACKGROUND = "it has background work running; relaunch it once that work ends"
+private const val MOVE_BACKGROUND =
+    "it has background work running, which its /exit would stop; move it once that work ends"
 
 // why: Claude Code 2.1.310's word for a client idle at its prompt with background shells running, which its own session
 // list counts as working. Its /exit answers "Background work is running" with "Exit and stop tasks" focused.
@@ -180,17 +184,15 @@ public class SessionContinue(
             }
         }
 
-        /** [record] moved onto [head] and [model], or why not now: it waits on an answer, or the command cannot
-         *  start. */
+        /** [record] moved onto [head] and [model], or why not now: its client cannot be ended now ([notNow]), or the
+         *  command cannot start. */
         private fun planOnto(session: String, record: SessionRecord, head: String, model: String?): Plan {
-            if (record.availability != SessionAvailability.GONE && record.status.waitingFor != null) {
-                return refused("it is waiting on an answer; answer it before moving it")
-            }
+            notNow(record)?.let { return it }
+            val running = record.availability != SessionAvailability.GONE
             return when (val command = commands.forHead(head)) {
                 is StartCommand.Refused -> refused(command.reason)
                 is StartCommand.Ready -> {
                     val resume = listOf("-r", session) + model?.let { listOf("--model", it) }.orEmpty()
-                    val running = record.availability != SessionAvailability.GONE
                     val folder = record.process.cwd?.takeIf { Files.isDirectory(Path.of(it)) } ?: home.toString()
                     ledger.leaving(record, head, model)
                     Plan.Go(
@@ -206,6 +208,15 @@ public class SessionContinue(
                     )
                 }
             }
+        }
+
+        /** Why a running [record]'s client cannot be ended now, or null: its `/exit` would land in a question, about
+         *  an answer it waits on or about the background shells it runs, whose focused answer stops them. */
+        private fun notNow(record: SessionRecord): Plan? = when {
+            record.availability == SessionAvailability.GONE -> null
+            record.status.waitingFor != null -> refused("it is waiting on an answer; answer it before moving it")
+            record.status.state == RUNNING_SHELLS -> refused(MOVE_BACKGROUND, Refusal.WORKING)
+            else -> null
         }
 
         private fun refused(sentence: String, reason: Refusal? = null): Plan =
@@ -239,17 +250,21 @@ public class SessionContinue(
         val exit = object : PaneTurns.Exit {
             override val process = move.process
 
-            override fun check(): JsonReply? = changed(move, ask) ?: when {
+            override fun check(): JsonReply? = changed(move, ask) ?: when (live(move.session)?.status?.state) {
                 // working now, on a turn the move did not stop: one the person started in the terminal itself, which
                 // splice's count does not see. A turn the move stopped already reads stopped here (RegistryHandover).
-                live(move.session)?.status?.state in busy ->
-                    Refusals.reply(
-                        HttpStatusCode.Conflict,
-                        "it started working while the move waited its turn, so nothing was started on ${move.head}",
-                        Refusal.WORKING,
-                    )
-                ask.clear -> null
-                else -> drive.drafted(move.session)
+                in busy -> Refusals.reply(
+                    HttpStatusCode.Conflict,
+                    "it started working while the move waited its turn, so nothing was started on ${move.head}",
+                    Refusal.WORKING,
+                )
+                // background shells a stopped turn left running, or ones started since: /exit would stop them
+                RUNNING_SHELLS -> Refusals.reply(
+                    HttpStatusCode.Conflict,
+                    "it has background work its /exit would stop, so nothing was started on ${move.head}",
+                    Refusal.WORKING,
+                )
+                else -> if (ask.clear) null else drive.drafted(move.session)
             }
 
             override fun keys(): JsonReply? = Cancellables.runCatchingCleanup {

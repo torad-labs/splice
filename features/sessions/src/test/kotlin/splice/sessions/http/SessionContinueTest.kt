@@ -45,6 +45,9 @@ class SessionContinueTest {
     /** The model a session's row reports it runs on: what a relaunch resumes it on. */
     private var runsOn: String? = "claude-fable-5-1"
 
+    /** What the registry reads once a stop the move pressed lands: idle at its prompt, unless a test says otherwise. */
+    private var stoppedTo: () -> Unit = { leadIdle() }
+
     private val continueOn by lazy {
         SessionContinue(
             drive = SessionDrive(TerminalSource { SessionDriver(terminal, panes) }),
@@ -57,7 +60,7 @@ class SessionContinueTest {
 
                 // A stop that lands reads in the registry, the one RegistryHandover.stopped watches.
                 override suspend fun stopped(session: String, seconds: Long): Boolean =
-                    stops.also { if (it) leadIdle() }
+                    stops.also { if (it) stoppedTo() }
 
                 override suspend fun cameOn(session: String, head: String, seconds: Long): Boolean {
                     cameOn += session to head
@@ -393,5 +396,45 @@ class SessionContinueTest {
         assertTrue("background" in body.getValue("error").jsonPrimitive.content, "it says what it waits for: $body")
         assertTrue(terminal.sent.isEmpty() && terminal.pressed.isEmpty(), "nothing is typed or pressed")
         assertTrue(terminal.opened.isEmpty(), "nothing is started")
+    }
+
+    // Continue on ends the client with /exit as a relaunch does, and /exit with background shells running stops on
+    // "Background work is running" with "Exit and stop tasks" focused, where his next Enter ends that work (PR #247's
+    // fifth review). The move leaves such a session where it is and types nothing into it.
+    @Test
+    fun `Continue on leaves a session running background work where it is, and types nothing into it`() {
+        panes.remember(LEAD, leadPane)
+        leadRunningShells()
+
+        val reply = move(LEAD, """{"head":"codex","model":"gpt-6-sol"}""")
+
+        assertEquals(HttpStatusCode.Conflict, reply.status)
+        val body = rig.json(reply.body)
+        assertEquals("working", body.getValue("reason").jsonPrimitive.content)
+        assertTrue("background" in body.getValue("error").jsonPrimitive.content, "it says what it waits for: $body")
+        assertTrue(terminal.sent.isEmpty() && terminal.pressed.isEmpty(), "nothing is typed or pressed")
+        assertTrue(terminal.opened.isEmpty() && kept.isEmpty(), "nothing is started and no mark is left")
+    }
+
+    // A turn can leave background shells running when it stops: the move stops the turn it was pressed on, and the
+    // client then sits at its prompt with that work still running, so /exit would land in the same question.
+    @Test
+    fun `a stopped turn that leaves background work running gets no exit, and the session stays where it is`() {
+        panes.remember(LEAD, leadPane)
+        leadWorking()
+        stoppedTo = {
+            leadIdle()
+            leadRunningShells()
+        }
+
+        val reply = move(LEAD, """{"head":"codex"}""")
+
+        assertEquals(HttpStatusCode.Conflict, reply.status)
+        val body = rig.json(reply.body)
+        assertEquals("working", body.getValue("reason").jsonPrimitive.content)
+        assertTrue("background" in body.getValue("error").jsonPrimitive.content, "it says what it waits for: $body")
+        assertEquals(listOf(SessionKey.STOP), terminal.pressed.map { it.second }, "only the turn he pressed on stops")
+        assertTrue(terminal.sent.isEmpty(), "no /exit lands in the background-work question")
+        assertTrue(terminal.opened.isEmpty() && kept.isEmpty(), "nothing is started and no mark is left")
     }
 }

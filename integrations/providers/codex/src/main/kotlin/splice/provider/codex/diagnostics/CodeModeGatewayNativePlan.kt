@@ -1,6 +1,7 @@
 package splice.provider.codex.diagnostics
 
 import kotlinx.serialization.json.JsonArray
+import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
@@ -73,11 +74,20 @@ internal class CodeModeGatewayNativePlan(private val family: String, private val
 internal enum class NativeGatewayAction { STORE, LOAD, YIELD, SIBLING, WAIT_SUFFIX, WAIT_EXHAUSTED }
 
 internal object CodeModeGatewayNativeResults {
+    fun runningCell(input: JsonArray, callId: String): String? {
+        val output = input.filterIsInstance<JsonObject>().firstOrNull {
+            JsonScalars.str(it, "call_id") == callId && JsonScalars.str(it, "type") == "custom_tool_call_output"
+        }?.get("output")
+        val header = header(output)
+        return header?.takeIf { it.startsWith("Script running with cell ID ") }
+            ?.substringAfter("Script running with cell ID ")?.lineSequence()?.first()
+    }
+
     fun cell(input: JsonArray, callId: String): String {
         val output = input.filterIsInstance<JsonObject>().first {
             JsonScalars.str(it, "call_id") == callId && JsonScalars.str(it, "type") == "custom_tool_call_output"
-        }.getValue("output") as? JsonArray
-        val header = output?.filterIsInstance<JsonObject>()?.firstNotNullOfOrNull { JsonScalars.str(it, "text") }
+        }.getValue("output")
+        val header = header(output)
         return checkNotNull(header).substringAfter("Script running with cell ID ").lineSequence().first()
             .also {
                 require(
@@ -85,4 +95,7 @@ internal object CodeModeGatewayNativeResults {
                 ) { "Native yield has no resumable cell identity" }
             }
     }
+
+    private fun header(output: JsonElement?): String? = JsonScalars.str(output)
+        ?: (output as? JsonArray)?.filterIsInstance<JsonObject>()?.firstNotNullOfOrNull { JsonScalars.str(it, "text") }
 }

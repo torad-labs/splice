@@ -15,6 +15,7 @@ import splice.provider.codex.CODE_MODE_FIELD_INPUT
 import splice.provider.codex.CodeModeBridgeConfig
 import splice.provider.codex.CodeModeRetention
 import splice.provider.codex.CodexCodeModeBridge
+import splice.provider.codex.diagnostics.current.CodeModeGatewayScenarioProbe
 import splice.upstream.RoundResult
 import splice.upstream.codemode.NativeCodeModeLifecycle
 import java.nio.file.Path
@@ -29,6 +30,22 @@ public object CodeModeGatewayNativeProbe {
     ): JsonObject {
         require(Regex("[a-f0-9]{32}").matches(nonce)) { "Expected a fresh 128-bit probe nonce" }
         val fixture = CodeModeGatewayProbeSupport(nonce, stateDirectory)
+        return when (id) {
+            "runtime.current-scenario" -> CodeModeGatewayScenarioProbe(fixture, runtime).run(stateDirectory)
+            "runtime.deferred-search" -> CodeModeGatewaySearchProbe(fixture, runtime).run()
+            "runtime.head-settings" -> CodeModeGatewaySettingsProbe(fixture, runtime).run()
+            "runtime.failed-tool-output-write", "runtime.failed-tool-output-read" ->
+                CodeModeGatewayToolOutputProbe(fixture, runtime).run(id.endsWith("-read"))
+            else -> runNative(id, fixture, runtime)
+        }
+    }
+
+    private suspend fun runNative(
+        id: String,
+        fixture: CodeModeGatewayProbeSupport,
+        runtime: NativeCodeModeLifecycle,
+    ): JsonObject {
+        val nonce = fixture.nonce
         val plan = CodeModeGatewayNativePlan(id, nonce)
         val manager = CodexCodeModeBridge(
             CodeModeBridgeConfig(

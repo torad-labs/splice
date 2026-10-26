@@ -124,7 +124,7 @@ internal class SseRoundConsume(
             val rawOutcome = translator.driveTurn(events, end.gate(inputs.sink))
             // An attempt that ended early has no outcome of its own to mark, classify or report.
             end.early()?.let { return it }
-            drive.perf.mark(PerfKeys.STREAM_END)
+            streamEnded(drive, rawOutcome)
             return StreamRead.Read(
                 zeroEvent.classify(
                     drive,
@@ -140,6 +140,16 @@ internal class SseRoundConsume(
             // channel alone; a no-op if the watchdog already cancelled it.
             roundJob.complete()
         }
+    }
+
+    /** The stream ended with an outcome of its own. When the upstream said the last word on the request (the response
+     *  completed, or the upstream reported why it failed), the request no longer runs there. Anything else (a client
+     *  gone, a reaped round, a stream that stopped with no terminal) leaves it possibly still running upstream. */
+    private fun streamEnded(drive: TurnDrive, outcome: TurnOutcome) {
+        val upstreamFinished =
+            outcome is TurnOutcome.Success || (outcome as? TurnOutcome.Failure)?.traits?.providerReported == true
+        if (upstreamFinished) drive.route?.finished()
+        drive.perf.mark(PerfKeys.STREAM_END)
     }
 }
 

@@ -134,6 +134,8 @@ internal class UpstreamRequest(
             val realStatus = resp.status.value
             val text = UpstreamResponse(resp).bodyTextLimited(MAX_ERROR_BODY_BYTES)
             recorder?.errorText(text)
+            // The vendor hears every answer that is not a stream; whether its route survives the answer is its call.
+            ctx.recovery.route?.answered(realStatus, text)
             // A refusal the vendor knows keeps its own plan; any other status keeps V4-73's quota reading.
             val vendor = ctx.auth as? VendorRefusals
             val refusal = vendor?.refusal(realStatus, text)

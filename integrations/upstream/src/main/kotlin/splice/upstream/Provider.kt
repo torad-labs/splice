@@ -117,6 +117,10 @@ public interface Provider : ProviderIdentity {
     /** Mid-stream re-anchoring policy for FAILED rounds; null = surface the failure (pre-reanchor behaviour). */
     public fun reanchorPolicy(meta: TurnMeta): ReanchorPolicy? = null
 
+    /** Where this turn's requests are routed upstream, asked once per turn; a new one each time, since it follows one
+     *  turn's requests. Null (the default) routes nothing beyond the turn's own headers. */
+    public fun route(meta: TurnMeta): VendorRoute? = null
+
     /** RC-4 (reasoning-cache 2026-07-24): one-shot request-body amendment on a
      *  deterministic upstream rejection — (status, responseText, bodyJson) -> amended
      *  body or null. Default null keeps every provider on the plain retry plan. */

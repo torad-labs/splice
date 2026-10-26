@@ -17,6 +17,7 @@ import splice.dialect.responses.tools.ToolDeferralPolicy
 import splice.dialect.responses.tools.ToolSearchMode
 import splice.oauth.muse.MuseRefresh
 import splice.provider.muse.MUSE_CONTINUES_REASONING_ONLY
+import splice.provider.muse.MuseGatewayRoutes
 import splice.provider.muse.MuseKeyMintCall
 import splice.upstream.CredentialHeaders
 import splice.upstream.ProviderLocations
@@ -44,6 +45,7 @@ internal class MuseResponsesArm(
         val quirks = museQuirks(ctx)
         val toolNames = ToolNameShortener(ctx.providerCfg.quirks.toolNameCap ?: MUSE_TOOL_NAME_CAP, log)
         val headers = SSE_HEADERS + MUSE_BASE_HEADERS + ctx.providerCfg.staticHeaders
+        val stateDir = statePaths.headsDir.resolve(ctx.key)
         val provider = MuseResponsesProvider(
             tuning = ProviderTuning(
                 name = ProviderName(key = ctx.key, label = label),
@@ -52,7 +54,7 @@ internal class MuseResponsesArm(
                 auth = default.auth,
                 locations = ProviderLocations(
                     baseUrl = ctx.providerCfg.baseUrl,
-                    stateDir = statePaths.headsDir.resolve(ctx.key),
+                    stateDir = stateDir,
                 ),
                 watchdog = ctx.faultPlan.watchdog,
                 loginCommand = ctx.faultPlan.loginCommand,
@@ -62,6 +64,7 @@ internal class MuseResponsesArm(
                 quirks = quirks,
                 headers = headers,
                 toolNames = toolNames,
+                routes = MuseGatewayRoutes(stateDir, log),
             ),
         )
         return Wired(provider, default.auth, wiredAccounts(accounts, headers))

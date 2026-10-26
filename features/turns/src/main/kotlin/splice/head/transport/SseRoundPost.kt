@@ -106,6 +106,7 @@ internal class SseRoundPost(
                 recovery = PostRecovery(
                     clientFrameEmitted = inputs.frameEmittedThisRound,
                     amendBodyOnFailure = provider::amendBodyOnFailure,
+                    route = drive.route,
                 ),
                 limits = PostLimits(
                     rateLimitCooldown = account?.cooldown,

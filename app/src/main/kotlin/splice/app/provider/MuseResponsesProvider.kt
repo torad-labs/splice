@@ -7,26 +7,18 @@ import splice.dialect.responses.CacheKeyStrategy
 import splice.dialect.responses.ReasoningSettings
 import splice.dialect.responses.ResponsesProvider
 import splice.dialect.responses.ResponsesQuirks
+import splice.provider.muse.MuseGatewayRoutes
 import splice.upstream.ProviderTuning
 import splice.upstream.ToolNameShortener
-import java.nio.ByteBuffer
-import java.security.MessageDigest
-import java.util.UUID
-
-// why: clear the UUID version nibble before setting version four on the digest-derived ID.
-private const val UUID_VERSION_MASK = -0xF001L
-
-// why: version four marks the stable gateway-routing UUID with the canonical version nibble.
-private const val UUID_VERSION_FOUR = 0x4000L
-
-// why: clear the upper UUID variant bits before setting the RFC variant on the second half.
-private const val UUID_VARIANT_MASK = 0x3FFF_FFFF_FFFF_FFFFL
+import splice.upstream.VendorRoute
 
 internal data class MuseResponsesOptions(
     val reasoning: ReasoningSettings,
     val quirks: ResponsesQuirks,
     val headers: Map<String, String>,
     val toolNames: ToolNameShortener,
+    /** Where Meta's gateway runs each conversation of this head (the muse module owns when one moves). */
+    val routes: MuseGatewayRoutes,
 )
 
 internal class MuseResponsesProvider(
@@ -40,20 +32,15 @@ internal class MuseResponsesProvider(
 ) {
     override fun extraHeaders(creds: Credentials): Map<String, String> = options.headers
 
-    override fun perTurnHeaders(meta: TurnMeta): Map<String, String> {
-        if (options.quirks.backend.promptCache.key == CacheKeyStrategy.OFF) return emptyMap()
-        // The same conversation key as prompt_cache_key; no client identity or raw session ID rides.
-        val key = meta.scope.sessionId?.let { "${options.quirks.providerTag}:$it" }
-            ?: meta.scope.conversationKey ?: return emptyMap()
-        return mapOf("x-meta-ai-gateway-session-id" to gatewaySessionId(key))
-    }
+    override fun perTurnHeaders(meta: TurnMeta): Map<String, String> =
+        conversation(meta)?.let { options.routes.headers(it) }.orEmpty()
 
-    private fun gatewaySessionId(key: String): String {
-        val bytes = MessageDigest.getInstance("SHA-256")
-            .digest("splice-muse:$key".toByteArray(Charsets.UTF_8))
-        val buffer = ByteBuffer.wrap(bytes)
-        val most = (buffer.long and UUID_VERSION_MASK) or UUID_VERSION_FOUR
-        val least = (buffer.long and UUID_VARIANT_MASK) or Long.MIN_VALUE
-        return UUID(most, least).toString()
+    override fun route(meta: TurnMeta): VendorRoute? = conversation(meta)?.let { options.routes.route(it) }
+
+    /** The same conversation key as prompt_cache_key; no client identity or raw session ID rides. Null when the cache
+     *  key is off or the turn names no conversation, and then no route is pinned. */
+    private fun conversation(meta: TurnMeta): String? {
+        if (options.quirks.backend.promptCache.key == CacheKeyStrategy.OFF) return null
+        return meta.scope.sessionId?.let { "${options.quirks.providerTag}:$it" } ?: meta.scope.conversationKey
     }
 }

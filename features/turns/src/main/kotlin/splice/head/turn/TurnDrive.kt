@@ -25,6 +25,7 @@ import splice.head.wire.TurnTerminal
 import splice.head.wire.TurnTrace
 import splice.upstream.RoundInterceptor
 import splice.upstream.ToolSearchPolicy
+import splice.upstream.VendorRoute
 import splice.upstream.credentials.AccountSelection
 import splice.upstream.retry.InflightGate
 import splice.upstream.retry.TurnWatchdog
@@ -151,6 +152,10 @@ internal data class TurnDrive(
     var rateLimitRelay: RateLimitRelay? = null
     var upstreamAccepted: splice.upstream.StreamStart? = null
     var accountHandoff: TurnAccountHandoff? = null
+
+    /** Where the provider routes this turn's requests ([splice.upstream.Provider.route]): set once, by the factory that
+     *  assembles the drive, and told how each request and the turn itself ended. */
+    var route: VendorRoute? = null
 
     /** The account this turn's row names: observed per attempt, else the chosen login, else the head's label. */
     val accountLabel = TurnAccountLabel()

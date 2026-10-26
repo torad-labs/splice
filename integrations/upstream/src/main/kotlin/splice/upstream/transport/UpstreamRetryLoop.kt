@@ -110,7 +110,8 @@ internal class RetryState(var cooldown: RateLimitCooldown, val t0: Long, val max
         val credentials = ctx.requireAuth() ?: return null
         // Preserve the request-preparation origin: header resolution belongs to POST wait, not prior round work.
         val postedAtMs = ctx.observers.perf?.elapsedMs()
-        val headers = ctx.extraHeaders(credentials)
+        // The vendor routes each attempt, so a retry sent after its route was left rides the new one (VendorRoute).
+        val headers = ctx.extraHeaders(credentials) + ctx.recovery.route?.sending().orEmpty()
         val selected = ctx.limits.rateLimitCooldown ?: cooldowns.forHeaders(
             CredentialKey.headers(credentials, headers),
             (credentials as? Credentials.ApiKey)?.header,

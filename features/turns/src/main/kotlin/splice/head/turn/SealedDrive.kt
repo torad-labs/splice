@@ -50,6 +50,9 @@ internal class SealedDrive(
         } finally {
             if (drive.emitter.endedCleanly) drive.account?.markTurnSucceeded()
             drive.account?.releaseCredentialProbe()
+            // Heard while the turn still holds its slot: a turn the head no longer counts as running has moved its
+            // conversation already, when it left a request running upstream.
+            drive.route?.turnEnded()
         }
     }
 

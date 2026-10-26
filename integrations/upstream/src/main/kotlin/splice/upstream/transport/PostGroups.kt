@@ -5,6 +5,7 @@ package splice.upstream.transport
 import splice.core.perf.TurnPerf
 import splice.upstream.BodyAmendment
 import splice.upstream.ClientFrameEmitted
+import splice.upstream.VendorRoute
 import splice.upstream.retry.RETRY_AFTER_GIVE_UP_MS
 import splice.upstream.retry.RateLimitCooldown
 import splice.upstream.retry.WarmLoginWait
@@ -29,10 +30,13 @@ public fun interface ProviderAnswerObserver {
 }
 
 /** What a failed send of a post may do next: whether the client has already been shown a frame, which forbids a
- *  reissue, and how the request body is amended before a retry. The defaults reissue freely and amend nothing. */
+ *  reissue, how the request body is amended before a retry, and where the vendor routes the retry. The defaults
+ *  reissue freely, amend nothing and route nothing. */
 public data class PostRecovery(
     val clientFrameEmitted: ClientFrameEmitted = ClientFrameEmitted { true },
     val amendBodyOnFailure: BodyAmendment = BodyAmendment { _, _, _ -> null },
+    /** The turn's route, asked for each attempt's headers and told every answer that is not a stream. */
+    val route: VendorRoute? = null,
 )
 
 /** What bounds a post beyond its own retry rules: the selected account's cooldown and the outer turn's wait. */

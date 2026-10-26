@@ -21,8 +21,12 @@ public object UserHome {
     /** The home: [env]'s HOME unless it is unset or blank, then the JVM's user.home. A caller that
      *  already reads its environment through an [EnvReader] passes it, so one environment decides both
      *  HOME and the variables read beside it (XDG_CONFIG_HOME, SPLICE_STATE_DIR). */
-    public fun dir(env: EnvReader = EnvReader(System::getenv)): Path =
-        redirected ?: Paths.get(of(env, System.getProperty(USER_HOME_PROPERTY)))
+    public fun dir(env: EnvReader = EnvReader(System::getenv)): Path = redirected ?: processDir(env)
+
+    /** The home the process runs under, which [within] does not move: for what lives as long as the process. A home a
+     *  test lends the process for one block is deleted when that test ends, and takes with it anything kept there. */
+    public fun processDir(env: EnvReader = EnvReader(System::getenv)): Path =
+        Paths.get(of(env, System.getProperty(USER_HOME_PROPERTY)))
 
     /** The vanilla Claude Code config dir's name under the home: the client's own state, which no head writes
      *  (V4-115). Every reader of `~/.claude` names it through this, so the one spelling lives in one place. */

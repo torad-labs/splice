@@ -2,6 +2,7 @@
 package splice.codemode
 
 import splice.core.config.StatePaths
+import splice.core.config.UserHome
 import java.io.File
 import java.io.IOException
 import java.net.URI
@@ -15,7 +16,10 @@ private const val WORKER_CLASS_RESOURCE = "splice/codemode/CodeModeWorker.class"
 
 /** Process-wide pins are captured synchronously before prewarm and reused across runtime replacements. */
 public object WorkerArtifacts {
-    private val pins by lazy { WorkerArtifactPins(StatePaths().stateDir) }
+    // why: a pin lives as long as this process, so it is kept in the process's own state folder. A daemon a test boots
+    // inside a home it lends the process pinned there, the test deleted the home when it ended, and every later worker
+    // in that JVM started from a jar that was gone (Oct 26, 2026).
+    private val pins by lazy { WorkerArtifactPins(StatePaths(homeDir = UserHome.processDir()).stateDir) }
     private val running by lazy {
         val resource = ClassLoader.getSystemResource(WORKER_CLASS_RESOURCE)
         if (resource?.protocol == "jar") {

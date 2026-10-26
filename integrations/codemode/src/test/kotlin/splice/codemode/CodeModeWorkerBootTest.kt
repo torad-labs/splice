@@ -26,6 +26,7 @@ import splice.upstream.failure.CodeModeTimeoutException
 import splice.upstream.failure.CodeModeWorkerLostException
 import java.io.File
 import java.io.IOException
+import java.nio.file.Files
 import java.nio.file.Path
 import java.util.concurrent.CopyOnWriteArrayList
 
@@ -228,6 +229,37 @@ class CodeModeWorkerBootTest {
                 assertTrue(process.waitFor(10, java.util.concurrent.TimeUnit.SECONDS))
                 assertEquals(0, process.exitValue())
             }
+        } finally {
+            process.destroyForcibly().waitFor()
+        }
+    }
+
+    // A daemon a test boots inside a home it lends the process pins the worker archive at boot. The pin lives as long as
+    // the process, so the home's deletion when that test ends must not take it: on Oct 26 every later worker in such a
+    // test JVM started from a jar that was gone and died before its first frame.
+    @Test
+    @Timeout(60)
+    fun `a worker still starts after the home a test lent the process at boot is deleted`(@TempDir root: Path) {
+        val archive = SwappedWorkerArchive(root, testClasspath)
+        val probeClasses = Path.of(BorrowedHomeBootProbe::class.java.protectionDomain.codeSource.location.toURI())
+        val borrowed = Files.createDirectories(root.resolve("borrowed-home"))
+        val builder = ProcessBuilder(
+            Path.of(System.getProperty("java.home"), "bin", "java").toString(),
+            "-cp",
+            archive.classpath + File.pathSeparator + probeClasses,
+            BorrowedHomeBootProbe::class.java.name,
+            borrowed.toString(),
+        ).redirectError(ProcessBuilder.Redirect.INHERIT)
+        builder.environment().apply {
+            put("HOME", Files.createDirectories(root.resolve("process-home")).toString())
+            remove("SPLICE_STATE_DIR")
+            remove("CLAUDEX_STATE_DIR")
+        }
+        val process = builder.start()
+        try {
+            val said = process.inputStream.bufferedReader().use { it.readText() }.trim()
+            assertTrue(process.waitFor(30, java.util.concurrent.TimeUnit.SECONDS))
+            assertEquals("booted", said, "the process's next worker runs its script")
         } finally {
             process.destroyForcibly().waitFor()
         }

@@ -102,6 +102,13 @@ class SessionContinueTest {
         Files.writeString(file, Files.readString(file).replace("{", """{"status":"busy","""))
     }
 
+    /** The lead's client idle at its prompt with background shells running, which Claude Code 2.1.310 writes as
+     *  "shell" and counts as working in its own session list. */
+    private fun leadRunningShells() {
+        val file = rig.tmp.resolve("sessions/1.json")
+        Files.writeString(file, Files.readString(file).replace("{", """{"status":"shell","""))
+    }
+
     private fun leadIdle() {
         val file = rig.tmp.resolve("sessions/1.json")
         Files.writeString(file, Files.readString(file).replace(""""status":"busy",""", ""))
@@ -368,5 +375,23 @@ class SessionContinueTest {
         assertEquals("draft", rig.json(held.body).getValue("reason").jsonPrimitive.content)
         assertTrue(terminal.sent.isEmpty(), "nothing is typed over his words")
         assertEquals(HttpStatusCode.NotFound, relaunch("no-such-session").status, "only a running session relaunches")
+    }
+
+    // A session idle at its prompt with background shells running answers /exit with "Background work is running" and
+    // "Exit and stop tasks" focused (Oct 26, 2026: a relaunch left that question on the rig session's screen). A relaunch
+    // stops nothing of his, so it leaves that session where it is and types nothing into it until that work ends.
+    @Test
+    fun `a relaunch leaves a session running background work where it is, and types nothing into it`() {
+        panes.remember(LEAD, leadPane)
+        leadRunningShells()
+
+        val reply = relaunch(LEAD)
+
+        assertEquals(HttpStatusCode.Conflict, reply.status)
+        val body = rig.json(reply.body)
+        assertEquals("working", body.getValue("reason").jsonPrimitive.content)
+        assertTrue("background" in body.getValue("error").jsonPrimitive.content, "it says what it waits for: $body")
+        assertTrue(terminal.sent.isEmpty() && terminal.pressed.isEmpty(), "nothing is typed or pressed")
+        assertTrue(terminal.opened.isEmpty(), "nothing is started")
     }
 }

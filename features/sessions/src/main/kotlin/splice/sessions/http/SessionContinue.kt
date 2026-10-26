@@ -67,6 +67,11 @@ private const val MOVE_NOT_OURS =
     "splice did not start this session, so it cannot move it from here; exit it and resume it on the other command"
 private const val MOVE_IN_FLIGHT = "it is already moving; wait for that move to answer"
 private const val RELAUNCH_WORKING = "it is working; relaunch it once its turn ends"
+private const val RELAUNCH_BACKGROUND = "it has background work running; relaunch it once that work ends"
+
+// why: Claude Code 2.1.310's word for a client idle at its prompt with background shells running, which its own session
+// list counts as working. Its /exit answers "Background work is running" with "Exit and stop tasks" focused.
+private const val RUNNING_SHELLS = "shell"
 private const val RELAUNCH_NO_HEAD = "it runs on no splice command, so there is none to relaunch it on"
 
 public class SessionContinue(
@@ -104,8 +109,8 @@ public class SessionContinue(
      *  on the model its row reports, as a move to another model on the same command goes on. Key rotation (Oct 26,
      *  2026): a session launched before the key helper holds a turn key a rotation strands, and its relaunch is
      *  launched with the helper. A relaunch is splice's, never his, so it stops nothing: a working session is
-     *  refused until its turn ends, and one waiting on an answer or holding words he has not sent is refused as a
-     *  move is. */
+     *  refused until its turn ends, one running background shells until they end, and one waiting on an answer or
+     *  holding words he has not sent is refused as a move is. */
     public suspend fun relaunch(session: String): JsonReply = moving(session, clear = false, Wanted.Relaunch)
 
     public suspend fun move(session: String, head: String, model: String?, clear: Boolean = false): JsonReply =
@@ -169,6 +174,8 @@ public class SessionContinue(
                 record == null -> Plan.Refused(Refusals.reply(HttpStatusCode.NotFound, "no running session: $session"))
                 head == null -> refused(RELAUNCH_NO_HEAD, Refusal.HEAD_UNKNOWN)
                 record.status.state in busy -> refused(RELAUNCH_WORKING, Refusal.WORKING)
+                // its /exit would ask him whether to stop that work, and a relaunch stops nothing of his
+                record.status.state == RUNNING_SHELLS -> refused(RELAUNCH_BACKGROUND, Refusal.WORKING)
                 else -> planOnto(session, record, head, models(record))
             }
         }

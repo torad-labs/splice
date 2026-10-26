@@ -9,7 +9,8 @@
 // GOING BACK. What the attempt left is closed: a terminal splice opened for it is closed, and an attempt typed into his
 // own shell is interrupted there, so it can never come up later beside the session it gave back. Then the session is
 // resumed on the command it left, by its own id and on the model it ran on, where the attempt ran: in his shell, typed
-// as he would type it, or in a new terminal among the ones it ran in. The answer says the move did not happen, why
+// as he would type it, in a new terminal among the ones it ran in, or, for a relaunch, in the pane the session ran in,
+// on the command it was started with and never on its head's (Oct 26, 2026). The answer says the move did not happen, why
 // ("no_start": it could not start; "no_answer": it did not come back in time), whether it went on where it was, the
 // last lines of the attempt's terminal, and the line he would type to resume it himself.
 //
@@ -39,19 +40,29 @@ private const val MISSED_NO_START = "no_start"
 private const val MISSED_NO_ANSWER = "no_answer"
 
 /** A move SessionContinue decided: the session, the command it goes to and the one it left, the argv that resumes it
- *  there, the folder it runs in, and the client to end first (its process, null when it already exited). */
+ *  there, the folder it runs in, the client to end first (null when it already exited), and whether it is a relaunch,
+ *  which comes back in the pane it ran in, on the argv it was started with (Oct 26, 2026). */
 internal data class Move(
     val session: String,
     val head: String,
     val from: String,
     val argv: List<String>,
     val folder: String,
-    val process: SessionProcess?,
-    val working: Boolean,
+    val leaving: Leaving?,
+    val relaunch: Boolean = false,
 ) {
+    /** The client to end first, null when it already exited. */
+    val process: SessionProcess? get() = leaving?.process
+
+    /** Whether that client runs a turn the move stops before it ends it. */
+    val working: Boolean get() = leaving?.working == true
+
     /** The pid of the client to end first, null when it already exited or the registry knew none. */
     val pid: Long? get() = process?.pid
 }
+
+/** The client a move ends first: the process the registry read, and whether it runs a turn the move stops. */
+internal data class Leaving(val process: SessionProcess, val working: Boolean)
 
 /** How an attempt ended: the session that came up (the moved one, or the launch's copy of it), or why none did. */
 private sealed class Landing {
@@ -60,8 +71,12 @@ private sealed class Landing {
     data class Missed(val reason: String) : Landing()
 }
 
-/** The terminal an attempt runs in, and whether splice opened it for the attempt (else it is his own shell). */
-internal data class Attempt(val pane: SessionPane, val opened: Boolean)
+/** The terminal an attempt runs in, and how it was started there. */
+internal data class Attempt(val pane: SessionPane, val ran: Ran)
+
+/** How an attempt was started: in a terminal splice opened for it, as a line typed into the shell the client left in
+ *  front, or in the pane the session ran in, started again in place (a relaunch, Oct 26, 2026). */
+internal enum class Ran { OPENED, TYPED, RESTARTED }
 
 internal class MoveArrival(
     private val commands: StartCommands,
@@ -124,9 +139,11 @@ internal class MoveArrival(
 
     /** Close the attempt and resume the session on the command it left, when it was running before the move. */
     private suspend fun back(driving: SessionDriver, attempt: Attempt, move: Move, missed: String): JsonReply {
-        val screen = tail(driving, attempt.pane)
+        val screen = tail(driving, attempt)
         val resume = listOf("-r", move.session) + ledger?.failed(move.session)?.let { listOf("--model", it) }.orEmpty()
         val backOn = wayBack(driving, attempt, move, resume)
+        // a relaunch goes back on the command it was started with, which is the line he would type himself
+        val himself = if (move.relaunch) move.argv else listOf(commandName(move)) + resume
         return JsonReply(
             if (missed == MISSED_NO_START) HttpStatusCode.BadGateway else HttpStatusCode.GatewayTimeout,
             buildJsonObject {
@@ -135,22 +152,27 @@ internal class MoveArrival(
                 if (missed == MISSED_NO_ANSWER) put("waited_s", ARRIVAL_SECONDS)
                 put("moved", false)
                 put("back", backOn != null)
-                put("resume", "cd " + shellWord(move.folder) + " && " + line(listOf(commandName(move)) + resume))
+                put("resume", "cd " + shellWord(move.folder) + " && " + line(himself))
                 if (screen.isNotEmpty()) put("screen", screen)
             }.toString(),
         )
     }
 
-    /** The pane the session went on in, on the command it left; null when it was not running or did not come up. */
+    /** The pane the session went on in, on the command it left; null when it was not running or did not come up. A
+     *  relaunch goes back on the command it was started with, where it ran, since that is what it left. */
     private suspend fun wayBack(
         driving: SessionDriver,
         attempt: Attempt,
         move: Move,
         resume: List<String>,
     ): SessionPane? {
-        val ready = commands.forHead(move.from) as? StartCommand.Ready
-        if (ready == null || move.pid == null) return null
-        return reopen(driving, attempt, move, ready.argv + resume)
+        if (move.pid == null) return null
+        val argv = if (move.relaunch) {
+            move.argv
+        } else {
+            (commands.forHead(move.from) as? StartCommand.Ready)?.argv?.plus(resume) ?: return null
+        }
+        return reopen(driving, attempt, move, argv)
             ?.takeIf { land(driving, it, move.session, move.from, move.pid) is Landing.Up }
     }
 
@@ -160,26 +182,36 @@ internal class MoveArrival(
             ?.let { Path.of(it).fileName.toString() }
             ?: move.from
 
-    /** End what the attempt left and run [argv] where it ran: the pane it runs in, or null if the terminal refused. */
+    /** End what the attempt left and run [argv] where it ran: the pane it runs in, or null if the terminal refused. A
+     *  relaunch's pane is started again in place, as the attempt was, and is never closed: the person's terminal, with
+     *  the session's screen in it, is the one thing a failed relaunch must leave standing. */
     private suspend fun reopen(driving: SessionDriver, attempt: Attempt, move: Move, argv: List<String>): SessionPane? =
         Cancellables.runCatchingCleanup {
-            if (attempt.opened) {
-                driving.terminal.close(attempt.pane)
-                driving.panes.forget(move.session)
-                driving.terminal.open(move.session, argv, move.folder, attempt.pane)
-                    .also { driving.panes.remember(move.session, it) }
-            } else {
-                driving.terminal.press(attempt.pane, SessionKey.INTERRUPT)
-                driving.terminal.send(attempt.pane, line(argv))
-                attempt.pane
+            when (attempt.ran) {
+                Ran.OPENED -> {
+                    driving.terminal.close(attempt.pane)
+                    driving.panes.forget(move.session)
+                    driving.terminal.open(move.session, argv, move.folder, attempt.pane)
+                        .also { driving.panes.remember(move.session, it) }
+                }
+                Ran.RESTARTED -> driving.terminal.restart(attempt.pane, argv, move.folder)
+                    ?.also { driving.panes.remember(move.session, it) }
+                Ran.TYPED -> {
+                    driving.terminal.press(attempt.pane, SessionKey.INTERRUPT)
+                    driving.terminal.send(attempt.pane, line(argv))
+                    attempt.pane
+                }
             }
         }.getOrNull()
 
     /** The bottom of the attempt's screen: the question a first-run prompt holds on is the last thing on it. A screen
-     *  that could not be read says so in its place, as a team start's does (TeamStart), never as no screen at all. */
-    private suspend fun tail(driving: SessionDriver, pane: SessionPane): String =
+     *  that could not be read says so in its place, as a team start's does (TeamStart), never as no screen at all. A
+     *  relaunch's pane is held, so it keeps what the attempt printed even once the attempt's own program has gone, and
+     *  that is exactly the case where the screen says why it did not come up. */
+    private suspend fun tail(driving: SessionDriver, attempt: Attempt): String =
         Cancellables.runCatchingCleanup {
-            if (driving.terminal.isOpen(pane)) driving.terminal.screen(pane) else ""
+            val pane = attempt.pane
+            if (attempt.ran == Ran.RESTARTED || driving.terminal.isOpen(pane)) driving.terminal.screen(pane) else ""
         }.fold(
             { it.lines().filter(String::isNotBlank).takeLast(SCREEN_TAIL_LINES).joinToString("\n") },
             { "(the screen could not be read: ${SafeFailureText.render(it)})" },
@@ -187,7 +219,7 @@ internal class MoveArrival(
 
     private fun sentence(move: Move, missed: String, wentBack: Boolean): String {
         val why = if (missed == MISSED_NO_START) {
-            "${move.head} did not start"
+            if (move.relaunch) "its relaunch did not start" else "${move.head} did not start"
         } else {
             "it had not come back on ${move.head} after ${ARRIVAL_SECONDS}s"
         }

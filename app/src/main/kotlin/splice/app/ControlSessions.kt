@@ -45,6 +45,9 @@ internal class ControlSessions(
      *  started. */
     fun driver(): SessionDriver = SessionDriver(TmuxTerminal(), RememberedPanes(daemon.statePaths.stateDir))
 
+    /** The one reader of a session's own process: the config folder and the words a relaunch starts it with again. */
+    fun processes(): ProcessEnvironment = environment
+
     /** The head whose Claude Code wrapper listens on [port] — the launcher's ANTHROPIC_BASE_URL. */
     private fun headOfPort(heads: Map<String, ManagedHead>, port: Int): String? =
         heads.entries.firstOrNull { it.value.launchSpec?.gateway?.port == port }?.key

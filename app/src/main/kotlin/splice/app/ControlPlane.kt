@@ -21,6 +21,7 @@ import splice.app.control.ControlServer
 import splice.app.control.FailedHeads
 import splice.app.control.KeyRotation
 import splice.app.control.ManagedHead
+import splice.app.control.ProcessReads
 import splice.app.daemon.BootedTopology
 import splice.app.head.HeadProbeReadings
 import splice.app.peer.PeersWiring
@@ -250,6 +251,7 @@ internal class ControlPlane(
         srv.ports.activity = console.stores
         srv.ports.teams = teams
         srv.ports.sessionDriver = sessionWiring.driver()
+        srv.ports.processes = ProcessReads { sessionWiring.processes() }
         ConsoleWiring.wireV4133(srv, budgets, alerts, playground)
         ConsoleWiring.wireVerbReads(srv, topology, statePaths, console)
         // A Claude head's add and remove go through folders splice owns, which the generic accounts port refuses

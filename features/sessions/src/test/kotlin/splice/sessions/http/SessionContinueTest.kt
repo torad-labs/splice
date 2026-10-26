@@ -89,9 +89,22 @@ class SessionContinueTest {
                     open.remove(session)
                 }
             },
-            models = MovingSessionModel { runsOn },
+            relaunches = object : SessionRelaunches {
+                override fun model(record: SessionRecord): String? = runsOn
+
+                override fun command(record: SessionRecord, model: String?): StartCommand = startedWith(model)
+            },
         )
     }
+
+    /** The command the lead was started with, as the daemon reads it back from its process: his own `claude` in his own
+     *  config folder, its agent kept, resumed by its id on [model]. A relaunch starts it on exactly this. */
+    private fun started(model: String?): List<String> =
+        listOf("env", "-u", "CLAUDE_CONFIG_DIR", "/home/p/.local/bin/claude", "--agent", "eli", "-r", LEAD) +
+            model?.let { listOf("--model", it) }.orEmpty()
+
+    /** What the daemon answers for the command the lead was started with: [started], unless a test says otherwise. */
+    private var startedWith: (String?) -> StartCommand = { model -> StartCommand.Ready(started(model)) }
 
     private val leadPane = SessionPane("%lead")
 
@@ -337,28 +350,99 @@ class SessionContinueTest {
     }
 
     // Key rotation (Oct 26, 2026): a session launched before the key helper holds a turn key a rotation strands, so
-    // it is relaunched first: ended where it runs and resumed by its own id on the command and the model it runs on,
-    // whose launch now hands it the helper.
+    // it is relaunched first. A relaunch brings it back as it was: on the command it was started with, so it stays in
+    // its own config folder and signed in, with its agent and its model, never with its first prompt, and in the same
+    // pane its starter and the person find it by. The relaunch of Oct 26 resumed every session on its head's own
+    // command in a new terminal: two came back "Not logged in", and every one moved to a tmux session nobody knew.
     @Test
-    fun `a relaunch ends the session where it runs and resumes it on its own command and model`() {
+    fun `a relaunch starts the session again in its own pane, on the command it was started with and its model`() {
         panes.remember(LEAD, leadPane)
 
         val reply = relaunch(LEAD)
 
-        assertEquals(HttpStatusCode.OK, reply.status)
-        assertEquals(listOf(leadPane to "/exit"), terminal.sent)
-        val resumed = terminal.opened.single().command
-        assertEquals(listOf("claude-claude", "-r", LEAD, "--model", "claude-fable-5-1"), resumed)
+        assertEquals(HttpStatusCode.OK, reply.status, reply.body)
+        assertEquals(listOf(leadPane), terminal.held, "its pane is kept before its client leaves")
+        assertEquals(listOf(leadPane to "/exit"), terminal.sent, "its client leaves on its own exit")
+        assertEquals(
+            listOf(Opened(leadPane.id, started("claude-fable-5-1"), rig.repo.toString())),
+            terminal.restarted,
+            "it starts again in the pane it ran in, in its folder, on the command it was started with",
+        )
+        assertTrue(terminal.opened.isEmpty(), "no new terminal is opened for it")
+        assertEquals(listOf(leadPane), terminal.released, "and the pane is given back its own end")
+        assertEquals(SessionPane("%lead+again"), panes.known[LEAD], "the pane is known as the one it runs in now")
         assertEquals(listOf(LEAD to "claude"), cameOn)
     }
 
     @Test
-    fun `a relaunch of a session whose model is not known resumes it on the model its command starts on`() {
+    fun `a relaunch of a session whose model is not known starts it on the command alone`() {
         panes.remember(LEAD, leadPane)
         runsOn = null
 
         assertEquals(HttpStatusCode.OK, relaunch(LEAD).status)
-        assertEquals(listOf("claude-claude", "-r", LEAD), terminal.opened.single().command)
+        assertEquals(listOf(started(null)), terminal.restarted.map { it.command })
+    }
+
+    @Test
+    fun `a relaunch of a session started from his own shell is typed into that shell, as it was started`() {
+        panes.remember(LEAD, leadPane)
+        closesWithClient = false
+
+        val reply = relaunch(LEAD)
+
+        assertEquals(HttpStatusCode.OK, reply.status, reply.body)
+        val line = "env -u CLAUDE_CONFIG_DIR /home/p/.local/bin/claude --agent eli -r $LEAD --model claude-fable-5-1"
+        assertEquals(listOf(leadPane to "/exit", leadPane to line), terminal.sent)
+        assertTrue(terminal.opened.isEmpty() && terminal.restarted.isEmpty(), "he keeps the shell he is in")
+        assertEquals(listOf(leadPane), terminal.released)
+    }
+
+    @Test
+    fun `a relaunch whose command cannot be read back leaves the session where it is, and types nothing`() {
+        panes.remember(LEAD, leadPane)
+        startedWith = { StartCommand.Refused("splice could not read the command line it was started with") }
+
+        val reply = relaunch(LEAD)
+
+        assertEquals(HttpStatusCode.Conflict, reply.status)
+        val error = rig.json(reply.body).getValue("error").jsonPrimitive.content
+        assertEquals("splice could not read the command line it was started with", error)
+        assertTrue(terminal.sent.isEmpty() && terminal.held.isEmpty(), "nothing is typed and no pane is kept")
+        assertTrue(terminal.opened.isEmpty() && terminal.restarted.isEmpty(), "nothing is started")
+    }
+
+    @Test
+    fun `a relaunch whose pane cannot be kept leaves the session where it is, and types nothing`() {
+        panes.remember(LEAD, leadPane)
+        terminal.holds = false
+
+        val reply = relaunch(LEAD)
+
+        assertEquals(HttpStatusCode.BadGateway, reply.status)
+        assertTrue(terminal.sent.isEmpty(), "no exit: the session would not come back where it was")
+        assertTrue(terminal.opened.isEmpty() && terminal.restarted.isEmpty(), "nothing is started")
+    }
+
+    @Test
+    fun `a relaunch that does not come up goes back in its own pane on the command it was started with`() {
+        panes.remember(LEAD, leadPane)
+        startsOn = { false }
+        terminal.onRestart = {} // the command exits at once, and its pane is kept dead
+
+        val reply = relaunch(LEAD)
+
+        assertEquals(HttpStatusCode.BadGateway, reply.status)
+        val body = rig.json(reply.body)
+        assertEquals("no_start", body.getValue("reason").jsonPrimitive.content)
+        assertEquals(
+            listOf(started("claude-fable-5-1"), started("claude-fable-5-1")),
+            terminal.restarted.map { it.command },
+            "the attempt, then the way back, both on the command it was started with and never on its head's",
+        )
+        assertTrue(terminal.opened.isEmpty(), "it never leaves its pane")
+        val line = "env -u CLAUDE_CONFIG_DIR /home/p/.local/bin/claude --agent eli -r $LEAD --model claude-fable-5-1"
+        assertEquals("cd ${rig.repo} && $line", body.getValue("resume").jsonPrimitive.content)
+        assertEquals(listOf(leadPane), terminal.released, "its pane is given back its own end")
     }
 
     // A relaunch is splice's, never his: it waits for his turn to end rather than stopping it, and it never types

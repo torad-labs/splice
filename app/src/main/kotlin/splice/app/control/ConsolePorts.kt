@@ -80,6 +80,11 @@ public class ConsolePorts {
      *  member's start and stop with a named 503, because splice cannot drive a session it cannot open. */
     public var sessionDriver: SessionDriver? = null
 
+    /** Oct 26, 2026: how a running session's own process is read: the config folder and the words it was started with,
+     *  which a relaunch starts it on again ([RelaunchCommands]). Assigned by ControlPlane after construction like
+     *  [sessionDriver]; null refuses every relaunch in words, because splice cannot say how a session was started. */
+    public var processes: ProcessReads? = null
+
     /** V4-127: the console's four injected ports, each a SETTABLE PROPERTY for the same reason
      *  [compaction] is — the constructor sits at the width ratchet's ceiling and V4-105 is burning it
      *  down, so a new route input arrives as an assignment ControlPlane makes after construction.

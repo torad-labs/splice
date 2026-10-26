@@ -3,9 +3,16 @@
 //   POST /api/sessions/{id}/continue   {"head": "<key>", "model": "<id>"}   go on under that command's model
 //   POST /api/sessions/{id}/relaunch                                       go on as it was, launched anew
 //
-// A RELAUNCH (key rotation, Oct 26, 2026) is a move onto the command and the model a running session already runs
-// on, so its launch is made again: a session launched before the key helper holds a turn key that a rotated key
-// strands, and the new launch reads it through the helper. It is splice's, never his, so it never stops a turn.
+// A RELAUNCH (key rotation, Oct 26, 2026) brings a running session back AS IT WAS: on the command it was started with,
+// read back from its own process, so it stays in its own config folder and signed in, with its agent and every other
+// option it was given and never its first prompt, on the model its row reports, and in the pane it ran in. A session
+// launched before the key helper holds a turn key a rotated key strands, and the launch its own command makes reads the
+// new one through the helper. It is splice's, never his, so it never stops a turn.
+//
+// The relaunch of Oct 26 was a move onto each session's HEAD command in a NEW terminal: two sessions started as
+// `claude` came back "Not logged in" in the head's config folder, reviews came back without their agent, and nobody
+// could find the seats it moved. What a session was started with is splice's to read ([SessionRelaunches]), and the
+// pane it ran in is kept so it comes back there (SessionTerminal.hold, restart, release).
 //
 // WHAT A MOVE IS. The session goes on under another head: Claude Code is ended where it runs and started again on the
 // chosen command with `-r <id>`, and that launch's cross-head resume makes a copy of the session beside it under a new
@@ -20,8 +27,11 @@
 //
 // WHERE IT GOES ON. In the terminal it ran in. The client is ended with its own `/exit`, never by killing the
 // terminal: a session he started from his own shell leaves that shell in front, and the resume is typed there as he
-// would type it. A terminal splice opened closes with its client, so the resume opens a new one. A session whose
-// client already exited opens a new one too.
+// would type it. A terminal splice opened closes with its client, so a move's resume opens a new one. A session whose
+// client already exited opens a new one too. A RELAUNCH opens none: its pane is held before its client leaves, so the
+// pane outlives the client, and the session is started again in that same pane, in the same terminal session and
+// window its starter and the person find it by. The pane is given back its own end however the relaunch ends, and a
+// pane the terminal cannot keep refuses the relaunch before anything is typed.
 //
 // WHAT IS REFUSED. A session waiting on an answer: `/exit` would land in the question. One running background shells,
 // at its prompt or once the move stopped its turn: `/exit` would land in "Background work is running", whose focused
@@ -77,6 +87,22 @@ private const val MOVE_BACKGROUND =
 // list counts as working. Its /exit answers "Background work is running" with "Exit and stop tasks" focused.
 private const val RUNNING_SHELLS = "shell"
 private const val RELAUNCH_NO_HEAD = "it runs on no splice command, so there is none to relaunch it on"
+private const val RELAUNCH_NONE = "this Continue on relaunches nothing; relaunch it from Sessions"
+private const val RELAUNCH_UNHELD =
+    "its pane could not be kept open, so it would not come back where it runs; nothing was ended"
+
+/** The handover a relaunch makes while the pane it comes back in is kept: the client ended with its own exit, and the
+ *  session started again in that pane. */
+private fun interface HandOverHeld {
+    suspend operator fun invoke(): JsonReply
+}
+
+/** A Continue on that only moves sessions, such as the manager's: it relaunches none. */
+private object NoRelaunches : SessionRelaunches {
+    override fun model(record: SessionRecord): String? = null
+
+    override fun command(record: SessionRecord, model: String?): StartCommand = StartCommand.Refused(RELAUNCH_NONE)
+}
 
 public class SessionContinue(
     private val drive: SessionDrive,
@@ -87,14 +113,17 @@ public class SessionContinue(
     /** Where a move that came back is kept, with what it left, read before it leaves, and which session has a move in
      *  flight: one ledger under every Continue on, so a session moves once at a time from any of them. */
     private val ledger: MoveLedger,
-    /** The model a session runs on, as its row reports it: what a relaunch resumes it on. */
-    private val models: MovingSessionModel = MovingSessionModel { null },
+    /** The model and the command each running session was started with: what a relaunch starts it on again. */
+    private val relaunches: SessionRelaunches = NoRelaunches,
 ) {
     /** The client's own words for a turn in flight. */
     private val busy = setOf("working", "busy")
 
     /** Where a move ends: back on the command he picked, or on the one it left. */
     private val arrival = MoveArrival(commands, handover, ledger, registry)
+
+    /** Where a relaunch happens: in the pane the session already runs in. */
+    private val inPlace = InPlace()
 
     private val plans = Plans()
 
@@ -109,12 +138,14 @@ public class SessionContinue(
         return move(session, head, JsonScalars.str(obj, "model")?.takeIf(String::isNotBlank), clear)
     }
 
-    /** POST .../relaunch: the running session ended where it runs and resumed by its own id on the command it runs on,
-     *  on the model its row reports, as a move to another model on the same command goes on. Key rotation (Oct 26,
-     *  2026): a session launched before the key helper holds a turn key a rotation strands, and its relaunch is
-     *  launched with the helper. A relaunch is splice's, never his, so it stops nothing: a working session is
-     *  refused until its turn ends, one running background shells until they end, and one waiting on an answer or
-     *  holding words he has not sent is refused as a move is. */
+    /** POST .../relaunch: the running session brought back as it was. It is ended where it runs and started again in
+     *  that same pane, on the command it was started with, read back from its own process, so it stays in its own
+     *  config folder and signed in, with its agent and every other option it was given and never its first prompt, and
+     *  on the model its row reports. Key rotation (Oct 26, 2026): a session launched before the key helper holds a
+     *  turn key a rotation strands, and the launch its own command makes reads the new one through the helper. A
+     *  relaunch is splice's, never his, so it stops nothing: a working session is refused until its turn ends, one
+     *  running background shells until they end, and one waiting on an answer or holding words he has not sent is
+     *  refused as a move is. */
     public suspend fun relaunch(session: String): JsonReply = moving(session, clear = false, Wanted.Relaunch)
 
     public suspend fun move(session: String, head: String, model: String?, clear: Boolean = false): JsonReply =
@@ -170,7 +201,7 @@ public class SessionContinue(
             return planOnto(session, record, head, model)
         }
 
-        /** A relaunch: [session]'s running client, on the command and the model it runs on, only between its turns. */
+        /** A relaunch: [session]'s running client, started again as it was started, only between its turns. */
         fun relaunch(session: String): Plan {
             val record = live(session)
             val head = record?.head
@@ -180,7 +211,33 @@ public class SessionContinue(
                 record.status.state in busy -> refused(RELAUNCH_WORKING, Refusal.WORKING)
                 // its /exit would ask him whether to stop that work, and a relaunch stops nothing of his
                 record.status.state == RUNNING_SHELLS -> refused(RELAUNCH_BACKGROUND, Refusal.WORKING)
-                else -> planOnto(session, record, head, models(record))
+                else -> asItWas(session, record, head)
+            }
+        }
+
+        /** [record] started again on the command it was started with and the model its row reports, in the pane it
+         *  runs in, or why not now: its client cannot be ended now ([notNow]), or splice cannot read that command
+         *  back, and then nothing is ended, since there would be nothing to start. */
+        private fun asItWas(session: String, record: SessionRecord, head: String): Plan {
+            notNow(record)?.let { return it }
+            val model = relaunches.model(record)
+            return when (val command = relaunches.command(record, model)) {
+                is StartCommand.Refused -> refused(command.reason)
+                is StartCommand.Ready -> {
+                    ledger.leaving(record, head, model)
+                    Plan.Go(
+                        Move(
+                            session = session,
+                            head = head,
+                            from = head,
+                            argv = command.argv,
+                            folder = folder(record),
+                            // a relaunch waits for his turn to end, so the client it ends runs none
+                            leaving = Leaving(record.process, working = false),
+                            relaunch = true,
+                        ),
+                    )
+                }
             }
         }
 
@@ -193,7 +250,6 @@ public class SessionContinue(
                 is StartCommand.Refused -> refused(command.reason)
                 is StartCommand.Ready -> {
                     val resume = listOf("-r", session) + model?.let { listOf("--model", it) }.orEmpty()
-                    val folder = record.process.cwd?.takeIf { Files.isDirectory(Path.of(it)) } ?: home.toString()
                     ledger.leaving(record, head, model)
                     Plan.Go(
                         Move(
@@ -201,14 +257,18 @@ public class SessionContinue(
                             head = head,
                             from = record.head ?: head,
                             argv = command.argv + resume,
-                            folder = folder,
-                            process = record.process.takeIf { running },
-                            working = running && record.status.state in busy,
+                            folder = folder(record),
+                            leaving = record.process.takeIf { running }
+                                ?.let { Leaving(it, record.status.state in busy) },
                         ),
                     )
                 }
             }
         }
+
+        /** The folder [record] runs in, or the daemon's own home when that folder is gone. */
+        private fun folder(record: SessionRecord): String =
+            record.process.cwd?.takeIf { Files.isDirectory(Path.of(it)) } ?: home.toString()
 
         /** Why a running [record]'s client cannot be ended now, or null: its `/exit` would land in a question, about
          *  an answer it waits on or about the background shells it runs, whose focused answer stops them. */
@@ -223,13 +283,18 @@ public class SessionContinue(
             Plan.Refused(Refusals.reply(HttpStatusCode.Conflict, sentence, reason))
     }
 
-    /** A client still running is ended in its pane first; one already gone goes on in a new terminal. */
+    /** A client still running is ended in its pane first; one already gone goes on in a new terminal. A relaunch holds
+     *  the pane around the whole handover, so the pane outlives the client and the session comes back in it. */
     private suspend fun go(move: Move, ask: Ask): JsonReply {
         val pid = move.pid ?: return openNew(move)
         val driving = drive.driver() ?: return unwired()
         val at = drive.locate(driving, move.session, MOVE_NOT_OURS, MOVE_CLOSED)
         val pane = at.pane
-        return if (pane == null) requireNotNull(at.refusal) else handOver(driving, pane, pid, move, ask)
+        return when {
+            pane == null -> requireNotNull(at.refusal)
+            move.relaunch -> inPlace.held(driving, pane) { handOver(driving, pane, pid, move, ask) }
+            else -> handOver(driving, pane, pid, move, ask)
+        }
     }
 
     /** End the client in [pane] with its own exit, and resume once it has gone. A turn in flight is stopped first,
@@ -331,14 +396,20 @@ public class SessionContinue(
     private fun again(driving: SessionDriver, move: Move): PaneTurns.Relocate =
         PaneTurns.Relocate { drive.locate(driving, move.session, MOVE_NOT_OURS, MOVE_CLOSED) }
 
-    /** The resume where the person is: his own shell when one is left in front, else a new terminal. */
+    /** The resume where the person is: the pane the session ran in for a relaunch, his own shell when one is left in
+     *  front, else a new terminal. */
     private suspend fun resume(driving: SessionDriver, pane: SessionPane, move: Move): JsonReply {
         driving.panes.forget(move.session)
+        if (move.relaunch) inPlace.restartIn(driving, pane, move)?.let { return it }
         if (!driving.terminal.isOpen(pane)) return openNew(move, beside = pane)
         // his own shell is in front again: the resume is typed there, the way he would type it
         val line = arrival.line(move.argv)
         val failure = Cancellables.runCatchingCleanup { driving.terminal.send(pane, line) }.exceptionOrNull()
-        return if (failure != null) refusedByTerminal(failure) else arrival.await(driving, Attempt(pane, false), move)
+        return if (failure != null) {
+            refusedByTerminal(failure)
+        } else {
+            arrival.await(driving, Attempt(pane, Ran.TYPED), move)
+        }
     }
 
     private suspend fun openNew(move: Move, beside: SessionPane? = null): JsonReply {
@@ -347,7 +418,43 @@ public class SessionContinue(
             driving.terminal.open(move.session, move.argv, move.folder, beside)
         }.getOrElse { return refusedByTerminal(it) }
         driving.panes.remember(move.session, pane)
-        return arrival.await(driving, Attempt(pane, true), move)
+        return arrival.await(driving, Attempt(pane, Ran.OPENED), move)
+    }
+
+    /** A relaunch in the pane the session runs in (Oct 26, 2026): the pane kept so it outlives the client that leaves,
+     *  and the session started again there, in the same terminal session, window and pane its starter and the person
+     *  find it by. The relaunch of Oct 26 opened a new terminal for every seat it brought back, and nobody could find
+     *  them again. */
+    private inner class InPlace {
+        /** [then] with [pane] kept, so the client's own exit does not take the pane with it, and the pane given back
+         *  its own end however [then] ends. A pane the terminal cannot keep refuses the relaunch before its client is
+         *  told to leave: the session would come back in a terminal nobody is looking at, which is the whole of what
+         *  the relaunch is for. */
+        suspend fun held(driving: SessionDriver, pane: SessionPane, then: HandOverHeld): JsonReply {
+            val kept = Cancellables.runCatchingCleanup { driving.terminal.hold(pane) }
+                .getOrElse { return refusedByTerminal(it) }
+            if (!kept) return Refusals.reply(HttpStatusCode.BadGateway, RELAUNCH_UNHELD, Refusal.REFUSED)
+            try {
+                return then()
+            } finally {
+                Cancellables.discard(
+                    Cancellables.runCatchingCleanup { driving.terminal.release(pane) },
+                    "the relaunch has already answered, and a pane that could not be given back is still his own: " +
+                        "it keeps the end it was held with until it is closed",
+                )
+            }
+        }
+
+        /** The session started again in [pane], where it ran, and the wait for it to come back there. Null while
+         *  something still runs in the pane, his own shell among them, so the resume is typed there instead; a new
+         *  terminal beside it when the pane itself is gone, since a session with no terminal has no agent. */
+        suspend fun restartIn(driving: SessionDriver, pane: SessionPane, move: Move): JsonReply? {
+            val restarted = Cancellables.runCatchingCleanup {
+                driving.terminal.restart(pane, move.argv, move.folder)
+            }.getOrElse { return openNew(move, beside = pane) } ?: return null
+            driving.panes.remember(move.session, restarted)
+            return arrival.await(driving, Attempt(restarted, Ran.RESTARTED), move)
+        }
     }
 
     private fun unwired(): JsonReply =
@@ -364,4 +471,15 @@ public class SessionContinue(
  *  the session's client. */
 public fun interface MovingSessionModel {
     public operator fun invoke(record: SessionRecord): String?
+}
+
+/** How a running session is started again as it was (a relaunch, Oct 26, 2026): the model its row reports, and the
+ *  command it was started with, read back from its own process. */
+public interface SessionRelaunches {
+    /** The model [record]'s row reports it runs on, read before its client ends: what it goes on with. */
+    public fun model(record: SessionRecord): String?
+
+    /** The argv that starts [record]'s session again as it was started, resumed by its id on [model] when known, or
+     *  why splice cannot start it that way. */
+    public fun command(record: SessionRecord, model: String?): StartCommand
 }

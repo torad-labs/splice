@@ -8,9 +8,14 @@ import io.ktor.server.routing.delete
 import io.ktor.server.routing.get
 import io.ktor.server.routing.post
 import kotlinx.coroutines.withContext
+import splice.app.control.ConsolePorts
 import splice.app.control.ManagedHead
+import splice.app.control.ProcessReads
+import splice.app.control.RelaunchCommands
 import splice.core.config.ConfigService
 import splice.core.config.UserHome
+import splice.launch.recipe.LaunchService
+import splice.launch.wrap.WrappedClaudeLaunch
 import splice.sessions.end.SessionEnd
 import splice.sessions.http.KeptActivity
 import splice.sessions.http.MovingSessionModel
@@ -33,6 +38,9 @@ internal class SessionsMount(
     heads: Map<String, ManagedHead>,
     config: ConfigService,
     private val guard: ControlGuard,
+    ports: ConsolePorts,
+    /** Where the wrapped `claude` is, which a session started through it is relaunched on. */
+    launch: LaunchService?,
 ) {
     private val fileIo = ProcessDispatchers().io()
     private val historyRoutes = sessions?.let { registry ->
@@ -56,8 +64,14 @@ internal class SessionsMount(
         registry = wiring.listed,
         home = UserHome.dir(),
         ledger = wiring.moveLedger,
-        // what a relaunch resumes a session on: the model its row reports
-        models = MovingSessionModel { record -> wiring.routes?.modelOf(record) },
+        // what a relaunch starts a session on: the command it was started with, and the model its row reports
+        relaunches = RelaunchCommands(
+            heads,
+            launch?.wrap?.let(::WrappedClaudeLaunch),
+            ProcessReads { ports.processes?.current() },
+            config.statePaths.stateDir,
+            MovingSessionModel { record -> wiring.routes?.modelOf(record) },
+        ),
     )
 
     /** End: the session closed where it runs, armed by what it would lose (SessionEnd, Marlin's p218 ruling). */

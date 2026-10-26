@@ -144,6 +144,10 @@ public class WrappedHead(
     public fun launchThrough(command: String): WrappedLaunch? =
         if (command == CLAUDE_COMMAND && claude() != ClaudeToRun.ThroughPath) WrappedLaunch(vanillaDir) else null
 
+    /** The person's `claude` command, where `splice install` links it, while it is wrapped: what a session started
+     *  through it is started by again (a relaunch, Oct 26, 2026). Null while `claude` is not wrapped. */
+    public fun command(): Path? = commandPath.takeIf { launchThrough(CLAUDE_COMMAND) != null }
+
     public fun status(): ClaudeHeadStatus {
         val cmd = commandPath
         val shim = shimPath

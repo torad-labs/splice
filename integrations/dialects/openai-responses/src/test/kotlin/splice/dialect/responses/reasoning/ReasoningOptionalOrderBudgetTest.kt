@@ -6,6 +6,7 @@ import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.jsonArray
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.put
+import org.junit.jupiter.api.AfterEach
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.io.TempDir
@@ -51,10 +52,24 @@ class ReasoningOptionalOrderBudgetTest(@param:TempDir private val state: Path) {
         assertEquals(expected, native(cache(budget)))
     }
 
-    private fun cache(budget: Long): ReasoningCache = ReasoningCache(
-        maxTotalBytes = budget,
-        files = ReasoningCacheFiles(state) {},
-    )
+    // REWRITTEN 2026-10-26 (fix 3): a cache writes its records behind its puts, on its write lane, so a restart first
+    // lands every earlier lane's records (the drain the head's stop runs), and each lane is drained after the cell. The
+    // restart here used to read the files right after the puts, which held only while each put forced its record to
+    // disk.
+    private val lanes = mutableListOf<ReasoningCacheWrites>()
+
+    @AfterEach
+    fun landAll() = land()
+
+    private fun land() = lanes.forEach { it.drain(LAND_MS) }
+
+    private fun cache(budget: Long): ReasoningCache {
+        land()
+        return ReasoningCache(
+            maxTotalBytes = budget,
+            writes = ReasoningCacheWrites(ReasoningCacheFiles(state) {}).also(lanes::add),
+        )
+    }
 
     private fun retain(cache: ReasoningCache, items: List<JsonObject>, terminal: Boolean, round: String) {
         val batch = if (terminal) InputDigest.hex(JsonArray(items)) else null
@@ -94,3 +109,6 @@ class ReasoningOptionalOrderBudgetTest(@param:TempDir private val state: Path) {
 
     private fun envelope(item: JsonObject): String = checkNotNull(ReasoningReplay.encodeReasoningEnvelope(item))
 }
+
+// How long a cell waits for a cache's records to land: far above what landing takes on a disk nobody holds.
+private const val LAND_MS = 10_000L

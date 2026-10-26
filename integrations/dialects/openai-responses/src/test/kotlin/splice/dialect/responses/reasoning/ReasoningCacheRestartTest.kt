@@ -14,6 +14,7 @@ import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.jsonArray
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
+import org.junit.jupiter.api.AfterEach
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertFalse
 import org.junit.jupiter.api.Assertions.assertTrue
@@ -89,6 +90,33 @@ private class RestartProbe(
     log = { logs.add(it) },
 ) {
     override fun extraHeaders(creds: Credentials): Map<String, String> = emptyMap()
+}
+
+/** The heads one test starts over its state dir, run the way the daemon runs them: a restart stops every head
+ *  first, a test reads or changes the files only with every head stopped, and every head is stopped once its test is
+ *  done. A head writes its reasoning records behind its turns (fix 3, 2026-10-26) and its stop is what waits for
+ *  them, so a restart that skipped the stop could find the last round still queued.
+ *
+ *  REWRITTEN 2026-10-26 (fix 3): these cells used to start the restarted head, or read the files, right after the
+ *  first head's turn, which held only while every turn forced its records to disk before it went on. */
+private class RestartHeads(private val state: Path) {
+    private val started = mutableListOf<RestartProbe>()
+
+    fun start(logs: MutableList<String> = mutableListOf(), cacheOn: Boolean = true, replay: Boolean = false) =
+        RestartProbe(state, logs, cacheOn, replay).also(started::add)
+
+    /** Stop every head started so far, then start the next one over the same state dir. */
+    fun restart(logs: MutableList<String> = mutableListOf(), cacheOn: Boolean = true, replay: Boolean = false) =
+        stopAll().let { start(logs, cacheOn, replay) }
+
+    /** [daemon], then its restart once the caller is done with [daemon]: lazily, so whatever [daemon] wrote
+     *  meanwhile lands before the restarted head reads the disk. */
+    fun thenRestarted(daemon: RestartProbe): Sequence<RestartProbe> = sequence {
+        yield(daemon)
+        yield(restart(replay = true))
+    }
+
+    fun stopAll() = started.forEach(RestartProbe::onHeadStop)
 }
 
 private object QuietSink : WireSink {
@@ -192,21 +220,25 @@ private fun reasoningBefore(provider: ResponsesProvider, session: String?, callI
 }
 
 class ReasoningCacheRestartTest(@param:TempDir private val state: Path) {
+    private val heads = RestartHeads(state)
+
+    @AfterEach
+    fun stopHeads() = heads.stopAll()
 
     @Test
     fun `a restarted daemon injects the reasoning the last one recorded, for the same session`() = runTest {
-        assertTrue(drive(RestartProbe(state), "session-1", toolRound("call_1", "cipher-1")) is TurnOutcome.Success)
+        assertTrue(drive(heads.start(), "session-1", toolRound("call_1", "cipher-1")) is TurnOutcome.Success)
 
-        val restarted = RestartProbe(state)
+        val restarted = heads.restart()
 
         assertEquals("cipher-1", reasoningBefore(restarted, "session-1", "call_1"))
     }
 
     @Test
     fun `a client that sends no session id finds its reasoning after a restart by its opening alone`() = runTest {
-        drive(RestartProbe(state), null, toolRound("call_1", "cipher-1"))
+        drive(heads.start(), null, toolRound("call_1", "cipher-1"))
 
-        assertEquals("cipher-1", reasoningBefore(RestartProbe(state), null, "call_1"))
+        assertEquals("cipher-1", reasoningBefore(heads.restart(), null, "call_1"))
     }
 
     @Test
@@ -222,7 +254,7 @@ class ReasoningCacheRestartTest(@param:TempDir private val state: Path) {
 
     @Test
     fun `two sessions with a byte-identical opening hold separate conversations`() = runTest {
-        val daemon = RestartProbe(state)
+        val daemon = heads.start()
         drive(daemon, "session-a", toolRound("call_1", "cipher-a"))
 
         assertEquals(null, reasoningBefore(daemon, "session-b", "call_1"), "session-b was handed session-a's reasoning")
@@ -231,7 +263,7 @@ class ReasoningCacheRestartTest(@param:TempDir private val state: Path) {
 
     @Test
     fun `a compaction that succeeds ends its conversation, on disk too, and spares the neighbor session`() = runTest {
-        val daemon = RestartProbe(state)
+        val daemon = heads.start()
         drive(daemon, "session-a", toolRound("call_1", "cipher-a"))
         drive(daemon, "session-b", toolRound("call_2", "cipher-b"))
 
@@ -239,14 +271,14 @@ class ReasoningCacheRestartTest(@param:TempDir private val state: Path) {
         assertTrue(compaction is TurnOutcome.Success)
 
         assertEquals(null, reasoningBefore(daemon, "session-a", "call_1"), "the compacted conversation still injects")
-        val restarted = RestartProbe(state)
+        val restarted = heads.restart()
         assertEquals(null, reasoningBefore(restarted, "session-a", "call_1"), "its file outlived the compaction")
-        assertEquals("cipher-b", reasoningBefore(RestartProbe(state), "session-b", "call_2"))
+        assertEquals("cipher-b", reasoningBefore(heads.restart(), "session-b", "call_2"))
     }
 
     @Test
     fun `a compaction that fails keeps its conversation's reasoning`() = runTest {
-        val daemon = RestartProbe(state)
+        val daemon = heads.start()
         drive(daemon, "session-a", toolRound("call_1", "cipher-a"))
         val failed = listOf(
             ev("""{"type":"response.failed","response":{"error":{"code":"server_error","message":"boom"}}}"""),
@@ -260,7 +292,8 @@ class ReasoningCacheRestartTest(@param:TempDir private val state: Path) {
 
     @Test
     fun `the store is owner-only - its directory 0700 and each conversation file 0600`() = runTest {
-        drive(RestartProbe(state), "session-1", toolRound("call_1", "cipher-1"))
+        drive(heads.start(), "session-1", toolRound("call_1", "cipher-1"))
+        heads.stopAll()
 
         val dirs = Files.walk(state).use { walk -> walk.filter { Files.isDirectory(it) && it != state }.toList() }
         val files = conversationFiles()
@@ -272,12 +305,14 @@ class ReasoningCacheRestartTest(@param:TempDir private val state: Path) {
 
     @Test
     fun `a corrupt conversation file degrades to no injection, says so, and is removed`() = runTest {
-        drive(RestartProbe(state), "session-1", toolRound("call_1", "cipher-1"))
+        drive(heads.start(), "session-1", toolRound("call_1", "cipher-1"))
+        heads.stopAll()
         val file = conversationFiles().single()
         file.writeText("{\"ids\":[\"call_1\"],\"envelopes\":[\"e\"]}\n{not json")
         val logs = mutableListOf<String>()
 
-        assertEquals(null, reasoningBefore(RestartProbe(state, logs), "session-1", "call_1"))
+        assertEquals(null, reasoningBefore(heads.restart(logs), "session-1", "call_1"))
+        heads.stopAll()
 
         val named = logs.any { "[reasoning-cache]" in it && file.fileName.toString() in it }
         assertTrue(named, "no line names the file: $logs")
@@ -286,10 +321,11 @@ class ReasoningCacheRestartTest(@param:TempDir private val state: Path) {
 
     @Test
     fun `a head that turns the cache off drops what an earlier start kept`() = runTest {
-        drive(RestartProbe(state), "session-1", toolRound("call_1", "cipher-1"))
+        drive(heads.start(), "session-1", toolRound("call_1", "cipher-1"))
+        heads.stopAll()
         val file = conversationFiles().single()
 
-        RestartProbe(state, cacheOn = false)
+        heads.restart(cacheOn = false)
 
         assertFalse(Files.exists(file), "a head with the cache off kept its conversations")
     }
@@ -311,9 +347,15 @@ class ReasoningCacheRestartTest(@param:TempDir private val state: Path) {
 
 /** The visible transcript contains no opaque carriers. Its exact positions restore server-owned reasoning. */
 class ReasoningPositionRestartTest(@param:TempDir private val state: Path) {
+    private val heads = RestartHeads(state)
+
+    @AfterEach
+    fun stopHeads() = heads.stopAll()
+
     @Test
     fun `installed duplicate records leave capacity after restart for the next reasoning item`() = runTest {
-        val initial = RestartProbe(state, replay = true).buildTurn(opening, false, "session")
+        val initial = heads.start(replay = true).buildTurn(opening, false, "session")
+        heads.stopAll()
         val scope = initial.meta.scope
         val key = checkNotNull(ReasoningCachePolicy().conversationKey(scope.sessionId, scope.reasoningStorageKey))
         val position = checkNotNull(scope.reasoningHistory).key
@@ -336,7 +378,7 @@ class ReasoningPositionRestartTest(@param:TempDir private val state: Path) {
             retained.joinToString("\n", postfix = "\n"),
         )
 
-        val restarted = RestartProbe(state, replay = true)
+        val restarted = heads.restart(replay = true)
         drive(restarted, "session", reasoning("rs_after_upgrade") + terminal)
         val replay = restarted.buildTurn(opening, false, "session").requestBody.getValue("input")
             .jsonArray.map { it.jsonObject }
@@ -347,13 +389,13 @@ class ReasoningPositionRestartTest(@param:TempDir private val state: Path) {
 
     @Test
     fun `a sparse reasoning terminal preserves the streamed prose boundary warm and after restart`() = runTest {
-        val daemon = RestartProbe(state, replay = true)
+        val daemon = heads.start(replay = true)
         val item = reasoning("rs_sparse").single().getValue("item")
         val sparse = ev("""{"type":"response.completed","response":{"status":"completed","output":[$item]}}""")
         drive(daemon, "session", prose("Already said.") + reasoning("rs_sparse") + sparse)
 
         val request = proseFollowup("Already said.")
-        for (provider in listOf(daemon, RestartProbe(state, replay = true))) {
+        for (provider in heads.thenRestarted(daemon)) {
             val replay = provider.buildTurn(request, false, "session").requestBody.getValue("input")
                 .jsonArray.map { it.jsonObject }
             assertEquals(listOf("user", "assistant", "rs_sparse", "user"), replayOrder(replay))
@@ -376,7 +418,7 @@ class ReasoningPositionRestartTest(@param:TempDir private val state: Path) {
             ev("""{"type":"response.output_item.done","output_index":0,"item":$first}"""),
             ev("""{"type":"response.output_item.done","output_index":1,"item":$second}"""),
         ) + reasoning("rs_after_messages") + terminal
-        drive(RestartProbe(state, replay = true), "session", frames)
+        drive(heads.start(replay = true), "session", frames)
 
         val replay = input(proseFollowup("LeftRight"))
         assertEquals(listOf("user", "assistant", "rs_after_messages", "user"), replayOrder(replay))
@@ -388,7 +430,7 @@ class ReasoningPositionRestartTest(@param:TempDir private val state: Path) {
 
     @Test
     fun `reasoning recovered after interrupted prose keeps its delivered boundary after restart`() = runTest {
-        val daemon = RestartProbe(state, replay = true)
+        val daemon = heads.start(replay = true)
         val built = daemon.buildTurn(opening, false, "session")
         val sink = PositionTextSink()
         val interrupted = daemon.streamTranslator(built.meta, signals).driveTurn(
@@ -412,7 +454,7 @@ class ReasoningPositionRestartTest(@param:TempDir private val state: Path) {
         assertEquals("Already finished.", sink.text.toString())
         assertEquals(0, sink.opaqueBlocks)
 
-        for (provider in listOf(daemon, RestartProbe(state, replay = true))) {
+        for (provider in heads.thenRestarted(daemon)) {
             val replay = provider.buildTurn(proseFollowup(sink.text.toString()), false, "session")
                 .requestBody.getValue("input").jsonArray.map { it.jsonObject }
             assertEquals(listOf("user", "assistant", "rs_recovered", "assistant", "user"), replayOrder(replay))
@@ -443,14 +485,14 @@ class ReasoningPositionRestartTest(@param:TempDir private val state: Path) {
             ev("""{"type":"response.output_item.done","output_index":2,"item":$reason}"""),
             ev("""{"type":"response.completed","response":{"status":"completed","output":[$first,$second,$reason]}}"""),
         )
-        val daemon = RestartProbe(state, replay = true)
+        val daemon = heads.start(replay = true)
         val built = daemon.buildTurn(opening, false, "session")
         val sink = PositionTextSink()
         daemon.streamTranslator(built.meta, signals).driveTurn(frames.asFlow(), sink)
         assertEquals("LeftRight", sink.text.toString())
         assertEquals(0, sink.opaqueBlocks)
 
-        for (provider in listOf(daemon, RestartProbe(state, replay = true))) {
+        for (provider in heads.thenRestarted(daemon)) {
             val replay = provider.buildTurn(proseFollowup(sink.text.toString()), false, "session")
                 .requestBody.getValue("input").jsonArray.map { it.jsonObject }
             assertEquals(listOf("user", "assistant", "rs_after_reverse", "user"), replayOrder(replay))
@@ -470,7 +512,7 @@ class ReasoningPositionRestartTest(@param:TempDir private val state: Path) {
             ev("""{"type":"response.output_item.done","output_index":2,"item":$exec}"""),
             ev("""{"type":"response.completed","response":{"status":"completed","output":[$message,$reason,$exec]}}"""),
         )
-        val daemon = RestartProbe(state, replay = true)
+        val daemon = heads.start(replay = true)
         val built = daemon.buildTurn(opening, false, "session")
         val sink = PositionTextSink()
         val outcome = daemon.streamTranslator(built.meta, signals).driveTurn(frames.asFlow(), sink)
@@ -491,7 +533,7 @@ class ReasoningPositionRestartTest(@param:TempDir private val state: Path) {
 
     @Test
     fun `a stale reasoning item before prose is removed from the next request and from restart history`() = runTest {
-        val daemon = RestartProbe(state, replay = true)
+        val daemon = heads.start(replay = true)
         drive(daemon, "session", reasoning("rs_stale") + prose("Done.") + terminal)
         val request = AnthropicParse.parseAnthropicBody(
             """{"model":"gpt-5.6-sol","messages":[{"role":"user","content":"$OPENING"},
@@ -545,13 +587,17 @@ class ReasoningPositionRestartTest(@param:TempDir private val state: Path) {
     private val tool = """{"type":"tool_use","id":"call_1","name":"run","input":{}}"""
     private val terminal = ev("""{"type":"response.completed","response":{"status":"completed","output":[]}}""")
 
+    /** What a restarted daemon sends for [body]: every head so far is stopped first, as a restart stops them, and the
+     *  restarted one is stopped once it has built, so what it wrote lands before a head the test keeps writes again. */
     private fun input(
         body: splice.core.parse.AnthropicTurnBody,
         replay: Boolean = true,
         session: String? = "session",
-    ): List<JsonObject> =
-        RestartProbe(state, replay = replay).buildTurn(body, false, session)
-            .requestBody.getValue("input").jsonArray.map { it.jsonObject }
+    ): List<JsonObject> {
+        val built = heads.restart(replay = replay).buildTurn(body, false, session)
+        heads.stopAll()
+        return built.requestBody.getValue("input").jsonArray.map { it.jsonObject }
+    }
 
     private fun ids(items: List<JsonObject>): List<String> = items.filter {
         it["type"]?.jsonPrimitive?.content == "reasoning"
@@ -563,7 +609,7 @@ class ReasoningPositionRestartTest(@param:TempDir private val state: Path) {
             """{"model":"gpt-5.6-sol","messages":[{"role":"user","content":[{"type":"image",
                 "source":{"type":"base64","media_type":"image/png","data":"AA=="}}]}],$TOOLS}""",
         )
-        drive(RestartProbe(state, replay = true), "image-a", reasoning("rs_image") + terminal, body = image)
+        drive(heads.start(replay = true), "image-a", reasoning("rs_image") + terminal, body = image)
         assertEquals(listOf("rs_image"), ids(input(image, session = "image-a")))
         assertTrue(ids(input(image, session = "image-b")).isEmpty())
         assertTrue(ids(input(image, session = null)).isEmpty())
@@ -578,7 +624,7 @@ class ReasoningPositionRestartTest(@param:TempDir private val state: Path) {
         val coalesced = AnthropicParse.parseAnthropicBody(
             """{"model":"gpt-5.6-sol","messages":[{"role":"user","content":"abcd"}],$TOOLS}""",
         )
-        val daemon = RestartProbe(state, replay = true)
+        val daemon = heads.start(replay = true)
         val splitKey = daemon.buildTurn(split, false, "session").requestBody["prompt_cache_key"]
         drive(daemon, "session", reasoning("rs_opening") + terminal, body = split)
         val joinedKey = daemon.buildTurn(coalesced, false, "session").requestBody["prompt_cache_key"]
@@ -588,7 +634,7 @@ class ReasoningPositionRestartTest(@param:TempDir private val state: Path) {
 
     @Test
     fun `terminal backfill orders reasoning and advances continuation past final-only prose`() = runTest {
-        val daemon = RestartProbe(state, replay = true)
+        val daemon = heads.start(replay = true)
         val built = daemon.buildTurn(opening, false, "session")
         val r1 = reasoning("rs_first").single().getValue("item")
         val r2 = reasoning("rs_second").single().getValue("item")
@@ -629,7 +675,7 @@ class ReasoningPositionRestartTest(@param:TempDir private val state: Path) {
     fun `restart restores reasoning around coalesced prose and both sides of a tool`() = runTest {
         val frames = reasoning("rs_1") + prose("Looking. ") + reasoning("rs_2") + prose("Then act.") +
             reasoning("rs_3") + call() + reasoning("rs_4") + terminal
-        drive(RestartProbe(state, replay = true), "session", frames)
+        drive(heads.start(replay = true), "session", frames)
         val request = history("""{"type":"text","text":"Looking. Then act."},$tool""")
         val replay = input(request)
         val order = replay.map {
@@ -653,7 +699,7 @@ class ReasoningPositionRestartTest(@param:TempDir private val state: Path) {
     @Test
     fun `changed tool arguments miss later reasoning and a missing store injects nothing`() = runTest {
         drive(
-            RestartProbe(state, replay = true),
+            heads.start(replay = true),
             "session",
             call("""{"path":"a","line":1}""") + reasoning("rs_after") + terminal,
         )
@@ -661,6 +707,7 @@ class ReasoningPositionRestartTest(@param:TempDir private val state: Path) {
         val changed = history("""{"type":"tool_use","id":"call_1","name":"run","input":{"path":"b","line":1}}""")
         assertEquals(listOf("rs_after"), ids(input(same)))
         assertTrue(ids(input(changed)).isEmpty())
+        heads.stopAll()
         Files.walk(state).use { paths ->
             paths.filter {
                 it.fileName.toString().endsWith(".jsonl")
@@ -671,7 +718,7 @@ class ReasoningPositionRestartTest(@param:TempDir private val state: Path) {
 
     @Test
     fun `reasoning-only history survives restart and replay off cuts only before the latest prompt`() = runTest {
-        val daemon = RestartProbe(state, replay = true)
+        val daemon = heads.start(replay = true)
         val outcome = drive(daemon, "session", reasoning("rs_old") + terminal) as TurnOutcome.Success
         assertFalse(outcome.text.emittedThinking)
         assertEquals("", outcome.text.thinkingText)
@@ -687,22 +734,33 @@ class ReasoningPositionRestartTest(@param:TempDir private val state: Path) {
     }
 }
 
-// The store under the provider: what a restart restores, and what the disk may never hold.
+// The store under the provider: what a restart restores, and what the disk may never hold. A cache's records are
+// written behind it on its write lane (fix 3, 2026-10-26), so a cell lets them land ([land], the drain the head's stop
+// runs) before it restarts, touches the directory or reads it, and once it is done; these cells used to do all of that
+// right after the put, which held only while every put forced its record to disk before it returned.
 class ReasoningCacheFilesTest(@TempDir tempDir: Path) {
     private val dir: Path = tempDir.resolve("reasoning")
     private val logs = mutableListOf<String>()
+    private val lanes = mutableListOf<ReasoningCacheWrites>()
 
     private fun cache(maxTotalBytes: Long = 64L * 1024 * 1024) = ReasoningCache(
         maxTotalBytes = maxTotalBytes,
         clock = { 0L },
-        files = ReasoningCacheFiles(dir) { logs.add(it) },
+        writes = ReasoningCacheWrites(ReasoningCacheFiles(dir) { logs.add(it) }).also(lanes::add),
     )
+
+    /** Land every record the caches built so far have queued. */
+    private fun land() = lanes.forEach { it.drain(LAND_MS) }
+
+    @AfterEach
+    fun landAll() = land()
 
     @Test
     fun `a restart over the bound keeps the most recently written conversations and deletes the rest`() {
         val first = cache()
         first.put("conv-old", listOf("call_1"), listOf("aaaaa"))
         first.put("conv-new", listOf("call_2"), listOf("bbbbb"))
+        land()
         Files.setLastModifiedTime(dir.resolve("conv-old.jsonl"), FileTime.fromMillis(1_000))
         Files.setLastModifiedTime(dir.resolve("conv-new.jsonl"), FileTime.fromMillis(2_000))
 
@@ -710,6 +768,7 @@ class ReasoningCacheFilesTest(@TempDir tempDir: Path) {
 
         assertEquals(listOf("bbbbb"), restarted.lookup("conv-new", "call_2"))
         assertEquals(null, restarted.lookup("conv-old", "call_1"))
+        land()
         assertFalse(Files.exists(dir.resolve("conv-old.jsonl")), "the evicted conversation's file stayed")
     }
 
@@ -718,10 +777,13 @@ class ReasoningCacheFilesTest(@TempDir tempDir: Path) {
         val c = cache()
         c.put("conv-a", listOf("call_0"), listOf("e0"))
         c.dropConversation("conv-a") // the directory exists, empty
+        land()
         Files.setPosixFilePermissions(dir, PosixFilePermissions.fromString("r-x------"))
         c.put("conv-a", listOf("call_1"), listOf("e1"))
+        land()
         Files.setPosixFilePermissions(dir, PosixFilePermissions.fromString("rwx------"))
         c.put("conv-a", listOf("call_2"), listOf("e2"))
+        land()
 
         assertEquals(listOf("e1"), c.lookup("conv-a", "call_1"))
         assertEquals(listOf("e2"), c.lookup("conv-a", "call_2"))
@@ -736,6 +798,7 @@ class ReasoningCacheFilesTest(@TempDir tempDir: Path) {
         c.put("conv-a", listOf("call_1"), listOf("e1"))
         c.dropConversation("conv-a")
         c.put("conv-a", listOf("call_2"), listOf("e2"))
+        land()
 
         val restarted = cache()
 
@@ -758,3 +821,6 @@ class ReasoningCacheFilesTest(@TempDir tempDir: Path) {
         assertEquals(null, policy.conversationKey("session-a", null))
     }
 }
+
+// How long a cell waits for a cache's records to land: far above what landing takes on a disk nobody holds.
+private const val LAND_MS = 10_000L

@@ -9,6 +9,7 @@ import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.jsonArray
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.put
+import org.junit.jupiter.api.AfterEach
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
@@ -26,11 +27,15 @@ class ResponsesMessageFrontierTest(@param:TempDir private val state: Path) {
     private val opening = AnthropicParse.parseAnthropicBody(
         """{"model":"gpt-5.6-sol","messages":[{"role":"user","content":"Check the answer."}]}""",
     )
+    private val heads = DeliveryHeads(state)
+
+    @AfterEach
+    fun stopHeads() = heads.stopAll()
 
     @ParameterizedTest
     @ValueSource(booleans = [false, true])
     fun `index-free completion uses the identity of prose streamed after reasoning`(indexedDelta: Boolean) = runTest {
-        val provider = DeliveryProvider(state)
+        val provider = heads.start()
         val built = provider.buildTurn(opening, false, "session")
         val before = DeliveryFrames.reasoning("rs_before_message")
         val message = DeliveryFrames.message("msg_unindexed", "Hello")
@@ -56,13 +61,13 @@ class ResponsesMessageFrontierTest(@param:TempDir private val state: Path) {
         assertEquals(emptyList<JsonObject>(), success.handoffs.nativeAfterExec)
         assertEquals(0, sink.opaqueBlocks)
         assertReplay(provider, built.requestBody, "Hello", listOf(before, after))
-        assertReplay(DeliveryProvider(state), built.requestBody, "Hello", listOf(before, after))
+        assertReplay(heads.restart(), built.requestBody, "Hello", listOf(before, after))
     }
 
     @ParameterizedTest
     @ValueSource(strings = ["Hello", "He|llo", "H|e|l|l|o"])
     fun `fully observed completed messages absorb repeated identified delta chunks`(repeated: String) = runTest {
-        val provider = DeliveryProvider(state)
+        val provider = heads.start()
         val built = provider.buildTurn(opening, false, "session")
         val message = DeliveryFrames.message("msg_observed", "Hello")
         val reason = DeliveryFrames.reasoning("rs_after_repeated")
@@ -84,12 +89,12 @@ class ResponsesMessageFrontierTest(@param:TempDir private val state: Path) {
         assertEquals(listOf(message, reason), success.handoffs.nativePrefix)
         assertEquals(0, sink.opaqueBlocks)
         assertReplay(provider, built.requestBody, "Hello", listOf(reason))
-        assertReplay(DeliveryProvider(state), built.requestBody, "Hello", listOf(reason))
+        assertReplay(heads.restart(), built.requestBody, "Hello", listOf(reason))
     }
 
     @Test
     fun `a new identified message at a reused index retains its real completion suffix`() = runTest {
-        val provider = DeliveryProvider(state)
+        val provider = heads.start()
         val built = provider.buildTurn(opening, false, "session")
         val first = DeliveryFrames.message("msg_first", "Hello")
         val second = DeliveryFrames.message("msg_second", "World")
@@ -114,7 +119,7 @@ class ResponsesMessageFrontierTest(@param:TempDir private val state: Path) {
         assertEquals(2, sink.textBlocks.size)
         assertEquals(listOf(first, second, reason), success.handoffs.nativePrefix)
         assertEquals(0, sink.opaqueBlocks)
-        assertReplay(DeliveryProvider(state), built.requestBody, "HelloWorld", listOf(reason))
+        assertReplay(heads.restart(), built.requestBody, "HelloWorld", listOf(reason))
     }
 
     private fun assertReplay(

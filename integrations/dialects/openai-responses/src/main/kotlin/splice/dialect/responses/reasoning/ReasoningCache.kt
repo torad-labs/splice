@@ -33,6 +33,11 @@
 // is also on disk, restored before the first read: disk and memory hold the same conversations, except
 // one whose file could not be written, which lives in memory only. Writes are queued under the lock and
 // applied after it (ReasoningCacheWrites), so no request waits on the disk.
+//
+// REWORKED 2026-10-26 (fix 3): "after it" now means on the head's one background writer, never on the thread that
+// made the change. That thread is often a session's stream inside its upstream read loop, and it used to apply the
+// whole queue itself, every session's records forced to disk one by one. The head's stop drains that writer
+// (ResponsesParts.onHeadStop), so a restart still restores every record.
 package splice.dialect.responses.reasoning
 
 import splice.core.util.ElapsedClock
@@ -51,8 +56,10 @@ internal class ReasoningCache(
      *  eviction, compaction, a file that did not read back). Defaults to a no-op so tests need not
      *  thread it. */
     private val log: LogSink = LogSink {},
-    /** V4-334: where keyed conversations outlive the process; null keeps them in memory only. */
-    files: ReasoningCacheFiles? = null,
+    /** V4-334: the lane that writes keyed conversations to disk, so they outlive the process; one without files
+     *  keeps them in memory only. Since fix 3 (2026-10-26) it writes behind the turns, and its owner drains it when
+     *  the head stops (ResponsesParts.onHeadStop). */
+    private val writes: ReasoningCacheWrites = ReasoningCacheWrites(null),
 ) : ReasoningCacheEvictions {
 
     // Iteration order = least-recently-TOUCHED first (touch re-inserts). Bound pressure evicts from
@@ -71,7 +78,6 @@ internal class ReasoningCache(
     private var totalBytes = 0L
     private var seq = 0L
     private val lock = Any()
-    private val writes = ReasoningCacheWrites(files)
     private val positions = ReasoningCachePositions()
     private val proofs = ReasoningCacheProofs()
     private val persistence = ReasoningRoundPersistence(writes, positions, proofs)
@@ -107,7 +113,7 @@ internal class ReasoningCache(
             }
             evictToBoundLocked(writing = null, writer = null, offered = null)
         }
-        writes.flush()
+        writes.wake()
     }
 
     fun put(conversationKey: String?, toolIds: List<String>, envelopes: List<String>) {
@@ -127,7 +133,7 @@ internal class ReasoningCache(
                 putConvoLocked(conversationKey, toolIds, envelopes, bytes)
             }
         }
-        writes.flush()
+        writes.wake()
     }
 
     /** The ordered envelopes for the round of THIS conversation that emitted [toolId], or null
@@ -194,7 +200,7 @@ internal class ReasoningCache(
             }
             nullRounds.filterValues { match(it) }.keys.toList().forEach(::removeNullLocked)
         }
-        writes.flush()
+        writes.wake()
     }
 
     /** V4-334: [conversationKey] compacted, so its reasoning is done — the client carries on under a
@@ -211,7 +217,7 @@ internal class ReasoningCache(
             )
             removeConvoLocked(conversationKey)
         }
-        writes.flush()
+        writes.wake()
     }
 
     /** An unchanged legacy transcript proved this old digest; move its items to the stable grammar. */
@@ -233,7 +239,7 @@ internal class ReasoningCache(
                 }
             }
         }
-        writes.flush()
+        writes.wake()
     }
 
     // ── internals ────────────────────────────────────────────────────────────────────────────

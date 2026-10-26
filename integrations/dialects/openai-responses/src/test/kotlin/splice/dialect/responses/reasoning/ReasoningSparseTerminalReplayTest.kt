@@ -8,6 +8,7 @@ import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.jsonArray
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.put
+import org.junit.jupiter.api.AfterEach
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertFalse
 import org.junit.jupiter.api.Assertions.assertTrue
@@ -86,42 +87,56 @@ private class SparseOrderSink : WireSink {
 }
 
 class ReasoningSparseTerminalReplayTest(@param:TempDir private val state: Path) {
+    // REWRITTEN 2026-10-26 (fix 3): a head writes its reasoning records behind its turns and its stop waits for them,
+    // so each head below over the shared state dir starts as a restart does, after every earlier head has stopped,
+    // and each is stopped after the cell. These cells used to start the next head right after the last one's turn,
+    // which held only while every turn forced its records to disk before it went on.
+    private val started = mutableListOf<SparseOrderProvider>()
+
+    private fun restart(): SparseOrderProvider {
+        started.forEach(SparseOrderProvider::onHeadStop)
+        return SparseOrderProvider(state).also(started::add)
+    }
+
+    @AfterEach
+    fun stopHeads() = started.forEach(SparseOrderProvider::onHeadStop)
+
     @ParameterizedTest
     @ValueSource(strings = ["B", "C,A", "C,B,A"])
     fun `actual sparse terminal reasoning keeps observed order in warm and restarted requests`(
         terminal: String,
     ) = runTest {
-        val provider = SparseOrderProvider(state)
+        val provider = restart()
         val observed = listOf("A", "B", "C")
         val terminalIds = terminal.split(',')
         val expected = (if (terminalIds.toSet() == observed.toSet()) terminalIds else observed).map { "rs_$it" }
         drive(provider, observed, terminalIds)
         assertEquals(expected, ids(input(provider)))
         assertEquals(expected, ids(input(provider)))
-        assertEquals(expected, ids(input(SparseOrderProvider(state))))
+        assertEquals(expected, ids(input(restart())))
     }
 
     @Test
     fun `cached same round sparse retries never combine into an invented terminal order`() = runTest {
         val expected = listOf("rs_A", "rs_B", "rs_C")
-        drive(SparseOrderProvider(state), listOf("A", "B", "C"), emptyList())
-        val firstRetry = SparseOrderProvider(state)
+        drive(restart(), listOf("A", "B", "C"), emptyList())
+        val firstRetry = restart()
         drive(firstRetry, listOf("A"), listOf("C", "A"))
         assertEquals(expected, ids(input(firstRetry)))
-        assertEquals(expected, ids(input(SparseOrderProvider(state))))
-        val secondRetry = SparseOrderProvider(state)
+        assertEquals(expected, ids(input(restart())))
+        val secondRetry = restart()
         drive(secondRetry, listOf("A"), listOf("B"))
         assertEquals(expected, ids(input(secondRetry)))
-        assertEquals(expected, ids(input(SparseOrderProvider(state))))
-        val completeRetry = SparseOrderProvider(state)
+        assertEquals(expected, ids(input(restart())))
+        val completeRetry = restart()
         drive(completeRetry, listOf("A"), listOf("C", "B", "A"))
         val authoritative = listOf("rs_C", "rs_B", "rs_A")
         assertEquals(authoritative, ids(input(completeRetry)))
-        assertEquals(authoritative, ids(input(SparseOrderProvider(state))))
-        val laterSparse = SparseOrderProvider(state)
+        assertEquals(authoritative, ids(input(restart())))
+        val laterSparse = restart()
         drive(laterSparse, listOf("A"), listOf("B"))
         assertEquals(authoritative, ids(input(laterSparse)))
-        assertEquals(authoritative, ids(input(SparseOrderProvider(state))))
+        assertEquals(authoritative, ids(input(restart())))
     }
 
     @Test

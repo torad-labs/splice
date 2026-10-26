@@ -126,4 +126,15 @@ public abstract class ResponsesProvider(
     // Every turn, compaction included (2026-09-02, see ResponsesTurnSeams.reanchorPolicy).
     final override fun reanchorPolicy(meta: TurnMeta): ReanchorPolicy? =
         parts.turnSeams.reanchorPolicy(meta)
+
+    /** Final so no subclass can skip the second step (fix 3, 2026-10-26): its own per-turn resources go first,
+     *  since a turn they end may still record reasoning, then the stop waits for the reasoning records still
+     *  queued for the disk, which a restart restores. */
+    final override fun onHeadStop() {
+        cancelTurnResources()
+        parts.onHeadStop()
+    }
+
+    /** A subclass's per-turn resources to cancel when the head stops ([onHeadStop]); none by default. */
+    protected open fun cancelTurnResources() {}
 }

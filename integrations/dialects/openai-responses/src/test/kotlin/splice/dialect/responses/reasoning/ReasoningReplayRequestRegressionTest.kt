@@ -9,6 +9,7 @@ import kotlinx.serialization.json.jsonArray
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
 import kotlinx.serialization.json.put
+import org.junit.jupiter.api.AfterEach
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
@@ -107,10 +108,25 @@ class ReasoningReplayRequestRegressionTest(@param:TempDir private val state: Pat
     private val opening = """{"role":"user","content":"Inspect the files."}"""
     private val terminal = event("""{"type":"response.completed","response":{"status":"completed","output":[]}}""")
 
+    // REWRITTEN 2026-10-26 (fix 3): a head writes its reasoning records behind its turns and its stop waits for them,
+    // so a cell stops every head it started before it reads the files or restarts, and after it is done. These cells
+    // used to do both right after a turn, which held only while every turn forced its records to disk first.
+    private val started = mutableListOf<ReplayRequestProvider>()
+
+    private fun start(directory: Path = state, cache: Boolean = true) =
+        ReplayRequestProvider(directory, cache).also(started::add)
+
+    private fun restart() = stopAll().let { start() }
+
+    private fun stopAll() = started.forEach(ReplayRequestProvider::onHeadStop)
+
+    @AfterEach
+    fun stopHeads() = stopAll()
+
     @Test
     fun `replay enabled retains prior reasoning when the cache is disabled`() = runTest {
         for (cache in listOf(true, false)) {
-            val provider = ReplayRequestProvider(state.resolve(if (cache) "cached" else "uncached"), cache)
+            val provider = start(state.resolve(if (cache) "cached" else "uncached"), cache)
             val sink = ReplayRequestSink()
             drive(provider, request(opening), reasoning("rs_plan") + prose("Inspecting.") + call("call_1", 2), sink)
             val envelopes = sink.envelopes.map(JsonObject::toString)
@@ -166,7 +182,7 @@ class ReasoningReplayRequestRegressionTest(@param:TempDir private val state: Pat
 
     @Test
     fun `new result proofs preserve durable history prefixes and replay after restart`() = runTest {
-        val provider = ReplayRequestProvider(state, cache = true)
+        val provider = start()
         drive(provider, request(opening), reasoning("rs_initial") + call("call_1"))
         val first = "$opening,${assistant(tool("call_1"))},${result("call_1", "first contents")}"
         drive(provider, request(first), reasoning("rs_second") + call("call_2"))
@@ -175,9 +191,11 @@ class ReasoningReplayRequestRegressionTest(@param:TempDir private val state: Pat
             ResponsesStableIds().reasoningStorageKey(request(opening).typed),
         )
         val file = state.resolve(REASONING_DIR).resolve("$key.jsonl")
+        stopAll()
         val durablePrefix = Files.readString(file)
         val second = "$first,${assistant(tool("call_2"))},${result("call_2", "second contents")}"
         drive(provider, request(second), reasoning("rs_third") + prose("Checked."))
+        stopAll()
         val extended = Files.readString(file)
         val cleared = "$opening,${assistant(tool("call_1"))}," +
             result("call_1", "[Old tool result content cleared]") +
@@ -186,7 +204,7 @@ class ReasoningReplayRequestRegressionTest(@param:TempDir private val state: Pat
             """{"role":"user","content":"Continue the inspection."}"""
         assertEquals(
             listOf("rs_initial", "rs_second", "rs_third"),
-            reasoningIds(input(ReplayRequestProvider(state, cache = true), request(cleared + tail))),
+            reasoningIds(input(restart(), request(cleared + tail))),
         )
         assertTrue(
             extended.startsWith(durablePrefix),
@@ -196,7 +214,7 @@ class ReasoningReplayRequestRegressionTest(@param:TempDir private val state: Pat
 
     @Test
     fun `clearing an earlier tool result retains reasoning around later prose and calls`() = runTest {
-        val provider = ReplayRequestProvider(state, cache = true)
+        val provider = start()
         drive(provider, request(opening), reasoning("rs_initial") + call("call_1"))
         val firstHistory = "$opening,${assistant(tool("call_1"))},${result("call_1", "original file contents")}"
         drive(
@@ -240,7 +258,7 @@ class ReasoningReplayRequestRegressionTest(@param:TempDir private val state: Pat
 
     @Test
     fun `result proofs learned before the first reasoning item survive restart and clearing`() = runTest {
-        val provider = ReplayRequestProvider(state, cache = true)
+        val provider = start()
         drive(provider, request(opening), call("call_1"))
         val prefix = "$opening,${assistant(tool("call_1"))},"
         drive(
@@ -250,7 +268,7 @@ class ReasoningReplayRequestRegressionTest(@param:TempDir private val state: Pat
         )
         val tail = ",${assistant(text("Checked."))}," +
             """{"role":"user","content":"Continue the inspection."}"""
-        val restarted = ReplayRequestProvider(state, cache = true)
+        val restarted = restart()
         val cleared = input(
             restarted,
             request(prefix + result("call_1", "[Old tool result content cleared]") + tail),
@@ -275,7 +293,7 @@ class ReasoningReplayRequestRegressionTest(@param:TempDir private val state: Pat
 
     @Test
     fun `clearing one result does not excuse changing another result in the same history`() = runTest {
-        val provider = ReplayRequestProvider(state, cache = true)
+        val provider = start()
         drive(provider, request(opening), reasoning("rs_initial") + call("call_1"))
         val first = "$opening,${assistant(tool("call_1"))},${result("call_1", "first contents")}"
         drive(provider, request(first), call("call_2"))
@@ -298,7 +316,7 @@ class ReasoningReplayRequestRegressionTest(@param:TempDir private val state: Pat
     }
 
     private suspend fun changedResultDropsReasoning(original: String, changed: String, scope: String) {
-        val provider = ReplayRequestProvider(state.resolve(scope), cache = true)
+        val provider = start(state.resolve(scope))
         drive(provider, request(opening), reasoning("rs_initial") + call("call_1"))
         val prefix = "$opening,${assistant(tool("call_1"))},"
         drive(provider, request(prefix + original), reasoning("rs_after_result") + prose("Checked."))
@@ -324,7 +342,7 @@ class ReasoningReplayRequestRegressionTest(@param:TempDir private val state: Pat
             """{"role":"user","content":"Continue the inspection."}"""
         val clearedHistory = "$opening,${assistant(tool("call_1"))}," +
             result("call_1", "[Old tool result content cleared]")
-        val provider = ReplayRequestProvider(state, cache = true)
+        val provider = start()
         assertTrue(
             reasoningIds(input(provider, request(clearedHistory + suffix))).isEmpty(),
             "an old payload hash cannot recover already-cleared history before an exact original-prefix lookup",
@@ -334,7 +352,7 @@ class ReasoningReplayRequestRegressionTest(@param:TempDir private val state: Pat
             reasoningIds(input(provider, request(firstHistory + suffix))),
             "an upgraded provider must read unchanged history from an existing full-result cache",
         )
-        val restarted = ReplayRequestProvider(state, cache = true)
+        val restarted = restart()
         val cleared = input(restarted, request(clearedHistory + suffix))
         assertEquals(
             listOf("rs_legacy"),
@@ -369,9 +387,9 @@ class ReasoningReplayRequestRegressionTest(@param:TempDir private val state: Pat
             envelope,
             ReasoningItemOrder("legacy-round", 0, true, "rs_legacy"),
         )
-        ReasoningCache(
-            files = ReasoningCacheFiles(state.resolve(REASONING_DIR)) {},
-        ).put(key, listOf(index), listOf(envelope))
+        val writes = ReasoningCacheWrites(ReasoningCacheFiles(state.resolve(REASONING_DIR)) {})
+        ReasoningCache(writes = writes).put(key, listOf(index), listOf(envelope))
+        assertTrue(writes.drain(LEGACY_LAND_MS), "the legacy record did not land")
     }
 
     /** The f940 cursor grammar, independent of the new stable-result cursor. */
@@ -462,3 +480,6 @@ class ReasoningReplayRequestRegressionTest(@param:TempDir private val state: Pat
 
     private fun event(value: String): JsonObject = Json.parseToJsonElement(value).jsonObject
 }
+
+// How long the legacy fixture waits for its record to land: far above what landing takes on a disk nobody holds.
+private const val LEGACY_LAND_MS = 10_000L

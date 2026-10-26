@@ -54,7 +54,7 @@ public class CodexProvider(
     override fun buildTurn(body: AnthropicTurnBody, compact: Boolean, sessionId: String?): BuiltTurn =
         codeModeTurns.prepare(body, sessionId, super.buildTurn(body, compact, sessionId))
 
-    override fun onHeadStop() {
+    override fun cancelTurnResources() {
         codeMode.onHeadStop()
     }
 

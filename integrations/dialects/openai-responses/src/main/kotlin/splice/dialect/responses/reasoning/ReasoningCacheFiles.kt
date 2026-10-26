@@ -4,15 +4,16 @@
 // in three live claudex histories carried its reasoning (0/634, 0/389, 0/14).
 //
 // One file per conversation, one line per admitted round, appended through JsonlSink with rotation off (a
-// rolled generation would be half a conversation). The directory is owner-only and each conversation file
-// is created 0600. This file only reads, appends and deletes: WHAT is on disk is the cache's decision
-// (ReasoningCache.kt), made in memory and written behind it in order (ReasoningCacheWrites). Every failure
-// met here degrades to the no-injection status quo with one daemon.log line, never to a turn error
-// (NEVER-BELOW-STATUS-QUO law).
+// rolled generation would be half a conversation) and with no force per line (fix 3, see `force` below). The
+// directory is owner-only and each conversation file is created 0600. This file only reads, appends and deletes:
+// WHAT is on disk is the cache's decision (ReasoningCache.kt), made in memory and written behind it in order
+// (ReasoningCacheWrites). Every failure met here degrades to the no-injection status quo with one daemon.log line,
+// never to a turn error (NEVER-BELOW-STATUS-QUO law).
 package splice.dialect.responses.reasoning
 
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.Json
+import splice.core.util.JsonlForce
 import splice.core.util.JsonlSink
 import splice.core.util.LogSink
 import splice.core.util.SafeFailureText
@@ -21,7 +22,15 @@ import java.io.IOException
 import java.nio.file.Files
 import java.nio.file.Path
 
-internal class ReasoningCacheFiles(private val dir: Path, private val log: LogSink) {
+internal class ReasoningCacheFiles(
+    private val dir: Path,
+    /** How an appended record reaches the disk: the page cache, not a force per record (fix 3, 2026-10-26). The page
+     *  cache outlives the process, so a restart keeps every record. A power loss can take the records the kernel had
+     *  not yet written out, and a conversation whose last line it tore is dropped whole at the next start ([read]).
+     *  A test stands a slow disk in here. */
+    private val force: JsonlForce = JsonlSink.PAGE_CACHE_FORCE,
+    private val log: LogSink,
+) {
 
     /** Whether [key] can name a file here. The cache's keys are `splice-<hex>`, with `-<hex>` per session
      *  (ReasoningCachePolicy.conversationKey); any other key stays in memory rather than become a path. */
@@ -52,7 +61,7 @@ internal class ReasoningCacheFiles(private val dir: Path, private val log: LogSi
         return try {
             if (Files.notExists(file)) SecureFile.createNew0600(file, ByteArray(0))
             val line = lines.encodeToString(StoredRound.serializer(), round)
-            JsonlSink.appendLine(file, line, maxBytes = Long.MAX_VALUE)
+            JsonlSink.appendLine(file, line, maxBytes = Long.MAX_VALUE, force = force)
             true
         } catch (failure: IOException) {
             log(

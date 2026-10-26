@@ -16,6 +16,7 @@ import splice.dialect.responses.WatchdogCaps
 import splice.dialect.responses.reasoning.ReasoningCache
 import splice.dialect.responses.reasoning.ReasoningCacheFiles
 import splice.dialect.responses.reasoning.ReasoningCachePolicy
+import splice.dialect.responses.reasoning.ReasoningCacheWrites
 import splice.dialect.responses.stream.ConversationSummaryParts
 import splice.dialect.responses.stream.LiveFoldConfig
 import splice.dialect.responses.stream.ResponsesFailureAmend
@@ -29,7 +30,7 @@ internal class ResponsesParts(
     reasoning: ReasoningSettings,
     quirks: ResponsesQuirks,
     foldConfig: LiveFoldConfig?,
-    log: LogSink,
+    private val log: LogSink,
     toolNames: ToolNameShortener,
 ) {
     val builder = ResponsesRequestBuilder(quirks, toolNames)
@@ -41,11 +42,12 @@ internal class ResponsesParts(
     // runs the cache; a head that turned it off drops what an earlier start kept (V4-260: kept files go
     // when their use ends).
     private val reasoningFiles =
-        tuning.locations.stateDir?.let { ReasoningCacheFiles(it.resolve(REASONING_DIR), log) }
-    private val reasoningCache = ReasoningCache(
-        log = log,
-        files = reasoningFiles.takeIf { quirks.roundTrip.reasoningCache },
-    )
+        tuning.locations.stateDir?.let { ReasoningCacheFiles(it.resolve(REASONING_DIR), log = log) }
+
+    // Fix 3 (2026-10-26): the cache's records reach those files on this lane, behind the turns that made them, and
+    // the head's stop drains it ([onHeadStop]).
+    private val reasoningWrites = ReasoningCacheWrites(reasoningFiles.takeIf { quirks.roundTrip.reasoningCache })
+    private val reasoningCache = ReasoningCache(log = log, writes = reasoningWrites)
 
     init {
         if (!quirks.roundTrip.reasoningCache) reasoningFiles?.purge()
@@ -83,4 +85,22 @@ internal class ResponsesParts(
         toolSurfaceLatch,
         log,
     )
+
+    /** The head is stopping: land the reasoning records still queued for the disk, waiting at most [STOP_WRITES_MS],
+     *  so the next start restores them. They are written behind the turns that made them (fix 3, 2026-10-26), so a
+     *  stop that did not wait could end the process with the last ones still queued. A disk that did not keep up is
+     *  said in daemon.log; the records it had not taken still land if the process lives on. */
+    fun onHeadStop() {
+        if (!reasoningWrites.drain(STOP_WRITES_MS)) {
+            log(
+                "[reasoning-cache] stop: the disk had not taken every queued record after ${STOP_WRITES_MS}ms; " +
+                    "the rest are lost if the daemon exits now",
+            )
+        }
+    }
 }
+
+// How long a head's stop waits for the reasoning records still queued. Page-cache appends land in microseconds, so
+// this binds only on a disk that has stalled; it stays inside the 5 s the daemon gives a head's close phase
+// (HeadShutdown's CLOSE_BUDGET_MS) beside the engine stop's 2.5 s, so the usage and perf flushes after it still run.
+private const val STOP_WRITES_MS: Long = 2_000L

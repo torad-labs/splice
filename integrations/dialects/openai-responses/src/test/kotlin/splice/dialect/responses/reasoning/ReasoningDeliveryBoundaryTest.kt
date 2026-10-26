@@ -9,6 +9,7 @@ import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.jsonArray
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.put
+import org.junit.jupiter.api.AfterEach
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertNull
 import org.junit.jupiter.api.Assertions.assertTrue
@@ -71,6 +72,30 @@ internal class DeliveryProvider(state: Path) : ResponsesProvider(
     log = {},
 ) {
     override fun extraHeaders(creds: Credentials): Map<String, String> = emptyMap()
+}
+
+/** The delivery heads one test starts over its state dir, stopped the way the daemon stops a head: before a restart
+ *  reads the disk, and once the test is done. A head writes its reasoning records behind its turns (fix 3,
+ *  2026-10-26) and its stop is what waits for them.
+ *
+ *  REWRITTEN 2026-10-26 (fix 3): the restarts these cells check used to start right after the first head's turn,
+ *  which held only while every turn forced its records to disk before it went on. */
+internal class DeliveryHeads(private val state: Path) {
+    private val started = mutableListOf<DeliveryProvider>()
+
+    fun start(): DeliveryProvider = DeliveryProvider(state).also(started::add)
+
+    /** Stop every head started so far, then start the next one over the same state dir. */
+    fun restart(): DeliveryProvider = stopAll().let { start() }
+
+    /** [warm], then its restart once the caller is done with [warm]: lazily, so whatever [warm] wrote meanwhile lands
+     *  before the restarted head reads the disk. */
+    fun thenRestarted(warm: DeliveryProvider): Sequence<DeliveryProvider> = sequence {
+        yield(warm)
+        yield(restart())
+    }
+
+    fun stopAll() = started.forEach(DeliveryProvider::onHeadStop)
 }
 
 internal class DeliverySink(private val rejectedText: String? = null) : WireSink {
@@ -175,10 +200,14 @@ class ReasoningDeliveryBoundaryTest(@param:TempDir private val state: Path) {
     private val opening = AnthropicParse.parseAnthropicBody(
         """{"model":"gpt-5.6-sol","messages":[{"role":"user","content":"Check the answer."}]}""",
     )
+    private val heads = DeliveryHeads(state)
+
+    @AfterEach
+    fun stopHeads() = heads.stopAll()
 
     @Test
     fun `recovery resumes after delivered prose while preserving the complete native payload`() = runTest {
-        val provider = DeliveryProvider(state)
+        val provider = heads.start()
         val built = provider.buildTurn(opening, false, "session")
         val sink = DeliverySink()
         val complete = DeliveryFrames.message("msg_full", "Hello world")
@@ -217,7 +246,7 @@ class ReasoningDeliveryBoundaryTest(@param:TempDir private val state: Path) {
 
     @Test
     fun `completed suffix reaches the client before following reasoning and survives replay`() = runTest {
-        val provider = DeliveryProvider(state)
+        val provider = heads.start()
         val built = provider.buildTurn(opening, false, "session")
         val sink = DeliverySink()
         val complete = DeliveryFrames.message("msg_full", "Hello world")
@@ -243,7 +272,7 @@ class ReasoningDeliveryBoundaryTest(@param:TempDir private val state: Path) {
         val added = checkNotNull(next).getValue("input").jsonArray
             .drop(built.requestBody.getValue("input").jsonArray.size)
         assertEquals(listOf("Hello world", "rs_after_complete"), projection(added.dropLast(1).map { it.jsonObject }))
-        for (view in listOf(provider, DeliveryProvider(state))) {
+        for (view in heads.thenRestarted(provider)) {
             assertEquals(
                 listOf("developer", "user", "Hello world", "rs_after_complete", "user"),
                 projection(input(view, sink)),
@@ -254,7 +283,7 @@ class ReasoningDeliveryBoundaryTest(@param:TempDir private val state: Path) {
 
     @Test
     fun `failed suffix delivery clamps recovery before separately retained later reasoning`() = runTest {
-        val provider = DeliveryProvider(state)
+        val provider = heads.start()
         val built = provider.buildTurn(opening, false, "session")
         val sink = DeliverySink(rejectedText = " world")
         val complete = DeliveryFrames.message("msg_full", "Hello world")
@@ -291,7 +320,7 @@ class ReasoningDeliveryBoundaryTest(@param:TempDir private val state: Path) {
 
     @Test
     fun `an unprovable completed prefix keeps later reasoning raw without positioning it`() = runTest {
-        val provider = DeliveryProvider(state)
+        val provider = heads.start()
         val built = provider.buildTurn(opening, false, "session")
         val sink = DeliverySink()
         val before = DeliveryFrames.reasoning("rs_before_mismatch")
@@ -313,7 +342,7 @@ class ReasoningDeliveryBoundaryTest(@param:TempDir private val state: Path) {
             checkNotNull(provider.reanchorPolicy(built.meta))
                 .continuationForFailure(ReanchorRound(built.requestBody, failure, 0)),
         )
-        for (view in listOf(provider, DeliveryProvider(state))) {
+        for (view in heads.thenRestarted(provider)) {
             assertEquals(
                 listOf("developer", "user", "rs_before_mismatch", "Hello!", "user"),
                 projection(input(view, sink)),
@@ -324,7 +353,7 @@ class ReasoningDeliveryBoundaryTest(@param:TempDir private val state: Path) {
 
     @Test
     fun `terminal only reasoning follows actual delta order warm and after restart`() = runTest {
-        val provider = DeliveryProvider(state)
+        val provider = heads.start()
         val built = provider.buildTurn(opening, false, "session")
         val sink = DeliverySink()
         val left = DeliveryFrames.message("msg_left", "Left")
@@ -342,14 +371,14 @@ class ReasoningDeliveryBoundaryTest(@param:TempDir private val state: Path) {
         )
         assertEquals("RightLeft", sink.text.toString())
         assertEquals(0, sink.opaqueBlocks)
-        for (view in listOf(provider, DeliveryProvider(state))) {
+        for (view in heads.thenRestarted(provider)) {
             assertEquals(listOf("developer", "user", "RightLeft", "rs_terminal", "user"), projection(input(view, sink)))
         }
     }
 
     @Test
     fun `reused reasoning index retains preceding unfinished prose in recovery order`() = runTest {
-        val provider = DeliveryProvider(state)
+        val provider = heads.start()
         val built = provider.buildTurn(opening, false, "session")
         val sink = DeliverySink()
         val reason = DeliveryFrames.reasoning("rs_reused")
@@ -370,7 +399,7 @@ class ReasoningDeliveryBoundaryTest(@param:TempDir private val state: Path) {
 
     @Test
     fun `a done only exec without an index seals after its captured reasoning`() = runTest {
-        val provider = DeliveryProvider(state)
+        val provider = heads.start()
         val built = provider.buildTurn(opening, false, "session")
         val sink = DeliverySink()
         val reason = DeliveryFrames.reasoning("rs_before_exec")

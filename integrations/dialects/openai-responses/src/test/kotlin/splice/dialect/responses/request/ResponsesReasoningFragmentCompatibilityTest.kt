@@ -8,6 +8,7 @@ import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.jsonArray
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
+import org.junit.jupiter.api.AfterEach
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.io.TempDir
@@ -21,6 +22,7 @@ import splice.dialect.responses.ResponsesQuirks
 import splice.dialect.responses.reasoning.InjectPriorReasoning
 import splice.dialect.responses.reasoning.ReasoningCache
 import splice.dialect.responses.reasoning.ReasoningCacheFiles
+import splice.dialect.responses.reasoning.ReasoningCacheWrites
 import splice.dialect.responses.reasoning.ReasoningHistoryLookup
 import splice.dialect.responses.reasoning.ReasoningItemOrder
 import splice.dialect.responses.reasoning.ReasoningPositionIndex
@@ -97,7 +99,21 @@ class ResponsesReasoningFragmentCompatibilityTest(@param:TempDir private val sta
         assertEquals(expected, input(builder, cache(), request).map(::label))
     }
 
-    private fun cache(): ReasoningCache = ReasoningCache(files = ReasoningCacheFiles(state) {})
+    // REWRITTEN 2026-10-26 (fix 3): a cache writes its records behind its puts, on its write lane, so a restart first
+    // lands every earlier lane's records (the drain the head's stop runs), and each lane is drained after the cell. The
+    // restarts here used to read the files right after the puts, which held only while each put forced its record to
+    // disk.
+    private val lanes = mutableListOf<ReasoningCacheWrites>()
+
+    @AfterEach
+    fun landAll() = land()
+
+    private fun land() = lanes.forEach { it.drain(LAND_MS) }
+
+    private fun cache(): ReasoningCache {
+        land()
+        return ReasoningCache(writes = ReasoningCacheWrites(ReasoningCacheFiles(state) {}).also(lanes::add))
+    }
 
     private fun input(
         builder: ResponsesRequestBuilder,
@@ -152,3 +168,6 @@ class ResponsesReasoningFragmentCompatibilityTest(@param:TempDir private val sta
 }
 
 private const val FRAGMENT_CONVERSATION = "splice-fragment-compatibility"
+
+// How long a cell waits for a cache's records to land: far above what landing takes on a disk nobody holds.
+private const val LAND_MS = 10_000L

@@ -9,6 +9,7 @@ import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.jsonArray
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.put
+import org.junit.jupiter.api.AfterEach
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertNotNull
 import org.junit.jupiter.api.Assertions.assertTrue
@@ -46,10 +47,14 @@ class ResponsesMessageContinuityTest(@param:TempDir private val state: Path) {
     private val opening = AnthropicParse.parseAnthropicBody(
         """{"model":"gpt-5.6-sol","messages":[{"role":"user","content":"Check the answer."}]}""",
     )
+    private val heads = DeliveryHeads(state)
+
+    @AfterEach
+    fun stopHeads() = heads.stopAll()
 
     @Test
     fun `late delta after eager completion does not duplicate a client row or later reasoning position`() = runTest {
-        val provider = DeliveryProvider(state)
+        val provider = heads.start()
         val built = provider.buildTurn(opening, false, "session")
         val sink = MessageWireProbe()
         val message = DeliveryFrames.message("msg_first", "Hello")
@@ -70,14 +75,14 @@ class ResponsesMessageContinuityTest(@param:TempDir private val state: Path) {
         assertEquals("Hello", success.text.bodyText)
         assertEquals(listOf(message, reason), success.handoffs.nativePrefix)
         assertEquals(0, sink.opaqueBlocks)
-        for (view in listOf(provider, DeliveryProvider(state))) {
+        for (view in heads.thenRestarted(provider)) {
             assertEquals(listOf("developer", "user", "Hello", "rs_after_late", "user"), project(input(view, "Hello")))
         }
     }
 
     @Test
     fun `late remaining chunks reconcile with the suffix already delivered at completion`() = runTest {
-        val provider = DeliveryProvider(state)
+        val provider = heads.start()
         val built = provider.buildTurn(opening, false, "session")
         val sink = MessageWireProbe()
         val message = DeliveryFrames.message("msg_chunked", "Hello")
@@ -99,7 +104,7 @@ class ResponsesMessageContinuityTest(@param:TempDir private val state: Path) {
 
     @Test
     fun `a distinct message at the same index still delivers identical legitimate text`() = runTest {
-        val provider = DeliveryProvider(state)
+        val provider = heads.start()
         val built = provider.buildTurn(opening, false, "session")
         val sink = MessageWireProbe()
         val first = DeliveryFrames.message("msg_first", "Hello")
@@ -122,13 +127,13 @@ class ResponsesMessageContinuityTest(@param:TempDir private val state: Path) {
         assertEquals(0, sink.opaqueBlocks)
         assertEquals(
             listOf("developer", "user", "HelloHello", "rs_after_reuse", "user"),
-            project(input(DeliveryProvider(state), sink.text)),
+            project(input(heads.restart(), sink.text)),
         )
     }
 
     @Test
     fun `torn interleaved messages resume actual delivery order with following reasoning intact`() = runTest {
-        val provider = DeliveryProvider(state)
+        val provider = heads.start()
         val built = provider.buildTurn(opening, false, "session")
         val sink = MessageWireProbe()
         val left = DeliveryFrames.message("msg_left", "Left")
@@ -153,7 +158,7 @@ class ResponsesMessageContinuityTest(@param:TempDir private val state: Path) {
         val added = checkNotNull(continuation).getValue("input").jsonArray
             .drop(built.requestBody.getValue("input").jsonArray.size).dropLast(1).map { it.jsonObject }
         assertEquals(listOf("RightLeft", "rs_after_delivery"), project(added))
-        for (view in listOf(provider, DeliveryProvider(state))) {
+        for (view in heads.thenRestarted(provider)) {
             assertEquals(
                 listOf("developer", "user", "RightLeft", "rs_after_delivery", "user"),
                 project(input(view, sink.text)),
@@ -164,7 +169,7 @@ class ResponsesMessageContinuityTest(@param:TempDir private val state: Path) {
 
     @Test
     fun `recovery and restart preserve reasoning between separately delivered messages`() = runTest {
-        val provider = DeliveryProvider(state)
+        val provider = heads.start()
         val built = provider.buildTurn(opening, false, "session")
         val sink = MessageWireProbe()
         val left = DeliveryFrames.message("msg_left", "Left")
@@ -189,7 +194,7 @@ class ResponsesMessageContinuityTest(@param:TempDir private val state: Path) {
             .drop(built.requestBody.getValue("input").jsonArray.size).dropLast(1).map { it.jsonObject }
         assertEquals(listOf("Left", "rs_middle", "Right", "rs_after"), project(added))
         assertEquals(listOf(left, middle, right, after), checkNotNull(failure.partial).nativePrefix)
-        for (view in listOf(provider, DeliveryProvider(state))) {
+        for (view in heads.thenRestarted(provider)) {
             assertEquals(
                 listOf("developer", "user", "Left", "rs_middle", "Right", "rs_after", "user"),
                 project(input(view, sink.text)),

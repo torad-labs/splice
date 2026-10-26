@@ -107,8 +107,13 @@ function askSessions() {
     render();
   });
 }
-let loadVersion = 0, accountRevision = 0;
-async function load({ asks = true } = {}) {
+// A read that a newer one overtook keeps nothing it read, and it ends only once the read that overtook it has ended, so
+// whoever waits on a read (the refresh after an act, Add naming the login it signed in) sees a board at least as new as
+// the one it asked for. Ending at once left Add a board from before its sign-in, because the day's figures that refresh
+// asked for answered first and started a newer read, and the name typed on Add was never given (account-labels).
+let loadVersion = 0, accountRevision = 0, newestRead = null;
+function load(options) { return (newestRead = readAll(options)); }
+async function readAll({ asks = true } = {}) {
   const version = ++loadVersion, revision = accountRevision;
   tick();
   if (asks) askEconomics();
@@ -116,7 +121,8 @@ async function load({ asks = true } = {}) {
   const [st, ac, ks, bg, md, hd, au] = await Promise.all(["/api/status", "/api/accounts", "/api/keys", "/api/budgets", "/api/models", "/api/heads", "/api/auth"].map((p) => API.get(p)));
   // each login's name by the label its pool knows it by on a head, so a session's last switch reads in Accounts' names
   for (const r of ac.body?.accounts || []) for (const h of r.heads || []) LOGIN_NAME.set(`${h}|${r.account_labels?.[h] || r.label}`, r.display_name || r.label);
-  if (version !== loadVersion || revision !== accountRevision || ui.orderSaving || ui.removing) return;
+  if (version !== loadVersion) return newestRead;
+  if (revision !== accountRevision || ui.orderSaving || ui.removing) return;
   if (!st.ok || !ac.ok) { data = []; offline = true; return; }
   offline = false;
   const ec = economics || { ok: true, body: { heads: (st.body?.registry || []).map((h) => ({ key: h.key, read_pending: true })) } };
@@ -266,8 +272,9 @@ async function load({ asks = true } = {}) {
     // the pool's own picks, named by label on this command
     c.serving = byLabel(o.body?.next_target) ?? null; c.following = byLabel(o.body?.following_target) ?? null;
   })));
+  if (version !== loadVersion) return newestRead;
   // An earlier reading must not undo a removal or order that is still being saved.
-  if (version === loadVersion && revision === accountRevision && !ui.orderSaving && !ui.removing) data = [...provs.values()];
+  if (revision === accountRevision && !ui.orderSaving && !ui.removing) data = [...provs.values()];
 }
 
 let data = [];

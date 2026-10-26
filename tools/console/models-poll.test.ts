@@ -116,11 +116,11 @@ beforeEach(() => {
   world.asked.clear();
 });
 
-// The page has no call on its way. A round is a chain of reads with no gap between them, so a page that shows none in
-// flight is between rounds, and what it drew is what the last round read.
-async function settled(page: Page) {
+// The page has no call on its way but the [held] the test itself keeps out. A round is a chain of reads with no gap
+// between them, so a page that shows none in flight is between rounds, and what it drew is what the last round read.
+async function settled(page: Page, held = 0) {
   const give = Date.now() + 10_000;
-  while ((await page.evaluate<number>("API.pending()")) > 0) {
+  while ((await page.evaluate<number>("API.pending()")) > held) {
     if (Date.now() > give) throw new Error("the page still has calls in flight after 10 s");
     await Bun.sleep(25);
   }
@@ -136,6 +136,15 @@ async function stepUntilAsked(page: Page, path: string) {
   world.asked.clear();
   for (let i = 0; i < 15 && !world.asked.has(path); i++) await step(page, 5_000);
   if (!world.asked.has(path)) throw new Error(`no round asked ${path} in 75 s of page time`);
+}
+// Steps 5 s at a time until the card's model line reads [model], which is how a test knows the lists were read, whenever
+// in the minute that fell. At most [ticks] steps, then it says so.
+async function stepUntilModel(page: Page, model: string, ticks: number) {
+  for (let taken = 0; taken < ticks; taken++) {
+    await step(page, 5_000);
+    if ((await cardOf(page))?.[1] === model) return;
+  }
+  throw new Error(`the card did not read ${model} in ${ticks} ticks`);
 }
 // The tab goes out of view or comes back, as the browser does it: the page reads document.hidden, then hears the event.
 const setVisible = (page: Page, visible: boolean) =>
@@ -191,6 +200,49 @@ test("Back on the tab after two minutes hidden, what changed meanwhile shows at 
     // started from a terminal, its doctor check cleared, and the model renamed in splice.toml, all while nobody looked
     world.running = true;
     world.label = "Alpha Two";
+    await setVisible(page, true);
+    await settled(page);
+    expect(await cardReading(page, ["Ready", "Alpha Two"])).toEqual(["Ready", "Alpha Two"]);
+  } finally {
+    await page.close();
+  }
+}, 30_000);
+
+test("A tab out of view keeps its card as it was while the daemon changes under it, then shows it at once", async () => {
+  const page = await open();
+  try {
+    expect(await cardOf(page)).toEqual(["Not started", "Alpha One"]);
+    await setVisible(page, false);
+    // started from a terminal and renamed in splice.toml after the tab went out of view, and then a minute and more of
+    // ticks: a page that kept asking would have read both at the first of them
+    world.running = true;
+    world.label = "Alpha Two";
+    for (let s = 5; s <= 65; s += 5) await step(page, 5_000);
+    expect(await cardOf(page)).toEqual(["Not started", "Alpha One"]);
+    await setVisible(page, true);
+    await settled(page);
+    expect(await cardReading(page, ["Ready", "Alpha Two"])).toEqual(["Ready", "Alpha Two"]);
+  } finally {
+    await page.close();
+  }
+}, 60_000);
+
+test("A tab that goes out of view while a tick's read is out reads no lists after it", async () => {
+  const page = await open();
+  try {
+    expect(await cardOf(page)).toEqual(["Not started", "Alpha One"]);
+    // started from a terminal and renamed in splice.toml; the tick's read of the commands answers slowly
+    const slow = hold("/api/heads");
+    world.running = true;
+    world.label = "Alpha Two";
+    await page.clock.runFor(5_000);
+    await slow.asked;
+    // the tab goes out of view while that read is out. Its answer shows the command moved, which brings the lists along
+    // when the page may still ask, and the page may not
+    await setVisible(page, false);
+    slow.release();
+    await settled(page);
+    expect((await cardOf(page))?.[1]).toBe("Alpha One");
     await setVisible(page, true);
     await settled(page);
     expect(await cardReading(page, ["Ready", "Alpha Two"])).toEqual(["Ready", "Alpha Two"]);
@@ -268,6 +320,27 @@ test("A change made just after a read of the lists shows a minute on, whichever 
     // renamed again just after that minute's own read: the next minute shows it too
     world.label = "Alpha Three";
     for (let i = 0; i < 12; i++) await step(page, 5_000);
+    expect(await cardReading(page, ["Ready", "Alpha Three"])).toEqual(["Ready", "Alpha Three"]);
+  } finally {
+    await page.close();
+  }
+}, 60_000);
+
+test("The lists are read once a minute: eleven ticks after a read of them leave the card as it was", async () => {
+  world.running = true;
+  const page = await open();
+  try {
+    expect(await cardOf(page)).toEqual(["Ready", "Alpha One"]);
+    // the first read of the lists after the page loaded, wherever in its minute that falls
+    world.label = "Alpha Two";
+    await stepUntilModel(page, "Alpha Two", 12);
+    // renamed just after that read: each tick on reads what moves, and the card keeps what the lists said until the twelfth
+    world.label = "Alpha Three";
+    for (let tick = 1; tick <= 11; tick++) {
+      await step(page, 5_000);
+      expect(await cardOf(page)).toEqual(["Ready", "Alpha Two"]);
+    }
+    await step(page, 5_000);
     expect(await cardReading(page, ["Ready", "Alpha Three"])).toEqual(["Ready", "Alpha Three"]);
   } finally {
     await page.close();
@@ -352,6 +425,29 @@ test("A command opened while a tick's reads are out keeps its pane as it was dra
     await settled(page);
     expect(await page.locator(".pane").count()).toBe(1);
     expect(await page.locator('.pane [data-act="save"]').count()).toBe(0);
+  } finally {
+    await page.close();
+  }
+}, 30_000);
+
+test("A tick waits for the round still out, so a slow splice is read at its own pace", async () => {
+  world.running = true;
+  const page = await open();
+  try {
+    expect(await cardOf(page)).toEqual(["Ready", "Alpha One"]);
+    // the tick's read of the sessions answers slowly, which holds its round open
+    const slow = hold("/api/sessions");
+    await page.clock.runFor(5_000);
+    await slow.asked;
+    // a session starts on alpha, and the next tick comes while that round is still out: the page asks nothing, so the
+    // card cannot know of the session yet
+    world.sessions = [{ session_id: "s-1", head: "alpha", status: "working" }];
+    await page.clock.runFor(5_000);
+    await settled(page, 1);
+    expect(await cardOf(page)).toEqual(["Ready", "Alpha One"]);
+    slow.release();
+    await settled(page);
+    expect(await cardReading(page, ["1 running", "Alpha One"])).toEqual(["1 running", "Alpha One"]);
   } finally {
     await page.close();
   }

@@ -68,6 +68,7 @@ import splice.head.pipeline.TurnPipeline
 import splice.head.round.PostRound
 import splice.head.round.ReanchorRunner
 import splice.head.round.RunnerSignals
+import splice.head.testVoice
 import splice.head.transport.UpstreamEventTiming
 import splice.head.turn.delivery.CollectedReply
 import splice.head.usage.OutputClamp
@@ -142,11 +143,11 @@ private class Rig(tmp: Path, tag: String, clock: ElapsedClock = ElapsedClock { 5
                 extraHeaders = emptyMap(),
                 toolSearch = null,
             ),
-            slot = InflightGate(LiveLimit { 1 }).admittedSlot(),
+            slot = TurnSlot(InflightGate(LiveLimit { 1 }).admittedSlot()) {},
             t0 = 0,
             perf = TurnPerf(),
             trace = null,
-            markHandedOff = {},
+            voice = testVoice,
         ),
         emitter = emitter,
         watchdog = watchdog,
@@ -180,7 +181,7 @@ class TurnPerfRowTest {
     fun `persisted perf row includes the completed paced tail`(cancelBeforeRecording: Boolean) = runTest {
         val clock = ElapsedClock { testScheduler.currentTime }
         val rig = Rig(tmp, "paced-row-$cancelBeforeRecording", clock)
-        val emitter = CollectingTerminal("synthetic", UsagePayloadBuilder { buildJsonObject { } })
+        val emitter = CollectingTerminal("synthetic", UsagePayloadBuilder { buildJsonObject { } }, voice = testVoice)
         val drive = rig.drive(emitter).let { it.copy(inputs = it.inputs.copy(perf = TurnPerf(clock = clock))) }
         val pacing = drive.channel.launchPacer(
             this,
@@ -232,7 +233,7 @@ class TurnPerfRowTest {
         var now = 10L
         val clock = ElapsedClock { now }
         val rig = Rig(tmp, "collected-row", clock)
-        val terminal = CollectingTerminal("synthetic", UsagePayloadBuilder { buildJsonObject { } })
+        val terminal = CollectingTerminal("synthetic", UsagePayloadBuilder { buildJsonObject { } }, voice = testVoice)
         val drive = rig.drive(terminal).let { it.copy(inputs = it.inputs.copy(perf = TurnPerf(clock = clock))) }
         try {
             drive.collectPerf.defer()
@@ -261,7 +262,7 @@ class TurnPerfRowTest {
         cancelled: Boolean,
     ) = runTest {
         val rig = Rig(tmp, "collect-flush-$cancelled")
-        val terminal = CollectingTerminal("synthetic", UsagePayloadBuilder { buildJsonObject { } })
+        val terminal = CollectingTerminal("synthetic", UsagePayloadBuilder { buildJsonObject { } }, voice = testVoice)
         val drive = rig.drive(terminal)
         val sink = object : ByteWriteChannel by ByteChannel() {
             override suspend fun flush(): Unit = if (cancelled) {
@@ -368,7 +369,7 @@ class TurnPerfRowTest {
     fun `persisted row separates a torn read tail reanchor backoff and the next POST wait`() = runTest {
         val clock = ElapsedClock { testScheduler.currentTime }
         val rig = Rig(tmp, "torn-tail-reanchor", clock)
-        val emitter = CollectingTerminal("synthetic", UsagePayloadBuilder { buildJsonObject { } })
+        val emitter = CollectingTerminal("synthetic", UsagePayloadBuilder { buildJsonObject { } }, voice = testVoice)
         val drive = rig.drive(emitter).let { it.copy(inputs = it.inputs.copy(perf = TurnPerf(clock = clock))) }
         val runner = ReanchorRunner(
             key = "synthetic",
@@ -397,7 +398,7 @@ class TurnPerfRowTest {
     @Test
     fun `a cancelled paced socket write still publishes its row and preserves cancellation`() = runBlocking {
         val rig = Rig(tmp, "paced-write-cancel")
-        val emitter = CollectingTerminal("synthetic", UsagePayloadBuilder { buildJsonObject { } })
+        val emitter = CollectingTerminal("synthetic", UsagePayloadBuilder { buildJsonObject { } }, voice = testVoice)
         val cancellation = CancellationException("synthetic cancelled socket")
         var writes = 0
         val channel = ClientChannel(
@@ -467,7 +468,7 @@ class TurnFinishTest {
 
     private suspend fun finishAndReadTurnLine(tag: String, watchdog: TurnWatchdog): String {
         val rig = Rig(tmp, tag)
-        val emitter = CollectingTerminal("gpt-5.6-sol", UsagePayloadBuilder { buildJsonObject { } })
+        val emitter = CollectingTerminal("gpt-5.6-sol", UsagePayloadBuilder { buildJsonObject { } }, voice = testVoice)
         val drive = rig.drive(emitter, watchdog)
         try {
             rig.finish.finishTurn(
@@ -490,7 +491,7 @@ class TurnFinishTest {
     @Test
     fun `a failure puts its cause and the loop attempt count on the perf row - V4-117`() = runBlocking {
         val rig = Rig(tmp, "perf-cause")
-        val emitter = CollectingTerminal("gpt-5.6-sol", UsagePayloadBuilder { buildJsonObject { } })
+        val emitter = CollectingTerminal("gpt-5.6-sol", UsagePayloadBuilder { buildJsonObject { } }, voice = testVoice)
         val drive = rig.drive(emitter)
         try {
             rig.finish.finishTurn(
@@ -516,7 +517,8 @@ class TurnFinishTest {
     fun `only a code-mode response without an upstream attempt marks a local step`() = runBlocking {
         for (attempts in listOf(0L, 1L)) {
             val rig = Rig(tmp, "local-step-$attempts")
-            val emitter = CollectingTerminal("gpt-5.6-sol", UsagePayloadBuilder { buildJsonObject { } })
+            val emitter =
+                CollectingTerminal("gpt-5.6-sol", UsagePayloadBuilder { buildJsonObject { } }, voice = testVoice)
             val drive = rig.drive(emitter)
             drive.perf.setCount(PerfKeys.ATTEMPTS, attempts)
             try {
@@ -540,7 +542,9 @@ class TurnFinishTest {
     @Test
     fun `a divergent result fallback marks its upstream perf row`() = runBlocking {
         val rig = Rig(tmp, "code-mode-divergence")
-        val drive = rig.drive(CollectingTerminal("gpt-5.6-sol", UsagePayloadBuilder { buildJsonObject { } }))
+        val drive = rig.drive(
+            CollectingTerminal("gpt-5.6-sol", UsagePayloadBuilder { buildJsonObject { } }, voice = testVoice),
+        )
         drive.perf.setCount(PerfKeys.ATTEMPTS, 1)
         try {
             rig.finish.finishTurn(
@@ -565,7 +569,8 @@ class TurnFinishTest {
     @Test
     fun `a dead client still records a divergent branch on its connection-reset row`() = runBlocking {
         val rig = Rig(tmp, "code-mode-divergence-reset")
-        val collecting = CollectingTerminal("gpt-5.6-sol", UsagePayloadBuilder { buildJsonObject { } })
+        val collecting =
+            CollectingTerminal("gpt-5.6-sol", UsagePayloadBuilder { buildJsonObject { } }, voice = testVoice)
         val failing = object : TurnTerminal by collecting {
             override suspend fun emitTerminal(hasToolUse: Boolean, incomplete: Boolean, usage: Usage) {
                 throw IOException("client closed")
@@ -600,7 +605,9 @@ class TurnFinishTest {
     @Test
     fun `worker failure reason survives the short daemon turn line`() = runBlocking {
         val rig = Rig(tmp, "worker-cause")
-        val drive = rig.drive(CollectingTerminal("gpt-6.1-sol", UsagePayloadBuilder { buildJsonObject { } }))
+        val drive = rig.drive(
+            CollectingTerminal("gpt-6.1-sol", UsagePayloadBuilder { buildJsonObject { } }, voice = testVoice),
+        )
         try {
             rig.finish.finishTurn(
                 drive,
@@ -668,7 +675,7 @@ class TurnFinishTest {
     @Test
     fun `a collect-path malformed-tool rewrite reaches health, log and perf - DR-87`() = runBlocking {
         val rig = Rig(tmp, "dr87")
-        val emitter = CollectingTerminal("gpt-5.6-sol", UsagePayloadBuilder { buildJsonObject { } })
+        val emitter = CollectingTerminal("gpt-5.6-sol", UsagePayloadBuilder { buildJsonObject { } }, voice = testVoice)
         val idx = emitter.openTool("toolu_1", "edit")
         emitter.inputJsonDelta(idx, "{not json")
         val drive = rig.drive(emitter)
@@ -691,7 +698,7 @@ class TurnFinishTest {
     @Test
     fun `an empty-model downgrade reaches health and the log - DR-88`() = runBlocking {
         val rig = Rig(tmp, "dr88")
-        val emitter = CollectingTerminal("gpt-5.6-sol", UsagePayloadBuilder { buildJsonObject { } })
+        val emitter = CollectingTerminal("gpt-5.6-sol", UsagePayloadBuilder { buildJsonObject { } }, voice = testVoice)
         val drive = rig.drive(emitter)
         try {
             // No text, no thinking, no tools: StreamPromote emits the CX-09 empty_model error
@@ -713,7 +720,8 @@ class TurnFinishTest {
     fun `closed empty messages stay clean while empty model and compact errors stay degraded`() = runBlocking {
         for (tag in listOf(OutcomeTag.EMPTY_MODEL, OutcomeTag.EMPTY_COMPACT, OutcomeTag.EMPTY_MESSAGE)) {
             val rig = Rig(tmp, "ending-${tag.wire}")
-            val emitter = CollectingTerminal("gpt-5.6-sol", UsagePayloadBuilder { buildJsonObject { } })
+            val emitter =
+                CollectingTerminal("gpt-5.6-sol", UsagePayloadBuilder { buildJsonObject { } }, voice = testVoice)
             val original = rig.drive(emitter)
             val built = original.inputs.built
             val drive = original.copy(
@@ -746,7 +754,7 @@ class TurnFinishTest {
     @Test
     fun `client abandonment does not enter success degradation accounting`() = runBlocking {
         val rig = Rig(tmp, "ending-abandoned")
-        val emitter = CollectingTerminal("gpt-5.6-sol", UsagePayloadBuilder { buildJsonObject { } })
+        val emitter = CollectingTerminal("gpt-5.6-sol", UsagePayloadBuilder { buildJsonObject { } }, voice = testVoice)
         val drive = rig.drive(emitter)
         try {
             rig.finish.finishTurn(drive, TurnOutcome.ClientAbandoned())
@@ -764,7 +772,7 @@ class TurnFinishTest {
     @Test
     fun `a normal aggregate replaces the raw cancellation prefix`() = runBlocking {
         val rig = Rig(tmp, "usage-aggregate")
-        val emitter = CollectingTerminal("gpt-5.6-sol", UsagePayloadBuilder { buildJsonObject { } })
+        val emitter = CollectingTerminal("gpt-5.6-sol", UsagePayloadBuilder { buildJsonObject { } }, voice = testVoice)
         val drive = rig.drive(emitter)
         try {
             drive.recordRawRound(
@@ -804,7 +812,7 @@ class TurnFinishTest {
     @Test
     fun `cancellation stamps the completed raw prefix once with cumulative accounting`() = runBlocking {
         val rig = Rig(tmp, "usage-cancelled-prefix")
-        val emitter = CollectingTerminal("gpt-5.6-sol", UsagePayloadBuilder { buildJsonObject { } })
+        val emitter = CollectingTerminal("gpt-5.6-sol", UsagePayloadBuilder { buildJsonObject { } }, voice = testVoice)
         val drive = rig.drive(emitter)
         try {
             drive.recordRawRound(
@@ -838,7 +846,7 @@ class TurnFinishTest {
     @Test
     fun `a cancelled success stamp still commits its claimed usage`() = runBlocking {
         val rig = Rig(tmp, "usage-success-cancelled")
-        val emitter = CollectingTerminal("gpt-5.6-sol", UsagePayloadBuilder { buildJsonObject { } })
+        val emitter = CollectingTerminal("gpt-5.6-sol", UsagePayloadBuilder { buildJsonObject { } }, voice = testVoice)
         val drive = rig.drive(emitter)
         try {
             val stampJob = launch {
@@ -864,7 +872,7 @@ class TurnFinishTest {
     @Test
     fun `cancellation without code-mode raw rounds leaves ordinary usage counters absent`() = runBlocking {
         val rig = Rig(tmp, "usage-cancelled-disabled")
-        val emitter = CollectingTerminal("gpt-5.6-sol", UsagePayloadBuilder { buildJsonObject { } })
+        val emitter = CollectingTerminal("gpt-5.6-sol", UsagePayloadBuilder { buildJsonObject { } }, voice = testVoice)
         val drive = rig.drive(emitter)
         try {
             rig.usageStamp.stampKnownOnCancellation(drive)

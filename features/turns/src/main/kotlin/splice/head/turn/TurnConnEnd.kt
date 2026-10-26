@@ -10,7 +10,6 @@ import splice.core.perf.PerfKeys
 import splice.core.turn.CONN_RESET_KIND
 import splice.core.turn.CONN_RESET_OUTCOME
 import splice.core.turn.CodeModeDivergenceMarker
-import splice.core.util.ERR_SNIPPET
 import splice.core.util.LogSink
 import splice.core.util.LoopbackOverride
 import splice.head.HeadHealthCounters
@@ -23,8 +22,6 @@ import java.net.ConnectException
 import java.net.URI
 import java.net.URISyntaxException
 import java.nio.channels.ClosedChannelException
-
-private const val RETRY_HINT = "; retry"
 
 // why: bound cause traversal even if an external throwable forms a cycle.
 private const val MAX_FAILURE_CAUSE_DEPTH = 8
@@ -69,13 +66,15 @@ internal class TurnConnEnd(
 
     /** The upstream sent a frame over our own size limit, before or after content reached the client. */
     suspend fun emitOversized(drive: TurnDrive, e: SseFrameTooLarge) {
-        log(telemetry.errTurn("upstream-frame-too-large", drive, ": ${e.text}"))
-        drive.trace?.failureSentence(frameTooLargeSentence(e))
+        // The limit and how big the frame had grown stay in the log; the client and the trace read the line.
+        val size = e.observed?.let { ", frame reached $it characters" }.orEmpty()
+        log(telemetry.errTurn("upstream-frame-too-large", drive, ": ${e.text}$size"))
+        val cause = FailureCause.Path.Torn(Tear.OVERSIZED_EVENT, toolOpen = false)
         // DR-128: account BEFORE the emit — a dead-client write makes emitError rethrow after
         // sealing, and the turn must not vanish from the perf JSONL and G20 counters (the
         // 2026-07-19 storm shape: dead clients + failing upstream). Same law on every surface.
         drive.markPermanent(false)
-        telemetry.recordPerf(drive, OutcomeTag.UPSTREAM_FRAME_TOO_LARGE.wire)
+        telemetry.recordPerf(drive, OutcomeTag.UPSTREAM_FRAME_TOO_LARGE.wire, ending = cause)
         health.provider()
         // V4-81: the wire type is the emitter's decision (ClientWire), and this is the one arm where
         // the cause's permanence needed deciding rather than reading. AN OVERSIZED FRAME IS TRANSIENT
@@ -84,19 +83,9 @@ internal class TurnConnEnd(
         // and can come back small. Contrast TurnEnding's unparseable base_url, which is a property of
         // our own config and reproduces exactly — that one is permanent. The emitter still owns the
         // other half: an oversized event can be met either side of content, and after content the
-        // type is left alone because the client is already finalizing what it holds. The message and
-        // the telemetry type are unchanged.
-        drive.emitter.emitError(
-            FailureCause.Path.Torn(Tear.OVERSIZED_EVENT, toolOpen = false),
-            "upstream sent an oversized streaming event; retry",
-        )
-    }
-
-    /** The wire record's words for an oversized frame: the label, which limit, and how big the frame had grown. Never
-     *  the frame's content. */
-    private fun frameTooLargeSentence(e: SseFrameTooLarge): String {
-        val size = e.observed?.let { ", frame reached $it characters" }.orEmpty()
-        return "frame_too_large: ${e.text}$size$RETRY_HINT"
+        // type is left alone because the client is already finalizing what it holds. The telemetry
+        // type is unchanged, and the line is the one the emitter's voice composes for this cause.
+        drive.emitter.emitError(cause)
     }
 
     private fun refusedRuntimePort(error: Throwable): Int? {
@@ -125,9 +114,8 @@ internal class TurnConnEnd(
 
     /** One conn-reset surface for raw tears and reissue-exhausted [StreamTornBeforeClient]. */
     suspend fun emitConnReset(drive: TurnDrive, detail: String) {
+        // The transport's own detail stays in the log; the client and the trace read the line for its cause.
         log(telemetry.errTurn(CONN_RESET_KIND, drive, ": $detail"))
-        val boundedDetail = detail.take(ERR_SNIPPET - RETRY_HINT.length)
-        drive.trace?.failureSentence("$boundedDetail$RETRY_HINT")
         // DR-128: account BEFORE the emit — see the frame-too-large arm above.
         val refused = drive.perfCounter(PerfKeys.REFUSED_RUNTIME_PORT) > 0
         val cause = FailureCause.Path.Unreachable(
@@ -139,8 +127,9 @@ internal class TurnConnEnd(
             drive,
             CONN_RESET_OUTCOME,
             failure = PerfFailure(cause = cause.persisted.name.takeIf { refused }),
+            ending = cause,
         )
         health.local()
-        drive.emitter.emitError(cause, "${provider.key}: upstream connection failed ($boundedDetail); retry")
+        drive.emitter.emitError(cause)
     }
 }

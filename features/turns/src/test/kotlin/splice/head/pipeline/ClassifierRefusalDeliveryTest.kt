@@ -26,12 +26,22 @@ import splice.dialect.anthropic.PassthroughQuirks
 import splice.dialect.anthropic.PassthroughStreamTranslator
 import splice.dialect.anthropic.PassthroughTurnContext
 import splice.head.compact.CompactStats
+import splice.head.testVoice
 import splice.head.wire.CollectingTerminal
 import splice.head.wire.SseEmitterFactory
 import splice.head.wire.StreamWiring
 import splice.head.wire.TurnTerminal
 import java.nio.file.Path
 import kotlin.random.Random
+
+/** What the classifier explained: a sentence a person can read, which the line quotes. */
+private const val EXPLANATION = "The request asks for working exploit code."
+
+/** Who declined, as the shared test voice names the head (TestVoice.kt). */
+private const val DECLINED = "[splice] The model on claude-test declined to answer"
+
+/** The longest line a person reads (final-design.md section 10). */
+private const val MAX_LINE = 240
 
 class ClassifierRefusalDeliveryTest {
     @TempDir
@@ -66,9 +76,13 @@ class ClassifierRefusalDeliveryTest {
         pipeline().finishStream(terminal, outcome, meta, elapsedMs = 1)
     }
 
+    // Failure-handling slice 2: the person reads the line the turn voice composes for a model's refusal, which quotes
+    // the category and explanation the classifier gave (final-design.md section 10, Refused(MODEL)). The old words
+    // ("blocked by the upstream safety classifier", "stop_reason=refusal", "Refusal category:", retry advice) are gone
+    // with FailureText, and the stop reason stays in the log.
     @Test
     fun `classifier details reach streaming and buffered errors before and after partial output`() = runTest {
-        val details = """{"type":"refusal","category":"cyber","explanation":"Upstream classifier explanation."}"""
+        val details = """{"type":"refusal","category":"cyber","explanation":"$EXPLANATION"}"""
         for (partial in listOf(false, true)) {
             val frames = mutableListOf<String>()
             val emitter = SseEmitterFactory().create(
@@ -76,6 +90,7 @@ class ClassifierRefusalDeliveryTest {
                 model = "claude-splice",
                 usagePayload = { buildJsonObject {} },
                 streaming = StreamWiring(contentReached = { partial }),
+                voice = testVoice,
             )
             refuse(emitter, details, partial)
             assertTrue(frames.last().startsWith("event: error\n"), frames.toString())
@@ -88,7 +103,7 @@ class ClassifierRefusalDeliveryTest {
             assertRefusal(error.getValue("error").jsonObject.getValue("message").jsonPrimitive.content)
             assertEquals("invalid_request_error", error.getValue("error").jsonObject["type"]?.jsonPrimitive?.content)
 
-            val buffered = CollectingTerminal("claude-splice", { buildJsonObject {} })
+            val buffered = CollectingTerminal("claude-splice", { buildJsonObject {} }, voice = testVoice)
             refuse(buffered, details, partial)
             assertEquals(400, buffered.httpStatus())
             val body = buffered.responseBody()
@@ -99,24 +114,44 @@ class ClassifierRefusalDeliveryTest {
         }
     }
 
-    private fun assertRefusal(message: String) {
-        assertTrue(message.contains("claude-splice: generation was blocked by the upstream safety classifier"), message)
-        assertTrue(message.contains("stop_reason=refusal"), message)
-        assertTrue(message.contains("Refusal category: cyber."), message)
-        assertTrue(message.contains("Upstream classifier explanation."), message)
+    /** The refusal line quotes what the classifier said, and invites no re-send: the same request meets the same no. */
+    private fun assertRefusal(message: String, category: String = "cyber") {
+        assertTrue(message.startsWith("$DECLINED: "), message)
+        assertTrue(EXPLANATION.removeSuffix(".") in message, "the explanation reaches the person: $message")
+        assertTrue(category in message, "and the category: $message")
+        assertFalse("again" in message || "retry" in message, message)
+    }
+
+    /** The line a stream=false refusal carrying [details] ends with. */
+    private suspend fun bufferedLine(details: String?): String {
+        val terminal = CollectingTerminal("claude-splice", { buildJsonObject {} }, voice = testVoice)
+        refuse(terminal, details, partial = false)
+        return terminal.responseBody().getValue("error").jsonObject.getValue("message").jsonPrimitive.content
     }
 
     @Test
-    fun `long classifier explanations and unrecognized categories reach the user intact`() = runTest {
-        val explanation = "Upstream classifier detail. ".repeat(20) + "End of upstream explanation."
+    fun `an unrecognized category reaches the person like a known one`() = runTest {
         for (category in listOf("cyber", "future_category")) {
-            val terminal = CollectingTerminal("claude-splice", { buildJsonObject {} })
-            refuse(terminal, """{"category":"$category","explanation":"$explanation"}""", partial = false)
-            val message = terminal.responseBody().getValue("error").jsonObject.getValue("message").jsonPrimitive.content
-            assertTrue(message.contains("Refusal category: $category."), message)
-            assertTrue(message.contains(explanation), message)
-            assertTrue(message.endsWith("Review the request before retrying."), message)
+            assertRefusal(bufferedLine("""{"category":"$category","explanation":"$EXPLANATION"}"""), category)
         }
+    }
+
+    @Test
+    fun `a category or an explanation given alone is quoted alone`() = runTest {
+        for (category in listOf("cyber", "future_category")) {
+            assertEquals("$DECLINED: $category.", bufferedLine("""{"category":"$category"}"""))
+            assertEquals("$DECLINED: $category.", bufferedLine("""{"category":"$category","explanation":null}"""))
+        }
+        assertEquals("$DECLINED: $EXPLANATION", bufferedLine("""{"explanation":"$EXPLANATION"}"""))
+    }
+
+    @Test
+    fun `a long classifier explanation still leaves one line of at most 240 characters`() = runTest {
+        val explanation = "The request asks for working exploit code against a named production system " +
+            "and for the steps to keep it hidden from the people who run that system, ".repeat(4) + "in detail."
+        val line = bufferedLine("""{"category":"cyber","explanation":"$explanation"}""")
+        assertTrue(line.startsWith("$DECLINED: The request asks for working exploit code"), line)
+        assertTrue(line.length <= MAX_LINE, "${line.length}: $line")
     }
 
     @Test
@@ -129,13 +164,7 @@ class ClassifierRefusalDeliveryTest {
             """{"category":" ","explanation":""}""",
         )
         for (details in variants) {
-            val terminal = CollectingTerminal("claude-splice", { buildJsonObject {} })
-            refuse(terminal, details, partial = false)
-            val message = terminal.responseBody().getValue("error").jsonObject.getValue("message").jsonPrimitive.content
-            assertTrue(message.contains("did not provide a refusal category or explanation"), message)
-            assertTrue(message.contains("Review the request before retrying"), message)
-            assertFalse(message.contains("Refusal category:"), message)
-            assertFalse(message.contains("null"), message)
+            assertEquals("$DECLINED.", bufferedLine(details), "$details")
         }
     }
 
@@ -150,16 +179,14 @@ class ClassifierRefusalDeliveryTest {
         ) + List(32) { JsonPrimitive(random.nextLong()) }
         for (value in malformed) {
             for (partial in listOf(false, true)) {
-                val terminal = CollectingTerminal("claude-splice", { buildJsonObject {} })
+                val terminal = CollectingTerminal("claude-splice", { buildJsonObject {} }, voice = testVoice)
                 val details = buildJsonObject {
                     put("category", value)
                     put("explanation", value)
                 }
                 refuse(terminal, details.toString(), partial)
                 val error = terminal.responseBody().getValue("error").jsonObject
-                val message = error.getValue("message").jsonPrimitive.content
-                assertTrue(message.contains("did not provide a refusal category or explanation"), message)
-                assertFalse(message.contains("Refusal category:"), message)
+                assertEquals("$DECLINED.", error.getValue("message").jsonPrimitive.content, "$details")
             }
         }
     }
@@ -173,6 +200,7 @@ class ClassifierRefusalDeliveryTest {
                 model = "claude-splice",
                 usagePayload = { buildJsonObject {} },
                 streaming = StreamWiring(contentReached = { true }),
+                voice = testVoice,
             )
             emitter.addTextBlock("partial")
             pipeline().finishStream(

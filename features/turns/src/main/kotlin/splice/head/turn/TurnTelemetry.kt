@@ -7,6 +7,8 @@ package splice.head.turn
 
 import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.withContext
+import splice.core.failure.FailureCause
+import splice.core.failure.SpliceLine
 import splice.core.model.TurnBill
 import splice.core.perf.PerfKeys
 import splice.core.perf.PerfSnapshot
@@ -81,19 +83,22 @@ internal class TurnTelemetry(
     val localAnswers = LocalAnswerRows(headKey, perfStats, log, clock)
 
     /** Drain the paced tail before the sole perf snapshot; publish even if cleanup throws cancellation.
-     *  [rateLimited] marks the one turn the upstream refused with a 429 — see [TurnSpend.economics]. */
+     *  [rateLimited] marks the one turn the upstream refused with a 429 — see [TurnSpend.economics]. [ending] is the
+     *  cause a row written ahead of its error frame ends on (DR-128), so its trace records the line the terminal is
+     *  about to write; null where the terminal wrote its ending first, or the turn ends with no line. */
     suspend fun recordPerf(
         drive: TurnDrive,
         outcomeTag: String,
         rateLimited: Boolean = false,
         failure: PerfFailure = PerfFailure(),
+        ending: FailureCause? = null,
     ) = withContext(NonCancellable) {
         // Cancellation still owes its row, even if a paced socket write itself throws cancellation.
         try {
             drive.channel.finishPacing(clock = clock)
         } finally {
-            if (!drive.collectPerf.hold(this@TurnTelemetry, outcomeTag, rateLimited, failure)) {
-                recordSnapshot(drive, outcomeTag, rateLimited, failure)
+            if (!drive.collectPerf.hold(this@TurnTelemetry, outcomeTag, rateLimited, failure, ending)) {
+                recordSnapshot(drive, outcomeTag, rateLimited, failure, ending)
             }
         }
     }
@@ -103,10 +108,11 @@ internal class TurnTelemetry(
         outcomeTag: String,
         rateLimited: Boolean,
         failure: PerfFailure,
+        cause: FailureCause?,
     ) {
         drive.perf.mark(PerfKeys.TOTAL)
         drive.perf.setCount(PerfKeys.ATTEMPTS, drive.perfCounter(PerfKeys.ATTEMPTS))
-        val ending = RowEnding(outcomeTag, rateLimited, failure, perfStats.clock())
+        val ending = RowEnding(outcomeTag, rateLimited, failure, perfStats.clock(), cause)
         held.write(drive.sourceRow) { usage -> writeRow(drive, ending, usage) }
     }
 
@@ -125,6 +131,8 @@ internal class TurnTelemetry(
         /** The failure as its recorder knew it: cause, the loop's attempt count, and the provider's own words. */
         val failure: PerfFailure,
         val at: Long,
+        /** The cause the turn ends on when its row is written ahead of its error frame (DR-128). */
+        val cause: FailureCause?,
     )
 
     /** [usage] is the turn's whole usage once a source round it held settled; its counters replace the turn's. */
@@ -139,7 +147,7 @@ internal class TurnTelemetry(
         val snap = billingSnapshot(drive)
         // V4-174: the turn record closes on the same snapshot the perf row carries — every ending
         // of a drive goes through here, so the trace never has a turn without its outcome.
-        closeTrace(drive.trace, outcomeTag, snap)
+        closeTrace(drive.trace, outcomeTag, snap, endingLine(drive, ending))
         val session = drive.sessionTag()
         val account = drive.account
         val accountLabel = drive.accountLabel.of(account?.account?.label)
@@ -182,6 +190,12 @@ internal class TurnTelemetry(
         spend.spend(rowTs, drive.upstreamModel, snap.counters, accountLabel, outcomeTag)
     }
 
+    /** The line the turn ended with, as its client was told it: the one its terminal wrote, or, for a row written
+     *  ahead of its error frame (DR-128), the one the terminal writes for the row's cause. Null for a turn that ended
+     *  with no line, such as a clean answer or a client that left. */
+    private fun endingLine(drive: TurnDrive, ending: RowEnding): SpliceLine? =
+        drive.emitter.lineWritten ?: ending.cause?.let(drive.emitter::lineFor)
+
     /** A whole answer that ends on tool calls leaves its session inside them until the client's next request carries
      *  their results, however long they run: the console holds the session heard until then. */
     private fun toolsOpened(drive: TurnDrive) {
@@ -206,16 +220,16 @@ internal class TurnTelemetry(
     }
 
     /** V4-404: the one place a turn's trace is closed, from both endings (a drive's perf row and a local
-     *  refusal). The outcome's sentence is recorded beside its tag unless the ending's own surface already
-     *  spoke, so no failed turn's record closes without words (only TurnConnEnd used to speak).
+     *  refusal). A drive's record carries the [line] its client was told, as that line's sentence (failure-handling
+     *  slice 2: the trace says what the client read, in the same words); a local refusal's surface recorded its own.
      *
      *  Best effort, and logged: the trace is a diagnostic and the perf row, the turn.end event and the spend entry
      *  are the ledger. A trace that cannot be written (the heap budget is full and TraceStore refuses) must not
      *  cost a turn the upstream already billed its row, so the failure stops here. */
-    private fun closeTrace(trace: TurnTrace?, outcomeTag: String, snap: PerfSnapshot) {
+    private fun closeTrace(trace: TurnTrace?, outcomeTag: String, snap: PerfSnapshot, line: SpliceLine? = null) {
         if (trace == null) return
         Cancellables.runCatchingBestEffort {
-            OutcomeSentences.of(outcomeTag)?.let(trace::failureSentenceUnlessSpoken)
+            line?.let(trace::failureLine)
             trace.finish(outcomeTag, snap)
         }.onFailure { failure ->
             log("[$headKey] trace of a $outcomeTag turn not closed (${SafeFailureText.render(failure)})\n")

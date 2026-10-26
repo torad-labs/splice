@@ -21,6 +21,7 @@ import kotlinx.coroutines.withTimeoutOrNull
 import splice.core.config.IngressReadIdleMs
 import splice.core.config.MaterializedByteCap
 import splice.core.config.RequestByteCap
+import splice.core.failure.Decline
 import splice.core.memory.HeapCapacityException
 import splice.core.memory.HeapCategory
 import splice.core.memory.HeapLease
@@ -34,9 +35,10 @@ private const val CODEC_HANDLER = "codec"
 private val connectionKey = io.netty.util.AttributeKey.valueOf<IngressOwnership>("splice.heap.ingress")
 private val leaseKey = AttributeKey<HeapLease>("splice.heap.request")
 
-/** The listener supplies its canonical pre-turn HTTP error renderer; transport never builds an SSE error. */
+/** The listener supplies its canonical pre-turn HTTP error renderer; transport never builds an SSE error. The words
+ *  are the listener's to say: transport names only what it declined ([why]) and the error [type]. */
 public fun interface IngressErrorBody {
-    public fun render(type: String, message: String): String
+    public fun render(type: String, why: Decline): String
 }
 
 /** Admission runs after the HTTP codec but before automatic continue and Ktor's body actor.
@@ -112,7 +114,7 @@ public class HeapIngress(
                     if (entry.refusal == null) {
                         proceed()
                     } else {
-                        refuse(call, entry.refusal, entry.refusalMessage)
+                        refuse(call, entry.refusal, entry.declined)
                         finish()
                     }
                 } catch (capacity: HeapCapacityException) {
@@ -155,12 +157,13 @@ public class HeapIngress(
         if (owner.finish(entry)) requests.channel(call)?.close()
     }
 
-    private suspend fun refuse(call: ApplicationCall, status: Int, detail: String? = null) {
+    private suspend fun refuse(call: ApplicationCall, status: Int, declined: Decline? = null) {
         val large = status == HttpStatus.CONTENT_TOO_LARGE
-        val message = detail ?: if (large) "request body exceeds ${maxBodyBytes()} bytes" else "gateway busy; retry"
+        val why = declined
+            ?: if (large) Decline.TooLarge(bytes = null, limit = maxBodyBytes().toLong()) else Decline.HeapBusy
         val type = if (large) "invalid_request_error" else "overloaded_error"
         call.respondText(
-            errorBody.render(type, message),
+            errorBody.render(type, why),
             ContentType.Application.Json,
             HttpStatusCode(status, if (large) "Content Too Large" else "Gateway At Capacity"),
         )

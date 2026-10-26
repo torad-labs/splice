@@ -7,6 +7,7 @@ import splice.core.failure.ClientWire
 import splice.core.failure.FailureCause
 import splice.core.failure.Moment
 import splice.core.failure.Position
+import splice.core.failure.WireAnswer
 import splice.core.perf.TurnPerf
 import splice.core.util.ElapsedClock
 import splice.core.wire.NativeReply
@@ -39,9 +40,23 @@ internal class PendingSse(
 
     val channel get() = output.channel
 
+    /** A frame from the model's side. A frame that is not the emitter's own ending, a relayed provider frame among
+     *  them, still answers an overflow by its words (OverflowFrame). */
     suspend fun model(frame: String) {
         if (structural(frame) && output.stageModel(frame)) return
-        val overflow = OverflowFrame.body(frame)?.let(::overflowAnswer)
+        settle(frame, OverflowFrame.body(frame)?.let(::overflowAnswer))
+    }
+
+    /** The emitter's error ending (failure-handling slice 2). [unsent] is what the failure is while the status is still
+     *  splice's to choose, so a prompt that outgrew the window answers with its own status and [body] whatever its line
+     *  says: a compaction's and a first message's lines leave out the words a client compacts on (final-design.md
+     *  section 11), and they keep today's 400. Once the stream is chosen, [frame] goes out in band like any other. */
+    suspend fun ending(frame: String, unsent: WireAnswer, body: String) {
+        settle(frame, unsent.status?.let { Decision.Overflow(body, it, unsent.shouldRetry) })
+    }
+
+    /** Chooses the stream unless [overflow] answers first, and writes [frame] when the stream is the answer. */
+    private suspend fun settle(frame: String, overflow: Decision.Overflow?) {
         if (overflow == null) {
             choice.complete(Decision.Stream)
         } else if (choice.complete(overflow)) {

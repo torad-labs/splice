@@ -29,6 +29,7 @@ import splice.core.auth.AuthDescription
 import splice.core.auth.Credentials
 import splice.core.auth.ForeignHostLog
 import splice.core.auth.RefreshableAuthProvider
+import splice.core.failure.HeadVoice
 import splice.core.model.ClientModelPolicy
 import splice.core.model.ModelCatalog
 import splice.core.model.ModelEntry
@@ -157,7 +158,11 @@ class TurnPreparationTest {
             deps,
             RequestBodyReader(deps.policy.requestReadTimeoutMs),
             parser,
-            ClientAuth(deps, AdmissionResponses(), ForeignHostLog("the test head", deps.log)),
+            ClientAuth(
+                deps,
+                AdmissionResponses(HeadVoice("scripted", loginCommand = null)),
+                ForeignHostLog("the test head", deps.log),
+            ),
         )
         var captured: BuiltTurn? = null
         testApplication {
@@ -186,12 +191,13 @@ class TurnPreparationTest {
             upstream = UpstreamClient(totalTimeoutMs = 1_000, maxRetries = 1),
             gate = InflightGate({ 1 }),
         )
+        val responses = AdmissionResponses(HeadVoice("scripted", loginCommand = null))
         val preparation = TurnPreparation(
             provider(mapOf("opus" to "fixture/absent")),
             deps,
             RequestBodyReader(deps.policy.requestReadTimeoutMs),
             parser,
-            ClientAuth(deps, AdmissionResponses(), ForeignHostLog("fixture", deps.log)),
+            ClientAuth(deps, responses, ForeignHostLog("fixture", deps.log)),
         )
         testApplication {
             application {
@@ -200,7 +206,7 @@ class TurnPreparationTest {
                         val result = preparation.prepareTurn(call, TurnPerf()).prepared()
                         assertTrue(result is Preparation.Rejected, result.toString())
                         val rejected = result as Preparation.Rejected
-                        AdmissionResponses().respondRefusal(call, rejected.cause, rejected.message)
+                        responses.respondRefusal(call, rejected.cause)
                     }
                 }
             }
@@ -212,9 +218,9 @@ class TurnPreparationTest {
                 assertEquals(HttpStatusCode.BadRequest, response.status)
                 val text = response.bodyAsText()
                 assertTrue(text.contains("invalid_request_error"), text)
-                assertTrue(text.contains("opus"), text)
-                assertTrue(text.contains("fixture/absent"), text)
-                assertTrue(text.contains("not offered"), text)
+                // Failure-handling slice 2: the line names the model the declared tier resolves to, the one the head's
+                // config has to serve, in the head's voice; it no longer repeats the alias beside it ("not offered").
+                assertTrue(text.contains("[splice] scripted does not serve fixture/absent."), text)
             }
         }
     }

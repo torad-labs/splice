@@ -27,7 +27,9 @@ import splice.core.turn.ToolSearchCall
 import splice.core.turn.ToolSearchCallId
 import splice.core.turn.TurnOutcome
 import splice.core.turn.Usage
+import splice.head.testVoice
 import splice.head.wire.SseEmitterFactory
+import splice.head.wire.StreamWiring
 import splice.upstream.FoldPolicy
 import splice.upstream.ReanchorPolicy
 import splice.upstream.RetryBackoff
@@ -62,7 +64,8 @@ private class Harness {
         write = { frames.add(it) },
         model = "m",
         usagePayload = { buildJsonObject { } },
-        messageId = "msg_test",
+        streaming = StreamWiring(messageId = "msg_test"),
+        voice = testVoice,
     )
     var finished: TurnOutcome? = null
     val absorbed = mutableListOf<TurnOutcome.Failure>()
@@ -79,7 +82,7 @@ private class Harness {
         finished = outcome
         when (outcome) {
             is TurnOutcome.Success -> emitter.emitTerminal(outcome.hasToolUse, outcome.incomplete, outcome.usage)
-            is TurnOutcome.Failure -> emitter.emitError(outcome.cause, outcome.evidence.message)
+            is TurnOutcome.Failure -> emitter.emitError(outcome.cause)
             is TurnOutcome.ClientAbandoned -> emitter.abandon()
         }
     }

@@ -96,6 +96,7 @@ internal class TurnStreamer(
                 ContentReached { (perf.snapshot().counters[PerfKeys.CONTENT_FRAMES_OUT] ?: 0L) > 0 },
                 perf.wire,
                 retryWrite = pending::retryProgress,
+                ending = pending::ending,
             ),
             model = meta.route.originalModel,
             usagePayload = wiring.usagePayloadBuilder(
@@ -103,6 +104,7 @@ internal class TurnStreamer(
                 meta,
                 clientWindow.of(call, meta.scope.sessionId),
             ),
+            voice = inputs.voice,
         )
     }
 

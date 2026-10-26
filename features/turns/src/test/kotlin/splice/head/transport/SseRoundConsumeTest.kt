@@ -64,8 +64,10 @@ import splice.head.compact.CompactStats
 import splice.head.perf.PerfStats
 import splice.head.pipeline.TurnPipeline
 import splice.head.round.RunnerSignals
+import splice.head.testVoice
 import splice.head.turn.TurnDrive
 import splice.head.turn.TurnInputs
+import splice.head.turn.TurnSlot
 import splice.head.turn.TurnTelemetry
 import splice.head.usage.OutputClamp
 import splice.head.usage.UsageStore
@@ -109,7 +111,7 @@ private class NoopTerminal : TurnTerminal, WireSink by RecordingSink2() {
 
     override suspend fun ensureStarted() = Unit
     override suspend fun emitTerminal(hasToolUse: Boolean, incomplete: Boolean, usage: Usage) = Unit
-    override suspend fun emitError(cause: FailureCause, message: String) = Unit
+    override suspend fun emitError(cause: FailureCause) = Unit
     override fun abandon() = Unit
 }
 
@@ -174,11 +176,11 @@ class SseRoundConsumeTest {
                 extraHeaders = emptyMap(),
                 toolSearch = null,
             ),
-            slot = InflightGate(LiveLimit { 1 }).admittedSlot(),
+            slot = TurnSlot(InflightGate(LiveLimit { 1 }).admittedSlot()) {},
             t0 = 0,
             perf = perf,
             trace = null,
-            markHandedOff = {},
+            voice = testVoice,
         ),
         emitter = emitter,
         watchdog = TurnWatchdog(budget),

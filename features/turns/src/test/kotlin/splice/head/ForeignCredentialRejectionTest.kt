@@ -5,6 +5,7 @@
 // read every 401 as the user's credential failing: the client was told authentication_error with
 // "run: claudex login", and the account was marked unavailable, so the next turn left it. These pin
 // both halves against a head with a real two-account pool, and pin the ordinary 401 beside them.
+// Since failure-handling slice 2 the client reads the head's line for that fault, never the provider's body.
 package splice.head
 
 import com.sun.net.httpserver.HttpServer
@@ -173,7 +174,10 @@ class ForeignCredentialRejectionTest(@param:TempDir private val root: Path) {
         val rig = PoolRig(root, RejectingUpstream(rejection(FOREIGN_MASKED_KEY)))
         try {
             val first = rig.turn()
-            assertTrue("Incorrect API key provided" in first, "the upstream's own words reach the client: $first")
+            // Failure-handling slice 2: the person reads the head's line for the provider's fault, and the
+            // provider's own words (with the key it named) stay in the log (final-design.md section 10).
+            assertTrue(FOREIGN_KEY_LINE in first, "the client reads that the provider failed its own check: $first")
+            assertFalse(FOREIGN_MASKED_KEY in first, "a key never reaches a line: $first")
             assertFalse("authentication_error" in first, "it is not the user's sign-in failing: $first")
             assertFalse("claudex login" in first, "so the client is not sent to sign in again: $first")
         } finally {
@@ -223,6 +227,8 @@ class ForeignCredentialRejectionTest(@param:TempDir private val root: Path) {
 }
 
 private const val UNAUTHORIZED = 401
+private const val FOREIGN_KEY_LINE =
+    "[splice] claudex's provider rejected a key this login never sent, a fault on its side."
 private const val PRIMARY_TOKEN = "primary-token"
 private const val BACKUP_TOKEN = "backup-token"
 

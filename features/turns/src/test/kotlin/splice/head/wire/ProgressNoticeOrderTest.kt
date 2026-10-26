@@ -8,7 +8,9 @@ import kotlinx.serialization.json.put
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
+import splice.core.failure.QuietTurn
 import splice.core.turn.Usage
+import splice.head.testVoice
 
 class ProgressNoticeOrderTest {
 
@@ -17,7 +19,8 @@ class ProgressNoticeOrderTest {
         write = { frames.add(it) },
         model = "m",
         usagePayload = { buildJsonObject { put("input_tokens", 0) } },
-        messageId = "msg_fixed",
+        streaming = StreamWiring(messageId = "msg_fixed"),
+        voice = testVoice,
     )
 
     private fun stopOf(index: Int): Int =
@@ -29,7 +32,7 @@ class ProgressNoticeOrderTest {
     @Test
     fun `the notice stops before the model's next block starts`() = runTest {
         emitter.ensureStarted()
-        emitter.progress { "[splice] holding this turn open." }
+        emitter.progress { testVoice.quiet(QuietTurn(30_000, answering = false, again = !it)) }
         val answer = emitter.openThinking()
         emitter.thinkingDelta(answer, "the model's reasoning")
         emitter.closeBlock(answer)
@@ -46,7 +49,7 @@ class ProgressNoticeOrderTest {
         emitter.ensureStarted()
         val answer = emitter.openThinking()
         emitter.thinkingDelta(answer, "half a thought")
-        emitter.progress { "[splice] 30s into the turn, m has paused mid-answer." }
+        emitter.progress { testVoice.quiet(QuietTurn(30_000, answering = true, again = !it)) }
         emitter.thinkingDelta(answer, ", and the rest")
         emitter.closeBlock(answer)
 
@@ -58,7 +61,7 @@ class ProgressNoticeOrderTest {
         val fresh = mutableListOf<Boolean>()
         val line = ProgressLine {
             fresh.add(it)
-            "line ${fresh.size}"
+            testVoice.quiet(QuietTurn(30_000L * fresh.size, answering = false, again = !it))
         }
         emitter.ensureStarted()
         emitter.progress(line)
@@ -84,7 +87,7 @@ class ProgressNoticeOrderTest {
         var sawFresh = false
         emitter.progress { fresh ->
             sawFresh = fresh
-            "now"
+            testVoice.quiet(QuietTurn(30_000, answering = false, again = !fresh))
         }
         assertTrue(sawFresh, "no block was opened, so the next line still opens one")
     }

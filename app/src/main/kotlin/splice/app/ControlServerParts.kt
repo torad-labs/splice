@@ -10,6 +10,7 @@ import splice.app.control.mount.ControlGuard
 import splice.app.daemon.BootedTopology
 import splice.app.peer.PeersWiring
 import splice.core.config.UserHome
+import splice.core.failure.HeadVoice
 import splice.head.admission.AdmissionErrorBody
 import splice.http.ingress.HeapIngress
 import splice.lifecycle.restart.DetachedDaemonSuccessor
@@ -34,7 +35,8 @@ internal class ControlServerParts(
         HeapIngress(
             JvmHeap.budget,
             { config.getConfig().maxRequestBytes },
-            AdmissionErrorBody,
+            // The control plane is no head: its refusals before a route speak as splice itself.
+            AdmissionErrorBody(HeadVoice("splice", loginCommand = null)),
             readIdleMs = { config.getConfig().ingressReadIdleMs },
         ),
         daemon.mcpAccess,

@@ -17,9 +17,13 @@ import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 import splice.core.failure.FailureCause
 import splice.core.failure.Lift
+import splice.core.failure.Moment
+import splice.core.failure.Position
 import splice.core.failure.RefusedBy
+import splice.core.failure.Tear
 import splice.core.turn.ErrorType
 import splice.core.turn.Usage
+import splice.head.testVoice
 import splice.upstream.transport.BufferCapacity
 
 private const val ERROR_STATUS = 502
@@ -27,7 +31,16 @@ private const val ERROR_STATUS = 502
 class CollectingTerminalTest {
 
     private fun terminal(usagePayload: (Usage?) -> JsonObject = { _ -> buildJsonObject { } }) =
-        CollectingTerminal(model = "claude-kimi--k3", usagePayload = usagePayload)
+        CollectingTerminal(model = "claude-kimi--k3", usagePayload = usagePayload, voice = testVoice)
+
+    /** The words of [t]'s error body. */
+    private fun wordsOf(t: CollectingTerminal): String? =
+        t.responseBody()["error"]?.jsonObject?.get("message")?.jsonPrimitive?.content
+
+    /** The line a buffered answer ends with for [cause]: told before the client has read anything ([collected] is
+     *  whether the provider's answer had begun when the collect ended). */
+    private fun line(cause: FailureCause, collected: Boolean = false) =
+        testVoice.ending(cause, Position(Moment.NON_STREAM, streamBegan = collected))
 
     // HEAD-004/REG-001: a blank tool name has no safe stand-in (unlike a blank id, which is
     // synthesized) — the block is dropped, but stop_reason=tool_use still claims a tool call
@@ -36,12 +49,14 @@ class CollectingTerminalTest {
     @Test
     fun `a permanent failure returns an error status and body without assistant content`() = runTest {
         val t = terminal()
-        t.emitError(FailureCause.Provider.Refused(RefusedBy.FILTER), "generation blocked")
+        val cause = FailureCause.Provider.Refused(RefusedBy.FILTER)
+        t.emitError(cause)
         assertEquals(400, t.httpStatus())
         val body = t.responseBody()
         assertEquals("error", body["type"]?.jsonPrimitive?.content)
         assertEquals("invalid_request_error", body.getValue("error").jsonObject["type"]?.jsonPrimitive?.content)
-        assertEquals("generation blocked", body.getValue("error").jsonObject["message"]?.jsonPrimitive?.content)
+        assertEquals(line(cause).text, wordsOf(t))
+        assertEquals(line(cause), t.lineWritten)
         assertTrue("content" !in body)
         assertTrue("stop_reason" !in body)
     }
@@ -58,9 +73,10 @@ class CollectingTerminalTest {
             ErrorType.API_ERROR.wireName,
             body["error"]!!.jsonObject["type"]?.jsonPrimitive?.content,
         )
-        assertTrue(
-            body["error"]!!.jsonObject["message"]?.jsonPrimitive?.content.orEmpty().contains("tool_use"),
-        )
+        // The provider's tool call tore: the body says the torn-tool line, as the trace does.
+        val torn = line(FailureCause.Provider.ToolTear(runaway = false), collected = true)
+        assertEquals(torn.text, wordsOf(t))
+        assertEquals(torn, t.lineWritten)
     }
 
     // RG2-001: the malformed-tool-use error envelope used to drop the turn's usage entirely — the
@@ -111,8 +127,29 @@ class CollectingTerminalTest {
         t.emitTerminal(hasToolUse = true, incomplete = false, usage = Usage())
 
         assertEquals(ERROR_STATUS, t.httpStatus())
-        val message = t.responseBody()["error"]!!.jsonObject["message"]?.jsonPrimitive?.content.orEmpty()
-        assertTrue(message.contains("exceeded max buffered size"), message)
+        assertEquals(line(FailureCause.Provider.ToolTear(runaway = true), collected = true).text, wordsOf(t))
+    }
+
+    /** Failure-handling slice 2: every error body this terminal builds says its voice's line, the fallback for a
+     *  drive that ended in neither verb included, and a clean answer writes no line. */
+    @Test
+    fun `a drive that ended in neither verb answers with the line for an escaped failure`() = runTest {
+        val t = terminal()
+        t.abandon()
+        assertEquals(ERROR_STATUS, t.httpStatus())
+        assertEquals(line(FailureCause.Splice.Internal(escaped = true)).text, wordsOf(t))
+        assertEquals(null, t.lineWritten, "no ending wrote this line")
+    }
+
+    @Test
+    fun `a clean answer and an error after it write no line`() = runTest {
+        val t = terminal()
+        t.addTextBlock("done")
+        t.emitTerminal(hasToolUse = false, incomplete = false, usage = Usage())
+        t.emitError(FailureCause.Path.Torn(Tear.NO_TERMINAL, toolOpen = false))
+        assertEquals(200, t.httpStatus())
+        assertEquals(null, t.lineWritten)
+        assertEquals(line(FailureCause.Splice.Internal()), t.lineFor(FailureCause.Splice.Internal()))
     }
 
     // THE COLLECT PATH IS OUT OF THE PRE-CONTENT WIRE-TYPE RULE BY CONSTRUCTION, and these
@@ -126,8 +163,10 @@ class CollectingTerminalTest {
     @Test
     fun `a buffered rate limit keeps its real 429 instead of the streaming relabel`() = runTest {
         val t = terminal()
-        t.emitError(FailureCause.Provider.Limited(Lift.Unstated, window = null), "upstream: quota exhausted")
+        val cause = FailureCause.Provider.Limited(Lift.Unstated, window = null)
+        t.emitError(cause)
         assertEquals(429, t.httpStatus())
+        assertEquals(line(cause).text, wordsOf(t))
         assertEquals(
             ErrorType.RATE_LIMIT.wireName,
             t.responseBody()["error"]!!.jsonObject["type"]?.jsonPrimitive?.content,
@@ -137,13 +176,13 @@ class CollectingTerminalTest {
     @Test
     fun `a buffered api error keeps its real 502, permanent or not`() = runTest {
         val remappable = terminal()
-        remappable.emitError(FailureCause.Provider.Unrecognized(clientError = false), "upstream: broke")
+        remappable.emitError(FailureCause.Provider.Unrecognized(clientError = false))
         assertEquals(ERROR_STATUS, remappable.httpStatus())
 
         // The permanence the streaming terminal reads is DELIBERATELY INERT here: the collect path
         // has no retryable event to relabel, so permanence changes nothing about its status.
         val permanent = terminal()
-        permanent.emitError(FailureCause.Provider.Unrecognized(clientError = true), "upstream: model refused")
+        permanent.emitError(FailureCause.Provider.Unrecognized(clientError = true))
         assertEquals(ERROR_STATUS, permanent.httpStatus())
         assertEquals(
             ErrorType.API_ERROR.wireName,

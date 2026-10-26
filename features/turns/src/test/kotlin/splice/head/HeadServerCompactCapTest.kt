@@ -14,7 +14,7 @@
 // turn is.
 //
 // A COMPACT turn has no first-output tier at all, so the only thing that can end it is its 4s
-// whole-turn wall — which surfaces as the cancellation seal's generic watchdog wording. Live
+// whole-turn wall — which surfaces as the spent turn budget's line. Live
 // provenance (2026-09-01 14:07): the first compaction on the corrected tier died at "no first output
 // within the 300s first-output cap". When the tier was merely RAISED to the wall, gate run 33575037270
 // failed this arm on a loaded runner: two pollers on one deadline, and the idle poller won the
@@ -52,6 +52,11 @@ import java.nio.file.Files
 import java.nio.file.Path
 import java.util.concurrent.ConcurrentLinkedQueue
 import kotlin.time.Duration.Companion.seconds
+
+// Failure-handling slice 2: each ending is the head's line for its cause (final-design.md section 10). The 4s wall
+// is a spent turn budget; the first-output tier, had it ended the turn, would be a stall before the first byte.
+private const val TOTAL_CAP = "[splice] claudex made no progress for 4 seconds."
+private const val FIRST_OUTPUT_TIER = "did not start answering in time"
 
 private class CapFakeAuth : RefreshableAuthProvider {
     override suspend fun credentials(): Credentials = Credentials.Bearer("tok-cap", "acct-cap")
@@ -156,11 +161,11 @@ class HeadServerCompactCapTest(@param:TempDir private val root: Path) {
             // nothing races it, and the wall must simply land before the test client gives up.
             val sse = turnOn(WatchdogBudget(1.seconds, 20.seconds, 4.seconds), "You are a test. SCENARIO:idlepre")
             assertFalse(
-                sse.contains("first-output cap"),
+                sse.contains(FIRST_OUTPUT_TIER),
                 "the 1s first-output tier is a probe now: a live path is HELD, never reaped by it: ${evidence(sse)}",
             )
             assertTrue(
-                sse.contains("splice progress timeout expired after 4000ms without upstream progress;"),
+                sse.contains(TOTAL_CAP),
                 "only the progress deadline may end this silent turn: ${evidence(sse)}",
             )
         }
@@ -176,14 +181,14 @@ class HeadServerCompactCapTest(@param:TempDir private val root: Path) {
             )
             assertTrue(sse.contains("overloaded_error"), "a stall is an honest, retryable failure: ${evidence(sse)}")
             assertFalse(
-                sse.contains("first-output cap"),
+                sse.contains(FIRST_OUTPUT_TIER),
                 "a compaction's pre-output silence must not be judged on the 1s first-output tier: ${evidence(sse)}",
             )
-            // The whole-turn cap cancels the TURN, so it surfaces through the cancellation seal's
-            // generic watchdog wording (as HeadServerFoldTest's NF-03 arm pins), not a tier-named
-            // message — which is exactly the discriminator: the 1s tier would have said its name.
+            // The whole-turn cap cancels the TURN, so it surfaces as the spent turn budget's line (as
+            // HeadServerFoldTest's NF-03 arm pins), not the first-output tier's — which is exactly the
+            // discriminator: the 1s tier would have said its own line.
             assertTrue(
-                sse.contains("splice progress timeout expired after 4000ms without upstream progress;"),
+                sse.contains(TOTAL_CAP),
                 "only the progress deadline may end this silent turn: ${evidence(sse)}",
             )
         }

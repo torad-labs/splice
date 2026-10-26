@@ -48,6 +48,7 @@ import splice.head.pipeline.TurnPipeline
 import splice.head.round.RunnerSignals
 import splice.head.turn.TurnDrive
 import splice.head.turn.TurnInputs
+import splice.head.turn.TurnSlot
 import splice.head.turn.TurnTelemetry
 import splice.head.usage.EconomicsStore
 import splice.head.usage.OutputClamp
@@ -180,13 +181,13 @@ private class TelemetryRig(tmp: Path, private val tag: String) {
                 extraHeaders = emptyMap(),
                 toolSearch = null,
             ),
-            slot = InflightGate(LiveLimit { 1 }).admittedSlot(),
+            slot = TurnSlot(InflightGate(LiveLimit { 1 }).admittedSlot()) {},
             t0 = 0,
             perf = TurnPerf(),
             trace = null,
-            markHandedOff = {},
+            voice = testVoice,
         ),
-        emitter = CollectingTerminal("sonnet-4-6", UsagePayloadBuilder { buildJsonObject { } }),
+        emitter = CollectingTerminal("sonnet-4-6", UsagePayloadBuilder { buildJsonObject { } }, voice = testVoice),
         watchdog = TurnWatchdog(WatchdogBudget(10.seconds, 10.seconds, 30.seconds)),
         pipeline = TurnPipeline(
             CompactStats(perfFile.resolveSibling("compact-$tag.jsonl")),

@@ -11,6 +11,7 @@ import kotlinx.serialization.json.jsonPrimitive
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Test
 import splice.core.turn.Usage
+import splice.head.testVoice
 
 class TerminalResponseIdTest {
     @Test
@@ -20,7 +21,8 @@ class TerminalResponseIdTest {
             write = { frames += it },
             model = "claude-e2e--m",
             usagePayload = { buildJsonObject { } },
-            messageId = "msg_stream_42",
+            streaming = StreamWiring(messageId = "msg_stream_42"),
+            voice = testVoice,
         )
         emitter.ensureStarted()
         val opener = frames.first { it.startsWith("event: message_start") }
@@ -38,6 +40,7 @@ class TerminalResponseIdTest {
             model = "claude-e2e--m",
             usagePayload = { buildJsonObject { } },
             messageId = "msg_collect_43",
+            voice = testVoice,
         )
         terminal.emitTerminal(hasToolUse = false, incomplete = false, usage = Usage())
 

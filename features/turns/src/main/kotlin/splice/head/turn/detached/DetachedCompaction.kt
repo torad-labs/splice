@@ -50,7 +50,7 @@ internal class DetachedCompaction(
             if (!launched && claimed.compareAndSet(false, true)) abandonLaunch(inputs, key, recording)
         }) {
             replay.begin(key, recording)
-            inputs.markHandedOff()
+            inputs.slot.markHandedOff()
             // ATOMIC enters the cleanup scopes even when head stop races the launch.
             val job = scope.launch(context, start = CoroutineStart.ATOMIC) {
                 // Dispatch may enqueue then throw while starting a worker. Only the winning owner can drive.
@@ -59,7 +59,7 @@ internal class DetachedCompaction(
                     Cancellables.withCleanup({
                         if (drive.channel.detached.get()) log(finishLine(drive, recording, kept))
                     }) {
-                        Cancellables.withCleanup({ inputs.slot.release() }) {
+                        Cancellables.withCleanup({ inputs.slot.held.release() }) {
                             Cancellables.withCleanup({
                                 kept = keepRecording(drive, completed)
                                 replay.finish(key, recording, keep = kept)
@@ -78,7 +78,7 @@ internal class DetachedCompaction(
     }
 
     private fun abandonLaunch(inputs: TurnInputs, key: String, recording: FrameRecording) {
-        Cancellables.withCleanup({ inputs.slot.release() }) {
+        Cancellables.withCleanup({ inputs.slot.held.release() }) {
             Cancellables.withCleanup({ replay.finish(key, recording, keep = false) }) {
                 recording.complete(whole = false)
             }
@@ -113,12 +113,12 @@ internal class DetachedCompaction(
         val claimed = AtomicBoolean(false)
         return Cancellables.withCleanup({
             if (!launched && claimed.compareAndSet(false, true)) {
-                Cancellables.withCleanup({ inputs.slot.release() }) {
+                Cancellables.withCleanup({ inputs.slot.held.release() }) {
                     Cancellables.withCleanup({ replay.answers.finish(key, hold, null, keep = false) }) { }
                 }
             }
         }) {
-            inputs.markHandedOff()
+            inputs.slot.markHandedOff()
             var answer: JsonObject? = null
             val job = scope.launch(context, start = CoroutineStart.ATOMIC) {
                 if (!claimed.compareAndSet(false, true)) return@launch
@@ -126,7 +126,7 @@ internal class DetachedCompaction(
                     Cancellables.withCleanup({
                         if (drive.channel.detached.get()) log(finishLineCollected(drive, kept))
                     }) {
-                        Cancellables.withCleanup({ inputs.slot.release() }) {
+                        Cancellables.withCleanup({ inputs.slot.held.release() }) {
                             Cancellables.withCleanup({
                                 kept = keepRecording(drive, completed)
                                 replay.answers.finish(key, hold, answer, keep = kept)

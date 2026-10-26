@@ -1,7 +1,8 @@
-// NEW (#406): an upstream SSE frame over our size limit leaves a wire record that says so. The client already got an
-// honest error; the trace used to close the turn with an outcome tag and no words. The record now carries the label
-// frame_too_large, the limit and the size the frame reached, and never the frame's content. Driven through a real
-// head against the mock upstream whose scenario sends one frame past the limit.
+// NEW (#406): an upstream SSE frame over our size limit leaves a wire record that says so, and never the frame's
+// content. The trace used to close the turn with an outcome tag and no words. Since failure-handling slice 2 the record
+// says the line the client read (final-design.md section 10, "trace equals client"), and the limit and the size the
+// frame reached stay in the head's log, where the person who reads them looks. Driven through a real head against the
+// mock upstream whose scenario sends one frame past the limit.
 package splice.head
 
 import io.ktor.client.HttpClient
@@ -19,8 +20,8 @@ import kotlinx.coroutines.withContext
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
+import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertFalse
-import org.junit.jupiter.api.Assertions.assertNotNull
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.io.TempDir
@@ -40,6 +41,7 @@ import splice.upstream.ProviderTuning
 import splice.upstream.transport.UpstreamClient
 import java.nio.file.Files
 import java.nio.file.Path
+import java.util.concurrent.CopyOnWriteArrayList
 import kotlin.time.Duration.Companion.seconds
 
 private const val MAX_EVENT_CHARS = 1024 * 1024
@@ -55,37 +57,47 @@ private class OversizedFakeAuth : RefreshableAuthProvider {
 class HeadServerOversizedFrameTraceTest {
 
     @Test
-    fun `an oversized frame is recorded with its limit and size, not its content`(
+    fun `an oversized frame's record says the line its client read, and the log keeps the limit and size`(
         @TempDir tmp: Path,
     ) = runBlocking {
         val mock = MockChatGptUpstream()
         val traceDir = tmp.resolve("trace")
         val trace = splice.head.syntheticTraceStore(ActivityDays(traceDir, "codex", 7, ownerOnly = true), "codex", 4096)
+        val logged = CopyOnWriteArrayList<String>()
         val head = HeadServer(
             provider(mock),
             0,
-            headDeps(tmp, upstream = UpstreamClient(totalTimeoutMs = 30_000, maxRetries = 2))
+            headDeps(tmp, upstream = UpstreamClient(totalTimeoutMs = 30_000, maxRetries = 2), log = { logged.add(it) })
                 .copy(stores = headStores(tmp, trace = trace)),
         )
         head.start()
         awaitListening(head.port)
         try {
             val answer = oversizedAnswer(head.port)
-            assertTrue(answer.contains("oversized streaming event"), answer)
+            val said = checkNotNull(errorWords(answer)) { "the client read no error line: $answer" }
 
             val turn = awaitTurnRecord(traceDir)
             val sentence = turn["failure_sentence"]?.jsonPrimitive?.content
-            assertNotNull(sentence, "the oversized frame left no failure words in the wire record: $turn")
-            assertTrue(sentence!!.startsWith("frame_too_large:"), sentence)
-            assertTrue(sentence.contains("$MAX_EVENT_CHARS-character"), sentence)
-            val size = Regex("reached (\\d+) characters").find(sentence)?.groupValues?.get(1)?.toInt()
-            assertTrue(size != null && size > MAX_EVENT_CHARS, "the size the frame reached is named: $sentence")
-            assertFalse(sentence.contains("xxxx"), "the frame's content never enters the record")
+            assertEquals(said.removePrefix("[splice] "), sentence, "the record says the line the client read: $turn")
+            assertFalse("xxxx" in answer || "xxxx" in sentence.orEmpty(), "the frame's content reaches no one")
+
+            val record = logged.single { "upstream-frame-too-large" in it }
+            assertTrue("$MAX_EVENT_CHARS-character" in record, "the log names the limit: $record")
+            val size = Regex("reached (\\d+) characters").find(record)?.groupValues?.get(1)?.toInt()
+            assertTrue(size != null && size > MAX_EVENT_CHARS, "the log names the size the frame reached: $record")
         } finally {
             head.stop()
             mock.stop()
         }
     }
+
+    /** The words of the error event in [sse], or null when it has none. */
+    private fun errorWords(sse: String): String? = sse.lineSequence()
+        .dropWhile { it != "event: error" }
+        .drop(1)
+        .firstOrNull()
+        ?.removePrefix("data: ")
+        ?.let { Json.parseToJsonElement(it).jsonObject["error"]?.jsonObject?.get("message")?.jsonPrimitive?.content }
 
     private fun provider(mock: MockChatGptUpstream) = TestResponsesProvider(
         tuning = ProviderTuning(

@@ -26,6 +26,7 @@
 // this boolean to carry one.
 package splice.head.round
 
+import splice.core.failure.WaitLine
 import splice.core.turn.TurnOutcome
 import splice.upstream.ClientGone
 import splice.upstream.RoundBody
@@ -128,6 +129,15 @@ internal fun interface ReanchorSpentHook {
     operator fun invoke(fromScratch: Boolean)
 }
 
+/**
+ * Tells the turn that a round failed and is being recovered: the failure it met and what the turn does next
+ * (failure-handling slice 2). The runner says only that. Whether a person sees a line, and its words, belong to the
+ * turn's wire and voice, which show one line per recovery episode (final-design.md section 8, "Lines from waits").
+ */
+internal fun interface Recovering {
+    suspend operator fun invoke(wait: WaitLine)
+}
+
 /** Shared per-loop collaborators for the round runners: liveness gates + the health hook for
  *  absorbed failures (one construction site in TurnDriveFactory.assembleDrive — the policies never
  *  drift apart). */
@@ -142,4 +152,7 @@ internal data class RunnerSignals(
      *  every existing construction (tests included) is unchanged, and so a turn that never
      *  re-anchors records nothing rather than a zero. */
     val onReanchor: ReanchorSpentHook = ReanchorSpentHook {},
+    /** Failure-handling slice 2: where a runner tells the turn it is recovering a failed round. A no-op by default,
+     *  like the hooks above, so a turn built without a wire tells nobody. */
+    val recovering: Recovering = Recovering {},
 )

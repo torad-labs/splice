@@ -29,6 +29,7 @@ import splice.head.round.RoundInterception
 import splice.head.round.RoundRunners
 import splice.head.round.RoundStrategy
 import splice.head.round.RunnerSignals
+import splice.head.testVoice
 import splice.head.wire.SseEmitterFactory
 import splice.head.wire.TurnWiring
 import splice.provider.codex.CodeModeBridgeConfig
@@ -67,7 +68,7 @@ class CodeModeStepContextTest {
 
         suspend fun run(body: JsonObject, post: suspend () -> TurnOutcome) {
             val usage = wiring.usagePayloadBuilderFor(catalog, MODEL)
-            val emitter = SseEmitterFactory().create({ frames += it }, MODEL, usage)
+            val emitter = SseEmitterFactory().create({ frames += it }, MODEL, usage, voice = testVoice)
             RoundStrategy(
                 emitter = emitter,
                 runners = RoundRunners(

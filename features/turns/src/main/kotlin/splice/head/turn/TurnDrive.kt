@@ -111,7 +111,7 @@ internal data class TurnDrive(
     /** The upstream request, typed: the wire itself, serialized per round by the round strategy. */
     val requestBody: JsonObject get() = inputs.built.requestBody
     val meta: TurnMeta get() = inputs.built.meta
-    val slot: InflightGate.Slot get() = inputs.slot
+    val slot: InflightGate.Slot get() = inputs.slot.held
     val t0: Long get() = inputs.t0
 
     /** V4-174: the turn's trace when the head's is on; null records nothing. */

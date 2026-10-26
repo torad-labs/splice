@@ -6,8 +6,9 @@
 // file and not the trace's sentence; a burst that names no reset counts none. Driven through a real
 // head over a local upstream, so it is the routes that record: each turn that meets the 429 (TurnKnownEnd), read back
 // from the trace the Turns page reads. Since Oct 26 no turn is held behind another's, so the next turn meets the 429
-// itself and must end the same way. A burst 429 that names no reset keeps its ending and sentence. The machine's zone
-// is set to Tokyo for the run, so a sentence that still said Chicago's hour or "CT" cannot pass.
+// itself and must end the same way. A burst 429 that names no reset keeps its ending. The head speaks in Tokyo's zone
+// (its voice's facts), so a line that still said Chicago's hour cannot pass. Since failure-handling slice 2 the trace
+// keeps the sentence of the line each client read (final-design.md section 10, "trace equals client").
 package splice.head
 
 import com.sun.net.httpserver.HttpServer
@@ -26,7 +27,6 @@ import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
 import org.junit.jupiter.api.Assertions.assertEquals
-import org.junit.jupiter.api.Assertions.assertFalse
 import org.junit.jupiter.api.Assertions.assertNull
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
@@ -34,6 +34,7 @@ import org.junit.jupiter.api.io.TempDir
 import splice.core.auth.AuthDescription
 import splice.core.auth.Credentials
 import splice.core.auth.RefreshableAuthProvider
+import splice.core.failure.VoiceFacts
 import splice.core.model.ModelCatalog
 import splice.core.model.ModelEntry
 import splice.core.perf.PerfKeys
@@ -44,7 +45,6 @@ import splice.core.util.AsyncFileIo
 import splice.core.util.LocalTimeText
 import splice.core.util.WallClock
 import splice.dialect.responses.ReasoningSettings
-import splice.head.turn.OutcomeSentences
 import splice.upstream.ProviderLocations
 import splice.upstream.ProviderName
 import splice.upstream.ProviderTuning
@@ -54,7 +54,6 @@ import java.net.InetSocketAddress
 import java.nio.file.Files
 import java.nio.file.Path
 import java.time.ZoneId
-import java.util.TimeZone
 import kotlin.time.Duration.Companion.seconds
 
 private const val TOO_MANY_REQUESTS = 429
@@ -132,6 +131,7 @@ private class LimitedHead(tmp: Path, upstreamBody: String, retryAfterSeconds: In
             gate = InflightGate(maxInflight = { 1 }, maxQueued = { 1 }),
             log = {},
         ).let { it.copy(stores = headStores(tmp, trace = trace)) },
+        voiceFacts = VoiceFacts(zone = ZoneId.of(TOKYO)),
     )
 
     suspend fun start() = head.start()
@@ -175,16 +175,17 @@ private fun JsonObject.windowCounted(): Long? = get("perf")?.jsonObject
     ?.get("counters")?.jsonObject
     ?.get(PerfKeys.LIMIT_WINDOW_SECONDS)?.jsonPrimitive?.content?.toLong()
 
-/** Runs [block] with the machine's zone set to [zone], and puts the old one back. */
-private fun <T> inZone(zone: String, block: () -> T): T {
-    val saved = TimeZone.getDefault()
-    TimeZone.setDefault(TimeZone.getTimeZone(zone))
-    try {
-        return block()
-    } finally {
-        TimeZone.setDefault(saved)
-    }
+/** The words of the error a turn's client read in [body]: the stream's error event, or the JSON error body a status
+ *  still uncommitted carried. */
+private fun errorWords(body: String): String? {
+    val data = body.lineSequence().dropWhile { it != "event: error" }.drop(1).firstOrNull()?.removePrefix("data: ")
+    val error = Json.parseToJsonElement(data ?: body).jsonObject["error"]?.jsonObject
+    return error?.get("message")?.jsonPrimitive?.content
 }
+
+/** The line each turn's client read, in the order the turns ran. */
+private fun linesRead(bodies: List<String>): List<String> =
+    bodies.map { body -> requireNotNull(errorWords(body)) { "an ending told its client nothing: $body" } }
 
 class PlanLimitTurnEndingTest {
 
@@ -195,28 +196,22 @@ class PlanLimitTurnEndingTest {
         val reset = System.currentTimeMillis() / 1_000 + SIX_DAYS_S
         val head = LimitedHead(tmp, usageLimitBody(reset))
         head.start()
-        val endings = try {
-            inZone(TOKYO) {
-                runBlocking {
-                    head.turn().bodyAsText()
-                    head.turn().bodyAsText()
-                }
-            }
-            head.endings()
+        val (read, endings) = try {
+            listOf(head.turn().bodyAsText(), head.turn().bodyAsText()) to head.endings()
         } finally {
             head.close()
         }
 
         assertEquals(2, endings.size, endings.toString())
         assertEquals(listOf("error:plan-limit", "error:plan-limit"), endings.map { it.outcome() })
-        val said = endings.map { requireNotNull(it.sentence()) { "a plan-limit ending left without words" } }
+        val said = linesRead(read)
         val instant = LocalTimeText(ZoneId.of(TOKYO)).at(reset)
-        said.forEach { sentence ->
-            assertTrue(instant in sentence, "the reset $instant is named in the machine's zone: $sentence")
-            assertTrue("JST" in sentence, sentence)
-            assertTrue("7-day" in sentence, "the window is named: $sentence")
-            assertFalse("CT" in sentence || "wait a moment" in sentence, "the generic words came back: $sentence")
-        }
+        said.forEach { line -> assertTrue(instant in line, "the reset $instant is named in the head's zone: $line") }
+        assertEquals(
+            said.map { it.removePrefix("[splice] ") },
+            endings.map { it.sentence() },
+            "each turn's trace says the line its client read",
+        )
         assertEquals(said[0], said[1], "the next turn names the same instant, in the same words")
         endings.forEach { ending ->
             assertEquals(reset, ending.resetCounted(), "the row counts when the window comes back: $ending")
@@ -235,17 +230,19 @@ class PlanLimitTurnEndingTest {
     ) = runBlocking {
         val head = LimitedHead(tmp, BURST_BODY, retryAfterSeconds = 90)
         head.start()
-        val endings = try {
-            head.turn().bodyAsText()
-            head.turn().bodyAsText()
-            head.endings()
+        val (read, endings) = try {
+            listOf(head.turn().bodyAsText(), head.turn().bodyAsText()) to head.endings()
         } finally {
             head.close()
         }
 
         assertEquals(listOf("error:rate-limited", "error:rate-limited"), endings.map { it.outcome() })
-        assertEquals(OutcomeSentences.of("error:rate-limited"), endings[0].sentence())
-        assertEquals(OutcomeSentences.of("error:rate-limited"), endings[1].sentence())
+        val said = linesRead(read)
+        assertEquals(
+            said.map { it.removePrefix("[splice] ") },
+            endings.map { it.sentence() },
+            "each turn's trace says the line its client read",
+        )
         endings.forEach { ending ->
             assertNull(ending.resetCounted(), "a burst with no reset counts none, so no surface can invent one")
             assertNull(ending.windowCounted(), "and no window either: a burst spends none")

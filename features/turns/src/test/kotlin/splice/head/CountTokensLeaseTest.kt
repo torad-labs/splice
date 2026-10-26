@@ -15,6 +15,7 @@ import org.junit.jupiter.api.io.TempDir
 import splice.core.auth.AuthDescription
 import splice.core.auth.Credentials
 import splice.core.auth.RefreshableAuthProvider
+import splice.core.failure.HeadVoice
 import splice.core.memory.HeapBudget
 import splice.core.model.ModelCatalog
 import splice.core.model.ModelEntry
@@ -106,7 +107,7 @@ class CountTokensLeaseTest {
             ),
             reasoning = ReasoningSettings(ReasoningDisplay.OFF, false, null, null),
         )
-        val responses = AdmissionResponses()
+        val responses = AdmissionResponses(HeadVoice("scripted", loginCommand = null))
         return CountTokens(
             provider,
             deps,

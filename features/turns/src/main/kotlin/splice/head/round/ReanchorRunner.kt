@@ -13,6 +13,8 @@ package splice.head.round
 
 import kotlinx.serialization.json.JsonObject
 import splice.core.failure.ClientWire
+import splice.core.failure.Recovery
+import splice.core.failure.WaitLine
 import splice.core.perf.PerfKeys
 import splice.core.perf.TurnPerf
 import splice.core.perf.TurnPerfTiming
@@ -87,18 +89,10 @@ internal class ReanchorRunner(
                 salvaged.add(p)
                 acc = acc.plusRound(p.usage)
             }
-            // A clean-slate restart returns the request verbatim; log it as what it is rather
-            // than claiming a partial that does not exist. ONE expression, read by the line and by
-            // the counter below (V4-444), so the journal and the row can never say different things.
+            // A clean-slate restart returns the request verbatim. ONE expression, read by the lines and
+            // by the counter below (V4-444), so the journal and the row can never say different things.
             val fromScratch = cont.body == body
-            val restarted =
-                if (fromScratch) "restarting the round from scratch" else "continuing from partial output"
-            // V4-242: with the round's own words, which name what ended it (a peer's close code and
-            // reason, a stall's cap); the wire type alone read "overloaded_error" for all of them.
-            val type = ClientWire.ownType(failure.cause).wireName
-            val why = "$type mid-stream (${failure.evidence.message})"
-            log("[$key] re-anchor ${attempt + 1}: $why; $restarted\n")
-            log.retry("[$key] re-anchor ${attempt + 1}: $type mid-stream; $restarted", failure.evidence.message)
+            announceRecovery(failure, fromScratch, attempt)
             // V4-116 (5): the continuation is SPENT here — right where the loop commits to another
             // POST and the counter that names it moves. Stamped at the same point as [attempt] on
             // purpose: a number that could disagree with the loop's own count is worse than no
@@ -108,6 +102,20 @@ internal class ReanchorRunner(
             body = cont.body
             attempt++
         }
+    }
+
+    /** What the loop says once it commits to another round, both read from the one [fromScratch]: the journal's
+     *  line, which logs a clean-slate restart as what it is rather than claiming a partial that does not exist,
+     *  and (slice 2) the person's line, what the round met and what the turn does now, once per recovery episode. */
+    private suspend fun announceRecovery(failure: TurnOutcome.Failure, fromScratch: Boolean, attempt: Int) {
+        val restarted =
+            if (fromScratch) "restarting the round from scratch" else "continuing from partial output"
+        // V4-242: with the round's own words, which name what ended it (a peer's close code and
+        // reason, a stall's cap); the wire type alone read "overloaded_error" for all of them.
+        val type = ClientWire.ownType(failure.cause).wireName
+        val why = "$type mid-stream (${failure.evidence.message})"
+        log("[$key] re-anchor ${attempt + 1}: $why; $restarted\n")
+        signals.recovering(WaitLine(failure.cause, if (fromScratch) Recovery.AskAgain else Recovery.Resume))
     }
 
     /** The next request of a search round this Success asks for, with the Success it answers; null when none. */

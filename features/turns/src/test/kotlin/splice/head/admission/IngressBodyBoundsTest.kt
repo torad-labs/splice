@@ -17,6 +17,7 @@ import kotlinx.coroutines.yield
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
+import splice.core.failure.HeadVoice
 import splice.core.memory.HeapBudget
 import splice.core.memory.HeapWeights
 import splice.http.ingress.HeapIngress
@@ -47,9 +48,12 @@ class IngressBodyBoundsTest {
     @Test
     fun `several small chunked bodies at once are each charged near their real size`() = runBlocking {
         val heap = HeapBudget(Long.MAX_VALUE, budgetBytes = 8L * 1024 * 1024)
-        val server = testServer(HeapIngress(heap, { 4 * 1024 * 1024 }, AdmissionErrorBody)) {
-            routing { post("/") { call.respondText(call.receiveText()) } }
-        }
+        val server =
+            testServer(
+                HeapIngress(heap, { 4 * 1024 * 1024 }, AdmissionErrorBody(HeadVoice("splice", loginCommand = null))),
+            ) {
+                routing { post("/") { call.respondText(call.receiveText()) } }
+            }
         server.start(false)
         val sockets = mutableListOf<Socket>()
         try {
@@ -79,9 +83,10 @@ class IngressBodyBoundsTest {
     @Test
     fun `a chunked body past the cap is refused mid-body and returns its charge`() = runBlocking {
         val heap = HeapBudget(Long.MAX_VALUE, budgetBytes = 4L * 1024 * 1024)
-        val server = testServer(HeapIngress(heap, { 32 * 1024 }, AdmissionErrorBody)) {
-            routing { post("/") { call.respondText(call.receiveText()) } }
-        }
+        val server =
+            testServer(HeapIngress(heap, { 32 * 1024 }, AdmissionErrorBody(HeadVoice("splice", loginCommand = null)))) {
+                routing { post("/") { call.respondText(call.receiveText()) } }
+            }
         server.start(false)
         try {
             val port = server.engine.resolvedConnectors().single().port
@@ -105,9 +110,12 @@ class IngressBodyBoundsTest {
     @Test
     fun `a chunked body that outgrows the heap is refused mid-body and returns its charge`() = runBlocking {
         val heap = HeapBudget(Long.MAX_VALUE, budgetBytes = 1024L * 1024)
-        val server = testServer(HeapIngress(heap, { 1024 * 1024 }, AdmissionErrorBody)) {
-            routing { post("/") { call.respondText(call.receiveText()) } }
-        }
+        val server =
+            testServer(
+                HeapIngress(heap, { 1024 * 1024 }, AdmissionErrorBody(HeadVoice("splice", loginCommand = null))),
+            ) {
+                routing { post("/") { call.respondText(call.receiveText()) } }
+            }
         server.start(false)
         try {
             val port = server.engine.resolvedConnectors().single().port
@@ -132,9 +140,14 @@ class IngressBodyBoundsTest {
     @Test
     fun `a body that stalls after its headers is closed at the read bound and returns its charge`() = runBlocking {
         val heap = HeapBudget(Long.MAX_VALUE, budgetBytes = 256 * 1024)
-        val server = testServer(HeapIngress(heap, { 32 * 1024 }, AdmissionErrorBody, readIdleMs = { 300L })) {
-            routing { post("/") { call.respondText(call.receiveText()) } }
-        }
+        val server =
+            testServer(
+                HeapIngress(heap, {
+                    32 * 1024
+                }, AdmissionErrorBody(HeadVoice("splice", loginCommand = null)), readIdleMs = { 300L }),
+            ) {
+                routing { post("/") { call.respondText(call.receiveText()) } }
+            }
         server.start(false)
         try {
             val port = server.engine.resolvedConnectors().single().port

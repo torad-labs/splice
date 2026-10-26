@@ -6,6 +6,7 @@
 package splice.head.wire
 
 import kotlinx.serialization.json.JsonObject
+import splice.core.failure.WireAnswer
 import splice.core.index.WireBlockIndex
 import splice.core.util.JsonWire
 
@@ -20,7 +21,7 @@ private const val FRAME_BUF_CAPACITY = 256
  *  All three are unguarded byte assemblers by design: block-pairing state lives in
  *  [WireBlockWriter], so the caller is what decides a frame is legal. [WireBlockWriter.hotDelta]
  *  is the sole caller of [writeDeltaFrame] and the sole place that guard is applied. */
-internal class SseFrameWriter(private val write: FrameWrite) {
+internal class SseFrameWriter(private val write: FrameWrite, private val ending: EndingWrite? = null) {
 
     // Reused for every frame assembly — never escapes the writer; not concurrent.
     private val frameBuf = StringBuilder(FRAME_BUF_CAPACITY)
@@ -39,6 +40,17 @@ internal class SseFrameWriter(private val write: FrameWrite) {
         frameBuf.setLength(0)
         frameBuf.append("event: ").append(event).append("\ndata: ").append(JsonWire.string(data)).append("\n\n")
         write(frameBuf.toString())
+    }
+
+    /** The error frame that ends a turn, holding [data]. It goes through [ending] when the failure is a status while
+     *  the response has not committed one ([unsent]), with the [body] that status carries, so the channel can still
+     *  answer with it; otherwise through [write] like any frame (failure-handling slice 2). */
+    internal suspend fun ending(data: JsonObject, unsent: WireAnswer, body: JsonObject) {
+        frameBuf.setLength(0)
+        frameBuf.append("event: error\ndata: ").append(JsonWire.string(data)).append("\n\n")
+        val frame = frameBuf.toString()
+        val port = ending
+        if (port == null || unsent.status == null) write(frame) else port(frame, unsent, JsonWire.string(body))
     }
 
     /** Hand-built SSE frame for a fixed-shape hot frame (content_block_stop) — no JsonObject map. */

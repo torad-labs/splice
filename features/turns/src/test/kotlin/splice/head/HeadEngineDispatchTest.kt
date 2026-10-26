@@ -19,6 +19,7 @@ import org.junit.jupiter.api.TestReporter
 import org.junit.jupiter.api.io.TempDir
 import splice.core.auth.ClientAuthProvider
 import splice.core.auth.ForeignHostLog
+import splice.core.failure.HeadVoice
 import splice.core.model.ModelCatalog
 import splice.core.model.ModelEntry
 import splice.core.parse.AnthropicTurnBody
@@ -348,9 +349,9 @@ internal fun dispatchProvider(baseUrl: String): Provider = TestResponsesProvider
 // The real composition, with only the engine exposed so the call group has deterministic affinity.
 internal fun dispatchEngine(provider: Provider, deps: HeadDeps): HeadEngine {
     val replay = CompactionReplay(deps.stores.compaction.compactionRecordings)
-    val driver = TurnDriver(provider, deps, replay)
+    val driver = TurnDriver(provider, deps, replay, voice = testHeadVoice)
     val window = AdmissionWindow().apply { open() }
-    val responses = AdmissionResponses()
+    val responses = AdmissionResponses(HeadVoice("scripted", loginCommand = null))
     val auth = ClientAuth(deps, responses, ForeignHostLog("synthetic", deps.log), forwardsOnly = true)
     val reader = RequestBodyReader(deps.policy.requestReadTimeoutMs)
     val parse = AnthropicBodyParse()
@@ -381,7 +382,7 @@ internal fun dispatchEngine(provider: Provider, deps: HeadDeps): HeadEngine {
         HeapIngress(
             deps.seams.requestMaterializationGate.heap,
             deps.policy.maxRequestBytes,
-            AdmissionErrorBody,
+            AdmissionErrorBody(HeadVoice("splice", loginCommand = null)),
             deps.seams.requestMaterializationGate.limitBytes,
         ),
     )

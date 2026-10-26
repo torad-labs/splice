@@ -30,9 +30,9 @@ internal class RoundRunners(
     /** Whether the head searches tools, which keeps a turn off the single-round path. */
     fun searchesTools(): Boolean = toolSearch != null
 
-    /** The one empty-answer recovery uses the same client-facing notice as the other runners. */
+    /** The one empty-answer recovery tells the turn it is recovering through the same signal as the other runners. */
     fun emptyRetry(perf: TurnPerf?, reanchor: ReanchorPolicy?): EmptyAnswerRetry =
-        EmptyAnswerRetry(perf, reanchor, notice)
+        EmptyAnswerRetry(perf, reanchor, signals.recovering)
 
     /** The runner for a fold-eligible turn. */
     fun fold(emitter: WireSink, post: PostRoundToSink, reanchor: ReanchorPolicy?): FoldRunner =

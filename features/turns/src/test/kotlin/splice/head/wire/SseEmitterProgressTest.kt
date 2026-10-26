@@ -17,11 +17,16 @@ import kotlinx.serialization.json.put
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
+import splice.core.failure.QuietTurn
 import splice.core.turn.Usage
+import splice.head.testVoice
 
 class SseEmitterProgressTest {
 
     private val emitters = SseEmitterFactory()
+
+    /** A quiet line in the test head's voice, the kind the pinger writes, [seconds] into the turn. */
+    private fun quiet(seconds: Long) = testVoice.quiet(QuietTurn(seconds * 1000, answering = false, again = false))
 
     private fun collector(): Pair<MutableList<String>, SseEmitter> {
         val frames = mutableListOf<String>()
@@ -34,7 +39,8 @@ class SseEmitterProgressTest {
                     put("output_tokens", u?.outputTokens ?: 0)
                 }
             },
-            messageId = "msg_fixed",
+            streaming = StreamWiring(messageId = "msg_fixed"),
+            voice = testVoice,
         )
         return frames to emitter
     }
@@ -42,18 +48,18 @@ class SseEmitterProgressTest {
     @Test
     fun `progress - silent before start, ONE thinking block for the turn, closed by the terminal`() = runTest {
         val (frames, e) = collector()
-        e.progress { "a" }
+        e.progress { quiet(1) }
         assertTrue(frames.isEmpty(), "no status line ahead of message_start: $frames")
         e.ensureStarted()
         val opened = frames.size
 
-        e.progress { "first" }
+        e.progress { quiet(1) }
         assertEquals(opened + 2, frames.size, "the first line opens the block and writes into it")
         assertTrue(frames[opened].startsWith("event: content_block_start"), frames[opened])
         assertTrue(frames[opened].contains("\"type\":\"thinking\""), frames[opened])
-        assertTrue(frames[opened + 1].contains("\"thinking\":\"first\""), frames[opened + 1])
+        assertTrue(frames[opened + 1].contains("\"thinking\":\"${quiet(1).text}\""), frames[opened + 1])
 
-        e.progress { "second" }
+        e.progress { quiet(2) }
         assertEquals(opened + 3, frames.size, "every later line is one delta on the SAME block")
         assertEquals(
             1,
@@ -71,16 +77,15 @@ class SseEmitterProgressTest {
         assertTrue(stop in 0 until messageDelta, "the status block closes before the ending: $frames")
 
         val ended = frames.size
-        e.progress { "after" }
+        e.progress { quiet(3) }
         assertEquals(ended, frames.size, "an ended turn writes nothing more")
     }
 
     /** The line is BUILT only where it is written. Composing one consumes the caller's ticker
-     *  state — TurnProgressLine says "holding this turn open" exactly once — so a line built for a
-     *  write the guards then drop is a line no client ever sees, and the next tick silently
-     *  degrades to the terse follow-up form. That is precisely what the combined run caught
-     *  (2026-09-06): pre-opener pings ate the intro and the first line on the wire was
-     *  "[splice] 0s, still paused."
+     *  state (TurnProgressLine counts the heartbeats of its quiet stretch), so a line built for a
+     *  write the guards then drop is a line no client ever sees, and the next tick reads as the
+     *  follow-up form. That is precisely what the combined run caught (2026-09-06): pre-opener
+     *  pings ate the intro and the first line on the wire was "[splice] 0s, still paused."
      *
      *  Pinned at the two boundaries where a write is dropped — before the opener, and after the
      *  ending — plus the one where it is not, so the invariant is "the producer runs exactly when
@@ -93,13 +98,13 @@ class SseEmitterProgressTest {
             write = { },
             model = "m",
             usagePayload = { buildJsonObject { put("input_tokens", 0) } },
-            messageId = "msg_fixed",
-            streaming = StreamWiring(progressWrite = { pinger.add(it) }),
+            streaming = StreamWiring(progressWrite = { pinger.add(it) }, messageId = "msg_fixed"),
+            voice = testVoice,
         )
 
         e.progress {
             built += 1
-            "line $built"
+            quiet(built.toLong())
         }
         assertEquals(0, built, "before the opener the wire cannot take it, so it must not be built")
         assertTrue(pinger.isEmpty(), "and nothing reached the pinger's port: $pinger")
@@ -107,15 +112,18 @@ class SseEmitterProgressTest {
         e.ensureStarted()
         e.progress {
             built += 1
-            "line $built"
+            quiet(built.toLong())
         }
         assertEquals(1, built, "now it is written, so now it is built")
-        assertTrue(pinger.any { it.contains("line 1") }, "and the FIRST line composed is the first written: $pinger")
+        assertTrue(
+            pinger.any { it.contains(quiet(1).text) },
+            "and the FIRST line composed is the first written: $pinger",
+        )
 
         e.emitTerminal(hasToolUse = false, incomplete = false, usage = Usage())
         e.progress {
             built += 1
-            "line $built"
+            quiet(built.toLong())
         }
         assertEquals(1, built, "an ended turn drops the write, so it composes nothing either")
     }
@@ -141,7 +149,6 @@ class SseEmitterProgressTest {
             write = { model.add(it) },
             model = "m",
             usagePayload = { buildJsonObject { put("input_tokens", 0) } },
-            messageId = "msg_fixed",
             streaming = StreamWiring(
                 progressWrite = { frame ->
                     if (frame.startsWith("event: content_block_start")) {
@@ -150,14 +157,16 @@ class SseEmitterProgressTest {
                     }
                     pinger.add(frame)
                 },
+                messageId = "msg_fixed",
             ),
+            voice = testVoice,
         )
         e.ensureStarted()
 
         e.heartbeat()
         assertEquals(1, pinger.count { it.startsWith("event: ping") }, "a heartbeat writes while OPEN: $pinger")
 
-        val line = launch { e.progress { "holding" } }
+        val line = launch { e.progress { quiet(1) } }
         holding.await()
         val queued = launch { e.heartbeat() }
         testScheduler.runCurrent()
@@ -196,12 +205,13 @@ class SseEmitterProgressTest {
             },
             model = "m",
             usagePayload = { buildJsonObject { put("input_tokens", 0) } },
-            messageId = "msg_fixed",
+            streaming = StreamWiring(messageId = "msg_fixed"),
+            voice = testVoice,
         )
 
         val opener = launch { e.ensureStarted() }
         opening.await()
-        val line = launch { e.progress { "holding" } }
+        val line = launch { e.progress { quiet(1) } }
         testScheduler.runCurrent()
         assertTrue(frames.isEmpty(), "nothing may reach the client ahead of message_start: $frames")
 
@@ -229,11 +239,12 @@ class SseEmitterProgressTest {
             },
             model = "m",
             usagePayload = { buildJsonObject { put("input_tokens", 0) } },
-            messageId = "msg_fixed",
+            streaming = StreamWiring(messageId = "msg_fixed"),
+            voice = testVoice,
         )
         e.ensureStarted()
 
-        val line = launch { e.progress { "holding" } }
+        val line = launch { e.progress { quiet(1) } }
         opening.await()
         val ending = launch { e.emitTerminal(hasToolUse = false, incomplete = false, usage = Usage()) }
         testScheduler.runCurrent()

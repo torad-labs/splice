@@ -21,6 +21,7 @@ import splice.core.turn.TurnOutcome
 import splice.dialect.anthropic.PassthroughQuirks
 import splice.dialect.anthropic.PassthroughStreamTranslator
 import splice.dialect.anthropic.PassthroughTurnContext
+import splice.head.testVoice
 
 class PassthroughProductionWireTest {
 
@@ -37,7 +38,8 @@ class PassthroughProductionWireTest {
                     put("output_tokens", u?.outputTokens ?: 0)
                 }
             },
-            messageId = "msg_142",
+            streaming = StreamWiring(messageId = "msg_142"),
+            voice = testVoice,
         )
         return frames to emitter
     }

@@ -40,6 +40,7 @@ import splice.head.admission.admittedSlot
 import splice.head.compact.CompactStats
 import splice.head.pipeline.TurnPipeline
 import splice.head.round.RunnerSignals
+import splice.head.testVoice
 import splice.head.transport.TearAwareEvents
 import splice.head.transport.WsRoundDrive
 import splice.head.transport.WsRoundInputs
@@ -124,13 +125,13 @@ class LiveTurnProviderActivityTest {
                         extraHeaders = emptyMap(),
                         toolSearch = null,
                     ),
-                    slot = slot,
+                    slot = TurnSlot(slot) {},
                     t0 = now,
                     perf = perf,
                     trace = null,
-                    markHandedOff = {},
+                    voice = testVoice,
                 ),
-                emitter = CollectingTerminal("model", UsagePayloadBuilder { buildJsonObject {} }),
+                emitter = CollectingTerminal("model", UsagePayloadBuilder { buildJsonObject {} }, voice = testVoice),
                 watchdog = TurnWatchdog(provider.watchdog),
                 pipeline = pipeline,
                 signals = RunnerSignals(),

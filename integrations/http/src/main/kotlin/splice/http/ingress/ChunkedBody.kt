@@ -1,14 +1,16 @@
 // NEW: a chunked body is charged for the bytes that arrived, not for the cap it might still reach.
 package splice.http.ingress
 
+import splice.core.failure.Decline
 import splice.core.memory.HeapWeights
 import splice.core.wire.HttpStatus
 
 /** What a chunked body is charged before its first chunk: enough for its headers and a small body. */
 internal const val CHUNKED_FLOOR_BYTES = 64 * 1024L
 
-/** Why a body was refused after the request was already admitted. */
-internal data class BodyRefusal(val status: Int, val message: String)
+/** Why a body was refused after the request was already admitted: the [status] it is answered with, and what it
+ *  [declined]. */
+internal data class BodyRefusal(val status: Int, val declined: Decline)
 
 /**
  * The charge of ONE request whose length is not declared. Content-Length bodies are charged for their whole
@@ -24,8 +26,8 @@ internal class ChunkedBody(val entry: IngressRequest, private val capBytes: Long
         val lease = checkNotNull(entry.lease)
         val want = HeapWeights.ingress(maxOf(received, minOf(CHUNKED_FLOOR_BYTES, capBytes)))
         return when {
-            received > capBytes -> BodyRefusal(HttpStatus.CONTENT_TOO_LARGE, "request body exceeds $capBytes bytes")
-            want > lease.bytes && !lease.resize(want) -> BodyRefusal(HttpStatus.OVERLOADED, "gateway busy; retry")
+            received > capBytes -> BodyRefusal(HttpStatus.CONTENT_TOO_LARGE, Decline.TooLarge(received, capBytes))
+            want > lease.bytes && !lease.resize(want) -> BodyRefusal(HttpStatus.OVERLOADED, Decline.HeapBusy)
             else -> null
         }
     }

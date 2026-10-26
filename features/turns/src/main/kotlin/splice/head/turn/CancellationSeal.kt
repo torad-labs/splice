@@ -18,10 +18,8 @@ import splice.core.failure.FailureCause
 import splice.core.failure.StoppedBy
 import splice.core.perf.OutcomeTag
 import splice.core.perf.OutcomeTags
-import splice.core.turn.ErrorType
 import splice.core.util.LogSink
 import splice.head.HeadHealthCounters
-import splice.head.pipeline.FailureRenderer
 import splice.upstream.Provider
 import java.io.IOException
 
@@ -35,8 +33,6 @@ internal class CancellationSeal(
     private val health: HeadHealthCounters,
     private val usageStamp: TurnUsageStamp,
 ) {
-    private val renderer = FailureRenderer()
-
     /** Coroutine recovery may wrap the explicit head-owned cancellation. */
     fun isRestart(cause: Throwable): Boolean =
         generateSequence(cause) { it.cause }.take(CAUSE_DEPTH).any { it is HeadRestart }
@@ -107,19 +103,18 @@ internal class CancellationSeal(
         } else {
             val ending = endingOf(drive, cause)
             if (isRestart(cause) && !drive.channel.clientGone.get()) {
-                withContext(NonCancellable) { drive.emitter.emitError(ending.cause, ending.message) }
+                withContext(NonCancellable) { drive.emitter.emitError(ending.cause) }
             }
-            drive.trace?.failureSentence(ending.message)
-            telemetry.recordPerf(drive, ending.outcome)
+            // The trace says the line this ending is told with, whether or not a frame carried it.
+            telemetry.recordPerf(drive, ending.outcome, ending = ending.cause)
         }
     }
 
-    /** What a still-connected cancelled turn tells its client, and how it is journalled and counted.
-     *  [local] bumps the head's own error count: a cancel the head or its watchdog caused, never the
-     *  operator's stop. */
+    /** What a still-connected cancelled turn tells its client ([cause], which its terminal's voice says), and how it
+     *  is journalled and counted. [local] bumps the head's own error count: a cancel the head or its watchdog caused,
+     *  never the operator's stop. */
     private data class Ending(
         val cause: FailureCause,
-        val message: String,
         val kind: String,
         val detail: String,
         val outcome: String,
@@ -132,7 +127,6 @@ internal class CancellationSeal(
             // The operator's stop is permanent and never advertises a retry.
             generateSequence(cause) { it.cause }.take(CAUSE_DEPTH).any { it is OperatorStop } -> Ending(
                 cause = FailureCause.Splice.Stopped(StoppedBy.CONSOLE),
-                message = "${provider.key}: $OPERATOR_STOPPED",
                 kind = "stopped",
                 detail = ": the operator stopped the turn",
                 outcome = OutcomeTags.error("stopped"),
@@ -140,7 +134,6 @@ internal class CancellationSeal(
             )
             isRestart(cause) -> Ending(
                 cause = FailureCause.Splice.Stopped(StoppedBy.RESTART),
-                message = HEAD_RESTART_SENTENCE,
                 kind = "restarted",
                 detail = ": the head ended this request before closing its engine",
                 outcome = OutcomeTag.RESTARTED.wire,
@@ -152,20 +145,18 @@ internal class CancellationSeal(
             // BUILD row 46). The client keeps the overloaded error type, which is the retryable shape.
             fired is splice.upstream.retry.WatchdogFired.TotalCap -> Ending(
                 cause = fired.cause,
-                message = renderer.spoken(ErrorType.OVERLOADED, fired.retryMessage),
                 kind = "turn-cap",
                 detail = ": no upstream progress within the limit, so splice gave up on the turn",
                 outcome = OutcomeTag.TURN_CAP.wire,
                 local = true,
             )
-            fired != null -> cancelled(fired.cause, "${provider.key}: splice idle watchdog ended the round; retry")
-            else -> cancelled(FailureCause.Splice.Internal(), "${provider.key}: splice turn cancelled; retry")
+            fired != null -> cancelled(fired.cause)
+            else -> cancelled(FailureCause.Splice.Internal())
         }
     }
 
-    private fun cancelled(why: FailureCause, message: String): Ending = Ending(
+    private fun cancelled(why: FailureCause): Ending = Ending(
         cause = why,
-        message = message,
         kind = "cancelled",
         detail = ": turn cancelled before terminal",
         outcome = OutcomeTag.CANCELLED.wire,
@@ -174,8 +165,7 @@ internal class CancellationSeal(
 
     private suspend fun sealConnected(drive: TurnDrive, ending: Ending) {
         try {
-            drive.emitter.emitError(ending.cause, ending.message)
-            drive.trace?.failureSentence(ending.message)
+            drive.emitter.emitError(ending.cause)
             log(telemetry.errTurn(ending.kind, drive, ending.detail))
             telemetry.recordPerf(drive, ending.outcome)
             if (ending.local) health.local()
@@ -187,8 +177,8 @@ internal class CancellationSeal(
             log("[${provider.key}] turn cancelled + error frame unwritable (${io.message}); client gone\n")
             drive.emitter.abandon()
             if (ending.outcome == OutcomeTag.RESTARTED.wire) {
-                drive.trace?.failureSentence(ending.message)
-                telemetry.recordPerf(drive, ending.outcome)
+                // No frame carried the restart's line, and the trace still says it.
+                telemetry.recordPerf(drive, ending.outcome, ending = ending.cause)
             } else {
                 telemetry.recordPerf(drive, OutcomeTag.CLIENT_ABORT.wire)
             }

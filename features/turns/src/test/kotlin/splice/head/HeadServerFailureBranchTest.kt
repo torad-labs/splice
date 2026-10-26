@@ -26,6 +26,9 @@ import io.ktor.utils.io.writeStringUtf8
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.withTimeout
+import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.jsonObject
+import kotlinx.serialization.json.jsonPrimitive
 import org.junit.jupiter.api.AfterAll
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertFalse
@@ -37,6 +40,10 @@ import org.junit.jupiter.api.io.TempDir
 import splice.core.auth.AuthDescription
 import splice.core.auth.Credentials
 import splice.core.auth.RefreshableAuthProvider
+import splice.core.failure.FailureCause
+import splice.core.failure.Moment
+import splice.core.failure.Position
+import splice.core.failure.RequestFacts
 import splice.core.model.ModelCatalog
 import splice.core.model.ModelEntry
 import splice.core.turn.ReasoningDisplay
@@ -184,6 +191,20 @@ class HeadServerFailureBranchTest {
             )
         }.bodyAsText()
 
+    /** The line [head]'s voice ends this rig's one-message turn with for [cause], before content reached the client
+     *  (failure-handling slice 2: the client reads the head's line for the cause, never a surface's own words). */
+    private fun lineBeforeContent(head: HeadServer, cause: FailureCause): String =
+        head.voice.turn(RequestFacts(compaction = false, firstExchange = true))
+            .ending(cause, Position(Moment.COMMITTED, streamBegan = false)).text
+
+    /** The words of the error event in [sse], or null when it has none. */
+    private fun errorWords(sse: String): String? = sse.lineSequence()
+        .dropWhile { it != "event: error" }
+        .drop(1)
+        .firstOrNull()
+        ?.removePrefix("data: ")
+        ?.let { Json.parseToJsonElement(it).jsonObject["error"]?.jsonObject?.get("message")?.jsonPrimitive?.content }
+
     @Test
     fun `a head with no credential emits an authentication error carrying the login hint`() = runBlocking {
         val head = buildHead(CredentiallessAuth())
@@ -195,7 +216,9 @@ class HeadServerFailureBranchTest {
             val sse = turn(headPort, "basic")
             assertTrue(sse.contains("event: error"), "expected an error event in: $sse")
             assertTrue(sse.contains("authentication_error"), sse)
-            assertTrue(sse.contains("codex: no upstream credentials; run: claudex login"), sse)
+            val line = lineBeforeContent(head, FailureCause.Splice.NoLogin("claudex login"))
+            assertEquals(line, errorWords(sse), sse)
+            assertTrue("Run claudex login" in line, "the line names the command that signs the head in: $line")
             assertFalse(sse.contains("event: message_stop"), "never a clean stop after failure: $sse")
             // The credential is resolved BEFORE the request is built, so nothing reached upstream.
             assertEquals(upstreamBefore, mock.upstreamBodies.size)
@@ -227,7 +250,7 @@ class HeadServerFailureBranchTest {
             // The config-parse case has its own cell below, on a REAL URLParserException.
             assertTrue(sse.contains("\"type\":\"overloaded_error\""), sse)
             assertFalse(sse.contains("\"type\":\"api_error\""), "the client-terminal type must not ride: $sse")
-            assertTrue(sse.contains("splice: internal gateway error; retry"), sse)
+            assertEquals(lineBeforeContent(head, FailureCause.Splice.Internal(escaped = true)), errorWords(sse), sse)
             assertFalse(sse.contains("event: message_stop"), "never a clean stop after failure: $sse")
             assertTrue(
                 outcomeRow("error:unexpected") != null,
@@ -251,8 +274,9 @@ class HeadServerFailureBranchTest {
     // TurnEnding.kt and THIS cell goes red BY NAME while the generic-arm cell above stays green —
     // so the two cells pin the two halves of the narrowing, not one shared behaviour.
     //
-    // The words do not move either way: the message still says "; retry", which is addressed to the
-    // OPERATOR (fix the config), not to the client.
+    // The words are the head's line for the cause, written from the answer (failure-handling slice 2). Claude Code
+    // re-sends an in-band api_error often enough for the line to say so (WireAnswer.clientResends), so this line
+    // reads like the arm above, and only the type differs.
     @Test
     fun `an unparseable base_url is permanent and keeps its api_error`() = runBlocking {
         val head = buildHead(BranchFakeAuth(), wrap = { ConfigParseThrowingProvider(it) })
@@ -268,7 +292,8 @@ class HeadServerFailureBranchTest {
                 sse.contains("\"type\":\"overloaded_error\""),
                 "a config failure a retry cannot change must not be sold as transient: $sse",
             )
-            assertTrue(sse.contains("splice: internal gateway error; retry"), sse)
+            val permanent = FailureCause.Splice.Internal(escaped = true, permanent = true)
+            assertEquals(lineBeforeContent(head, permanent), errorWords(sse), sse)
             assertFalse(sse.contains("event: message_stop"), "never a clean stop after failure: $sse")
             // Same accounting as every other surface: the real class is still what the journal
             // names, and the perf row still lands — permanence changed the WIRE TYPE only.

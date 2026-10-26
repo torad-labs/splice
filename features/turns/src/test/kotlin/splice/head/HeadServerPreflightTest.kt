@@ -444,6 +444,10 @@ class HeadServerPreflightTest {
 class HeadServerOverflowStatusTest {
     private val fixture = HeadServerPreflightTest()
 
+    /** An answer before the prompt, so the conversation is one Claude Code can compact: only then does an overflow's
+     *  line say "prompt is too long", which a first message's line leaves out (failure-handling slice 2). */
+    private val earlier = """{"role":"assistant","content":"earlier"},"""
+
     private fun head(root: Path, upstream: MockChatGptUpstream): HeadServer = fixture.head(root, upstream)
 
     private suspend fun send(
@@ -487,7 +491,7 @@ class HeadServerOverflowStatusTest {
         val server = head(root, upstream)
         try {
             server.start()
-            val response = send(client, server.port, "", "go", "SCENARIO:zero_event_overflow")
+            val response = send(client, server.port, earlier, "go", "SCENARIO:zero_event_overflow")
             assertEquals(400, response.status.value)
             assertEquals("false", response.headers["x-should-retry"])
             assertTrue("prompt is too long" in response.bodyAsText())
@@ -526,7 +530,7 @@ class HeadServerOverflowStatusTest {
         val server = head(root, upstream)
         try {
             server.start()
-            val response = send(client, server.port, "", "go", "SCENARIO:overflow_http")
+            val response = send(client, server.port, earlier, "go", "SCENARIO:overflow_http")
             assertEquals(400, response.status.value)
             assertEquals("false", response.headers["x-should-retry"])
             assertTrue("prompt is too long" in response.bodyAsText())
@@ -545,7 +549,7 @@ class HeadServerOverflowStatusTest {
         val server = head(root, upstream)
         try {
             server.start()
-            val response = send(client, server.port, "", "go", "SCENARIO:overflow_after_content")
+            val response = send(client, server.port, earlier, "go", "SCENARIO:overflow_after_content")
             assertEquals(200, response.status.value)
             val body = response.bodyAsText()
             assertTrue("partial answer" in body && "event: error" in body, body)

@@ -278,20 +278,19 @@ class RetryAlwaysArmedTest {
             !firstBody.contains("\"type\":\"rate_limit_error\""),
             "an in-stream rate_limit_error is never retried by the client: ${firstBody.take(240)}",
         )
-        // (b) the WORDS do not move: the operator must still be told it was a rate limit, and the
-        // V4-59 code still rides in front of them.
+        // (b) the WORDS do not move: the operator must still be told it was a rate limit, in the head's
+        // line for a usage limit (failure-handling slice 2 retired the V4-59 code with FailureText).
         assertTrue(
-            firstBody.contains("rate limit", ignoreCase = true),
+            firstBody.contains(USAGE_LIMIT),
             "the wording must stay rate-limit even though the wire type is overload: ${firstBody.take(240)}",
         )
-        assertTrue(firstBody.contains("SPLICE-RATE-LIMIT"), "the greppable code must survive: ${firstBody.take(240)}")
 
         // (c) and this is what makes the first turn's shape matter: the same head's next turn asks the
         // provider itself (Marcos, Oct 26), so when the limit still holds it ends in that same shape.
         val (nextStatus, nextBody) = request("quota429")
         assertEquals(200, nextStatus, "the next turn is sent and committed like the first: ${nextBody.take(240)}")
         assertTrue(nextBody.contains("overloaded_error"), "the next 429 turn is retryable too: ${nextBody.take(240)}")
-        assertTrue(nextBody.contains("SPLICE-RATE-LIMIT"), "and still a rate limit: ${nextBody.take(240)}")
+        assertTrue(nextBody.contains(USAGE_LIMIT), "and still a rate limit: ${nextBody.take(240)}")
     }
 
     @Test
@@ -315,9 +314,12 @@ class RetryAlwaysArmedTest {
             upstreamClient.clearRateLimitCooldown()
             val (status, body) = request("quota429", stream = false)
             assertEquals(429, status, "collect path keeps the real status, got: ${body.take(240)}")
-            assertTrue(body.contains("SPLICE-RATE-LIMIT"), "the words stay rate-limit: ${body.take(240)}")
+            assertTrue(body.contains(USAGE_LIMIT), "the words stay rate-limit: ${body.take(240)}")
         }
 }
+
+/** The head's words for a usage limit, whatever reset it states (final-design.md section 10). */
+private const val USAGE_LIMIT = "is at its usage limit"
 
 /** Statuses Claude Code retries on: 429, 408, and 5xx except 501. */
 private val RETRYABLE_STATUSES = setOf(408, 429, 500, 502, 503, 504, 529)

@@ -148,11 +148,11 @@ class TraceHeapShareTest {
         val ingress = HeapIngress(
             heap,
             { 4096 },
-            IngressErrorBody { type, message ->
+            IngressErrorBody { type, why ->
                 JsonWire.string(
                     buildJsonObject {
                         put("type", type)
-                        put("message", message)
+                        put("message", why.toString())
                     },
                 )
             },

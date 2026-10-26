@@ -152,7 +152,8 @@ class AnotherTurnsRateLimitTest {
             )
             assertEquals(firstStatus, next.status.value, "its refusal reaches the client as the first one did: $body")
             assertEquals(errorType(firstBody), errorType(body), "with the same error: $body")
-            assertTrue("rate limit" in body.lowercase(), "the client is told it is a rate limit: $body")
+            // The head's line for a usage limit (failure-handling slice 2), as the first turn's was.
+            assertTrue("is at its usage limit" in body, "the client is told it is a rate limit: $body")
             assertTrue("holding" !in body, "never splice's own hold: $body")
         } finally {
             head.close()

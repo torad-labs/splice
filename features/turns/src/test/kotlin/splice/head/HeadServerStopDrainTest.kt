@@ -85,7 +85,13 @@ private const val RELEASE_POLL_MS = 10L
 // why 600: a burst this size is paced over the head's whole one-second window, not written in one go.
 private const val BURST_DELTAS = 600
 
-private const val EXPECTED_RESTART_SENTENCE = "Splice restarted while this request was running. Retry the request."
+// Failure-handling slice 2: the head's line for a restart (final-design.md section 10), which says Claude Code sends
+// the turn again since both answers below, an in-band overloaded_error and a 529, are ones it re-sends.
+private const val EXPECTED_RESTART_SENTENCE =
+    "[splice] splice restarted during this turn. Claude Code sends this turn again."
+
+/** The words of the operator's stop, which a restart never says. */
+private const val CONSOLE_STOP = "stopped from the splice console"
 
 private class DrainFakeAuth : RefreshableAuthProvider {
     override suspend fun credentials(): Credentials = Credentials.Bearer("tok-drain", "acct-drain")
@@ -252,7 +258,7 @@ class HeadServerStopDrainTest {
             assertEquals(if (stream) 200 else 529, status)
             assertTrue(body.contains("overloaded_error"), "a connected client must receive an automatic-retry error")
             assertTrue(body.contains(EXPECTED_RESTART_SENTENCE), "the terminal must name the owner of the cut")
-            assertTrue(!body.contains("operator stopped"), "a restart never impersonates a user stop")
+            assertTrue(!body.contains(CONSOLE_STOP), "a restart never impersonates a user stop")
             assertTrue(AsyncFileIo.drain())
             val outcome = Files.readAllLines(tmp.resolve("perf.jsonl"))
                 .map { Json.parseToJsonElement(it).jsonObject }

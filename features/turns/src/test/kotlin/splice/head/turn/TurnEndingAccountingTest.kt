@@ -55,6 +55,7 @@ import splice.head.compact.CompactStats
 import splice.head.perf.PerfStats
 import splice.head.pipeline.TurnPipeline
 import splice.head.round.RunnerSignals
+import splice.head.testVoice
 import splice.head.transport.TurnAccountHandoff
 import splice.head.usage.OutputClamp
 import splice.head.usage.QuotaTracker
@@ -102,7 +103,7 @@ private class BranchlessFakeAuth : splice.core.auth.RefreshableAuthProvider {
 private class DeadClientTerminal : TurnTerminal {
     override val hasEnded: Boolean = true
     override suspend fun emitTerminal(hasToolUse: Boolean, incomplete: Boolean, usage: Usage) = Unit
-    override suspend fun emitError(cause: FailureCause, message: String): Unit =
+    override suspend fun emitError(cause: FailureCause): Unit =
         throw IOException("client hung up mid error frame")
     override fun abandon() = Unit
     override suspend fun openText() = WireBlockIndex(0)
@@ -123,7 +124,7 @@ private class DeadClientSuccessTerminal : TurnTerminal {
     override val hasEnded: Boolean = false
     override suspend fun emitTerminal(hasToolUse: Boolean, incomplete: Boolean, usage: Usage): Unit =
         throw IOException("client hung up mid terminal frame")
-    override suspend fun emitError(cause: FailureCause, message: String): Unit =
+    override suspend fun emitError(cause: FailureCause): Unit =
         throw IOException("client hung up mid error frame")
     override fun abandon() = Unit
     override suspend fun openText() = WireBlockIndex(0)
@@ -142,7 +143,7 @@ private class DeadClientSuccessTerminal : TurnTerminal {
 private class CancellationDuringSealTerminal(private val emission: CancellationException) : TurnTerminal {
     override val hasEnded: Boolean = false
     override suspend fun emitTerminal(hasToolUse: Boolean, incomplete: Boolean, usage: Usage) = Unit
-    override suspend fun emitError(cause: FailureCause, message: String): Unit = throw emission
+    override suspend fun emitError(cause: FailureCause): Unit = throw emission
     override fun abandon() = Unit
     override suspend fun openText() = WireBlockIndex(0)
     override suspend fun openThinking() = WireBlockIndex(0)
@@ -160,7 +161,7 @@ private class CancellationDuringSealTerminal(private val emission: CancellationE
 private class ConnectedTerminal : TurnTerminal {
     override val hasEnded: Boolean = false
     override suspend fun emitTerminal(hasToolUse: Boolean, incomplete: Boolean, usage: Usage) = Unit
-    override suspend fun emitError(cause: FailureCause, message: String) = Unit
+    override suspend fun emitError(cause: FailureCause) = Unit
     override fun abandon() = Unit
     override suspend fun openText() = WireBlockIndex(0)
     override suspend fun openThinking() = WireBlockIndex(0)
@@ -797,7 +798,7 @@ private class EndingRig(tag: String, tmp: Path, p: Provider) {
             telemetry,
             health,
             TurnConnEnd(p, log, telemetry, failures, health),
-            TurnKnownEnd(p, log, telemetry, failures, health),
+            TurnKnownEnd(p, log, telemetry, health),
         )
     }
 
@@ -826,11 +827,11 @@ private class EndingRig(tag: String, tmp: Path, p: Provider) {
                 extraHeaders = emptyMap(),
                 toolSearch = null,
             ),
-            slot = InflightGate(LiveLimit { 1 }).admittedSlot(),
+            slot = TurnSlot(InflightGate(LiveLimit { 1 }).admittedSlot()) {},
             t0 = 0,
             perf = TurnPerf(),
             trace = null,
-            markHandedOff = {},
+            voice = testVoice,
         ),
         emitter = emitter,
         watchdog = TurnWatchdog(WatchdogBudget(10.seconds, 10.seconds, 30.seconds)),

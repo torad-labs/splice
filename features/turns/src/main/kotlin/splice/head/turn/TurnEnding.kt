@@ -58,8 +58,9 @@ internal class TurnEnding(
                 // after sealing, and the turn must not vanish from the perf JSONL and G20
                 // counters. Same law on every failure surface (TurnConnEnd, TurnKnownEnd).
                 val permanent = e is URLParserException
+                val cause = FailureCause.Splice.Internal(escaped = true, permanent = permanent)
                 drive.markPermanent(permanent)
-                telemetry.recordPerf(drive, OutcomeTag.UNEXPECTED.wire)
+                telemetry.recordPerf(drive, OutcomeTag.UNEXPECTED.wire, ending = cause)
                 health.local() // internal gateway bug (e.g. bad base_url parse)
                 // V4-81, NARROWED BY THE ORCHESTRATOR'S RULING. This arm catches EVERY non-Error
                 // RuntimeException at the turn boundary, and the operator law (V4-62) is retry on
@@ -80,10 +81,7 @@ internal class TurnEnding(
                 // fault non-retryable. If some other config failure reaches this arm as a different
                 // type it stays RETRYABLE, which is the pre-V4-81 behaviour and never worse than it;
                 // widening the set is a deliberate act that needs its own named entry here.
-                drive.emitter.emitError(
-                    FailureCause.Splice.Internal(escaped = true, permanent = permanent),
-                    "splice: internal gateway error; retry",
-                )
+                drive.emitter.emitError(cause)
             }
             else -> throw e // Errors (OOM etc.) are not turn failures — never masked
         }

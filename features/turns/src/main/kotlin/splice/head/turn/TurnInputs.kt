@@ -3,6 +3,7 @@
 // is not billed for a second column-0 type.
 package splice.head.turn
 
+import splice.core.failure.TurnVoice
 import splice.core.perf.TurnPerf
 import splice.head.admission.KeyNaming
 import splice.head.usage.QuotaTracker
@@ -21,9 +22,9 @@ import splice.upstream.retry.InflightGate
  *
  *  The role, not the shape: the DRIVE calls it at the instant a detached compaction takes the
  *  admission slot with it. Nothing else may call it, and it is not a general "turn ended" hook —
- *  [TurnInputs.slot] stays the admission's to release unless this fires.
+ *  [TurnSlot.held] stays the admission's to release unless this fires.
  *
- *  `invoke` is spelled as the single abstract method so the call site stays `inputs.markHandedOff()`
+ *  `invoke` is spelled as the single abstract method so the call site stays `inputs.slot.markHandedOff()`
  *  and the wiring stays a lambda literal (SAM conversion); adopting the port is a declaration diff,
  *  never a rename storm. */
 internal fun interface HandoffMark {
@@ -34,10 +35,24 @@ internal fun interface HandoffMark {
  *  cohesive argument across the stream and collect entries. */
 internal data class TurnInputs(
     val built: BuiltTurn,
-    val slot: InflightGate.Slot,
+    val slot: TurnSlot,
     val t0: Long,
     val perf: TurnPerf,
-    /** Called by TurnStreamer when a detached compaction takes [slot] with it: the drive releases
+    /** V4-174: this turn's trace, begun at admission for a head whose trace is on; null records
+     *  nothing. REQUIRED, NO DEFAULT, for [TurnSlot.markHandedOff]'s reason: the wiring is the control. */
+    val trace: TurnTrace?,
+    val accountQuota: TurnAccountQuota = TurnAccountQuota(),
+    /** Failure-handling slice 2: the voice every line this turn ends with is spoken in, built once at admission from
+     *  the request's own facts (a compaction, a first exchange). REQUIRED, NO DEFAULT: a turn that spoke in some
+     *  other turn's voice would say the wrong thing about its own request. */
+    val voice: TurnVoice,
+)
+
+/** The admission slot a turn holds and the mark its drive calls when a detached compaction takes that slot with it.
+ *  One value because the mark speaks only of this slot (grouped when slice 2's voice joined [TurnInputs]). */
+internal data class TurnSlot(
+    val held: InflightGate.Slot,
+    /** Called by TurnStreamer when a detached compaction takes [held] with it: the drive releases
      *  the slot when the upstream turn ends, and HeadAdmission's finally must then leave it alone.
      *
      *  A PORT, NOT AN ATOMICBOOLEAN THE DRIVE MUTATES (V4-99 item 3, law 19). Two reasons, and the
@@ -52,10 +67,6 @@ internal data class TurnInputs(
      *
      *  REQUIRED, NO DEFAULT: the wiring IS the control. */
     val markHandedOff: HandoffMark,
-    /** V4-174: this turn's trace, begun at admission for a head whose trace is on; null records
-     *  nothing. REQUIRED, NO DEFAULT, for [markHandedOff]'s reason: the wiring is the control. */
-    val trace: TurnTrace?,
-    val accountQuota: TurnAccountQuota = TurnAccountQuota(),
 )
 
 /** The login a turn runs on and the quota tracker that login's usage lands in. They are chosen together and

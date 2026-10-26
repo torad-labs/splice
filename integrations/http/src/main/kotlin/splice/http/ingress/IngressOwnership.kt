@@ -2,6 +2,7 @@
 package splice.http.ingress
 
 import io.netty.handler.codec.http.HttpRequest
+import splice.core.failure.Decline
 import splice.core.memory.HeapLease
 import java.util.IdentityHashMap
 import java.util.concurrent.atomic.AtomicBoolean
@@ -101,7 +102,8 @@ internal class IngressOwnership(private val connectionLease: HeapLease?) {
 internal class IngressRequest(
     val lease: HeapLease?,
     val refusal: Int? = null,
-    val refusalMessage: String? = null,
+    /** What the refusal declined, where the status alone does not say it. */
+    val declined: Decline? = null,
 ) {
     var bound = false
     var unread = false

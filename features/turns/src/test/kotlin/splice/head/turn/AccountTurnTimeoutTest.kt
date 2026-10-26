@@ -40,6 +40,7 @@ import splice.head.compact.CompactStats
 import splice.head.perf.PerfStats
 import splice.head.pipeline.TurnPipeline
 import splice.head.round.RunnerSignals
+import splice.head.testVoice
 import splice.head.transport.SseRoundConsume
 import splice.head.transport.SseRoundPost
 import splice.head.transport.TearAwareEvents
@@ -267,7 +268,7 @@ class AccountTurnTimeoutTest {
         )
 
         fun newTerminal(): CollectingTerminal =
-            CollectingTerminal("gpt-5.6-sol", UsagePayloadBuilder { buildJsonObject {} })
+            CollectingTerminal("gpt-5.6-sol", UsagePayloadBuilder { buildJsonObject {} }, voice = testVoice)
 
         fun expire() {
             remainingMs = 0L
@@ -296,11 +297,11 @@ class AccountTurnTimeoutTest {
                     extraHeaders = emptyMap(),
                     toolSearch = null,
                 ),
-                slot = InflightGate(LiveLimit { 1 }).admittedSlot(),
+                slot = TurnSlot(InflightGate(LiveLimit { 1 }).admittedSlot()) {},
                 t0 = 0L,
                 perf = TurnPerf { elapsedMs },
                 trace = null,
-                markHandedOff = {},
+                voice = testVoice,
             ),
             emitter = terminal,
             watchdog = TurnWatchdog(provider.watchdog, ElapsedClock { 0L }),

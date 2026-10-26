@@ -24,11 +24,13 @@ import splice.core.turn.Usage
 import splice.dialect.anthropic.PassthroughQuirks
 import splice.dialect.anthropic.PassthroughStreamTranslator
 import splice.dialect.anthropic.PassthroughTurnContext
+import splice.head.testVoice
 
 class PassthroughNativeCollectTest {
     private fun event(value: String): JsonObject = Json.parseToJsonElement(value).jsonObject
 
-    private fun collector(): CollectingTerminal = CollectingTerminal("native", { buildJsonObject {} })
+    private fun collector(): CollectingTerminal =
+        CollectingTerminal("native", { buildJsonObject {} }, voice = testVoice)
 
     @Test
     fun `initial prose signature tool id and input survive the collected response`() = runTest {

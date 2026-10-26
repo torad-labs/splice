@@ -49,6 +49,8 @@ import splice.head.compaction.CompactionRecordings
 import splice.head.compaction.CompactionReplay
 import splice.head.compaction.KeptAnswer
 import splice.head.headDeps
+import splice.head.testHeadVoice
+import splice.head.testVoice
 import splice.head.turn.stream.PendingSse
 import splice.head.wire.ClientChannel
 import splice.head.wire.FrameRecording
@@ -363,11 +365,11 @@ class TurnStreamerCleanupTest {
                     )
                 },
             ),
-            slot = slot,
+            slot = TurnSlot(slot, HandoffMark { handedOff.set(true) }),
             t0 = 0L,
             perf = perf,
-            markHandedOff = HandoffMark { handedOff.set(true) },
             trace = null,
+            voice = testVoice,
         )
         private val channel = ClientChannel(
             ImmediateSseWriter({}, {}),
@@ -382,6 +384,7 @@ class TurnStreamerCleanupTest {
                 write = { checkNotNull(activeRecording).append(it) },
                 model = "synthetic-model",
                 usagePayload = { JsonObject(emptyMap()) },
+                voice = testVoice,
             ),
             channel,
         )
@@ -390,7 +393,7 @@ class TurnStreamerCleanupTest {
             provider,
             deps,
             factory,
-            TurnDriver(provider, deps, replay).sealedDrive,
+            TurnDriver(provider, deps, replay, voice = testHeadVoice).sealedDrive,
             replay,
             detached,
             // Observe the actual detached job's rethrown error instead of replacing its drive.
@@ -435,7 +438,7 @@ class TurnStreamerCleanupTest {
         }
 
         fun failRelease(failure: Throwable) {
-            inputs.slot.onRelease(TurnEnd { throw failure })
+            inputs.slot.held.onRelease(TurnEnd { throw failure })
         }
 
         suspend fun run(recording: FrameRecording) {
@@ -452,7 +455,7 @@ class TurnStreamerCleanupTest {
             try {
                 runBlocking { checkNotNull(scope.coroutineContext[Job]).cancelAndJoin() }
             } finally {
-                inputs.slot.release()
+                inputs.slot.held.release()
             }
             check(AsyncFileIo.drain()) { "queued writes must settle before the temp directory is deleted" }
         }

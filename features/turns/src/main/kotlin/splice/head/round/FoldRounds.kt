@@ -8,6 +8,8 @@ package splice.head.round
 
 import kotlinx.serialization.json.JsonObject
 import splice.core.failure.ClientWire
+import splice.core.failure.Recovery
+import splice.core.failure.WaitLine
 import splice.core.turn.TurnOutcome
 import splice.core.turn.Usage
 import splice.head.wire.BufferingWireSink
@@ -33,11 +35,12 @@ internal class FoldRounds(
     fun withFailureSalvage(outcome: TurnOutcome, summed: RoundUsage): TurnOutcome =
         rounds.withFailureSalvage(outcome, summed)
 
-    /** The fold re-anchor line: round [attempt] (zero-based) died mid-stream and is being retried. */
+    /** The fold re-anchor: round [attempt] (zero-based) died mid-stream and continues from its salvage. The journal
+     *  names the attempt; the turn is told the failure, which a person reads as the episode's line (slice 2). */
     suspend fun noteReanchor(attempt: Int, failure: TurnOutcome.Failure) {
         val type = ClientWire.ownType(failure.cause).wireName
         log("[$key] fold re-anchor ${attempt + 1}: $type mid-round; retrying\n")
-        log.retry("[$key] fold re-anchor ${attempt + 1}: $type mid-round; retrying", failure.evidence.message)
+        signals.recovering(WaitLine(failure.cause, Recovery.Resume))
     }
 
     /** Health for the rounds this fold absorbed, once the turn ends on something other than a failure. */

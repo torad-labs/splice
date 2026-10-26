@@ -82,7 +82,6 @@ internal class TurnFinish(
         // V4-117: the failing outcome is in scope here, so the perf row gets its cause and the
         // attempt count the retry loop stamped on it. A Success carries neither, and both default to
         // absent — the row for a healthy turn is byte-identical to what it was before this field.
-        failure?.let { drive.trace?.failureSentenceUnlessSpoken(OutcomeSentences.of(it)) }
         telemetry.recordPerf(
             drive,
             outcomeTag,

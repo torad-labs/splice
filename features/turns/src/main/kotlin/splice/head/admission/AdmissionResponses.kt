@@ -12,16 +12,18 @@ import io.ktor.http.HttpStatusCode
 import io.ktor.server.application.ApplicationCall
 import io.ktor.server.response.header
 import io.ktor.server.response.respondText
-import splice.core.auth.LoopbackHost
 import splice.core.budget.BudgetBlock
 import splice.core.failure.ClientWire
 import splice.core.failure.Decline
 import splice.core.failure.FailureCause
+import splice.core.failure.HeadVoice
 import splice.core.failure.Lift
 import splice.core.failure.LiftSource
 import splice.core.failure.Moment
 import splice.core.failure.Position
+import splice.core.failure.SpliceLine
 import splice.core.failure.StoppedBy
+import splice.core.failure.WireAnswer
 import splice.core.wire.ErrorEnvelope
 import splice.core.wire.HttpStatus
 import splice.http.ingress.IngressErrorBody
@@ -30,35 +32,41 @@ import java.time.ZoneOffset
 import java.time.format.DateTimeFormatter
 import java.util.Locale
 
-/** Shared pre-turn HTTP bodies. The real response status owns retry semantics, not the SSE rule. */
-public object AdmissionErrorBody : IngressErrorBody {
-    override fun render(type: String, message: String): String = ErrorEnvelope.of(type, message).toString()
+/** Shared pre-turn HTTP bodies: what was declined, said in [voice]'s line (failure-handling slice 2), in the envelope
+ *  every refusal before a turn takes. The real response status owns retry semantics, not the SSE rule. */
+public class AdmissionErrorBody(private val voice: HeadVoice) : IngressErrorBody {
+    override fun render(type: String, why: Decline): String = envelope(type, FailureCause.Splice.Declined(why), null)
+
+    /** [cause] told as the client is told it ([answer], or ClientWire's answer at admission when null). */
+    internal fun envelope(type: String, cause: FailureCause, answer: WireAnswer?): String {
+        val told = answer ?: ClientWire.answer(cause, AT_ADMISSION)
+        return ErrorEnvelope.of(type, voice.anyTurn.ending(cause, AT_ADMISSION, told).text).toString()
+    }
 }
 
+/** Where every refusal before a turn is told: at admission, before any stream. */
+private val AT_ADMISSION = Position(Moment.ADMISSION, streamBegan = false)
+
 /** The admission plane's response shapes: one owner for every wire terminal a request can meet
- *  before a turn exists (400, 401, 403, 408, 413, 429, 503, 529). No instance state; pure response
- *  shaping. */
-internal class AdmissionResponses {
+ *  before a turn exists (400, 401, 403, 408, 413, 429, 503, 529). The words of each are the head's [voice]
+ *  (failure-handling slice 2): a site names what it refused, never what the client reads. */
+internal class AdmissionResponses(private val voice: HeadVoice) {
     private val retryAfterFormat = DateTimeFormatter.ofPattern("EEE, dd MMM uuuu HH:mm:ss 'GMT'", Locale.US)
         .withZone(ZoneOffset.UTC)
 
-    // Relocated from a HeadServer member so respondAtCapacity shares one body builder; pure JSON
-    // shaping with no instance state (review 2026-07-22 round 3).
-    // V4-102: the shape lives in core (splice.core.wire.ErrorEnvelope) so :upstream can build the
-    // same envelope — it cannot import :daemon-head. Kept as a named delegate so the six admission
-    // callers read unchanged; the local builder is gone, which is what the wall actually asks for.
-    private fun errorBodyJson(type: String, message: String): String =
-        AdmissionErrorBody.render(type, message)
+    // V4-102: the shape lives in core (splice.core.wire.ErrorEnvelope) so :upstream can build the same envelope, and
+    // AdmissionErrorBody is the one place a refusal before a turn is put in it, here and at the heap ingress.
+    private val bodies = AdmissionErrorBody(voice)
 
     /** The one shape every refusal before a turn takes: [cause] decides the status, the error type and
-     *  x-should-retry (ClientWire at ADMISSION), and [message] is what the client reads. Every admission
+     *  x-should-retry (ClientWire at ADMISSION), and the head's voice says the line the client reads. Every admission
      *  path answers IDENTICALLY per cause because client retry logic keys on the shape (three hand-built
      *  copies of the 529 drifted; review 2026-07-22 round 3). */
-    suspend fun respondRefusal(call: ApplicationCall, cause: FailureCause, message: String) {
-        val answer = ClientWire.answer(cause, Position(Moment.ADMISSION, streamBegan = false))
+    suspend fun respondRefusal(call: ApplicationCall, cause: FailureCause) {
+        val answer = ClientWire.answer(cause, AT_ADMISSION)
         answer.shouldRetry?.let { call.response.header(SHOULD_RETRY_HEADER, it.toString()) }
         call.respondText(
-            errorBodyJson(answer.type.wireName, message),
+            bodies.envelope(answer.type.wireName, cause, answer),
             ContentType.Application.Json,
             statusLine(checkNotNull(answer.status) { "an admission answer is an HTTP status" }),
         )
@@ -72,68 +80,63 @@ internal class AdmissionResponses {
         else -> HttpStatusCode.fromValue(status)
     }
 
+    /** The line [cause] is told with at admission: what a trace records beside the refusal that answers it. */
+    fun lineOf(cause: FailureCause): SpliceLine = voice.anyTurn.ending(cause, AT_ADMISSION)
+
     /** The gate and its queue are full: [limit] turns already run on this head. */
-    suspend fun respondAtCapacity(call: ApplicationCall, limit: Int, message: String) {
-        respondRefusal(call, FailureCause.Splice.AtCapacity(limit), message)
+    suspend fun respondAtCapacity(call: ApplicationCall, limit: Int) {
+        respondRefusal(call, FailureCause.Splice.AtCapacity(limit))
     }
 
     /** The refusal of a request that reaches a head that is stopping. The connection closes after it, so the client's
      *  retry opens a new one, and a new one waits for the next daemon instead of coming back to this one. */
     suspend fun respondStopping(call: ApplicationCall) {
         call.response.header(HttpHeaders.Connection, "close")
-        respondRefusal(call, FailureCause.Splice.Stopped(StoppedBy.HEAD_STOPPING), "head is stopping; retry")
+        respondRefusal(call, FailureCause.Splice.Stopped(StoppedBy.HEAD_STOPPING))
     }
 
-    /** Every login of the head is at its limit; [resetEpochSeconds] is the earliest reset, when one is known. */
-    suspend fun respondRateLimited(call: ApplicationCall, message: String, resetEpochSeconds: Long?) {
-        resetEpochSeconds?.let { call.response.header(HttpHeaders.RetryAfter, retryAfterDate(it)) }
+    /** Every login of the head is at its limit: [resetEpochSeconds] is the earliest reset, when one is known, which the
+     *  line names, and [retryEpochSeconds] is when the client is told to come back (its Retry-After). */
+    suspend fun respondRateLimited(call: ApplicationCall, resetEpochSeconds: Long?, retryEpochSeconds: Long?) {
+        retryEpochSeconds?.let { call.response.header(HttpHeaders.RetryAfter, retryAfterDate(it)) }
         val lift = resetEpochSeconds?.let {
             Lift.At(AccountResetText.normalizedInstant(it), firm = true, source = LiftSource.RESET_HEADER)
         } ?: Lift.Unstated
-        respondRefusal(call, FailureCause.Provider.Limited(lift, window = null), message)
+        respondRefusal(call, FailureCause.Provider.Limited(lift, window = null))
     }
 
     private fun retryAfterDate(resetEpochSeconds: Long): String =
         retryAfterFormat.format(AccountResetText.normalizedInstant(resetEpochSeconds))
 
-    suspend fun respondTooLarge(call: ApplicationCall, limit: Int) {
-        respondRefusal(
-            call,
-            FailureCause.Splice.Declined(Decline.TooLarge(bytes = null, limit = limit.toLong())),
-            "request body exceeds $limit bytes",
-        )
+    /** A body over the head's [limit], [bytes] long where the request declared its length. */
+    suspend fun respondTooLarge(call: ApplicationCall, limit: Int, bytes: Long?) {
+        respondRefusal(call, FailureCause.Splice.Declined(Decline.TooLarge(bytes = bytes, limit = limit.toLong())))
     }
 
-    /** Only temporary pressure is retryable; an unfit body names the effective reservation ceiling. */
+    /** Only temporary pressure is retryable; an unfit body is refused against the effective reservation ceiling. */
     suspend fun respondHeapRefusal(call: ApplicationCall, weight: Long, limit: Long) {
-        if (weight > limit) {
-            respondRefusal(
-                call,
-                FailureCause.Splice.Declined(Decline.TooLarge(bytes = weight, limit = limit)),
-                "request body requires $weight bytes; materialization heap limit is $limit bytes",
-            )
-        } else {
-            respondRefusal(call, FailureCause.Splice.Declined(Decline.HeapBusy), "gateway busy; retry")
-        }
+        val why = if (weight > limit) Decline.TooLarge(bytes = weight, limit = limit) else Decline.HeapBusy
+        respondRefusal(call, FailureCause.Splice.Declined(why))
     }
 
-    suspend fun respondReadTimeout(call: ApplicationCall, message: String = "request body read timed out") {
-        respondRefusal(call, FailureCause.Splice.Declined(Decline.ReadTimeout), message)
+    /** The body did not arrive within the read bound, or its stream broke off. */
+    suspend fun respondReadTimeout(call: ApplicationCall) {
+        respondRefusal(call, FailureCause.Splice.Declined(Decline.ReadTimeout))
     }
 
     /** v0.4.0: the DNS-rebinding refusal (see ClientAuth.admitsHost) — before any route runs. */
     suspend fun respondForeignHost(call: ApplicationCall) {
-        respondRefusal(call, FailureCause.Splice.Declined(Decline.ForeignHost), LoopbackHost.FOREIGN_HOST_REFUSAL)
+        respondRefusal(call, FailureCause.Splice.Declined(Decline.ForeignHost))
     }
 
     /** V4-133 review: the head's `block` budget is reached (see HeadAdmission.refuseIfOverBudget). */
     suspend fun respondBudgetBlocked(call: ApplicationCall, block: BudgetBlock) {
-        respondRefusal(call, FailureCause.Splice.Declined(Decline.Budget(block.limit, block.resetsAt)), block.message)
+        respondRefusal(call, FailureCause.Splice.Declined(Decline.Budget(block.limit, block.resetsAt)))
     }
 
     /** The mgmt-key front door's refusal (see [ClientAuth.authorize]). */
-    suspend fun respondUnauthorized(call: ApplicationCall, message: String = "invalid local gateway credentials") {
-        respondRefusal(call, FailureCause.Splice.Declined(Decline.BadLocalKey), message)
+    suspend fun respondUnauthorized(call: ApplicationCall) {
+        respondRefusal(call, FailureCause.Splice.Declined(Decline.BadLocalKey))
     }
 }
 

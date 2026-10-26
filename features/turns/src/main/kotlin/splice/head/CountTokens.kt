@@ -52,11 +52,8 @@ internal class CountTokens(
         val estimate = prepared.getOrNull()
         if (estimate == null) {
             val declared = call.request.headers[HttpHeaders.ContentLength]?.toLongOrNull()
-            responses.respondRefusal(
-                call,
-                FailureCause.Splice.Declined(Decline.BadBody(readBytes, declared)),
-                "invalid request body",
-            )
+            val unread = Decline.BadBody(readBytes, declared)
+            responses.respondRefusal(call, FailureCause.Splice.Declined(unread))
             return
         }
         // Unicode-safe: UTF-8 bytes / 3 includes structural/tool overhead; images and documents count flat, not by base64 length.

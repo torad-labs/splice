@@ -40,6 +40,7 @@ import splice.head.round.RoundInterception
 import splice.head.round.RoundRunners
 import splice.head.round.RoundStrategy
 import splice.head.round.RunnerSignals
+import splice.head.testVoice
 import splice.head.wire.SseEmitterFactory
 import splice.provider.codex.CodeModeBridgeConfig
 import splice.provider.codex.CodeModeStateLocation
@@ -172,7 +173,7 @@ class CodexCodeModeReanchorTest {
         val config = CodeModeBridgeConfig({ runtime }, state, log = LogSink(lines::add))
         var bridge = CodexCodeModeBridge(config)
         val frames = mutableListOf<String>()
-        val sink = SseEmitterFactory().create(frames::add, "model", { buildJsonObject { } })
+        val sink = SseEmitterFactory().create(frames::add, "model", { buildJsonObject { } }, voice = testVoice)
         val turn = CodexCodeModeBridge.Turn("session", "conversation", "gpt-6-astra", setOf("Read"))
         val recovery = RecoveryCase(eventsBeforeCut, cuts, streamed)
         var finished: TurnOutcome? = null
@@ -223,7 +224,7 @@ class CodexCodeModeReanchorTest {
         val runtime = PendingRuntime(completeFirst = true)
         val state = CodeModeStateLocation(tempDir.resolve("code-mode"), tempDir.resolve("state.json"))
         val bridge = CodexCodeModeBridge(CodeModeBridgeConfig({ runtime }, state))
-        val sink = SseEmitterFactory().create({}, "model", { buildJsonObject { } })
+        val sink = SseEmitterFactory().create({}, "model", { buildJsonObject { } }, voice = testVoice)
         val turn = CodexCodeModeBridge.Turn("session", "conversation", "gpt-6-astra", setOf("Read"))
         val recovery = RecoveryCase(2, 1, streamed)
         var finished: TurnOutcome? = null
@@ -249,7 +250,7 @@ class CodexCodeModeReanchorTest {
         val lines = mutableListOf<String>()
         val bridge = CodexCodeModeBridge(CodeModeBridgeConfig({ runtime }, state, log = LogSink(lines::add)))
         val frames = mutableListOf<String>()
-        val sink = SseEmitterFactory().create(frames::add, "model", { buildJsonObject { } })
+        val sink = SseEmitterFactory().create(frames::add, "model", { buildJsonObject { } }, voice = testVoice)
         val turn = CodexCodeModeBridge.Turn("session", "conversation", "gpt-6-astra", setOf("Read"))
         val recovery = RecoveryCase(2, 1, streamed, secondScript = true)
         try {
@@ -494,7 +495,7 @@ class CodexCodeModeReanchorTest {
         val state = CodeModeStateLocation(tempDir.resolve("code-mode"), tempDir.resolve("state.json"))
         val bridge = CodexCodeModeBridge(CodeModeBridgeConfig({ runtime }, state))
         val turn = CodexCodeModeBridge.Turn("session", "conversation", "gpt-6-astra", setOf("Read"), emptyList())
-        val emitter = SseEmitterFactory().create({}, "model", { buildJsonObject { } })
+        val emitter = SseEmitterFactory().create({}, "model", { buildJsonObject { } }, voice = testVoice)
         return RoundStrategy(
             emitter = emitter,
             runners = RoundRunners(

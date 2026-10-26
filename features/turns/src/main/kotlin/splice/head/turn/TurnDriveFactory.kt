@@ -75,7 +75,7 @@ internal class TurnDriveFactory(
             drive.accountHandoff = deps.quotaBundle.activePool?.let { TurnAccountHandoff(it, deps.turnQuota) }
             drive.route = provider.route(meta)
             drive.sourceRoundStarted =
-                TurnDrive.SourceRoundStarted { job -> deps.traffic.liveTurns.driving(inputs.slot, job) }
+                TurnDrive.SourceRoundStarted { job -> deps.traffic.liveTurns.driving(inputs.slot.held, job) }
         }
     }
 }

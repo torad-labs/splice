@@ -12,6 +12,7 @@ import kotlinx.serialization.json.putJsonObject
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Test
 import splice.core.turn.Usage
+import splice.head.testVoice
 
 class SseEscapingParityTest {
 
@@ -41,7 +42,8 @@ class SseEscapingParityTest {
                 write = { frames.add(it) },
                 model = "m",
                 usagePayload = { buildJsonObject { put("output_tokens", 0) } },
-                messageId = "msg_fixed",
+                streaming = StreamWiring(messageId = "msg_fixed"),
+                voice = testVoice,
             )
             block(emitter, frames)
             out = frames.single()

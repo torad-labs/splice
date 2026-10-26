@@ -8,6 +8,7 @@ package splice.head.admission
 
 import io.ktor.server.application.ApplicationCall
 import splice.core.auth.CredentialKey
+import splice.core.failure.RequestFacts
 import splice.core.turn.LiveWatchdogBudget
 import splice.core.util.WallClock
 import splice.head.HeadDeps
@@ -17,6 +18,7 @@ import splice.head.turn.TurnAccountQuota
 import splice.head.turn.TurnDriver
 import splice.head.turn.TurnInputs
 import splice.head.turn.TurnPreparation
+import splice.head.turn.TurnSlot
 import splice.head.wire.TurnTrace
 import splice.upstream.TurnEnd
 import splice.upstream.credentials.Selection
@@ -73,7 +75,7 @@ internal class HeadAdmission(
         // Only a Ready turn names a live row. settle already returned Local/Replay/Collected ownership,
         // including a borrowed handle whose row still belongs to its independent source.
         when (prepared) {
-            is Preparation.Rejected -> responses.respondRefusal(call, prepared.cause, prepared.message)
+            is Preparation.Rejected -> responses.respondRefusal(call, prepared.cause)
             is Preparation.Local -> driver.answerLocally(call, prepared, admitted.perf)
             is Preparation.Replay -> {
                 // settle returned this retry's candidate before it follows the independently held drive.
@@ -194,12 +196,14 @@ internal class HeadAdmission(
         admitted.retainRequest()
         val inputs = TurnInputs(
             prepared.built,
-            admitted.slot,
+            TurnSlot(admitted.slot) { admitted.markHandedOff() },
             admitted.t0,
             admitted.perf,
-            markHandedOff = { admitted.markHandedOff() },
             trace = trace,
             accountQuota = running,
+            voice = driver.voice.turn(
+                RequestFacts(compaction = prepared.built.meta.compact, firstExchange = !prepared.hasPriorExchange),
+            ),
         )
         if (prepared.stream) driver.stream(call, inputs) else driver.collect(call, inputs)
     }

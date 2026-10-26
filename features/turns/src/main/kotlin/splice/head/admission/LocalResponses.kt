@@ -12,6 +12,8 @@ import io.ktor.server.response.header
 import io.ktor.server.response.respond
 import io.ktor.server.response.respondText
 import splice.core.failure.FailureCause
+import splice.core.failure.HeadVoice
+import splice.core.failure.RequestFacts
 import splice.core.turn.Usage
 import splice.core.turn.UsageField
 import splice.core.util.JsonWire
@@ -33,9 +35,13 @@ internal class LocalResponses(
     private val provider: Provider,
     private val deps: HeadDeps,
     private val replay: CompactionReplay,
+    /** The head's voice (failure-handling slice 2). A local answer is about no request of its own, and a compaction
+     *  retry's ending is about the compaction it followed. */
+    private val voice: HeadVoice,
 ) {
     private val emitters = SseEmitterFactory()
     private val wiring = TurnWiring()
+    private val compactionVoice = voice.turn(RequestFacts(compaction = true, firstExchange = false))
 
     /** One text block, an end_turn terminal, zero usage: the side query is not a context read. */
     suspend fun answer(call: ApplicationCall, local: Preparation.Local) {
@@ -54,12 +60,13 @@ internal class LocalResponses(
                     },
                     model = local.model,
                     usagePayload = usage,
+                    voice = voice.anyTurn,
                 )
                 emitText(emitter, local.text)
             }
             call.respond(stream)
         } else {
-            val terminal = CollectingTerminal(local.model, usage)
+            val terminal = CollectingTerminal(local.model, usage, voice = voice.anyTurn)
             emitText(terminal, local.text)
             call.respondText(
                 terminal.responseBody().let(JsonWire::string),
@@ -165,11 +172,9 @@ internal class LocalResponses(
         val terminal = CollectingTerminal(
             model,
             wiring.usagePayloadBuilderFor(provider.catalog, model, deps.stores.clientWindows.windowFor(sessionId)),
+            voice = compactionVoice,
         )
-        terminal.emitError(
-            FailureCause.Splice.CompactionUnfinished,
-            "${provider.key}: the compaction this retry followed did not finish; retry",
-        )
+        terminal.emitError(FailureCause.Splice.CompactionUnfinished)
         call.respondText(
             terminal.responseBody().let(JsonWire::string),
             ContentType.Application.Json,
@@ -188,11 +193,9 @@ internal class LocalResponses(
                 replayed.model,
                 deps.stores.clientWindows.windowFor(replayed.sessionId),
             ),
+            voice = compactionVoice,
         )
-        emitter.emitError(
-            FailureCause.Splice.CompactionUnfinished,
-            "${provider.key}: the compaction this retry followed did not finish; retry",
-        )
+        emitter.emitError(FailureCause.Splice.CompactionUnfinished)
     }
 
     // The quota windows ride every response (TurnStreamer / CollectTurn do the same): on a pooled

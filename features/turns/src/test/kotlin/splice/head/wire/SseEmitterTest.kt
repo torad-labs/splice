@@ -5,20 +5,26 @@ package splice.head.wire
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.test.runTest
 import kotlinx.coroutines.withContext
+import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.buildJsonObject
+import kotlinx.serialization.json.jsonObject
+import kotlinx.serialization.json.jsonPrimitive
 import kotlinx.serialization.json.put
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 import splice.core.failure.FailureCause
+import splice.core.failure.Moment
+import splice.core.failure.Position
 import splice.core.failure.ProtocolFault
 import splice.core.failure.RefusedBy
+import splice.core.failure.ServerFault
 import splice.core.failure.Stall
 import splice.core.index.WireBlockIndex
 import splice.core.perf.TurnPerf
-import splice.core.turn.ErrorType
 import splice.core.turn.Usage
 import splice.core.util.ElapsedClock
+import splice.head.testVoice
 import splice.head.turn.stream.PendingSse
 import java.io.IOException
 import java.io.StringWriter
@@ -27,6 +33,17 @@ import java.util.concurrent.CancellationException
 class SseEmitterTest {
 
     private val emitters = SseEmitterFactory()
+
+    /** What an error frame tells the client: its type and its words. */
+    private fun errorOf(frame: String): Pair<String, String> {
+        val data = frame.substringAfter("data: ").trim()
+        val error = Json.parseToJsonElement(data).jsonObject.getValue("error").jsonObject
+        return error.getValue("type").jsonPrimitive.content to error.getValue("message").jsonPrimitive.content
+    }
+
+    /** The line [cause] ends a turn with, where content has [reached] the client or not. */
+    private fun lineAt(cause: FailureCause, reached: Boolean) =
+        testVoice.ending(cause, Position(if (reached) Moment.MID_CONTENT else Moment.COMMITTED, streamBegan = reached))
 
     private fun collector(): Pair<MutableList<String>, SseEmitter> {
         val frames = mutableListOf<String>()
@@ -39,7 +56,8 @@ class SseEmitterTest {
                     put("output_tokens", u?.outputTokens ?: 0)
                 }
             },
-            messageId = "msg_fixed",
+            streaming = StreamWiring(messageId = "msg_fixed"),
+            voice = testVoice,
         )
         return frames to emitter
     }
@@ -109,7 +127,7 @@ class SseEmitterTest {
         e.emitTerminal(false, false, Usage())
         val count = frames.size
         e.emitTerminal(false, false, Usage())
-        e.emitError(FailureCause.Provider.Unrecognized(clientError = false), "late") // after ended: swallowed
+        e.emitError(FailureCause.Provider.Unrecognized(clientError = false)) // after ended: swallowed
         assertEquals(count, frames.size)
         assertTrue(frames.last().startsWith("event: message_stop"))
     }
@@ -118,7 +136,7 @@ class SseEmitterTest {
     fun `error path emits a single error event and seals`() = runTest {
         val (frames, e) = collector()
         e.openText()
-        e.emitError(FailureCause.Path.Stalled(Stall.IDLE), "upstream stalled")
+        e.emitError(FailureCause.Path.Stalled(Stall.IDLE))
         assertTrue(frames.last().startsWith("event: error\n"))
         assertTrue(frames.last().contains("overloaded_error"))
         e.emitTerminal(false, false, Usage())
@@ -128,14 +146,10 @@ class SseEmitterTest {
     @Test
     fun `a permanent failure is an error event without assistant text or a clean stop`() = runTest {
         val (frames, e) = collector()
-        e.emitError(FailureCause.Splice.Protocol(ProtocolFault.CODE_MODE_STATE), "nothing was executed")
-        assertEquals(
-            listOf(
-                "event: error\ndata: {\"type\":\"error\",\"error\":{" +
-                    "\"type\":\"invalid_request_error\",\"message\":\"nothing was executed\"}}\n\n",
-            ),
-            frames,
-        )
+        val cause = FailureCause.Splice.Protocol(ProtocolFault.CODE_MODE_STATE)
+        e.emitError(cause)
+        assertTrue(frames.single().startsWith("event: error\ndata: "), "$frames")
+        assertEquals("invalid_request_error" to lineAt(cause, reached = true).text, errorOf(frames.single()))
         assertTrue(!e.endedCleanly)
         e.emitTerminal(false, false, Usage())
         assertTrue(frames.last().startsWith("event: error"))
@@ -147,10 +161,44 @@ class SseEmitterTest {
         val idx = e.openTool("toolu_1", "Read")
         e.inputJsonDelta(idx, "{}")
         e.closeBlock(idx)
-        e.emitError(FailureCause.Provider.Refused(RefusedBy.FILTER), "generation blocked")
+        e.emitError(FailureCause.Provider.Refused(RefusedBy.FILTER))
         assertTrue(frames.last().startsWith("event: error"))
         assertTrue(frames.none { it.startsWith("event: message_delta") || it.startsWith("event: message_stop") })
         assertTrue(frames.none { it.contains("text_delta") })
+    }
+
+    /** Failure-handling slice 2: the emitter is the one place an error frame is written, and its words are the line
+     *  its turn's voice composes for the cause where the stream stands when the frame is written, never a caller's. */
+    @Test
+    fun `an error frame says the line its turn voice composes for the cause where the stream stands`() = runTest {
+        val cause = FailureCause.Provider.ServerError(ServerFault.INTERNAL)
+        val said = listOf(false, true).map { reached ->
+            val frames = mutableListOf<String>()
+            val e = emitters.create(
+                write = { frames.add(it) },
+                model = "m",
+                usagePayload = { buildJsonObject { } },
+                streaming = StreamWiring(contentReached = { reached }),
+                voice = testVoice,
+            )
+            assertEquals(null, e.lineWritten, "no line is written before the ending")
+            assertEquals(lineAt(cause, reached), e.lineFor(cause), "the line the ending would write now")
+            e.emitError(cause)
+            val (_, words) = errorOf(frames.single { it.startsWith("event: error") })
+            assertEquals(lineAt(cause, reached).text, words, "content reached the client: $reached")
+            assertEquals(lineAt(cause, reached), e.lineWritten)
+            words
+        }
+        assertTrue(said.distinct().size == 2, "the line says where the answer stood: $said")
+    }
+
+    @Test
+    fun `an error after the turn ended writes no line`() = runTest {
+        val (frames, e) = collector()
+        e.emitTerminal(false, false, Usage())
+        e.emitError(FailureCause.Path.Stalled(Stall.IDLE))
+        assertTrue(frames.none { it.startsWith("event: error") }, "$frames")
+        assertEquals(null, e.lineWritten)
     }
 
     @Test
@@ -249,7 +297,8 @@ class SseEmitterTest {
             },
             model = "m",
             usagePayload = { buildJsonObject { put("input_tokens", 0) } },
-            messageId = "msg_fixed",
+            streaming = StreamWiring(messageId = "msg_fixed"),
+            voice = testVoice,
         )
         var cancelled: CancellationException? = null
         try {
@@ -259,9 +308,10 @@ class SseEmitterTest {
         }
         assertTrue(cancelled != null, "mid-terminal cancellation must propagate")
         assertTrue(!emitter.hasEnded, "a cancelled terminal must not read as ended")
-        emitter.emitError(FailureCause.Splice.Internal(), "turn cancelled; retry")
+        emitter.emitError(FailureCause.Splice.Internal())
         assertTrue(emitter.hasEnded, "the seal after a cancelled terminal must land")
-        assertTrue(frames.any { it.startsWith("event: error") && it.contains("turn cancelled") })
+        val (_, words) = errorOf(frames.single { it.startsWith("event: error") })
+        assertEquals(lineAt(FailureCause.Splice.Internal(), reached = true).text, words)
     }
 
     @OptIn(kotlinx.coroutines.ExperimentalCoroutinesApi::class)
@@ -281,19 +331,22 @@ class SseEmitterTest {
             write = pending::model,
             model = "synthetic",
             usagePayload = { buildJsonObject { } },
-            messageId = "synthetic-message",
+            streaming = StreamWiring(messageId = "synthetic-message"),
+            voice = testVoice,
         )
         try {
             withContext(writing) {
-                emitter.emitError(FailureCause.Path.Stalled(Stall.IDLE), "splice watchdog ended this turn; retry")
+                emitter.emitError(FailureCause.Path.Stalled(Stall.IDLE))
             }
         } catch (_: CancellationException) {
             // PendingSseWriter waits before writing; its synchronous flush cannot reopen a delivered frame.
         }
-        emitter.emitError(FailureCause.Splice.Internal(), "splice turn cancelled; retry")
-        assertEquals(1, writer.toString().split("event: error").size - 1)
-        assertTrue(writer.toString().contains("splice watchdog ended this turn; retry"))
-        assertTrue(!writer.toString().contains("splice turn cancelled; retry"))
+        emitter.emitError(FailureCause.Splice.Internal())
+        val errors = writer.toString().split("\n\n").filter { it.startsWith("event: error") }
+        val watchdog = lineAt(FailureCause.Path.Stalled(Stall.IDLE), reached = true)
+        assertEquals(listOf(watchdog.text), errors.map { errorOf(it).second })
+        // The trace reads the line the client read: the one delivered, not the seal's dropped second.
+        assertEquals(watchdog, emitter.lineWritten)
         assertTrue(emitter.hasEnded)
     }
 
@@ -314,7 +367,8 @@ class SseEmitterTest {
             },
             model = "m",
             usagePayload = { buildJsonObject { put("input_tokens", 0) } },
-            messageId = "msg_fixed",
+            streaming = StreamWiring(messageId = "msg_fixed"),
+            voice = testVoice,
         )
         var thrown: IOException? = null
         try {
@@ -325,7 +379,7 @@ class SseEmitterTest {
         assertTrue(thrown != null, "a client-gone IOException mid-terminal must propagate")
         assertTrue(emitter.hasEnded, "a client-gone terminal stays sealed ENDED")
         val before = frames.size
-        emitter.emitError(FailureCause.Provider.Unrecognized(clientError = false), "conn reset")
+        emitter.emitError(FailureCause.Provider.Unrecognized(clientError = false))
         assertEquals(before, frames.size) // emitError no-ops: nothing new on the wire
     }
 
@@ -375,99 +429,5 @@ class SseEmitterTest {
         e.rawDelta(raw, buildJsonObject { put("type", "citations_delta") })
         e.rawDelta(WireBlockIndex(raw.value + 1), buildJsonObject { put("type", "citations_delta") })
         assertEquals(1, frames.count { it.startsWith(deltaEvent) }, "a rawDelta to a non-open block is a no-op")
-    }
-
-    // THE PRE-CONTENT WIRE-TYPE RULE, PINNED WHERE IT NOW RUNS.
-    //
-    // The rule used to be restated at four failure surfaces (TurnKnownEnd, TurnEnding, TurnConnEnd,
-    // TurnPipeline); a fifth ending could be added without it, and TurnFinish had to snapshot perf
-    // on every turn just to feed it. It lives here now, at the one place an error frame can be
-    // written, so these cells are the seam's own proof rather than a policy mirrored from it. The
-    // rule's TABLE (which types remap, which are exempt) is ClientWire's, pinned over every leaf by
-    // ClientWireTodayPropertyTest; what these cells add is that the emitter actually CONSULTS it, on
-    // the frame it writes, with where the stream stood.
-    //
-    // MUTATION PROOF (recorded in the ledger): replace `ClientWire.answer(cause, at).type` at
-    // SseEmitter.emitError with `ClientWire.ownType(cause)` and the relabel cell below goes red BY
-    // NAME while the exempt cells stay green — so this pins the RULE's application, not the
-    // constant OVERLOADED. The lambda being a FUNCTION is separately load-bearing: make it a
-    // snapshot at construction and the "content arrives first" cell goes red.
-    private fun errorTypeIn(frames: List<String>): String =
-        frames.single { it.startsWith("event: error") }
-
-    @Test
-    fun `the pre-content rule is applied at the frame - a pre-content api_error is wired as overloaded`() =
-        runTest {
-            val frames = mutableListOf<String>()
-            val e = emitters.create(
-                write = { frames.add(it) },
-                model = "claude-codex--gpt-5.6-sol",
-                usagePayload = { buildJsonObject { } },
-                messageId = "msg_fixed",
-                streaming = StreamWiring(contentReached = { false }),
-            )
-            e.emitError(FailureCause.Provider.Unrecognized(clientError = false), "upstream: broke")
-
-            assertTrue(
-                errorTypeIn(frames).contains("\"type\":\"${ErrorType.OVERLOADED.wireName}\""),
-                "nothing was read yet, so the wire type is the one Claude Code retries: $frames",
-            )
-            assertTrue(errorTypeIn(frames).contains("upstream: broke"), "the words are not the type")
-        }
-
-    @Test
-    fun `the rule reads content LIVE - content arriving after construction closes the remap`() = runTest {
-        // The emitter is built before the first byte, so the answer has to be a question asked at
-        // the failure, not an answer recorded at the open. This is the cell that fails if the
-        // lambda is collapsed into a Boolean.
-        val frames = mutableListOf<String>()
-        var reached = false
-        val e = emitters.create(
-            write = { frames.add(it) },
-            model = "claude-codex--gpt-5.6-sol",
-            usagePayload = { buildJsonObject { } },
-            messageId = "msg_fixed",
-            streaming = StreamWiring(contentReached = { reached }),
-        )
-        e.openText()
-        reached = true
-        e.emitError(FailureCause.Provider.Unrecognized(clientError = false), "upstream: broke after content")
-
-        assertTrue(
-            errorTypeIn(frames).contains("\"type\":\"${ErrorType.API_ERROR.wireName}\""),
-            "content already reached the client, so the type rides through: $frames",
-        )
-    }
-
-    @Test
-    fun `a permanent failure keeps its real type and is never advertised as transient`() = runTest {
-        val frames = mutableListOf<String>()
-        val e = emitters.create(
-            write = { frames.add(it) },
-            model = "claude-codex--gpt-5.6-sol",
-            usagePayload = { buildJsonObject { } },
-            messageId = "msg_fixed",
-            streaming = StreamWiring(contentReached = { false }),
-        )
-        e.emitError(FailureCause.Provider.Unrecognized(clientError = true), "upstream: model refused")
-
-        assertTrue(
-            errorTypeIn(frames).contains("\"type\":\"${ErrorType.API_ERROR.wireName}\""),
-            "a retry reproduces this verdict exactly, so it is not sold as retryable: $frames",
-        )
-    }
-
-    @Test
-    fun `a caller that cannot prove nothing was written takes the inert default`() = runTest {
-        // SseEmitterFactory.create defaults contentReached to true: the local answer and the
-        // compaction replay have no counter, and a path that cannot PROVE the client has read
-        // nothing must not be handed a relabel it cannot justify. Its types stay as they were.
-        val (frames, e) = collector()
-        e.emitError(FailureCause.Provider.Unrecognized(clientError = false), "local answer failed")
-
-        assertTrue(
-            errorTypeIn(frames).contains("\"type\":\"${ErrorType.API_ERROR.wireName}\""),
-            "the default is inert, not optimistic: $frames",
-        )
     }
 }

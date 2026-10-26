@@ -95,8 +95,10 @@ import splice.head.headDeps
 import splice.head.headStores
 import splice.head.pipeline.TurnPipeline
 import splice.head.round.RunnerSignals
+import splice.head.testVoice
 import splice.head.turn.TurnDrive
 import splice.head.turn.TurnInputs
+import splice.head.turn.TurnSlot
 import splice.head.turn.ZeroEventClassifier
 import splice.head.usage.OutputClamp
 import splice.head.wire.BufferingWireSink
@@ -175,6 +177,10 @@ private const val POLICY_REFUSAL =
     """{"type":"response.failed","response":{"id":"r1","status":"failed",""" +
         """"error":{"code":"cyber_policy","message":"This request was flagged. Try rephrasing."}}}"""
 
+/** The head's line for that refusal: who declined and why, quoting the vendor's first sentence. */
+private const val POLICY_REFUSAL_LINE =
+    "[splice] claudex declined this request under its usage policy: This request was flagged."
+
 /** A round that opens one text part and streams one delta into it, so a client frame goes out. */
 private val TEXT_ROUND = listOf(
     """{"type":"response.created","response":{"id":"r1"}}""",
@@ -185,6 +191,9 @@ private val TEXT_ROUND = listOf(
 )
 
 private const val LATE_ERROR_SENTENCE = "Synthetic access check failed. Please try again."
+
+private const val LATE_ERROR_LINE =
+    "[splice] claudex refused this turn in a way splice does not recognize: Synthetic access check failed."
 
 /** A synthetic in-band error event of the shape the backend sends mid-round, with a request-class vendor code. */
 private const val LATE_ERROR =
@@ -315,7 +324,7 @@ private class RecordingTerminal : TurnTerminal, WireSink by RecordingSink2() {
 
     override suspend fun ensureStarted() = Unit
     override suspend fun emitTerminal(hasToolUse: Boolean, incomplete: Boolean, usage: Usage) = Unit
-    override suspend fun emitError(cause: FailureCause, message: String) = Unit
+    override suspend fun emitError(cause: FailureCause) = Unit
     override fun abandon() = Unit
 }
 
@@ -373,7 +382,7 @@ private class ThrowingStartTerminal(
 
     override suspend fun ensureStarted(): Unit = throw failure
     override suspend fun emitTerminal(hasToolUse: Boolean, incomplete: Boolean, usage: Usage) = Unit
-    override suspend fun emitError(cause: FailureCause, message: String) = Unit
+    override suspend fun emitError(cause: FailureCause) = Unit
     override fun abandon() = Unit
 }
 
@@ -465,11 +474,11 @@ private class WsDriverFixture(private val tmp: Path, private val baseUrl: String
                     extraHeaders = emptyMap(),
                     toolSearch = null,
                 ),
-                slot = slot,
+                slot = TurnSlot(slot) {},
                 t0 = 0,
                 perf = TurnPerf(),
                 trace = null,
-                markHandedOff = {},
+                voice = testVoice,
             ),
             emitter = emitter,
             watchdog = TurnWatchdog(budget),
@@ -1763,7 +1772,7 @@ class WsRoundFailureTest(@param:TempDir private val tmp: Path) {
     }
 
     /** The same refusal end to end: one WebSocket attempt, no SSE request, and the client reads the
-     *  bad-request class with the vendor's own sentence, which it does not re-send. */
+     *  bad-request class, which it does not re-send, in the head's line quoting the vendor's sentence. */
     @Test
     fun `a policy refusal before any client frame reaches the client as invalid_request_error, never re-sent`() {
         val runner = ScriptedRunner(listOf(POLICY_REFUSAL))
@@ -1776,7 +1785,9 @@ class WsRoundFailureTest(@param:TempDir private val tmp: Path) {
             assertEquals(before, mock.upstreamBodies.size, "an SSE request re-sent the refused context")
             assertEquals(1, runner.attempts, "the refused context was re-sent over the websocket")
             assertTrue(sse.contains("\"type\":\"invalid_request_error\""), "not the bad-request class: $sse")
-            assertTrue(sse.contains("This request was flagged. Try rephrasing."), "the vendor's sentence: $sse")
+            // Failure-handling slice 2 (final-design.md section 10, Refused(POLICY)): the line quotes the vendor's
+            // first sentence a person can read.
+            assertTrue(sse.contains(POLICY_REFUSAL_LINE), "the vendor's sentence: $sse")
         } finally {
             runBlocking { h.stop() }
         }
@@ -1796,7 +1807,10 @@ class WsRoundFailureTest(@param:TempDir private val tmp: Path) {
             assertEquals(before, mock.upstreamBodies.size, "an SSE request re-sent the context")
             assertTrue(sse.contains("late text"), "the text the client already read: $sse")
             assertTrue(sse.contains("event: error"), "the failed turn ended without an error frame: $sse")
-            assertTrue(sse.contains(LATE_ERROR_SENTENCE), "the vendor's sentence: $sse")
+            // The head's line for a refusal no table names quotes the vendor's sentence, and never its advice to
+            // try again: what the client does next is splice's to say (failure-handling slice 2).
+            assertTrue(sse.contains(LATE_ERROR_LINE), "the vendor's sentence: $sse")
+            assertFalse(sse.contains("Please try again"), "the vendor's advice: $sse")
             assertFalse(sse.contains("\"stop_reason\":\"end_turn\""), "the failed turn ended as a clean end: $sse")
         } finally {
             runBlocking { h.stop() }

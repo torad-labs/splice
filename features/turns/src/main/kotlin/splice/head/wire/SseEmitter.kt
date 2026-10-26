@@ -25,6 +25,9 @@ import splice.core.failure.ClientWire
 import splice.core.failure.FailureCause
 import splice.core.failure.Moment
 import splice.core.failure.Position
+import splice.core.failure.SpliceLine
+import splice.core.failure.TurnVoice
+import splice.core.failure.WaitLine
 import splice.core.turn.Usage
 import splice.core.util.JsonScalars
 import splice.core.wire.ANTHROPIC_ASSISTANT_ROLE
@@ -66,6 +69,9 @@ internal class SseEmitter(
      *  channel's own CONTENT_FRAMES_OUT counter, so the emitter's answer and the wire's accounting
      *  cannot disagree. */
     private val contentReached: ContentReached,
+    /** Failure-handling slice 2: the voice this turn's error ending speaks in. [emitError] asks it for the line
+     *  with the cause, the position and the answer the frame carries, so the words and the wire cannot disagree. */
+    private val voice: TurnVoice,
 ) : TurnTerminal, WireSink by blocks {
 
     // Sole-terminal state machine: OPEN → ENDING (claim) → ENDED (frames succeeded, or abandon).
@@ -78,6 +84,10 @@ internal class SseEmitter(
     private val seal = AtomicReference(SealState.OPEN)
     private val cleanEnd = AtomicBoolean(false)
 
+    // Only the seal's claimant writes it (OPEN → ENDING admits one caller at a time), so a volatile field keeps the
+    // first line handed to the wire without an identity compare a value class cannot offer.
+    @Volatile private var written: SpliceLine? = null
+
     // The shared stop_reason derivation (L3) — one definition, held rather than copied.
     private val envelope = TerminalEnvelope()
 
@@ -85,6 +95,17 @@ internal class SseEmitter(
     override val responseMessageId: String get() = start.messageId
 
     override val endedCleanly: Boolean get() = cleanEnd.get()
+
+    override val lineWritten: SpliceLine? get() = written
+
+    override fun lineFor(cause: FailureCause): SpliceLine = voice.ending(cause, position())
+
+    /** Where an error frame written now stands: the stream is open, so the answer is in band, and whether content
+     *  has reached this client decides the rest (V4-81). */
+    private fun position(): Position {
+        val reached = contentReached()
+        return Position(if (reached) Moment.MID_CONTENT else Moment.COMMITTED, streamBegan = reached)
+    }
 
     override suspend fun ensureStarted(): Unit = start.openEarly()
 
@@ -142,6 +163,20 @@ internal class SseEmitter(
         }
     }
 
+    /** The line that opens a recovery episode (failure-handling slice 2, final-design.md section 8, rules 3 to 5):
+     *  what the round met and what the turn does next, in this turn's voice, appended to the notice block the way a
+     *  status line is, under the same seal and lock. ProgressWire shows one per episode, so a failure that follows
+     *  another before model content reaches the client again says nothing it has not said. The turn is opened first,
+     *  as a retry's line always opened it, and the line never commits the response: before the status commits, the
+     *  channel stages it (PendingSse) and shows it when the status does. */
+    override suspend fun recovering(wait: WaitLine) {
+        if (seal.get() != SealState.OPEN) return
+        ensureStarted()
+        progress.lock.withLock {
+            if (seal.get() == SealState.OPEN) progress.writeEpisodeLocked(voice.waiting(wait.cause, wait.next))
+        }
+    }
+
     /** Close the status-line block before a terminal, so nothing of ours sits open across the end.
      *  A no-op for the overwhelming majority of turns, which never went quiet enough to open one. */
     private suspend fun closeProgress() {
@@ -185,24 +220,38 @@ internal class SseEmitter(
      *  the failure's REAL status — a buffered 429 stays 429 and a buffered api_error stays 502,
      *  which is the shape its callers already assert. The stream is open by the time this runs,
      *  so the answer is an in-band event; whether the provider's stream began is what this sink
-     *  can see, content having reached the client. */
-    override suspend fun emitError(cause: FailureCause, message: String) {
-        val reached = contentReached()
-        val at = Position(if (reached) Moment.MID_CONTENT else Moment.COMMITTED, streamBegan = reached)
-        val wireType = ClientWire.answer(cause, at).type
+     *  can see, content having reached the client.
+     *
+     *  The words are the line this turn's voice composes from the same cause, position and answer
+     *  (failure-handling slice 2), and the first line handed to the wire is [lineWritten]: a frame
+     *  the production channel took is delivered even when a cancellation lands on its flush, and
+     *  the channel drops any later error frame (PendingSse), so the first is the one the client read. */
+    override suspend fun emitError(cause: FailureCause) {
+        val at = position()
+        val answer = ClientWire.answer(cause, at)
+        val line = voice.ending(cause, at, answer)
         if (!seal.compareAndSet(SealState.OPEN, SealState.ENDING)) return
         var cancelled = false
+        var handed = false
         try {
             closeProgress()
+            handed = true
             // V4-102: the envelope is built once in core so this frame, the non-stream JSON body,
             // the admission 4xx/5xx bodies and :upstream's own fail-fast body cannot drift apart.
-            frames.frame(
-                "error",
-                ErrorEnvelope.of(wireType.wireName, message),
+            // Failure-handling slice 2: the frame carries what the failure is while the status is still splice's to
+            // choose, which only the channel knows, so an overflow answers with its own status whatever its line says.
+            val unsent = ClientWire.answer(cause, Position(Moment.BEFORE_COMMIT, streamBegan = true))
+            frames.ending(
+                ErrorEnvelope.of(answer.type.wireName, line.text),
+                unsent,
+                ErrorEnvelope.of(unsent.type.wireName, line.text),
             )
+            written = written ?: line
         } catch (e: CancellationException) {
-            // Cancelled before the frame went out — release so a later seal can still retry.
+            // Cancelled before the frame went out — release so a later seal can still retry. A frame
+            // already handed to the wire keeps its line as the one written (see above).
             cancelled = true
+            if (handed) written = written ?: line
             seal.set(SealState.OPEN)
             throw e
         } finally {

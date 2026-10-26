@@ -53,10 +53,7 @@ internal class StreamPromote(
                 // the same retryable wire type as the empty_model branch below. A compaction that
                 // ends terminally leaves the session growing until it dies, which is the stall
                 // this ending exists to prevent; the client's backoff bounds the re-sends.
-                emitter.emitError(
-                    FailureCause.Provider.Empty(reasoningOnly = outcome.shape.endedInReasoning),
-                    "splice: compact returned no content from model; retry (upstream ${outcome.shape.outputShape})",
-                )
+                emitter.emitError(FailureCause.Provider.Empty(reasoningOnly = outcome.shape.endedInReasoning))
                 PromoteVerdict(OutcomeTag.EMPTY_COMPACT.wire)
             }
             finishedEmpty(outcome, meta) -> {
@@ -80,12 +77,9 @@ internal class StreamPromote(
                 // Before content, Claude Code re-sends an api_error IDENTICALLY until it gives up
                 // (the 2.1.x behaviour recorded on TurnOutcome.Failure.deterministic: 87 and 47
                 // identical turns on 2026-09-07), which reproduces the same empty turn instead of
-                // recovering from it; overloaded_error is retried on a backoff. The WORDS are
-                // unchanged, including the upstream shape, because they are the diagnosis.
-                emitter.emitError(
-                    FailureCause.Provider.Empty(reasoningOnly = outcome.shape.endedInReasoning),
-                    "splice: model returned no content (empty response); retry (upstream ${outcome.shape.outputShape})",
-                )
+                // recovering from it; overloaded_error is retried on a backoff. The upstream shape, which is the
+                // diagnosis, stays in the log line above; the client reads the line for an empty answer.
+                emitter.emitError(FailureCause.Provider.Empty(reasoningOnly = outcome.shape.endedInReasoning))
                 PromoteVerdict(OutcomeTag.EMPTY_MODEL.wire)
             }
             else -> PromoteVerdict(null)

@@ -242,11 +242,11 @@ class HeadServerCapacityTest {
             // mock drift and a broken cooldown read identically at the next assert. The head relays
             // upstream failures as a 200 + SSE error event (never an HTTP error status mid-stream).
             // V4-71: the FIRST pre-content 429 turn now rides the wire as overloaded_error (the one
-            // in-band type Claude Code retries) with the rate-limit words and code kept, so the
-            // precondition pins the code, which is what says the quota429 scenario fired.
+            // in-band type Claude Code retries), and since failure-handling slice 2 its words are the
+            // head's line for a usage limit, which is what says the quota429 scenario fired.
             val body = response.bodyAsText()
             assertTrue(
-                body.contains("SPLICE-RATE-LIMIT") && body.contains("overloaded_error"),
+                body.contains("[splice] claudex is at its usage limit") && body.contains("overloaded_error"),
                 "the quota429 scenario must surface a retryable rate-limit event, got: ${body.take(200)}",
             )
         }

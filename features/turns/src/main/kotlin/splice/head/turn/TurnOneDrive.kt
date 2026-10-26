@@ -63,9 +63,9 @@ internal class TurnOneDrive(
         val turnJob = newTurnJob(owner)
         // V4-319: the operator's stop cancels exactly this job, the one the watchdog cancels (LiveTurns).
         deps.traffic.liveTurns.driving(drive.slot, turnJob)
-        // Per TURN: the line remembers whether it has spoken, so the first one explains itself, and
-        // counts the heartbeats of the current quiet stretch to thin its lines out.
-        val progress = TurnProgressLine()
+        // Per TURN: the line counts the heartbeats of the current quiet stretch to thin its lines out,
+        // and the turn's voice says it (failure-handling slice 2).
+        val progress = TurnProgressLine(drive.inputs.voice)
         return try {
             withContext(turnJob + owner) {
                 val self = this
@@ -93,7 +93,6 @@ internal class TurnOneDrive(
                                 drive.emitter.progress { fresh ->
                                     progress.next(
                                         elapsedMs = deps.seams.clock() - drive.t0,
-                                        model = drive.upstreamModel,
                                         sawOutput = drive.perf.hasMark(PerfKeys.FIRST_DELTA),
                                         fresh = fresh,
                                     )

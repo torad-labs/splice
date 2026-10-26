@@ -4,7 +4,7 @@
 // The failing state the review named: `PUT /api/budgets {"budgets":[{"head":"h","daily_usd":0.01,
 // "action":"block"}]}` answered 200 and turns on `h` kept being served, because nothing on the turn
 // path read a budget. The block arm here is what the client sees — a 403 permission_error carrying
-// the budget's own sentence, before any upstream call — and the spend arm compares what the budget
+// the budget's [splice] line, before any upstream call — and the spend arm compares what the budget
 // was told against the perf row the head actually wrote for that turn.
 package splice.head
 
@@ -36,6 +36,7 @@ import splice.core.auth.Credentials
 import splice.core.auth.RefreshableAuthProvider
 import splice.core.budget.BudgetBlock
 import splice.core.budget.HeadBudget
+import splice.core.failure.VoiceFacts
 import splice.core.model.ModelCatalog
 import splice.core.model.ModelEntry
 import splice.core.perf.OutcomeTag
@@ -53,6 +54,7 @@ import splice.upstream.ProviderTuning
 import java.nio.file.Files
 import java.nio.file.Path
 import java.time.Instant
+import java.time.ZoneId
 import java.util.UUID
 import java.util.concurrent.CopyOnWriteArrayList
 import java.util.concurrent.atomic.AtomicInteger
@@ -79,7 +81,7 @@ private class RecordingBudget(private val answer: BudgetBlock?) : HeadBudget {
 class HeadBudgetTest(@param:TempDir private val root: Path) {
 
     @Test
-    fun `a reached block budget refuses the turn with its sentence as a 403, before any upstream call`() =
+    fun `a reached block budget refuses the turn with its line as a 403, before any upstream call`() =
         runBlocking {
             val block = BudgetBlock(
                 message = "head 'codex' has spent \$2.00 today (UTC) against its \$2.00 daily budget",
@@ -95,7 +97,13 @@ class HeadBudgetTest(@param:TempDir private val root: Path) {
                 assertEquals(HttpStatusCode.Forbidden, response.status, body)
                 val error = Json.parseToJsonElement(body).jsonObject.getValue("error").jsonObject
                 assertEquals("permission_error", error.getValue("type").jsonPrimitive.content)
-                assertEquals(block.message, error.getValue("message").jsonPrimitive.content)
+                // The line names the head, the operator's limit and when the budget's day ends, in the head's zone
+                // (failure-handling slice 2); the spend and the remedies stay in the console and the log.
+                assertEquals(
+                    "[splice] claudex reached its daily budget of \$2.00, which resets Oct 27, 12:00 AM CDT. " +
+                        "Send the message again after that time.",
+                    error.getValue("message").jsonPrimitive.content,
+                )
                 assertEquals(0, rig.upstreamCalls(), "a refused turn must never reach the upstream")
                 val outcome = rig.perfRows(1).single().getValue("outcome").jsonPrimitive.content
                 assertEquals(
@@ -209,6 +217,7 @@ private class BudgetRig(root: Path, val budget: RecordingBudget) {
         provider = provider(),
         listenPort = 0,
         deps = headDeps(tmp = tmp).copy(quotaBundle = quotaFor(null, null, budget = budget)),
+        voiceFacts = VoiceFacts(zone = ZoneId.of("America/Chicago")),
     )
     private val client = HttpClient(CIO) { defaultRequest { bearerAuth("test-inference-token") } }
 

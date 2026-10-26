@@ -38,6 +38,7 @@ import splice.core.auth.AuthDescription
 import splice.core.auth.Credentials
 import splice.core.auth.RefreshableAuthProvider
 import splice.core.client.SESSION_HEADER
+import splice.core.failure.HeadVoice
 import splice.core.model.ModelCatalog
 import splice.core.model.ModelEntry
 import splice.core.perf.OutcomeTag
@@ -207,7 +208,7 @@ class GateRefusalRowTest {
                 ),
                 deps,
                 window,
-                AdmissionResponses(),
+                AdmissionResponses(HeadVoice("scripted", loginCommand = null)),
                 refusals = GateRefusals { tag, session -> recorded += tag to session },
             )
             application { routing { post("/probe") { gate.acceptingOrRespond(call) } } }

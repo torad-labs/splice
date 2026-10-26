@@ -286,7 +286,8 @@ class HeadServerIntegrationTest {
     fun `oversized upstream SSE frame emits an honest provider error`() = runTest {
         val sse = messages("oversized_sse")
         assertTrue(sse.contains("event: error"))
-        assertTrue(sse.contains("oversized streaming event"))
+        // The head's line for an oversized event (failure-handling slice 2); the limit and size stay in the log.
+        assertTrue(sse.contains("[splice] claudex sent a stream event larger than splice accepts."), sse)
         assertFalse(sse.contains("event: message_stop"))
     }
 
@@ -320,7 +321,7 @@ class HeadServerIntegrationTest {
         val sse = messages("zero_event_auth")
         assertTrue(sse.contains("event: error"))
         assertTrue(sse.contains("authentication_error"))
-        assertTrue(sse.contains("run: claudex login"))
+        assertTrue(sse.contains(LOGIN_HINT), sse)
         assertFalse(sse.contains("overloaded_error"))
     }
 
@@ -330,7 +331,7 @@ class HeadServerIntegrationTest {
         val sse = messages("authfail")
         assertTrue(sse.contains("event: error"))
         assertTrue(sse.contains("authentication_error"))
-        assertTrue(sse.contains("run: claudex login"))
+        assertTrue(sse.contains(LOGIN_HINT), sse)
         // UpstreamFailed's status/body are the literal HTTP response the retry loop gave up on
         // after exhausting retries -- the upstream host responded, so this is PROVIDER, not LOCAL.
         val after = head.healthSnapshot()
@@ -491,3 +492,6 @@ class HeadServerIntegrationTest {
 
 // The 32 hex chars the gateway keeps of the sha256 for prompt_cache_key / thread_id.
 private const val CACHE_KEY_HEX = 32
+
+// The head's per-head login hint, as its line for a login the provider refused says it (failure-handling slice 2).
+private const val LOGIN_HINT = "Run claudex login, then send the message again."

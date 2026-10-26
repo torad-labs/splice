@@ -65,6 +65,7 @@ internal class CollectTurn(
         val terminal = CollectingTerminal(
             built.meta.route.originalModel,
             wiring.usagePayloadBuilder(provider.catalog, built.meta, clientWindow.of(call, built.meta.scope.sessionId)),
+            voice = inputs.voice,
         )
         // Inert writer: collect never writes SSE frames. clientGone is flipped by Netty
         // closeFuture (HD-29), not by a failed write.

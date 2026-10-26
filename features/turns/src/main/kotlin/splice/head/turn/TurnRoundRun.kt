@@ -6,11 +6,11 @@ package splice.head.turn
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Job
 import splice.core.util.LogSink
+import splice.head.round.Recovering
 import splice.head.round.RoundInterception
 import splice.head.round.RoundRunners
 import splice.head.round.RoundStrategy
 import splice.head.transport.IndependentSourcePost
-import splice.head.transport.RetryProgress
 import splice.head.transport.SseRoundDriver
 import splice.head.wire.WireTap
 import splice.upstream.Provider
@@ -48,8 +48,10 @@ internal class TurnRoundRun(
             emitter = drive.emitter,
             runners = RoundRunners(
                 key = provider.key,
-                log = RetryProgress(RetryNotice { log(it.trimEnd('\n') + "\n") }, drive.emitter),
-                signals = drive.signals,
+                log = RetryNotice { log(it.trimEnd('\n') + "\n") },
+                // Failure-handling slice 2: a runner's recovery reaches the person only as the line this turn's wire
+                // shows once per recovery episode, said by the turn's voice from the cause.
+                signals = drive.signals.copy(recovering = Recovering { drive.emitter.recovering(it) }),
                 finish = { outcome -> turnFinish.finishTurn(drive, outcome) },
                 backoff = backoff,
                 toolSearch = drive.toolSearch,

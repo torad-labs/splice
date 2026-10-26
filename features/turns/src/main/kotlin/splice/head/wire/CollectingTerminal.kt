@@ -12,6 +12,8 @@ import splice.core.failure.ClientWire
 import splice.core.failure.FailureCause
 import splice.core.failure.Moment
 import splice.core.failure.Position
+import splice.core.failure.SpliceLine
+import splice.core.failure.TurnVoice
 import splice.core.index.WireBlockIndex
 import splice.core.turn.Usage
 import splice.core.util.JsonScalars
@@ -30,6 +32,9 @@ internal class CollectingTerminal(
     private val usagePayload: UsagePayloadBuilder,
     private val messageId: String = MessageIds().generateMessageId(),
     private val content: CollectingBlocks = CollectingBlocks(),
+    /** Failure-handling slice 2: the voice this collect's error ending speaks in. Every error body it builds carries
+     *  the line this voice composes from the same cause, position and answer as the body's status and type. */
+    private val voice: TurnVoice,
 ) : TurnTerminal, ContentBlockSink by CollectedContent(content) {
     private val ended = AtomicBoolean(false)
 
@@ -46,6 +51,7 @@ internal class CollectingTerminal(
     private var body: JsonObject? = null
     private var status = HttpStatus.BAD_GATEWAY
     private var degraded: String? = null
+    private var written: SpliceLine? = null
 
     // DR-87: the emit-time Success->error rewrites below were invisible to the caller — StreamFinish
     // returned "ok" and health/log/perf all read green while the client got this 502.
@@ -55,10 +61,14 @@ internal class CollectingTerminal(
      *  after a driven turn — a turn always ends in emitTerminal or emitError; the fallback covers
      *  only a torn drive that somehow emitted neither, a failure splice cannot attribute, whose
      *  status the default above already holds. */
-    public fun responseBody(): JsonObject = body ?: errorEnvelope(
-        ClientWire.ownType(FailureCause.Splice.Internal(escaped = true)).wireName,
-        "splice: gateway produced no response; retry",
-    )
+    public fun responseBody(): JsonObject = body ?: escaped()
+
+    /** The body of a drive that ended in neither verb: a failure splice cannot attribute, said in its own line. It
+     *  is not this terminal's written line, because no ending wrote it. */
+    private fun escaped(): JsonObject {
+        val cause = FailureCause.Splice.Internal(escaped = true)
+        return errorEnvelope(ClientWire.ownType(cause).wireName, lineFor(cause).text)
+    }
 
     public fun httpStatus(): Int = status
 
@@ -83,11 +93,7 @@ internal class CollectingTerminal(
         if (content.toolInputCapacityExceeded) {
             degraded = "buffered_capacity"
             // splice's own size guard tripped on the provider's tool call: a runaway tear.
-            fail(
-                FailureCause.Provider.ToolTear(runaway = true),
-                "splice: response exceeded max buffered size; aborting",
-                usagePayload(usage),
-            )
+            fail(FailureCause.Provider.ToolTear(runaway = true), usagePayload(usage))
             return
         }
         val blocks = content.contentBlocks()
@@ -101,11 +107,7 @@ internal class CollectingTerminal(
             // turn even though it failed honestly, and the internal usage store already recorded
             // it; the wire response must not be the one place that accounting goes missing.
             degraded = "malformed_tool_input"
-            fail(
-                FailureCause.Provider.ToolTear(runaway = false),
-                "splice: malformed tool_use input from upstream; retry",
-                usagePayload(usage),
-            )
+            fail(FailureCause.Provider.ToolTear(runaway = false), usagePayload(usage))
             return
         }
         body = envelope.terminalMessageJson(
@@ -134,10 +136,15 @@ internal class CollectingTerminal(
      *  the status IS the information (429 rate_limit_error, 502 api_error). Applying the rule here
      *  would ship a genuine 429 as a 529 with rate-limit headers attached and turn every buffered
      *  api_error into a lie about an overload that did not happen. */
-    override suspend fun emitError(cause: FailureCause, message: String) {
+    override suspend fun emitError(cause: FailureCause) {
         if (!ended.compareAndSet(false, true)) return
-        fail(cause, message, usage = null, streamBegan = false)
+        fail(cause, usage = null, streamBegan = false)
     }
+
+    override val lineWritten: SpliceLine? get() = written
+
+    /** The line [emitError] writes for [cause]: a buffered answer, before the client has read anything. */
+    override fun lineFor(cause: FailureCause): SpliceLine = voice.ending(cause, Position(Moment.NON_STREAM, false))
 
     override fun abandon() {
         ended.set(true) // no body: responseBody() falls back to the honest api_error envelope
@@ -152,11 +159,15 @@ internal class CollectingTerminal(
     private fun errorEnvelope(type: String, message: String, usage: JsonObject? = null): JsonObject =
         ErrorEnvelope.of(type, message, usage)
 
-    /** Ends the collect as [cause]'s failure: its real status and type (ClientWire at NON_STREAM). [streamBegan] is
-     *  what this sink can see: true once it collected content, false where it cannot tell. */
-    private fun fail(cause: FailureCause, message: String, usage: JsonObject?, streamBegan: Boolean = true) {
-        val answer = ClientWire.answer(cause, Position(Moment.NON_STREAM, streamBegan))
-        body = errorEnvelope(answer.type.wireName, message, usage)
+    /** Ends the collect as [cause]'s failure: its real status and type (ClientWire at NON_STREAM), and the line its
+     *  voice composes from them. [streamBegan] is what this sink can see: true once it collected content, false
+     *  where it cannot tell. */
+    private fun fail(cause: FailureCause, usage: JsonObject?, streamBegan: Boolean = true) {
+        val at = Position(Moment.NON_STREAM, streamBegan)
+        val answer = ClientWire.answer(cause, at)
+        val line = voice.ending(cause, at, answer)
+        written = line
+        body = errorEnvelope(answer.type.wireName, line.text, usage)
         status = answer.status ?: HttpStatus.BAD_GATEWAY
     }
 }

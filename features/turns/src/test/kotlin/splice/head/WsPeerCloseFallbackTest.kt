@@ -1,5 +1,5 @@
 // NEW: a websocket round the peer closes is served over HTTP when the client has
-// seen nothing yet, and names the close when it ends the turn after output.
+// seen nothing yet, and says the answer was cut off when it ends the turn after output, with the close in the log.
 //
 // The Codex outage of 2026-09-25 closed every socket with 1011 after codex.rate_limits and
 // codex.response.metadata, before any output. The head read that tear as a truncated round and
@@ -222,8 +222,13 @@ class WsPeerCloseFallbackTest(@param:TempDir private val tmp: Path) {
 
         assertTrue("partial words" in run.sse, "the output the client saw stays: ${run.sse}")
         assertEquals(0, run.httpPosts, "a round with output on the wire is never re-served over HTTP")
-        assertTrue("status=1011" in run.sse, "the frame names the close: ${run.sse}")
-        assertTrue("no reason given" in run.sse, "and the peer's reason, or that it gave none: ${run.sse}")
+        // Failure-handling slice 2: the frame says the answer was cut off, in the head's line for a torn answer, and
+        // the close code and the peer's reason stay in the log (final-design.md section 10: a line holds no status=).
+        assertTrue(TORN_LINE in run.sse, "the frame says the answer was cut off: ${run.sse}")
+        assertFalse("status=1011" in run.sse, "the close code is the log's: ${run.sse}")
+        val closes = run.logs.filter { it.startsWith(CLOSE_LINE) }
+        assertTrue(closes.isNotEmpty() && closes.all { "status=1011" in it }, "the log names the close: $closes")
+        assertTrue(closes.all { "no reason given" in it }, "and the peer's reason, or that it gave none: $closes")
     }
 }
 
@@ -247,3 +252,6 @@ private val CONTENT_THEN_CLOSE = listOf(
 
 // The transport's own close line; the bypass line quotes the same words, so it is told apart by its start.
 private const val CLOSE_LINE = "[ws] socket closed by the peer"
+
+// The head's line for an answer the peer kept cutting off (final-design.md section 10, Torn ending).
+private const val TORN_LINE = "[splice] claudex's answer kept getting cut off."

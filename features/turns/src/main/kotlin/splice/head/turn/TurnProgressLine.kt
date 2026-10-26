@@ -15,45 +15,31 @@
 // ping still goes out at every one. A stretch that begins after the model wrote opens its own block,
 // so its first line is a whole sentence, never a "still" continuation of a block the reader no
 // longer sees beside it.
+//
+// Failure-handling slice 2 (2026-10-26): the words moved to the turn's voice (SpliceLines.quiet), which
+// names the head a person launched rather than the model behind it and says the time as a person says
+// it. This class keeps the cadence.
 package splice.head.turn
 
-private const val MS_PER_S = 1000L
-private const val S_PER_MIN = 60L
+import splice.core.failure.QuietTurn
+import splice.core.failure.SpliceLine
+import splice.core.failure.TurnVoice
 
-/** One per turn: composes the status line, and remembers whether it has introduced itself and how
- *  many heartbeats the current quiet stretch has had. Takes the facts rather than the turn, so what
- *  it says is testable without one. */
-internal class TurnProgressLine {
+/** One per turn: decides which heartbeats of a quiet stretch speak, and asks the turn's [voice] for the
+ *  line. Takes the facts rather than the turn, so what it says is testable without one. */
+internal class TurnProgressLine(private val voice: TurnVoice) {
 
-    private var introduced = false
     private var beat = 0
 
     /** The line for this heartbeat, or null when the beat stays silent. [fresh] is whether the wire
-     *  has no notice block open, so this line opens one: the turn's first quiet stretch, or a later
-     *  one after the model wrote. The turn's first line says what is happening and names the row; a
-     *  later block's first line restates the wait in one sentence; lines inside a block are a ticker
-     *  that leads with the separator. [sawOutput] is whether the CLIENT has been handed a delta yet,
-     *  which is the difference between a turn that has not started answering and one that stopped
-     *  mid-answer. */
-    fun next(elapsedMs: Long, model: String, sawOutput: Boolean, fresh: Boolean): String? {
+     *  has no notice block open, so this line opens one and reads on its own: the turn's first quiet
+     *  stretch, or a later one after the model wrote. A line inside an open block follows the one
+     *  before it. [sawOutput] is whether the CLIENT has been handed a delta yet, which is the
+     *  difference between a turn that has not started answering and one that stopped mid-answer. */
+    fun next(elapsedMs: Long, sawOutput: Boolean, fresh: Boolean): SpliceLine? {
         beat = if (fresh) 1 else beat + 1
         // 1, 2, 4, 8, ... heartbeats into the stretch: a power of two.
         if (beat and (beat - 1) != 0) return null
-        val elapsed = elapsed(elapsedMs)
-        val wait = if (sawOutput) "$model has paused mid-answer" else "no answer from $model yet"
-        val line = when {
-            !fresh && sawOutput -> "\n[splice] $elapsed, still paused."
-            !fresh -> "\n[splice] $elapsed, still waiting."
-            introduced -> "[splice] $elapsed into the turn, $wait."
-            else -> "[splice] holding this turn open. $elapsed into the turn, $wait."
-        }
-        introduced = true
-        return line
-    }
-
-    private fun elapsed(ms: Long): String {
-        val seconds = ms / MS_PER_S
-        val minutes = seconds / S_PER_MIN
-        return if (minutes == 0L) "${seconds}s" else "${minutes}m${seconds % S_PER_MIN}s"
+        return voice.quiet(QuietTurn(elapsedMs, answering = sawOutput, again = !fresh))
     }
 }

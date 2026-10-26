@@ -14,6 +14,7 @@ import splice.configuration.topology.TopologyStale
 import splice.core.config.ConfigService
 import splice.core.config.Knob
 import splice.core.config.MgmtKey
+import splice.core.failure.HeadVoice
 import splice.core.util.LogSink
 import splice.core.util.WallClock
 import splice.core.version.ClientVersionTracker
@@ -78,7 +79,7 @@ internal class ControlAuth(
         HeapIngress(
             JvmHeap.budget,
             { Knob.MAX_REQUEST_BYTES.count().toInt() },
-            AdmissionErrorBody,
+            AdmissionErrorBody(HeadVoice("splice", loginCommand = null)),
             readIdleMs = { Knob.INGRESS_READ_IDLE_MS.count() },
         ),
         console = ConsoleKey(mgmtKey, clock),

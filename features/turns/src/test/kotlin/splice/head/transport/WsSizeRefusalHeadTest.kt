@@ -132,11 +132,14 @@ class WsSizeRefusalHeadTest(@param:TempDir private val tmp: Path) {
         val before = posts.get()
         runBlocking { head.start() }
         try {
+            // A prompt after an earlier answer: a conversation Claude Code can compact, so a refusal for size tells it
+            // to (a first message's line leaves that out, failure-handling slice 2).
             val response = runBlocking {
                 client.post("http://127.0.0.1:${head.port}/v1/messages") {
                     setBody(
                         """{"model":"claude-codex--gpt-6.1-sol","stream":true,"max_tokens":100,
-                            "messages":[{"role":"user","content":"hi"}]}""",
+                            "messages":[{"role":"user","content":"hi"},{"role":"assistant","content":"hello"},
+                            {"role":"user","content":"go on"}]}""",
                     )
                 }
             }

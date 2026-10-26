@@ -42,6 +42,7 @@ import splice.core.budget.HeadBudget
 import splice.core.client.SESSION_HEADER
 import splice.core.failure.Decline
 import splice.core.failure.FailureCause
+import splice.core.failure.HeadVoice
 import splice.core.memory.HeapBudget
 import splice.core.model.ModelCatalog
 import splice.core.model.ModelEntry
@@ -66,6 +67,7 @@ import splice.head.TestResponsesProvider
 import splice.head.compaction.CompactionReplay
 import splice.head.headStores
 import splice.head.noQuota
+import splice.head.testHeadVoice
 import splice.head.turn.LiveTurns
 import splice.head.turn.Preparation
 import splice.head.turn.TurnDriver
@@ -116,6 +118,9 @@ private fun headDeps(tmp: Path, mirrorReasoning: Boolean = false) = HeadDeps(
     seams = HeadDeps.HeadSeams(),
 )
 
+/** The refusals of the head these tests admit for: named "scripted", with no login command. */
+private fun scriptedResponses() = AdmissionResponses(HeadVoice("scripted", loginCommand = null))
+
 class MaterializationRefusalTest {
     @Test
     fun `bodies that cannot fit return a permanent limit error in both admission modes`(
@@ -126,7 +131,7 @@ class MaterializationRefusalTest {
             policy = HeadDeps.HeadPolicy(maxRequestBytes = { 4 }),
             seams = HeadDeps.HeadSeams(requestMaterializationGate = heap),
         )
-        val admission = AdmissionGate(testProvider, deps, AdmissionWindow(), AdmissionResponses())
+        val admission = AdmissionGate(testProvider, deps, AdmissionWindow(), scriptedResponses())
         var entered = false
         var released = 0
         application {
@@ -181,7 +186,7 @@ class SourceContinuationAdmissionTest {
         val source = original.retainSource("synthetic-session")
         original.release()
         val previous = checkNotNull(deps.traffic.gate.resumeSource("synthetic-session"))
-        val admission = AdmissionGate(testProvider, deps, AdmissionWindow().apply { open() }, AdmissionResponses())
+        val admission = AdmissionGate(testProvider, deps, AdmissionWindow().apply { open() }, scriptedResponses())
         application {
             routing {
                 post("/probe") {
@@ -268,7 +273,7 @@ class AdmissionGateTest {
     ) = testApplication {
         val provider = testProvider
         val deps = headDeps(tmp)
-        val responses = AdmissionResponses()
+        val responses = scriptedResponses()
         val admission = AdmissionGate(provider, deps, AdmissionWindow(), responses)
         val reader = RequestBodyReader(
             deps.policy.requestReadTimeoutMs,
@@ -303,7 +308,7 @@ class AdmissionGateTest {
             policy = HeadDeps.HeadPolicy(maxRequestBytes = { 4 }),
             seams = HeadDeps.HeadSeams(requestMaterializationGate = materialization),
         )
-        val admission = AdmissionGate(testProvider, deps, AdmissionWindow(), AdmissionResponses())
+        val admission = AdmissionGate(testProvider, deps, AdmissionWindow(), scriptedResponses())
         val lengths = mutableListOf<String?>()
         application {
             routing {
@@ -350,9 +355,10 @@ class AdmissionGateTest {
     ) = testApplication {
         val heap = RequestMaterializationGate(heap = HeapBudget(JvmHeap.limitBytes, 7))
         val deps = headDeps(tmp)
-        val admission = AdmissionGate(testProvider, deps, AdmissionWindow(), AdmissionResponses())
+        val responses = scriptedResponses()
+        val admission = AdmissionGate(testProvider, deps, AdmissionWindow(), responses)
         val preparations = listOf(
-            Preparation.Rejected(FailureCause.Splice.Declined(Decline.BadBody(0L, null)), "synthetic rejection"),
+            Preparation.Rejected(FailureCause.Splice.Declined(Decline.BadBody(0L, null))),
             Preparation.Local("synthetic answer", "synthetic-model", null, false),
             Preparation.Replay(FrameRecording(), "synthetic-key", null, "synthetic-model"),
         )
@@ -398,7 +404,7 @@ class AdmissionGateTest {
         val gate = InflightGate({ 1 }, maxQueued = { 1 })
         val deps = headDeps(tmp).let { it.copy(traffic = it.traffic.copy(gate = gate)) }
         val window = AdmissionWindow()
-        val admission = AdmissionGate(testProvider, deps, window, AdmissionResponses())
+        val admission = AdmissionGate(testProvider, deps, window, scriptedResponses())
         val releasedAtReply = mutableListOf<Boolean>()
         var request: AdmittedTurn? = null
         application {
@@ -683,7 +689,7 @@ private fun handler(
     deps: HeadDeps,
     reader: RequestBodyReader = RequestBodyReader(RequestReadBudgetMs { 1_000 }),
 ): HeadAdmission {
-    val responses = AdmissionResponses()
+    val responses = scriptedResponses()
     val clientAuth = ClientAuth(deps, responses, ForeignHostLog("synthetic head", deps.log))
     val window = AdmissionWindow().apply { open() }
     return HeadAdmission(
@@ -692,7 +698,7 @@ private fun handler(
         AdmissionTelemetry(deps.traffic.gate, deps.seams.clock),
         TurnPreparation(provider, deps, reader, AnthropicBodyParse(), clientAuth),
         responses,
-        TurnDriver(provider, deps, CompactionReplay()),
+        TurnDriver(provider, deps, CompactionReplay(), voice = testHeadVoice),
     )
 }
 
@@ -720,7 +726,7 @@ class AdmissionTimingTest {
         var now = 10L
         val deps = headDeps(tmp)
         val window = AdmissionWindow().apply { open() }
-        val admission = AdmissionGate(testProvider, deps, window, AdmissionResponses())
+        val admission = AdmissionGate(testProvider, deps, window, scriptedResponses())
         val telemetry = AdmissionTelemetry(deps.traffic.gate) { now }
         val perf = telemetry.begin(0L)
         application {

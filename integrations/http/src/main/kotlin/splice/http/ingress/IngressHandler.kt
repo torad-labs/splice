@@ -22,6 +22,7 @@ import io.netty.util.ReferenceCountUtil
 import splice.core.config.IngressReadIdleMs
 import splice.core.config.MaterializedByteCap
 import splice.core.config.RequestByteCap
+import splice.core.failure.Decline
 import splice.core.memory.HeapCategory
 import splice.core.memory.HeapReservations
 import splice.core.memory.HeapWeights
@@ -106,18 +107,13 @@ internal class IngressHandler(
         val weight = HeapWeights.ingress(bytes)
         val capacity = (heap.limitBytes - HeapWeights.CONNECTION_BYTES).coerceAtLeast(0L)
         return when {
-            bytes > capBytes -> IngressRequest(null, HttpStatus.CONTENT_TOO_LARGE)
-            bodyWeight > limitBytes -> IngressRequest(
-                null,
-                HttpStatus.CONTENT_TOO_LARGE,
-                "request body requires $bodyWeight bytes; materialization heap limit is $limitBytes bytes",
-            )
-            weight > capacity -> IngressRequest(
-                null,
-                HttpStatus.CONTENT_TOO_LARGE,
-                "request ingress requires $weight bytes plus a connection; " +
-                    "process heap limit is ${heap.limitBytes} bytes",
-            )
+            bytes > capBytes ->
+                IngressRequest(null, HttpStatus.CONTENT_TOO_LARGE, Decline.TooLarge(bytes = bytes, limit = capBytes))
+            bodyWeight > limitBytes ->
+                IngressRequest(null, HttpStatus.CONTENT_TOO_LARGE, Decline.TooLarge(bodyWeight, limit = limitBytes))
+            // The request and its connection together outweigh the whole process heap.
+            weight > capacity ->
+                IngressRequest(null, HttpStatus.CONTENT_TOO_LARGE, Decline.TooLarge(weight, limit = capacity))
             else -> {
                 val lease = if (ownership.admitted) heap.reserve(weight, HeapCategory.INGRESS) else null
                 IngressRequest(lease, if (lease == null) HttpStatus.OVERLOADED else null)
@@ -179,7 +175,7 @@ internal class IngressHandler(
             return
         }
         val large = why.status == HttpStatus.CONTENT_TOO_LARGE
-        val text = render.render(if (large) "invalid_request_error" else "overloaded_error", why.message)
+        val text = render.render(if (large) "invalid_request_error" else "overloaded_error", why.declined)
         val bytes = text.toByteArray(Charsets.UTF_8)
         val reason = if (large) "Content Too Large" else "Gateway At Capacity"
         val reply = DefaultFullHttpResponse(

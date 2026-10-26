@@ -20,6 +20,7 @@ import splice.core.auth.AuthDescription
 import splice.core.auth.Credentials
 import splice.core.auth.ForeignHostLog
 import splice.core.auth.RefreshableAuthProvider
+import splice.core.failure.HeadVoice
 import splice.core.model.ModelCatalog
 import splice.core.model.ModelEntry
 import splice.core.parse.AnthropicTurnBody
@@ -98,7 +99,11 @@ class BuiltTurnEndTest {
             deps,
             RequestBodyReader(deps.policy.requestReadTimeoutMs),
             AnthropicBodyParse(),
-            ClientAuth(deps, AdmissionResponses(), ForeignHostLog("the test head", deps.log)),
+            ClientAuth(
+                deps,
+                AdmissionResponses(HeadVoice("scripted", loginCommand = null)),
+                ForeignHostLog("the test head", deps.log),
+            ),
         )
         var outcome: Any? = null
         testApplication {

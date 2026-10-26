@@ -79,9 +79,9 @@ internal sealed class Preparation {
         fun takeInbound(): ClientInbound? = inbound.also { inbound = null }
     }
 
-    /** Refused before anything is recorded of it: [cause] decides the answer (ClientWire at admission), and
-     *  [message] is what the client reads. */
-    data class Rejected(val cause: FailureCause.Splice, val message: String) : Preparation()
+    /** Refused before anything is recorded of it: [cause] decides the answer (ClientWire at admission) and the line
+     *  the client reads (the head's voice, failure-handling slice 2). */
+    data class Rejected(val cause: FailureCause.Splice) : Preparation()
 
     /** Answered by the proxy itself: the activity side query (ActivityLabel). No upstream turn. */
     data class Local(val text: String, val model: String, val sessionId: String?, val stream: Boolean) : Preparation()
@@ -179,15 +179,13 @@ internal class TurnPreparation(
      *  session and messages. The re-send is answered here and never built or sent upstream; the 400
      *  ends the client's turn with no further request (the probe on Claude Code 2.1.283). */
     private fun refusalOf(parsed: AnthropicTurnBody, sessionId: String?): Preparation.Rejected? = when {
-        !provider.catalog.contains(parsed.typed.model) -> Preparation.Rejected(
-            FailureCause.Splice.Declined(Decline.UnknownModel(parsed.typed.model)),
-            provider.catalog.refusals.message(parsed.typed.model, provider.key),
-        )
+        !provider.catalog.contains(parsed.typed.model) ->
+            Preparation.Rejected(FailureCause.Splice.Declined(Decline.UnknownModel(parsed.typed.model)))
         !parsed.typed.stream && deps.traffic.liveTurns.refusesResend(sessionId, parsed.raw) -> {
             deps.log("[${provider.key}] re-send of a stopped turn refused (${who(sessionId)}no upstream turn)\n")
-            Preparation.Rejected(FailureCause.Splice.Stopped(StoppedBy.CONSOLE), "${provider.key}: $OPERATOR_STOPPED")
+            Preparation.Rejected(FailureCause.Splice.Stopped(StoppedBy.CONSOLE))
         }
-        else -> provider.requestRefusal(parsed)?.let { Preparation.Rejected(it.cause, it.message) }
+        else -> provider.requestRefusal(parsed)?.let { Preparation.Rejected(it.cause) }
     }
 
     /** V4-265: a working session's own turn is its activity sample, at the side query's pace; see
@@ -344,7 +342,6 @@ internal class TurnPreparation(
         )
         return Preparation.Rejected(
             FailureCause.Splice.Declined(Decline.BadBody(body.bytes.toLong(), declared.toLongOrNull())),
-            "invalid request body",
         )
     }
 

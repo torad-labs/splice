@@ -7,6 +7,7 @@ import io.ktor.http.content.OutgoingContent
 import io.ktor.http.withCharset
 import io.ktor.utils.io.ByteWriteChannel
 import io.ktor.utils.io.writeStringUtf8
+import splice.core.failure.FailureCause
 import splice.core.perf.TurnPerf
 import splice.core.util.JsonWire
 import splice.head.perf.PerfFailure
@@ -20,8 +21,9 @@ internal class CollectPerf {
         private val outcome: String,
         private val rateLimited: Boolean,
         private val failure: PerfFailure,
+        private val cause: FailureCause?,
     ) {
-        fun publish(drive: TurnDrive) = telemetry.recordSnapshot(drive, outcome, rateLimited, failure)
+        fun publish(drive: TurnDrive) = telemetry.recordSnapshot(drive, outcome, rateLimited, failure, cause)
     }
 
     private val lock = Any()
@@ -33,16 +35,22 @@ internal class CollectPerf {
         synchronized(lock) { deferred = true }
     }
 
-    /** Streaming remains immediate. A deferred ending is claimed once, including cancellation cleanup. */
-    fun hold(telemetry: TurnTelemetry, outcome: String, rateLimited: Boolean, failure: PerfFailure): Boolean =
-        synchronized(lock) {
-            if (!deferred) {
-                false
-            } else {
-                if (!published && pending == null) pending = Publication(telemetry, outcome, rateLimited, failure)
-                true
-            }
+    /** Streaming remains immediate. A deferred ending is claimed once, including cancellation cleanup. [cause] is
+     *  the cause a row written ahead of its error ends on (TurnTelemetry.recordPerf). */
+    fun hold(
+        telemetry: TurnTelemetry,
+        outcome: String,
+        rateLimited: Boolean,
+        failure: PerfFailure,
+        cause: FailureCause?,
+    ): Boolean = synchronized(lock) {
+        if (!deferred) {
+            false
+        } else {
+            if (!published && pending == null) pending = Publication(telemetry, outcome, rateLimited, failure, cause)
+            true
         }
+    }
 
     /** Called in collect's finally after the engine's suspending write returns or fails. */
     fun publish(drive: TurnDrive) {

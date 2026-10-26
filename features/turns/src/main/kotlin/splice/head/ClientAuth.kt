@@ -140,7 +140,7 @@ internal class ClientAuth(
         // The OPERATOR key alone (v0.4.0): the turn key is in every launched session's environment,
         // so accepting it here handed any session every other session's upstream bodies.
         if (matchesOperatorToken(presentedCredential(call))) return true
-        responses.respondUnauthorized(call, "this route takes splice's management key")
+        responses.respondUnauthorized(call)
         return false
     }
 
@@ -185,11 +185,7 @@ internal class ClientAuth(
     private suspend fun authorizeUpstream(call: ApplicationCall): Boolean {
         // Header presence only REFUSES dispatch. No credential or body can turn it into hidden work.
         if (call.request.headers.getAll(LivenessProbe.PROBE_HEADER_NAME) != null) {
-            responses.respondRefusal(
-                call,
-                FailureCause.Splice.Declined(Decline.LivenessProbe),
-                "a liveness probe does not dispatch a turn",
-            )
+            responses.respondRefusal(call, FailureCause.Splice.Declined(Decline.LivenessProbe))
             return false
         }
         if (!authorize(call)) return false
@@ -219,12 +215,7 @@ internal class ClientAuth(
                 "$variables in the launching environment carried it and shadowed the caller's own " +
                 "credential; unset it (or launch from a clean shell) so this head can forward yours\n",
         )
-        responses.respondUnauthorized(
-            call,
-            "splice's own keys (the management key and the turn key) are not upstream credentials; " +
-                "this head forwards your own Anthropic credential, so unset $variables in the " +
-                "environment that launched it (it put splice's key in $headers)",
-        )
+        responses.respondUnauthorized(call)
         return false
     }
 

@@ -53,8 +53,21 @@ import kotlin.time.Duration.Companion.seconds
 
 private const val MGMT_KEY = "mgmt-key-for-this-test"
 
+/** The line a head answers a caller whose key is none of splice's (Declined(BadLocalKey), failure-handling slice 2). */
+private const val BAD_KEY_LINE = "[splice] This session's splice key is not valid."
+
+/** What the line says when a client-auth head is handed one of splice's own keys in place of the caller's login. */
+private const val OWN_KEY_SENT = "This session sent splice's own key"
+
 /** The v0.4.0 turn key: what a launched client presents, split from [MGMT_KEY]. */
 private const val TURN_KEY = "turn-key-for-this-test"
+
+/** A conversation's first message, the request most tests send. */
+private const val FIRST_MESSAGE = """[{"role":"user","content":"hi"}]"""
+
+/** A prompt after an earlier exchange: a conversation Claude Code can compact. */
+private const val LATER_MESSAGE =
+    """[{"role":"user","content":"hi"},{"role":"assistant","content":"hello"},{"role":"user","content":"go on"}]"""
 
 /** An Anthropic-shaped upstream that records every request's headers — APPEND-ONLY, so a test can
  *  pin "exactly one NEW request" with a size boundary instead of reading whatever request (possibly
@@ -175,8 +188,8 @@ class HeadServerClientAuthTest {
         client.close()
     }
 
-    private fun turn(port: Int, headers: Map<String, String> = emptyMap()) =
-        turnWithLines(port, headers.map { (k, v) -> k to v })
+    private fun turn(port: Int, headers: Map<String, String> = emptyMap(), messages: String = FIRST_MESSAGE) =
+        turnWithLines(port, headers.map { (k, v) -> k to v }, messages)
 
     /** A turn written straight onto the socket, so the request reaches the head with the EXACT
      *  header lines given — repeats included.
@@ -208,13 +221,17 @@ class HeadServerClientAuthTest {
 
     /** A turn whose headers are a LIST of lines, so the same name can appear more than once —
      *  the shape Claude Code actually sends its beta flags in, which a Map cannot express. */
-    private fun turnWithLines(port: Int, headers: List<Pair<String, String>>) = runBlocking {
+    private fun turnWithLines(
+        port: Int,
+        headers: List<Pair<String, String>>,
+        messages: String = FIRST_MESSAGE,
+    ) = runBlocking {
         val response = client.post("http://127.0.0.1:$port/v1/messages") {
             headers.forEach { (k, v) -> header(k, v) }
             header("Content-Type", "application/json")
             setBody(
                 """{"model":"claude-splice--claude-fable-5","max_tokens":16,""" +
-                    """"messages":[{"role":"user","content":"hi"}],"stream":true}""",
+                    """"messages":$messages,"stream":true}""",
             )
         }
         response.status to response.bodyAsText()
@@ -338,12 +355,14 @@ class HeadServerClientAuthTest {
         assertEquals(listOf("2023-06-01"), upstream.requests[before]["anthropic-version"].orEmpty())
     }
 
+    // Claude Code compacts a conversation that has one to compact, so the trigger rides a later prompt; a first message
+    // or a compaction is told it is too long without it (final-design.md section 11, failure-handling slice 2).
     @Test
     fun `a passthrough context-window stop reaches Claude Code's compaction trigger`() {
         val port = startHead(forwardClientAuth = true)
         upstream.stopReason = "model_context_window_exceeded"
         try {
-            val (status, body) = turn(port, mapOf("Authorization" to "Bearer caller-own-token"))
+            val (status, body) = turn(port, mapOf("Authorization" to "Bearer caller-own-token"), LATER_MESSAGE)
             assertEquals(HttpStatusCode.OK, status)
             assertTrue(body.contains("event: error"), body)
             assertTrue(body.contains("invalid_request_error"), body)
@@ -361,7 +380,7 @@ class HeadServerClientAuthTest {
         val port = startHead(forwardClientAuth = false)
         val (status, body) = turn(port, mapOf("Authorization" to "Bearer caller-own-token"))
         assertEquals(HttpStatusCode.Unauthorized, status)
-        assertTrue(body.contains("invalid local gateway credentials"), body)
+        assertTrue(body.contains(BAD_KEY_LINE), body)
     }
 
     @Test
@@ -449,27 +468,29 @@ class HeadServerClientAuthTest {
         val before = upstream.requests.size
         val (status, body) = turn(port, mapOf("Authorization" to "Bearer $MGMT_KEY"))
         assertEquals(HttpStatusCode.Unauthorized, status)
-        assertTrue(body.contains("management key"), body)
+        assertTrue(body.contains(OWN_KEY_SENT), body)
         assertEquals(before, upstream.requests.size, "splice's own key must never reach the vendor")
     }
 
     // v0.4.0 review round 2: the refusal blamed ANTHROPIC_AUTH_TOKEN whichever header carried the key, so
     // an operator whose ANTHROPIC_API_KEY (x-api-key) or ANTHROPIC_CUSTOM_HEADERS held it unset a variable
-    // that was never set, and the refusal kept happening. The log and the 401 name the header and the
-    // variable that writes it.
+    // that was never set, and the refusal kept happening. The 401's line names the variable that writes the key,
+    // which is what the person unsets, and the log names the header that carried it beside the variable
+    // (failure-handling slice 2: the line a person reads names what they act on, not the wire).
     @Test
-    fun `the refusal names the header that carried the key and the variable that set it`() {
+    fun `the refusal names the variable that set the key, and the log the header that carried it`() {
         val logLines = CopyOnWriteArrayList<String>()
         val port = startHead(forwardClientAuth = true, log = { logLines += it })
 
         val (_, body) = turn(port, mapOf("x-api-key" to MGMT_KEY))
         val said = logLines.single { it.startsWith("[auth] refused") }
+        assertTrue(said.contains("x-api-key"), said)
         for (text in listOf(body, said)) {
-            assertTrue(text.contains("x-api-key") && text.contains("ANTHROPIC_API_KEY"), text)
+            assertTrue(text.contains("ANTHROPIC_API_KEY"), text)
             assertFalse(text.contains("ANTHROPIC_AUTH_TOKEN"), "not the variable that was never set: $text")
         }
         val (_, betaBody) = turn(port, mapOf("anthropic-beta" to "tools-2024, $TURN_KEY"))
-        assertTrue(betaBody.contains("anthropic-beta") && betaBody.contains("ANTHROPIC_CUSTOM_HEADERS"), betaBody)
+        assertTrue(betaBody.contains("ANTHROPIC_CUSTOM_HEADERS"), betaBody)
         val (_, bearerBody) = turn(port, mapOf("Authorization" to "Bearer $TURN_KEY"))
         assertTrue(bearerBody.contains("ANTHROPIC_AUTH_TOKEN"), bearerBody)
     }
@@ -499,7 +520,7 @@ class HeadServerClientAuthTest {
             mapOf("Authorization" to "Bearer caller-own-token", "x-api-key" to MGMT_KEY),
         )
         assertEquals(HttpStatusCode.Unauthorized, status)
-        assertTrue(body.contains("management key"), body)
+        assertTrue(body.contains(OWN_KEY_SENT), body)
         assertEquals(before, upstream.requests.size, "splice's own key must never reach the vendor")
     }
 
@@ -538,7 +559,7 @@ class HeadServerClientAuthTest {
         val before = upstream.requests.size
         val (status, body) = turn(port, mapOf("Authorization" to "Digest response=$MGMT_KEY"))
         assertEquals(HttpStatusCode.Unauthorized, status)
-        assertTrue(body.contains("management key"), body)
+        assertTrue(body.contains(OWN_KEY_SENT), body)
         assertEquals(before, upstream.requests.size, "splice's own key must never reach the vendor")
     }
 

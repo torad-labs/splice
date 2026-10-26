@@ -9,6 +9,7 @@ import splice.core.auth.AuthDescription
 import splice.core.auth.ClientAuthProvider
 import splice.core.auth.Credentials
 import splice.core.auth.RefreshableAuthProvider
+import splice.core.failure.VoiceFacts
 import splice.core.model.ModelCatalog
 import splice.core.model.ModelEntry
 import splice.core.turn.WatchdogBudget
@@ -32,6 +33,7 @@ import splice.upstream.transport.RetryPacing
 import splice.upstream.transport.UpstreamClient
 import java.net.URI
 import java.nio.file.Path
+import java.time.ZoneId
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.CopyOnWriteArrayList
 import java.util.concurrent.atomic.AtomicInteger
@@ -44,6 +46,12 @@ private const val BUDGET_HOURS = 12
 /** The model every head serves, and its window. */
 private const val MODEL = "scripted-model"
 private const val CONTEXT_WINDOW = 200_000L
+
+/** The zone every scripted head says a time in, so a line reads the same on any machine (failure-handling slice 2). */
+private val LINE_ZONE: ZoneId = ZoneId.of("America/Chicago")
+
+/** The kind of the one scripted head whose model server runs on this machine. */
+private const val LOCAL_KIND = "local"
 
 /** The credential every head sends the scripted provider. Not a real one: the provider reads none. */
 private const val PROVIDER_TOKEN = "scripted-provider-token"
@@ -66,6 +74,11 @@ public data class HeadShape(
     val progressCap: Duration = budget,
     val relayed: Boolean = false,
 )
+
+/** What a scripted head's lines name besides the failure (failure-handling slice 2): the command that signs it in and
+ *  the provider a person pays or signs in with. A head names neither unless its test says which. Only the local head's
+ *  model server runs on this machine, as only a local family's does in the daemon. */
+public data class HeadSays(val loginCommand: String = "", val providerName: String? = null)
 
 /**
  * The head's own waits (the drain's and the stop seal's polls): on the virtual clock while the head serves, and a
@@ -199,18 +212,18 @@ public class ScriptedHeads(private val tmp: Path, public val time: VirtualTime) 
         head("anthropic", shape) { tuning, _ -> PassthroughProvider(tuning, PassthroughQuirks(tuning.key)) }
 
     /** An OpenAI Chat Completions head on a hosted vendor's profile. */
-    public suspend fun chat(shape: HeadShape = HeadShape()): ScriptedHead =
-        head("chat", shape) { tuning, _ -> ScriptedChatProvider(tuning, ChatQuirks(tuning.key)) }
+    public suspend fun chat(shape: HeadShape = HeadShape(), says: HeadSays = HeadSays()): ScriptedHead =
+        head("chat", shape, says = says) { tuning, _ -> ScriptedChatProvider(tuning, ChatQuirks(tuning.key)) }
 
     /** An OpenAI Chat Completions head on a local runtime's profile: usage in the stream, reasoning replayed. */
     public suspend fun localChat(shape: HeadShape = HeadShape()): ScriptedHead =
-        head("local", shape) { tuning, _ ->
+        head(LOCAL_KIND, shape) { tuning, _ ->
             ScriptedChatProvider(tuning, ChatQuirks(tuning.key).withStreamUsageToml(true).withReplayReasoning(true))
         }
 
     /** An OpenAI Chat Completions head whose login is gone. */
-    public suspend fun signedOutChat(shape: HeadShape = HeadShape()): ScriptedHead =
-        head("signed-out", shape, HeadLogin.SIGNED_OUT) { tuning, _ ->
+    public suspend fun signedOutChat(shape: HeadShape = HeadShape(), says: HeadSays = HeadSays()): ScriptedHead =
+        head("signed-out", shape, HeadLogin.SIGNED_OUT, says) { tuning, _ ->
             ScriptedChatProvider(tuning, ChatQuirks(tuning.key))
         }
 
@@ -234,7 +247,7 @@ public class ScriptedHeads(private val tmp: Path, public val time: VirtualTime) 
         kind: String,
         shape: HeadShape = HeadShape(),
         build: (ProviderTuning, LogSink) -> Provider,
-    ): ScriptedHead = head(kind, shape, HeadLogin.SCRIPTED, build)
+    ): ScriptedHead = head(kind, shape, HeadLogin.SCRIPTED, build = build)
 
     /** Releases the provider's holds, stops every head, closes the clock and stops the provider. */
     public suspend fun stop() {
@@ -252,6 +265,7 @@ public class ScriptedHeads(private val tmp: Path, public val time: VirtualTime) 
         kind: String,
         shape: HeadShape,
         login: HeadLogin = HeadLogin.SCRIPTED,
+        says: HeadSays = HeadSays(),
         build: (ProviderTuning, LogSink) -> Provider,
     ): ScriptedHead {
         provider.start()
@@ -276,7 +290,12 @@ public class ScriptedHeads(private val tmp: Path, public val time: VirtualTime) 
         )
         val relay = if (shape.relayed) PathRelay(URI(provider.baseUrl).port) else null
         val baseUrl = relay?.let { "http://127.0.0.1:${it.port}" } ?: provider.baseUrl
-        val server = HeadServer(build(tuning(key, shape, baseUrl, login), log), listenPort = 0, deps = deps)
+        val server = HeadServer(
+            build(tuning(key, shape, baseUrl, login, says.loginCommand), log),
+            listenPort = 0,
+            deps = deps,
+            voiceFacts = VoiceFacts(says.providerName, local = kind == LOCAL_KIND, zone = LINE_ZONE),
+        )
         val wiring = HeadWiring(tmp.resolve("perf$suffix.jsonl"), relay)
         val head = ScriptedHead(server, waiter, "claude-$key--$MODEL", liveTurns, gate, lines, wiring)
         heads += head
@@ -284,7 +303,13 @@ public class ScriptedHeads(private val tmp: Path, public val time: VirtualTime) 
         return head
     }
 
-    private fun tuning(key: String, shape: HeadShape, baseUrl: String, login: HeadLogin): ProviderTuning =
+    private fun tuning(
+        key: String,
+        shape: HeadShape,
+        baseUrl: String,
+        login: HeadLogin,
+        loginCommand: String,
+    ): ProviderTuning =
         ProviderTuning(
             name = ProviderName(key = key, label = key),
             catalog = ModelCatalog(
@@ -296,6 +321,7 @@ public class ScriptedHeads(private val tmp: Path, public val time: VirtualTime) 
             auth = login.auth(key),
             locations = ProviderLocations(baseUrl = baseUrl),
             watchdog = WatchdogBudget(shape.firstOutput, shape.budget, shape.progressCap),
+            loginCommand = loginCommand,
         )
 }
 

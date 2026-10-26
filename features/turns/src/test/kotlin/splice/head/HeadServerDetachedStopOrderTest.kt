@@ -221,7 +221,7 @@ class HeadServerDetachedStopOrderTest {
             // V4-99 item 5: the entry takes the SEAL CONTRACT, not the whole driver — the rig
             // reaches it through the driver it already builds rather than re-assembling the four
             // collaborators the contract is composed from.
-            sealedDrive = TurnDriver(builtProvider, builtDeps, CompactionReplay()).sealedDrive,
+            sealedDrive = TurnDriver(builtProvider, builtDeps, CompactionReplay(), voice = testHeadVoice).sealedDrive,
             replay = CompactionReplay(),
             detachedScope = scope,
         )

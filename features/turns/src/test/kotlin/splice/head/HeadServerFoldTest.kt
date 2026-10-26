@@ -366,8 +366,9 @@ class HeadServerFoldTest {
             val diag = "status=${response.status} bodyLen=${sse.length} tookMs=$tookMs " +
                 "head=[${headLines.joinToString(" ~ ")}] sse=$sse"
             assertTrue(sse.contains("\"type\":\"error\""), "expected an honest error terminal: $diag")
+            // The turn's own wall ended it, in the head's words for a spent turn budget (failure-handling slice 2).
             assertTrue(
-                sse.contains("splice progress timeout expired after 1000ms without upstream progress; retry"),
+                sse.contains("[splice] claudex made no progress for 1 second."),
                 "expected the local progress-timeout reason: $diag",
             )
             assertTrue(tookMs < 2_500, "reaped by the 1s cap, not the 3s stall: $diag")

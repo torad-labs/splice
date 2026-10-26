@@ -14,6 +14,7 @@ import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertFalse
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
+import splice.core.failure.HeadVoice
 import splice.core.memory.HeapBudget
 import splice.core.memory.HeapWeights
 import splice.http.ingress.HeapIngress
@@ -57,9 +58,13 @@ class HeapIngressTest {
     fun `listener stop closes an open connection even when transport registration has ended`() = runBlocking {
         val heap = HeapBudget(Long.MAX_VALUE, budgetBytes = 128 * 1024)
         val channel = CompletableFuture<Channel>()
-        val server = testServer(HeapIngress(heap, { 32 * 1024 }, AdmissionErrorBody), channel) {
-            routing { post("/") { error("the idle socket must not enter routing") } }
-        }
+        val server =
+            testServer(
+                HeapIngress(heap, { 32 * 1024 }, AdmissionErrorBody(HeadVoice("splice", loginCommand = null))),
+                channel,
+            ) {
+                routing { post("/") { error("the idle socket must not enter routing") } }
+            }
         server.start(false)
         try {
             val port = server.engine.resolvedConnectors().single().port
@@ -83,9 +88,12 @@ class HeapIngressTest {
         val bytes = ByteArray(32 * 1024 * 1024)
         val heap = HeapBudget(Long.MAX_VALUE, splice.core.memory.HeapWeights.request(bytes.size.toLong()) + 1024 * 1024)
         val hold = checkNotNull(heap.reserve(heap.limitBytes - 128 * 1024))
-        val server = testServer(HeapIngress(heap, { bytes.size }, AdmissionErrorBody)) {
-            routing { post("/") { error("an overloaded body must not enter routing") } }
-        }
+        val server =
+            testServer(
+                HeapIngress(heap, { bytes.size }, AdmissionErrorBody(HeadVoice("splice", loginCommand = null))),
+            ) {
+                routing { post("/") { error("an overloaded body must not enter routing") } }
+            }
         server.start(false)
         try {
             val port = server.engine.resolvedConnectors().single().port
@@ -119,9 +127,12 @@ class HeapIngressTest {
         val body = "x".repeat(64)
         val weight = HeapWeights.request(body.length.toLong())
         var limit = weight - 1
-        val server = testServer(HeapIngress(heap, { 1024 }, AdmissionErrorBody, { limit })) {
-            routing { post("/") { call.respondText(call.receiveText()) } }
-        }
+        val server =
+            testServer(
+                HeapIngress(heap, { 1024 }, AdmissionErrorBody(HeadVoice("splice", loginCommand = null)), { limit }),
+            ) {
+                routing { post("/") { call.respondText(call.receiveText()) } }
+            }
         server.start(false)
         try {
             val port = server.engine.resolvedConnectors().single().port
@@ -149,9 +160,10 @@ class HeapIngressTest {
         // SAME listener refuses a body at 8 bytes and then carries it once the cap is raised, with nothing rebuilt.
         var cap = 8
         val heap = HeapBudget(Long.MAX_VALUE, budgetBytes = 8 * 1024 * 1024)
-        val server = testServer(HeapIngress(heap, { cap }, AdmissionErrorBody)) {
-            routing { post("/") { call.respondText(call.receiveText()) } }
-        }
+        val server =
+            testServer(HeapIngress(heap, { cap }, AdmissionErrorBody(HeadVoice("splice", loginCommand = null)))) {
+                routing { post("/") { call.respondText(call.receiveText()) } }
+            }
         server.start(false)
         try {
             val port = server.engine.resolvedConnectors().single().port
@@ -176,9 +188,10 @@ class HeapIngressTest {
     @Test
     fun `an empty call still has to reserve its request metadata`() = runBlocking {
         val heap = HeapBudget(1024 * 1024, 64 * 1024 + 1024)
-        val server = testServer(HeapIngress(heap, { 1024 }, AdmissionErrorBody)) {
-            routing { post("/") { call.respondText("must not allocate an uncharged call") } }
-        }
+        val server =
+            testServer(HeapIngress(heap, { 1024 }, AdmissionErrorBody(HeadVoice("splice", loginCommand = null)))) {
+                routing { post("/") { call.respondText("must not allocate an uncharged call") } }
+            }
         server.start(false)
         try {
             val port = server.engine.resolvedConnectors().single().port
@@ -202,7 +215,7 @@ class HeapIngressTest {
     fun `a declared refused body receives overload before any continue or body read`() = runBlocking {
         val heap = HeapBudget(1024 * 1024, 384 * 1024)
         val hold = requireNotNull(heap.reserve(heap.limitBytes))
-        val ingress = HeapIngress(heap, { 32 * 1024 }, AdmissionErrorBody)
+        val ingress = HeapIngress(heap, { 32 * 1024 }, AdmissionErrorBody(HeadVoice("splice", loginCommand = null)))
         val server = testServer(ingress) {
             routing { post("/") { error("a refused body must not enter routing") } }
         }
@@ -230,7 +243,7 @@ class HeapIngressTest {
     @Test
     fun `an unfit chunked body gets a permanent limit without waiting for its final chunk`() = runBlocking {
         val heap = HeapBudget(1024 * 1024, 128 * 1024)
-        val ingress = HeapIngress(heap, { 32 * 1024 }, AdmissionErrorBody)
+        val ingress = HeapIngress(heap, { 32 * 1024 }, AdmissionErrorBody(HeadVoice("splice", loginCommand = null)))
         val server = testServer(ingress) {
             routing { post("/") { error("a cap-backed refusal must not read chunks") } }
         }
@@ -257,7 +270,7 @@ class HeapIngressTest {
     @Test
     fun `an admitted small body that never finishes is settled once the drain's wait runs out`() = runBlocking {
         val heap = HeapBudget(1024 * 1024, 128 * 1024)
-        val ingress = HeapIngress(heap, { 32 * 1024 }, AdmissionErrorBody)
+        val ingress = HeapIngress(heap, { 32 * 1024 }, AdmissionErrorBody(HeadVoice("splice", loginCommand = null)))
         val server = testServer(ingress) {
             routing { post("/") { call.respondText("rejected by the route") } }
         }
@@ -286,7 +299,7 @@ class HeapIngressTest {
         // Room for two requests at once: a POST's charge returns when its call finishes, just after the client has the
         // reply, so the GET sent at once can overlap it on the one connection.
         val heap = HeapBudget(1024 * 1024, 256 * 1024)
-        val ingress = HeapIngress(heap, { 32 * 1024 }, AdmissionErrorBody)
+        val ingress = HeapIngress(heap, { 32 * 1024 }, AdmissionErrorBody(HeadVoice("splice", loginCommand = null)))
         val server = testServer(ingress) {
             routing {
                 post("/ignores-body") { call.respondText("posted") }
@@ -338,7 +351,7 @@ class HeapIngressTest {
     @Test
     fun `a pipelined overload cannot overtake a preceding streamed response`() = runBlocking {
         val heap = HeapBudget(1024 * 1024, 128 * 1024)
-        val ingress = HeapIngress(heap, { 32 * 1024 }, AdmissionErrorBody)
+        val ingress = HeapIngress(heap, { 32 * 1024 }, AdmissionErrorBody(HeadVoice("splice", loginCommand = null)))
         val streaming = CompletableDeferred<Unit>()
         val finishStream = CompletableDeferred<Unit>()
         val server = heldServer(ingress, streaming, finishStream)
@@ -378,7 +391,17 @@ class HeapIngressTest {
     fun `a refused connection closes when the client half-closes, not at the grace deadline`() = runBlocking {
         val heap = HeapBudget(1024 * 1024, 128 * 1024)
         val channel = CompletableFuture<Channel>()
-        val ingress = HeapIngress(heap, { 32 * 1024 }, AdmissionErrorBody, shutdownGraceMs = HEAP_INGRESS_TEST_GRACE_MS)
+        val ingress =
+            HeapIngress(
+                heap,
+                {
+                    32 * 1024
+                },
+                AdmissionErrorBody(
+                    HeadVoice("splice", loginCommand = null),
+                ),
+                shutdownGraceMs = HEAP_INGRESS_TEST_GRACE_MS,
+            )
         val server = testServer(ingress, channel) {
             routing { post("/") { error("a cap-backed refusal must not read chunks") } }
         }

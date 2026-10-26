@@ -42,7 +42,7 @@ internal class ExhaustedAccountAdmission(
                 trace,
             ),
         )
-        // The message names the real reset; the client is told to come back within the recheck, to a pool that may
+        // The line names the real reset; the client is told to come back within the recheck, to a pool that may
         // have gained a login by then.
         val retryEpochSeconds = recheck.deadline(
             exhausted.earliestResetEpochSeconds?.let { AccountResetText.normalizedInstant(it).epochSecond },
@@ -50,8 +50,8 @@ internal class ExhaustedAccountAdmission(
         deps.turnQuota.forSession(prepared.built.meta.scope.sessionId, null)?.clientHeadersRejected(retryEpochSeconds)
             ?.forEach { (name, value) -> call.response.header(name, value) }
         admitted.close()
-        val standby = deps.turnQuota.standbyRefusal(null)
-        val message = exhausted.message + standby?.let { " $it" }.orEmpty()
-        responses.respondRateLimited(call, message, retryEpochSeconds)
+        // Why no standby login can take over names other logins and their remedies: the operator's to read, in the log.
+        deps.turnQuota.standbyRefusal(null)?.let { deps.log("[accounts] every login is at its limit; $it\n") }
+        responses.respondRateLimited(call, exhausted.earliestResetEpochSeconds, retryEpochSeconds)
     }
 }

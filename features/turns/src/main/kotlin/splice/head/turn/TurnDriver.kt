@@ -17,6 +17,7 @@
 package splice.head.turn
 
 import io.ktor.server.application.ApplicationCall
+import splice.core.failure.HeadVoice
 import splice.core.perf.PerfKeys
 import splice.core.perf.TurnPerf
 import splice.core.turn.TurnMeta
@@ -49,6 +50,9 @@ internal class TurnDriver(
      *  anything. A value that must be shared is exactly the parameter a default must not supply, so
      *  the compiler now asks every construction site for it. */
     private val compactionReplay: CompactionReplay,
+    /** The head's voice (failure-handling slice 2), which HeadServer builds once: admission takes each turn's voice
+     *  from it, and the answers served without an upstream turn speak in it. */
+    internal val voice: HeadVoice,
 ) {
     private val log get() = deps.log
 
@@ -97,7 +101,7 @@ internal class TurnDriver(
         telemetry,
         health,
         TurnConnEnd(provider, log, telemetry, failures, health),
-        TurnKnownEnd(provider, log, telemetry, failures, health, deps.turnQuota),
+        TurnKnownEnd(provider, log, telemetry, health, deps.turnQuota),
     )
     private val usageStamp = TurnUsageStamp(deps.stores.usageStore, log, telemetry)
     private val cancellationSeal = CancellationSeal(provider, log, telemetry, health, usageStamp)
@@ -135,7 +139,7 @@ internal class TurnDriver(
 
     /** What a compaction retry is served from without an upstream turn (CompactionReplay): a streamed replay, a
      *  collect hold, or a streamed recording collected for a stream:false fallback. HeadAdmission calls it. */
-    internal val localResponses = LocalResponses(provider, deps, compactionReplay)
+    internal val localResponses = LocalResponses(provider, deps, compactionReplay, voice)
 
     // Pre-priced HD-24 contingency: collect() moved to its own file (CollectTurn.kt) because the
     // un-split TurnDriver.kt measured ratio 1.83, just over the 1.8 gate.

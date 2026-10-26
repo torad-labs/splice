@@ -10,6 +10,7 @@ import kotlinx.coroutines.runBlocking
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
+import splice.core.failure.HeadVoice
 import splice.core.memory.HeapBudget
 import splice.http.ingress.HeapIngress
 import java.net.Socket
@@ -24,8 +25,8 @@ class HeapIngressCloseOrderTest {
         val heap = HeapBudget(2 * 1024 * 1024, 2 * 1024 * 1024)
         val channel = CompletableFuture<Channel>()
         val finishRoute = CompletableDeferred<Unit>()
-        val ingress =
-            HeapIngress(heap, { 128 * 1024 }, AdmissionErrorBody, shutdownGraceMs = HEAP_INGRESS_TEST_GRACE_MS)
+        val refusals = AdmissionErrorBody(HeadVoice("splice", loginCommand = null))
+        val ingress = HeapIngress(heap, { 128 * 1024 }, refusals, shutdownGraceMs = HEAP_INGRESS_TEST_GRACE_MS)
         val server = testServer(ingress, channel) {
             routing {
                 post("/") {

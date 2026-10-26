@@ -8,6 +8,8 @@ package splice.head.wire
 
 import kotlinx.serialization.json.JsonObject
 import splice.core.failure.FailureCause
+import splice.core.failure.SpliceLine
+import splice.core.failure.WaitLine
 import splice.core.turn.Usage
 import splice.upstream.sse.WireSink
 import java.util.concurrent.atomic.AtomicLong
@@ -31,12 +33,10 @@ internal fun interface UsagePayloadBuilder {
  *  composing a line CONSUMES the caller's ticker state and reads its live clock — see
  *  [TurnTerminal.progress]. [fresh] says no notice block is open, so the line opens one and must read
  *  on its own; null says this beat stays silent (V4-451). `operator fun invoke` keeps every call site
- *  a plain lambda. */
+ *  a plain lambda. Failure-handling slice 2: the line is a [SpliceLine], so only a turn's voice can say
+ *  one, and the wire puts the break between two lines of one block. */
 internal fun interface ProgressLine {
-    public operator fun invoke(fresh: Boolean): String?
-
-    /** Retry status must not pre-empt a native refusal before the response has been selected. */
-    public val mayCommitResponse: Boolean get() = true
+    public operator fun invoke(fresh: Boolean): SpliceLine?
 }
 
 internal interface TurnTerminal : WireSink {
@@ -58,8 +58,16 @@ internal interface TurnTerminal : WireSink {
 
     /** The ONLY failure ending — an honestly-typed error the client can act on. [cause] decides what the client
      *  reads, through ClientWire at the moment this terminal stands in (V4-81: a cause no retry can change keeps
-     *  its real type before content); [message] is what it says. */
-    public suspend fun emitError(cause: FailureCause, message: String)
+     *  its real type before content), and the line it says, which this terminal's turn voice composes from the
+     *  same cause, position and answer (failure-handling slice 2: no caller spells a word of it). */
+    public suspend fun emitError(cause: FailureCause)
+
+    /** The line [emitError] would write for [cause] at this moment, for a record that closes before the error
+     *  frame is written (DR-128: a perf row lands ahead of its error frame). Null for a terminal with no voice. */
+    public fun lineFor(cause: FailureCause): SpliceLine? = null
+
+    /** The line this terminal's error ending wrote, once one did; null before, and for a clean ending. */
+    public val lineWritten: SpliceLine? get() = null
 
     /** Client vanished before any ending: seal with nothing emitted (never an error/terminal). */
     public fun abandon()
@@ -98,6 +106,11 @@ internal interface TurnTerminal : WireSink {
      *  reasoning phase or a slow compaction. Written only after message_start and only while the
      *  turn is still open; the non-stream sink has no incremental wire, so its default is a no-op. */
     public suspend fun heartbeat() {}
+
+    /** A round failed and the turn is recovering it: [wait] is the failure it met and what the turn does next, which
+     *  this terminal's turn voice says (failure-handling slice 2, final-design.md section 8). The streaming emitter
+     *  shows one line per recovery episode; the non-stream sink has no incremental wire, so its default says nothing. */
+    public suspend fun recovering(wait: WaitLine) {}
 
     /** splice's own status line for a turn that has gone quiet: a short sentence about the wait,
      *  appended to one thinking block per quiet stretch so a user watching a long silent turn can see

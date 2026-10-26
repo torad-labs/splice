@@ -62,7 +62,10 @@ import kotlin.time.Duration.Companion.seconds
 private const val WAIT_MS = 10_000L
 private const val POLL_MS = 20L
 private const val SESSION = "sess-stop-319"
-private const val STOPPED = "codex: the operator stopped this turn"
+
+// Failure-handling slice 2: the head's line for a turn stopped from the console, running or re-sent
+// (final-design.md section 10). It says what happened and invites nothing.
+private const val STOPPED = "[splice] This turn was stopped from the splice console."
 
 private class StopFakeAuth : RefreshableAuthProvider {
     override suspend fun credentials(): Credentials = Credentials.Bearer("tok-stop", "acct-stop")
@@ -199,7 +202,7 @@ class HeadServerTurnStopTest {
             assertTrue(body.contains("event: error"), body)
             assertTrue(body.contains("invalid_request_error"), body)
             assertTrue(body.contains(STOPPED), body)
-            assertFalse(body.contains("retry"), "a stop never invites a retry: $body")
+            assertFalse(body.contains("retry") || body.contains("again"), "a stop never invites a retry: $body")
             assertFalse(body.contains("message_stop"), "a stopped turn does not end as finished: $body")
 
             rig.until("the stopped turn's slot is released") { rig.gate.snapshot().inflight == 0 }

@@ -21,6 +21,8 @@ import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import splice.core.auth.ClientAuthProvider
 import splice.core.auth.ForeignHostLog
+import splice.core.failure.HeadVoice
+import splice.core.failure.VoiceFacts
 import splice.core.head.CompactionHold
 import splice.core.head.Head
 import splice.core.head.HeadHealth
@@ -63,6 +65,11 @@ public class HeadServer(
     private val deps: HeadDeps,
     /** The already-listening socket a socket manager handed the daemon for this head, when it did. */
     inherited: AdoptedBootstrap? = null,
+    /** What this head's lines name besides the head itself (failure-handling slice 2): the provider a person pays or
+     *  signs in with, whether its model server runs here, and the zone a time reads in. The default names no
+     *  provider, on the machine's own zone; HeadServerFactory names the provider per head, and a test names a zone so
+     *  the line it reads is the line every machine reads. */
+    voiceFacts: VoiceFacts = VoiceFacts(),
 ) : Head {
 
     private val gate get() = deps.traffic.gate
@@ -72,9 +79,12 @@ public class HeadServer(
         deps.stores.compaction.compactionRecordings,
         heap = deps.seams.requestMaterializationGate.heap,
     )
-    private val driver = TurnDriver(provider, deps, compactionReplay)
+
+    /** Slice 2: every line this head writes a person comes from here (one voice). */
+    internal val voice: HeadVoice = HeadVoice(provider.label, provider.loginCommand.ifEmpty { null }, voiceFacts)
+    private val driver = TurnDriver(provider, deps, compactionReplay, voice)
     private val window = AdmissionWindow()
-    private val responses = AdmissionResponses()
+    private val responses = AdmissionResponses(voice)
     private val clientAuth = ClientAuth(
         deps,
         responses,
@@ -124,7 +134,7 @@ public class HeadServer(
         HeapIngress(
             deps.seams.requestMaterializationGate.heap,
             deps.policy.maxRequestBytes,
-            AdmissionErrorBody,
+            AdmissionErrorBody(voice),
             deps.seams.requestMaterializationGate.limitBytes,
         ),
     )

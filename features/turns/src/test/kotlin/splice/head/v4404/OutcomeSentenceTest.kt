@@ -1,9 +1,10 @@
-// NEW: V4-404 — a failed turn's trace has a sentence in words for EVERY outcome tag, not only the ones whose
-// connection ended. RED on the pre-fix telemetry: only TurnConnEnd wrote `failure_sentence`, so an
-// upstream-failed turn's detail read `error:upstream-failed · 3 retries` and then Timing (Marlin's walk of
-// V4-349 on bb54736ea). The tags are enumerated from their SOURCES, never from a hand list: OutcomeTag and
-// ErrorType are read as enums, and the open `error:<kind>` strings are read out of this module's own sources,
-// so a new tag without a sentence fails BY NAME and cannot be missed by a list nobody updated.
+// NEW: V4-404 — a failed turn's trace has a sentence in words for EVERY failure, not only the ones whose connection
+// ended. RED on the pre-fix telemetry: only TurnConnEnd wrote `failure_sentence`, so an upstream-failed turn's detail
+// read `error:upstream-failed · 3 retries` and then Timing (Marlin's walk of V4-349 on bb54736ea).
+//
+// Rewritten by failure-handling slice 2 (2026-10-26): the sentence is the line the client read, without its
+// "[splice] " prefix, so the trace cannot say one thing while the client read another. The walk is over every leaf of
+// the sealed cause, through the real terminal of each path, so a leaf added later is walked the day it exists.
 package splice.head.v4404
 
 import kotlinx.coroutines.CancellationException
@@ -13,12 +14,11 @@ import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.withTimeout
 import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
 import org.junit.jupiter.api.Assertions.assertEquals
-import org.junit.jupiter.api.Assertions.assertNotNull
-import org.junit.jupiter.api.Assertions.assertNull
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.io.TempDir
@@ -31,54 +31,54 @@ import splice.core.failure.ClientWire
 import splice.core.failure.FailureCause
 import splice.core.failure.FailureEvidence
 import splice.core.failure.Moment
-import splice.core.failure.PersistedCause
 import splice.core.failure.Position
-import splice.core.failure.ProtocolFault
-import splice.core.failure.RefusedBy
-import splice.core.index.WireBlockIndex
+import splice.core.failure.ServerFault
+import splice.core.failure.StoppedBy
 import splice.core.model.ModelCatalog
 import splice.core.model.ModelEntry
 import splice.core.perf.OutcomeTag
 import splice.core.perf.OutcomeTags
 import splice.core.perf.TurnPerf
 import splice.core.storage.ActivityDays
-import splice.core.turn.CONN_RESET_OUTCOME
 import splice.core.turn.ErrorType
 import splice.core.turn.ReasoningDisplay
 import splice.core.turn.TurnMeta
 import splice.core.turn.TurnOutcome
 import splice.core.turn.TurnReasoning
 import splice.core.turn.TurnRoute
-import splice.core.turn.Usage
 import splice.core.turn.WatchdogBudget
 import splice.core.util.AsyncFileIo
-import splice.core.util.ERR_SNIPPET
 import splice.core.util.ElapsedClock
 import splice.core.util.LogSink
 import splice.core.util.WallClock
 import splice.dialect.responses.ReasoningSettings
+import splice.head.HeadDeps
 import splice.head.HeadHealthCounters
 import splice.head.TestResponsesProvider
-import splice.head.admission.LocalRefusal
 import splice.head.admission.admittedSlot
 import splice.head.compact.CompactStats
 import splice.head.headDeps
 import splice.head.perf.PerfStats
 import splice.head.pipeline.TurnPipeline
+import splice.head.pipeline.everyLeaf
 import splice.head.round.RunnerSignals
+import splice.head.testVoice
 import splice.head.turn.CancellationSeal
-import splice.head.turn.OutcomeSentences
+import splice.head.turn.HeadRestart
 import splice.head.turn.TurnDrive
-import splice.head.turn.TurnFailures
 import splice.head.turn.TurnFinish
 import splice.head.turn.TurnInputs
 import splice.head.turn.TurnKnownEnd
+import splice.head.turn.TurnSlot
 import splice.head.turn.TurnTelemetry
 import splice.head.turn.TurnUsageStamp
 import splice.head.usage.OutputClamp
 import splice.head.wire.ClientChannel
 import splice.head.wire.ClientInbound
+import splice.head.wire.CollectingTerminal
 import splice.head.wire.ImmediateSseWriter
+import splice.head.wire.SseEmitterFactory
+import splice.head.wire.StreamWiring
 import splice.head.wire.TurnTerminal
 import splice.upstream.BuiltTurn
 import splice.upstream.Provider
@@ -87,29 +87,26 @@ import splice.upstream.ProviderName
 import splice.upstream.ProviderTuning
 import splice.upstream.Ticker
 import splice.upstream.TurnSignals
-import splice.upstream.failure.FailureSource
-import splice.upstream.failure.UpstreamFailureClassifier
 import splice.upstream.retry.InflightGate
 import splice.upstream.retry.LiveLimit
 import splice.upstream.retry.TurnWatchdog
 import splice.upstream.transport.UpstreamFailed
+import java.io.IOException
 import java.nio.file.Files
 import java.nio.file.Path
+import java.util.concurrent.CopyOnWriteArrayList
 import java.util.concurrent.atomic.AtomicBoolean
 import kotlin.time.Duration.Companion.milliseconds
 import kotlin.time.Duration.Companion.seconds
 
 private const val TRACE_DAY_EPOCH_MS = 1_789_725_600_000L
 private const val TRACE_FILE = "codex-2026-09-18.jsonl"
-private const val SOURCE_ROOT = "features/turns/src/main/kotlin"
 
-/** The tags that are not failures, each with the reason it carries no sentence. Read with [OutcomeSentences]:
- *  a tag on this list must answer null, so an exemption cannot outlive its reason unnoticed. */
-private val notFailures: Map<String, String> = mapOf(
-    OutcomeTag.OK.wire to "the turn succeeded",
-    OutcomeTag.CLIENT_ABORT.wire to "the client closed the connection: nobody is left to read a sentence",
-    OutcomeTag.EMPTY_MESSAGE.wire to "a finished answer that happened to be empty; StreamPromote ends it clean",
-)
+/** What a failure left for the log: a path, a class name and a count, none of which a client line may carry. */
+private const val EVIDENCE = "code-mode runtime failed: IllegalStateException at SyntheticCell.kt:83; results=0"
+
+/** After content: where the translators place every failure they build. */
+private val MID = Position(Moment.MID_CONTENT, streamBegan = true)
 
 /** Holds a credential so provider construction is honest; the surfaces under test never dial out. */
 private class FakeAuth : RefreshableAuthProvider {
@@ -118,240 +115,18 @@ private class FakeAuth : RefreshableAuthProvider {
     override suspend fun describe() = AuthDescription(true, "fake")
 }
 
-private class RecordingTerminal : TurnTerminal {
-    override var hasEnded: Boolean = false
-        private set
-
-    override suspend fun emitError(cause: FailureCause, message: String) {
-        hasEnded = true
+/** The `error` object of the one error frame among [frames], or null when none was written. */
+private fun errorOf(frames: List<String>): JsonObject? =
+    frames.singleOrNull { it.startsWith("event: error") }?.let { frame ->
+        Json.parseToJsonElement(frame.substringAfter("data: ").trim()).jsonObject.getValue("error").jsonObject
     }
 
-    override suspend fun emitTerminal(hasToolUse: Boolean, incomplete: Boolean, usage: Usage) = Unit
-    override fun abandon() = Unit
-    override suspend fun openText() = WireBlockIndex(0)
-    override suspend fun openThinking() = WireBlockIndex(0)
-    override suspend fun openTool(id: String, name: String) = WireBlockIndex(0)
-    override suspend fun textDelta(index: WireBlockIndex, text: String) = Unit
-    override suspend fun thinkingDelta(index: WireBlockIndex, thinking: String) = Unit
-    override suspend fun inputJsonDelta(index: WireBlockIndex, partialJson: String) = Unit
-    override suspend fun closeBlock(index: WireBlockIndex) = Unit
-    override suspend fun closeAll() = Unit
-    override suspend fun addTextBlock(text: String) = Unit
-    override suspend fun addRedactedThinking(data: String) = Unit
-}
-
-/** After content: where the translators place every failure they build. */
-private val MID = Position(Moment.MID_CONTENT, streamBegan = true)
+private fun JsonObject.words(): String? = this["message"]?.jsonPrimitive?.content
 
 class OutcomeSentenceTest {
 
-    // ── the tag sources ───────────────────────────────────────────────────────────────────────
-
-    /** Every `OutcomeTags.error(<arg>)` call in this module's main sources: the file and the argument text. */
-    private fun errorKindCalls(): List<Pair<String, String>> {
-        var dir = Path.of("").toAbsolutePath()
-        while (!Files.isDirectory(dir.resolve(SOURCE_ROOT)) && dir.parent != null) dir = dir.parent
-        val pattern = Regex("""OutcomeTags\.error\(\s*([^)]*?)\s*\)""")
-        val comments = Regex("""(?sm)/\*.*?\*/|^\s*//[^\n]*| //[^\n]*""")
-        return Files.walk(dir.resolve(SOURCE_ROOT)).use { files ->
-            files.filter { it.toString().endsWith(".kt") }.toList().flatMap { file ->
-                val code = comments.replace(Files.readString(file), "")
-                pattern.findAll(code).map { file.fileName.toString() to it.groupValues[1] }.toList()
-            }
-        }
-    }
-
-    private fun sourceKinds(): List<String> = errorKindCalls().map { (file, arg) ->
-        val literal = arg.startsWith("\"") && arg.endsWith("\"")
-        assertTrue(literal, "$file builds an error tag from `$arg`: name its kind as a literal")
-        arg.trim('"')
-    }.distinct()
-
-    /** Every tag a turn of this module can end on, from the tag sources. */
-    private fun everyTag(): List<String> =
-        OutcomeTag.entries.map { it.wire } +
-            ErrorType.entries.map { OutcomeTags.failure(it) } +
-            CONN_RESET_OUTCOME +
-            sourceKinds().map { OutcomeTags.error(it) }
-
-    // ── the table itself ──────────────────────────────────────────────────────────────────────
-
-    @Test
-    fun `every outcome tag has a sentence or a stated reason for none`() {
-        val tags = everyTag()
-        assertTrue(tags.size > OutcomeTag.entries.size, "the tag sources were not enumerated: $tags")
-        for (tag in tags) {
-            val sentence = OutcomeSentences.of(tag)
-            if (tag in notFailures) {
-                assertNull(sentence, "outcome tag $tag is exempt (${notFailures[tag]}) yet has a sentence")
-            } else {
-                assertNotNull(sentence, "outcome tag $tag has no failure sentence: add it to OutcomeSentences")
-            }
-        }
-    }
-
-    @Test
-    fun `every sentence says what to do in words and quotes no path or bytes`() {
-        for (tag in everyTag()) {
-            val sentence = OutcomeSentences.of(tag) ?: continue
-            if (tag == OutcomeTag.RESTARTED.wire) {
-                assertEquals("Splice restarted while this request was running. Retry the request.", sentence)
-            } else {
-                assertTrue(
-                    "; " in sentence,
-                    "$tag: `$sentence` must say what happened, then after a semicolon what to do",
-                )
-            }
-            assertTrue(sentence.length <= ERR_SNIPPET, "$tag: the sentence is cut at $ERR_SNIPPET characters")
-            val quoted = sentence.any { it in "/\\{}<>\"`" } || "://" in sentence || "~" in sentence
-            assertTrue(!quoted, "$tag: `$sentence` quotes a path or bytes")
-        }
-    }
-
-    @Test
-    fun `a legacy typed tag does not invent provider origin`() {
-        for (type in ErrorType.entries) {
-            val sentence = checkNotNull(OutcomeSentences.of(OutcomeTags.failure(type)))
-            assertTrue("does not say whether splice or the provider" in sentence, sentence)
-        }
-    }
-
-    @Test
-    fun `local and provider invalid requests keep their origin in the trace and error`(
-        @TempDir tmp: Path,
-    ) = runBlocking {
-        val localSentence = "splice could not complete this session's code-mode step; " +
-            "start a new session, and if it repeats read the daemon log"
-        val providerSentence =
-            "the provider rejected the request as invalid, so resending it unchanged fails the same way; " +
-                "change the request before retrying"
-        for (reported in listOf(false, true)) {
-            val rig = Rig("origin-$reported", tmp)
-            val deps = headDeps(tmp.resolve("stores-$reported"))
-            var errorMessage: String? = null
-            val terminal = object : TurnTerminal by RecordingTerminal() {
-                override suspend fun emitError(cause: FailureCause, message: String) {
-                    errorMessage = message
-                }
-            }
-            val drive = rig.drive().copy(emitter = terminal)
-            val failure = TurnOutcome.Failure(
-                // The provider's verdict on the request, or splice's own recorded state that cannot go on.
-                cause = if (reported) {
-                    FailureCause.Provider.Rejected(staleReasoning = false)
-                } else {
-                    FailureCause.Splice.Protocol(ProtocolFault.CODE_MODE_STATE)
-                },
-                at = MID,
-                evidence = FailureEvidence(
-                    "code-mode runtime failed: IllegalStateException at SyntheticCell.kt:83; " +
-                        "accepted results=0; source was not rerun",
-                ),
-            )
-            assertEquals(ErrorType.INVALID_REQUEST, ClientWire.ownType(failure.cause))
-            val finish = TurnFinish(
-                ElapsedClock { 5L },
-                rig.log,
-                TurnUsageStamp(deps.stores.usageStore, rig.log, rig.telemetry),
-                HeadHealthCounters(),
-                rig.telemetry,
-            )
-            try {
-                finish.finishTurn(drive, failure)
-            } finally {
-                drive.slot.release()
-            }
-            assertEquals(if (reported) providerSentence else localSentence, sentenceOf(rig.turnRecord()))
-            if (!reported) {
-                assertTrue(checkNotNull(errorMessage).startsWith(localSentence + ". "), errorMessage)
-            }
-            assertTrue("[SPLICE-INVALID-REQUEST]" in checkNotNull(errorMessage))
-            assertTrue(failure.evidence.message in checkNotNull(errorMessage))
-        }
-    }
-
-    @Test
-    fun `a translator parsed provider invalid request retains provider origin`(@TempDir tmp: Path) = runBlocking {
-        val rig = Rig("parsed-provider", tmp)
-        val event = Json.parseToJsonElement(
-            """{"type":"response.failed","response":{"error":{"code":"request_too_large",""" +
-                """"message":"prompt is too long"}}}""",
-        ).jsonObject
-        val outcome = provider().streamTranslator(
-            rig.meta,
-            TurnSignals(watchdogFired = { null }, clientGone = { false }),
-        ).driveTurn(flowOf(event), RecordingTerminal())
-        val failure = outcome as? TurnOutcome.Failure ?: error("provider error must fail")
-        assertTrue(failure.cause.providerReported)
-        assertEquals(ErrorType.INVALID_REQUEST, ClientWire.ownType(failure.cause))
-        assertTrue(OutcomeSentences.of(failure).startsWith("the provider rejected"))
-    }
-
-    @Test
-    fun `every local cause fits its whole human action before a clipped card diagnostic`() {
-        for (cause in PersistedCause.entries) {
-            val sentence = OutcomeSentences.local(cause)
-            assertTrue(sentence.startsWith("splice "), "$cause: $sentence")
-            assertTrue("; " in sentence, "$cause: $sentence")
-            assertTrue(sentence.length < 150, "$cause: the card would clip its action")
-        }
-    }
-
-    @Test
-    fun `a typed local finish preserves a more specific recorded sentence`(@TempDir tmp: Path) = runBlocking {
-        val rig = Rig("specific-origin", tmp)
-        val deps = headDeps(tmp.resolve("stores"))
-        val drive = rig.drive()
-        val sentence = "splice could not save this step; free space and start a new session"
-        rig.trace.failureSentence(sentence)
-        try {
-            TurnFinish(
-                ElapsedClock { 5L },
-                rig.log,
-                TurnUsageStamp(deps.stores.usageStore, rig.log, rig.telemetry),
-                HeadHealthCounters(),
-                rig.telemetry,
-            ).finishTurn(
-                drive,
-                TurnOutcome.Failure(
-                    cause = FailureCause.Splice.Protocol(ProtocolFault.CODE_MODE_START),
-                    at = MID,
-                    evidence = FailureEvidence("synthetic"),
-                ),
-            )
-        } finally {
-            drive.slot.release()
-        }
-        assertEquals(sentence, sentenceOf(rig.turnRecord()))
-    }
-
-    @Test
-    fun `provider content refusals keep the cause and provider words without calling them an outage`() {
-        val cyber = TurnOutcome.Failure(
-            cause = FailureCause.Provider.Refused(RefusedBy.POLICY),
-            at = MID,
-            evidence = FailureEvidence("upstream: cyber_policy this request was flagged. Try rephrasing."),
-        )
-        assertEquals(
-            "OpenAI refused the request under its cybersecurity check. This request was flagged. Try rephrasing.",
-            OutcomeSentences.of(cyber),
-        )
-        val generic = cyber.copy(evidence = FailureEvidence("upstream: generation stopped by content filter"))
-        val sentence = OutcomeSentences.of(generic)
-        assertTrue("content check" in sentence, sentence)
-        assertTrue("cybersecurity" !in sentence, sentence)
-        for (failure in listOf(cyber, generic, cyber.copy(cause = FailureCause.Provider.Refused(RefusedBy.MODEL)))) {
-            val words = OutcomeSentences.of(failure)
-            assertTrue("failed on its side" !in words && "retry in a moment" !in words, words)
-        }
-        // Origin is the cause's family, never the words: the same words under splice's own failure are splice's.
-        val quiet = cyber.copy(cause = FailureCause.Splice.Internal())
-        assertTrue(OutcomeSentences.of(quiet).startsWith("splice "))
-    }
-
-    // ── the trace it closes ───────────────────────────────────────────────────────────────────
-
-    private inner class Rig(private val tag: String, private val tmp: Path) {
+    /** One turn and the real terminal it ends through: the stream's emitter, or the collect path's body. */
+    private inner class Rig(private val tag: String, private val tmp: Path, val stream: Boolean = true) {
         val log = LogSink { }
         val perfFile: Path = tmp.resolve("perf-$tag.jsonl")
         val traceDir: Path = tmp.resolve("trace-$tag")
@@ -365,7 +140,7 @@ class OutcomeSentenceTest {
                 budgetTokens = null,
             ),
             route = TurnRoute(
-                stream = true,
+                stream = stream,
                 originalModel = "claude-codex--gpt-5.6-sol",
                 upstreamModel = "gpt-5.6-sol",
                 clientMaxTokens = 100,
@@ -384,6 +159,33 @@ class OutcomeSentenceTest {
             now = WallClock { TRACE_DAY_EPOCH_MS },
         ).begin(meta, ClientInbound("POST", "/v1/messages", emptyMap(), "synthetic request"))
 
+        /** Every frame the stream's client was written. Once [socketClosed] is set, a write fails as a closed
+         *  socket's does. */
+        val frames = CopyOnWriteArrayList<String>()
+        var socketClosed = false
+        private val collected = CollectingTerminal(meta.route.originalModel, { buildJsonObject { } }, voice = testVoice)
+        val terminal: TurnTerminal = if (stream) {
+            SseEmitterFactory().create(
+                write = { frame ->
+                    if (socketClosed) throw IOException("synthetic server socket closed")
+                    frames.add(frame)
+                },
+                model = meta.route.originalModel,
+                usagePayload = { buildJsonObject { } },
+                streaming = StreamWiring(contentReached = { false }),
+                voice = testVoice,
+            )
+        } else {
+            collected
+        }
+
+        /** Where this terminal stands for an ending before any content: in band on a committed stream, or the
+         *  collected body. */
+        val position = Position(if (stream) Moment.COMMITTED else Moment.NON_STREAM, streamBegan = false)
+
+        /** The error the client read: the stream's error frame, or the collected body's. */
+        fun clientError(): JsonObject? = if (stream) errorOf(frames) else collected.responseBody()["error"]?.jsonObject
+
         suspend fun drive(): TurnDrive = TurnDrive(
             inputs = TurnInputs(
                 built = BuiltTurn(
@@ -392,13 +194,13 @@ class OutcomeSentenceTest {
                     extraHeaders = emptyMap(),
                     toolSearch = null,
                 ),
-                slot = InflightGate(LiveLimit { 1 }).admittedSlot(),
+                slot = TurnSlot(InflightGate(LiveLimit { 1 }).admittedSlot()) {},
                 t0 = 0,
                 perf = TurnPerf(),
                 trace = trace,
-                markHandedOff = {},
+                voice = testVoice,
             ),
-            emitter = RecordingTerminal(),
+            emitter = terminal,
             watchdog = TurnWatchdog(WatchdogBudget(10.seconds, 10.seconds, 30.seconds)),
             pipeline = TurnPipeline(
                 CompactStats(perfFile.resolveSibling("compact-$tag.jsonl")),
@@ -411,6 +213,22 @@ class OutcomeSentenceTest {
                 Mutex(),
                 AtomicBoolean(false),
             ),
+        )
+
+        fun finish(deps: HeadDeps) = TurnFinish(
+            ElapsedClock { 5L },
+            log,
+            TurnUsageStamp(deps.stores.usageStore, log, telemetry),
+            HeadHealthCounters(),
+            telemetry,
+        )
+
+        fun seal(deps: HeadDeps) = CancellationSeal(
+            provider(),
+            log,
+            telemetry,
+            HeadHealthCounters(),
+            TurnUsageStamp(deps.stores.usageStore, log, telemetry),
         )
 
         /** The turn record the trace wrote, once the async writer has drained. */
@@ -437,161 +255,120 @@ class OutcomeSentenceTest {
         reasoning = ReasoningSettings(ReasoningDisplay.TEXT, false, "high", "detailed"),
     )
 
-    private fun sentenceOf(record: kotlinx.serialization.json.JsonObject): String? =
-        record["failure_sentence"]?.jsonPrimitive?.content
+    private fun sentenceOf(record: JsonObject): String? = record["failure_sentence"]?.jsonPrimitive?.content
+
+    @ParameterizedTest
+    @ValueSource(booleans = [false, true])
+    fun `every failure's turn record says the line its client read`(stream: Boolean, @TempDir tmp: Path) =
+        runBlocking {
+            val deps = headDeps(tmp.resolve("stores"))
+            for ((at, cause) in everyLeaf.withIndex()) {
+                val rig = Rig("leaf-$at", tmp, stream)
+                val drive = rig.drive()
+                try {
+                    rig.finish(deps).finishTurn(drive, TurnOutcome.Failure(cause, MID, FailureEvidence(EVIDENCE)))
+                } finally {
+                    drive.slot.release()
+                }
+                val said = rig.clientError()?.words()
+                assertEquals(testVoice.ending(cause, rig.position).text, said, "$cause: the line its client read")
+                assertEquals(said?.removePrefix("[splice] "), sentenceOf(rig.turnRecord()), "$cause: its trace")
+                assertTrue("SyntheticCell" !in said.orEmpty(), "$cause: the evidence reached the client: $said")
+            }
+        }
 
     @Test
-    fun `every outcome tag closes its turn record with its sentence`(@TempDir tmp: Path) = runBlocking {
-        for ((at, tag) in everyTag().withIndex()) {
-            val rig = Rig("tag-$at", tmp)
-            val drive = rig.drive()
+    fun `a translator parsed provider invalid request retains provider origin`(@TempDir tmp: Path) = runBlocking {
+        val rig = Rig("parsed-provider", tmp)
+        val event = Json.parseToJsonElement(
+            """{"type":"response.failed","response":{"error":{"code":"request_too_large",""" +
+                """"message":"prompt is too long"}}}""",
+        ).jsonObject
+        val outcome = provider().streamTranslator(
+            rig.meta,
+            TurnSignals(watchdogFired = { null }, clientGone = { false }),
+        ).driveTurn(flowOf(event), rig.terminal)
+        val failure = outcome as? TurnOutcome.Failure ?: error("provider error must fail")
+        assertTrue(failure.cause.providerReported)
+        assertEquals(ErrorType.INVALID_REQUEST, ClientWire.ownType(failure.cause))
+    }
+
+    @ParameterizedTest
+    @ValueSource(booleans = [false, true])
+    fun `a progress timeout's trace says the line its ending is told with`(stream: Boolean, @TempDir tmp: Path) =
+        runBlocking {
+            val rig = Rig("progress-timeout", tmp, stream)
+            var now = 0L
+            val dog = TurnWatchdog(
+                WatchdogBudget(10.seconds, 10.seconds, 600.milliseconds),
+                clock = ElapsedClock { now },
+                ticker = Ticker { interval ->
+                    now += interval
+                    true
+                },
+            )
+            val target = Job()
+            val cap = dog.launchTotalCap(this, target)
+            withTimeout(1_000) { target.join() }
+            cap.cancel()
+            val drive = rig.drive().copy(watchdog = dog)
             try {
-                rig.telemetry.recordPerf(drive, tag)
+                rig.seal(headDeps(tmp.resolve("stores"))).seal(drive, stream, CancellationException("synthetic"))
             } finally {
                 drive.slot.release()
             }
-            val record = rig.turnRecord()
-            assertEquals(tag, record.getValue("outcome").jsonPrimitive.content)
-            val said = sentenceOf(record)
-            assertEquals(OutcomeSentences.of(tag), said, "outcome tag $tag: the turn record's failure_sentence")
+            val spent = FailureCause.Splice.TurnBudgetSpent(budgetMs = 600L, beforeFirstAttempt = false)
+            val line = testVoice.ending(spent, rig.position)
+            assertEquals(line.sentence, sentenceOf(rig.turnRecord()))
+            if (stream) {
+                val error = checkNotNull(rig.clientError()) { "the connected client is owed an error frame" }
+                assertEquals(line.text, error.words())
+                assertEquals(ErrorType.OVERLOADED.wireName, error["type"]?.jsonPrimitive?.content)
+            } else {
+                // Collect has no half-open 200 to rescue: the seal records the ending and writes no body.
+                assertEquals(null, rig.terminal.lineWritten)
+            }
         }
-    }
 
     @ParameterizedTest
     @ValueSource(booleans = [false, true])
-    fun `progress timeout records the same splice sentence as its client terminal`(
+    fun `a shutdown cut stays splice's own failure, and its trace says the restart's line after its socket closed`(
         stream: Boolean,
         @TempDir tmp: Path,
     ) = runBlocking {
-        val rig = Rig("progress-timeout", tmp)
-        var now = 0L
-        val dog = TurnWatchdog(
-            WatchdogBudget(10.seconds, 10.seconds, 600.milliseconds),
-            clock = ElapsedClock { now },
-            ticker = Ticker { interval ->
-                now += interval
-                true
-            },
-        )
-        val target = Job()
-        val cap = dog.launchTotalCap(this, target)
-        withTimeout(1_000) { target.join() }
-        cap.cancel()
-        var wireMessage: String? = null
-        var wireType: ErrorType? = null
-        val terminal = object : TurnTerminal by RecordingTerminal() {
-            override suspend fun emitError(cause: FailureCause, message: String) {
-                wireType = ClientWire.ownType(cause)
-                wireMessage = message
-            }
-        }
-        val drive = rig.drive().copy(watchdog = dog, emitter = terminal)
-        val deps = headDeps(tmp.resolve("stores"))
-        val seal = CancellationSeal(
-            provider(),
-            rig.log,
-            rig.telemetry,
-            HeadHealthCounters(),
-            TurnUsageStamp(deps.stores.usageStore, rig.log, rig.telemetry),
-        )
-        try {
-            seal.seal(drive, stream, CancellationException("synthetic progress timeout"))
-        } finally {
-            drive.slot.release()
-        }
-        val expected = "[SPLICE-OVERLOADED] splice progress timeout expired after 600ms " +
-            "without upstream progress; retry"
-        assertEquals(expected, sentenceOf(rig.turnRecord()))
-        assertEquals(if (stream) expected else null, wireMessage)
-        assertEquals(if (stream) ErrorType.OVERLOADED else null, wireType)
-    }
-
-    @ParameterizedTest
-    @ValueSource(booleans = [false, true])
-    fun `shutdown cut remains a local failure even after its socket closes`(
-        stream: Boolean,
-        @TempDir tmp: Path,
-    ) = runBlocking {
-        val rig = Rig("restart-$stream", tmp)
-        val deps = headDeps(tmp.resolve("stores"))
-        val seal = CancellationSeal(
-            provider(),
-            rig.log,
-            rig.telemetry,
-            HeadHealthCounters(),
-            TurnUsageStamp(deps.stores.usageStore, rig.log, rig.telemetry),
-        )
-        var wireType: ErrorType? = null
-        val terminal = object : TurnTerminal by RecordingTerminal() {
-            override suspend fun emitError(cause: FailureCause, message: String) {
-                wireType = ClientWire.ownType(cause)
-                throw java.io.IOException("synthetic server socket closed")
-            }
-        }
-        val drive = rig.drive().copy(emitter = terminal)
+        val rig = Rig("restart-$stream", tmp, stream)
+        rig.socketClosed = true
+        val drive = rig.drive()
         drive.channel.clientGone.set(true)
         try {
-            seal.seal(drive, stream, splice.head.turn.HeadRestart())
+            rig.seal(headDeps(tmp.resolve("stores"))).seal(drive, stream, HeadRestart())
         } finally {
             drive.slot.release()
         }
         val record = rig.turnRecord()
         assertEquals(OutcomeTag.RESTARTED.wire, record.getValue("outcome").jsonPrimitive.content)
-        assertEquals("Splice restarted while this request was running. Retry the request.", sentenceOf(record))
+        val restart = testVoice.ending(FailureCause.Splice.Stopped(StoppedBy.RESTART), rig.position)
+        assertEquals(restart.sentence, sentenceOf(record))
+        assertEquals(null, rig.terminal.lineWritten, "no frame reached the closed socket")
         assertTrue(OutcomeTags.isFailed(OutcomeTag.RESTARTED.wire))
         assertTrue(!OutcomeTags.isStopped(OutcomeTag.RESTARTED.wire))
-        assertEquals(if (stream) ErrorType.OVERLOADED else null, wireType)
-    }
-
-    @Test
-    fun `a local refusal closes its trace with its sentence`(@TempDir tmp: Path) = runBlocking {
-        val refusals = listOf(OutcomeTag.RATE_LIMITED, OutcomeTag.ALL_ACCOUNTS_EXHAUSTED, OutcomeTag.BUDGET_BLOCKED)
-        for (tag in refusals) {
-            val rig = Rig("refusal-${tag.name}", tmp)
-            rig.telemetry.recordLocalRefusal(rig.meta, TurnPerf(), 0, LocalRefusal(tag.wire, "detail", rig.trace))
-            val record = rig.turnRecord()
-            assertEquals(tag.wire, record.getValue("outcome").jsonPrimitive.content)
-            val said = sentenceOf(record)
-            assertEquals(OutcomeSentences.of(tag.wire), said, "local refusal ${tag.wire}: failure_sentence")
-            assertNotNull(said, "local refusal ${tag.wire} left the turn without words")
-        }
     }
 
     @Test
     fun `an upstream-failed turn after three retries reads in words, Marlin's walk`(@TempDir tmp: Path) = runBlocking {
         val rig = Rig("upstream-failed", tmp)
-        val provider = provider()
-        val knownEnd = TurnKnownEnd(provider, rig.log, rig.telemetry, TurnFailures(provider), HeadHealthCounters())
+        val knownEnd = TurnKnownEnd(provider(), rig.log, rig.telemetry, HeadHealthCounters())
         val drive = rig.drive()
         try {
             val body = """{"error":{"message":"boom"}}"""
-            val read = UpstreamFailureClassifier.classify(FailureSource.HTTP, body, 502)
-            val failure = UpstreamFailed(read.cause, FailureEvidence(read.message, 502, body = body), layers = 3)
-            knownEnd.emitFailed(drive, failure)
+            val cause = FailureCause.Provider.ServerError(ServerFault.INTERNAL)
+            knownEnd.emitFailed(drive, UpstreamFailed(cause, FailureEvidence("boom", 502, body = body), layers = 3))
         } finally {
             drive.slot.release()
         }
         val record = rig.turnRecord()
         assertEquals("error:upstream-failed", record.getValue("outcome").jsonPrimitive.content)
-        val sentence = sentenceOf(record)
-        assertNotNull(sentence, "the upstream-failed turn's trace has no sentence")
-        assertEquals(OutcomeSentences.of(OutcomeTag.UPSTREAM_FAILED.wire), sentence)
+        val said = checkNotNull(rig.clientError()?.words()) { "the upstream-failed turn's client read no line" }
+        assertEquals(said.removePrefix("[splice] "), sentenceOf(record), "the trace says the line the client read")
     }
-
-    @Test
-    fun `a sentence the ending's own surface spoke is kept, not replaced by the table's`(@TempDir tmp: Path) =
-        runBlocking {
-            val rig = Rig("spoken", tmp)
-            val drive = rig.drive()
-            try {
-                rig.trace.failureSentence("the connection to 127.0.0.1:1 closed mid-request; retry")
-                rig.telemetry.recordPerf(drive, CONN_RESET_OUTCOME)
-            } finally {
-                drive.slot.release()
-            }
-            assertEquals(
-                "the connection to 127.0.0.1:1 closed mid-request; retry",
-                sentenceOf(rig.turnRecord()),
-            )
-        }
 }

@@ -27,6 +27,7 @@ import splice.head.admission.admittedSlot
 import splice.head.headDeps
 import splice.head.round.RoundRunners
 import splice.head.round.RoundStrategy
+import splice.head.testVoice
 import splice.head.wire.ClientChannel
 import splice.head.wire.CollectingTerminal
 import splice.head.wire.ImmediateSseWriter
@@ -66,7 +67,8 @@ private class SerializationRig(tmp: Path) {
     private val provider = SerializationProvider()
     private val gate = InflightGate({ 1 })
     private val factory = TurnDriveFactory(provider, headDeps(tmp), HeadHealthCounters())
-    private val terminal = CollectingTerminal("synthetic", UsagePayloadBuilder { buildJsonObject { } })
+    private val terminal =
+        CollectingTerminal("synthetic", UsagePayloadBuilder { buildJsonObject { } }, voice = testVoice)
     private val meta = TurnMeta(
         compact = false,
         reasoning = TurnReasoning(
@@ -86,11 +88,11 @@ private class SerializationRig(tmp: Path) {
     suspend fun assemble(body: JsonObject): TurnDrive = factory.assembleDrive(
         TurnInputs(
             built = BuiltTurn(body, meta),
-            slot = gate.admittedSlot(),
+            slot = TurnSlot(gate.admittedSlot()) {},
             t0 = 0L,
             perf = TurnPerf(),
-            markHandedOff = {},
             trace = null,
+            voice = testVoice,
         ),
         terminal,
         ClientChannel(ImmediateSseWriter(writeRaw = {}, flushRaw = {}), Mutex(), AtomicBoolean(false)),

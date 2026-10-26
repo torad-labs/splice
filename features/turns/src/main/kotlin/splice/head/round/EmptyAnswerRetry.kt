@@ -2,13 +2,15 @@
 package splice.head.round
 
 import kotlinx.serialization.json.JsonObject
+import splice.core.failure.FailureCause
+import splice.core.failure.Recovery.AskAgain
+import splice.core.failure.WaitLine
 import splice.core.perf.PerfKeys
 import splice.core.perf.TurnPerf
 import splice.core.turn.RoundText
 import splice.core.turn.TurnOutcome
 import splice.core.turn.Usage
 import splice.upstream.ReanchorPolicy
-import splice.upstream.RetryNotice
 import splice.upstream.RoundBody
 import splice.upstream.RoundResult
 
@@ -34,7 +36,8 @@ import splice.upstream.RoundResult
 internal class EmptyAnswerRetry(
     private val perf: TurnPerf?,
     private val reanchor: ReanchorPolicy? = null,
-    private val notice: RetryNotice = RetryNotice {},
+    /** Failure-handling slice 2: where the re-send is told, as an empty answer the turn asks again for. */
+    private val recovering: Recovering = Recovering {},
 ) {
     suspend fun post(body: RoundBody, direct: PostRound): RoundResult {
         val framesBefore = contentFrames()
@@ -44,10 +47,7 @@ internal class EmptyAnswerRetry(
         val carried = continuation(body, emptied)
         // reasoning alone is the model's finished silence unless the rule carries it on: never re-sent identically
         if (carried == null && emptied.shape.endedInReasoning) return first
-        notice.retry(
-            if (carried != null) "continuing after an empty answer" else "retrying an empty answer once",
-            "the upstream completed with no answer content",
-        )
+        recovering(WaitLine(FailureCause.Provider.Empty(reasoningOnly = emptied.shape.endedInReasoning), AskAgain))
         perf?.add(if (carried != null) PerfKeys.EMPTY_CONTINUES else PerfKeys.EMPTY_RETRIES, 1)
         return billed(emptied.usage, direct(carried?.let { RoundBody.Tree(it) } ?: body))
     }

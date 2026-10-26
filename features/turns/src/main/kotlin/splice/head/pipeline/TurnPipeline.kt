@@ -17,7 +17,6 @@ import splice.core.turn.TurnMeta
 import splice.core.turn.TurnOutcome
 import splice.core.util.LogSink
 import splice.head.compact.CompactStats
-import splice.head.turn.OutcomeSentences
 import splice.head.usage.OutputClamp
 import splice.head.wire.TurnTerminal
 
@@ -34,7 +33,6 @@ internal class TurnPipeline(
 
     // Success-path honesty / promote / mirror live in StreamFinish.kt (concentration, 2026-08-19).
     private val compact = StreamCompact(compactStats)
-    private val failures = FailureRenderer()
     private val streamFinish = StreamFinish(
         compact,
         log,
@@ -55,21 +53,14 @@ internal class TurnPipeline(
         when (outcome) {
             is TurnOutcome.Failure -> {
                 val cause = outcome.cause
-                val type = ClientWire.ownType(cause)
                 if (meta.compact) {
-                    compact.recordStreamError(meta, elapsedMs, type.wireName)
-                }
-                val spoken = failures.spoken(type, outcome.evidence.message, cause)
-                val message = if (cause.deterministic && !cause.providerReported) {
-                    OutcomeSentences.of(outcome) + ". " + spoken
-                } else {
-                    spoken
+                    compact.recordStreamError(meta, elapsedMs, ClientWire.ownType(cause).wireName)
                 }
                 // Failures belong to the error channel, including refusals and failures after
                 // partial output. A text block and a clean stop would record them as an answer.
                 // The emitter asks ClientWire what the client reads, from the cause and how far the
-                // stream had got.
-                emitter.emitError(cause, message)
+                // stream had got, and its turn voice says the line for the same cause (slice 2).
+                emitter.emitError(cause)
                 // V4-67: a tear the gateway converted into an outcome keeps the conn-reset tag it
                 // would have carried had it escaped to TurnConnEnd. That tag is the only string in
                 // the journal that names this failure class, and the row that made a torn stream

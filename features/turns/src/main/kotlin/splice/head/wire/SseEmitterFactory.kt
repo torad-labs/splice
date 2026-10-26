@@ -5,6 +5,8 @@
 // this factory in the same module calls it unchanged.
 package splice.head.wire
 
+import splice.core.failure.TurnVoice
+import splice.core.failure.WireAnswer
 import splice.core.turn.WireFacts
 import java.util.concurrent.atomic.AtomicInteger
 
@@ -19,22 +21,24 @@ internal class SseEmitterFactory {
      * as content (ClientChannel.timedProgressWrite). Nothing has to recognise a frame after the
      * fact — the path it was written through IS the answer. Defaulted to [write] for the callers
      * with no pinger (the local answer and the compaction replay), which never call either verb.
+     *
+     * [voice] is the turn's voice, which the emitter's error ending speaks in (failure-handling slice 2).
      */
     public fun create(
         write: FrameWrite,
         model: String,
         usagePayload: UsagePayloadBuilder,
-        messageId: String = MessageIds().generateMessageId(),
         streaming: StreamWiring = StreamWiring(),
+        voice: TurnVoice,
     ): SseEmitter {
-        val frames = SseFrameWriter(write)
-        val start = MessageStart(frames, model, messageId, usagePayload)
+        val frames = SseFrameWriter(write, streaming.ending)
+        val start = MessageStart(frames, model, streaming.messageId, usagePayload)
         // ONE index sequence, two writers: see WireBlockWriter's nextBlockIndex. The turn's writer
         // ends the pinger's notice at its own block boundaries, so the pinger's wire comes first.
         val indexes = AtomicInteger(0)
         val progress = ProgressWire(streaming.progressTo(write), streaming.retryTo(write), start, indexes)
         val blocks = WireBlockWriter(frames, start, indexes, notice = progress, facts = streaming.facts)
-        return SseEmitter(frames, start, blocks, progress, usagePayload, streaming.contentReached)
+        return SseEmitter(frames, start, blocks, progress, usagePayload, streaming.contentReached, voice)
     }
 }
 
@@ -54,10 +58,27 @@ internal class StreamWiring(
     /** What the client has been shown, kept for the live listing (the turn's writer fills it). */
     val facts: WireFacts? = null,
     private val retryWrite: FrameWrite? = null,
+    /** Where the turn's error ending goes while the response may still answer with a status (null: through the
+     *  frame write like any frame). Only the streaming path holds its status open, so only it can answer one. */
+    val ending: EndingWrite? = null,
+    /** The id the emitter's message_start carries: a fresh one per emitter, pinned only by a caller that must know it
+     *  before the stream starts. */
+    val messageId: String = MessageIds().generateMessageId(),
 ) {
     /** The port the pinger's frames go through for an emitter that writes to [write]. */
     fun progressTo(write: FrameWrite): FrameWrite = progressWrite ?: write
 
     /** Retries share progress accounting, but do not choose HTTP success before the upstream answers. */
     fun retryTo(write: FrameWrite): FrameWrite = retryWrite ?: progressTo(write)
+}
+
+/**
+ * A turn's error ending on a response that may not have committed its status (failure-handling slice 2): the SSE
+ * [frame] a stream writes, what the failure is while the status is still splice's to choose ([unsent]), and the
+ * error [body] that status carries. The path an ending takes is the answer, so nothing reads a line's words to
+ * choose the status: a compaction's and a first message's overflow lines leave out the words a client compacts on
+ * (final-design.md section 11), and they keep the 400 every overflow before commit answers with.
+ */
+internal fun interface EndingWrite {
+    suspend operator fun invoke(frame: String, unsent: WireAnswer, body: String)
 }

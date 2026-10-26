@@ -237,7 +237,7 @@ class DescriptorAdoptionTest {
     private fun guarded() = HeapIngress(
         HeapBudget(heapLimitBytes = Long.MAX_VALUE, budgetBytes = 64L * 1024 * 1024),
         { 1024 * 1024 },
-        IngressErrorBody { type, message -> "{\"type\":\"$type\",\"message\":\"$message\"}" },
+        IngressErrorBody { type, why -> "{\"type\":\"$type\",\"message\":\"$why\"}" },
     )
 
     /** A connection that sent one request without asking to close, was answered, and is now open and idle. */

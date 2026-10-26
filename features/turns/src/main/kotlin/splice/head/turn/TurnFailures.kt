@@ -41,12 +41,7 @@ internal class TurnFailures(
         }
 
     /** V4-164: the socket's own account, never Throwable.message — the JDK client's refused connect
-     *  carries a null one, which reached Claude Code as "upstream connection failed (no detail)". */
+     *  carries a null one. It goes to the log; the client reads the line for the connection's cause. */
     fun connectionResetMessage(error: Throwable): String =
         TransportFailureReason.of(error, provider.upstreamUrl)
-
-    /** G19-consistent per-head hint — every AUTHENTICATION surface uses the SAME provider-threaded
-     *  command (review 2026-07-19: two paths still hardcoded "claudex login" on non-codex heads). */
-    fun loginHint(): String =
-        if (provider.loginCommand.isNotEmpty()) "; run: ${provider.loginCommand}" else ""
 }

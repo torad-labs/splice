@@ -70,6 +70,7 @@ import splice.head.perf.PerfStats
 import splice.head.pipeline.TurnPipeline
 import splice.head.round.ObservedRoundPost
 import splice.head.round.RunnerSignals
+import splice.head.testVoice
 import splice.head.usage.EconomicsStore
 import splice.head.usage.OutputClamp
 import splice.head.usage.TurnSpend
@@ -121,13 +122,13 @@ private class UsageStampRig(tmp: Path, private val tag: String, economics: Econo
                 toolSearch = null,
                 roundInterceptor = interceptor,
             ),
-            slot = InflightGate(LiveLimit { 1 }).admittedSlot(),
+            slot = TurnSlot(InflightGate(LiveLimit { 1 }).admittedSlot()) {},
             t0 = 0,
             perf = TurnPerf(),
             trace = null,
-            markHandedOff = {},
+            voice = testVoice,
         ),
-        emitter = CollectingTerminal("sonnet-4-6", UsagePayloadBuilder { buildJsonObject { } }),
+        emitter = CollectingTerminal("sonnet-4-6", UsagePayloadBuilder { buildJsonObject { } }, voice = testVoice),
         watchdog = TurnWatchdog(WatchdogBudget(10.seconds, 10.seconds, 30.seconds)),
         pipeline = TurnPipeline(
             CompactStats(perfFile.resolveSibling("compact-$tag.jsonl")),

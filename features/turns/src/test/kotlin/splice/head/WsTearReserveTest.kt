@@ -46,6 +46,7 @@ import splice.head.transport.WsRoundInputs
 import splice.head.transport.WsRoundResult
 import splice.head.turn.TurnDrive
 import splice.head.turn.TurnInputs
+import splice.head.turn.TurnSlot
 import splice.head.turn.ZeroEventClassifier
 import splice.head.usage.OutputClamp
 import splice.head.wire.ClientChannel
@@ -80,7 +81,7 @@ private class RecordingTerminal : TurnTerminal, WireSink by RecordingSink2() {
 
     override suspend fun ensureStarted() = Unit
     override suspend fun emitTerminal(hasToolUse: Boolean, incomplete: Boolean, usage: Usage) = Unit
-    override suspend fun emitError(cause: FailureCause, message: String) = Unit
+    override suspend fun emitError(cause: FailureCause) = Unit
     override fun abandon() = Unit
 }
 
@@ -160,11 +161,11 @@ class WsTearReserveTest(@param:TempDir private val tmp: Path) {
                     extraHeaders = emptyMap(),
                     toolSearch = null,
                 ),
-                slot = InflightGate(LiveLimit { 1 }).admittedSlot(),
+                slot = TurnSlot(InflightGate(LiveLimit { 1 }).admittedSlot()) {},
                 t0 = 0,
                 perf = TurnPerf(),
                 trace = null,
-                markHandedOff = {},
+                voice = testVoice,
             ),
             emitter = RecordingTerminal(),
             watchdog = TurnWatchdog(WatchdogBudget(10.seconds, 10.seconds, 30.seconds)),

@@ -48,6 +48,7 @@ internal class HeadServerFactory(
     private val console: ConsoleEventPublisher? = null,
 ) {
     private val upstreamFactory = UpstreamFactory()
+    private val voices = HeadVoiceFacts()
 
     /** Assigned before any head is assembled; the callback reads the login owner at request time. */
     internal var credentialAccountNames: HeadDeps.CredentialAccountNames = HeadDeps.CredentialAccountNames { null }
@@ -84,6 +85,7 @@ internal class HeadServerFactory(
             provider = provider,
             listenPort = ctx.head.port,
             inherited = adopted.head(key),
+            voiceFacts = voices.of(ctx.head.provider, ctx.providerCfg),
             deps = HeadDeps(
                 // read per request, so a key replaced while the head runs is the only one it accepts from then on, and
                 // the keys that replacement retired are still refused as splice's on a head that forwards the caller's
@@ -128,24 +130,29 @@ internal class HeadServerFactory(
                     maxRequestBytes = { config.getConfig(key).maxRequestBytes },
                     requestReadTimeoutMs = { config.getConfig(key).requestReadTimeoutMs },
                 ),
-                traffic = HeadDeps.HeadTraffic(
-                    watchdog = ctx.faultPlan.liveWatchdog,
-                    upstream = upstreamFactory.upstreamFor(ctx, cfg, log, stores.providerHold),
-                    // Re-read per head on EVERY admission (still hot-resizable): the ceiling belongs to
-                    // the upstream ACCOUNT, not the gateway. One shared value meant a workflow fan-out
-                    // admitted 100 concurrent streams into a single account, 429'd, and armed the shared
-                    // cooldown — measured 67% turn failure at inflight=100 vs 0.3% at <=14 (perf jsonl,
-                    // 2026-07-24). Per-head lets a slow upstream sit low while a fast one stays high.
-                    gate = InflightGate(
-                        maxInflight = { config.getConfig(key).maxInflight },
-                        maxQueued = { config.getConfig(key).maxQueued },
-                    ),
-                    liveTurns = liveTurnsFor(key),
-                ),
+                traffic = traffic(ctx, stores),
                 log = log,
             ),
         )
     }
+
+    /** The head's traffic: its watchdog, its upstream, its inflight gate and its live turns. Its own function since
+     *  failure-handling slice 2 gave the head the facts its lines name, which took [headServerFor] past detekt's
+     *  method-length ceiling. */
+    private fun traffic(ctx: ProviderBuild, stores: HeadStores): HeadDeps.HeadTraffic = HeadDeps.HeadTraffic(
+        watchdog = ctx.faultPlan.liveWatchdog,
+        upstream = upstreamFactory.upstreamFor(ctx, ctx.cfg, log, stores.providerHold),
+        // Re-read per head on EVERY admission (still hot-resizable): the ceiling belongs to
+        // the upstream ACCOUNT, not the gateway. One shared value meant a workflow fan-out
+        // admitted 100 concurrent streams into a single account, 429'd, and armed the shared
+        // cooldown — measured 67% turn failure at inflight=100 vs 0.3% at <=14 (perf jsonl,
+        // 2026-07-24). Per-head lets a slow upstream sit low while a fast one stays high.
+        gate = InflightGate(
+            maxInflight = { config.getConfig(ctx.key).maxInflight },
+            maxQueued = { config.getConfig(ctx.key).maxQueued },
+        ),
+        liveTurns = liveTurnsFor(ctx.key),
+    )
 
     /** The head's stores. Its own function since V4-216 added the compaction recordings, which took
      *  [headServerFor] past detekt's method-length ceiling. */

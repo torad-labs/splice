@@ -2,7 +2,8 @@
 // became sealed outcomes: the host's own 529, retried and surfaced as overloaded_error (the type Claude Code retries
 // on), and an oversized frame AFTER content reached the client, which can no longer be re-issued and must end the
 // stream honestly with the content kept. A SIBLING class rather than more cases on HeadServerIntegrationTest, which
-// is at detekt's LargeClass ceiling.
+// is at detekt's LargeClass ceiling. Failure-handling slice 2 adds a third: a prompt too long, whose line depends on
+// whether the request is the conversation's first exchange.
 package splice.head
 
 import io.ktor.client.HttpClient
@@ -14,7 +15,12 @@ import io.ktor.client.request.post
 import io.ktor.client.request.setBody
 import io.ktor.client.statement.bodyAsText
 import kotlinx.coroutines.test.runTest
+import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.jsonObject
+import kotlinx.serialization.json.jsonPrimitive
 import org.junit.jupiter.api.AfterAll
+import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertFalse
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.BeforeAll
@@ -24,6 +30,11 @@ import org.junit.jupiter.api.io.TempDir
 import splice.core.auth.AuthDescription
 import splice.core.auth.Credentials
 import splice.core.auth.RefreshableAuthProvider
+import splice.core.failure.FailureCause
+import splice.core.failure.Moment
+import splice.core.failure.Position
+import splice.core.failure.RequestFacts
+import splice.core.failure.Tear
 import splice.core.model.CatalogWindows
 import splice.core.model.ModelCatalog
 import splice.core.model.ModelEntry
@@ -91,15 +102,26 @@ class HeadServerEndingsTest {
         mock.stop()
     }
 
-    private suspend fun messages(scenario: String): String =
+    /** One turn of [scenario]. With [priorExchange] the conversation already holds an answer: not its first. */
+    private suspend fun messages(scenario: String, priorExchange: Boolean = false): String =
         client.post("http://127.0.0.1:${head.port}/v1/messages") {
             header("Content-Type", "application/json")
+            val earlier = if (priorExchange) PRIOR_EXCHANGE else ""
             setBody(
                 """{"model":"claude-codex--gpt-5.6-sol","stream":true,"max_tokens":8000,
                     "system":"You are a test. SCENARIO:$scenario",
-                    "messages":[{"role":"user","content":"go"}]}""",
+                    "messages":[$earlier{"role":"user","content":"go"}]}""",
             )
         }.bodyAsText()
+
+    /** The error a client read in [body]: the stream's error event, or the JSON body of a status not yet committed. */
+    private fun errorOf(body: String): JsonObject? {
+        val event = body.lineSequence().dropWhile { it != "event: error" }.drop(1).firstOrNull()?.removePrefix("data: ")
+        return runCatching { Json.parseToJsonElement(event ?: body).jsonObject["error"]?.jsonObject }.getOrNull()
+    }
+
+    /** The words of the error in [body], or null when it has none. */
+    private fun errorWords(body: String): String? = errorOf(body)?.get("message")?.jsonPrimitive?.content
 
     @Test
     fun `a host 529 is retried by the head and reaches the client as overloaded_error, never api_error`() = runTest {
@@ -116,8 +138,34 @@ class HeadServerEndingsTest {
         runTest {
             val sse = messages("oversized_after_content")
             assertTrue(sse.contains("partial answer"), "the content already streamed stays: $sse")
-            assertTrue(sse.contains("event: error"), sse)
-            assertTrue(sse.contains("oversized streaming event"), sse)
+            // The line this head's voice says for a cut answer after content, on this first exchange (slice 2).
+            val torn = FailureCause.Path.Torn(Tear.OVERSIZED_EVENT, toolOpen = false)
+            val line = head.voice.turn(RequestFacts(compaction = false, firstExchange = true))
+                .ending(torn, Position(Moment.MID_CONTENT, streamBegan = true))
+            assertEquals(line.text, errorWords(sse), sse)
             assertFalse(sse.contains("event: message_stop"), sse)
         }
+
+    // final-design.md, "Rules across families": a too-long prompt's line says "prompt is too long", the words Claude
+    // Code compacts on, and a first exchange, which compacting cannot shorten, gets the same status and type with the
+    // phrase left out. The head learns which exchange it is from the request (failure-handling slice 2).
+    @Test
+    fun `a prompt too long tells Claude Code to compact, except on the conversation's first message`() = runTest {
+        val first = messages("overflow_http")
+        val later = messages("overflow_http", priorExchange = true)
+        val firstLine = checkNotNull(errorWords(first)) { "the first message's client read no line: $first" }
+        val laterLine = checkNotNull(errorWords(later)) { "the later prompt's client read no line: $later" }
+
+        assertTrue(COMPACT_WORDS in laterLine, "a later prompt asks Claude Code to compact: $laterLine")
+        assertFalse(COMPACT_WORDS in firstLine, "a first message cannot be compacted, so none is asked: $firstLine")
+        assertTrue("first message is too long" in firstLine, "the line says it is the first message: $firstLine")
+        assertEquals(errorOf(later)?.get("type"), errorOf(first)?.get("type"), "both end with the same type")
+    }
 }
+
+/** The phrase Claude Code compacts the conversation on (V4-446, V4-256). */
+private const val COMPACT_WORDS = "prompt is too long"
+
+/** An exchange the conversation already holds, ahead of its last message. */
+private const val PRIOR_EXCHANGE =
+    """{"role":"user","content":"hi"},{"role":"assistant","content":"hello"},"""

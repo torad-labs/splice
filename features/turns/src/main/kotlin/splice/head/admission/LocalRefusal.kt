@@ -45,26 +45,23 @@ internal class PreDriveRefusals(
         val meta = prepared.built.meta
         val refused = admission.compactionPreflight.refusal(meta, prepared.built.requestBody, prepared.hasPriorExchange)
             ?: return false
-        val message = refused.detail
         val (tag, kind) = when {
             meta.compact -> OutcomeTag.COMPACTION_PREFLIGHT_COMPACT_OVERFLOW to PreflightKind.COMPACT_OVERFLOW
             prepared.hasPriorExchange -> OutcomeTag.COMPACTION_PREFLIGHT_COMPACTABLE to PreflightKind.COMPACTABLE
             else -> OutcomeTag.COMPACTION_PREFLIGHT_FIRST_EXCHANGE to PreflightKind.FIRST_EXCHANGE
         }
-        trace?.failureSentence(message)
+        val cause = FailureCause.Splice.Declined(Decline.Preflight(kind, refused.windowTokens))
+        // The trace says what the client reads; the log and the perf row keep the bound's own numbers.
+        trace?.failureSentence(responses.lineOf(cause).sentence)
         driver.recordLocalRefusal(
             prepared.built.meta,
             admitted.perf,
             admitted.t0,
-            LocalRefusal(tag.wire, message, trace),
+            LocalRefusal(tag.wire, refused.detail, trace),
         )
         admitted.close()
         // x-should-retry false (ClientWire): the client answers this bound by compacting, not by re-sending.
-        responses.respondRefusal(
-            call,
-            FailureCause.Splice.Declined(Decline.Preflight(kind, refused.windowTokens)),
-            message,
-        )
+        responses.respondRefusal(call, cause)
         return true
     }
 
@@ -74,7 +71,7 @@ internal class PreDriveRefusals(
      *
      *  403 permission_error, never 429: the refusal lasts until local midnight, and a 429 invites
      *  the client to retry into the same refusal. Claude Code does not retry a 403 and shows its
-     *  message, so the budget's own sentence — head, spend, limit, when it lifts — is what the
+     *  message, so the budget's line (the head, its limit and when it resets) is what the
      *  operator reads. Recorded BEFORE responding, like every local refusal (V4-55). A budget that
      *  is not reached, or only warns, admits the turn and changes nothing on its path. */
     suspend fun refuseIfOverBudget(
@@ -108,19 +105,19 @@ internal class PreDriveRefusals(
         sender: AuthProvider,
     ): Boolean {
         if (!CallerCredential.unheldNodeWord(prepared.built.extraHeaders, sender)) return false
-        val message = "another machine's turn runs on a Claude login this machine holds, and this head has none free " +
-            "for it, so the turn was not sent; it runs once one of this machine's own logins is back on this head"
-        trace?.failureSentence(message)
+        val cause = FailureCause.Splice.Declined(Decline.NoSharedLogin)
+        val sentence = responses.lineOf(cause).sentence
+        trace?.failureSentence(sentence)
         driver.recordLocalRefusal(
             prepared.built.meta,
             admitted.perf,
             admitted.t0,
-            LocalRefusal(OutcomeTag.AUTH_MISSING.wire, message, trace),
+            LocalRefusal(OutcomeTag.AUTH_MISSING.wire, sentence, trace),
         )
         // 503, not retried (ClientWire): a login coming back here is this machine's to do, so the node shows the
-        // sentence at once.
+        // line at once.
         admitted.close()
-        responses.respondRefusal(call, FailureCause.Splice.Declined(Decline.NoSharedLogin), message)
+        responses.respondRefusal(call, cause)
         return true
     }
 }

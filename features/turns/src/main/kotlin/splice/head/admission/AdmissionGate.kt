@@ -81,7 +81,7 @@ internal class AdmissionGate(
                 log("[${provider.key}] admission rejected: gateway at capacity (queued=${full.queued})\n")
                 beforeRefusal?.ended()
                 refusals.refused(OutcomeTag.AT_CAPACITY, session)
-                responses.respondAtCapacity(call, full.limit, "gateway at capacity")
+                responses.respondAtCapacity(call, full.limit)
                 return null
             }
         }
@@ -120,7 +120,7 @@ internal class AdmissionGate(
         // An oversized DECLARATION keeps its 413 before any admission wait; an unknown length
         // reserves the full head cap.
         if (declared != null && declared > cap) {
-            refuseTooLarge(call, cap, how)
+            refuseTooLarge(call, cap, how, declared)
         } else {
             answered(call, declared ?: cap.toLong(), how, block)
         }
@@ -132,7 +132,7 @@ internal class AdmissionGate(
         how.refused()
         // 408, not 400 (DR-20): a torn client body is a connection event the client may retry;
         // BadRequest told Claude Code the request itself was malformed — a non-retryable class.
-        responses.respondReadTimeout(call, "request body stream interrupted")
+        responses.respondReadTimeout(call)
         null
     }
 
@@ -155,13 +155,19 @@ internal class AdmissionGate(
                 null
             }
             is Materialized.Done -> leased.value
-            is Materialized.TooLarge -> refuseTooLarge(call, leased.limit, how)
+            is Materialized.TooLarge -> refuseTooLarge(call, leased.limit, how, declared = null)
         }
     }
 
-    private suspend fun refuseTooLarge(call: ApplicationCall, limit: Int, how: Materializing): Nothing? {
+    /** A body over [limit]: [declared] is its length where the request declared one, so the line names both. */
+    private suspend fun refuseTooLarge(
+        call: ApplicationCall,
+        limit: Int,
+        how: Materializing,
+        declared: Long?,
+    ): Nothing? {
         how.refused()
-        responses.respondTooLarge(call, limit)
+        responses.respondTooLarge(call, limit, declared)
         return null
     }
 }

@@ -96,7 +96,7 @@ internal class SseRoundPost(
                 url = provider.upstreamUrl,
                 auth = sender,
                 extraHeaders = { creds -> sendHeaders(inputs, answers, creds) },
-                onRetry = RetryProgress(onRetry, drive.emitter),
+                onRetry = onRetry,
                 observers = PostObservers(
                     perf = drive.perf,
                     // V4-174: the trace hears every send of this round from inside the retry loop.

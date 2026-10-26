@@ -15,6 +15,7 @@ import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertFalse
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
+import splice.core.failure.QuietTurn
 import splice.core.index.WireBlockIndex
 import splice.core.turn.TurnOutcome
 import splice.core.turn.Usage
@@ -22,6 +23,7 @@ import splice.dialect.anthropic.PassthroughQuirks
 import splice.dialect.anthropic.PassthroughStreamTranslator
 import splice.dialect.anthropic.PassthroughThinkingQuirks
 import splice.dialect.anthropic.PassthroughTurnContext
+import splice.head.testVoice
 import splice.upstream.sse.WireSink
 
 class PassthroughNativeWireTest {
@@ -34,7 +36,8 @@ class PassthroughNativeWireTest {
         write = { frames.add(it) },
         model = "native",
         usagePayload = { buildJsonObject { put("output_tokens", it?.outputTokens ?: 0) } },
-        messageId = "fixed",
+        streaming = StreamWiring(messageId = "fixed"),
+        voice = testVoice,
     )
 
     private fun decoded(frames: List<String>): List<JsonObject> = frames.flatMap { frame ->
@@ -60,7 +63,7 @@ class PassthroughNativeWireTest {
         assertTrue(writes.isEmpty(), "preparation must run before a generated opener commits")
         val events = flow {
             emit(event("""{"type":"message_start","message":{"future":[null,false,3]}}"""))
-            sink.progress { "synthetic wait" }
+            sink.progress { testVoice.quiet(QuietTurn(30_000, answering = false, again = !it)) }
             emit(event("""{"type":"content_block_start","index":8,"content_block":{"type":"text","text":""}}"""))
             emit(event("""{"type":"content_block_delta","index":8,"delta":{"type":"text_delta","text":"hello"}}"""))
             emit(event("""{"type":"future_event","index":8,"opaque":{"index":77},"data":[null,false]}"""))
@@ -84,7 +87,7 @@ class PassthroughNativeWireTest {
 
     @Test
     fun `raw deltas and all opaque extension shapes survive collected finalization`() = runTest {
-        val sink = CollectingTerminal("native", { buildJsonObject { put("output_tokens", 0) } })
+        val sink = CollectingTerminal("native", { buildJsonObject { put("output_tokens", 0) } }, voice = testVoice)
         val outcome = drive(
             sink,
             """{"type":"message_start","future_start":null,"message":{"future_message":[null,false]}}""",
@@ -197,7 +200,7 @@ class PassthroughNativeWireTest {
 
     @Test
     fun `fresh collecting turns cannot inherit native metadata`() = runTest {
-        val first = CollectingTerminal("native", { buildJsonObject {} })
+        val first = CollectingTerminal("native", { buildJsonObject {} }, voice = testVoice)
         drive(
             first,
             """{"type":"message_start","message":{"private_turn_field":true}}""",
@@ -207,7 +210,7 @@ class PassthroughNativeWireTest {
         )
         first.emitTerminal(false, false, Usage())
         assertTrue(first.responseBody().containsKey("private_turn_field"))
-        val second = CollectingTerminal("native", { buildJsonObject {} })
+        val second = CollectingTerminal("native", { buildJsonObject {} }, voice = testVoice)
         second.addTextBlock("two")
         second.emitTerminal(false, false, Usage())
         assertFalse(second.responseBody().containsKey("private_turn_field"))

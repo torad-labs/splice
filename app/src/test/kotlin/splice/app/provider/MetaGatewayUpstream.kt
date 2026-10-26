@@ -1,5 +1,6 @@
 // NEW: Meta's Muse gateway as a head meets it, answering each request by the route it rides
-// (x-meta-ai-gateway-session-id). A route with a generation stuck on it answers what Meta answered on Oct 26 from
+// (x-meta-ai-gateway-session-id), and recording the prompt_cache_key it carries, which Meta routes by too and which
+// moves with the route. A route with a generation stuck on it answers what Meta answered on Oct 26 from
 // 02:37 CT: a 504 gateway_timeout with connection: close, which says nothing about the generation behind it. A route
 // can also carry a generation that is still running: its request is streamed the start of an answer that never ends
 // while the test runs, or whose connection breaks under it, and every later request on that route waits behind it
@@ -12,6 +13,7 @@
 // connection sends: a reset, never a clean end of the body.
 package splice.app.provider
 
+import kotlinx.serialization.json.Json
 import okhttp3.Interceptor
 import okhttp3.MediaType
 import okhttp3.RequestBody
@@ -19,8 +21,10 @@ import okhttp3.Response
 import okio.BufferedSink
 import splice.core.testing.TestPorts
 import splice.core.util.ElapsedClock
+import splice.core.util.JsonScalars
 import splice.core.wire.HttpStatus
 import java.io.BufferedInputStream
+import java.io.ByteArrayOutputStream
 import java.io.IOException
 import java.io.InputStream
 import java.io.OutputStream
@@ -41,6 +45,7 @@ internal const val META_ANSWER = "Meta answered."
 internal const val META_PARTIAL = "Meta is still"
 
 private const val ROUTE_HEADER = "x-meta-ai-gateway-session-id"
+private const val CACHE_KEY_FIELD = "prompt_cache_key"
 
 // Connections the gateway queues before it accepts them; a test opens a handful at most.
 private const val BACKLOG = 50
@@ -59,9 +64,13 @@ private const val PARTIAL_DELTA = """{"type":"response.output_text.delta","outpu
 private const val ANSWER_DELTA = """{"type":"response.output_text.delta","output_index":0,"delta":"$META_ANSWER"}"""
 private const val ITEM_DONE = """{"type":"response.output_item.done","output_index":0}"""
 
+/** One request as the gateway read it: the [route] it rode and the [cacheKey] its body carried, each null when the
+ *  request named none. */
+internal data class MetaRequest(val route: String?, val cacheKey: String?)
+
 internal class MetaGatewayUpstream {
-    /** The route each request rode, in arrival order; null for a request that named none. */
-    val routes: MutableList<String?> = CopyOnWriteArrayList()
+    /** Every request the gateway read, in arrival order. */
+    val requests: MutableList<MetaRequest> = CopyOnWriteArrayList()
 
     /** How long Meta takes, as the head's clock reads it. */
     val waits = MetaWaits()
@@ -170,9 +179,9 @@ internal class MetaGatewayUpstream {
     private fun serve(socket: Socket) {
         try {
             socket.use {
-                val route = readRequest(BufferedInputStream(socket.getInputStream()))
-                routes += route
-                answer(socket, route)
+                val request = readRequest(BufferedInputStream(socket.getInputStream()))
+                requests += request
+                answer(socket, request.route)
             }
         } catch (_: IOException) {
             // The head let go of the request; Meta goes on generating it all the same.
@@ -272,8 +281,8 @@ internal class MetaGatewayUpstream {
         out.flush()
     }
 
-    /** Reads one request off [input], body included, and returns the route it rides, or null when it names none. */
-    private fun readRequest(input: InputStream): String? {
+    /** Reads one request off [input], body included: the route it rides and the cache key its body carries. */
+    private fun readRequest(input: InputStream): MetaRequest {
         var route: String? = null
         var length = 0
         var chunked = false
@@ -288,17 +297,20 @@ internal class MetaGatewayUpstream {
                 name.equals("Transfer-Encoding", ignoreCase = true) -> chunked = value.contains("chunked", true)
             }
         }
-        if (chunked) skipChunks(input) else input.readNBytes(length)
-        return route
+        val body = if (chunked) readChunks(input) else input.readNBytes(length)
+        val json = JsonScalars.objectOrNull(Json, body.decodeToString())
+        return MetaRequest(route, JsonScalars.str(json, CACHE_KEY_FIELD))
     }
 
-    private fun skipChunks(input: InputStream) {
-        while (true) {
-            val size = readLine(input).substringBefore(';').trim().toIntOrNull(radix = 16) ?: return
-            input.readNBytes(size)
+    /** A chunked body's chunks, joined, up to the empty one that ends it. */
+    private fun readChunks(input: InputStream): ByteArray {
+        val body = ByteArrayOutputStream()
+        do {
+            val size = readLine(input).substringBefore(';').trim().toIntOrNull(radix = 16) ?: 0
+            body.write(input.readNBytes(size))
             readLine(input)
-            if (size == 0) return
-        }
+        } while (size > 0)
+        return body.toByteArray()
     }
 
     /** One line without its line ending; an empty line at the end of the input. */

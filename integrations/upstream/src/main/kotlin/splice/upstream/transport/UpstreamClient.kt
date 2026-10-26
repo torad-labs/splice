@@ -193,7 +193,8 @@ public class UpstreamClient(
         return if (auth == null) {
             LoopStep.Done(UpstreamPost.Ended(UpstreamAuthMissing()))
         } else {
-            attempt(ctx, body, state, block, auth)
+            // What the vendor routes by in the body moves with the place credentials just chose (VendorRoute.body).
+            attempt(ctx, state.routedBody(ctx, body, request::body), state, block, auth)
         }
     }
 

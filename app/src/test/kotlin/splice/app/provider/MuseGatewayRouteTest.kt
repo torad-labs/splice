@@ -5,8 +5,11 @@
 // leaves nothing running there and moves nothing. A conversation also leaves a slow route: when a warm turn (at least
 // half its input read from Meta's cache) got Meta's headers more than 60 s after its request was written whole, the
 // next request goes out on a new route. A cold turn keeps its route, where it just wrote its cache, and so does a turn
-// whose time went into writing the request. A conversation that meets none of these keeps its one route, so its cache
-// stays pinned, and a restarted daemon keeps every conversation on the route it last moved to.
+// whose time went into writing the request. Meta routes requests that share a prompt_cache_key together, so a
+// conversation that leaves a route also leaves its key: from the request that moves it on, it carries a new key with
+// the new route's header. A conversation that meets none of these keeps its one route and exactly its own key,
+// muse:<session>, so its cache stays pinned, and a restarted daemon keeps every conversation on the route and key it
+// last moved to.
 //
 // Oct 26, 02:37 to 02:55 CT: Meta answered a claude-muse turn 504 gateway_timeout after 184 s. splice re-sent the same
 // request on the same x-meta-ai-gateway-session-id within a second, and that request and the four after it waited
@@ -275,6 +278,42 @@ class MuseGatewayRouteTest {
         }
 
     @Test
+    fun `after a gateway timeout the conversation carries a new cache key from the re-send on, across a restart`(
+        @TempDir root: Path,
+    ) = runBlocking {
+        museHead(root) { rig ->
+            val own = "muse:$CONVERSATION"
+            val calm = "muse:$CALM"
+            assertEquals(listOf(calm), rig.turn(CALM, 1).keys, "a conversation starts on its own cache key")
+            rig.gateway.stall(rig.firstRoute(CONVERSATION))
+
+            val timedOut = rig.turn(CONVERSATION, 2)
+
+            assertEquals(own, timedOut.keys.first(), "the turn goes out on its conversation's key: ${timedOut.keys}")
+            val moved = timedOut.keys.getOrNull(1)
+            assertNotNull(moved, "the gateway timeout is re-sent: ${timedOut.keys}")
+            assertNotEquals(own, moved, "Meta routes by the key, so the re-send leaves $own: ${timedOut.keys}")
+            val reSend = timedOut.requests[1]
+            assertEquals(
+                "muse:${reSend.route}",
+                reSend.cacheKey,
+                "the key and the header name one place: ${timedOut.requests}",
+            )
+            assertTrue(timedOut.answered, "the client gets the answer: ${timedOut.sse}")
+            val next = rig.turn(CONVERSATION, 3)
+            assertEquals(listOf(moved), next.keys, "turn 3 carries the key the conversation moved to")
+            assertEquals(listOf(calm), rig.turn(CALM, 2).keys, "a conversation that never moved keeps its own key")
+
+            rig.restart()
+
+            val later = rig.turn(CONVERSATION, 4)
+            assertEquals(listOf(moved), later.keys, "after the restart the conversation carries its new key")
+            assertTrue(later.answered, "the turn after the restart is answered: ${later.sse}")
+            assertEquals(listOf(calm), rig.turn(CALM, 3).keys, "after the restart the calm one keeps its own key")
+        }
+    }
+
+    @Test
     fun `a request whose connection was refused before it was written keeps its route, and so does the next turn`(
         @TempDir root: Path,
     ) = runBlocking {
@@ -447,8 +486,14 @@ class MuseGatewayRouteTest {
     }
 }
 
-/** What one turn looked like from both ends: the routes the gateway saw it ride, and what the client was streamed. */
-private data class SeenTurn(val routes: List<String?>, val sse: String) {
+/** What one turn looked like from both ends: the requests the gateway read, and what the client was streamed. */
+private data class SeenTurn(val requests: List<MetaRequest>, val sse: String) {
+    /** The route each request rode. */
+    val routes: List<String?> = requests.map(MetaRequest::route)
+
+    /** The prompt_cache_key each request carried. */
+    val keys: List<String?> = requests.map(MetaRequest::cacheKey)
+
     private val events: List<JsonObject> = sse.lineSequence()
         .filter { it.startsWith("data: ") }
         .mapNotNull { JsonScalars.objectOrNull(Json, it.removePrefix("data: ")) }
@@ -467,11 +512,11 @@ private data class SeenTurn(val routes: List<String?>, val sse: String) {
 }
 
 /** A turn the client is still reading: [job] is the client's request, [midGeneration] completes once the client has
- *  been streamed the start of Meta's answer, and [sse] is what it has been streamed so far. [routesBefore] counts the
+ *  been streamed the start of Meta's answer, and [sse] is what it has been streamed so far. [requestsBefore] counts the
  *  requests the gateway had seen before the turn began. */
 private class StreamingTurn(
     val job: Job,
-    val routesBefore: Int,
+    val requestsBefore: Int,
     private val midGeneration: CompletableDeferred<Unit>,
     private val sse: StringBuffer,
 ) {
@@ -521,11 +566,11 @@ private class MuseRig(
     /** Turn [n] of [session]: every earlier question and its answer, then the next question, as Claude Code sends
      *  it. */
     suspend fun turn(session: String, n: Int): SeenTurn {
-        val before = gateway.routes.size
+        val before = gateway.requests.size
         val sse = withTimeout(TURN_WAIT_MS) {
             client.post(messagesUrl()) { ask(session, n) }.bodyAsText()
         }
-        return SeenTurn(gateway.routes.drop(before), sse)
+        return SeenTurn(gateway.requests.drop(before), sse)
     }
 
     /** Turn [n] of [session], read as it streams, the way Claude Code reads a turn the user may stop. */
@@ -533,7 +578,7 @@ private class MuseRig(
         val midGeneration = CompletableDeferred<Unit>()
         val sse = StringBuffer()
         val url = messagesUrl()
-        val before = gateway.routes.size
+        val before = gateway.requests.size
         val job = scope.launch {
             client.preparePost(url) { ask(session, n) }.execute { response ->
                 val body = response.bodyAsChannel()
@@ -550,7 +595,7 @@ private class MuseRig(
     /** What [turn] looked like from both ends, once it has ended. */
     suspend fun seen(turn: StreamingTurn): SeenTurn {
         val sse = turn.ended()
-        return SeenTurn(gateway.routes.drop(turn.routesBefore), sse)
+        return SeenTurn(gateway.requests.drop(turn.requestsBefore), sse)
     }
 
     /** Turn 1 of [session], answered on the route the conversation starts on, and that route. */

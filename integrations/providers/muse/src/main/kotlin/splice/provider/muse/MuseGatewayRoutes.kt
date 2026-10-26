@@ -1,8 +1,13 @@
 // NEW: where Meta's gateway runs each Muse conversation, and when a conversation must leave that place (Oct 26, 2026).
 //
-// The gateway pins a conversation's requests to one place by x-meta-ai-gateway-session-id, and the
-// conversation's prompt cache lives there. A request sent there while a generation is still running on it waits
-// behind that generation. On Oct 26 a re-send 0.2 s after a 504 gateway_timeout, and the four requests after it,
+// Meta routes requests by their prompt_cache_key: "Requests that share a key route together, so a request is more
+// likely to land on a backend that already holds its prefix" (dev.meta.ai/docs/prompt-caching). A conversation's own
+// key is muse:<session>, and its prompt cache lives where that key lands. splice also sends
+// x-meta-ai-gateway-session-id beside it, a header no Meta page names. Moving that header alone moved no request: on
+// Oct 26, 10 of the 15 answers after a header-only move read 92 to 100% of the conversation from the cache it was
+// meant to leave. So a route here is the key and the header together, and a conversation that leaves one carries a
+// new key and a new header from then on. A request sent where a generation is still running waits behind that
+// generation. On Oct 26 a re-send 0.2 s after a 504 gateway_timeout, and the four requests after it,
 // waited 18 minutes. After a turn the client aborted, the next warm turn waited over 30 s 6 times in 33, against 2
 // to 3% after a normal turn. So a request goes out on a new route whenever its conversation's previous request reached
 // Meta whole and never finished: the gateway gave up on it, its stream broke and the turn sent it again or resumed it,
@@ -29,6 +34,7 @@ import splice.core.util.MonoClock
 import splice.core.util.SafeFailureText
 import splice.core.util.SecureFile
 import splice.core.wire.HttpStatus
+import splice.upstream.RoundBody
 import splice.upstream.VendorRoute
 import java.nio.ByteBuffer
 import java.nio.file.Files
@@ -38,8 +44,14 @@ import java.util.UUID
 import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicReference
 
-// why: the header Meta's gateway routes a request by.
+// why: the header splice has sent beside the cache key since Sep 28 to pin a conversation's place at Meta.
 private const val ROUTE_HEADER = "x-meta-ai-gateway-session-id"
+
+// why: the field of a Responses request Meta routes by, and the one a moved conversation changes in each body.
+private const val CACHE_KEY_FIELD = "prompt_cache_key"
+
+// why: a moved conversation's key stays in Muse's namespace and is as long as a session's own: muse: and a UUID.
+private const val MOVED_KEY_PREFIX = "muse:"
 
 // why: the error code Meta's gateway answers a 504 with when no stream started before its own timeout (Oct 26 trace).
 private const val GATEWAY_TIMEOUT_CODE = "gateway_timeout"
@@ -74,9 +86,10 @@ public data class MuseHeaderWait(
     val clock: ElapsedClock = ElapsedClock(MonoClock::nowMs),
 )
 
-/** The route each conversation of one Muse head rides. A conversation starts on a route derived from its key, so it
- *  lands in the same place on every turn and after every restart with nothing stored. One that had to leave a route
- *  rides a new one from then on, and [stateDir] keeps that move for the next daemon. */
+/** The route each conversation of one Muse head rides: the gateway header and the prompt_cache_key its requests carry.
+ *  A conversation starts on its own key and a header derived from it, so it lands in the same place on every turn and
+ *  after every restart with nothing stored. One that had to leave a route rides a new header and a key named after it
+ *  from then on, and [stateDir] keeps that move for the next daemon. */
 public class MuseGatewayRoutes(
     stateDir: Path?,
     private val log: LogSink,
@@ -85,15 +98,21 @@ public class MuseGatewayRoutes(
     private val file: Path? = stateDir?.resolve(MOVES_FILE)
     private val moves: LinkedHashMap<String, String> = load()
 
-    /** The headers that route [conversation]'s next request. */
+    /** The gateway header [conversation]'s next request carries. Its body carries that route's cache key beside it,
+     *  which the turn's [route] writes there. */
     public fun headers(conversation: String): Map<String, String> = mapOf(ROUTE_HEADER to current(conversation))
 
     /** The route of one turn of [conversation]: it follows that turn's requests and moves the conversation when one of
      *  them may still be running where it was sent, or Meta held a warm one's headers past [headerWait]'s limit. */
     public fun route(conversation: String): VendorRoute = TurnRoute(conversation)
 
-    private fun current(conversation: String): String =
-        synchronized(moves) { moves[conversation] } ?: firstRoute(conversation)
+    private fun current(conversation: String): String = movedTo(conversation) ?: firstRoute(conversation)
+
+    /** The route [conversation] moved to last; null while it rides its first. */
+    private fun movedTo(conversation: String): String? = synchronized(moves) { moves[conversation] }
+
+    /** The cache key of a conversation that moved to [route]. */
+    private fun movedKey(route: String): String = "$MOVED_KEY_PREFIX$route"
 
     /** [conversation] leaves [from] for a new route, unless it has already left it. */
     private fun leave(conversation: String, from: String, why: String) {
@@ -103,9 +122,20 @@ public class MuseGatewayRoutes(
             moves.remove(conversation)
             moves[conversation] = to
             while (moves.size > MOVES_KEPT) moves.remove(moves.keys.first())
-            log("[muse] $conversation leaves gateway route $from for $to: $why")
+            log("[muse] $conversation leaves gateway route $from for $to, with cache key ${movedKey(to)}: $why")
             save()
         }
+    }
+
+    /** [round] carrying [key] as its cache key, or null when it already does. Every body is built with its
+     *  conversation's own key, which Meta routes to the place a moved conversation left. */
+    private fun rekeyed(round: RoundBody, key: String): RoundBody? {
+        val request = when (round) {
+            is RoundBody.Tree -> round.element as? JsonObject
+            is RoundBody.Text -> JsonScalars.objectOrNull(museJson, round.text)
+        }
+        if (request == null || JsonScalars.str(request, CACHE_KEY_FIELD) == key) return null
+        return RoundBody.Tree(JsonObject(request + (CACHE_KEY_FIELD to JsonPrimitive(key))))
     }
 
     /** The gateway gave up waiting for the stream: a 504 whose error code is gateway_timeout. Nothing in it says the
@@ -179,18 +209,30 @@ public class MuseGatewayRoutes(
 
         @Volatile private var heldMs: Long? = null
 
+        /** The cache key the request sent last carries in place of the one it was built with: the key of the route
+         *  the conversation moved to, or null while it rides its first. */
+        @Volatile private var sentKey: String? = null
+
         /** The turn is over. The transport hears a request went out whole on its own thread, so a turn the client left
          *  while the request's last bytes went out ends before it hears that, and leaves that request behind. */
         @Volatile private var ended = false
 
+        /** The header and the key come from one look at the moves, so a request rides one route even while another
+         *  turn of its conversation moves it. */
         override fun sending(): Map<String, String> {
             leftBehind("the turn sends again")
-            val route = current(conversation)
+            val moved = movedTo(conversation)
+            val route = moved ?: firstRoute(conversation)
             sent = route
+            sentKey = moved?.let(::movedKey)
             writtenAt = null
             heldMs = null
             return mapOf(ROUTE_HEADER to route)
         }
+
+        /** The body as built while the conversation rides its first route; otherwise a copy carrying the key of the
+         *  route [sending] just chose. */
+        override fun body(round: RoundBody): RoundBody? = sentKey?.let { key -> rekeyed(round, key) }
 
         override fun written() {
             writtenAt = headerWait.clock()

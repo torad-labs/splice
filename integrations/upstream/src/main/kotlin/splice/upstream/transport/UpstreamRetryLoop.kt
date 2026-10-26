@@ -6,6 +6,7 @@ import splice.core.auth.CredentialKey
 import splice.core.auth.Credentials
 import splice.core.util.ElapsedClock
 import splice.core.wire.HttpStatus
+import splice.upstream.RoundBody
 import splice.upstream.retry.CredentialCooldowns
 import splice.upstream.retry.RETRY_AFTER_GIVE_UP_MS
 import splice.upstream.retry.RateLimitCooldown
@@ -15,6 +16,12 @@ import splice.upstream.retry.RetryRules
 import splice.upstream.sse.AttemptRecorder
 
 internal enum class RetryKind { ORDINARY, POST_SEND }
+
+/** Encodes one round's body into the request the wire sends: [UpstreamRequest.body], which keeps the bytes it wrote
+ *  and the content-encoding they ride under. */
+internal fun interface RequestBodyFromRound {
+    operator fun invoke(round: RoundBody): RequestBody
+}
 
 /** Mutable loop state threaded through UpstreamClient.runAttempt — extracted (with it) so `post()` stays
  *  under detekt's LongMethod/CyclomaticComplexMethod ceilings (G4d follow-up to bb8553f). [t0] is when the
@@ -111,6 +118,12 @@ internal class RetryState(var cooldown: RateLimitCooldown, val t0: Long, val max
         cooldown = selected
         return AttemptCredentials(credentials, headers, postedAtMs, selected)
     }
+
+    /** The body this attempt sends: [body] as it was built, or the copy the vendor's route made of it for the place
+     *  [credentials] just chose (VendorRoute.body), encoded by [encode]. Each attempt asks with the body as built, so
+     *  what it sends never depends on what an earlier attempt sent. */
+    fun routedBody(ctx: PostContext, body: RequestBody, encode: RequestBodyFromRound): RequestBody =
+        ctx.recovery.route?.body(body.body)?.let(encode::invoke) ?: body
 
     fun amendStep(ctx: PostContext, outcome: RetryOutcome.Failed, bodyJson: String): LoopStep.Amend? {
         if (amendedOnce) return null

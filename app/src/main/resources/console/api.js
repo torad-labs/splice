@@ -4,11 +4,13 @@
 // key (Oct 26, 2026), so an address that a history, a log or a browser tool keeps holds a code that is spent or expired
 // and opens nothing. Until then the address carried the management key itself (#k=…), and on Sep 29 a browser tool
 // printed one into a conversation that went to a model provider: such an address is still cleared, and its key is
-// never kept or sent.
+// never kept or sent. A browser signed in before then kept that management key under the old name, and would send it on
+// every call until a trade replaced it: it is removed as the page loads, so the console key alone is ever kept or sent.
 "use strict";
 
 const API = (() => {
-  const STORE = "splice-console-key";
+  const STORE = "splice-console-access-key";
+  localStorage.removeItem("splice-console-key"); // where a page before Oct 26 kept the management key itself
   const handed = /^#([ck])=([^&/]*)$/.exec(location.hash);
   if (handed) history.replaceState(history.state, "", `${location.pathname}${location.search}`); // not left in view or history
   // Every call waits for the trade, so none goes out keyless, or with an older key, while the page is being signed in.

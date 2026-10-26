@@ -11,7 +11,9 @@ import { join } from "node:path";
 import { layout } from "../gate/src/lib/repo.ts";
 
 const consoleDir = join(layout().repoRoot, "app/src/main/resources/console");
-const STORE = "splice-console-key";
+const STORE = "splice-console-access-key";
+// Where a browser signed in before Oct 26 kept what it was handed then: the management key itself.
+const LEGACY_STORE = "splice-console-key";
 const CONSOLE_KEY = "c0", MANAGEMENT_KEY = "a1";
 const consoleKey = CONSOLE_KEY.repeat(32), managementKey = MANAGEMENT_KEY.repeat(32);
 const fresh = new Set<string>();
@@ -123,6 +125,23 @@ test("an address that carries the management key, as pages before Oct 26 did, is
     expect(await page.evaluate((store) => localStorage.getItem(store), STORE)).toBeNull();
     expect(bearers.filter((b) => b.includes(managementKey))).toEqual([]);
     expect(traded).toEqual([]);
+  } finally {
+    await context.close();
+  }
+}, 40_000);
+
+test("a browser that kept the management key before Oct 26 forgets it when a page loads, and sends it nowhere", async () => {
+  const context = await browser.newContext();
+  const page = await context.newPage();
+  try {
+    // Kept the way a console page before Oct 26 kept it, from an address of the console's origin that runs no page.
+    await page.goto(`${origin}/no-page-here`);
+    await page.evaluate(([store, key]) => localStorage.setItem(store, key), [LEGACY_STORE, managementKey] as const);
+    await page.goto(`${origin}/accounts.html`);
+    await page.locator(".lockedby").waitFor({ timeout: 15_000 });
+    expect(await page.evaluate((store) => localStorage.getItem(store), LEGACY_STORE)).toBeNull();
+    expect(bearers.length).toBeGreaterThan(0);
+    expect(bearers.filter((b) => b.includes(managementKey))).toEqual([]);
   } finally {
     await context.close();
   }

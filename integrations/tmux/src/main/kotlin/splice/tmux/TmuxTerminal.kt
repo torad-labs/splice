@@ -23,6 +23,11 @@
 // behaviour and not splice's to change. Each message has a buffer of its own: buffers belong to the server,
 // shared by every client of it, so one named for the pane let a second message replace the first between its
 // load and its paste.
+//
+// WHY A RELAUNCH RESPAWNS (Oct 26, 2026). A relaunch that opened a new tmux session for each seat left its starter and
+// the person looking for it. A pane is held with tmux's remain-on-exit before its client leaves, so it outlives the
+// client, and respawn-pane starts the session again in the same session, window and pane. A pane where something still
+// runs, such as the shell the session was started from, is never respawned, since that would end what runs there.
 package splice.tmux
 
 import splice.core.session.SessionKey
@@ -48,6 +53,10 @@ private const val EXIT_GRACE_MS = 10_000L
 // why: how often a close looks again for the client to have gone.
 private const val EXIT_POLL_MS = 100L
 
+// why: a pane's program that ran the client and waits on it (a seat's `bash -c` wrapper) ends a moment after the client
+// does; two seconds is far past that, and a pane still running something then has a shell in front.
+private const val SETTLE_MS = 2_000L
+
 // why: the size a session opens at before anyone attaches, wide enough that a permission's choices are not
 // wrapped mid-word when splice reads them off the screen. Attaching resizes it to the person's terminal.
 private const val OPEN_COLUMNS = "200"
@@ -67,6 +76,8 @@ public class TmuxTerminal(
     socket: Path? = null,
     binary: String = "tmux",
     private val exitWaitMs: Long = EXIT_GRACE_MS,
+    /** How long [restart] waits for a pane's program to end after the client it ran has gone. */
+    private val settleMs: Long = SETTLE_MS,
 ) : SessionTerminal {
     private val tmux = TmuxCommand(binary, socket, CALL_DEADLINE_MS)
 
@@ -107,7 +118,7 @@ public class TmuxTerminal(
     override fun press(pane: SessionPane, key: SessionKey) {
         val at = paneOf(pane) ?: return
         if (!isOpen(pane)) return
-        keyNames(key).forEach { tmux.must(listOf("send-keys", "-t", at.id, it), at.socket) }
+        TmuxKeys.names(key).forEach { tmux.must(listOf("send-keys", "-t", at.id, it), at.socket) }
     }
 
     /** A capture tmux refused throws with tmux's own line, as one that did not answer does: a screen splice could not
@@ -134,7 +145,7 @@ public class TmuxTerminal(
      *  against the session's own process with [hosts] instead. */
     override fun isOpen(pane: SessionPane): Boolean {
         val at = paneOf(pane) ?: return false
-        val reply = tmux.run(listOf("display-message", "-p", "-t", at.id, "#{pane_dead} #{pane_pid}"), at.socket)
+        val reply = tmux.run(listOf(ASK, "-p", "-t", at.id, "#{pane_dead} #{pane_pid}"), at.socket)
         val shown = reply.out.trim().split(' ')
         val live = reply.ok && shown.first() == "0"
         return live && (at.owner == null || shown.getOrNull(1)?.toLongOrNull() == at.owner)
@@ -153,31 +164,54 @@ public class TmuxTerminal(
      *  the pane's terminal: a session suspended to its shell is still under the pane but no longer the one typed to. */
     override fun hosts(pane: SessionPane, pid: Long): Boolean {
         val at = paneOf(pane) ?: return false
-        val reply = tmux.run(listOf("display-message", "-p", "-t", at.id, "#{pane_pid}"), at.socket)
+        val reply = tmux.run(listOf(ASK, "-p", "-t", at.id, "#{pane_pid}"), at.socket)
         val root = reply.out.trim().toLongOrNull()?.takeIf { reply.ok } ?: return false
         return ForegroundProcess.under(pid, root) && ForegroundProcess.inFront(pid) != false
     }
 
-    /** The key tmux sends for what the console asked to do. Every case is listed and there is no `else`: the
-     *  day a key is added to the contract, this is a compile error rather than a press that quietly does
-     *  the wrong thing. The nine numbered choices share one arm because they are one rule, their own digit. */
-    private fun keyNames(key: SessionKey): List<String> = if (key == SessionKey.CLEAR) {
-        List(CLEAR_PRESSES) { "C-u" }
-    } else {
-        listOf(keyName(key))
+    /** Keeps the pane once its program ends, by tmux's own remain-on-exit, only where it would not stay already. What
+     *  the pane itself had set is written beside it, under [HELD_MARK], so [release] puts back exactly that. */
+    override fun hold(pane: SessionPane): Boolean {
+        val at = paneOf(pane)?.takeIf { isOpen(pane) } ?: return false
+        val shown = tmux.run(listOf(ASK, "-p", "-t", at.id, "#{$REMAIN_ON_EXIT}"), at.socket)
+        if (shown.ok && shown.out.trim() != ON) {
+            val own = tmux.must(listOf(SHOW_OPTIONS, "-p", "-q", "-v", "-t", at.id, REMAIN_ON_EXIT), at.socket).trim()
+            tmux.must(listOf(SET_OPTION, "-p", "-t", at.id, HELD_MARK, own.ifEmpty { INHERITED }), at.socket)
+            tmux.must(listOf(SET_OPTION, "-p", "-t", at.id, REMAIN_ON_EXIT, ON), at.socket)
+        }
+        return shown.ok
     }
 
-    private fun keyName(key: SessionKey): String = when (key) {
-        SessionKey.CLEAR -> "C-u"
-        SessionKey.STOP -> "Escape"
-        SessionKey.INTERRUPT -> "C-c"
-        SessionKey.ACCEPT -> "Enter"
-        SessionKey.NEXT -> "Down"
-        SessionKey.PREVIOUS -> "Up"
-        SessionKey.CHOICE_1, SessionKey.CHOICE_2, SessionKey.CHOICE_3,
-        SessionKey.CHOICE_4, SessionKey.CHOICE_5, SessionKey.CHOICE_6,
-        SessionKey.CHOICE_7, SessionKey.CHOICE_8, SessionKey.CHOICE_9,
-        -> key.name.substringAfter(CHOICE_PREFIX)
+    /** Waits up to [settleMs] for the pane's program to end, since a seat's wrapper ends a moment after the client it
+     *  ran, then starts [command] in its place with tmux's respawn-pane, which keeps the session, the window and the
+     *  pane. A program that still runs there is the shell the session was started from, and is never ended. */
+    override fun restart(pane: SessionPane, command: List<String>, directory: String): SessionPane? {
+        require(command.isNotEmpty()) { "a session needs a command to run" }
+        val at = paneOf(pane) ?: throw IOException("no tmux pane is named ${pane.id}")
+        val dead = listOf(ASK, "-p", "-t", at.id, "#{pane_dead}")
+        val until = System.nanoTime() + TimeUnit.MILLISECONDS.toNanos(settleMs)
+        var ended = tmux.must(dead, at.socket).trim() == "1"
+        while (!ended && System.nanoTime() < until) {
+            Thread.sleep(EXIT_POLL_MS)
+            ended = tmux.must(dead, at.socket).trim() == "1"
+        }
+        if (!ended) return null
+        // `--` before the command, as in open: the session's own arguments start with dashes
+        tmux.must(listOf("respawn-pane", "-t", at.id, "-c", directory, "--") + command, at.socket)
+        val pid = tmux.must(listOf(ASK, "-p", "-t", at.id, "#{pane_pid}"), at.socket)
+            .trim().toLongOrNull()
+        return TmuxPane(at.id, at.socket, requireNotNull(pid) { "tmux named no process for ${at.id}" }).pane
+    }
+
+    /** Puts back what [hold] wrote beside the pane, and nothing on a pane it did not change: a pane kept by its own
+     *  setting stays kept. A pane whose program ended while it was held stays until it is closed. */
+    override fun release(pane: SessionPane) {
+        val at = paneOf(pane) ?: return
+        val marked = tmux.run(listOf(SHOW_OPTIONS, "-p", "-q", "-v", "-t", at.id, HELD_MARK), at.socket)
+        val before = marked.out.trim().takeIf { marked.ok && it.isNotEmpty() } ?: return
+        val back = if (before == INHERITED) listOf("-u", REMAIN_ON_EXIT) else listOf(REMAIN_ON_EXIT, before)
+        tmux.run(listOf(SET_OPTION, "-p", "-t", at.id) + back, at.socket)
+        tmux.run(listOf(SET_OPTION, "-p", "-u", "-t", at.id, HELD_MARK), at.socket)
     }
 
     /** The pane an opaque id names, or null when it names no pane at all.
@@ -195,6 +229,48 @@ public class TmuxTerminal(
         return TmuxPane(held.groupValues[1], socket, held.groupValues[2].toLongOrNull())
     }
 }
+
+/** The keys tmux sends for what the console asks to do. */
+private object TmuxKeys {
+    /** Every key [key] is pressed as, in order. */
+    fun names(key: SessionKey): List<String> = if (key == SessionKey.CLEAR) {
+        List(CLEAR_PRESSES) { "C-u" }
+    } else {
+        listOf(name(key))
+    }
+
+    /** The key tmux sends for what the console asked to do. Every case is listed and there is no `else`: the
+     *  day a key is added to the contract, this is a compile error rather than a press that quietly does
+     *  the wrong thing. The nine numbered choices share one arm because they are one rule, their own digit. */
+    private fun name(key: SessionKey): String = when (key) {
+        SessionKey.CLEAR -> "C-u"
+        SessionKey.STOP -> "Escape"
+        SessionKey.INTERRUPT -> "C-c"
+        SessionKey.ACCEPT -> "Enter"
+        SessionKey.NEXT -> "Down"
+        SessionKey.PREVIOUS -> "Up"
+        SessionKey.CHOICE_1, SessionKey.CHOICE_2, SessionKey.CHOICE_3,
+        SessionKey.CHOICE_4, SessionKey.CHOICE_5, SessionKey.CHOICE_6,
+        SessionKey.CHOICE_7, SessionKey.CHOICE_8, SessionKey.CHOICE_9,
+        -> key.name.substringAfter(CHOICE_PREFIX)
+    }
+}
+
+// why: the tmux commands this file asks a pane about and sets options with, each named once.
+private const val ASK = "display-message"
+private const val SET_OPTION = "set-option"
+private const val SHOW_OPTIONS = "show-options"
+
+// why: tmux's own pane option that keeps a pane once its program ends, and the value that keeps it.
+private const val REMAIN_ON_EXIT = "remain-on-exit"
+private const val ON = "on"
+
+// why: a pane option of splice's own, beside the pane, holding what the pane had set before a hold: tmux keeps it as
+// long as the pane, so a hold a daemon restart cut short is still given back by the next release.
+private const val HELD_MARK = "@splice-held"
+
+// why: what HELD_MARK holds when the pane had set nothing itself and took its window's or the server's value.
+private const val INHERITED = "inherit"
 
 // why: what separates a pane's number from its server's socket in the opaque id. A pane is `%` and digits and
 // can never hold one, and the socket is everything after the first, so a socket path with one in it survives.

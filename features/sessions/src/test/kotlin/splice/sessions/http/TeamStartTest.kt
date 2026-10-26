@@ -74,6 +74,32 @@ internal class FakeTerminal(var openFails: Boolean = false, var screenText: Stri
     override fun recorded(pane: String, server: String): SessionPane = SessionPane("$pane@$server")
 
     override fun hosts(pane: SessionPane, pid: Long): Boolean = inFront[pane] == pid
+
+    /** Whether a pane can be kept once its program ends, and the panes kept and given back, in order. */
+    var holds = true
+    val held = mutableListOf<SessionPane>()
+    val released = mutableListOf<SessionPane>()
+
+    /** Each start in place: the pane, the command and the folder, in order. */
+    val restarted = mutableListOf<Opened>()
+
+    /** What a start in place does to the pane: it runs the command, so the pane is live again. */
+    var onRestart: () -> Unit = { live = true }
+
+    override fun hold(pane: SessionPane): Boolean = holds.also { if (it) held += pane }
+
+    /** A pane with a program still in front (his shell) is not started again; one whose program ended is, as the pane
+     *  it was, now carrying the process the command became. */
+    override fun restart(pane: SessionPane, command: List<String>, directory: String): SessionPane? {
+        if (live) return null
+        restarted += Opened(pane.id, command, directory)
+        onRestart()
+        return SessionPane(pane.id.substringBefore('@') + "+again")
+    }
+
+    override fun release(pane: SessionPane) {
+        released += pane
+    }
 }
 
 internal class FakePanes : SessionPanes {

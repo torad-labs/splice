@@ -12,6 +12,8 @@ package splice.tmux
 import org.junit.jupiter.api.AfterEach
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertFalse
+import org.junit.jupiter.api.Assertions.assertNotNull
+import org.junit.jupiter.api.Assertions.assertNull
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.BeforeEach
 import org.junit.jupiter.api.Test
@@ -20,6 +22,7 @@ import org.junit.jupiter.api.io.TempDir
 import splice.core.session.SessionKey
 import splice.core.session.SessionPane
 import java.io.IOException
+import java.nio.file.Files
 import java.nio.file.Path
 import java.util.concurrent.TimeUnit
 
@@ -39,7 +42,7 @@ class TmuxTerminalTest {
         socket = tmp.resolve("tmux.sock")
         // exitWaitMs short: these sessions run `cat`, which leaves the moment its input closes, and a test
         // that waited the production ten seconds for a client that is never coming would just be slow.
-        terminal = TmuxTerminal(socket = socket, exitWaitMs = 500)
+        terminal = TmuxTerminal(socket = socket, exitWaitMs = 500, settleMs = 300)
     }
 
     @AfterEach
@@ -245,5 +248,93 @@ class TmuxTerminalTest {
         val screen = screenUntil(theirs) { "got:marker" in it }
         assertTrue("got:marker" in screen, "the shell answered: $screen")
         assertFalse("hello" in screen, "nothing splice meant for its session reached the shell: $screen")
+    }
+
+    // A relaunch comes back where the session ran (Oct 26, 2026): its pane is kept once its program ends, and the
+    // session starts again in that same pane, in the same tmux session and window its starter and the person find it
+    // by. A relaunch that opened a new session instead left them looking for it.
+
+    @Test
+    fun `a held pane outlives its program, and the session starts again in the same session, window and pane`() {
+        val pane = open("sh", "-c", "read -r line")
+        val before = where(pane)
+        val elsewhere = Files.createDirectories(tmp.resolve("elsewhere"))
+
+        assertTrue(terminal.hold(pane), "the pane is kept once its program ends")
+        terminal.send(pane, "bye")
+        assertTrue(until { !terminal.isOpen(pane) }, "its program ended")
+        val again = terminal.restart(pane, listOf("sh", "-c", "pwd; exec cat"), elsewhere.toString())
+
+        assertNotNull(again, "a pane whose program ended is started again")
+        val restarted = checkNotNull(again)
+        assertTrue(terminal.isOpen(restarted), "the command runs there now, as the pane's own process")
+        assertEquals(before, where(restarted), "in the same session, window and pane")
+        val screen = screenUntil(restarted) { it.contains(elsewhere.toString()) }
+        assertTrue(screen.contains(elsewhere.toString()), "in the folder it was given: $screen")
+    }
+
+    @Test
+    fun `a program still running in the pane is never ended to start another`() {
+        val pane = open("cat")
+
+        assertTrue(terminal.hold(pane))
+        assertNull(terminal.restart(pane, listOf("sh", "-c", "echo replaced; exec cat"), tmp.toString()))
+
+        assertTrue(terminal.isOpen(pane), "the program it ran still runs there")
+        assertFalse(terminal.screen(pane).contains("replaced"), "and nothing else was started in its place")
+    }
+
+    @Test
+    fun `a pane given back closes with its program again, as it did before it was held`() {
+        val pane = open("sh", "-c", "read -r line")
+
+        assertTrue(terminal.hold(pane))
+        terminal.release(pane)
+        terminal.send(pane, "bye")
+
+        assertTrue(until { !exists(pane) }, "given back, it closed with its program")
+    }
+
+    @Test
+    fun `a pane its owner keeps on its own is still kept once given back`() {
+        val pane = open("cat")
+        tmux().must(listOf("set-option", "-p", "-t", number(pane), "remain-on-exit", "on"))
+
+        assertTrue(terminal.hold(pane))
+        terminal.release(pane)
+
+        val own = tmux().must(listOf("show-options", "-p", "-v", "-t", number(pane), "remain-on-exit")).trim()
+        assertEquals("on", own, "the setting it had is the setting it keeps")
+    }
+
+    @Test
+    fun `a pane that is not there is not kept, and is never started again`() {
+        val gone = SessionPane("%0@" + tmp.resolve("never-started.sock"))
+
+        assertFalse(terminal.hold(gone), "no pane is kept that is not there")
+        assertFalse(terminal.hold(SessionPane("not-a-pane")), "nor one an id cannot name")
+        assertThrows<IOException>("a start where nothing can start says so") {
+            terminal.restart(gone, listOf("cat"), tmp.toString())
+        }
+        terminal.release(gone)
+    }
+
+    private fun tmux() = TmuxCommand("tmux", socket, DEADLINE_MS)
+
+    /** The tmux session, window and pane [pane] is in, as tmux names them. */
+    private fun where(pane: SessionPane): String = tmux()
+        .must(listOf("display-message", "-p", "-t", number(pane), "#{session_name} #{window_index} #{pane_id}")).trim()
+
+    /** Whether tmux still has [pane] at all, live or kept after its program ended. */
+    private fun exists(pane: SessionPane): Boolean =
+        tmux().run(listOf("list-panes", "-a", "-F", "#{pane_id}")).let { it.ok && number(pane) in it.out.lines() }
+
+    /** Polls until [holds], and answers whether it did before the deadline. Never sleeps for a duration. */
+    private fun until(holds: () -> Boolean): Boolean {
+        val deadline = System.nanoTime() + TimeUnit.MILLISECONDS.toNanos(DEADLINE_MS)
+        while (System.nanoTime() < deadline) {
+            if (holds()) return true
+        }
+        return holds()
     }
 }

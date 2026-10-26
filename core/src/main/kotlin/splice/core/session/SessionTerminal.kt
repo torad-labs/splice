@@ -12,6 +12,10 @@
 // screen, [screen] to read the choices this Claude Code version is actually showing, and [close] it. Reading the screen is an act of its own because
 // the choices belong to the client's version, never to a list splice keeps.
 //
+// A RELAUNCH STAYS WHERE IT RAN (Oct 26, 2026). A relaunch brought each session back in a new terminal, which its
+// starter and the person could not find. Now its pane is held ([hold]) before its client leaves, the session is
+// started again in that same pane ([restart]), and the pane is given back its own end ([release]).
+//
 // SPLICE DRIVES ONLY WHAT IT OPENED. A [SessionPane] is handed out by [open] or by registering a pane
 // splice launched, and every other act takes one. There is no act that takes a name, so a pane splice does
 // not know cannot be typed into — the rule is kept by the shape, not by a check somebody has to remember.
@@ -68,6 +72,20 @@ public interface SessionTerminal {
      *  has taken the foreground. A pane whose session exited, or was put in the background, holds another client,
      *  and nothing is typed into it on that session's behalf. */
     public fun hosts(pane: SessionPane, pid: Long): Boolean
+
+    /** Keep [pane] in its place once the program in it ends, so a session relaunched there comes back in the same
+     *  terminal, window and pane its starter and the person find it by (Oct 26, 2026). True when it now stays; false
+     *  when there is no such pane, and then nothing changed. [release] gives it back what it did before. */
+    public fun hold(pane: SessionPane): Boolean
+
+    /** Start [command] in [pane], in [directory], in place of the program that ended there, and answer the pane as
+     *  it is now, carrying the process [command] became. Null while a program still runs there, such as the shell a
+     *  session was started from: nothing is ended to make room. Throws when the pane is gone or the terminal refused. */
+    public fun restart(pane: SessionPane, command: List<String>, directory: String): SessionPane?
+
+    /** Give [pane] back the end it had before [hold]: one [hold] changed closes with its program again, and one it
+     *  did not change is left as it is. */
+    public fun release(pane: SessionPane)
 }
 
 /** The keys the console sends, named for what they DO. A terminal's actual bytes are the implementation's. */

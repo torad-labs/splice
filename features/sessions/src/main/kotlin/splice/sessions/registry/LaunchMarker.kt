@@ -23,7 +23,9 @@ public object LaunchMarker {
     /** Whether this host's launches carry the mark: macOS only. */
     public val here: Boolean = System.getProperty("os.name").orEmpty().startsWith("Mac")
 
-    private const val SETTINGS_FLAG = "--settings"
+    /** Claude Code's flag that names a settings overlay: the one declaration, read back by a relaunch
+     *  (LaunchRecipeArgs) to tell splice's own words from the person's. */
+    public const val SETTINGS_FLAG: String = "--settings"
     private val marked = "\"$SPLICE_LAUNCH_KEY\":true"
 
     /** The --settings arguments of a launch: [overlay], the JSON a wrapped launch passes (marked by its writer on

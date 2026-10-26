@@ -23,7 +23,9 @@ import java.nio.file.NoSuchFileException
 import java.nio.file.Path
 import java.time.Instant
 
-private const val MCP_CONFIG_FLAG = "--mcp-config"
+/** Claude Code's flag that names an MCP config file: the one declaration, read back by a relaunch
+ *  (LaunchRecipeArgs) to tell splice's own words from the person's. */
+public const val MCP_CONFIG_FLAG: String = "--mcp-config"
 private const val AUTHORIZATION_HEADER = "Authorization"
 
 /** Whether a running session's hosted MCP servers hold an MCP key that was replaced after the session started. */

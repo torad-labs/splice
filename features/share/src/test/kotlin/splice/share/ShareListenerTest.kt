@@ -26,6 +26,7 @@ import java.net.http.HttpClient
 import java.net.http.HttpRequest
 import java.net.http.HttpResponse
 import java.nio.file.Path
+import kotlin.random.Random
 
 internal class ShareListenerTest {
     private val sharePort = TestPorts.reserve()
@@ -72,9 +73,9 @@ internal class ShareListenerTest {
     @AfterEach
     fun stop() = listener.stop()
 
-    private fun send(path: String, body: String? = null): Pair<Int, String> {
+    private fun send(path: String, body: String? = null, type: String = "application/json"): Pair<Int, String> {
         val request = HttpRequest.newBuilder(URI.create("http://127.0.0.1:$sharePort$path"))
-            .header("Content-Type", "application/json")
+            .header("Content-Type", type)
             .header("X-Claude-Code-Session-Id", "mac-session")
             .let { if (body == null) it.GET() else it.POST(HttpRequest.BodyPublishers.ofString(body)) }
             .build()
@@ -122,4 +123,52 @@ internal class ShareListenerTest {
         val message = error(body).second
         assertTrue(message.contains("grok") && message.contains("stopped") && message.contains("silent"), message)
     }
+
+    // The listener faces the LAN, so a turn's Content-Type is whatever a client or a probe sends. Whatever it is, the
+    // answer is an error Claude Code prints or the turn itself, never a 500 in Ktor's plain text (PR #247 review r2).
+    @Test
+    fun `a posted turn of any content type is refused in an error Claude Code prints, or relayed, never a 500`() {
+        val random = Random(CONTENT_TYPE_SEED)
+        val generated = List(GENERATED_TYPES) {
+            List(random.nextInt(1, MAX_TYPE_CHARS)) { TYPE_CHARS[random.nextInt(TYPE_CHARS.length)] }.joinToString("")
+        }.map(String::trim).filter(String::isNotEmpty)
+        for (type in listOf("json", "text", "application", "/", "application/") + generated) {
+            val (status, body) = send("/silent/v1/messages", turn, type)
+            assertTrue(status == 400 || status == 503, "Content-Type '$type' answered $status: $body")
+            val message = error(body).second
+            if ('/' !in type) {
+                assertEquals(400, status, "Content-Type '$type' names no media type: $body")
+                assertTrue(message.contains("application/json"), "Content-Type '$type': $message")
+            }
+        }
+    }
+
+    @Test
+    fun `a turn sent as application json, in any case and with parameters, reaches the head`() {
+        val random = Random(CONTENT_TYPE_SEED)
+        repeat(JSON_VARIANTS) {
+            val spelled = "application/json".map { if (random.nextBoolean()) it.uppercaseChar() else it }
+            val type = spelled.joinToString("") + JSON_PARAMETERS[random.nextInt(JSON_PARAMETERS.size)]
+            val (status, body) = send("/silent/v1/messages", turn, type)
+            assertEquals(503, status, "Content-Type '$type': $body")
+            assertTrue(error(body).second.contains("not answering"), "Content-Type '$type': $body")
+        }
+    }
 }
+
+// why: a fixed seed, so a failing Content-Type comes back on every run and its value is in the message.
+private const val CONTENT_TYPE_SEED = 20_261_026L
+
+// why: generated values per run; each refusal is one loopback round trip.
+private const val GENERATED_TYPES = 200
+
+// why: long enough for a type, a subtype and a parameter or two.
+private const val MAX_TYPE_CHARS = 24
+
+// why: well-formed JSON types per run; each reaches the head's relay.
+private const val JSON_VARIANTS = 12
+
+// why: the letters of application/json in both cases, digits, and every separator a media type or a parameter uses.
+private const val TYPE_CHARS = "aApPlLiIcCtToOnNjJsS0123456789/;=,+-.*\" "
+
+private val JSON_PARAMETERS = listOf("", "; charset=utf-8", ";charset=UTF-8", " ; x=1")

@@ -35,7 +35,6 @@ import io.ktor.server.engine.embeddedServer
 import io.ktor.server.netty.Netty
 import io.ktor.server.netty.NettyApplicationEngine
 import io.ktor.server.plugins.origin
-import io.ktor.server.request.contentType
 import io.ktor.server.request.httpMethod
 import io.ktor.server.request.path
 import io.ktor.server.request.queryString
@@ -160,7 +159,7 @@ public class ShareListener(
     private suspend fun turn(call: ApplicationCall, head: SharedHead, login: String?, path: List<String>) {
         if (!head.running()) return notRunning(call, head)
         val posted = call.request.httpMethod == HttpMethod.Post
-        if (posted && call.request.contentType().withoutParameters() != ContentType.Application.Json) {
+        if (posted && !sentAsJson(call)) {
             return ShareErrors.refuse(call, HttpStatus.BAD_REQUEST, "a turn's body must be application/json")
         }
         if (login != null) {
@@ -171,6 +170,13 @@ public class ShareListener(
         val query = call.request.queryString().takeIf(String::isNotEmpty)?.let { "?$it" }.orEmpty()
         relay.turn(call, head, path.joinToString("/", prefix = "/") + query)
     }
+
+    /** Whether [call] says its body is application/json, in any case and with any parameters. Read from the header as
+     *  sent: Ktor's parser throws on a value that names no media type, such as "json", and its exception (a plain
+     *  Exception) answered that turn with a 500 in plain text instead of this refusal (PR #247 review r2). */
+    private fun sentAsJson(call: ApplicationCall): Boolean =
+        call.request.headers[HttpHeaders.ContentType]?.substringBefore(';')?.trim()
+            .equals(ContentType.Application.Json.toString(), ignoreCase = true)
 
     /** Pins [session] to [login] on [head], or says why it can't: null once pinned, or when there is nothing to pin
      *  and the request [runs] no turn. */

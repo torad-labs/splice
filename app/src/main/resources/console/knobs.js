@@ -124,7 +124,8 @@ const createKnobs = (scope) => {
   // What the daemon answered for GET /api/config, the menu or Custom field a click opened, and what each change did.
   // `perCommand` is whether a page offers "One command" on a setting's row. A command's own value is written by
   // PATCH /api/config?head=<command> (HeadOverrideWrite.kt), which edits [heads.<command>.overrides] in splice.toml.
-  // `adding` holds, per setting, the commands picked from that menu whose own value is not saved yet.
+  // `adding` holds, per setting, the commands picked from that menu, each keeping its line until the page reloads or its
+  // value is cleared, saved or not.
   // `restart` holds the rows saved while the running splice still reads the old value, until a restart brings them in.
   // `providerOf` maps a command to its provider, which is all kit.js knows a colour by; a page fills it from GET /api/models.
   // `cfg` is null until load() returns: a page draws no value it has not read.
@@ -392,7 +393,10 @@ const createKnobs = (scope) => {
     const mine = { ...(layer("perHead")[cmd] ?? {}) };
     if (v === null) delete mine[key]; else mine[key] = v;
     st.cfg = { ...st.cfg, layers: { ...st.cfg?.layers, perHead: { ...layer("perHead"), [cmd]: mine } } };
-    st.adding[key] = (st.adding[key] ?? []).filter((c) => c !== cmd);
+    // A command set here keeps its line until the page reloads (c01c0a810), so what the change did stays where it was
+    // made: Applied with the struck value and Undo, or Saved with Restart splice. Turned into its chip at the save, the
+    // line took those with it, and a value splice reads at start had no Restart splice left. A cleared one leaves.
+    if (v === null) st.adding[key] = (st.adding[key] ?? []).filter((c) => c !== cmd);
     const restart = (body.restart_required ?? []).includes(key);
     // a cleared value leaves Settings' row, so what it did is said on the setting's own line there as well
     const at = v === null ? [id, key] : [id];

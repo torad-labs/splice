@@ -1,6 +1,8 @@
 // A command's own value on Settings' rows, through the real page against a stub daemon that answers the per-command
 // PATCH /api/config?head=<command> the way HeadOverrideWrite.kt does. What he does: give one command its own value,
-// see what the change did, take it back to the shared value, and bring in a value splice reads only at start.
+// see what the change did, take it back to the shared value, and bring in a value splice reads only at start. A command
+// set here keeps its line until the page reloads; one that already holds its own value reads as a chip, a door to that
+// command's setting on Models, where it edits (gap 457, Oct 13).
 import { afterAll, beforeAll, beforeEach, test } from "bun:test";
 import { chromium, expect, type Browser, type Page } from "@playwright/test";
 import { existsSync } from "node:fs";
@@ -81,11 +83,11 @@ async function busy(held: Record<string, Record<string, unknown>> = {}): Promise
 /** The control cell beside a setting's name. */
 const ctl = (page: Page, key: string) => page.locator(`[data-row="${key}"] + .ctl`);
 
-test("One command gives a command its own value, saved for that command alone, and Back to clears it", async () => {
+test("Set for one command gives a command its own value, saved for that command alone, and Undo takes it back", async () => {
   const page = await busy();
   try {
     const row = ctl(page, "maxInflight");
-    await row.getByRole("button", { name: "One command" }).click();
+    await row.getByRole("button", { name: "Set for one command" }).click();
     await expect(row.locator(".menu [role=menuitem]")).toHaveText(["alpha", "beta"]);
     await row.locator(".menu [role=menuitem]", { hasText: "beta" }).click();
     const line = row.locator(".over", { hasText: "beta" });
@@ -94,9 +96,11 @@ test("One command gives a command its own value, saved for that command alone, a
     expect(writes).toEqual([{ head: "beta", body: { maxInflight: 100 } }]);
     await expect(line.locator(".pickbtn")).toHaveText("100");
     await expect(row.locator(".only.every")).toHaveText("Every other command");
-    await expect(row.getByRole("button", { name: "One command" })).toBeVisible(); // alpha can still have its own
+    await expect(row.getByRole("button", { name: "Set for one command" })).toBeVisible(); // alpha can still have its own
 
-    await line.getByRole("button", { name: "Back to 12" }).click();
+    // the pick shows the value it replaced, struck, with Undo, which sends that value back: none of its own (gap 458)
+    await expect(line.locator(".was")).toHaveText("12");
+    await line.getByRole("button", { name: "Undo" }).click();
     await expect(row.locator(".over")).toHaveCount(0);
     expect(writes[1]).toEqual({ head: "beta", body: { maxInflight: null } });
     await expect(row.locator(".only.every")).toHaveText("Every command");
@@ -105,14 +109,21 @@ test("One command gives a command its own value, saved for that command alone, a
   }
 }, 40_000);
 
+/** A command's line on a setting's row, picked from Set for one command, with its value's menu open. */
+async function setFor(page: Page, key: string, cmd: string) {
+  const row = ctl(page, key);
+  await row.getByRole("button", { name: "Set for one command" }).click();
+  await row.locator(".menu [role=menuitem]", { hasText: cmd }).click();
+  return row.locator(".over", { hasText: cmd });
+}
+
 test("a value refused by splice reads Not saved, and the reason goes to the console only", async () => {
-  const page = await busy({ alpha: { upstreamRetries: 6 } });
+  const page = await busy();
   const warned: string[] = [];
   page.on("console", (m) => { if (m.type() === "warning") warned.push(m.text()); });
   try {
     refuse = "must be at most 8";
-    const line = ctl(page, "upstreamRetries").locator(".over", { hasText: "alpha" });
-    await line.locator(".pickbtn").click();
+    const line = await setFor(page, "upstreamRetries", "alpha");
     await line.locator(".menu [role=menuitem]", { hasText: "10 tries" }).click(); // the menu holds 10
     await expect(line).toContainText("Not saved");
     await expect(line).not.toContainText("must be at most 8");
@@ -123,17 +134,29 @@ test("a value refused by splice reads Not saved, and the reason goes to the cons
 }, 40_000);
 
 test("a value splice reads at start reads Saved with Restart splice beside it, then Applied once splice is back", async () => {
-  const page = await busy({ beta: { maxInflight: 8 } });
+  const page = await busy();
   try {
     restartBound = ["maxInflight"];
-    const line = ctl(page, "maxInflight").locator(".over", { hasText: "beta" });
-    await line.locator(".pickbtn").click();
+    const line = await setFor(page, "maxInflight", "beta");
     await line.locator(".menu [role=menuitem]", { hasText: "16" }).click();
     await expect(line.locator(".said")).toHaveText("Saved");
     await line.getByRole("button", { name: "Restart splice" }).click();
     await expect(line.locator(".said")).toHaveText("Applied", { timeout: 15_000 });
     expect(restarts).toBe(1);
     await expect(line.getByRole("button", { name: "Restart splice" })).toHaveCount(0);
+  } finally {
+    await page.close();
+  }
+}, 40_000);
+
+test("a command that holds its own value reads as a chip with that value, its door to the setting on Models", async () => {
+  const page = await busy({ alpha: { upstreamRetries: 6 } });
+  try {
+    const row = ctl(page, "upstreamRetries");
+    const chip = row.locator(".owners .chip.own");
+    await expect(chip).toHaveText("alpha 6 tries");
+    await expect(chip).toHaveAttribute("href", "models.html?cmd=alpha&setting=upstreamRetries");
+    await expect(row.locator(".over")).toHaveCount(0);
   } finally {
     await page.close();
   }

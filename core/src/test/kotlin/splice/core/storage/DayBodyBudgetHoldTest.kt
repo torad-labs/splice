@@ -1,11 +1,14 @@
 // The gate on DayBodyBudget's lock hold (Oct 26, 2026): inside one hold of the directory lock, admissions may share
 // one listing of the trace directory, moved only by the hold's own grants and relisted after its own deletions. Each
-// case builds one generated trace directory twice: two or three heads over five UTC days, rolled index generations,
-// v2 and v1 packs, eviction markers, locks, an undated pack and a file named for an impossible date. One generated
-// sequence of body and index admissions then runs over each copy, and every grant is followed by exactly the granted
-// bytes, as the trace writer writes them. Run A asks inside one hold, run B gives each call a hold of its own. A hold
-// changes nothing a caller can see, so the two must decide every call alike and leave the same files, and neither
-// may let the dated packs pass the body cap or the dated index files pass the index cap.
+// case builds two generated trace directories, and builds the pair twice: two or three heads over five UTC days,
+// rolled index generations, v2 and v1 packs, eviction markers, locks, an undated pack and a file named for an
+// impossible date. One generated sequence of body and index admissions then runs over each copy, and every grant is
+// followed by exactly the granted bytes, as the trace writer writes them. Run A asks inside one hold of the first
+// directory, run B gives each call a hold of its own. A hold changes nothing a caller can see, so the two must decide
+// every call alike and leave the same files, and neither may let a directory's dated packs pass the body cap or its
+// dated index files pass the index cap.
+// Oct 26, 2026, on review: some calls are for the second directory, and run A makes them inside its hold of the
+// first. Such a call must list its own directory, and what it grants or deletes must not move the hold's listing.
 package splice.core.storage
 
 import org.junit.jupiter.api.Assertions.assertEquals
@@ -43,6 +46,11 @@ private const val FLOOR = 64L
 // why: the heads a case takes two or three of
 private val HEADS = listOf("claude", "claudex", "kimi")
 
+// why: run A's hold is opened on the held directory, and some of the calls made inside it are for the other one
+private const val HELD_DIR = "held"
+private const val OTHER_DIR = "other"
+private val DIRS = listOf(HELD_DIR, OTHER_DIR)
+
 // why: the five UTC days every generated directory spans; the clock starts late on the last of them
 private val DATES = (1..5).map { LocalDate.of(2026, 10, it) }
 
@@ -75,6 +83,9 @@ private const val V1_SHARE = 3
 private const val MARKER_SHARE = 2
 private const val BODY_SHARE = 12
 
+// why: how often a call is for the other directory; the rest stay on the held one, whose listing the hold keeps
+private const val OTHER_SHARE = 4
+
 // why: how often a line, and a body, is asked for with the volume near the floor; a body below it evicts every
 // completed day before it is refused, so it comes less often and leaves the cases older days to evict
 private const val LOW_FREE_SHARE = 3
@@ -95,7 +106,7 @@ private val MARKER = (BODY_BUDGET_EVICTED_REASON + "\n").toByteArray()
 
 class DayBodyBudgetHoldTest {
     @Test
-    fun `one hold over many admissions decides each as its own hold would and never passes a cap`(
+    fun `one hold over calls for its directory and another decides each as a hold per call would and passes no cap`(
         @TempDir root: Path,
     ) {
         val random = Random(SEED)
@@ -118,14 +129,16 @@ class DayBodyBudgetHoldTest {
         counts.forEach { (outcome, n) -> assertTrue(n >= OUTCOME_FLOOR) { "too few $outcome to test: $table" } }
     }
 
-    /** [case] over [dir]: inside one hold when [oneHold], else in a hold per call. The first entry is the directory as
-     *  built, then what each admission decided and the files it left. */
-    private fun run(dir: Path, case: HoldCase, oneHold: Boolean): List<HoldDecision> {
+    /** [case] in two directories under [root]: inside one hold of the held directory when [oneHold], else in a hold
+     *  per call. The first entry is the directories as built, then what each admission decided and the files it
+     *  left. */
+    private fun run(root: Path, case: HoldCase, oneHold: Boolean): List<HoldDecision> {
+        DIRS.forEach { Files.createDirectory(root.resolve(it)) }
         case.start.forEach { (name, bytes) ->
-            val file = dir.resolve(name)
+            val file = root.resolve(name)
             if (name.endsWith(DAY_BODY_EVICTED_SUFFIX)) Files.write(file, MARKER) else Files.write(file, zeros(bytes))
         }
-        val built = HoldDecision("built", files(dir))
+        val built = HoldDecision("built", files(root))
         var free = PLENTY
         var now = START
         val budget = DayBodyBudget(
@@ -139,12 +152,15 @@ class DayBodyBudgetHoldTest {
         val ask = { admission: HoldAdmission ->
             free = admission.free
             now = admission.now
-            HoldDecision(decide(budget, dir, admission), files(dir))
+            val dir = root.resolve(admission.dir)
+            // Every writer takes its directory's lock first. Inside run A's hold this nests and opens no hold of its
+            // own, so a call for the other directory is made while the held directory's hold is open.
+            HoldDecision(budget.withLock(dir) { decide(budget, dir, admission) }, files(root))
         }
         val decided = if (oneHold) {
-            budget.withLock(dir) { case.admissions.map(ask) }
+            budget.withLock(root.resolve(HELD_DIR)) { case.admissions.map(ask) }
         } else {
-            case.admissions.map { admission -> budget.withLock(dir) { ask(admission) } }
+            case.admissions.map(ask)
         }
         return listOf(built) + decided
     }
@@ -179,33 +195,43 @@ class DayBodyBudgetHoldTest {
         built: Set<String>,
     ): List<HoldOutcome> {
         val deleted = (before.keys - after.keys).isNotEmpty()
-        // A pack an earlier grant of the case created, which this step's grant now adds to.
-        val created = admission.name !in built && admission.name in before && dated(admission.name, pack = true)
-        val shown = if (admission.body) {
-            mapOf(
-                HoldOutcome.BODY_GRANT to (outcome == GRANTED),
-                HoldOutcome.EVICTION to deleted,
-                HoldOutcome.BODY_CAP_REFUSAL to (outcome == BODY_CAP),
-                HoldOutcome.GRANT_INTO_CREATED_PACK to (outcome == GRANTED && created),
+        val shown = when {
+            admission.dir == OTHER_DIR -> mapOf(
+                HoldOutcome.OTHER_DIRECTORY_GRANT to (outcome == GRANTED),
+                HoldOutcome.OTHER_DIRECTORY_DELETION to deleted,
+                HoldOutcome.OTHER_DIRECTORY_CAP_REFUSAL to (outcome == BODY_CAP || outcome == INDEX_CAP),
             )
-        } else {
-            mapOf(
+            admission.body -> {
+                // A pack an earlier grant of the case created, which this step's grant now adds to.
+                val key = "${admission.dir}/${admission.name}"
+                val created = key !in built && key in before && dated(key, pack = true)
+                mapOf(
+                    HoldOutcome.BODY_GRANT to (outcome == GRANTED),
+                    HoldOutcome.EVICTION to deleted,
+                    HoldOutcome.BODY_CAP_REFUSAL to (outcome == BODY_CAP),
+                    HoldOutcome.GRANT_INTO_CREATED_PACK to (outcome == GRANTED && created),
+                    HoldOutcome.FLOOR_REFUSAL to (outcome == FLOOR_REACHED),
+                )
+            }
+            else -> mapOf(
                 HoldOutcome.INDEX_GRANT to (outcome == GRANTED),
                 HoldOutcome.DAY_REMOVAL to deleted,
                 HoldOutcome.INDEX_CAP_REFUSAL to (outcome == INDEX_CAP),
+                HoldOutcome.FLOOR_REFUSAL to (outcome == FLOOR_REACHED),
             )
         }
-        return (shown + (HoldOutcome.FLOOR_REFUSAL to (outcome == FLOOR_REACHED))).filterValues { it }.keys.toList()
+        return shown.filterValues { it }.keys.toList()
     }
 
-    /** A granted body leaves the dated packs within the body cap, and a granted line leaves the dated index files
-     *  within the index cap; the directory a case starts from may hold more than either. */
+    /** A granted body leaves its directory's dated packs within the body cap, and a granted line leaves its directory's
+     *  dated index files within the index cap; a directory a case starts from may hold more than either. */
     private fun capped(case: HoldCase, admission: HoldAdmission, decision: HoldDecision, step: String) {
         if (decision.outcome != GRANTED) return
+        val own = decision.files.filterKeys { it.startsWith("${admission.dir}/") }
         if (admission.body) {
-            assertTrue(packBytes(decision.files) <= case.bodyCap) { "$step: the dated packs pass the body cap" }
+            assertTrue(packBytes(own) <= case.bodyCap) { "$step: the dated packs pass the body cap" }
         } else {
-            assertTrue(indexBytes(decision.files) <= case.indexCap) { "$step: the dated index passes its cap" }
+            assertTrue(indexBytes(own) <= case.indexCap) { "$step: the dated index passes its cap" }
         }
     }
 
@@ -227,20 +253,26 @@ class DayBodyBudgetHoldTest {
         null
     }
 
-    private fun files(dir: Path): Map<String, Long> =
-        Files.list(dir).use { entries -> entries.toList() }
-            .associate { it.fileName.toString() to Files.size(it) }
-            .toSortedMap()
+    /** Every file of both directories under [root], named by its directory and its own name, with its size. */
+    private fun files(root: Path): Map<String, Long> =
+        DIRS.flatMap { dir ->
+            Files.list(root.resolve(dir)).use { entries -> entries.toList() }
+                .map { "$dir/${it.fileName}" to Files.size(it) }
+        }.toMap().toSortedMap()
 
-    private fun remove(dir: Path) {
-        Files.list(dir).use { entries -> entries.toList() }.forEach(Files::delete)
-        Files.delete(dir)
+    private fun remove(root: Path) {
+        for (dir in DIRS) {
+            Files.list(root.resolve(dir)).use { entries -> entries.toList() }.forEach(Files::delete)
+            Files.delete(root.resolve(dir))
+        }
+        Files.delete(root)
     }
 
     private fun zeros(bytes: Long): ByteArray = ByteArray(Math.toIntExact(bytes))
 }
 
-/** What the floor counts, each at least OUTCOME_FLOOR times across the cases. */
+/** What the floor counts, each at least OUTCOME_FLOOR times across the cases. The first eight are calls for the held
+ *  directory, the last three calls for the other one, which run A makes inside its hold of the held one. */
 private enum class HoldOutcome {
     BODY_GRANT,
     EVICTION,
@@ -250,35 +282,51 @@ private enum class HoldOutcome {
     DAY_REMOVAL,
     INDEX_CAP_REFUSAL,
     GRANT_INTO_CREATED_PACK,
+    OTHER_DIRECTORY_GRANT,
+    OTHER_DIRECTORY_DELETION,
+    OTHER_DIRECTORY_CAP_REFUSAL,
 }
 
-/** One admission: a body chunk of [bytes] for the pack [name], or an index line of [bytes] for the day file [name],
- *  asked while the volume has [free] usable bytes and the clock reads [now]. */
-private data class HoldAdmission(val body: Boolean, val name: String, val bytes: Long, val free: Long, val now: Long)
+/** One admission in the directory [dir]: a body chunk of [bytes] for the pack [name], or an index line of [bytes] for
+ *  the day file [name], asked while the volume has [free] usable bytes and the clock reads [now]. */
+private data class HoldAdmission(
+    val dir: String,
+    val body: Boolean,
+    val name: String,
+    val bytes: Long,
+    val free: Long,
+    val now: Long,
+)
 
-/** What one admission decided, and every file of the directory after it, by name, with its size. */
+/** What one admission decided, and every file of both directories after it, by directory and name, with its size. */
 private data class HoldDecision(val outcome: String, val files: Map<String, Long>)
 
-/** One generated case: the directory it starts from, by file name and size, its two caps and its admissions. */
+/** One generated case: the two directories it starts from, each file by its directory and name with its size, its two
+ *  caps and its admissions. */
 private class HoldCase(random: Random) {
     val heads: List<String> = HEADS.take(random.nextInt(2, HEADS.size + 1))
     val bodyCap: Long = random.nextLong(BODY_CAP_MIN, BODY_CAP_MAX + 1)
     val indexCap: Long = random.nextLong(INDEX_CAP_MIN, INDEX_CAP_MAX + 1)
     val start: Map<String, Long> = HashMap<String, Long>().also { files ->
-        files["directory.days.lock"] = 0L
-        // A pack whose day has no date, and an index file named for a day no calendar has: neither is counted.
-        files["notes.jsonl$DAY_BODY_V2_SUFFIX"] = random.nextLong(PACK_FILE_MAX)
-        files["${heads.first()}-2026-02-30.jsonl"] = random.nextLong(INDEX_FILE_MAX)
-        for (head in heads) {
-            if (random.nextBoolean()) files["$head.days.lock"] = 0L
-            for (date in DATES) day(files, random, "$head-$date.jsonl")
-        }
+        for (dir in DIRS) directory(files, random, dir)
     }
     val admissions: List<HoldAdmission> = (START + random.nextLong(START_SPREAD_MS)).let { first ->
         var now = first
         List(STEPS) {
             now += random.nextLong(STEP_MAX_MS)
             admission(random, now)
+        }
+    }
+
+    /** One generated trace directory, [dir]: every head's days, the directory's lock, and two files no day counts. */
+    private fun directory(files: MutableMap<String, Long>, random: Random, dir: String) {
+        files["$dir/directory.days.lock"] = 0L
+        // A pack whose day has no date, and an index file named for a day no calendar has: neither is counted.
+        files["$dir/notes.jsonl$DAY_BODY_V2_SUFFIX"] = random.nextLong(PACK_FILE_MAX)
+        files["$dir/${heads.first()}-2026-02-30.jsonl"] = random.nextLong(INDEX_FILE_MAX)
+        for (head in heads) {
+            if (random.nextBoolean()) files["$dir/$head.days.lock"] = 0L
+            for (date in DATES) day(files, random, "$dir/$head-$date.jsonl")
         }
     }
 
@@ -293,15 +341,17 @@ private class HoldCase(random: Random) {
         if (random.nextInt(ODDS) < MARKER_SHARE) files["$day$DAY_BODY_EVICTED_SUFFIX"] = MARKER.size.toLong()
     }
 
-    /** A body chunk for one of the day file's packs, or an index line for the day file itself. */
+    /** A body chunk for one of the day file's packs, or an index line for the day file itself, in the held directory
+     *  or now and then the other one. */
     private fun admission(random: Random, now: Long): HoldAdmission {
+        val dir = if (random.nextInt(ODDS) < OTHER_SHARE) OTHER_DIR else HELD_DIR
         val day = dayFile(random, now)
         val body = random.nextInt(ODDS) < BODY_SHARE
         val bytes = random.nextLong(1, (if (body) CHUNK_MAX_BYTES else LINE_MAX_BYTES) + 1)
         val low = random.nextInt(ODDS) < if (body) LOW_FREE_BODY_SHARE else LOW_FREE_SHARE
         val free = if (low) random.nextLong(FLOOR + 2 * bytes) else PLENTY
         val name = if (body) packOf(random, day) else day
-        return HoldAdmission(body, name, bytes, free, now)
+        return HoldAdmission(dir, body, name, bytes, free, now)
     }
 
     /** A day file's name, mostly for today or yesterday by [now], sometimes for any day of the directory, and now

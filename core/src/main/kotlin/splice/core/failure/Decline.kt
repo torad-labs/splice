@@ -2,6 +2,8 @@
 // FailureCause.Splice.Declined, apart from the leaves so each file holds one idea.
 package splice.core.failure
 
+import java.time.Instant
+
 /** Why splice refused a request before any provider saw it. Each case carries only the facts its site has. */
 public sealed class Decline {
     /** The body is over the head's size limit, or over what the heap can hold at once. */
@@ -10,11 +12,15 @@ public sealed class Decline {
     /** The heap is busy with other bodies; this one fits once they are done. */
     public data object HeapBusy : Decline()
 
-    /** The head's spend budget is reached and its action is block. */
-    public data object Budget : Decline()
+    /** The head's daily spend budget is reached and its action is block, until the budget's day ends at [resetsAt],
+     *  the machine's own midnight. [limit] is the operator's own figure as splice spells an amount: V4-240 keeps every
+     *  dollar figure in one place (splice.usage.ApiCostText.limit), which core cannot reach, so the amount arrives
+     *  spelled and the line around it is still SpliceLines'. */
+    public data class Budget(val limit: String, val resetsAt: Instant) : Decline()
 
-    /** The compaction preflight's size bound refused the request before sending it. */
-    public data class Preflight(val kind: PreflightKind) : Decline()
+    /** The compaction preflight's size bound refused the request before sending it, against the model's window of
+     *  [windowTokens]. */
+    public data class Preflight(val kind: PreflightKind, val windowTokens: Long) : Decline()
 
     /** The body could not be read whole or parsed. */
     public data class BadBody(val readBytes: Long, val declaredBytes: Long?) : Decline()

@@ -34,7 +34,7 @@ private val DECLINES: List<Decline> = listOf(
     Decline.TooLarge(bytes = 9_000_000L, limit = 8_000_000L),
     Decline.TooLarge(bytes = null, limit = 8_000_000L),
     Decline.HeapBusy,
-    Decline.Budget,
+    Decline.Budget(limit = "$20.00", resetsAt = Instant.parse("2026-10-27T05:00:00Z")),
     Decline.BadBody(readBytes = 12L, declaredBytes = 40L),
     Decline.BadBody(readBytes = 12L, declaredBytes = null),
     Decline.ReadTimeout,
@@ -43,7 +43,8 @@ private val DECLINES: List<Decline> = listOf(
     Decline.BadLocalKey,
     Decline.LivenessProbe,
     Decline.NoSharedLogin,
-) + PreflightKind.entries.map(Decline::Preflight) + RequestFeature.entries.map(Decline::Untranslatable)
+) + PreflightKind.entries.map { Decline.Preflight(it, windowTokens = 262_144L) } +
+    RequestFeature.entries.map(Decline::Untranslatable)
 
 /** The provider leaves a lift rides on, with every lift. */
 private fun liftedCauses(): List<FailureCause> = LIFTS.flatMap { lift ->
@@ -152,7 +153,7 @@ private fun todayStoppedType(by: StoppedBy): ErrorType =
 /** AdmissionResponses' and LocalRefusal's error type for each refusal. */
 private fun todayDeclinedType(why: Decline): ErrorType = when (why) {
     Decline.HeapBusy -> ErrorType.OVERLOADED
-    Decline.Budget, Decline.ForeignHost -> ErrorType.PERMISSION
+    is Decline.Budget, Decline.ForeignHost -> ErrorType.PERMISSION
     Decline.BadLocalKey -> ErrorType.AUTHENTICATION
     Decline.NoSharedLogin -> ErrorType.API_ERROR
     is Decline.TooLarge, is Decline.Preflight, is Decline.BadBody, Decline.ReadTimeout, is Decline.UnknownModel,
@@ -243,7 +244,7 @@ private fun todayDeclined(why: Decline): WireAnswer = when (why) {
     is Decline.TooLarge -> WireAnswer(HttpStatus.CONTENT_TOO_LARGE, ErrorType.INVALID_REQUEST, null)
     Decline.HeapBusy -> WireAnswer(HttpStatus.OVERLOADED, ErrorType.OVERLOADED, null)
     Decline.ReadTimeout -> WireAnswer(HttpStatus.REQUEST_TIMEOUT, ErrorType.INVALID_REQUEST, null)
-    Decline.Budget, Decline.ForeignHost -> WireAnswer(HttpStatus.FORBIDDEN, ErrorType.PERMISSION, null)
+    is Decline.Budget, Decline.ForeignHost -> WireAnswer(HttpStatus.FORBIDDEN, ErrorType.PERMISSION, null)
     Decline.BadLocalKey -> WireAnswer(HttpStatus.UNAUTHORIZED, ErrorType.AUTHENTICATION, null)
     // LocalRefusal.refuseIfOversized sets x-should-retry false before its 400.
     is Decline.Preflight -> WireAnswer(HttpStatus.BAD_REQUEST, ErrorType.INVALID_REQUEST, false)

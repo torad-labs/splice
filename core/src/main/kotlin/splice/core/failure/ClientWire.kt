@@ -14,7 +14,20 @@ import splice.core.wire.HttpStatus
 /** The client's answer to a failure: the HTTP [status] while the answer is still a status (null once the stream is
  *  open, where the failure is an in-band error event), the error [type] the client reads, and the x-should-retry
  *  header, null when it is not sent. */
-public data class WireAnswer(val status: Int?, val type: ErrorType, val shouldRetry: Boolean?)
+public data class WireAnswer(val status: Int?, val type: ErrorType, val shouldRetry: Boolean?) {
+    /** Whether Claude Code sends the request again on this answer, which is when a line may say so (SpliceLines).
+     *  Until slice 4 reads it from the client reaction record (tools/e2e/fixtures/client-reactions/2.1.310.toml), it
+     *  follows the re-send rates measured on 2026-10-04 and quoted on [ClientWire]'s rule before content: in band,
+     *  the client re-sent after 86 of 171 overloaded_error turns and 7 of 12 api_error turns, and after 3 of 50
+     *  invalid_request_error turns; a real 429 or 529 is retried by status. Every other answer counts as not re-sent,
+     *  an in-band rate_limit_error included, since those rows hold none. */
+    public val clientResends: Boolean
+        get() = if (status == null) {
+            type == ErrorType.OVERLOADED || type == ErrorType.API_ERROR
+        } else {
+            status == HttpStatus.TOO_MANY_REQUESTS || status == HttpStatus.OVERLOADED
+        }
+}
 
 public object ClientWire {
     /** An overflow found while the turn's status was still splice's to choose: Claude Code compacts on a 400 that
@@ -75,7 +88,7 @@ public object ClientWire {
         Decline.ReadTimeout -> HttpStatus.REQUEST_TIMEOUT
         // A login coming back to this head is this machine's to do, so the node shows the sentence at once.
         Decline.NoSharedLogin -> HttpStatus.SERVICE_UNAVAILABLE
-        Decline.HeapBusy, Decline.Budget, is Decline.Preflight, is Decline.BadBody, is Decline.UnknownModel,
+        Decline.HeapBusy, is Decline.Budget, is Decline.Preflight, is Decline.BadBody, is Decline.UnknownModel,
         Decline.ForeignHost, Decline.BadLocalKey, Decline.LivenessProbe, is Decline.Untranslatable,
         -> null
     }
@@ -84,7 +97,7 @@ public object ClientWire {
      *  bound, which the client answers by compacting, and a shared turn with no login here. */
     private fun refusalRetry(why: Decline): Boolean? = when (why) {
         is Decline.Preflight, Decline.NoSharedLogin -> false
-        is Decline.TooLarge, Decline.HeapBusy, Decline.Budget, is Decline.BadBody, Decline.ReadTimeout,
+        is Decline.TooLarge, Decline.HeapBusy, is Decline.Budget, is Decline.BadBody, Decline.ReadTimeout,
         is Decline.UnknownModel, Decline.ForeignHost, Decline.BadLocalKey, Decline.LivenessProbe,
         is Decline.Untranslatable,
         -> null
@@ -156,7 +169,7 @@ private object OwnTypes {
 
     private fun declined(why: Decline): ErrorType = when (why) {
         Decline.HeapBusy -> ErrorType.OVERLOADED
-        Decline.Budget, Decline.ForeignHost -> ErrorType.PERMISSION
+        is Decline.Budget, Decline.ForeignHost -> ErrorType.PERMISSION
         Decline.BadLocalKey -> ErrorType.AUTHENTICATION
         Decline.NoSharedLogin -> ErrorType.API_ERROR
         is Decline.TooLarge, is Decline.Preflight, is Decline.BadBody, Decline.ReadTimeout, is Decline.UnknownModel,

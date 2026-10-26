@@ -289,7 +289,10 @@ internal class CodexCodeModeDriver(
     }
 
     private fun cancelledStart(record: CodeModeRecord, error: CancellationException) {
-        if (record.phase != CodeModePhase.ACTIVE) return
+        // An admitted record reads LOST with no error until its cell attaches: that is admission's no-rerun proof,
+        // not a settled loss. The cancelled client step owns it (the reader stands down), so it saves why.
+        val admitted = record.phase == CodeModePhase.LOST && record.error == null
+        if (record.phase != CodeModePhase.ACTIVE && !admitted) return
         // A native foreground observation may be preempted after its cell was safely adopted.
         if (record.nativeRuntime && registry.cell(record) != null) return
         registry.lose(record, "code-mode runtime start cancelled; source was not rerun", error)

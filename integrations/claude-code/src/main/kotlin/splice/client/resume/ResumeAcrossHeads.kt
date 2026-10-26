@@ -62,6 +62,7 @@ import java.nio.file.Files
 import java.nio.file.LinkOption.NOFOLLOW_LINKS
 import java.nio.file.NoSuchFileException
 import java.nio.file.Path
+import java.nio.file.StandardCopyOption.ATOMIC_MOVE
 import java.nio.file.StandardCopyOption.REPLACE_EXISTING
 import java.util.UUID
 
@@ -180,14 +181,17 @@ public class ResumeAcrossHeads(
     }
 
     /** The copy, its subdir, the retag and the model move are one act: a copy that fails partway is removed, and the
-     *  original, read only, resumes as it is. */
+     *  original, read only, resumes as it is. A daemon that halts removes nothing, so the rows go to a dotted temp file,
+     *  which no picker lists, and reach the copy's name only whole. */
     private fun copyAside(transcript: Path, sessionId: String, roster: CallingRoster, log: LogSink): SessionAdoption {
         val copyId = UUID.randomUUID().toString()
         val target = transcript.resolveSibling(copyId + TRANSCRIPT_SUFFIX)
+        val staged = transcript.resolveSibling(".${target.fileName}.tmp")
         val targetSubdir = transcript.resolveSibling(copyId)
         val retag = SessionIdRetag(sessionId, copyId)
         val made = Cancellables.runCatchingCancellable {
-            retag.copy(transcript, target)
+            retag.copy(transcript, staged)
+            Files.move(staged, target, ATOMIC_MOVE)
             val sourceSubdir = transcript.resolveSibling(sessionId)
             if (Files.isDirectory(sourceSubdir, NOFOLLOW_LINKS)) {
                 copyTree(sourceSubdir, targetSubdir, log)
@@ -196,7 +200,7 @@ public class ResumeAcrossHeads(
             rewriter.rewriteCopy(target, roster)
         }
         val rewritten = made.getOrElse { cause ->
-            discardCopy(target, targetSubdir)
+            discardCopy(staged, target, targetSubdir)
             return SessionAdoption.Refused(sessionId, transcript.parent, SafeFailureText.render(cause))
         }
         log(
@@ -218,9 +222,10 @@ public class ResumeAcrossHeads(
         }
     }
 
-    private fun discardCopy(target: Path, targetSubdir: Path?) {
+    private fun discardCopy(staged: Path, target: Path, targetSubdir: Path?) {
         Cancellables.discard(
             Cancellables.runCatchingBestEffort {
+                val _ = Files.deleteIfExists(staged)
                 val _ = Files.deleteIfExists(target)
                 if (targetSubdir != null && Files.isDirectory(targetSubdir, NOFOLLOW_LINKS)) {
                     Files.walk(targetSubdir).use { stream ->
@@ -283,7 +288,8 @@ public class ResumeAcrossHeads(
     /** The copy, the subdir tree and the model rewrite are ONE transaction: a partial adoption would
      *  hand Claude Code a transcript that is half another head's. The launch still names the original id, so a copy
      *  that fails partway is removed, as [copyAside]'s is, and Claude Code finds no half-made session to resume. A
-     *  subdir this head already held is not this copy's to remove. The source is read only. */
+     *  subdir this head already held is not this copy's to remove. The source is read only. A daemon that halts removes
+     *  nothing, so the bytes go to a dotted temp file and reach the transcript's name only whole. */
     private fun copyIn(
         callingConfigDir: Path,
         plan: ResumePlan.Copy,
@@ -293,19 +299,21 @@ public class ResumeAcrossHeads(
     ): SessionAdoption {
         val target = plan.into
         val targetDir = target.parent
+        val staged = targetDir.resolve(".${target.fileName}.tmp")
         val targetSubdir = targetDir.resolve(sessionId)
         val subdirHeld = Files.exists(targetSubdir, NOFOLLOW_LINKS)
         val copied = Cancellables.runCatchingCancellable {
             Files.createDirectories(targetDir)
             // A real byte copy, never a link: a link would put the source head's tree inside the
             // calling head's, which is exactly the leak this row removes.
-            Files.copy(plan.from, target, REPLACE_EXISTING)
+            Files.copy(plan.from, staged, REPLACE_EXISTING)
+            Files.move(staged, target, REPLACE_EXISTING, ATOMIC_MOVE)
             val sourceSubdir = plan.from.resolveSibling(sessionId)
             if (Files.isDirectory(sourceSubdir, NOFOLLOW_LINKS)) copyTree(sourceSubdir, targetSubdir, log)
             rewriter.rewriteCopy(target, roster)
         }
         val rewritten = copied.getOrElse { cause ->
-            discardCopy(target, targetSubdir.takeUnless { subdirHeld })
+            discardCopy(staged, target, targetSubdir.takeUnless { subdirHeld })
             return SessionAdoption.Refused(sessionId, plan.fromHead, SafeFailureText.render(cause))
         }
         log(

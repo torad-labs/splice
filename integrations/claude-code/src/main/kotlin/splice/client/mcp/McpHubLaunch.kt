@@ -25,8 +25,9 @@ import java.net.Socket
 import java.nio.file.Files
 import java.nio.file.Path
 
-// why: the header the front names a call's session by (HubLaunch.kt); the value is the launch id.
-private const val HUB_LAUNCH_HEADER = "X-Splice-Launch"
+// why: the header the front names a call's session by (HubLaunch.kt); the value is the launch id. McpKeyHolders knows a
+// launch file's entries as splice's by it.
+internal const val HUB_LAUNCH_HEADER = "X-Splice-Launch"
 private const val HUB_PLUGIN_FLAG = "--plugin-dir-no-mcp"
 private const val HUB_LAUNCH_FILE_PREFIX = "launch-"
 private const val HUB_LAUNCH_FILE_SUFFIX = ".json"

@@ -10,7 +10,10 @@
 // reads one more key the same way, CLAUDE_CONFIG_DIR, to know which config home a session runs under. Key rotation
 // (Oct 26, 2026) asks whether a session's ANTHROPIC_AUTH_TOKEN is one of splice's keys: that value is a credential, so
 // it is handed to the caller's test and kept nowhere. On macOS, which has no /proc, the same block comes from ps
-// (DarwinPs) and is scanned the same way.
+// (DarwinPs) and is scanned the same way. PR #247's fifth review asks two more facts of a session, to know whether
+// its hosted MCP servers hold a replaced MCP key: when it started, as its launch record says, and the arguments it was
+// started with, which name the MCP config file its launch wrote. The arguments come from /proc/<pid>/cmdline, or on
+// macOS from ProcessHandle, and are scanned by the caller and kept nowhere.
 package splice.sessions.registry
 
 import splice.core.config.StatePaths
@@ -18,10 +21,12 @@ import splice.core.process.LaunchOwners
 import splice.core.util.Cancellables
 import java.io.ByteArrayInputStream
 import java.io.ByteArrayOutputStream
+import java.io.IOException
 import java.io.InputStream
 import java.nio.file.Files
 import java.nio.file.Path
 import java.nio.file.Paths
+import java.time.Instant
 
 private const val SPLICE_MARKER = "SPLICE"
 private const val CONFIG_HOME_VARIABLE = "CLAUDE_CONFIG_DIR"
@@ -51,6 +56,26 @@ public class ProcessEnvironment(
     public fun holds(pid: Long, variable: String, match: CredentialMatch): Boolean? {
         val read = entries(pid, listOf("$variable=".toByteArray())) ?: return null
         return read[variable]?.takeIf { it.isNotEmpty() }?.let(match::matches) ?: false
+    }
+
+    /** When [pid] started, as its launch recorded it and the live process still shows (LaunchOwners), or null when
+     *  splice holds no such record: a process splice did not launch, or one that is gone. */
+    public fun started(pid: Long): Instant? = owners.read(pid)?.let { Instant.parse(it.startedAt) }
+
+    /** The arguments [pid] was started with, after its command, or null when they could not be read: the process is
+     *  gone, or not this user's. */
+    public fun arguments(pid: Long): List<String>? {
+        if (darwin.here) {
+            return ProcessHandle.of(pid).flatMap { it.info().arguments() }.map { it.toList() }.orElse(null)
+        }
+        // gone, or not this user's; a zombie's is empty, which is not its arguments either
+        val read = try {
+            Files.readAllBytes(procRoot.resolve(pid.toString()).resolve("cmdline")).takeIf { it.isNotEmpty() }
+        } catch (_: IOException) {
+            null
+        } ?: return null
+        // each argument ends with a NUL byte, the command first
+        return read.toString(Charsets.UTF_8).removeSuffix("\u0000").split("\u0000").drop(1)
     }
 
     /** Whether a variable's value, a credential, is the one its caller looks for. It sees the value and keeps it

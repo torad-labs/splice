@@ -1,20 +1,22 @@
-// Key rotation (Oct 26, 2026): `splice sessions relaunch`, rotation day's first step. A session splice launched before
-// the key helper holds its turn key in ANTHROPIC_AUTH_TOKEN, which a rotated management key strands. Each such session
-// still running on a splice head is relaunched there by the daemon, one at a time: ended in its terminal and resumed
-// by its own id on the command and the model it runs on, whose launch hands it the helper (SessionContinue.relaunch).
-// The daemon leaves a working session, one waiting on an answer and one holding words he has not sent where they are,
-// and this command does not relaunch the session it runs in. Each session left is named with why, and the run fails
-// while any is left, so it is run again until it passes. A session counts only when its ANTHROPIC_AUTH_TOKEN is one of
-// splice's keys: the management key, the turn key made from it, or one a rotation retired (RetiredKeys). A head that
-// forwards the person's own login leaves his own token there, and a LAN node's launch plants a word that opens nothing;
-// a relaunch hands neither anything, so neither is relaunched or left (PR #247 review round 4). No key is printed: the
-// management key goes only into the request's Authorization header, and a session's token is only compared
-// (ProcessEnvironment.holds).
+// Key rotation (Oct 26, 2026): `splice sessions relaunch`, run after `splice rotate-key` until it passes. A session
+// splice launched before the key helper holds its turn key in ANTHROPIC_AUTH_TOKEN, which a rotated management key
+// strands, and a session's hosted MCP servers hold the MCP key its launch handed it, which the rotation replaces (PR
+// #247's fifth review). Each such session still running on a splice head is relaunched there by the daemon, one at a
+// time: ended in its terminal and resumed by its own id on the command and the model it runs on, whose launch hands it
+// the helper and the MCP key in force (SessionContinue.relaunch). The daemon leaves a working session, one waiting on
+// an answer and one holding words he has not sent where they are, and this command does not relaunch the session it
+// runs in. Each session left is named with why, and the run fails while any is left, so it is run again until it
+// passes. Which sessions hold such a key is SessionKeys': a planted token counts only when it is one of splice's keys,
+// so a head that forwards the person's own login and a LAN node's planted word are neither relaunched nor left (PR
+// #247 review round 4). No key is printed: the management key goes only into the request's Authorization header, and
+// a session's token is only compared.
 package splice.app.cli.sessions
 
 import kotlinx.serialization.json.Json
 import splice.app.cli.AdminSupport
+import splice.client.mcp.McpKeyHolders
 import splice.core.config.RetiredKeys
+import splice.core.config.UserHome
 import splice.core.terminal.TerminalOutput
 import splice.core.util.EnvReader
 import splice.core.util.JsonScalars
@@ -32,9 +34,6 @@ import splice.topology.TopologyStatePaths
 import java.net.URLEncoder
 
 private const val VERB = "splice sessions relaunch"
-
-// The variable a launch before the key helper planted the turn key in.
-private const val PLANTED = "ANTHROPIC_AUTH_TOKEN"
 
 // why: the daemon answers once the client has exited and come back on its command, or has gone back where it was when
 // it did not, two arrival waits of 45 s at most; past this it is not answering
@@ -78,22 +77,22 @@ internal class SessionsRelaunchCommand(
         return if (onHeads.isEmpty()) nothingToDo() else relaunchHolders(onHeads)
     }
 
-    /** Each session in [onHeads] whose token is one of splice's keys is relaunched, but the one this command runs in. A
-     *  token is splice's only when it is one of those keys, so the management key is read before any token is. */
+    /** Each session in [onHeads] that holds a key the rotation strands is relaunched, but the one this command runs in.
+     *  A token is splice's only when it is one of its keys, so the management key is read before any token is. */
     private fun relaunchHolders(onHeads: List<SessionRecord>): Int {
         val key = managementKey() ?: return 1
-        val keys = RetiredKeys(TopologyStatePaths(env).current())
-        val read = onHeads.associateWith { record ->
-            environment.holds(pidOf(record), PLANTED) { keys.ownKey(it, key) }
+        val state = TopologyStatePaths(env).current()
+        val keys = SessionKeys(environment, key, RetiredKeys(state), McpKeyHolders(state.stateDir), UserHome.dir(env))
+        val read = onHeads.associateWith { keys.of(pidOf(it)) }
+        // what was not read: the process is gone, or not this user's, or macOS hides its environment
+        read.forEach { (record, held) ->
+            held.unread?.let {
+                out.line(
+                    "  could not read $it of ${shown(record)}, so whether it holds one of splice's keys is not known",
+                )
+            }
         }
-        // an environment not read: the process is gone, or not this user's, or macOS hides it
-        read.filterValues { it == null }.keys.forEach { record ->
-            out.line(
-                "  could not read the environment of ${shown(record)}, so whether it holds one of splice's keys " +
-                    "is not known",
-            )
-        }
-        val planted = read.filterValues { it == true }.keys.toList()
+        val planted = read.filterValues { it == SessionKeys.Held.YES }.keys.toList()
         if (planted.isEmpty()) return nothingToDo()
         val own = ancestors.pids()
         val (mine, others) = planted.partition { pidOf(it) in own }
@@ -104,7 +103,7 @@ internal class SessionsRelaunchCommand(
 
     private fun nothingToDo(): Int {
         out.line(
-            "$VERB: no running session on a splice head holds one of splice's keys in its environment; nothing to do.",
+            "$VERB: no running session on a splice head holds one of splice's keys; nothing to do.",
         )
         return 0
     }
@@ -112,7 +111,7 @@ internal class SessionsRelaunchCommand(
     /** The run's last line. It fails while any session is left, so it is run again until it passes. */
     private fun summary(relaunched: Int, left: Int): Int {
         val rest = if (left == 0) {
-            "no running session holds one of splice's keys in its environment any more"
+            "no running session holds one of splice's keys any more"
         } else {
             "left $left where they are. Run it again once they can be relaunched"
         }

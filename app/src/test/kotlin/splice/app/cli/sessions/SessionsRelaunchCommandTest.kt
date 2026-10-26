@@ -1,8 +1,9 @@
-// Key rotation (Oct 26, 2026): `splice sessions relaunch`, rotation day's first step. A session splice launched before
-// the key helper holds its turn key in ANTHROPIC_AUTH_TOKEN, which a rotated key strands, so each such session is
-// relaunched on its own head, resumed by its own id, before the key is replaced. The sessions are this machine's
-// registry and environments, written here; the daemon's relaunch, which ends a client in its terminal and starts it
-// again, cannot run here and is answered by a stand-in that keeps what it was asked.
+// Key rotation (Oct 26, 2026): `splice sessions relaunch`, run once the key is rotated. A session splice launched
+// before the key helper holds its turn key in ANTHROPIC_AUTH_TOKEN, which a rotated key strands, and a session's hosted
+// MCP servers hold the MCP key its launch handed it, which the rotation replaces, so each such session is relaunched on
+// its own head, resumed by its own id. The sessions are this machine's registry, environments, command lines and launch
+// records, written here; the daemon's relaunch, which ends a client in its terminal and starts it again, cannot run
+// here and is answered by a stand-in that keeps what it was asked.
 package splice.app.cli.sessions
 
 import com.sun.net.httpserver.HttpServer
@@ -11,12 +12,17 @@ import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.io.TempDir
+import splice.client.mcp.HostedMcpOverlay
+import splice.client.mcp.McpAccessKey
+import splice.client.mcp.McpSharing
 import splice.core.config.MgmtKey
 import splice.core.config.RetiredKeys
 import splice.core.config.StatePaths
 import splice.core.config.TurnKey
 import splice.core.process.LaunchOwners
+import splice.core.process.LaunchProcess
 import splice.core.terminal.TerminalOutput
+import splice.core.util.LogSink
 import splice.sessions.registry.DarwinPs
 import splice.sessions.registry.ProcessEnvironment
 import splice.sessions.registry.SessionAvailability
@@ -30,12 +36,19 @@ import splice.sessions.registry.SessionStatus
 import java.net.InetSocketAddress
 import java.nio.file.Files
 import java.nio.file.Path
+import java.time.Instant
 import java.util.concurrent.CopyOnWriteArrayList
 
 // why: the person's own Anthropic login, which a head that forwards the caller's credential leaves in the session
 private const val OWN_LOGIN = "sk-ant-oat01-the-persons-own-login"
 
 private const val RELAUNCHED = """{"session_id":"s-101","head":"relay"}"""
+
+// why: a stdio server whose arguments name no place, which splice hosts once for every session
+private const val USER_SERVERS = """{"mcpServers": {"exa": {"command": "npx", "args": ["-y", "exa-mcp"]}}}"""
+
+private const val HOUR = 3600L
+
 private const val WORKING = """{"error":"it is working; relaunch it once its turn ends","reason":"working"}"""
 
 class SessionsRelaunchCommandTest {
@@ -98,6 +111,39 @@ class SessionsRelaunchCommandTest {
         assertTrue(said.none { OWN_LOGIN in it || retiredTurnKey in it || keys.get() in it }, "no key: $said")
     }
 
+    // PR #247's fifth review: a rotation replaces the MCP access key too. A session launched with the key helper holds
+    // no key in its environment, but its hosted MCP servers hold the MCP key its launch handed it until it ends. One
+    // launched before the rotation is relaunched, though its head's file was since rewritten with the new key, and one
+    // launched after it is left alone.
+    @Test
+    fun `after a rotation, a session whose hosted MCP servers hold the replaced key is relaunched, and no later one`() {
+        val keys = MgmtKey(statePaths())
+        val mcp = McpAccessKey(stateDir = statePaths().stateDir) { keys.get() }
+        Files.writeString(tmp.resolve(".claude.json"), USER_SERVERS)
+        val overlay = HostedMcpOverlay(tmp, sharing(mcp), statePaths().stateDir, LogSink {})
+        val launched = listOf("--mcp-config", checkNotNull(overlay.file("claude-splice")).toString())
+        val replaced = mcp()
+        val before = Instant.now().minusSeconds(HOUR)
+        RetiredKeys(statePaths()).retire(keys.get())
+        keys.replace()
+        mcp.managementReplaced()
+        overlay.file("claude-splice")
+        val after = Instant.now().plusSeconds(1)
+        val sessions = listOf(
+            session("before-the-rotation", 101, SessionRoute.Head("relay"), "HOME=/home/me"),
+            session("after-the-rotation", 102, SessionRoute.Head("relay"), "HOME=/home/me"),
+        )
+        startedWith(101, launched)
+        startedWith(102, launched)
+        val stand = standIn(mapOf("s-101" to (200 to RELAUNCHED)))
+
+        val exit = relaunch(sessions, ownPids = emptySet(), births = mapOf(101L to before, 102L to after))
+
+        assertEquals(listOf("s-101"), stand.asked, "$said")
+        assertEquals(0, exit, "$said")
+        assertTrue(said.none { replaced in it || mcp() in it }, "no key: $said")
+    }
+
     @Test
     fun `with no session holding a planted key nothing is relaunched, and it says so`() {
         val sessions = listOf(session("launched-with-helper", 102, SessionRoute.Head("relay"), "HOME=/h"))
@@ -136,8 +182,16 @@ class SessionsRelaunchCommandTest {
         assertTrue(said.any { "permission denied" in it }, "$said")
     }
 
-    private fun relaunch(sessions: List<SessionRecord>, ownPids: Set<Long>, unlisted: String? = null): Int {
+    private fun relaunch(
+        sessions: List<SessionRecord>,
+        ownPids: Set<Long>,
+        unlisted: String? = null,
+        births: Map<Long, Instant> = emptyMap(),
+    ): Int {
         val state = tmp.resolve("state")
+        // each launch splice made declares its process and when it started, as the launcher does before exec
+        val owners = LaunchOwners(state) { pid -> births[pid]?.let(::LaunchProcess) }
+        births.keys.forEach { owners.write(it, "relay", "http://127.0.0.1:1", "session", "other") }
         val env = mapOf(
             "SPLICE_STATE_DIR" to state.toString(),
             "SPLICE_CONTROL_PORT" to checkNotNull(daemon).port.toString(),
@@ -148,12 +202,15 @@ class SessionsRelaunchCommandTest {
             env = { name -> env[name] },
             out = TerminalOutput { said.add(it) },
             sessions = Listed(sessions, unlisted),
-            environment = ProcessEnvironment(tmp.resolve("proc"), LaunchOwners(state), DarwinPs(here = false)),
+            environment = ProcessEnvironment(tmp.resolve("proc"), owners, DarwinPs(here = false)),
             ancestors = SessionsRelaunchCommand.Ancestors { ownPids },
         ).run()
     }
 
     private fun statePaths(): StatePaths = StatePaths(baseOverride = tmp.resolve("state"))
+
+    private fun sharing(bearer: McpAccessKey): McpSharing =
+        McpSharing(enabled = true, exclude = emptySet(), endpointPrefix = "http://127.0.0.1:3096/mcp/", bearer = bearer)
 
     private fun daemonKey(): String = MgmtKey(statePaths()).get()
 
@@ -163,10 +220,17 @@ class SessionsRelaunchCommandTest {
     /** The entry a session launched before the key helper holds: its turn key, which the command must never print. */
     private fun planted(): String = "ANTHROPIC_AUTH_TOKEN=${turnKey()}"
 
+    /** [pid]'s command line as /proc keeps it: the command, then each of [arguments], each ended by a NUL. */
+    private fun startedWith(pid: Long, arguments: List<String>) {
+        val line = (listOf("claude") + arguments).joinToString("") { "$it\u0000" }
+        Files.write(tmp.resolve("proc").resolve(pid.toString()).resolve("cmdline"), line.toByteArray())
+    }
+
     private fun standIn(answers: Map<String, Pair<Int, String>>): StandInDaemon =
         StandInDaemon(daemonKey(), answers).also { daemon = it }
 
-    /** A registered session, `s-<pid>`, whose process environment holds the one entry [environ]. */
+    /** A registered session, `s-<pid>`, whose process environment holds the one entry [environ], started with no
+     *  arguments. */
     private fun session(
         name: String,
         pid: Long,
@@ -176,6 +240,7 @@ class SessionsRelaunchCommandTest {
     ): SessionRecord {
         val dir = Files.createDirectories(tmp.resolve("proc").resolve(pid.toString()))
         Files.write(dir.resolve("environ"), environ.toByteArray())
+        startedWith(pid, emptyList())
         return SessionRecord(
             sessionId = "s-$pid",
             name = name,

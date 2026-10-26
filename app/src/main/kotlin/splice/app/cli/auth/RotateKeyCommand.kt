@@ -90,7 +90,7 @@ internal class RotateKeyCommand(
             null -> Unit
             MCP_REPLACED -> out.line(
                 "splice: the MCP access key was replaced too. A running session reaches its hosted MCP servers again " +
-                    "once it is relaunched.",
+                    "once it is relaunched: `splice sessions relaunch` finds each one. Run it until it passes.",
             )
             else -> out.line("splice: the MCP access key was not replaced ($mcp); `splice restart` replaces it.")
         }

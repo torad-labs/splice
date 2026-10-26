@@ -179,6 +179,10 @@ internal class CollectTurn(
             withContext(NonCancellable) {
                 channel.clientGone.set(true)
                 channel.detached.set(true)
+                detachOwner.log(
+                    "[${provider.key}] a compaction's client left mid-turn: it runs on detached, so a " +
+                        "byte-identical retry can read its answer\n",
+                )
             }
             throw cancelled
         }

@@ -146,6 +146,13 @@ class CollectCompactionRetryTest {
             )
             assertTrue(waitFor(20_000) { held.gate.snapshot().inflight == 1 }, "the collect holds its slot")
             first.close() // the Esc
+            // The head must see the client gone before the upstream answers. On a loaded machine the close can land
+            // after a release that follows it at once, and the turn then ends as an ordinary delivered one.
+            assertTrue(
+                waitFor(20_000) { held.lines.any { "client left mid-turn" in it } },
+                "precondition: the head notices the client left before the upstream answers:" +
+                    " ${held.lines.joinToString("")}",
+            )
 
             // With no client left, release the hold so the detached drive can end cleanly and keep its answer.
             held.mock.releaseHold()

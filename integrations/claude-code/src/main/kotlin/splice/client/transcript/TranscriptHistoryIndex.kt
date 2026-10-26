@@ -253,6 +253,8 @@ private class HistoryScanBuilder(
         }
     }
 
+    // HistorySessionRows in HistoryRowsCache.kt keeps only the rows these rules need,
+    // so a change to them changes it too.
     private fun prompt(row: HistoryRow, head: String?) {
         val facts = sessions.getOrPut(row.id) { HistoryFacts(row.id) }
         facts.hasHistory = true

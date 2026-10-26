@@ -461,6 +461,7 @@ names = [
     "EnvReader",
     "HeadOfSession",
     "HistoryWindowStore",
+    "McpScopeLookup",
     "QuotaHeaderRead",
     "SessionAddress",
     "SessionServedOf",
@@ -510,7 +511,15 @@ SessionServedOf (Oct 11, 2026) is a SIXTH source: a session id to the MODEL spli
 model a later Continue on move put it on, from the daemon's own perf rows and move records. Its miss means \
 "splice has served this session nothing and never moved it". Its answer is a model id, which Continue on \
 compares against its menu and keeps as a move's "from" model. Served by HeadOfSession it would put a head \
-key where a model id is compared, and the menu would offer back the very model the session is on."""
+key where a model id is compared, and the menu would offer back the very model the session is on. \
+McpScopeLookup (Oct 26, 2026) is a SEVENTH source: a hosted MCP child's systemd scope unit to that scope's \
+cgroup, read from the user's service manager. It sits beside SliceMemoryCap without sharing its role: that \
+port measures a slice's ceiling, and this one names where one child generation's processes live. Its blank \
+answer means systemd knows no such scope, which once the child's root has exited proves that nothing in it \
+can still run, so the child's server may start it again. Its null means systemd could not be asked, and the \
+generation stays retained. Served by SliceMemoryCap, a ceiling or infinity would be read as a cgroup path. \
+Served by a lookup whose null means nothing is there, a manager that did not answer would settle a \
+generation whose workers may still run."""
 
 # ── 5 names, () -> T ──────────────────────────────────────────────────────────────────────────────
 [[groups]]

@@ -95,6 +95,8 @@ kotlin.target.compilations.named("parityClient") {
     associateWith(kotlin.target.compilations.getByName("main"))
 }
 tasks.named("check") { dependsOn(parityClient.classesTaskName) }
+// detekt reads the source sets splice.kotlin-common lists for every module. This one is this module's alone.
+detekt { source.from("src/parityClient/kotlin") }
 
 // The compiled runtime suite, for :app's codeModePackagedTest to rerun with the shipped fat jar as the
 // worker classpath: a language, global or service registration that shading adds or loses shows only

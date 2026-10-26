@@ -39,16 +39,9 @@ detekt {
     buildUponDefaultConfig = true
     // EVERY SOURCE SET WE WRITE, shared fixtures included. The plugin's own default is src/main and src/test only,
     // so the fixtures other modules compile against (testFixtures everywhere, core's lawFixtures) went unread while
-    // detekt.yml says it has no test exemption. A source set a module lacks is simply absent from the list. The
-    // parity tool's client wrappers are integrations-codemode's parityClient.
+    // detekt.yml says it has no test exemption. A source set a module lacks is simply absent from the list.
     source.setFrom(
-        files(
-            "src/main/kotlin",
-            "src/test/kotlin",
-            "src/testFixtures/kotlin",
-            "src/lawFixtures/kotlin",
-            "src/parityClient/kotlin",
-        ),
+        files("src/main/kotlin", "src/test/kotlin", "src/testFixtures/kotlin", "src/lawFixtures/kotlin"),
     )
     // Each module's files are parsed in parallel; the rules still run in order, so the findings are the same. Measured on
     // :app, :features-turns, :integrations-providers-codex and :core, Oct 9: 68.9 s of detekt one file at a time, 13.9 s

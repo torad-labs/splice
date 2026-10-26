@@ -254,28 +254,40 @@ internal class ProviderSentences(private val spoken: Spoken) {
     )
 }
 
-/** The three ways the path to a provider breaks. */
+/** The three ways the path to a provider breaks. Once the answer began, the person saw it start: a connection that
+ *  closed reads as the answer cut off and a reply that never came as silence mid-answer, whatever leaf the transport
+ *  chose (a reset past the handoff is RESET_BEFORE_REPLY wherever it lands, TurnConnEnd.emitConnReset). */
 internal object PathSentences {
-    fun said(cause: FailureCause.Path, facts: LineFacts, ongoing: Boolean): Said {
+    fun said(cause: FailureCause.Path, at: Position, facts: LineFacts, ongoing: Boolean): Said {
         val head = facts.head
+        val answering = at.moment == Moment.MID_CONTENT
         val what = when (cause) {
-            is FailureCause.Path.Unreachable -> unreachable(cause, head, ongoing)
-            is FailureCause.Path.Torn -> torn(cause, head, ongoing)
+            is FailureCause.Path.Unreachable -> unreachable(cause, head, answering, ongoing)
+            is FailureCause.Path.Torn -> torn(cause, head, answering, ongoing)
             is FailureCause.Path.Stalled -> when (cause.tier) {
-                Stall.FIRST_BYTE -> "$head did not start answering in time"
-                Stall.IDLE -> "$head went silent mid-answer" + if (ongoing) "" else " and did not recover"
+                Stall.FIRST_BYTE -> if (answering) silent(head, ongoing) else "$head did not start answering in time"
+                Stall.IDLE -> silent(head, ongoing)
             }
         }
         return Said(what, next = Next.Resend(SEND_AGAIN))
     }
 
-    private fun unreachable(cause: FailureCause.Path.Unreachable, head: String, ongoing: Boolean): String {
+    private fun unreachable(
+        cause: FailureCause.Path.Unreachable,
+        head: String,
+        answering: Boolean,
+        ongoing: Boolean,
+    ): String {
         val side = if (cause.local) "$head's model server" else "$head's provider"
         return when (cause.why) {
             Unreach.REFUSED -> refused(side, cause.local, ongoing)
             Unreach.DNS -> "$head could not reach its provider because the address did not resolve"
             Unreach.TLS -> "$head could not open a secure connection to its provider"
-            Unreach.RESET_BEFORE_REPLY -> "$side closed the connection before answering"
+            Unreach.RESET_BEFORE_REPLY -> if (answering) {
+                cut(head, ongoing, toolOpen = false)
+            } else {
+                "$side closed the connection before answering"
+            }
             Unreach.WRITE_STALLED -> "$head stopped reading the request while splice was sending it"
         }
     }
@@ -287,14 +299,24 @@ internal object PathSentences {
         else -> "$side is not running"
     }
 
-    private fun torn(cause: FailureCause.Path.Torn, head: String, ongoing: Boolean): String = when (cause.why) {
-        Tear.RESET, Tear.SOCKET_CLOSED, Tear.NO_TERMINAL -> {
-            val cut = if (ongoing) "was cut off" else "kept getting cut off"
-            "$head's answer $cut" + if (cause.toolOpen) " inside a tool call" else ""
+    private fun torn(cause: FailureCause.Path.Torn, head: String, answering: Boolean, ongoing: Boolean): String =
+        when (cause.why) {
+            Tear.RESET, Tear.SOCKET_CLOSED, Tear.NO_TERMINAL -> cut(head, ongoing, cause.toolOpen)
+            Tear.NO_EVENTS -> if (answering) {
+                cut(head, ongoing, cause.toolOpen)
+            } else {
+                "$head closed the connection before sending anything"
+            }
+            Tear.OVERSIZED_EVENT -> "$head sent a stream event larger than splice accepts"
         }
-        Tear.NO_EVENTS -> "$head closed the connection before sending anything"
-        Tear.OVERSIZED_EVENT -> "$head sent a stream event larger than splice accepts"
+
+    private fun cut(head: String, ongoing: Boolean, toolOpen: Boolean): String {
+        val cut = if (ongoing) "was cut off" else "kept getting cut off"
+        return "$head's answer $cut" + if (toolOpen) " inside a tool call" else ""
     }
+
+    private fun silent(head: String, ongoing: Boolean): String =
+        "$head went silent mid-answer" + if (ongoing) "" else " and did not recover"
 }
 
 /** The leaves splice decides itself. */

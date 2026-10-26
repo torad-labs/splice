@@ -26,6 +26,9 @@ private const val MAX_CHARS = 240
 private const val SAYS_RESEND = "Claude Code sends this turn again."
 private const val COMPACT_TRIGGER = "prompt is too long"
 
+/** What a line must not say once the person has seen the answer begin: that the provider sent nothing. */
+private val SENT_NOTHING = listOf("before answering", "before sending anything", "did not start answering")
+
 /** Launch commands of the shipped heads, and the ones operators named (final-design.md section 10, subject). */
 private val HEADS = listOf(
     "claude-muse", "claudex", "claudeor", "claude-glml53", "claude-deepseek", "claude-kimi", "claude-splice",
@@ -417,6 +420,27 @@ class SpliceLinesPropertyTest {
                 COMPACT_TRIGGER in line.text,
                 "${case.cause}, ${case.facts.request} -> ${line.text}",
             )
+        }
+    }
+
+    @Test
+    fun `a line said once the answer began never says the provider sent nothing`() {
+        val random = Random(8)
+        val lines = SpliceLines(LocalTimeText(ZoneId.of("America/Chicago")))
+        val answering = Position(Moment.MID_CONTENT, streamBegan = true)
+        repeat(RUNS * 2) {
+            val now = random.instant()
+            val cause = random.cause(now, null)
+            val facts = random.facts(now)
+
+            val ending = lines.ending(cause, answering, random.answer(cause, answering), facts)
+            val resumes = lines.waiting(WaitLine(cause, Recovery.Resume), facts)
+
+            listOf(ending, resumes).forEach { line ->
+                SENT_NOTHING.forEach { said ->
+                    assertFalse(said in line.text, "$cause after the answer began says \"$said\": ${line.text}")
+                }
+            }
         }
     }
 

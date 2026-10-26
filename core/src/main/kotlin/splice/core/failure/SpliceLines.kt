@@ -101,7 +101,7 @@ public class SpliceLines(time: LocalTimeText = LocalTimeText()) {
 
     private fun said(cause: FailureCause, at: Position, facts: LineFacts, ongoing: Boolean): Said = when (cause) {
         is FailureCause.Provider -> providers.said(cause, at, facts, ongoing)
-        is FailureCause.Path -> PathSentences.said(cause, facts, ongoing)
+        is FailureCause.Path -> PathSentences.said(cause, at, facts, ongoing)
         is FailureCause.Splice -> splices.said(cause, facts)
     }
 

@@ -39,7 +39,7 @@ internal class NativeGrpcExecutions(
             tools,
         )
         operations[operationId] = key
-        callbacks.getOrPut(session.localId, ::NativeGrpcCallbackState)
+        if (session.localId !in callbacks) callbacks[session.localId] = NativeGrpcCallbackState()
     }
 
     @Synchronized

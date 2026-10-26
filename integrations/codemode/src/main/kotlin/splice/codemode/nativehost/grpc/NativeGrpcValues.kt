@@ -45,7 +45,13 @@ internal object NativeGrpcValues {
             Descriptors.FieldDescriptor.JavaType.INT -> number.toInt()
             Descriptors.FieldDescriptor.JavaType.DOUBLE -> number.toDouble()
             Descriptors.FieldDescriptor.JavaType.FLOAT -> number.toFloat()
-            else -> error("Invalid native gRPC numeric field: ${field.fullName}")
+            Descriptors.FieldDescriptor.JavaType.LONG,
+            Descriptors.FieldDescriptor.JavaType.BOOLEAN,
+            Descriptors.FieldDescriptor.JavaType.STRING,
+            Descriptors.FieldDescriptor.JavaType.BYTE_STRING,
+            Descriptors.FieldDescriptor.JavaType.ENUM,
+            Descriptors.FieldDescriptor.JavaType.MESSAGE,
+            -> error("Invalid native gRPC numeric field: ${field.fullName}")
         }
     }
 }

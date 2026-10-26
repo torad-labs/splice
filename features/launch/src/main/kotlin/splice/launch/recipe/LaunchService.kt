@@ -32,6 +32,7 @@ import splice.client.wrap.WrappedLaunch
 import splice.core.config.StatePaths
 import splice.core.config.UserHome
 import splice.core.util.EnvReader
+import splice.launch.LaunchGateway
 import splice.launch.LaunchOutcome
 import splice.launch.LaunchSpec
 import splice.launch.RemoteCommands
@@ -148,7 +149,7 @@ public class LaunchService(
         // carries the head's settings as a --settings overlay below.
         val modelOverrides = effective.models.tiers.modelOverrides
             .takeUnless { effective.gateway.clientModels }.orEmpty()
-        materializeLaunch(materialize, trust, modelOverrides, wrapped)
+        materializeLaunch(materialize, trust, modelOverrides, effective.gateway.keyHelper, wrapped)
         // V4-276: a launch never writes a head's .credentials.json. V4-129 copied the selected stored
         // login over it here, and Claude Code's refresh tokens rotate, so every launch put back a
         // superseded token and upstream revoked the login (V4-237, V4-250). The live login is
@@ -173,7 +174,7 @@ public class LaunchService(
             if (dangerouslySkipPermissions) add("--dangerously-skip-permissions")
             // a launch on macOS carries splice's mark in its --settings, the one sign of it a hardened claude's
             // arguments keep there (LaunchMarker); elsewhere the arguments are as they were
-            val overlay = wrapped?.settingsOverlay(roster, held.gateway.statuslineCommand, LaunchMarker.here)
+            val overlay = overlayOf(wrapped, roster, held.gateway)
             addAll(LaunchMarker.settingsArgs(overlay))
             addAll(hub.args)
             // NB: no --model — the active model is ANTHROPIC_MODEL + settings.json, so the /model
@@ -184,6 +185,11 @@ public class LaunchService(
         val warning = launchWarning(spec, dangerouslySkipPermissions, adoption, bounded.warning, hub.warning)
         return LaunchOutcome.Ready(environment.recipe(argv, warning))
     }
+
+    /** A wrapped launch's --settings overlay: the roster, the status line, splice's launch mark on macOS, and the key
+     *  helper of a head that checks the turn key (Oct 26). Null for a launch that materialized its own settings. */
+    private fun overlayOf(wrapped: WrappedLaunch?, roster: List<String>?, gateway: LaunchGateway): String? =
+        wrapped?.settingsOverlay(roster, gateway.statuslineCommand, LaunchMarker.here, gateway.keyHelper)
 
     /** MCP hub step 6: what the hub adds to this launch. A wrapped launch reads his own config home and falls back to
      *  the V4-445 file; a head's launch reads the head's home. */
@@ -207,9 +213,10 @@ public class LaunchService(
         spec: MaterializeSpec,
         trust: TrustedLaunch?,
         modelOverrides: Map<String, String>,
+        keyHelper: String?,
         wrapped: WrappedLaunch?,
     ) {
-        if (wrapped == null) materializer.materialize(spec, trust, modelOverrides)
+        if (wrapped == null) materializer.materialize(spec, trust, modelOverrides, keyHelper)
     }
 
     /** The folder the move of this launch's session is in flight out of, or null when it names no session or no
@@ -310,7 +317,7 @@ public class LaunchService(
                 "ANTHROPIC_API_KEY",
                 "CLAUDE_CODE_OAUTH_TOKEN",
                 "CLAUDE_CODE_OAUTH_REFRESH_TOKEN",
-            )
+            ) + helperShadows(spec)
         }
         val emitted = slots.map { it.first }.toSet()
         val absentTiers = listOf("OPUS", "SONNET", "HAIKU", "FABLE")
@@ -338,15 +345,23 @@ public class LaunchService(
         )
     }
 
+    /** Oct 26 (key rotation): Claude Code prefers an ANTHROPIC_AUTH_TOKEN over the key helper and then never runs the
+     *  helper again, not even after a 401 (read in the 2.1.310 binary), so one an outer session would pass down is
+     *  scrubbed from a launch whose turn key comes from the helper. */
+    private fun helperShadows(spec: LaunchSpec): List<String> =
+        if (spec.gateway.keyHelper != null) listOf("ANTHROPIC_AUTH_TOKEN") else emptyList()
+
     private fun buildEnv(spec: LaunchSpec, slots: List<Pair<String, String>>): Map<String, String> {
         return buildMap {
             // LAN share: a command another machine serves goes to that machine's address, never through this one.
             put("ANTHROPIC_BASE_URL", spec.gateway.remote ?: "http://127.0.0.1:${spec.gateway.port}")
             // AUTH_TOKEN (bearer), NOT API_KEY — a bearer avoids Claude Code's custom-api-key
             // approval flow. The head validates this per-install credential before any quota-
-            // consuming work. A native-auth head plants NOTHING: the client's own credential must
-            // reach the head untouched, and this would override it.
-            if (!spec.gateway.forwardClientAuth) put("ANTHROPIC_AUTH_TOKEN", spec.gateway.inferenceToken)
+            // consuming work. Only a PLANTED bearer is put here (a LAN share's word): a gateway head's
+            // session reads its turn key through the apiKeyHelper its settings carry, which Claude Code
+            // runs again after a 401, so a rotated key never strands it (Oct 26). A native-auth head plants
+            // NOTHING: the client's own credential must reach the head untouched, and this would override it.
+            spec.gateway.plantedToken?.let { put("ANTHROPIC_AUTH_TOKEN", it) }
             put(CONFIG_DIR_ENV, spec.trees.own.toString())
             // NO gateway model discovery: the picker reads the materialized roster (settings.json
             // availableModels + .claude.json additionalModelOptionsCache) — see the header for why

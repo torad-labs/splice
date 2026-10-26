@@ -89,9 +89,9 @@ internal class ClientAuth(
     }
 
     private suspend fun authorize(call: ApplicationCall): Boolean {
-        // A client-auth head has NO splice-held credential to protect: the turn key is what the
-        // launcher plants in a client whose own credentials it replaced, and this head does the
-        // opposite — it leaves the client's native auth intact and forwards it. Comparing the
+        // A client-auth head has NO splice-held credential to protect: the turn key is what a
+        // launched client reads through its key helper once its own credentials were removed, and this
+        // head does the opposite — it leaves the client's native auth intact and forwards it. Comparing the
         // inbound header against splice's keys would therefore reject exactly the requests this
         // head exists to serve. ONE exception, below: splice's own keys are never a credential this
         // head may forward. A call that forwards also needs a credential: [authorizeUpstream].
@@ -147,11 +147,12 @@ internal class ClientAuth(
      *
      * splice's own keys are not upstream credentials — sending one to the vendor spends nothing,
      * authenticates nothing, and leaks a local secret to a third party. It reaches this seam by
-     * accident rather than by malice: LaunchService plants ANTHROPIC_AUTH_TOKEN=<turn key>
-     * for every non-native head, `app/src/main/dist/bin/splice-launch` execs `env` WITHOUT -i, and a native head's
-     * unset list is empty by design — so a native head launched from inside another head's session
-     * inherits that bearer. Forwarding it would ALSO mean the caller's real credential never rides,
-     * turning a fixable environment slip into an opaque vendor 401. Refusing here says which.
+     * accident rather than by malice: until Oct 26, 2026 LaunchService planted ANTHROPIC_AUTH_TOKEN=<turn key>
+     * for every non-native head (a LAN share's remote launch still plants its node's bearer, and a session launched
+     * before then still holds it), `app/src/main/dist/bin/splice-launch` execs `env` WITHOUT -i, and a native head's
+     * unset list is empty by design — so a native head launched from inside such a session inherits that bearer.
+     * Forwarding it would ALSO mean the caller's real credential never rides, turning a fixable environment slip
+     * into an opaque vendor 401. Refusing here says which.
      *
      * EVERY forwardable spelling is checked, not the one [presentedCredential] would pick (DR-30
      * redo): [forwardedClientHeaders] sends Authorization AND x-api-key when both are present, so

@@ -41,6 +41,7 @@ import splice.core.head.HeadHealth
 import splice.diagnostics.logs.HeadLogSource
 import splice.head.compact.CompactView
 import splice.head.compact.HeadCompactSource
+import splice.launch.GatewayBearer
 import splice.launch.HeadTrees
 import splice.launch.LaunchGateway
 import splice.launch.LaunchModels
@@ -197,7 +198,7 @@ class ControlServerTest {
         gateway = LaunchGateway(
             statuslineCommand = "\"/bin/curl\" -s :3096/statusline",
             port = 3099,
-            inferenceToken = inferenceToken,
+            bearer = GatewayBearer.Planted(inferenceToken),
             apiTimeoutMs = 960_000,
         ),
         policy = splice.client.ClaudePolicy(share = emptySet(), isolate = emptySet()),

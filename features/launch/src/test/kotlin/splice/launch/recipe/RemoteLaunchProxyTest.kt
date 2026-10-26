@@ -9,6 +9,7 @@ import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.io.TempDir
 import splice.client.ClaudeConfigMaterializer
 import splice.client.ClaudePolicy
+import splice.launch.GatewayBearer
 import splice.launch.HeadTrees
 import splice.launch.LaunchGateway
 import splice.launch.LaunchModels
@@ -30,7 +31,7 @@ class RemoteLaunchProxyTest(@param:TempDir private val tmp: Path) {
         signIn = LaunchSignIn(loginCommand = "claudex login", signInLabel = "Codex (ChatGPT) on torad-server"),
         gateway = LaunchGateway(
             port = 0,
-            inferenceToken = "splice-lan",
+            bearer = GatewayBearer.Planted("splice-lan"),
             apiTimeoutMs = 960_000,
             statuslineCommand = "curl -sS --data-binary @- '$address/statusline'",
             remote = address,

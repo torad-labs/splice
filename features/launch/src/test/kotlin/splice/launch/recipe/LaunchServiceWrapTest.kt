@@ -22,6 +22,7 @@ import splice.client.wrap.WrapState
 import splice.client.wrap.WrapStateRead
 import splice.client.wrap.WrapStateStore
 import splice.client.wrap.WrappedHead
+import splice.launch.GatewayBearer
 import splice.launch.HeadTrees
 import splice.launch.LaunchGateway
 import splice.launch.LaunchModels
@@ -62,7 +63,7 @@ class LaunchServiceWrapTest(@param:TempDir private val tmp: Path) {
         gateway = LaunchGateway(
             statuslineCommand = "\"/bin/curl\" -s :3096/statusline",
             port = 3104,
-            inferenceToken = "test-token",
+            bearer = GatewayBearer.Helper("printf test-token"),
             apiTimeoutMs = 960_000,
             forwardClientAuth = forwardClientAuth,
         ),
@@ -158,6 +159,30 @@ class LaunchServiceWrapTest(@param:TempDir private val tmp: Path) {
             "nothing was added to ~/.claude, a .credentials.json or a .claude.json least of all",
         )
         assertEquals(null, service.wrap.launchThrough("claudex"), "only the wrapped command resolves through wrap")
+        assertFalse("apiKeyHelper" in overlay, "the client's own login answers a client-auth head")
+    }
+
+    // Key rotation (Oct 26): a wrapped launch materializes no settings.json, so a head that checks the turn key gets
+    // its key helper in the --settings overlay, or its session would reach the head with no key at all.
+    @Test
+    fun `a wrapped launch of a head that checks the turn key carries the key helper in its overlay`() {
+        val home = tmp.resolve("helper-home").createDirectories()
+        val stateStore = WrapStateStore(file = home.resolve("state/claude-head-wrap.json"))
+        stateStore.write(WrapState("/opt/claude/current", "/opt/claude/current", "/share/splice-launch", "", "", 0L))
+        val service = LaunchService(ClaudeConfigMaterializer(home), wrap = WrappedHead(home, stateStore = stateStore))
+        val through = service.wrap.launchThrough("claude") ?: error("wrap state is present")
+
+        val recipe = service.launch(
+            spec("claude-splice", forwardClientAuth = false),
+            emptyList(),
+            dangerouslySkipPermissions = false,
+            caller = LaunchCaller(wrapped = through),
+        )
+
+        val overlay = Json.parseToJsonElement(recipe.argv[2]).jsonObject
+        assertEquals("printf test-token", overlay["apiKeyHelper"]?.jsonPrimitive?.content)
+        assertFalse("ANTHROPIC_AUTH_TOKEN" in recipe.env)
+        assertTrue("ANTHROPIC_AUTH_TOKEN" in recipe.unset, "an outer session's planted token would win over it")
     }
 
     @Test

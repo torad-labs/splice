@@ -32,7 +32,7 @@ class ForegroundOwnerLaunchTest {
             gateway = LaunchGateway(
                 statuslineCommand = "",
                 port = 0,
-                inferenceToken = "synthetic",
+                bearer = GatewayBearer.Planted("synthetic"),
                 apiTimeoutMs = 1_000,
             ),
             policy = ClaudePolicy(share = emptySet(), isolate = emptySet()),

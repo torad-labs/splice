@@ -42,6 +42,7 @@ import splice.core.topology.Topology
 import splice.core.topology.TopologyParse
 import splice.core.topology.TopologyWriter
 import splice.core.topology.TopologyWriterSource
+import splice.launch.GatewayBearer
 import splice.launch.HeadTrees
 import splice.launch.LaunchGateway
 import splice.launch.LaunchModels
@@ -111,7 +112,7 @@ class LiveWindowsControlTest {
         gateway = LaunchGateway(
             statuslineCommand = "",
             port = 8801,
-            inferenceToken = "t",
+            bearer = GatewayBearer.Planted("t"),
             apiTimeoutMs = 960_000,
         ),
         policy = ClaudePolicy(share = emptySet(), isolate = emptySet()),

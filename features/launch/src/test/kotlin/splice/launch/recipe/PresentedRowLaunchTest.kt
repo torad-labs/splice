@@ -22,6 +22,7 @@ import splice.client.wrap.WrapStateStore
 import splice.client.wrap.WrappedHead
 import splice.core.model.ModelCatalog
 import splice.core.model.ModelEntry
+import splice.launch.GatewayBearer
 import splice.launch.HeadTrees
 import splice.launch.LaunchGateway
 import splice.launch.LaunchModels
@@ -61,7 +62,7 @@ class PresentedRowLaunchTest(@param:TempDir private val tmp: Path) {
         gateway = LaunchGateway(
             statuslineCommand = "true",
             port = 3108,
-            inferenceToken = "test-inference-token",
+            bearer = GatewayBearer.Planted("test-inference-token"),
             apiTimeoutMs = 960_000,
         ),
         policy = ClaudePolicy(share = emptySet(), isolate = emptySet()),

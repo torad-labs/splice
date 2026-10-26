@@ -25,6 +25,7 @@ import splice.client.resume.ResumeAcrossHeads
 import splice.client.resume.TranscriptModelRewrite
 import splice.client.resume.originals.TranscriptOriginals
 import splice.core.config.StatePaths
+import splice.launch.GatewayBearer
 import splice.launch.HeadTrees
 import splice.launch.LaunchGateway
 import splice.launch.LaunchModels
@@ -44,6 +45,9 @@ private val launchMark: List<String> =
     } else {
         emptyList()
     }
+
+// why: a gateway head's session reads its turn key through this command (GatewayBearer.Helper); any one will do here
+private const val KEY_HELPER = "sed -n 's/^Authorization: Bearer //p' /run/turn-auth-header"
 
 class LaunchServiceTest(@param:TempDir private val tmp: Path) {
 
@@ -75,7 +79,7 @@ class LaunchServiceTest(@param:TempDir private val tmp: Path) {
         gateway = LaunchGateway(
             statuslineCommand = "\"/bin/curl\" -s :3096/statusline",
             port = 3099,
-            inferenceToken = "test-inference-token",
+            bearer = GatewayBearer.Helper(KEY_HELPER),
             apiTimeoutMs = 960_000,
         ),
         policy = ClaudePolicy(share = emptySet(), isolate = emptySet()),
@@ -355,7 +359,6 @@ class LaunchServiceTest(@param:TempDir private val tmp: Path) {
         assertFalse(recipe.argv.contains("--dangerously-skip-permissions"))
         assertTrue(recipe.argv.contains("--verbose"))
         assertNull(recipe.warning)
-        assertTrue(recipe.env["ANTHROPIC_AUTH_TOKEN"] == "test-inference-token")
     }
 
     @Test
@@ -457,14 +460,17 @@ class LaunchServiceTest(@param:TempDir private val tmp: Path) {
         assertEquals("1", env["SPLICE"])
     }
 
-    // The regression that matters most: foreign heads' ENV must be BYTE-IDENTICAL to before this
-    // feature existed. A default-valued flag is easy to leak into the wrong branch. The unset list
-    // is allowed exactly one addition since: the discovery scrub (all four tiers emit on a
-    // declare-nothing head, so no tier scrubs appear here).
+    // A foreign head's session strips the client's Anthropic session and has login disabled, as it always did.
+    // Key rotation (Oct 26) changed how it holds its turn key: Claude Code reads ANTHROPIC_AUTH_TOKEN once, so a
+    // rotated key stranded every session that held it. The session's settings carry an apiKeyHelper instead
+    // (LaunchKeyHelperTest), which Claude Code runs again after a 401 and resends the turn on the same head.
+    // Claude Code prefers an ANTHROPIC_AUTH_TOKEN over the helper and then never asks the helper again, so one an
+    // outer session would pass down is scrubbed. The discovery scrub is the other addition (all four tiers emit on
+    // a declare-nothing head, so no tier scrubs appear here).
     @Test
-    fun `a foreign-vendor head is unchanged - bearer planted, session stripped, login disabled`() {
+    fun `a foreign-vendor head reads its turn key from the key helper, session stripped, login disabled`() {
         val recipe = service.launch(spec("codex"), extraArgs = emptyList(), dangerouslySkipPermissions = false)
-        assertEquals("test-inference-token", recipe.env["ANTHROPIC_AUTH_TOKEN"])
+        assertNull(recipe.env["ANTHROPIC_AUTH_TOKEN"], "a planted token is read once and never again")
         assertEquals("1", recipe.env["DISABLE_LOGIN_COMMAND"])
         assertEquals("1", recipe.env["DISABLE_LOGOUT_COMMAND"])
         assertEquals("0", recipe.env["CLAUDE_CODE_AUTO_MODE_SERVER"], "no auto-mode notice on a translated head")
@@ -473,6 +479,7 @@ class LaunchServiceTest(@param:TempDir private val tmp: Path) {
                 "ANTHROPIC_API_KEY",
                 "CLAUDE_CODE_OAUTH_TOKEN",
                 "CLAUDE_CODE_OAUTH_REFRESH_TOKEN",
+                "ANTHROPIC_AUTH_TOKEN",
                 "CLAUDE_CODE_ENABLE_GATEWAY_MODEL_DISCOVERY",
             ),
             recipe.unset,

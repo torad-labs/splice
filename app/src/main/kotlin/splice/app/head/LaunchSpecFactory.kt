@@ -15,6 +15,7 @@ import splice.core.config.StatePaths
 import splice.core.config.TurnKey
 import splice.core.config.UserHome
 import splice.core.topology.Topology
+import splice.launch.GatewayBearer
 import splice.launch.HeadTrees
 import splice.launch.LaunchGateway
 import splice.launch.LaunchModels
@@ -126,10 +127,18 @@ internal class LaunchSpecFactory(
                 statuslineCommand = "curl -sS -H ${shellSingleQuote("@${turnKey.headerFile()}")} " +
                     "--data-binary @- http://127.0.0.1:$controlPort/statusline/$key",
                 port = head.port,
-                inferenceToken = turnKey.get(),
+                bearer = keyHelper(),
             ),
             policy = ClaudePolicy(share = topology.claude.share.toSet(), isolate = head.claude.isolate.toSet()),
         )
+    }
+
+    /** Oct 26 (key rotation): the session reads its turn key through Claude Code's apiKeyHelper, which prints the
+     *  line of the same 0600 header file, never a key in settings.json. Claude Code runs it again after a 401 and
+     *  resends the turn, so a rotated key reaches a running session on its own head. */
+    private fun keyHelper(): GatewayBearer {
+        val header = shellSingleQuote(turnKey.headerFile().toString())
+        return GatewayBearer.Helper("sed -n 's/^Authorization: Bearer //p' $header")
     }
 
     private fun shellSingleQuote(value: String): String = "'" + value.replace("'", "'\\''") + "'"

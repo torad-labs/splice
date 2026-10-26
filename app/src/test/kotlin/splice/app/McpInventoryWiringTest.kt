@@ -15,6 +15,7 @@ import splice.client.mcp.McpDisposition
 import splice.client.mcp.McpSharing
 import splice.client.mcp.McpWhy
 import splice.core.util.LogSink
+import splice.launch.GatewayBearer
 import splice.launch.HeadTrees
 import splice.launch.LaunchGateway
 import splice.launch.LaunchModels
@@ -131,7 +132,7 @@ class McpInventoryWiringTest {
             apiTimeoutMs = 960_000,
             statuslineCommand = "true",
             port = 3099,
-            inferenceToken = "test-inference-token",
+            bearer = GatewayBearer.Planted("test-inference-token"),
         ),
         policy = policy,
     )

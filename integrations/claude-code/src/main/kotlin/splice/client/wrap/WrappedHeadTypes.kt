@@ -90,13 +90,17 @@ public class WrappedLaunch internal constructor(public val configDir: Path) {
      *  line. The client merges it over the operator's own settings for this run only, so nothing is written to
      *  ~/.claude/settings.json and a plain `claude` afterwards reads the file it always read. A null roster is a
      *  head whose client picks its own models (V4-449): the overlay then carries the status line alone. [marked] adds
-     *  splice's launch mark (LaunchMarker), which a launch on macOS carries. */
+     *  splice's launch mark (LaunchMarker), which a launch on macOS carries. [keyHelper] is the `apiKeyHelper` of a
+     *  head that checks the turn key (key rotation, Oct 26): with no settings.json written, the overlay is the one
+     *  place the session can read it from. */
     public fun settingsOverlay(
         availableModelIds: List<String>?,
         statuslineCommand: String,
         marked: Boolean = false,
+        keyHelper: String? = null,
     ): String =
         buildJsonObject {
+            if (keyHelper != null) put(Keys.API_KEY_HELPER, keyHelper)
             if (availableModelIds != null) {
                 putJsonArray(Keys.AVAILABLE_MODELS) { availableModelIds.forEach { add(it) } }
                 put("enforceAvailableModels", true)

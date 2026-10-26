@@ -10,6 +10,7 @@ import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.io.TempDir
 import splice.client.ClaudeConfigMaterializer
 import splice.client.ClaudePolicy
+import splice.launch.GatewayBearer
 import splice.launch.HeadTrees
 import splice.launch.LaunchGateway
 import splice.launch.LaunchModels
@@ -40,7 +41,7 @@ class LaunchTierCandidatesTest(@param:TempDir private val tmp: Path) {
         gateway = LaunchGateway(
             statuslineCommand = "\"/bin/curl\" -s :3096/statusline",
             port = 3104,
-            inferenceToken = "test-inference-token",
+            bearer = GatewayBearer.Planted("test-inference-token"),
             apiTimeoutMs = 960_000,
         ),
         policy = ClaudePolicy(share = emptySet(), isolate = emptySet()),

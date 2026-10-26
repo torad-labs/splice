@@ -13,6 +13,7 @@ import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.io.TempDir
 import splice.client.ClaudeConfigMaterializer
 import splice.client.ClaudePolicy
+import splice.launch.GatewayBearer
 import splice.launch.HeadTrees
 import splice.launch.LaunchGateway
 import splice.launch.LaunchModels
@@ -43,7 +44,7 @@ class ClientPickedLaunchTest(@param:TempDir private val tmp: Path) {
         gateway = LaunchGateway(
             statuslineCommand = "synthetic-status",
             port = 0,
-            inferenceToken = "synthetic-token",
+            bearer = GatewayBearer.Planted("synthetic-token"),
             apiTimeoutMs = 1_000,
             forwardClientAuth = true,
         ),

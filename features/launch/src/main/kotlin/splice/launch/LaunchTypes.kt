@@ -203,12 +203,25 @@ public data class LaunchSignIn(
     val headKey: String = "",
 )
 
+/** How a launched session holds the bearer a gateway head checks on every turn. */
+public sealed class GatewayBearer {
+    /** Planted once in ANTHROPIC_AUTH_TOKEN, which Claude Code reads at start and never again: for a word that
+     *  does not change while the session runs, like a LAN share's. */
+    public data class Planted(val token: String) : GatewayBearer()
+
+    /** Read through Claude Code's apiKeyHelper: a shell [command] that prints the current turn key. Claude Code runs
+     *  it again after a 401 and resends the turn, so a session whose key was rotated recovers on its own head with
+     *  its draft intact (key rotation, Oct 26, read in the 2.1.310 binary). */
+    public data class Helper(val command: String) : GatewayBearer()
+}
+
 /** How the launched client reaches this head's gateway: the port, the bearer, the request timeout and
  *  the status line that posts back, plus whether the client keeps its own credentials. */
 public data class LaunchGateway(
     val port: Int,
-    /** Per-install local gateway credential; shared with the head's inbound verifier. */
-    val inferenceToken: String,
+    /** How the session holds the local gateway credential the head's inbound verifier checks. A head that
+     *  forwards the client's own login uses neither form. */
+    val bearer: GatewayBearer,
     /** Claude Code's per-request timeout (API_TIMEOUT_MS) for THIS head: the daemon's whole-turn
      *  cap plus a grace, so the client always outlives the proxy's own wall and receives its honest
      *  verdict instead of aborting first. 2026-09-01: the daemon allowed a compaction 900s while
@@ -239,6 +252,14 @@ public data class LaunchGateway(
     /** TRUE when the turns reach Anthropic itself, so Anthropic's own server-side checks answer: a Claude head here,
      *  or one on another machine. A translated head does not. */
     val reachesAnthropic: Boolean get() = forwardClientAuth || remoteClaude
+
+    /** The token planted in ANTHROPIC_AUTH_TOKEN, or null: a head that forwards the client's login plants none,
+     *  since it would replace the very credential the head forwards. */
+    val plantedToken: String? get() = (bearer as? GatewayBearer.Planted)?.token?.takeUnless { forwardClientAuth }
+
+    /** The apiKeyHelper command the session's settings carry, or null: a head that forwards the client's login
+     *  keeps the client's own, as with [plantedToken]. */
+    val keyHelper: String? get() = (bearer as? GatewayBearer.Helper)?.command?.takeUnless { forwardClientAuth }
 }
 
 public data class LaunchRecipe(

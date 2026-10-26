@@ -31,6 +31,7 @@ import splice.client.resume.originals.TranscriptOriginals
 import splice.core.compaction.SessionProject
 import splice.core.config.StatePaths
 import splice.core.util.JsonScalars
+import splice.launch.GatewayBearer
 import splice.launch.HeadTrees
 import splice.launch.LaunchGateway
 import splice.launch.LaunchModels
@@ -260,7 +261,7 @@ class SharedTranscriptsResumeTest {
             apiTimeoutMs = 960_000,
             statuslineCommand = "curl -sS --data-binary @- http://127.0.0.1:3096/statusline/$head",
             port = 3099,
-            inferenceToken = "test-inference-token",
+            bearer = GatewayBearer.Planted("test-inference-token"),
         ),
         policy = policy,
     )

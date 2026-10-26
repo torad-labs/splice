@@ -36,6 +36,7 @@ import splice.core.topology.HeadModel
 import splice.core.topology.ProviderConfig
 import splice.core.topology.Topology
 import splice.core.turn.WatchdogBudget
+import splice.launch.GatewayBearer
 import java.net.Socket
 import java.nio.file.Files
 import java.nio.file.Path
@@ -51,13 +52,17 @@ class LaunchSpecClientAuthTest {
         assertEquals(AuthKind.Client.wire, CLIENT_AUTH_KIND)
     }
 
-    private fun factory(tmp: Path, topology: Topology = Topology()): LaunchSpecFactory {
+    private fun factory(
+        tmp: Path,
+        topology: Topology = Topology(),
+        mgmtKey: MgmtKey = MgmtKey(StatePaths(baseOverride = tmp)),
+    ): LaunchSpecFactory {
         val statePaths = StatePaths(baseOverride = tmp)
         val signInPlanner = SignInPlanner()
         return LaunchSpecFactory(
             topology = topology,
             signInPlanner = signInPlanner,
-            mgmtKey = MgmtKey(statePaths),
+            mgmtKey = mgmtKey,
             buildInputs = HeadBuildInputs(ConfigService(statePaths), signInPlanner),
         )
     }
@@ -240,34 +245,54 @@ class LaunchSpecClientAuthTest {
     // while the suite stayed green. v0.4.0: it then carried the MANAGEMENT key inline, which sat in
     // settings.json and in curl's argv (/proc/<pid>/cmdline, readable by every local user). The
     // command now names a 0600 header file holding the TURN key and carries no key of either kind;
-    // the pin ties that file's bearer to the factory's ACTUAL planted token (spec.gateway.inferenceToken).
+    // the pin ties that file's bearer to the turn key the heads check.
     @Test
     fun `the statusline command names the turn-key header file and carries no key itself`(@TempDir tmp: Path) {
-        val mgmt = MgmtKey(StatePaths(baseOverride = tmp)).get()
-        val spec = factory(tmp).launchSpecFor(
+        val mgmt = MgmtKey(StatePaths(baseOverride = tmp))
+        val turn = TurnKey(mgmt).get()
+        val spec = factory(tmp, mgmtKey = mgmt).launchSpecFor(
             build(tmp, Dialect.ANTHROPIC_PASSTHROUGH),
             controlPort = 3099,
             forwardClientAuth = false,
         )
-        assertFalse(spec.gateway.statuslineCommand.contains(mgmt), "no management key in settings.json or argv")
-        assertFalse(spec.gateway.statuslineCommand.contains(spec.gateway.inferenceToken), "no turn key inline either")
+        assertFalse(spec.gateway.statuslineCommand.contains(mgmt.get()), "no management key in settings.json or argv")
+        assertFalse(spec.gateway.statuslineCommand.contains(turn), "no turn key inline either")
         val header = Regex("-H '@([^']+)'").find(spec.gateway.statuslineCommand)?.groupValues?.get(1)
         assertTrue(header != null, "the bearer rides a header file: ${spec.gateway.statuslineCommand}")
-        assertEquals("Authorization: Bearer ${spec.gateway.inferenceToken}\n", Files.readString(Path.of(header!!)))
+        assertEquals("Authorization: Bearer $turn\n", Files.readString(Path.of(header!!)))
     }
 
-    // v0.4.0: ANTHROPIC_AUTH_TOKEN is inherited by every tool the model runs in the session, so the
-    // planted token is the turn key, never the management key that opens the whole control plane.
+    // v0.4.0: a session's credential is the turn key, never the management key that opens the whole control
+    // plane. Oct 26 (key rotation): ANTHROPIC_AUTH_TOKEN is read once, so a session holding it was stranded by a
+    // rotated key. The session gets a key helper instead, a command Claude Code runs through its shell and runs
+    // again after a 401. It reads the 0600 header file, so it prints the turn key current at that moment and
+    // carries no key in settings.json itself.
     @Test
-    fun `a launched session is planted the turn key, never the management key`(@TempDir tmp: Path) {
+    fun `the key helper prints the current turn key, and the new one after a rotation`(@TempDir tmp: Path) {
         val mgmt = MgmtKey(StatePaths(baseOverride = tmp))
-        val spec = factory(tmp).launchSpecFor(
+        val turn = TurnKey(mgmt)
+        val spec = factory(tmp, mgmtKey = mgmt).launchSpecFor(
             build(tmp, Dialect.ANTHROPIC_PASSTHROUGH),
             controlPort = 3099,
             forwardClientAuth = false,
         )
-        assertNotEquals(mgmt.get(), spec.gateway.inferenceToken)
-        assertEquals(TurnKey(mgmt).get(), spec.gateway.inferenceToken)
+        val helper = (spec.gateway.bearer as? GatewayBearer.Helper)?.command
+        assertTrue(helper != null, "a gateway head's session reads its key through a helper: ${spec.gateway.bearer}")
+        assertFalse(helper!!.contains(turn.get()) || helper.contains(mgmt.get()), "the helper carries no key itself")
+        assertEquals(turn.get(), shellOutput(helper))
+        val before = turn.get()
+        mgmt.replace()
+        turn.headerFile() // the rotation rewrites the file the helper reads
+        assertNotEquals(before, turn.get())
+        assertEquals(turn.get(), shellOutput(helper), "the next run of the helper hands the session the new key")
+    }
+
+    /** What Claude Code reads from its key helper: the command's output through a shell, trimmed. */
+    private fun shellOutput(command: String): String {
+        val process = ProcessBuilder("sh", "-c", command).start()
+        val out = process.inputStream.readBytes().toString(Charsets.UTF_8).trim()
+        check(process.waitFor(10, TimeUnit.SECONDS)) { "key helper did not exit within 10s: $command" }
+        return out
     }
 
     // The pin that matters: drive the MATERIALIZED command against a real ControlServer statusline

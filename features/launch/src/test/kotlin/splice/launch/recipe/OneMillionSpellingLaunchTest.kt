@@ -22,6 +22,7 @@ import splice.client.ClaudePolicy
 import splice.core.model.CLAUDE_CODE_ONE_MILLION
 import splice.core.model.ModelCatalog
 import splice.core.model.ModelEntry
+import splice.launch.GatewayBearer
 import splice.launch.HeadTrees
 import splice.launch.LaunchGateway
 import splice.launch.LaunchModels
@@ -69,7 +70,7 @@ class OneMillionSpellingLaunchTest(@param:TempDir private val tmp: Path) {
         gateway = LaunchGateway(
             statuslineCommand = "true",
             port = 3101,
-            inferenceToken = "test-inference-token",
+            bearer = GatewayBearer.Planted("test-inference-token"),
             apiTimeoutMs = 960_000,
             forwardClientAuth = forwardClientAuth,
         ),

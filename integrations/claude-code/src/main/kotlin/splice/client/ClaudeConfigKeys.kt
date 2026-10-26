@@ -45,6 +45,7 @@ internal object Keys {
     const val AVAILABLE_MODELS = "availableModels"
     const val MODEL_OVERRIDES = "modelOverrides"
     const val STATUS_LINE = "statusLine"
+    const val API_KEY_HELPER = "apiKeyHelper"
     const val MCP_SERVERS = "mcpServers"
     const val CUSTOM_API_KEY_RESPONSES = "customApiKeyResponses"
     const val ONBOARDING = "hasCompletedOnboarding"

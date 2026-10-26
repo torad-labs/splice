@@ -14,6 +14,7 @@ import org.junit.jupiter.api.io.TempDir
 import splice.client.ClaudePolicy
 import splice.core.auth.AuthDescription
 import splice.core.auth.AuthProvider
+import splice.launch.GatewayBearer
 import splice.launch.HeadTrees
 import splice.launch.LaunchGateway
 import splice.launch.LaunchHead
@@ -46,7 +47,7 @@ class LaunchKeyWarningTest {
         gateway = LaunchGateway(
             statuslineCommand = "\"/bin/curl\" -s :3096/statusline/$HEAD",
             port = 3102,
-            inferenceToken = "test-token",
+            bearer = GatewayBearer.Planted("test-token"),
             apiTimeoutMs = 960_000,
             forwardClientAuth = false,
         ),

@@ -17,6 +17,7 @@ import splice.core.topology.SHARE_AUTH_PARAM
 import splice.core.topology.SHARE_MODELS_PARAM
 import splice.core.topology.SHARE_NODE_TOKEN
 import splice.core.wire.HttpStatus
+import splice.launch.GatewayBearer
 import splice.launch.HeadTrees
 import splice.launch.LaunchGateway
 import splice.launch.LaunchSignIn
@@ -85,7 +86,7 @@ public class RemoteLaunches(
         val statusline = "${address.turns}/statusline"
         val gateway = LaunchGateway(
             port = 0,
-            inferenceToken = SHARE_NODE_TOKEN,
+            bearer = GatewayBearer.Planted(SHARE_NODE_TOKEN),
             apiTimeoutMs = shared.timeoutMs,
             statuslineCommand = "curl -sS --connect-timeout $STATUSLINE_CONNECT_S --data-binary @- '$statusline'",
             remote = address.turns,

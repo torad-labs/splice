@@ -58,6 +58,7 @@ import splice.core.testing.TestPorts
 import splice.diagnostics.logs.HeadLogSource
 import splice.head.compact.CompactView
 import splice.head.compact.HeadCompactSource
+import splice.launch.GatewayBearer
 import splice.launch.HeadTrees
 import splice.launch.LaunchGateway
 import splice.launch.LaunchModels
@@ -94,7 +95,7 @@ class ClaudeHeadRoutesWiringTest {
         gateway = LaunchGateway(
             statuslineCommand = "\"/bin/curl\" -s :3096/statusline/claude-splice",
             port = 3104,
-            inferenceToken = "test-token",
+            bearer = GatewayBearer.Planted("test-token"),
             apiTimeoutMs = 960_000,
             forwardClientAuth = true,
         ),

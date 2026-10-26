@@ -99,11 +99,14 @@ public class ClaudeConfigMaterializer(
      *  baseline. [modelOverrides] (V4-232, ModelCatalog.presented) is written as settings.json
      *  `modelOverrides`, a Claude model the client knows -> the row id it stands for; empty writes
      *  nothing and leaves a shared value as it was. A wrapped `claude` never comes through here:
-     *  it writes nothing into the operator's own ~/.claude, which this entry point refuses (V4-445). */
+     *  it writes nothing into the operator's own ~/.claude, which this entry point refuses (V4-445). [keyHelper] is
+     *  written as settings.json `apiKeyHelper`, the command a session of a head that checks the turn key reads it
+     *  through (key rotation, Oct 26); null writes none. */
     public fun materialize(
         spec: MaterializeSpec,
         trust: TrustedLaunch? = null,
         modelOverrides: Map<String, String> = emptyMap(),
+        keyHelper: String? = null,
     ): MaterializeResult {
         requireIsolatedDir(spec.configDir)
         // Validate every ABORTING source BEFORE any mutation (DR-11 redo, codex ordering catch).
@@ -148,7 +151,7 @@ public class ClaudeConfigMaterializer(
                 } ?: emptyMap(),
             ),
         )
-        writeSettings(spec, hookAdditions, existingSettings, modelOverrides, hookOrigins)
+        writeSettings(spec, hookAdditions, existingSettings, LaunchSettings(modelOverrides, keyHelper), hookOrigins)
         val mcpCount = writeClaudeJson(
             spec.configDir,
             spec.modelOptionsCache.takeIf { spec.availableModelIds != null },
@@ -300,13 +303,17 @@ public class ClaudeConfigMaterializer(
         }
     }
 
+    /** What one launch adds to the head's settings beside its [MaterializeSpec]: the presented rows' model overrides
+     *  and the key helper. One value, so writeSettings stays within its parameter budget. */
+    private data class LaunchSettings(val modelOverrides: Map<String, String>, val keyHelper: String?)
+
     // [existing] is the DR-105 preflight read from materialize() — the one aborting read this
     // function used to perform itself, after the mutations it must now precede.
     private fun writeSettings(
         spec: MaterializeSpec,
         hookAdditions: Map<String, List<JsonObject>>,
         existing: JsonObject,
-        modelOverrides: Map<String, String>,
+        launch: LaunchSettings,
         hookOrigins: JsonObject,
     ) {
         val dst = spec.configDir.resolve(Keys.SETTINGS_FILE_NAME)
@@ -333,6 +340,7 @@ public class ClaudeConfigMaterializer(
         )
         val merged = buildJsonObject {
             base.forEach { (key, value) -> put(key, value) }
+            launch.keyHelper?.let { put(Keys.API_KEY_HELPER, it) }
             put(
                 Keys.STATUS_LINE,
                 buildJsonObject {
@@ -342,7 +350,7 @@ public class ClaudeConfigMaterializer(
                 },
             )
             hooks.hooks?.let { put(Keys.HOOKS, it) }
-            ClaudeModelSettings.overrides(global, modelOverrides)?.let { put(Keys.MODEL_OVERRIDES, it) }
+            ClaudeModelSettings.overrides(global, launch.modelOverrides)?.let { put(Keys.MODEL_OVERRIDES, it) }
         }
         // The one atomic-write primitive (DR-11b): a LIVE Claude Code re-reads this file, and the
         // old truncate-then-write let it observe a torn settings.json mid-launch.

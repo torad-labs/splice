@@ -15,6 +15,7 @@ import splice.client.ClaudePolicy
 import splice.core.auth.AuthDescription
 import splice.core.auth.AuthProvider
 import splice.core.auth.CredentialVerdict
+import splice.launch.GatewayBearer
 import splice.launch.HeadTrees
 import splice.launch.LaunchGateway
 import splice.launch.LaunchHead
@@ -47,7 +48,7 @@ class LaunchClientVerdictTest {
         gateway = LaunchGateway(
             statuslineCommand = "\"/bin/curl\" -s :3096/statusline/$HEAD",
             port = 3104,
-            inferenceToken = "test-token",
+            bearer = GatewayBearer.Planted("test-token"),
             apiTimeoutMs = 960_000,
             forwardClientAuth = true,
         ),

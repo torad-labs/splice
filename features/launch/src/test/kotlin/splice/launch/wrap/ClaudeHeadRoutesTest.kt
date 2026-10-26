@@ -32,6 +32,7 @@ import splice.client.wrap.WrapStateStore
 import splice.client.wrap.WrappedHead
 import splice.core.config.InstallPaths
 import splice.core.testing.TestPorts
+import splice.launch.GatewayBearer
 import splice.launch.HeadTrees
 import splice.launch.LaunchGateway
 import splice.launch.LaunchHead
@@ -69,7 +70,7 @@ class ClaudeHeadRoutesTest {
         gateway = LaunchGateway(
             statuslineCommand = "\"/bin/curl\" -s :3096/statusline/claude-splice",
             port = 3104,
-            inferenceToken = "test-token",
+            bearer = GatewayBearer.Planted("test-token"),
             apiTimeoutMs = 960_000,
             forwardClientAuth = true,
         ),

@@ -18,6 +18,7 @@ import splice.client.resume.SessionOwnership
 import splice.client.resume.TranscriptModelRewrite
 import splice.client.resume.originals.TranscriptOriginals
 import splice.core.config.StatePaths
+import splice.launch.GatewayBearer
 import splice.launch.HeadTrees
 import splice.launch.LaunchGateway
 import splice.launch.LaunchHead
@@ -274,7 +275,7 @@ class ResumeHookRouteTest {
             gateway = LaunchGateway(
                 statuslineCommand = "",
                 port = 0,
-                inferenceToken = "t",
+                bearer = GatewayBearer.Planted("t"),
                 apiTimeoutMs = 1_000,
             ),
             policy = ClaudePolicy(share = emptySet(), isolate = emptySet()),

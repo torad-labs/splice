@@ -169,7 +169,7 @@ class TraceHeapShareTest {
                     reply.body().contains("overloaded_error"),
                     "capacity is not an empty trace or corrupt record",
                 )
-                assertTrue(reply.body().contains("retry"))
+                assertTrue(reply.body().contains("HeapBusy"), reply.body())
                 assertFalse(reply.body().contains("invalid_request"))
             }
         } finally {

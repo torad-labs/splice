@@ -261,7 +261,8 @@ class AccountTurnSelectionTest(@param:TempDir private val root: Path) {
 
     @Test
     fun `all exhausted refuses with an IMF-fixdate Retry-After bounded by the clamp`() = runTest {
-        val rig = AccountTurnRig(root)
+        // The machine's zone is Tokyo when the head is built, which is when its voice reads the zone.
+        val rig = inZone(TOKYO) { AccountTurnRig(root) }
         try {
             rig.start()
             val resetEpochSeconds = 2_077_951_777L
@@ -271,7 +272,7 @@ class AccountTurnSelectionTest(@param:TempDir private val root: Path) {
 
             // V4-433: the client's sentence says the reset in the machine's zone; the journal keeps the ISO instant.
             val response = inZone(TOKYO) { rig.messages() }.also { body ->
-                assertTrue(body.bodyAsText().contains("all OAuth accounts are exhausted; earliest reset is $said"))
+                assertTrue(body.bodyAsText().contains("[splice] claudex is at its usage limit until $said."))
             }
             val receivedAtSeconds = System.currentTimeMillis() / MS_PER_SECOND
 
@@ -299,7 +300,7 @@ class AccountTurnSelectionTest(@param:TempDir private val root: Path) {
     // formatter-safe 9999 instant is still asserted where it now lives, in the message.
     @Test
     fun `oversized exhausted reset stays rate limited with a bounded Retry-After`() = runTest {
-        val rig = AccountTurnRig(root)
+        val rig = inZone(TOKYO) { AccountTurnRig(root) }
         try {
             rig.start()
             val oversizedReset = Long.MAX_VALUE - 10_000_000_000_000_000L
@@ -312,7 +313,8 @@ class AccountTurnSelectionTest(@param:TempDir private val root: Path) {
             assertEquals(HttpStatusCode.TooManyRequests, response.status)
             assertBoundedHold(checkNotNull(response.headers["Retry-After"]), sentAtSeconds, receivedAtSeconds)
             // The clamp is the 9999 instant; in Tokyo it reads as the morning of the next January 1.
-            assertTrue(response.bodyAsText().contains("earliest reset is Jan 1, 8:59 AM JST"))
+            val said = "[splice] claudex is at its usage limit until Jan 1, 8:59 AM JST."
+            assertTrue(response.bodyAsText().contains(said))
             assertTrue(rig.authHeaders().isEmpty(), "an exhausted pool must not contact upstream")
             val row = exhaustedRow(rig)
             assertEquals(oversizedReset, row["earliest_reset_epoch_seconds"]?.jsonPrimitive?.long)

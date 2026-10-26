@@ -26,7 +26,8 @@ internal class ChunkedBody(val entry: IngressRequest, private val capBytes: Long
         val lease = checkNotNull(entry.lease)
         val want = HeapWeights.ingress(maxOf(received, minOf(CHUNKED_FLOOR_BYTES, capBytes)))
         return when {
-            received > capBytes -> BodyRefusal(HttpStatus.CONTENT_TOO_LARGE, Decline.TooLarge(received, capBytes))
+            // [received] counts only the chunks before the cap, not the body, so the refusal names the limit alone.
+            received > capBytes -> BodyRefusal(HttpStatus.CONTENT_TOO_LARGE, Decline.TooLarge(null, capBytes))
             want > lease.bytes && !lease.resize(want) -> BodyRefusal(HttpStatus.OVERLOADED, Decline.HeapBusy)
             else -> null
         }

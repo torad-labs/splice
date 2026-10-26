@@ -207,15 +207,15 @@ internal class ClientAuth(
         }.keys
         if (carriers.isEmpty()) return true
         val headers = carriers.joinToString(", ")
-        val variables = carriers.map { FORWARDED_CLIENT_HEADERS[it] ?: "ANTHROPIC_CUSTOM_HEADERS" }
-            .distinct().joinToString(" and ")
+        val variables = carriers.map { FORWARDED_CLIENT_HEADERS[it] ?: "ANTHROPIC_CUSTOM_HEADERS" }.distinct()
         deps.log(
             "[auth] refused a turn on a client-auth head that presented one of splice's own keys (the " +
                 "management key or the turn key) in $headers: " +
-                "$variables in the launching environment carried it and shadowed the caller's own " +
-                "credential; unset it (or launch from a clean shell) so this head can forward yours\n",
+                "${variables.joinToString(" and ")} in the launching environment carried it and shadowed the " +
+                "caller's own credential; unset it (or launch from a clean shell) so this head can forward yours\n",
         )
-        responses.respondUnauthorized(call)
+        // The line names the variables to unset, which is what the person acts on; the headers stay in the log.
+        responses.respondRefusal(call, FailureCause.Splice.Declined(Decline.SpliceKeyAsLogin(variables)))
         return false
     }
 

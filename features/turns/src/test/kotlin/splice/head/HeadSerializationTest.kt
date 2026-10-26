@@ -165,7 +165,7 @@ class HeadSerializationTest {
                         setBody(body)
                     }
                     assertEquals(400, response.status.value, response.bodyAsText().take(200))
-                    assertTrue(response.bodyAsText().contains("invalid request body"))
+                    assertTrue(response.bodyAsText().contains("[splice] splice could not parse this request."))
                 }
                 assertTrue(upstream.upstreamBodies.isEmpty(), "rejected bodies must never reach upstream")
             } finally {

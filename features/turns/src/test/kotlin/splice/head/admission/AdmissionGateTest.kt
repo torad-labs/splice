@@ -165,8 +165,7 @@ class MaterializationRefusalTest {
                 val body = response.bodyAsText()
                 assertEquals(HttpStatusCode.PayloadTooLarge, response.status, body)
                 assertTrue(body.contains("invalid_request_error"), body)
-                assertTrue(body.contains("materialization heap limit is 13 bytes"), body)
-                assertTrue(body.contains("requires ${if (unknown) 26 else 20} bytes"), body)
+                assertTrue(body.contains(UNFIT_LINE), body)
                 assertFalse(body.contains("retry"), body)
                 assertEquals(13L, heap.heap.available.value)
             }
@@ -296,7 +295,7 @@ class AdmissionGateTest {
         assertEquals(HttpStatusCode.RequestTimeout, response.status)
         val body = response.bodyAsText()
         assertTrue(body.contains("invalid_request_error"), body)
-        assertTrue(body.contains("request body stream interrupted"), body)
+        assertTrue(body.contains("[splice] This request took too long to reach splice. Send the message again."), body)
     }
 
     @Test
@@ -810,10 +809,14 @@ class RequestBodyCapRefusalTest {
         assertEquals(413, declaredStatus, declaredBody)
         assertEquals(413, runningStatus, runningBody)
         assertEquals(declaredBody, runningBody, "the two cap arms must be indistinguishable to the client")
-        assertTrue(declaredBody.contains("exceeds 4 bytes"), declaredBody)
+        val said = "[splice] This request is larger than the 4 bytes splice accepts."
+        assertTrue(declaredBody.contains(said), declaredBody)
         // The control: a DIFFERENT refusal does differ, so the equality above is a check that can
         // fail and not a tautology that would hold however the two arms were spelled.
         assertEquals(408, timeoutStatus, timeoutBody)
         assertNotEquals(declaredBody, timeoutBody, "a different refusal must differ, or the check above cannot fail")
     }
 }
+
+/** The line a body splice cannot give enough memory is refused with (Decline.Unfit, failure-handling slice 2). */
+private const val UNFIT_LINE = "[splice] This request needs more memory than splice can give one request."

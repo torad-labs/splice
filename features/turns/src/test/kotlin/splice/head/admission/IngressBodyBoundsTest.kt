@@ -97,7 +97,7 @@ class IngressBodyBoundsTest {
                 socket.getOutputStream().flush()
                 val reply = socket.getInputStream().readBytes().toString(Charsets.UTF_8)
                 assertTrue(reply.startsWith("HTTP/1.1 413"), reply)
-                assertTrue(reply.contains("request body exceeds 32768 bytes"), reply)
+                assertTrue(reply.contains("[splice] This request is larger than the 32 KB splice accepts."), reply)
                 assertTrue(reply.contains("Connection: close", ignoreCase = true), reply)
             }
             withTimeout(CLOSE_WAIT_SECONDS * 1000) { while (heap.available.value != heap.limitBytes) yield() }

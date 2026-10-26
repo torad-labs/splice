@@ -32,6 +32,7 @@ import splice.core.model.ModelCatalog
 import splice.core.model.ModelEntry
 import splice.core.turn.ReasoningDisplay
 import splice.core.turn.WatchdogBudget
+import splice.core.util.LocalTimeText
 import splice.core.util.LogSink
 import splice.core.util.WallClock
 import splice.dialect.responses.ReasoningSettings
@@ -172,11 +173,8 @@ class HeadServerCapacityTest {
         assertEquals(529, response.status.value)
         val body = response.bodyAsText()
         assertTrue(body.contains("overloaded_error"), "expected overloaded_error in: $body")
-        assertTrue(body.contains("gateway at capacity"), "expected 'gateway at capacity' in: $body")
-        assertEquals(
-            """{"type":"error","error":{"type":"overloaded_error","message":"gateway at capacity"}}""",
-            body,
-        )
+        val line = "[splice] claudex is already running 1 turn, its limit. Claude Code sends this turn again."
+        assertEquals("""{"type":"error","error":{"type":"overloaded_error","message":"$line"}}""", body)
 
         // release both held requests (they finish cleanly — no retry/re-anchor interaction, the
         // deterministic slot-occupancy mechanism the mock prescribes) before the test returns.
@@ -298,9 +296,14 @@ class HeadServerCapacityTest {
 
             assertEquals(RATE_LIMITED_STATUS, refused.status.value)
             val said = refused.bodyAsText()
+            // The provider's reset is three days from when it was marked, a second this request's round trip brackets.
+            val lines = (sentAtSeconds - 2..receivedAtSeconds + 1).map {
+                "[splice] claudex is at its usage limit until ${LocalTimeText().at(it + THREE_DAYS_MS / MS_PER_S)}. " +
+                    "Claude Code sends this turn again."
+            }
             assertTrue(
-                said.contains("all OAuth accounts are exhausted; earliest reset is"),
-                "the provider's own reset still rides in the message; only the wire deadline is bounded",
+                lines.any { it in said },
+                "the provider's own reset still rides in the message; only the wire deadline is bounded: $said",
             )
             // V4-433: said as a person reads it (LocalTimeText), never as the ISO instant the journal keeps.
             assertFalse(Regex("""\d{4}-\d{2}-\d{2}T\d{2}:\d{2}""").containsMatchIn(said), said)

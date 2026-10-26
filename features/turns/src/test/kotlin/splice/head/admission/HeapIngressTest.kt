@@ -122,7 +122,8 @@ class HeapIngressTest {
     fun `a materialization budget raised while the listener runs admits the next request it refused`() = runBlocking {
         // The OTHER live ceiling this guard reads per request: the gate's own, which the daemon derives from
         // materializationHeapBytes. The body is well under the byte cap, so only the materialization arm can refuse
-        // it — its 413 names the weight and the limit, and the same listener carries the body once the limit moves.
+        // it. Its 413 says the request needs more memory than splice gives one request, and the same listener carries
+        // the body once the limit moves.
         val heap = HeapBudget(Long.MAX_VALUE, budgetBytes = 8 * 1024 * 1024)
         val body = "x".repeat(64)
         val weight = HeapWeights.request(body.length.toLong())
@@ -141,7 +142,7 @@ class HeapIngressTest {
             HttpClient.newBuilder().version(HttpClient.Version.HTTP_1_1).build().use { client ->
                 val refused = client.send(request, HttpResponse.BodyHandlers.ofString())
                 assertEquals(413, refused.statusCode(), refused.body())
-                assertTrue(refused.body().contains("materialization heap limit is $limit bytes"), refused.body())
+                assertTrue(refused.body().contains(UNFIT_LINE), refused.body())
 
                 limit = weight
 
@@ -173,7 +174,8 @@ class HeapIngressTest {
             HttpClient.newBuilder().version(HttpClient.Version.HTTP_1_1).build().use { client ->
                 val refused = client.send(request, HttpResponse.BodyHandlers.ofString())
                 assertEquals(413, refused.statusCode(), refused.body())
-                assertTrue(refused.body().contains("exceeds 8 bytes"), refused.body())
+                val said = "[splice] This request is 64 bytes, more than the 8 bytes splice accepts."
+                assertTrue(refused.body().contains(said), refused.body())
 
                 cap = 1024
                 val admitted = client.send(request, HttpResponse.BodyHandlers.ofString())
@@ -203,7 +205,7 @@ class HeapIngressTest {
                 )
                 val reply = socket.getInputStream().readBytes().toString(Charsets.UTF_8)
                 assertTrue(reply.startsWith("HTTP/1.1 413"), reply)
-                assertTrue(reply.contains("process heap limit is ${heap.limitBytes} bytes"), reply)
+                assertTrue(reply.contains(UNFIT_LINE), reply)
                 assertFalse(reply.contains("retry"), reply)
             }
         } finally {
@@ -257,7 +259,7 @@ class HeapIngressTest {
                 )
                 val reply = socket.getInputStream().readBytes().toString(Charsets.UTF_8)
                 assertTrue(reply.startsWith("HTTP/1.1 413"), reply)
-                assertTrue(reply.contains("materialization heap limit is ${heap.limitBytes} bytes"), reply)
+                assertTrue(reply.contains(UNFIT_LINE), reply)
                 assertTrue(reply.contains("invalid_request_error"), reply)
                 assertFalse(reply.contains("retry"), reply)
             }
@@ -428,3 +430,6 @@ class HeapIngressTest {
         }
     }
 }
+
+/** The line a body splice cannot give enough memory is refused with (Decline.Unfit, failure-handling slice 2). */
+private const val UNFIT_LINE = "[splice] This request needs more memory than splice can give one request."

@@ -124,6 +124,6 @@ class RequestBodyLimitTest {
         val response = post("/v1/messages", "x".repeat((MESSAGES_API_LIMIT + 1).toInt()))
 
         assertEquals(413, response.status.value)
-        assertTrue(response.bodyAsText().contains("request body exceeds $MESSAGES_API_LIMIT bytes"))
+        assertTrue(response.bodyAsText().contains("[splice] This request is larger than the 32 MB splice accepts."))
     }
 }

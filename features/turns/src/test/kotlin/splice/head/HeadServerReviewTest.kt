@@ -1,7 +1,7 @@
 // NEW (review 2026-07-23): HTTP-level integration coverage the PR review flagged as missing —
 //   E: a waiter promoted from the InflightGate queue DURING a stop/restart drain is bounced with
-//      the 529 "head is stopping; retry" shape (never starts a doomed upstream turn);
-//   G: count_tokens fast-fails 529 "gateway busy; retry" when the materialization gate is saturated
+//      a 529 whose line says the head is shutting down (never starts a doomed upstream turn);
+//   G: count_tokens fast-fails 529, saying splice is short of memory, when the materialization gate is saturated
 //      (proves the HTTP route is wired to tryWithLease, not just the primitive);
 //   I: upstream x-ratelimit-* headers survive to durable UsageStore state through TurnDriver.
 // Each test builds an ISOLATED head so it can stop/restart/hold without disturbing a shared one.
@@ -164,7 +164,7 @@ class HeadServerReviewTest {
                 assertEquals(1L, mock.startHoldRelease.count, "no model item arrived before progress")
                 mock.startHoldRelease.countDown()
                 val body = turn.await()
-                assertTrue(body.contains("[splice] holding this turn open"), body)
+                assertTrue(body.contains("[splice] No answer from claudex yet"), body)
                 assertTrue(body.contains("event: message_stop"), body)
             } finally {
                 tickGate.complete(Unit)
@@ -237,7 +237,7 @@ class HeadServerReviewTest {
                 if (!opened.isCompleted && line.contains("event: message_start")) {
                     opened.complete(System.currentTimeMillis() - t0)
                 }
-                if (progressSeen?.isCompleted == false && line.contains("[splice] holding this turn open")) {
+                if (progressSeen?.isCompleted == false && line.contains("[splice] No answer from claudex yet")) {
                     progressSeen.complete(Unit)
                 }
             }
@@ -314,7 +314,7 @@ class HeadServerReviewTest {
             assertEquals(529, resp.status.value)
             val body = resp.bodyAsText()
             assertTrue(body.contains("overloaded_error"), "expected overloaded_error in: $body")
-            assertTrue(body.contains("head is stopping"), "expected 'head is stopping; retry' in: $body")
+            assertTrue(body.contains("[splice] claudex is shutting down. Claude Code sends this turn again."), body)
 
             req1.await()
             restart.await()
@@ -345,7 +345,8 @@ class HeadServerReviewTest {
             assertEquals(529, resp.status.value)
             val body = resp.bodyAsText()
             assertTrue(body.contains("overloaded_error"), "expected overloaded_error in: $body")
-            assertTrue(body.contains("gateway busy"), "expected 'gateway busy; retry' in: $body")
+            val said = "[splice] splice is short of memory right now. Claude Code sends this turn again."
+            assertTrue(body.contains(said), body)
 
             release.complete(Unit)
             holding.await()

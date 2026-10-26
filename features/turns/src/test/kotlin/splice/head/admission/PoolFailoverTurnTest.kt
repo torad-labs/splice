@@ -40,6 +40,7 @@ import splice.core.usage.PlanLimit
 import splice.core.usage.QuotaHeaderRead
 import splice.core.util.AsyncFileIo
 import splice.core.util.ElapsedClock
+import splice.core.util.LocalTimeText
 import splice.core.util.LogSink
 import splice.core.util.WallClock
 import splice.dialect.anthropic.PassthroughProvider
@@ -234,13 +235,20 @@ class PoolFailoverTurnTest {
             val rig = FailoverRig(directory, limited = resets)
             rig.start()
             try {
+                val before = System.currentTimeMillis() / 1_000
                 assertEquals(HttpStatusCode.TooManyRequests, rig.turn().first)
+                val after = System.currentTimeMillis() / 1_000
                 assertEquals(listOf("one", "two", "three"), rig.requests, "each login meets its own limit once")
 
                 val held = rig.turn()
 
                 assertEquals(HttpStatusCode.TooManyRequests, held.first)
-                assertTrue(held.second.contains("all OAuth accounts are exhausted; earliest reset is"), held.second)
+                // The earliest reset is login two's: an hour from the second it answered during the first turn.
+                val lines = (before..after).map {
+                    "[splice] synthetic is at its usage limit until ${LocalTimeText().at(it + HOUR_S)}. " +
+                        "Claude Code sends this turn again."
+                }
+                assertTrue(lines.any { it in held.second }, held.second)
                 assertEquals(listOf("one", "two", "three"), rig.requests, "replayed at admission, no upstream request")
             } finally {
                 rig.close()

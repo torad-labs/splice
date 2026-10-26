@@ -95,6 +95,10 @@ private const val TURN_BOUND_MS: Long = WORKER_START_TIMEOUT_MS + 5_000L
 // How often the slot test reads the admission gate while it waits for the source round's permit to return.
 private const val GATE_POLL_MS = 10L
 
+// why: the line a first step the runtime rejected ends with: a fault in splice, which Claude Code sends again.
+private const val INTERNAL_LINE =
+    "[splice] This turn failed because of a fault in splice. Claude Code sends this turn again."
+
 /**
  * Oct 4: a claudex turn whose script called a client tool recorded zero tokens, and the next turn of the same
  * script carried this round's tokens instead of its own. The round that writes a script is billed when the
@@ -299,7 +303,7 @@ class CodeModeFirstStepBillingTest {
                 ""
             } else {
                 withTimeout(TURN_BOUND_MS) { first.await() }.also {
-                    assertTrue(it.contains("source was not rerun"), it)
+                    assertTrue(it.contains(INTERNAL_LINE), it)
                 }
             }
             assertTrue(toolUses(answer).isEmpty(), "the failed first step never publishes a parked callback")

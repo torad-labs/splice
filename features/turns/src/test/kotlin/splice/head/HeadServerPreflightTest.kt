@@ -188,9 +188,10 @@ class HeadServerPreflightTest {
         }
     }
 
-    private fun assertRecovery(message: String, inputTokens: Long, window: Long) {
-        assertTrue("$inputTokens input tokens" in message && "$window-token window" in message, message)
-        assertTrue("larger context window" in message && "start a fresh conversation" in message, message)
+    /** The refusal says what is too long for claudex and how many tokens its model [holds]: a person reads the model's
+     *  window, not the estimate the preflight measured (failure-handling slice 2). */
+    private fun assertTooLong(message: String, what: String, holds: String) {
+        assertTrue("[splice] $what Its model holds $holds tokens." in message, message)
     }
 
     internal fun recorded(root: Path): String {
@@ -251,7 +252,7 @@ class HeadServerPreflightTest {
             assertEquals(400, ordinary.status.value, "measured growth exceeds W−R before SSE")
             assertEquals("false", ordinary.headers["x-should-retry"])
             val refusal = ordinary.bodyAsText()
-            assertTrue("prompt is too long" in refusal && "measured-text-prefix" in refusal, refusal)
+            assertTooLong(refusal, "This prompt is too long for claudex.", "272,000")
             val compact = compact(client, server.port, previous, "summary")
             assertEquals(200, compact.status.value, "an unmeasured compact reaches the provider")
             assertTrue("event: message_stop" in compact.bodyAsText())
@@ -261,7 +262,7 @@ class HeadServerPreflightTest {
             val tooLargeCompact = compact(client, server.port, compactHistory, "continue")
             assertEquals(400, tooLargeCompact.status.value, "measured compact input alone exceeds W")
             val compactRefusal = tooLargeCompact.bodyAsText()
-            assertRecovery(compactRefusal, inputTokens = 273_000, window = 272_000)
+            assertTooLong(compactRefusal, "This conversation is too long for claudex to summarize.", "272,000")
             assertEquals(2, upstream.upstreamBodies.size, "only measured refusals avoid the backend")
             val recorded = recorded(root)
             assertTrue("compaction-preflight-compactable" in recorded, recorded)
@@ -294,7 +295,7 @@ class HeadServerPreflightTest {
             val history = previous + """{"role":"user","content":"summary"},"""
             val refused = compact(client, server.port, history, "continue")
             assertEquals(400, refused.status.value)
-            assertRecovery(refused.bodyAsText(), inputTokens = 900_000, window = 872_000)
+            assertTooLong(refused.bodyAsText(), "This conversation is too long for claudex to summarize.", "872,000")
             assertEquals(2, upstream.upstreamBodies.size)
         } finally {
             server.stop()
@@ -392,7 +393,7 @@ class HeadServerPreflightTest {
             val oversized = send(client, server.port, grown, "continue", PreflightPrompt(model = "gpt-6-sol"))
             assertEquals(400, oversized.status.value, "measured input alone exceeds W")
             val firstRefusal = oversized.bodyAsText()
-            assertRecovery(firstRefusal, inputTokens = 873_000, window = 872_000)
+            assertTooLong(firstRefusal, "This first message is too long for claudex.", "872,000")
             assertEquals(2, upstream.upstreamBodies.size)
             assertTrue("compaction-preflight-first-exchange" in recorded(root))
         } finally {

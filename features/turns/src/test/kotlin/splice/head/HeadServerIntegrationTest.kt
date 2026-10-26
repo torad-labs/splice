@@ -163,7 +163,8 @@ class HeadServerIntegrationTest {
             setBody("x".repeat(2_048))
         }
         assertEquals(413, response.status.value)
-        assertTrue(response.bodyAsText().contains("request body exceeds 1024 bytes"))
+        val said = "[splice] This request is 2 KB, more than the 1 KB splice accepts."
+        assertTrue(response.bodyAsText().contains(said))
     }
 
     @Test
@@ -453,7 +454,7 @@ class HeadServerIntegrationTest {
         assertEquals(HttpStatusCode.BadRequest, response.status)
         val body = response.bodyAsText()
         assertTrue(body.contains("invalid_request_error"))
-        assertTrue(body.contains("proxies its own models only"))
+        assertTrue(body.contains("[splice] claudex does not serve claude-3-opus."), body)
     }
 
     @Test
@@ -486,7 +487,7 @@ class HeadServerIntegrationTest {
         assertEquals(HttpStatusCode.BadRequest, response.status)
         val body = response.bodyAsText()
         assertTrue(body.contains("invalid_request_error"))
-        assertTrue(body.contains("invalid request body"))
+        assertTrue(body.contains("[splice] splice could not parse this request."), body)
     }
 }
 

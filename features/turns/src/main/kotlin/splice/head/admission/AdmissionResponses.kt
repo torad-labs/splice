@@ -108,14 +108,16 @@ internal class AdmissionResponses(private val voice: HeadVoice) {
     private fun retryAfterDate(resetEpochSeconds: Long): String =
         retryAfterFormat.format(AccountResetText.normalizedInstant(resetEpochSeconds))
 
-    /** A body over the head's [limit], [bytes] long where the request declared its length. */
-    suspend fun respondTooLarge(call: ApplicationCall, limit: Int, bytes: Long?) {
-        respondRefusal(call, FailureCause.Splice.Declined(Decline.TooLarge(bytes = bytes, limit = limit.toLong())))
+    /** A body over the head's [limit]. Both cap arms answer these same bytes (V4-440), and the arm that refuses a
+     *  frame into the read never learns the body's size, so the line names the limit alone. */
+    suspend fun respondTooLarge(call: ApplicationCall, limit: Int) {
+        respondRefusal(call, FailureCause.Splice.Declined(Decline.TooLarge(bytes = null, limit = limit.toLong())))
     }
 
-    /** Only temporary pressure is retryable; an unfit body is refused against the effective reservation ceiling. */
+    /** Only temporary pressure is retryable; a body whose [weight] is over the effective reservation ceiling is one
+     *  splice cannot give the memory to, whatever else is running. */
     suspend fun respondHeapRefusal(call: ApplicationCall, weight: Long, limit: Long) {
-        val why = if (weight > limit) Decline.TooLarge(bytes = weight, limit = limit) else Decline.HeapBusy
+        val why = if (weight > limit) Decline.Unfit(weight, limit) else Decline.HeapBusy
         respondRefusal(call, FailureCause.Splice.Declined(why))
     }
 

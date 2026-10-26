@@ -188,8 +188,7 @@ class HeadServerHeartbeatTest {
         // and it names what is actually true here — the client has already seen a delta, so this
         // turn is paused mid-answer rather than not started.
         val wire = text()
-        assertTrue("[splice] holding this turn open." in wire, "the status line must reach the client: $wire")
-        assertTrue("has paused mid-answer" in wire, "and must name the wait it is actually in: $wire")
+        assertTrue("[splice] claudex has paused mid-answer" in wire, "the line names the wait it is actually in: $wire")
 
         // And it costs the model's accounting NOTHING. Every frame the pinger wrote is counted in
         // frames_out and in none of content_frames_out, which is what keeps the idle watchdog on the
@@ -230,7 +229,7 @@ class HeadServerHeartbeatTest {
         statusLineOn = true
         repeat(SILENT_TICKS_SENT) { ticks.trySend(Unit) }
         assertTrue(
-            waitFor(10_000) { "[splice] holding this turn open." in text() },
+            waitFor(10_000) { "[splice] claudex has paused mid-answer" in text() },
             "turned on mid-turn, the line must reach this turn: ${text()}",
         )
         mock.releaseHold()

@@ -110,10 +110,10 @@ internal class IngressHandler(
             bytes > capBytes ->
                 IngressRequest(null, HttpStatus.CONTENT_TOO_LARGE, Decline.TooLarge(bytes = bytes, limit = capBytes))
             bodyWeight > limitBytes ->
-                IngressRequest(null, HttpStatus.CONTENT_TOO_LARGE, Decline.TooLarge(bodyWeight, limit = limitBytes))
+                IngressRequest(null, HttpStatus.CONTENT_TOO_LARGE, Decline.Unfit(bodyWeight, limit = limitBytes))
             // The request and its connection together outweigh the whole process heap.
             weight > capacity ->
-                IngressRequest(null, HttpStatus.CONTENT_TOO_LARGE, Decline.TooLarge(weight, limit = capacity))
+                IngressRequest(null, HttpStatus.CONTENT_TOO_LARGE, Decline.Unfit(weight, limit = capacity))
             else -> {
                 val lease = if (ownership.admitted) heap.reserve(weight, HeapCategory.INGRESS) else null
                 IngressRequest(lease, if (lease == null) HttpStatus.OVERLOADED else null)

@@ -137,7 +137,7 @@ class ClientIdentityHeadersTest {
                     val value = if (carrier == "Authorization") "Digest response=\"$key\"" else key
                     val (status, body) = rig.turn(CLIENT_IDENTITY + (carrier to value))
                     assertEquals(HttpStatusCode.Unauthorized, status, carrier)
-                    assertTrue(body.contains("splice's own keys"), body)
+                    assertTrue(body.contains("This session sent splice's own key"), body)
                 }
             }
             assertTrue(rig.requests.isEmpty(), "no local credential reaches the upstream")
@@ -151,7 +151,8 @@ class ClientIdentityHeadersTest {
                 for (carrier in listOf("User-Agent", "X-Stainless-Future-Identity")) {
                     val (status, body) = rig.turn(CLIENT_IDENTITY + (carrier to "test $key"))
                     assertEquals(HttpStatusCode.Unauthorized, status, carrier)
-                    assertTrue(body.contains(carrier, ignoreCase = true), body)
+                    // The line names the variable that can set such a header, which is what the person unsets.
+                    assertTrue(body.contains("Unset ANTHROPIC_CUSTOM_HEADERS in the shell"), body)
                 }
             }
             assertTrue(rig.requests.isEmpty(), "new headers must not create a local-key leak")

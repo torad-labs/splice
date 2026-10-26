@@ -58,7 +58,7 @@ private const val FORWARD_BODY = """{"model":"claude-forward--forward-model","ma
 private const val OWN_LOGIN = "sk-ant-oat01-the-persons-own-login"
 
 // why: the words of the head's refusal of one of splice's own keys, which say what to unset
-private const val OWN_KEY_REFUSAL = "are not upstream credentials"
+private const val OWN_KEY_REFUSAL = "Unset ANTHROPIC_AUTH_TOKEN in the shell that launched it"
 
 private const val TURN_CALL = "POST /v1/messages"
 

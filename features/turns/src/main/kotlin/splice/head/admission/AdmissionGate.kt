@@ -120,7 +120,7 @@ internal class AdmissionGate(
         // An oversized DECLARATION keeps its 413 before any admission wait; an unknown length
         // reserves the full head cap.
         if (declared != null && declared > cap) {
-            refuseTooLarge(call, cap, how, declared)
+            refuseTooLarge(call, cap, how)
         } else {
             answered(call, declared ?: cap.toLong(), how, block)
         }
@@ -155,19 +155,14 @@ internal class AdmissionGate(
                 null
             }
             is Materialized.Done -> leased.value
-            is Materialized.TooLarge -> refuseTooLarge(call, leased.limit, how, declared = null)
+            is Materialized.TooLarge -> refuseTooLarge(call, leased.limit, how)
         }
     }
 
-    /** A body over [limit]: [declared] is its length where the request declared one, so the line names both. */
-    private suspend fun refuseTooLarge(
-        call: ApplicationCall,
-        limit: Int,
-        how: Materializing,
-        declared: Long?,
-    ): Nothing? {
+    /** A body over [limit], from either cap arm: the same refusal, which names the limit alone (V4-440). */
+    private suspend fun refuseTooLarge(call: ApplicationCall, limit: Int, how: Materializing): Nothing? {
         how.refused()
-        responses.respondTooLarge(call, limit, declared)
+        responses.respondTooLarge(call, limit)
         return null
     }
 }

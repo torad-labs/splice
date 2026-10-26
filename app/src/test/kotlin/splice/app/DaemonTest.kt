@@ -225,7 +225,7 @@ class DaemonTest {
         }.bodyAsText()
         assertTrue(sse.contains("event: error"))
         assertTrue(sse.contains("authentication_error"))
-        assertTrue(sse.contains("run: claudex login"))
+        assertTrue(sse.contains("Run claudex login, then send the message again."), sse)
     }
 
     // A 2-head topology: one valid (codex → mock) plus a `ghost` head whose provider does not exist.

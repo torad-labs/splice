@@ -378,7 +378,8 @@ class HeadServerFailureBranchTest {
             }
             assertEquals(408, response.status.value)
             val body = response.bodyAsText()
-            assertTrue(body.contains("request body read timed out"), body)
+            val said = "[splice] This request took too long to reach splice. Send the message again."
+            assertTrue(body.contains(said), body)
             assertTrue(body.contains("invalid_request_error"), body)
         } finally {
             stalled.complete(Unit)

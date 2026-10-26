@@ -134,7 +134,7 @@ class ModelDiscoveryTest {
     }
 
     @Test
-    fun `a list kept before prices were read still loads, with no card`(@TempDir tmp: Path) {
+    fun `a list kept before prices were read still loads, with no card and no runtime metadata`(@TempDir tmp: Path) {
         val paths = StatePaths(baseOverride = tmp)
         Files.createDirectories(paths.modelRosterFile("test").parent)
         Files.writeString(
@@ -142,7 +142,9 @@ class ModelDiscoveryTest {
             """{"url":"$LIST_URL","models":[{"id":"m-old","label":"Old","context_window":128000}]}""",
         )
         val kept = RosterCache(paths).read("test", remote)
-        assertEquals(KeptRoster.Kept(listOf(DiscoveredModel("m-old", "Old", 128_000))), kept)
+        // The file predates metadata_version, so its picker rows load, and the runtime metadata it never recorded stays
+        // unknown rather than read as the rows' defaults.
+        assertEquals(KeptRoster.Kept(listOf(DiscoveredModel("m-old", "Old", 128_000)), metadata = emptyList()), kept)
     }
 
     // 2026-09-23 (review): this read as "nothing kept", and daemon.log said the same for a missing file,

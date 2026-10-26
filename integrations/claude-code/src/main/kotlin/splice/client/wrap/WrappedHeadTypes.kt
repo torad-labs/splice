@@ -4,6 +4,8 @@
 // data shapes separate from the class that acts on them). Same-package FQCNs are unchanged.
 package splice.client.wrap
 
+import kotlinx.serialization.json.JsonArray
+import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.add
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
@@ -92,12 +94,14 @@ public class WrappedLaunch internal constructor(public val configDir: Path) {
      *  head whose client picks its own models (V4-449): the overlay then carries the status line alone. [marked] adds
      *  splice's launch mark (LaunchMarker), which a launch on macOS carries. [keyHelper] is the `apiKeyHelper` of a
      *  head that checks the turn key (key rotation, Oct 26): with no settings.json written, the overlay is the one
-     *  place the session can read it from. */
+     *  place the session can read it from. [hooks] are the head's hooks by event, its startup hook (round 6 of #247),
+     *  which Claude Code runs beside the operator's own. */
     public fun settingsOverlay(
         availableModelIds: List<String>?,
         statuslineCommand: String,
         marked: Boolean = false,
         keyHelper: String? = null,
+        hooks: Map<String, List<JsonObject>> = emptyMap(),
     ): String =
         buildJsonObject {
             if (keyHelper != null) put(Keys.API_KEY_HELPER, keyHelper)
@@ -111,6 +115,7 @@ public class WrappedLaunch internal constructor(public val configDir: Path) {
                 put("padding", 0)
             }
             if (marked) put(LaunchMarker.SPLICE_LAUNCH_KEY, true)
+            if (hooks.isNotEmpty()) put(Keys.HOOKS, JsonObject(hooks.mapValues { (_, entries) -> JsonArray(entries) }))
         }.toString()
 }
 

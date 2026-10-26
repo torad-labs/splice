@@ -159,8 +159,9 @@ public class LaunchService(
         // <configDir>/projects is a REAL head-owned directory (ProjectsLink un-links one an earlier
         // launch pointed elsewhere). Copying first would write through the very link this row removes.
         // V4-183 BEFORE the adoption: a bounded -c becomes a named resume, and a named resume is what
-        // adoptResume judges.
-        val bounded = headBoundedContinue.resolve(effective.trees.own, extraArgs, cwd)
+        // adoptResume judges. Read from the head's own index, a wrapped launch's too (round 6 of #247): the hook
+        // route records every session of the head there, and nothing records one under ~/.claude.
+        val bounded = headBoundedContinue.resolve(keyed.trees.own, extraArgs, cwd)
         val adoption = adoptResume(held, bounded.args, cwd)
         // V4-445: Claude Code reads ~/.claude.json only while CLAUDE_CONFIG_DIR is unset. Set to the vanilla dir it
         // reads ~/.claude/.claude.json, a file that holds none of the operator's mcpServers, projects or account.
@@ -174,7 +175,7 @@ public class LaunchService(
             if (dangerouslySkipPermissions) add("--dangerously-skip-permissions")
             // a launch on macOS carries splice's mark in its --settings, the one sign of it a hardened claude's
             // arguments keep there (LaunchMarker); elsewhere the arguments are as they were
-            val overlay = overlayOf(wrapped, roster, held.gateway)
+            val overlay = overlayOf(wrapped, roster, held.gateway, keyed)
             addAll(LaunchMarker.settingsArgs(overlay))
             addAll(hub.args)
             // NB: no --model — the active model is ANTHROPIC_MODEL + settings.json, so the /model
@@ -186,10 +187,19 @@ public class LaunchService(
         return LaunchOutcome.Ready(environment.recipe(argv, warning))
     }
 
-    /** A wrapped launch's --settings overlay: the roster, the status line, splice's launch mark on macOS, and the key
-     *  helper of a head that checks the turn key (Oct 26). Null for a launch that materialized its own settings. */
-    private fun overlayOf(wrapped: WrappedLaunch?, roster: List<String>?, gateway: LaunchGateway): String? =
-        wrapped?.settingsOverlay(roster, gateway.statuslineCommand, LaunchMarker.here, gateway.keyHelper)
+    /** A wrapped launch's --settings overlay: the roster, the status line, splice's launch mark on macOS, the key
+     *  helper of a head that checks the turn key (Oct 26), and [head]'s startup hook, so the session is recorded as
+     *  the head's (round 6 of #247). Null for a launch that materialized its own settings. */
+    private fun overlayOf(
+        wrapped: WrappedLaunch?,
+        roster: List<String>?,
+        gateway: LaunchGateway,
+        head: LaunchSpec,
+    ): String? {
+        if (wrapped == null) return null
+        val hooks = materializer.startupHook(head.trees.own, head.signIn.headKey)
+        return wrapped.settingsOverlay(roster, gateway.statuslineCommand, LaunchMarker.here, gateway.keyHelper, hooks)
+    }
 
     /** MCP hub step 6: what the hub adds to this launch. A wrapped launch reads his own config home and falls back to
      *  the V4-445 file; a head's launch reads the head's home. */

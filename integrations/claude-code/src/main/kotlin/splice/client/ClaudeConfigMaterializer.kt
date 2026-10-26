@@ -41,6 +41,7 @@ import splice.client.mcp.McpRewrite
 import splice.client.models.ClaudeModelSettings
 import splice.client.resume.ResumeHook
 import splice.client.resume.ResumeHookTarget
+import splice.client.resume.STARTUP_SOURCE
 import splice.client.resume.SessionRegistryLink
 import splice.client.wrap.ProjectsLink
 import splice.core.util.Cancellables
@@ -161,6 +162,16 @@ public class ClaudeConfigMaterializer(
         )
         return MaterializeResult(spec.configDir, spec.availableModelIds?.size ?: 0, mcpCount)
     }
+
+    /** A wrapped launch's one hook (round 6 of #247): the head's resume hook on `startup` only, its script staged in
+     *  the head's own [configDir], never in ~/.claude, so the session a wrapped `claude` starts is recorded as the
+     *  head's and a later bare -c goes on with it. The `resume` entry stays off, as a wrapped `claude` carries no -r
+     *  picker hook. Empty with no daemon behind this materializer, or when the install failed, which it logs. */
+    public fun startupHook(configDir: Path, headKey: String): Map<String, List<JsonObject>> =
+        resumeHook?.let { target ->
+            ResumeHook.install(configDir, target, headKey, HookInstaller(log = log, execProbe = hookExecProbe))
+                .mapValues { (_, entries) -> entries.filter { JsonScalars.str(it, "matcher") == STARTUP_SOURCE } }
+        }.orEmpty()
 
     /** The /login interception [signIn] asks for. */
     private fun headLogin(signIn: MaterializeSignIn): HeadLogin = HeadLogin(

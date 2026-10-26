@@ -8,15 +8,19 @@ package splice.launch.recipe
 
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.buildJsonObject
+import kotlinx.serialization.json.jsonArray
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
+import kotlinx.serialization.json.put
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertFalse
+import org.junit.jupiter.api.Assertions.assertNull
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.io.TempDir
 import splice.client.ClaudeConfigMaterializer
 import splice.client.ClaudePolicy
+import splice.client.resume.ResumeHookTarget
 import splice.client.wrap.ClaudeToRun
 import splice.client.wrap.WrapState
 import splice.client.wrap.WrapStateRead
@@ -25,15 +29,26 @@ import splice.client.wrap.WrappedHead
 import splice.launch.GatewayBearer
 import splice.launch.HeadTrees
 import splice.launch.LaunchGateway
+import splice.launch.LaunchHead
 import splice.launch.LaunchModels
 import splice.launch.LaunchSignIn
 import splice.launch.LaunchSpec
+import splice.launch.absentAuth
 import splice.launch.launch
+import splice.launch.launchHeadsOf
+import splice.launch.resume.ResumeHookRoute
+import splice.launch.runningHead
+import java.nio.file.Files
 import java.nio.file.Path
+import java.nio.file.attribute.PosixFilePermissions
+import java.util.concurrent.TimeUnit
 import kotlin.io.path.createDirectories
 import kotlin.io.path.exists
 import kotlin.io.path.readText
 import kotlin.io.path.writeText
+
+// why: the shape of the id Claude Code gives a session, as the hook names it
+private const val SESSION = "5e3c1a2b-0d4f-4c6e-8a9b-1c2d3e4f5a6b"
 
 // why: on a Mac every launch carries splice's mark in a --settings of its own (LaunchMarker), since macOS hides a
 // hardened client's environment from ps; elsewhere nothing is added. The OS decides, so the OS is asked here.
@@ -203,6 +218,84 @@ class LaunchServiceWrapTest(@param:TempDir private val tmp: Path) {
 
         assertFalse("CLAUDE_CONFIG_DIR" in recipe.env)
         assertFalse("CLAUDE_CONFIG_DIR" in recipe.unset, "the shim preserves the caller's $customDir")
+    }
+
+    // Round 6 of #247, finding 13. README: a bare -c stays with its head and resumes the newest session that head
+    // started or resumed in the folder. In Wrap mode `claude` runs in a folder, then `claude -c` there. Claude Code
+    // runs the startup hooks of the settings it reads, the launch's --settings overlay among them, and the hook route
+    // records the session in the head's own index. The overlay carried no hook and -c read an index under ~/.claude
+    // that nothing writes, so every wrapped `claude -c` started a new session.
+    @Test
+    fun `a wrapped claude -c goes on with the session a wrapped claude started in that folder`() {
+        val home = tmp.resolve("continue-home").createDirectories()
+        val shared = home.resolve(".claude/projects").createDirectories()
+        val head = spec("claude-splice", forwardClientAuth = true)
+        // the head's own launches link its transcript tree to the shared one (ProjectsLink, the default share policy)
+        Files.createSymbolicLink(head.trees.own.createDirectories().resolve("projects"), shared)
+        val stateStore = WrapStateStore(file = home.resolve("state/claude-head-wrap.json"))
+        stateStore.write(WrapState("/opt/claude/current", "/opt/claude/current", "/share/splice-launch", "", "", 0L))
+        val service = LaunchService(
+            ClaudeConfigMaterializer(home, resumeHook = ResumeHookTarget(3096) { home.resolve("turn-auth-header") }),
+            wrap = WrappedHead(home, stateStore = stateStore),
+        )
+        val caller = LaunchCaller(
+            cwd = home.resolve("work/app").createDirectories().toString(),
+            wrapped = service.wrap.launchThrough("claude") ?: error("wrap state is present"),
+        )
+        val folder = checkNotNull(caller.cwd)
+        val transcript = shared.resolve(folder.replace(Regex("[^A-Za-z0-9]"), "-")).resolve("$SESSION.jsonl")
+
+        val first = service.launch(head, emptyList(), dangerouslySkipPermissions = false, caller = caller)
+        startSession(first.argv, head, startupHook(transcript, folder))
+        // Claude Code's first row of the session
+        transcript.parent.createDirectories()
+        transcript.writeText("""{"type":"user","sessionId":"$SESSION","message":{"role":"user","content":"hi"}}""")
+        val again = service.launch(head, listOf("-c"), dangerouslySkipPermissions = false, caller = caller)
+
+        assertEquals(listOf("--resume", SESSION), again.argv.takeLast(2), "${again.argv}, warned: ${again.warning}")
+        assertNull(again.warning, "going on with one's own session is the quiet path")
+        assertEquals(
+            listOf("projects"),
+            home.resolve(".claude").toFile().list().orEmpty().sorted(),
+            "the hook's script is the head's own: nothing is written into ~/.claude",
+        )
+    }
+
+    /** The JSON Claude Code pipes to a SessionStart hook when it starts [SESSION] in [folder]. */
+    private fun startupHook(transcript: Path, folder: String): String = buildJsonObject {
+        put("session_id", SESSION)
+        put("transcript_path", transcript.toString())
+        put("cwd", folder)
+        put("hook_event_name", "SessionStart")
+        put("source", "startup")
+    }.toString()
+
+    /** Claude Code starting a session: each SessionStart command the launch's --settings registers for a startup runs
+     *  with [hook] on its stdin. curl is a recording one first on PATH, and what it would POST to the daemon is handed
+     *  to the hook route under the head its URL names. */
+    private fun startSession(argv: List<String>, head: LaunchSpec, hook: String) {
+        val heads = launchHeadsOf(LaunchHead(runningHead("claude-splice"), absentAuth("test"), head))
+        val route = ResumeHookRoute(heads, log = {})
+        val bin = tmp.resolve("bin").createDirectories()
+        val curl = bin.resolve("curl")
+        curl.writeText(
+            "#!/usr/bin/env bash\nfor a; do url=\$a; done\nprintf '%s' \"\$url\" > '$bin/url'\ncat > '$bin/body'\n",
+        )
+        Files.setPosixFilePermissions(curl, PosixFilePermissions.fromString("rwx------"))
+        val overlay = Json.parseToJsonElement(argv[argv.indexOf("--settings") + 1]).jsonObject
+        overlay["hooks"]?.jsonObject?.get("SessionStart")?.jsonArray.orEmpty()
+            .map { it.jsonObject }
+            .filter { it["matcher"]?.jsonPrimitive?.content in setOf(null, "startup") }
+            .flatMap { it.getValue("hooks").jsonArray }
+            .forEach { command ->
+                val run = ProcessBuilder(command.jsonObject.getValue("command").jsonPrimitive.content)
+                run.environment()["PATH"] = "$bin:${System.getenv("PATH")}"
+                val process = run.start()
+                process.outputStream.use { it.write(hook.toByteArray()) }
+                assertTrue(process.waitFor(10, TimeUnit.SECONDS), "the hook exits on its own")
+                val key = bin.resolve("url").readText().substringAfterLast("/hooks/resume/")
+                assertNull(route.handle(key, bin.resolve("body").readText()), "the route records the session")
+            }
     }
 
     @Test

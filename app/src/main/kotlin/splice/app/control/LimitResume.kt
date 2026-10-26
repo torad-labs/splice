@@ -3,11 +3,14 @@
 // that nobody stopped, answered or wrote to since, is sent the note, once per ending. Each release and each session
 // that could not be reached is logged with why. Only a new login does this: a window that resets is not a login. A
 // session still in Claude Code's own retry is left to it, since that retry rechecks the pool within 30 s, and one whose
-// newest message is not the limit's own error was taken up by its person (Escape, a stop, a new message).
+// newest message is not the limit's own error was taken up by its person (Escape, a stop, a new message). The note is
+// the head's own session note, which SpliceLines writes like every line a person reads (failure-handling slice 2).
 package splice.app.control
 
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.launch
+import splice.core.failure.HeadVoice
+import splice.core.failure.SessionNote
 import splice.core.perf.OutcomeTag
 import splice.core.util.Cancellables
 import splice.core.util.LogSafe
@@ -21,8 +24,6 @@ import splice.sessions.registry.SessionAvailability
 import splice.sessions.registry.SessionRecord
 import splice.sessions.registry.SessionSource
 import java.util.concurrent.ConcurrentHashMap
-
-private const val NEW_ACCOUNT_NOTE = "A new account is available. Continue where you left off."
 
 // why: a turn still in Claude Code's own wait reads busy: its retry rechecks the pool within 30 s (ClientRecheck), so a
 // note to it would only land after that turn, as a second ask.
@@ -85,7 +86,8 @@ internal class LimitResume(
             log("[limit-resume] left ${LogSafe.str(id)} to ${LogSafe.str(it)} on ${LogSafe.str(head)}")
             return
         }
-        val outcome = Cancellables.runCatchingCancellable { sender.send(record, NEW_ACCOUNT_NOTE) }
+        val note = HeadVoice(head, loginCommand = null).anyTurn.note(SessionNote.NEW_LOGIN).text
+        val outcome = Cancellables.runCatchingCancellable { sender.send(record, note) }
             .getOrElse { NoteOutcome.Failed(SafeFailureText.render(it)) }
         when (outcome) {
             NoteOutcome.Submitted -> log("[limit-resume] released ${LogSafe.str(id)} on ${LogSafe.str(head)}")

@@ -96,7 +96,9 @@ class LimitResumeTest {
         )
         val joined = join(dir, limited + others, endings)
 
-        val note = "A new account is available. Continue where you left off."
+        // Failure-handling slice 2: the note is the session note every line comes from, naming the head the login
+        // joined (final-design.md section 10, "Session note at a new login").
+        val note = "[splice] claude has a new login. Continue where you left off."
         assertEquals(listOf("a" to note, "b" to note, "c" to note), joined.sent)
         assertEquals(
             listOf(

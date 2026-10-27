@@ -20,6 +20,7 @@ import splice.provider.codex.CodexCodeModeHistoryCodec
 import splice.provider.codex.history.CodeModeAcknowledgedBaseline
 import splice.provider.codex.history.CodeModeDeliveredEchoes
 import splice.provider.codex.history.CodeModeOwnership
+import splice.provider.codex.history.CodeModeReasoningIdentity
 import splice.provider.codex.history.CodeModeScriptPlacements
 import splice.provider.codex.state.diagnostics.CodeModeHistoryLog
 import splice.provider.codex.state.replay.CodeModeCallbackReplay
@@ -215,7 +216,9 @@ internal class CodeModeExtraContent(
         val contextOnly = (range.first until range.last).all {
             skippable(projected.logicalItems[it], it, record, record.clientIds(), prose)
         }
-        return candidates.takeIf { contextOnly && it.flatMap { replay -> replay.items } == expected }.orEmpty()
+        // GPT's reasoning by its identity, whichever copy holds it: the stream's, or the client's from its envelope.
+        val replayed = candidates.flatMap { replay -> replay.items }.map(CodeModeReasoningIdentity::key)
+        return candidates.takeIf { contextOnly && replayed == expected.map(CodeModeReasoningIdentity::key) }.orEmpty()
     }
 
     private fun unexpectedReplay(
@@ -257,7 +260,8 @@ internal class CodeModeExtraContent(
             copy += replay
             held += replay.items.size
         }
-        return copy.toSet().takeIf { copy.flatMap(ResponsesCodeModeReplay::items) == given }.orEmpty()
+        val copied = copy.flatMap(ResponsesCodeModeReplay::items).map(CodeModeReasoningIdentity::key)
+        return copy.toSet().takeIf { copied == given.map(CodeModeReasoningIdentity::key) }.orEmpty()
     }
 }
 

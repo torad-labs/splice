@@ -50,11 +50,13 @@ internal class CodeModeUpstreamHistory(
     /** The request for [context]: the kept post it extends with what the client added, or its whole history folded
      *  when it extends none. A record whose accepted result this request changed (a fork), or replays with other
      *  media than it captured (V4-179), or was abandoned, is not folded: the client's calls are the history, and no
-     *  post that sent it folded is extended. Null only for a recovery request or
-     *  one that is not a Responses input. */
+     *  post that sent it folded is extended. A recovery is built the same way: its request is the round it tore,
+     *  which extends the post that round sent, plus the torn round's partial and the marker, so the round goes out
+     *  again as GPT was last sent it, the way Codex retries a stream from its recorded history (core/src/session/
+     *  turn.rs, run_sampling_request). Null only for a request that is not a Responses input. */
     fun extend(context: CodeModeRunContext, records: List<CodeModeRecord>): CodeModeBody? {
         CodeModeBatchLinks.link(records)
-        val client = context.client?.takeIf { context.recovery == null } ?: return null
+        val client = context.client ?: return null
         val request = client.request ?: return null
         val media = context.turn.rendering.replayMedia
         val changed = records.filter {
@@ -129,9 +131,11 @@ internal class CodeModeUpstreamHistory(
         return CodeModeBody(RoundBody.Tree(rebuilt), json, digests = client.digests)
     }
 
-    /** Keeps [body] as what [context]'s conversation last sent, as it is posted. */
+    /** Keeps [body] as what [context]'s conversation last sent, as it is posted. A recovery's post is kept too: the
+     *  partial and the marker it covers are the head's own, so the client's next request extends the post of the round
+     *  it tore, and a script started in the recovery follows the post it started on. */
     fun sent(context: CodeModeRunContext, body: CodeModeBody) {
-        val client = context.client?.request?.second?.takeIf { context.recovery == null }
+        val client = context.client?.request?.second
         val posted = body.request?.second
         if (client == null || posted == null) {
             ledger.forget(context.key)

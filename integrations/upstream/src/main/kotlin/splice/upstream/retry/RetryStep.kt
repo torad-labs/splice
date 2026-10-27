@@ -1,32 +1,32 @@
 // NEW: failure-handling slice 4. What a turn does next about a failure, as RetryEngine decides it
-// (final-design.md section 8). The HTTP attempt loop and the head's round controller both execute these steps, and
-// every wait among them goes through the turn's TurnWaits.
+// (final-design.md section 8). The HTTP attempt loop (RetrySteps) and the head's round controller (RoundSteps) both
+// execute these steps, so the head reads them too, and every wait among them goes through the turn's TurnWaits.
 package splice.upstream.retry
 
 import splice.core.failure.FailureCause
 import java.time.Instant
 
 /** One step of a turn's recovery. */
-internal sealed class RetryStep {
+public sealed class RetryStep {
     /** Send again after [afterMs], in the way [how] names. */
-    data class Again(val afterMs: Long, val how: How) : RetryStep()
+    public data class Again(val afterMs: Long, val how: How) : RetryStep()
 
     /** Move the turn to another of the head's logins, before any content reached the client. */
-    data object SwitchLogin : RetryStep()
+    public data object SwitchLogin : RetryStep()
 
     /** Hold the turn until [until], or until a probe finds the cause lifted where no time was stated. Until slice 5
      *  brings holds, a hold step ends the turn at once with today's R wire and the interim line for its kind. */
-    data class Hold(val until: Instant?, val probes: Probes) : RetryStep()
+    public data class Hold(val until: Instant?, val probes: Probes) : RetryStep()
 
     /** End the turn as [cause]. */
-    data class End(val cause: FailureCause) : RetryStep()
+    public data class End(val cause: FailureCause) : RetryStep()
 
     /** The answer as received stands: only a cut round reaches it, once its continuations are spent. */
-    data object Keep : RetryStep()
+    public data object Keep : RetryStep()
 }
 
 /** How an [RetryStep.Again] sends the request again. */
-internal enum class How {
+public enum class How {
     /** The same request. */
     SAME,
 
@@ -48,4 +48,4 @@ internal enum class How {
 
 /** What a hold probes while it waits: a firm reset, a soft one, nothing stated, or credit. NONE only for a hold with
  *  nothing to probe. */
-internal enum class Probes { NONE, FIRM, SOFT_LIFT, UNSTATED, CREDIT }
+public enum class Probes { NONE, FIRM, SOFT_LIFT, UNSTATED, CREDIT }

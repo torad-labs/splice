@@ -28,6 +28,7 @@ import splice.head.admission.admittedSlot
 import splice.head.headDeps
 import splice.head.round.RoundRunners
 import splice.head.round.RoundStrategy
+import splice.head.round.testRoundSteps
 import splice.head.testVoice
 import splice.head.wire.ClientChannel
 import splice.head.wire.CollectingTerminal
@@ -39,7 +40,6 @@ import splice.upstream.ProviderIdentity
 import splice.upstream.ProviderLocations
 import splice.upstream.ProviderName
 import splice.upstream.ProviderTuning
-import splice.upstream.RetryBackoff
 import splice.upstream.RoundResult
 import splice.upstream.StreamTranslator
 import splice.upstream.TurnSignals
@@ -109,7 +109,7 @@ private class SerializationRig(tmp: Path) {
             RoundStrategy(
                 emitter = terminal,
                 runners = RoundRunners(
-                    backoff = RetryBackoff { _, _ -> },
+                    steps = testRoundSteps(),
                     key = provider.key,
                     log = {},
                     signals = drive.signals,

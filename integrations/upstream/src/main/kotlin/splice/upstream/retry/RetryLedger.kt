@@ -46,7 +46,7 @@ public class RetryLedger {
     }
 
     /** [step] was taken for [cause]: its budget is spent once, and its wait counted. */
-    internal fun took(step: RetryStep, cause: FailureCause) {
+    public fun took(step: RetryStep, cause: FailureCause) {
         val spend = RetryEngine.spendOf(step, cause, this)
         spent[spend.ordinal] += 1
         if (step is RetryStep.Again) waitedMs[spend.ordinal] += step.afterMs

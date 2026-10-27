@@ -71,6 +71,16 @@ private const val TOKEN_PATH = "/oauth/token"
 private const val CODEX_LOGIN =
     """{"tokens":{"access_token":"scripted-access","refresh_token":"scripted-refresh","account_id":"scripted"}}"""
 
+/** A Responses stream's own failure event for an overload, with no time stated. */
+private const val RESPONSES_OVERLOADED =
+    """{"type":"response.failed","response":{"error":{"code":"server_is_overloaded","message":"Try again."}}}"""
+
+/** A proxy's login page sent as a 200, a body with no event in it that no reader names. */
+private const val PROXY_LOGIN_PAGE = "<html><body>Sign in to continue.</body></html>"
+
+/** The words an overload episode's line says of the wait it opens on. */
+private const val WAITS_15_S = "This turn tries again in 15 seconds."
+
 /** A Responses stream's own failure event for a server error. */
 private const val RESPONSES_SERVER_ERROR =
     """{"type":"response.failed","response":{"error":{"code":"server_error","message":"upstream exploded"}}}"""
@@ -111,7 +121,19 @@ class OneEngineThroughHeadsTest {
             assertEquals(listOf(2, 4, 8, 15, 30).map { it.seconds }, gaps(provider.requests))
             val told = lines(answer)
             assertEquals(1, told.size, "one line for the episode, written when the first wait of 10 s began: $told")
-            assertTrue("This turn tries again in 15 seconds." in told.single(), told.single())
+            assertTrue(WAITS_15_S in told.single(), told.single())
+            // The line is written when its wait starts and staged through PendingSse, as the slice's goal says, so
+            // the client reads it when the status commits: here with the answer, 30 s after the wait it names began.
+            // Slice 5 commits the status while the wait runs, and this is the row that says so when it does.
+            assertEquals(
+                answer.arrivals.firstOrNull(),
+                answer.noticeArrival(WAITS_15_S),
+                "a staged line reaches the client with the first frame of the committed status",
+            )
+            assertTrue(
+                (answer.noticeArrival(WAITS_15_S) ?: Duration.ZERO) > provider.requests[4].at,
+                "and not while the wait it names runs, which is slice 5's",
+            )
         }
     }
 
@@ -341,6 +363,58 @@ class OneEngineThroughHeadsTest {
     }
 
     @Test
+    fun `an overload after the answer began is continued from what arrived after 2, 4, 8, 15 and 30 s, then ends`(
+        @TempDir tmp: Path,
+    ) = runTest {
+        withScriptedHeads(tmp) {
+            val overloaded = reply { responsesStart(); responsesText("partial words"); event(RESPONSES_OVERLOADED) }
+            provider.script(*Array(1 + 5) { overloaded })
+            val head = responses()
+
+            val answer = head.client.send()
+
+            // The overload's waits, each through the turn's waits, and every continuation carries what arrived.
+            assertEquals(listOf(2, 4, 8, 15, 30).map { it.seconds }, gaps(provider.requests), answer.describe())
+            assertTrue(provider.requests.drop(1).all { "partial words" in it.body }, answer.describe())
+            assertTrue(answer.contentBeforeError, answer.describe())
+        }
+    }
+
+    @Test
+    fun `a stream that closed before sending anything is sent fresh twice, then ends for Claude Code to resend`(
+        @TempDir tmp: Path,
+    ) = runTest {
+        withScriptedHeads(tmp) {
+            val loginPage = reply { body(PROXY_LOGIN_PAGE) }
+            provider.script(loginPage, loginPage, loginPage, reply { anthropicAnswer("not reached") })
+            val head = anthropic()
+
+            val answer = head.client.send()
+
+            // A 200 that carried no event, which no reader names: the send and two fresh re-sends, on one budget.
+            assertEquals(1 + 2, provider.requests.size, answer.describe())
+            assertLine(answer, RESENDS)
+        }
+    }
+
+    @Test
+    fun `an empty answer is asked again once a turn, a recovery from a server error between them`(
+        @TempDir tmp: Path,
+    ) = runTest {
+        withScriptedHeads(tmp) {
+            val failed = reply { responsesStart(); event(RESPONSES_SERVER_ERROR) }
+            provider.script(failed, emptyResponse(), failed, emptyResponse(), reply { responsesAnswer("not reached") })
+            val head = responses()
+
+            val answer = head.client.send()
+
+            // A recovery, the turn's one empty re-send, a second recovery, and the second empty answer ends the turn.
+            assertEquals(4, provider.requests.size, answer.describe())
+            assertTrue(lineOf(answer).startsWith(PREFIX), answer.describe())
+        }
+    }
+
+    @Test
     fun `a token endpoint answering 503 is asked again after 2 s and 4 s, then the turn ends with the login line`(
         @TempDir tmp: Path,
     ) = runTest {
@@ -396,5 +470,14 @@ class OneEngineThroughHeadsTest {
         status(TOO_MANY_REQUESTS)
         header("Retry-After", DateTimeFormatter.RFC_1123_DATE_TIME.format(resetsAt.atOffset(ZoneOffset.UTC)))
         openAiErrorBody("rate_limit_error", "Rate limit reached for this plan.", "rate_limit_exceeded")
+    }
+
+    /** A Responses stream that completes with nothing in it: no message, no tool call, no reasoning. */
+    private fun emptyResponse(): ScriptedReply = reply {
+        event("""{"type":"response.created","response":{"id":"resp_scripted","status":"in_progress","output":[]}}""")
+        event(
+            """{"type":"response.completed","response":{"id":"resp_scripted","status":"completed","output":[],""" +
+                """"usage":{"input_tokens":12,"output_tokens":0}}}""",
+        )
     }
 }

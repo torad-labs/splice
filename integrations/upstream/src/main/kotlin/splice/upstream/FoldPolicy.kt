@@ -30,15 +30,17 @@ public data class FoldRound(
 
 /** Mid-stream re-anchoring policy (eli design 2026-07-24): when a round FAILS after frames were
  *  already forwarded, the provider may return the continuation request that resumes the turn from
- *  its accumulated partial output. Null = not continuable (non-retryable failure type, a poison
- *  tool tear, or budget exhausted) — the gateway then emits the honest error terminal. Distinct
- *  from [FoldPolicy], which continues SUCCESSFUL rounds whose reasoning was truncated. */
+ *  its accumulated partial output. Null = the round cannot be carried on from what arrived (a poison tool tear, a
+ *  committed tool call, or prose a provider cannot continue from), and the turn ends with the honest error. Whether a
+ *  failure is carried on at all, and how many times, is RetryEngine's answer on the turn's one ledger: this answer is
+ *  what its TurnFacts.canContinue reads (failure-handling slice 4). Distinct from [FoldPolicy], which continues
+ *  SUCCESSFUL rounds whose reasoning was truncated. */
 public fun interface ReanchorPolicy {
     public fun continuationForFailure(round: ReanchorRound): JsonObject?
 
-    /** Whether a retryable failure at this point of the turn would still be continued, asked of a round still
-     *  streaming: the live listing's "will it resume". A dialect that has a rule overrides it with the same
-     *  conditions [continuationForFailure] refuses on; the default is no rule. */
+    /** Whether a failure at this point of the turn could still be carried on, asked of a round still streaming: the
+     *  live listing's "will it resume". A dialect that has a rule overrides it with the same conditions
+     *  [continuationForFailure] refuses on; the default is no rule. */
     public fun wouldContinue(live: LiveRound): Boolean = false
 
     /** The request that carries on from a round that completed with nothing for the client, sent in place of the
@@ -47,12 +49,12 @@ public fun interface ReanchorPolicy {
     public fun continuationForEmpty(requestBody: JsonObject, empty: TurnOutcome.Success): JsonObject? = null
 }
 
-/** Where a streaming turn stands, as far as a re-anchor rule can tell: how many continuations it has spent, and
- *  what the client already holds. */
+/** Where a streaming turn stands, as far as a re-anchor rule can tell: how many continuations it has spent, which
+ *  the rule reads for no budget (the engine counts them on the turn's ledger), and what the client already holds. */
 public data class LiveRound(val attempt: Int, val toolOpened: Boolean, val textWritten: Boolean)
 
 /** One failed round: the request that produced it, its failure (carrying the partial), and how
- *  many mid-stream continuations this turn already spent (0-based). */
+ *  many mid-stream continuations this turn already spent (0-based), which no rule reads as a budget. */
 public data class ReanchorRound(
     val requestBody: JsonObject,
     val failure: TurnOutcome.Failure,

@@ -61,10 +61,8 @@ private fun previousBody(): JsonObject = Json.parseToJsonElement(
     """{"model":"gpt-5.6-sol","input":[{"role":"user","content":"hi"}],"store":false,"stream":true}""",
 ).jsonObject
 
-// V4-117: this helper varies the CAUSE, not the type. The controller decides on the failure's type
-// (`type !in RETRYABLE`), and the type is DERIVED from the cause — so a cause is the only way to
-// state the case. The default maps to the same OVERLOADED this helper defaulted to, and callers
-// that passed API_ERROR or RATE_LIMIT map to causes deriving those types exactly.
+// The rule reads no cause since failure-handling slice 4: which failures are carried on, and how many times, is
+// RetryEngine's answer. The cause rides so the failure is whole, and the translator rows below read it.
 private fun failureWith(
     cause: FailureCause = FailureCause.Path.Stalled(Stall.IDLE),
     partial: TurnOutcome.PartialRound? = TurnOutcome.PartialRound(text = RoundText(bodyText = "The fix is to")),
@@ -377,10 +375,6 @@ class ResponsesReanchorPolicyTest {
         assertEquals("commentary", prose.getValue("phase").jsonPrimitive.content)
     }
 
-    // SSE is a FALLBACK, and reaching it costs the socket's cache key plus a full re-upload, so
-    // the socket gets the reference client's number of attempts before we abandon it: codex-rs
-    // retries a retryable stream 5 times (DEFAULT_STREAM_MAX_RETRIES) before switching transport.
-    // Pinned so the budget cannot quietly drift back down to a freehand value.
     @Test
     fun `re-anchor preserves an original phase when native message history supplies it`() {
         val provider = ReanchorProbe(lite = false)
@@ -408,18 +402,14 @@ class ResponsesReanchorPolicyTest {
         assertEquals("final_answer", prose["phase"]?.jsonPrimitive?.content)
     }
 
+    // codex-rs retries a retryable stream 5 times (DEFAULT_STREAM_MAX_RETRIES) before it switches transport. Since
+    // failure-handling slice 4 those five are RetryEngine's MAX_STREAM_RECOVERIES, on the turn's one ledger and shared
+    // by every recovery of the turn, so the rule counts nothing: a sixth round is still one it could carry on.
     @Test
-    fun `the socket gets five attempts before the fallback, matching the reference client`() {
-        repeat(5) { attempt ->
-            assertNotNull(
-                controller.continuationForFailure(ReanchorRound(previousBody(), failureWith(), attempt)),
-                "attempt $attempt must still be retried on the socket, not dropped to the fallback",
-            )
-        }
-        assertNull(
-            controller.continuationForFailure(ReanchorRound(previousBody(), failureWith(), attempt = 5)),
-            "the budget is exhausted after five, and the turn stops re-anchoring",
-        )
+    fun `the rule counts no attempts - the five continuations are the engine's`() {
+        val empty = failureWith(partial = TurnOutcome.PartialRound())
+        assertNotNull(controller.continuationForFailure(ReanchorRound(previousBody(), failureWith(), attempt = 5)))
+        assertEquals(previousBody(), controller.continuationForFailure(ReanchorRound(previousBody(), empty, 5)))
     }
 
     @Test
@@ -466,23 +456,19 @@ class ResponsesReanchorPolicyTest {
     }
 
     @Test
-    fun `non-retryable failure causes refuse continuation`() {
-        // V4-117: the loop is over CAUSES now, because the type is derived and a cause is the only
-        // thing a caller can state. PERMISSION is deliberately gone from this list: no cause derives
-        // it — the classifier never produced one either — so keeping it would have pinned a wire type
-        // that nothing in the tree can construct, which is the opposite of a wall.
-        val refused = listOf(
+    fun `the rule reads no failure type - a rejection is the engine's to end`() {
+        // A rejection, a refused login and a context too long are never carried on: RetryEngine ends them or renews
+        // the login before anything is sent (its Rejected, AuthRejected and TooLong rows). The rule says only that the
+        // round could be carried on from what arrived, so it answers each of them as it answers a stall.
+        val stalled = controller.continuationForFailure(ReanchorRound(previousBody(), failureWith(), 0))
+        val causes = listOf(
             FailureCause.Provider.Rejected(staleReasoning = false),
             FailureCause.Provider.AuthRejected(LoginOwner.SPLICE),
             FailureCause.Provider.TooLong(limitTokens = null, whileAnswering = false),
         )
-        for (cause in refused) {
-            assertNull(
-                controller.continuationForFailure(
-                    ReanchorRound(previousBody(), failureWith(cause = cause), 0),
-                ),
-                "cause $cause must not continue",
-            )
+        for (cause in causes) {
+            val next = controller.continuationForFailure(ReanchorRound(previousBody(), failureWith(cause = cause), 0))
+            assertEquals(stalled, next, "cause $cause")
         }
     }
 
@@ -511,26 +497,13 @@ class ResponsesReanchorPolicyTest {
         // V4-58, the Responses twin of V4-57 — premise re-proven on THIS dialect, not ported. A rate
         // limit met after the first frame arrives as an SSE rate_limit_error inside a 200, and the
         // client's recovery trigger is HTTP status 429, so a turn that dead-ends here has no
-        // automatic recovery. Continuing is enough on its own: the re-POST is a fresh request through
-        // the shared round post, and a provider still limiting answers it with a genuine pre-stream
-        // 429 carrying Retry-After, which the pre-stream path already owns. No pushback is invented
-        // here, because a mid-stream SSE frame never carried one, and no cooldown is armed by it —
-        // every arm site is status-gated and this dialect references the cooldown nowhere in code.
+        // automatic recovery. Since failure-handling slice 4 the wait before the continuation is
+        // RetryEngine's burst schedule (2, 4, 8 and 15 s, then the turn ends), taken through the
+        // turn's waits; this rule only builds the request.
         val next = controller.continuationForFailure(
             ReanchorRound(previousBody(), failureWith(FailureCause.Provider.Limited(Lift.Unstated, null)), 0),
         )
         assertNotNull(next, "a mid-stream rate limit must earn a continuation on this dialect too")
-    }
-
-    @Test
-    fun `a rate limit past the attempt budget still stops`() {
-        // Pinned from both sides like the budget itself: RATE_LIMIT continues on the same terms as
-        // OVERLOADED, so the ceiling that bounds OVERLOADED bounds it too — never a blind re-POST loop.
-        assertNull(
-            controller.continuationForFailure(
-                ReanchorRound(previousBody(), failureWith(FailureCause.Provider.Limited(Lift.Unstated, null)), 5),
-            ),
-        )
     }
 
     @Test
@@ -552,13 +525,6 @@ class ResponsesReanchorPolicyTest {
             ReanchorRound(previousBody(), failureWith(partial = TurnOutcome.PartialRound()), 0),
         )
         assertEquals(previousBody(), next)
-    }
-
-    @Test
-    fun `clean-slate restart respects the continuation budget`() {
-        val empty = failureWith(partial = TurnOutcome.PartialRound())
-        assertNotNull(controller.continuationForFailure(ReanchorRound(previousBody(), empty, 4)))
-        assertNull(controller.continuationForFailure(ReanchorRound(previousBody(), empty, 5)))
     }
 
     @Test

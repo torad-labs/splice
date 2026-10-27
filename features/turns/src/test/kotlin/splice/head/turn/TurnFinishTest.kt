@@ -39,6 +39,7 @@ import org.junit.jupiter.params.ParameterizedTest
 import org.junit.jupiter.params.provider.ValueSource
 import splice.core.failure.FailureCause
 import splice.core.failure.FailureEvidence
+import splice.core.failure.Lift
 import splice.core.failure.Moment
 import splice.core.failure.Position
 import splice.core.failure.ProtocolFault
@@ -68,6 +69,7 @@ import splice.head.pipeline.TurnPipeline
 import splice.head.round.PostRound
 import splice.head.round.ReanchorRunner
 import splice.head.round.RunnerSignals
+import splice.head.round.testRoundSteps
 import splice.head.testVoice
 import splice.head.transport.UpstreamEventTiming
 import splice.head.turn.delivery.CollectedReply
@@ -81,9 +83,9 @@ import splice.head.wire.UsagePayloadBuilder
 import splice.upstream.BuiltTurn
 import splice.upstream.ClientFrameEmitted
 import splice.upstream.ReanchorPolicy
-import splice.upstream.RetryBackoff
 import splice.upstream.RoundResult
 import splice.upstream.Ticker
+import splice.upstream.TurnWaits
 import splice.upstream.Waiter
 import splice.upstream.retry.InflightGate
 import splice.upstream.retry.LiveLimit
@@ -354,7 +356,7 @@ class TurnPerfRowTest {
                 TurnOutcome.Success(hasToolUse = false, incomplete = false, usage = Usage())
             } catch (_: SocketException) {
                 TurnOutcome.Failure(
-                    cause = FailureCause.Path.Stalled(Stall.IDLE),
+                    cause = FailureCause.Provider.Overloaded(Lift.Unstated, loading = false),
                     at = Position(Moment.MID_CONTENT, streamBegan = true),
                     evidence = FailureEvidence("synthetic reset"),
                     partial = TurnOutcome.PartialRound(text = RoundText(bodyText = "synthetic", emittedText = true)),
@@ -366,7 +368,7 @@ class TurnPerfRowTest {
 
     @OptIn(kotlinx.coroutines.ExperimentalCoroutinesApi::class)
     @Test
-    fun `persisted row separates a torn read tail reanchor backoff and the next POST wait`() = runTest {
+    fun `persisted row separates a torn read tail, the engine's wait and the next POST wait`() = runTest {
         val clock = ElapsedClock { testScheduler.currentTime }
         val rig = Rig(tmp, "torn-tail-reanchor", clock)
         val emitter = CollectingTerminal("synthetic", UsagePayloadBuilder { buildJsonObject { } }, voice = testVoice)
@@ -377,7 +379,8 @@ class TurnPerfRowTest {
             postRound = tornThenResumedPost(drive, clock, Waiter { ms -> delay(ms) }),
             finish = { rig.telemetry.recordPerf(drive, "ok") },
             signals = RunnerSignals(),
-            backoff = RetryBackoff { _, _ -> delay(3_000) },
+            // The engine's first wait for an overload, 2 s (final-design.md section 8), taken through the turn's waits.
+            steps = testRoundSteps(TurnWaits { afterMs, _, _ -> delay(afterMs) }),
         )
         try {
             runner.run(buildJsonObject {}, ReanchorPolicy { buildJsonObject {} }, drive.perf)
@@ -386,9 +389,9 @@ class TurnPerfRowTest {
             assertAll(
                 { assertEquals(40_000L, row[PerfKeys.UP_GAP_MAX_MS]?.jsonPrimitive?.long) },
                 { assertEquals("torn", row[PerfKeys.UP_GAP_END]?.jsonPrimitive?.content) },
-                { assertEquals(3_000L, row[PerfKeys.BACKOFF_MS]?.jsonPrimitive?.long) },
+                { assertEquals(2_000L, row[PerfKeys.BACKOFF_MS]?.jsonPrimitive?.long) },
                 { assertEquals(40_000L, row[PerfKeys.UP_CONTENT_GAP_MAX_MS]?.jsonPrimitive?.long) },
-                { assertEquals(45_000L, row[PerfKeys.OUT_GAP_MAX_MS]?.jsonPrimitive?.long) },
+                { assertEquals(44_000L, row[PerfKeys.OUT_GAP_MAX_MS]?.jsonPrimitive?.long) },
             )
         } finally {
             drive.slot.release()

@@ -23,7 +23,7 @@ import java.time.Instant
  *  re-anchor rule can continue from what arrived at this position (PassthroughReanchorPolicy and its siblings).
  *  [wallLeftMs]: what is left of the lowest wall that applies, the session's, a compaction's timer or the non-stream
  *  bound. [earliestLift]: the first reset among the head's logins, for slice 5's holds. */
-internal data class TurnFacts(
+public data class TurnFacts(
     val pooled: Boolean,
     val freeLogin: Boolean,
     val warmWaitLeftMs: Long,
@@ -33,7 +33,7 @@ internal data class TurnFacts(
     val earliestLift: Instant?,
 )
 
-internal object RetryEngine {
+public object RetryEngine {
     /** The step after [cause] met at [at]. Every turn ends within [MAX_ATTEMPTS_OUTSIDE_HOLDS] sends, and a wait
      *  the turn's wall cannot hold ends it instead. */
     public fun next(

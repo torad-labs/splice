@@ -7,12 +7,13 @@ package splice.head.transport
 
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Job
+import splice.core.failure.FailureCause
 import splice.core.failure.FailureEvidence
 import splice.core.failure.Moment
 import splice.core.failure.Position
+import splice.core.failure.Tear
 import splice.core.perf.PerfKeys
 import splice.core.turn.TurnOutcome
-import splice.core.util.LoopbackOverride
 import splice.head.turn.TurnDrive
 import splice.upstream.ClientFrameEmitted
 import splice.upstream.RoundBody
@@ -20,7 +21,6 @@ import splice.upstream.RoundResult
 import splice.upstream.sse.WireSink
 import splice.upstream.transport.StreamTornBeforeClient
 import splice.upstream.transport.TransportFaultLine
-import splice.upstream.transport.TransportFaults
 import java.io.IOException
 
 internal class SseRoundDriver(
@@ -131,14 +131,11 @@ internal class SseRoundDriver(
         // still reaches names the same failure (V4-164: one describer for both).
         val detail = TransportFaultLine.of(e, upstreamUrl)
         return TurnOutcome.Failure(
-            // V4-117: a failed connection, not a stall and not a truncation, and the layers that can repair it
-            // are the L1 retry ones. A Path cause, so the G20 health split counts it local: the upstream reported
-            // nothing, the socket did. An unreachable path keeps the tag this failure would have carried had it
-            // escaped: an unrecovered tear stays greppable as conn-reset in the perf row, which is the only string
-            // in the journal that names this failure class.
-            // Failure-handling slice 3: read, not assumed. A tear with bytes already read is a reset in almost every
-            // case, and now a write that stalled or a handshake that failed in this window reads as itself.
-            cause = TransportFaults.of(e, local = LoopbackOverride.isLoopback(upstreamUrl)),
+            // Failure-handling slice 4: the reading the post's own loop asks RetryEngine with (RetrySteps.torn),
+            // a stream torn before the client saw a frame, so the round controller asks the engine the same
+            // question on the turn's one ledger. Two readings of one tear were each granted a budget: the post's
+            // two fresh re-sends, then the runner's five restarts (or a path's eight waits) for one failure.
+            cause = FailureCause.Path.Torn(Tear.NO_EVENTS, toolOpen = false),
             // COMMITTED, and this is one of the few sites that KNOWS rather than guesses: the guards above only
             // reach here when no content frame was emitted and the stream was read, which is the pre-content
             // window by construction rather than by assumption.

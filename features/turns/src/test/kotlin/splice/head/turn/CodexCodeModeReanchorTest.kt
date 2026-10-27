@@ -40,13 +40,13 @@ import splice.head.round.RoundInterception
 import splice.head.round.RoundRunners
 import splice.head.round.RoundStrategy
 import splice.head.round.RunnerSignals
+import splice.head.round.testRoundSteps
 import splice.head.testVoice
 import splice.head.wire.SseEmitterFactory
 import splice.provider.codex.CodeModeBridgeConfig
 import splice.provider.codex.CodeModeStateLocation
 import splice.provider.codex.CodexCodeModeBridge
 import splice.upstream.ReanchorRound
-import splice.upstream.RetryBackoff
 import splice.upstream.RoundBody
 import splice.upstream.RoundResult
 import splice.upstream.codemode.CodeModeCall
@@ -81,7 +81,7 @@ class CodexCodeModeReanchorTest {
                 )
             }
         }
-        strategy.run(body, null, responsesTestReanchor(maxContinuations = 1))
+        strategy.run(body, null, responsesTestReanchor())
         val failure = finished as TurnOutcome.Failure
         assertEquals(1, posts, "local failure must not produce an upstream marker retry")
         assertEquals(1, runtime.starts)
@@ -106,7 +106,7 @@ class CodexCodeModeReanchorTest {
                 else -> TurnOutcome.Success(false, false, Usage(23, 2), shape = ResponseShape(messageClosed = true))
             }
         }
-        strategy.run(body, null, responsesTestReanchor(maxContinuations = 1))
+        strategy.run(body, null, responsesTestReanchor())
         assertTrue(finished is TurnOutcome.Success, finished.toString())
         assertEquals(3, posts)
         assertEquals(1, runtime.starts)
@@ -143,7 +143,7 @@ class CodexCodeModeReanchorTest {
                 TurnOutcome.Success(false, false, Usage(23, 2), shape = ResponseShape(messageClosed = true))
             }
         }
-        strategy.run(body, null, responsesTestReanchor(maxContinuations = 1))
+        strategy.run(body, null, responsesTestReanchor())
         assertTrue(finished is TurnOutcome.Success, finished.toString())
         assertEquals(2, posts, "prose recovery must not be mistaken for replay of a script")
         assertEquals(0, runtime.starts)
@@ -300,7 +300,7 @@ class CodexCodeModeReanchorTest {
     ) = RoundStrategy(
         emitter = sink,
         runners = RoundRunners(
-            backoff = RetryBackoff { _, _ -> },
+            steps = testRoundSteps(),
             key = "test",
             log = {},
             signals = RunnerSignals(watchdogFired = { false }, clientGone = { false }),
@@ -326,10 +326,7 @@ class CodexCodeModeReanchorTest {
                 "prompt_cache_key" to kotlinx.serialization.json.JsonPrimitive("synthetic-cache-key"),
             ),
         )
-        val controller = responsesTestReanchor(
-            maxContinuations = cuts,
-            decode = { ReasoningReplay.decodeReasoningEnvelope(it) },
-        )
+        val controller = responsesTestReanchor(decode = { ReasoningReplay.decodeReasoningEnvelope(it) })
         private var failure: TurnOutcome.Failure? = null
 
         suspend fun post(request: RoundBody, target: WireSink): TurnOutcome {
@@ -499,7 +496,7 @@ class CodexCodeModeReanchorTest {
         return RoundStrategy(
             emitter = emitter,
             runners = RoundRunners(
-                backoff = RetryBackoff { _, _ -> },
+                steps = testRoundSteps(),
                 key = "test",
                 log = {},
                 signals = RunnerSignals(watchdogFired = { false }, clientGone = { false }),

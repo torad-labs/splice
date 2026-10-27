@@ -19,7 +19,6 @@ import splice.core.turn.RoundText
 import splice.core.turn.TurnOutcome
 import splice.core.turn.Usage
 import splice.dialect.responses.responsesTestTranslator
-import splice.upstream.RetryBackoff
 import splice.upstream.RoundResult
 import splice.upstream.sse.WireSink
 
@@ -101,7 +100,7 @@ class EmptyAnswerRetryTest {
         RoundStrategy(
             emitter = QuietSink(),
             runners = RoundRunners(
-                backoff = RetryBackoff { _, _ -> },
+                steps = testRoundSteps(),
                 key = "test",
                 log = {},
                 signals = RunnerSignals(),

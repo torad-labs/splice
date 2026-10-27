@@ -4,7 +4,6 @@ package splice.dialect.anthropic
 
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Test
-import splice.core.turn.DEFAULT_MAX_CONTINUATIONS
 import splice.upstream.LiveRound
 
 class PassthroughWouldContinueTest {
@@ -23,12 +22,6 @@ class PassthroughWouldContinueTest {
     fun `a round that has opened a tool call would not be`() {
         assertEquals(false, resumable.wouldContinue(round(tool = true)))
         assertEquals(false, resumable.wouldContinue(round(tool = true, text = true)))
-    }
-
-    @Test
-    fun `a spent continuation budget would not be`() {
-        assertEquals(true, resumable.wouldContinue(round(attempt = DEFAULT_MAX_CONTINUATIONS - 1)))
-        assertEquals(false, resumable.wouldContinue(round(attempt = DEFAULT_MAX_CONTINUATIONS)))
     }
 
     @Test

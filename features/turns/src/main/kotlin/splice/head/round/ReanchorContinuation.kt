@@ -9,6 +9,7 @@ import splice.core.turn.TurnOutcome
 import splice.upstream.ReanchorPolicy
 import splice.upstream.ReanchorRound
 import splice.upstream.ToolSearchPolicy
+import splice.upstream.retry.RetryStep
 
 /** V4-106: a continuation TOGETHER with the Failure it was computed from.
  *
@@ -17,15 +18,22 @@ import splice.upstream.ToolSearchPolicy
  *  with an unchecked cast, so the two statements that had to agree are now one, and a caller cannot
  *  reach the retry without holding the Failure. That is the wall's preferred remedy: not a safer
  *  cast, but no cast at all. */
-internal data class FailureContinuation(val body: JsonObject, val failure: TurnOutcome.Failure)
+internal data class FailureContinuation(
+    val body: JsonObject,
+    val failure: TurnOutcome.Failure,
+    /** The engine's step for [failure] (failure-handling slice 4): its wait, and the budget it spends. */
+    val step: RetryStep.Again,
+)
 
 internal class ReanchorContinuation(
     private val toolSearch: ToolSearchPolicy?,
     private val signals: RunnerSignals,
     private val rounds: RoundSplice,
+    private val steps: RoundSteps,
 ) {
-    /** Whether a Failure is continuable via re-anchor: the reanchor controller is consulted
-     *  whenever the client is still listening.
+    /** Whether a Failure is continued: the head's re-anchor rule says whether it can carry the turn on from what
+     *  arrived, and builds the request, whenever the client is still listening; the engine says whether it does,
+     *  on the turn's one ledger (failure-handling slice 4), so the rule holds no budget and reads no failure type.
      *
      *  DR-7: the watchdog half of this gate is gone. "A watchdog fire never continues; its
      *  cancellation owns the turn from that point" was true of a watchdog that cancelled the whole
@@ -41,8 +49,9 @@ internal class ReanchorContinuation(
         (outcome as? TurnOutcome.Failure)
             ?.takeIf { !signals.clientGone() }
             ?.let { failure ->
-                reanchor?.continuationForFailure(ReanchorRound(body, failure, attempt))
-                    ?.let { FailureContinuation(it, failure) }
+                reanchor?.continuationForFailure(ReanchorRound(body, failure, attempt))?.let { next ->
+                    steps.recovery(failure)?.let { FailureContinuation(next, failure, it) }
+                }
             }
 
     fun searchContinuation(outcome: TurnOutcome, body: JsonObject, searchIndex: Int): JsonObject? =

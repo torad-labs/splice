@@ -3,6 +3,9 @@
 // Same-package.
 package splice.head.round
 
+import splice.core.failure.FailureCause
+import splice.core.failure.Moment
+import splice.core.failure.Position
 import splice.core.turn.RoundText
 import splice.core.turn.TurnOutcome
 import splice.head.wire.BufferingWireSink
@@ -10,6 +13,8 @@ import splice.upstream.FoldPolicy
 import splice.upstream.FoldRound
 import splice.upstream.RetryNotice
 import splice.upstream.ToolSearchPolicy
+import splice.upstream.retry.How
+import splice.upstream.retry.RetryStep
 
 internal class FoldContinuations(
     private val key: String,
@@ -17,12 +22,15 @@ internal class FoldContinuations(
     private val signals: RunnerSignals,
     private val toolSearch: ToolSearchPolicy?,
     private val rounds: RoundSplice,
+    /** The turn's steps: how many times a round cut short at its reasoning bound is continued is the engine's answer
+     *  on the turn's one ledger, and at its budget the round's answer stands (final-design.md section 8, Keep). */
+    private val steps: RoundSteps,
 ) {
     /** The fold-continuation and search-continuation checks, extracted out of FoldRunner.run
      *  (detekt 2026-07-24: LongMethod/CyclomaticComplexMethod/LoopWithTooManyJumpStatements). Null =
      *  neither fired; the caller falls through to the re-anchor check exactly as before the
      *  extraction. */
-    fun nextRoundBody(
+    suspend fun nextRoundBody(
         fold: FoldPolicy,
         outcome: TurnOutcome,
         buffer: BufferingWireSink,
@@ -35,7 +43,8 @@ internal class FoldContinuations(
         // trigger-B failed-round branch already apply — a gone client or a fired watchdog must
         // not buy more upstream fold rounds (quota burn + a pinned slot for a reader that left).
         val signalsClear = !signals.watchdogFired() && !signals.clientGone()
-        val foldNext = if (signalsClear) success?.let { fold.continuation(FoldRound(body, it, roundIndex)) } else null
+        val cut = if (signalsClear) success else null
+        val foldNext = cut?.let { fold.continuation(FoldRound(body, it, roundIndex)) }?.takeIf { continues(cut) }
         if (foldNext != null && success != null) {
             buffer.discard()
             // CX-09: a fold round whose reasoning reached the client must say so, or a turn whose
@@ -48,10 +57,6 @@ internal class FoldContinuations(
             // fails immediately if you try. usage is not carried either; the caller folds it into
             // `acc` separately. ONLY the honesty flag rides, which no other field can express.
             salvaged.add(TurnOutcome.PartialRound(text = RoundText(emittedThinking = success.text.emittedThinking)))
-            log(
-                "[$key] fold round ${roundIndex + 1}: reasoning truncated at " +
-                    "${success.usage.reasoningTokens} tokens, continuing\n",
-            )
             return RoundCursor(foldNext, roundIndex + 1, searchIndex)
         }
         // FoldRunner's rounds run through a BufferingWireSink — reducer.emittedText/bodyText
@@ -79,4 +84,20 @@ internal class FoldContinuations(
         }
         return null
     }
+
+    /** Whether the engine continues this round, which it answers from the turn's one ledger: a round the provider
+     *  finished with its reasoning cut short is continued silently, and once the fold's budget is spent the round's
+     *  answer stands (RetryStep.Keep). The step is recorded there, so the fold's continuations count among the turn's
+     *  attempts instead of running on a count of their own. A fold round carries nothing waiting. */
+    private suspend fun continues(round: TurnOutcome.Success): Boolean {
+        val cause = FailureCause.Provider.ReasoningCut(round.usage.reasoningTokens)
+        val step = steps.next(cause, AT_ITS_REASONING_BOUND, canContinue = true) as? RetryStep.Again ?: return false
+        if (step.how != How.FOLD_CONTINUE) return false
+        steps.take(step, cause, AT_ITS_REASONING_BOUND)
+        return true
+    }
 }
+
+/** Where a round cut short at its reasoning bound leaves the turn: the provider's stream ran to its end, and the
+ *  client holds only the reasoning it streamed live. */
+private val AT_ITS_REASONING_BOUND = Position(Moment.COMMITTED, streamBegan = true)

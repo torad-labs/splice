@@ -32,7 +32,7 @@ import splice.core.auth.LoginAnswer
 import splice.core.failure.FailureEvidence
 import splice.core.usage.PlanLimit
 import splice.core.util.ElapsedClock
-import splice.upstream.RetryBackoff
+import splice.core.util.WallClock
 import splice.upstream.RoundBody
 import splice.upstream.StreamRead
 import splice.upstream.TurnRetry
@@ -53,8 +53,8 @@ public class UpstreamClient(
      *  exists because xAI 400d on a compressed body and broke grok live on 2026-07-18. */
     zstdRequestBody: Boolean = false,
     client: HttpClient = UpstreamTransport().defaultClient(totalTimeoutMs),
-    /** How this client waits and dates: the wait a post with no turn around it sleeps through, the curve the head's
-     *  round runners still pause on, and the wall clock a failed answer is dated by ([RetryPacing]). */
+    /** How this client waits and dates: the wait a post with no turn around it sleeps through, and the wall clock a
+     *  failed answer is dated by ([RetryPacing]). */
     private val pacing: RetryPacing = RetryPacing(),
     // Default is monotonic — a wall-clock jump must not abort a healthy retry loop (forward) or
     // extend its deadline (backward). Same base as TurnWatchdog/InflightGate: two authorities
@@ -74,9 +74,9 @@ public class UpstreamClient(
     private val transportFailures = TransportFailures()
     private val request = UpstreamRequest(client, zstdRequestBody, pacing.wall)
 
-    /** The head's configured retry curve as a sleep, for the runners that restart a round (fold continuation,
-     *  mid-stream re-anchor) until they take RetryEngine's steps too. */
-    public val retryBackoff: RetryBackoff = RetryBackoff { attempt, minDelayMs -> pacing.pause(attempt, minDelayMs) }
+    /** The wall clock a failed answer is dated by ([RetryPacing]): the head's round controller asks RetryEngine on it
+     *  too, so a time an answer stated reads the same to both executors of the engine's steps. */
+    public val retryWall: WallClock get() = pacing.wall
 
     /** Where a wait RetryEngine names sleeps ([RetryPacing]'s waiter): a turn's waits at its head sleep here too, so a
      *  test that replaces this client's wait replaces every wait a retry of its turns makes (HD-19). */

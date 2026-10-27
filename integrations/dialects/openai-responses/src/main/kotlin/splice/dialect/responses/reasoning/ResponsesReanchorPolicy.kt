@@ -7,8 +7,9 @@
 // bytes) — but append needs no replay, and Claude Code commits nothing before message_stop.
 // A retryable round with NOTHING replayable re-POSTs the ORIGINAL request verbatim instead —
 // the whole-stream half of codex-rs's retry, which the marker continuation cannot cover.
-// One honest terminal ends the whole turn (L3); tool rounds and an exhausted budget still
-// fall back to the error.
+// One honest terminal ends the whole turn (L3); tool rounds still fall back to the error. Which failures are carried
+// on, and how many times, is RetryEngine's answer on the turn's one ledger (failure-handling slice 4): this rule only
+// says whether the round can be carried on from what arrived, and builds the request that does.
 //
 // V4-339: the partial prose rides as [ResponsesAssistantText]'s item with the turn's [prosePhase]. It
 // was said mid-turn, so a lite turn replays it as commentary, as its builder does every mid-turn
@@ -16,10 +17,6 @@
 package splice.dialect.responses.reasoning
 
 import kotlinx.serialization.json.JsonObject
-import splice.core.failure.ClientWire
-import splice.core.failure.FailureCause
-import splice.core.turn.DEFAULT_MAX_CONTINUATIONS
-import splice.core.turn.ErrorType
 import splice.core.turn.TurnOutcome
 import splice.core.util.JsonScalars
 import splice.dialect.responses.request.AssistantPhase
@@ -35,7 +32,6 @@ import splice.upstream.ReanchorRound
  *  reasoning instead of re-sent identically. */
 internal class ResponsesReanchorPolicy(
     private val decodeReasoningEnvelope: ReasoningEnvelopeDecoder,
-    private val maxContinuations: Int = DEFAULT_MAX_CONTINUATIONS,
     private val prosePhase: AssistantPhase? = AssistantPhase.COMMENTARY,
     private val continueReasoningOnly: Boolean = false,
 ) : ReanchorPolicy {
@@ -44,7 +40,7 @@ internal class ResponsesReanchorPolicy(
 
     override fun continuationForFailure(round: ReanchorRound): JsonObject? {
         val partial = round.failure.partial ?: return null
-        if (!eligible(round, partial)) return null
+        if (!continuable(partial)) return null
         // No salvage: re-POST the ORIGINAL request verbatim, the whole-stream retry codex-rs
         // performs (responses_retry.rs). Emitted thinking may precede this — the client's
         // partial thinking block is already closed (closeAll before the terminal decision) and
@@ -54,9 +50,9 @@ internal class ResponsesReanchorPolicy(
         return if (!hasClientVisibleSalvage(partial)) round.requestBody else markerContinuation(round, partial)
     }
 
-    /** The same refusals as [continuationForFailure], read off a round still streaming: the budget is spent or a
-     *  tool call has opened. Prose never ends it: with none the request restarts whole, with some it carries on. */
-    override fun wouldContinue(live: LiveRound): Boolean = live.attempt < maxContinuations && !live.toolOpened
+    /** The same refusal as [continuationForFailure], read off a round still streaming: a tool call has opened. Prose
+     *  never ends it: with none the request restarts whole, with some it carries on. */
+    override fun wouldContinue(live: LiveRound): Boolean = !live.toolOpened
 
     /** The round's encrypted reasoning, then a commentary marker asking for the answer it never gave: the same
      *  shape as [markerContinuation], which this vendor already accepts mid-stream. Null with the quirk off or no
@@ -74,15 +70,7 @@ internal class ResponsesReanchorPolicy(
     // continuation input would carry a function_call without its function_call_output (a 400)
     // while a re-emitted call risks double-dispatch — and a verbatim restart would re-run the
     // dispatched call. Tool rounds fall back to the honest error either way.
-    private fun eligible(round: ReanchorRound, partial: TurnOutcome.PartialRound): Boolean = when {
-        round.attempt >= maxContinuations -> false
-        // An error no table names is sent once more, no more (final-design.md section 8). Since failure-handling
-        // slice 3 the head's reader reads it as not permanent, so the leaf is read rather than its permanence.
-        round.failure.cause is FailureCause.Provider.Unrecognized && round.attempt >= 1 -> false
-        ClientWire.ownType(round.failure.cause) !in RETRYABLE -> false
-        partial.toolTearOpen || partial.hasToolUse -> false
-        else -> true
-    }
+    private fun continuable(partial: TurnOutcome.PartialRound): Boolean = !partial.toolTearOpen && !partial.hasToolUse
 
     /** Client-visible salvage = content the marker continuation can safely REPLAY: prose (rides as
      *  an assistant item) or encrypted reasoning envelopes. FoldRounds blanks buffered bodyText
@@ -163,21 +151,6 @@ internal class ResponsesReanchorPolicy(
 // Narrowed from the companion's `public` to `private`: grep shows no consumer outside this file,
 // in :app, or in any test, and a bare top-level `MARKER_TEXT` would otherwise be importable
 // package-wide.
-//
-// PARITY WITH THE REFERENCE, raised from 2 (operator call, 2026-09-02). codex-rs retries a
-// retryable stream DEFAULT_STREAM_MAX_RETRIES = 5 times (model-provider-info/src/lib.rs:27) before
-// it switches transport, and this controller exists to be the proxy-side answer to exactly that
-// loop. Two was chosen freehand and is simply too few: SSE is a FALLBACK, not a co-equal second
-// transport, and every drop to it discards the socket's cache key and re-uploads the whole body,
-// so the expensive path must not be reached until the cheap one has genuinely been exhausted. The
-// argument that 2 was harmless because the live log never shows `re-anchor 2` measured the wrong
-// thing — it says the first retry usually works, not that abandoning after the second is right,
-// and it counts only rounds that were re-anchor ELIGIBLE at all. Turn recovery and its cooldown
-// backoff are unchanged; this widens only how many times they may run.
-//
-// V4-122: the budget itself is splice.core.turn.DEFAULT_MAX_CONTINUATIONS now. This dialect's
-// twin declared the same 5, and both re-anchor against the same client budget, so one of them
-// owning the number meant a change in one head silently diverged from the other.
 
 private const val MARKER_TEXT: String =
     "Your previous stream was interrupted mid-answer. Continue EXACTLY where the text " +
@@ -187,16 +160,3 @@ private const val MARKER_TEXT: String =
 private const val ANSWER_MARKER_TEXT: String =
     "You finished reasoning without giving an answer or calling a tool. Give your answer now, " +
         "or make the tool call your reasoning chose. Do not restate your reasoning."
-
-// FILE SCOPE ON PURPOSE: one shared immutable set, read per failure classification.
-//
-// V4-58 adds RATE_LIMIT, the Responses twin of V4-57 — and the premise was RE-PROVEN here rather
-// than ported, because this dialect reaches its terminal differently. Both facts hold. (1) A
-// mid-stream SSE error arms NO cooldown: every arm site is status-gated (RetryPolicy.kt:50 and
-// :161, RateLimitCooldown.kt:288) and an SSE frame carries no status, so this dialect references
-// the cooldown nowhere outside a comment. (2) The re-POST is a FRESH request through the shared
-// round post, so a provider still limiting answers it with a genuine pre-stream 429 carrying
-// Retry-After — the one place a pushback is machine-readable, already owned by the pre-stream path
-// (V4-48's short wait, and an honest 429 past the ceiling). Continuability alone therefore buys the
-// recovery, and no pushback is invented at this layer.
-private val RETRYABLE = setOf(ErrorType.OVERLOADED, ErrorType.API_ERROR, ErrorType.RATE_LIMIT)

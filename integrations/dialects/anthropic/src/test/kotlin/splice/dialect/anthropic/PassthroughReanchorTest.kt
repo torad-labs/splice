@@ -89,10 +89,8 @@ class PassthroughReanchorTest {
         body: JsonObject,
         partial: TurnOutcome.PartialRound?,
         attempt: Int = 0,
-        // V4-117: the helper varies the CAUSE now, not the type. The controller keys its decision on
-        // the failure's type (`type !in RETRYABLE`), and the type is DERIVED from the cause — so
-        // choosing a cause is the only way to state the case, and the default here maps to the same
-        // API_ERROR this helper defaulted to before.
+        // The rule reads no cause since failure-handling slice 4: which failures are carried on, and how
+        // many times, is RetryEngine's answer. The cause rides only so the failure is whole.
         cause: FailureCause = FailureCause.Provider.Unrecognized(clientError = false),
     ) = ReanchorRound(
         requestBody = body,
@@ -238,32 +236,24 @@ class PassthroughReanchorTest {
     }
 
     @Test
-    fun `attempt four still continues`() {
-        assertNotNull(controller.continuationForFailure(round(body(), partial(bodyText = "1"), attempt = 4)))
+    fun `the rule counts no attempts - how many times a turn is carried on is the engine's`() {
+        // Failure-handling slice 4: the stream-recovery budget of 5 is RetryEngine's, on the turn's one ledger and
+        // shared by every recovery of the turn. A rule that counted too would be a second budget beside it.
+        assertNotNull(controller.continuationForFailure(round(body(), partial(bodyText = "1"), attempt = 5)))
+        assertNotNull(controller.continuationForFailure(round(body(), partial(bodyText = "1"), attempt = 6)))
     }
 
     @Test
-    fun `attempt five and beyond stop`() {
-        // Pinned from BOTH sides against the budget of 5: attempt 4 above must continue, and these
-        // must not, so a budget that moves either way turns one of the two tests red.
-        assertNull(controller.continuationForFailure(round(body(), partial(bodyText = "1"), attempt = 5)))
-        assertNull(controller.continuationForFailure(round(body(), partial(bodyText = "1"), attempt = 6)))
-    }
-
-    @Test
-    fun `a failure type outside the retryable set is not eligible`() {
-        val requests = round(
-            body(),
-            partial(bodyText = "1"),
-            cause = FailureCause.Provider.Rejected(staleReasoning = false),
+    fun `the rule reads no failure type - which failures are carried on is the engine's`() {
+        // A rejected request is never sent again: RetryEngine ends it (its Rejected row). The rule says only that the
+        // round could be carried on from what arrived, so it answers a rejection as it answers a stall.
+        val rejected = FailureCause.Provider.Rejected(staleReasoning = false)
+        val stalled = round(body(), partial(bodyText = "1"), cause = FailureCause.Path.Stalled(Stall.IDLE))
+        assertNotNull(controller.continuationForFailure(stalled))
+        assertEquals(
+            controller.continuationForFailure(stalled),
+            controller.continuationForFailure(round(body(), partial(bodyText = "1"), cause = rejected)),
         )
-        assertNull(controller.continuationForFailure(requests))
-    }
-
-    @Test
-    fun `overloaded is retryable, so the set is pinned from both sides`() {
-        val overloaded = round(body(), partial(bodyText = "1"), cause = FailureCause.Path.Stalled(Stall.IDLE))
-        assertNotNull(controller.continuationForFailure(overloaded))
     }
 
     @Test
@@ -272,30 +262,11 @@ class PassthroughReanchorTest {
         // the client's recovery trigger is HTTP status 429 — so a turn that dead-ends here has no
         // automatic recovery at all and the operator must continue it by hand.
         //
-        // Continuing is the right answer, and the wait it needs is NOT owed by this seam. Retrying
-        // re-POSTs, and a provider still limiting answers THAT with a genuine pre-stream 429 carrying
-        // Retry-After headers — the one place a pushback is machine-readable. The pre-stream path
-        // already knows what to do with it, including V4-48's short-wait branch; and a reset longer
-        // than the interactive ceiling gives up with a real 429, which the client CAN retry on. So
-        // the recovery is bought without inventing a pushback the wire never carried.
-        //
-        // What this must NOT become: a continuation whose every round is a blind re-POST. The
-        // attempt budget below is the bound, shared with OVERLOADED rather than special-cased.
+        // Continuing is the right answer. Since failure-handling slice 4 the wait before it is RetryEngine's
+        // burst schedule (2, 4, 8 and 15 s, then the turn ends), taken through the turn's waits, so the
+        // re-POST is never blind; this rule only builds it.
         val limited = round(body(), partial(bodyText = "1"), cause = FailureCause.Provider.Limited(Lift.Unstated, null))
         assertNotNull(controller.continuationForFailure(limited))
-    }
-
-    @Test
-    fun `a rate limit past the attempt budget still stops`() {
-        // Pinned from both sides like the budget itself: RATE_LIMIT earns continuation on the same
-        // terms as every other retryable type, so the ceiling that bounds OVERLOADED bounds it too.
-        val limited = round(
-            body(),
-            partial(bodyText = "1"),
-            attempt = 5,
-            cause = FailureCause.Provider.Limited(Lift.Unstated, window = null),
-        )
-        assertNull(controller.continuationForFailure(limited))
     }
 
     @Test

@@ -106,6 +106,9 @@ internal class HeadWaiter(private val time: VirtualTime) : Waiter {
     override suspend fun wait(ms: Long) {
         if (stopping) yield() else time.waiter.wait(ms)
     }
+
+    /** How long the head's virtual clock has run, the clock [ProviderRequest.at] is read on. */
+    fun passed(): Duration = time.passed()
 }
 
 /** One running head, the client in front of it, and the seams a test drives it through. */
@@ -127,7 +130,9 @@ public class ScriptedHead internal constructor(
     public val port: Int get() = server.port
 
     /** Claude Code's side of this head, on the port it listens on now. */
-    public val client: ClientReader get() = readers.computeIfAbsent(server.port) { ClientReader(it, model) }
+    public val client: ClientReader get() = readers.computeIfAbsent(server.port) {
+        ClientReader(it, model, clock = waiter::passed)
+    }
 
     /** Lines the head logged, in order. */
     public val log: List<String> get() = lines.toList()

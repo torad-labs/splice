@@ -81,8 +81,7 @@ fun responsesTestTranslator(
     ),
 )
 
-/** The re-anchor policy a Responses turn runs under, cut off after [maxContinuations] continuations. */
+/** The re-anchor rule a Responses turn runs under; how many times it carries a turn on is the engine's. */
 fun responsesTestReanchor(
-    maxContinuations: Int,
     decode: (String) -> JsonObject? = { null },
-): ReanchorPolicy = ResponsesReanchorPolicy(ReasoningEnvelopeDecoder { decode(it) }, maxContinuations)
+): ReanchorPolicy = ResponsesReanchorPolicy(ReasoningEnvelopeDecoder { decode(it) })

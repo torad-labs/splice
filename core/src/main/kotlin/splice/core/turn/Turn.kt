@@ -241,18 +241,6 @@ public class SharedSummaryParts(
     }
 }
 
-// NEW: V4-122 — the ONE re-anchor continuation budget, in core because both re-anchoring dialects
-// read it and neither may own the other's constant.
-//
-// Two dialect files declared this at 5 — PassthroughReanchorPolicy.kt and
-// ResponsesReanchorPolicy.kt — and the checker held the name as a scar because they re-anchor
-// against the SAME client budget: the number is one policy, and a fork of it makes the two dialects
-// behave differently depending on which head the operator happens to be running. It used to be
-// widened from 2 to 5 at codex-rs parity (11ce5512) in one dialect at a time, which is exactly the
-// drift a single declaration prevents. Beside [WatchdogBudget] because it is the same kind of fact:
-// a bound on how long splice keeps a turn alive on its own.
-public const val DEFAULT_MAX_CONTINUATIONS: Int = 5
-
 /** The watchdog budget as it stands NOW. firstByteTimeoutMs and stallReanchorMs are live knobs, so a turn asks for its
  *  budget when it starts instead of holding the one the head was built with; the other tiers stay as built. */
 public fun interface LiveWatchdogBudget {

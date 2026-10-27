@@ -20,7 +20,6 @@ import splice.core.perf.TurnPerf
 import splice.core.perf.TurnPerfTiming
 import splice.core.turn.TurnOutcome
 import splice.upstream.ReanchorPolicy
-import splice.upstream.RetryBackoff
 import splice.upstream.RetryNotice
 import splice.upstream.RoundBody
 import splice.upstream.RoundResult
@@ -33,11 +32,13 @@ internal class ReanchorRunner(
     private val postRound: PostRound,
     private val finish: FinishTurn,
     private val signals: RunnerSignals,
+    /** The turn's steps (failure-handling slice 4): whether a failed round is continued, and its wait, come from
+     *  RetryEngine on the turn's one ledger, never from a count or a curve of this runner's own. */
+    private val steps: RoundSteps,
     private val toolSearch: ToolSearchPolicy? = null,
-    private val backoff: RetryBackoff,
 ) {
     private val rounds = RoundSplice()
-    private val continuation = ReanchorContinuation(toolSearch, signals, rounds)
+    private val continuation = ReanchorContinuation(toolSearch, signals, rounds, steps)
 
     // [reanchor] is nullable — a turn may reach this runner with search-only continuation (no
     // ReanchorPolicy at all): driveOneTurn routes here whenever EITHER exists, so the seam is
@@ -98,7 +99,7 @@ internal class ReanchorRunner(
             // purpose: a number that could disagree with the loop's own count is worse than no
             // number, and the ending message (gaveUp) quotes this one.
             signals.onReanchor(fromScratch)
-            TurnPerfTiming.timedOr(perf, PerfKeys.BACKOFF_MS) { backoff(attempt, 0) }
+            TurnPerfTiming.timedOr(perf, PerfKeys.BACKOFF_MS) { steps.take(cont.step, failure.cause, failure.at) }
             body = cont.body
             attempt++
         }

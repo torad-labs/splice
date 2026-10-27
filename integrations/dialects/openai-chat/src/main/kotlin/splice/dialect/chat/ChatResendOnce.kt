@@ -3,20 +3,17 @@
 package splice.dialect.chat
 
 import kotlinx.serialization.json.JsonObject
-import splice.core.failure.FailureCause
 import splice.core.turn.TurnOutcome
 import splice.upstream.ReanchorPolicy
 import splice.upstream.ReanchorRound
 
 /**
- * Re-sends the same request once for an unknown vendor code that arrived before any content: a
- * [FailureCause.Provider.Unrecognized] that carries its round (ChatStreamTranslator attaches the round to the
- * backend's failure only then, ChatTerminalState.resendsOnce). The leaf is read, never its permanence: since
- * failure-handling slice 3 the head's reader reads a code no table names as the backend's report rather than its
- * verdict on the request (OpenAiReplies), which is not permanent, and asking for permanence then sent nothing again.
- * A 200 with no events carries its empty round too, under the cause its body names, and a known failure is never
- * sent twice. Not a continuation: nothing reached the client, so the original bytes go again. A second failure, or
- * any other failure, is surfaced as before.
+ * The chat head's rule for a round that failed: it can be carried on only by sending the same request again, and
+ * only while nothing reached the client. Which failures are sent again, and how many times, is RetryEngine's answer
+ * on the turn's one ledger (failure-handling slice 4): an unknown vendor code is sent once more, as splice-lead's
+ * ruling of Oct 12 asked, and a known one takes its own row. The translator attaches the round to a failure that
+ * arrived before any content (ChatTerminalState.resendsOnce), and a 200 with no events carries its empty round too,
+ * under the cause its body names. Not a continuation: nothing reached the client, so the original bytes go again.
  *
  * "Nothing reached the client" is read off the round, not assumed: the translator flushes a buffered tool
  * call to the client before it decides the turn's end, and its content gate counts only text and thinking,
@@ -25,12 +22,7 @@ import splice.upstream.ReanchorRound
  */
 public object ChatResendOnce : ReanchorPolicy {
     override fun continuationForFailure(round: ReanchorRound): JsonObject? =
-        round.requestBody.takeIf { round.attempt == 0 && resendable(round) }
-
-    private fun resendable(round: ReanchorRound): Boolean {
-        val cause = round.failure.cause
-        return cause is FailureCause.Provider.Unrecognized && round.failure.partial?.let(::nothingSent) == true
-    }
+        round.requestBody.takeIf { round.failure.partial?.let(::nothingSent) == true }
 
     private fun nothingSent(round: TurnOutcome.PartialRound): Boolean =
         !round.hasToolUse && !round.text.emittedText && !round.text.emittedThinking

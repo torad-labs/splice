@@ -5,7 +5,6 @@ package splice.head.round
 
 import splice.core.perf.TurnPerf
 import splice.upstream.ReanchorPolicy
-import splice.upstream.RetryBackoff
 import splice.upstream.RetryNotice
 import splice.upstream.RoundResult
 import splice.upstream.ToolSearchPolicy
@@ -19,9 +18,10 @@ internal class RoundRunners(
     log: RetryNotice,
     private val signals: RunnerSignals,
     private val finish: FinishTurn,
-    /** The head's configured retry curve: the fold and re-anchor runners sleep their restarts on it, as the
-     *  upstream client does for an ordinary retry, never on a curve of their own. */
-    private val backoff: RetryBackoff,
+    /** The turn's steps (failure-handling slice 4): every runner asks RetryEngine whether a round is sent again and
+     *  how long it waits first, on the turn's one ledger, as the post's attempt loop does, never on a count or a curve
+     *  of its own. */
+    private val steps: RoundSteps,
     private val toolSearch: ToolSearchPolicy? = null,
 ) {
     private val notice = log
@@ -32,15 +32,15 @@ internal class RoundRunners(
 
     /** The one empty-answer recovery tells the turn it is recovering through the same signal as the other runners. */
     fun emptyRetry(perf: TurnPerf?, reanchor: ReanchorPolicy?): EmptyAnswerRetry =
-        EmptyAnswerRetry(perf, reanchor, signals.recovering)
+        EmptyAnswerRetry(perf, steps, reanchor, signals.recovering)
 
     /** The runner for a fold-eligible turn. */
     fun fold(emitter: WireSink, post: PostRoundToSink, reanchor: ReanchorPolicy?): FoldRunner =
-        FoldRunner(emitter, post, FoldRounds(key, notice, signals, finish, reanchor, toolSearch), backoff)
+        FoldRunner(emitter, post, FoldRounds(key, notice, signals, finish, steps, reanchor, toolSearch))
 
     /** The runner for a re-anchor or search-only turn. */
     fun reanchoring(post: PostRound): ReanchorRunner =
-        ReanchorRunner(key, notice, post, finish, signals, toolSearch, backoff)
+        ReanchorRunner(key, notice, post, finish, signals, steps, toolSearch)
 
     /** The single-round path's end: DR-130 — the runners salvage a failed round's own burn through
      *  withFailureSalvage (DR-124); this path handed the raw outcome to finishTurn, which stamps ONLY

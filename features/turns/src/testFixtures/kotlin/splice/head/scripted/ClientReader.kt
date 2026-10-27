@@ -36,6 +36,7 @@ import kotlinx.serialization.json.putJsonArray
 import splice.core.client.SESSION_HEADER
 import splice.core.turn.SpliceNotice
 import java.util.UUID
+import kotlin.time.Duration
 
 /** The bearer token HeadDepsFixture gives every head's callers. */
 private const val INFERENCE_TOKEN = "test-inference-token"
@@ -99,8 +100,9 @@ private object WireJson {
     fun type(event: SseEvent): String? = event.name ?: str(parse(event.data), "type")
 }
 
-/** One content block as the client assembled it from its start, its deltas and its signature. */
-private class ClientBlock(val type: String) {
+/** One content block as the client assembled it from its start, its deltas and its signature. [startedAt] is the
+ *  index of the event that opened it. */
+private class ClientBlock(val type: String, val startedAt: Int) {
     private val written = StringBuilder()
     private var signature: String? = null
     private var deltas = 0
@@ -141,6 +143,9 @@ public data class ClientAnswer(
     val cut: Boolean,
     /** What the read failed with when the connection dropped, for [describe]. */
     val failure: String? = null,
+    /** When each of [events] arrived, on the clock the reader was given: the scripted head's virtual clock, the one
+     *  [ProviderRequest.at] is read on, so a test can tell what the client held when the provider was asked. */
+    val arrivals: List<Duration> = emptyList(),
 ) {
     /** The first value of header [name], any case. */
     public fun header(name: String): String? = headers[name.lowercase()]?.firstOrNull()
@@ -158,6 +163,10 @@ public data class ClientAnswer(
 
     /** The text of each block splice signed as its own notice, in order. */
     public val notices: List<String> get() = blocks(events).filter { it.isNotice }.map { it.text }
+
+    /** When the first notice that says [fragment] began to arrive, or null when none says it. */
+    public fun noticeArrival(fragment: String): Duration? =
+        blocks(events).firstOrNull { it.isNotice && fragment in it.text }?.let { arrivals.getOrNull(it.startedAt) }
 
     /** True when the stream reached message_stop. */
     public val completed: Boolean get() = events.any { WireJson.type(it) == "message_stop" }
@@ -238,13 +247,13 @@ public data class ClientAnswer(
 
     private fun blocks(seen: List<SseEvent>): Collection<ClientBlock> {
         val byIndex = LinkedHashMap<Int, ClientBlock>()
-        for (event in seen) {
+        for ((at, event) in seen.withIndex()) {
             val data = WireJson.parse(event.data)
             val index = WireJson.str(data, "index")?.toIntOrNull()
             when {
                 index == null -> Unit
-                WireJson.type(event) == "content_block_start" ->
-                    byIndex[index] = ClientBlock(WireJson.str(WireJson.obj(data, "content_block"), "type").orEmpty())
+                WireJson.type(event) == "content_block_start" -> byIndex[index] =
+                    ClientBlock(WireJson.str(WireJson.obj(data, "content_block"), "type").orEmpty(), startedAt = at)
                 WireJson.type(event) == "content_block_delta" ->
                     WireJson.obj(data, "delta")?.let { delta -> byIndex[index]?.add(delta) }
             }
@@ -324,6 +333,8 @@ public class ClientReader(
     private val port: Int,
     private val model: String,
     dispatcher: CoroutineDispatcher = Dispatchers.IO,
+    /** The clock an event's arrival is read on ([ClientAnswer.arrivals]); a reader with none dates nothing. */
+    private val clock: () -> Duration = { Duration.ZERO },
 ) : AutoCloseable {
     private val http = HttpClient(CIO) {
         engine { requestTimeout = 0 }
@@ -375,7 +386,10 @@ public class ClientReader(
     }
 
     private suspend fun readEvents(channel: ByteReadChannel, stream: ClientStream) {
-        val framing = SseFraming { event -> stream.update { it.copy(events = it.events + event) } }
+        val framing = SseFraming { event ->
+            val at = clock()
+            stream.update { it.copy(events = it.events + event, arrivals = it.arrivals + at) }
+        }
         while (true) {
             framing.line(channel.readLine() ?: break)
         }

@@ -55,23 +55,26 @@ import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.buildJsonArray
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
-import splice.core.failure.ClientWire
-import splice.core.turn.DEFAULT_MAX_CONTINUATIONS
-import splice.core.turn.ErrorType
-import splice.core.turn.TurnOutcome
 import splice.core.wire.ANTHROPIC_ASSISTANT_ROLE
 import splice.upstream.LiveRound
 import splice.upstream.ReanchorPolicy
 import splice.upstream.ReanchorRound
 
+/** The head's rule for a round that failed: whether it can carry the turn on from what arrived, and the request that
+ *  does. Which failures are carried on, and how many times, is RetryEngine's answer on the turn's one ledger
+ *  (failure-handling slice 4), so this rule holds no budget and reads no failure type. */
 public class PassthroughReanchorPolicy(
     private val prefill: Boolean = false,
-    private val maxContinuations: Int = DEFAULT_MAX_CONTINUATIONS,
 ) : ReanchorPolicy {
 
     override fun continuationForFailure(round: ReanchorRound): JsonObject? {
         val partial = round.failure.partial ?: return null
-        if (!eligible(round, partial)) return null
+        // Tool rounds cannot be carried on BOTH ways, exactly as the Responses twin argues it: an OPEN tear already
+        // committed partial argument JSON to the wire (a corrupt block, nothing to splice onto), and a COMMITTED
+        // tool_use means the continuation would carry a tool_use whose tool_result cannot exist yet, while
+        // re-emitting the call risks double-dispatch of a tool the client may already be running. Both keep the
+        // honest error.
+        if (partial.toolTearOpen || partial.hasToolUse) return null
         // Nothing the client can SEE was salvaged (thinking only, or a tear before the first text
         // delta): the fresh round appends new blocks after the closed ones, so a verbatim re-POST
         // duplicates nothing, and the turn keeps whatever thinking setting it asked for. That is
@@ -89,23 +92,9 @@ public class PassthroughReanchorPolicy(
         }
     }
 
-    /** The same refusals as [continuationForFailure], read off a round still streaming: the budget is spent, a tool
-     *  call has opened, or prose has reached the client on an upstream that has not been measured to continue from a
-     *  prefill. A stall ends as a retryable failure, so the failure type is not a condition here. */
-    override fun wouldContinue(live: LiveRound): Boolean =
-        live.attempt < maxContinuations && !live.toolOpened && (prefill || !live.textWritten)
-
-    /** Tool rounds end eligibility BOTH ways, exactly as the Responses twin argues it: an OPEN tear
-     *  already committed partial argument JSON to the wire (a corrupt block, nothing to splice
-     *  onto), and a COMMITTED tool_use means the continuation would carry a tool_use whose
-     *  tool_result cannot exist yet, while re-emitting the call risks double-dispatch of a tool the
-     *  client may already be running. Both fall back to the honest error. */
-    private fun eligible(round: ReanchorRound, partial: TurnOutcome.PartialRound): Boolean = when {
-        round.attempt >= maxContinuations -> false
-        ClientWire.ownType(round.failure.cause) !in RETRYABLE -> false
-        partial.toolTearOpen || partial.hasToolUse -> false
-        else -> true
-    }
+    /** The same refusals as [continuationForFailure], read off a round still streaming: a tool call has opened, or
+     *  prose has reached the client on an upstream that has not been measured to continue from a prefill. */
+    override fun wouldContinue(live: LiveRound): Boolean = !live.toolOpened && (prefill || !live.textWritten)
 
     /** The original request with the partial answer appended as a trailing assistant message and
      *  thinking turned off, so the model continues from the answer's exact end instead of re-planning
@@ -145,22 +134,3 @@ private const val THINKING_DISABLED = "disabled"
 // Written onto every prefill continuation. One shared immutable value: the probe above is the only
 // reason this file can resume a reasoning turn at all, and a second spelling of it could drift.
 private val THINKING_OFF: JsonObject = buildJsonObject { put(THINKING_TYPE, THINKING_DISABLED) }
-
-// Parity with the Responses twin, which took this number from codex-rs's own
-// DEFAULT_STREAM_MAX_RETRIES.
-//
-// V4-122: the continuation budget itself is splice.core.turn.DEFAULT_MAX_CONTINUATIONS now — one
-// declaration, because this dialect's twin declared the same 5 and they re-anchor against the same
-// client budget. A log line that quotes a budget still quotes the one the controller enforces,
-// since there is only one.
-
-// FILE SCOPE ON PURPOSE: one shared immutable set, read once per failure classification.
-//
-// V4-57 adds RATE_LIMIT. A limit met after the first frame arrives as 200 + an SSE
-// rate_limit_error and the client only auto-retries on HTTP status 429, so refusing to continue
-// left that turn with no automatic recovery at all. Continuing is enough ON ITS OWN here — the
-// re-POST is answered by a provider that is still limiting with a genuine pre-stream 429 carrying
-// Retry-After headers, the one place a pushback is machine-readable; the pre-stream path already
-// owns that decision (V4-48's short wait, and an honest 429 the client can retry on past the
-// ceiling). No pushback is invented at this layer, because the wire never carried one to it.
-private val RETRYABLE = setOf(ErrorType.OVERLOADED, ErrorType.API_ERROR, ErrorType.RATE_LIMIT)

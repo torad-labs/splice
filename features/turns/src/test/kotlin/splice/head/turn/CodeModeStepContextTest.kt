@@ -29,13 +29,13 @@ import splice.head.round.RoundInterception
 import splice.head.round.RoundRunners
 import splice.head.round.RoundStrategy
 import splice.head.round.RunnerSignals
+import splice.head.round.testRoundSteps
 import splice.head.testVoice
 import splice.head.wire.SseEmitterFactory
 import splice.head.wire.TurnWiring
 import splice.provider.codex.CodeModeBridgeConfig
 import splice.provider.codex.CodeModeStateLocation
 import splice.provider.codex.CodexCodeModeBridge
-import splice.upstream.RetryBackoff
 import splice.upstream.RoundResult
 import splice.upstream.codemode.CodeModeCall
 import splice.upstream.codemode.CodeModeCell
@@ -72,7 +72,7 @@ class CodeModeStepContextTest {
             RoundStrategy(
                 emitter = emitter,
                 runners = RoundRunners(
-                    backoff = RetryBackoff { _, _ -> },
+                    steps = testRoundSteps(),
                     key = "test",
                     log = {},
                     signals = RunnerSignals(watchdogFired = { false }, clientGone = { false }),

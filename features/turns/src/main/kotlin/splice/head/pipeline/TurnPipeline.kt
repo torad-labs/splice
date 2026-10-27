@@ -61,10 +61,11 @@ internal class TurnPipeline(
                 // The emitter asks ClientWire what the client reads, from the cause and how far the
                 // stream had got, and its turn voice says the line for the same cause (slice 2).
                 emitter.emitError(cause)
-                // V4-67: a tear the gateway converted into an outcome keeps the conn-reset tag it
-                // would have carried had it escaped to TurnConnEnd. That tag is the only string in
-                // the journal that names this failure class, and the row that made a torn stream
-                // continuable is the row that would otherwise have hidden its successor.
+                // V4-67: a path that could not be reached, ended as an outcome, keeps the conn-reset
+                // tag it would have carried had it escaped to TurnConnEnd. A stream torn before the
+                // client saw a frame is no longer one: since failure-handling slice 4 it is read as
+                // the post's own loop reads it, a torn stream (SseRoundDriver.tearOutcome), and its
+                // row names it so (MidStreamTearContinuesTest, ARM 7).
                 return if (cause is FailureCause.Path.Unreachable) CONN_RESET_OUTCOME else OutcomeTags.failure(cause)
             }
             is TurnOutcome.ClientAbandoned -> {

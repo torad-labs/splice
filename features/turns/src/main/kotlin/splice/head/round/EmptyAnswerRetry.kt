@@ -3,6 +3,8 @@ package splice.head.round
 
 import kotlinx.serialization.json.JsonObject
 import splice.core.failure.FailureCause
+import splice.core.failure.Moment
+import splice.core.failure.Position
 import splice.core.failure.Recovery.AskAgain
 import splice.core.failure.WaitLine
 import splice.core.perf.PerfKeys
@@ -13,6 +15,8 @@ import splice.core.turn.Usage
 import splice.upstream.ReanchorPolicy
 import splice.upstream.RoundBody
 import splice.upstream.RoundResult
+import splice.upstream.retry.How
+import splice.upstream.retry.RetryStep
 
 /**
  * A round whose stream completed with no text, no tool call and no thinking, and no message item either, ends the
@@ -22,9 +26,9 @@ import splice.upstream.RoundResult
  * nothing it was not already doing, and nothing has reached the client to duplicate: the structural frames are held
  * until the first model frame, and the round's content-frame counter proves none was written.
  *
- * Exactly one re-send, the same body byte for byte, inside whatever the post itself allows (the watchdog's turn
- * budget is the post's own). A second empty ends as it ends today. A closed empty message is the model's finished
- * answer (codex ends the turn there), so it is never re-sent.
+ * One re-send a turn, the same body byte for byte, as RetryEngine's Empty row allows it on the turn's one ledger
+ * (failure-handling slice 4), inside whatever the post itself allows. A second empty ends as it ends today. A closed
+ * empty message is the model's finished answer (codex ends the turn there), so it is never re-sent.
  *
  * A vendor whose empties repeat for the same bytes carries on instead: when the turn's [reanchor] rule builds a
  * continuation from the empty round (its reasoning, then a request for the answer), that request is the one sent.
@@ -35,6 +39,8 @@ import splice.upstream.RoundResult
  */
 internal class EmptyAnswerRetry(
     private val perf: TurnPerf?,
+    /** The turn's steps: whether an empty round is asked again, and how, is the engine's answer. */
+    private val steps: RoundSteps,
     private val reanchor: ReanchorPolicy? = null,
     /** Failure-handling slice 2: where the re-send is told, as an empty answer the turn asks again for. */
     private val recovering: Recovering = Recovering {},
@@ -44,12 +50,25 @@ internal class EmptyAnswerRetry(
         val first = direct(body)
         val emptied = emptied(first)
         if (emptied == null || contentFrames() > framesBefore) return first
-        val carried = continuation(body, emptied)
-        // reasoning alone is the model's finished silence unless the rule carries it on: never re-sent identically
-        if (carried == null && emptied.shape.endedInReasoning) return first
-        recovering(WaitLine(FailureCause.Provider.Empty(reasoningOnly = emptied.shape.endedInReasoning), AskAgain))
-        perf?.add(if (carried != null) PerfKeys.EMPTY_CONTINUES else PerfKeys.EMPTY_RETRIES, 1)
-        return billed(emptied.usage, direct(carried?.let { RoundBody.Tree(it) } ?: body))
+        val again = askAgain(body, emptied) ?: return first
+        return billed(emptied.usage, direct(again))
+    }
+
+    /** What the turn sends after [empty], once the engine allows it: the rule's continuation where the engine carries
+     *  a reasoning-only answer on, else the same body; null when the turn ends on the empty answer. Reasoning alone is
+     *  the model's finished silence unless the rule carries it on: never re-sent identically. */
+    private suspend fun askAgain(body: RoundBody, empty: TurnOutcome.Success): RoundBody? {
+        val carried = continuation(body, empty)
+        if (carried == null && empty.shape.endedInReasoning) return null
+        val cause = FailureCause.Provider.Empty(reasoningOnly = empty.shape.endedInReasoning)
+        val step = steps.next(cause, NOTHING_SHOWN, canContinue = false, continuesReasoning = carried != null)
+        val again = (step as? RetryStep.Again)?.takeIf { it.how == How.SAME || it.how == How.CONTINUE_REASONING }
+            ?: return null
+        steps.take(again, cause, NOTHING_SHOWN)
+        recovering(WaitLine(cause, AskAgain))
+        val next = carried?.takeIf { again.how == How.CONTINUE_REASONING }
+        perf?.add(if (next != null) PerfKeys.EMPTY_CONTINUES else PerfKeys.EMPTY_RETRIES, 1)
+        return next?.let { RoundBody.Tree(it) } ?: body
     }
 
     /** The request that carries on from [empty], when the turn's rule has one and [body] is the tree it extends. */
@@ -86,3 +105,6 @@ internal class EmptyAnswerRetry(
     private fun shown(text: RoundText): Boolean =
         text.emittedText || text.emittedThinking || text.bodyText.isNotBlank() || text.thinkingText.isNotBlank()
 }
+
+/** Where an empty round leaves the turn: its stream began and ended, and nothing of it reached the client. */
+private val NOTHING_SHOWN = Position(Moment.COMMITTED, streamBegan = true)

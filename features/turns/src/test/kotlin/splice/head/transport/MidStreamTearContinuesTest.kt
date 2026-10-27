@@ -46,9 +46,9 @@ import org.junit.jupiter.api.io.TempDir
 import splice.core.auth.AuthDescription
 import splice.core.auth.Credentials
 import splice.core.auth.RefreshableAuthProvider
+import splice.core.failure.PersistedCause
 import splice.core.model.ModelCatalog
 import splice.core.model.ModelEntry
-import splice.core.turn.CONN_RESET_OUTCOME
 import splice.core.turn.WatchdogBudget
 import splice.dialect.anthropic.PassthroughProvider
 import splice.dialect.anthropic.PassthroughQuirks
@@ -108,8 +108,8 @@ private const val TEAR_DELIVERY_PAUSE_MS = 250L
  *  HOLD_MS while the next arms connect, so eight leave room for that overlap. */
 private const val SERVE_THREADS = 8
 
-// One more tear than PassthroughReanchorPolicy's continuation budget, so the turn runs the
-// whole re-anchor loop out and finishes with the honest failure instead of recovering.
+// More tears than the turn re-sends a torn stream for (RetryEngine's fresh re-sends, failure-handling
+// slice 4), so the turn runs that budget out and finishes with the honest failure instead of recovering.
 private const val TEARS_PAST_BUDGET = 7
 private const val PERF_POLLS = 300
 private const val PERF_POLL_MS = 50L
@@ -125,7 +125,7 @@ private val SCENARIO_MARKER = Regex("${SCENARIO_PREFIX}\\d+")
 // The perf row is JSON, so the tag is asserted as its own FIELD — and the tag itself comes from
 // the one definition in core, never a second spelling here. A test that re-spells the string it
 // is pinning cannot catch the string changing.
-private const val PERF_OUTCOME_FIELD = "\"outcome\":\""
+private const val PERF_CAUSE_FIELD = "\"cause\":\""
 private const val QUOTE = "\""
 
 // V4-116 (5): the two evidence fields, asserted by their rendered name so a renamed key cannot
@@ -655,14 +655,16 @@ class MidStreamTearContinuesTest {
         )
     }
 
-    // ARM 7 — THE TAG. A converted tear that never recovers (every continuation tears too, until
-    // the controller budget is spent) must still be RECORDED as conn-reset. That tag is the only
-    // string in the live journal that names this failure class: it is what the operator grepped to
-    // find this bug at all, so a fix that renamed it would have hidden its own successor. The
-    // client bytes and the health attribution are the ones this row already pins elsewhere; this
-    // arm pins the perf row alone.
+    // ARM 7 — THE TAG. A converted tear that never recovers (every re-send tears too, until the
+    // turn's budget for it is spent) must still be RECORDED under a name of its own: it is what the
+    // operator grepped to find this bug at all, so a fix that hid it would have hidden its own
+    // successor. Failure-handling slice 4 reads it as the post's own loop does, a stream torn before
+    // the client saw a frame, so one budget covers it whichever layer met it, and the row names it
+    // as final-design.md section 7 names every torn stream; it was conn-reset while the round read
+    // it as an unreachable path. The client bytes and the health attribution are the ones this row
+    // already pins elsewhere; this arm pins the perf row alone.
     @Test
-    fun `an unrecovered converted tear is still recorded as conn-reset`() {
+    fun `an unrecovered converted tear is recorded as a torn stream`() {
         val tears = Array(TEARS_PAST_BUDGET) { Act.TRUNCATE_BEFORE_CONTENT }
         reset(*tears)
         val before = perfRowsBefore(prefillPort)
@@ -674,8 +676,8 @@ class MidStreamTearContinuesTest {
         )
         val row = perfRow(prefillPort, before)
         assertTrue(
-            row.contains(PERF_OUTCOME_FIELD + CONN_RESET_OUTCOME + QUOTE),
-            "an unrecovered tear must stay greppable as conn-reset, got: " + row + diagnostics(received),
+            row.contains(PERF_CAUSE_FIELD + PersistedCause.UPSTREAM_TRUNCATED.name + QUOTE),
+            "an unrecovered tear must stay greppable as a torn stream, got: " + row + diagnostics(received),
         )
     }
 

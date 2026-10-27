@@ -15,7 +15,6 @@ import splice.core.perf.TurnPerfTiming
 import splice.core.turn.TurnOutcome
 import splice.head.wire.BufferingWireSink
 import splice.upstream.FoldPolicy
-import splice.upstream.RetryBackoff
 import splice.upstream.RoundBody
 import splice.upstream.RoundResult
 import splice.upstream.sse.WireSink
@@ -26,7 +25,6 @@ internal class FoldRunner(
     private val emitter: WireSink,
     private val postRound: PostRoundToSink,
     private val foldRounds: FoldRounds,
-    private val backoff: RetryBackoff,
 ) {
     suspend fun run(initialBody: JsonObject, fold: FoldPolicy): UpstreamEnding? = run(initialBody, fold, null)
 
@@ -67,16 +65,12 @@ internal class FoldRunner(
             // retried round re-answers cleanly from its reasoning envelopes. Live thinking
             // already on the wire stays (append-only).
             val retry = foldRounds.continuationForFailedRound(outcome, body, reanchorAttempt)
-            // V4-106: `outcome !is TurnOutcome.Failure` joins the guard so the narrowing below is a
-            // SMART CAST rather than an unchecked `as`. continuationForFailedRound only ever returns
-            // a non-null retry for a Failure, so the added arm cannot fire in practice — but if that
-            // invariant ever breaks, this takes the honest null path instead of throwing a
-            // ClassCastException on the turn path, which is the whole point of the wall.
-            if (retry == null || outcome !is TurnOutcome.Failure) {
+            // V4-106: the Failure rides back with the retry (FailureContinuation), so no cast narrows it here.
+            if (retry == null) {
                 endTurn(outcome, absorbedFailures, acc, buffer, salvaged)
                 return null
             }
-            val failure = outcome
+            val failure = retry.failure
             absorbedFailures.add(failure)
             failure.partial?.let { p ->
                 // Strip BOTH buffered-text signals: the prose never reached the client, so the
@@ -90,8 +84,8 @@ internal class FoldRunner(
             }
             buffer.discard()
             foldRounds.noteReanchor(reanchorAttempt, failure)
-            TurnPerfTiming.timedOr(perf, PerfKeys.BACKOFF_MS) { backoff(reanchorAttempt, 0) }
-            body = retry
+            TurnPerfTiming.timedOr(perf, PerfKeys.BACKOFF_MS) { foldRounds.take(retry) }
+            body = retry.body
             reanchorAttempt++
         }
     }

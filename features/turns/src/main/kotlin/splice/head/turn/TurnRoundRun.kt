@@ -9,14 +9,18 @@ import splice.core.util.LogSink
 import splice.head.round.Recovering
 import splice.head.round.RoundInterception
 import splice.head.round.RoundRunners
+import splice.head.round.RoundSteps
 import splice.head.round.RoundStrategy
 import splice.head.transport.IndependentSourcePost
 import splice.head.transport.SseRoundDriver
 import splice.head.wire.WireTap
 import splice.upstream.Provider
-import splice.upstream.RetryBackoff
 import splice.upstream.RetryNotice
 import splice.upstream.RoundBody
+import splice.upstream.TurnRetry
+import splice.upstream.TurnWaits
+import splice.upstream.retry.RetryLedger
+import splice.upstream.transport.UpstreamClient
 import splice.upstream.transport.UpstreamEnding
 
 internal class TurnRoundRun(
@@ -27,7 +31,9 @@ internal class TurnRoundRun(
     /** V4-173: the head's opt-in upstream wire tap, null on every head that did not turn it on. */
     private val wireTap: WireTap?,
     usageStamp: TurnUsageStamp,
-    private val backoff: RetryBackoff,
+    /** The head's client: the waiter and the wall clock its posts retry on, which the turn's rounds take their steps on
+     *  too where a drive carries no ledger of its own. */
+    private val upstream: UpstreamClient,
 ) {
     private val sourceRound = IndependentSourcePost(sseRoundDriver, usageStamp)
 
@@ -53,7 +59,7 @@ internal class TurnRoundRun(
                 // shows once per recovery episode, said by the turn's voice from the cause.
                 signals = drive.signals.copy(recovering = Recovering { drive.emitter.recovering(it) }),
                 finish = { outcome -> turnFinish.finishTurn(drive, outcome) },
-                backoff = backoff,
+                steps = RoundSteps(turnRetry(drive), upstream.retryWall),
                 toolSearch = drive.toolSearch,
             ),
             // V4-173: THE choke point. Every upstream request of every runner — the single round,
@@ -75,6 +81,11 @@ internal class TurnRoundRun(
             ),
         ).run(drive.requestBody, fold, reanchor, drive.perf)
     }
+
+    /** The turn's one ledger and waits, which its posts spend from too; a drive built without one keeps a ledger for
+     *  its rounds and waits on the client's waiter, as a post with no turn around it does. */
+    private fun turnRetry(drive: TurnDrive): TurnRetry =
+        drive.retry ?: TurnRetry(RetryLedger(), TurnWaits { afterMs, _, _ -> upstream.retryWaiter.wait(afterMs) })
 
     // The audit still sees exactly the bytes this round POSTs, and the wire tap reads the text only when a tap is
     // actually open. The round's size on its perf row is stamped by the transport that sends the body, from what that

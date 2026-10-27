@@ -122,7 +122,7 @@ internal class TurnDriver(
             turnFinish,
             deps.stores.captures.wireTap,
             usageStamp,
-            deps.traffic.upstream.retryBackoff,
+            deps.traffic.upstream,
         ),
     )
 

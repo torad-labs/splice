@@ -32,10 +32,10 @@ import splice.head.wire.SseEmitterFactory
 import splice.head.wire.StreamWiring
 import splice.upstream.FoldPolicy
 import splice.upstream.ReanchorPolicy
-import splice.upstream.RetryBackoff
 import splice.upstream.RoundInterceptor
 import splice.upstream.RoundResult
 import splice.upstream.ToolSearchPolicy
+import splice.upstream.TurnWaits
 import splice.upstream.sse.WireSink
 
 private fun continuationBody() = buildJsonObject { }
@@ -130,7 +130,7 @@ class ReanchorRunnerTest {
             TurnOutcome.Success(hasToolUse = false, incomplete = false, usage = Usage(outputTokens = 5))
         }
         ReanchorRunner(
-            backoff = RetryBackoff { _, _ -> },
+            steps = testRoundSteps(),
             key = "t",
             log = { },
             postRound = { RoundResult.Outcome(rounds.removeFirst().invoke()) },
@@ -159,7 +159,7 @@ class ReanchorRunnerTest {
             TurnOutcome.Success(hasToolUse = false, incomplete = false, usage = Usage(outputTokens = 1))
         }
         ReanchorRunner(
-            backoff = RetryBackoff { _, _ -> },
+            steps = testRoundSteps(),
             key = "t",
             log = { },
             postRound = { RoundResult.Outcome(rounds.removeFirst().invoke()) },
@@ -180,7 +180,7 @@ class ReanchorRunnerTest {
         var posts = 0
         var asks = 0
         ReanchorRunner(
-            backoff = RetryBackoff { _, _ -> },
+            steps = testRoundSteps(),
             key = "t",
             log = { },
             postRound = {
@@ -210,14 +210,14 @@ class ReanchorRunnerTest {
     // DR-7 REVERSES this arm. It used to assert the controller is never consulted after a watchdog
     // fire — true of a watchdog that cancelled the whole turn, false of one that reaps a single
     // round. A stalled round is the case most worth continuing: the client is still listening and
-    // the round left real reasoning behind. The bound is the controller's own attempt budget, which
-    // is why this fixture caps at two rather than returning a continuation forever.
+    // the round left real reasoning behind. The bound is the engine's stream-recovery budget on the turn's
+    // ledger; this fixture's rule stops at two so the test reads three asks.
     @Test
     fun `an idle watchdog fire continues - the round is reaped, not the turn`() = runTest {
         val h = Harness()
         var asks = 0
         ReanchorRunner(
-            backoff = RetryBackoff { _, _ -> },
+            steps = testRoundSteps(),
             key = "t",
             log = { },
             postRound = { RoundResult.Outcome(retryableFailure()) },
@@ -240,7 +240,7 @@ class ReanchorRunnerTest {
         val h = Harness()
         var asks = 0
         ReanchorRunner(
-            backoff = RetryBackoff { _, _ -> },
+            steps = testRoundSteps(),
             key = "t",
             log = { },
             postRound = { RoundResult.Outcome(retryableFailure()) },
@@ -275,7 +275,7 @@ class ReanchorRunnerTest {
             retryableFailure(outputTokens = 9, hasToolUse = true)
         }
         ReanchorRunner(
-            backoff = RetryBackoff { _, _ -> },
+            steps = testRoundSteps(),
             key = "t",
             log = { },
             postRound = { RoundResult.Outcome(rounds.removeFirst().invoke()) },
@@ -306,7 +306,7 @@ class ReanchorRunnerTest {
             retryableFailure(outputTokens = 4, hasToolUse = true, toolTearOpen = true)
         }
         ReanchorRunner(
-            backoff = RetryBackoff { _, _ -> },
+            steps = testRoundSteps(),
             key = "t",
             log = { },
             postRound = { RoundResult.Outcome(rounds.removeFirst().invoke()) },
@@ -325,7 +325,7 @@ class ReanchorRunnerTest {
     fun `an ineligible failure surfaces immediately - error, not clean stop`() = runTest {
         val h = Harness()
         ReanchorRunner(
-            backoff = RetryBackoff { _, _ -> },
+            steps = testRoundSteps(),
             key = "t",
             log = { },
             postRound = { RoundResult.Outcome(retryableFailure()) },
@@ -343,7 +343,7 @@ class FoldRunnerReanchorTest {
     fun `fold trigger-B retries a failed round with never-forwarded prose stripped from the salvage`() = runTest {
         val h = Harness()
         val seenPartialBodies = mutableListOf<String?>()
-        val waits = mutableListOf<Int>()
+        val waits = mutableListOf<Long>()
         val rounds = ArrayDeque<suspend () -> TurnOutcome>()
         rounds.add { retryableFailure(outputTokens = 3, bodyText = "buffered never-sent prose") }
         rounds.add {
@@ -366,15 +366,12 @@ class FoldRunnerReanchorTest {
                 },
                 signals = h.signals(),
                 finish = { h.finish(it) },
+                steps = testRoundSteps(TurnWaits { afterMs, _, _ -> waits += afterMs }),
             ),
-            backoff = RetryBackoff { attempt, minDelayMs ->
-                assertEquals(0, minDelayMs)
-                waits += attempt
-            },
         ).run(continuationBody()) { null }
 
         assertEquals(listOf(""), seenPartialBodies, "buffered prose must be stripped before the policy sees it")
-        assertEquals(listOf(0), waits, "fold trigger-B must pause before the re-POST")
+        assertEquals(emptyList<Long>(), waits, "sent at once: the engine's step for a stalled round names no wait")
         val success = h.finished as TurnOutcome.Success
         assertEquals("clean full answer", success.text.bodyText, "the merge-side strip must hold too")
         assertEquals(8, success.usage.outputTokens, "failed round's salvaged usage accrues")
@@ -402,8 +399,8 @@ class FoldRunnerReanchorTest {
         FoldRunner(
             emitter = h.emitter,
             postRound = { _, _ -> RoundResult.Outcome(rounds.removeFirst().invoke()) },
-            backoff = RetryBackoff { _, _ -> },
             foldRounds = FoldRounds(
+                steps = testRoundSteps(),
                 key = "t",
                 log = { },
                 reanchor = ReanchorPolicy { continuationBody() },
@@ -420,7 +417,7 @@ class FoldRunnerReanchorTest {
     fun `salvaged usage rides the failure when the turn ultimately fails`() = runTest {
         val h = Harness()
         var posts = 0
-        val waits = mutableListOf<Int>()
+        val waits = mutableListOf<Long>()
         ReanchorRunner(
             key = "t",
             log = { },
@@ -430,16 +427,13 @@ class FoldRunnerReanchorTest {
             },
             finish = { h.finish(it) },
             signals = h.signals(),
-            backoff = RetryBackoff { attempt, minDelayMs ->
-                assertEquals(0, minDelayMs)
-                waits += attempt
-            },
+            steps = testRoundSteps(TurnWaits { afterMs, _, _ -> waits += afterMs }),
         ).run(
             continuationBody(),
             ReanchorPolicy { round -> if (round.attempt < 2) continuationBody() else null },
         )
         assertEquals(3, posts)
-        assertEquals(listOf(0, 1), waits, "every absorbed failure must pause before the re-POST")
+        assertEquals(emptyList<Long>(), waits, "each re-anchor is sent at once: a stalled round's step names no wait")
         val failure = h.finished as TurnOutcome.Failure
         assertEquals(
             12,
@@ -460,7 +454,7 @@ class FoldRunnerReanchorTest {
         rounds.add { retryableFailure(outputTokens = 8) }
         rounds.add { TurnOutcome.ClientAbandoned() }
         ReanchorRunner(
-            backoff = RetryBackoff { _, _ -> },
+            steps = testRoundSteps(),
             key = "t",
             log = { },
             postRound = { RoundResult.Outcome(rounds.removeFirst().invoke()) },
@@ -479,8 +473,8 @@ class FoldRunnerReanchorTest {
         FoldRunner(
             emitter = h.emitter,
             postRound = { _, _ -> RoundResult.Outcome(retryableFailure()) },
-            backoff = RetryBackoff { _, _ -> },
             foldRounds = FoldRounds(
+                steps = testRoundSteps(),
                 key = "t",
                 log = { },
                 reanchor = ReanchorPolicy {
@@ -520,8 +514,8 @@ class FoldRunnerReanchorTest {
         FoldRunner(
             emitter = h.emitter,
             postRound = { _, sink -> RoundResult.Outcome(rounds.removeFirst().invoke(sink)) },
-            backoff = RetryBackoff { _, _ -> },
             foldRounds = FoldRounds(
+                steps = testRoundSteps(),
                 key = "t",
                 log = { },
                 signals = h.signals(gone = true),
@@ -563,7 +557,7 @@ class ReanchorRunnerSearchTest {
             }
         }
         ReanchorRunner(
-            backoff = RetryBackoff { _, _ -> },
+            steps = testRoundSteps(),
             key = "t",
             log = { },
             postRound = { RoundResult.Outcome(rounds.removeFirst().invoke()) },
@@ -596,7 +590,7 @@ class ReanchorRunnerSearchTest {
             if (round.outcome.handoffs.toolSearches.isEmpty()) null else continuationBody()
         }
         ReanchorRunner(
-            backoff = RetryBackoff { _, _ -> },
+            steps = testRoundSteps(),
             key = "t",
             log = { },
             postRound = { RoundResult.Outcome(rounds.removeFirst().invoke()) },
@@ -621,7 +615,7 @@ class ReanchorRunnerSearchTest {
             if (round.outcome.hasToolUse) null else continuationBody()
         }
         ReanchorRunner(
-            backoff = RetryBackoff { _, _ -> },
+            steps = testRoundSteps(),
             key = "t",
             log = { },
             postRound = { RoundResult.Outcome(searchSuccess(hasToolUse = true)) },
@@ -647,7 +641,7 @@ class ReanchorRunnerSearchTest {
             continuationBody()
         }
         ReanchorRunner(
-            backoff = RetryBackoff { _, _ -> },
+            steps = testRoundSteps(),
             key = "t",
             log = { },
             postRound = { RoundResult.Outcome(searchSuccess()) },
@@ -668,7 +662,7 @@ class ReanchorRunnerSearchTest {
             continuationBody()
         }
         ReanchorRunner(
-            backoff = RetryBackoff { _, _ -> },
+            steps = testRoundSteps(),
             key = "t",
             log = { },
             postRound = { RoundResult.Outcome(searchSuccess()) },
@@ -692,7 +686,7 @@ class ReanchorRunnerSearchTest {
         }
         var reanchorAsks = 0
         ReanchorRunner(
-            backoff = RetryBackoff { _, _ -> },
+            steps = testRoundSteps(),
             key = "t",
             log = { },
             postRound = { RoundResult.Outcome(rounds.removeFirst().invoke()) },
@@ -721,7 +715,7 @@ class ReanchorRunnerSearchTest {
             if (round.outcome.handoffs.toolSearches.isEmpty()) null else continuationBody()
         }
         ReanchorRunner(
-            backoff = RetryBackoff { _, _ -> },
+            steps = testRoundSteps(),
             key = "t",
             log = { },
             postRound = { RoundResult.Outcome(rounds.removeFirst().invoke()) },
@@ -749,8 +743,8 @@ class FoldRunnerAbandonTest {
         FoldRunner(
             emitter = h.emitter,
             postRound = { _, _ -> RoundResult.Outcome(rounds.removeFirst().invoke()) },
-            backoff = RetryBackoff { _, _ -> },
             foldRounds = FoldRounds(
+                steps = testRoundSteps(),
                 key = "t",
                 log = { },
                 reanchor = ReanchorPolicy { continuationBody() },
@@ -795,8 +789,8 @@ class FoldRunnerSearchTest {
         FoldRunner(
             emitter = h.emitter,
             postRound = { _, sink -> RoundResult.Outcome(rounds.removeFirst().invoke(sink)) },
-            backoff = RetryBackoff { _, _ -> },
             foldRounds = FoldRounds(
+                steps = testRoundSteps(),
                 key = "t",
                 log = { },
                 signals = h.signals(),
@@ -837,8 +831,8 @@ class FoldRunnerSearchTest {
         FoldRunner(
             emitter = h.emitter,
             postRound = { _, sink -> RoundResult.Outcome(rounds.removeFirst().invoke(sink)) },
-            backoff = RetryBackoff { _, _ -> },
             foldRounds = FoldRounds(
+                steps = testRoundSteps(),
                 key = "t",
                 log = { },
                 signals = h.signals(),
@@ -868,7 +862,7 @@ class RoundStrategySingleRoundTest {
         RoundStrategy(
             emitter = h.emitter,
             runners = RoundRunners(
-                backoff = RetryBackoff { _, _ -> },
+                steps = testRoundSteps(),
                 key = "t",
                 log = { },
                 signals = h.signals(),
@@ -907,7 +901,7 @@ class RoundStrategyUsageObservationTest {
             RoundStrategy(
                 emitter = h.emitter,
                 runners = RoundRunners(
-                    backoff = RetryBackoff { _, _ -> },
+                    steps = testRoundSteps(),
                     key = "t",
                     log = { },
                     signals = h.signals(),
@@ -951,7 +945,7 @@ class RoundStrategyUsageObservationTest {
         RoundStrategy(
             emitter = h.emitter,
             runners = RoundRunners(
-                backoff = RetryBackoff { _, _ -> },
+                steps = testRoundSteps(),
                 key = "t",
                 log = { },
                 signals = h.signals(),
@@ -977,7 +971,7 @@ class RoundStrategyUsageObservationTest {
         RoundStrategy(
             emitter = h.emitter,
             runners = RoundRunners(
-                backoff = RetryBackoff { _, _ -> },
+                steps = testRoundSteps(),
                 key = "t",
                 log = { },
                 signals = h.signals(),
@@ -1029,7 +1023,7 @@ class RoundRoutingEquivalenceTest {
         RoundStrategy(
             emitter = plain.emitter,
             runners = RoundRunners(
-                backoff = RetryBackoff { _, _ -> },
+                steps = testRoundSteps(),
                 key = "t",
                 log = { },
                 signals = plain.signals(),
@@ -1044,7 +1038,7 @@ class RoundRoutingEquivalenceTest {
         RoundStrategy(
             emitter = wired.emitter,
             runners = RoundRunners(
-                backoff = RetryBackoff { _, _ -> },
+                steps = testRoundSteps(),
                 key = "t",
                 log = { },
                 signals = wired.signals(),

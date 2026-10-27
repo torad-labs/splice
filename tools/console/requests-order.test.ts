@@ -1,8 +1,9 @@
 // Requests orders Newest or Highest price (fin's words, hitstop 20bfada; Marlin took price over tokens). Through the real
 // page against a daemon that keeps each command's highest priced when asked order=price and says so in `order`
-// (splice-builder): the list runs dearest first with unpriced last, no hour marks and a day on each row, a plan row keeps
-// "On your plan" with its worth under it, and the footer says the highest priced were kept. A daemon that does not echo
-// the order kept the newest, and the page says Newest over them, never Highest price.
+// (splice-builder): the list runs dearest first with unpriced last, no hour marks and a day on each row, a plan row draws
+// its worth at API prices in its cost column, hollow, with the list's key saying once what hollow means, and the footer
+// says the highest priced were kept. A daemon that does not echo the order kept the newest, and the page says Newest over
+// them, never Highest price.
 import { afterAll, beforeAll, expect, test } from "bun:test";
 import { chromium, type Browser } from "@playwright/test";
 import { existsSync } from "node:fs";
@@ -56,9 +57,11 @@ async function look(query: string) {
       order: await page.locator(".rq").evaluateAll((els) => els.map((e) => e.getAttribute("data-open"))),
       pressed: await page.locator('.switch.order [aria-pressed="true"]').innerText(),
       hours: await page.locator(".list .hour").count(),
-      // the worth sits on the top line before "On your plan", never under it beside the meta line (hitstop baa64db)
+      // a plan's worth at API prices stands in its cost column as a hollow bar, and the list's key says once what hollow
+      // means, where its top line said "On your plan" with the worth beside it (Requests' goal, Oct 26)
       plan: await page.locator('article[data-open="alpha:plan"] .top').innerText(),
-      worthBeforeCost: await page.locator('article[data-open="alpha:plan"] .top .worth + .cost').count(),
+      planCost: await page.locator('article[data-open="alpha:plan"] .co.plan .v').innerText(),
+      key: await page.locator(".lkey").innerText(),
       foot: await page.locator(".foot.held").innerText(),
     };
   } finally {
@@ -66,7 +69,7 @@ async function look(query: string) {
   }
 }
 
-test("Highest price runs dearest first, unpriced last, with no hour marks, a plan's worth under its word, and says so", async () => {
+test("Highest price runs dearest first, unpriced last, with no hour marks, a plan's worth in its cost column, hollow, and says so", async () => {
   echo = true;
   asked.length = 0;
   const seen = await look("?order=price");
@@ -74,9 +77,8 @@ test("Highest price runs dearest first, unpriced last, with no hour marks, a pla
   expect(seen.order).toEqual(["alpha:dear", "alpha:plan", "alpha:cheap", "alpha:none"]);
   expect(seen.pressed).toBe("Highest price");
   expect(seen.hours).toBe(0);
-  expect(seen.plan).toContain("On your plan");
-  expect(seen.plan).toContain("at API prices");
-  expect(seen.worthBeforeCost).toBe(1);
+  expect(seen.planCost).toBe("≈$0.500");
+  expect(seen.key).toContain("On your plan, at API prices");
   expect(seen.foot).toContain("highest priced of each command");
 }, 30_000);
 

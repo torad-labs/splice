@@ -14,7 +14,7 @@ const PILOT = (() => {
     "[role=button]", "[role=link]", "[role=tab]", "[role=switch]", "[role=checkbox]", "[role=radio]", "[role=menuitem]",
     "[role=option]", "[role=slider]", "[role=combobox]", "[data-act]", "[tabindex]:not([tabindex='-1'])",
   ].join(",");
-  const OWN = ".cmp, .pilot-ring, .pilot-note";
+  const OWN = ".cmp, .cmp-dim, .pilot-ring, .pilot-note";
   const ROW = "tr, li, [role=row], [role=listitem], article";
   const HEADING = "h1, h2, h3, h4, h5, h6, legend, caption, [role=heading]";
   const SECRET = /key|token|secret|passw|credential/i;

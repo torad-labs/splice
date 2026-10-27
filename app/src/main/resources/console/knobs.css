@@ -2,22 +2,34 @@
    Every rule sits under .kn, the wrapper a page puts around what the kit draws, so none reaches a page's own
    .pickbtn or .said. Class names checked against console.css, sessions.css, models.css and requests.css. */
 
-/* a setting: its name, its control, and what the change did. The name of one the search found carries a dot, wherever
-   the page puts the name: the kit's own form is gone and Settings draws each setting as a card. */
+/* a setting: its name, its control, and what the change did. The name of one the search found keeps the text's full
+   ink, its matched words marked in neutral (the page's mark); the key light is never a search hit. */
 .kn .lbl.lit { color: var(--text); }
-.kn .lbl.lit::before { content: ""; display: inline-block; width: .5rem; height: .5rem; margin: 0 .6rem .15rem -1.1rem; border-radius: 50%; background: var(--key-light); }
 .kn .ctl { display: flex; align-items: center; flex-wrap: wrap; gap: .9rem; min-width: 0; }
 .kn .ctl.col { flex-direction: column; align-items: flex-start; gap: .7rem; }
 .kn .line { display: flex; align-items: center; flex-wrap: wrap; gap: .9rem; }
 .kn .menuwrap { position: relative; display: inline-flex; }
 .kn .menuwrap > .menu { left: 0; right: auto; top: calc(100% + .5rem); z-index: 20; }
 .kn .menu button { display: flex; align-items: baseline; justify-content: space-between; gap: 1.1rem; }
-.kn .menu button[aria-current="true"] { box-shadow: inset .25rem 0 0 var(--key-light); }
+/* the setting a menu is showing: the picked row's own rule, in the text's ink (console.css .picked), never the key */
+.kn .menu button[aria-current="true"] { box-shadow: inset .25rem 0 0 var(--sel-ink); }
 .kn .mmeta { font: 500 .88rem/1 var(--font-data); color: var(--text-mute); }
 .kn .pickbtn { --c: var(--key-light); justify-content: space-between; min-width: 10.5rem; }
 .kn .custom { display: inline-flex; align-items: center; gap: .55rem; }
 .kn .custom .field { width: 6.5rem; text-align: right; font: 500 .95rem/1 var(--font-data); padding: .65rem .8rem; }
+/* A TEXT SETTING SHOWS ALL IT HOLDS (Oct 26): an address, a path or a service name in a number's 6.5rem box read
+   "https://(" and "~/.confi" (Version's and MCP servers' Advanced, at 1440 and 3822). It takes the room left on its
+   line and reads from the left, as text does. A blank number is as wide as the words that say what blank means. */
+/* A FIELD IS NEVER NARROWER THAN ITS VALUE READS (Oct 27): the same text fields stood in 26 to 56 px boxes inside a
+   pane's own grid of pairs, where the cell they land in may be narrower than the words, and clipped an address to two
+   characters. The box has a floor and the line wraps instead (.ctl wraps), so a value is read or the row grows. */
+.kn .custom.wide { flex: 1 1 16rem; min-width: min(100%, 11rem); }
+.kn .custom.wide .field { flex: 1 1 0; width: 0; min-width: min(100%, 8rem); text-align: left; }
+.kn .custom .field[size] { width: auto; }
 .kn .custom em { font: 500 .9rem/1 var(--font-data); font-style: normal; color: var(--text-mute); }
+/* a blank field says what blank means ("Off", "Automatic") in its own box, and a unit after those words read
+   "Off tokens out": the unit shows only once there is a number for it to measure */
+.kn .custom .field:placeholder-shown + em { display: none; }
 .kn .said { display: inline-flex; align-items: center; gap: .45rem; font: 500 .9rem/1 var(--font-name); color: var(--text-body); white-space: nowrap; }
 .kn .said .wait { width: 1.1rem; height: 1.1rem; --c: var(--text-body); }
 .kn .said.ok { color: var(--live); }
@@ -27,20 +39,55 @@
 .kn .said.limit { color: var(--limit); }
 .kn .fixed { font: 500 .95rem/1 var(--font-data); color: var(--text); display: inline-flex; align-items: center; min-height: var(--ctl-h); }  /* a value with no control stands where one would */
 .kn .from { display: inline-flex; align-items: center; gap: .45rem; font: 500 .9rem/1.2 var(--font-name); color: var(--text-mute); }
-/* where a value comes from, and Live or Applies on restart: two quiet tags at the row's far end, after the value and what
-   a change did (hitstop, Oct 13). The source is Models' Default tag; Live, on most rows, is quieter still; the rarer
-   Applies on restart takes the border so it stands out */
+/* AN EXCEPTION IS A MARK, AND THE SECTION NAMES IT ONCE (Oct 26, from "show don't tell"): the ordinary row — splice's
+   default, changed live — carries nothing at its far end. A value that is changed, from the file, from the shell, gone
+   at the next start or read only at a start carries its glyph there, named in its title and in the section's legend. */
 .kn .ctl.col > .line { align-self: stretch; }
-.kn .tags { display: inline-flex; align-items: center; gap: .5rem; margin-left: auto; }
-.kn .tag { display: inline-flex; align-items: center; font: 500 .85rem/1 var(--font-data); color: var(--text-body); border: .1rem solid var(--track-line); border-radius: var(--r-in); padding: .3rem .5rem; white-space: nowrap; }
-.kn .tag.when { color: var(--text-mute); border-color: transparent; }
-.kn .tag.when.later { color: var(--text-body); border-color: var(--track-line); }
-.kn .tag.lock svg { width: 1rem; height: 1rem; }
+.kn .marks { display: inline-flex; align-items: center; gap: .45rem; flex: none; }
+.kn .mk { display: inline-flex; color: var(--text-mute); transition: color var(--t-hover) var(--e-out); }
+.kn .mk svg { width: 1.05rem; height: 1.05rem; }
+.kn .mk.changed svg { width: .62rem; height: .62rem; }
+.kn .mk.changed { color: var(--text-body); }
+.kn .mk.unsaved { color: var(--limit); }
+.kn .ctl:hover .mk, .kn .kin:hover .mk { color: var(--text-body); }
+.kn .ctl:hover .mk.unsaved { color: var(--limit); }
+.kn .legend { display: inline-flex; align-items: center; flex-wrap: wrap; gap: 0 1.1rem; }
+.kn .legend .lg { display: inline-flex; align-items: center; gap: .4rem; font: 500 .85rem/1.4 var(--font-name); color: var(--text-mute); white-space: nowrap; }
+.kn .legend .lg svg { width: 1rem; height: 1rem; stroke: currentColor; fill: none; }
+.kn .legend .lg svg[viewBox]:not([stroke]) circle[fill] { fill: currentColor; }
 .kn code { font: 500 .88rem/1 var(--font-data); color: var(--text-body); background: var(--obj-sunk); border-radius: .3rem; padding: .2rem .4rem; }
-.kn .act.one { opacity: .75; }
-.kn .ctl:hover .act.one, .kn .act.one[aria-expanded="true"] { opacity: 1; }
+/* the empty slot that makes an exception: dashed, like every "add" on the console, at a chip's own size, and quiet
+   until the row is under the eye (console.css sizes .add as a full-width tile, which a row's end is not) */
+.kn .chip.add.one {
+  width: auto; min-height: 0; gap: .4rem; padding: .32rem .6rem .32rem .45rem; opacity: .72; cursor: pointer;
+  font: 500 .9rem/1 var(--font-name); color: var(--text-body); box-shadow: none;
+  transition: opacity var(--t-hover) var(--e-out), color var(--t-hover) var(--e-out), border-color var(--t-hover) var(--e-out);
+}
+.kn .ctl:hover .chip.add.one, .kn .chip.add.one[aria-expanded="true"] { opacity: 1; }
+.kn .chip.add.one:hover { border-style: solid; border-color: var(--text-mute); color: var(--text); background: transparent; }
+.kn .chip.add.one svg { width: .95rem; height: .95rem; }
+/* commands that agree read as one group: the value once, its commands under it */
+.kn .ogrp { display: inline-flex; align-items: center; flex-wrap: wrap; gap: .4rem; padding: .2rem .5rem .2rem .2rem; border: .12rem solid var(--track-line); border-radius: var(--r-in); }
+.kn .ogrp > .v { font: 600 .9rem/1 var(--font-data); color: var(--text); margin: 0 .3rem 0 .35rem; }
+.kn .off { opacity: .62; }
+/* the setting that turns a dimmed one on, named where the reason is: pressing it brings that row into view */
+.kn .note { display: inline-flex; align-items: baseline; flex-wrap: wrap; gap: .3rem; font: 500 .92rem/1.3 var(--font-name); color: var(--text-mute); }
+.kn .seerow { padding: 0; border: 0; background: none; cursor: pointer; font: 500 .92rem/1.3 var(--font-name); color: var(--text-body); text-decoration: underline; text-decoration-color: var(--track-line); text-underline-offset: .2em; transition: color var(--t-hover) var(--e-out), text-decoration-color var(--t-hover) var(--e-out); }
+.kn .seerow:hover { color: var(--text); text-decoration-color: currentColor; }
 .kn .blot { width: .75rem; height: .75rem; border-radius: 50%; background: var(--c); box-shadow: 0 0 0 .1rem var(--ink); flex: none; }
 .kn .menu button:has(.blot) { justify-content: flex-start; gap: .7rem; }
+/* the command picker, grouped by the value each command runs now: the group's value on its own line, and each command
+   in the data face a command wears on every chip */
+.kn .cmdmenu { min-width: 17rem; }
+.kn .cmdmenu .mgroup + .mgroup { margin-top: .3rem; padding-top: .3rem; box-shadow: 0 -.1rem 0 var(--track-line); }
+.kn .cmdmenu .mgh { display: flex; align-items: baseline; justify-content: space-between; gap: 1.1rem; padding: .55rem .75rem .3rem; font: 600 .78rem/1.2 var(--font-name); letter-spacing: .06em; text-transform: uppercase; color: var(--text-mute); }
+.kn .cmdmenu .mgh b { font: 500 .88rem/1 var(--font-data); letter-spacing: 0; text-transform: none; color: var(--text-body); }
+.kn .cmdmenu [role="menuitem"] { font-family: var(--font-data); font-size: .92rem; }
+/* A REFUSED VALUE SHAKES ONCE where he is looking (console.css's shake, 300 ms): only the drawing right after the
+   refusal carries the mark, so the field or the menu button moves once and "Not saved" stays beside it */
+.kn [data-shook] { animation: shake 300ms var(--e-out) 1; }
+/* applied and not written: the legend's own mark and words for it, so the row and the legend say one thing */
+.kn .said.gone svg { width: 1.05rem; height: 1.05rem; flex: none; }
 
 /* one command's own value, under the value every other command has, with the way back to it */
 .kn .over { display: flex; flex-wrap: wrap; align-items: center; gap: .6rem .8rem; padding-left: .85rem; border-left: .2rem solid var(--track-line); }
@@ -50,6 +97,7 @@
 .kn .back {
   display: inline-flex; align-items: center; gap: .45rem; padding: .45rem .7rem .45rem .55rem; cursor: pointer;
   font: 500 .9rem/1 var(--font-data); color: var(--text-mute); background: transparent; border: .12rem dashed var(--track-line); border-radius: var(--r-in);
+  transition: color var(--t-hover) var(--e-out), border-color var(--t-hover) var(--e-out);
 }
 .kn .back svg { width: .95rem; height: .95rem; }
 .kn .back:hover { color: var(--text); border-style: solid; border-color: var(--text-mute); }
@@ -65,5 +113,5 @@
 .kn .mchip .icon { width: 1.5rem; height: 1.5rem; }
 .kn .mchip .icon svg { width: .95rem; height: .95rem; }
 
-/* a command's own settings on Models */
-.kn .only .word, .kn .only.every { font: 500 .9rem/1.2 var(--font-name); color: var(--text-mute); }
+/* the commands a setting acts on at all */
+.kn .only .word { font: 500 .9rem/1.2 var(--font-name); color: var(--text-mute); }

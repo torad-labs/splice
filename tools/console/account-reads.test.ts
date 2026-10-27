@@ -65,10 +65,11 @@ test("Compare names the login the order route says is next, and leaves off a poo
   try {
     await page.goto(`http://127.0.0.1:${server.port}/compare.html`);
     await page.locator("[data-act=add]").click({ timeout: 15_000 });
-    await page.locator("button.pg-pill").first().waitFor({ timeout: 15_000 });
-    const keys = await page.locator("button.pg-pill").evaluateAll((pills) => pills.map((p) => p.getAttribute("data-key")));
+    // the picker is a board of command cards now, a model a row on its command's card, the login on the card's head
+    await page.locator("button.pg-mrow").first().waitFor({ timeout: 15_000 });
+    const keys = await page.locator("button.pg-mrow").evaluateAll((rows) => rows.map((r) => r.getAttribute("data-key")));
     expect([...new Set(keys)].sort()).toEqual(["claude", "codex"]);
-    expect(await page.locator(".pg-group .acct").allInnerTexts()).toContainEqual(expect.stringContaining("Home login"));
+    expect(await page.locator(".pg-cmd .pg-ch .pg-an").allInnerTexts()).toContainEqual(expect.stringContaining("Home login"));
   } finally {
     await page.close();
   }

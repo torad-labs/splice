@@ -63,7 +63,10 @@ test("teams keeps Read again off while its read is out", () => reading("teams", 
   expect(await p.locator('.head [data-act="read"]').isDisabled()).toBe(true);
 }), 30_000);
 
+// Breakdown is the "Where it went" band now and Results by command its own band (the Usage rebuild, Oct 26): each draws
+// its own table in stripes, in the band its rows land in
 test("usage draws Breakdown and Commands in the frames they land in, one card each", () => reading("usage", async (p) => {
-  expect(await p.locator(".breakdown > .card .ghost").count()).toBeGreaterThan(3);
-  expect(await p.locator(".lower .card.gcard").count()).toBe(2);
+  expect(await p.locator("#band-by .card .ghost").count()).toBeGreaterThan(3);
+  expect(await p.locator("#band-by .card.ghosted").count()).toBe(1);
+  expect(await p.locator("#band-perf .card.ghosted").count()).toBe(1);
 }), 30_000);

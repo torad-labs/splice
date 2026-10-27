@@ -52,16 +52,24 @@ afterAll(async () => {
   server.stop(true);
 });
 
-test("a plan request reads On your plan with its API-price worth under it; a key request keeps its cost alone", async () => {
+// The list draws a plan request's worth at API prices in its cost column as a hollow bar with its figure muted, and its
+// key says once what hollow means (Requests' goal, Oct 26: "A plan row draws its worth at API prices as a hollow bar with
+// its figure muted. The list's key says once what hollow means."), where each plan row read "On your plan" and no "$".
+test("a plan request draws its API-price worth hollow, the list's key says On your plan once; a key request keeps its cost alone", async () => {
   // This walk closes its overlay; side-by-side panes intentionally hide that control.
   const page = await browser.newPage({ viewport: { width: 1100, height: 900 } });
   try {
     await page.goto(`http://127.0.0.1:${server.port}/requests.html`);
     const card = (turn: string) => page.locator(`article[data-open="codex:${turn}"]`);
     await expect(card("onplan")).toBeVisible({ timeout: 20_000 });
-    await expect(card("onplan")).toContainText("On your plan");
-    await expect(card("onplan")).not.toContainText("$");
-    await expect(card("onkey")).toContainText("≈$0.120");
+    const fill = (turn: string) => card(turn).locator(".co .cbar > b").evaluate((b) => getComputedStyle(b).backgroundColor);
+    await expect(card("onplan").locator(".co .v")).toHaveText("≈$0.053");
+    expect(await card("onplan").locator(".co.plan").count()).toBe(1);
+    expect(await fill("onplan")).toBe("rgba(0, 0, 0, 0)");
+    await expect(page.locator(".lkey")).toContainText("On your plan, at API prices");
+    await expect(card("onkey").locator(".co .v")).toHaveText("≈$0.120");
+    expect(await card("onkey").locator(".co.plan").count()).toBe(0);
+    expect(await fill("onkey")).not.toBe("rgba(0, 0, 0, 0)");
 
     const cost = page.locator(".rqpane .fig").filter({ hasText: "Cost" });
     await card("onplan").click();

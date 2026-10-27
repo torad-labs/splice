@@ -87,6 +87,7 @@ test("Set for one command gives a command its own value, saved for that command 
   const page = await busy();
   try {
     const row = ctl(page, "maxInflight");
+    const scope = page.locator('section.psec:has([data-row="maxInflight"]) > .sechead .sc');
     await row.getByRole("button", { name: "Set for one command" }).click();
     await expect(row.locator(".menu [role=menuitem]")).toHaveText(["alpha", "beta"]);
     await row.locator(".menu [role=menuitem]", { hasText: "beta" }).click();
@@ -95,7 +96,10 @@ test("Set for one command gives a command its own value, saved for that command 
     await expect(line).toContainText("Applied");
     expect(writes).toEqual([{ head: "beta", body: { maxInflight: 100 } }]);
     await expect(line.locator(".pickbtn")).toHaveText("100");
-    await expect(row.locator(".only.every")).toHaveText("Every other command");
+    // the shared value stands for every other command, as the section's scope line says once for all its rows, where
+    // the row itself read "Every other command" (Settings' report, Oct 26: said once per section, on the kicker's line)
+    await expect(row.locator(":scope > .line .pickbtn")).toHaveText("12");
+    await expect(scope).toHaveText("Every command, unless one is named");
     await expect(row.getByRole("button", { name: "Set for one command" })).toBeVisible(); // alpha can still have its own
 
     // the pick shows the value it replaced, struck, with Undo, which sends that value back: none of its own (gap 458)
@@ -103,7 +107,10 @@ test("Set for one command gives a command its own value, saved for that command 
     await line.getByRole("button", { name: "Undo" }).click();
     await expect(row.locator(".over")).toHaveCount(0);
     expect(writes[1]).toEqual({ head: "beta", body: { maxInflight: null } });
-    await expect(row.locator(".only.every")).toHaveText("Every command");
+    // back to one value for every command: no command is named on the row, and the scope line says so
+    expect(await row.locator(".owners .chip.own").count()).toBe(0);
+    await expect(row.locator(":scope > .line .pickbtn")).toHaveText("12");
+    await expect(scope).toHaveText("Every command, unless one is named");
   } finally {
     await page.close();
   }

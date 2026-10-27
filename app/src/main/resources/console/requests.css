@@ -1,29 +1,29 @@
-/* Requests, in the Sessions language (console.css, sessions.css): each request a cel slip docked on the time rail, its
-   outcome the lamp in the socket, the hour marked on the rail where it turns. The open request sits beside the list with
-   its sends on one time rail, its tokens and cost, and both bodies. Built for 3828 first; where both don't fit, the
-   open request takes the page and Close brings the list back. Class names checked against the shared sheets:
-   .failed shakes (console.css), .send, .fold and .s are Sessions' own. */
+/* Requests: every request splice handled in a window, as one table on one card (Usage's results table is the model),
+   under a band that answers the window before a row is read (kit DRAW: the hero, the stacked bar, the range bars, the
+   ring). EVERY ROW ON THE SAME COLUMNS: its tokens, its time and its cost are bars on the column's shared scale, named
+   once in the column header. The open request unfolds under its row, inside the table, at every width, so the page is
+   the one scroll. Class names checked against the shared sheets: .failed shakes (console.css), .send, .fold and .s are
+   Sessions' own, .card .top, .card .plan, .meta, .pane and .nomatch are theirs too and are set here where a row uses
+   the same words. */
 
 .head .search { width: 30rem; }
 
 /* ---------- the filters: what /api/perf/turns takes, one button each ---------- */
-.filters-row { margin: -.9rem 0 1.4rem 2.6rem; }
+.filters-row { margin: 0 0 calc(3 * var(--u)); }
 /* the pick on its own line above the filters (PROJECTS.md): the picker where the filters start, the tiles page-wide */
-.pickline:not(:empty) { margin: -.9rem 0 1rem; }
-.pickline .lhead { margin-left: 2.6rem; }
-.pickline:not(:empty) + .filters-row { margin-top: 0; }
-/* the tiles run from the page's edge, so the filters under them start there too (Marlin, 3828) */
-.pickline:has(> .ptiles) + .filters-row { margin-left: 0; }
-.filters { display: flex; flex-wrap: wrap; align-items: center; gap: .8rem; }
+.pickline:not(:empty) { margin: 0 0 calc(1.5 * var(--u)); }
+.filters { display: flex; flex-wrap: wrap; align-items: center; gap: calc(1.2 * var(--u)); }
 .fwrap { position: relative; display: inline-flex; }
 .fbtn {
   display: inline-flex; align-items: center; gap: .55rem; font: 500 .92rem/1 var(--font-name); color: var(--text-body); white-space: nowrap;
   background: var(--obj-sunk); border: .12rem solid var(--track-line); border-radius: var(--r-in); padding: .55rem .8rem; cursor: pointer;
+  transition: border-color var(--t-snap) var(--e-out), color var(--t-snap) var(--e-out);
 }
 .fbtn:hover { color: var(--text); border-color: var(--text-mute); }
 .fbtn .down { width: .95rem; height: .95rem; color: var(--text-mute); }
-.fbtn.on { color: var(--text); border-color: var(--key-ink); padding-right: 2.4rem; }
+.fbtn.on { color: var(--text); border-color: var(--text); padding-right: 2.4rem; }  /* a filter that is on is a selection: neutral ink */
 .fbtn.on .down { display: none; }
+.fbtn .pd-sw { margin-right: -.1rem; }  /* an outcome's chip carries its part's swatch from the band's bar */
 .fclear {
   position: absolute; right: .3rem; top: 50%; transform: translateY(-50%); width: 1.7rem; height: 1.7rem; display: grid; place-items: center;
   border: 0; background: none; color: var(--text-body); border-radius: .3rem; cursor: pointer;
@@ -31,23 +31,24 @@
 .fclear:hover { background: var(--track); color: var(--text); }
 .fclear svg { width: .95rem; height: .95rem; }
 .filters .blot, .fmenu .blot { display: inline-block; flex: none; width: .8rem; height: .8rem; border-radius: 50%; background: var(--c); box-shadow: 0 0 0 .1rem var(--ink); }
-.fmenu { left: 0; right: auto; top: calc(100% + .5rem); max-height: 34rem; overflow-y: auto; }
+/* what each toggle would list, counted by the daemon over the window (requests.js filtersHtml) */
+.filters .n { margin-left: .5rem; font: 500 .84rem/1 var(--font-data); font-variant-numeric: tabular-nums; color: var(--text-mute); }
+.filters [aria-pressed="true"] .n { color: var(--text-body); }
+.fmenu { left: 0; right: auto; top: calc(100% + .5rem); max-height: 34rem; overflow-y: auto; animation: menu-in var(--t-snap) var(--e-out) both; }
+@keyframes menu-in { from { opacity: 0; transform: translateY(-.3rem); } }
 .fmenu button { display: flex; align-items: center; gap: .7rem; position: relative; }
-.fmenu button[aria-checked="true"]::before { content: ""; position: absolute; left: -.4rem; top: .5rem; bottom: .5rem; width: .22rem; background: var(--key-light); border-radius: 0 .15rem .15rem 0; }
+.fmenu button[aria-checked="true"]::before { content: ""; position: absolute; left: -.4rem; top: .5rem; bottom: .5rem; width: .22rem; background: var(--text); border-radius: 0 .15rem .15rem 0; }
+/* an item's count with its share of the menu's largest, so the busiest is found before a digit is read */
+.fmenu .mc { display: inline-flex; align-items: center; gap: .6rem; margin-left: auto; padding-left: 1.4rem; }
+.fmenu .mc .vbar { flex: none; width: 3.6rem; }
+.fmenu .mn { min-width: 2.6rem; text-align: right; font: 500 .86rem/1 var(--font-data); font-variant-numeric: tabular-nums; color: var(--text-mute); }
+.fmenu button.idle { color: var(--text-mute); }  /* a command with nothing in the window: last, and quiet */
 .fmenu .blots { display: inline-flex; gap: .25rem; width: 1.6rem; flex: none; }
 .fmenu .sname { flex: 1; }
-.fmenu .aname { display: flex; flex-direction: column; gap: .3rem; white-space: nowrap; }  /* an account, with its provider under it */
-.fmenu .aprov { font: 500 .88rem/1 var(--font-data); color: var(--text-mute); }
-/* A READ THAT REFUSED SAYS SO WHERE IT HAPPENED: the command and one word, above the rows it is missing from, or under
-   the rows for a search; the reason goes to the browser's log (fin). One command that cannot answer is not an empty day. */
-.list > :not(.list-wait) + .list-wait { margin-top: .75rem; }
-.list-wait { display: flex; align-items: center; gap: .55rem; margin: 0 0 .75rem 0; font: 500 .92rem/1.45 var(--font-data); color: var(--text-mute); }
-.list-wait .wait { --c: var(--text-mute); width: 1.1rem; height: 1.1rem; }
-.list-wait.unread { color: var(--limit); }
-.list-wait:has(+ .list-wait) { margin-bottom: .35rem; }
-
-/* what the list holds against what the window counted, and how far back a search read */
-.list .foot { margin: .8rem 0 .2rem 0; font: 500 .88rem/1.4 var(--font-data); color: var(--text-mute); }
+/* the accounts under each command's name and dot, so the command is said once for its accounts */
+.fmenu .mgroup { display: flex; align-items: center; gap: .55rem; margin: .55rem .2rem .2rem; font: 500 .8rem/1.2 var(--font-name); color: var(--text-mute); }
+.fmenu .mgroup:first-of-type { margin-top: .35rem; }
+.fmenu .mgroup + button, .fmenu .ingroup { padding-left: 1.6rem; }
 .fmenu .mfoot { margin: .35rem .2rem .1rem; font: 500 .88rem/1.3 var(--font-data); color: var(--text-mute); }
 .fmenu .swhen { font: 500 .88rem/1 var(--font-data); color: var(--text-mute); margin-left: 1.2rem; }
 /* Up to: a day and time to list the requests up to, under the windows it chooses between (Marlin, desk c, Oct 12) */
@@ -60,111 +61,294 @@
 .fmenu .days { display: flex; flex-wrap: wrap; gap: .2rem .3rem; margin: .35rem 0 .1rem; max-width: 20rem; }
 .fmenu .days button { flex: none; padding: .5rem .6rem; }
 .fmenu .days button[aria-checked="true"]::before { left: .5rem; right: .5rem; top: auto; bottom: .1rem; width: auto; height: .2rem; border-radius: .1rem; }  /* in a row the picked day is underlined, not barred on its left */
+/* a toggle is a control like the pickers, so its rim is solid; a dashed rim on this console means "add" */
 .ftog {
-  display: inline-flex; align-items: center; gap: .55rem; font: 500 .92rem/1 var(--font-name); color: var(--text-mute); white-space: nowrap;
-  background: none; border: .12rem dashed var(--track-line); border-radius: var(--r-in); padding: .55rem .8rem; cursor: pointer;
+  display: inline-flex; align-items: center; gap: .55rem; font: 500 .92rem/1 var(--font-name); color: var(--text-body); white-space: nowrap;
+  background: none; border: .12rem solid var(--track-line); border-radius: var(--r-in); padding: .55rem .8rem; cursor: pointer;
+  transition: border-color var(--t-snap) var(--e-out), color var(--t-snap) var(--e-out);
 }
-.ftog svg { width: 1.1rem; height: 1.1rem; flex: none; fill: none; stroke: var(--key-ink); stroke-width: 2.4; stroke-linecap: round; stroke-linejoin: round; }  /* the rows' own marks, drawn as the lamp draws them */
-.ftog i.tick { width: .22rem; height: 1.1rem; margin: 0 .3rem; border-radius: .1rem; background: var(--key-ink); flex: none; }
-.ftog:hover { color: var(--text); }
-.ftog[aria-pressed="true"] { color: var(--text); border-style: solid; border-color: var(--key-ink); }
-
-/* ---------- the list and the open request, side by side when both fit ---------- */
-.requests { display: block; }
-.requests .list { position: relative; display: flex; flex-direction: column; gap: .8rem; padding-left: 2.6rem; min-width: 0; }
-.requests .list::before {                 /* the time rail the requests dock into */
-  content: ""; position: absolute; left: .7rem; top: .8rem; bottom: .8rem; width: .6rem;
-  background: var(--rail); border-radius: .3rem; box-shadow: 0 0 0 var(--ink-w) var(--ink);
-}
-.requests.open .list { display: none; }
-.requests.open .pane { display: flex; }
-.page { --side-by-side: 120; } /* kit.js sideBySide() reads this: the same 120rem as the container query below */
-@container (min-width: 120rem) {
-  .requests, .requests.open { display: flex; align-items: flex-start; gap: var(--gap-col); }
-  .requests .list, .requests.open .list { display: flex; flex: 0 0 58rem; }
-  .requests.open .pane { flex: 1 1 0; max-width: 112rem; position: sticky; top: calc(var(--bar-h) + 1rem); height: calc(100vh - 11rem - var(--bar-h)); overflow: hidden; }
-  .requests.open .rqpane .scroll { overflow-y: auto; }
-  .requests .pane .close { display: none; } /* beside the list there is nothing to bring back; below 120rem Close does */
-}
-/* A WIDER SCREEN MUST NOT GIVE THE LIST LESS THAN A NARROW ONE. The column is a fraction of a 3828-wide screen while
-   the page keeps tens of rem unused, so his widest screen was the one width where a row's meta line ran out of room
-   and wrapped (splice-lead, Oct 11). The step is where it can be paid for: from 160rem the list takes 64rem and the
-   open request still holds more than it has at the breakpoint above. 64rem is what a row needs at this scale — a
-   command, a model name, his plan account's whole email address and both token figures on one line — so from here
-   the list is never narrower than it is at 1440, where that line already fits. */
-@container (min-width: 160rem) {
-  .requests .list, .requests.open .list { flex: 0 0 64rem; }
-}
-/* where the open request takes the page, it grows with what it holds and the page scrolls */
-.requests .rqpane { height: auto; overflow: visible; }
-.requests .rqpane .scroll { overflow: visible; }
-.requests .rqpane > header { border-radius: calc(var(--r-obj) - .12rem) calc(var(--r-obj) - .12rem) 0 0; }
-.requests .list:has(.nomatch)::before { content: none; }
-
-/* ---------- a request: one slip ---------- */
-.rq { cursor: pointer; padding: .6rem .95rem .65rem; box-shadow: .3rem .3rem 0 var(--c), .3rem .3rem 0 var(--ink-w) var(--ink); }
-.rq:hover { background: var(--obj-high); }
-.rq[aria-current="true"] { border-color: var(--key-ink); }
-.rq .lamp { top: .45rem; left: -2.65rem; width: 2rem; height: 2rem; }
-.rq .top { gap: .8rem; min-height: 1.7rem; }
-.rq time { font: 500 .95rem/1 var(--font-data); color: var(--text-mute); font-variant-numeric: tabular-nums; width: 6.8rem; flex: none; }
-.rq .name { font: 500 1rem/1.15 var(--font-name); color: var(--text); background: none; border: 0; padding: 0; cursor: pointer; text-align: left; flex: 0 1 auto; }
-.rq .dur { margin-left: auto; font: 500 .95rem/1 var(--font-data); color: var(--text-body); font-variant-numeric: tabular-nums; white-space: nowrap; }
-.rq .cost { font: 500 .95rem/1 var(--font-data); color: var(--text); min-width: 5.6rem; text-align: right; white-space: nowrap; }
-.rq .cost.gap { font: 500 .95rem/1 var(--font-name); color: var(--text-mute); }
-.rq .meta { margin-top: .35rem; padding-left: 7.6rem; gap: .35rem .9rem; font-size: .88rem; }
-.tok em { font-style: normal; color: var(--text-mute); margin-left: .4rem; }
-/* NOTHING BREAKS MID-NAME. The meta line wraps where it must, as its row gap is there for; what it must not do is
-   break a model name or an account across two lines ("Claude Opus" over "5"), which is what a flex line does to a
-   span it is allowed to squeeze. Live, Oct 10: a plan account is his whole email address and a model name is three
-   words, so this line was a few characters over its width on most rows at the narrow column — which is why the
-   column is wider from 160rem up (above). Each piece stays whole and the line wraps between pieces. A session's
-   name is as long as he made it, so that one ends in an ellipsis rather than pushing the duration and the cost
-   off the row; the open request shows it whole. */
-.rq .meta > * { white-space: nowrap; }
-/* and the two token figures are ONE piece: a line that must wrap breaks before the pair, never between them, so
-   no row is left with "4 out" alone under a neighbour that kept both (requests.js, rowHtml) */
-.rq .meta .toks { display: inline-flex; align-items: center; gap: .4rem .9rem; white-space: nowrap; }
-.rq .name { min-width: 4rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.tok { color: var(--text-body); }
-.tok.quiet { color: var(--text-mute); }
-.rq .meta .door { background: none; border: 0; padding: 0; font: inherit; cursor: pointer; text-decoration: underline dotted; text-underline-offset: .2em; }
-.rq.fail { box-shadow: .3rem .3rem 0 var(--limit), .3rem .3rem 0 var(--ink-w) var(--ink); }  /* a failure keeps its edge in the limit's colour */
-/* what the search found, in the body it was found in */
-.match { margin: .45rem 0 0 7.6rem; font: 500 .9rem/1.35 var(--font-data); color: var(--text-body); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.match .where { font: 500 .88rem/1 var(--font-name); color: var(--text-mute); margin-right: .6rem; }
-
-
-/* the hour, on the rail where it turns */
-.hour { position: relative; margin: .7rem 0 -.1rem -2.6rem; height: 1.8rem; display: flex; align-items: center; }
-.hour:first-child { margin-top: 0; }
-.hour .act { margin-left: auto; }  /* the day before, at the right end of the new day's heading */
-.hour span {
-  font: 600 .88rem/1 var(--font-data); color: var(--splice-cream); background: var(--socket); padding: .4rem .55rem; border-radius: .35rem;  /* the socket is dark in both themes */
-  box-shadow: 0 0 0 var(--ink-w) var(--ink), inset 0 0 0 .14rem var(--rail);
-}
-.list .more { display: flex; align-items: center; gap: .9rem; margin-top: .75rem; }
-.list .more .count { font: 500 .92rem/1 var(--font-data); color: var(--text-mute); }
-
-
-/* the search sits where the head holds its tools */
+.ftog svg { width: 1.1rem; height: 1.1rem; flex: none; fill: none; stroke: currentColor; stroke-width: 2.4; stroke-linecap: round; stroke-linejoin: round; }  /* the rows' own marks, drawn as the lamp draws them */
+.ftog i.tick { width: .22rem; height: 1.1rem; margin: 0 .3rem; border-radius: .1rem; background: currentColor; flex: none; }
+.ftog:hover { color: var(--text); border-color: var(--text-mute); }
+.ftog.none:not([aria-pressed="true"]) { color: var(--text-mute); border-color: color-mix(in oklab, var(--track-line) 60%, transparent); }  /* none in the window: quiet, still there */
+.ftog[aria-pressed="true"] { color: var(--sel-ink); background: var(--sel-face); border-color: var(--sel-line); }  /* a filter that is on is the selected look */
 .head .tools { position: relative; display: flex; align-items: center; gap: .8rem; }
-.filters > .switch.order { margin-left: auto; } /* the order is not a filter: it sits apart, at the row's end */
-/* in Highest price, a plan row's worth sits on the top line before "On your plan": the meta line's pieces are all whole,
-   so the top line, where the session name already gives way, is what makes room (hitstop baa64db, Oct 12) */
-.rq .top .worth { font: 500 .85rem/1 var(--font-data); color: var(--text-mute); white-space: nowrap; }
 
-/* ---------- reading: the list's own shape, hollow (Marcos, Oct 12); the bars themselves are console.css's .ghost ---------- */
-.ghost.nm { height: 1rem; }
-.ghost.end { margin-left: auto; }
-.rq .meta .ghost.chip { height: 1.4rem; box-shadow: 0 0 0 .1rem var(--ink); }
-.ghost-rq { --c: var(--track); }
-.ghost-rq .meta { display: flex; align-items: center; }
+/* ---------- the band: did it go wrong, was it slow, what did it use ---------- */
+/* four sections side by side where they fit (from 110rem, so 1440 too: stacked two by two the band took half its
+   screen and the list began under the fold), each a kicker over its drawing. Narrower, two columns that stack on their
+   own, how it went (outcomes over times) beside what it used (tokens over cost), so a short section never leaves a
+   hole beside a tall one. Between two of them 4u, a hairline and 4u, the plate's own rhythm, standing up between
+   columns and lying down inside one. */
+.rqband-row:empty { display: none; }
+.rqband-row { margin: 0 0 calc(4 * var(--u)); }
+.plate.rqband { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); column-gap: calc(4 * var(--u)); }
+.rqband .bcol { display: flex; flex-direction: column; min-width: 0; }
+.rqband .bcol > .psec + .psec { margin-top: calc(4 * var(--u)); padding-top: calc(4 * var(--u)); border-top: .08rem solid var(--hair); }
+.rqband .bcol + .bcol { padding-left: calc(4 * var(--u)); border-left: .08rem solid var(--hair); }
+@container (min-width: 110rem) {
+  .plate.rqband { grid-template-columns: minmax(0, 1.15fr) minmax(0, 1.15fr) minmax(0, .95fr) minmax(0, .95fr); }
+  .rqband .bcol { display: contents; }
+  .rqband .bcol > .psec + .psec { margin-top: 0; padding-top: 0; border-top: 0; }
+  .rqband .bcol > .psec + .psec, .rqband .bcol + .bcol > .psec { padding-left: calc(4 * var(--u)); border-left: .08rem solid var(--hair); }
+}
+/* Times in a narrow column: each stage's name and figures on one line and its track under them across the column, so
+   the track keeps the length its log axis needs; the legend under the kicker, the axis under the tracks, the count of
+   answers under the axis. Wide, the kit's own four columns. */
+.rqband .pd-stages { container: rqtimes / inline-size; }
+@container rqtimes (max-width: 36rem) {
+  .rqband .pd-stages .pd-grid { grid-template-columns: minmax(0, 1fr) 4.2rem 4.6rem; row-gap: .45rem; }
+  .rqband .pd-stages .sechead > .pd-leg, .rqband .pd-stages .pd-st > .pd-trk, .rqband .pd-stages .pd-st > .ghost.range { grid-column: 1 / -1; grid-row: 2; }
+  .rqband .pd-stages .pd-axis > .pd-ax { grid-column: 1 / -1; grid-row: 1; }
+  .rqband .pd-stages .pd-axis > .pd-sl { grid-column: 1 / -1; grid-row: 2; padding-top: 0; }
+  .rqband .pd-stages .pd-axis > span:empty { display: none; }
+}
+.rqband .sechead .miss { display: inline-flex; align-items: center; gap: .5rem; font: 500 .84rem/1.2 var(--font-name); color: var(--text-mute); }
+.rqband .sechead > .pd-count:first-of-type { margin-left: auto; }  /* what a section counts rides the kicker line's end */
+.rqband .pd-seg.on { box-shadow: inset 0 0 0 .16rem var(--text); }  /* the part the list is filtered to */
+.rqband .pd-lb:has(> .pd-sw.on) { color: var(--text); text-decoration: underline; text-underline-offset: .2em; }
+.rqband .pd-sl small { white-space: nowrap; }
+.rqband .pd-stats { row-gap: calc(2 * var(--u)); }
+/* the kinds of failure: each a door, its count on one scale with the others, the commonest first; the kind he pressed
+   in the selected look */
+.rqband .kinds { display: flex; flex-direction: column; gap: .1rem; }
+.kr { display: grid; grid-template-columns: minmax(0, 1fr) minmax(7rem, 1.15fr); align-items: center; column-gap: calc(2 * var(--u)); margin: 0 -.45rem; padding: .3rem .45rem; border-radius: var(--r-in); color: inherit; text-decoration: none; transition: background var(--t-hover) var(--e-out); }
+a.kr:hover { background: var(--track); }
+a.kr:hover .kn { color: var(--text); }
+.kr .kn { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font: 500 .9rem/1.25 var(--font-name); color: var(--text-body); }
+.kr .barcell > .v { min-width: 3.6rem; font: 500 .9rem/1.2 var(--font-data); }
+a.kr.on { background: var(--sel-face); box-shadow: inset 0 0 0 .12rem var(--sel-line); }
+a.kr.on .kn { color: var(--sel-ink); }
+.rqband .kinds > .morepill { margin: .35rem 0 0; }
+/* the tokens: the cache ring beside one bar of every token, in the chart colours; none, the shape hollow */
+.tkband { display: flex; align-items: center; gap: calc(3 * var(--u)); min-width: 0; }
+.tkband > .pd-pop { flex: 1 1 auto; min-width: 0; }
+.tkband > .pd-stat { flex: none; }
+.pd-bar.none { background: color-mix(in oklab, var(--text) 8%, transparent); }
+/* the cost: a key's dollars solid, the plan's worth hollow, the two as the list's cost column draws them */
+.rqband .pd-seg.paid, .rqband .pd-sw.paid { background: color-mix(in oklab, var(--text) 62%, transparent); }
+.rqband .pd-seg.onplan, .rqband .pd-sw.onplan { background: none; box-shadow: inset 0 0 0 .12rem color-mix(in oklab, var(--text) 48%, transparent); color: var(--text-body); }
+.rqband .pd-seg.onplan + .pd-seg, .rqband .pd-seg + .pd-seg.onplan { margin-left: .16rem; }
+.rqcost > .kr { margin-top: 0; }
+/* where it went: the sessions that cost the most on one scale, each line a door to its requests (requests.js bySessionHtml) */
+.bys { display: grid; grid-template-columns: minmax(0, max-content) minmax(6rem, 1fr) max-content; column-gap: calc(2 * var(--u)); row-gap: .1rem; margin-top: var(--u); }
+.byh { grid-column: 1 / -1; margin: 0 0 .25rem; font: 500 .8rem/1.2 var(--font-name); color: var(--text-mute); }
+.byr { display: grid; grid-column: 1 / -1; grid-template-columns: subgrid; align-items: center; margin: 0 -.45rem; padding: .32rem .45rem; border-radius: .35rem; color: inherit; text-decoration: none; transition: background var(--t-hover) var(--e-out); }
+a.byr:hover { background: var(--track); }
+a.byr:hover .bn { color: var(--text); }
+.byr .bn { min-width: 0; font: 500 .92rem/1.2 var(--font-name); color: var(--text-body); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.byr .bb { display: flex; align-items: center; gap: .16rem; min-width: 0; }
+.byr .bb b, .byr .bb i { height: .5rem; border-radius: .25rem; }
+.byr .bb b { background: color-mix(in oklab, var(--text) 55%, transparent); }
+.byr .bb i { box-shadow: inset 0 0 0 .12rem color-mix(in oklab, var(--text) 48%, transparent); }
+.byr .bv { text-align: right; font: 500 .9rem/1.2 var(--font-data); font-variant-numeric: tabular-nums; color: var(--text); white-space: nowrap; }
+.byr.rest .bv { color: var(--text-mute); }
+/* while it is read, each part is its own shape at the size that lands, so nothing moves when it does */
+.rqband.ghosts .psec { gap: calc(2 * var(--u)); }
+.rqband .ghost-row { min-height: var(--ring-focal); }
+.rqband .pd-stat > span > .ghost { display: block; }
+.rqband .pd-stat > span > .ghost.focalfig { margin-bottom: .2rem; }
+.rqband.ghosts .byr .bb .ghost { box-shadow: none; }                     /* a session's bar, striped, not the plan's hollow */
+.rqband .kr .kn > .ghost { vertical-align: middle; }
+
+/* ---------- the list: its head line, then one table ---------- */
+.requests { display: block; }
+.requests .list { display: flex; flex-direction: column; gap: calc(2 * var(--u)); min-width: 0; }
+/* the list's head: how much of the window it holds, what the bars' parts mean, and the order, at its end */
+.lline { display: flex; flex-wrap: wrap; align-items: center; gap: var(--u) calc(4 * var(--u)); min-height: var(--ctl-h); }
+.list .foot { margin: 0; font: 500 .88rem/1.4 var(--font-data); color: var(--text-mute); }
+.list .foot b { font-weight: 500; color: var(--text-body); }
+.foot.held { display: inline-flex; align-items: center; gap: var(--u); }
+.foot.held .vbar { flex: none; width: 7rem; }
+.lkey { display: inline-flex; flex-wrap: wrap; align-items: center; gap: var(--u) calc(3 * var(--u)); margin-left: auto; }
+.lline > .switch.order { flex: none; }
+.lg { display: inline-flex; align-items: center; gap: .5rem; font: 500 .8rem/1.2 var(--font-name); color: var(--text-mute); white-space: nowrap; }
+.sw { flex: none; display: inline-block; width: 1.3rem; height: .62rem; border-radius: .15rem; }
+.sw.cached { background: color-mix(in oklab, var(--text) 22%, transparent); }
+.sw.pre { background: repeating-linear-gradient(-45deg, color-mix(in oklab, var(--text) 55%, transparent) 0 .18rem, transparent .18rem .36rem); box-shadow: inset 0 0 0 .08rem color-mix(in oklab, var(--text) 40%, transparent); }
+.sw.p95 { width: .18rem; height: 1rem; border-radius: .08rem; background: var(--text); }
+.sw.plan { box-shadow: inset 0 0 0 .12rem color-mix(in oklab, var(--text) 48%, transparent); }
+/* A READ THAT REFUSED SAYS SO WHERE IT HAPPENED: the command and one word, above the rows it is missing from, or under
+   the rows for a search; the reason goes to the browser's log (fin). One command that cannot answer is not an empty day. */
+.list-wait { display: flex; align-items: center; gap: .55rem; margin: 0; font: 500 .92rem/1.45 var(--font-data); color: var(--text-mute); }
+.list-wait .wait { --c: var(--text-mute); width: 1.1rem; height: 1.1rem; }
+.list-wait.unread { color: var(--limit); }
+.list-wait .ghost.state { height: .9rem; }
+
+/* THE TABLE: one card, as Usage's results are, its rows on hairlines at its row height. The card's padding is that
+   table's, so the two pages' tables read as one kind of thing. */
+.rqtable { --c: var(--track-line); container: rqt / inline-size; display: flex; flex-direction: column; min-width: 0; padding: .35rem 1rem .5rem; }
+/* nothing to list: the table keeps its header, and one muted line stands where the rows go, with its acts */
+.rqtable .nomatch { display: flex; width: auto; max-width: none; align-items: center; gap: calc(2 * var(--u)); min-height: 3.7rem; padding: .6rem 0; border: 0; }
+.rqtable .nomatch .state { font: 500 .95rem/1.2 var(--font-name); color: var(--text-mute); }
+.rqtable .nomatch .state.limit { color: var(--limit); }
+
+/* ---------- one grid for the header, every row, every burst and every hollow row ---------- */
+/* Wide (the table 92rem and up: 1440 and 3822 alike) a request is ONE LINE: its chevron and lamp, time, session,
+   command, model, account, then its tokens, its time and its cost as bars on shared scales. Narrower, it is two: what
+   it was and how long and how much over where it ran and what it used. The rows reach .6rem past the columns so their
+   hover wash has room round the text, as Usage's rows do. */
+.rq, .rqg, .rqhead, .rqburst {
+  --t: 6.6rem;
+  display: grid; align-items: center; column-gap: 1rem; row-gap: .3rem; margin: 0 -.6rem; padding: .6rem;
+  grid-template-columns: .8rem 1.9rem var(--t) minmax(0, 1fr) minmax(10rem, 14rem) 7.4rem;
+  grid-template-areas: "ch lp t who du co" ". . . meta tk tk";
+}
+.list.priced :is(.rq, .rqhead, .rqburst) { --t: 9.4rem; }  /* in Highest price each row says its own day too */
+.rq .top, .rqg .top, .rqhead .top { display: contents; }
+.rq .meta, .rqg .meta, .rqhead .meta { grid-area: meta; display: flex; align-items: center; gap: calc(1.5 * var(--u)); min-width: 0; margin: 0; font: 500 .88rem/1.2 var(--font-data); color: var(--text-mute); }
+:is(.rq, .rqg, .rqhead, .rqburst) > .chev, .rqhead > .ch, .rqg > .ch { grid-area: ch; }
+:is(.rq, .rqg, .rqburst) > .lamp, .rqhead > .lp { grid-area: lp; }
+:is(.rq, .rqg, .rqhead, .rqburst) time, :is(.rq, .rqg, .rqhead) .top > :first-child { grid-area: t; }
+:is(.rq, .rqg, .rqhead, .rqburst) .who { grid-area: who; }
+:is(.rq, .rqg, .rqhead) .tk { grid-area: tk; }
+:is(.rq, .rqg, .rqhead) .du { grid-area: du; }
+:is(.rq, .rqg, .rqhead) .co { grid-area: co; }
+.rqburst .bcmd { grid-area: meta; }
+.rqburst .bsess { grid-area: tk; }
+@container rqt (min-width: 92rem) {
+  .rq, .rqg, .rqhead, .rqburst {
+    /* the session and the bars take the room; a model keeps room for names that differ only at their end */
+    grid-template-columns: .8rem 1.9rem var(--t) minmax(13rem, 1.3fr) minmax(8.5rem, .5fr) minmax(11rem, .8fr) minmax(7rem, .5fr) minmax(11rem, 1fr) minmax(13rem, 1.3fr) minmax(7.4rem, .55fr);
+    grid-template-areas: "ch lp t who cmd mdl acc tk du co";
+  }
+  .rq .meta, .rqg .meta, .rqhead .meta { display: contents; }
+  :is(.rq, .rqg, .rqhead) .meta > :nth-child(1) { grid-area: cmd; }
+  :is(.rq, .rqg, .rqhead) .meta > :nth-child(2) { grid-area: mdl; }
+  :is(.rq, .rqg, .rqhead) .meta > :nth-child(3) { grid-area: acc; }
+  .rqburst .bcmd { grid-area: cmd; }
+  .rqburst .bsess { grid-area: auto; grid-column: mdl-start / co-end; }
+}
+.rq .meta > *, .rqg .meta > * { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.rq .meta > .chip { justify-self: start; max-width: 100%; }
+
+/* ---------- a request: one row of the table ---------- */
+/* a row, not a card: .card's ink, cast and padding are a list object's. Hairlines between rows, a wash under the
+   pointer over the hover time, and the open one keeps the wash, which its request below it shares. */
+.rq, .rqburst { position: relative; min-height: 3.7rem; box-sizing: border-box; border-radius: var(--r-in); cursor: pointer; font: 500 .95rem/1.2 var(--font-data); color: var(--text-body); transition: background-color var(--t-hover) var(--e-out); }
+.rqtable .rq { border: 0; background: none; box-shadow: none; }
+.rqburst { width: auto; border: 0; background: none; text-align: left; }
+:is(.rq, .rqburst, .rqg, .rqpane) + :is(.rq, .rqburst, .rqg)::before { content: ""; position: absolute; left: .6rem; right: .6rem; top: -.06rem; height: .12rem; background: var(--track); pointer-events: none; }
+.rqtable .rq:hover, .rqburst:hover, .rqtable .rq[aria-current="true"] { background: color-mix(in oklab, var(--text) 4%, transparent); }
+.rqtable .rq:focus-within { outline: none; }
+.rq, .rqburst { scroll-margin-top: calc(var(--bar-h) + 1rem); }  /* a row brought into view lands under the top bar, not behind it */
+.rq > .chev, .rqburst > .chev { justify-self: center; }
+.rq[aria-current="true"] > .chev { transform: rotate(90deg); stroke: var(--text); }  /* its request is open under it */
+:is(.rq, .rqburst, .rqg) > .lamp { position: static; width: 1.9rem; height: 1.9rem; margin: 0; }
+.rq time, .rqburst time { font: 500 .92rem/1 var(--font-data); color: var(--text-mute); font-variant-numeric: tabular-nums; white-space: nowrap; }
+.rq .who, .rqburst .who { display: flex; flex-wrap: wrap; align-items: center; gap: .25rem calc(1.2 * var(--u)); min-width: 0; }  /* the name keeps its line; what happened wraps under it where both do not fit */
+.rq .name { flex: 0 1 auto; min-width: 4rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font: 500 1rem/1.2 var(--font-name); color: var(--text); background: none; border: 0; padding: 0; cursor: pointer; text-align: left; }
+.rq .who .word, .rq .who .detail, .rq .who .door, .rq .who .note, .rqburst .who .word, .rqburst .who .note { flex: none; white-space: nowrap; font: 500 .88rem/1.2 var(--font-data); }
+.rq .who .word { color: var(--text-body); }
+.rq .who .word.fail, .rqburst .who .word.fail { color: var(--limit); }
+.rq .who .note, .rqburst .who .note { color: var(--text-mute); }
+/* the retries splice ran: the lamp's retries glyph and the count, which the list's key names once */
+.rq .who .detail.rt { gap: .2rem; }
+.rq .who .detail.rt svg, .lg > svg { flex: none; width: .95rem; height: .95rem; fill: none; stroke: currentColor; stroke-width: 2.2; stroke-linecap: round; stroke-linejoin: round; }
+.rq .who .door { background: none; border: 0; padding: 0; color: var(--text-body); cursor: pointer; text-decoration: underline dotted; text-underline-offset: .2em; }
+.rq .who .door:hover { color: var(--text); text-decoration-style: solid; }
+.rq .mdl { color: var(--text-body); }
+.rq .acc { color: var(--text-mute); }
 a.acct { color: inherit; text-decoration: none; }  /* the login opens its Accounts card; it reads as the same words, underlined only under the pointer */
 a.acct:hover { text-decoration: underline; }
-/* a request that answered after a retry, or slower than all but 5% of its model on its command here: the key light,
-   apart from a failure's red and a clean answer's plain (requests.js, slowLines) */
-.word.marked { color: var(--key-ink); }
-.lamp.retried { color: var(--key-light); }
+.rq .nr { color: var(--text-mute); font-style: normal; }
+/* the rows of a burst he opened, marked as one run by a rule down their left */
+.rq.inburst { box-shadow: inset .2rem 0 0 var(--track-line); }
+
+/* the figures' columns: a bar on the column's shared scale, then its figures, which end on one right edge */
+.tk { display: grid; grid-template-columns: minmax(2.5rem, 1fr) 3.6rem 3.2rem; column-gap: calc(1.2 * var(--u)); align-items: center; min-width: 0; }
+.du { display: grid; grid-template-columns: minmax(4rem, 1fr) 5.2rem; column-gap: calc(1.2 * var(--u)); align-items: center; min-width: 0; }
+.co { display: grid; grid-template-columns: minmax(1.5rem, 1fr) 4.6rem; column-gap: var(--u); align-items: center; min-width: 0; }
+.rq .v { text-align: right; white-space: nowrap; font: 500 .9rem/1 var(--font-data); font-variant-numeric: tabular-nums; color: var(--text); }
+.rq .tk .v + .v { color: var(--text-body); }  /* tokens out, after tokens in */
+.tbar, .cbar, .dtrk { position: relative; display: block; height: .5rem; border-radius: .25rem; background: color-mix(in oklab, var(--text) 8%, transparent); }
+.tbar > b, .cbar > b { position: absolute; left: 0; top: 0; bottom: 0; border-radius: .25rem; background: color-mix(in oklab, var(--text) 55%, transparent); overflow: hidden; }
+.tbar > b > i { position: absolute; left: 0; top: 0; bottom: 0; background: color-mix(in oklab, var(--text) 22%, var(--obj)); }  /* the part served from cache */
+.rq .co.plan { font: inherit; color: inherit; }  /* .card .plan is Accounts' plan word; here it only says the bar is hollow */
+.rq .co.plan .cbar > b { background: none; box-shadow: inset 0 0 0 .12rem color-mix(in oklab, var(--text) 48%, transparent); }
+.rq .co.plan .v { color: var(--text-mute); }
+.rq .co.gap .cbar { visibility: hidden; }  /* no price, no track: the dash says it */
+/* the time on the band's log axis: hatched to the first byte, solid to the end, and a tick where its model's slowest 5% begins */
+.dtrk { overflow: visible; }
+.dtrk > .run { position: absolute; left: 0; top: 0; bottom: 0; min-width: .2rem; border-radius: .25rem; background: color-mix(in oklab, var(--text) 55%, transparent); overflow: hidden; }
+.dtrk .pre { position: absolute; left: 0; top: 0; bottom: 0; background: repeating-linear-gradient(-45deg, var(--obj) 0 .16rem, transparent .16rem .34rem); }
+.dtrk > .p95 { position: absolute; top: -.3rem; bottom: -.3rem; width: .14rem; margin-left: -.07rem; border-radius: .07rem; background: var(--text-mute); }
+
+/* the header: each column's name over what it names, muted and in sentence case, on the table's first hairline */
+.rqhead { min-height: 0; padding-block: .9rem .8rem; border-bottom: .12rem solid var(--track); font: 500 .85rem/1.2 var(--font-name); color: var(--text-mute); }
+.rqhead .h { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.rqhead .h.v { text-align: right; }
+.rqhead .who { display: block; }
+.rqhead .co .h { grid-column: 1 / -1; }
+.dax { position: relative; display: block; height: 1rem; }
+.dax i { position: absolute; top: 0; transform: translateX(-50%); font: 400 .74rem/1 var(--font-data); font-style: normal; font-variant-numeric: tabular-nums; color: var(--text-mute); white-space: nowrap; }
+.dax i.first { transform: none; }
+.dax i.tail { transform: translateX(-100%); }  /* not .last, which is Sessions' quoted line (sessions.css) */
+/* the axis names its two ends wherever it stands, and the marks between them where the column is long enough to space
+   them, so a narrow column (two-line rows) never prints one tick's word over the next */
+.rqhead .du { container: rqdu / inline-size; }
+.dax i.mid { display: none; }
+@container rqdu (min-width: 19rem) { .dax i.mid { display: block; } }
+
+/* what the search found, in the body it was found in */
+.match { grid-column: who-start / -1; margin: .1rem 0 0; font: 500 .9rem/1.35 var(--font-data); color: var(--text-body); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.match .where { font: 500 .88rem/1 var(--font-name); color: var(--text-mute); margin-right: .6rem; }
+/* how far back a search read when it stopped early: the table's last row, under a dashed rule, since the list goes on */
+.rqtable > .foot.searched { display: flex; align-items: center; min-height: 3.2rem; margin: 0 -.6rem; padding: .6rem; border-top: .12rem dashed var(--track-line); font: 500 .88rem/1.4 var(--font-data); color: var(--text-mute); }
+
+/* ---------- a burst: a run of failures with one cause, as one row that opens to its rows ---------- */
+.rqburst .bn { font: 600 1rem/1.2 var(--font-name); color: var(--text); white-space: nowrap; }
+.rqburst .bcmd { display: flex; align-items: center; gap: .5rem; min-width: 0; overflow: hidden; }
+.rqburst .bsess { display: flex; align-items: center; gap: calc(1.5 * var(--u)); min-width: 0; overflow: hidden; font: 500 .88rem/1.2 var(--font-name); color: var(--text-mute); }
+.rqburst .bsn { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.rqburst .bsn.more { flex: none; font-family: var(--font-data); }
+
+/* ---------- the hour: the table's sub-head where it turns, with how many it held and how they ended ---------- */
+.hour { display: flex; align-items: center; gap: calc(2 * var(--u)); min-height: 2.6rem; margin: 0 -.6rem; padding: .9rem .6rem .45rem; }
+.hour .hw {
+  font: 600 .88rem/1 var(--font-data); color: var(--splice-cream); background: var(--socket); padding: .42rem .6rem; border-radius: .35rem; white-space: nowrap;  /* the socket is dark in both themes */
+  box-shadow: 0 0 0 var(--ink-w) var(--ink), inset 0 0 0 .14rem var(--rail);
+}
+.hour .hc { display: inline-flex; align-items: center; gap: var(--u); font: 500 .86rem/1 var(--font-data); font-variant-numeric: tabular-nums; color: var(--text-mute); }
+.hour .hc b { font-weight: 500; color: var(--text-body); }
+.hbar { display: inline-flex; height: .5rem; border-radius: .25rem; overflow: hidden; gap: .1rem; }
+.hbar i { min-width: .16rem; }
+.hbar .ok { background: color-mix(in oklab, var(--text) 45%, transparent); }
+.hbar .nt { background: color-mix(in oklab, var(--text) 25%, transparent); }
+.hbar .f { background: var(--limit); }
+.hour .act { margin-left: auto; }  /* the day before, at the right end of the oldest day's heading */
+/* a stretch with no requests between two hours: a dashed rule across the table, and how long it lasted */
+.hgap { display: flex; align-items: center; gap: calc(2 * var(--u)); min-height: 2.4rem; margin: 0 -.6rem; padding: 0 .6rem; font: 500 .84rem/1.2 var(--font-name); color: var(--text-mute); }
+.hgap::after { content: ""; flex: 1 1 auto; border-top: .12rem dashed var(--track-line); }
+.list .more { display: flex; align-items: center; gap: calc(2 * var(--u)); }
+.list .more .count { display: inline-flex; align-items: center; gap: var(--u); font: 500 .9rem/1 var(--font-data); font-variant-numeric: tabular-nums; color: var(--text-mute); }
+.list .more .vbar { width: 8rem; flex: none; }
+
+/* ---------- the open request: under its row, inside the table, one step in, on the row's wash ---------- */
+/* inset past the chevron as Usage's detail plate is, with no ink and no cast, and never a scroll of its own */
+.rqtable .rqpane {
+  display: flex; min-width: 0; margin: .15rem 0 calc(2 * var(--u)) 1.8rem; border: 0; border-radius: var(--r-in); box-shadow: none;
+  background: color-mix(in oklab, var(--text) 4%, transparent);
+}
+
+/* ---------- reading: the list's own shape, hollow (Marcos, Oct 12); the bars themselves are console.css's .ghost ---------- */
+.rqg { min-height: 3.7rem; box-sizing: border-box; position: relative; }
+.rqg > .lamp { --c: var(--track); }
+.rqg .tk > .ghost, .rqg .du > .ghost, .rqg .co > .ghost { grid-column: 1 / -1; height: .5rem; }
+.rqg .meta .ghost.chip { height: 1.4rem; box-shadow: 0 0 0 .1rem var(--ink); }
+.ghost.nm { height: 1rem; }
+.list.ghosts .hour .hw { padding: .42rem .6rem; }
+
+/* the outcome as an element, and the lamp of a request that answered after more than one send: the retries glyph,
+   in the lamp's own ink, so a failure's red stays the only colour in the table */
 .lamp.retried svg { width: 1.1rem; height: 1.1rem; }
-.rq .dur.slow { color: var(--key-ink); }
+
+@media (prefers-reduced-motion: reduce) {
+  .rq, .rqburst, .fbtn, .ftog, .kr, .byr { transition: none; }
+  .fmenu { animation: none; }
+}
+
+/* the pick line and the filters while they are read: the tiles or the picker, and the filters' own row, hollow */
+.ptiles > .ghost.ptg { width: auto; height: 6.97rem; border-radius: var(--r-obj); box-shadow: 0 0 0 var(--ink-w) var(--ink); }
+.lhead > .ghost.chip { height: 2.4rem; }
+.filters > .ghost.chip { height: 2.26rem; }

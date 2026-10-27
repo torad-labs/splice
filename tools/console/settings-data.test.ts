@@ -1,5 +1,6 @@
-// Settings' "Your data": every store splice keeps is a card with its size, what it holds and its share of everything
-// kept; a store holding nothing says so; and every Delete stands together under "Free up space", never inside a card
+// Settings' "Your data": every store splice keeps is a card with its size and what it holds, and its share of everything
+// kept is its part of the one bar under the total; a store holding nothing says so and has no part; and every Delete
+// stands together under "Free up space", never inside a card
 // (Marcos's verdict on this pane, Oct 11). The cards must also keep their words inside themselves at his width and at
 // 1440, where a long "When off" note used to run past the card's right edge.
 import { afterAll, beforeAll, test } from "bun:test";
@@ -72,16 +73,34 @@ async function open(width: number, height: number) {
   return page;
 }
 
+// A store's share of everything kept is drawn as its part of the bar under the total, with its size as the part's figure,
+// where each card said "N% of everything kept" (Settings' report, Oct 26)
 test("a store that holds something shows its size, its count and its share; one that holds nothing says so and claims none", async () => {
   const page = await open(1440, 900);
   try {
     const kept = page.locator(".dcard").filter({ hasText: "Transcript copies" });
     await expect(kept).toContainText("12.8 GB");
     await expect(kept).toContainText("1,952 files");
-    await expect(kept).toContainText("of everything kept");
+    const whole = page.locator("section.psec", { has: page.locator('.sechead > .kicker:text-is("On this computer")') });
+    const bar = whole.locator(".pd-pop");
+    await expect(bar).toContainText("Transcript copies 12.8 GB");
+    // every part is as long as its own share of the total the figure above it reads, once the bar has grown in
+    const shares = () => whole.evaluate((el) => {
+      const size = (t: string) => Number.parseFloat(t.replace(/[^\d.]/g, "")) * (/TB/.test(t) ? 1_048_576 : /GB/.test(t) ? 1024 : /KB/.test(t) ? 1 / 1024 : 1);
+      const total = size(el.querySelector(".pd-top .pd-rate")?.textContent ?? "");
+      const w = el.querySelector(".pd-bar")!.getBoundingClientRect().width;
+      return [...el.querySelectorAll(".pd-bar .pd-seg")].map((s) => {
+        const title = s.getAttribute("title") ?? "";
+        return { title, drawn: s.getBoundingClientRect().width / w, read: size(title.replace(/^\D+/, "")) / total };
+      });
+    });
+    await expect.poll(async () => (await shares()).find((s) => s.title.startsWith("Transcript copies"))?.drawn ?? 0).toBeGreaterThan(0.5);
+    const parts = await shares();
+    expect(parts.map((s) => s.title)).toContain("Transcript copies 12.8 GB");
+    for (const part of parts) expect(Math.abs(part.drawn - part.read)).toBeLessThan(0.02);
     const empty = page.locator(".dcard").filter({ hasText: "Compaction summaries" });
     await expect(empty).toContainText("Nothing saved");
-    await expect(empty).not.toContainText("of everything kept");
+    await expect(bar).not.toContainText("Compaction summaries");
   } finally {
     await page.close();
   }

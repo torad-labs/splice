@@ -131,7 +131,13 @@ test("dropping a path saves the rest and leaves the others alone", async () => {
     projects: [],
   });
   try {
-    await page.locator(".pane .prow", { hasText: "~/work" }).getByRole("button", { name: /Remove/ }).click();
+    // removal arms in place (Settings' report, Oct 26): the × arms the path's row with Remove and Keep, saving nothing yet,
+    // and Remove drops it
+    const row = page.locator(".pane .prow", { hasText: "~/work" });
+    await row.getByRole("button", { name: "Remove ~/work" }).click();
+    await expect(row.getByRole("button", { name: "Keep" })).toBeVisible();
+    expect(patched).toEqual([]);
+    await row.getByRole("button", { name: "Remove", exact: true }).click();
     await expect(page.locator(".pane .ppath")).toHaveCount(1, { timeout: 10_000 });
     expect(patched).toEqual([{ projectsFolders: "~/code" }]);
     await expect(page.locator(".pane .ppath")).toContainText("~/code");

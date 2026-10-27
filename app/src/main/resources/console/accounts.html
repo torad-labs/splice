@@ -10,6 +10,7 @@
 <link rel="stylesheet" href="tokens.css">
 <link rel="stylesheet" href="console.css">
 <link rel="stylesheet" href="composer.css">
+<link rel="stylesheet" href="accounts.css">
 </head>
 <body>
 <div class="app">
@@ -28,8 +29,10 @@
     <header class="head">
       <h1>Accounts</h1>
       <div class="read">
+        <span class="unheard" id="unheard" role="alert" hidden></span>
+        <span class="unheard" id="dayunread" role="status" hidden></span>
         <button class="act quiet small" data-act="probe">
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M20 11a8 8 0 1 0-2.3 5.7M20 4v7h-7"/></svg>Read again
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M20 11a8 8 0 1 0-2.3 5.7M20 4v7h-7"/></svg><span class="w">Read again</span>
         </button>
       </div>
     </header>

@@ -1,8 +1,8 @@
 // Marlin's Teams-by-project walk of Oct 12 (78056fbbd), fin's cuts and hitstop's eye pass, through the real Teams page
 // against a stub daemon answering in the routes' own shapes: a member last heard on another day reads that day's weekday;
 // a role that already reads Lead carries no Lead tag; a member with no requests shows no tokens; an empty activity
-// panel is as tall as its one line, and an empty chat only as tall as the column beside it; in day theme a tab's needs
-// dot takes the key's day ink.
+// panel is as tall as its one line, and an empty chat only as tall as the column beside it; and a tab's needs dot takes
+// the needs-you ink in either theme, never the key light.
 import { afterAll, beforeAll, expect as bunExpect, test } from "bun:test";
 import { chromium, expect, type Browser, type Page } from "@playwright/test";
 import { existsSync } from "node:fs";
@@ -104,7 +104,18 @@ for (const width of [3828, 1440]) {
   }, "night", width), 60_000);
 }
 
-test("in day theme a tab's needs dot takes the key's day ink", () => onTeams(async (p) => {
-  const dot = await p.locator(".tab.needs").first().evaluate((el) => getComputedStyle(el, "::before").backgroundColor);
-  bunExpect(dot).toBe("rgb(138, 90, 18)");
-}, "day", 1440), 60_000);
+// NEEDS-YOU IS ITS OWN COLOUR, NEVER THE KEY LIGHT (the foundation, Oct 26: `--needs` is `#F6B352` night and `#9C5410`
+// day, "its own colour now, split off the key"): the key light marks the one act a view wants pressed, so a page with
+// three waiting members would otherwise carry four key lights and none of them would mean anything.
+for (const [theme, ink, key] of [["day", "rgb(156, 84, 16)", "rgb(138, 90, 18)"], ["night", "rgb(246, 179, 82)", "rgb(255, 215, 154)"]] as const) {
+  test(`in ${theme} theme a tab's needs dot takes the needs-you ink, never the key light`, () => onTeams(async (p) => {
+    // read in one step from the live document: the page redraws its tabs when a read answers, and a tab it replaced
+    // between finding it and measuring it is detached, whose computed style is the empty string
+    const read = () => p.evaluate(() => {
+      const el = document.querySelector(".tab.needs");
+      return el ? getComputedStyle(el, "::before").backgroundColor : "";
+    });
+    await expect.poll(read, { timeout: 15_000 }).toBe(ink);
+    bunExpect(await read()).not.toBe(key);
+  }, theme, 1440), 60_000);
+}

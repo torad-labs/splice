@@ -33,6 +33,26 @@ const REQVIEW = (() => {
     if (d.object === "chat.completion.chunk" && d.choices?.[0]?.delta?.content != null) return { key: "c", text: d.choices[0].delta.content };
     return null;
   };
+  // HOW A REPLY ENDED, IN WORDS: each dialect names it in its own field (Anthropic's stop_reason, a chat completion's
+  // finish_reason, a Responses status), and "end_turn" is a value, not a sentence. The value stays under the pointer.
+  const STOP_WORD = { end_turn: "Ended its turn", tool_use: "Called a tool", max_tokens: "Reached its output limit", stop_sequence: "Hit a stop sequence",
+    pause_turn: "Paused its turn", refusal: "Refused", model_context_window_exceeded: "Ran out of context", stop: "Ended its turn", length: "Reached its output limit",
+    tool_calls: "Called a tool", function_call: "Called a tool", content_filter: "Filtered by the provider", completed: "Completed", incomplete: "Incomplete",
+    failed: "Failed", cancelled: "Cancelled", in_progress: "Still running" };
+  // A SEND THAT FAILED INSIDE splice NAMES A JAVA EXCEPTION, which nobody reading the request should have to translate.
+  // The common network failures read as what happened, any other exception keeps its own message without its class
+  // name, and the raw text stays under the pointer (the attempt's title).
+  const EXCEPTION_WORD = { ConnectException: "Could not connect", SocketTimeoutException: "Timed out", HttpTimeoutException: "Timed out", TimeoutException: "Timed out",
+    HttpConnectTimeoutException: "Timed out connecting", UnknownHostException: "Unknown host", SSLException: "Secure connection failed",
+    SSLHandshakeException: "Secure connection failed", EOFException: "The connection closed early", ClosedChannelException: "The connection closed",
+    SocketException: "The connection broke", NoRouteToHostException: "No route to the host" };
+  const failureWords = (text) => {
+    const m = /(?:^|\s)(?:[a-z_$][\w$]*\.)*([A-Z][\w$]*(?:Exception|Error))(?::\s*([\s\S]*))?$/.exec(String(text ?? ""));
+    if (!m) return text;
+    const said = m[2]?.trim(), word = EXCEPTION_WORD[m[1]], told = said && !/^null$/i.test(said) ? said : "";
+    if (word) return told ? `${word} · ${told}` : word;
+    return told || m[1].replace(/(Exception|Error)$/, "").replace(/([a-z])([A-Z])/g, (_, a, b) => `${a} ${b.toLowerCase()}`);
+  };
 
   // view(state): the drawing, over the page's own state, read each time: { tab, nodes (the folds he opened or closed), q }
   const documentJobs = [];
@@ -240,11 +260,14 @@ const REQVIEW = (() => {
       // a Responses stream ends on response.failed with a code where Anthropic's has an error event (ResponsesRoundEnd.kt:14)
       const failed = fr.find((f) => f.event === "response.failed")?.data.response.error;
       const err = fr.find((f) => f.event === "error")?.data ?? (failed && { error: { type: failed.code, message: failed.message } });
+      // how it ended and the error's type in words, the dialect's own value under the pointer (a provider's type through
+      // the console's own outcome words, so an overload reads "Overloaded" here as on its row)
+      const errWord = (type) => OUTCOME_WORD[`failure:${type}`] || tagWord(`failure:${type}`) || type;
       return `<div class="reply">${blocks.filter(Boolean).map((b) => b.type === "text" ? `<div class="msg agent"><div class="body">${md(b.text)}</div></div>`
         : `<div class="call"><span class="tool" style="--c:${colorOf(provider)}"><span class="tname">${esc(b.name)}</span><span class="tsum">${esc(toolSummary(b.partial))}</span></span></div>`).join("")}`
-        + `${stop ? `<p class="stopr"><span class="chip">${esc(stop)}</span></p>` : ""}`
+        + `${stop ? `<p class="stopr"><span class="chip" title="${esc(stop)}">${esc(STOP_WORD[stop] ?? stop)}</span></p>` : ""}`
         // a stream that ended on an error event: its type and its sentence where the stop reason would be
-        + `${err ? `<p class="stopr err"><span class="chip">${esc(err.error.type)}</span><span class="state limit">${esc(err.error.message)}</span></p>` : ""}</div>`;
+        + `${err ? `<p class="stopr err"><span class="chip" title="${esc(err.error.type)}">${esc(errWord(err.error.type))}</span><span class="state limit">${esc(err.error.message)}</span></p>` : ""}</div>`;
     }
     // frames, the consecutive pieces of one answer gathered into one line
     function framesHtml(fr, key) {
@@ -262,86 +285,169 @@ const REQVIEW = (() => {
     // the bodies, by tab: what the caller sent splice, each send upstream, and what splice handed back.
     // tr: { sent: {headers, body}, attempts: [{url, start, ms, status, headers, body, resHeaders?, frames? | raw?, failure?, lock?}],
     // returned: {status, frames | body} }. st: the records' state, kept or cut; every other state never reaches here.
+    // A fold that keeps a list of headers to one line until he opens it: the count says how many it holds.
+    function headFold(h, key) {
+      const n = Object.values(h || {}).filter((v) => v != null).length, open = s().nodes.has(`${key}:frames`);
+      if (!n) return "";
+      return `<button class="framefold" data-act="frames" data-k="${key}" aria-expanded="${open}">${ICON.caret}${n0(n)} ${n === 1 ? "header" : "headers"}</button>${open ? headersHtml(h) : ""}`;
+    }
     function bodiesHtml(r, tr, st) {
       // a kept trace that holds no record for a piece: that piece was not reported, which is not the request missing
       const tab = s().tab, cut = st === "cut", gone = !tr;
-      const absent = `<p class="unavail">Not reported</p>`;
-      if (tab === "sent") return blockHtml("Headers", gone ? absent : headersHtml(tr.sent.headers))
-        + blockHtml("Body", gone ? absent : `${bodyTree(tr.sent.body, `${r.id}.sent`)}${cut ? `<p class="cut">Cut at 16M characters</p>` : ""}`);
+      const absent = `<p class="unavail">${DRAW.nothing("Not reported")}</p>`;
+      // what Claude Code sent: its headers folded to their count, credentials redacted inside, then the body
+      if (tab === "sent") return gone ? absent : `${headFold(tr.sent.headers, `${r.id}:sh`)}${bodyTree(tr.sent.body, `${r.id}.sent`)}${cut ? `<p class="cut">Cut at 16M characters</p>` : ""}`;
       if (tab === "returned") {
-        if (gone) return blockHtml("Status", absent) + blockHtml("Body", absent);
+        if (gone) return absent;
         const rt = tr.returned;
         const inner = rt.frames ? `${replyHtml(rt.frames, r.provider)}${framesHtml(rt.frames, `${r.id}:ret`)}` : (unsavedHtml(rt.body) ?? `<div class="json">${tree(rt.body, `${r.id}.ret`, 0, () => true)}</div>`);
         // a 200 whose stream ends on an error event keeps its true status, out of the success colour, so the eye lands on the
         // ending (fin, after p88 read Claude's in-stream Overloaded as a success)
         const ended = ["error", "response.failed"].includes(rt.frames?.at(-1)?.event);
-        return blockHtml("Status", rt.status == null ? absent : `<p class="status s${ended ? "x" : String(rt.status)[0]}">${rt.status}</p>`) + blockHtml("Body", inner);
+        const status = `<p class="rstat"><span>Status</span>${rt.status == null ? DRAW.dash : `<b class="status s${ended ? "x" : String(rt.status)[0]}">${rt.status}</b>`}</p>`;
+        return status + inner;
       }
-      if (gone) return `<div class="gone"><span class="state">Not reported</span></div>`;
+      if (gone) return absent;
       // a send's answer: its headers when the record has them, then its frames or its body
       const answer = (a, i) => (a.frames ? framesHtml(a.frames, `${r.id}:a${i}`) : `<div class="json">${tree(a.raw, `${r.id}.raw${i}`, 0, () => true)}</div>`);
-      const resHtml = (a, i) => (a.resHeaders ? `<div>${blockHtml("Response", headersHtml(a.resHeaders))}${answer(a, i)}</div>`
+      const resHtml = (a, i) => (a.resHeaders ? `<div>${blockHtml("Response", headFold(a.resHeaders, `${r.id}:a${i}rh`))}${answer(a, i)}</div>`
         : a.frames || a.raw ? `<div>${blockHtml("Response", answer(a, i))}</div>` : "");
-      // A websocket round records no address and no status: the frames went over a socket splice had already opened
-      // (TurnTrace.wsAttempt). Its heading names the transport rather than spelling a POST that never happened.
-      const sendTo = (a) => (a.url ? `POST ${esc(a.url)}` : a.transport === "ws" ? "WebSocket" : "");
+      // A send is headed by where it went. A websocket round records no address and no status: the frames went over a
+      // connection splice had already opened (TurnTrace.wsAttempt), and its heading says so in those words.
+      const sendTo = (a) => (a.url ? esc(a.url) : a.transport === "ws" ? `<span class="nr">Over the open connection</span>` : "");
+      // why it failed, in words; a send that failed as an earlier one did says which, rather than the same line again
+      const why = (a, i) => {
+        if (!a.failure) return "";
+        const same = tr.attempts.slice(0, i).findIndex((b) => b.failure === a.failure);
+        return `<p class="why" title="${esc(a.failure)}">${a.lock ? ICON.lock : ""}${same >= 0 ? `Same failure as ${same + 1}` : esc(failureWords(a.failure))}</p>`;
+      };
       return tr.attempts.map((a, i) => `<section class="attempt${a.failure ? " fail" : ""}"><h3><span class="an">${i + 1}</span><span class="url">${sendTo(a)}</span>${a.status ? `<span class="status s${a.failure ? "x" : String(a.status)[0]}">${a.status}</span>` : ""}<span class="ams">${secs(a.ms)}</span></h3>`
-        + `${a.failure ? `<p class="why">${a.lock ? ICON.lock : ""}${esc(a.failure)}</p>` : ""}`
+        + why(a, i)
         + `<div class="two${resHtml(a, i) ? "" : " one"}"><div>${i && a.headers === tr.attempts[0].headers && a.body === tr.attempts[0].body ? `<p class="same">Same as 1</p>`
-          : `${blockHtml("Request", headersHtml(a.headers))}${a.body === tr.sent.body ? `<p class="same">Unchanged</p>` : blockHtml("Body", bodyTree(a.body, `${r.id}.a${i}`))}`}</div>`
+          : `${blockHtml("Request", headFold(a.headers, `${r.id}:a${i}h`))}${a.body === tr.sent.body ? `<p class="same">Unchanged</p>` : blockHtml("Body", bodyTree(a.body, `${r.id}.a${i}`))}`}</div>`
         + `${resHtml(a, i)}</div></section>`).join("");
     }
-    // the attempts on one time rail: each send a bar from its start to its end, the waits between them the bare rail, and
-    // the first byte and the first token marked where they came. tr null: no records, so the request is one bar.
-    function railHtml(r, tr) {
-      const total = r.total, pct = (ms) => `${((ms / total) * 100).toFixed(2)}%`;
-      const sends = (tr ? tr.attempts : [{ start: r.queued || 0, ms: total - (r.queued || 0), status: 200 }]).map((a) => {
-        const bad = a.failure || a.status >= 400, pre = !bad && r.ttfb != null ? `<i class="pre" style="width:${(((r.ttfb - a.start) / a.ms) * 100).toFixed(2)}%"></i>` : "";
+    // THE TIME RAIL (the redesign, Oct 26): each send a bar from its start to its end, hatched to its first byte, a failed
+    // one in the limit red with its status over it; the waits between them the bare rail; the first byte and the first
+    // token marked where they came, under one label when they fall together. Where the page knows this model's own
+    // typical and slowest 5% on this command ([ref]), the rail reaches at least that far and marks both, so a request
+    // reads as quick or slow against its own kind. An axis of elapsed time runs under it. tr null: no records, so the
+    // request is one bar.
+    const STEPS = [100, 200, 500, 1e3, 2e3, 5e3, 1e4, 2e4, 3e4, 6e4, 12e4, 3e5, 6e5, 12e5, 18e5, 36e5];
+    // [failed]: the request ended in a failure; with no records its one bar is the whole request, red as its row's is
+    function railHtml(r, tr, ref, failed) {
+      const total = r.total, span = Math.max(total, ref?.slow ?? 0); // Requests passes no [ref]: its rail is the request's own length
+      const at = (ms) => Math.max(0, Math.min(100, (ms / span) * 100)), pct = (ms) => `${at(ms).toFixed(2)}%`;
+      const sends = (tr ? tr.attempts : [{ start: r.queued || 0, ms: total - (r.queued || 0), status: null, failure: failed }]).map((a) => {
+        const bad = a.failure || a.status >= 400, into = r.ttfb != null ? r.ttfb - a.start : null;
+        const pre = !bad && into > 0 && a.ms > 0 ? `<i class="pre" style="width:${Math.min(100, (into / a.ms) * 100).toFixed(2)}%"></i>` : "";
         return `<span class="sbar${bad ? " bad" : ""}" style="left:${pct(a.start)};width:${pct(a.ms)}">${pre}${a.status >= 400 ? `<b>${a.status}</b>` : ""}</span>`;
       }).join("");
       // a mark past the middle hangs its label to the left, so it never runs off the rail's end
-      const mark = (ms, label, cls) => (ms == null ? "" : `<span class="mk ${cls}${ms / total > .6 ? " late" : ""}" style="left:${pct(ms)}"><span>${label} ${secs(ms)}</span></span>`);
-      // a silence splice waited out, as the stretch it was, and a resume where the stream broke and splice re-sent: from the
-      // partial answer, or the round over from scratch
-      const quiet = r.silent ? `<span class="quiet${r.silentFrom / total > .6 ? " late" : ""}" style="left:${pct(r.silentFrom)};width:${pct(r.silent)}"><span>No output for ${secs(r.silent)}</span></span>` : "";
-      // the time the gate held it behind a full limit, before splice sent it (admit_held_ms)
-      const line = r.queued ? `<span class="quiet" style="left:0;width:${pct(r.queued)}"><span>Waited in line ${secs(r.queued)}</span></span>` : "";
-      // a resume ends the silence before it, so both labels would stand at one place: the resume's goes a line higher
-      const resumed = r.resumed ? `<span class="resume${r.resumedAt / total > .6 ? " late" : ""}${r.silent ? " stack" : ""}" style="left:${pct(r.resumedAt)}"><span>${r.resumedFresh ? "Started over" : "Resumed"}</span></span>` : "";
-      return `<div class="trail${r.resumed && r.silent ? " tall" : ""}"><div class="rail-t">${sends}${line}${quiet}${resumed}${mark(r.ttfb, "First byte", "fb")}${mark(r.ftok, "First token", "ft")}</div>`
-        + `<div class="ends"><span>${clockS(new Date(+r.ts - total))}</span><span class="tot">${secs(total)}</span><span>${clockS(r.ts)}</span></div></div>`;
+      const mark = (ms, label, cls) => (ms == null ? "" : `<span class="mk ${cls}${at(ms) > 60 ? " late" : ""}" style="left:${pct(ms)}"><span>${label}</span></span>`);
+      const together = r.ttfb != null && r.ftok != null && Math.abs(r.ftok - r.ttfb) <= 0.08 * span;
+      const marks = together ? mark(r.ttfb, `First byte ${secs(r.ttfb)} · first token ${secs(r.ftok)}`, "fb")
+        : mark(r.ttfb, `First byte ${secs(r.ttfb)}`, "fb") + mark(r.ftok, `First token ${secs(r.ftok)}`, r.ttfb != null ? "ft" : "fb");
+      // a stretch nothing came through, neutral and dashed, named over the rail: the time the gate held it behind a full
+      // limit before splice sent it (admit_held_ms), and a silence splice waited out mid-answer
+      const band = (from, ms, label) => `<span class="quiet${at(from) > 60 ? " late" : ""}" style="left:${pct(from)};width:${pct(ms)}"><span>${label}</span></span>`;
+      const line = r.queued ? band(0, r.queued, `Waited in line ${secs(r.queued)}`) : "";
+      const quiet = r.silent ? band(r.silentFrom, r.silent, `No output for ${secs(r.silent)}`) : "";
+      // a resume ends the silence before it, so it stands at that silence's end and its label goes a line higher; the
+      // silence's own label already says how long it lasted
+      const word = `${r.resumedFresh ? "Started over" : "Resumed"}${r.resumed > 1 ? ` ${r.resumed} times` : ""}`;
+      const resumed = r.resumed && r.resumedAt ? `<span class="resume${at(r.resumedAt) > 60 ? " late" : ""}${r.silent ? " stack" : ""}" style="left:${pct(r.resumedAt)}"><span>${word}</span></span>` : "";
+      const refs = ref ? `<i class="ref" style="left:${pct(ref.typ)}"></i><i class="ref slow" style="left:${pct(ref.slow)}"></i>` : "";
+      const step = STEPS.find((x) => span / x <= 6) ?? STEPS.at(-1), ticks = [];
+      for (let t = 0; t <= span * 1.0001; t += step) ticks.push(t);
+      const axis = `<span class="rax" aria-hidden="true">${ticks.map((t, i) => `<span class="${i === 0 ? "first" : at(t) > 96 ? "tail" : ""}" style="left:${pct(t)}">${t ? tickWord(t) : "0"}</span>`).join("")}</span>`;
+      const tall = Boolean(r.resumed && r.resumedAt && r.silent);
+      return `<div class="trail${tall ? " tall" : ""}${!together && r.ttfb != null && r.ftok != null ? " two" : ""}"><div class="rail-t">${refs}${sends}${line}${quiet}${resumed}${marks}${axis}</div></div>`;
     }
-    // the figures the request has: cells names which, in order (in, write, out, cost, attempts); cost is its text, costSub
-    // the line under it (a plan request's worth at API prices, Marlin 5:52 PM)
-    function figuresHtml(r, cells, cost, costSub = "") {
-      const cell = (label, value, sub = "") => `<div class="fig"><span class="label">${label}</span><span class="v">${value}</span>${sub ? `<span class="fsub">${sub}</span>` : ""}</div>`;
-      const told = (v) => (v == null ? `<span class="nr">Not reported</span>` : n0(v)); // TurnBill.kt:37-40 writes a field only when reported
-      const cachePct = r.in ? Math.round((r.cached / r.in) * 100) : 0;
-      const of = { in: () => cell("Tokens in", told(r.in), r.cached ? `${cachePct}% cached` : ""), write: () => cell("Cache write", told(r.write)),
-        out: () => cell("Tokens out", told(r.out)), cost: () => cell("Cost", cost, costSub), attempts: () => cell("Attempts", r.attempts) };
-      // the three token counts are one fact when none was reported: one card where they sat (fin)
-      const none = r.in == null && r.write == null && r.out == null, tok = ["in", "write", "out"];
+    // an axis label: a round figure, minutes and seconds past the first minute ("1 min 20 s", never "1.33 min")
+    const tickWord = (ms) => (ms < 1000 ? `${ms} ms` : ms < 60000 ? `${ms / 1000} s` : ms % 60000 ? `${Math.floor(ms / 60000)} min ${(ms % 60000) / 1000} s` : `${ms / 60000} min`);
+    // the waterfall's counters, each drawn only when it happened, so a clean request draws none (the page's countsOf:
+    // { glyph, n, label, title, share }). First the load it entered: how many requests its command was already running
+    // when splice let this one in (the row's inflight), then its sends when there was more than one.
+    const countTiles = (r) => DRAW.tiles([
+      r.inflight > 0 ? { icon: DRAW.glyph.peak, n: n0(r.inflight), label: "Already in flight", title: "Requests its command was already running when splice let this one in" } : null,
+      r.attempts > 1 ? { icon: DRAW.glyph.retry, n: n0(r.attempts), label: "Attempts" } : null,
+      ...(r.counts || []).map((c) => ({ icon: c.share != null ? DRAW.ring(c.share, { size: "focal", label: c.title }) : DRAW.glyph[c.glyph] ?? "", n: c.n, label: c.label, title: c.title }))]);
+    /** Where the request stands among its own kind: this model's typical and slowest 5% on this command as one range on
+     *  a log axis, with this request marked on it, in the key light when it ran past the slowest 5%. */
+    function kindHtml(r, ref) {
+      const ax = DRAW.axis([Math.min(ref.typ, r.total)], [Math.max(ref.slow, r.total)]), slow = r.total > ref.slow;
+      const me = `<i class="me${slow ? " slow" : ""}" style="left:${ax.at(r.total).toFixed(2)}%" title="This request, ${secs(r.total)}"></i>`;
+      return `<div class="rqkind"><div class="pd-grid pd-h"><span></span><span class="pd-leg"><i class="pd-lt"></i>Typical<i class="pd-ls"></i>Slowest 5%<i class="me"></i>This request</span>`
+        + `<span class="pd-n">Typical</span><span class="pd-n">Slowest 5%</span></div>`
+        + `<div class="pd-st pd-grid"><span class="pd-sl">This model</span>${DRAW.range(ax, ref.typ, ref.slow).replace(/<\/span>$/, `${me}</span>`)}<span class="pd-n t">${secs(ref.typ)}</span><span class="pd-n hi5">${secs(ref.slow)}</span></div>`
+        + `${DRAW.axisRow(ax, "Log scale", "<span></span><span></span>")}</div>`;
+    }
+    /** How long it took: the whole time as the figure it leads with, between its two clocks, then the rail of its own
+     *  length, where this model's requests usually land with this one marked ([ref]), and what it counted on the way. */
+    function timingHtml(r, tr, ref, failed) {
+      const counts = countTiles(r);
+      if (!(r.total > 0) && !counts) return "";
+      const lead = r.total > 0 ? DRAW.focal(secs(r.total), `${dayOf(new Date(+r.ts - r.total))}${clockS(new Date(+r.ts - r.total))} to ${clockS(r.ts)}`) : "";
+      const kind = ref && r.total > 0 ? kindHtml(r, ref) : "";
+      return DRAW.section("Timing", lead + (r.total > 0 ? railHtml(r, tr, null, failed) : "") + kind + counts, { cls: "rqtime" });
+    }
+    /** What it used: the share of its input served from cache as a ring where the page asks for one ([ring]), then the
+     *  figures [cells] names, in order (in, write, out, cost, attempts). [cost] is the cost's text, [costSub] the line
+     *  under it (a plan request's worth at API prices, Marlin 5:52 PM). Each count is drawn only where it says something:
+     *  cache writes above zero, Attempts only at 0, the request that never left splice. */
+    function usageHtml(r, h) {
+      const cells = h.cells || [];
+      if (!cells.length) return "";
+      const cell = (label, value, sub = "", bar = "") => `<div class="fig"><span class="label">${label}</span><span class="v">${value}</span>${bar}${sub ? `<span class="fsub">${sub}</span>` : ""}</div>`;
+      const tok = ["in", "write", "out"], none = r.in == null && r.write == null && r.out == null;
+      const share = h.ring && r.in > 0 ? Math.min(1, (r.cached || 0) / r.in) : null;
+      // the three token figures as bars on one scale, the tokens in shading the part that came from the cache
+      const most = Math.max(r.in ?? 0, r.write ?? 0, r.out ?? 0);
+      const bar = (v, inner = "") => (most > 0 ? `<span class="fbar" aria-hidden="true">${v > 0 ? `<b style="width:${Math.max(1.5, (v / most) * 100).toFixed(1)}%">${inner}</b>` : ""}</span>` : "");
+      const cachedPart = r.in > 0 && r.cached > 0 ? `<i style="width:${Math.min(100, (r.cached / r.in) * 100).toFixed(1)}%"></i>` : "";
+      const of = {
+        in: () => cell("Tokens in", r.in == null ? DRAW.dash : n0(r.in), share == null && r.cached && r.in ? `${Math.round((r.cached / r.in) * 100)}% cached` : "", bar(r.in, cachedPart)),
+        write: () => (r.write > 0 ? cell("Cache write", n0(r.write), "", bar(r.write)) : ""),
+        out: () => cell("Tokens out", r.out == null ? DRAW.dash : n0(r.out), "", bar(r.out)),
+        cost: () => cell("Cost", h.cost || DRAW.dash, h.costSub),
+        attempts: () => (r.attempts === 0 ? cell("Attempts", "0") : ""),
+      };
       // a request splice ended before any attempt (over budget, no quota, too many at once) asked no provider, so it has
-      // no token figures at all, not unreported ones and not zeros: Attempts 0 stands alone (fin, Oct 12)
-      const shown = r.attempts === 0 ? cells.filter((k) => !tok.includes(k)) : none ? cells.filter((k, i) => !tok.includes(k) || cells.findIndex((c) => tok.includes(c)) === i) : cells;
-      if (none) of.in = of.write = of.out = () => cell("Tokens", told(null));
-      // the waterfall's counters, under the figures in the same columns, only those the request has (requests.js countsOf)
-      const counts = r.counts?.length ? `<div class="figs counts" style="--n:${Math.max(shown.length, r.counts.length)}">${r.counts.map(([l, v, s]) => cell(l, v, s)).join("")}</div>` : "";
-      return `<div class="figs" style="--n:${shown.length}">${shown.map((k) => of[k]()).join("")}</div>${counts}`;
+      // no token figures at all, not unreported ones and not zeros: Attempts 0 stands alone (fin, Oct 12). One that was
+      // sent and got no counts back says so once, where the three would stand (TurnBill.kt:37-40 writes a field only
+      // when reported)
+      const shown = r.attempts === 0 ? cells.filter((k) => !tok.includes(k))
+        : none ? cells.filter((k, i) => !tok.includes(k) || cells.findIndex((c) => tok.includes(c)) === i) : cells;
+      if (none) of.in = of.write = of.out = () => cell("Tokens", `<span class="nr">Not reported</span>`);
+      const figs = shown.map((k) => of[k]()).join("");
+      const ring = share != null ? DRAW.statTile(DRAW.ring(share, { size: "focal", label: `${DRAW.pct(share)} of tokens in came from the cache` }), DRAW.pct(share), "Cache hit", { focal: true }) : "";
+      const told = shown.some((k) => tok.includes(k)), priced = shown.includes("cost");
+      return DRAW.section(told && priced ? "Tokens and cost" : told ? "Tokens" : "Cost", `<div class="rquse">${ring}<div class="figs">${figs}</div></div>`, { cls: "rqfigs" });
     }
-    // the open request. h: the head's lamp (cls, glyph), word, name and account, the page's own acts, the trace and its
-    // state, the figures with the cost's text, and h.gone: the one line the page says when the records are not here
+    // a row with no model says No model; Compare passes model "" because its pane is already named by the model (compare.js)
+    const modelOf = (r) => (r.model ? `<span>${esc(r.model)}</span>` : r.model === "" ? "" : `<span class="nr">No model</span>`);
+    const headerHtml = (r, h) => `<header><span class="lamp ${h.lampCls}" aria-hidden="true">${h.lamp}</span>`
+      + `<div class="who"><div class="top"><span class="name">${esc(h.name)}</span><time>${dayOf(r.ts)}${clockS(r.ts)}</time></div>`
+      + `<div class="meta">${h.chip ?? `<span class="chip">${esc(r.cmd)}</span>`}${h.word}${modelOf(r)}${h.acct ? `<span>${h.acct}</span>` : ""}</div></div>`
+      + `<div class="acts">${h.acts}</div></header>`;
+    // A request opened under its own row needs no header: the row names it. Its top line holds what the provider said
+    // (h.said) and the page's acts, so the first thing read is why it failed and the way out.
+    const lineHtml = (h) => `<header class="rqline">${h.said ? `<div class="upmsgs">${h.said}</div>` : ""}<div class="acts">${h.acts}</div></header>`;
+    // the open request, as sections on one ground: what the provider said (h.said) first, then Timing, Tokens and the
+    // Record with its tabs on the kicker's line. h: the head's lamp (cls, glyph), word, name and account, the page's own
+    // acts, the trace and its state, the figures, and h.gone: the one line the page says when the records are not here.
+    // h.head false leaves the header to the page, and "line" draws the top line alone; h.recActs ride the Record's
+    // kicker line after its tabs; h.rail false leaves out Timing; cells [] leaves out the figures.
     function paneHtml(r, h) {
-      const bodies = kept(h.st);
-      const lower = bodies ? bodiesHtml(r, h.tr(), h.st)
-        : h.st === "reading" ? `<div class="gone"><span class="state">Reading</span></div>` : h.gone ?? "";
-      const tabs = bodies ? `<div class="switch tabs" role="tablist">${[["sent", "Sent"], ["attempts", "Attempts"], ["returned", "Returned"]].map(([v, w]) => `<button role="tab" data-act="tab" data-v="${v}" aria-pressed="${s().tab === v}">${w}</button>`).join("")}</div>` : "";
-      return `<section class="pane rqpane" style="--c:${colorOf(r.provider)}" aria-label="Request at ${clockS(r.ts)}"><header><span class="lamp ${h.lampCls}" aria-hidden="true">${h.lamp}</span>`
-        + `<div class="who"><div class="top"><span class="name">${esc(h.name)}</span><time>${dayOf(r.ts)}${clockS(r.ts)}</time></div>`
-        + `<div class="meta">${h.chip ?? `<span class="chip">${esc(r.cmd)}</span>`}${h.word}<span>${esc(r.model)}</span>${h.acct ? `<span>${h.acct}</span>` : ""}</div></div>`
-        + `<div class="acts">${h.acts}</div></header>`
-        // h.said: what the provider answered, verbatim and unlabelled, directly under the outcome in the header (fin)
-        + `<div class="scroll">${h.said ?? ""}${railHtml(r, bodies ? h.tr() : null)}${figuresHtml(r, h.cells, h.cost, h.costSub)}${tabs}<div class="bodies">${lower}</div></div></section>`;
+      const bodies = kept(h.st), reading = h.st === "reading", tr = bodies ? h.tr() : null, line = h.head === "line";
+      // while the records are read the tabs already stand and the body is its own shape, hollow
+      const record = bodies ? bodiesHtml(r, tr, h.st) : reading ? `<div class="json reading" aria-busy="true">${GHOST.lines([18, 27, 23, 14, 25, 19])}</div>` : h.gone ?? "";
+      const tabs = bodies || reading ? `<div class="switch tabs" role="tablist">${[["sent", "Sent"], ["attempts", "Attempts"], ["returned", "Returned"]].map(([v, w]) => `<button role="tab" data-act="tab" data-v="${v}" aria-pressed="${s().tab === v}">${w}</button>`).join("")}</div>` : "";
+      const racts = h.recActs ? `<span class="racts">${h.recActs}</span>` : "";
+      return `<section class="pane rqpane${line ? " inrow" : ""}" style="--c:${colorOf(r.provider)}" aria-label="Request at ${clockS(r.ts)}">${line ? lineHtml(h) : h.head === false ? "" : headerHtml(r, h)}`
+        + `<div class="scroll pdetail">${h.said && !line ? `<div class="upmsgs">${h.said}</div>` : ""}${h.rail === false ? "" : timingHtml(r, tr, h.ref, /\bfail\b/.test(h.lampCls ?? ""))}${usageHtml(r, h)}`
+        + `${record ? DRAW.section("Record", `<div class="bodies">${record}</div>`, { aside: tabs + racts, cls: "rqrec" }) : ""}</div></section>`;
     }
     // its controls: a tab, a fold of a body, a send's frames. True when the click was one of them; the page draws again.
     function click(el) {

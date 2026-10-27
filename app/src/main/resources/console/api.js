@@ -28,6 +28,9 @@ const API = (() => {
   }
   // A 401 means this browser holds no key splice takes: every page is locked the same way, its body set aside for the
   // one way back, `splice console` with Copy, which signs this browser in again whatever lost it (fin, Marlin, Oct 12).
+  // THE STATE IS DRAWN, NOT SPELLED (Oct 26): the kit's lock pops in beside the word, as a reached limit does on
+  // Accounts, and a two-word kicker puts the command where it is run, so the page needs no sentence. Copy says what it
+  // did beside itself (DRAW.result) instead of renaming the button, so the act he pressed stays where he pressed it.
   function lock() {
     const main = document.querySelector("main.page");
     if (!main || main.querySelector(".lockedby")) return;
@@ -35,18 +38,42 @@ const API = (() => {
     const box = document.createElement("section");
     box.className = "lockedby";
     box.setAttribute("role", "alert");
-    box.innerHTML = `<p class="word">Locked</p><div class="way"><code>splice console</code><button class="act quiet small" type="button">Copy</button></div>`;
-    const copy = box.querySelector("button");
+    // the kicker says what to do with the command under it; "In a terminal" said only where it goes
+    box.innerHTML = `${DRAW.lock("Locked", { pop: true })}<p class="kicker">Run in a terminal</p>`
+      // the one act left on the page stands at the console's own act height, never the small one
+      + `<div class="way"><code>splice console</code><button class="act quiet" type="button">Copy</button></div>`;
+    const copy = box.querySelector("button"), way = box.querySelector(".way");
     copy.addEventListener("click", async (e) => {
       e.stopPropagation();
-      try { await navigator.clipboard.writeText("splice console"); copy.textContent = "Copied"; } catch { copy.textContent = "Copy"; }
-      setTimeout(() => { copy.textContent = "Copy"; }, 1600);
+      let said = DRAW.result("Copied", "good");
+      // one phrase for a copy that did not land, the one the request pane uses
+      try { await navigator.clipboard.writeText("splice console"); } catch { said = DRAW.result("Could not copy", "bad"); }
+      way.querySelector(".result")?.remove();
+      copy.insertAdjacentHTML("afterend", said);
+      setTimeout(() => way.querySelector(".result")?.remove(), 1600);
     });
     (main.querySelector(":scope > .head") || main.firstChild)?.after(box);
   }
   // Calls a page has in flight, so the manager's acts (pilot.js) can wait for what a press started before saying what
   // it did. The pilot's own calls are not counted: its ask is always open.
   let pending = 0;
+  // WHAT THE SHELL READS, IT READS ONCE WITH THE PAGE (Oct 27). The top bar's links carry what waits behind them
+  // (kit.js markNav), which takes the sessions and the commands' live turns, and the page beside it often has just
+  // read the same. The newest answer to each of those reads is kept here, and any of them landing is announced, so the
+  // bar redraws off the page's own read the moment it lands, and reads for itself only when no page has lately.
+  const KEPT = /^\/api\/(?:sessions|heads|heads\/[^/]+\/turns\/live)$/;
+  const heard = new Map();
+  function hear(path, answer) {
+    if (!answer.ok || !KEPT.test(path)) return;
+    heard.set(path, { answer, at: Date.now() });
+    dispatchEvent(new CustomEvent("splice:heard", { detail: path }));
+  }
+  /** The newest answer to [path] if one landed within [ms], else a fresh read of it. */
+  async function recent(path, ms) {
+    const kept = heard.get(path);
+    if (kept && Date.now() - kept.at < ms) return kept.answer;
+    return call("GET", path);
+  }
   // Every answer comes back as { ok, status, body }; a refused or unreachable call is an answer too, never a throw.
   async function call(method, path, body, extra, signal, keepalive) {
     const counted = !path.startsWith("/api/console/pilot");
@@ -60,7 +87,9 @@ const API = (() => {
       let parsed = null;
       try { parsed = text ? JSON.parse(text) : null; } catch { parsed = null; }
       if (res.status === 401 && !signal?.aborted) lock();
-      return { ok: res.ok, status: res.status, body: parsed };
+      const answer = { ok: res.ok, status: res.status, body: parsed };
+      if (method === "GET") hear(path, answer);
+      return answer;
     } catch {
       return { ok: false, status: 0, body: null };
     } finally {
@@ -79,6 +108,7 @@ const API = (() => {
     // a last word as the tab hides or closes: the browser still delivers it after the page is gone (pilot.js)
     parting: (p) => call("POST", p, {}, undefined, undefined, true),
     scoped: (nextSignal) => client(signal ? AbortSignal.any([signal, nextSignal]) : nextSignal),
+    recent,
   });
   return client();
 })();

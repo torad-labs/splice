@@ -12,6 +12,15 @@ const LEN = { "5 hours": 300, Week: 10080, Month: 43200, Day: 1440 };
 // with the admission that actually blocks (re-review, Oct 10). Only a daemon that answers nothing falls back here.
 let DAY_RESETS_AT = null;
 let DAY_STARTED_AT = null; // the instant the budget day now running began, from the daemon's own calendar day
+let DAY_FROM = null; // the first whole hour the day's figures count from, where each Day's door to its requests starts
+let HOUR_MAX = 1; // the busiest hour of any command today: every strip's hours are drawn on this one scale
+// NO DAY ON THE BOARD WAS READ (the day's read failed, or splice could read no command's history): the page head says so
+// once with the reason, and each strip keeps a dash and its hatched hours. Null while any day reads. { why }
+let DAY_UNREAD = null;
+// whether each command was all on a plan the last time splice said (all_accounts_on_plan), kept across visits, so a day
+// that is not read still knows whether its strip offers a budget
+const SPLIT_KEY = "splice-accounts-split";
+const SPLIT_SEEN = new Map((() => { try { return Object.entries(JSON.parse(localStorage.getItem(SPLIT_KEY) || "{}")); } catch { return []; } })());
 function dayReset() {
   const next = DAY_RESETS_AT ?? new Date(NOW.getFullYear(), NOW.getMonth(), NOW.getDate() + 1).getTime();
   return { left: Math.round((next - NOW.getTime()) / 60000), resetMs: next };
@@ -72,8 +81,8 @@ const labelOn = (a, head) => a.row?.account_labels?.[head] || labelOf(a.row);
 
 // One read of everything the page shows. Each provider: its commands (with their order, pin and day) and its accounts.
 // The day's counts come from /api/economics, which on a daemon that has just started can take half a minute. The page
-// never waits on it: it is asked beside the other reads, the cards are drawn at once with Reading where a day's count
-// goes, and when it answers the page is read again with that answer in hand.
+// never waits on it: it is asked beside the other reads, the cards are drawn at once with the Day row's ghost where its
+// count goes, and when it answers the page is read again with that answer in hand.
 let economics = null; // the last /api/economics answer, kept so a later read draws the day it knew while a new one is asked
 let askingEconomics = false;
 const ECONOMICS_REASK_MS = 2000;
@@ -85,14 +94,15 @@ function askEconomics() {
     askingEconomics = false;
     await load({ asks: false });
     render();
-    // a command the daemon is still reading said so, and Reading is true only until it has: ask again until none is
+    // a command the daemon is still reading said so, and its ghost stands only until it has: ask again until none is
     if (answer.ok && (answer.body?.heads || []).some((h) => h.read_pending)) setTimeout(askEconomics, ECONOMICS_REASK_MS);
   });
 }
 // The sessions on each login come from /api/sessions, which took 4 s and more on his machine while every other read here
 // answers in under one, and the page showed only Add provider until it did (walk on d0ec523b5). So it is asked beside
-// the other reads and never waited on: the cards draw at once with Reading under each login, and when it answers each
-// card takes its sessions and the page draws again. Null is not read yet; a later read keeps the last answer meanwhile.
+// the other reads and never waited on: the cards draw at once with ghost doors under each login, as many as it had on the
+// last visit, and when it answers each card takes its sessions and the page draws again. Null is not read yet; a later
+// read keeps the last answer meanwhile.
 let liveSessions = null;
 let askingSessions = false;
 function askSessions() {
@@ -119,12 +129,24 @@ async function readAll({ asks = true } = {}) {
   if (asks) askEconomics();
   askSessions();
   const [st, ac, ks, bg, md, hd, au] = await Promise.all(["/api/status", "/api/accounts", "/api/keys", "/api/budgets", "/api/models", "/api/heads", "/api/auth"].map((p) => API.get(p)));
-  // each login's name by the label its pool knows it by on a head, so a session's last switch reads in Accounts' names
-  for (const r of ac.body?.accounts || []) for (const h of r.heads || []) LOGIN_NAME.set(`${h}|${r.account_labels?.[h] || r.label}`, r.display_name || r.label);
+  // each login's name by every label its pool knows it by on a head (its pool label and its selector, "native:claude"
+  // for Claude Code's own sign-in), so a session's last switch reads in Accounts' names and never as an id
+  for (const r of ac.body?.accounts || []) for (const h of r.heads || []) {
+    for (const l of [r.account_labels?.[h], r.label, r.selector_key]) if (l) LOGIN_NAME.set(`${h}|${l}`, r.display_name || r.label || l);
+  }
   if (version !== loadVersion) return newestRead;
   if (revision !== accountRevision || ui.orderSaving || ui.removing) return;
-  if (!st.ok || !ac.ok) { data = []; offline = true; return; }
-  offline = false;
+  // A READ SPLICE DID NOT ANSWER KEEPS THE BOARD IT HAD (Oct 26). It emptied the list, so the board drew only Add provider:
+  // a splice with no providers, inviting him to add what was already there. The last board stays with its figures, the
+  // page head says splice is not answering and since when, and the page asks again on its own until it answers.
+  if (!st.ok || !ac.ok) {
+    // a 401 is the console's lock (api.js), which only `splice console` opens again: there is nothing to ask again
+    if (st.status === 401 || ac.status === 401) return;
+    unheard = unheard ?? { at: Date.now() };
+    askAgainSoon();
+    return;
+  }
+  unheard = null; readOnce = true;
   const ec = economics || { ok: true, body: { heads: (st.body?.registry || []).map((h) => ({ key: h.key, read_pending: true })) } };
   const budgets = new Map((bg.body?.budgets || []).map((b) => [b.head, b]));
   DAY_RESETS_AT = bg.body?.day_resets_at_epoch_ms ?? null;
@@ -139,6 +161,27 @@ async function readAll({ asks = true } = {}) {
   // number beside it, never guessed into either day.
   const HOUR = 3600000;
   const wholeFrom = Math.ceil(dayStart / HOUR) * HOUR;
+  DAY_FROM = wholeFrom;
+  // THE DAY HOUR BY HOUR, midnight to the reset, drawn on each command's Day row: each whole hour's requests split into
+  // the ones that went through (on a plan or priced), the ones with no price and the failed ones; an hour the daemon could
+  // not read is marked so; the hours still to come are empty. 23 or 25 of them on the days the clock changes.
+  const dayEnds = DAY_RESETS_AT ?? wholeFrom + 24 * HOUR;
+  const slots = Math.max(1, Math.min(26, Math.round((dayEnds - wholeFrom) / HOUR)));
+  const hoursOf = (h, onPlanHead) => {
+    const by = new Map();
+    for (const b of h.buckets || []) {
+      if (b.hour < wholeFrom || b.hour >= dayEnds) continue;
+      const t = by.get(b.hour) || { all: 0, fail: 0, none: 0 };
+      // a split hour's unpriced turns are the key's alone; before the split a plan command's unpriced turns are its plan's
+      const none = b.plan_turns != null || !onPlanHead ? b.unpriced_turns || 0 : 0;
+      by.set(b.hour, { all: t.all + (b.turns || 0), fail: t.fail + (b.failed_turns || 0), none: t.none + none });
+    }
+    const missing = new Set((h.not_read_hours || []).filter((x) => x >= wholeFrom && x < dayEnds));
+    return Array.from({ length: slots }, (_, i) => {
+      const at = wholeFrom + i * HOUR, t = by.get(at) || { all: 0, fail: 0, none: 0 };
+      return { at, ...t, ok: Math.max(0, t.all - t.fail - t.none), unread: missing.has(at) };
+    });
+  };
   // economics counts only requests that moved tokens, so turns less the unpriced ones are the priced share (fin, Oct 10)
   // A daemon that splits plan from key (all_accounts_on_plan on the head) says per hour how many requests were on a plan
   // and their value at API prices; cost_usd and unpriced_turns are then the key's alone. An hour recorded before the split
@@ -158,18 +201,19 @@ async function readAll({ asks = true } = {}) {
     return [h.key, { ...sumOf(rows.filter((b) => b.hour >= wholeFrom)), opening: opening && (opening.usd || opening.unpriced) ? opening : null }];
   }));
   // a command whose hours splice has not read has no count, and its row says why, never zero, because "No requests" over
-  // a day that had them is a false statement (Marlin, Oct 11): still being read just after a restart reads Reading, as
-  // Requests does while it loads; a history it could not read, or no answer at all, reads Not read, as Settings does (fin)
+  // a day that had them is a false statement (Marlin, Oct 11): still being read just after a restart draws the row's
+  // ghost; a history it could not read, or no answer at all, reads Not read, as Settings does (fin)
   // a day that holds an hour the daemon could not read has no total, never the sum of the hours it could (not_read_hours)
   const dayUnread = (h) => (h.not_read_hours || []).some((hour) => hour + HOUR > dayStart);
   const unread = new Map(ec.ok ? (ec.body?.heads || []).filter((h) => h.read_pending || h.unavailable || dayUnread(h))
     .map((h) => [h.key, !h.read_pending && (h.unavailable || dayUnread(h)) ? DAY_NOT_READ : DAY_READING])
     : (st.body?.registry || []).map((h) => [h.key, DAY_NOT_READ]));
-  // why a day reads Not read, on screen beside it (splice-usage's walk, Oct 13: ChatGPT's Day said Not read and nothing
-  // more): the daemon's own sentence for a history it could not read, else the hour it could not read, else no answer
-  const unreadWhy = new Map(ec.ok ? (ec.body?.heads || []).filter((h) => !h.read_pending && (h.unavailable || dayUnread(h)))
-    .map((h) => [h.key, h.unavailable || "An hour of today's history could not be read"])
-    : (st.body?.registry || []).map((h) => [h.key, "splice did not answer with today's spend"]));
+  // why a day reads Not read, behind the word as its disclosure (splice-usage's walk, Oct 13: ChatGPT's Day said Not read
+  // and nothing more): the daemon's own fixed sentence for a history it could not read (EconomicsRead.Unavailable), or
+  // that splice did not answer. An hour it could not read needs no sentence: the day draws that hour hatched.
+  const unreadWhy = new Map(ec.ok ? (ec.body?.heads || []).filter((h) => !h.read_pending && h.unavailable).map((h) => [h.key, h.unavailable])
+    : (st.body?.registry || []).map((h) => [h.key, "splice did not answer with today's requests"]));
+  const ecHead = new Map(ec.ok ? (ec.body?.heads || []).map((h) => [h.key, h]) : []);
   // why a command's turns with no price have none, decided by the daemon once for this row and for Requests
   const priceWhy = new Map((ec.body?.heads || []).map((h) => [h.key, h.unpriced_reason]));
   // a local runtime splice could not reach on its port (/api/heads runtimeNotAnswering): its card says so, as a signed-out one does
@@ -194,15 +238,21 @@ async function readAll({ asks = true } = {}) {
       : { allPlan: false, keyUsd: today.usd - today.oldUsd, keyUnpriced: today.unpriced - today.oldUnpriced, plan: today.plan, old: today.old,
         keyPriced: Math.max(0, today.turns - today.old - today.plan - (today.unpriced - today.oldUnpriced) - today.failed) };
     const counted = !unread.has(h.key);
-    p.cmds.push({ cmd: h.label || h.key, head: h.key, authKind: h.authKind, spent: b ? b.used_usd : counted ? today.usd : null, unpriced: b ? b.unpriced_turns : today.unpriced,
+    const onPlan = ((b && b.unpriced_reason) || priceWhy.get(h.key) || (kind === "plan" ? "plan" : "undeclared")) === "plan";
+    const eh = ecHead.get(h.key);
+    p.cmds.push({ cmd: h.label || h.key, head: h.key, kind, authKind: h.authKind, spent: b ? b.used_usd : counted ? today.usd : null, unpriced: b ? b.unpriced_turns : today.unpriced,
+      // the day hour by hour, null while the daemon still reads it; a history it could not read at all, or no answer,
+      // leaves every hour gone by unknown
+      hours: kind === "local" || eh?.read_pending ? null : hoursOf(eh || {}, onPlan), allUnread: !ec.ok || (!!eh && !!eh.unavailable),
       unread: b ? null : unread.get(h.key) ?? null,
       unreadWhy: b ? null : unreadWhy.get(h.key) ?? null,
       failed: b ? b.failed_turns ?? today.failed : today.failed,
       priced: Math.max(0, today.turns - today.unpriced - today.failed),
+      turns: counted ? today.turns : null, // every request the day's figures count, which its door opens on Requests
       opening: b ? null : today.opening, // only the bucket-built figure has a half-hour it cannot place; the budget's own is exact
       local: kind === "local", // nothing bills it per token, so no figure and no line
       split,
-      onPlan: ((b && b.unpriced_reason) || priceWhy.get(h.key) || (kind === "plan" ? "plan" : "undeclared")) === "plan",
+      onPlan,
       budget: b && b.daily_usd != null ? { cap: b.daily_usd, block: b.action === "block" } : null, mode: "soonest", pin: null, order: [],
       moved: au.body?.[h.key]?.account_pool?.last_switch ?? null, // the command's last move between logins, and why (spec 11h)
       lastLeft: lastLeftOf(ac.body?.head_pools?.[h.key]) });
@@ -223,7 +273,7 @@ async function readAll({ asks = true } = {}) {
         // own label, and a single login with none is the primary
         const namesOn = (head) => { const n = [row.account_labels?.[head], row.selector_key, row.label].filter(Boolean); return n.length ? n : ["primary"]; };
         const sessionsOn = () => (liveSessions ? liveSessions.filter((x) => (row.heads || []).includes(x.head) && namesOn(x.head).includes(x.account)) : null);
-        p.accounts.push({ id: acctId(row), row, name: row.display_name, email: row.email || null, plan: plainPlan(row.plan), windows, sessions: sessionsOn(), sessionsOn,
+        p.accounts.push({ id: acctId(row), row, name: row.display_name, email: row.email || null, plan: plainPlan(row.plan), windows, sessions: sessionsOn(), sessionsOn, namesOn,
           // one observation time behind every bar, so the read line shows as soon as ANY bar drawn here is stale
           staleAt: [...windows, ...models].some((w) => w.stale) && row.observed_at_epoch_seconds ? row.observed_at_epoch_seconds * 1000 : null,
           // an expired token its own command renews on its next run is not a sign-out: the card keeps its readings
@@ -274,13 +324,36 @@ async function readAll({ asks = true } = {}) {
   })));
   if (version !== loadVersion) return newestRead;
   // An earlier reading must not undo a removal or order that is still being saved.
-  if (revision === accountRevision && !ui.orderSaving && !ui.removing) data = [...provs.values()];
+  if (revision !== accountRevision || ui.orderSaving || ui.removing) return;
+  data = [...provs.values()];
+  // the board's one scale for the hours: the busiest hour any command had today, its opening hour included
+  const days = data.flatMap((p) => p.cmds).filter((c) => !c.local);
+  HOUR_MAX = Math.max(1, ...days.flatMap((c) => (c.allUnread ? [] : [...(c.hours || []).filter((h) => !h.unread).map((h) => h.all), c.opening?.turns || 0])));
+  // no day read on the whole board is one thing gone wrong, said once (a budgeted day is read from its budget, so it
+  // still has its figure)
+  const free = days.filter((c) => !c.budget), whys = [...new Set(free.map((c) => c.unreadWhy).filter(Boolean))];
+  DAY_UNREAD = free.length && free.every((c) => c.unread === DAY_NOT_READ) ? { why: !ec.ok ? "splice did not answer" : whys.length === 1 ? whys[0] : "" } : null;
+  if (splitOf.size) {
+    for (const [head, allPlan] of splitOf) SPLIT_SEEN.set(head, allPlan);
+    try { localStorage.setItem(SPLIT_KEY, JSON.stringify(Object.fromEntries(SPLIT_SEEN))); } catch { /* a full store keeps the last split */ }
+  }
 }
 
 let data = [];
-let offline = false;
-const FRESH_UI = () => ({ lane: {}, signin: {}, editor: null, addProv: null, menu: null, armed: null, removeErr: null, rename: null, renameErr: null, renameDraft: null, replace: null, pulse: null, naming: null });
-const ui = { probing: false, grow: null, ...FRESH_UI() };
+// SPLICE NOT ANSWERING: since when, while the board it last drew stays (readAll). Null while it answers. readOnce is a
+// board read this visit, so a splice that never answered draws the ghost board and never an empty one offering Add.
+let unheard = null, readOnce = false, againTimer = null;
+// it asks again on its own every 5 s until splice answers, so he never has to keep pressing
+function askAgainSoon() {
+  clearTimeout(againTimer);
+  againTimer = setTimeout(async () => { await load(); render({ flip: true }); }, 5000);
+}
+const FRESH_UI = () => ({ lane: {}, signin: {}, editor: null, addProv: null, menu: null, armed: null, removeErr: null, rename: null, renameErr: null, renameDraft: null, replace: null, pulse: null, naming: null,
+  moving: null, slotErr: null, orderErr: null, orderSaving: null, removing: null });
+// why: the Day rows whose Not read reason is open; reasons: the refusals whose reason splice gave is open under their
+// word; doors: the logins whose every session door is out; enter: the one form or menu just opened, which rises into
+// place once and never again on a later redraw; shook: the refusal just drawn, which shakes once and then stands still
+const ui = { probing: false, grow: null, why: new Set(), reasons: new Set(), doors: new Set(), enter: null, shook: null, ...FRESH_UI() };
 const board = document.getElementById("board");
 let drag = null;
 // ---------- time: what a person reads ----------
@@ -351,7 +424,10 @@ function nameError(p, a, v) {
   if (a.row?.ref) return refNameError(p, a, v);
   const reserved = p.id !== "claude" && (v === "primary" || v === "auto" || v.endsWith("-quota"));
   const shape = p.id === "claude" ? /^[A-Za-z0-9][A-Za-z0-9_-]{0,63}$/ : /^[a-z0-9][a-z0-9._-]{0,47}$/;
-  if (reserved || !shape.test(v)) return "Invalid name";
+  // the word says it was refused, and what a name here may be opens under it, so the next try can be right
+  if (reserved) return { word: "Invalid name", why: "primary, auto and names ending in -quota are splice's own" };
+  if (!shape.test(v)) return { word: "Invalid name", why: p.id === "claude" ? "Letters, digits, - and _, starting with a letter or digit, up to 64"
+    : "Lowercase letters, digits, ., - and _, starting with a letter or digit, up to 48" };
   if (p.accounts.some((x) => x !== a && x.name === v)) return "Name taken";
   return null;
 }
@@ -374,9 +450,15 @@ const GLYPH = {
   pin: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"><path d="M9 3.5h6l-1.2 6 3.7 3.5h-11l3.7-3.5z"/><path d="M12 13v7.5"/></svg>',
   more: '<svg viewBox="0 0 24 24" fill="currentColor"><circle cx="5" cy="12" r="2"/><circle cx="12" cy="12" r="2"/><circle cx="19" cy="12" r="2"/></svg>',
   wait: '<svg class="wait" viewBox="0 0 40 40" aria-hidden="true"><circle cx="20" cy="20" r="15"/></svg>',
+  // a move onto this login, and one off it (movesHtml)
+  into: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 4v7a4 4 0 0 0 4 4h10"/><path d="M15 11l4 4-4 4"/></svg>',
+  away: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12h13"/><path d="M13 7l5 5-5 5"/></svg>',
+  // an expired token its command renews on its next run, on that command's chip
+  renew: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M19.5 12a7.5 7.5 0 1 1-2.2-5.3"/><path d="M19.5 4.5v4h-4"/></svg>',
 };
-/** The Day row while splice is still reading the command's saved hours: the count is not known, so it says so. */
-const DAY_READING = "Reading";
+/** A Day row splice is still reading: the count is not known, so it draws the ghost of the row that will land, never a
+ *  word (Marcos, Oct 12: "we can do better than that reading indicator"). The value is the row's state, never printed. */
+const DAY_READING = "reading";
 const DAY_NOT_READ = "Not read";
 // why a login's limits could not be read, from /api/accounts' last_read_failure.reason; a reason with no word shows none
 const READ_WHY = { not_answering: "Provider not answering", refused: "Provider refused", signed_out: "Signed out", unsupported: "No limits to read" };
@@ -384,15 +466,14 @@ const money = dollars; // priced from the rate card, so an estimate; nothing cha
 const cap = (v) => `$${Number.isInteger(v) ? v : v.toFixed(2)}`;
 const waiting = () => `<span class="waitbox" role="status">${GLYPH.wait}<span class="sr">Signing in</span></span>`;
 // the lock says what it means beside it: a bare red lock read as nothing until the footer under the stack (walk, Oct 13)
-const locked = (pop = false, word = "Limit reached") => `<span class="state limit"><span class="lockico${pop ? " lock-pop" : ""}" aria-hidden="true">${GLYPH.lock}</span>${word}</span>`;
+const locked = (pop = false, word = "Limit reached") => DRAW.lock(word, { pop });
 // a held login is held until the last of its windows at their limit resets
 const heldUntil = (a) => { const w = a.windows.filter(atLimit).sort((x, y) => y.left - x.left)[0]; return w?.resetMs != null ? `Limit reached until ${at(w.resetMs)}` : "Limit reached"; };
 
-function ring(w) {
-  const C = 2 * Math.PI * 15, f = Math.max(0, Math.min(1, w.left / w.len));
-  return `<svg class="ring" viewBox="0 0 40 40" aria-hidden="true"><circle class="trk" cx="20" cy="20" r="15"/><circle class="arc" cx="20" cy="20" r="15" stroke-dasharray="${(C * f).toFixed(1)} ${C.toFixed(1)}"/></svg>`;
-}
-const bar = (v, cls = "") => `<div class="bar ${cls}"><b data-v="${v}"></b></div>`;
+// the ring and the meter are the KIT's now (kit.js DRAW, console.css): this page's own drawings, lifted so that every
+// page draws a share the way this one does. The arc is how much of the window is left; the bar is how much is used.
+const ring = (w) => DRAW.ring(w.left / w.len);
+const bar = (v, cls = "") => DRAW.meter(v, cls);
 // A window still running says when it resets, with its ring. A window whose reported reset has already gone by says
 // "Ended" and that time (Marlin's Accounts walk, Oct 12: "Reset" over an empty bar misread), with no ring: there is nothing left to fill, and "Week 93% used" beside an empty
 // cell read as a live week at 93% when it was the ended week's figure (fin's word, Oct 10). A window that reported no
@@ -400,9 +481,11 @@ const bar = (v, cls = "") => `<div class="bar ${cls}"><b data-v="${v}"></b></div
 const resets = (w) => (w.left != null ? `<span class="when">${ring(w)}Resets ${at(w.resetMs)}</span>`
   : w.rolledMs != null ? `<span class="when rolled">Ended ${at(w.rolledMs)}</span>` : "<span></span>");
 // A window whose reset went by is closed, and Claude opens the next only on the next request, so it can stay closed for
-// hours: "Ended" and the time over the bar's and the figure's columns, the reset's column left empty, never an empty bar
-// read as a missing figure (Marlin's ruling, fin's words, hitstop's drawing a3c93b2, Oct 12).
-const closed = (w) => `<span class="closed"><b>Ended</b>${w.rolledMs != null ? at(w.rolledMs) : ""}</span><span></span>`;
+// hours. Its row keeps its shape: the dashed track a window with no reading since its reset draws (console.css .bar.gone,
+// never a solid empty track, which would read as nothing used), a dash for its figure, and "Ended" with the time in the
+// reset's column, where the open rows say when they reset (Marlin's ruling, fin's words, Oct 12).
+const closed = (w, sub = false) => `${bar(null, `gone${sub ? " sub" : ""}`)}<span class="pct">${DRAW.dash}</span>`
+  + `<span class="when rolled">Ended${w.rolledMs != null ? ` ${at(w.rolledMs)}` : ""}</span>`;
 // The budget day refills at the DAEMON's midnight, so its strip says that one word: a day name and "12:00 AM" read
 // as a weekly date to both walkers (fin, Oct 10). The plan windows keep their times, which really move. Read from a
 // browser in another zone the daemon's midnight is not midnight there, so the word is only used when it is one.
@@ -412,7 +495,7 @@ function refills(day) {
   return `<span class="when">${ring(day)}Resets ${midnightHere ? "midnight" : at(day.resetMs)}</span>`;
 }
 
-function windowsHtml(a, next = null) {
+function windowsHtml(a, next = null, left = null) {
   // a held login says so on its own line under the header, where a narrow card wraps it instead of cutting its name
   let rows = held(a) ? `<span class="heldline">${heldUntil(a)}</span>` : "";
   for (const w of a.windows) {
@@ -427,122 +510,235 @@ function windowsHtml(a, next = null) {
       // A model's figure is a slice of the account week above it, read in the same observation, so once that week has
       // ended its slices have too — whether or not the model itself reported a reset (hitstop, Oct 10).
       for (const m of a.models) rows += `<span class="label sub">${esc(m.name)}</span>`
-        + (ended(m) || ended(w) ? closed(ended(m) ? m : w)
+        + (ended(m) || ended(w) ? closed(ended(m) ? m : w, true)
           : `${bar(m.used, `sub ${m.used >= 100 ? "full" : ""} ${m.stale ? "stale" : ""}`)}`
             + `<span class="pct">${m.used}%<span class="used">used</span></span>` + resets(m));
     }
   }
   if (a.staleAt != null) rows += `<span class="stale-at">${GLYPH.eye}Read ${at(a.staleAt)}</span>`;
-  if (next) { // a held next is the one serving at its reset: its lock and that reset, on the windows' own columns
+  if (next) { // a held next is the one serving at its reset: its lock and that reset, on the windows' own columns, drawn
+    // and not said again in a sentence under them (the lock says held, the ring and the time say until when)
     const w = held(next) && next.windows.filter(atLimit).sort((x, y) => y.left - x.left)[0];
-    rows += `<span class="next"><span class="label">Next</span><span class="who">${esc(next.name)}</span>${w ? `${locked(false, "")}${resets(w)}<span class="nextwhy">Limit reached; usable again from ${at(w.resetMs)}</span>` : ""}</span>`;
+    rows += `<span class="next"><span class="label">Next</span><span class="who">${esc(next.name)}</span>${w ? `<span class="nextlock" title="Limit reached until ${at(w.resetMs)}">${locked(false, "")}</span>${resets(w)}` : ""}</span>`;
+  } else if (left) {
+    // the last login with room in a pool of several: no other takes over at the next plan limit, until the first held one
+    // comes back (lastLeftOf), drawn on the Next row where a next would stand (splice-lead, Oct 13): an empty socket where
+    // its name would be, the lock, and the time the first held login is back
+    const said = `No other login has room${left.untilMs ? ` until ${at(left.untilMs)}` : ""}`;
+    rows += `<span class="next none" title="${said}"><span class="label">Next</span><span class="who"><i class="nosock" role="img" aria-label="${said}"></i></span>`
+      + `<span class="nextlock">${locked(false, "")}</span>${left.untilMs ? `<span class="when rolled">${at(left.untilMs)}</span>` : "<span></span>"}</span>`;
   }
   return `<div class="windows">${rows}</div>`;
 }
 
-// A command's day: what it has spent since local midnight, against the budget he set, and when it refills. The
-// command's tab names the row, because one provider can serve several commands. Where a plan provider's commands share
-// one rail, the tab is pressed to show that command's order: pick is { p, on } there, and null everywhere else.
+// ---------- a command's day ----------
+// ONE STRIP PER COMMAND, ON THE CARDS' OWN COLUMNS (Oct 26), so its bars end and its reset stands where theirs do. Row
+// one leads with the day's figure at the focal size, its words muted on the figure's baseline and the budget's act at
+// the row's end, the words taking the whole row before they wrap. Under it the day is drawn: spend against the budget
+// where one caps what the command is charged, beside when the day resets, then the day hour by hour on the scale every
+// strip on the board shares, which a budget never takes away. The command's tab names the strip, because one provider
+// can serve several commands; where a plan provider's commands share one rail, the tab is pressed to show that
+// command's order: pick is { p, on } there, and null everywhere else.
 function meterHtml(c, pick = null) {
   const day = { ...dayReset(), len: LEN.Day };
-  const tag = pick ? `<button class="chip tag" data-act="lane" data-p="${pick.p.id}" data-c="${c.cmd}" aria-pressed="${pick.on}">${esc(c.cmd)}</button>`
+  const tag = pick ? `<button class="chip tag" data-act="lane" data-p="${pick.p.id}" data-c="${esc(c.cmd)}" aria-pressed="${pick.on}">${esc(c.cmd)}</button>`
     : `<span class="chip tag">${esc(c.cmd)}</span>`;
-  if (ui.editor && ui.editor.c === c.cmd) return `<div class="meter" data-meter="${c.cmd}">${editorHtml(c, tag)}</div>`;
-  if (c.split && !c.unread) return splitMeterHtml(c, tag, day);
-  // Marlin's mixed form (fin, Oct 10): with every request priced, the figure alone; with some, the figure for the priced
-  // ones, "≈$0.84 for 50 requests", and the rest by why under it; with none, only the count. Never "$0.00" over all.
-  // a spend splice is still reading (spend_pending, used_usd null after a restart) is no figure yet: it once threw here
-  // and left the whole board empty on the first open after a restart
-  const spent = c.local || c.unread || c.spent == null || (c.unpriced && !c.priced) ? "" : money(c.spent);
-  const share = spent && (c.unpriced || c.failed) && c.priced ? `for ${reqs(c.priced)}` : "";
+  const reading = c.unread === DAY_READING, split = c.split && !c.unread ? c.split : null;
+  const fill = capFill(c, split), keyed = !!c.hours && !c.local; // the hours are drawn, so the words' swatches name their colours
+  const words = c.local ? `<span class="money"></span>` : reading ? `<span class="money">${GHOST.fig(4.6)} ${GHOST.bar(9.5)}</span>`
+    : split ? splitWords(c, split, keyed) : plainWords(c, keyed);
+  // the budget editor opens between the figure and the hours, so the day he caps stays drawn under it
+  const editing = ui.editor && ui.editor.c === c.cmd, act = editing ? "" : budgetAct(c, split, reading);
+  const spend = editing ? editorHtml(c) : fill ? `${capHtml(c, fill)}${refills(day)}` : "";
+  // the day is a door to exactly its requests on Requests, every project, from the hour its figures count from
+  // (requests.js applyAddress reads cmd and from); a day with none, or one not read yet, has nothing to open
+  const opens = !c.local && !reading && !c.unread && c.turns > 0 && DAY_FROM != null;
+  const label = opens ? `<a class="label door" href="${requestsAt(c, { from: DAY_FROM })}" aria-label="Today's ${esc(c.cmd)} requests">Day${DRAW.go}</a>`
+    : `<span class="label">Day</span>`;
+  return `<div class="meter day${spend ? " spend" : ""}" data-meter="${esc(c.cmd)}"${reading ? ' aria-busy="true"' : ""}>`
+    + `${tag}${label}<div class="dayline">${words}${act}</div>${spend}${hoursHtml(c)}${fill && !editing ? "" : refills(day)}</div>`;
+}
+// a door to one command's requests on Requests, every project, over a stretch of today (requests.js applyAddress)
+const requestsAt = (c, { from, to = null, outcome = null }) => `requests.html?${new URLSearchParams({ project: "", cmd: c.cmd, from: String(from),
+  ...(to != null ? { to: String(to) } : {}), ...(outcome ? { outcome } : {}) })}`;
+const n0 = (n) => n.toLocaleString("en-US");
+const reqs = (n) => `${n0(n)} ${n === 1 ? "request" : "requests"}`;
+// a count that leads its row is the row's figure, in the figure's weight; after a figure it is one of the words
+const leadNum = (n, lead) => (lead ? `<b class="lead">${n0(n)}</b>` : n0(n));
+// A plan's turns read "on your plan": the plan covered them, and "with no price" would read as splice missing data.
+// Every other turn with no figure is a model with no rate card (fin's words, Marlin, Oct 10).
+const noPrice = (c, lead = false) => `${leadNum(c.unpriced, lead)} ${c.unpriced === 1 ? "request" : "requests"} ${c.onPlan ? "on your plan" : "with no price"}`;
+// A failed request is counted here only when it reported no usage, so nothing was charged for it: one that reported
+// usage is priced into the figure (EconomicsBuckets: failed_turns counts noPrice && failed). The word is the one
+// Requests' Outcome switch uses (fin, Oct 12), in the limit red the hours draw failures in, and the count is the door
+// to exactly those requests; that they cost nothing (marlin p229, Oct 12: a count alone left him unsure) is said on
+// the door, which is where he asks it.
+const failedDoor = (c, n) => (DAY_FROM == null ? `<span class="failed-n">${n0(n)} failed</span>`
+  : `<a class="failed-n" href="${requestsAt(c, { from: DAY_FROM, outcome: "fail" })}" title="${n === 1 ? "It reported" : "They reported"} no usage, so nothing was charged">${n0(n)} failed</a>`);
+// the swatch that ties a phrase to its colour in the hours drawn under it: no price muted, failed in the limit red
+const sw = (k) => `<i class="sw ${k}" aria-hidden="true"></i>`;
+// what the figure leaves out, each phrase with its swatch where the hours are drawn
+const asides = (c, keyed, lead = false) => [c.unpriced ? `${keyed && !c.onPlan ? sw("np") : ""}${noPrice(c, lead)}` : "",
+  c.failed ? `${keyed ? sw("fl") : ""}${failedDoor(c, c.failed)}` : ""].filter(Boolean);
+// the line under the figure, its phrases kept whole: a narrow strip breaks it between them, never inside one, and each
+// dot is held to the phrase before it, so a wrapped line never opens on one
+const ownLine = (parts) => (parts.length ? `<span class="unpriced own">${parts.map((p) => `<span class="part">${p}</span>`).join("\u00a0· ")}</span>` : "");
+// Not read, and why when splice kept a sentence for it, behind the word: an hour it could not read is drawn hatched on
+// the day itself, so only a reason the drawing cannot show opens here. Where no day on the board was read, the page
+// head says so once (dayState) and each strip keeps only the dash where its figure goes.
+function notRead(c) {
+  if (DAY_UNREAD) return DRAW.dash;
+  if (!c.unreadWhy) return `<em class="nr-day">${DAY_NOT_READ}</em>`;
+  const open = ui.why.has(c.cmd);
+  return DRAW.disc({ open, act: "why", data: ` data-c="${esc(c.cmd)}"`, inner: `<em class="nr-day">${DAY_NOT_READ}</em>` })
+    + (open ? `<span class="state why${ui.enter === "why" ? " unfold" : ""}">${esc(c.unreadWhy)}</span>` : "");
+}
+// a day at or past its budget: its figure in the limit red, as its bar's overage is
+const pastCap = (c) => !!c.budget && c.spent != null && c.spent >= c.budget.cap;
+// Marlin's mixed form (fin, Oct 10): with every request priced, the figure alone; with some, the figure for the priced
+// ones, "≈$0.84 for 50 requests", and the rest by why under it; with none, only the count, which then leads. Never
+// "$0.00" over all. A spend splice is still reading (spend_pending, used_usd null after a restart) is its figure's ghost:
+// it once threw here and left the whole board empty on the first open after a restart.
+function plainWords(c, keyed) {
+  if (c.unread) return `<span class="money">${notRead(c)}</span>`;
+  if (c.spent == null) return `<span class="money">${GHOST.fig(3.6)}${c.budget ? ` <em>of ${cap(c.budget.cap)}</em>` : ""}</span>`;
+  const figure = !(c.unpriced && !c.priced), lead = figure ? `<b class="lead${pastCap(c) ? " over" : ""}">${money(c.spent)}</b>` : "";
   // a day with no request yet says so in muted ink, never a figure of nothing (hitstop's mock, fin)
-  const none = c.unread ? `<em>${c.unread}</em>${c.unreadWhy ? ` <span class="state">${esc(c.unreadWhy)}</span>` : ""}` : !c.local && c.spent != null && !c.priced && !c.unpriced && !c.failed ? "<em>No requests</em>" : "";
-  if (!c.budget) {
-    // a command whose every account is on a plan has nothing a budget caps, since a budget caps what a key was charged
-    // (BudgetEnforcement.kt:34), so its row offers none, as the split row's does; a day not read yet keeps that rule
-    const offer = c.split?.allPlan ? "" : `<button class="act quiet" data-act="edit-budget" data-c="${c.cmd}">Set budget</button>`;
-    return `<div class="meter windows spend" data-meter="${c.cmd}">${tag}<span class="label">Day</span><span class="money">${none || spent}${share ? ` <em>${share}</em>` : ""}${unpriced(c)}</span>`
-      + `${offer}${refills(day)}${c.unread ? "" : openingRow(c)}</div>`;
-  }
-  const pct = Math.min(100, Math.round((c.spent / c.budget.cap) * 100)), mode = c.budget.block ? "Block" : "Warn";
-  const spoken = `${spent ? `${spent} of` : "Budget"} ${cap(c.budget.cap)}, ${mode}${unpriced(c) ? `, ${[share, ...asides(c)].filter(Boolean).join(", ")}` : ""}`;
-  // no fill without a figure, and no empty box either: the cell stays, so the columns line up with the other rows
-  const fill = !spent ? "<span></span>" : `<div class="capbox">${bar(pct, c.spent >= c.budget.cap ? "full" : "")}</div>`;
-  return `<div class="meter windows spend" data-meter="${c.cmd}">${tag}<span class="label">Day</span>${fill}`
-    + `<button class="money act quiet" data-act="edit-budget" data-c="${c.cmd}" aria-label="${spoken}">${c.budget.block ? GLYPH.stop : GLYPH.bell}${spent ? `${spent} <em>of</em> ` : "<em>Budget</em> "}${cap(c.budget.cap)}${unpriced(c, share)}</button>${refills(day)}</div>`;
+  if (!c.priced && !c.unpriced && !c.failed && !c.budget) return `<span class="money"><em>No requests</em></span>`;
+  // with a budget the priced share goes under the figure, since "≈$0.84 for 50 requests of $20" misreads (fin)
+  const share = figure && (c.unpriced || c.failed) && c.priced ? `for ${reqs(c.priced)}` : "";
+  if (c.budget && figure) return `<span class="money">${lead} <em>of ${cap(c.budget.cap)}</em>${ownLine([share, ...asides(c, keyed)].filter(Boolean))}</span>`;
+  return `<span class="money">${lead}${share ? ` <em>${share}</em>` : ""}${ownLine(asides(c, keyed, !figure))}</span>`;
 }
 // The Day row once splice splits plan from key (fin's words, Marlin's 5:52 PM ruling, Oct 11). A bare "≈$" is money at the
 // rate card on a key and nothing else; a plan's share is a count "on your plan", and a dollar on it says "at API prices".
 // All on a plan: "23,559 requests on your plan · ≈$1,512.40 at API prices", and no Set budget, since his limits there are
-// the account's own windows; a budget set before keeps its button so he can see and remove it. Key and plan mixed:
+// the account's own windows; a budget set before keeps its act so he can see and remove it. Key and plan mixed:
 // "≈$12.40 for 300 requests · 23,259 on your plan", the budget capping the key's money alone. An hour recorded before the
 // split, on a mixed command, cannot say which side its requests were on, so they are counted as not split, never as money.
-function splitMeterHtml(c, tag, day) {
-  const s = c.split, n0 = (n) => n.toLocaleString("en-US"), parts = [];
+function splitWords(c, s, keyed) {
+  const parts = [];
   // each phrase after the first carries its dot as text; the run sits one dot's width left inside a clipping box, so a
   // phrase that starts a wrapped line has its dot cut off instead of leading the line with it (live walk of 54af50884)
   const line = (lead) => `<span class="money line"><span class="run">${[lead, ...parts].filter(Boolean)
     .map((p, i) => `<span class="part">${i ? `<span class="sep">· </span>` : ""}${p}</span>`).join(" ")}</span></span>`;
   if (s.allPlan) {
-    if (s.plan) parts.push(`${reqs(s.plan)} on your plan`);
+    if (s.plan) parts.push(`${leadNum(s.plan, true)} ${s.plan === 1 ? "request" : "requests"} on your plan`);
     if (s.planUsd) parts.push(`${money(s.planUsd)} at API prices`);
-    const keep = c.budget ? `<button class="act quiet" data-act="edit-budget" data-c="${c.cmd}">${c.budget.block ? GLYPH.stop : GLYPH.bell}Budget ${cap(c.budget.cap)}</button>` : "";
-    return `<div class="meter windows spend" data-meter="${c.cmd}">${tag}<span class="label">Day</span>${parts.length ? line("") : `<span class="money"><em>No requests</em></span>`}${keep}${refills(day)}</div>`;
+    return parts.length ? line("") : `<span class="money"><em>No requests</em></span>`;
   }
   const spent = c.budget ? c.spent : s.keyUsd, priced = s.keyPriced;
-  const lead = priced && spent != null ? `${money(spent)}${s.plan || s.keyUnpriced || s.old ? ` <em>for ${reqs(priced)}</em>` : ""}` : "";
-  const many = (n, words) => (lead || parts.length ? `${n0(n)} ${words}` : `${reqs(n)} ${words}`);
-  if (s.plan) parts.push(many(s.plan, "on your plan"));
-  if (s.keyUnpriced) parts.push(many(s.keyUnpriced, "with no price"));
-  if (c.failed) parts.push(failedCost(c.failed)); // the Outcome switch's word, never "requests failed" (fin, Oct 12)
-  if (s.old) parts.push(many(s.old, "not split into plan and key"));
-  const body = lead || (parts.length ? "" : `<em>No requests</em>`);
-  if (!c.budget) {
-    return `<div class="meter windows spend" data-meter="${c.cmd}">${tag}<span class="label">Day</span>${line(body)}`
-      + `<button class="act quiet" data-act="edit-budget" data-c="${c.cmd}">Set budget</button>${refills(day)}</div>`;
-  }
   // a day of failed requests spent nothing and says so, "$0 of $5", never only the cap (Oct 12)
-  const counted = spent != null && (spent || priced || c.failed);
-  const pct = Math.min(100, Math.round(((spent || 0) / c.budget.cap) * 100));
-  const fill = counted ? `<div class="capbox">${bar(pct, spent >= c.budget.cap ? "full" : "")}</div>` : "<span></span>";
-  return `<div class="meter windows spend" data-meter="${c.cmd}">${tag}<span class="label">Day</span>${fill}`
-    + `<button class="money act quiet" data-act="edit-budget" data-c="${c.cmd}">${c.budget.block ? GLYPH.stop : GLYPH.bell}${counted ? `${money(spent)} <em>of</em> ` : "<em>Budget</em> "}${cap(c.budget.cap)}`
-    + `${parts.length ? `<span class="unpriced own">${parts.map((p) => `<span class="part">${p}</span>`).join(" · ")}</span>` : ""}</button>${refills(day)}</div>`;
+  const counted = c.budget ? spent != null && (spent || priced || c.failed) : priced && spent != null;
+  const lead = !counted ? "" : c.budget ? `<b class="lead${pastCap(c) ? " over" : ""}">${money(spent)}</b> <em>of ${cap(c.budget.cap)}</em>`
+    : `<b class="lead">${money(spent)}</b>${s.plan || s.keyUnpriced || s.old ? ` <em>for ${reqs(priced)}</em>` : ""}`;
+  const many = (n, words) => (lead || parts.length ? `${n0(n)} ${words}` : `${leadNum(n, true)} ${n === 1 ? "request" : "requests"} ${words}`);
+  if (s.plan) parts.push(many(s.plan, "on your plan"));
+  if (s.keyUnpriced) parts.push(`${keyed ? sw("np") : ""}${many(s.keyUnpriced, "with no price")}`);
+  if (c.failed) parts.push(`${keyed ? sw("fl") : ""}${failedDoor(c, c.failed)}`);
+  if (s.old) parts.push(many(s.old, "not split into plan and key"));
+  return lead || parts.length ? line(lead) : `<span class="money"><em>No requests</em></span>`;
 }
-// turns on a model with no rate card, after the dollar figure (fin). A meter's money column is narrow at every width, so
-// here the words take their own line under the figure, with no dot (fin)
-// A plan's turns read "on your plan": the plan covered them, and "with no price" would read as splice missing data.
-// Every other turn with no figure is a model with no rate card (fin's words, Marlin, Oct 10).
-const reqs = (n) => `${n.toLocaleString("en-US")} ${n === 1 ? "request" : "requests"}`;
-const noPrice = (c) => `${reqs(c.unpriced)} ${c.onPlan ? "on your plan" : "with no price"}`;
-// with a budget the priced share leads the line under the meter, since "≈$0.84 for 50 requests of $20" misreads (fin)
-// a day with an hour splice has not read has no count to share either: its readable hours would undercount it (fin, Oct 11)
-// what the figure leaves out: requests with no price, and failed ones, which cost nothing and are counted as failed, the
-// word Requests' Outcome switch uses (Marlin's Accounts walk, fin's words, Oct 12)
-// A failed request is counted here only when it reported no usage, so nothing was charged for it: one that reported
-// usage is priced into the figure (EconomicsBuckets: failed_turns counts noPrice && failed). The count says what they
-// cost, "10 failed · $0", since a count alone left the walker unsure they were free (marlin p229, Oct 12).
-const failedCost = (n) => `${n.toLocaleString("en-US")} failed · ${money(0)}`;
-const asides = (c) => [c.unpriced ? noPrice(c) : "", c.failed ? failedCost(c.failed) : ""].filter(Boolean);
-const unpriced = (c, lead = "") => ((c.unpriced || c.failed) && !c.local && !c.unread ? `<span class="unpriced own">${[lead, ...asides(c)].filter(Boolean).map((p) => `<span class="part">${p}</span>`).join(" · ")}</span>` : "");
-// The hour holding the day's start, in a zone whose midnight is not on a UTC hour: its turns belong to two days and
-// the hourly totals cannot split them, so they are said once, apart from the day's figure.
-//
-// A SENTENCE, SO IT TAKES THE WHOLE TILE, never the money column beside the figure: that column is 175 px at 3394 and
-// wrapped these words into four ragged lines, doubling the tile's height for one aside (capture, Oct 10).
-//
-// Only the tile with no budget draws it: a budgeted head reads its day from the budget's own exact figure, which has
-// no half-hour it cannot place, so `opening` is null there by construction (see where the command rows are built).
-const openingRow = (c) => (c.opening && !c.local ? `<span class="unpriced opening">${openingNote(c.opening)}</span>` : "");
-const openingNote = (o) => `${o.usd ? money(o.usd) : `${o.unpriced.toLocaleString("en-US")} ${o.unpriced === 1 ? "request" : "requests"}`} in the hour that includes midnight, not counted`;
-function editorHtml(c, tag) {
-  const ed = ui.editor;
+// What the budget's meter fills with: today's spend against the cap, the spend's ghost while splice still reads it, or
+// nothing where no request today had a price to count against it. A budget on a command all on a plan caps nothing, so
+// its strip draws only the hours, as one with no budget does.
+function capFill(c, split) {
+  if (!c.budget || c.local || split?.allPlan) return null;
+  if (c.spent == null) return { pending: true };
+  if (split) return c.spent || split.keyPriced || c.failed ? { usd: c.spent } : null;
+  return c.unpriced && !c.priced ? null : { usd: c.spent };
+}
+// SPEND AGAINST THE CAP, on one track scaled to the larger of the two, so a day past its budget draws how far past: the
+// cap is the mark across the track, what stayed under it fills in the provider's colour and what went over in the limit
+// red, and the percent is never held at 100 (a Warn budget lets the day run on past it). [capUsd] is the cap drawn: the
+// budget's own, or the amount typed in its editor.
+function capHtml(c, f, capUsd = c.budget.cap) {
+  if (f.pending) return `<div class="capbox">${GHOST.track()}</div><span class="pct">${GHOST.fig(4.2)}</span>`;
+  const usd = f.usd || 0, scale = Math.max(capUsd, usd), at = (v) => +((v / scale) * 100).toFixed(2);
+  const fill = usd > capUsd ? `<b class="past" data-v="${at(usd)}"></b><b data-v="${at(capUsd)}"></b>` : `<b data-v="${at(usd)}"></b>`;
+  return `<div class="capbox"><div class="bar spend">${fill}</div><i class="capline" style="left:calc(${at(capUsd)}% - .08rem)"></i></div>`
+    + `<span class="pct${usd >= capUsd ? " limit" : ""}">${Math.round((usd / capUsd) * 100)}%<span class="used">used</span></span>`;
+}
+// what a budget on this command would cap today: the key's money, which a plan never adds to; null where nothing is
+// capped or the day is not read
+const cappable = (c) => (c.local || c.unread || c.split?.allPlan ? null : c.budget ? c.spent : c.split ? c.split.keyUsd : c.spent);
+// The act at the right of the first row: Set budget, or the budget he set, its glyph saying Warn or Block. The cap is on
+// the act only where the row's own words do not say it already ("$1.50 of $5").
+function budgetAct(c, split, reading) {
+  const d = `data-act="edit-budget" data-c="${esc(c.cmd)}"`;
+  if (c.budget) {
+    const said = !c.local && !split?.allPlan && capFill(c, split);
+    return `<button class="act quiet bud" ${d} aria-label="Budget ${cap(c.budget.cap)}, ${c.budget.block ? "Block" : "Warn"}">${c.budget.block ? GLYPH.stop : GLYPH.bell}Budget${said ? "" : ` ${cap(c.budget.cap)}`}</button>`;
+  }
+  // a command whose every account is on a plan has nothing a budget caps, since a budget caps what a key was charged
+  // (BudgetEnforcement.kt:34), so its row offers none. A day not read cannot say which it is: the split splice last gave
+  // for it decides (SPLIT_SEEN), and a plan command it never gave one for offers none until its day is read.
+  const allPlan = c.split ? c.split.allPlan : c.unread === DAY_NOT_READ ? SPLIT_SEEN.get(c.head) ?? c.kind === "plan" : false;
+  if (allPlan || c.local) return "";
+  if (reading) return c.kind === "key" ? `<span class="act-ghost">${GHOST.bar(6.6)}</span>` : "";
+  return `<button class="act quiet" ${d}>Set budget</button>`;
+}
+// THE DAY HOUR BY HOUR, ON ONE SCALE FOR THE WHOLE BOARD (HOUR_MAX, the busiest hour of any strip), so a quiet command
+// reads as quiet beside a busy one. One sunk track runs from the day's start to its reset; each hour gone by is a column
+// filled from the foot with what went through in the provider's colour, what had no price muted and what failed in the
+// limit red, and is a door to exactly that hour's requests on Requests. An hour splice could not read is hatched, an
+// hour with no requests is the flat track, and the hours to come are the track's outline past the now line. The
+// strip's busiest hour carries its count on its top, and 12 AM, 6 AM, 12 PM and 6 PM stand under their hours. In a zone
+// whose midnight is not on a UTC hour, the hour that holds the day's start opens the track hatched in the provider's
+// colour: its requests belong to two days, so they are kept out of the figure, and what they were is on the hour. While
+// the day is read, the row is its ghost.
+const HOUR_MS = 3600000;
+const hourWord = (ms) => new Date(ms).toLocaleTimeString("en-US", { hour: "numeric" });
+const TICKS = new Set([0, 6, 12, 18]);
+const openingWord = (o) => `${o.usd ? money(o.usd) : `${n0(o.unpriced)} ${o.unpriced === 1 ? "request" : "requests"}`} in the hour that includes midnight, not counted`;
+function hoursHtml(c) {
+  if (c.local) return "";
+  if (!c.hours) return `<div class="dayrun">${GHOST.track()}</div>`;
+  const now = Date.now(), open = c.opening && !c.allUnread ? c.opening : null, first = open ? 1 : 0;
+  const t0 = c.hours[0].at - first * HOUR_MS, n = c.hours.length + first;
+  const tall = (k) => `height:max(.14rem, ${((k / HOUR_MAX) * 100).toFixed(2)}%)`;
+  const peak = c.allUnread ? null : c.hours.reduce((m, h) => (!h.unread && h.at <= now && h.all > (m?.all ?? 0) ? h : m), null);
+  const cols = c.hours.map((h) => {
+    if (h.at > now) return "<i></i>";
+    if (h.unread || c.allUnread) return `<i class="unread" title="${hourWord(h.at)} · ${DAY_NOT_READ}"></i>`;
+    if (!h.all) return `<i title="${hourWord(h.at)} · No requests"></i>`;
+    const said = [reqs(h.all), h.none ? `${n0(h.none)} with no price` : "", h.fail ? `${n0(h.fail)} failed` : ""].filter(Boolean).join(", ");
+    return `<a class="hr" href="${requestsAt(c, { from: h.at, to: h.at + HOUR_MS })}" tabindex="-1" title="${hourWord(h.at)} · ${said}">`
+      + `${h.ok ? `<b class="ok" style="${tall(h.ok)}"></b>` : ""}${h.none ? `<b class="np" style="${tall(h.none)}"></b>` : ""}`
+      + `${h.fail ? `<b class="fl" style="${tall(h.fail)}"></b>` : ""}</a>`;
+  });
+  if (open) cols.unshift(`<i class="opening" title="${openingWord(open)}"><b style="${tall(open.turns)}"></b></i>`);
+  const ticks = [];
+  for (let i = 0; i < n; i++) {
+    const at = t0 + i * HOUR_MS, hour = new Date(at).getHours();
+    if (TICKS.has(hour) && (i === 0 || new Date(at - HOUR_MS).getHours() !== hour)) ticks.push(`<span class="tick" style="--i:${i}"><b>${hourWord(at)}</b></span>`);
+  }
+  const top = peak ? `<span class="peak" style="--i:${c.hours.indexOf(peak) + first}">${n0(peak.all)}</span>` : "";
+  const f = Math.min(1, Math.max(0, (now - t0) / (n * HOUR_MS)));
+  return `<div class="dayrun" role="group" aria-label="Requests by hour since ${hourWord(t0)}" style="--n:${n};--at:${f.toFixed(4)}">`
+    + `<span class="hours">${cols.join("")}</span><i class="now" aria-hidden="true"></i><span class="marks" aria-hidden="true">${top}${ticks.join("")}</span></div>`;
+}
+// The budget editor, between today's figure and its hours: the amount, five presets, Warn or Block, the cap drawn against
+// today's spend as he types it, and the acts. A save splice refused says so beside the acts with its reason one press
+// away, and the editor shakes once.
+function editorHtml(c) {
+  const ed = ui.editor, spend = cappable(c);
   const presets = [5, 10, 25, 50, 100].map((v) => `<button data-act="preset" data-v="${v}" aria-pressed="${ed.cap === v}">$${v}</button>`).join("");
-  return `${tag}<div class="editor"><span class="money-in">$<input class="field" id="cap-in" inputmode="decimal" value="${ed.cap}" aria-label="Budget cap"></span>`
+  const preview = spend == null ? "" : `<span class="edpreview" aria-hidden="true">${capHtml(c, { usd: spend }, ed.cap)}</span>`;
+  return `<div class="editor${ed.err && ui.shook === "editor" ? " failed" : ""}${ui.enter === "editor" ? " enter" : ""}"><span class="money-in">$<input class="field" id="cap-in" inputmode="decimal" value="${ed.cap}" aria-label="Budget cap"></span>`
     + `<span class="presets">${presets}</span>`
     + `<span class="mode"><button data-act="bmode" data-v="warn" aria-pressed="${!ed.block}">${GLYPH.bell}Warn</button><button data-act="bmode" data-v="block" aria-pressed="${ed.block}">${GLYPH.stop}Block</button></span>`
-    + `<button class="act primary" data-act="save-budget" data-c="${c.cmd}">Set budget</button>`
-    + `${c.budget ? `<button class="act quiet" data-act="remove-budget" data-c="${c.cmd}">Remove budget</button>` : ""}<button class="act quiet" data-act="cancel-budget">Cancel</button></div>`;
+    + `${preview}<span class="edacts"><button class="act primary" data-act="save-budget" data-c="${esc(c.cmd)}">Set budget</button>`
+    + `${c.budget ? `<button class="act quiet" data-act="remove-budget" data-c="${esc(c.cmd)}">Remove budget</button>` : ""}<button class="act quiet" data-act="cancel-budget">Cancel</button>`
+    + `${ed.err ? refusalHtml(ed.err, "editor") : ""}</span>${ed.err ? reasonHtml(ed.err, "editor") : ""}</div>`;
+}
+// the editor's drawing of its cap against today's spend, redrawn in place as he types, so the field keeps its focus
+function previewCap(field) {
+  const box = field.closest(".editor")?.querySelector(".edpreview"), { c } = findCmd(ui.editor?.c);
+  const spend = c && cappable(c);
+  if (!box || spend == null || !(ui.editor.cap > 0)) return;
+  box.innerHTML = capHtml(c, { usd: spend }, ui.editor.cap);
+  DRAW.paint(box);
 }
 
 // ---------- sign-in: one element wherever an account signs in, with the step its provider really asks for ----------
@@ -654,24 +850,42 @@ function howFor(p, a, c) {
 // serves: every command this account serves now, each riding it as a chip. Use now pins it on the rail's command.
 function slotHtml(p, c, a, serves) {
   // the pin says what pressing it does, at rest and on touch: both walkers clicked a bare pin on a guess (p153, p154)
-  const pin = c && c.pin === a.id ? `<button class="act quiet small pin" data-act="unpin" data-p="${p.id}" data-c="${c.cmd}">${GLYPH.pin}Unpin</button>` : "";
-  const chips = serves.map((x) => `<span class="chip" data-key="chip:${x.cmd}"><i></i>${esc(x.cmd)}</span>`).join("");
-  // "Not answering" is the word (fin, Oct 10): it is what the watch measures, no reply at the
-  // address in time (LocalRuntimeReach.kt), and it is what splice status already prints.
-  if (a.down) return `<span class="state">Not answering</span>`;
-  if (a.unread) return `<span class="state">Checking</span>`;
-  if (serves.length && (!c || serves.includes(c))) return `${pin}${chips}`;
+  const pin = c && c.pin === a.id ? `<button class="act quiet small pin" data-act="unpin" data-p="${p.id}" data-c="${esc(c.cmd)}">${GLYPH.pin}Unpin</button>` : "";
+  const chips = serves.map((x) => `<span class="chip" data-key="chip:${esc(x.cmd)}"><i></i>${esc(x.cmd)}</span>`).join("");
+  // A SERVER ON THIS COMPUTER WEARS ITS LAMP: unlit when it does not answer, as Sessions draws a session that is not
+  // running, and its command's chip with the live dot when it does. "Not answering" is the word (fin, Oct 10): it is
+  // what the watch measures, no reply at the address in time (LocalRuntimeReach.kt), and what splice status prints.
+  if (a.down) return `${DRAW.lamp("")}<span class="state">Not answering</span>`;
+  // a server the watch has no reading for yet: the unlit lamp, and the state line's ghost until the watch reads it
+  if (a.unread) return `${DRAW.lamp("")}${GHOST.state()}`;
+  // a switch or an unpin splice refused, on the card it was pressed on, until the next press
+  const err = c && ui.slotErr && ui.slotErr.a === a.id && ui.slotErr.c === c.cmd ? refusalHtml(ui.slotErr, slotKey(a, c)) : "";
+  if (serves.length && (!c || serves.includes(c))) return `${err}${pin}${chips}`;
   if (a.out) return `<span class="state">Signed out</span>`;
-  if (a.renews) return `<span class="state">Token expired</span>`;
-  if (p.kind === "key" && !a.has) return `<span class="state">No key</span>`;
-  if (held(a)) return `${pin}${locked(false, "")}`;
-  const use = (cls) => `<button class="act ${cls}" data-act="use" data-p="${p.id}" data-c="${c.cmd}" data-a="${a.id}">Use now</button>`;
-  const mv = ui.moving;
-  if (p.kind === "plan" && mv && mv.a === a.id && mv.c === c.cmd) {
-    return chips + armedAsk("Switches at its next request", mv.cut, use("danger"), '<button class="act quiet" data-act="keep-use">Cancel</button>');
+  // an expired token its command renews on its next run: the chip of that command carries the renewal, and its title
+  // says so in words
+  if (a.renews) {
+    const cmd = p.cmds.find((x) => (a.row?.heads || []).includes(x.head))?.cmd;
+    return `<span class="state mute">Token expired</span>${cmd ? `<span class="chip renew" title="Renews when ${esc(cmd)} next runs">${GLYPH.renew}${esc(cmd)}</span>` : ""}`;
   }
-  if (p.kind === "plan") return `${chips}${use("quiet")}`;
+  if (p.kind === "key" && !a.has) return `<span class="state">No key</span>`;
+  if (held(a)) return `${err}${pin}${locked(false, "")}`;
+  if (p.kind === "plan" && c) {
+    // armed, Use now waits in the row under the card's head, beside the sessions it would cut (armRow)
+    const armed = ui.moving && ui.moving.a === a.id && ui.moving.c === c.cmd;
+    return `${err}${chips}${armed ? "" : useAct(p, c, a, "quiet")}`;
+  }
   return "";
+}
+const slotKey = (a, c) => `slot:${a.id}|${c.cmd}`;
+const useAct = (p, c, a, cls) => `<button class="act ${cls}" data-act="use" data-p="${p.id}" data-c="${esc(c.cmd)}" data-a="${a.id}">Use now</button>`;
+// Use now asked once: the sessions with a request in flight on the command, each a chip to its session, then the act
+// that switches and the way out, on a row of its own under the card's head. The confirming act fills in the text's own
+// ink, never the limit red, which is for limits and failures.
+function armRow(p, c, a) {
+  const mv = ui.moving;
+  if (!c || !mv || mv.a !== a.id || mv.c !== c.cmd) return "";
+  return `<div class="armrow${ui.enter === "arm" ? " unfold" : ""}">${armedAsk("Switches at its next request", mv.cut, useAct(p, c, a, "danger"), '<button class="act quiet" data-act="keep-use">Cancel</button>')}</div>`;
 }
 // A key in the environment or a key file shadows the stored copy (KeyRoutes.kt:7-9): saving one there changes nothing.
 const keyActs = (a) => a.from === "store";
@@ -681,13 +895,16 @@ function menuItems(p, a) {
   return [...(a.canRename === false ? [] : [["rename", "Rename"]]), ...(a.out ? [] : [["resign", "Sign in again"]]),
     ...(a.canRemove === false ? [] : [["remove", "Remove"]])];
 }
+// Remove is in the text's ink like every other item, and armed it fills in that ink and names what it cuts: the limit red
+// is for limits and failures, never for an act. A refusal says so in plain words under it, its reason one press away,
+// and the menu shakes once.
 function menuHtml(p, a, spot) {
-  const armed = ui.armed === spot, refused = ui.removeErr && ui.removeErr.spot === spot;
-  return `<div class="menu${refused ? " failed" : ""}" role="menu">${menuItems(p, a).map(([act, label]) => {
-    const on = a.sessions?.length || 0; // sessions on it sign in again or move to another login once it is gone
-    const text = act === "remove" && armed ? `Remove ${p.kind === "key" ? "API key" : a.name}${on ? ` · ${on === 1 ? "1 session" : `${on} sessions`} use it` : ""}` : label;
+  const armed = ui.armed === spot, refused = ui.removeErr && ui.removeErr.spot === spot, key = `remove:${spot}`;
+  const on = a.sessions?.length || 0; // sessions on it sign in again or move to another login once it is gone
+  return `<div class="menu${refused && ui.shook === key ? " failed" : ""}${ui.enter === "menu" ? " enter" : ""}" role="menu">${menuItems(p, a).map(([act, label]) => {
+    const text = act === "remove" && armed ? `Remove ${p.kind === "key" ? "API key" : a.name}${on ? ` · ${on === 1 ? "1 session uses it" : `${on} sessions use it`}` : ""}` : label;
     return `<button role="menuitem" class="${act === "remove" ? `danger${armed ? " armed" : ""}` : ""}" data-act="${act}" data-p="${p.id}" data-a="${a.id}" data-s="${spot}"${act === "remove" && ui.removing === spot ? " disabled" : ""}>${act === "remove" && ui.removing === spot ? "Removing…" : esc(text)}</button>`;
-  }).join("")}${refused ? `<span class="state limit menu-state" role="status">${esc(ui.removeErr.word)}</span>` : ""}</div>`;
+  }).join("")}${refused ? `<div class="menu-state">${refusalHtml(ui.removeErr, key)}${reasonHtml(ui.removeErr, key)}</div>` : ""}</div>`;
 }
 const keyDayWord = (d) => d.toLocaleDateString("en-US", { month: "short", day: "numeric" }); // a key card's day, "Oct 12"
 function nameHtml(p, a, spot) {
@@ -695,39 +912,109 @@ function nameHtml(p, a, spot) {
   if (p.kind === "key") return `<span class="name"><span class="var">${esc(a.env)}</span>${a.tail ? ` <span class="tail">${esc(a.tail)}</span>` : ""}${a.has && a.seen && a.twins ? ` · ${keyDayWord(a.seen)}` : ""}</span>`;
   if (ui.rename !== spot) return `<span class="name">${esc(a.name)}</span>`;
   const err = ui.renameErr;
-  // one visible way to finish, as the key field's Save: both walkers had to guess Enter (p153, p154)
-  return `<input class="field rename" data-a="${a.id}" data-s="${spot}" value="${esc(ui.renameDraft ?? a.name)}" placeholder="${esc(a.name)}" aria-label="Name" spellcheck="false"${err ? ' aria-invalid="true" aria-describedby="rename-err"' : ""}>`
-    + `<button class="act primary small" data-act="finish-rename">Save</button>`; // a refusal reads under it (cardHtml)
+  // one visible way to finish and one to leave, as the key field's Save and Cancel: both walkers had to guess Enter
+  // (p153, p154). A refusal reads under it (cardHtml).
+  return `<input class="field rename${ui.enter === "rename" ? " enter" : ""}" data-a="${a.id}" data-s="${spot}" value="${esc(ui.renameDraft ?? a.name)}" placeholder="${esc(a.name)}" aria-label="Name" spellcheck="false"${err ? ' aria-invalid="true" aria-describedby="rename-err"' : ""}>`
+    + `<button class="act primary small" data-act="finish-rename">Save</button><button class="act quiet small" data-act="cancel-rename">Cancel</button>`;
 }
 // c is the command whose order the rail shows on a plan provider, and null for a key or this computer. Each account shows
 // once, so its spot is the provider and the account.
-// the sessions on a login now, each a door to it on Sessions; past a handful, the rest as a count that opens Sessions
+// the sessions on a login now, each a door to it on Sessions; past a handful, the rest behind one pill that opens them here
 const SESS_SHOWN = 4;
 const LOGIN_NAME = new Map();
-const loginOf = (head, label) => LOGIN_NAME.get(`${head}|${label}`) ?? label;
+// a login by the name Accounts gives it; one splice never listed keeps a plain word, never its selector or an id
+const loginOf = (head, label) => LOGIN_NAME.get(`${head}|${label}`) ?? (String(label ?? "").startsWith("native:") ? "Claude Code's own sign-in" : label);
+const at24 = (ms) => backWord(new Date(ms));
 // a session's own last switch and splice's reason, and whether it is pinned to this login alone (spec section 11); its
 // pane on Sessions carries Use and Unpin for it
 function sessWhy(x) {
-  const own = x.account_pin && x.account_pin !== x.account_pin_head ? "Pinned to this account. " : "";
+  const own = x.account_pin && x.account_pin !== x.account_pin_head ? "Pinned to this account" : "";
   const sw = x.account_switch;
-  return own + (sw ? `Moved from ${loginOf(x.head, sw.from)} to ${loginOf(x.head, sw.to)} at ${new Date(sw.at_epoch_millis).toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit" })}: ${sw.reason}` : "");
+  const moved = sw ? `Moved from ${loginOf(x.head, sw.from)} to ${loginOf(x.head, sw.to)}${sw.at_epoch_millis ? ` at ${at24(sw.at_epoch_millis)}` : ""}${sw.reason ? ` · ${movedWhy(sw.reason)}` : ""}` : "";
+  return [own, moved].filter(Boolean).join(" · ");
 }
-function sessionsHtml(a) {
-  if (a.sessions === null) return `<div class="onlogin"><span class="state mute">Reading sessions</span></div>`;
+// HOW MANY DOORS EACH LOGIN HAD, kept from the last answer and the last visit, so while /api/sessions is read (4 s and
+// more on his machine) each card stands at the size it will land at, its doors drawn as their ghosts
+const DOORS_SEEN = new Map();
+function sessionsHtml(p, a) {
+  if (a.sessions === null) return ghostDoors(Math.min(SESS_SHOWN, DOORS_SEEN.get(a.id) ?? 0));
   const on = a.sessions || [];
-  if (!on.length) return "";
+  DOORS_SEEN.set(a.id, on.length);
+  const marks = movesHtml(p, a);
+  if (!on.length) return marks;
   // each name carries the lamp Sessions gives a running session (kit.js look), so it reads as an agent on this login now
   const lamp = (x) => (/^(working|busy)$/.test(x.status) ? `<span class="lamp working" aria-hidden="true">${ICON.trace}</span>` : `<span class="lamp idle" aria-hidden="true"><i></i></span>`);
-  const door = (x) => { const why = sessWhy(x), pinned = x.account_pin && x.account_pin !== x.account_pin_head;
-    return `<a class="sdoor" href="sessions.html#${encodeURIComponent(x.session_id)}"${why ? ` title="${esc(why)}"` : ""}>${lamp(x)}<span>${esc(x.name || x.title || String(x.session_id).slice(0, 8))}</span>${pinned ? GLYPH.pin : ""}</a>`; };
-  const more = on.length > SESS_SHOWN ? `<a class="sdoor more" href="sessions.html">+${on.length - SESS_SHOWN}</a>` : "";
-  return `<div class="onlogin">${on.slice(0, SESS_SHOWN).map(door).join("")}${more}</div>`;
+  // two sessions of one name on a login are told apart by their folder, as Sessions names a repo, and by when each
+  // started where the folder is the same too
+  const nameOf = (x) => x.name || x.title || String(x.session_id).slice(0, 8);
+  const count = (f) => on.reduce((m, x) => m.set(f(x), (m.get(f(x)) || 0) + 1), new Map());
+  const names = count(nameOf), places = count((x) => `${nameOf(x)}|${folderOf(x)}`);
+  const apart = (x) => (names.get(nameOf(x)) < 2 ? "" : places.get(`${nameOf(x)}|${folderOf(x)}`) < 2 && folderOf(x) ? folderOf(x) : startedAt(x));
+  const door = (x) => { const why = sessWhy(x), pinned = x.account_pin && x.account_pin !== x.account_pin_head, also = apart(x);
+    return `<a class="sdoor" href="sessions.html#${encodeURIComponent(x.session_id)}"${why ? ` title="${esc(why)}"` : ""}>${lamp(x)}<span>${esc(nameOf(x))}</span>${also ? `<span class="apart">${esc(also)}</span>` : ""}${pinned ? GLYPH.pin : ""}</a>`; };
+  // the rest of this login's sessions open in place, where the first ones stand, and fold back with Fewer
+  const open = ui.doors.has(a.id), shown = open ? on : on.slice(0, SESS_SHOWN);
+  const more = on.length > SESS_SHOWN ? DRAW.more(on.length - SESS_SHOWN, { pill: true, open, act: "doors", data: ` data-a="${esc(a.id)}" aria-expanded="${open}"` }) : "";
+  return `<div class="onlogin">${shown.map(door).join("")}${more}</div>${marks}`;
 }
+const folderOf = (x) => String(x.repo?.root || x.cwd || "").split("/").filter(Boolean).pop() || "";
+function startedAt(x) {
+  const t = typeof x.started_at === "number" ? (x.started_at < 1e12 ? x.started_at * 1000 : x.started_at) : Date.parse(x.started_at ?? "");
+  return Number.isFinite(t) ? `since ${clock(new Date(t))}` : "";
+}
+// A MOVE IS SHOWN ON THE CARDS IT TOUCHED (Oct 26), in one short line under the card's doors: its glyph says onto this
+// login or off it, then the other login by its socket and its name, a door to its card on this board, then why and when.
+// Where a provider serves two or more commands, each command's move is its own line with that command's chip, so two
+// commands moved off one login read as two moves and he can tell which command went where. The command's last move
+// (spec 11h, AccountPoolJson last_switch) and each session's own (account_switch) read alike, merged when they say the
+// same move; a session move names how many when not every door on the card moved.
+function movesHtml(p, a) {
+  if (p.kind !== "plan" || !a.namesOn) return "";
+  const many = p.cmds.length > 1, cmdOf = (head) => (many ? p.cmds.find((c) => c.head === head)?.cmd ?? null : null);
+  const heads = a.row?.heads || [], mine = (head, label) => heads.includes(head) && a.namesOn(head).includes(label);
+  // the login a move names, as this board draws it: its name, and its card and socket when it has one here
+  const rail = ordered(p, laneOf(p));
+  const login = (head, label) => {
+    const x = p.accounts.find((o) => o !== a && (o.row?.heads || []).includes(head) && o.namesOn?.(head).includes(label));
+    return { name: loginOf(head, label), id: x?.id ?? null, sock: x ? rail.indexOf(x) + 1 : 0 };
+  };
+  const into = new Map(), away = new Map();
+  const add = (map, key, g, n, ms) => { const m = map.get(key) || { ...g, n: 0, at: 0 }; m.n += n; m.at = Math.max(m.at, ms || 0); map.set(key, m); };
+  for (const c of p.cmds) {
+    const m = c.moved;
+    if (!m) continue;
+    const cmd = cmdOf(c.head);
+    if (mine(c.head, m.to)) add(into, `${cmd}|${loginOf(c.head, m.from)}|${m.reason}`, { cmd, other: login(c.head, m.from), why: movedWhy(m.reason) }, 0, m.at_epoch_millis);
+    else if (mine(c.head, m.from)) add(away, `${cmd}|${loginOf(c.head, m.to)}`, { cmd, other: login(c.head, m.to) }, 0, m.at_epoch_millis);
+  }
+  for (const x of a.sessions || []) {
+    const sw = x.account_switch, cmd = cmdOf(x.head);
+    if (sw?.from && !mine(x.head, sw.from)) add(into, `${cmd}|${loginOf(x.head, sw.from)}|${sw.reason}`, { cmd, other: login(x.head, sw.from), why: movedWhy(sw.reason) }, 1, sw.at_epoch_millis);
+  }
+  for (const x of liveSessions || []) {
+    const sw = x.account_switch, cmd = cmdOf(x.head);
+    if (sw?.from && mine(x.head, sw.from) && !mine(x.head, x.account)) add(away, `${cmd}|${loginOf(x.head, x.account)}`, { cmd, other: login(x.head, x.account) }, 1, sw.at_epoch_millis);
+  }
+  const all = a.sessions?.length || 0;
+  const tail = (g) => `${g.why ? ` · ${esc(g.why)}` : ""}${g.at ? ` · ${at24(g.at)}` : ""}`;
+  const chip = (g) => (g.cmd ? `<span class="chip" data-key="move:${esc(g.cmd)}">${esc(g.cmd)}</span>` : "");
+  const other = ({ name, id, sock }) => (id ? `<button class="mlogin" type="button" data-act="goto" data-a="${esc(id)}" title="Show ${esc(name)}'s card">`
+    + `${sock ? `<span class="msock" aria-hidden="true">${sock}</span>` : ""}<b>${esc(name)}</b></button>` : `<b>${esc(name)}</b>`);
+  const sessions = (n) => `${n0(n)} ${n === 1 ? "session" : "sessions"}`;
+  const ins = [...into.values()].map((g) => `<p class="moveline">${GLYPH.into}${chip(g)}<span>${g.n && g.n < all ? `${sessions(g.n)} from` : "From"} ${other(g.other)}${tail(g)}</span></p>`);
+  const outs = [...away.values()].map((g) => `<p class="moveline">${GLYPH.away}${chip(g)}<span>${g.n ? `${sessions(g.n)} to` : "To"} ${other(g.other)}${tail(g)}</span></p>`);
+  return [...ins, ...outs].join("");
+}
+// how many rows a card's windows draw, so a login being read for the first time stands at the height it will land at
+const WINDOW_GHOST = () => `${GHOST.bar(3.4)}${GHOST.track()}<span class="pct">${GHOST.fig(4.2)}</span><span class="when">${GHOST.ring()}${GHOST.bar(6.2)}</span>`;
 function cardHtml(p, c, a, i, serves) {
   const spot = `${p.id}/${a.id}`;
-  const cls = ["card", serves.length ? "serving" : "", a.out || (p.kind === "key" && !a.has) ? "out" : "", held(a) ? "held" : ""].join(" ");
-  const canMove = c && laneAccts(p, c).length > 1 && c.orderable?.has(labelOn(a, c.head));
-  const grip = p.kind === "plan" ? `<button class="grip" data-grip="${p.id}" data-c="${c.cmd}" data-a="${a.id}" aria-label="Move ${esc(a.name)}" title="Drag to reorder, or use the up and down arrow keys"${!canMove || ui.orderSaving || ui.removing ? " disabled" : ""}>${GLYPH.grip}</button>` : "";
+  // a server on this computer that does not answer serves nothing, so it wears no serving tint and no lit socket
+  const live = serves.length && !(p.kind === "local" && (a.down || a.unread));
+  const cls = ["card", live ? "serving" : "", a.out || (p.kind === "key" && !a.has) ? "out" : "", held(a) ? "held" : ""].join(" ");
+  const canMove = c && laneAccts(p, c).length > 1 && c.orderable?.has(labelOn(a, c.head)) && !ui.orderSaving && !ui.removing;
+  // a grip that cannot move promises nothing on hover: only one that drags says how
+  const grip = p.kind === "plan" ? `<button class="grip" data-grip="${p.id}" data-c="${esc(c.cmd)}" data-a="${a.id}" aria-label="Move ${esc(a.name)}"${canMove ? ' title="Drag to reorder, or use the up and down arrow keys"' : " disabled"}>${GLYPH.grip}</button>` : "";
   // a default name starts with its plan word ("Max", "Max · 1a2b3c4d", later "Max 2"): the tag beside it shows only
   // when it says more than that word, such as a tier "Max 5x" (fin, Oct 12)
   const said = a.row?.label_default && String(a.name ?? "").split(/[\s·]/)[0].toLowerCase() === String(a.plan ?? "").trim().toLowerCase();
@@ -742,16 +1029,13 @@ function cardHtml(p, c, a, i, serves) {
     ? `<button class="icon more" data-act="menu" data-p="${p.id}" data-a="${a.id}" data-s="${spot}" aria-label="More" aria-haspopup="menu" aria-expanded="${ui.menu === spot}">${GLYPH.more}</button>` : "";
   const mine = (t) => ui.signin[t] && (ui.signin[t].spot == null || ui.signin[t].spot === spot);
   const signT = mine(`out:${a.id}`) ? `out:${a.id}` : mine(`re:${a.id}`) ? `re:${a.id}` : null;
-  const signRow = signT ? `<div class="outbox${ui.signin[signT].state === "fail" ? " failed" : ""}">${signingHtml(signT)}</div>` : "";
+  const signRow = signT ? `<div class="outbox${ui.signin[signT].state === "fail" ? " failed" : ""}${ui.enter === "sign" ? " enter" : ""}">${signingHtml(signT)}</div>` : "";
   let body;
-  const keyField = (cancel) => `<div class="outbox"><input class="field" id="key-in" type="password" data-a="${a.id}" placeholder="Paste key" aria-label="API key" autocomplete="off" spellcheck="false">`
+  const keyField = (cancel) => `<div class="outbox${cancel && ui.enter === "key" ? " enter" : ""}"><input class="field" id="key-in" type="password" data-a="${a.id}" placeholder="Paste key" aria-label="API key" autocomplete="off" spellcheck="false">`
     + `<button class="act primary" data-act="save-replace" data-p="${p.id}" data-a="${a.id}" disabled>Save</button>${cancel ? `<button class="act quiet" data-act="cancel-replace">Cancel</button>` : ""}</div>`;
   if (p.kind === "key") {
-    // the card's name carries the variable, so its source says only where the value comes from
-    body = !a.has ? keyField(false) : ui.replace === spot ? keyField(true)
-      : a.from === "environment" ? `<div class="keysrc"><span class="state">From environment</span></div>`
-      : a.from === "file" ? `<div class="keysrc"><span class="state">From file</span></div>`
-      : "";
+    // where the value comes from rides the name line as a tag (src, below); the body is the field while one is open
+    body = !a.has ? keyField(false) : ui.replace === spot ? keyField(true) : "";
     // a key's provider sends no plan window, so its limits line says that, never an empty bar or a zero (spec section 11)
     if (a.has) body += `<div class="keysrc"><span class="state mute">Limits not reported by provider</span></div>`;
     // the keys this one replaced, as one quiet line with the days splice first saw them
@@ -763,40 +1047,64 @@ function cardHtml(p, c, a, i, serves) {
     // fin's words (Marlin, Oct 10): no time on it, and never "no usage", which reads as "used nothing"
     body = `<div class="keysrc"><span class="state">No limits reported</span></div>${signRow}`;
   } else if (p.kind === "plan" && !a.windows.length) {
-    // no reading at all is never "No limits reported", which is the provider answering with none (Oct 12); a login
-    // splice has never read reads Not read yet only while the page's own read is in flight; once it is back with nothing,
-    // Not read, with the provider's reason when splice kept one (marlin, Marcos's Oct 4 ruling: the page reads on open)
+    // no reading at all is never "No limits reported", which is the provider answering with none (Oct 12). A login
+    // splice has never read stands as the ghost of its two windows while the page's own read is in flight; once it is
+    // back with nothing, Not read, with the provider's reason when splice kept one (marlin, Marcos's Oct 4 ruling), over
+    // the provider's own windows drawn empty: each label on its dashed track with a dash for its figure, so the card
+    // keeps its neighbours' columns and says once what is missing
     const never = !a.row?.observed_at_epoch_seconds && !a.row?.no_usage_at_epoch_seconds;
     const why = a.row?.last_read_failure ? READ_WHY[a.row.last_read_failure.reason] ?? null : null;
-    body = `<div class="windows"><span class="unproved">${never && ui.probing ? "Not read yet" : DAY_NOT_READ}</span>${why ? `<span class="state">${esc(why)}</span>` : ""}</div>${signRow}`;
-  } else if (p.kind === "plan") body = windowsHtml(a, c && serving(p, c) === a ? nextOf(p, c) : null) + signRow;
-  else body = `<div class="local-model">${a.down || a.unread ? "" : "<i></i>"}${esc(a.model)}</div>`; // the dot says it answers, so only when it does
-  // how to renew it, under its readings: the route's own words name the command to run
-  if (a.renews && a.row?.refusal) body += `<div class="keysrc"><span class="state">${esc(a.row.refusal)}</span></div>`;
+    const rows = windowLabels(p).map((l) => `<span class="label">${l}</span>${bar(null)}<span class="pct">${DRAW.dash}</span><span></span>`).join("");
+    body = never && ui.probing ? `<div class="windows" aria-busy="true">${WINDOW_GHOST()}${WINDOW_GHOST()}</div>${signRow}`
+      : `<div class="windows"><span class="unproved">${DAY_NOT_READ}${why ? `<span class="why"> · ${esc(why)}</span>` : ""}</span>${rows}</div>${signRow}`;
+  } else if (p.kind === "plan") {
+    const first = c && serving(p, c) === a;
+    body = windowsHtml(a, first ? nextOf(p, c) : null, first ? c.lastLeft : null) + signRow;
+  } else {
+    // the model it serves, and the door to its command on Models, where its log and its model are
+    body = `<div class="local-model"><span class="mname">${esc(a.model)}</span><a class="door" href="models.html?cmd=${encodeURIComponent(a.id)}">Models${DRAW.go}</a></div>`;
+  }
+  // a key read from the environment or a file says so on its name line, as a plan login's tier does; one in splice's
+  // store is the plain case and carries no tag
+  const src = p.kind === "key" && a.has && KEY_FROM[a.from] ? `<span class="plan src">${KEY_FROM[a.from]}</span>` : "";
   const socket = p.kind === "plan" ? `<span class="socket">${i + 1}</span>` : "";
+  const renameErr = ui.rename === spot && ui.renameErr ? asErr(ui.renameErr) : null;
+  const slotErr = c && ui.slotErr && ui.slotErr.a === a.id && ui.slotErr.c === c.cmd ? ui.slotErr : null;
   return `<article class="${cls}" data-key="card:${spot}" data-p="${p.id}" data-a="${a.id}">${socket}<div class="top">${grip}`
-    + `${nameHtml(p, a, spot)}${nameIt}${sub}<div class="slot">${slotHtml(p, c, a, serves)}</div>${more}</div>`
-    + `${mail}${ui.rename === spot && ui.renameErr ? `<span class="state limit rename-err" id="rename-err">${ui.renameErr}</span>` : ""}${ui.menu === spot ? menuHtml(p, a, spot) : ""}${body}${sessionsHtml(a)}</article>`;
+    + `${nameHtml(p, a, spot)}${nameIt}${sub}${src}<div class="slot${slotErr && ui.shook === slotKey(a, c) ? " failed" : ""}">${slotHtml(p, c, a, serves)}</div>${more}</div>`
+    + `${slotErr ? reasonHtml(slotErr, slotKey(a, c), "onslot") : ""}${armRow(p, c, a)}`
+    + `${mail}${renameErr ? `<div class="rename-err${ui.shook === "rename" ? " failed" : ""}" id="rename-err">${refusalHtml(renameErr, "rename")}${reasonHtml(renameErr, "rename")}</div>` : ""}`
+    + `${ui.menu === spot ? menuHtml(p, a, spot) : ""}${body}${sessionsHtml(p, a)}</article>`;
+}
+const KEY_FROM = { environment: "Environment", file: "File" };
+const asErr = (e) => (typeof e === "string" ? { word: e, why: "" } : e);
+// the windows a provider's logins report, in their order, so a login with no reading draws the same rows empty; a
+// provider none of whose logins was read draws one row, unlabelled, rather than guess which windows it keeps
+const WINDOW_ORDER = ["5 hours", "Week", "Month"];
+function windowLabels(p) {
+  const seen = new Set(p.accounts.flatMap((x) => (x.windows || []).map((w) => w.label)));
+  const labels = WINDOW_ORDER.filter((l) => seen.has(l));
+  return labels.length ? labels : [""];
 }
 
 // ---------- the tiles that end a rail, and the one that ends the page ----------
 function addTileHtml(p, c) {
   const t = `add:${c.cmd}`, s = ui.signin[t];
-  if (s) return `<div class="add signing${s.state === "fail" ? " failed" : ""}" data-key="${t}"><span class="socket"></span>${signingHtml(t)}</div>`;
+  if (s) return DRAW.addForm({ body: signingHtml(t), data: ` data-key="${t}"`, socket: true, failed: s.state === "fail" });
   if (ui.naming?.cmd === c.cmd) { // a new login may be named before it signs in; left empty, Enter signs in and splice names it
     const d = `data-p="${p.id}" data-c="${c.cmd}"`, err = ui.naming.err;
-    return `<div class="add signing naming${err ? " failed" : ""}" data-key="${t}"><span class="socket"></span>`
-      + `<input class="field add-name" value="${esc(ui.naming.draft)}" placeholder="Name" aria-label="Name" spellcheck="false" maxlength="48"${err ? ' aria-invalid="true"' : ""}>`
-      + `<button class="act primary" data-act="add-go" ${d}>Sign in</button><button class="act quiet" data-act="cancel-add">Cancel</button>`
-      + `${err ? `<span class="state limit" role="status">${esc(err)}</span>` : ""}</div>`;
+    return DRAW.addForm({ cls: `naming${ui.enter === "naming" ? " enter" : ""}`, failed: Boolean(err), data: ` data-key="${t}"`, socket: true,
+      body: `<input class="field add-name" value="${esc(ui.naming.draft)}" placeholder="Name" aria-label="Name" spellcheck="false" maxlength="48"${err ? ' aria-invalid="true"' : ""}>`
+        + `<button class="act primary" data-act="add-go" ${d}>Sign in</button><button class="act quiet" data-act="cancel-add">Cancel</button>`
+        + `${err ? DRAW.result(err, "bad") : ""}` });
   }
-  return `<button class="add" data-key="${t}" data-act="add" data-p="${p.id}" data-c="${c.cmd}"><span class="socket"></span><span class="plus">+</span>Add account</button>`;
+  return DRAW.addTile({ word: "Add account", act: "add", data: ` data-key="${t}" data-p="${p.id}" data-c="${c.cmd}"`, socket: true });
 }
 function switchHtml(p, c) {
   if (laneAccts(p, c).length < 2) return "";
-  const disabled = ui.orderSaving || ui.removing || c.orderable.size < 2;
-  const b = (v, label) => `<button data-act="mode" data-p="${p.id}" data-c="${c.cmd}" data-v="${v}" aria-pressed="${c.mode === v}"${disabled ? " disabled" : ""}>${label}</button>`;
-  return `<div class="switch" role="group" aria-label="Account order${p.cmds.length > 1 ? `, ${esc(c.cmd)}` : ""}">${b("soonest", "Soonest reset")}${b("mine", "My order")}</div>`;
+  const disabled = Boolean(ui.orderSaving || ui.removing || c.orderable.size < 2);
+  return DRAW.switcher([["soonest", "Soonest reset"], ["mine", "My order"]], c.mode, "mode", `Account order${p.cmds.length > 1 ? `, ${c.cmd}` : ""}`,
+    { data: ` data-p="${p.id}" data-c="${c.cmd}"`, disabled });
 }
 function railHtml(p, c, span = 1) {
   const srv = new Map(p.cmds.map((x) => [x, serving(p, x)]));
@@ -832,47 +1140,46 @@ function lastLeftOf(pool) {
   const back = all.filter((a) => !open.includes(a)).map((a) => a.blocked_until_epoch_seconds).filter((s) => s != null && s > now);
   return { untilMs: back.length ? Math.min(...back) * 1000 : null };
 }
-function movedHtml(p) {
-  const nameOn = (c, label) => p.accounts.find((a) => labelOn(a, c.head) === label)?.name ?? label;
-  return p.cmds.filter((c) => c.moved || c.lastLeft).map((c) => {
-    const chip = p.cmds.length > 1 ? `<span class="chip">${esc(c.cmd)}</span>` : "";
-    const m = c.moved, left = c.lastLeft;
-    const bits = m ? [`Moved from ${esc(nameOn(c, m.from))} to ${esc(nameOn(c, m.to))}`, m.at_epoch_millis ? backWord(new Date(m.at_epoch_millis)) : "", esc(movedWhy(m.reason))] : [];
-    const moved = bits.length ? `<p class="moved">${chip}${bits.filter(Boolean).join(" · ")}</p>` : "";
-    const last = left ? `<p class="moved">${chip}One account left; no other account takes over at the next plan limit${left.untilMs ? ` until ${at(left.untilMs)}` : ""}</p>` : "";
-    return moved + last;
-  }).join("");
-}
+// A refused order save says so in the provider's own header, beside the switch it came from, and shakes once there, so
+// nothing on the board moves down to make room for it; splice's reason opens under the head from the word, and the
+// order goes back to the one splice still holds. The next press clears it.
 function providerHtml(p, span = 1) {
-  const head = (sw) => `<section class="provider${span > 1 ? " wide" : ""}" style="--c:${colorOf(p.id)}${span > 1 ? `;--span:${span}` : ""}" data-key="prov:${p.id}"><header><h2><span class="blot"></span>${esc(p.name)}</h2>${sw}</header>`;
+  const refusal = (c) => (ui.orderErr && c && ui.orderErr.cmd === c.cmd ? ui.orderErr : null), key = (c) => `order:${c.cmd}`;
+  const said = (c) => (refusal(c) ? `<span class="order-err${ui.shook === key(c) ? " failed" : ""}">${refusalHtml(refusal(c), key(c))}</span>` : "");
+  const why = (c) => (refusal(c) ? reasonHtml(refusal(c), key(c), "onhead") : "");
+  const group = (end, body) => DRAW.group({ name: p.name, c: colorOf(p.id), key: `prov:${p.id}`, cls: `provider${span > 1 ? " wide" : ""}`,
+    style: span > 1 ? `--span:${span}` : "", end, body });
   if (p.kind !== "plan") {
     const srv = serving(p), meters = (p.kind === "local" ? p.cmds.filter((c) => c.budget) : p.cmds).map((c) => meterHtml(c)).join("");
     // a model on this computer or a rented GPU bills nothing per token: no Day row, unless he already set a budget on it
     // (Marlin and fin, Oct 10), which keeps its row with no figure and no line
     // a key card carries the commands that send with it; a local card its own command
     const serves = (a) => (p.kind === "local" ? p.cmds.filter((c) => c.head === a.id) : p.kind === "key" ? p.cmds.filter((c) => a.has && (a.heads || []).includes(c.head)) : a === srv ? p.cmds : []);
-    return `${head("")}${meters}<div class="rail plain" data-rail="${p.id}">${p.accounts.map((a, i) => cardHtml(p, null, a, i, serves(a))).join("")}</div></section>`;
+    return group("", `${meters}<div class="rail plain" data-rail="${p.id}">${p.accounts.map((a, i) => cardHtml(p, null, a, i, serves(a))).join("")}</div>`);
   }
   const c = laneOf(p), many = p.cmds.length > 1;
   const meters = p.cmds.map((x) => meterHtml(x, many ? { p, on: x === c } : null)).join("");
-  const error = ui.orderErr?.cmd === c.cmd ? `<p class="state limit order-err" role="status">${esc(ui.orderErr.word)}</p>` : "";
-  return `${head(switchHtml(p, c))}${error}${span > 1 ? `<div class="meters">${meters}</div>` : meters}${railHtml(p, c, span)}${movedHtml(p)}</section>`;
+  // over k columns the strips take a column each, and a provider with fewer commands than columns spreads them over the
+  // whole width instead of leaving the columns beside them empty: its day's words then stand on one line and its hours
+  // are drawn at the width the cards under them have
+  const strips = span > 1 ? `<div class="meters" style="--span:${Math.min(span, p.cmds.length)}">${meters}</div>` : meters;
+  return group(said(c) + switchHtml(p, c), `${why(c)}${strips}${railHtml(p, c, span)}`);
 }
 function addProviderHtml() {
   const have = new Set(data.map((p) => p.id));
   const st = ui.addProv;
-  if (!st) return `<section class="provider" data-key="addprov"><header></header><button class="add" data-act="add-provider"><span class="plus">+</span>Add provider</button></section>`;
+  if (!st) return `<section class="provider" data-key="addprov"><header></header>${DRAW.addTile({ word: "Add provider", act: "add-provider" })}</section>`;
   if (st.stage === "pick") {
     const picks = CATALOG.filter((c) => !have.has(c.id)).map((c) => `<button class="pick" style="--c:${colorOf(c.id)}" data-act="pick" data-id="${c.id}"><span class="blot">${c.name[0]}</span>${c.name}</button>`).join("");
-    return `<section class="provider" data-key="addprov"><header></header><div class="add signing" style="--c:var(--key-light)"><div class="providers">${picks}</div><button class="act quiet" data-act="cancel-prov">Cancel</button></div></section>`;
+    // the pick's own edge is the text's quiet ink: the key light stays on the one serving socket and the one primary act
+    return `<section class="provider" data-key="addprov"><header></header>${DRAW.addForm({ cls: ui.enter === "pick" ? "enter" : "", data: ` style="--c:var(--text-mute)"`,
+      body: `<div class="providers">${picks}</div><button class="act quiet" data-act="cancel-prov">Cancel</button>` })}</section>`;
   }
   const c = CATALOG.find((x) => x.id === st.id);
   const inner = st.stage === "key"
     ? `<input class="field" id="key-in" type="password" placeholder="Paste key" aria-label="API key" autocomplete="off" spellcheck="false"><button class="act primary" data-act="save-key" disabled>Add</button><button class="act quiet" data-act="cancel-prov">Cancel</button>`
     : signingHtml("prov");
-  const failed = ui.signin.prov?.state === "fail" ? " failed" : "";
-  return `<section class="provider" style="--c:${colorOf(c.id)}" data-key="addprov"><header><h2><span class="blot"></span>${c.name}</h2></header>`
-    + `<div class="add signing${failed}">${inner}</div></section>`;
+  return DRAW.group({ name: c.name, c: colorOf(c.id), key: "addprov", cls: "provider", body: DRAW.addForm({ body: inner, failed: ui.signin.prov?.state === "fail" }) });
 }
 
 // ---------- the board: providers stacked into columns, each into the shortest so far ----------
@@ -887,81 +1194,231 @@ const weight = (p) => 4 + (p.kind === "local" ? 0 : p.cmds.length) + (p.kind !==
 // may take k columns, its cards split down them, when that makes the tallest column shorter; the rest pack into the other
 // columns, each into the shortest so far. Its columns keep two cards or more, one column is always left for the others and
 // Add provider, and a split that saves under 15% of the height isn't made, so a full board keeps one column each and 1440
-// (two columns) never splits.
+// (two columns) never splits. Split or not, that provider opens the board at the top of the first column, so the one with
+// the most logins stands in one place at every width (at 1440 it fell to the foot of the second column, under the fold);
+// the rest keep the order splice lists them in.
 const fixedW = (p) => 4 + p.cmds.length + 2 * p.cmds.length + 1; // the heading and a day per command
 const railW = (p) => laneAccts(p, laneOf(p)).reduce((t, a) => t + acctWeight(a), 0) + 1.5; // its cards and Add account
 function pack(ps, n) {
-  const cols = Array.from({ length: n }, () => ({ w: 0, ids: [] }));
-  const shortest = () => cols.reduce((m, c) => (c.w < m.w ? c : m));
-  for (const p of ps) { const c = shortest(); c.ids.push(p.id); c.w += weight(p); }
-  const add = shortest(); add.w += 3; // Add provider ends the shortest column
-  return { cols: cols.map((c) => c.ids), add: cols.indexOf(add), tall: Math.max(...cols.map((c) => c.w)) };
+  const cols = DRAW.packCols(ps, n, weight);
+  const add = cols.reduce((m, c) => (c.w < m.w ? c : m)); add.w += 3; // Add provider ends the shortest column
+  return { cols: cols.map((c) => c.items.map((p) => p.id)), add: cols.indexOf(add), tall: Math.max(...cols.map((c) => c.w)) };
+}
+// how many columns the board's width holds: one per 40rem with the gap between, the board's own rule at every width
+function colCount() { return DRAW.colsFit(board, 40); }
+// EACH PROVIDER KEEPS ITS COLUMN FROM VISIT TO VISIT (Oct 27): the packing is kept with the providers and cards it was made
+// for, and the next visit with the same ones at the same width lands each provider where he last found it, however its
+// cards' rows have grown or shrunk since; a provider or a card added or gone packs the board again, and the providers
+// slide to their new columns (render).
+const PACK_KEY = "splice-accounts-packing";
+const PACK_RULE = 2; // a packing kept from an older rule packs again
+function keptPacking(n, ids) {
+  let kept = null;
+  try { kept = JSON.parse(localStorage.getItem(PACK_KEY) || "null"); } catch { kept = null; }
+  return kept && kept.rule === PACK_RULE && kept.n === n && kept.ids === ids && Array.isArray(kept.cols) ? kept : null;
 }
 function columns() {
-  const gap = parseFloat(getComputedStyle(board).columnGap), rem = parseFloat(getComputedStyle(document.documentElement).fontSize);
-  const n = Math.max(1, Math.floor((board.clientWidth + gap) / (40 * rem + gap)));
+  const n = colCount();
   // laid out again when the width, the providers or a plan provider's count of cards changes, never for an open editor
   const ids = data.map((p) => p.id).join() + "|" + data.map((p) => (p.kind === "plan" ? laneAccts(p, laneOf(p)).length : 0)).join();
   if (!layout || layout.n !== n || layout.ids !== ids) {
-    const plans = data.filter((p) => p.kind === "plan"), big = plans.reduce((m, p) => (!m || railW(p) > railW(m) ? p : m), null);
-    let best = { k: 1, ...pack(data, n) };
-    const base = best.tall;
-    if (big && n > 1) {
-      const rest = data.filter((p) => p !== big), cards = laneAccts(big, laneOf(big)).length + 1;
-      for (let k = 2; k <= Math.min(n - 1, Math.floor(cards / 2)); k++) {
-        const r = pack(rest, n - k), tall = Math.max(fixedW(big) + railW(big) / k, r.tall);
-        if (tall < best.tall && tall < 0.85 * base) best = { k, ...r, tall }; // 15% shorter or no split
-      }
-    }
-    layout = { n, ids, wide: best.k > 1 ? { id: big.id, k: best.k } : null, cols: best.cols, addAt: best.add };
+    layout = keptPacking(n, ids) || packed(n, ids);
+    try { localStorage.setItem(PACK_KEY, JSON.stringify(layout)); } catch { /* a full store packs again next visit */ }
   }
   return layout;
 }
-addEventListener("resize", () => { const n = layout?.n; if (columns().n !== n) render(); });
+function packed(n, ids) {
+  const plans = data.filter((p) => p.kind === "plan"), big = plans.reduce((m, p) => (!m || railW(p) > railW(m) ? p : m), null);
+  // a split is weighed against the board packed in splice's own order, as it always was; unsplit, the big one leads
+  let best = { k: 1, ...pack(big ? [big, ...data.filter((p) => p !== big)] : data, n) }, under = 0.85 * pack(data, n).tall;
+  if (big && n > 1) {
+    const rest = data.filter((p) => p !== big), cards = laneAccts(big, laneOf(big)).length + 1;
+    for (let k = 2; k <= Math.min(n - 1, Math.floor(cards / 2)); k++) {
+      const r = pack(rest, n - k), tall = Math.max(fixedW(big) + railW(big) / k, r.tall);
+      if (tall < under) { best = { k, ...r, tall }; under = tall; } // 15% shorter or no split
+    }
+  }
+  return { rule: PACK_RULE, n, ids, wide: best.k > 1 ? { id: big.id, k: best.k } : null, cols: best.cols, addAt: best.add };
+}
+addEventListener("resize", () => {
+  if (!readOnce) { ghostBoard(); return; }
+  const n = layout?.n; if (columns().n !== n) render();
+});
+
+// ---------- before splice answers: the board as it stood last time, in ghosts ----------
+// THE FIRST FRAME STANDS WHERE THE BOARD WILL LAND (Oct 26). The board was empty until all seven reads answered, 4 s and
+// more on his machine, then fell in at once; a splice that did not answer left only Add provider. Each visit now keeps
+// the shape it drew (its columns, each provider's strips and cards, each card's rows, doors and height), never a name
+// or a figure, and the next one draws that shape as ghosts until splice answers, each at the height it had, so nothing
+// moves when the board lands. A first visit, or a width the last one never drew, gets a plain shape of the same parts.
+const SHAPE_KEY = "splice-accounts-shape";
+let shapeSaved = "";
+const remOf = (el) => (el ? +(el.getBoundingClientRect().height / parseFloat(getComputedStyle(document.documentElement).fontSize)).toFixed(2) : 0);
+function shapeOf(L) {
+  const doors = (a) => (a.sessions === null ? DOORS_SEEN.get(a.id) ?? 0 : a.sessions?.length || 0);
+  const prov = (p) => {
+    const sec = board.querySelector(`[data-key="prov:${CSS.escape(p.id)}"]`);
+    // each card: its window rows (its Next row too), its doors, its height, the lines over its rows (the address, the
+    // held line) and the move lines under its doors
+    const card = (a) => {
+      const el = sec?.querySelector(`[data-key="card:${CSS.escape(`${p.id}/${a.id}`)}"]`);
+      const rows = p.kind !== "plan" || a.out ? 0 : Math.max(1, (a.windows?.length || 0) + (a.models?.length || 0)) + (el?.querySelector(".windows > .next") ? 1 : 0);
+      const over = (el?.querySelector(":scope > .email") ? 1 : 0) + (el?.querySelector(".windows > .heldline") ? 1 : 0);
+      return [rows, Math.min(SESS_SHOWN, doors(a)), remOf(el), over, el?.querySelectorAll(":scope > .moveline").length || 0];
+    };
+    return { k: p.kind, d: [...(sec?.querySelectorAll(".meter.day") || [])].map(remOf), a: (p.kind === "plan" ? ordered(p, laneOf(p)) : p.accounts).map(card) };
+  };
+  return { n: L.n, wide: L.wide ? { k: L.wide.k, p: prov(findProv(L.wide.id)) } : null, cols: L.cols.map((ids) => ids.map((id) => prov(findProv(id)))),
+    doors: Object.fromEntries(data.flatMap((p) => p.accounts).map((a) => [a.id, doors(a)]).filter(([, k]) => k > 0)) };
+}
+// the board at rest: an open form, menu, reason or list of doors is not the shape the next visit lands on
+const atRest = () => !(ui.menu || ui.rename || ui.replace || ui.editor || ui.naming || ui.addProv || ui.moving || Object.keys(ui.signin).length || ui.why.size || ui.doors.size);
+const tall = (h) => (h ? `;min-height:${h}rem` : "");
+const ghostDoors = (n) => (n ? `<div class="onlogin" aria-hidden="true">${Array.from({ length: n }, (_, j) => `<span class="sdoor gdoor"><i class="ghost lampg"></i>${GHOST.bar(4.2 + (j % 3) * 1.3)}</span>`).join("")}</div>` : "");
+function ghostCard(kind, [rows, doors, h, over = 0, moves = 0], k) {
+  const lines = (n, w, cls) => Array.from({ length: n }, () => `<span class="${cls}">${GHOST.bar(w)}</span>`).join("");
+  const body = kind === "key" ? `<div class="keysrc">${GHOST.bar(13)}</div>` : kind === "local" ? `<div class="local-model">${GHOST.bar(11)}</div>`
+    : rows ? `<div class="windows">${lines(Math.max(0, over - 1), 12, "heldline")}${Array.from({ length: rows }, WINDOW_GHOST).join("")}</div>` : `<div class="outbox">${GHOST.bar(5.4, "chip")}</div>`;
+  return `<article class="card gcard ghosted" style="--i:${Math.min(k, 3)}${tall(h)}">${kind === "plan" ? `<span class="socket"></span>` : ""}`
+    + `<div class="top">${GHOST.bar(7.4, "big")}<span class="slot">${GHOST.bar(6.2, "chip")}</span></div>${over ? lines(1, 9.5, "email") : ""}${body}${ghostDoors(doors)}`
+    + `${Array.from({ length: moves }, () => `<p class="moveline">${GHOST.bar(15)}</p>`).join("")}</article>`;
+}
+const ghostStrip = (h) => `<div class="meter day ghosted" style="${tall(h).slice(1)}"><span class="label">Day</span><span class="money">${GHOST.fig(4.6)} ${GHOST.bar(9.5)}</span>`
+  + `<span class="dayrun">${GHOST.track()}</span><span class="when">${GHOST.ring()}${GHOST.bar(6.2)}</span></div>`;
+function ghostProvider(g, span = 1) {
+  // a shape kept before the heights were (a count of strips) still draws, at the plain height
+  const strips = (Array.isArray(g.d) ? g.d : Array.from({ length: g.d || 0 }, () => 0)).map((h) => ghostStrip(h)).join(""), cards = (g.a || []).map((x, k) => ghostCard(g.k, x, k));
+  const head = `<header><h2><span class="blot"></span>${GHOST.bar(6.4, "big")}</h2></header>`;
+  if (g.k !== "plan") return `<section class="provider ghostp">${head}${strips}<div class="rail plain">${cards.join("")}</div></section>`;
+  cards.push(`<div class="add ghosted" style="--i:3"><span class="socket"></span>${GHOST.bar(7)}</div>`); // Add account
+  let rail = `<div class="rail">${cards.join("")}</div>`;
+  if (span > 1) {
+    const per = Math.ceil(cards.length / span), cols = [];
+    for (let i = 0; i < cards.length; i += per) cols.push(cards.slice(i, i + per));
+    rail = `<div class="rails" style="--span:${span}">${cols.map((x) => `<div class="rail">${x.join("")}</div>`).join("")}</div>`;
+  }
+  return `<section class="provider ghostp${span > 1 ? ` wide" style="--span:${span}` : ""}">${head}${span > 1 ? `<div class="meters">${strips}</div>` : strips}${rail}</section>`;
+}
+// A FIRST VISIT, or a width the last one never drew, has no kept shape: its ghosts come from splice's own list of commands
+// as soon as that answers (it answers well before the rest), one provider per family with a strip and a card per command
+// (two on a plan, which pools its logins), packed as the board packs; until then, one plain provider per column.
+let registry = null, askedRegistry = false;
+function shapeFromRegistry(n) {
+  const provs = new Map();
+  for (const h of registry) {
+    const id = (FAMILY[h.family] || { id: h.family || h.key }).id;
+    const k = h.family === "local" || h.family === "vast" ? "local" : h.authKind === "api-key" ? "key" : "plan";
+    const p = provs.get(id) || { k, cmds: 0 };
+    p.cmds++; provs.set(id, p);
+  }
+  const ps = [...provs.values()].map(({ k, cmds }) => ({ k, d: Array.from({ length: k === "local" ? 0 : cmds }, () => 0),
+    a: Array.from({ length: k === "plan" ? cmds + 1 : cmds }, () => (k === "plan" ? [2, 0] : [0, 0])) }));
+  return { n, wide: null, cols: DRAW.packCols(ps, n, (g) => 4 + 3 * g.d.length + g.a.length * (g.k === "plan" ? 4 : 2)).map((c) => c.items) };
+}
+function ghostBoard() {
+  let shape = null;
+  try { shape = JSON.parse(localStorage.getItem(SHAPE_KEY) || "null"); } catch { shape = null; }
+  const n = colCount();
+  if (!shape || shape.n !== n || !Array.isArray(shape.cols)) {
+    shape = registry?.length ? shapeFromRegistry(n) : null;
+    if (!registry) {
+      // nothing is drawn for the moment the list takes, so the ghosts do not land twice; a list that is slow to come
+      // leaves the plain shape
+      if (!askedRegistry) {
+        askedRegistry = true;
+        const plain = setTimeout(() => { registry = registry ?? []; if (!readOnce) ghostBoard(); }, 600);
+        API.get("/api/status").then((st) => {
+          clearTimeout(plain);
+          registry = st.ok ? st.body?.registry || [] : registry ?? [];
+          if (!readOnce) ghostBoard();
+        });
+      }
+      board.setAttribute("aria-busy", "true");
+      return;
+    }
+  }
+  if (!shape) {
+    shape = { n, wide: null, cols: Array.from({ length: n }, (_, i) => [i % 2 ? { k: "key", d: [0], a: [[0, 0]] } : { k: "plan", d: [0], a: [[2, 0], [2, 0]] }]) };
+  }
+  for (const [id, k] of Object.entries(shape.doors || {})) if (!DOORS_SEEN.has(id)) DOORS_SEEN.set(id, k);
+  board.innerHTML = DRAW.boardCols([...(shape.wide ? [{ span: shape.wide.k, body: ghostProvider(shape.wide.p, shape.wide.k) }] : []),
+    ...shape.cols.map((ps) => ({ body: ps.map((g) => ghostProvider(g)).join("") }))]);
+  board.setAttribute("aria-busy", "true");
+}
+
+// ---------- the page head: Read again, and splice not answering ----------
+// A read splice did not answer keeps the board it held and says so here, once, beside the act that asks again, which is
+// then Try again; the page also asks again on its own every 5 s (askAgainSoon).
+function headState() {
+  const say = document.getElementById("unheard"), btn = document.querySelector('[data-act="probe"]');
+  if (!say || !btn) return;
+  const at = unheard ? String(unheard.at) : "";
+  if (say.dataset.at !== at) { // once per stretch of silence, so a redraw never plays its arrival again
+    say.dataset.at = at; say.hidden = !unheard;
+    say.innerHTML = unheard ? `${ICON.bang}<span>splice not answering</span><span class="since">since <b>${clock(new Date(unheard.at))}</b></span>` : "";
+  }
+  const w = btn.querySelector(".w");
+  if (w) w.textContent = unheard ? "Try again" : "Read again";
+  // no day on the board read: said here once, beside the act that reads again, with splice's reason; while splice is not
+  // answering at all, the line above already says why
+  const day = document.getElementById("dayunread"), why = DAY_UNREAD && !unheard ? DAY_UNREAD.why : null;
+  if (day && day.dataset.why !== String(why)) {
+    day.dataset.why = String(why); day.hidden = why == null;
+    day.innerHTML = why == null ? "" : `${ICON.bang}<span>Day not read</span>${why ? `<span class="since">${esc(why)}</span>` : ""}`;
+  }
+}
 
 // ---------- render, with every moved object sliding from where it was ----------
 // Chrome fires focusout on a focused field as the board replaces it; `drawing` keeps that from reading as him leaving it.
-let drawing = false;
+let drawing = false, landed = false;
+const DAYS_GROWN = new Set(); // the Day rows whose hours have risen in once, so a redraw never plays it again
 function render({ flip = false } = {}) {
   if (!board.isConnected || drag) return;
-  const before = new Map();
-  if (flip) for (const el of document.querySelectorAll("[data-key]")) before.set(el.dataset.key, el.getBoundingClientRect());
+  headState();
+  // a splice that has not answered once this visit keeps the ghost board, never an empty one offering Add provider
+  if (!readOnce) { if (!board.querySelector(".ghostp")) ghostBoard(); return; }
+  board.removeAttribute("aria-busy");
+  // what slides: every object after an act (flip), and else the providers alone, which slide only when the board packs
+  // them into other columns
+  const sliding = flip ? "[data-key]" : '[data-key^="prov:"]', before = new Map(), was = layout;
+  for (const el of board.querySelectorAll(sliding)) before.set(el.dataset.key, el.getBoundingClientRect());
   const L = columns();
   drawing = true;
   // Add provider sits under the shortest column while a provider is left to add; with all of them here it has none to offer
   const addable = ui.addProv || CATALOG.some((c) => !data.some((p) => p.id === c.id));
-  board.innerHTML = (L.wide ? `<div class="col wide" style="--span:${L.wide.k}">${providerHtml(findProv(L.wide.id), L.wide.k)}</div>` : "")
-    + L.cols.map((ids, i) => `<div class="col">${ids.map((id) => providerHtml(findProv(id))).join("")}`
-    + `${addable && i === L.addAt ? addProviderHtml() : ""}</div>`).join("");
+  board.innerHTML = DRAW.boardCols([...(L.wide ? [{ span: L.wide.k, body: providerHtml(findProv(L.wide.id), L.wide.k) }] : []),
+    ...L.cols.map((ids, i) => ({ body: ids.map((id) => providerHtml(findProv(id))).join("") + (addable && i === L.addAt ? addProviderHtml() : "") }))]);
   drawing = false;
-  const animateBars = !window.matchMedia("(prefers-reduced-motion: reduce)").matches;
-  for (const b of board.querySelectorAll(".bar > b")) {
-    const host = b.closest("[data-a], [data-meter]"), v = b.dataset.v;
-    const id = host && (host.dataset.a || host.dataset.meter);
-    const growing = animateBars && ui.grow && id && (ui.grow === "all" || ui.grow.has(id));
-    b.style.width = `${v}%`;
-    // the last figure stays while the track says it is being read again
-    if (ui.probing) b.parentElement.classList.add("reading");
-    else if (growing) {
-      b.style.transform = "scaleX(0)";
-      b.parentElement.classList.add("grow");
-      requestAnimationFrame(() => requestAnimationFrame(() => (b.style.transform = "scaleX(1)")));
-    }
-  }
-  for (const box of board.querySelectorAll(".capbox")) {
-    const { c } = findCmd(box.closest("[data-meter]").dataset.meter);
-    box.insertAdjacentHTML("beforeend", `<i class="cap" style="left:calc(${Math.min(100, (c.budget.cap / Math.max(c.budget.cap, c.spent)) * 100)}% - .08rem)"></i>`);
+  // the board it held, while splice does not answer: still there, quieter, under the line in the head that says so
+  board.classList.toggle("unheard", !!unheard);
+  // THE RESET COLUMN IS ONE WIDTH ON THE WHOLE BOARD: as wide as its longest time, so every card's bars and every Day
+  // row's end on one line in their column, whatever each one's own reset says
+  board.style.setProperty("--when-n", String(Math.max(15, ...[...board.querySelectorAll(".when")].map((e) => e.textContent.trim().length))));
+  // the first board after the ghosts rises into their places once
+  if (!landed) { landed = true; board.classList.add("landing"); setTimeout(() => board.classList.remove("landing"), 700); }
+  // the meters take their widths, growing over 240 ms the ones that changed; while splice asks the providers again the
+  // last figure stays on screen and the track stripes (kit.js DRAW.paint, which every page now shares)
+  DRAW.paint(board, { grow: ui.grow, reading: ui.probing });
+  // a day's hours rise in with the bars, when the fresh reading lands (ui.grow), and a day that lands after it rises on
+  // first sight; while the page is still asking the providers they stand, as the striped bars do
+  for (const run of board.querySelectorAll(".dayrun[role=group]")) {
+    const id = run.closest("[data-meter]")?.dataset.meter, asked = ui.grow === "all" || !!ui.grow?.has?.(id);
+    if (id && (asked || (!DAYS_GROWN.has(id) && !ui.probing))) { run.classList.add("grow"); DAYS_GROWN.add(id); }
   }
   ui.grow = null;
+  ui.enter = null; // a form or a menu rises in on the draw that opened it, and stands still on every later one
+  ui.shook = null; // a refusal shakes on the draw that first said it, and stands still on every later one
   watchForRoll(); // whatever is drawn now, the page knows when the soonest of these windows rolls
   if (ui.pulse) { board.querySelectorAll(`.card[data-a="${ui.pulse}"]`).forEach((el) => el.classList.add("pulse-once")); ui.pulse = null; }
   const menu = board.querySelector(".menu"); // a menu that would cross the bottom of the window opens upward
   if (menu && menu.getBoundingClientRect().bottom > innerHeight - 12) menu.classList.add("up");
   const focus = board.querySelector(".field.rename") || board.querySelector("#key-in");
   if (focus) { focus.focus(); if (focus.select) focus.select(); }
-  if (!flip) return;
+  const shape = atRest() && !ui.probing ? JSON.stringify(shapeOf(L)) : shapeSaved;
+  if (shape !== shapeSaved) { shapeSaved = shape; try { localStorage.setItem(SHAPE_KEY, shape); } catch { /* a full store keeps the last shape */ } }
+  if (!flip && L === was) return;
   const moved = new Map();
-  for (const el of board.querySelectorAll("[data-key]")) {
+  for (const el of board.querySelectorAll(sliding)) {
     const a = before.get(el.dataset.key);
     if (!a) continue;
     const b = el.getBoundingClientRect();
@@ -986,8 +1443,9 @@ function findCmd(name) {
 async function probe() {
   const glyph = document.querySelector('[data-act="probe"]');
   // what splice last knew is drawn at once and marked as being checked: the page never reads empty while every
-  // provider is asked, which takes up to half a minute on his machine (Marlin, splice-lead, Oct 11)
-  if (!data.length) await load();
+  // provider is asked, which takes up to half a minute on his machine (Marlin, splice-lead, Oct 11); before its first
+  // answer the board stands as its ghosts (render)
+  if (!data.length) { render(); await load(); }
   ui.probing = true; glyph.classList.add("turning"); render();
   await API.post("/api/usage/probe");
   await load();
@@ -1010,10 +1468,12 @@ function watchForRoll() {
   rollWatch = setTimeout(() => (Date.now() >= soonest ? probe() : watchForRoll()), Math.max(wait, 1000));
 }
 
-// After an act: read again, and let what changed slide into place (grow: the account or command whose bars refill).
-async function refresh(grow = null) {
+// After an act: read again, and let what changed slide into place (grow: the account or command whose bars refill). An
+// act splice refused is said ([no]) once the board it left is read, so its shake plays on the board that stays.
+async function refresh(grow = null, no = null) {
   await load();
   ui.grow = grow ? new Set([grow]) : null;
+  no?.();
   render({ flip: true });
 }
 
@@ -1100,8 +1560,25 @@ function keyState(field, word) {
 // An order names only the accounts splice holds in this command's order (its effective_order): it refuses a whole order
 // naming one it doesn't, such as a login place that never held a sign-in, and My order then fell back to Soonest reset.
 const orderLabels = (c, list) => list.map((x) => labelOn(x, c.head)).filter((l) => c.orderable?.has(l));
-const mutationError = (res, fallback) => typeof res.body?.error === "string" ? res.body.error
-  : res.status === 0 ? "Could not reach splice. Try again." : fallback;
+// A REFUSED ACT SAYS SO IN TWO WORDS WHERE IT WAS PRESSED, and splice's own reason opens under them. splice writes these
+// refusals for a person ("'X' could not be removed; its folder is still on disk", "this native login is busy"), and
+// the reason is what tells a login that only needs a wait from one that needs his hand. The words stand alone; the
+// reason is one press away, never a sentence on the card.
+function mutationError(res, word) {
+  const why = res.status === 0 ? "splice did not answer" : typeof res.body?.error === "string" ? res.body.error.trim() : "";
+  return { word, why };
+}
+// A refusal where it happened: its word in the limit red, and when splice gave a reason, the word is the door to it.
+// [key] names this refusal among the open reasons (ui.reasons); the reason itself is drawn by reasonHtml where the
+// object has room for a line.
+function refusalHtml(err, key) {
+  if (!err.why) return DRAW.result(err.word, "bad");
+  // the word is the button that opens splice's reason, inside the status that announces it: a status inside the button
+  // would leave the button with no name to be found or read by
+  return `<span class="result bad" role="status">${DRAW.disc({ open: ui.reasons.has(key), act: "reason", cls: "refusal", data: ` data-k="${esc(key)}"`, inner: esc(err.word) })}</span>`;
+}
+const reasonHtml = (err, key, cls = "") => (err?.why && ui.reasons.has(key)
+  ? `<p class="reason${cls ? ` ${cls}` : ""}${ui.enter === `reason:${key}` ? " unfold" : ""}">${esc(err.why)}</p>` : "");
 async function saveOrder(c, list, mode, unpin = false) {
   if (ui.orderSaving || ui.removing) return;
   accountRevision++;
@@ -1112,10 +1589,11 @@ async function saveOrder(c, list, mode, unpin = false) {
   render({ flip: true });
   let res = await API.put(headPath(c, "order"), { order: mode === "mine" ? orderLabels(c, list) : [] });
   if (res.ok && unpin) res = await API.del(headPath(c, "switch"));
-  if (!res.ok) ui.orderErr = { cmd: c.cmd, word: mutationError(res, "Order was not saved. Try again.") };
   ui.orderSaving = null;
-  await refresh();
+  await refresh(null, res.ok ? null : () => { ui.orderErr = { cmd: c.cmd, ...mutationError(res, "Order not saved") }; refused(`order:${c.cmd}`); });
 }
+// A refusal just drawn shakes once where it happened, and its reason starts folded under its word.
+function refused(key) { ui.shook = key; ui.reasons.delete(key); }
 // ---------- reorder: drag by the grip, or arrows on it ----------
 // The new order is the command's own (PUT /api/auth/{head}/order); a refused one reads the order splice still holds.
 async function moveTo(p, c, aid, index) {
@@ -1198,12 +1676,13 @@ board.addEventListener("input", (e) => {
     const v = Number(e.target.value);
     if (v > 0) ui.editor.cap = v;
     e.target.closest(".editor").querySelectorAll('[data-act="preset"]').forEach((b) => b.setAttribute("aria-pressed", String(Number(b.dataset.v) === v)));
+    previewCap(e.target); // the cap moves on today's spend as he types it
   }
 });
-// Save takes the press without taking focus, so the field's blur can't save and redraw before Save's click lands. Tab
-// between the field and Save keeps the rename open; leaving both saves, as leaving the field always did.
-const inRename = (el) => !!el?.matches?.(".rename, [data-act=finish-rename]");
-board.addEventListener("mousedown", (e) => { if (e.target.closest("[data-act=finish-rename]")) e.preventDefault(); });
+// Save and Cancel take the press without taking focus, so the field's blur can't save and redraw before their click
+// lands. Tab between the field and its acts keeps the rename open; leaving all three saves, as leaving the field did.
+const inRename = (el) => !!el?.matches?.(".rename, [data-act=finish-rename], [data-act=cancel-rename]");
+board.addEventListener("mousedown", (e) => { if (e.target.closest("[data-act=finish-rename], [data-act=cancel-rename]")) e.preventDefault(); });
 board.addEventListener("focusout", (e) => {
   const f = board.querySelector(".field.rename");
   if (!drawing && f && inRename(e.target) && !inRename(e.relatedTarget)) saveRename(f, false);
@@ -1214,17 +1693,16 @@ document.addEventListener("keydown", (e) => {
   closeAll(); render();
 });
 // Enter on a name splice won't take keeps the field open with the reason; leaving the field keeps the old name.
-// Enter on a name splice won't take keeps the field open with the reason; leaving the field keeps the old name.
 async function saveRename(field, enter) {
   if (ui.rename !== field.dataset.s) return;
   const a = findAcct(field.dataset.a), v = field.value.trim();
   const err = v && v !== a.name ? nameError(provOf(a), a, v) : null;
-  if (err && enter) { ui.renameErr = err; ui.renameDraft = v; render(); return; }
+  if (err && enter) { ui.renameErr = err; ui.renameDraft = v; refused("rename"); render(); return; }
   if (v && !err && v !== a.name) {
     // a name splice would take but the save fails: the field stays with the reason, even when he leaves it
     // a login with a ref keeps its name in splice's names, so its sign-in files are never touched (labels only, Oct 12)
     const res = a.row?.ref ? await API.put(namePath(a.row.ref), { name: v }) : await API.patch(editPath(a), { label: v });
-    if (!res.ok) { ui.renameErr = "Not renamed"; ui.renameDraft = v; render(); return; }
+    if (!res.ok) { ui.renameErr = mutationError(res, "Not renamed"); ui.renameDraft = v; refused("rename"); render(); return; }
     Object.assign(ui, { rename: null, renameErr: null, renameDraft: null });
     await refresh(); return;
   }
@@ -1245,7 +1723,19 @@ document.addEventListener("click", async (e) => {
   if (!t) return;
   const act = t.dataset.act, p = t.dataset.p && findProv(t.dataset.p), a = t.dataset.a && findAcct(t.dataset.a);
   const k = t.dataset.c && findCmd(t.dataset.c).c;
+  // a refused switch or order is said until the next press; opening its reason is no new press
+  if (act !== "reason") { ui.slotErr = null; ui.orderErr = null; }
   switch (act) {
+    // a refusal's word opens splice's own reason under it, and folds it back
+    case "reason":
+      if (!ui.reasons.delete(t.dataset.k)) { ui.reasons.add(t.dataset.k); ui.enter = `reason:${t.dataset.k}`; }
+      render(); break;
+    // a move names the other login as a door to its card on this board, which comes into view and pulses once
+    case "goto": {
+      const el = board.querySelector(`.card[data-a="${CSS.escape(t.dataset.a)}"]`);
+      if (el) { el.scrollIntoView({ block: "nearest", behavior: window.matchMedia("(prefers-reduced-motion: reduce)").matches ? "instant" : "smooth" }); el.classList.remove("pulse-once"); void el.offsetWidth; el.classList.add("pulse-once"); }
+      break;
+    }
     case "theme": toggleTheme(); break;
     case "probe": probe(); break;
     // Soonest reset is no order of his own (AccountPool.kt:101, :259); My order keeps the order shown, as his.
@@ -1254,32 +1744,46 @@ document.addEventListener("click", async (e) => {
       await saveOrder(k, order, t.dataset.v); break;
     }
     // Use now pins the account on that command: it serves from the next request, the rule stays, and the pin undoes it
-    // (SwitchRoute.kt).
+    // (SwitchRoute.kt). A switch splice refused says so beside the act, and the order it holds comes back.
     case "keep-use": ui.moving = null; render(); break;
     case "use": {
       const armed = ui.moving?.a === a.id && ui.moving?.c === k.cmd;
       ui.moving = null;
       const cut = armed ? [] : await midRequest([k.head]);
-      if (cut.length) { ui.moving = { a: a.id, c: k.cmd, cut }; render(); break; }
-      k.pin = a.id; render({ flip: true }); await API.post(headPath(k, "switch"), { label: labelOn(a, k.head) }); await refresh(); break;
+      if (cut.length) { ui.moving = { a: a.id, c: k.cmd, cut }; ui.enter = "arm"; render(); break; }
+      k.pin = a.id; render({ flip: true });
+      const res = await API.post(headPath(k, "switch"), { label: labelOn(a, k.head) });
+      await refresh(null, res.ok ? null : () => { ui.slotErr = { a: a.id, c: k.cmd, ...mutationError(res, "Not switched") }; refused(slotKey(a, k)); });
+      break;
     }
-    case "unpin": k.pin = null; render({ flip: true }); await API.del(headPath(k, "switch")); await refresh(); break;
+    case "unpin": {
+      const on = findCmdPin(k);
+      k.pin = null; render({ flip: true });
+      const res = await API.del(headPath(k, "switch"));
+      await refresh(null, res.ok || !on ? null : () => { ui.slotErr = { a: on, c: k.cmd, ...mutationError(res, "Not unpinned") }; refused(slotKey({ id: on }, k)); });
+      break;
+    }
     case "lane": ui.lane[p.id] = k.cmd; closeAll(); render({ flip: true }); break; // the rail shows that command's order
-    case "add": closeAll(); ui.naming = { cmd: k.cmd, draft: "" }; render(); board.querySelector(".add-name")?.focus(); break;
+    case "add": closeAll(); ui.naming = { cmd: k.cmd, draft: "" }; ui.enter = "naming"; render(); board.querySelector(".add-name")?.focus(); break;
     case "add-go": { const f = board.querySelector(".add-name"); if (f) startAdd(p, k.cmd, f); break; }
     case "cancel-add": ui.naming = null; render(); break;
-    case "signin": startSignin(`out:${a.id}`, howFor(p, a, null)); break;
+    case "signin": ui.enter = "sign"; startSignin(`out:${a.id}`, howFor(p, a, null)); break;
     case "open-signin": openSignin(t.dataset.t); break;
     case "copy-code":
       navigator.clipboard?.writeText(ui.signin[t.dataset.t].code).catch(() => {});
       t.classList.add("copied"); setTimeout(() => t.classList.remove("copied"), 1200); break;
     case "retry-signin": { const s = ui.signin[t.dataset.t]; if (s.how.again) s.how.again(); else waitSignin(t.dataset.t); break; }
     case "cancel-signin": cancelSignin(t.dataset.t); break;
-    case "menu": ui.menu = ui.menu === t.dataset.s ? null : t.dataset.s; ui.armed = null; ui.removeErr = null; render(); board.querySelector(".menu button")?.focus(); break;
-    case "rename": ui.menu = null; ui.rename = t.dataset.s; ui.renameDraft = t.classList.contains("name-it") ? "" : null; render(); break;
+    case "menu": {
+      const opening = ui.menu !== t.dataset.s;
+      ui.menu = opening ? t.dataset.s : null; ui.armed = null; ui.removeErr = null; ui.enter = opening ? "menu" : null;
+      render(); board.querySelector(".menu button")?.focus(); break;
+    }
+    case "rename": ui.menu = null; ui.rename = t.dataset.s; ui.renameDraft = t.classList.contains("name-it") ? "" : null; ui.enter = "rename"; render(); break;
     case "finish-rename": { const f = board.querySelector(".field.rename"); if (f) saveRename(f, true); break; } // Enter's path
-    case "resign": ui.menu = null; startSignin(`re:${a.id}`, howFor(p, a, null), t.dataset.s); break;
-    case "replace": ui.menu = null; ui.replace = t.dataset.s; render(); break;
+    case "cancel-rename": Object.assign(ui, { rename: null, renameErr: null, renameDraft: null }); render(); break;
+    case "resign": ui.menu = null; ui.enter = "sign"; startSignin(`re:${a.id}`, howFor(p, a, null), t.dataset.s); break;
+    case "replace": ui.menu = null; ui.replace = t.dataset.s; ui.enter = "key"; render(); break;
     case "cancel-replace": ui.replace = null; render(); break;
     // Remove takes two presses on the same item; removal deletes the sign-in, so nothing comes back from it.
     case "remove": {
@@ -1290,7 +1794,8 @@ document.addEventListener("click", async (e) => {
       const res = p.kind === "key" ? await API.del(`/api/keys/${encodeURIComponent(a.env)}`) : await API.del(editPath(a));
       ui.removing = null;
       if (!res.ok) {
-        ui.removeErr = { spot: t.dataset.s, word: mutationError(res, "Account was not removed. Try again.") }; ui.armed = null; render(); break;
+        ui.removeErr = { spot: t.dataset.s, ...mutationError(res, p.kind === "key" ? "Key not removed" : "Not removed") };
+        ui.armed = null; refused(`remove:${t.dataset.s}`); render(); break;
       }
       ui.menu = null; ui.armed = null;
       board.querySelectorAll(`.card[data-a="${CSS.escape(a.id)}"]`).forEach((el) => el.classList.add("leaving"));
@@ -1307,43 +1812,60 @@ document.addEventListener("click", async (e) => {
     // the person can still pick Warn or Block here, and a config that does not read starts at Warn, the knob's default
     case "edit-budget": {
       const block = k.budget ? k.budget.block : (await API.get("/api/config")).body?.knobs?.budgetDefaultAction?.value === "block";
-      ui.editor = { c: k.cmd, cap: k.budget ? k.budget.cap : 10, block }; render(); document.getElementById("cap-in")?.focus(); break;
+      ui.editor = { c: k.cmd, cap: k.budget ? k.budget.cap : 10, block }; ui.enter = "editor"; render(); document.getElementById("cap-in")?.focus(); break;
     }
-    case "preset": ui.editor.cap = Number(t.dataset.v); render(); break;
-    case "bmode": ui.editor.cap = Number(document.getElementById("cap-in").value) || ui.editor.cap; ui.editor.block = t.dataset.v === "block"; render(); break;
-    // splice keeps the whole set of budgets (BudgetRoutes.kt:71): every other command's goes back unchanged.
+    case "preset": ui.editor.cap = Number(t.dataset.v); ui.editor.err = null; render(); break;
+    case "bmode": ui.editor.cap = Number(document.getElementById("cap-in").value) || ui.editor.cap; ui.editor.block = t.dataset.v === "block"; ui.editor.err = null; render(); break;
+    // splice keeps the whole set of budgets (BudgetRoutes.kt:71): every other command's goes back unchanged. A set splice
+    // refused keeps the editor open as he left it, says so beside its acts, and shakes once.
     case "save-budget": {
       const v = Number(document.getElementById("cap-in").value), cap = v > 0 ? v : ui.editor.cap, block = ui.editor.block;
       const set = data.flatMap((x) => x.cmds).filter((c) => c.budget && c.cmd !== k.cmd).map((c) => ({ head: c.head, daily_usd: c.budget.cap, action: c.budget.block ? "block" : "warn" }));
       set.push({ head: k.head, daily_usd: cap, action: block ? "block" : "warn" });
+      ui.editor.cap = cap; ui.editor.err = null;
       const res = await API.put("/api/budgets", { budgets: set });
-      ui.editor = null;
-      if (res.ok) await refresh(k.cmd); else render();
+      if (res.ok) { ui.editor = null; await refresh(k.cmd); } else { if (ui.editor) { ui.editor.err = mutationError(res, "Not saved"); refused("editor"); } render(); }
       break;
     }
     // a budget goes by sending the set without it, as saving one sends the set with it (BudgetRoutes.kt:71)
     case "remove-budget": {
       const set = data.flatMap((x) => x.cmds).filter((c) => c.budget && c.cmd !== k.cmd).map((c) => ({ head: c.head, daily_usd: c.budget.cap, action: c.budget.block ? "block" : "warn" }));
+      ui.editor.err = null;
       const res = await API.put("/api/budgets", { budgets: set });
-      ui.editor = null;
-      if (res.ok) await refresh(k.cmd); else render();
+      if (res.ok) { ui.editor = null; await refresh(k.cmd); } else { if (ui.editor) { ui.editor.err = mutationError(res, "Not removed"); refused("editor"); } render(); }
       break;
     }
     case "cancel-budget": ui.editor = null; render(); break;
-    case "add-provider": ui.addProv = { stage: "pick" }; render(); break;
+    // a Day's Not read opens the reason splice kept for it, under the word, and folds it back
+    case "why": if (ui.why.has(k.cmd)) ui.why.delete(k.cmd); else { ui.why.add(k.cmd); ui.enter = "why"; } render(); break;
+    // the rest of a login's sessions open in place under its first ones, and Fewer folds them back
+    case "doors": if (ui.doors.has(t.dataset.a)) ui.doors.delete(t.dataset.a); else ui.doors.add(t.dataset.a); render({ flip: true }); break;
+    case "add-provider": ui.addProv = { stage: "pick" }; ui.enter = "pick"; render(); break;
     case "cancel-prov": dropAdd(); render(); break;
     case "pick": pickProvider(CATALOG.find((x) => x.id === t.dataset.id)); break;
     case "save-key": if (pasted()) saveKey(); break;
   }
 });
+// the login a command is pinned to, by its card's id, for a refused Unpin said on that card
+const findCmdPin = (c) => c.pin ?? data.flatMap((p) => p.accounts).find((a) => (a.row?.pinned_heads || []).includes(c.head))?.id ?? null;
 
 // a door from another page lands on one account: accounts.html?card=<provider>/<account>, or ?head=<command's head>,
 // which lands on what that command needs fixed (a signed-out login, a missing key) and else its first account: the
 // way back from a session Sessions or Teams shows as Signed out (Marlin, Oct 10)
 const ADDR = new URLSearchParams(location.search);
+// A POOL'S DOOR LANDS ON THE LOGIN THAT COMMAND SENDS AS NEXT (Oct 26): what needs fixing comes first, as it did, but
+// where nothing does, this landed on the provider's FIRST card, so Compare's Name it — which shows only where the
+// login a command sends as next has no name — opened a named card beside the one to name. The next login is the
+// pool's own pick (c.serving, from GET /api/auth/{head}/order's next_target).
 const doorOf = (head) => {
   const p = data.find((x) => x.cmds.some((c) => c.head === head));
-  const a = p && (p.accounts.find((x) => x.out || x.has === false) || p.accounts[0]);
+  if (!p) return null;
+  const c = p.cmds.find((x) => x.head === head);
+  const mine = (x) => (x.row?.heads || []).includes(head) || (x.heads || []).includes(head) || x.id === head;
+  const a = p.accounts.find((x) => x.out || x.has === false)
+    || (c && serving(p, c))
+    || p.accounts.find(mine)
+    || p.accounts[0];
   return a ? `${p.id}/${a.id}` : null;
 };
 probe().then(() => {
@@ -1351,7 +1873,7 @@ probe().then(() => {
   const over = data.flatMap((p) => p.cmds).find((c) => c.head === ADDR.get("budget"));
   if (over) {
     ui.editor = { c: over.cmd, cap: over.budget ? over.budget.cap : 10, block: over.budget ? over.budget.block : false };
-    render();
+    ui.enter = "editor"; render();
     document.getElementById("cap-in")?.focus();
     return;
   }

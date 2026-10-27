@@ -72,7 +72,8 @@ async function dayOf(command: string) {
     await page.goto(`http://127.0.0.1:${server.port}/accounts.html`);
     const meter = page.locator(`[data-meter="${command}"]`);
     await expect(meter).toBeVisible({ timeout: 15_000 });
-    await expect(meter).not.toContainText("Reading", { timeout: 15_000 });
+    // a day still being read stands as its own ghost, busy, with no word in it: its figures are read once it lands
+    await expect(meter).not.toHaveAttribute("aria-busy", "true", { timeout: 15_000 });
     return (await meter.innerText()).replace(/\s+/g, " ");
   } finally {
     await page.close();
@@ -105,7 +106,7 @@ test("at 3828 the requests-on-your-plan line under a Day reading stays clear of 
     await page.goto(`http://127.0.0.1:${server.port}/accounts.html`);
     const meter = page.locator(`[data-meter="plan-day"]`);
     await expect(meter).toBeVisible({ timeout: 15_000 });
-    await expect(meter).not.toContainText("Reading", { timeout: 15_000 });
+    await expect(meter).not.toHaveAttribute("aria-busy", "true", { timeout: 15_000 });
     // clear means the two boxes share no area: since 18cb0a9eb the button sits on the row under the line, so a
     // left-of check alone failed whenever a longer reset label ("Resets Mon 7:00 PM", after 7 PM CT) moved it left
     const overlap = await page.evaluate(() => {
@@ -123,21 +124,30 @@ test("at 3828 the requests-on-your-plan line under a Day reading stays clear of 
   }
 }, 30_000);
 
-test("a command the daemon is still reading says Reading, never Not read, and then shows its day", async () => {
+// A day still being read is a ghost of the strip that lands, never a word in a figure's place (Accounts' goal, Oct 26:
+// "On first load there is no Reading word anywhere: ghosts stand where figures, tracks and doors will land").
+test("a command the daemon is still reading stands as its day's ghost, never Reading or Not read, and then shows its day", async () => {
   asked = 0;
   const page = await browser.newPage({ viewport: { width: 1440, height: 900 } });
-  const seen: string[] = [];
+  const seen: { text: string; busy: boolean; ghosts: number }[] = [];
   try {
     await page.goto(`http://127.0.0.1:${server.port}/accounts.html`);
     const meter = page.locator(`[data-meter="warming"]`);
     await expect(meter).toBeVisible({ timeout: 15_000 });
     // first draw: the page has not been answered yet; then the daemon answers "still reading", twice
-    const watch = setInterval(async () => seen.push((await meter.innerText().catch(() => "")).replace(/\s+/g, " ")), 100);
+    const look = () => meter.evaluate((el) => ({
+      text: (el as HTMLElement).innerText.replace(/\s+/g, " "),
+      busy: el.getAttribute("aria-busy") === "true",
+      ghosts: el.querySelectorAll(".ghost").length,
+    }));
+    const watch = setInterval(async () => seen.push(await look().catch(() => ({ text: "", busy: false, ghosts: 0 }))), 100);
     await expect(meter).toContainText("$1.50", { timeout: 30_000 });
     clearInterval(watch);
     expect(asked).toBeGreaterThan(READING_ANSWERS);
-    expect(seen.some((day) => day.includes("Reading"))).toBe(true);
-    expect(seen.some((day) => day.includes("Not read"))).toBe(false);
+    // while it reads, the strip is busy and holds the ghosts of its figure and its hours
+    expect(seen.some((day) => day.busy && day.ghosts > 0)).toBe(true);
+    expect(seen.some((day) => day.text.includes("Reading"))).toBe(false);
+    expect(seen.some((day) => day.text.includes("Not read"))).toBe(false);
   } finally {
     await page.close();
   }

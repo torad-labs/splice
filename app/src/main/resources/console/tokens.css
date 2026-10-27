@@ -13,7 +13,9 @@
   --splice-ink: #07050A;  /* Ink: 3 px outlines and the 6 px offset shadow on every object. */
   --splice-paper: #FBF1DF;  /* Paper: Light cards, tooltips and end cards. Light-mode background. */
   --splice-cream: #EFE2C6;  /* Cream: Body text and the wordmark on Night. */
-  --splice-key: #FFD79A;  /* Key Light: Accent. Primary button, focus ring, the active session. One use per view. */
+  --splice-key: #FFD79A;  /* Key Light: Accent. ONE USE PER VIEW: the one place to look or act next — the account
+                             serving now, the one primary button, a rate worth watching. Never a selection, a tab, a
+                             filter, a focus ring or a row's words: those are neutral ink (console.css's roles block). */
   --splice-dusk: #724C5E;  /* Dusk: Alternate background for end cards and the GitHub preview only. */
   /* inks */
   --splice-cream-body: #CBBD9D;  /* Cream Body: Secondary text on Night. */
@@ -22,7 +24,9 @@
   --splice-ink-day-body: #4E4434;  /* Day Body: Secondary text on Paper. */
   --splice-ink-day-mute: #6B604B;  /* Day Mute: Captions and metadata on Paper. */
   --splice-key-day: #8A5A12;  /* Key on Paper: Accent text on Paper. Key Light itself is too pale to read on Paper. */
-  /* provider colours: one fixed colour per provider, used for its cable, shadow and model dot. Not brand colours. */
+  /* provider colours: one fixed colour per provider. Not brand colours. ONE JOB: they say WHICH PROVIDER, and only in
+     four places — its dot, a chip's edge, a card's offset shadow and a meter's fill. Never words, never a selection,
+     never a page's chrome, never a fill behind text (the words on a meter sit beside it, not on it). */
   --splice-cable-claude: #EE8F58;
   --splice-cable-gpt: #00C5BE;
   --splice-cable-grok: #6EADFE;
@@ -43,10 +47,17 @@
   --splice-cable-router-day: #7E5B44;
   --splice-cable-local-day: #327035;
   --splice-cable-deepseek-day: #B82072;
-  /* status (night value; day value in [data-theme=day]) */
-  --splice-status-live: #5BB59C;  /* Connected, request succeeded, tests passed. */
-  --splice-status-limit: #F06A4C;  /* Rate limited, failed, stopped. */
-  --splice-status-needs-you: #FFD79A;  /* Waiting for the user to decide something. */
+  /* status (night value; day value in [data-theme=day]). ONE JOB EACH, and none of them is the Key Light. */
+  --splice-status-live: #5BB59C;  /* Live: something is running or answering now — a lamp's trace, a chip's dot. Never a figure. */
+  --splice-status-limit: #F06A4C;  /* Limit: ONLY a limit or a failure — a full bar, a lock, a held line, a failure rate
+                                      and its segments, the one worst card. Never an act, never a healthy phase. */
+  /* NEEDS YOU is its own colour, not the Key Light (they were both #FFD79A until Oct 26, so a session waiting on him and
+     the one primary button lit the same and neither led the eye). It marks only a thing waiting on a person: a Needs-you
+     lamp and its count, a project door with someone waiting, a question still unanswered. */
+  --splice-status-needs-you: #F6B352;
+  /* added: Needs you on a dark socket in either theme, beside live-on-night and limit-on-night. Same value as Needs
+     you on Night, because the lamp's socket stays dark in day and day's #9C5410 is unreadable in it. */
+  --splice-status-needs-you-on-night: #F6B352;
   /* added: Paper's two companions, the light mode's Night Low and raised card. Every day text colour holds 4.5:1 on both. */
   --splice-paper-low: #EBE1CA;  /* Paper Low: Second background in light mode: table headers, sunk fields, code blocks. */
   --splice-paper-high: #F6EDDB;  /* Paper High: Raised surfaces in light mode: menus. */
@@ -65,14 +76,21 @@
   --splice-cast: 6px;           /* offset shadow, down and right, no blur */
   --splice-r-obj: 9px;          /* object corner radius */
   --splice-r-in: 7px;
+  /* added: one row pitch for every list of objects (Usage's three tables, Sessions' rows), the pitch of Usage's Results
+     table. One token keeps both pages on one pitch if either is changed. */
+  --splice-row-h: 3.7rem;
   --splice-shaft: rgba(174, 182, 200, .055);  /* diagonal light band on backgrounds */
   /* space: 4px rhythm */
   --splice-space-1: 4px; --splice-space-2: 8px; --splice-space-3: 12px; --splice-space-4: 16px;
   --splice-space-6: 24px; --splice-space-8: 32px; --splice-space-12: 48px; --splice-space-16: 64px;
-  /* motion (the ease-out curve is the same one Temple uses) */
-  --splice-t-hit: 90ms;   /* button press */
-  --splice-t-snap: 240ms; /* small UI change */
-  --splice-t-move: 420ms; /* large or full-screen move */
+  /* motion (the ease-out curve is the same one Temple uses). Only what changed, or what the pointer touches, moves. */
+  --splice-t-hit: 90ms;    /* button press */
+  --splice-t-hover: 140ms; /* the pointer arrives: a button, a row, an add tile warms */
+  --splice-t-snap: 240ms;  /* something changed in place: a bar grows, a chevron turns, a detail opens */
+  --splice-t-pop: 260ms;   /* something arrives that was not there: a lock, a badge */
+  --splice-t-pulse: 900ms; /* once, on the item a change landed on */
+  --splice-t-stripe: .9s;  /* one cycle of the stripes; ONLY for work still in progress */
+  --splice-t-move: 420ms;  /* large or full-screen move */
   --splice-e-out: cubic-bezier(.22, 1, .36, 1);
   --splice-e-io: cubic-bezier(.65, 0, .35, 1);
   --splice-drawing-rate: 12; /* drawn objects update 12 times per second in 24 fps video */
@@ -84,11 +102,20 @@
   --splice-card: var(--splice-shell);  /* an object's face */
   --splice-card-high: #241A12;  /* a raised face: a menu, a hovered row. Between Shell and Plate. */
   --splice-card-sunk: var(--splice-socket);  /* a sunk field, a code block, a loading bar */
-  --splice-key-ink: var(--splice-key);  /* the key as text or a mark on a card: the focus ring, the active page */
+  --splice-key-ink: var(--splice-key);  /* the Key Light as text or a mark on a card: the ONE place to look or act next in a view */
   --splice-on-fill: var(--splice-ink-day);  /* text on a solid fill: Limit, a provider colour, a status chip. Cream-white was 2.9:1 on Night Limit; Day Ink is 5.5:1 */
   --splice-track: rgba(239, 226, 198, .12);  /* a hover fill or a rule inside an object */
   --splice-track-line: rgba(239, 226, 198, .22);  /* a field's rim, a dashed rule */
-  --splice-chart-1: #E8B26A; --splice-chart-2: #7FB0D8; --splice-chart-3: #8CC08A; --splice-chart-4: #D394B8; --splice-chart-5: #9F9BDC; --splice-chart-6: #D8C38A;  /* six hues for split bars, never the provider colours */
+  /* added: THE SELECTED LOOK, one for every view, tab, filter and row that is picked: a raised face, the full text ink
+     and a thin rim. A selection is where he IS, not where to look next, so it is never the Key Light. */
+  --splice-selected-face: var(--splice-card-high);
+  --splice-selected-ink: var(--splice-text);
+  --splice-selected-line: var(--splice-track-line);
+  /* six hues for split bars, never the provider colours. Chart 6 is a teal: it was a pale gold (#D8C38A night,
+     #756029 day) beside chart 1's amber, and on a day screen Settings' first and sixth store read as one colour
+     (measured rgb(136, 89, 32) against rgb(117, 96, 41)). Teal is the family the other five leave free, and each
+     value keeps the lightness the gold had. */
+  --splice-chart-1: #E8B26A; --splice-chart-2: #7FB0D8; --splice-chart-3: #8CC08A; --splice-chart-4: #D394B8; --splice-chart-5: #9F9BDC; --splice-chart-6: #8CD2CB;
   --splice-code-str: #A9CF8E;  /* a string in a JSON tree */
 }
 [data-theme='day'] {
@@ -96,7 +123,7 @@
   --splice-ink: #241D14;
   --splice-status-live: #2C6555;
   --splice-status-limit: #BB301A;
-  --splice-status-needs-you: #8A5A12;
+  --splice-status-needs-you: #9C5410;  /* Needs you on Paper: its own, apart from the day key (#8A5A12) and the day limit */
   /* added: the same roles on Paper */
   --splice-ground-low: var(--splice-paper-low);
   --splice-card: var(--splice-paper);
@@ -107,7 +134,7 @@
   --splice-track: rgba(36, 29, 20, .06);  /* a hover fill: every day text colour holds 4.5:1 on it, on Paper and on Paper High */
   --splice-track-line: rgba(36, 29, 20, .52);  /* 3.3:1 on Paper, 3.1:1 on Paper Low, the least a rim needs to be seen */
   --splice-shaft: rgba(255, 246, 220, .35);
-  --splice-chart-1: #885920; --splice-chart-2: #366792; --splice-chart-3: #386E3F; --splice-chart-4: #984871; --splice-chart-5: #5A52A0; --splice-chart-6: #756029;  /* 4.6:1 or more on Paper Low */
+  --splice-chart-1: #885920; --splice-chart-2: #366792; --splice-chart-3: #386E3F; --splice-chart-4: #984871; --splice-chart-5: #5A52A0; --splice-chart-6: #1C6E6E;  /* 4.6:1 or more on Paper Low; chart 6 is the teal (see night) at the gold's lightness, 4.7:1 */
   --splice-code-str: var(--splice-status-live);
 }
-@media (prefers-reduced-motion: reduce) { :root { --splice-t-snap: 0ms; --splice-t-move: 0ms; } }
+@media (prefers-reduced-motion: reduce) { :root { --splice-t-hit: 0ms; --splice-t-hover: 0ms; --splice-t-snap: 0ms; --splice-t-pop: 0ms; --splice-t-pulse: 0ms; --splice-t-move: 0ms; } }

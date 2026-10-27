@@ -38,11 +38,55 @@
   --gap-col: 2rem; --gap-card: 1rem;
   --bar-h: 3.4rem;                    /* the nav bar across the top; a sticky pane clears it */
 
-  --t-snap: 240ms; --t-move: 420ms;
+  /* ONE SPACING UNIT for every page (the rhythm of Usage's drill-down panel, perf-heads.css's --u lifted here):
+     u = .667rem = 10.11 px at 3822 and 8 px at 1440. 2u inside a section, 4u + a 1 px hairline + 4u between sections,
+     4u round a plate. --gap-card (15.2 px), 2.4rem between groups (36.4 px) and --gap-col (30.3 px) are the board's
+     own three gaps, measured on Accounts. Nothing writes a spacing number that is not one of these. */
+  --u: .667rem;
+  --hair: color-mix(in oklab, var(--text) 12%, transparent);   /* the 1 px rule between sections */
+
+  /* the drawings' own sizes, so a meter on Usage is the meter on Accounts (the Accounts page's measurements) */
+  --meter-h: 1.1rem;                  /* a share of a limit or a whole: 16.7 px at 3822 */
+  --meter-h-sub: .62rem;              /* a slice inside one */
+  --stack-h: 1.9rem;                  /* the stacked bar with its labels inside its segments */
+  --ring-sz: 1.6rem;                  /* the reset ring beside a meter: 24.3 px */
+  --ring-focal: 3.3rem;               /* the share a section leads with: 50 px */
+  --fig-hero: 2.9rem;                 /* the one figure a section is answered by: 43.97 px */
+  --fig-focal: 1.7rem;                /* a figure that leads a part of a section: 25.77 px */
+  --kicker: .8rem;                    /* a two-word uppercase kicker: 12.13 px, +.09em */
+  --row-h: var(--splice-row-h);       /* one row pitch for a list of objects: Usage's tables and Sessions' rows */
+
+  /* MOTION, one token per job, all of them tokens.css's, so prefers-reduced-motion zeroes every one at once (tokens.css's
+     last line) and the global rule below stops every animation, the stripes included. Write the token, never the ms:
+     --t-hit   90 ms   a press goes down
+     --t-hover 140 ms  the pointer arrives: a button, a row, an add tile warms
+     --t-snap  240 ms  something changed in place: a bar grows, a chevron turns, a detail opens under its row
+     --t-pop   260 ms  something arrives that was not there: a lock, a badge, a result word
+     --t-pulse 900 ms  ONCE, on the item a change landed on (.landed)
+     --t-stripe .9 s   one cycle of the stripes, and ONLY for work still in progress (a ghost, a reading track)
+     --t-move  420 ms  a large move: an object travelling to its new place */
+  --t-hit: var(--splice-t-hit); --t-hover: var(--splice-t-hover); --t-snap: var(--splice-t-snap); --t-pop: var(--splice-t-pop);
+  --t-pulse: var(--splice-t-pulse); --t-stripe: var(--splice-t-stripe); --t-move: var(--splice-t-move);
   --e-out: var(--splice-e-out); --e-io: var(--splice-e-io);
+
+  /* THE SELECTED LOOK (tokens.css --splice-selected-*): a picked view, tab, filter or row is a raised face in the full
+     text ink with a thin rim. Never the key light, which is kept for the one place to look or act next. */
+  --sel-face: var(--splice-selected-face); --sel-ink: var(--splice-selected-ink); --sel-line: var(--splice-selected-line);
 }
 
-/* The colours below are aliases of tokens.css: the console keeps its own names, the kit owns the values. */
+/* The colours below are aliases of tokens.css: the console keeps its own names, the kit owns the values.
+   EACH COLOUR HAS ONE JOB, and a colour that does two stops telling the eye where to go:
+     --key-light / --key-ink   the ONE place to look or act next in a view: the account serving now, the one primary act,
+                               a rate worth watching. Never a selection, a focus ring, a disabled act or a row's words.
+     --needs                   a thing waiting on a person: a Needs-you lamp and its count, a door to someone waiting.
+     --live                    running or answering now: a lamp's trace, a chip's dot. Never a figure.
+     --limit                   a limit or a failure, and nothing else: a full meter, a lock, a failure rate. Never an
+                               act (an act that ends something is ink: .act.danger), never a healthy phase.
+     --claude ... --deepseek   WHICH PROVIDER, in four places only: its dot, a chip's edge, a card's offset shadow and a
+                               meter's fill.
+     --sel-face / --sel-ink    the picked view, tab, filter or row (above): neutral, raised.
+     --splice-chart-1..6       the parts of a whole split by something that is neither an outcome nor a provider.
+   Everything else is ink: --text for what matters, --text-body for what supports it, --text-mute for what labels it. */
 /* dark: the night wall of the film and the page */
 :root, [data-theme="night"] {
   --wall: var(--splice-ground); --wall-low: var(--splice-ground-low);
@@ -51,7 +95,7 @@
   --rail: var(--splice-plate); --socket: var(--splice-socket); --socket-ink: var(--splice-cream-mute);  /* the socket is dark in both themes, so its number keeps night's muted ink */
   --text: var(--splice-text); --text-body: var(--splice-text-body); --text-mute: var(--splice-text-mute);
   --track: var(--splice-track); --track-line: var(--splice-track-line);
-  --limit: var(--splice-status-limit); --live: var(--splice-status-live);
+  --limit: var(--splice-status-limit); --live: var(--splice-status-live); --needs: var(--splice-status-needs-you);
   --on-fill: var(--splice-on-fill); --on-limit: var(--on-fill); --on-cable: var(--on-fill);  /* the words on a solid fill: a limit, a provider colour */
   --key-ink: var(--splice-key-ink);   /* the key as ink on a card: words and marks it lights */
   --shaft: var(--splice-shaft);
@@ -66,9 +110,9 @@
   --rail: var(--splice-plate); --socket: var(--splice-socket); --socket-ink: var(--splice-cream-mute);  /* the socket is dark in both themes, so its number keeps night's muted ink */
   --text: var(--splice-text); --text-body: var(--splice-text-body); --text-mute: var(--splice-text-mute);
   --track: var(--splice-track); --track-line: var(--splice-track-line);
-  --limit: var(--splice-status-limit); --live: var(--splice-status-live);
+  --limit: var(--splice-status-limit); --live: var(--splice-status-live); --needs: var(--splice-status-needs-you);
   --on-fill: var(--splice-on-fill); --on-limit: var(--on-fill); --on-cable: var(--on-fill);
-  --key-ink: var(--splice-key-ink);   /* day's key ink: the pale key washed out on cream (walk ea3eeff67), Needs you's colour */
+  --key-ink: var(--splice-key-ink);   /* day's key ink: the pale key washed out on cream (walk ea3eeff67) */
   --shaft: var(--splice-shaft);
   color-scheme: light;
 }
@@ -95,8 +139,10 @@ body::before {
     url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='220' height='220'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.85' numOctaves='2' stitchTiles='stitch'/%3E%3CfeColorMatrix values='0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 .09 0'/%3E%3C/filter%3E%3Crect width='220' height='220' filter='url(%23n)'/%3E%3C/svg%3E");
 }
 button { font: inherit; color: inherit; }
-/* the focus ring is drawn like the outline, in the key's ink, which reads on cream as well as on the night */
-:focus-visible { outline: var(--ink-w) solid var(--key-ink); outline-offset: .18rem; }
+/* THE FOCUS RING IS NEUTRAL (the colour pass, Oct 26). It is drawn like the outline, in the full text ink, which reads
+   on cream and on the night alike. It used to take the key light, so on Teams the focused field, the pressed toggle and
+   the one primary button all lit warm at once and none of them led the eye. */
+:focus-visible { outline: var(--ink-w) solid var(--text); outline-offset: .18rem; }
 
 /* ---------- the frame: the nav across the top, the page on the wall under it (Marcos, Oct 15: "let's also move the
    navigation from the left to the top") ---------- */
@@ -117,40 +163,97 @@ html { scroll-padding-top: calc(var(--bar-h) + 1rem); }
 .mark .lockup.day { display: none; }
 [data-theme="day"] .mark .lockup.night { display: none; }
 [data-theme="day"] .mark .lockup.day { display: block; }
-.nav { flex: none; display: flex; align-self: stretch; gap: .15rem; }
+.nav { flex: none; display: flex; align-self: stretch; gap: .15rem; position: relative; }
 .nav a {
-  display: flex; align-items: center; padding: 0 .75rem; position: relative; white-space: nowrap;
-  font: 400 .95rem/1 var(--font-name); color: var(--text-body); text-decoration: none;
-  transition: color 140ms var(--e-out);
+  display: flex; align-items: center; gap: .55rem; padding: 0 .75rem; position: relative; white-space: nowrap;
+  font: 400 1rem/1 var(--font-name); color: var(--text-body); text-decoration: none;
+  transition: color var(--t-hover) var(--e-out);
 }
-/* the page he is on: its name in full ink and the key's lamp on the bar's ink line under it; hover draws the same line
-   in the track's ink, so the bar says where a press goes before it goes */
+/* the page he is on: its name in full ink and a line of the same ink under it; hover draws the line in the track's ink,
+   so the bar says where a press goes before it goes. A SELECTED VIEW IS NEUTRAL, never the key light: the page he is on
+   is not where he should look next (the colour pass, Oct 26). */
 .nav a::before {
   content: ""; position: absolute; left: .75rem; right: .75rem; bottom: -.1rem; height: .22rem; border-radius: .2rem .2rem 0 0;
   background: var(--track-line); opacity: 0; transform: scaleX(.5);
-  transition: opacity 140ms var(--e-out), transform 140ms var(--e-out);
+  transition: opacity var(--t-hover) var(--e-out), transform var(--t-hover) var(--e-out);
 }
 .nav a:hover { color: var(--text); }
 .nav a:hover::before { opacity: 1; transform: none; }
 .nav a[aria-current="page"] { color: var(--text); }
-.nav a[aria-current="page"]::before { background: var(--key-ink); opacity: 1; transform: none; }
+.nav a[aria-current="page"]::before { opacity: 0; }
+/* THE CURRENT-PAGE LINE IS ONE OBJECT THAT TRAVELS (Oct 27): kit.js navLine puts it under the current link's name and
+   moves it to the next link's over --t-move, so a page change reads as one move along the bar, not a blink. */
+.nav-line {
+  position: absolute; left: 0; bottom: -.1rem; height: .22rem; border-radius: .2rem .2rem 0 0; pointer-events: none;
+  background: var(--text); transform-origin: left; clip-path: inset(0 .75rem);
+  transition: transform var(--t-move) var(--e-io), width var(--t-move) var(--e-io), opacity var(--t-hover) var(--e-out);
+}
+.nav-line.still { transition: none; }
+.nav-line.off { opacity: 0; }
 .nav a:focus-visible { outline-offset: -.4rem; border-radius: var(--r-in); }
+/* WHAT WAITS BEHIND A LINK, DRAWN AS THE TILES DRAW IT (kit.js markNav): the lamp's socket and glyph in its state's
+   colour, its count in the data face beside it, inside the link, so the mark is the door. */
+.nmarks { display: inline-flex; align-items: center; gap: .7rem; }
+.nmarks.pop { animation: pop var(--t-pop) var(--e-out) 1; }
+.nav .pc.big { gap: .35rem; font: 600 .95rem/1 var(--font-data); font-variant-numeric: tabular-nums; }
+.nav .tlamp { width: 1.55rem; height: 1.55rem; }
+.nav .tlamp svg { width: .95rem; height: .95rem; }
+.nav .tlamp.needs svg { width: .85rem; height: .85rem; }
 .side .foot { flex: 0 1 auto; min-width: 0; margin-left: auto; display: flex; align-items: center; gap: .9rem; }
-/* the stale mark (kit.js markStale): the key's ink, small, beside the theme toggle; one line where the bar has room, and
-   it wraps rather than run under the pages where it has not (a bar between 825 and about 1000 px) */
-.side .foot .stale { font-size: .85rem; line-height: 1.2; color: var(--key-ink); text-align: right; }
+/* the stale mark (kit.js markStale): the fact in the needs-you ink, in the links' own type and as a door to the
+   settings it is about, and ON IT the act that applies them, the console's one small act. One line where the bar has
+   room, wrapping rather than running under the pages where it has not. */
+.side .foot .stale { display: inline-flex; flex-wrap: wrap; align-items: center; justify-content: flex-end; gap: .4rem calc(1.5 * var(--u)); font: 400 1rem/1.2 var(--font-name); text-align: right; }
+.side .foot .stale-door { display: inline-flex; align-items: center; gap: .45rem; color: var(--needs); text-decoration: none; white-space: nowrap; }
+.side .foot .stale-door:hover span { text-decoration: underline; text-underline-offset: .2rem; }
+.side .foot .stale svg { flex: none; width: 1rem; height: 1rem; }
+/* what the press did, said in the bar: the kit's own result word, at the bar's size */
+.side .foot .stale .result { font-size: .88rem; }
+.side .foot .stale.shook, .side .foot .stale .shook { animation: shake 300ms var(--e-out) 1; }
+/* the way out when splice cannot bring itself back: the reason, the command that can, and Copy beside it */
+.side .foot .stale-way { display: inline-flex; align-items: center; gap: .6rem; white-space: nowrap; }
+.side .foot .stale-way .said { color: var(--text-body); font-size: .88rem; }
+.side .foot .stale-way code { font: 500 .88rem/1 var(--font-data); color: var(--text); background: var(--obj-sunk); border: .1rem solid var(--track-line); border-radius: .3rem; padding: .3rem .5rem; }
 .side .foot > .icon { flex: none; }
+/* THE THEME SWITCH IS A SWITCH (Oct 26): both themes drawn, the one in use on the raised knob and the other waiting on
+   the sunk track — the same two-state shape as Usage's window switch (.switch above), so the bar's one odd control now
+   reads like the rest of the console. Two bare glyphs with no track read as two buttons that happen to sit together. */
+.icon.thm {
+  width: auto; height: auto; gap: .1rem; grid-auto-flow: column; padding: .18rem;
+  border-radius: var(--r-obj); background: var(--obj-sunk); border: var(--ink-w) solid var(--ink);
+}
+.icon.thm svg {
+  box-sizing: content-box; width: 1rem; height: 1rem; padding: .2rem .34rem; border-radius: calc(var(--r-obj) - .16rem);
+  color: var(--text-mute); opacity: .55;
+  transition: opacity var(--t-hover) var(--e-out), color var(--t-hover) var(--e-out), background var(--t-hover) var(--e-out);
+}
+[data-theme="night"] .icon.thm .moon, [data-theme="day"] .icon.thm .sun {
+  color: var(--text); opacity: 1; background: var(--obj-high); box-shadow: inset 0 0 0 .1rem var(--track-line);
+}
+.icon.thm:hover svg { opacity: .85; }
+[data-theme="night"] .icon.thm:hover .moon, [data-theme="day"] .icon.thm:hover .sun { opacity: 1; }
 
 .page { padding: 1.6rem 2.4rem 5rem; min-width: 0; }
-.head { display: flex; align-items: flex-end; justify-content: space-between; gap: 1.2rem; margin-bottom: 1.6rem; }
-.head h1 { font: 400 2.1rem/1.05 var(--font-lead); letter-spacing: -.01em; margin: 0; }
+/* ONE HEADER RHYTHM ON EVERY PAGE (the spacing pass, Oct 26). The title used to sit at y 76, 80 or 81 and the body
+   10, 17 or 24 px under it, because the header was as tall as whatever stood on its right and everything was aligned
+   to its bottom edge. Now the first row is one control tall, the title's words sit at one y on all eight pages, and
+   what grows under the title (Compare's subtitle, Usage's filter pills) grows downward instead of pushing it up.
+   The gap to the body is 2u, said here and nowhere else: the first thing on a page adds no top margin of its own.
+   THE TITLE HOLDS THE ROW'S TOP (Oct 27): centred in the row, it still sat at y 76, 77 or 81 because a taller control
+   on the right (Usage's 48 px switch, a 39 px search) made the row taller. Now the title keeps the top and the row grows
+   downward under it; the controls stay centred on the row. */
+.head { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: var(--u) calc(2 * var(--u)); margin: 0 0 calc(2 * var(--u)); }
+.head h1 { align-self: flex-start; font: 400 2.1rem/1.05 var(--font-lead); letter-spacing: -.01em; margin: 0; min-height: var(--ctl-h); display: flex; align-items: center; }
+/* a title with a line under it (Compare) keeps the title on the header's first row and grows downward */
+.head > .titles { align-self: flex-start; }
+main.page > .head + *:not(.lockedby) { margin-top: 0; }
 .read { display: flex; align-items: center; gap: .6rem; font: 500 .88rem/1 var(--font-data); color: var(--text-mute); }
 
 /* ---------- icon buttons: copy, refresh, more, theme ---------- */
 .icon {
   width: 2.2rem; height: 2.2rem; padding: 0; display: grid; place-items: center; border-radius: var(--r-obj);
   background: transparent; border: var(--ink-w) solid transparent; color: var(--text-body); cursor: pointer;
-  transition: background-color 140ms var(--e-out), color 140ms var(--e-out);
+  transition: background-color var(--t-hover) var(--e-out), color var(--t-hover) var(--e-out);
 }
 .icon:hover { background: var(--track); color: var(--text); }
 .icon svg { width: 1.1rem; height: 1.1rem; }
@@ -160,19 +263,27 @@ html { scroll-padding-top: calc(var(--bar-h) + 1rem); }
 .act {
   font: 500 .92rem/1 var(--font-name); padding: .58rem 1rem; border-radius: var(--r-obj); cursor: pointer;
   background: var(--obj-high); color: var(--text); border: var(--ink-w) solid var(--ink);
-  box-shadow: .22rem .22rem 0 var(--ink); transition: transform 140ms var(--e-out), box-shadow 140ms var(--e-out);
+  box-shadow: .22rem .22rem 0 var(--ink); transition: transform var(--t-hover) var(--e-out), box-shadow var(--t-hover) var(--e-out);
 }
 a.act { text-decoration: none; }  /* an act that happens to be a link still looks like an act, never an underlined word */
 .act:hover { transform: translate(-.08rem, -.08rem); box-shadow: .3rem .3rem 0 var(--ink); }  /* it lifts toward the light */
-.act:active { transform: translate(.18rem, .18rem); box-shadow: .04rem .04rem 0 var(--ink); transition-duration: 60ms; }
+.act:active { transform: translate(.18rem, .18rem); box-shadow: .04rem .04rem 0 var(--ink); transition-duration: var(--t-hit); }
 .act.primary { background: var(--key-light); color: var(--splice-ink-day); }
 .act.quiet { background: transparent; box-shadow: none; border-color: var(--track-line); }
+/* AN ACT THAT ENDS SOMETHING IS INK, NOT RED (Oct 26): the limit red says "a limit or a failure" and nothing else, so
+   an armed Remove, End, Stop or Restart is the heaviest neutral there is — the text's own ink, with the face's colour
+   on its words. Five pages wrote this rule in their own sheet, three of them in red. */
+.act.danger { background: var(--text); color: var(--obj); }
 .pane > header .act, .answers .act, .slot-acts .act, .card .fix .act, .pg-addbtn {  /* the one medium button */
   display: inline-flex; align-items: center; gap: .45rem; padding: .5rem .85rem; font-size: .92rem;
 }
 .act.small, .pane > header .act.small, .card .fix .act.small { display: inline-flex; align-items: center; gap: .4rem; padding: .4rem .7rem; font-size: .88rem; }  /* the one compact button */
 .act.small svg { width: .9rem; height: .9rem; }
 .act:disabled, .act:disabled:hover { opacity: .45; cursor: default; transform: none; box-shadow: none; }
+/* A PRIMARY ACT THAT CANNOT ACT IS NOT LIT (the colour roles above): faded at .45 it kept the key light, so a disabled
+   Start team stayed the one lit button on its dialog and the key pointed at the one thing he could not do. It waits as
+   a quiet outline, in words he can read in both themes, and lights the moment it can act. */
+.act.primary:disabled, .act.primary:disabled:hover { opacity: 1; background: transparent; color: var(--text-mute); border-color: var(--track-line); }
 
 /* ---------- the switch: two named states, one lit ---------- */
 .switch { display: inline-flex; padding: .2rem; border-radius: var(--r-obj); background: var(--obj-sunk); border: var(--ink-w) solid var(--ink); }
@@ -180,7 +291,13 @@ a.act { text-decoration: none; }  /* an act that happens to be a link still look
   font: 500 .92rem/1 var(--font-name); color: var(--text-mute); background: none; border: 0;
   padding: .45rem .8rem; border-radius: calc(var(--r-obj) - .15rem); cursor: pointer;
 }
-.switch button[aria-pressed="true"] { background: var(--obj-high); color: var(--text); box-shadow: inset 0 0 0 .1rem var(--track-line); }
+.switch button[aria-pressed="true"] { background: var(--sel-face); color: var(--sel-ink); box-shadow: inset 0 0 0 .1rem var(--sel-line); }
+.switch button:not([aria-pressed="true"]):not(:disabled):hover { color: var(--text-body); }
+.switch button { transition: color var(--t-hover) var(--e-out), background-color var(--t-hover) var(--e-out); }
+/* A PICKED ROW OR CARD (the selected look, :root): the row he opened, the item a list is showing. Raised in the text's
+   ink with a 3 px rule down its left edge, never lit in the key light. A page opts in with .picked (no attribute rule
+   here, so no page's own selected style is reached by this one). */
+.picked { background: var(--sel-face); box-shadow: inset .22rem 0 0 var(--sel-ink), inset 0 0 0 .1rem var(--sel-line); }
 
 /* ---------- the board: one rail per provider ---------- */
 .board { display: flex; align-items: flex-start; gap: var(--gap-col); }
@@ -189,14 +306,21 @@ a.act { text-decoration: none; }  /* an act that happens to be a link still look
 /* a provider over k columns: its days and its rail split on the board's own columns, the order running down each (accounts.js columns(), hitstop 0360fc4) */
 .provider.wide .meters { display: grid; grid-template-columns: repeat(var(--span), minmax(0, 1fr)); column-gap: var(--gap-col); }
 .rails { display: grid; grid-template-columns: repeat(var(--span), minmax(0, 1fr)); column-gap: var(--gap-col); align-items: start; }
-.provider { --c: var(--text-mute); min-width: 0; }
-.provider > header { display: flex; align-items: center; gap: .8rem; flex-wrap: wrap; margin-bottom: 1.1rem; min-height: var(--ctl-h); }
+/* A TITLED GROUP (kit DRAW.group): Accounts' provider, lifted so every page's board of groups reads alike — the
+   group's dot in its colour, its Fraunces title at 1.4rem, what acts on the whole group at the header's end, and its
+   objects 1.1rem under the header. Accounts draws it as .provider, every other page as .titled. */
+.provider, .titled { --c: var(--text-mute); min-width: 0; }
+.provider > header, .titled > header { display: flex; align-items: center; gap: .8rem; flex-wrap: wrap; margin-bottom: 1.1rem; min-height: var(--ctl-h); }
 /* the headings: a section under the page title, and a section inside a pane, one size each on every page */
-.provider h2, .usage h2, .compose > h2, .proj h2 { font: 400 1.4rem/1.1 var(--font-lead); letter-spacing: normal; margin: 0; }
-.sub h3, .dgroup h3, .run h3, .tally h3, .hlog h3, .pblock h3, .feed h3, .compose h3 { font: 400 1.15rem/1.1 var(--font-lead); color: var(--text); margin: 0; }
-.provider h2 { display: flex; align-items: center; gap: .6rem; }
-.provider h2 .blot { width: .8rem; height: .8rem; border-radius: 50%; background: var(--c); box-shadow: 0 0 0 .14rem var(--ink); }
-.provider > header .switch { margin-left: auto; }
+.provider h2, .titled > header > h2, .usage h2, .compose > h2, .proj h2 { font: 400 1.4rem/1.1 var(--font-lead); letter-spacing: normal; margin: 0; }
+/* a kicker is a kicker wherever it stands: these headings never reach an h3.kicker (Teams' ACTIVITY kicker in .feed came
+   out as a Fraunces heading, because .feed h3 outranked .kicker) */
+.sub h3:where(:not(.kicker)), .dgroup h3:where(:not(.kicker)), .run h3:where(:not(.kicker)), .tally h3:where(:not(.kicker)), .hlog h3:where(:not(.kicker)), .pblock h3:where(:not(.kicker)), .feed h3:where(:not(.kicker)), .compose h3:where(:not(.kicker)) { font: 400 1.15rem/1.1 var(--font-lead); color: var(--text); margin: 0; }
+.provider h2, .titled > header > h2 { display: flex; align-items: center; gap: .6rem; }
+.provider h2 .blot, .titled > header > h2 .blot { width: .8rem; height: .8rem; border-radius: 50%; background: var(--c); box-shadow: 0 0 0 .14rem var(--ink); }
+/* what acts on the whole group stands at the header's end: the first thing after the name takes the end and the rest
+   follow it (Accounts' order switch, and the refusal that comes back beside it) */
+.provider > header .switch, .titled > header > h2 + * { margin-left: auto; }
 .col > .provider:not(:first-child) > header:empty { display: none; }  /* Add provider lines up with first cards only at a column's top */
 
 /* the rail and its sockets: a socket 2rem across, centred on the rail's bar, 2.7rem left of the card it numbers
@@ -224,7 +348,7 @@ a.act { text-decoration: none; }  /* an act that happens to be a link still look
 /* a list card opens something, so it lifts toward the light under the pointer: the card rises as far as its cast grows,
    so the shadow stays put. Top and left, never a transform, which would trap a card's open menu under the next card */
 @property --cast { syntax: "<length>"; inherits: true; initial-value: .5rem; }
-.s, .card.m, .card.h, .card.job { top: 0; left: 0; transition: top 140ms var(--e-out), left 140ms var(--e-out), --cast 140ms var(--e-out); }
+.s, .card.m, .card.h, .card.job { top: 0; left: 0; transition: top var(--t-hover) var(--e-out), left var(--t-hover) var(--e-out), --cast var(--t-hover) var(--e-out); }
 .s:hover, .card.m:hover, .card.h:hover, .card.job:hover { top: -.1rem; left: -.1rem; --cast: .6rem; }
 .card.serving { background: color-mix(in oklab, var(--obj) 88%, var(--key-light)); }
 .card.held, .card.out { box-shadow: var(--cast) var(--cast) 0 var(--wall-low), var(--cast) var(--cast) 0 var(--ink-w) var(--ink); }  /* out of play: its edge goes to the wall */
@@ -259,11 +383,17 @@ a.act { text-decoration: none; }  /* an act that happens to be a link still look
 }
 .chip i { width: .7rem; height: .7rem; border-radius: 50%; background: var(--live); box-shadow: 0 0 .5rem var(--live); }
 a.chip { text-decoration: none; }  /* a chip that opens something (a session it names) is still a chip, never an underlined link */
+.chip svg { flex: none; width: 1em; height: 1em; }  /* a glyph in a chip is the chip's own size, never its box's */
+/* THE QUIET CHIP, for a list where the chip repeats on every row (Oct 26): same box, same face, same live dot, with
+   the loud edge spent down to 1 px of the command's colour. On 21 rows at 3822 the ink border and the offset edge made
+   the chip the loudest shape on the row, over the session's own name. The padding grows by what the border loses, so
+   the box is the size of every other chip. */
+.chip.quiet { border-color: transparent; box-shadow: inset 0 0 0 1px var(--c); background: transparent; }
 
 .state { font: 500 .95rem/1 var(--font-name); color: var(--text-body); display: inline-flex; align-items: center; gap: .45rem; white-space: nowrap; }
 .state.limit { color: var(--limit); }
 .state.mute { color: var(--text-mute); }  /* a fact that is no longer live: a key splice has replaced */
-.state svg { width: 1rem; height: 1rem; }
+.state svg { flex: none; width: 1rem; height: 1rem; }
 
 /* ---------- a window: bar for how much is used, ring for how soon it refills ---------- */
 .windows { display: grid; grid-template-columns: 5.2rem minmax(0, 1fr) 5.2rem max-content;  /* "100% used" fits its column, so bars end together across cards */  /* the reset takes what its words need; the bar gives */ column-gap: .9rem; row-gap: .75rem; align-items: center; margin-top: .9rem; }
@@ -284,8 +414,10 @@ a.chip { text-decoration: none; }  /* a chip that opens something (a session it 
 /* a window whose reset has gone by (hitstop, Oct 10): no fill AND no track. A solid empty track is the same
    drawing as 0% used, so a stack of them says "nothing used", which is the old figure back in another form.
    Dashed already means "not set yet" here (.pickbtn.unset); on a bar it means "not read since its reset". */
-.bar.gone { background: none; box-shadow: none; outline: .1rem dashed var(--track-line); outline-offset: -.1rem; }
-.bar.reading { background-image: repeating-linear-gradient(-45deg, transparent 0 .45rem, var(--track) .45rem .9rem); background-size: 200% 100%; animation: reading .9s linear infinite; }
+.bar.gone, .bar.unread { background: none; box-shadow: none; outline: .1rem dashed var(--track-line); outline-offset: -.1rem; }
+/* A WINDOW NOT READ (DRAW.meter(null)): the same dashed empty track as a window past its reset, because both say "no
+   reading here", and a dash in its figure's place. Never a 0% fill, which reads as nothing used. */
+.bar.reading { background-image: repeating-linear-gradient(-45deg, transparent 0 .45rem, var(--track) .45rem .9rem); background-size: 200% 100%; animation: reading var(--t-stripe) linear infinite; }
 @keyframes reading { to { background-position: -1.27rem 0; } }
 .pct { font: 500 .95rem/1 var(--font-data); text-align: right; min-width: 3rem; font-variant-numeric: tabular-nums; white-space: nowrap; }
 .pct.limit { color: var(--limit); }
@@ -298,8 +430,10 @@ a.chip { text-decoration: none; }  /* a chip that opens something (a session it 
 .stale-at { grid-column: 1 / -1; font: 500 .88rem/1 var(--font-data); color: var(--text-mute); display: flex; gap: .5rem; align-items: center; }
 .stale-at svg { width: .66rem; height: .66rem; flex: none; }  /* its 16 px at 3828, in rem so the scale reaches it */
 
-/* money: today's spend against a cap line */
-.cap { position: absolute; top: -.3rem; bottom: -.3rem; width: .16rem; background: var(--text); border-radius: .1rem; }
+/* money: today's spend against a cap line. ITS OWN NAME (Oct 26): this was a bare `.cap`, which the kit's caption on a
+   hero figure's baseline also answers to (.cap, .pd-failed below), so a caption written as `.cap` came out
+   absolutely positioned and .16rem wide — a hairline where Usage's chart says "348,487 requests through splice". */
+.capline { position: absolute; top: -.3rem; bottom: -.3rem; width: .16rem; background: var(--text); border-radius: .1rem; }
 .capbox { position: relative; overflow: visible; }
 .money { font: 500 .95rem/1 var(--font-data); white-space: nowrap; }
 .money em { font-style: normal; color: var(--text-mute); }
@@ -331,7 +465,7 @@ a.chip { text-decoration: none; }  /* a chip that opens something (a session it 
   position: relative; border: var(--ink-w) dashed var(--track-line); border-radius: var(--r-obj); background: transparent;
   min-height: 3.4rem; display: flex; align-items: center; gap: .8rem; padding: .75rem 1.15rem; color: var(--text-body);
   font: 500 .95rem/1 var(--font-name); cursor: pointer; width: 100%; text-align: left;
-  transition: border-color 140ms var(--e-out), color 140ms var(--e-out), background-color 140ms var(--e-out);
+  transition: border-color var(--t-hover) var(--e-out), color var(--t-hover) var(--e-out), background-color var(--t-hover) var(--e-out);
 }
 .add:hover { border-color: var(--c); color: var(--text); background: var(--track); }
 .add .plus { width: 1.6rem; height: 1.6rem; border-radius: 50%; display: grid; place-items: center; border: .14rem solid currentColor; font: 500 1.05rem/1 var(--font-data); }
@@ -347,9 +481,12 @@ a.chip { text-decoration: none; }  /* a chip that opens something (a session it 
 .field {
   font: 500 .95rem/1 var(--font-data); color: var(--text); background: var(--obj-sunk); border: .12rem solid var(--track-line);
   border-radius: var(--r-in); padding: .55rem .75rem; min-width: 0; flex: 1;
-  transition: border-color 140ms var(--e-out);
+  transition: border-color var(--t-hover) var(--e-out);
 }
-.field:focus { border-color: var(--key-ink); outline: none; }
+/* A FOCUSED FIELD IS A PLACE, NOT THE ONE ACT (Oct 26): it took the key light, so tabbing into a form's first field
+   lit it in the same ink as the form's one primary button and the eye went to the wrong one. Focus is neutral ink,
+   as every selection is, with the ring every other control gets. */
+.field:focus, .field:focus-visible { border-color: var(--text); outline: none; box-shadow: 0 0 0 .12rem var(--text); }
 input.field, .pickbtn { min-height: var(--ctl-h); }
 
 /* ---------- a form: the label, the picker, the outcome word; one rule each, on every page (the coherence pass, Oct 9) ---------- */
@@ -370,7 +507,7 @@ input.field, .pickbtn { min-height: var(--ctl-h); }
 .pick {
   display: flex; flex-direction: column; align-items: center; gap: .6rem; padding: .9rem .5rem; cursor: pointer;
   background: var(--obj); border: var(--ink-w) solid var(--ink); border-radius: var(--r-obj); box-shadow: .3rem .3rem 0 var(--c);
-  font: 500 .95rem/1 var(--font-name); color: var(--text); transition: transform 140ms var(--e-out);
+  font: 500 .95rem/1 var(--font-name); color: var(--text); transition: transform var(--t-hover) var(--e-out);
 }
 .pick:hover { transform: translate(-.08rem, -.08rem); }
 .pick .blot { width: 1.9rem; height: 1.9rem; border-radius: 50%; background: var(--c); box-shadow: 0 0 0 .14rem var(--ink); display: grid; place-items: center; font: 600 .95rem/1 var(--font-data); color: var(--on-cable); }
@@ -382,7 +519,7 @@ input.field, .pickbtn { min-height: var(--ctl-h); }
   font: 500 .92rem/1 var(--font-data); padding: .5rem .7rem; border-radius: var(--r-in); cursor: pointer;
   background: var(--obj-sunk); color: var(--text-body); border: .12rem solid var(--track-line);
 }
-.editor .presets button[aria-pressed="true"], .editor .mode button[aria-pressed="true"] { color: var(--text); border-color: var(--key-ink); }
+.editor .presets button[aria-pressed="true"], .editor .mode button[aria-pressed="true"] { color: var(--text); border-color: var(--text); }  /* one neutral selected style */
 .editor .mode { display: flex; gap: .45rem; }
 .editor .mode button { display: inline-flex; gap: .4rem; align-items: center; font-family: var(--font-name); }
 .editor .money-in { display: flex; align-items: center; gap: .3rem; font: 500 .95rem/1 var(--font-data); }
@@ -390,7 +527,7 @@ input.field, .pickbtn { min-height: var(--ctl-h); }
 
 /* ---------- motion: what repeats barely moves; the takeover gets the frame ---------- */
 .flip { transition: transform var(--t-move) var(--e-io); }
-.lock-pop { animation: pop 260ms var(--e-out) 1; }
+.lock-pop { animation: pop var(--t-pop) var(--e-out) 1; }
 @keyframes pop { 0% { transform: scale(.4); opacity: 0; } 70% { transform: scale(1.18); } 100% { transform: scale(1); } }
 
 /* ---------- the command's day: set into the wall under the provider's name, not standing on it like an account ---------- */
@@ -420,9 +557,6 @@ input.field, .pickbtn { min-height: var(--ctl-h); }
 /* a plan provider serving two commands: the pressed tab is the command whose order the rail and the switch show; the
    other waits on the wall, quieter, until it's pressed */
 .meter > button.chip.tag { cursor: pointer; }
-/* Accounts: a command's last move between logins, under its rail (spec 11h) */
-.provider .moved { margin: .75rem 0 0; font: 500 .92rem/1.4 var(--font-name); color: var(--text-mute); }
-.provider .moved .chip { margin-right: .6rem; }
 .meter > .chip.tag[aria-pressed="false"] { color: var(--text-mute); border-color: var(--track-line); box-shadow: none; }
 .meter > .chip.tag[aria-pressed="false"]:hover { color: var(--text); border-color: var(--ink); }
 .money .glyph { width: .95rem; height: .95rem; margin-right: .4rem; vertical-align: -.15rem; }
@@ -439,7 +573,7 @@ input.field, .pickbtn { min-height: var(--ctl-h); }
 }
 .usercode.copied { color: var(--live); box-shadow: .2rem .2rem 0 var(--live); }
 /* a fresh code replaces an expired one: the old drops away and the new one lands under the key light */
-.usercode.swap { animation: codeSwap 420ms var(--e-out) 1; }
+.usercode.swap { animation: codeSwap var(--t-move) var(--e-out) 1; }
 @keyframes codeSwap { 0% { transform: translateY(-.5rem); opacity: 0; box-shadow: .2rem .2rem 0 var(--key-light); } 60% { opacity: 1; } 100% { transform: none; } }
 .waitbox { display: inline-flex; flex: none; }
 .sr { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
@@ -466,8 +600,10 @@ input.field, .pickbtn { min-height: var(--ctl-h); }
   background: none; border: 0; padding: .6rem .75rem; border-radius: .35rem; cursor: pointer;
 }
 .menu button:hover, .menu button:focus-visible { background: var(--track); outline: none; }
-.menu .danger { color: var(--limit); margin-top: .3rem; box-shadow: 0 -.1rem 0 var(--track-line); border-radius: 0 0 .35rem .35rem; }
-.menu .danger.armed, .menu .danger.armed:hover { background: var(--limit); color: var(--on-limit); box-shadow: none; border-radius: .35rem; }
+/* the item that removes something: set apart by the rule above it, in the text's own ink, and filled with that ink
+   once it is armed. The limit red is a limit or a failure, never "delete" (the colour roles above). */
+.menu .danger { color: var(--text); margin-top: .3rem; box-shadow: 0 -.1rem 0 var(--track-line); border-radius: 0 0 .35rem .35rem; }
+.menu .danger.armed, .menu .danger.armed:hover { background: var(--text); color: var(--obj-high); box-shadow: none; border-radius: .35rem; }
 .menu .menu-state { display: block; max-width: 19rem; white-space: normal; line-height: 1.35; padding: .6rem .75rem; margin-top: .3rem; box-shadow: 0 -.1rem 0 var(--track-line); }
 .menu button:disabled { cursor: wait; opacity: .6; }
 .field.rename { flex: 0 1 14rem; min-width: 7rem; font: 500 1.1rem/1.15 var(--font-name); padding: .3rem .5rem; }
@@ -478,7 +614,8 @@ input.field, .pickbtn { min-height: var(--ctl-h); }
 .keysrc .var { font: 500 .92rem/1 var(--font-data); color: var(--text-body); letter-spacing: .01em; }
 .field[aria-invalid="true"] { border-color: var(--limit); }
 /* the account a sign-in landed on is already here: its card pulses once so he sees which */
-.card.pulse-once { animation: pulseOnce 900ms var(--e-out) 1; }
+/* one pulse, one rule: .landed is the kit's name for it; .pulse-once is Accounts' older name for the same thing */
+.card.pulse-once { animation: pulseOnce var(--t-pulse) var(--e-out) 1; }
 @keyframes pulseOnce { 0%, 100% { outline: .22rem solid transparent; outline-offset: .5rem; } 25% { outline: .22rem solid var(--key-ink); outline-offset: .3rem; } }
 .card.leaving { opacity: 0; transform: scale(.97); transition: opacity 160ms var(--e-out), transform 160ms var(--e-out); }
 
@@ -518,58 +655,78 @@ input.field, .pickbtn { min-height: var(--ctl-h); }
 .pwrap { position: relative; display: inline-flex; }
 .ppick, .pdoor { display: inline-flex; align-items: center; gap: .5rem; min-height: var(--ctl-h); padding: .5rem .75rem; font: 500 .95rem/1 var(--font-name); white-space: nowrap;
   background: var(--obj-sunk); border: .12rem solid var(--track-line); border-radius: var(--r-in); cursor: pointer; color: var(--text-body);
-  transition: color 140ms var(--e-out), border-color 140ms var(--e-out), background-color 140ms var(--e-out); }
+  transition: color var(--t-hover) var(--e-out), border-color var(--t-hover) var(--e-out), background-color var(--t-hover) var(--e-out); }
 .ppick:hover { color: var(--text); border-color: var(--text-mute); }
-.ppick.on { color: var(--text); border-color: var(--key-ink); }
+.ppick.on { color: var(--text); border-color: var(--text); }  /* a filter that is set is neutral, never the key light */
 .ppick .caret { width: .85rem; height: .85rem; color: var(--text-mute); transform: rotate(90deg); }
 .pmenu { left: 0; right: auto; top: calc(100% + .45rem); min-width: 100%; max-height: 34rem; overflow-y: auto; }
 .pmenu button { position: relative; white-space: nowrap; display: flex; align-items: baseline; gap: 1.6rem; }
 /* a project's figure, as its tile shows it: muted data type beside the name, at the menu's right edge */
 .ppick .pfig, .pmenu .pfig { font: 500 .9rem/1 var(--font-data); color: var(--text-mute); font-variant-numeric: tabular-nums; }
 .pmenu .pfig { margin-left: auto; }
-.pmenu button[aria-checked="true"]::before { content: ""; position: absolute; left: -.4rem; top: .5rem; bottom: .5rem; width: .22rem; background: var(--key-ink); border-radius: 0 .15rem .15rem 0; }
-/* someone waiting in another project while one is picked: a door that picks it, in Needs you's ink (fin); key ink,
-   because the pale key washes out on cream in day */
-.pdoor { border-color: var(--key-ink); color: var(--key-ink); }
-.pdoor:hover { background: color-mix(in oklab, transparent 85%, var(--key-light)); }
+.pmenu button[aria-checked="true"]::before { content: ""; position: absolute; left: -.4rem; top: .5rem; bottom: .5rem; width: .22rem; background: var(--text); border-radius: 0 .15rem .15rem 0; }
+/* someone waiting in another project while one is picked: a door that picks it, in Needs you's own colour (fin) */
+.pdoor { border-color: var(--needs); color: var(--needs); }
+.pdoor:hover { background: color-mix(in oklab, transparent 88%, var(--needs)); }
 .pdoor .pname { font: inherit; }
 .pc { display: inline-flex; align-items: center; gap: .3rem; }
-.pc.needs { color: var(--key-ink); } .pc.stalled { color: var(--limit); } .pc.working { color: var(--live); }
+.pc.needs { color: var(--needs); } .pc.stalled { color: var(--limit); } .pc.working { color: var(--live); }
 .plamp { display: inline-grid; place-items: center; }
 .plamp svg { width: 1rem; height: 1rem; fill: none; stroke: currentColor; stroke-width: 2.2; stroke-linecap: round; stroke-linejoin: round; }
 
 /* ---------- the project tiles (Marlin, fin, Oct 11; hitstop's mock 4e4f391): at a 150rem page and wider, every
    project at once, on Sessions, Teams and Requests (kit tilesHtml, tilesWide) ---------- */
-#ptiles { margin: 0 0 1.5rem; }
-.ptiles { display: flex; flex-wrap: wrap; gap: .75rem; }
+/* THE ROW TAKES THE WHOLE LINE, wherever a page puts it (Oct 27): the tiles are equal columns of the row, so the row
+   needs a width of its own. Laid inside a flex line it was sized by its content, and the columns collapsed to one, which
+   stood the eight tiles in a 248 px stack down the page. */
+#ptiles { margin: 0 0 1.5rem; width: 100%; }
+/* THE TILES FILL THE ROW IN EQUAL COLUMNS (Oct 27). Sized by their names they left 831 to 2,949 px of the row empty
+   (79% on Teams), no two shared an edge, and each share bar's 100% was its own tile's width, so equal shares drew
+   different lengths. Every tile is now one column of the row: the same width, the same track, so the shares compare
+   by eye, and the row is full at 3822 and at 1440 alike. */
+.ptiles { width: 100%; display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 15rem), 1fr)); gap: var(--gap-card); }
 /* a removed command's name in a menu, with its one muted word (kit REMOVED_TAG) */
 .rtag { margin-left: .6rem; font: 500 .85rem/1 var(--font-data); color: var(--text-mute); }
-/* each tile its own content's width on every row, its whole name included, left-aligned and never grown to fill: a
-   last row of three stood three times the width of the tiles above it at 3394 (marlin, Oct 13). Only a name past
-   32rem is cut, with an ellipsis */
-.ptile { flex: 0 0 auto; max-width: 32rem; display: flex; flex-direction: column; gap: .7rem; padding: .8rem .95rem .9rem;
+/* a name longer than its column is cut with an ellipsis, and the tile keeps the whole name as its title */
+.ptile { min-width: 0; display: flex; flex-direction: column; gap: .7rem; padding: .8rem .95rem .9rem;
   text-align: left; cursor: pointer; color: var(--text-body); font: 500 1.1rem/1.1 var(--font-name);
   background: var(--obj-sunk); border: var(--ink-w) solid var(--track-line); border-radius: var(--r-obj);
-  transition: color 140ms var(--e-out), border-color 140ms var(--e-out); }
+  transition: color var(--t-hover) var(--e-out), border-color var(--t-hover) var(--e-out); }
 .ptile:hover { color: var(--text); border-color: var(--text-mute); }
-/* picked by its look, no word (fin): the Teams tab's raised card */
-.ptile.on { color: var(--text); background: var(--obj); border-color: var(--ink); box-shadow: .3rem .3rem 0 var(--key-light), .3rem .3rem 0 var(--ink-w) var(--ink); }
+/* picked by its look, no word (fin): the Teams tab's raised card, in NEUTRAL ink (the colour pass, Oct 26: a selection
+   never takes the key light, so the key is free to mark the one place to act) */
+.ptile.on { color: var(--text); background: var(--obj); border-color: var(--ink); box-shadow: .3rem .3rem 0 var(--text), .3rem .3rem 0 var(--ink-w) var(--ink); }
 .ptop { display: flex; align-items: baseline; gap: .6rem; min-width: 0; }
 .ptile .tname { flex: 0 1 auto; min-width: 0; font: 500 1.1rem/1.1 var(--font-name); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.ptile .ptotal { flex: none; color: var(--text-mute); font: 500 .95rem/1 var(--font-data); }
-.plamps { display: flex; align-items: center; gap: .55rem; min-height: 2rem; }  /* a project with nothing live keeps the row, empty */
+.ptile .ptotal { flex: none; color: var(--text-body); font: 500 .95rem/1 var(--font-data); font-variant-numeric: tabular-nums; }
+/* WHAT THE FIGURE COUNTS, SAID ONCE ON THE TILE (Oct 27): "2,127 requests", the unit muted on the figure's baseline. It
+   was a kicker over the row, which under the page's own title read as the title again ("TEAMS" under "Teams"). */
+.ptile .punit { flex: none; margin-left: -.3rem; color: var(--text-mute); font: 500 .88rem/1 var(--font-name); white-space: nowrap; }
+/* each tile draws its share of every project's total on the one track every tile has, so a row compares by eye. Every
+   project is the whole, so it draws no share of itself. */
+.ptile .pshare { height: .4rem; border-radius: .2rem; background: color-mix(in oklab, var(--text) 10%, transparent); overflow: hidden; }
+.ptile .pshare > i { display: block; height: 100%; border-radius: .2rem; background: color-mix(in oklab, var(--text) 38%, transparent); transition: width var(--t-snap) var(--e-out); }
+.ptile.on .pshare > i { background: color-mix(in oklab, var(--text) 55%, transparent); }
+.plamps { display: flex; flex-wrap: wrap; align-items: center; gap: .55rem calc(2 * var(--u)); min-height: 2rem; margin-top: auto; }  /* a project with nothing live keeps the row, empty */
 .ptile .pc.big { gap: .3rem; font: 600 1rem/1 var(--font-data); }
+/* each lamp's count says what it counts, in the muted words the lamp stands for ("1 needs you", "3 working") */
+.ptile .pc .pw { margin-left: .1rem; font: 500 .88rem/1 var(--font-name); color: var(--text-body); }
+/* A PROJECT WITH NOTHING IN THIS WINDOW keeps its tile, because the tile is how he picks it, but says so as a quiet
+   object: the name and its 0 muted, no share to draw, a dashed rim, as an add tile says "nothing here yet". */
+.ptile.zero { color: var(--text-mute); border-style: dashed; background: transparent; }
+.ptile.zero .ptotal { color: var(--text-mute); }
+.ptile.zero.on { background: var(--obj); border-style: solid; }
 /* a card's lamp, standing in the line: the socket, its ink ring and its glyph in the state's colour (sessions.css .lamp) */
 .tlamp { flex: none; width: 2rem; height: 2rem; border-radius: 50%; display: grid; place-items: center; color: var(--socket-ink);
   background: var(--socket); box-shadow: 0 0 0 var(--ink-w) var(--ink), inset 0 0 0 .15rem var(--rail); }
-[data-theme="day"] .tlamp { --live: var(--splice-live-on-night); --limit: var(--splice-limit-on-night); }  /* the socket is dark in both themes, so it keeps night's ink */
+[data-theme="day"] .tlamp { --live: var(--splice-live-on-night); --limit: var(--splice-limit-on-night); --needs: var(--splice-status-needs-you-on-night); }  /* the socket is dark in both themes, so it keeps night's ink */
 .tlamp svg { width: 1.2rem; height: 1.2rem; fill: none; stroke: currentColor; stroke-width: 2.4; stroke-linecap: round; stroke-linejoin: round; }
 .tlamp svg.wave { width: 1.5rem; height: 1.5rem; stroke-width: 3.6; }
 .tlamp.working { color: var(--live); }
 .tlamp.working .base { opacity: .32; }
 .tlamp.working .beat { stroke-dasharray: 16 64; animation: tlamp-trace 2.2s linear infinite; }
 @keyframes tlamp-trace { from { stroke-dashoffset: 80; } to { stroke-dashoffset: 0; } }
-.tlamp.needs { color: var(--key-light); box-shadow: 0 0 0 var(--ink-w) var(--ink), inset 0 0 0 .18rem var(--key-light), 0 0 1.1rem .12rem rgba(255, 215, 154, .4); }
+.tlamp.needs { color: var(--needs); box-shadow: 0 0 0 var(--ink-w) var(--ink), inset 0 0 0 .18rem var(--needs), 0 0 1.1rem .12rem color-mix(in oklab, var(--needs) 42%, transparent); }
 .tlamp.needs svg { width: 1.05rem; height: 1.05rem; }
 .tlamp.stalled { color: var(--limit); }
 
@@ -580,15 +737,15 @@ input.field, .pickbtn { min-height: var(--ctl-h); }
    such bars. Ghost cards rise in and fade down the page. GHOST in kit.js writes the markup. */
 .ghost { display: inline-block; flex: none; height: .95rem; border-radius: .3rem; background-color: var(--obj-sunk);
   background-image: repeating-linear-gradient(-45deg, transparent 0 .45rem, var(--track) .45rem .9rem);
-  background-size: 200% 100%; animation: ghost-stripes .9s linear infinite; vertical-align: middle; }
-.ghost.chip { height: 1.9rem; border-radius: var(--r-obj); box-shadow: 0 0 0 var(--ink-w) var(--ink); }
+  background-size: 200% 100%; animation: ghost-stripes var(--t-stripe) linear infinite; vertical-align: middle; }
+.ghost.chip { height: 1.7rem; border-radius: var(--r-obj); box-shadow: 0 0 0 var(--ink-w) var(--ink); }
 .ghost.big { height: 1.3rem; }
 /* the hour tag is a dark pill in both themes, so its stripes are light in both */
 .hour .ghost { height: .8rem; background-color: transparent;
   background-image: repeating-linear-gradient(-45deg, transparent 0 .45rem, rgba(255, 244, 222, .28) .45rem .9rem); }
 .ghost-lines { display: flex; flex-direction: column; gap: .8rem; padding: .3rem 0; }
 .ghosted { cursor: default; pointer-events: none; opacity: calc(1 - var(--i, 0) * .17);
-  animation: ghost-in .45s var(--e-out) both; animation-delay: calc(var(--i, 0) * 70ms); }
+  animation: ghost-in var(--t-move) var(--e-out) both; animation-delay: calc(var(--i, 0) * 70ms); }
 .card.gcard { padding: .85rem 1rem .95rem; }
 .card.gcard .ghost-lines { gap: .75rem; }
 .ghost-chart { --c: var(--rail); display: flex; align-items: flex-end; gap: .7rem; height: 25rem; /* the loaded chart card is about 25rem tall at every width (usage.css .plot's 16rem plus its switch, legend and padding) */ padding: 1.4rem 1.15rem 1.1rem; }
@@ -597,17 +754,51 @@ input.field, .pickbtn { min-height: var(--ctl-h); }
 /* its own name: settings.css keeps a "reading" of its own, a sweep, which would carry the bars sideways there */
 @keyframes ghost-stripes { to { background-position: -1.27rem 0; } }
 .ghost-teams { display: flex; flex-direction: column; gap: var(--gap-card); max-width: 52rem; }
-.money-band > .card.gcard { width: 28rem; }
 .card.gcard > .ghost.big { margin-bottom: .75rem; }
-.lower .card.gcard + .card.gcard { margin-top: var(--gap-card); }
 
 /* Locked: this browser holds no key splice takes (a 401). The page's body steps aside for the one way back, the command as
-   something to run with Copy beside it; the title stays so he knows where he is (fin, Marlin, Oct 12) */
-body.locked main.page > :not(.head):not(.lockedby), body.locked main.page > .head > :not(h1) { display: none; }
-.lockedby { display: flex; flex-direction: column; align-items: flex-start; gap: .9rem; }
-.lockedby .word { margin: 0; font: 500 1.15rem/1 var(--font-name); color: var(--limit); }
+   something to run with Copy beside it; the title stays so he knows where he is (fin, Marlin, Oct 12).
+   THE STATE IS A SHAPE (Oct 26): the kit's lock pops in over 260 ms beside the word, where the page was a red word and a
+   code chip with no lock, and a two-word kicker says where the command goes, so no sentence has to. */
+/* every page keeps its title, Compare's included, whose title stands inside its .titles with the line under it */
+body.locked main.page > :not(.head):not(.lockedby), body.locked main.page > .head > :not(h1):not(.titles) { display: none; }
+/* AND THE STATE OWNS THE EMPTY PAGE (Oct 26, at 3822): left-aligned under the title it was a 300 px speck in the
+   corner of an otherwise blank screen, with the one act he has left almost invisible. It sits on a plate now, the
+   console's own panel, centred in the page's width and a screen-height down from the title, so the lock, the word and
+   the command land where the eye goes at 1440 and at 3822 alike. */
+/* AND IT KEEPS ITS PRESENCE AS THE SCREEN GROWS (Oct 27): a 26rem plate is 394 px of a 3822 px screen holding nothing
+   else, so the one thing left to read was a speck. Its width grows with the window between those bounds. */
+.lockedby {
+  display: flex; flex-direction: column; align-items: center; text-align: center; gap: calc(2 * var(--u));
+  width: min(100%, clamp(26rem, 30vw, 44rem)); margin: clamp(calc(4 * var(--u)), 12vh, 12rem) auto 0;
+  padding: calc(5 * var(--u)) calc(4 * var(--u)); border-radius: var(--r-in);
+  background: color-mix(in oklab, var(--text) 4%, transparent);
+}
+/* the state is the plate's title, at a group title's size, and the command and its Copy stand one control tall side by side */
+.lockedby .state.limit { font: 400 1.4rem/1.1 var(--font-lead); gap: .7rem; }
+.lockedby .state.limit .lockico svg { width: 1.5rem; height: 1.5rem; }
+.lockedby .word { margin: 0; font: 400 1.4rem/1.1 var(--font-lead); color: var(--limit); }
+.lockedby .kicker { margin: calc(2 * var(--u)) 0 0; }
 .lockedby .way { display: flex; align-items: center; gap: .75rem; }
-.lockedby code { font: 500 1rem/1 var(--font-data); color: var(--text); background: var(--obj-sunk); border: .12rem solid var(--ink); border-radius: var(--r-in); padding: .55rem .8rem; }
+.lockedby code {
+  display: inline-flex; align-items: center; height: var(--ctl-h); padding: 0 .9rem; font: 500 1.05rem/1 var(--font-data);
+  color: var(--text); background: var(--obj-sunk); border: .12rem solid var(--ink); border-radius: var(--r-in);
+}
+.lockedby .way .act { height: var(--ctl-h); }
+
+/* A page that did not open (console.js): where it would have been, in its own words, with the act that opens it again.
+   It had no rule of its own and rendered as a bare paragraph that told him to try the link again. */
+.route-error {
+  display: flex; width: fit-content; max-width: 100%; align-items: center; flex-wrap: wrap; gap: var(--u) calc(2 * var(--u)); margin: 0 0 calc(2 * var(--u));
+  padding: calc(2 * var(--u)) calc(3 * var(--u)); border-radius: var(--r-in);
+  background: color-mix(in oklab, var(--limit) 10%, transparent); box-shadow: inset 0 0 0 .1rem color-mix(in oklab, var(--limit) 45%, transparent);
+  font: 500 .95rem/1.3 var(--font-name); color: var(--text-body); animation: pop var(--t-pop) var(--e-out) 1;
+}
+.route-error > svg { flex: none; width: 1.15rem; height: 1.15rem; color: var(--limit); }
+.route-error b { font-weight: 600; color: var(--text); }
+.route-error .why { color: var(--text-mute); }
+/* the act stands beside the words it answers, never at the far end of a 3,749 px row (it sat 3,291 px from them) */
+.route-error .act { margin-left: var(--u); }
 
 /* Accounts: the sessions on a login now, under its card, each a door to Sessions (v0.4.0 section 9) */
 .card .onlogin { display: flex; flex-wrap: wrap; gap: .45rem .6rem; margin-top: .8rem; }
@@ -627,7 +818,6 @@ body.locked main.page > :not(.head):not(.lockedby), body.locked main.page > .hea
 /* a held login, and a held next, say so in words on a line of their own that wraps inside a narrow card; the header and
    the Next row keep only the lock, so neither cuts a name (walk on ea24c63fc, Claude's cards at 650 px) */
 .windows .heldline { grid-column: 1 / -1; font: 500 .95rem/1.35 var(--font-name); color: var(--limit); }
-.windows .next .nextwhy { grid-column: 2 / -1; font: 500 .92rem/1.35 var(--font-name); color: var(--limit); white-space: normal; }
 /* THE PILOT'S MARKS (pilot.js, Oct 16): the ring an agent points with through `splice console highlight`, the brief ring
    on whatever it taps, and the note it may write beside a highlight. They sit under the composer, never over the person's
    conversation, and take no presses. Room under the page lets a thing near its foot rise above the composer's sheet. */
@@ -646,3 +836,271 @@ body.locked main.page > :not(.head):not(.lockedby), body.locked main.page > .hea
 @keyframes pilot-in { from { opacity: 0; transform: scale(1.06); } to { opacity: 1; transform: none; } }
 @keyframes pilot-flash { 0%, 60% { opacity: 1; } 100% { opacity: 0; } }
 main.page.pilot-room::after { height: var(--pilot-room); }
+
+/* ============================================================================================================
+   THE DRAWINGS EVERY PAGE SHARES (kit.js DRAW). Lifted here on Oct 26 from the two screens: the
+   Usage drill-down and Accounts. They were private to those two files, so seven other pages
+   printed their quantities as words. Nothing below is new invention: each rule is the drill-down's or Accounts' own,
+   carried across so one meter, one ring, one stacked bar and one axis read the same on every page.
+   THE RULE: draw the quantity first; the number only labels the drawing.
+   ============================================================================================================ */
+
+/* ---------- rhythm: a plate, its sections, its kicker (Usage's drill-down panel) ---------- */
+/* A PLATE IS A SECTION'S GROUND, NOT AN OBJECT: a wash and 4u of padding, no ink border and no cast shadow. The card
+   (2 px ink border, provider-colour offset shadow) stays for objects alone — an account, a command, a model, a member.
+   A toolbar, a popover and a pane are neither, so they take neither. */
+.plate { min-width: 0; display: flex; flex-direction: column; padding: calc(4 * var(--u)); border-radius: var(--r-in); background: color-mix(in oklab, var(--text) 4%, transparent); font: 500 .9rem/1.25 var(--font-name); color: var(--text-body); }
+.psec { min-width: 0; display: flex; flex-direction: column; gap: calc(2 * var(--u)); }
+/* 4u, a 1 px hairline, 4u: about 82 px at 3822, and the only thing between two sections. Never a sentence. */
+.plate > .psec + .psec, .pdetail > .psec + .psec { margin-top: calc(4 * var(--u)); padding-top: calc(4 * var(--u)); border-top: .08rem solid var(--hair); }
+.sechead, .pd-h { display: flex; align-items: baseline; flex-wrap: wrap; gap: .3rem calc(2 * var(--u)); }
+/* the two-word kicker: 12.13 px at 3822, uppercase, +.09em, muted, on the plate's left edge, 2u above its content */
+.kicker, .pd-h h3, .sechead h2, .sechead h3 { margin: 0; font: 600 var(--kicker)/1.2 var(--font-name); letter-spacing: .09em; text-transform: uppercase; color: var(--text-mute); }
+.kicker.on-wall { margin-bottom: calc(2 * var(--u)); }   /* a kicker over a row of objects rather than inside a plate */
+
+/* ---------- figures: the hero a section is answered by, and the focal figures under it ---------- */
+/* 2.9rem tabular mono, coloured by level, its count of the total in muted words on the SAME baseline (never a line under) */
+.fig-hero, .pd-rate { font: 600 var(--fig-hero)/1 var(--font-data); font-variant-numeric: tabular-nums; letter-spacing: -.02em; color: var(--text); }
+.fig-hero.lv-watch, .pd-rate.lv-watch { color: var(--key-ink); }     /* worth watching: the key light's one use in the section */
+.fig-hero.lv-bad, .pd-rate.lv-bad { color: var(--limit); }           /* a limit or a failure: the limit red's only job */
+.fig-focal, .pd-sub b { font: 600 var(--fig-focal)/1 var(--font-data); font-variant-numeric: tabular-nums; letter-spacing: -.01em; color: var(--text); }
+.figline, .pd-top, .pd-sub { display: flex; flex-wrap: wrap; align-items: baseline; gap: .3rem calc(2 * var(--u)); margin: 0; }
+.pd-sub { gap: .55rem; font: 500 .85rem/1.2 var(--font-name); color: var(--text-mute); }
+/* the caption on the hero's baseline, and the door it opens: the figure itself is the link, never a "View details" */
+.cap, .pd-failed { display: inline-flex; align-items: baseline; gap: .4rem; color: var(--text-mute); text-decoration: none; font: 500 .88rem/1.2 var(--font-name); }
+.cap b, .pd-failed b { font: 500 .88rem/1.2 var(--font-data); font-variant-numeric: tabular-nums; color: var(--text-body); }
+.cap .go, .pd-failed .go { align-self: center; width: .85rem; height: .85rem; color: var(--text-mute); }
+a.cap:hover, a.pd-failed:hover { color: var(--text); text-decoration: underline; }
+/* the object the hero's figure belongs to, on its own line under the figure's baseline: the login, the command or the
+   window, with room at its end for the state that goes with it (a lock and its reset). DRAW.hero's `under`/`tail`. */
+.pd-under { display: flex; align-items: center; flex-wrap: wrap; gap: .5rem .9rem; margin: calc(-1 * var(--u)) 0 0; font: 500 1rem/1 var(--font-name); color: var(--text-body); }
+/* a count in a kicker line, as a door to exactly those items */
+.pd-count { display: inline-flex; align-items: center; gap: .3rem; font: 500 .8rem/1.2 var(--font-name); color: var(--text-mute); text-decoration: none; }
+.pd-count b { font: 500 .8rem/1.2 var(--font-data); font-variant-numeric: tabular-nums; color: var(--text-body); }
+.pd-count .go { width: .8rem; height: .8rem; color: var(--text-mute); }
+a.pd-count:hover { color: var(--text); text-decoration: underline; }
+/* a row figure: always the data face, tabular, right-aligned, so figures end on one column across rows and cards */
+.fig, .pd-n { text-align: right; white-space: nowrap; font: 500 .92rem/1.2 var(--font-data); font-variant-numeric: tabular-nums; color: var(--text); }
+.pd-h .pd-n { font: 500 .8rem/1.2 var(--font-name); color: var(--text-mute); }
+.pd-grid { display: grid; grid-template-columns: minmax(0, 8.5rem) minmax(0, 1fr) 4.2rem 4.6rem; column-gap: calc(2 * var(--u)); align-items: center; }
+
+/* ---------- the stacked bar: every part of a whole in one bar, each label inside its own segment ---------- */
+.pd-pop { display: flex; flex-direction: column; gap: calc(2 * var(--u)); }
+.pd-pop.sm { --bh: 1.4rem; }                       /* a second whole under a hero bar, as Compactions sits under Outcomes */
+.pd-bar { display: flex; height: var(--bh, var(--stack-h)); border-radius: .3rem; overflow: hidden; }
+.pd-seg { flex: none; box-sizing: border-box; display: flex; align-items: center; min-width: 0; padding: 0; overflow: hidden; white-space: nowrap; font: 600 .8rem/1 var(--font-name); color: var(--obj); text-decoration: none; }
+.pd-seg > span { padding-inline: .6rem; }
+.pd-seg b { font: 600 .8rem/1 var(--font-data); font-variant-numeric: tabular-nums; }
+.pd-seg.ok, .pd-sw.ok { background: color-mix(in oklab, var(--text) 66%, transparent); }
+/* the quiet part: neither one outcome nor the other ("nt"), or the rest of a whole that is not an outcome at all
+   ("rest": the servers not shared, the repos no folder holds), which keeps its own word in the legend */
+.pd-seg.nt, .pd-sw.nt, .pd-seg.rest, .pd-sw.rest { background: color-mix(in oklab, var(--text) 52%, transparent); }
+.pd-seg.f0, .pd-sw.f0 { background: var(--limit); }
+.pd-seg.f1, .pd-sw.f1 { background: color-mix(in oklab, var(--limit) 80%, transparent); }
+.pd-seg.f2, .pd-sw.f2 { background: color-mix(in oklab, var(--limit) 72%, transparent); }
+/* A SEGMENT THAT CARRIES ITS OWN COLOUR (Oct 26): a whole split by something that is not an outcome — a member, a
+   store, a provider — takes the colour the caller already knows (DRAW.stack's `ink`), written as --c on the block and
+   its swatch. Teams and Settings each restated the eight provider colours or six store hues to get it here. */
+.pd-seg.ink, .pd-sw.ink { background: var(--c, var(--text-mute)); }
+.pd-seg.ink { color: var(--on-cable); }
+/* two neighbours of one colour (two members on one command, two stores of one hue) are divided by the page's own line,
+   so they read as two parts and not one block */
+.pd-seg.ink + .pd-seg.ink { box-shadow: inset .16rem 0 0 var(--ink); }
+a.pd-seg:hover { box-shadow: inset 0 0 0 999px color-mix(in oklab, var(--text) 12%, transparent); }
+.pd-legend { display: flex; flex-wrap: wrap; align-items: center; justify-content: flex-start; margin-top: calc(-1 * var(--u)); gap: var(--u) calc(3 * var(--u)); }
+/* the quiet outcomes: a row of their own, the grey swatch hanging at the left, the outcomes it holds after the colon */
+.pd-lgrp { flex: 1 1 100%; padding-left: 1.05rem; text-indent: -1.05rem; line-height: 1.6; }
+.pd-lgrp .pd-lb { display: inline; }
+.pd-lgrp .pd-sw { display: inline-block; margin-right: .4rem; vertical-align: -.03rem; text-indent: 0; }
+.pd-lb { display: inline-flex; align-items: center; gap: .4rem; color: var(--text-body); text-decoration: none; font: 500 .84rem/1.2 var(--font-name); }
+a.pd-lb:hover { color: var(--text); text-decoration: underline; }
+.pd-lb b, .pd-neither b { font: 500 .84rem/1.2 var(--font-data); font-variant-numeric: tabular-nums; color: var(--text); }
+.pd-neither { font: 500 .84rem/1.2 var(--font-name); color: var(--text-mute); }
+.pd-sw { flex: none; width: .65rem; height: .65rem; border-radius: .15rem; }
+/* the bar grows into place when it lands, once, and only then (240 ms) */
+.pd-bar.grow > .pd-seg { transform-origin: left; animation: seg-grow var(--t-snap) var(--e-out) both; }
+@keyframes seg-grow { from { transform: scaleX(0); } }
+
+/* ---------- a bar cell: a column's figures on the column's shared scale, ending on one right edge ---------- */
+.barcell, .pf.req, .pf.fail { display: flex; align-items: center; gap: .7rem; }
+.vbar { flex: 1 1 auto; min-width: 1.5rem; height: .4rem; border-radius: .2rem; overflow: hidden; background: color-mix(in oklab, var(--text) 10%, transparent); }
+.vbar b { display: block; height: 100%; border-radius: .2rem; background: color-mix(in oklab, var(--text) 38%, transparent); transform-origin: left; transition: width var(--t-snap) var(--e-out); }
+.barcell > .v, .pf .v { flex: none; text-align: right; font-weight: 500; font-variant-numeric: tabular-nums; }
+.barcell.lv-watch .vbar b { background: var(--key-ink); }
+.barcell.lv-watch > .v { color: var(--key-ink); }
+.barcell.lv-bad .vbar b { background: var(--limit); }
+.barcell.lv-bad > .v { color: var(--limit); }
+
+/* ---------- range bars on ONE log axis: the solid bar to the typical, a line on to the slowest 5%, ending in a tick ---------- */
+.pd-leg { display: inline-flex; align-items: center; gap: .45rem; font: 500 .8rem/1.2 var(--font-name); color: var(--text-mute); }
+.pd-leg i { flex: none; width: 1.3rem; border-radius: .14rem; }
+.pd-lt { height: .6rem; background: color-mix(in oklab, var(--text) 70%, transparent); }
+.pd-ls { position: relative; margin-left: .6rem; height: .2rem; background: color-mix(in oklab, var(--text) 62%, transparent); }
+.pd-ls::after, .pd-trk .hi::after { content: ""; position: absolute; right: 0; top: 50%; width: .17rem; height: 1.05rem; transform: translateY(-50%); border-radius: .08rem; background: var(--text); }
+.pd-trk { position: relative; display: block; height: var(--meter-h); border-radius: .2rem; background: color-mix(in oklab, var(--text) 8%, transparent); }
+.pd-trk i { position: absolute; left: 0; }
+.pd-trk .hi { top: 50%; height: .2rem; margin-top: -.1rem; min-width: .2rem; background: color-mix(in oklab, var(--text) 62%, transparent); }
+.pd-trk .mid { top: 0; bottom: 0; min-width: .2rem; border-radius: .2rem; background: color-mix(in oklab, var(--text) 70%, transparent); }
+.pd-st { padding-block: calc(.5 * var(--u)); }
+.pd-sl { min-width: 0; font: 500 .92rem/1.25 var(--font-name); color: var(--text-body); }
+.pd-sl small { display: block; margin-top: .15rem; font: 500 .8rem/1.2 var(--font-name); color: var(--text-mute); }
+.pd-st .pd-n.t { font-size: .98rem; font-weight: 600; }
+.pd-st .pd-n.hi5 { font-size: .86rem; color: var(--text-mute); }
+.pd-st.pd-focus .pd-n.t { font-size: 1.45rem; letter-spacing: -.01em; }
+.pd-axis { margin-top: -.2rem; align-items: start; }
+.pd-ax { position: relative; display: block; height: 1.6rem; border-top: .08rem solid color-mix(in oklab, var(--text) 58%, transparent); }
+.pd-axis .pd-sl { padding-top: .4rem; }
+.pd-axis .pd-sl small { margin: 0; font-size: .74rem; }
+.pd-tk { position: absolute; top: .45rem; transform: translateX(-50%); white-space: nowrap; font: 400 .74rem/1.2 var(--font-data); font-variant-numeric: tabular-nums; color: var(--text-mute); }
+.pd-tk::before { content: ""; position: absolute; left: 50%; top: -.45rem; height: .3rem; border-left: .08rem solid color-mix(in oklab, var(--text) 58%, transparent); }
+.pd-tk.pd-t-first { transform: none; }
+.pd-tk.pd-t-first::before { left: 0; }
+.pd-tk.pd-t-last { transform: translateX(-100%); }
+.pd-tk.pd-t-last::before { left: 100%; }
+
+/* ---------- stat and glyph tiles: a ring for the share, a glyph for each count, and NOTHING where a count is zero ---------- */
+.pd-stats { display: flex; flex-wrap: wrap; align-items: center; gap: calc(2 * var(--u)) calc(4 * var(--u)); }
+.pd-stat { display: inline-flex; align-items: center; gap: .75rem; }
+.pd-stat > svg { flex: none; width: 2.2rem; height: 2.2rem; }
+.pd-stat.focal > svg { width: var(--ring-focal); height: var(--ring-focal); }
+.pd-stat > svg:not(.pd-ring) { box-sizing: border-box; padding: .46rem; border-radius: 50%; background: color-mix(in oklab, var(--text) 8%, transparent); fill: none; stroke: var(--text-body); stroke-width: 1.4; stroke-linecap: round; stroke-linejoin: round; }
+.pd-ring circle { fill: none; stroke-width: 5; }
+.pd-ring .rt { stroke: color-mix(in oklab, var(--text) 16%, transparent); }
+.pd-ring .rv { stroke: var(--text); stroke-linecap: butt; transition: stroke-dasharray var(--t-snap) var(--e-out); }
+.pd-stat > span { display: flex; flex-direction: column; gap: .2rem; }
+.pd-stat b { font: 500 .98rem/1.1 var(--font-data); font-variant-numeric: tabular-nums; color: var(--text); }
+.pd-stat.focal b { font: 600 var(--fig-focal)/1 var(--font-data); letter-spacing: -.01em; }
+.pd-stat small { font: 500 .8rem/1.2 var(--font-name); color: var(--text-mute); }
+
+/* ---------- small multiples: one card per thing, every card on the same three scales, only the worst one loud ---------- */
+/* auto-FIT, not auto-fill, with a ceiling on a track: three cards in a wide plate stay three cards of a readable width
+   and pack to the left, instead of leaving five empty tracks of screen between them (the width pass, Oct 26). At the
+   width Usage's drill-down was measured at, this gives the same 223.8 px card it always had. */
+.pd-cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(13rem, 20rem)); justify-content: start; gap: calc(2 * var(--u)); }
+.pd-card { min-width: 0; display: flex; flex-direction: column; gap: calc(2 * var(--u)); padding: calc(2 * var(--u)); border-radius: var(--r-in); background: color-mix(in oklab, var(--text) 2.5%, transparent); box-shadow: inset 0 0 0 .08rem var(--hair); }
+.pd-card.loud.lv-watch { box-shadow: inset 0 0 0 .13rem color-mix(in oklab, var(--key-ink) 75%, transparent); }
+.pd-card.loud.lv-bad { background: color-mix(in oklab, var(--limit) 6%, transparent); box-shadow: inset 0 0 0 .15rem var(--limit); }
+.pd-card.loud .k, .pd-card.loud small { color: var(--text-body); }
+.pd-cn { min-width: 0; overflow-wrap: anywhere; font: 600 .95rem/1.2 var(--font-name); color: var(--text); }
+.pd-pair { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); column-gap: calc(2 * var(--u)); align-items: start; }
+.pd-q { min-width: 0; display: flex; flex-direction: column; gap: .35rem; }
+.pd-q .k { font: 500 .8rem/1.2 var(--font-name); color: var(--text-mute); }
+.pd-q > b { display: flex; align-items: flex-end; height: 1.75rem; font: 500 .98rem/1.1 var(--font-data); font-variant-numeric: tabular-nums; color: var(--text); }
+.pd-q > b.lv-watch { color: var(--key-ink); font-weight: 600; }
+.pd-q > b.lv-bad { color: var(--limit); font-weight: 600; }
+.pd-card.loud .pd-q > b.lv-bad, .pd-card.loud .pd-q > b.lv-watch { font-size: var(--fig-focal); font-weight: 600; letter-spacing: -.01em; line-height: 1; }
+/* a mini bar can carry a limit line, as a meter does: a 2 px tick where the line sits (DRAW.miniPair's `mark`) */
+.pd-mini { position: relative; min-width: 1.5rem; height: .5rem; border-radius: .25rem; overflow: hidden; background: color-mix(in oklab, var(--text) 12%, transparent); }
+.pd-mini i { display: block; height: 100%; border-radius: .25rem; background: color-mix(in oklab, var(--text) 60%, transparent); transition: width var(--t-snap) var(--e-out); }
+.pd-mini > .pd-mk { position: absolute; top: 0; bottom: 0; width: .16rem; margin-left: -.08rem; border-radius: .08rem; background: var(--text-mute); }
+.pd-mini.lv-watch i { background: var(--key-ink); }
+/* a level says what the figure says: a bad one reddens its own fill, with no second class to pass (Oct 26) */
+.pd-mini.lv-bad i { background: var(--limit); }
+/* THE MINI PAIR AS A ROW (Oct 26): in a card 28rem wide the stacked label-figure-bar costs three lines per quantity,
+   so two quantities fill the card with no room for its name. The row form puts the name left, the figure at the right
+   edge and the bar across both. */
+.pd-q.row { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: baseline; column-gap: .9rem; row-gap: .3rem; }
+.pd-q.row .k { font-size: .92rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.pd-q.row > b { height: auto; justify-content: flex-end; }
+.pd-q.row > .pd-mini { grid-column: 1 / -1; }
+.pd-time { display: flex; flex-direction: column; gap: .6rem; }
+.pd-ends { display: flex; justify-content: space-between; gap: .6rem; }
+.pd-ends > span { display: flex; flex-direction: column; gap: .15rem; }
+.pd-ends > span:last-child { align-items: flex-end; }
+.pd-ends small { font: 500 .8rem/1.2 var(--font-name); color: var(--text-mute); }
+.pd-ends b { font: 500 .92rem/1.2 var(--font-data); font-variant-numeric: tabular-nums; color: var(--text); }
+
+/* ---------- bounded lists: the top few at full size, the rest behind one pill; never a column that runs past the fold ---------- */
+.plink, .morepill { align-self: flex-start; display: inline-flex; align-items: center; gap: .4rem; padding: 0; border: 0; background: none; color: var(--text-mute); font: 500 .88rem/1.2 var(--font-name); cursor: pointer; }
+/* the kit's arrow is an svg with no size of its own: inside a link it took its intrinsic box and squeezed the words
+   onto three lines (Models' "Projects in Settings" at 3822). The arrow is the link's own size, and the words stay on
+   one line, as they do in a caption (.cap .go above). */
+.plink { white-space: nowrap; }
+.plink .go { flex: none; width: .8rem; height: .8rem; }
+.plink:hover, .morepill:hover { color: var(--text); text-decoration: underline; }
+.plink:focus-visible, .morepill:focus-visible { outline: .14rem solid var(--text); outline-offset: .2rem; border-radius: .2rem; }
+.morepill.pill { padding: .28rem .6rem; border: .12rem solid var(--track-line); border-radius: var(--r-in); background: var(--obj-sunk); }
+.morepill.pill:hover { color: var(--text); border-color: var(--text-mute); text-decoration: none; }
+.morepill b { font: 500 .88rem/1.2 var(--font-data); font-variant-numeric: tabular-nums; }
+
+/* ---------- a disclosure: its chevron turns over 240 ms and its detail opens in place, under the row ---------- */
+.disc { display: inline-flex; align-items: center; gap: .65rem; min-width: 0; max-width: 100%; padding: 0; border: 0; background: none; color: inherit; font: inherit; text-align: left; cursor: pointer; }
+.disc:focus-visible { outline: .14rem solid var(--text); outline-offset: .25rem; border-radius: .3rem; }
+.chev { flex: none; width: .8rem; height: .8rem; fill: none; stroke: var(--text-mute); stroke-width: 1.5; stroke-linecap: round; stroke-linejoin: round; transition: transform var(--t-snap) var(--e-out); }
+[aria-expanded="true"] > .chev, .open > .disc > .chev, .pitem.open .chev { transform: rotate(90deg); }
+/* the detail a disclosure opens lands in place under its row as the chevron turns: a page adds .unfold to it on the
+   draw that opened it, never on a redraw, so it rises in once over 240 ms */
+.unfold { animation: unfold var(--t-snap) var(--e-out) both; }
+@keyframes unfold { from { opacity: 0; transform: translateY(-.4rem); } }
+.dot-c { flex: none; width: .7rem; height: .7rem; border-radius: 50%; background: var(--c); }   /* a provider's dot, the one place its colour names it in a row */
+
+/* ---------- an act in flight: it spins where it stands, says its result in place, and shakes once on failure ---------- */
+.act[aria-busy="true"] { cursor: progress; }
+.act[aria-busy="true"]::after { content: ""; width: .7rem; height: .7rem; margin-left: .5rem; border-radius: 50%; border: .14rem solid currentColor; border-right-color: transparent; animation: spin 800ms linear infinite; }
+.act.shook { animation: shake 300ms var(--e-out) 1; }
+.result { display: inline-flex; align-items: center; gap: .4rem; font: 500 .92rem/1.2 var(--font-name); color: var(--text-body); }
+.result.bad { color: var(--limit); }
+.result.good { color: var(--live); }
+.result svg { flex: none; width: .95rem; height: .95rem; }
+.landed { animation: pulseOnce var(--t-pulse) var(--e-out) 1; }   /* once, on the item a change landed on */
+
+/* ---------- states as shapes ---------- */
+/* a figure splice has no reading for is a dash, never a word in a figure's slot and never a zero */
+.nr { font-style: normal; color: var(--text-mute); }
+/* a healthy phase said beside a lamp is muted, never the limit red (kit.js workingLook's "No output yet"). The
+   selector carries the lamp's own container so it wins over sessions.css's .meta .detail, which is the limit's. */
+.detail.soft, .meta .detail.soft, .sessions .s .top .meta .detail.soft { color: var(--text-mute); }
+/* an object with nothing to report keeps its own shape and says so ONCE, in one muted line, on itself */
+.nothing { font: 500 .9rem/1.3 var(--font-name); color: var(--text-mute); }
+.nothing svg { flex: none; width: 1em; height: 1em; }  /* a glyph in that line is the line's size, never its box's */
+/* the share a project tile has not read yet: the bar's own track, striped, so the tile is the height it will be */
+.ptile .pshare.ghost { background-color: color-mix(in oklab, var(--text) 10%, transparent); border-radius: .2rem; }
+/* a state line not read yet: a striped bar the size of the word that will land, so the row never jumps */
+.ghost.state { height: 1rem; width: 5.5rem; }
+.ghost.fig { height: 1rem; width: 3.6rem; vertical-align: -.1rem; }
+.ghost.ring { width: var(--ring-sz); height: var(--ring-sz); border-radius: 50%; }
+.ghost.ring.focal { width: var(--ring-focal); height: var(--ring-focal); }
+.ghost.tile { height: 2.2rem; width: 2.2rem; border-radius: 50%; }
+.ghost.track { display: block; width: auto; height: var(--meter-h); border-radius: .3rem; }
+.ghost.stack { display: block; width: auto; height: var(--stack-h); border-radius: .3rem; }
+.ghost-row { display: flex; align-items: center; gap: calc(2 * var(--u)); }
+/* THE REST OF THE SHAPES A SECTION LANDS WITH (Oct 27), each the size of what lands, so a page draws its whole first
+   frame from the kit and nothing moves when the figures arrive (GHOST in kit.js writes them):
+   the hero figure and its caption on one baseline, a focal figure, a bar cell's track and its figure, a range track. */
+.ghost.hero { height: var(--fig-hero); width: 5.6rem; border-radius: .4rem; }
+.ghost.cap { height: .9rem; width: 12rem; }
+.ghost.focalfig { height: var(--fig-focal); width: 3.4rem; }
+.ghost.vtrack { flex: 1 1 auto; min-width: 1.5rem; height: .4rem; border-radius: .2rem; }
+.ghost.range { display: block; width: auto; height: var(--meter-h); border-radius: .2rem; }
+
+/* ---------- a bar cell's figures on ONE right edge, and its tracks on one length ----------
+   A column of bar cells sets --v-w to its widest figure (Usage's Results: 4.3rem for requests): every figure then takes
+   the same room, so the figures end on one edge and every track is the same length, which is what makes the bars a
+   shared scale. Without it a row with a short figure drew a longer track. */
+.barcell > .v { min-width: var(--v-w, 0px); }
+
+/* ---------- ONE SCROLL PER PAGE (Oct 27) ----------
+   The page is the only thing that scrolls. No pane, list or log inside it takes a height of its own and an overflow:
+   a detail opens in place under its row (DRAW.disc), as the Usage drill-down does, and a long list shows its top few
+   and DRAW.more. A menu or a popover may scroll inside itself; nothing else may, and nothing is sticky but the top bar.
+   The end of every page's scroll reserves the composer's own height plus 4u (composer.css main.page::after), so the
+   last line of any page can always be scrolled out from under the bar. */
+
+/* ---------- a board of titled groups: the groups packed into columns, the order running down each ----------
+   For a page whose groups differ in height (Accounts' providers, Models' commands): each column takes the next group,
+   so no column is a tall wall beside empty ones. Cards in a group 15 px apart (.stack-cards), groups 36 px apart,
+   columns 30 px apart; --col-min is the width one group needs. */
+.flow-cols { columns: var(--col-min, 26rem) auto; column-gap: var(--gap-col); }
+.flow-cols > * { break-inside: avoid; margin: 0 0 2.4rem; }
+
+/* ---------- the column system: fill the content width in column units, as the Accounts page fills 3,749 px in five ----------
+   A page sets --col-min to the width one of its objects needs and the row takes as many columns as fit, every column
+   an equal share of what is left; a group that holds twice as much takes .wide2. Never a rem cap with empty screen
+   beside it. At 1440 the same rule gives one or two columns, so nothing is cut. */
+.cols { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(100%, var(--col-min, 26rem)), 1fr)); gap: var(--gap-col); align-items: start; }
+.cols.tight { gap: var(--gap-card) var(--gap-col); }
+.cols > .wide2 { grid-column: span 2; }
+.cols > .wide3 { grid-column: span 3; }
+.cols > .full { grid-column: 1 / -1; }
+.stack-cards { display: flex; flex-direction: column; gap: var(--gap-card); min-width: 0; }   /* cards down one column, 15 px apart */
+.groups { display: flex; flex-direction: column; gap: 2.4rem; min-width: 0; }                 /* titled groups, 36 px apart */

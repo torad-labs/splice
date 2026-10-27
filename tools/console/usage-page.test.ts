@@ -1,6 +1,7 @@
 // Usage on the real page: a week's figures are the daemon's totals over every request, never a count of the rows the
-// read returned; a plan's requests read "On your plan" with their API-price value and never as money, a key's are
-// money; a window change draws its striped shapes until the new figures land, never the old ones under the new heading; and a
+// read returned; a plan's requests draw their API-price value hatched, never as money, under the band's one legend for
+// "On your plan, at API prices", and a key's are money; a window change draws its striped shapes until the new figures
+// land, never the old ones under the new heading; and a
 // breakdown row opens its requests on Requests with its filter carried. A login the daemon names (ref + label) is read by
 // them alone; a daemon that does not serve them yet is drawn as before.
 import { afterAll, beforeAll, test } from "bun:test";
@@ -76,17 +77,22 @@ async function open(query = ""): Promise<Page> {
   return p;
 }
 
-test("Usage: a week's figures are the daemon's totals, not the rows returned; a plan reads On your plan with its value, a key reads money", async () => {
+// "On your plan" and "at API prices" are said once, in the band's legend, and "Counted by splice" once, in the board's
+// head (Usage's goal, Oct 26: "Qualifiers said once: 'On your plan', 'at API prices', the window, splice's own count, in a
+// header or legend"), where each plan's cost cell and each card's footer said them
+test("Usage: a week's figures are the daemon's totals, not the rows returned; a plan draws its value hatched under the band's legend, a key reads money", async () => {
   const p = await open();
   try {
     const plan = p.locator(".brow", { hasText: "Primary" }).first();
     await expect(plan.locator(".num.open")).toContainText("1,234,567", { timeout: 20_000 });
-    await expect(plan.locator(".cost")).toContainText("On your plan");
-    await expect(plan.locator(".cost")).toContainText("≈$4,321.50 at API prices");
+    await expect(plan.locator(".cost .val")).toHaveText("≈$4,321.50");
+    await expect(plan.locator(".cost .vbar .plan")).toHaveCount(1);
+    await expect(p.locator("#band-by .bandhead")).toContainText("On your plan, at API prices");
     await expect(plan.locator(".cost .money")).toHaveCount(0);
     const key = p.locator(".brow", { hasText: "OPENROUTER_API_KEY" }).first();
     await expect(key.locator(".cost .money")).toHaveText("≈$1.25");
-    await expect(p.locator(".pcard .thru")).toContainText("Counted by splice");
+    await expect(p.locator("#band-money .bandhead")).toContainText("Counted by splice");
+    await expect(p.locator(".pcard .thru")).toContainText("1,234,567");
   } finally {
     await p.context().close();
   }
@@ -153,10 +159,14 @@ test("Usage: a window change keeps the plans and the headings drawn and stripes 
     await p.locator("[data-act=win][data-v='5h']").click();
     await expect(p.locator(".pcard .cmds")).toBeVisible();
     await expect(p.locator(".pcard .windows")).toBeVisible();
-    await expect(p.locator(".pcard .thru .ghost")).toBeVisible();
-    await expect(p.locator(".keys")).toBeVisible();
+    // the footer stripes one row per figure it will hold (Usage's report, Oct 26), and the keys are cards on the same board
+    await expect(p.locator(".pcard .thru .ghost").first()).toBeVisible();
+    await expect(p.locator(".kcard")).toBeVisible();
     slowWeek = false;
-    await expect(p.locator(".pcard .thru")).toContainText("Counted by splice", { timeout: 20_000 });
+    // the window's own figures land in the footer, and the board's head names the window splice counted
+    await expect(p.locator(".pcard .thru .ghost")).toHaveCount(0, { timeout: 20_000 });
+    await expect(p.locator(".pcard .thru")).toContainText("1,234,567");
+    await expect(p.locator("#band-money .bandhead")).toContainText("Counted by splice · last 5 hours");
   } finally {
     await p.context().close();
   }

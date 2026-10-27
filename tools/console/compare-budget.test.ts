@@ -43,7 +43,7 @@ test("an over-budget command's Compare pane reads Over budget, never the daemon'
   try {
     await page.goto(`http://127.0.0.1:${server.port}/compare.html`);
     await page.locator("[data-act=add]").click();
-    await page.locator("button.pg-pill").first().click();
+    await page.locator("button.pg-mrow").first().click(); // a model is a row on its command's card in the picker now
     await page.locator("#prompt").fill("say hi");
     await page.locator("button.pg-send").click();
     await expect(page.locator(".state.limit")).toHaveText("Over budget", { timeout: 20_000 });

@@ -26,7 +26,7 @@ const tick = () => (NOW = new Date());
 
 // ---------- the providers, as the stylesheet names their colours ----------
 const COLORS = { claude: "--claude", gpt: "--gpt", grok: "--grok", kimi: "--kimi", muse: "--muse", router: "--router", deepseek: "--deepseek", local: "--local", vast: "--local" };
-const PROVIDER_NAME = { claude: "Claude", gpt: "ChatGPT", grok: "Grok", kimi: "Kimi", muse: "Muse", router: "OpenRouter", deepseek: "DeepSeek", local: "This computer" };
+const PROVIDER_NAME = { claude: "Claude", gpt: "ChatGPT", grok: "Grok", kimi: "Kimi", muse: "Muse", router: "OpenRouter", deepseek: "DeepSeek", local: "This computer", vast: "vast.ai" };
 // /api/models names a head's provider in the provider module's own words, which are not always the colour's. A family
 // with no colour of its own draws in none, rather than borrowing another's.
 const PROVIDER_FAMILY = { anthropic: "claude", openai: "gpt", codex: "gpt", xai: "grok", grok: "grok", moonshot: "kimi",
@@ -191,15 +191,18 @@ const idleTierOf = (cfg, headKey) => {
 };
 
 // ---------- drawing ----------
-const G = (d, extra = "") => `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" ${extra}>${d}</svg>`;
+// EVERY GLYPH THE KIT DRAWS HAS A SIZE OF ITS OWN (Oct 26): an svg with only a viewBox takes its box, so a kit icon
+// dropped into a line the stylesheet has no rule for drew 300 px tall — ICON.door as an arrow across a card, DRAW.lock
+// filling a login row. 1em is the size of the words beside it; any rule that wants another size still wins.
+const G = (d, extra = "") => `<svg viewBox="0 0 24 24" width="1em" height="1em" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" ${extra}>${d}</svg>`;
 const ICON = {
-  trace: '<svg class="wave" viewBox="0 0 40 40" aria-hidden="true"><polyline class="base" points="5,20 13,20 16,12 20,28 24,15 27,20 35,20"/><polyline class="beat" points="5,20 13,20 16,12 20,28 24,15 27,20 35,20"/></svg>',
-  flat: '<svg class="wave" viewBox="0 0 40 40" aria-hidden="true"><polyline points="5,20 35,20"/></svg>',
-  dialog: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3l7 3v5.5c0 4.4-3 8-7 9.5-4-1.5-7-5.1-7-9.5V6z"/></svg>',
-  input: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 5h16v11h-9l-4.5 3.5V16H4z"/><path d="M12 13.2h0"/><path d="M10 9.2a2 2 0 1 1 2.6 1.9"/></svg>',
-  retries: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4.5 11a7.5 7.5 0 0 1 13.2-4.6M19 4v4.5h-4.5M19.5 13a7.5 7.5 0 0 1-13.2 4.6M5 20v-4.5h4.5"/></svg>',
-  limit: '<svg viewBox="0 0 24 24" aria-hidden="true"><rect x="4.5" y="10.5" width="15" height="10" rx="2"/><path d="M8 10.5V7.5a4 4 0 0 1 8 0v3"/></svg>',
-  signout: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M14 4h5v16h-5M10 8l-4 4 4 4M6 12h9"/></svg>',
+  trace: '<svg class="wave" viewBox="0 0 40 40" width="1em" height="1em" aria-hidden="true"><polyline class="base" points="5,20 13,20 16,12 20,28 24,15 27,20 35,20"/><polyline class="beat" points="5,20 13,20 16,12 20,28 24,15 27,20 35,20"/></svg>',
+  flat: '<svg class="wave" viewBox="0 0 40 40" width="1em" height="1em" aria-hidden="true"><polyline points="5,20 35,20"/></svg>',
+  dialog: '<svg viewBox="0 0 24 24" width="1em" height="1em" aria-hidden="true"><path d="M12 3l7 3v5.5c0 4.4-3 8-7 9.5-4-1.5-7-5.1-7-9.5V6z"/></svg>',
+  input: '<svg viewBox="0 0 24 24" width="1em" height="1em" aria-hidden="true"><path d="M4 5h16v11h-9l-4.5 3.5V16H4z"/><path d="M12 13.2h0"/><path d="M10 9.2a2 2 0 1 1 2.6 1.9"/></svg>',
+  retries: '<svg viewBox="0 0 24 24" width="1em" height="1em" aria-hidden="true"><path d="M4.5 11a7.5 7.5 0 0 1 13.2-4.6M19 4v4.5h-4.5M19.5 13a7.5 7.5 0 0 1-13.2 4.6M5 20v-4.5h4.5"/></svg>',
+  limit: '<svg viewBox="0 0 24 24" width="1em" height="1em" aria-hidden="true"><rect x="4.5" y="10.5" width="15" height="10" rx="2"/><path d="M8 10.5V7.5a4 4 0 0 1 8 0v3"/></svg>',
+  signout: '<svg viewBox="0 0 24 24" width="1em" height="1em" aria-hidden="true"><path d="M14 4h5v16h-5M10 8l-4 4 4 4M6 12h9"/></svg>',
   branch: G('<circle cx="6" cy="5" r="2.2"/><circle cx="6" cy="19" r="2.2"/><circle cx="18" cy="7" r="2.2"/><path d="M6 7.2v9.6M18 9.2c0 4.5-6 3.6-11.3 7.4"/>', 'aria-hidden="true"'),
   team: G('<circle cx="8.5" cy="9" r="3"/><circle cx="16.5" cy="9.5" r="2.5"/><path d="M3 19c.8-3.3 2.9-5 5.5-5s4.7 1.7 5.5 5M15 14.4c2.5-.4 5 .9 6 4.6"/>', 'aria-hidden="true"'),
   stop: G('<rect x="6" y="6" width="12" height="12" rx="1.5"/>', 'aria-hidden="true"'),
@@ -208,8 +211,13 @@ const ICON = {
   watch: (sec) => G(`<circle cx="12" cy="13.5" r="7.5"/><path d="M10 3h4M12 3v3"/><path class="hand" d="M12 13.5V9" style="transform: rotate(${sec * 6}deg)"/>`, 'class="watch" aria-hidden="true"'),
   caret: G('<path d="M9 5l7 7-7 7"/>', 'class="caret" aria-hidden="true"'),
   door: G('<path d="M7 17L17 7M9 7h8v8"/>', 'aria-hidden="true"'),
-  wait: '<svg class="wait" viewBox="0 0 40 40" aria-hidden="true"><circle cx="20" cy="20" r="15"/></svg>',
+  wait: '<svg class="wait" viewBox="0 0 40 40" width="1em" height="1em" aria-hidden="true"><circle cx="20" cy="20" r="15"/></svg>',
   lock: G('<rect x="4.5" y="10.5" width="15" height="10" rx="2"/><path d="M8 10.5V7.5a4 4 0 0 1 8 0v3"/>', 'aria-hidden="true"'),
+  // the two themes, as the top bar's switch shows them: the one in use is lit and the other waits (drawTheme)
+  sun: G('<circle cx="12" cy="12" r="4.2"/><path d="M12 2.6v2.2M12 19.2v2.2M2.6 12h2.2M19.2 12h2.2M5.4 5.4l1.6 1.6M17 17l1.6 1.6M18.6 5.4L17 7M7 17l-1.6 1.6"/>', 'class="sun" aria-hidden="true"'),
+  moon: G('<path d="M21 12.8A9 9 0 1 1 11.2 3a7 7 0 0 0 9.8 9.8z"/>', 'class="moon" aria-hidden="true"'),
+  // something went wrong where a person was going: the route error's mark (console.js)
+  bang: G('<circle cx="12" cy="12" r="9"/><path d="M12 7.6v5.2M12 16.2h0"/>', 'aria-hidden="true"'),
 };
 // A refused Stop, in fin's words, by the refusal's reason key and never its sentence (SessionDrive.Refusal). Ended and
 // a head's 404 draw no line: the card's re-read state says it. A closed pane splice opened says only that, because
@@ -229,12 +237,38 @@ const esc = (s) => String(s ?? "").replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<
 // WHAT IS NOT READ YET DRAWS AS ITS OWN SHAPE (Marcos, Oct 12: "we can do better than that reading indicator"): a
 // figure or a line is a striped bar the size of what will land there, a card a drawn card of such bars, a chart its
 // columns, so a page reads as arriving, never as empty or as a lone word. Widths are in rem; console.css draws them.
+// A GHOST IS THE SIZE AND THE SHAPE OF WHAT WILL LAND, so nothing moves when the data arrives, and an item keeps its own
+// state visible while the page reads. The stripes move at .9 s a cycle, which is the one loop that means "still working".
 const GHOST = {
   bar: (rem, cls = "") => `<i class="ghost${cls ? ` ${cls}` : ""}" style="width:${rem}rem" aria-hidden="true"></i>`,
   lines: (widths) => `<div class="ghost-lines" aria-hidden="true">${widths.map((w) => GHOST.bar(w)).join("")}</div>`,
   // [i] fades the card down the page: the first is whole, each later one lighter
   card: (widths, i = 0, cls = "") => `<article class="card ghosted gcard${cls ? ` ${cls}` : ""}" style="--i:${i}" aria-hidden="true">${GHOST.bar(widths[0], "big")}${GHOST.lines(widths.slice(1))}</article>`,
   chart: (heights) => `<div class="card ghost-chart" aria-hidden="true">${heights.map((h) => `<i class="ghost" style="--h:${h}%"></i>`).join("")}</div>`,
+  // AN ITEM'S OWN STATE LINE, which the kit had no shape for, so nine pages printed the word "Reading" where a state
+  // belongs (the old page's rail said it on 7 of 11 cards). A card draws this where its state word will land and keeps
+  // everything else it already knows.
+  state: () => `<i class="ghost state" aria-hidden="true"></i>`,
+  fig: (rem = 3.6) => `<i class="ghost fig" style="width:${rem}rem" aria-hidden="true"></i>`,
+  // a share not read yet: the meter's own empty track, striped. Never a 0% fill, which reads as "nothing used".
+  track: () => `<i class="ghost track" aria-hidden="true"></i>`,
+  stack: () => `<i class="ghost stack" aria-hidden="true"></i>`,
+  ring: (cls = "") => `<i class="ghost ring${cls ? ` ${cls}` : ""}" aria-hidden="true"></i>`,
+  tile: () => `<i class="ghost tile" aria-hidden="true"></i>`,
+  // a row of shapes the size of the row that will land: give it the pieces in order
+  row: (parts) => `<div class="ghost-row" aria-hidden="true">${parts.join("")}</div>`,
+  // THE REST OF A SECTION'S SHAPES (Oct 27), so a page draws its first frame from the kit and not by hand (three pages
+  // drew their own, and jumped by up to 1,093 px when the data landed):
+  /** the hero figure and its caption on one baseline (DRAW.hero) */
+  hero: () => `<div class="pd-top" aria-hidden="true"><i class="ghost hero"></i><i class="ghost cap"></i></div>`,
+  /** a focal figure and its words (DRAW.focal) */
+  focal: (rem = 7) => `<div class="pd-sub" aria-hidden="true"><i class="ghost focalfig"></i>${GHOST.bar(rem)}</div>`,
+  /** a chip, its own size (DRAW.chip) */
+  chip: (rem = 6.2) => GHOST.bar(rem, "chip"),
+  /** a bar cell: the column's track and its figure on the column's right edge (DRAW.barCell) */
+  cell: () => `<span class="barcell" aria-hidden="true"><i class="ghost vtrack"></i><i class="ghost fig v"></i></span>`,
+  /** a range on the shared log axis (DRAW.range) */
+  range: () => `<i class="ghost range" aria-hidden="true"></i>`,
 };
 const clock = (d) => {
   const h = d.getHours() % 12 || 12, m = d.getMinutes(), ap = d.getHours() < 12 ? "AM" : "PM";
@@ -250,18 +284,470 @@ const counter = (ms) => { const s = Math.floor(ms / 1000); return `${Math.floor(
  *  zeros, and "<$0.000001" only below a millionth. A cent and up is cents. Nothing charged is exact, "$0". */
 const dollars = (v) => (v === 0 ? "$0" : v < 0.000001 ? "<$0.000001" : `≈$${v.toLocaleString("en-US", v < 0.0095 ? { minimumSignificantDigits: 2, maximumSignificantDigits: 2 } : { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`);
 const kTok = (n) => (n >= 999500 ? `${+(n / 1e6).toFixed(n >= 1e7 ? 0 : 1)}M` : n >= 1e4 ? `${Math.round(n / 1000)}K` : n >= 1000 ? `${+(n / 1000).toFixed(1)}K` : `${n}`);
-const inline = (s) => esc(s).replace(/`([^`]+)`/g, "<code>$1</code>");
-function md(text) { // the agent's own text, formatted as it wrote it: paragraphs, lists, code
-  const out = []; let list = null;
-  for (const line of text.split("\n")) {
-    if (line.startsWith("- ")) { (list ??= []).push(`<li>${inline(line.slice(2))}</li>`); continue; }
+// AN AGENT'S *EMPHASIS* IS EMPHASIS (Oct 27): only **bold** was read, so a line an agent wrote with single asterisks
+// round a word printed the asterisks themselves, wherever agent text is shown (the manager's sheet, a session's
+// messages). Single asterisks round a run that starts and ends on a letter are <em>, which composer.css already draws
+// in italic; a lone asterisk (5 * 3, a glob, a bullet already read off its line) is left as written, and code keeps
+// its own text.
+const EMPH = /(^|[^*\w])\*(?![\s*])([^*\n]*?[^\s*])\*(?![*\w])/g;
+const inline = (s) => esc(s).split(/(`[^`]+`)/g).map((part, i) => (i % 2 ? `<code>${part.slice(1, -1)}</code>`
+  : part.replace(/\*\*([^*\n]+)\*\*/g, "<b>$1</b>").replace(EMPH, "$1<em>$2</em>"))).join("");
+// THE BLOCK SHAPES AN AGENT ACTUALLY WRITES (Oct 26). This read dash lists and backticks only, so a Claude Code turn's
+// table came out as a run of pipes, a heading as hash marks, a numbered list as paragraphs and a fenced block as one
+// long line — the walls of explanation Marcos stopped the console for. Sessions carried its own copy of this; every
+// page that shows what an agent wrote (its conversation, Teams' messages, Requests' bodies) now draws the same shapes.
+const mdCells = (line) => line.trim().replace(/^\|/, "").replace(/\|$/, "").split("|").map((c) => c.trim());
+const MD_RULE = /^\s*\|?[\s:|-]*-[\s:|-]*\|?\s*$/;
+function mdTable(rows) {
+  if (!rows.length) return "";
+  const head = rows.length > 1 && MD_RULE.test(rows[1]) ? mdCells(rows[0]) : null;
+  const body = (head ? rows.slice(2) : rows).map(mdCells).filter((r) => r.length);
+  return `<table class="mdt">${head ? `<thead><tr>${head.map((c) => `<th>${inline(c)}</th>`).join("")}</tr></thead>` : ""}`
+    + `<tbody>${body.map((r) => `<tr>${r.map((c) => `<td>${inline(c)}</td>`).join("")}</tr>`).join("")}</tbody></table>`;
+}
+function md(text) { // the agent's own text, as it wrote it: headings, lists, tables, fenced code, paragraphs
+  const out = [], lines = String(text ?? "").split("\n");
+  let list = null, ord = null, table = null, fence = null, lang = "";
+  const closeAll = () => {
     if (list) { out.push(`<ul>${list.join("")}</ul>`); list = null; }
+    if (ord) { out.push(`<ol>${ord.join("")}</ol>`); ord = null; }
+    if (table) { out.push(mdTable(table)); table = null; }
+  };
+  for (const line of lines) {
+    if (fence != null) {
+      if (/^\s*```/.test(line)) { out.push(`<pre class="code"${lang ? ` data-lang="${esc(lang)}"` : ""}>${esc(fence.join("\n"))}</pre>`); fence = null; lang = ""; }
+      else fence.push(line);
+      continue;
+    }
+    if (/^\s*```/.test(line)) { closeAll(); fence = []; lang = line.replace(/^\s*```/, "").trim(); continue; }
+    if (line.trim().startsWith("|")) { if (list || ord) closeAll(); (table ??= []).push(line); continue; }
+    if (table) closeAll();
+    const bullet = line.match(/^\s*[-*]\s+(.*)$/), number = line.match(/^\s*(\d+)[.)]\s+(.*)$/);
+    if (bullet) { if (ord) closeAll(); (list ??= []).push(`<li>${inline(bullet[1])}</li>`); continue; }
+    if (number) { if (list) closeAll(); (ord ??= []).push(`<li>${inline(number[2])}</li>`); continue; }
+    closeAll();
+    const head = line.match(/^(#{1,6})\s+(.*)$/);
+    if (head) { out.push(`<p class="mh h${head[1].length}">${inline(head[2])}</p>`); continue; }
     if (line.trim()) out.push(`<p>${inline(line)}</p>`);
   }
-  if (list) out.push(`<ul>${list.join("")}</ul>`);
+  if (fence) out.push(`<pre class="code">${esc(fence.join("\n"))}</pre>`);
+  closeAll();
   return out.join("");
 }
 const acctPlanHtml = (acct, plan) => `<span class="acct">${esc(acct)}${plan ? `<span class="pv">${esc(plan)}</span>` : ""}</span>`;
+
+// ================================================================================================================
+// DRAW: THE DRAWINGS EVERY PAGE SHARES (Oct 26)
+//
+// Marcos's rule for the console is "show don't tell". Until now the drawings that make the Usage drill-down and Accounts
+// lived inside the two files that drew them: the hero figure, the stacked outcome bar, the ring and glyph tiles and
+// the log axis were private to the Usage drill-down (perf-heads.js), and the meter, the reset ring and the card's
+// acts were private to Accounts. Everywhere else a share, a load, a window, a time or an amount was printed as a
+// word. This is the same drawings, lifted here unchanged, so any page can draw instead of tell. console.css holds
+// their rules under "THE DRAWINGS EVERY PAGE SHARES"; the sizes are tokens there (--meter-h, --stack-h, --ring-sz,
+// --ring-focal, --fig-hero, --fig-focal, --kicker, --u), measured on his own screen at 3822.
+//
+// THE SHAPE FITS THE QUANTITY: a share of a whole is a meter or a ring; a magnitude is a bar on its column's shared
+// scale; a split of a whole is one stacked bar with the labels inside the segments; a time is a mark on one log
+// axis; the one answer of a section is the hero figure with its denominator on the same baseline. A figure splice
+// has no reading for is DRAW.dash, never a word in a figure's slot and never a zero.
+// ================================================================================================================
+const GO = G('<path d="M7 17L17 7M9 7h8v8"/>', 'class="go" aria-hidden="true"');
+const CHEV = `<svg class="chev" viewBox="0 0 10 10" aria-hidden="true"><path d="M3 1.5 7 5 3 8.5"/></svg>`;
+// the glyphs a count can carry, so a number has a shape the eye finds again (the Usage drill-down's CACHE AND ACTIVITY strip)
+const GLYPH = {
+  retry: `<svg viewBox="0 0 16 16" width="1em" height="1em" aria-hidden="true"><path d="M13.2 6.2A5.3 5.3 0 1 0 13.6 10"/><path d="M13.4 2.8v3.4H10"/></svg>`,
+  cold: `<svg viewBox="0 0 16 16" width="1em" height="1em" aria-hidden="true"><path d="M8 1.5v13M2.3 4.75l11.4 6.5M13.7 4.75l-11.4 6.5"/></svg>`,
+  key: `<svg viewBox="0 0 16 16" width="1em" height="1em" aria-hidden="true"><circle cx="5.2" cy="10.8" r="2.6"/><path d="M7.2 8.8l6.3-6.3M11.2 4.8l1.6 1.6M13.5 2.5l1.2 1.2"/></svg>`,
+  peak: `<svg viewBox="0 0 16 16" width="1em" height="1em" aria-hidden="true"><path d="M3.5 14.5V1.5M3.5 2.3h8.5l-2 2.6 2 2.6H3.5"/></svg>`,
+  gap: `<svg viewBox="0 0 16 16" width="1em" height="1em" aria-hidden="true"><path d="M1.5 8h4.5M10 8h4.5M7 8h2" stroke-dasharray=".5 1.5"/></svg>`,
+  label: `<svg viewBox="0 0 16 16" width="1em" height="1em" aria-hidden="true"><path d="M2 3.5h8.4L14 8l-3.6 4.5H2z"/></svg>`,
+};
+const RING_R = 16, RING_C = 2 * Math.PI * RING_R, RESET_C = 2 * Math.PI * 15;
+const BW = 40;                                        // rem, about how wide a panel bar is drawn
+const labelRem = (text) => text.length * 0.42 + 0.8;  // rem a label takes at the panel's type size (an estimate)
+const STEP = ["f0", "f1", "f2"];                      // failure blocks by rank: the largest is the full limit red
+// the times on a log axis, from a round figure under the smallest typical to one over the largest slowest 5%
+const NICE = [1, 3, 10, 30, 100, 300, 1e3, 3e3, 1e4, 3e4, 6e4, 18e4, 6e5];
+// an axis label: a round figure, never a table's two-part reading (60 000 ms is "1 min", not "1 min 0 s")
+const tickWord = (ms) => (ms < 1000 ? `${ms} ms` : ms < 60000 ? `${ms / 1000} s` : `${ms / 60000} min`);
+
+const DRAW = {
+  // ---------- how a figure is written: one spelling per kind, everywhere ----------
+  n: (v) => Math.round(v).toLocaleString("en-US"),
+  /** A share as a percent. Under half a percent reads "<1%", so a rounded 0% never stands for something that happened. */
+  pct: (x) => (x == null ? null : x > 0 && x < 0.005 ? "<1%" : `${Math.round(x * 100)}%`),
+  /** A duration: milliseconds, then seconds, then minutes and seconds. */
+  ms: (v) => (v < 1000 ? `${Math.round(v)} ms` : v < 60000 ? `${+(v / 1000).toFixed(v < 10000 ? 1 : 0)} s` : `${Math.floor(v / 60000)} min ${Math.round((v % 60000) / 1000)} s`),
+  /** Tokens and other counts that run to billions, in ONE spelling: "53.9B", "77M", "920K" (kit kTok). The billions
+   *  step was "15 bn", a space and two letters where the scale beside it has neither, so a page that says a token
+   *  count five times (Usage) had to carry its own speller. */
+  big: (v) => (v >= 999.5e6 ? `${+(v / 1e9).toFixed(v >= 9.995e9 ? 0 : 1)}B` : kTok(v)),
+  /** A figure splice has no reading for. NEVER a word in a figure's slot, and never a zero. */
+  dash: `<i class="nr" title="Not reported">—</i>`,
+  /** What an agent wrote, as it wrote it: headings, lists, tables, fenced code and paragraphs (md above). */
+  md,
+  /** A TOOL'S NAME IN WORDS (Oct 26): tool names reach the screen as a client names them, so `mcp__ast-grep__find_code`
+   *  stood on a session's row and "mcp__" was on the page. An MCP tool reads as its server, a middle dot and its own
+   *  words; a joined name splits where a lowercase letter or digit meets a capital, and where a run of capitals meets
+   *  a capital and a lowercase ("SendMessage" is "Send message", "WebFetch" is "Web fetch"); a one-word name is left
+   *  as written (Bash, Read, Edit). It returns TEXT: the caller escapes it and keeps the client's name as the title. */
+  toolWord(name) {
+    const raw = String(name ?? "").trim();
+    if (!raw) return "";
+    const mcp = raw.match(/^mcp__(.+?)__(.+)$/);
+    if (mcp) return `${mcp[1]} · ${mcp[2].replace(/_/g, " ")}`;
+    const words = raw.replace(/_/g, " ").replace(/([a-z0-9])([A-Z])/g, "$1 $2").replace(/([A-Z]+)([A-Z][a-z])/g, "$1 $2").split(/\s+/).filter(Boolean);
+    if (words.length < 2) return raw;
+    return words.map((w, i) => (i ? w.toLowerCase() : w)).join(" ");
+  },
+  /** An object with nothing to report keeps its own shape and says so once, on itself, in one muted line. */
+  nothing: (word) => `<span class="nothing">${esc(word)}</span>`,
+  /** A dollar figure in a table's cell: the kit's money spelling (dollars) without its "≈". A column of estimates says
+   *  so ONCE, in its header ("Cost, estimated"), never on every row; a figure splice has no price for is the dash.
+   *  dollars() keeps the mark for a figure that stands alone, away from any header. */
+  usd: (v) => (v == null || !Number.isFinite(+v) ? DRAW.dash : dollars(+v).replace(/^≈/, "")),
+
+  // ---------- rhythm: a plate, its sections, its kicker ----------
+  /** A section's ground: 4u of padding and a wash, no ink border and no cast shadow. A card is for OBJECTS only. */
+  plate: (body, cls = "", id = "") => `<div class="plate${cls ? ` ${cls}` : ""}"${id ? ` id="${esc(id)}"` : ""}>${body}</div>`,
+  /** One section of a plate: a two-word uppercase kicker 2u above its content, and 4u + a hairline + 4u from the one
+   *  before it. [aside] rides the kicker's baseline, which is where a legend, a count or a window door belongs. */
+  section: (kicker, body, { aside = "", cls = "", head = "" } = {}) =>
+    `<section class="psec${cls ? ` ${cls}` : ""}"><div class="sechead${head ? ` ${head}` : ""}">${kicker ? `<h3 class="kicker">${esc(kicker)}</h3>` : ""}${aside}</div>${body}</section>`,
+  /** A kicker over a row of objects that is not inside a plate: the unit, or what the row counts, said once. */
+  kicker: (words) => `<p class="kicker on-wall">${esc(words)}</p>`,
+
+  // ---------- the figures a section leads with ----------
+  /** The one figure a section answers with, 2.9rem in the data face, coloured by level, with its denominator on the
+   *  SAME baseline and the whole caption a door to exactly those items: "57%  1,635 failed of 2,887 requests ↗".
+   *  [level] is "ok" (text ink), "watch" (the key light) or "bad" (the limit red).
+   *
+   *  [under] is the object the figure belongs to, on its own line under the figure — the login, the command, the
+   *  window — and [tail] the state that goes with it, such as a DRAW.lock with its reset. A page that led with a
+   *  figure and then had to say which thing it was about wrote that line itself (settings.css's .herocap). */
+  hero({ figure, level = "ok", count = null, word = "", of = "", href = null, under = "", tail = "" }) {
+    const inner = count == null ? `<span>${esc(of)}</span>` : `<b>${DRAW.n(count)}</b> ${esc(word)}<span>${esc(of)}</span>`;
+    const cap = !of && count == null ? ""
+      : href ? `<a class="pd-failed" href="${href}">${inner}${GO}</a>` : `<span class="pd-failed">${inner}</span>`;
+    const line = under || tail ? `<p class="pd-under">${esc(under)}${tail}</p>` : "";
+    return `<div class="pd-top"><b class="pd-rate lv-${level}">${esc(figure)}</b>${cap}</div>${line}`;
+  },
+  /** A figure that leads a part of a section, 1.7rem, with its words on its baseline: "587 ended, last 7 days". */
+  focal: (figure, words) => `<div class="pd-sub"><b>${esc(figure)}</b>${esc(words)}</div>`,
+  /** A count in a kicker line, as a door to exactly those items: "9 in 24 hours ↗". */
+  countDoor: (count, words, href) => `<a class="pd-count" href="${href}"><b>${DRAW.n(count)}</b> ${esc(words)}${GO}</a>`,
+
+  // ---------- a share of a limit or of a whole ----------
+  /** THE METER (every window row on Accounts): 16.7 px tall at 3822, a sunk track with a rim, the fill in the provider's
+   *  colour with an ink right edge, and at 100% the whole bar in the limit red with no edge. The figure beside it says
+   *  "NN% used", so 6% never reads as 6% left. [cls]: "sub" a slice inside one, "full" at the limit, "stale" read
+   *  before its window moved, "gone" a window whose reset has passed, "reading" still being read.
+   *  Call DRAW.paint once after the markup lands to set the widths and grow them.
+   *  [used] null is a window splice has not read: the empty track, rimmed in a dashed line and holding nothing (a 0%
+   *  fill would read as nothing used), with DRAW.dash where its figure goes. */
+  meter: (used, cls = "") => (used == null ? `<div class="bar unread${cls ? ` ${cls}` : ""}"></div>`
+    : `<div class="bar ${cls}"><b data-v="${Math.max(0, Math.min(100, used))}"></b></div>`),
+  /** Every meter under [root] takes its width. [grow] is "all" or a Set of ids: those grow from nothing over 240 ms,
+   *  and the rest are simply drawn. [reading] stripes the tracks while splice is asking the provider again, so the
+   *  last figure stays on screen. A meter's id is the closest [data-a], [data-meter] or [data-grow]. */
+  paint(root, { grow = null, reading = false } = {}) {
+    const move = !window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+    for (const b of root.querySelectorAll(".bar > b[data-v]")) {
+      const host = b.closest("[data-a], [data-meter], [data-grow]");
+      const id = host && (host.dataset.a || host.dataset.meter || host.dataset.grow);
+      const growing = move && grow && id && (grow === "all" || (typeof grow.has === "function" && grow.has(id)));
+      b.style.width = `${b.dataset.v}%`;
+      if (reading) b.parentElement.classList.add("reading");
+      else if (growing) {
+        b.style.transform = "scaleX(0)";
+        b.parentElement.classList.add("grow");
+        requestAnimationFrame(() => requestAnimationFrame(() => (b.style.transform = "scaleX(1)")));
+      }
+    }
+  },
+  /** THE RING: a share drawn as an arc from 12 o'clock. "reset" is Accounts' 24.3 px ring beside a meter (how soon the
+   *  window refills, in the provider's colour); "focal" is the Usage drill-down's 50 px ring, the figure a section leads with. */
+  ring(frac, { size = "reset", label = null } = {}) {
+    const f = Math.max(0, Math.min(1, frac || 0));
+    if (size === "focal") {
+      return `<svg class="pd-ring" viewBox="0 0 44 44" ${label ? `role="img" aria-label="${esc(label)}"` : `aria-hidden="true"`}><circle class="rt" cx="22" cy="22" r="${RING_R}"/>`
+        + `<circle class="rv" cx="22" cy="22" r="${RING_R}" transform="rotate(-90 22 22)" stroke-dasharray="${(RING_C * f).toFixed(2)} ${RING_C.toFixed(2)}"/></svg>`;
+    }
+    return `<svg class="ring" viewBox="0 0 40 40" aria-hidden="true"><circle class="trk" cx="20" cy="20" r="15"/><circle class="arc" cx="20" cy="20" r="15" stroke-dasharray="${(RESET_C * f).toFixed(1)} ${RESET_C.toFixed(1)}"/></svg>`;
+  },
+
+  // ---------- one whole, split: the stacked bar ----------
+  /** THE STACKED BAR (the Usage drill-down's OUTCOMES): one proportional bar over [total] from [{n, word, cls, href}], in order. A
+   *  block is as wide as its count says (a tiny one keeps a hairline) and is a link when it has an href. A block wide
+   *  enough CARRIES ITS OWN WORD AND COUNT INSIDE IT, so there is no key to look up; the rest are named in one tidy
+   *  row under the bar, the largest first. Blocks marked "nt" (neither one outcome nor the other) always go to that
+   *  row; two or more of them are led by their own total, so the parts add up to the bar.
+   *  [cls] per segment: "ok" the clean part, "nt" the quiet part, f0/f1/f2 failure kinds in the limit red by rank,
+   *  "rest" the rest of a whole that is not an outcome (the servers not shared), quiet but named by its own word.
+   *
+   *  A WHOLE THAT IS NOT A SET OF OUTCOMES (Oct 26). Three pages carried a copy of this bar because the kit wrote
+   *  every count with DRAW.n, coloured only by outcome, and gathered every quiet part under one sentence:
+   *   - [text] per segment is the figure as the caller words it ("24.7 GB", "15"); without it, DRAW.n(s.n).
+   *   - [ink] per segment is the colour the caller already knows (a member's command, a store's hue), written as --c.
+   *   - ONE quiet block is a plain legend item with the neutral swatch ("Stopped 6") after the failure kinds, where
+   *     it read "Neither answered nor failed 6: Stopped 6" — the same count twice behind a sentence about a class.
+   *   - { restWord } is the caller's own word for the lead over two or more quiet blocks.
+   *  { small } draws the shorter 1.4rem bar, for a second whole under a hero bar. { grow } grows it in over 240 ms.
+   *  { label } reads the whole bar aloud; { tail } rides the end of the legend row.
+   *
+   *  WHICH LABELS FIT INSIDE IS MEASURED ON THE BAR AS DRAWN (Oct 27, fitStack below). The words and counts are first
+   *  placed by a guess from a bar { bw } rem wide (40 by default), and once the bar is laid out each part keeps its label
+   *  only where the label fits, and a part the guess left outside takes its label in where it fits. The guess assumed
+   *  a 606 px bar everywhere, so on a wider bar a 273 px part lost its label to the row below. */
+  stack(segs, total, { small = false, grow = false, restWord = "Neither answered nor failed", label = null, tail = "", bw = BW } = {}) {
+    const blocks = [], legend = [];
+    // every part that can carry its label is paired with its item in the row by its rank, largest first, which is the
+    // row's own order, so fitStack can move a label between the two and keep the row in order
+    const ranked = segs.filter((s) => s.n > 0 && total > 0 && s.cls !== "nt").sort((a, b) => b.n - a.n);
+    const pair = (s) => (ranked.includes(s) ? ` data-seg="${ranked.indexOf(s)}"` : "");
+    const figure = (s) => (s.text == null ? DRAW.n(s.n) : esc(s.text));
+    const classOf = (s) => `pd-seg${s.cls ? ` ${s.cls}` : ""}${s.ink ? " ink" : ""}`;
+    for (const s of segs) {
+      if (!(s.n > 0) || !(total > 0)) continue;
+      const w = (s.n / total) * 100, text = `${s.word} ${s.text == null ? DRAW.n(s.n) : s.text}`;
+      const quiet = s.cls === "nt";
+      const inside = !quiet && w >= (labelRem(text) / (0.9 * bw)) * 100;
+      const tag = s.href ? "a" : "span", href = s.href ? ` href="${s.href}"` : "";
+      const style = `${s.ink ? `--c:${s.ink};` : ""}width:max(${w.toFixed(3)}%, .16rem)`;
+      blocks.push(`<${tag} class="${classOf(s)}"${href}${pair(s)} style="${style}" title="${esc(text)}">`
+        + `${inside ? `<span>${esc(s.word)} <b>${figure(s)}</b></span>` : ""}</${tag}>`);
+      if (!inside) legend.push(s);
+    }
+    const item = (s, bare) => {
+      const sw = `<i class="pd-sw${s.cls ? ` ${s.cls}` : ""}${s.ink ? " ink" : ""}"${s.ink ? ` style="--c:${s.ink}"` : ""}></i>`;
+      const inner = `${bare ? "" : sw}${esc(s.word)} <b>${figure(s)}</b>`;
+      return s.href ? `<a class="pd-lb"${pair(s)} href="${s.href}">${inner}</a>` : `<span class="pd-lb"${pair(s)}>${inner}</span>`;
+    };
+    const quiet = legend.filter((s) => s.cls === "nt"), rest = legend.filter((s) => s.cls !== "nt").sort((a, b) => b.n - a.n);
+    // one quiet block says what it is, as every other item does; two or more are led by what they have in common
+    const neither = quiet.length === 1 ? item(quiet[0])
+      : quiet.length ? `<div class="pd-lgrp"><span class="pd-neither"><i class="pd-sw nt"></i>${esc(restWord)} <b>${DRAW.n(quiet.reduce((a, s) => a + s.n, 0))}</b>:</span> ${quiet.map((s) => item(s, true)).join(`<span class="pd-comma">, </span>`)}</div>` : "";
+    const bar = `<div class="pd-bar${grow ? " grow" : ""}"${label ? ` role="img" aria-label="${esc(label)}"` : ""}>${blocks.join("")}</div>`;
+    return `<div class="pd-pop${small ? " sm" : ""}">${bar}`
+      + `${legend.length || tail ? `<div class="pd-legend">${rest.map((s) => item(s)).join("")}${neither}${tail}</div>` : ""}</div>`;
+  },
+
+  // ---------- a magnitude in a table column ----------
+  /** A bar on its column's shared scale with its figure after it, so every row's figure ends on ONE right edge and the
+   *  biggest and the worst are found before a digit is read. [w] is this row's percent of the column's largest.
+   *  [label] is the column's own word, drawn only where the table is too narrow for its header. */
+  vbar: (w) => `<span class="vbar" aria-hidden="true"><b style="width:${Math.round(Math.max(0, Math.min(100, w)) * 10) / 10}%"></b></span>`,
+  /** [role] "cell" when the bar cell is a cell of a role="table" (the Usage Results rows). */
+  barCell: ({ w, text, label = "", cls = "", level = "", role = "" }) =>
+    `<span class="barcell${cls ? ` ${cls}` : ""}${level ? ` lv-${level}` : ""}"${role ? ` role="${role}"` : ""}>${label ? `<em>${esc(label)}</em>` : ""}${DRAW.vbar(w)}<b class="v">${text}</b></span>`,
+
+  // ---------- times: range bars on ONE log axis ----------
+  /** The axis every range bar on a page shares, from a round figure under the smallest typical to one over the largest
+   *  slowest 5%. Returns { lo, hi, ticks, at(ms) }. A log axis lets 272 ms and 75 s read as lengths on one line. */
+  axis(typicals, slowests) {
+    const low = Math.min(...typicals.map((x) => Math.max(1, x))), high = Math.max(...slowests);
+    const lo = [...NICE].reverse().find((v) => v <= low) ?? 1, hi = NICE.find((v) => v >= high) ?? high;
+    const span = Math.log(hi) - Math.log(lo) || 1;
+    const at = (x) => Math.max(0, Math.min(100, ((Math.log(Math.max(x, lo)) - Math.log(lo)) / span) * 100));
+    // no more than six labels along the axis, always the last one, and none within 7% of another, so no two touch
+    const all = NICE.filter((v) => v >= lo && v <= hi), step = Math.ceil(all.length / 6);
+    const picked = all.filter((v, i) => (all.length - 1 - i) % step === 0);
+    const wide = (v) => tickWord(v).length * 2.4, GAP = 7;
+    const kept = [];
+    picked.forEach((v, i) => {
+      const first = i === 0, last = i === picked.length - 1 && picked.length > 1;
+      if (first) { kept.push({ v, l: 0, r: wide(v) }); return; }
+      if (last) { const l = 100 - wide(v); while (kept.length > 1 && l - kept.at(-1).r < GAP) kept.pop(); kept.push({ v, l, r: 100 }); return; }
+      const l = at(v) - wide(v) / 2, r = at(v) + wide(v) / 2;
+      if (l - kept.at(-1).r >= GAP) kept.push({ v, l, r });
+    });
+    return { lo, hi, ticks: kept.map((k) => k.v), at };
+  },
+  /** One range on the shared axis: a solid band to the typical time, a thin line on to the slowest 5%, ending in a tick. */
+  range: (ax, typical, slowest) => `<span class="pd-trk"><i class="hi" style="width:${ax.at(slowest).toFixed(2)}%"></i><i class="mid" style="width:${ax.at(typical).toFixed(2)}%"></i></span>`,
+  /** The two marks named once, on the section's kicker line, so no row repeats them. */
+  rangeLegend: `<span class="pd-leg"><i class="pd-lt"></i>Typical<i class="pd-ls"></i>Slowest 5%</span>`,
+  /** The axis's own line, its ticks and what it measures, said once under the rows. */
+  axisRow: (ax, word = "Time, log scale", tail = "") =>
+    `<div class="pd-axis pd-grid"><span class="pd-sl"><small>${esc(word)}</small></span><span class="pd-ax">`
+    + `${ax.ticks.map((v, i) => `<span class="pd-tk${i === 0 ? " pd-t-first" : i === ax.ticks.length - 1 ? " pd-t-last" : ""}" style="left:${ax.at(v).toFixed(2)}%">${tickWord(v)}</span>`).join("")}`
+    + `</span>${tail}</div>`,
+  tickWord,
+
+  // ---------- stat and glyph tiles: ONLY above zero ----------
+  /** One tile: a ring or a glyph, its figure and its name on one baseline. A tile is drawn only when its count is above
+   *  zero — a strip of tiles lists what happened, never a row of noughts. */
+  statTile: (icon, number, label, { title = null, focal = false } = {}) =>
+    `<span class="pd-stat${focal ? " focal" : ""}"${title ? ` title="${esc(title)}"` : ""}>${icon}<span><b>${number}</b><small>${esc(label)}</small></span></span>`,
+  /** The strip: [{icon, n, label, title, focal}], the ones above zero, in the order the section reads them. */
+  tiles(items) {
+    // a string is a tile its caller has already judged; an object with a numeric count is drawn only above zero
+    const drawn = items.filter((t) => t && (typeof t === "string" || typeof t.n !== "number" || t.n > 0));
+    return drawn.length ? `<div class="pd-stats">${drawn.map((t) => (typeof t === "string" ? t : DRAW.statTile(t.icon, t.n, t.label, t))).join("")}</div>` : "";
+  },
+  glyph: GLYPH,
+
+  // ---------- small multiples: one card per thing, every card on the same scales ----------
+  /** A card that holds one thing's figures on the scales its siblings use, so the cards compare by eye. Only the worst
+   *  is loud, and only when it is worth a look: one inset ring in the limit red and its rate at 1.7rem. */
+  multiCard: ({ name, level = "ok", loud = false, body }) =>
+    `<div class="pd-card lv-${level}${loud ? " loud" : ""}"><span class="pd-cn">${esc(name)}</span>${body}</div>`,
+  /** A labelled figure with its own mini bar inside a small-multiple card. [mark] is a percent: the line the bar is
+   *  read against (a warn line), as DRAW.meter carries a limit. [cls] "row" lays the three out as a row for a narrow
+   *  card (console.css .pd-q.row); a "bad" level reddens the fill as well as the figure. */
+  miniPair: ({ label, figure, w, cls = "", level = "", mark = null, markTitle = "" }) => {
+    const parts = String(cls).split(" ").filter(Boolean);
+    const row = parts.includes("row") ? " row" : "", mini = parts.filter((c) => c !== "row").join(" ");
+    const pin = mark == null ? "" : `<i class="pd-mk" style="left:${Math.max(0, Math.min(100, mark)).toFixed(2)}%"></i>`;
+    return `<div class="pd-q${row}"><span class="k">${esc(label)}</span><b${level ? ` class="lv-${level}"` : ""}>${figure}</b>`
+      + `<span class="pd-mini${mini ? ` ${mini}` : ""}${level ? ` lv-${level}` : ""}"${markTitle ? ` title="${esc(markTitle)}"` : ""}>`
+      + `<i style="width:${Math.max(0, Math.min(100, w)).toFixed(2)}%"></i>${pin}</span></div>`;
+  },
+
+  // ---------- the objects ----------
+  /** A command as an object: the mono face says "a command", the edge colour says which provider, and the 10.6 px dot
+   *  says it is live now. Three facts, no words. Set --c on the chip or on a parent. */
+  chip: ({ text, live = false, href = null, cls = "", title = null, data = "" }) => {
+    const inner = `${live ? `<i aria-hidden="true"></i>` : ""}${esc(text)}`;
+    const attrs = `class="chip${cls ? ` ${cls}` : ""}"${title ? ` title="${esc(title)}"` : ""}${data}`;
+    return href ? `<a ${attrs} href="${href}">${inner}</a>` : `<span ${attrs}>${inner}</span>`;
+  },
+  /** A segmented switch: every view visible as one set with ONE lit, in neutral ink (the selected look, console.css
+   *  :root --sel-*). Never the key light. [items] is [[value, word]]; { data } rides every button (Accounts writes the
+   *  provider and command the switch orders), and { disabled } holds the whole switch while what it sets is saved. */
+  switcher: (items, now, act, label, { data = "", disabled = false } = {}) =>
+    `<div class="switch" role="group" aria-label="${esc(label)}">`
+    + items.map(([v, word]) => `<button type="button" data-act="${esc(act)}"${data} data-v="${esc(v)}" aria-pressed="${now === v}"${disabled ? " disabled" : ""}>${esc(word)}</button>`).join("")
+    + `</div>`,
+  /** The dashed tile where the new item will land, so the act explains itself with no "Click to add" sentence. On a
+   *  rail it carries the empty socket, so it stands in the order as the next number. While it works it turns solid and
+   *  holds its own form; a refused add shakes once. */
+  addTile: ({ word, act, data = "", socket = false, cls = "", pressed = null, body = null }) =>
+    `<button class="add${cls ? ` ${cls}` : ""}" type="button" data-act="${esc(act)}"${data}${pressed == null ? "" : ` aria-pressed="${pressed}"`}>`
+    + `${socket ? `<span class="socket" aria-hidden="true"></span>` : ""}<span class="plus" aria-hidden="true">+</span>${body ?? `<span>${esc(word)}</span>`}</button>`,
+  /** The add tile turned into its form, in the same place and at the same size: the rim goes solid in the group's
+   *  colour and [body], the fields and the acts, stands where the word was. { failed } rims it in the limit red and
+   *  shakes it once. A page adds "enter" to { cls } on the draw that opened it, so it rises in once (Accounts' signing
+   *  and naming tiles). */
+  addForm: ({ body, data = "", socket = false, failed = false, cls = "" }) =>
+    `<div class="add signing${cls ? ` ${cls}` : ""}${failed ? " failed" : ""}"${data}>${socket ? `<span class="socket" aria-hidden="true"></span>` : ""}${body}</div>`,
+
+  // ---------- the wall: titled groups, packed into columns ----------
+  /** A TITLED GROUP (Accounts' provider, for every page's board of groups): its dot in [c], its name in the serif at
+   *  1.4rem, [end] at the header's end (the first thing after the name takes the end and the rest follow it: a switch,
+   *  a count, an act on the whole group), and [body], its objects, 1.1rem under the header. { cls } "provider" is
+   *  Accounts' own; every other page keeps "titled". { key } is the data-key a page keeps focus and motion by. */
+  group: ({ name, body, c = null, end = "", key = "", cls = "titled", style = "" }) => {
+    const st = [c ? `--c:${c}` : "", style].filter(Boolean).join(";");
+    return `<section class="${cls}"${st ? ` style="${st}"` : ""}${key ? ` data-key="${esc(key)}"` : ""}><header><h2><span class="blot"></span>${esc(name)}</h2>${end}</header>${body}</section>`;
+  },
+  /** Objects down one column, 15 px apart (.stack-cards), and titled groups down one column, 36 px apart (.groups). */
+  cards: (items) => `<div class="stack-cards">${items.join("")}</div>`,
+  groups: (items) => `<div class="groups">${items.join("")}</div>`,
+  /** THE COLUMN SYSTEM: [items] in as many equal columns as the width holds, each at least [min] rem, so the row is
+   *  always full (.cols); an item with the class "wide2", "wide3" or "full" takes more of the row. */
+  cols: (items, min = 26, cls = "") => `<div class="cols${cls ? ` ${cls}` : ""}" style="--col-min:${min}rem">${items.join("")}</div>`,
+  /** Groups of different heights flowed down columns at least [min] rem wide, the order running down each (.flow-cols). */
+  flow: (items, min = 26) => `<div class="flow-cols" style="--col-min:${min}rem">${items.join("")}</div>`,
+  /** How many columns [rem] wide [el]'s width holds, with its own column gap between them: a board's rule at every
+   *  width (Accounts: 40rem a column, five at 3822 and two at 1440). */
+  colsFit(el, rem) {
+    const gap = parseFloat(getComputedStyle(el).columnGap) || 0, px = parseFloat(getComputedStyle(document.documentElement).fontSize);
+    return Math.max(1, Math.floor((el.clientWidth + gap) / (rem * px + gap)));
+  },
+  /** [items] packed down [n] columns, each into the shortest column so far by [weight], so no column stands as a tall
+   *  wall beside empty ones. Returns [{ w, items }] in column order (Accounts' providers). */
+  packCols(items, n, weight) {
+    const cols = Array.from({ length: n }, () => ({ w: 0, items: [] }));
+    for (const it of items) { const c = cols.reduce((m, x) => (x.w < m.w ? x : m)); c.items.push(it); c.w += weight(it); }
+    return cols;
+  },
+  /** A board's columns as drawn (console.css .board): [{ body, span }] in order; a column of span k is as wide as k
+   *  columns and the k - 1 gaps between them, so its own columns line up with the board's. */
+  boardCols: (cols) => cols.map(({ body, span = 1 }) => `<div class="col${span > 1 ? " wide" : ""}"${span > 1 ? ` style="--span:${span}"` : ""}>${body}</div>`).join(""),
+  /** A list's tail: the top few at full size, the rest behind one pill. Never a column that runs past the fold. */
+  more: (n, { word = "more", act = "", data = "", pill = false, open = false, less = "Fewer" } = {}) =>
+    `<button class="${pill ? "morepill pill" : "morepill"}" type="button" data-act="${esc(act)}"${data}>${open ? esc(less) : `${pill ? `<b>+${DRAW.n(n)}</b>` : `<b>${DRAW.n(n)}</b> ${esc(word)}`}`}</button>`,
+  /** A row that opens its own detail under itself: the chevron turns over 240 ms and the detail lands in place, so the
+   *  row keeps its context and the panel needs no title. */
+  disc: ({ open, controls, inner, cls = "", act = "", data = "" }) =>
+    `<button class="disc${cls ? ` ${cls}` : ""}" type="button" aria-expanded="${Boolean(open)}"${controls ? ` aria-controls="${esc(controls)}"` : ""}${act ? ` data-act="${esc(act)}"` : ""}${data}>${CHEV}${inner}</button>`,
+  chev: CHEV,
+  /** The lock that takes the place of the act that no longer works, and pops in over 260 ms when it arrives. */
+  lock: (word = "Limit reached", { pop = false } = {}) =>
+    `<span class="state limit"><span class="lockico${pop ? " lock-pop" : ""}" aria-hidden="true">${ICON.lock}</span>${esc(word)}</span>`,
+  /** An act, on the object it changes. While it works it spins where it stands; its result lands beside it in plain
+   *  words, and a refusal shakes it once (add .shook for one turn). */
+  act: ({ word, act, cls = "", busy = false, data = "", disabled = false }) =>
+    `<button class="act${cls ? ` ${cls}` : ""}" type="button" data-act="${esc(act)}"${data}${busy ? ` aria-busy="true"` : ""}${disabled ? " disabled" : ""}>${esc(word)}</button>`,
+  /** What an act did, in place and in plain words: nothing to hunt for in a console or a banner. */
+  result: (word, tone = "") => `<span class="result${tone ? ` ${tone}` : ""}" role="status">${esc(word)}</span>`,
+  /** A lamp: a dark socket with an ink ring, lit in the state's own colour. "working" draws the live trace, "needs"
+   *  the Needs-you ring, "stalled" the flat line in the limit red, and anything else an unlit dot. */
+  lamp: (kind) => `<span class="tlamp${kind ? ` ${kind}` : ""}" aria-hidden="true">${TLAMP[kind] ?? "<i></i>"}</span>`,
+  /** A press that cuts or moves someone asks ONCE, in place: what it does to them, each one a chip that opens its
+   *  session, then the act and the way out. The second press acts. (kit armedAsk) */
+  armed: (said, cut, act, keep, tail = "") => armedAsk(said, cut, act, keep, tail),
+  go: GO,
+};
+
+// ---------- the stacked bar's labels, fitted to the bar as it is drawn (Oct 27) ----------
+// DRAW.stack places each part's word and count from a guess at the bar's width. Once the bar is laid out, a part keeps
+// its label inside only where the label fits, a part named in the row under the bar takes its label in where it fits,
+// and the row keeps its order, largest first, ahead of the quiet parts and the caller's tail. Fitted when a bar lands,
+// again when the window's width changes, and once more when the fonts arrive, since a label's width is its font's.
+const FITTED = new WeakMap();
+let fitRound = 0;
+function fitStack(pop) {
+  const bar = pop.querySelector(":scope > .pd-bar"), width = bar?.clientWidth;
+  if (!width || FITTED.get(bar) === `${fitRound}:${width}`) return;
+  FITTED.set(bar, `${fitRound}:${width}`);
+  let legend = pop.querySelector(":scope > .pd-legend");
+  const itemOf = (seg) => legend?.querySelector(`:scope > .pd-lb[data-seg="${seg.dataset.seg}"]`) ?? null;
+  const parts = [...bar.querySelectorAll(":scope > .pd-seg[data-seg]")], tried = new Set();
+  for (const seg of parts) { // a part named in the row tries its label inside
+    const it = seg.firstElementChild ? null : itemOf(seg);
+    if (!it) continue;
+    const span = document.createElement("span");
+    span.append(...[...it.childNodes].filter((n) => !n.classList?.contains("pd-sw")).map((n) => n.cloneNode(true)));
+    seg.append(span);
+    tried.add(seg);
+  }
+  const over = new Set(parts.filter((seg) => seg.firstElementChild && seg.firstElementChild.offsetWidth > seg.clientWidth));
+  for (const seg of parts) {
+    const span = seg.firstElementChild;
+    if (!span) continue;
+    if (!over.has(seg)) { if (tried.has(seg)) itemOf(seg)?.remove(); continue; }
+    if (!tried.has(seg)) { // a label that does not fit goes to the row, behind its part's swatch
+      const it = document.createElement(seg.tagName === "A" ? "a" : "span");
+      it.className = "pd-lb";
+      it.dataset.seg = seg.dataset.seg;
+      if (seg.tagName === "A") it.setAttribute("href", seg.getAttribute("href"));
+      const sw = document.createElement("i");
+      sw.className = [...seg.classList].map((c) => (c === "pd-seg" ? "pd-sw" : c)).join(" ");
+      if (seg.style.getPropertyValue("--c")) sw.style.setProperty("--c", seg.style.getPropertyValue("--c"));
+      it.append(sw, ...span.childNodes);
+      if (!legend) { legend = document.createElement("div"); legend.className = "pd-legend"; pop.append(legend); }
+      legend.append(it);
+    }
+    span.remove();
+  }
+  if (!legend) return;
+  const named = [...legend.querySelectorAll(":scope > .pd-lb[data-seg]")].sort((a, b) => a.dataset.seg - b.dataset.seg);
+  const after = [...legend.childNodes].find((n) => !named.includes(n)) ?? null;
+  for (const it of named) legend.insertBefore(it, after);
+  if (!legend.childNodes.length) legend.remove();
+}
+const fitStacks = (root = document) => { for (const pop of root.querySelectorAll(".pd-pop")) fitStack(pop); };
+new MutationObserver((records) => {
+  for (const r of records) for (const n of r.addedNodes) {
+    if (n.nodeType !== 1) continue;
+    if (n.matches(".pd-pop")) fitStack(n); else if (n.firstElementChild) fitStacks(n);
+  }
+}).observe(document.documentElement, { childList: true, subtree: true });
+addEventListener("resize", () => fitStacks());
+document.fonts?.ready.then(() => { fitRound++; fitStacks(); });
 
 // ---------- what a page says about a session: fin's states, element first and the word small ----------
 //
@@ -373,7 +859,10 @@ function workingLook(s) {
   }
   if (t?.phase == null) return { cls: "working", lamp: ICON.trace, word: "Working" };
   const word = `${t.compact ? "Compacting" : "Working"} · <span data-held="${esc(s.id)}">${heldFor(t)}</span>`;
-  return { cls: "working", lamp: ICON.trace, word, detail: t.phase === "connect" ? `<span class="detail">No output yet</span>` : "" };
+  // THE CONNECT PHASE IS HEALTHY, SO IT IS NOT RED (the colour pass, Oct 26). "No output yet" is the ordinary moment
+  // between a request going out and the first byte coming back; drawn in the limit red it read as a failure on 3 of 15
+  // working sessions. The limit red marks a limit or a failure and nothing else, so this line is muted ink (.soft).
+  return { cls: "working", lamp: ICON.trace, word, detail: t.phase === "connect" ? `<span class="detail soft">No output yet</span>` : "" };
 }
 function look(s) {
   if (s.state === "needs") return { cls: "needs", lamp: ICON[s.ask.kind], word: "Needs you" };
@@ -469,11 +958,25 @@ async function midRequest(heads = null) {
 const armedAsk = (said, cut, act, keep, tail = "") => `<span class="armed cutask"><span class="said">${esc(said)}</span>`
   + cut.map((x) => `<a class="chip" href="sessions.html#${encodeURIComponent(x.id)}"><i aria-hidden="true"></i>${esc(x.name || x.id.slice(0, 8))}</a>`).join("")
   + `${tail}${act}${keep}</span>`;
+/** THE TOGGLE SHOWS BOTH THEMES WITH THE ONE IN USE LIT (Oct 26), as every other two-state control on the console does:
+ *  the sun and the moon side by side, the current one in full ink and the other muted, and the label says what the
+ *  press gives ("Switch to day"). It drew one moon in both themes with the label "Day or night", so it said neither
+ *  which theme was on nor what a press would do. The page's own markup holds the button; the kit draws what is in it,
+ *  so every page's toggle reads the same and the press keeps its one binding. */
+function drawTheme() {
+  const button = document.querySelector('.side [data-act="theme"]');
+  if (!button) return;
+  const day = document.documentElement.dataset.theme === "day";
+  button.classList.add("thm");
+  button.setAttribute("aria-label", day ? "Switch to night" : "Switch to day");
+  button.innerHTML = `${ICON.sun}${ICON.moon}`;
+}
 function toggleTheme() {
   const h = document.documentElement;
   h.dataset.theme = h.dataset.theme === "day" ? "night" : "day";
   try { localStorage.setItem(THEME_KEY, h.dataset.theme); } catch { /* storage off: this page still switches */ }
   setFavicon();
+  drawTheme();
 }
 // WITH ONE PAGE THE NAV DRAWS NOTHING (hitstop, Oct 10): a lone link repeats the page's own title, and a single
 // selected box reads as a strip with its other tabs torn off. The top bar keeps its height, its wordmark and its
@@ -486,32 +989,209 @@ function drawNav() {
   const own = document.title.split(" · ")[0], file = location.pathname.split("/").pop();
   const here = PAGES.find(([f, name]) => name === own || f === file)?.[0];
   const links = PAGES.map(([file, name]) =>
-    `<a href="${file}"${file === here ? ' aria-current="page"' : ""}>${esc(name)}</a>`).join("");
+    `<a href="${file}"${file === here ? ' aria-current="page"' : ""}><span class="nname">${esc(name)}</span></a>`).join("");
   const nav = document.createElement("nav");
   nav.className = "nav";
   nav.setAttribute("aria-label", "Pages");
-  nav.innerHTML = links;
+  // ONE LINE UNDER THE PAGE HE IS ON, AND IT TRAVELS (Oct 27): each link drew its own line and faded it in place, so a
+  // page change blinked one line out and another in. The line is one object now, moved to the new link's place.
+  nav.innerHTML = `${links}<span class="nav-line" aria-hidden="true"></span>`;
   side.insertBefore(nav, side.querySelector(".foot"));
+  navLine(false);
+  new ResizeObserver(() => navLine(false)).observe(nav);
+}
+/** The current-page line under the link marked current: moved there over --t-move, or put there at once. */
+function navLine(travel = true) {
+  const nav = document.querySelector(".side .nav"), line = nav?.querySelector(".nav-line");
+  if (!line) return;
+  const on = nav.querySelector('a[aria-current="page"]');
+  line.classList.toggle("off", !on);
+  if (!on) return;
+  line.classList.toggle("still", !travel);
+  line.style.width = `${on.offsetWidth}px`;
+  line.style.transform = `translateX(${on.offsetLeft}px)`;
+  if (!travel) requestAnimationFrame(() => line.classList.remove("still"));
+}
+/** Marks [file]'s link as the page he is on, and moves the line to it (the router, console.js select). */
+function navCurrent(file) {
+  for (const link of document.querySelectorAll(".side .nav a")) {
+    if (link.getAttribute("href") === file) link.setAttribute("aria-current", "page");
+    else link.removeAttribute("aria-current");
+  }
+  navLine(true);
 }
 drawNav();
+
+// ---------- what waits behind a link ----------
+// THE LINKS ARE THE MAP, SO A LINK CARRIES WHAT WAITS BEHIND IT (Oct 27). The bar named eight pages and nothing on
+// them, so a session waiting on him was one page away and invisible from the other seven. Sessions carries the
+// project tiles' own lamps with their counts: who needs him, and what stalled. It is the same reading every page's
+// tiles take (projectGroups over the sessions and the commands' live turns), so the bar and the tiles never disagree.
+// Nothing waiting draws nothing, since a bare link is the steady state; a read that fails leaves the last marks.
+// The read is the page's own when it just made one (API.recent, splice:heard), else the bar's, once a minute while the
+// tab is in view. Working sessions are not marked: working is the normal state, not something waiting.
+const NAV_READ_MS = 60_000;
+const NAV_MARKS = ["needs", "stalled"];
+let navReading = false, navAgain = false;
+async function markNav() {
+  if (navReading) { navAgain = true; return; }
+  if (document.hidden || document.body.classList.contains("locked") || !document.querySelector(".side .nav")) return;
+  navReading = true;
+  try {
+    const [sessions, list] = await Promise.all([API.recent("/api/sessions", NAV_READ_MS / 2), API.recent("/api/heads", NAV_READ_MS / 2)]);
+    if (!sessions.ok || !list.ok) return;
+    const heads = (list.body?.heads || []).filter((h) => h.key).map((h) => ({ key: h.key, reanchorMs: h.gate?.stall_reanchor_ms ?? null,
+      idleMs: h.gate?.stream_idle_ms ?? null, firstByteMs: h.gate?.first_byte_timeout_ms ?? null, retired: h.retired }));
+    const running = heads.filter((h) => !h.retired);
+    const lives = await Promise.all(running.map((h) => API.recent(`/api/heads/${encodeURIComponent(h.key)}/turns/live`, NAV_READ_MS / 2)));
+    const turns = {};
+    running.forEach((h, i) => { for (const t of lives[i].body?.turns || []) if (t.session && !t.stopped) turns[t.session] = { head: h.key, ...t }; });
+    const every = sumCounts(projectGroups(sessions.body?.sessions || [], turns, heads).map((g) => g.counts));
+    drawNavMarks("sessions.html", "Sessions", every.filter(([k, n]) => NAV_MARKS.includes(k) && n > 0));
+  } finally {
+    navReading = false;
+    if (navAgain) { navAgain = false; markNav(); }
+  }
+}
+function drawNavMarks(file, name, counts) {
+  const link = document.querySelector(`.side .nav a[href="${file}"]`);
+  if (!link) return;
+  let marks = link.querySelector(".nmarks");
+  const html = counts.map((c) => tlampHtml(c)).join("");
+  if ((marks?.innerHTML ?? "") === html) return;
+  if (!html) { marks?.remove(); link.removeAttribute("aria-label"); navLine(false); return; }
+  const fresh = !marks;
+  if (!marks) { marks = document.createElement("span"); marks.className = "nmarks"; link.append(marks); }
+  marks.innerHTML = html;
+  if (fresh) marks.classList.add("pop");
+  // read aloud as the tiles are: "Sessions, 2 needs you, 1 stalled"
+  link.setAttribute("aria-label", [name, ...counts.map(([k, n]) => `${n} ${STATE_WORDS[k]}`)].join(", "));
+  navLine(false);
+}
+let navTimer = 0;
+// a page's own read of the sessions landing redraws the marks off it, a moment after, once the live turns are in too
+addEventListener("splice:heard", (e) => {
+  if (e.detail !== "/api/sessions") return;
+  clearTimeout(navTimer);
+  navTimer = setTimeout(markNav, 400);
+});
+addEventListener("DOMContentLoaded", () => {
+  markNav();
+  setInterval(markNav, NAV_READ_MS);
+  document.addEventListener("visibilitychange", () => { if (!document.hidden) markNav(); });
+});
+drawTheme();
 document.querySelector('.side [data-act="theme"]')?.addEventListener("click", toggleTheme);
 
 // THE STALE MARK (web-console.md:385, :397; gap 460): splice.toml on disk no longer matches what the daemon booted with,
 // so a change written there, by this console or by hand, waits on a restart. /health says so as topologyStale; the
 // mark sits at the top bar's right end, beside the theme toggle, on every page and is absent while the two match. Read once the page's scripts have
 // loaded (API comes after this file), then every 15 s; an unanswered read leaves the mark as it was.
-const STALE_READ_MS = 15_000;
+//
+// AND THE ACT IS ON THE MARK (Oct 26). The words were the user's already, but the only way to act on them was to go to
+// Settings and find Restart splice, so the mark told him to do something and offered nothing. The restart lives here
+// now, as an act on the thing it changes: it arms once with the sessions it would cut (midRequest, as Settings and
+// Models arm theirs), spins where it stands, and says in place what happened. The daemon's side is unchanged:
+// POST /api/daemon/restart, then GET /api/daemon/restart answers again once the successor is up.
+const STALE_READ_MS = 15_000, RESTART_POLL_MS = 2_000, RESTART_TRIES = 60, SAID_MS = 4_000;
+// what the restart press is doing right now: armed with the sessions it would cut, out, or done with a word to say
+let restarting = null;
 async function markStale() {
   const foot = document.querySelector(".side .foot");
   const res = foot ? await API.get("/health") : null;
   if (!res?.ok) return;
-  const mark = foot.querySelector(".stale");
-  if (res.body?.topologyStale !== true) { mark?.remove(); return; }
-  if (mark) return;
-  const add = document.createElement("span");
-  add.className = "stale";
-  add.textContent = "splice.toml changed · restart to apply";
-  foot.prepend(add);
+  // the mark stays while a restart of its own is in flight or has a word to say, so the act never vanishes mid-press;
+  // a way out he was handed (the command) has done its work once splice runs the saved settings
+  if (res.body?.topologyStale !== true && restarting?.manual) restarting = null;
+  if (res.body?.topologyStale !== true && !restarting) { foot.querySelector(".stale")?.remove(); return; }
+  drawStale();
+}
+function drawStale() {
+  const foot = document.querySelector(".side .foot");
+  if (!foot) return;
+  let mark = foot.querySelector(".stale");
+  if (!mark) {
+    mark = document.createElement("span");
+    mark.className = "stale";
+    foot.prepend(mark);
+    mark.addEventListener("click", async (e) => {
+      const act = e.target.closest("[data-act]")?.dataset.act;
+      if (act === "restart") pressRestart();
+      if (act === "restart-now") restartSplice();
+      if (act === "keep") { restarting = null; drawStale(); }
+      if (act === "copy-restart") {
+        let ok = true;
+        try { await navigator.clipboard.writeText(RESTART_LINE); } catch { ok = false; }
+        restarting = { ...restarting, copied: ok ? "Copied" : "Could not copy" };
+        drawStale();
+        setTimeout(() => { if (restarting?.copied) { restarting = { ...restarting, copied: null }; drawStale(); } }, SAID_MS);
+      }
+    });
+  }
+  // THE USER'S WORDS, NOT THE FILE'S (Oct 26), AND THE DOOR TO THEM (Oct 27). It read "splice.toml changed · restart to
+  // apply", then "Settings changed since splice started" at 12.9 px beside a 26 px act. The fact is two words in the
+  // links' own type, and a door to the page that holds those settings; the act that applies them stands beside it.
+  const words = `<a class="stale-door" href="settings.html">${ICON.retries}<span>Settings changed</span></a>`;
+  const act = restarting?.manual
+    // SPLICE CANNOT BRING ITSELF BACK HERE, SO THE WAY OUT IS THE COMMAND THAT CAN (Oct 27): a refusal that said
+    // "Nothing is set to start it again" left nothing to press. `splice restart` stops it and starts it from a terminal.
+    ? `<span class="stale-way"><span class="said">${esc(restarting.manual)}</span><code>${RESTART_LINE}</code>`
+      + (restarting.copied ? DRAW.result(restarting.copied, restarting.copied === "Copied" ? "good" : "bad")
+        : `<button class="act quiet small" type="button" data-act="copy-restart">Copy</button>`) + `</span>`
+    : restarting?.said
+      ? DRAW.result(restarting.said, restarting.tone)
+      : restarting?.armed
+        ? armedAsk("Mid-request", restarting.armed, `<button class="act danger small" type="button" data-act="restart-now">Restart splice</button>`,
+          `<button class="act quiet small" type="button" data-act="keep">Keep running</button>`)
+        : DRAW.act({ word: restarting?.out ? "Restarting" : "Restart splice", act: "restart", cls: "quiet small",
+          busy: Boolean(restarting?.out || restarting?.reading) });
+  mark.innerHTML = words + act;
+  // a refusal shakes what the press was on; the press is gone by then (its word stands in its place), so the mark shakes
+  if (restarting?.shook) { (mark.querySelector(".act") || mark).classList.add("shook"); restarting.shook = false; }
+}
+const RESTART_LINE = "splice restart";
+/** The first press reads which sessions have a request in flight; none, and it restarts at once. */
+async function pressRestart() {
+  if (restarting?.out || restarting?.reading) return;
+  restarting = { reading: true };
+  drawStale();
+  const cut = await midRequest();
+  if (!cut.length) { restartSplice(); return; }
+  restarting = { armed: cut };
+  drawStale();
+}
+async function restartSplice() {
+  restarting = { out: true };
+  drawStale();
+  const res = await API.post("/api/daemon/restart", {});
+  if (res.body?.error) console.warn(`restart: ${res.body.error}`);
+  // one already under way is the same wait as his own: it says Restarted when splice is back
+  if (res.status === 409) { pollRestart(0); return; }
+  if (!res.ok) {
+    // 503 is the daemon saying nothing would bring it back, unwired or unsupervised: both mean the same to him here,
+    // and the way out is the command; any other refusal leaves the act to press again
+    restarting = res.status === 503 ? { manual: "Can't restart itself", shook: true } : { said: "Not restarted", tone: "bad", shook: true };
+    drawStale();
+    if (restarting.said) setTimeout(() => { if (restarting?.said) { restarting = null; markStale(); } }, SAID_MS);
+    return;
+  }
+  pollRestart(0);
+}
+/** Until the daemon answers again. Every call while it is down fails, which is the wait, not an error. Past two
+ *  minutes the wait is said, with the command that brings it back, and the reading goes on at the mark's own pace. */
+function pollRestart(tries) {
+  setTimeout(async () => {
+    const res = await API.get("/api/daemon/restart");
+    if (res.ok && res.body?.status === "idle") {
+      restarting = { said: "Restarted", tone: "good" };
+      drawStale();
+      setTimeout(() => { restarting = null; markStale(); }, SAID_MS);
+      return;
+    }
+    if (tries === RESTART_TRIES) { restarting = { manual: "Not back yet", shook: true }; drawStale(); }
+    if (tries >= RESTART_TRIES) { setTimeout(() => pollRestart(tries + 1), STALE_READ_MS - RESTART_POLL_MS); return; }
+    pollRestart(tries + 1);
+  }, RESTART_POLL_MS);
 }
 addEventListener("DOMContentLoaded", () => { markStale(); setInterval(markStale, STALE_READ_MS); });
 
@@ -571,32 +1251,51 @@ function tilesWide() {
   return (p.clientWidth - parseFloat(cs.paddingLeft) - parseFloat(cs.paddingRight)) / rem >= TILES_AT_REM;
 }
 const TLAMP = { needs: ICON.input, stalled: ICON.flat, working: ICON.trace };
-const tlampHtml = ([k, n]) => `<span class="pc big ${k}"><span class="tlamp ${k}" aria-hidden="true">${TLAMP[k]}</span><b>${n}</b></span>`;
+// a lamp and its count; on a tile, with the words the lamp stands for beside the count ("1 needs you", "3 working")
+const tlampHtml = ([k, n], said = false) => `<span class="pc big ${k}"><span class="tlamp ${k}" aria-hidden="true">${TLAMP[k]}</span><b>${n}</b>${said ? `<span class="pw">${STATE_WORDS[k]}</span>` : ""}</span>`;
 // the brief's own words for a header read aloud: "temple, 1 needs you, 3 working, 7 sessions" (Marlin)
 const STATE_WORDS = { needs: "needs you", stalled: "stalled", working: "working" };
 /** "1 needs you, 3 working, 7 sessions": what a tile says to a screen reader, in the lamps' order. */
 const countWords = (counts, total, unit, show = showCount) => [...counts.filter(([, n]) => n).map(([k, n]) => `${n} ${STATE_WORDS[k]}`),
-  `${show(total)}${total === 1 ? unit : `${unit}s`}`].join(", ");
+  `${show(total)} ${total === 1 ? unit : `${unit}s`}`].join(", ");
 const sumCounts = (lists) => ["needs", "stalled", "working"].map((k) => [k, lists.flat().filter(([x]) => x === k).reduce((a, [, n]) => a + n, 0)]);
 /** [items] is [[key, label, counts, total, words]] with Every project's key "". Each tile's preferred width is its name
  *  in its own font plus the total, so the row's room goes where the names are, and in a crowded row a long name
  *  truncates before its total does (the total sits beside the name, never at the lamps' end, where "4" and "1,300"
- *  would read as one number). */
-function tilesHtml(items, pick, show = showCount) {
-  return `<nav class="ptiles" aria-label="Projects">${items.map(([k, label, counts, total, words]) => {
-    const on = (pick ?? "") === k, figure = total == null ? "" : show(total);
-    // each tile is its own content's width, its whole name included (console.css .ptile)
-    return `<button class="ptile${on ? " on" : ""}" data-act="pickproj" data-p="${esc(k)}" aria-pressed="${on}" aria-label="${esc(`${label}, ${words}`)}">`
-      + `<span class="ptop"><span class="tname">${esc(label)}</span><span class="ptotal">${figure}</span></span>`
-      + `<span class="plamps">${counts.filter(([, n]) => n).map(tlampHtml).join("")}</span></button>`;
-  }).join("")}</nav>`;
+ *  would read as one number).
+ *
+ *  EACH TILE SAYS WHAT IT COUNTS AND DRAWS ITS SHARE (Oct 27). The figure carries its unit on its own baseline,
+ *  "2,127 requests", once per tile: a bare "2,127" changed meaning with the page, and the unit said once over the row
+ *  read as the page's title again ("TEAMS" under "Teams"). Every tile but Every project, which is the whole, draws its
+ *  total on one track as a share of Every project's, and the tiles stand in equal columns (console.css .ptiles), so
+ *  the shares compare by eye. A project with nothing in the window keeps its tile, since the tile is how it is
+ *  picked, drawn quiet: a dashed rim, its 0 muted and an empty track. */
+function tilesHtml(items, pick, show = showCount, unit = "") {
+  const all = items.find(([k]) => k === "")?.[3];
+  const tiles = items.map(([k, label, counts, total, words]) => {
+    const on = (pick ?? "") === k, every = k === "", zero = total === 0 && !every;
+    // A TILE BEING READ IS THE SIZE IT WILL BE (Oct 26): the names are known before the figures, so a tile whose
+    // total has not landed draws the figure and the share as the shapes that will land there, and the page under
+    // the row stays where it is. It used to lose both, which left a 10 px stripe and moved the page by ~100 px.
+    const figure = total == null ? GHOST.bar(2.6) : show(total);
+    const what = unit ? `<span class="punit">${esc(total === 1 ? unit : `${unit}s`)}</span>` : "";
+    const share = every ? "" : total == null ? `<span class="pshare ghost" aria-hidden="true"></span>`
+      : `<span class="pshare" aria-hidden="true"><i style="width:${all > 0 ? Math.min(100, (total / all) * 100).toFixed(1) : 0}%"></i></span>`;
+    return `<button class="ptile${on ? " on" : ""}${zero ? " zero" : ""}" data-act="pickproj" data-p="${esc(k)}" aria-pressed="${on}" aria-label="${esc(`${label}, ${words}`)}" title="${esc(label)}">`
+      + `<span class="ptop"><span class="tname">${esc(label)}</span><span class="ptotal">${figure}</span>${what}</span>${share}`
+      + `<span class="plamps">${counts.filter(([, n]) => n).map((c) => tlampHtml(c, true)).join("")}</span></button>`;
+  }).join("");
+  return `<nav class="ptiles" aria-label="Projects">${tiles}</nav>`;
 }
 
 // ---------- the projects as Teams and Requests see them: off /api/sessions rows, in Sessions' group order ----------
 // Sessions groups its own cards (sessions.js groupsOf); the other pages read the same rows raw. The order is the same
-// rule and the same reading (rowLook, rankOf, from the same live turns): the group with the most urgent live session
-// first, then its latest activity, then its name, No project last. ONE ORDER (Marlin): a project that ranked one way
-// here and another on Sessions would read as two facts.
+// rule and the same reading (rowLook, rankOf, from the same live turns): a project where someone waits on him first,
+// then one with a stalled session, then every other project by its name, No project last. ONE ORDER (Marlin): a
+// project that ranked one way here and another on Sessions would read as two facts.
+// AN ORDER HE CAN LEARN (Oct 27): working and idle no longer rank, and neither does the latest activity, since both
+// change by the minute: the tiles reshuffled between two visits minutes apart, so a project found once had moved by
+// the next. Only a project that needs him moves, and its lamp says why.
 const NO_PROJECT_KEY = "-";
 // Compare models sends belong to no project and are not "No project" either: they are a group of their own, keyed so no
 // project id (an absolute folder or git root) can equal it, and shown only where a page has rows of it.
@@ -627,7 +1326,7 @@ function projectGroups(rows, turns = {}, heads = []) {
     };
   });
   return groups.sort((a, b) => (a.key === NO_PROJECT_KEY) - (b.key === NO_PROJECT_KEY)
-    || a.rank - b.rank || b.at - a.at || a.label.localeCompare(b.label));
+    || Math.min(a.rank, 2) - Math.min(b.rank, 2) || a.label.localeCompare(b.label));
 }
 /** A pick that names a project by its name (an older door: Usage's ?project=splice) is that project's id. */
 function reconcilePick(pick, groups) {
@@ -649,7 +1348,7 @@ function pickLineHtml(groups, pick, open, count) {
     const words = (c, n) => (n == null ? countWords(c, 0, count.unit).replace(/(, )?0 \w+$/, "") : countWords(c, n, count.unit, show));
     const items = groups.map((g) => { const n = count.of(g.key); return [g.key, g.label, g.counts, n, words(g.counts, n)]; });
     const every = sumCounts(items.map((x) => x[2]));
-    return tilesHtml([["", "Every project", every, count.all, words(every, count.all)], ...items], pick, show);
+    return tilesHtml([["", "Every project", every, count.all, words(every, count.all)], ...items], pick, show, count.unit);
   }
   return `<div class="lhead">${pickerHtml(groups.map((g) => [g.key, g.label, count.of(g.key)]), pick, open, groups.map((g) => [g.key, g.label, g.counts[0][1]]), count.all, show)}</div>`;
 }

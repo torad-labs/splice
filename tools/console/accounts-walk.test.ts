@@ -84,7 +84,9 @@ afterAll(async () => {
 });
 
 async function onPage<T>(check: (page: Page) => Promise<T>, theme = "night", width = 1440): Promise<T> {
-  const context = await browser.newContext({ viewport: { width, height: 1000 } });
+  // the page and this file read the same clock, so a day is the same day on both sides: bun's test runner reads UTC,
+  // where a key first seen at 7:25 PM CT is already the next day, and the card's "Sep 26" met "Sep 27" (Oct 26, 7:25 PM CT)
+  const context = await browser.newContext({ viewport: { width, height: 1000 }, timezoneId: Intl.DateTimeFormat().resolvedOptions().timeZone });
   await context.addInitScript((t) => localStorage.setItem("splice-console-theme", t), theme);
   const page = await context.newPage();
   try {

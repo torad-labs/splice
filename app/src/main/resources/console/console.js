@@ -156,12 +156,10 @@ const CONSOLE = (() => {
     return sheets.get(href);
   }
   const styles = (css) => Promise.all(css.map(sheet));
+  // the bar marks the page and moves its one line there (kit.js navCurrent)
   function select(file, title) {
     document.title = title;
-    for (const link of document.querySelectorAll(".side .nav a")) {
-      if (link.getAttribute("href") === file) link.setAttribute("aria-current", "page");
-      else link.removeAttribute("aria-current");
-    }
+    navCurrent(file);
   }
   function mount(file, main, extras) {
     const current = lifetime(main, extras);
@@ -191,13 +189,36 @@ const CONSOLE = (() => {
       if (options.focus !== false) { main.tabIndex = -1; main.focus({ preventScroll: true }); }
     } catch (error) {
       if (ticket !== generation) return;
-      const main = document.querySelector("main.page");
-      main.querySelector(".route-error")?.remove();
-      const note = document.createElement("p");
-      note.className = "route-error empty"; note.setAttribute("role", "alert");
-      note.textContent = `Could not open ${PAGES.find(([f]) => f === file)?.[1] || "page"}: ${error.message}. Try the link again.`;
-      main.prepend(note);
+      routeFailed(file, error, address, options);
     }
+  }
+  /** A page that did not open, where it would have been: the page's name, what happened in splice's own words, and the
+   *  act that opens it again. It used to end in "Try the link again", which is an order to the reader to do what the
+   *  console can do itself; the retry reads the page again from scratch, because load() drops what failed from its
+   *  caches. The class is kept: it is what the manager's eyes read to see that a page did not open (pilot.js). */
+  /** What happened, in splice's words and not the browser's: a fetch that never landed says so as "splice did not
+   *  answer", and a daemon that answered with a code says what the code means, never the number (a 503 is splice
+   *  still starting or stopping). Everything load() throws is already a sentence. */
+  const CODE_WORDS = { 404: "splice has no such page", 500: "splice failed to send it", 502: "splice is not ready", 503: "splice is not ready", 504: "splice did not answer" };
+  function why(error) {
+    const said = String(error?.message || "");
+    if (/failed to fetch|networkerror|load failed/i.test(said)) return "splice did not answer";
+    const code = /Section returned (\d+)/.exec(said);
+    return code ? CODE_WORDS[code[1]] ?? "splice did not send it" : said || "Something went wrong";
+  }
+  function routeFailed(file, error, address, options) {
+    const main = document.querySelector("main.page");
+    main.querySelector(".route-error")?.remove();
+    const note = document.createElement("section");
+    note.className = "route-error"; note.setAttribute("role", "alert");
+    note.innerHTML = `${ICON.bang}<span><b>${esc(PAGES.find(([f]) => f === file)?.[1] || "That page")} didn't open</b> `
+      + `<span class="why">${esc(why(error))}</span></span>`
+      + `<button class="act small" type="button" data-act="retry">Try again</button>`;
+    note.querySelector('[data-act="retry"]').addEventListener("click", () => {
+      note.remove();
+      navigate(address, options);
+    });
+    main.prepend(note);
   }
   window.addEventListener("click", (event) => {
     if (event.defaultPrevented || event.button !== 0 || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return;

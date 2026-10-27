@@ -28,8 +28,12 @@
     <header class="head">
       <h1>Teams</h1>
       <div class="read">
+        <!-- when the page last read: it re-reads itself every five seconds, and teams.js markRead writes the time here,
+             and writes "Not answering since 10:37 AM" here when a read fails after the board landed -->
+        <time class="readat"></time>
+        <!-- the act's own word is in its span, so markRead can read Try again once a read has failed -->
         <button class="act quiet small" data-act="read">
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M20 11a8 8 0 1 0-2.3 5.7M20 4v7h-7"/></svg>Read again
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M20 11a8 8 0 1 0-2.3 5.7M20 4v7h-7"/></svg><span>Read again</span>
         </button>
       </div>
     </header>

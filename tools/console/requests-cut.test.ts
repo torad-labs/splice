@@ -73,10 +73,12 @@ test("a cut request names the one that took its tokens, that one names it back, 
     // the cut request: a door to the carrier
     await expect(card("cutrow")).toContainText("Counted on the next request");
     expect(await card("cutrow").locator("button.door").getAttribute("data-open")).toBe("codex:carrier");
-    // the carrier: the way back, and its own tokens still drawn
+    // the carrier: the way back, and its own tokens still drawn, as its figure in the Tokens column whose header says In
+    // once (Requests' goal, Oct 26: "What a column holds is said once, over it"; the rows lost "tokens in")
     await expect(card("carrier")).toContainText("Counts 1 earlier request");
     expect(await card("carrier").locator("button.door").getAttribute("data-open")).toBe("codex:cutrow");
-    await expect(card("carrier")).toContainText("tokens in");
+    await expect(card("carrier").locator(".tk .v").first()).toHaveText("170K");
+    await expect(page.locator(".rqhead .tk")).toContainText("In");
     // a finished request with no tokens and no carrier in the list says so plainly, with no door
     await expect(card("orphan")).toContainText("No usage reported");
     expect(await card("orphan").locator("button.door").count()).toBe(0);

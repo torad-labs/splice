@@ -8,7 +8,7 @@ CONSOLE.page("settings.html", (scope) => {
   "use strict";
   const { document, window, API, setTimeout, clearTimeout, setInterval, clearInterval, requestAnimationFrame, cancelAnimationFrame, addEventListener, removeEventListener, KNOBS } = scope;
 
-const { fmt, KNOB, st: ks, val, word, rowHtml, ctlHtml, saidHtml, cmdChip, needsRestart } = KNOBS;
+const { fmt, KNOB, st: ks, val, word, rowHtml, ctlHtml, saidHtml, cmdChip, needsRestart, dur } = KNOBS;
 const SV = {
   file: G('<path d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8z"/><path d="M14 3v5h5"/>'),
   open: G('<path d="M7 17L17 7M9 7h8v8"/>'),
@@ -50,7 +50,9 @@ const liveKnobs = () => (KNOBS.others(), Object.values(KNOB))
 // ruling, Oct 13): a value that does nothing would read as working if it took changes (fin). The poll interval while
 // reading plan limits is off; the resume wait while no command has a stall gate; "Run at most" while the hub serves,
 // which stops servers when idle and leaves their memory to the host's MCP slice (v0.4.0 section 8, as built under the hub).
-const inertWhy = (key) => key === "quotaPollIntervalMs" && val("quotaPoll") === "off" ? "Reading plan limits is off, so nothing is polled"
+// The poll interval's reason is another setting on the same pane, so it names it, and pressing the name brings that row
+// into view (knobs.js inertHtml, "seerow" below).
+const inertWhy = (key) => key === "quotaPollIntervalMs" && val("quotaPoll") === "off" ? { text: "Off with", see: "quotaPoll" }
   : key === "stallReanchorMs" && !KNOB.stallReanchorMs.only.length ? "No command resumes stalled answers"
   : key === "mcpMaxServers" && ui.hubOn ? "The MCP hub runs these servers, with no limit on how many" : null;
 /** The jobs on the rail: Your data always, the others once one of their settings is live. */
@@ -61,16 +63,19 @@ const keysOf = (id, skip = []) => liveKnobs().filter((k) => topicOf(k.key) === i
 // settings a person rarely needs, every knob without a row of its own among them (knobs.js ADV_HOME), closed on every
 // load until pressed, and open while a search finds one of them. Every section ends in one.
 const advKeys = (id) => liveKnobs().filter((k) => k.adv === id).map((k) => k.key);
+/** Open when pressed, and while a search finds one of its settings by its own words. */
+const advOpen = (id) => Boolean(ui.adv[id]) || advKeys(id).some((key) => hits([KNOB[key].label, key, KNOB[key].also || ""].join(" ")));
 function advancedHtml(id) {
   const keys = advKeys(id);
   if (!keys.length) return "";
-  const open = ui.adv[id] || keys.some((key) => hits([KNOB[key].label, key, KNOB[key].also || ""].join(" ")));
-  return `<section class="sub adv"><button class="act quiet advbtn" data-act="adv" data-id="${id}" aria-expanded="${open}">Advanced${ICON.caret}</button>${open ? blocks(keys) : ""}</section>`;
+  const open = advOpen(id);
+  // the count is on the button: how much is behind it is the one thing he cannot see while it is closed
+  return `<section class="psec adv"><div class="sechead"><button class="act quiet advbtn" data-act="adv" data-id="${id}" aria-expanded="${open}">Advanced<b>${fmt(keys.length)}</b>${ICON.caret}</button>${open ? paneLegend() : ""}</div>`
+    + `<div class="advin"${open ? "" : " hidden"}>${open ? krowsHtml(keys) : ""}</div></section>`;
 }
 
-// A figure not read yet is undefined and draws "Reading"; one asked for and not answered is null and draws "Not read", its reason warned to the console.
-const ui = { adv: {}, said: {}, capture: {}, week: {}, ver: undefined, run: null, headRows: [], saving: null, held: {}, open: "busy", shown: false, q: "", armed: null, bad: {}, ask: null, heads: [], hist: undefined, stores: undefined, kept: {}, peaks: undefined, mcp: undefined, mtest: {}, mtestAt: {}, topo: undefined, mmem: undefined, shareSaving: false, shareSaid: null, exSaid: {}, accts: undefined, projects: undefined, addPath: null, checking: false, checkSaid: null, restarting: false, restartSaid: null, restartWait: 0, err: null };
-const READING = `<span class="none">Reading</span>`;
+// A figure not read yet is undefined and draws its own shape, striped; one asked for and not answered is null and draws "Not read", its reason warned to the console.
+const ui = { adv: {}, said: {}, capture: {}, week: {}, ver: undefined, run: null, headRows: [], saving: null, held: {}, open: "busy", shown: false, q: "", armed: null, bad: {}, ask: null, heads: [], hist: undefined, stores: undefined, kept: {}, peaks: undefined, mcp: undefined, mtest: {}, mtestAt: {}, topo: undefined, mmem: undefined, shareSaving: false, shareSaid: null, exSaid: {}, accts: undefined, projects: undefined, addPath: null, checking: false, checkSaid: null, restarting: false, restartSaid: null, restartWait: 0, mmore: {}, pmore: {}, grown: new Set(), shook: null, err: null, legendSaid: new Set() };
 let drawLater = 0;
 /** Many answers arrive in a burst; one drawing a moment later takes them all. */
 /** The per-command reads and the week's counts are over a hundred requests, and a browser sends six at a time to one address: left to
@@ -85,6 +90,8 @@ const bulkGet = (path) => new Promise((resolve) => {
   if (bulk.running < BULK) start(); else bulk.waiting.push(start);
 });
 const later = () => { if (!drawLater) drawLater = setTimeout(() => { drawLater = 0; render(); }, 60); };
+/** A REFUSAL SHAKES ONCE (console.css .failed, .act.shook): the drawing right after it carries the mark, and the next one is still. */
+const shake = (id) => { ui.shook = id; render(); ui.shook = null; };
 
 // ---------- what the daemon keeps ----------
 // One read per store; a store whose route answers with an error is drawn as unreadable, never as empty.
@@ -127,7 +134,9 @@ async function readBase() {
   KNOB.stallReanchorMs.only = (heads.body?.heads || []).filter((h) => typeof h.gate?.stall_reanchor_ms === "number").map((h) => h.key);
   ks.cmds = ui.heads;
   ks.commandOf = Object.fromEntries(ui.headRows.map((h) => [h.key, h.command]));
-  ks.providerOf = Object.fromEntries((models.body?.heads || []).map((r) => [r.head, r.provider]));
+  // a command's colour is its provider's FAMILY: the models route names a provider in its module's own word ("codex",
+  // "openai"), which the colour table does not, and a chip drawn from the module's word came out in no colour at all
+  ks.providerOf = Object.fromEntries((models.body?.heads || []).map((r) => [r.head, familyOf(r.provider)]));
   // the fold set is ChatGPT models, so only the commands that reach that provider offer theirs
   ks.models = [...new Map((models.body?.heads || []).filter((r) => r.provider === "codex").flatMap((r) => r.models || []).map((m) => [m.id, { id: m.id, label: m.label || m.id }])).values()];
 }
@@ -149,6 +158,8 @@ async function readHeads() {
 const mbWord = (b) => { const mb = b / MiB; return mb >= 1000 ? `${+(mb / 1024).toFixed(1)} GB` : mb >= 1 ? `${+mb.toFixed(1)} MB` : b > 0 ? `${Math.max(1, Math.round(b / 1024))} KB` : "0 B"; };
 const dateWord = (d) => d.toLocaleDateString("en-US", { month: "short", day: "numeric" });
 const atWord = (ms) => { const d = new Date(ms); return d.getHours() || d.getMinutes() ? `${dateWord(d)}, ${d.toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit" })}` : dateWord(d); };
+// A TIME CARRIES ITS ZONE (Oct 26), as today's peak does: today's is its clock, any other day's leads with the date
+const whenWord = (ms) => { const d = new Date(ms); return `${d.toDateString() === new Date().toDateString() ? "" : `${dateWord(d)}, `}${clock(d)}${ZONE_WORD ? ` ${ZONE_WORD}` : ""}`; };
 
 // ---------- search ----------
 const norm = (s) => String(s).toLowerCase();
@@ -170,68 +181,100 @@ function found(id) {
   return [...new Set(f)];
 }
 const lit = (text) => (words().length && hits(text) ? " lit" : "");
-/** The same settings as cards: each one its name, its value and the commands that override it, across a row that the
- *  cards fill however many there are. A label column shared by every setting left the right third of the row empty and
- *  put two sections' controls at different x (splice-lead's walk of the rebuilt pane, Oct 11), so a setting owns its
- *  card; .kin is the card's inner grid, which asks the card how wide it ended up (settings.css). */
-const kcard = (inner, cls = "") => `<article class="kcard${cls}"><div class="kin">${inner}</div></article>`;
-/** How many cards to a row, so the rows come out even: six settings read as two rows of three, never four and then two
- *  with half a row empty. Four or fewer stand on one row; above that, the fewest rows of at most four, shared evenly. */
+/** How many cards to a row, so the rows come out even: six read as two rows of three, never four and then two with
+ *  half a row empty. Four or fewer stand on one row; above that, the fewest rows of at most four, shared evenly. */
 const perRow = (n) => (n <= 4 ? Math.max(1, n) : Math.ceil(n / Math.ceil(n / 4)));
-const cardRow = (cards, cls = "") => `<div class="kcards${cls}" style="--n:${perRow(cards.length)}">${cards.join("")}</div>`;
-// ---------- what a setting shows under its control ----------
+/** A provider as the colour table names it (kit.js COLORS), from the word its module uses ("codex", "anthropic"). */
+const familyOf = (p) => (COLORS[p] ? p : PROVIDER_FAMILY[p] ?? p);
+
+// ---------- what a setting's row draws ----------
 // AN ELEMENT, NEVER A SENTENCE, AND ONLY WHERE THE FACT IS ON THE WIRE (Marlin's ruling, Oct 12). Each of these is a
-// fact this page already reads: the last plan read, the mark the account bars draw, the providers reporting no window,
-// how many servers run now, where the reasoning text lands. Two the build list asked for are NOT here because the
-// daemon does not carry them: the waiting line's own text lives in TurnProgressLine.kt and reaches no route, and
-// nothing counts fold continuations, so those rows ship with their rename alone.
+// fact this page already reads: when the plans were last read, where every login stands against the warn line, the
+// logins reporting no window, how many servers run now. The waiting line's own text lives in TurnProgressLine.kt and
+// reaches no route, and nothing counts fold continuations, so those rows draw no figure of either.
 const seenAt = () => Math.max(0, ...(ui.accts || []).map((x) => x.observed_at_epoch_seconds || 0));
-/** The providers whose accounts report no plan window at all: what the 5-hour stand-in covers. */
 // Accounts' own rule for a login it shows as Signed out (accounts.js): its last reading is from before, so this pane draws
-// none of it, where "100% Highest this week" stood on a signed-out login (splice-usage's walk, Oct 13)
+// no window of it, where "100% Highest this week" stood on a signed-out login (splice-usage's walk, Oct 13)
 const signedOut = (x) => !x.token_renews && (!x.credential_present || x.auth_exclusion_reason === "credential_missing"
   || (!!x.refusal && !(x.five_hour_used_percent >= 100 || x.seven_day_used_percent >= 100)));
-// A login by its command and its name: four logins are named Primary on his install, so a bare name never said which one
-// (splice-usage's walks, Oct 13). A name that is the command's own word is said once.
-const loginWord = (x) => [...new Set([ks.commandOf?.[(x.heads || [])[0]], x.display_name || x.provider].filter(Boolean))].join(" · ");
-// each login reporting no window
-const quietProviders = () => [...new Set((ui.accts || [])
-  .filter((x) => !signedOut(x) && x.five_hour_used_percent == null && x.seven_day_used_percent == null)
-  .map(loginWord).filter(Boolean))];
-/** Where the reasoning text lands for the picked option, as three lines of a terminal. */
-function reasoningSketch() {
-  const where = val("showReasoning");
-  const think = `<span class="sk think">${where === "thinking" ? "⏺ Thinking… working out the order" : "⏺ Thinking…"}</span>`;
-  // rep, never said: the kit's own .said is the word a saved setting shows, and it carries nowrap, so the line ran
-  // 77px past the card at 1440
-  const body = where === "text" ? `<span class="sk rep">Working out the order, then the reply.</span>` : "";
-  const reply = `<span class="sk">Here is the change.</span>`;
-  return `<div class="sketch" aria-hidden="true">${where === "off" ? "" : think}${body}${reply}</div>`;
+// A login by its command, and by its own name as well where that command has more than one login: several logins can
+// share one name, so a bare name never said which, and a command with one login already names it. The whole of it is
+// on the login's title.
+const loginCmd = (x) => (x.heads || [])[0];
+const loginFull = (x) => [...new Set([ks.commandOf?.[loginCmd(x)], x.display_name || x.provider].filter(Boolean))].join(" · ");
+function loginWord(x) {
+  const cmd = ks.commandOf?.[loginCmd(x)];
+  const several = (ui.accts || []).filter((y) => loginCmd(y) === loginCmd(x)).length > 1;
+  return cmd && !several ? cmd : loginFull(x);
 }
+const loginChip = (x) => `<span class="chip" style="--c:${colorOf(familyOf(x.provider))}" title="${esc(loginFull(x))}">${esc(loginWord(x))}</span>`;
+/** The logins reporting no plan window at all: the ones the 5-hour stand-in covers. */
+const quietLogins = () => (ui.accts || []).filter((x) => !signedOut(x) && x.five_hour_used_percent == null && x.seven_day_used_percent == null);
+/** What a row draws when its section gives it no drawing of its own. */
 function elOf(key) {
   if (key === "quotaPollIntervalMs") {
     const seen = seenAt();
-    return seen ? `<p class="kel">Read ${esc(backWord(new Date(seen * 1000)))}</p>` : "";
+    return seen ? `<span class="kfact">Read <b>${esc(whenWord(seen * 1000))}</b></span>` : "";
   }
-  if (key === "usageWarnPct") {
-    const warn = Number(val("usageWarnPct")) || 80;
-    return `<div class="kel"><div class="pct mark" style="--w:0%;--warn:${warn}%" role="img" aria-label="warns at ${warn}%"><b></b><i></i></div></div>`;
-  }
+  if (key === "usageWarnPct") return warnDraw();
   if (key === "usageWarnTokens5h") {
-    const quiet = quietProviders();
-    return quiet.length ? `<div class="kel"><span class="kword">No limit reported</span>${chipRow(quiet)}</div>` : "";
+    const quiet = quietLogins();
+    return quiet.length ? `<span class="kfact">No limit reported</span><span class="kchips">${quiet.map(loginChip).join("")}</span>` : "";
   }
+  // how many run now against the most it may, as a meter on that ceiling: full at the limit, in the limit red
   if (key === "mcpMaxServers") {
-    const up = Object.values(ui.mcp?.servers || {}).filter((s) => s.hosted).length;
-    return ui.mcp ? `<p class="kel"><b>${fmt(up)}</b> running</p>` : "";
+    if (!ui.mcp) return "";
+    const up = Object.values(ui.mcp.servers || {}).filter((s) => s.hosted).length, most = Number(val("mcpMaxServers")) || 0;
+    return most ? `<div class="kmeter">${DRAW.meter((up / most) * 100, up >= most ? "full" : "")}<span><b>${fmt(up)}</b> running</span></div>`
+      : `<span class="kfact"><b>${fmt(up)}</b> running</span>`;
   }
-  if (key === "showReasoning") return reasoningSketch();
   return "";
 }
-const blocks = (keys, extra = []) => {
-  const cards = keys.map((key) => kcard(rowHtml(KNOB[key], { hl, lit: lit(knobHay(KNOB[key])), everyCommand: true, el: elOf(key), inert: inertWhy(key) })));
-  return cards.length + extra.length ? cardRow([...cards, ...extra]) : "";
-};
+
+// ---------- a section's settings, on one grid ----------
+// A SETTING IS A ROW, AND WHAT IT DOES IS DRAWN ON IT (Oct 27, from Marcos's "show don't tell"): its name, its control
+// and, where this page reads the fact, the drawing of what the value does, each in a column of its own, so the names,
+// the controls and the drawings start at one x down a section. A section whose rows draw nothing is two columns.
+// [draw] gives a row its own drawing by key. [ax] puts the drawings on one time axis, its ticks said once under the
+// rows. [mark] is a figure this page read on that axis (the longest stall this week): one upright line through every
+// row, with its door above them, so each wait is read against what happened.
+function krowsHtml(keys, { ax = null, draw = {}, mark = null } = {}) {
+  if (!keys.length) return "";
+  const drawn = keys.map((key) => (draw[key] && ax ? draw[key](key, ax) : elOf(key)));
+  const flat = !ax && drawn.every((d) => !d);
+  const at = ax && mark ? ax.at(mark.ms) : null;
+  const line = at == null ? "" : `<i class="dline" style="left:${at.toFixed(2)}%" aria-hidden="true"></i>`;
+  const rows = keys.map((key, i) => {
+    const k = KNOB[key], hay = knobHay(k);
+    // a search keeps every row in its place: the ones it found keep their ink, the rest go quiet
+    const found = words().length ? (hits(hay) ? " hit" : " miss") : "";
+    const el = flat ? "" : `<div class="kdraw">${drawn[i] ? `${drawn[i]}${draw[key] ? line : ""}` : ""}</div>`;
+    return `<div class="krow${found}" data-key="${key}">${rowHtml(k, { hl, lit: lit(hay), el, inert: inertWhy(key) })}</div>`;
+  });
+  const head = at == null ? "" : `<div class="khead"><span></span><span></span><span class="kmk">`
+    + `<a class="dmark${at > 55 ? " end" : ""}" href="${mark.href}" style="left:${at.toFixed(2)}%">${mark.inner}</a></span></div>`;
+  const ticks = ax ? ax.ticks.map((v) => {
+    const x = ax.at(v), edge = x < 4 ? " pd-t-first" : x > 96 ? " pd-t-last" : "";
+    return `<span class="pd-tk${edge}" style="left:${x.toFixed(2)}%">${esc(dur(v))}</span>`;
+  }).join("") : "";
+  // the axis's word sits in the control column, at its right edge, so it ends where the axis starts and reads as its caption
+  const foot = ax ? `<div class="kaxis" aria-hidden="true"><span></span><span class="kaw">${esc(ax.word)}</span><span class="pd-ax">${ticks}</span></div>` : "";
+  return `<div class="krows${flat ? " flat" : ""}">${head}${rows.join("")}${foot}</div>`;
+}
+// THE MARKS ARE NAMED ONCE A PANE (Marcos, Oct 25: "show don't tell"): a row names a command only where that command
+// holds its own value, so the scope every other row follows is said once, on the first section it applies to; and the
+// first section carrying a mark names it on its kicker line, a later one naming only the marks above it did not.
+const perCommandIn = (keys) => keys.some((key) => ks.cfg?.knobs?.[key]?.per_command ?? Boolean(KNOB[key]?.cmd));
+function paneLegend(keys) {
+  const said = ui.legendSaid;
+  const scope = !said.has("scope") && perCommandIn(keys) ? `<span class="lg sc">Every command, unless one is named</span>` : "";
+  if (scope) said.add("scope");
+  const items = KNOBS.legendHtml(keys, { bare: true }).split('<span class="lg">').filter(Boolean).map((s) => `<span class="lg">${s}`).filter((s) => !said.has(s));
+  items.forEach((s) => said.add(s));
+  return scope || items.length ? `<span class="legend">${scope}${items.join("")}</span>` : "";
+}
+/** A section of settings: its kicker, what its rows' marks mean, and the rows. */
+const knobSec = (kicker, keys, opts = {}) => (keys.length ? DRAW.section(kicker, krowsHtml(keys, opts), { aside: paneLegend(keys) }) : "");
 
 // the per-command settings splice reads at start and the page only shows (restart-only, set in [heads.KEY.overrides])
 const tapOf = (head) => Number(ks.cfg?.layers?.perHead?.[head]?.wireTap) || 0;
@@ -242,12 +285,12 @@ const traceOn = (head) => ui.capture[head] ?? ks.cfg?.layers?.perHead?.[head]?.t
 // ---------- Your data ----------
 // Each store, what it holds, how long, and its Delete now. A store with no route to count or delete it says so.
 const DATA_ROWS = [
-  { id: "trace", g: "text", name: "Prompts and answers", unit: "requests", yours: true, door: ["requests.html", "Requests"] },
+  { id: "trace", g: "text", name: "Prompts and answers", unit: "requests", door: ["requests.html", "Requests"] },
   // the stores a person's prompts sit in that no feature runs without: counted and cleared by /api/kept/stores, each naming the
   // feature that needs it in place of a switch, with the lifetime splice gives it (the history window, or its own)
-  { id: "originals", g: "text", name: "Transcript copies", unit: "files", yours: true, store: "transcript_copies", knob: "keepTranscriptCopies", off: "When off, a session moved with Continue on cannot move back" },
-  { id: "recordings", g: "text", name: "Compaction summaries", unit: "files", yours: true, store: "compaction_summaries", knob: "keepCompactionSummaries", off: "When off, retried compactions cost again", life: "2 hours" },
-  { id: "journals", g: "text", name: "Code mode work", unit: "files", store: "code_mode", yours: true, knob: "keepCodeModeWork", off: "When off, a restart ends running scripts", life: "1 day unused" },
+  { id: "originals", g: "text", name: "Transcript copies", unit: "files", store: "transcript_copies", knob: "keepTranscriptCopies", off: "When off, a session moved with Continue on cannot move back" },
+  { id: "recordings", g: "text", name: "Compaction summaries", unit: "files", store: "compaction_summaries", knob: "keepCompactionSummaries", off: "When off, retried compactions cost again", life: "2 hours" },
+  { id: "journals", g: "text", name: "Code mode work", unit: "files", store: "code_mode", knob: "keepCodeModeWork", off: "When off, a restart ends running scripts", life: "1 day unused" },
   { id: "reasoning", g: "text", name: "Reasoning between requests", own: true, door: ["sessions.html", "Sessions"] },
   { id: "hist", g: "records", name: "Usage and request history", unit: "requests", door: ["usage.html", "Usage"] },
   // its own days and its own switch, both live (ConsoleWiring.activityStores reads them per sweep and per write); it never
@@ -275,63 +318,65 @@ function heldOf(r) {
 }
 /** A store whose count has not come back yet (a store with no route to count it is never waiting). */
 const stillReading = (r) => !(r.noRoute || r.own) && heldOf(r) === undefined;
+// REMOVAL ARMS IN PLACE: Delete now turns into what it would delete, by count, and the way out, on the store's own tile
 const delBtn = (id, n, unit) => (!n ? "" : ui.armed === id
   ? `<span class="armed"><button class="act danger small" data-act="delete" data-id="${id}">Delete ${fmt(n)} ${unit}</button><button class="act quiet small" data-act="disarm">Cancel</button></span>`
   : `<button class="act quiet small" data-act="arm" data-id="${id}">Delete now</button>`);
 const ALWAYS = `<span class="fixed quiet">Always saved</span>`; // a store whose daemon has no off switch
-const YOURS = `<span class="yours">Your prompts</span>`;
-// What Off costs, under the switch. Every row that has the line always draws it, quieter while On, in the room the row keeps, so a flip moves no row below (p179; Marlin reversed show-only-while-Off, Oct 11). Each line is true On or Off and wraps at a dot, never inside a part (fin).
-const costHtml = (off, isOff) => (off ? `<p class="offcost${isOff ? " now" : ""}">${off.split(" · ").map((t) => `<span class="whole">${esc(t)}</span>`).join("\u00a0· ")}</p>` : "");
-/** One store, as a card: its name, its size large, what it holds, its share of everything splice keeps, and its own
- *  controls. The card returns its Delete rather than drawing it, so every destructive act stands together in one
- *  section at the end instead of once per row (Marcos's verdict on the small-table pane, Oct 11). */
-const drow = ({ cls = "", name, hay = name, yours, door, amount, keep = "", sw = "", del = "", off = "", offShown = false, more = "", wide = false }) => ({
+// WHAT OFF COSTS IS SAID WHILE IT IS IN FORCE (Oct 26): under a switch that is On the line told him, on every card, what
+// a press he is not making would cost. It is the Off button's own title while On, and the line under the switch once Off,
+// where it is the state he is in. Each part wraps at a dot, never inside a part (fin).
+const costHtml = (off, isOff) => (off && isOff ? `<p class="offcost now">${off.split(" · ").map((t) => `<span class="whole">${esc(t)}</span>`).join(" · ")}</p>` : "");
+const offTitles = (off) => (off ? { titles: { false: off.replace(/ · /g, ". ") } } : {});
+/** One store, as a card: its colour, its name and door, its size at the focal size, what it holds, and its own controls.
+ *  The card returns its Delete rather than drawing it, so every destructive act stands together in Free up space. */
+const drow = ({ cls = "", name, hay = name, door, amount, keep = "", sw = "", del = "", off = "", offShown = false, more = "", hue = "", lamp = "" }) => ({
   name, del,
-  html: `<article class="dcard${cls}${wide ? " wide" : ""}${lit(hay)}">`
-    + `<header class="dtop"><span class="nm">${hl(name)}</span>${yours ? YOURS : ""}${door ? `<a class="link" href="${door[0]}">${SV.open}${door[1]}</a>` : ""}</header>`
+  // .din is the card's inner layout, one element in, so it can ask the card how wide it turned out (settings.css)
+  html: `<article class="dcard${cls}${lit(hay)}"><div class="din">`
+    + `<header class="dtop">${hue ? `<i class="dsw" style="${hue}" aria-hidden="true"></i>` : ""}<span class="nm">${hl(name)}</span>${lamp}${door ? `<a class="link" href="${door[0]}">${SV.open}${door[1]}</a>` : ""}</header>`
     + `<div class="dfig">${amount}</div>`
-    + (keep || sw ? `<div class="dctl">${sw ? `<div class="dc"><span class="dcl">Save</span>${sw}</div>` : ""}${keep ? `<div class="dc"><span class="dcl">Keep for</span><div class="dcv">${keep}</div></div>` : ""}</div>` : "")
-    + `${costHtml(off, offShown)}${more}</article>`,
+    + (keep || sw ? `<div class="dctl">${sw ? `<div class="dc"><span class="dcl">Save</span><div class="dcv">${sw}</div></div>` : ""}${keep ? `<div class="dc"><span class="dcl">Keep for</span><div class="dcv">${keep}</div></div>` : ""}</div>` : "")
+    + `${costHtml(off, offShown)}${more}</div></article>`,
 });
-/** Everything splice keeps, in bytes: the figure the pane leads with, and what each card's share is measured against. */
+/** Everything splice keeps, in bytes: the figure the pane leads with. */
 const allBytes = () => DATA_ROWS.reduce((s, r) => s + (heldOf(r)?.bytes ?? 0), 0);
 /** How fast a store grows. Usage history is the one store the daemon measures (rate_bytes_per_month, over its own days);
- *  for every other store it is the size divided by the days since the oldest thing kept, and the words say so. */
+ *  for every other store it is the size over the days since the oldest thing kept. */
 function growOf(r, x) {
   if (r.id === "hist") return ui.hist && ui.hist.rate_bytes_per_month ? `About ${mbWord(ui.hist.rate_bytes_per_month)} a month` : "";
   if (!x.since || !x.bytes) return "";
   const days = Math.max(1, Math.round((Date.now() - x.since) / DAY));
-  return `About ${mbWord(x.bytes / days)} a day on average`;
+  return `About ${mbWord(x.bytes / days)} a day`;
 }
-/** Everything that holds bytes, biggest first: the order the split bar, its legend and the cards all take their colour
- *  from, so one store is one colour wherever it appears on the pane. */
+/** Everything that holds bytes, biggest first: the order the split bar, the cards' swatches and Free up space all take
+ *  their colour from, so one store is one colour wherever it appears on the pane. */
 const bySize = () => DATA_ROWS.map((r) => ({ r, x: heldOf(r) })).filter((p) => p.x && p.x.bytes > 0).sort((a, b) => b.x.bytes - a.x.bytes);
-const hueAt = (i) => `--c:var(--store-${(i % 6) + 1})`;
+const hueAt = (i) => `--c:${storeInk(i)}`;
 const hueOf = (r) => { const i = bySize().findIndex((p) => p.r.id === r.id); return i < 0 ? "" : hueAt(i); };
-/** A store's share of everything kept, as a bar and a figure. Under half a percent reads "under 1%", never "0%". */
-function shareOf(x, r) {
-  const all = allBytes();
-  if (!all || !x.bytes) return "";
-  const pc = (x.bytes / all) * 100, word = pc < 1 ? "under 1%" : `${Math.round(pc)}%`;
-  return `<div class="dsh" role="img" aria-label="${word} of ${mbWord(all)} kept"><i style="${hueOf(r)};--w:${Math.max(0.6, pc).toFixed(1)}%"></i></div>`
-    + `<span class="dpc">${word} of everything kept</span>`;
-}
-/** Usage history, day by day, as the daemon measured it (its own per-day bytes). No other store has a series, so no
- *  other card draws one: an average is words, never a shape that would read as history. */
-function daysChart(h) {
+/** Usage history, day by day, as the daemon measured it (its own per-day bytes): the first day kept and today at the
+ *  ends, and the biggest day named on its own column. No other store has a series, so no other card draws one. */
+function daysChart(h, hue = "") {
   if (!h || !h.days || h.days.length < 2) return "";
-  const top = Math.max(...h.days.map((d) => d.bytes)) || 1;
-  const bars = h.days.map((d) => `<i style="--h:${Math.max(2, (d.bytes / top) * 100).toFixed(1)}%"></i>`).join("");
-  return `<div class="dchart"><div class="dbars" role="img" aria-label="${h.days.length} days, biggest ${mbWord(top)}">${bars}</div>`
-    + `<div class="dcends"><span>${atWord(h.held.oldest_epoch_ms)}</span><span>Today</span></div></div>`;
+  const sizes = h.days.map((d) => d.bytes), top = Math.max(...sizes) || 1, at = sizes.indexOf(top), n = sizes.length;
+  // the last column is today, so a column's day is counted back from it
+  const dayOf = (i) => dateWord(new Date(startOfToday() - (n - 1 - i) * DAY));
+  const bars = sizes.map((b, i) => `<i style="--h:${Math.max(2, (b / top) * 100).toFixed(1)}%"${i === at ? ' class="top"' : ""} title="${esc(`${dayOf(i)} · ${mbWord(b)}`)}"></i>`).join("");
+  // the biggest day's label stands over its own column, starting there near the left end and ending there near the right
+  const x = (at + 0.5) / n, side = x < 0.3 ? "start" : x > 0.7 ? "end" : "mid";
+  const peak = `<span class="dpeak ${side}" style="--at:${(x * 100).toFixed(2)}%"><span><b>${esc(mbWord(top))}</b> ${esc(dayOf(at))}</span></span>`;
+  return `<div class="dchart"${hue ? ` style="${hue}"` : ""}>${peak}<div class="dbars" role="img" aria-label="${n} days, the biggest ${esc(mbWord(top))} on ${esc(dayOf(at))}">${bars}</div>`
+    + `<div class="dcends"><span>${esc(dateWord(new Date(h.held.oldest_epoch_ms)))}</span><span>Today</span></div></div>`;
 }
 const amountOf = (x, r) => (x.n || x.bytes
-  ? `<b class="big">${mbWord(x.bytes)}</b><span class="dmeta">${fmt(x.n)} ${esc(r.unit)}${x.since ? ` · since ${atWord(x.since)}` : ""}</span>`
-    + shareOf(x, r) + (growOf(r, x) ? `<span class="dgrow">${growOf(r, x)}</span>` : "") + (r.id === "hist" ? daysChart(ui.hist) : "")
-  : `<span class="none">Nothing saved</span>`);
-// A store splice could not read is a quiet "Not read" in the muted line, as every page says it; why goes to the console,
-// where the read that failed is named (fin, Oct 11)
-const unreadable = `<span class="none">Not read</span>`;
+  ? `<div class="pd-sub"><b>${esc(mbWord(x.bytes))}</b><span>${fmt(x.n)} ${esc(r.unit)}${x.since ? ` · since ${esc(dateWord(new Date(x.since)))}` : ""}</span></div>`
+    + (growOf(r, x) ? `<span class="dgrow">${growOf(r, x)}</span>` : "") + (r.id === "hist" ? daysChart(ui.hist, hueOf(r)) : "")
+  : DRAW.nothing("Nothing saved"));
+// what a store's size will be, while it is read: the figure and the line under it, striped
+const AMOUNT_GHOST = GHOST.row([GHOST.fig(5.5), GHOST.bar(9)]);
+// A store splice could not read says so on its own figure line, in the limit colour as every unread figure on this page
+// does; why goes to the console, where the read that failed is named (fin, Oct 11)
+const unreadable = `<span class="state limit">Not read</span>`;
 /** The reason a read failed, in the words every page warns with. */
 const whyNot = (path, r) => console.warn(`${path}: ${r.status === 0 ? "splice is not answering" : r.body?.error || `splice answered ${r.status}`}`);
 
@@ -353,16 +398,16 @@ const keptDays = () => {
   return w.forever ? "forever" : w.nothing ? 0 : w.days;
 };
 function histRow(r) {
-  if (ui.hist === undefined) return drow({ name: r.name, door: r.door, amount: READING });
-  if (!ui.hist) return drow({ name: r.name, door: r.door, amount: unreadable });
-  const a = ui.ask, h = a && a.h ? a.h : ui.hist, x = heldOf(r), id = "del:hist";
-  const month = ui.hist.rate_bytes_per_month;
-  const rate = a || h.window.nothing || !month ? "" : `<span class="hrate">About ${mbWord(month)} a month</span>`;
+  const hue = hueOf(r);
+  if (ui.hist === undefined) return drow({ name: r.name, door: r.door, amount: AMOUNT_GHOST, cls: " hist" });
+  if (!ui.hist) return drow({ name: r.name, door: r.door, amount: unreadable, cls: " hist" });
+  const a = ui.ask, x = heldOf(r), id = "del:hist";
   return drow({
-    name: r.name, hay: `${r.name} ${KNOB.historyRetentionDays.also}`, door: r.door,
+    name: r.name, hay: `${r.name} ${KNOB.historyRetentionDays.also}`, door: r.door, hue, cls: " hist",
     sw: ALWAYS, // the daemon has no switch for turn statistics: only how far back they go
     amount: amountOf(x, r),
-    keep: `${ctlHtml(KNOB.historyRetentionDays, a ? a.v : keptDays())}${saidHtml("historyRetentionDays")}${rate}`,
+    // the month's rate is said once, under the size it grows
+    keep: `${ctlHtml(KNOB.historyRetentionDays, a ? a.v : keptDays())}${saidHtml("historyRetentionDays")}`,
     del: `${ui.bad[id] ? `<span class="said limit">${esc(ui.bad[id])}</span>` : ""}${delBtn(id, x.n, r.unit)}`,
     more: a && a.h ? `<div class="dmore hask">${histBar(a.h)}<div class="hacts"><button class="act danger small" data-act="shorten">Delete ${fmt(a.h.cut.turns)} requests</button><button class="act quiet small" data-act="unask">Cancel</button></div></div>`
       : a ? `<div class="dmore hask"><div class="hbar reading"><span class="hend"></span><div class="hdays"></div><span class="hend">Today</span></div><div class="hacts"><button class="act danger small" disabled>Delete</button><button class="act quiet small" data-act="unask">Cancel</button></div></div>` : "",
@@ -387,15 +432,17 @@ function traceStopped() {
   if (!stops.length) return null;
   const at = Math.min(...stops.map(({ b }) => b.saving_stopped_at_epoch_ms));
   const why = String(stops.find(({ b }) => b.saving_stopped_at_epoch_ms === at).b.saving_stopped_reason || "");
-  const words = /free-space floor/.test(why) ? "the disk is down to the 64 GB splice always leaves free; free up space and saving starts again on the next request"
-    : /index budget/.test(why) ? "the 16 GB kept for request records is full with today's records"
-    : /body budget|evicted/.test(why) ? "the 32 GB kept for prompts and answers is full with today's" : why;
-  const today = new Date(at).toDateString() === new Date().toDateString();
-  const when = today ? new Date(at).toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit" }) : atWord(at);
-  const who = stops.length < ui.heads.filter(traceOn).length ? ` for ${stops.map(({ h }) => h).join(", ")}` : "";
-  return { when, words, who };
+  // the cause in his words; the daemon's own sentence goes to the console, where it can be read in full. Each known
+  // cause is one that deleting what is kept clears, so it carries the way to Free up space; an unknown one does not.
+  if (why) console.warn(`trace: saving stopped: ${why}`);
+  const known = /free-space floor/.test(why) ? "The disk is down to the 64 GB splice leaves free"
+    : /index budget/.test(why) ? "The 16 GB for request records is full"
+    : /body budget|evicted/.test(why) ? "The 32 GB for prompts and answers is full" : "";
+  const heads = stops.length < ui.heads.filter(traceOn).length ? stops.map(({ h }) => h) : [];
+  return { when: whenWord(at), words: known || shortWhy(why), known: !!known, heads };
 }
-function traceKeepWords() {
+/** How long prompts and answers stay: the longest any command keeps them, and the caps that can end it sooner. */
+function traceKeep() {
   const w = ui.hist.window, windowDays = w.forever ? Infinity : w.nothing ? 0 : w.days;
   const days = ui.heads.map((h, i) => {
     const body = ui.kept.trace?.[i];
@@ -404,95 +451,132 @@ function traceKeepWords() {
     return traceSetDays(h) ?? windowDays;
   });
   const n = days.length ? Math.max(...days) : windowDays;
-  if (n === Infinity) return "Until its size caps, oldest day first";
-  if (n === 0) return "Today only";
-  return `Up to ${n} ${n === 1 ? "day" : "days"}, sooner past its size caps, oldest day first`;
+  return n === Infinity ? "Until its size caps" : n === 0 ? "Today only" : `Up to ${n} ${n === 1 ? "day" : "days"}`;
+}
+const TRACE_CAPS = "Sooner past its size caps, the oldest day first";
+/** Prompts and answers, one command at a time: its switch, what its change did, and what it holds on one shared scale. */
+function traceCommands() {
+  const sizes = ui.heads.map((h, i) => ({ h, b: ui.kept.trace?.[i]?.bytes ?? null }));
+  const top = Math.max(1, ...sizes.map((s) => s.b ?? 0));
+  const rows = [...sizes].sort((a, b) => (b.b ?? -1) - (a.b ?? -1)).map(({ h, b }) => {
+    const said = ui.said[`capture@${h}`] ? `<span class="said ${ui.bad[`capture@${h}`] ? "limit" : "ok"}">${esc(ui.said[`capture@${h}`])}</span>` : "";
+    return `<div class="cs${traceOn(h) ? "" : " off"}">${cmdChip(h)}${b === null ? DRAW.dash : DRAW.barCell({ w: (b / top) * 100, text: esc(mbWord(b)) })}`
+      + `<span class="switch"><button data-act="capture" data-head="${esc(h)}" data-v="true" aria-pressed="${traceOn(h)}">On</button><button data-act="capture" data-head="${esc(h)}" data-v="false" aria-pressed="${!traceOn(h)}">Off</button></span>${said}</div>`;
+  }).join("");
+  return `<div class="dmore"><div class="cmdsw">${rows}</div><p class="dcap">${esc(TRACE_CAPS)}</p></div>`;
 }
 function dataRow(r) {
   if (r.id === "hist") return histRow(r);
   if (r.own) { // splice keeps no copy: the reasoning rides inside the conversations Claude Code writes, so the switch stops it and Sessions deletes it
-    return drow({ name: r.name, yours: true, door: r.door, amount: `<span class="none">Inside your conversations</span>`, keep: `<span class="fixed quiet">As long as the conversation</span>`, sw: `${ctlHtml(KNOB.replayReasoning, val("replayReasoning"))}`, del: `<a class="act quiet small" href="sessions.html">Delete in Sessions</a>` });
+    return drow({ name: r.name, door: r.door, amount: DRAW.nothing("Inside your conversations"), keep: `<span class="fixed quiet">As long as the conversation</span>`, sw: `${ctlHtml(KNOB.replayReasoning, val("replayReasoning"))}`, del: `<a class="act quiet small" href="sessions.html">Delete in Sessions</a>` });
   }
   if (r.noRoute) { // no route counts or deletes it: say so on the row, never an empty Delete
-    return drow({ name: r.name, yours: r.yours, amount: `<span class="none">Not counted</span>`, keep: "", sw: r.always ? ALWAYS : "" }); // a store the daemon has no off switch for
+    return drow({ name: r.name, amount: DRAW.nothing("Not counted"), keep: "", sw: r.always ? ALWAYS : "" }); // a store the daemon has no off switch for
   }
   const x = heldOf(r), id = `del:${r.id}`;
-  if (x === undefined) return drow({ name: r.name, yours: r.yours, door: r.door, amount: READING });
-  if (!x) return drow({ name: r.name, yours: r.yours, door: r.door, amount: unreadable });
+  if (x === undefined) return drow({ name: r.name, door: r.door, amount: AMOUNT_GHOST });
+  if (!x) return drow({ name: r.name, door: r.door, amount: unreadable });
   const on = r.id === "trace" ? ui.heads.filter(traceOn) : null;
   // the copies keep their own days (the President, Oct 12), and the messages theirs, so each row sets them in its Keep for
   const keep = r.id === "originals" ? `${ctlHtml(KNOB.transcriptCopyDays, val("transcriptCopyDays"))}${saidHtml("transcriptCopyDays")}`
-    : r.id === "trace" && ui.hist ? `<span class="fixed quiet need">${esc(traceKeepWords())}</span>`
+    : r.id === "trace" && ui.hist ? `<span class="fixed quiet">${esc(traceKeep())}</span>`
     : r.id === "edges" ? `${ctlHtml(KNOB.activityRetentionDays, val("activityRetentionDays"))}${saidHtml("activityRetentionDays")}`
     : r.id === "labels" ? `<span class="fixed quiet">Today and yesterday</span>`
     : r.life ? `<span class="fixed quiet">${esc(r.life)}</span>` : "";
   const said = r.knob ? saidHtml(r.knob) : "";
-  const stop = r.id === "trace" ? traceStopped() : null;
-  const stopped = stop ? `<p class="dstop" role="status">Nothing new saved since ${esc(stop.when)}${esc(stop.who)}: ${esc(stop.words)}</p>` : "";
+  // every command saving is a dot in its provider's colour, hollow where it is off, so "9 of 11" is seen before it is read
+  const dots = on ? `<span class="cdots" aria-hidden="true">${ui.heads.map((h) => `<i class="${traceOn(h) ? "" : "off"}" style="--c:${colorOf(ks.providerOf[h])}"></i>`).join("")}</span>` : "";
   return drow({
-    name: r.name, yours: r.yours, door: r.door, amount: amountOf(x, r), keep, cls: said || r.knob ? " once" : "", off: r.off || "", offShown: !!r.knob && !val(r.knob),
-    // the switch's own source and Live tags sit beside the switch, so a row with two settings (the days and the switch) says
-    // which each pair describes; on the Keep for line both pairs read as one (look at 3394 dark, Oct 13)
-    sw: r.knob ? ctlHtml(KNOB[r.knob], val(r.knob)) + said : r.needs ? `<span class="fixed quiet need">${esc(r.needs)}</span>` : on ? `<button class="count" data-act="saving" aria-expanded="${ui.saving === r.id}">${on.length} of ${ui.heads.length} commands${ICON.caret}</button>` : "",
-    more: stopped + (on && ui.saving === r.id ? `<div class="dmore"><div class="cmdsw">${ui.heads.map((h) => `<div class="cs${traceOn(h) ? "" : " off"}">${cmdChip(h)}<span class="switch"><button data-act="capture" data-head="${esc(h)}" data-v="true" aria-pressed="${traceOn(h)}">On</button><button data-act="capture" data-head="${esc(h)}" data-v="false" aria-pressed="${!traceOn(h)}">Off</button></span>${ui.said[`capture@${h}`] ? `<span class="said ${ui.bad[`capture@${h}`] ? "limit" : "ok"}">${esc(ui.said[`capture@${h}`])}</span>` : ""}</div>`).join("")}</div></div>` : ""),
+    name: r.name, door: r.door, amount: amountOf(x, r), keep, hue: hueOf(r), cls: said || r.knob ? " once" : "", off: r.off || "", offShown: !!r.knob && !val(r.knob),
+    lamp: r.id === "trace" && traceStopped() ? DRAW.lamp("stalled") : "",
+    sw: r.knob ? ctlHtml(KNOB[r.knob], val(r.knob), null, offTitles(r.off)) + said
+      : on ? `<button class="count" data-act="saving" aria-expanded="${ui.saving === r.id}">${dots}${on.length} of ${ui.heads.length} commands${ICON.caret}</button>` : "",
+    more: on && ui.saving === r.id ? traceCommands() : "",
     del: `${ui.bad[id] ? `<span class="said limit">${esc(ui.bad[id])}</span>` : ""}${delBtn(id, x.n, r.unit)}`,
   });
 }
+// THE SPLIT BAR IS THE KIT'S (DRAW.stack): one proportional bar over a whole, each part labelled inside itself where
+// it is wide enough and in one row under the bar where it is not. The kit now takes each part's own figure and its own
+// colour, and a part that is the REST of a whole ("rest": the servers not shared, the repos no folder holds) keeps its
+// own word instead of being gathered under an outcome's phrase — so this page carries no copy of the bar. A bar grows
+// in from nothing the first time it is drawn with data, once.
+const SPLIT_REM = 60; // about how wide the pane's bar is at the narrowest side-by-side width, in rem
+const storeInk = (i) => `var(--store-${(i % 6) + 1})`;
+function splitBar(parts, total, { id = "", tail = "" } = {}) {
+  const grow = id && !ui.grown.has(id) && total > 0;
+  if (grow) ui.grown.add(id);
+  const label = parts.filter((p) => p.n > 0).map((p) => `${p.word} ${p.text}`).join(", ");
+  return DRAW.stack(parts, total, { grow, label, tail, bw: SPLIT_REM });
+}
+/** What splice keeps, all of it, as the topic's one figure and one bar split by store, biggest first; and the moment
+ *  saving stopped, with the way to the space that brings it back. */
+function keptHtml() {
+  const reading = DATA_ROWS.some(stillReading), unread = DATA_ROWS.some((r) => !(r.noRoute || r.own) && heldOf(r) === null);
+  const held = bySize(), all = allBytes();
+  // a total over a store that was not read is not read either: "0 B" over unread stores is a figure that is not true
+  const hero = reading ? heroGhost()
+    : unread ? `<div class="pd-top"><b class="pd-rate">${DRAW.dash}</b><span class="pd-failed"><span>kept</span></span>${unreadable}</div>`
+    : DRAW.hero({ figure: mbWord(all), of: "kept" });
+  const stop = reading ? null : traceStopped();
+  // SAVING STOPPED IS A STATE ON THE FIGURE IT STOPS (Oct 26): the stalled lamp, since when, the commands it holds for,
+  // the cause, and the one way back, which scrolls to the deletes and lights them once
+  const stopped = stop ? `<div class="dstop" role="status">${DRAW.lamp("stalled")}<b>Saving stopped ${esc(stop.when)}</b>`
+    + `${stop.heads.length ? `<span class="dwho">${stop.heads.map((h) => cmdChip(h)).join("")}</span>` : ""}${stop.words ? `<span class="dwhy">${esc(stop.words)}</span>` : ""}`
+    + (stop.known ? `<button class="act quiet small" data-act="tofree">Free up space</button><span class="dthen">Saves again on the next request</span>` : "") + `</div>` : "";
+  const bar = reading ? GHOST.stack() : all ? splitBar(held.map((p, i) => ({ n: p.x.bytes, text: mbWord(p.x.bytes), word: p.r.name, ink: storeInk(i) })), all, { id: "data" }) : "";
+  return DRAW.section("On this computer", `${hero}${stopped}${bar}`, { cls: "tally" });
+}
+// the knobs each group's cards carry, so the marks on their values are named once on the group's own line
+const GROUP_KNOBS = {
+  text: ["transcriptView", "keepTranscriptCopies", "transcriptCopyDays", "keepCompactionSummaries", "keepCodeModeWork", "replayReasoning"],
+  records: ["historyRetentionDays", "messageEdges", "activityRetentionDays"],
+};
+// the tap is set per command in splice.toml and read at start, so its card carries the lock and restart marks, and the
+// group's legend names them only while that card is drawn
+const groupKnobs = (g, tapped) => (g === "text" && tapped ? [...GROUP_KNOBS.text, "wireTap"] : GROUP_KNOBS[g]);
 function dataHtml() {
-  const read = drow({ name: "Read your Claude Code conversations", door: ["sessions.html", "Sessions"], amount: `<span class="none">Nothing saved</span>`, keep: saidHtml("transcriptView"), sw: ctlHtml(KNOB.transcriptView, val("transcriptView")), off: "When off, Sessions, Requests and Teams show no conversations · Questions are answered in the terminal · Nothing is deleted", offShown: !val("transcriptView") });
+  const read = drow({ name: "Read your Claude Code conversations", door: ["sessions.html", "Sessions"], amount: DRAW.nothing("Nothing saved"), keep: saidHtml("transcriptView"), sw: ctlHtml(KNOB.transcriptView, val("transcriptView"), null, offTitles(TV_OFF)), off: TV_OFF, offShown: !val("transcriptView") });
   // what each tapped command holds in memory right now: counted, never shown, and no Delete since the daemon has none
   const taps = ui.heads.filter((h) => tapOf(h) > 0), heldN = taps.reduce((n, h) => n + (ui.held[h] ?? 0), 0);
-  // The row draws when the fact exists: a command taps its requests or bodies are held. With neither it holds nothing and
-  // offers nothing (the tap is restart-only and has no control here), so it is not drawn at all (fin, Oct 11).
+  // The card draws when the fact exists: a command taps its requests or bodies are held. With neither it holds nothing and
+  // offers nothing (the tap is set per command in splice.toml and read at start), so it is not drawn at all (fin, Oct 11).
   const memory = taps.length || heldN ? drow({
-    name: "Last requests, in memory", yours: true,
-    amount: taps.some((h) => ui.held[h] === undefined) ? READING : taps.some((h) => ui.held[h] === null) ? unreadable : heldN ? `<span class="none">${fmt(heldN)} ${heldN === 1 ? "request" : "requests"} held</span>` : `<span class="none">Nothing held</span>`,
+    name: "Last requests, in memory",
+    amount: taps.some((h) => ui.held[h] === undefined) ? AMOUNT_GHOST : taps.some((h) => ui.held[h] === null) ? unreadable
+      : heldN ? `<div class="pd-sub"><b>${fmt(heldN)}</b><span>${heldN === 1 ? "request" : "requests"} held</span></div>` : DRAW.nothing("Nothing held"),
     keep: `<span class="taps">${taps.map((h) => `<span class="tap">${cmdChip(h)}<span class="fixed">Last ${tapOf(h)}</span></span>`).join("")}</span>`,
-    // the tap is read when splice starts, so its row says so as every restart-only setting does (v0.4.0 section 9, §586)
-    sw: `<span class="count">${taps.length} of ${ui.heads.length} commands</span><span class="tags"><span class="tag when later">Applies on restart</span></span>`,
+    sw: `<span class="count">${taps.length} of ${ui.heads.length} commands</span><span class="marks">${KNOBS.markHtml("lock", "Set per command in splice.toml")}${KNOBS.markHtml("restart")}</span>`,
   }) : "";
   const bytes = (g) => DATA_ROWS.filter((r) => r.g === g).reduce((s, r) => s + (heldOf(r)?.bytes ?? 0), 0);
-  // a total over a store that was not read is not read either: "0 B" over unread stores is a figure that is not true
   const unreadIn = (g) => DATA_ROWS.some((r) => r.g === g && !(r.noRoute || r.own) && heldOf(r) === null);
-  const sum = (g) => (DATA_ROWS.some((r) => r.g === g && stillReading(r)) ? "Reading" : unreadIn(g) ? "Not read"
-    : `${mbWord(bytes(g))}${DATA_ROWS.some((r) => r.g === g && (r.noRoute || r.own)) ? " counted" : ""}`);
-  const head = (name, g) => `<div class="dgroup"><h3>${name}</h3><span class="hn">${sum(g)}</span></div>`;
-  // each store is built once: its card goes to its group, its Delete to the one section at the end
+  const sum = (g) => (DATA_ROWS.some((r) => r.g === g && stillReading(r)) ? GHOST.fig(4) : unreadIn(g) ? unreadable : `<span class="hn">${esc(mbWord(bytes(g)))}</span>`);
+  // each store is built once: its card goes to its group, its Delete to Free up space
   const built = DATA_ROWS.map((r) => ({ r, p: dataRow(r) }));
-  const sized = (b) => (heldOf(b.r)?.bytes ?? 0) > 0;
-  // a group whose cards say the same kind of thing stands them level, so their Save and Keep for line up; Records holds
-  // one card with a chart and two without, and there the short ones stay short (splice-lead, Oct 11)
-  const cards = (g) => `<div class="dcards ${esc(g)}">${built.filter((b) => b.r.g === g && sized(b)).map((b) => b.p.html).join("")}</div>`;
-  const dels = built.filter((b) => b.p.del && b.p.del.trim()).map((b) => {
-    const x = heldOf(b.r);
-    return `<div class="dfrow"><span class="nm">${esc(b.r.name)}</span><span class="dfs">${x && x.bytes ? mbWord(x.bytes) : ""}</span><span class="dfa">${b.p.del}</span></div>`;
-  });
-  return `<div class="dlist">${totalHtml()}`
-    + `${head("Conversation text", "text")}${cards("text")}`
-    + `${head("Records", "records")}${cards("records")}`
-    + `<div class="dgroup"><h3>Nothing kept right now</h3><span class="hn">No space used</span></div><div class="dcards slim">${read.html}${built.filter((b) => !sized(b)).map((b) => b.p.html).join("")}${memory ? memory.html : ""}</div>`
-    + freeHtml(dels) + `</div>`;
+  // a group's cards, biggest first, then the ones holding nothing yet, in the order they are listed
+  const order = (b) => -(heldOf(b.r)?.bytes ?? -1);
+  const cards = (g, extra = []) => `<div class="dcards ${esc(g)}">${built.filter((b) => b.r.g === g).sort((a, b) => order(a) - order(b)).map((b) => b.p.html).join("")}${extra.join("")}</div>`;
+  const legend = (g) => { const items = KNOBS.legendHtml(groupKnobs(g, !!memory), { bare: true }); return items ? `<span class="legend">${items}</span>` : ""; };
+  // conversation text is his prompts word for word, which is said once, on the group, instead of once per card
+  const text = DRAW.section("Conversation text", cards("text", [memory ? memory.html : "", read.html]), { aside: `<span class="gaside"><span class="yours">Your prompts</span>${sum("text")}${legend("text")}</span>` });
+  const records = DRAW.section("Records", cards("records"), { aside: `<span class="gaside">${sum("records")}${legend("records")}</span>`, cls: "drec" });
+  return keptHtml() + text + records + freeHtml(built);
 }
-/** What splice keeps, all of it, as one figure and one bar split by store, biggest first. Each piece is the share that
- *  store holds, so where the space went is read in one look rather than summed from a column of small numbers. */
-function totalHtml() {
-  const reading = DATA_ROWS.some(stillReading), unread = DATA_ROWS.some((r) => !(r.noRoute || r.own) && heldOf(r) === null);
-  const held = bySize();
-  const all = allBytes();
-  const fig = reading ? `<span class="none">Reading</span>` : unread ? `<span class="none">Not read</span>` : `<b>${mbWord(all)}</b>`;
-  // six hues of their own, never the provider colours: on every page a colour names a provider, and these name stores
-  const seg = (p, i) => `<i style="${hueAt(i)};--w:${((p.x.bytes / all) * 100).toFixed(2)}%" title="${esc(p.r.name)}"></i>`;
-  const key = (p, i) => `<span class="dkey"><i style="${hueAt(i)}"></i>${esc(p.r.name)}<b>${mbWord(p.x.bytes)}</b></span>`;
-  return `<section class="dtotal"><div class="dtfig">${fig}<span class="dtw">kept on this computer</span></div>`
-    + (all && !reading ? `<div class="dtbar" role="img" aria-label="${held.map((p) => `${p.r.name} ${mbWord(p.x.bytes)}`).join(", ")}">${held.map(seg).join("")}</div>`
-      + `<div class="dtkey">${held.map(key).join("")}</div>` : "")
-    + `</section>`;
-}
-/** Every delete in one place at the end, away from the cards, so a destructive act is never a button beside a reading. */
-function freeHtml(dels) {
-  if (!dels.length) return "";
-  return `<section class="dfree"><div class="dgroup"><h3>Free up space</h3><span class="hn">Deleting cannot be undone</span></div>`
-    + `<div class="dfrows">${dels.join("")}</div></section>`;
+const TV_OFF = "When off, Sessions, Requests and Teams show no conversations · Questions are answered in the terminal · Nothing is deleted";
+/** Every delete in one place, away from the cards, biggest first, each store's size on one scale with its colour. */
+function freeHtml(built) {
+  // a store still being read holds its row with its name, its size and its Delete as ghosts, so the list does not grow
+  // from one row to seven as the sizes land (the slow door, Oct 26)
+  const rows = built.filter((b) => (b.p.del && b.p.del.trim()) || stillReading(b.r)).map((b) => ({ b, x: heldOf(b.r) })).sort((a, z) => (z.x?.bytes ?? -1) - (a.x?.bytes ?? -1));
+  if (!rows.length) return "";
+  const top = Math.max(1, ...rows.map((f) => f.x?.bytes ?? 0));
+  const tile = ({ b, x }) => {
+    const hue = hueOf(b.r);
+    const nm = `<span class="nm">${hue ? `<i class="dsw" style="${hue}" aria-hidden="true"></i>` : ""}${esc(b.r.name)}</span>`;
+    if (stillReading(b.r)) return `<div class="dfrow">${nm}${GHOST.track()}<span class="dfa">${GHOST.bar(5.5)}</span></div>`;
+    return `<div class="dfrow">${nm}${x && x.bytes ? DRAW.barCell({ w: (x.bytes / top) * 100, text: esc(mbWord(x.bytes)) }) : "<span></span>"}<span class="dfa">${b.p.del}</span></div>`;
+  };
+  return `<section class="psec dfree"><div class="sechead"><h3 class="kicker">Free up space</h3><span class="hn">Deleting cannot be undone</span></div>`
+    + `<div class="dfrows cols" style="--n:${perRow(rows.length)}">${rows.map(tile).join("")}</div></section>`;
 }
 
 // ---------- what happened this week ----------
@@ -500,6 +584,9 @@ function freeHtml(dels) {
 // here: a count is the daemon's `count` for the filter a door opens on Requests, so the figure and the page it opens
 // agree. Six words are tested on the daemon over every row (TurnsTest.kt), never over the newest 2,000 the route would send.
 const ZONE = Intl.DateTimeFormat().resolvedOptions().timeZone;
+// A TIME CARRIES ITS ZONE (Oct 26): he reads this page beside a terminal whose log lines are in UTC, so a bare "4:10 PM"
+// on today's peak is a time he has to place. The browser's own short name for the zone it is in, said on the time.
+const ZONE_WORD = new Intl.DateTimeFormat("en-US", { timeZoneName: "short" }).formatToParts(new Date()).find((p) => p.type === "timeZoneName")?.value ?? "";
 const SEC = 1000, MIN = 60000;
 const startOfToday = () => { const d = new Date(); d.setHours(0, 0, 0, 0); return +d; };
 const reqUrl = (f) => `requests.html?${new URLSearchParams(f)}`;
@@ -553,7 +640,9 @@ async function readPeak(head) {
 }
 function readWeek() {
   const day = startOfToday(), week = Date.now() - 7 * DAY;
-  const plan = [["overloaded", day], ["cutoff", day], ["queued", day], ["restarted", week], ["gaveup", week], ["waited", week], ["silentresume", week], ["silentover", week]];
+  // "allweek" and "allday" are asks with no filter at all: the requests of the window, which is the denominator every
+  // share on this page is read against ("1,635 failed of 2,887 requests"). The daemon counts them in the same read.
+  const plan = [["overloaded", day], ["cutoff", day], ["queued", day], ["allday", day], ["restarted", week], ["gaveup", week], ["waited", week], ["silentresume", week], ["silentover", week], ["allweek", week]];
   Promise.all(ui.headRows.map(readPeak)).then((peaks) => { ui.peaks = peaks; later(); });
   Promise.all(ui.headRows.map((h) => countsWeek(h, plan, week))).then((perHead) => {
     plan.forEach(([why]) => { ui.week[why] = perHead.map((m) => m.get(why)); });
@@ -561,187 +650,369 @@ function readWeek() {
   });
 }
 const weekReading = (...words) => words.some((why) => ui.week[why] === undefined);
+// ---------- the one figure a topic opens on ----------
+// A section answers with ONE figure, its denominator on the same baseline, and a door to exactly those requests where
+// Requests can list exactly them (the Usage drill-down's hero). Every part is read from the daemon: while a part is
+// still being read it is drawn as the ghost of its own shape, and where the daemon answers nothing the figure is not
+// drawn at all. No stand-in figure.
+const heroGhost = () => GHOST.hero();
 /** A word's figure across every command: the total, or null when any command's read did not answer. */
 const weekTotal = (why) => { const per = ui.week[why]; return per && per.every((p) => !p.err) ? per.reduce((s, p) => s + p.n, 0) : null; };
-const doorTo = (url, what, tail, chip) => `<a class="door" href="${url}">${SV.open}<span>${what}</span>${tail}${chip ? cmdChip(chip) : ""}<em>Open it</em></a>`;
-const clockOf = (ts) => clock(new Date(ts));
-const msLong = (ms) => (ms >= MIN ? `${Math.floor(ms / MIN)} min${ms % MIN ? ` ${Math.round((ms % MIN) / SEC)} s` : ""}` : `${Math.round(ms / SEC)} s`);
-/** One figure: how many, opening them all on Requests, then each command's share. A figure he can open is a tile; a zero, or a
- *  count splice could not read, is a quiet line beside the tiles, never a tile of its own (fin, Oct 11). */
-function figParts({ why, what, door, cmds = true }) {
-  if (weekReading(why)) return { tile: `<div class="fig3 none"><span class="big">…</span><span class="what">${esc(what)}</span><span class="state">Reading</span></div>` };
-  const per = ui.week[why] ?? [], total = weekTotal(why), from = why === "overloaded" || why === "cutoff" || why === "queued" ? { from: String(startOfToday()) } : { win: "7d" };
+/** A command's own limit on requests at once, or the one every command uses; 0 is no limit. */
+const limitOf = (head) => Number(ks.cfg?.layers?.perHead?.[head]?.maxInflight ?? val("maxInflight")) || 0;
+/** How loud a share is: the limit red from [bad], the key light from [watch], the text's own ink below. */
+const levelOf = (share, watch, bad) => (share >= bad ? "bad" : share >= watch ? "watch" : "ok");
+/** Two parts of a topic side by side once the plate holds both whole, one over the other below that (settings.css
+ *  .pair). "lead" gives the first part the larger share, for a table beside a short list of settings. */
+const pair = (left, right, cls = "") => (left && right
+  ? `<div class="pair${cls ? ` ${cls}` : ""}"><div class="pcol">${left}</div><div class="pcol">${right}</div></div>` : left || right);
+const today = () => String(startOfToday());
+/** One request's own row on Requests, in the week it lies in. */
+const rowUrl = (head, row) => `requests.html?win=7d#${encodeURIComponent(rowId(head, row))}`;
+/** A time in a column whose header says the zone once: the clock today, the date and the clock before today. */
+const whenShort = (ms) => { const d = new Date(ms); return `${d.toDateString() === new Date().toDateString() ? "" : `${dateWord(d)}, `}${clock(d)}`; };
+const zoneHead = (w) => `${w}${ZONE_WORD ? `, ${ZONE_WORD}` : ""}`;
+
+// ---------- waits on one time axis ----------
+// A section whose settings are waits draws them on ONE log axis, so "90 s" and "15 min" read as lengths on one line and
+// the order they act in is seen rather than worked out: each row's track runs to the value every command uses, and a
+// command holding its own value is a dot in its provider's colour at that value.
+const HOUR = 60 * MIN;
+const STOPS = [10, 30, 100, 300, SEC, 3 * SEC, 10 * SEC, 30 * SEC, MIN, 2 * MIN, 5 * MIN, 10 * MIN, 15 * MIN, 30 * MIN, HOUR, 2 * HOUR, 4 * HOUR, 8 * HOUR];
+/** Every value [keys] hold in ms: the one every command uses and each command's own. */
+const msOf = (keys) => keys.flatMap((key) => [Number(val(key)), ...KNOBS.ownersOf(key).map((c) => Number(KNOBS.ownValue(key, c)))]).filter((x) => Number.isFinite(x) && x > 0);
+/** The axis from the round figure under the smallest value to the one past the largest. At most five labels, never
+ *  closer than a fifth of the axis to each other, so no two touch on the narrowest pane; the last one always. */
+function durAxis(values, word) {
+  const xs = values.filter((x) => Number.isFinite(x) && x > 0);
+  if (!xs.length) return null;
+  const min = Math.min(...xs), max = Math.max(...xs);
+  const lo = [...STOPS].reverse().find((s) => s < min) ?? STOPS[0];
+  const hi = STOPS.find((s) => s >= max * 1.15) ?? STOPS.at(-1);
+  const span = Math.log(hi) - Math.log(lo) || 1;
+  const at = (x) => Math.max(0, Math.min(100, ((Math.log(Math.max(x, lo)) - Math.log(lo)) / span) * 100));
+  const all = STOPS.filter((s) => s >= lo && s <= hi), step = Math.ceil(all.length / 5), ticks = [];
+  for (let i = all.length - 1; i >= 0; i -= step) if (!ticks.length || at(ticks[0]) - at(all[i]) >= 18) ticks.unshift(all[i]);
+  return { at, ticks, word };
+}
+/** One wait on the axis: the track to the value every command uses, and a dot for each command holding its own. */
+function durDraw(key, ax) {
+  const k = KNOB[key], v = Number(val(key));
+  const own = KNOBS.ownersOf(key).map((c) => [c, Number(KNOBS.ownValue(key, c))]).filter(([, x]) => Number.isFinite(x) && x > 0);
+  const name = (c) => ks.commandOf[c] || c;
+  const said = `${word(k, v)}${own.length ? `; ${own.map(([c, x]) => `${name(c)} ${word(k, x)}`).join(", ")}` : ""}`;
+  return `<span class="dtrk" role="img" aria-label="${esc(said)}">${v > 0 ? `<i class="dfill" style="width:${ax.at(v).toFixed(2)}%"></i>` : ""}`
+    + own.map(([c, x]) => `<i class="dtk" style="left:${ax.at(x).toFixed(2)}%;--c:${colorOf(ks.providerOf[c])}" title="${esc(`${name(c)} · ${word(k, x)}`)}"></i>`).join("") + `</span>`;
+}
+
+// ---------- Stalled answers ----------
+// WHAT SPLICE DID THIS WEEK WHEN A MODEL WENT QUIET, AS ONE TABLE ON ONE SCALE (Oct 27): the two ways a request ended
+// early and the three ways it kept going, each a bar as long as its count against the largest and split by the
+// commands it happened on, its count a door to exactly those requests, and its newest one a door to that request.
+// Beside it, the waits that decide which of them happens, on one time axis, with the longest stall this week across them.
+const STALL_GROUPS = [
+  ["Ended early", [["restarted", WHY.restarted.word], ["gaveup", WHY.gaveup.word]]],
+  ["Kept going", [["waited", WHY.waited.word], ["silentresume", "Resumed"], ["silentover", "Started over"]]],
+];
+const STALL_WHYS = STALL_GROUPS.flatMap(([, rows]) => rows.map(([why]) => why));
+const otabHead = () => `<div class="orow oh" role="row"><span role="columnheader">Outcome</span><span role="columnheader">By command</span>`
+  + `<span role="columnheader" class="r">Requests</span><span role="columnheader">Most on</span><span role="columnheader">${esc(zoneHead("Latest"))}</span></div>`;
+const ogroup = (name) => `<div class="orow og" role="row"><span role="rowheader">${esc(name)}</span></div>`;
+function silentHero() {
+  if (weekReading("restarted", "gaveup", "allweek")) return heroGhost();
+  const early = ["restarted", "gaveup"].map(weekTotal);
+  if (early.includes(null)) return "";
+  const n = early[0] + early[1], all = weekTotal("allweek");
+  if (all === 0) return DRAW.hero({ figure: "0", of: "requests this week" });
+  return DRAW.hero(all
+    ? { figure: DRAW.pct(n / all), level: levelOf(n / all, 0.02, 0.1), count: n, word: "ended early", of: `of ${DRAW.n(all)} requests this week` }
+    : { figure: DRAW.n(n), level: n ? "bad" : "ok", of: "ended early this week" });
+}
+function stallRow(why, what, top, early) {
+  const per = ui.week[why] ?? [], total = weekTotal(why), ask = { win: "7d", why };
+  const cells = (cls, bar, count, cmds, last) => `<div class="orow${cls}" role="row"><span class="ow" role="cell">${esc(what)}</span>`
+    + `<span class="obar" role="cell">${bar}</span><span class="on r" role="cell">${count}</span><span class="ocmds" role="cell">${cmds}</span><span class="olast" role="cell">${last}</span></div>`;
   if (total === null) {
     console.warn(`${what}: ${per.find((p) => p.err)?.err ?? "splice did not answer"}`);
-    return { line: `<span class="fig"><span class="state limit">Not read</span> ${esc(what)}</span>` };
+    return cells(" unread", "", `<span class="state limit">Not read</span>`, "", "");
   }
-  if (!total) return { line: `<span class="fig"><b>0</b> ${esc(what)}</span>` };
-  const ask = why === "failed" ? { outcome: "fail" } : { why };
-  const shares = per.filter((p) => p.n).sort((a, b) => b.n - a.n);
-  return { tile: `<div class="fig3"><a class="lead" href="${reqUrl({ ...from, ...ask })}"><span class="big">${fmt(total)}</span><span class="what">${esc(what)}</span><em>${SV.open}Open on Requests</em></a>`
-    + (cmds ? `<div class="cdoors">${shares.map((p) => `<a class="cdoor" href="${reqUrl({ ...from, ...ask, cmd: p.head.command })}">${cmdChip(p.head.key)}<b>${fmt(p.n)}</b></a>`).join("")}</div>` : "")
-    + (door ? door(shares) : "") + `</div>` };
+  if (!total) return cells(" zero", "", "0", "", "");
+  const shares = per.filter((p) => !p.err && p.n).sort((a, b) => b.n - a.n), cmd = (p) => p.head.command;
+  const segs = shares.map((p) => `<a class="oseg" href="${reqUrl({ ...ask, cmd: cmd(p) })}" style="flex-grow:${p.n};--c:${colorOf(ks.providerOf[p.head.key])}" title="${esc(`${cmd(p)} · ${fmt(p.n)}`)}"></a>`).join("");
+  const bar = `<span class="ofill" style="width:${Math.max(2, (total / top) * 100).toFixed(2)}%">${segs}</span>`;
+  const count = `<a${early ? ' class="lv-bad"' : ""} href="${reqUrl(ask)}">${fmt(total)}</a>`;
+  const rest = shares.slice(3);
+  const cmds = shares.slice(0, 3).map((p) => `<a class="cdoor" href="${reqUrl({ ...ask, cmd: cmd(p) })}">${cmdChip(p.head.key)}<b>${fmt(p.n)}</b></a>`).join("")
+    + (rest.length ? `<span class="omore" title="${esc(rest.map((p) => `${cmd(p)} ${fmt(p.n)}`).join(", "))}">+${fmt(rest.length)}</span>` : "");
+  const newest = shares.filter((p) => p.newest).sort((a, b) => b.newest.ts - a.newest.ts)[0];
+  const last = newest ? `<a href="${rowUrl(newest.head.key, newest.newest)}">${esc(whenShort(newest.newest.ts))}</a>` : "";
+  return cells("", bar, count, cmds, last);
 }
-/** The figures of one group: the tiles he can open, then one quiet line holding the zeros. `n` is how many tiles were
- *  drawn, which is what a group's share of the row is weighed by: the ones that came back zero are in the line. */
-function figsHtml(figs) {
-  const parts = figs.map(figParts), lines = parts.filter((p) => p.line).map((p) => p.line);
-  const tiles = parts.filter((p) => p.tile).map((p) => p.tile);
-  return {
-    n: tiles.length,
-    // the count is on the row too: a group's tiles share its width evenly, so how wide one came out is the row's width
-    // divided by this, which is what tells a lone tile on a full row from three tiles sharing one (settings.css)
-    tiles: `<div class="figs3 n${tiles.length}">${tiles.join("")}</div>`,
-    // the zeros ride on the head beside the name of what they belong to: under the tiles, "0 Given up" hung on its own
-    // under the row with nothing to tie it to (splice-lead's walk of round two, Oct 11)
-    zeros: lines.length ? `<span class="zeros">${lines.join('<span class="dot">·</span>')}</span>` : "",
-  };
+function stallTable() {
+  if (weekReading(...STALL_WHYS)) return stallGhost();
+  const top = Math.max(1, ...STALL_WHYS.map((why) => weekTotal(why) ?? 0));
+  const body = STALL_GROUPS.map(([group, rows], g) => ogroup(group) + rows.map(([why, what]) => stallRow(why, what, top, g === 0)).join("")).join("");
+  return `<div class="otab" role="table" aria-label="Stalled answers this week">${otabHead()}${body}</div>`;
 }
-const latestDoor = (shares) => {
-  const best = shares.filter((p) => p.newest).sort((a, b) => b.newest.ts - a.newest.ts)[0];
-  return best ? doorTo(`requests.html?win=7d#${encodeURIComponent(rowId(best.head.key, best.newest))}`, "Latest", `<b>${clockOf(best.newest.ts)}</b>`, best.head.key) : "";
-};
-const longestDoor = (shares) => {
-  const best = shares.filter((p) => p.longest).sort((a, b) => b.silence - a.silence)[0];
-  return best ? doorTo(`requests.html?win=7d#${encodeURIComponent(rowId(best.head.key, best.longest))}`, "Longest stall", `<b>${msLong(best.silence)}</b>`, best.head.key) : "";
-};
-// --f is how many figures the group holds, so two groups share the row in proportion to what is in them and every
-// figure comes out the same width: one group of one beside a group of three left most of the row empty at 1440 and 3828
-// the head carries the group's name and whatever came back zero, over a line the width of the group, so a label over
-// two tiles is read as theirs and not as the first one's (splice-lead: "the third card has none", Oct 11)
-const groupHtml = (label, figs) => {
-  const f = figsHtml(figs);
-  return `<div class="fgroup" style="--f:${f.n || 1}"><div class="ghead"><span class="glabel">${label}</span>${f.zeros}</div>${f.tiles}</div>`;
-};
-const tallyHtml = (title, groups) => `<section class="tally"><h3>${title}</h3><div class="fgroups">${groups.join("")}</div></section>`;
-/** A section whose figures stand under its own heading, with anything that came back zero on the heading's line. */
-const headed = (title, f) => `<div class="thead"><h3>${title}</h3>${f.zeros}</div>${f.tiles}`;
-const silentHtml = () => tallyHtml("This week", [
-  groupHtml("Ended early", [
-    { why: "restarted", what: WHY.restarted.word, door: latestDoor },
-    { why: "gaveup", what: WHY.gaveup.word, door: latestDoor },
-  ].sort((a, b) => (weekTotal(b.why) ?? 0) - (weekTotal(a.why) ?? 0))),
-  groupHtml("Kept going", [
-    { why: "waited", what: WHY.waited.word, door: longestDoor },
-    { why: "silentresume", what: WHY.silentresume.word.replace(" after no progress", "") },
-    { why: "silentover", what: WHY.silentover.word.replace(" after no progress", "") },
-  ]),
-]) + `<section class="sub">${blocks(keysOf("silent"))}</section>`;
-const limitOf = (head) => Number(ks.cfg?.layers?.perHead?.[head]?.maxInflight ?? val("maxInflight")) || 0;
-function peaksHtml() {
-  if (ui.peaks === undefined) return `<section class="tally"><h3>Today</h3><div class="card peaks">${READING}</div></section>`;
+/** The table as it will land: its words are this page's own, its figures the ghosts of figures. */
+const stallGhost = () => `<div class="otab" aria-busy="true">${otabHead()}${STALL_GROUPS.map(([group, rows]) => ogroup(group)
+  + rows.map(([, what], i) => `<div class="orow" aria-hidden="true"><span class="ow">${esc(what)}</span><span class="obar">${GHOST.bar([12, 7, 16][i] ?? 8)}</span>`
+    + `<span class="on r">${GHOST.fig(2.2)}</span><span class="ocmds">${GHOST.chip()}</span><span class="olast">${GHOST.bar(4.6)}</span></div>`).join("")).join("")}</div>`;
+function silentWaits() {
+  const keys = keysOf("silent");
+  const best = (ui.week.waited || []).filter((p) => !p.err && p.longest && p.silence > 0).sort((a, b) => b.silence - a.silence)[0];
+  const mark = best ? { ms: best.silence, href: rowUrl(best.head.key, best.longest), inner: `Longest stall <b>${esc(DRAW.ms(best.silence))}</b>${cmdChip(best.head.key)}` } : null;
+  const ax = durAxis([...msOf(keys), ...(mark ? [mark.ms] : [])], "Without progress, log scale");
+  const draw = Object.fromEntries(keys.filter((key) => KNOB[key].c.k === "dur").map((key) => [key, durDraw]));
+  return knobSec("How long splice waits", keys, { ax, draw, mark });
+}
+const silentHtml = () => pair(DRAW.section("This week", `${silentHero()}${stallTable()}`), silentWaits());
+
+// ---------- Many agents at once ----------
+// TODAY, ONE ROW PER COMMAND ON SHARED SCALES (Oct 27): the most requests it held at once against its own limit, when
+// in the day that was, how many requests it sent and how many waited in line, each figure a door to those requests.
+// The settings that make those limits stand beside the table. What splice did when a provider pushed back stands under
+// it, beside the retries that answer a failure.
+const LIMITS = ["maxInflight", "maxQueued", "maxRequestBytes"];
+/** Where a moment of today falls on the day's track, in percent. */
+const dayAt = (ms) => Math.max(0, Math.min(100, ((ms - startOfToday()) / DAY) * 100));
+const DAY_TICKS = [[0, "12 AM"], [25, "6 AM"], [50, "12 PM"], [75, "6 PM"]];
+const peakHead = () => `<div class="pk ph" role="row"><span role="columnheader">Command</span><span role="columnheader">At once, of its limit</span>`
+  + `<span role="columnheader" class="pdh">${esc(zoneHead("Busiest at"))}</span><span role="columnheader" class="r">Requests</span><span role="columnheader" class="r">Waited in line</span></div>`;
+function busyHero() {
+  if (ui.peaks === undefined) return heroGhost();
+  const rows = (ui.peaks || []).filter((p) => !p.err && p.peak > 0);
+  if (!rows.length) return "";
+  const share = (p) => { const lim = limitOf(p.head.key); return lim ? p.peak / lim : 0; };
+  const top = [...rows].sort((a, b) => share(b) - share(a) || b.peak - a.peak)[0];
+  const lim = limitOf(top.head.key), href = reqUrl({ from: today(), cmd: top.head.command });
+  const tail = `${cmdChip(top.head.key)}<span class="hat">at ${esc(clock(new Date(top.at)))}${ZONE_WORD ? ` ${esc(ZONE_WORD)}` : ""}</span>`;
+  return DRAW.hero(lim
+    ? { figure: DRAW.pct(top.peak / lim), level: levelOf(top.peak / lim, 0.8, 1), count: top.peak, word: "at once", of: `of ${DRAW.n(lim)} allowed`, href, tail }
+    : { figure: DRAW.n(top.peak), of: "at once, no limit set", href, tail });
+}
+function peakRow(p, maxN, now) {
+  const key = p.head.key, lim = limitOf(key), full = lim > 0 && p.peak >= lim;
+  const q = (ui.week.queued || []).find((x) => x.head.key === key), queued = q && !q.err ? q.n : p.queued || 0;
+  const meter = lim ? DRAW.meter(Math.min(100, (p.peak / lim) * 100), full ? "full" : "") : "";
+  return `<div class="pk" role="row" data-grow="peak-${esc(key)}" style="--c:${colorOf(ks.providerOf[key])}">`
+    + `<span role="cell"><a class="pcmd" href="${reqUrl({ from: today(), cmd: p.head.command })}">${cmdChip(key)}</a></span>`
+    + `<span class="pm" role="cell">${meter}<span class="pmv${full ? " lv-bad" : ""}"><b>${fmt(p.peak)}</b><i>${lim ? `of ${fmt(lim)}` : "no limit"}</i></span></span>`
+    + `<span class="pclk" role="cell">${esc(clock(new Date(p.at)))}</span>`
+    + `<span class="pday" aria-hidden="true"><i class="pfut" style="left:${now.toFixed(2)}%"></i><i class="pdot" style="left:${dayAt(p.at).toFixed(2)}%"></i></span>`
+    + `<span role="cell">${DRAW.barCell({ w: ((p.n || 0) / maxN) * 100, text: fmt(p.n || 0) })}</span>`
+    + `<span class="pq r" role="cell">${queued ? `<a class="pd-count" href="${reqUrl({ from: today(), why: "queued", cmd: p.head.command })}"><b>${fmt(queued)}</b>${DRAW.go}</a>` : `<span class="pq0">0</span>`}</span></div>`;
+}
+function peaksTable() {
+  if (ui.peaks === undefined) return peaksGhost();
   if (!ui.peaks.length) return "";
   const rows = [...ui.peaks].sort((a, b) => (b.peak ?? -1) - (a.peak ?? -1));
-  // The commands that actually ran today lead, one card each; the ones that held nothing collapse to a line naming
-  // them, instead of a full-width bar at 0 apiece (Marcos's verdict on this pane, Oct 11).
+  // the commands that ran today are rows; the ones that held nothing are one line naming them, and a command whose
+  // peak was not read says so beside its chip, its reason in the console (fin, Oct 12)
   const busy = rows.filter((p) => !p.err && p.peak > 0), idle = rows.filter((p) => !p.err && !p.peak), bad = rows.filter((p) => p.err);
-  const card = (p) => {
-    const key = p.head.key, lim = limitOf(key), pc = lim ? Math.min(100, (100 * p.peak) / lim) : 4;
-    return `<article class="pcard${lim && p.peak >= lim ? " full" : ""}"><header>${cmdChip(key)}<span class="pat">${clockOf(p.at)}</span></header>`
-      + `<div class="pbig"><b>${fmt(p.peak)}</b><span class="pof">${lim ? `of ${fmt(lim)} at once` : "Unlimited"}</span></div>`
-      + `<span class="pbar"><b style="width:${pc}%"></b></span>`
-      // a command that queued nothing reads as the zero of the figure above it, in the same words and with no door
-      + (p.queued ? `<a class="door" href="${reqUrl({ from: String(startOfToday()), why: "queued", cmd: p.head.command })}">${SV.open}<span>Waited in line</span><b>${fmt(p.queued)}</b><em>Open on Requests</em></a>` : `<span class="pnone"><b>0</b> Waited in line</span>`)
-      + `</article>`;
-  };
-  const quiet = idle.length
-    ? `<p class="pidle"><span>No requests today</span>${idle.map((p) => cmdChip(p.head.key)).join("")}</p>` : "";
-  const errs = bad.map((p) => `<p class="pidle"><span class="none">${esc(p.err)}</span>${cmdChip(p.head.key)}</p>`).join("");
-  return `<section class="tally"><h3>Today</h3>${busy.length ? `<div class="pcards">${busy.map(card).join("")}</div>` : `<p class="pidle"><span>No requests today</span></p>`}${quiet}${errs}</section>`;
+  const maxN = Math.max(1, ...busy.map((p) => p.n || 0)), now = dayAt(Date.now());
+  const ticks = DAY_TICKS.map(([x, w]) => `<span class="pd-tk${x ? "" : " pd-t-first"}" style="left:${x}%">${w}</span>`).join("");
+  const table = busy.length ? `<div class="peaks" role="table" aria-label="Today's busiest moment per command">${peakHead()}${busy.map((p) => peakRow(p, maxN, now)).join("")}`
+    + `<div class="pk pt" aria-hidden="true"><span class="pdax pd-ax">${ticks}</span></div></div>` : "";
+  const quiet = idle.length ? `<p class="pidle"><span>No requests today</span>${idle.map((p) => cmdChip(p.head.key)).join("")}</p>` : "";
+  const errs = [...new Set(bad.map((p) => p.err))].map((err) => `<p class="pidle"><span class="state limit">${esc(err)}</span>${bad.filter((p) => p.err === err).map((p) => cmdChip(p.head.key)).join("")}</p>`).join("");
+  return table + quiet + errs;
 }
+const peaksGhost = () => `<div class="peaks" aria-busy="true">${peakHead()}${(ui.headRows.length ? ui.headRows : [0, 1, 2]).slice(0, 6).map(() => `<div class="pk" aria-hidden="true">`
+  + `<span>${GHOST.chip()}</span><span class="pm">${GHOST.track()}</span><span class="pclk">${GHOST.bar(3.6)}</span><span class="pday"></span>`
+  + `<span>${GHOST.cell()}</span><span class="pq r">${GHOST.fig(1.4)}</span></div>`).join("")}</div>`;
+/** How many waited in line today, as a door to them, on the section's kicker line. */
+function queuedAside() {
+  if (weekReading("queued")) return "";
+  const q = weekTotal("queued");
+  if (q === null) return `<span class="pd-count"><span class="state limit">Not read</span> waited in line</span>`;
+  return q ? DRAW.countDoor(q, "waited in line today", reqUrl({ from: today(), why: "queued" })) : `<span class="pd-count"><b>0</b> waited in line today</span>`;
+}
+/** What the providers pushed back with today: each kind's count against the day's requests as a door to them, then
+ *  each command's share of it on one scale. A kind that came back zero, or unread, is one quiet line. */
+function pushback() {
+  if (weekReading("overloaded", "cutoff", "allday")) return `${GHOST.focal(16)}${GHOST.row([GHOST.chip(), GHOST.cell()])}`;
+  const all = weekTotal("allday"), parts = [], quiet = [];
+  for (const [why, what] of [["overloaded", "overloaded"], ["cutoff", "cut off"]]) {
+    const per = ui.week[why] ?? [], total = weekTotal(why);
+    if (total === null) {
+      console.warn(`${what} today: ${per.find((p) => p.err)?.err ?? "splice did not answer"}`);
+      quiet.push(`<span class="fig"><span class="state limit">Not read</span> ${esc(what)}</span>`);
+      continue;
+    }
+    if (!total) { quiet.push(`<span class="fig"><b>0</b> ${esc(what)}</span>`); continue; }
+    const shares = per.filter((p) => !p.err && p.n).sort((a, b) => b.n - a.n), top = shares[0]?.n || 1;
+    parts.push(`<div class="pb"><a class="pd-sub pbfig" href="${reqUrl({ from: today(), why })}"><b>${fmt(total)}</b>${esc(what)}${all ? ` of ${DRAW.n(all)} requests` : ""}${DRAW.go}</a>`
+      + `<div class="pbrows">${shares.map((p) => `<a class="pbrow" href="${reqUrl({ from: today(), why, cmd: p.head.command })}">${cmdChip(p.head.key)}${DRAW.barCell({ w: (p.n / top) * 100, text: fmt(p.n) })}</a>`).join("")}</div></div>`);
+  }
+  return parts.join("") + (quiet.length ? `<p class="zeros">${quiet.join('<span class="dot">·</span>')}</p>` : "");
+}
+// THE TRIES, AS THE WAITS BETWEEN THEM (Oct 27): a request that keeps failing for no known reason waits the first wait,
+// then twice that, and so on up to the longest wait, give or take the jitter, between one try and the next (a 429's
+// own Retry-After and a DNS failure's plan are not this curve). They are drawn on the waits' axis, each wait a dot with
+// its jitter as a band, so a count of tries is read as where its waits land against the first and the longest wait
+// under it. A command whose own values make other waits draws those as rings, its commands in their title.
+const RETRY = ["upstreamRetries", "retryBackoffBaseMs", "retryBackoffCapMs"];
+const waitsOf = (tries, base, cap) => Array.from({ length: Math.max(0, Math.min(Number(tries) || 0, 20) - 1) }, (_, i) => Math.min(base * 2 ** i, cap));
+const ownOr = (key, c) => { const v = KNOBS.ownValue(key, c); return Number(v === undefined ? val(key) : v); };
+const jitterOf = () => Math.max(0, Math.min(100, Number(val("retryBackoffJitterPct")) || 0)) / 100;
+function retryWaits() {
+  const shared = waitsOf(...RETRY.map((key) => Number(val(key)))), extra = new Map();
+  for (const c of new Set(RETRY.flatMap((key) => KNOBS.ownersOf(key)))) {
+    for (const w of new Set(waitsOf(...RETRY.map((key) => ownOr(key, c))))) if (!shared.includes(w)) extra.set(w, [...(extra.get(w) ?? []), c]);
+  }
+  return { shared, extra };
+}
+function triesDraw(key, ax) {
+  const { shared, extra } = retryWaits(), jit = jitterOf(), times = new Map();
+  shared.forEach((w) => times.set(w, (times.get(w) ?? 0) + 1));
+  const band = (w) => (jit ? `<i class="wband" style="left:${ax.at(w * (1 - jit)).toFixed(2)}%;width:${(ax.at(w * (1 + jit)) - ax.at(w * (1 - jit))).toFixed(2)}%"></i>` : "");
+  const dots = [...times].map(([w, n]) => `${band(w)}<i class="wdot" style="left:${ax.at(w).toFixed(2)}%" title="${esc(`${n > 1 ? `${n} waits of` : "A wait of"} ${DRAW.ms(w)}${jit ? `, ±${Math.round(jit * 100)}%` : ""}`)}">${n > 1 ? `<b>×${n}</b>` : ""}</i>`).join("");
+  const rings = [...extra].map(([w, cs]) => `<i class="wdot own" style="left:${ax.at(w).toFixed(2)}%" title="${esc(`${cs.map((c) => ks.commandOf[c] || c).join(", ")} · ${DRAW.ms(w)}`)}"></i>`).join("");
+  const all = shared.reduce((s, w) => s + w, 0);
+  const said = shared.length ? `${shared.length} ${shared.length === 1 ? "wait" : "waits"} between ${shared.length + 1} tries, about ${DRAW.ms(all)} in all` : "One try, no wait";
+  return `<span class="dtrk tries" role="img" aria-label="${esc(said)}">${dots}${rings}</span>`;
+}
+function retries() {
+  const { shared, extra } = retryWaits(), jit = jitterOf(), waits = [...shared, ...extra.keys()];
+  const ax = durAxis([...msOf(["retryBackoffBaseMs", "retryBackoffCapMs"]), ...waits.flatMap((w) => [w * (1 - jit), w * (1 + jit)])], "Wait between tries, log scale");
+  return knobSec("Retries", keysOf("busy", LIMITS), { ax, draw: { upstreamRetries: triesDraw, retryBackoffBaseMs: durDraw, retryBackoffCapMs: durDraw } });
+}
+const busyHtml = () => pair(DRAW.section("Today", `${busyHero()}${peaksTable()}`, { aside: queuedAside() }),
+  knobSec("splice's limits", LIMITS.filter((key) => keysOf("busy").includes(key))), "lead")
+  + pair(DRAW.section("Providers today", pushback()), retries());
+
+// ---------- Reasoning ----------
+// REASONING HAS NO FIGURE, SO IT OPENS ON THE THING ITSELF (Oct 26): nothing on the wire counts what a reasoning setting
+// did, so this topic leads with the terminal it changes, drawn from the live values as shapes, never as sample words or
+// numbers (Marcos, Oct 25: "no made-up data"). Each line a setting decides is named in the terminal's margin by that
+// setting's own name, and pointing at the line or at the setting lights the other (settings.css), so a choice is read
+// as the line it adds, moves or takes away. A line a setting takes away keeps its place, dashed, with the value that
+// took it.
+const SHOWS = ["showReasoning", "summary", "progressLine"];
+const flagOn = (key) => val(key) === true || val(key) === "true";
+function terminal() {
+  const where = val("showReasoning"), sum = val("summary"), prog = flagOn("progressLine");
+  const n = where === "off" || sum === "none" ? 0 : sum === "detailed" ? 2 : 1;
+  const tie = (key, gone) => `<span class="tie">${esc(KNOB[key]?.label ?? "")}${gone ? `<em>${esc(gone)}</em>` : ""}</span>`;
+  const line = (cls, body, key = "", gone = "") => `<div class="tl ${cls}${gone ? " gone" : ""}"${key ? ` data-tie="${key}"` : ""}>`
+    + `<span class="tx">${gone ? "" : body}</span>${key ? tie(key, gone) : "<span></span>"}</div>`;
+  const wire = (w, cls = "") => `<i class="wire${cls ? ` ${cls}` : ""}" style="width:${w}%"></i>`;
+  // the bullet the terminal prints before a block of its own; named apart from the rows' own mark (knobs.css .mk)
+  const dot = `<b class="bul">⏺</b>`;
+  // in the thinking block the reasoning is indented under Thinking and muted; in the reply it is the reply's own text
+  const reasoning = n
+    ? [62, 44].slice(0, n).map((w, i) => line(`rs ${where === "thinking" ? "in" : "out"}`, `${where === "text" && !i ? dot : ""}${wire(w)}`, i ? "" : "summary")).join("")
+    : line("rs", "", "summary", where === "off" ? word(KNOB.showReasoning, where) : word(KNOB.summary, sum));
+  const said = `${where === "off" ? "Reasoning hidden" : `Reasoning ${word(KNOB.summary, sum).toLowerCase()}, ${word(KNOB.showReasoning, where).toLowerCase()}`}; waiting line ${prog ? "on" : "off"}`;
+  return `<div class="term" role="img" aria-label="${esc(said)}"><div class="tbar" aria-hidden="true"><i></i><i></i><i></i></div>`
+    + line("you", `<b class="pr">$</b>claude`)
+    + line("think", `${dot}Thinking…`, "showReasoning", where === "off" ? word(KNOB.showReasoning, where) : "")
+    + reasoning
+    + line("wait", `<i class="spin"></i>${wire(8, "s")}<b class="sep">·</b>${wire(6, "s")}<b class="sep">·</b>${wire(7, "s")}`, "progressLine", prog ? "" : word(KNOB.progressLine, false))
+    + line("reply", `${dot}${wire(70)}`)
+    + `</div>`;
+}
+const termGhost = () => `<div class="term" aria-busy="true"><div class="tbar" aria-hidden="true"><i></i><i></i><i></i></div>`
+  + [24, 40, 62, 44, 30, 70].map((w) => `<div class="tl" aria-hidden="true"><span class="tx">${GHOST.bar(w / 4)}</span><span></span></div>`).join("") + `</div>`;
+const reasoningHtml = () => pair(DRAW.section("In your terminal", terminal()),
+  knobSec("How reasoning shows", SHOWS.filter((key) => keysOf("reasoning").includes(key))) + knobSec("Keep thinking", keysOf("reasoning", SHOWS)));
+
 // ---------- Plan limits ----------
-// Where the plans stand against the line these settings draw. The windows are /api/accounts' own, the ones Accounts
-// shows per account; this pane reads only the highest of each, because the question here is whether the warn line sits
-// in the right place, not which account is busy. The bar carries the line itself, so the setting is read as a mark on
-// the figure rather than as a number in a box.
-const pctWord = (p) => `${Math.round(p)}%`;
-const planBar = (p, warn) => `<div class="pct${p >= warn ? " over" : ""}" style="--w:${Math.min(100, Math.max(1.5, p))}%;--warn:${warn}%" role="img" aria-label="${pctWord(p)} used, warns at ${warn}%"><b></b><i></i></div>`;
-const resetWord = (secs) => (secs ? `Resets ${backWord(new Date(secs * 1000))}` : "");
-function planNow() {
-  const a = ui.accts;
-  if (a === undefined) return `<div class="card peaks">${READING}</div>`;
-  if (!a) return `<p class="pidle"><span class="state limit">Not read</span><span>splice did not answer for its accounts</span></p>`;
-  const warn = Number(val("usageWarnPct")) || 80;
-  const read = a.filter((x) => !signedOut(x) && (x.five_hour_used_percent != null || x.seven_day_used_percent != null));
-  const top = (k) => read.filter((x) => x[k] != null).sort((p, q) => q[k] - p[k])[0];
-  const five = top("five_hour_used_percent"), week = top("seven_day_used_percent");
-  const over = read.filter((x) => Math.max(x.five_hour_used_percent ?? 0, x.seven_day_used_percent ?? 0) >= warn);
-  const tiles = [], zeros = [];
-  if (five) {
-    tiles.push(statTile(pctWord(five.five_hour_used_percent), "Highest in 5 hours",
-      planBar(five.five_hour_used_percent, warn) + chipRow([loginWord(five)]) + note(resetWord(five.five_hour_reset_epoch_seconds))));
-  }
-  if (week) {
-    tiles.push(statTile(pctWord(week.seven_day_used_percent), "Highest this week",
-      planBar(week.seven_day_used_percent, warn) + chipRow([loginWord(week)]) + note(resetWord(week.seven_day_reset_epoch_seconds))));
-  }
-  if (over.length) {
-    // the accounts themselves, no sentence: the setting under this tile is named "Warn when a plan reaches", so what
-    // splice does about them is already on the pane (fin, Marlin's order, Oct 12)
-    tiles.push(statTile(fmt(over.length), `Over ${warn}%`, chipRow(over.map(loginWord))));
-  } else if (read.length) { zeros.push(zeroFig(`over ${warn}%`)); }
-  // NO FOOT LINE UNDER THE BARS (fin, Oct 12): when the plans were last read is the element under "Check plan usage
-  // every", and the accounts reporting no window are the chips under the 5-hour row, each beside the setting it
-  // answers. Repeating either here put the same fact on the pane twice, in two typefaces, four inches apart.
-  // Where no account reports a window at all there are no bars to draw, so the state stands in their place.
-  // "No limits reported" is the providers answering with none; a login splice has never read is Not read, since this
-  // page asks for no reading of its own (marlin, Oct 12)
-  const never = a.some((x) => !x.refusal && x.credential_present !== false && !x.observed_at_epoch_seconds && !x.no_usage_at_epoch_seconds);
-  if (!tiles.length && !zeros.length) zeros.push(`<span class="fig"><span class="state">${never ? "Not read" : "No limits reported"}</span></span>`);
-  return `<div class="thead"><h3>Right now</h3>${zeros.length ? `<span class="zeros">${zeros.join('<span class="dot">·</span>')}</span>` : ""}</div>`
-    + (tiles.length ? `<div class="figs3 n${tiles.length}">${tiles.join("")}</div>` : "");
+// WHERE EACH LOGIN STANDS, IN ACCOUNTS' OWN WINDOW ROWS (Oct 27): the meter for how much is used, the percent, and the
+// ring for how soon it refills, read from /api/accounts as Accounts reads them, with the warn line these settings set
+// as a tick on every meter. Beside them the warn line's own row carries every login as a dot at its highest window,
+// so the setting is read as a line among the figures it acts on rather than as a number in a box.
+const PLAN_LEN = { "5 hours": 300, Week: 10080, Month: 43200 };
+const warnPct = () => Number(val("usageWarnPct")) || 80;
+/** A window as Accounts draws it (accounts.js windowOf): no minutes left once its reset has gone by. */
+function planWindow(pct, resetSec, lenSec, slot, current) {
+  if (pct == null) return null;
+  const label = slot === "short" ? "5 hours" : lenSec >= 28 * 86400 ? "Month" : "Week";
+  const left = resetSec ? Math.round((resetSec * 1000 - Date.now()) / 60000) : null, due = left != null && left >= 0;
+  return { label, used: Math.round(pct), len: PLAN_LEN[label], left: due ? left : null, resetMs: due ? resetSec * 1000 : null,
+    rolledMs: resetSec && !due ? resetSec * 1000 : null, stale: current === false };
 }
-const planHtml = () => `<section class="tally">${planNow()}</section><section class="sub">${blocks(keysOf("plan"))}</section>`;
+const windowsOf = (x) => [planWindow(x.five_hour_used_percent, x.five_hour_reset_epoch_seconds, x.five_hour_window_seconds, "short", x.five_hour_current),
+  planWindow(x.seven_day_used_percent, x.seven_day_reset_epoch_seconds, x.seven_day_window_seconds, "long", x.seven_day_current)].filter(Boolean);
+const lenWord = (w) => ({ "5 hours": "5-hour", Week: "weekly", Month: "monthly" })[w.label];
+/** Each login with a window, with its highest window still running (an ended window's figure is the ended one's),
+ *  the highest first. */
+const planLogins = () => (ui.accts || []).filter((x) => !signedOut(x) && windowsOf(x).length)
+  .map((x) => ({ x, top: windowsOf(x).filter((w) => w.rolledMs == null).sort((a, b) => b.used - a.used)[0] ?? null }))
+  .sort((a, b) => (b.top?.used ?? -1) - (a.top?.used ?? -1));
+function planTop() {
+  const best = planLogins().find((l) => l.top);
+  return best ? { x: best.x, w: best.top, p: best.top.used } : null;
+}
+function planHero() {
+  if (ui.accts === undefined) return heroGhost();
+  const top = planTop();
+  if (!top) return "";
+  const warn = warnPct(), back = top.w.resetMs ? `Resets ${backWord(new Date(top.w.resetMs))}` : "";
+  return DRAW.hero({
+    figure: `${top.p}%`, level: top.p >= 100 ? "bad" : top.p >= warn ? "watch" : "ok", of: `used of its ${lenWord(top.w)} limit`, href: "accounts.html",
+    under: loginWord(top.x), tail: top.p >= 100 ? DRAW.lock(back ? `Limit reached · ${back}` : "Limit reached") : back ? `<span class="hat">${esc(back)}</span>` : "",
+  });
+}
+function planAside() {
+  const logins = planLogins().filter((l) => l.top), warn = warnPct();
+  if (!logins.length) return "";
+  const over = logins.filter((l) => l.top.used >= warn).length;
+  return `<span class="hn"><b>${fmt(over)}</b> of ${fmt(logins.length)} ${logins.length === 1 ? "login" : "logins"} at ${warn}% or more</span>`;
+}
+function planWin(w, warn) {
+  const label = `<span class="label">${w.label}</span>`;
+  if (w.rolledMs != null) return `${label}${DRAW.meter(null, "gone")}<span class="pct">${DRAW.dash}</span><span class="when rolled">Ended ${esc(backWord(new Date(w.rolledMs)))}</span>`;
+  const full = w.used >= 100;
+  return `${label}<span class="wmeter">${DRAW.meter(Math.min(100, w.used), `${full ? "full" : ""}${w.stale ? " stale" : ""}`)}<i class="wmk" style="left:${warn}%"></i></span>`
+    + `<span class="pct${full ? " limit" : ""}">${w.used}%<span class="used">used</span></span>`
+    + (w.left != null ? `<span class="when">${DRAW.ring(w.left / w.len)}Resets ${esc(backWord(new Date(w.resetMs)))}</span>` : "<span></span>");
+}
+function planCards() {
+  const a = ui.accts;
+  if (a === undefined) return planGhost();
+  if (!a) return `<p class="pidle"><span class="state limit">Not read</span></p>`;
+  const warn = warnPct(), out = a.filter(signedOut);
+  const cards = planLogins().map(({ x }) => `<article class="plog" style="--c:${colorOf(familyOf(x.provider))}" data-grow="plan">`
+    + `<header title="${esc(loginFull(x))}"><span class="blot"></span><span class="pln">${esc(loginWord(x))}</span></header>`
+    + `<div class="windows">${windowsOf(x).map((w) => planWin(w, warn)).join("")}</div></article>`);
+  // a signed-out login's last reading is from before, so it stands as its chip under the state, never as windows
+  const signed = out.length ? `<p class="pidle"><span>Signed out</span>${out.map(loginChip).join("")}</p>` : "";
+  if (!cards.length) {
+    // "No limits reported" is the providers answering with none; a login splice has never read is Not read, since this
+    // page asks for no reading of its own (marlin, Oct 12)
+    const never = a.some((x) => !x.refusal && x.credential_present !== false && !x.observed_at_epoch_seconds && !x.no_usage_at_epoch_seconds);
+    return `<p class="pidle"><span class="state">${never ? "Not read" : "No limits reported"}</span></p>${signed}`;
+  }
+  return DRAW.cols(cards, 26, "plogs") + signed;
+}
+const planGhost = () => DRAW.cols([0, 1, 2].map((i) => `<article class="plog ghosted" style="--i:${i}" aria-hidden="true"><header>${GHOST.bar(8)}</header>`
+  + `<div class="windows">${[0, 1].map(() => `${GHOST.bar(3.4)}${GHOST.track()}<span class="pct">${GHOST.fig(4.2)}</span><span class="when">${GHOST.ring()}${GHOST.bar(6.2)}</span>`).join("")}</div></article>`), 26, "plogs");
+/** The warn line on a plan's whole, with every login a dot at its highest running window, in its provider's colour.
+ *  Dots that would touch take a lane under the one before, so each stays a dot of its own. */
+function warnDraw() {
+  if (ui.accts === undefined) return GHOST.track();
+  const warn = warnPct(), lanes = [];
+  const dots = planLogins().filter((l) => l.top).sort((a, b) => a.top.used - b.top.used).map((l) => {
+    let lane = lanes.findIndex((last) => l.top.used - last >= 4);
+    if (lane < 0) lane = Math.min(lanes.length, 2);
+    lanes[lane] = l.top.used;
+    return { ...l, lane };
+  });
+  const said = `Warns at ${warn}%${dots.length ? `; ${dots.map((d) => `${loginWord(d.x)} ${d.top.used}%`).join(", ")}` : ""}`;
+  return `<span class="wtrk" style="--lanes:${Math.max(1, lanes.length)}" role="img" aria-label="${esc(said)}"><i class="wzone" style="left:${warn}%"></i>`
+    + dots.map((d) => `<i class="ldot${d.top.used >= warn ? " over" : ""}" style="left:${Math.min(100, d.top.used)}%;--lane:${d.lane};--c:${colorOf(familyOf(d.x.provider))}" title="${esc(`${loginWord(d.x)} · ${d.top.used}% of its ${lenWord(d.top)} limit`)}"></i>`).join("")
+    + `</span>`;
+}
+const planHtml = () => pair(DRAW.section("Right now", `${planHero()}${planCards()}`, { aside: planAside() }), knobSec("When splice warns", keysOf("plan")));
 
 // ---------- MCP servers ----------
 // GET /api/mcp is a SNAPSHOT, not a count over a window: the host keeps no tally of tool calls, of how long one took,
 // or of how many servers an idle sweep stopped (McpStatus.kt, HostedServers.kt), so this pane says what is true now
 // and never a week figure it would have to invent. Each server's own line is what the settings above it act on.
-const statTile = (big, what, under = "") => `<div class="fig3"><span class="big">${big}</span><span class="what">${esc(what)}</span>${under}</div>`;
-const srvChip = (name) => `<span class="mchip">${esc(name)}</span>`;
-const zeroFig = (what) => `<span class="fig"><b>0</b> ${esc(what)}</span>`;
-function mcpNow() {
-  const m = ui.mcp;
-  if (m === undefined) return `<div class="card peaks">${READING}</div>`;
-  if (m === false) return "";
-  if (!m) return `<p class="pidle"><span class="state limit">Not read</span><span>splice did not answer for its MCP servers</span></p>`;
-  const live = Object.entries(m.servers || {}), up = live.filter(([, s]) => s.hosted);
-  // one server is written in several files (a head's copy of the canonical home, a repo's own entry), so the figure is
-  // how many SERVERS he set up, not how many entries splice read: 32 servers over 112 entries on this machine
-  const regs = m.sources?.servers || [], names = [...new Set(regs.map((r) => r.name))];
-  const hosts = [...new Set(regs.filter((r) => r.disposition === "migrated").map((r) => r.name))];
-  const set = names.length || live.length;
-  const held = up.reduce((n, [, s]) => n + (s.rss_bytes || 0), 0);
-  const sessions = up.reduce((n, [, s]) => n + (s.sessions || 0), 0);
-  const tiles = [], zeros = [];
-  // A LABEL AND ITS ZERO ARE THE SAME WORDS (fin, Oct 12): the zero line stands in for the tile that did not draw, so
-  // "0 Running" is read as the empty form of "Running". "Server running" against "0 running now" read as two figures.
-  if (up.length) {
-    tiles.push(statTile(fmt(up.length), "Running", chipRow(up.map(([n]) => n))));
-  } else { zeros.push(zeroFig("Running")); }
-  if (set) tiles.push(statTile(fmt(set), "Set up", note(regs.length > set ? `${fmt(regs.length)} entries in your files` : "")));
-  if (hosts.length) {
-    // THE FIGURE AND ITS CHIPS, NO SUB-LINE (fin, Marlin, Oct 12): a process count here is what runs now and so repeats
-    // "Running", and a session count is the agent count the page does not draw, because splice cannot name those sessions.
-    tiles.push(statTile(fmt(hosts.length), "Hosted by splice", chipRow(hosts)));
-  } else if (set) { zeros.push(zeroFig("Hosted by splice")); }
-  // no "Run by each session" tile: it added unlike things (a web address, a plugin's server, a per-project one), and each
-  // server's row already says its own reason (fin, Marlin, Oct 12)
-  // resident memory of the live hosted processes, read from /proc (McpStatus.kt:100), with the sessions on them under it
-  if (held) tiles.push(statTile(mbWord(held), "Memory in use", note(sessions ? `${fmt(sessions)} ${sessions === 1 ? "session" : "sessions"}` : "")));
-  const lines = [];
-  // the one fact the settings above cannot fix: a server that failed, named with what it said
-  live.filter(([, s]) => s.last_error).forEach(([n, s]) => lines.push(`<span class="fig">${srvChip(n)} <span class="state limit">${esc(s.last_error)}</span></span>`));
-  return `<div class="thead"><h3>Right now</h3>${zeros.length ? `<span class="zeros">${zeros.join('<span class="dot">·</span>')}</span>` : ""}</div>`
-    + (tiles.length ? `<div class="figs3 n${tiles.length}">${tiles.join("")}</div>` : "")
-    + (lines.length ? `<div class="zeros under">${lines.join('<span class="dot">·</span>')}</div>` : "");
-}
-const chipRow = (names) => `<div class="cdoors">${names.map(srvChip).join("")}</div>`;
-const note = (s) => (s ? `<p class="knote">${esc(s)}</p>` : "");
-// ---------- MCP servers: one row each ----------
-// The row is hitstop's drawing (Splice-Animator/design/console, Oct 12) and its words are fin's. The daemon says WHY a
-// server is not shared as a stable key (McpSharing.kt, McpInventory.kt) with the value it names; this table is the only
-// place those keys become words. A key it does not know reads "Not shared" and nothing more, never a guess.
+// The daemon says WHY a server is not shared as a stable key (McpSharing.kt, McpInventory.kt) with the value it names;
+// this table is the only place those keys become words. A key it does not know is grouped as "No reason given", never a guess.
 const MCP_STATE = {
   cwd: { word: "Per session", line: "Starts in its own folder" },
   variable: { word: "Per session", line: "A different value in each session" },
@@ -782,16 +1053,24 @@ const fromWord = (e) => {
     const dir = dirs.pop();
     return dir ? `${dir} plugin` : "a plugin";
   }
-  return homeWord(e.source_file);
+  // A FILE IS NAMED, NEVER SPELLED AS A PATH (Oct 26): his own .claude.json, or the config folder a copy sits in when it
+  // is not his home's (.claude-grok); the whole path stays on the line's title
+  const parts = homeWord(e.source_file).split("/"), name = parts.pop() || "", dir = parts.at(-1) || "";
+  return name === ".claude.json" && dir && dir !== "~" ? dir : name;
 };
-// a project's own entry names its project by the folder it sits in, so a row shows that name and not the config path
-const projectOf = (e) => (e?.kind === "project" ? String(e.scope || "").split("/").filter(Boolean).pop() ?? "" : "");
-// where a server is declared, under its name: its project's chip, else its file or plugin, and a web server's address
-const fromHtml = (s) => `<span class="from">${SV.file}${s.project ? `<span class="chip">${esc(s.project)}</span>` : `<span class="ft" title="${esc(s.from)}">${esc(s.from)}</span>`}${s.address ? `<code>${esc(s.address)}</code>` : ""}</span>`;
+// a project's or a repo's own entry names it by the folder it sits in, so a row shows that name and not the config path
+const projectOf = (e) => (e?.kind === "project" || e?.kind === "repo" ? String(e.scope || "").split("/").filter(Boolean).pop() ?? "" : "");
 // a web server's address, without the part of a URL that can carry a credential: the host and path, never a query or a login
 const addressOf = (v) => {
   try { const u = new URL(v); return u.host + (u.pathname === "/" ? "" : u.pathname); } catch { return ""; }
 };
+// EVERY VALUE SHOWN AS CODE IS READ AS AN ADDRESS FIRST (Oct 26): a server's deciding value can be its URL, whose query
+// carries a key. One that parses as a web address shows its host and path only, as the shared row's address does.
+const codeOf = (v) => (/^(https?|wss?):\/\//i.test(String(v || "")) ? addressOf(v) : homeWord(v));
+// where a server is declared, under its name: its project's chip, else its file or plugin, and a web server's address
+// a server the files never declared (the daemon planned it from elsewhere) has no line here: a file glyph naming nothing
+// read as a file with no name (temple, Per project, at 3822 on Oct 26)
+const fromHtml = (s) => !s.project && !s.from && !s.address ? "" : `<span class="from" title="${esc(s.path || s.from)}">${SV.file}${s.project ? `<span class="chip">${esc(s.project)}</span>` : `<span class="ft">${esc(s.from)}</span>`}${s.address ? `<code>${esc(s.address)}</code>` : ""}</span>`;
 /** Every server by name, from what the daemon planned (servers) and what it found in the files (sources). */
 function mcpServerRows(m) {
   const found = new Map();
@@ -813,11 +1092,11 @@ function mcpServerRows(m) {
     if (state && !MCP_STATE[state] && !MCP_SILENT.has(state)) console.warn(`mcp: no word for "${state}" on ${name}: ${live?.reason ?? own?.reason ?? ""}`);
     const at = own || added;
     const project = projectOf(at);
-    return { name, from: fromWord(at), project, shared, web, address: web ? addressOf(value) : "", state, value,
+    return { name, from: fromWord(at), path: at?.source_file ? homeWord(at.source_file) : "", project, shared, web, address: web ? addressOf(value) : "", state, value,
       cmd: state === "added_in" ? (entries.length && value && why === "added_in" ? value : copyOf(copy?.source_file)) : null,
       cmds: live?.commands || [], stale, last: live?.last_activity || 0, err: live?.last_error || "", started: live?.started_at || 0,
-      // the one process splice runs for it now and what it holds, read from /proc by the daemon (McpStatus.kt hosted)
-      hosted: !!live?.hosted, rss: live?.rss_bytes ?? null };
+      // the one process splice runs for it now, what it holds read from /proc, and the sessions on it (McpStatus.kt hosted)
+      hosted: !!live?.hosted, rss: live?.rss_bytes ?? null, sessions: live?.sessions || 0 };
   }).sort((a, b) => Number(b.shared) - Number(a.shared) || a.name.localeCompare(b.name));
 }
 const msWord = (ms) => (ms >= 1000 ? `${+(ms / 1000).toFixed(1)} s` : `${ms} ms`);
@@ -828,37 +1107,6 @@ const testSaid = (name) => {
   if (r?.ok) return `<span class="said ok">${r.started ? "Started · " : ""}${msWord(r.ms)}${r.tools == null ? "" : ` · ${fmt(r.tools)} ${r.tools === 1 ? "tool" : "tools"}`}</span>`;
   // the words the route sends for a failed test, after the short word: a failure with no reason left nothing to act on
   return r ? `<span class="said limit">${esc(r.word)}${r.why ? ` · ${esc(r.why)}` : ""}</span>` : "";
-};
-// a shared server's one process: the memory it holds now, Running where /proc gave none, Not running until a session
-// asks for it (spec 8i: instance, sessions and memory per server; its sessions are the Used by chips beside it)
-// a server at a web address has no process here, so its cell is empty, never Not running (marlin, Oct 12)
-const memWord = (s) => (s.web ? "" : !s.hosted ? `<span class="state">Not running</span>` : s.rss ? esc(mbWord(s.rss)) : "Running");
-function serverRow(s, dim) {
-  const name = `<div class="sname"><span class="nm">${esc(s.name)}</span>${fromHtml(s)}</div>`;
-  if (!s.shared) {
-    const m = MCP_STATE[s.state];
-    const cmd = m?.cmd && s.cmd ? cmdChip(s.cmd) : "", code = m && s.value && s.state !== "added_in" ? `<code>${esc(homeWord(s.value))}</code>` : "";
-    // a row with a why has no switch, just the word; one the person set reads Not shared with Share beside it, which
-    // takes it off mcp_hosting_exclude, and a row with no word reads only its state
-    const why = m ? `<div class="why"><span class="w">${esc(m.word)}${cmd}${code}</span>${m.line ? `<span class="wl">${esc(m.line)}</span>` : ""}</div>` : "<span></span>";
-    const state = s.state === "excluded" ? `<span class="acts">${exAct(s.name, false)}<span class="always">Not shared</span></span>`
-      : !m ? `<span class="acts"><span class="always">Not shared</span></span>` : "<span></span>";
-    return `<div class="srv out"><span class="lamp ended" aria-hidden="true"><i></i></span>${name}${why}${state}</div>`;
-  }
-  // a command whose own copy of the config is older joins at its next session, which rewrites the copy (fin, Oct 12)
-  const soon = s.stale.length ? s.stale.map((c) => cmdChip(c).replace("class=\"chip\"", "class=\"chip soon\"")).join("") + `<span class="next">Next session</span>` : "";
-  const used = s.cmds.length || soon ? `<span class="used">Used by${s.cmds.map((c) => cmdChip(c)).join("")}${soon}</span>` : "";
-  const test = `${testSaid(s.name)}<button class="act quiet small" data-act="mtest" data-name="${esc(s.name)}"${ui.mtest[s.name] === "running" ? " disabled" : ""}>Test</button>`;
-  return `<div class="srv"><span class="lamp working" aria-hidden="true">${ICON.trace}</span>${name}`
-    + `<span class="fig uses">${used}</span><span class="fig mem">${memWord(s)}</span><span class="fig">${s.started ? `Started ${esc(atWord(s.started))}` : ""}${s.started && s.last ? " · " : ""}${s.last ? `Last call ${esc(atWord(s.last))}` : ""}${s.err ? ` <span class="state limit">${esc(s.err)}</span>` : ""}</span>`
-    + `<span class="acts">${test}${exAct(s.name, true)}<span class="always">Shared</span></span></div>`;
-}
-const mcpServersHtml = () => {
-  const m = ui.mcp;
-  if (!m) return "";
-  const rows = mcpServerRows(m);
-  if (!rows.length) return "";
-  return `<section class="sub"><h3>Servers<span class="hn">${fmt(rows.filter((r) => r.shared).length)} of ${fmt(rows.length)} shared</span></h3><div class="srvs${m.hosting === false ? " dim" : ""}">${rows.map(serverRow).join("")}</div></section>`;
 };
 /** POST /api/mcp/{name}/test: the daemon starts the server if it is not running, asks it for its tools, and says how long. */
 async function testServer(name) {
@@ -878,13 +1126,14 @@ async function testServer(name) {
 // ONE SWITCH, ONE FACT (Marlin, Oct 13, gap 464): servers are shared only when both mcp_share and mcp_hosting are on, so
 // the switch reads both, and Shared turns on whichever was off. One per session writes mcp_share only.
 const shareOn = () => ui.topo?.topology?.daemon?.mcp_share !== false && ui.topo?.topology?.daemon?.mcp_hosting !== false;
-function shareCard() {
+/** The switch, on the Sharing section's own kicker line: it is what the figure under it answers to. */
+function shareSwitch() {
   if (!ui.topo) return ""; // an unread splice.toml draws no switch: one tap would write over what it never read
   const on = shareOn();
-  const sw = `<span class="switch">${[[true, "Shared"], [false, "One per session"]].map(([v, w]) =>
+  const sw = `<span class="switch${ui.shook === "share" ? " failed" : ""}" role="group" aria-label="Share servers between sessions">${[[true, "Shared"], [false, "One per session"]].map(([v, w]) =>
     `<button data-act="mshare" data-v="${v}" aria-pressed="${v === on}"${ui.shareSaving ? " disabled" : ""}>${w}</button>`).join("")}</span>`;
-  const said = ui.shareSaid ? `<span class="said${ui.shareSaid.bad ? " limit" : ""}">${esc(ui.shareSaid.word)}</span>` : "";
-  return cardRow([kcard(`<div class="lbl">Share servers between sessions</div><div class="ctl col"><div class="line">${sw}${said}</div></div>`)]);
+  const said = ui.shareSaving ? `<span class="said">${ICON.wait}</span>` : ui.shareSaid ? `<span class="said ${ui.shareSaid.bad ? "limit" : "ok"}">${esc(ui.shareSaid.word)}</span>` : "";
+  return `<span class="mshare">${sw}${said}</span>`;
 }
 /** PUT /api/topology with [daemon] mcp_share changed, and mcp_hosting cleared when sharing is turned on. A changed choice applies to new connections; a running copy
  *  finishes with its session, so nothing here is cut. */
@@ -900,7 +1149,7 @@ async function setShare(on) {
     const found = r.body?.findings ?? [];
     if (found.length) console.warn(`settings: saving mcp_share refused: ${found.map((x) => x.message).join("; ")}`);
     ui.shareSaid = { word: found.length ? "Config error" : "Not saved", bad: true };
-    render();
+    shake("share");
     return;
   }
   ui.shareSaid = { word: r.body.restart_required ? "After a restart" : "New sessions" };
@@ -909,8 +1158,9 @@ async function setShare(on) {
 /** Share, or stop sharing, one server: Don't share adds it to [daemon] mcp_hosting_exclude, Share takes it off. */
 const exAct = (name, shared) => {
   const said = ui.exSaid[name], busy = said === "saving";
-  const word = said && !busy ? `<span class="said${said.bad ? " limit" : ""}">${esc(said.word)}</span>` : "";
-  return `${word}<button class="act quiet small" data-act="mexclude" data-name="${esc(name)}" data-v="${shared}"${busy ? " disabled" : ""}>${shared ? "Don't share" : "Share"}</button>`;
+  const word = said && !busy ? `<span class="said ${said.bad ? "limit" : "ok"}">${esc(said.word)}</span>` : "";
+  const shook = said?.bad && ui.shook === `ex:${name}` ? " shook" : "";
+  return `${word}<button class="act quiet small${shook}" data-act="mexclude" data-name="${esc(name)}" data-v="${shared}"${busy ? " disabled" : ""}>${shared ? "Don't share" : "Share"}</button>`;
 };
 async function setExcluded(name, out) {
   if (!ui.topo) return;
@@ -923,7 +1173,7 @@ async function setExcluded(name, out) {
     const found = r.body?.findings ?? [];
     if (found.length) console.warn(`settings: saving mcp_hosting_exclude refused: ${found.map((x) => x.message).join("; ")}`);
     ui.exSaid[name] = { word: found.length ? "Config error" : "Not saved", bad: true };
-    render();
+    shake(`ex:${name}`);
     return;
   }
   ui.exSaid[name] = { word: r.body.restart_required ? "After a restart" : "New sessions" };
@@ -938,32 +1188,20 @@ async function rereadMcp() {
   render();
 }
 // A server sharing would serve with one copy: one the hub shares now, or one it runs per session only because sharing
-// is off. Every other server keeps one copy per session either way and is named below with its reason.
+// is off. Every other server keeps one copy per session either way and is named with its reason.
 const shareable = (s) => s.class === "shared" || s.why === "per_session_choice";
-// one server reads one answer on this page: where the Servers list below keeps a server unshared for a reason the switch
-// does not change, a project's server the hub does not host yet among them, its row here sits with the ones kept one per
-// session, under that reason and out of the figures (marlin, desk m, Oct 12)
+// one server reads one answer on this page: where the list keeps a server unshared for a reason the switch does not
+// change, a project's server the hub does not host yet among them, the census counts it with the ones kept one per
+// session, under that reason and out of what sharing saves (marlin, desk m, Oct 12)
 const asListed = (s, rows) => {
   const r = rows.get(s.label ?? s.name);
   return r && !r.shared && MCP_STATE[r.state] && r.state !== "per_session_choice" ? { ...s, class: "per_session", why: r.state, value: r.value } : s;
 };
 const copiesWord = (n) => `${fmt(n)} ${n === 1 ? "copy" : "copies"}`;
-// a row names its server as the Servers list below does: Claude Code's own name for it and where it is declared, never
-// the plugin_<plugin>_<server> id the census matches copies by (marlin, desk m, Oct 12)
-const memName = (s) => `<div class="sname"><span class="nm">${esc(s.label ?? s.name)}</span>${s.source_file ? fromHtml({ from: fromWord(s), project: projectOf(s) }) : ""}</div>`;
-// a server with no copy says why it has no figure: one at a web address has no process here, any other runs none now
-const idle = (s) => (s.web ? "At a web address" : `<span class="state">Not running</span>`);
 // the sessions holding a server now, its own copy or the hub's, each a door to it on Sessions (spec §8: ownership visible
 // per session). A session with no name reads as Sessions titles it, once /api/sessions has answered for it
 const HELD_SHOWN = 4;
 const heldName = (h) => h.name || ui.snames?.get(h.session_id) || "Unnamed session";
-const heldHtml = (s) => {
-  const held = s.held_by || [];
-  if (!held.length) return "";
-  const shown = held.slice(0, HELD_SHOWN).map((h) => `<a class="chip sess" href="sessions.html#${esc(h.session_id)}">${esc(heldName(h))}</a>`);
-  const rest = held.length - HELD_SHOWN;
-  return `<span class="held">Used now by${shown.join("")}${rest > 0 ? `<span class="more">+${fmt(rest)}</span>` : ""}</span>`;
-};
 /** Titles for the holding sessions that carry no name, read only when one of them has none. */
 async function nameHolders() {
   const held = (ui.mmem?.servers || []).flatMap((s) => s.held_by || []);
@@ -973,69 +1211,154 @@ async function nameHolders() {
   ui.snames = new Map((r.body?.sessions || []).map((x) => [x.session_id, x.name || x.title]));
   later();
 }
-const memRow = (s, what, shared) => `<div class="mrow">${memName(s)}<div class="mwhat">${what}${heldHtml(s)}</div>`
-  + `<span class="fig">${s.copies ? copiesWord(s.copies) : idle(s)}</span><span class="fig">${s.copies ? `<b>${esc(mbWord(s.bytes_now))}</b> now` : ""}</span>`
-  + `<span class="fig">${shared}</span></div>`;
-const whyCell = (s) => {
-  const m = MCP_STATE[s.why];
-  if (!m) return `<span class="why"></span>`;
-  const code = s.value ? `<code>${esc(homeWord(s.value))}</code>` : "";
-  return `<span class="why"><span class="w">${esc(m.word)}${code}</span>${m.line ? `<span class="wl">${esc(m.line)}</span>` : ""}</span>`;
-};
-/** GET /api/mcp/memory: every copy of every declared stdio server on this machine, PSS summed, against one copy each. */
-function savingsHtml() {
-  const m = ui.mmem;
-  if (m === undefined) return `<section class="tally"><div class="card peaks">${READING}</div></section>`;
-  if (!m) return `<section class="tally"><p class="pidle"><span class="state limit">Not read</span><span>splice did not measure its MCP servers</span></p></section>`;
-  // each row carries its class from the host's own sharing plan, unless the Servers list keeps it unshared (asListed)
-  const byName = new Map((ui.mcp ? mcpServerRows(ui.mcp) : []).map((r) => [r.name, r]));
-  const all = (m.servers || []).map((s) => asListed(s, byName));
-  // every server lands in one list, running or not: the figures count the ones with copies (marlin, desk m, Oct 12)
-  const listed = all.filter(shareable), share = listed.filter((s) => s.copies);
-  const now = share.reduce((n, s) => n + s.bytes_now, 0), one = share.reduce((n, s) => n + s.bytes_if_shared, 0);
-  const copies = share.reduce((n, s) => n + s.copies, 0);
-  const tiles = share.length ? [
-    statTile(mbWord(now), "In use now", note(copiesWord(copies))),
-    // it counts servers, each at one copy once shared: the words say both, never a copy count it did not take
-    statTile(mbWord(one), "Shared", note(`${fmt(share.length)} ${share.length === 1 ? "server" : "servers"}, one copy each`)),
-    statTile(mbWord(Math.max(0, now - one)), "Sharing saves"),
-  ] : [];
-  const head = `<div class="thead"><h3>What sharing saves</h3>${tiles.length ? "" : `<span class="zeros">${zeroFig("copies running")}</span>`}</div>`;
-  const rows = listed.map((s) => memRow(s, `<span class="why"></span>`, s.copies ? `<b>${esc(mbWord(s.bytes_if_shared))}</b> shared` : ""));
-  // the hub keeps these one per session whatever the switch says: each says why, in the words its rows use above
-  const kept = all.filter((s) => s.class === "per_session" && s.why !== "per_session_choice");
-  // servers no plan decides yet (a project's, a repo's or a plugin's): Claude Code starts them itself, a copy a session
-  const own = all.filter((s) => !shareable(s) && s.class !== "per_session");
-  const list = (title, xs) => (xs.length ? `<section class="sub"><h3>${title}</h3><div class="mrows">${xs.map((s) => memRow(s, whyCell(s), "")).join("")}</div></section>` : "");
-  return `<section class="tally">${head}${tiles.length ? `<div class="figs3 n3">${tiles.join("")}</div>` : ""}`
-    + (rows.length ? `<div class="mrows">${rows.join("")}</div>` : "") + `</section>`
-    + list("One per session either way", kept) + list("Started by Claude Code", own);
+/** What the machine-wide census (GET /api/mcp/memory) holds for one server, summed over its entries: one name can be
+ *  declared by several plugins, and each is measured on its own. Null while the census has nothing under that name. */
+function censusOf(name) {
+  const xs = (ui.mmem?.servers || []).filter((c) => (c.label ?? c.name) === name);
+  return xs.length ? { copies: xs.reduce((n, c) => n + (c.copies || 0), 0), now: xs.reduce((n, c) => n + (c.bytes_now || 0), 0), held: xs.flatMap((c) => c.held_by || []) } : null;
 }
-
-const mcpHtml = () => `${shareCard()}${savingsHtml()}<section class="tally">${mcpNow()}</section>${mcpServersHtml()}<section class="sub">${blocks(keysOf("mcp"))}</section>`;
-
-// the three settings that cap splice itself, in the order they bite: how many run, how many wait, how big one may be
-const LIMITS = ["maxInflight", "maxQueued", "maxRequestBytes"];
-const busyHtml = () => {
-  const limits = LIMITS.filter((key) => keysOf("busy").includes(key));
-  // what splice does when a provider pushes back sits under that provider's figures; its own caps stand together
-  return peaksHtml()
-    + `<section class="tally">${headed("Providers", figsHtml([{ why: "overloaded", what: "Overloaded today" }, { why: "queued", what: "Waited in line" }, { why: "cutoff", what: "Cut off today" }]))}`
-    + blocks(keysOf("busy", LIMITS)) + `</section>`
-    + (limits.length ? `<section class="sub"><h3>splice's limits</h3>${blocks(limits)}</section>` : "");
-};
+// the cause in his words: the daemon's sentence ends in the part he can act on, and the whole of it stays on the title
+const shortWhy = (t) => String(t || "").split(/:\s+/).filter(Boolean).pop() || "";
+/** The sessions on a server now: by name where the census names them (four, then the rest as a count), else how many. */
+function heldHtml(s, c) {
+  const held = c?.held || [];
+  if (held.length) {
+    return held.slice(0, HELD_SHOWN).map((h) => DRAW.chip({ text: heldName(h), live: true, href: `sessions.html#${encodeURIComponent(h.session_id)}`, cls: "sess", title: heldName(h) })).join("")
+      + (held.length > HELD_SHOWN ? `<span class="more">+${fmt(held.length - HELD_SHOWN)}</span>` : "");
+  }
+  return s.sessions ? `<span class="nsess"><b>${fmt(s.sessions)}</b> ${s.sessions === 1 ? "session" : "sessions"}</span>` : "";
+}
+// THE LAMP IS THE SERVER'S STATE (the kit's tlamp): the live trace while splice runs its one copy, the flat line in the
+// limit red when it last failed, and an unlit socket for one nothing runs now (a web address has no process here)
+const lampOf = (s) => DRAW.lamp(s.err ? "stalled" : s.hosted ? "working" : "");
+// THE COLUMNS ARE NAMED ONCE, over the rows (Oct 26): "Used by" and "Last call" on every row said the same two words
+// three times over three servers. A time is a dash where the daemon has none to give, as a web server never has.
+const USES_SHOWN = 4;
+// A LIST'S TAIL IS NEVER ONE (Oct 26): a pill that hides one item is as big as the item, so a list one over its cap
+// shows whole, and a pill only ever stands for two or more
+const capOf = (n, cap) => (n > cap + 1 ? cap : n);
+const SRV_HEAD = `<div class="srvhead"><span></span><span></span><span>Used by</span><span>Memory</span><span>Started</span><span>Last call</span><span></span></div>`;
+function sharedRow(s) {
+  const c = censusOf(s.name);
+  // THE COMMANDS ON A SERVER ARE A BOUNDED LIST (Oct 26): eleven chips ran the row past every other column. The first
+  // four, then the rest behind one pill; a command whose own copy of the config is older joins at its next session,
+  // which rewrites the copy (fin, Oct 12), and those are one count that opens to their chips in place
+  const usesOpen = !!ui.mmore[`uses:${s.name}`], soonOpen = !!ui.mmore[`soon:${s.name}`];
+  const cmds = (usesOpen ? s.cmds : s.cmds.slice(0, capOf(s.cmds.length, USES_SHOWN))).map((x) => cmdChip(x)).join("")
+    + (s.cmds.length > USES_SHOWN + 1 ? DRAW.more(s.cmds.length - USES_SHOWN, { act: "mmore", data: ` data-id="uses:${esc(s.name)}"`, open: usesOpen, pill: !usesOpen }) : "");
+  // the ones joining at their next session show by name, under that word, while the row has room for them beside the
+  // ones using it now; more than that are one count
+  const soonFits = Math.min(s.cmds.length, USES_SHOWN) + s.stale.length <= USES_SHOWN + 1;
+  const soon = !s.stale.length ? "" : soonOpen || soonFits
+    ? `<span class="next">Next session</span>${s.stale.map((x) => cmdChip(x).replace("class=\"chip\"", "class=\"chip soon\"")).join("")}${soonFits ? "" : DRAW.more(s.stale.length, { act: "mmore", data: ` data-id="soon:${esc(s.name)}"`, open: true })}`
+    : DRAW.more(s.stale.length, { word: "join next session", act: "mmore", data: ` data-id="soon:${esc(s.name)}"` });
+  const used = `${cmds}${soon}${heldHtml(s, c)}`;
+  // what its one copy holds now, as the census measures every copy on the machine, so this row and What sharing saves
+  // read one figure; /proc's own reading where the census has none, Running where neither does. A web address runs no
+  // process here, so its figure is the dash every figure without a reading is.
+  const mem = s.web ? DRAW.dash : c?.copies ? `<b>${esc(mbWord(c.now))}</b>${c.copies > 1 ? ` <span>${copiesWord(c.copies)}</span>` : ""}`
+    : s.hosted ? (s.rss ? `<b>${esc(mbWord(s.rss))}</b>` : "Running") : `<span class="state">Not running</span>`;
+  const when = (ms) => (ms ? esc(whenWord(ms)) : DRAW.dash);
+  const err = s.err ? `<span class="serr" title="${esc(s.err)}">${esc(shortWhy(s.err))}</span>` : "";
+  const test = `${testSaid(s.name)}<button class="act quiet small" data-act="mtest" data-name="${esc(s.name)}"${ui.mtest[s.name] === "running" ? " disabled" : ""}>Test</button>`;
+  return `<div class="srv${s.err ? " err" : ""}">${lampOf(s)}<div class="sname"><span class="nm">${hl(s.name)}</span>${fromHtml(s)}${err}</div>`
+    + `<span class="fig uses">${used}</span><span class="fig mem">${mem}</span><span class="fig t">${when(s.started)}</span><span class="fig t">${when(s.last)}</span>`
+    + `<span class="acts">${test}${exAct(s.name, true)}</span></div>`;
+}
+// THE REASON IS SAID ONCE, ON ITS GROUP (Oct 26): fifteen rows each reading "Plugin-owned" said one word fifteen times.
+// Each reason is a card with its count; under it, each server with the value that decides it and where it is declared.
+const MCP_SHOWN = 4;
+const outWord = (s) => MCP_STATE[s.state]?.word ?? (s.state === "hosting_disabled" ? "Sharing off" : "No reason given");
+function outGroups(rows) {
+  const groups = new Map();
+  for (const s of rows.filter((r) => !r.shared)) groups.set(outWord(s), [...(groups.get(outWord(s)) ?? []), s]);
+  return [...groups].sort((a, b) => b[1].length - a[1].length || a[0].localeCompare(b[0]));
+}
+function outItem(s, lines) {
+  const m = MCP_STATE[s.state], c = censusOf(s.name);
+  const cmd = m?.cmd && s.cmd ? cmdChip(s.cmd) : "";
+  const code = m && s.value && s.state !== "added_in" ? `<code>${esc(codeOf(s.value))}</code>` : "";
+  const why = cmd || code || (lines && m?.line) ? `<div class="why">${cmd || code ? `<span class="w">${cmd}${code}</span>` : ""}${lines && m?.line ? `<span class="wl">${esc(m.line)}</span>` : ""}</div>` : "";
+  // what its copies hold now, one per session: drawn only where there are copies, never a row of zeros
+  const mem = c?.copies ? `<span class="fig mem"><b>${esc(mbWord(c.now))}</b> <span>${copiesWord(c.copies)}</span>${heldHtml(s, c)}</span>` : "";
+  const acts = s.state === "excluded" ? `<span class="acts">${exAct(s.name, false)}</span>` : "";
+  return `<div class="srv out"><div class="sname"><span class="nm">${hl(s.name)}</span>${fromHtml(s)}</div>${why}${mem}${acts}</div>`;
+}
+function outCard([word, xs]) {
+  // a reason whose servers all carry the same line says it once, under the reason, instead of on every server
+  const lines = [...new Set(xs.map((s) => MCP_STATE[s.state]?.line || ""))], once = lines.length === 1 ? lines[0] : "";
+  const open = !!ui.mmore[word], shown = open ? xs : xs.slice(0, capOf(xs.length, MCP_SHOWN));
+  const more = xs.length > MCP_SHOWN + 1 ? DRAW.more(xs.length - MCP_SHOWN, { act: "mmore", data: ` data-id="${esc(word)}"`, open }) : "";
+  return `<article class="mcard"><header class="mtop"><span class="mw">${esc(word)}</span><b class="mn">${fmt(xs.length)}</b></header>`
+    + `${once ? `<p class="ml">${esc(once)}</p>` : ""}<div class="srvs out">${shown.map((s) => outItem(s, !once)).join("")}</div>${more}</article>`;
+}
+/** What sharing saves, from the census: every copy of every server sharing would serve, against one copy of each. */
+function savedHtml() {
+  const m = ui.mmem;
+  const aside = m?.claude_processes ? `<span class="hn"><b>${fmt(m.claude_processes)}</b> Claude Code processes</span>` : "";
+  if (m === undefined) return DRAW.section("What sharing saves", `${GHOST.row([GHOST.fig(6), GHOST.bar(9)])}<div class="msave">${GHOST.track()}${GHOST.track()}</div>`);
+  if (!m) return DRAW.section("What sharing saves", `<div class="pd-sub"><b>${DRAW.dash}</b>${unreadable}</div>`);
+  // each server carries its class from the host's own sharing plan, unless the list keeps it unshared (asListed)
+  const byName = new Map((ui.mcp ? mcpServerRows(ui.mcp) : []).map((r) => [r.name, r]));
+  const share = (m.servers || []).map((s) => asListed(s, byName)).filter((s) => shareable(s) && s.copies);
+  if (!share.length) return DRAW.section("What sharing saves", DRAW.nothing("No copies running"), { aside });
+  const now = share.reduce((n, s) => n + s.bytes_now, 0), one = share.reduce((n, s) => n + s.bytes_if_shared, 0);
+  const copies = share.reduce((n, s) => n + s.copies, 0), top = Math.max(now, one, 1);
+  // the census measures what runs now, so the saving it can show is what one copy of each would free from it: once each
+  // runs one copy there is nothing more to free, which is sharing working, never "sharing saves nothing" (Oct 26)
+  const saves = now - one > 0 ? DRAW.focal(mbWord(now - one), "sharing would free") : DRAW.nothing("Nothing more to free");
+  const bar = (k, b) => `<div class="mbar"><span class="k">${k}</span>${DRAW.barCell({ w: (b / top) * 100, text: esc(mbWord(b)) })}</div>`;
+  const each = `${fmt(share.length)} ${share.length === 1 ? "server" : "servers"}, one copy each`;
+  return DRAW.section("What sharing saves", `${saves}<div class="msave">${bar(`${copiesWord(copies)} now`, now)}${bar(each, one)}</div>`, { aside });
+}
+// the server timers in the order they bite: how many may run, how long one may take to start, to answer, to sit unused
+const MCP_ORDER = ["mcpMaxServers", "mcpInitializeTimeoutMs", "mcpRequestTimeoutMs", "mcpIdleTimeoutMs"];
+const mcpKeys = () => { const keys = keysOf("mcp"); return [...MCP_ORDER.filter((k) => keys.includes(k)), ...keys.filter((k) => !MCP_ORDER.includes(k))]; };
+// the reasons land as cards, so their place is held by two cards of their shape: a name and its count, then servers
+const mcardsGhost = () => `<div class="mcards">${[0, 1].map(() => `<article class="mcard" aria-hidden="true"><header class="mtop">${GHOST.bar(8)}${GHOST.fig(1.6)}</header>${GHOST.lines([9, 12, 8, 11])}</article>`).join("")}</div>`;
+/** The topic: how many servers are shared and why the rest are not, the shared ones, the rest by reason, what sharing
+ *  saves, and the timers. Each part draws its own shape while its read is out. */
+function mcpHtml() {
+  const m = ui.mcp, aside = shareSwitch();
+  const limits = knobSec("Server limits", mcpKeys());
+  if (m === undefined) {
+    const ghost = [0, 1, 2].map(() => GHOST.row([GHOST.tile(), GHOST.bar(9), GHOST.bar(15), GHOST.bar(5), GHOST.bar(8)])).join("");
+    return DRAW.section("Sharing", `${heroGhost()}${GHOST.stack()}`, { aside, cls: "tally" }) + DRAW.section("Shared", `<div class="ghost-rows">${ghost}</div>`)
+      + DRAW.section("Not shared", mcardsGhost()) + savedHtml() + limits;
+  }
+  // the route is mounted only while splice hosts MCP (ControlServer.kt), so its 404 is the honest "nothing is hosted"
+  if (m === false) return DRAW.section("Sharing", DRAW.nothing("splice runs no MCP servers"), { aside, cls: "tally" }) + savedHtml() + limits;
+  if (!m) return DRAW.section("Sharing", `<div class="pd-top"><b class="pd-rate">${DRAW.dash}</b><span class="pd-failed"><span>servers shared</span></span>${unreadable}</div>`, { aside, cls: "tally" }) + savedHtml() + limits;
+  const rows = mcpServerRows(m), shared = rows.filter((r) => r.shared), groups = outGroups(rows);
+  const hosted = shared.filter((r) => !r.web).length, web = shared.length - hosted;
+  // one server is written in several files (a head's copy of the canonical home, a repo's own entry), so the figure is
+  // how many SERVERS he set up, and the entries splice read are said once, at the end of the bar's names
+  const entries = (m.sources?.servers || []).length;
+  const tail = entries > rows.length ? `<span class="pd-lb quiet"><b>${fmt(entries)}</b> entries in your files</span>` : "";
+  const parts = [
+    { n: hosted, word: "Hosted by splice", text: fmt(hosted), cls: "ok" },
+    { n: web, word: "At a web address", text: fmt(web), cls: "ok" },
+    ...groups.map(([w, xs]) => ({ n: xs.length, word: w, text: fmt(xs.length), cls: "rest" })),
+  ];
+  const top = rows.length
+    ? DRAW.hero({ figure: fmt(shared.length), of: `of ${fmt(rows.length)} servers shared` }) + splitBar(parts, rows.length, { id: "mcp", tail })
+    : DRAW.nothing("No MCP servers set up");
+  const up = shared.filter((r) => r.hosted), sessions = up.reduce((n, r) => n + r.sessions, 0);
+  const upAside = up.length ? `<span class="hn"><b>${fmt(up.length)}</b> running${sessions ? ` · <b>${fmt(sessions)}</b> ${sessions === 1 ? "session" : "sessions"}` : ""}</span>` : "";
+  const list = shared.length ? DRAW.section("Shared", `<div class="srvs${m.hosting === false ? " dim" : ""}">${SRV_HEAD}${shared.map(sharedRow).join("")}</div>`, { aside: upAside }) : "";
+  const out = groups.length ? DRAW.section("Not shared", `<div class="mcards">${groups.map(outCard).join("")}</div>`) : "";
+  return DRAW.section("Sharing", top, { aside, cls: "tally" }) + list + out + savedHtml() + limits;
+}
 
 // ---------- Version ----------
 // What this daemon runs, where the newest is, and the way back, from GET /api/upgrade. The route never fetches, so the
 // newest is a version only when a check has succeeded here; otherwise it is the releases page, one tap away. Go back is
 // POST /api/upgrade {rollback}.
 //
-// ONE CARD PER VERSION THERE IS, AND NO CARD FOR A VERSION THERE IS NOT. Three cards of which two held no number read
-// as a broken row (splice-lead, Oct 11): on a daemon that has never checked, Newest is permanently "Not checked" and
-// Previous is "None". Running always has a number and takes the row; Previous joins it only when a release is on this
-// machine to go back to. What the daemon cannot know is said in the card's own plain line, never in its sentence,
-// which names fetching, verifying and polls ("no upgrade check has succeeded on this daemon; splice learns the latest
-// version by fetching and verifying a release, which no poll may do").
+// ONE CARD PER VERSION THERE IS, AND NO CARD FOR A VERSION THERE IS NOT (splice-lead, Oct 11): Running always has a
+// number; Previous joins it only when a release is on this machine to go back to, and Newest only when a check found a
+// version he does not run. THEY STAND IN THE ORDER THEY CAME OUT (Oct 26), the one he runs at the hero's size between
+// them, so which way each act moves him is read from where it sits before its word is.
 const RELEASES = "https://github.com/torad-labs/splice/releases";
 // ONE ROUTE, TWO DIRECTIONS: POST /api/upgrade takes him to a release or back to one, and the run that follows is the
 // same run. Only the words differ, so the header says which way it went rather than "Going back to" over an upgrade.
@@ -1043,57 +1366,53 @@ const RUN_WORD = {
   up: { running: "Upgrading to", succeeded: "Now on", failed: "Not on", lost: "Not on" },
   back: { running: "Going back to", succeeded: "Back on", failed: "Not back on", lost: "Not back on" },
 };
-const vcard = (label, body, note = "") => kcard(`<div class="lbl">${esc(label)}</div><div class="ctl">${body}${note ? `<p class="vwhy">${esc(note)}</p>` : ""}</div>`, " vcard");
+const vnode = (label, cls, body) => `<article class="vcard${cls}"><span class="vk">${esc(label)}</span>${body}</article>`;
 const vnum = (s) => `<b class="v">${esc(s)}</b>`;
+// the version each card holds is on the card, so its act says only what it does: "Go back", named in full for a reader
+// that hears the button alone; armed, the question names both versions, since that is the moment the two are weighed
+const goAct = (id, word, to, going) => `<button class="act quiet" data-act="arm" data-id="${id}" aria-label="${esc(`${word} to ${to}`)}"${going ? " disabled" : ""}>${esc(word)}</button>`;
+const askAct = (act, word, to, from) => `<button class="act primary" data-act="${act}">${esc(`${word} to ${to}`)}</button><button class="act quiet" data-act="disarm">Stay on ${esc(from)}</button>`;
 function versionHtml() {
   const v = ui.ver;
-  if (v === undefined) return `<span class="state">Reading</span>`;
-  if (!v) return `<span class="state">Not read</span>`; // the word the Version job's own rail line uses; why is warned where it was read (fin)
+  if (v === undefined) {
+    const ghost = (w) => `<div class="vghost" aria-hidden="true">${GHOST.bar(5)}${GHOST.fig(w)}${GHOST.bar(9)}</div>`;
+    // the files come with the settings, which have answered by now, so they stand while the versions are read
+    return DRAW.section("Versions", `<div class="vline">${ghost(5)}${ghost(8)}</div>`) + filesHtml();
+  }
+  // the word the Version job's own rail line uses; why is warned where it was read (fin)
+  if (!v) return DRAW.section("Versions", `<div class="vline">${vnode("Running", " now", `<b class="v">${DRAW.dash}</b>${unreadable}`)}</div>`) + filesHtml();
   const back = v.rollback_target, run = ui.run, going = run && run.state === "running";
-  // "Not checked" sits where "Checked Oct 12, 4:10 AM" would, in the same small line, so the version stays the largest
-  // thing on the card (Marlin with hitstop, Oct 12)
-  const checked = `<p class="kel">${v.checked_at_epoch_millis ? `Checked ${esc(atWord(v.checked_at_epoch_millis))}` : "Not checked"}</p>`;
-  const releases = `<a class="act quiet" href="${RELEASES}" target="_blank" rel="noopener">${SV.open}Releases</a>`;
-  // A STATE AND AN ACT, NOT A SENTENCE (fin, Marlin approved, Oct 12). What the check gave him is a state on this card:
-  // "Not read" when a tap answered nothing, "Newest" when he is already on the newest. A newer version is a version
-  // there is, so it takes a card of its own below instead of standing as a second bare number under "Running"; when
-  // the check happened, or that it never has, is an element.
+  // "Not checked" sits where "Checked Oct 12, 4:10 AM CDT" would, in the same small line, so the version stays the
+  // largest thing on the card (Marlin with hitstop, Oct 12)
+  const checked = `<p class="kel">${v.checked_at_epoch_millis ? `Checked ${esc(whenWord(v.checked_at_epoch_millis))}` : "Not checked"}</p>`;
+  // A STATE AND AN ACT, NOT A SENTENCE (fin, Marlin approved, Oct 12): "Not read" when a tap answered nothing, "Newest"
+  // when he is already on the newest. A newer version is a version there is, so it takes a card of its own.
   const news = v.latest && v.latest !== v.installed;
-  const newest = news ? ""
-    : v.latest ? `<span class="state">Newest</span>`
-    : v.checked_at_epoch_millis ? `<span class="state limit">Not read</span>` : "";
+  const newest = news ? "" : v.latest ? `<span class="state">Newest</span>` : v.checked_at_epoch_millis ? `<span class="state limit">Not read</span>` : "";
   // ONLY HIS TAP READS THE NETWORK (Marlin's privacy line, Oct 12): nothing here polls, and the page never checks when
   // it opens. GET /api/upgrade answers the snapshot a past tap left, and POST /api/upgrade/check is the only fetch.
-  const act = ui.armed === "restart" ? "" : `<button class="act quiet" data-act="check"${ui.checking || going ? " disabled" : ""}>${ui.checking ? ICON.wait : ""}Check</button>`
+  const act = ui.armed === "restart" ? "" : `<button class="act quiet${ui.shook === "check" ? " shook" : ""}" data-act="check"${ui.checking || going ? " disabled" : ""}>${ui.checking ? ICON.wait : ""}Check</button>`
     + (ui.checkSaid ? `<span class="said limit">${esc(ui.checkSaid)}</span>` : "");
-  const cards = [vcard("Running", `${vnum(v.installed)}${newest}${act}${restartAct(going)}${checked}`)];
-  // UPGRADE IS THE SAME ARMING AS GO BACK, on the card that holds the version it would take him to, because it is the
-  // same decision in the other direction. The releases page is the door for reading the notes before he arms; while
-  // he is armed the card holds the question and nothing else, so the yes and the no are the only things to tap.
-  if (news) {
-    cards.push(vcard("Newest", `${vnum(v.latest)}${ui.armed === "upgrade"
-      ? `<button class="act primary" data-act="upgrade">Upgrade to ${esc(v.latest)}</button><button class="act quiet" data-act="disarm">Stay on ${esc(v.installed)}</button>`
-      : `<button class="act quiet" data-act="arm" data-id="upgrade"${going ? " disabled" : ""}>Upgrade to ${esc(v.latest)}</button>${releases}`}`));
-  }
+  const now = vnode("Running", " now", `<div class="vtop">${vnum(v.installed)}${newest}</div>${checked}<div class="vacts">${act}${restartAct(going)}</div>`);
   // Previous is a card only when there is a release to go back to, or when the read that would have found one failed:
-  // "None" under a name is not news, and three cards of which two held no number read as a broken row.
-  if (back) {
-    cards.push(vcard("Previous", `${vnum(back)}${ui.armed === "rollback"
-      ? `<button class="act primary" data-act="rollback">Go back to ${esc(back)}</button><button class="act quiet" data-act="disarm">Stay on ${esc(v.installed)}</button>`
-      : `<button class="act quiet" data-act="arm" data-id="rollback"${going ? " disabled" : ""}>Go back to ${esc(back)}</button>`}`));
-    // no line under it: "Previous" and "Go back to 0.3.2" already say what the card is (Marlin, Oct 12)
-  } else if (v.rollback_unavailable_reason) {
-    cards.push(vcard("Previous", `<span class="state">Not read</span>`, v.rollback_unavailable_reason));
-  }
-  return cardRow(cards, " vcards") + filesHtml() + runHtml(run, back);
+  // "None" under a name is not news. A failed read keeps the cause he can act on; the daemon's sentence is its title.
+  const prev = back ? vnode("Previous", " prev", `${vnum(back)}<div class="vacts">${ui.armed === "rollback" ? askAct("rollback", "Go back", back, v.installed) : goAct("rollback", "Go back", back, going)}</div>`)
+    : v.rollback_unavailable_reason ? vnode("Previous", " prev", `<b class="v">${DRAW.dash}</b><span class="state limit">Not read</span><p class="vwhy" title="${esc(v.rollback_unavailable_reason)}">${esc(shortWhy(v.rollback_unavailable_reason))}</p>`) : "";
+  // UPGRADE IS THE SAME ARMING AS GO BACK, on the card that holds the version it would take him to. The releases page is
+  // the door for reading the notes before he arms; armed, the card holds the question and nothing else.
+  const next = news ? vnode("Newest", " next", `${vnum(v.latest)}<div class="vacts">${ui.armed === "upgrade" ? askAct("upgrade", "Upgrade", v.latest, v.installed)
+    : `${goAct("upgrade", "Upgrade", v.latest, going)}<a class="act quiet" href="${RELEASES}" target="_blank" rel="noopener">${SV.open}Releases</a>`}</div>`) : "";
+  return DRAW.section("Versions", `<div class="vline">${prev}${now}${next}</div>${runHtml(run, back)}`) + filesHtml();
 }
 // WHERE SPLICE KEEPS ITS FILES, shown and never edited (v0.4.0 section 9, Resolved: computed paths are inspectable, not
-// editable). The daemon resolved them (GET /api/config paths), so an older daemon without the field draws nothing.
+// editable). The daemon resolved them (GET /api/config paths), so an older daemon without the field draws nothing. Each
+// reads from his home as ~, the way he would type it; the whole path is its title.
 function filesHtml() {
   const p = ks.cfg?.paths;
   if (!p) return "";
-  const line = (name, path) => (path ? `<div class="vfile"><span class="nm">${esc(name)}</span><code>${esc(path)}</code></div>` : "");
-  return cardRow([vcard("Files", `${line("Settings file", p.config)}${line("State", p.state)}${line("Logs", p.logs)}`)], " vcards");
+  const line = (name, path) => (path ? `<div class="vfile"><span class="nm">${esc(name)}</span><code title="${esc(path)}">${esc(homeWord(path))}</code></div>` : "");
+  const rows = `${line("Settings file", p.config)}${line("State", p.state)}${line("Logs", p.logs)}`;
+  return rows ? DRAW.section("Files", `<div class="vfiles">${rows}</div>`) : "";
 }
 // A RUN IS ITS STEPS, AND THE LOG IS A DOOR ONLY WHEN IT FAILS (Marlin, Oct 12). The steps are read off the lines the
 // run prints (UpgradeCommand, RestartCommand, DaemonStop, DaemonLaunch): a step is done once a later one has begun.
@@ -1121,7 +1440,7 @@ function runHtml(run, back) {
   const door = failed && run.output?.length
     ? `<button class="logbtn" data-act="runlog" aria-expanded="${!!ui.runLog}">${ICON.caret}Full log</button>${ui.runLog ? `<ol class="rlog">${run.output.map((l) => `<li>${esc(l)}</li>`).join("")}</ol>` : ""}`
     : "";
-  return `<section class="run"><header><h3>${words[run.state] ?? words.running} ${esc(run.to ?? back ?? "")}</h3></header>${steps}${door}</section>`;
+  return `<section class="run${failed ? " bad" : ""}"><header><h3>${words[run.state] ?? words.running} ${esc(run.to ?? back ?? "")}</h3></header>${steps}${door}</section>`;
 }
 /** Restart splice, beside the version it is running. With nothing in flight it is one press: splice is built to come
  *  back from a restart. With requests in flight it arms the way Remove does on Models (Marlin, Oct 12): the first press
@@ -1139,7 +1458,7 @@ function restartAct(going) {
   const word = !ui.restarting ? "Restart splice"
     : wait ? `Waiting for ${fmt(wait)} ${wait === 1 ? "compaction" : "compactions"}`
     : "Restarting";
-  return `<button class="act quiet" data-act="restart"${ui.restarting || ui.restartArming || going ? " disabled" : ""}>${ui.restarting ? ICON.wait : ""}${word}</button>`
+  return `<button class="act quiet${ui.shook === "restart" ? " shook" : ""}" data-act="restart"${ui.restarting || ui.restartArming || going ? " disabled" : ""}>${ui.restarting ? ICON.wait : ""}${word}</button>`
     + (ui.restartSaid ? `<span class="said limit">${esc(ui.restartSaid)}</span>` : "");
 }
 /** His tap, and the only thing on this page that reaches the network: POST /api/upgrade/check reads once and answers
@@ -1155,11 +1474,12 @@ async function check() {
     ui.ver = { ...ui.ver, latest: s.latest ?? null, checked_at_epoch_millis: s.read_at_epoch_millis ?? ui.ver?.checked_at_epoch_millis ?? null };
     // a read that answered nothing is "Not read" on the card itself, so nothing is said twice
     if (s.state === "not_read" && s.reason) console.warn(`upgrade check: ${s.reason}`);
-  } else {
-    ui.checkSaid = r.status === 409 ? "Already checking" : r.status === 429 ? "Checked a moment ago" : "Not read";
-    if (r.body?.error) console.warn(`upgrade check: ${r.body.error}`);
+    render();
+    return;
   }
-  render();
+  ui.checkSaid = r.status === 409 ? "Already checking" : r.status === 429 ? "Checked a moment ago" : "Not read";
+  if (r.body?.error) console.warn(`upgrade check: ${r.body.error}`);
+  shake("check");
 }
 /** A run already going when the page opened, read off the args splice started it with (`upgrade --rollback`, or
  *  `upgrade --to 0.4.1`): the way it went and the release it names, so a run started on another screen reads the
@@ -1204,7 +1524,7 @@ async function restartSplice() {
     // 503 is the daemon saying nothing would bring it back, unwired or unsupervised: both mean the same to him here
     ui.restartSaid = r.status === 409 ? "Already restarting" : r.status === 503 ? "Nothing is set to start it again" : "Not restarted";
     if (r.body?.error) console.warn(`restart: ${r.body.error}`);
-    render();
+    shake("restart");
     return;
   }
   ui.restartWait = r.body?.compactions ?? 0;
@@ -1233,26 +1553,13 @@ function pollRun(to, way) {
   }, 2000);
 }
 
-// ---------- Reasoning: the fold pair as one sentence ----------
-// "When thinking stops short, continue [models] up to [3 times]" is ONE row, because the two knobs are one decision:
-// the models splice asks to keep thinking, and how many times it asks (fin's build list, Marlin approved, Oct 12).
-// An element would be how many answers were continued today, and nothing on the wire counts folds, so there is none.
-const FOLD = ["foldReasoningModels", "foldMaxContinue"];
-function foldCard() {
-  const models = KNOB.foldReasoningModels, times = KNOB.foldMaxContinue;
-  if (FOLD.some((key) => needsRestart(key) || inertWhy(key)) || !keysOf("reasoning").includes(models.key)) return "";
-  const lit2 = lit([knobHay(models), knobHay(times)].join(" "));
-  return kcard(`<div class="lbl${lit2}" data-row="${models.key}">${hl(models.label)}</div>`
-    + `<div class="ctl col"><div class="line">${ctlHtml(models, val(models.key))}${saidHtml(models.key)}</div>`
-    + `<div class="line"><span class="upto">${hl(times.label)}</span>${ctlHtml(times, val(times.key))}${saidHtml(times.key)}</div></div>`);
-}
-
 // ---------- Projects ----------
-// WHAT A PROJECT IS, AND NOTHING ELSE: one row, the folders under which each child folder is a project of its own.
-// With none saved, a project is the git repo, which is the rule in force and what the rail says. The row is drawn
-// here rather than by the kit because a list of paths is not one of its controls: each path carries the way to drop
-// it, the projects it makes, and whether it is still on disk. The value is the kit's (PATCH /api/config
-// projectsFolders, colon-separated), so a change reads "Applied" in the same place every other setting does.
+// WHAT A PROJECT IS, AND WHAT HE HAS: the projects splice groups his sessions by (GET /api/projects), drawn first, then
+// the folders under which each child folder is a project of its own. With none saved, a project is the git repo, which
+// is the rule in force and what the rail says. The folder list is drawn here rather than by the kit because a list of
+// paths is not one of its controls: each path carries the way to drop it, the projects it makes, and whether it is
+// still on disk. The value is the kit's (PATCH /api/config projectsFolders, colon-separated), so a change reads
+// "Applied" in the same place every other setting does.
 const FOLDER_SEP = ":";
 const foldersNow = () => String(val("projectsFolders") || "").split(FOLDER_SEP).map((s) => s.trim()).filter(Boolean);
 /** What the daemon says about each saved folder: whether it is on disk, and the projects it makes. */
@@ -1265,26 +1572,60 @@ const folderFacts = () => {
     makes: (ui.projects?.projects || []).filter((p) => p.folder === path).map((p) => p.name || p.label).filter(Boolean).sort(),
   }));
 };
+// THE PROJECTS ARE THE TOPIC'S CONTENT (Oct 26): four names and "+31" stood in a column 1,600 px wide at 3822, so he
+// clicked to read what splice groups his sessions by. They show whole up to forty, the rest behind one pill.
+const PROJECTS_SHOWN = 40;
+/** A list of project names as chips, up to forty, and the rest behind one pill that opens them in place. */
+function projectChips(names, id) {
+  // a list one over the cap shows whole, as a server's commands do (capOf): a "+1" pill is as big as the name it hides
+  const open = !!ui.pmore[id], shown = open ? names : names.slice(0, capOf(names.length, PROJECTS_SHOWN));
+  const more = names.length > PROJECTS_SHOWN + 1 ? DRAW.more(names.length - PROJECTS_SHOWN, { act: "pmore", data: ` data-id="${esc(id)}"`, open, pill: !open }) : "";
+  return `${shown.map((n) => `<span class="mchip quiet">${hl(n)}</span>`).join("")}${more}`;
+}
+/** The projects there are, as the topic's figure, and where they come from: one bar split by the folder that makes
+ *  each (and the repos no folder holds), only where there is more than one source to split. */
+function projectsTop(p, folders) {
+  const all = p.projects || [];
+  if (!all.length) return DRAW.nothing(folders.length ? "No projects in these folders yet" : "No git repos seen yet");
+  const from = all.filter((x) => x.folder), repos = all.filter((x) => !x.folder);
+  const hero = DRAW.hero({ figure: fmt(all.length), of: folders.length ? `projects from ${fmt(folders.length)} ${folders.length === 1 ? "folder" : "folders"}` : "projects, one per git repo" });
+  const parts = [...folders.map((f, i) => ({ n: f.makes.length, word: f.path, text: fmt(f.makes.length), ink: storeInk(i) })),
+    ...(from.length && repos.length ? [{ n: repos.length, word: "Git repos", text: fmt(repos.length), cls: "rest" }] : [])];
+  const split = parts.filter((x) => x.n > 0).length > 1 ? splitBar(parts, all.length, { id: "projects" }) : "";
+  // with no folder saved every project is a repo, and those are the chips; with folders, each path carries its own
+  const chips = !folders.length ? `<div class="pmakes">${projectChips(repos.map((x) => x.name || x.label).filter(Boolean).sort(), "repo")}</div>` : "";
+  return `${hero}${split}${chips}`;
+}
 function pathRow(f) {
-  const drop = `<button class="icon" data-act="dropfolder" data-path="${esc(f.path)}" aria-label="Remove ${esc(f.path)}">${ICON.close}</button>`;
+  const armed = ui.armed === `folder:${f.path}`;
+  // REMOVAL ARMS IN PLACE (Oct 26): the × turns into the act it would take and the way out, on the path it removes
+  const drop = armed
+    ? `<span class="armed"><button class="act danger small" data-act="dropfolder" data-path="${esc(f.path)}">Remove</button><button class="act quiet small" data-act="disarm">Keep</button></span>`
+    : `<button class="icon" data-act="armfolder" data-path="${esc(f.path)}" aria-label="Remove ${esc(f.path)}">${ICON.close}</button>`;
   // a folder that has vanished still holds its place: splice never stops over it, and its sessions fall back to repos
   const gone = f.found === false ? `<span class="state limit">Not found</span>` : "";
-  const makes = f.makes.length ? `<div class="pmakes">${f.makes.map((n) => `<span class="mchip quiet">${hl(n)}</span>`).join("")}</div>` : "";
-  return `<div class="prow"><span class="ppath"><code>${hl(f.path)}</code>${drop}</span>${gone}</div>${makes}`;
+  const makes = f.found === null ? GHOST.row([GHOST.bar(6), GHOST.bar(7)]) : f.makes.length ? projectChips(f.makes, f.path) : "";
+  return `<div class="prow${armed ? " arming" : ""}"><span class="ppath"><code>${hl(f.path)}</code>${drop}</span>${gone}${makes ? `<div class="pmakes">${makes}</div>` : ""}</div>`;
+}
+/** The add tile where the next path lands; pressed, it turns into its own form in place, and a refused path shakes it. */
+function addFolder() {
+  if (ui.addPath === null) return DRAW.addTile({ word: "Add a folder", act: "addfolder", cls: "padd" });
+  const bad = ui.bad.projectsFolders;
+  return `<div class="add signing padd${bad && ui.shook === "projects" ? " failed" : ""}" role="group" aria-label="Add a folder">`
+    + `<span class="plus" aria-hidden="true">+</span><input class="field wide" id="kf-projects-add" data-pfield value="${esc(ui.addPath)}" placeholder="~/code" aria-label="Projects folder">`
+    + `<button class="act primary small" data-act="savefolder">Save</button><button class="act quiet small" data-act="cancelfolder">Cancel</button>`
+    + (bad ? `<span class="said limit">${esc(bad)}</span>` : "") + `</div>`;
 }
 function projectsHtml() {
-  const k = KNOB.projectsFolders, folders = folderFacts();
-  // WHAT HE SET IS NEVER QUIETER THAN WHAT IT MAKES (Marlin, Oct 12, from hitstop's mock eb1c855): the label, the path
-  // and the field it is typed in stand at the project chips' size, and these acts take the medium button, not the
-  // compact one, so Add is as tall as a chip. The pform class is what carries all of it.
-  const adding = ui.addPath !== null
-    ? `<span class="custom"><input class="field wide" data-pfield value="${esc(ui.addPath)}" placeholder="/home/you/code" aria-label="Projects folder">`
-      + `<button class="act primary" data-act="savefolder">Save</button>`
-      + `<button class="act quiet" data-act="cancelfolder">Cancel</button></span>`
-      + (ui.bad.projectsFolders ? `<span class="said limit">${esc(ui.bad.projectsFolders)}</span>` : "")
-    : `<button class="act quiet" data-act="addfolder">${SV.plus}Add</button>${saidHtml("projectsFolders")}`;
-  const body = `<div class="plist">${folders.map(pathRow).join("")}<div class="pacts">${adding}</div></div>`;
-  return `<section class="sub">${cardRow([kcard(`<div class="lbl" data-row="${k.key}">${hl(k.label)}</div><div class="ctl col">${body}</div>`, " pform")])}</section>`;
+  const k = KNOB.projectsFolders, folders = folderFacts(), p = ui.projects;
+  const top = p === undefined ? `${heroGhost()}${GHOST.row([GHOST.bar(7), GHOST.bar(8), GHOST.bar(6), GHOST.bar(7)])}`
+    : p === null ? `<div class="pd-top"><b class="pd-rate">${DRAW.dash}</b><span class="pd-failed"><span>projects</span></span>${unreadable}</div>`
+    : projectsTop(p, folders);
+  // the folders are one setting: its name is the section's kicker, lit by a search the way a setting's name is
+  const list = `<div class="plist">${folders.map(pathRow).join("")}${addFolder()}</div>`;
+  // the projects and the folders that make them are one pair: side by side once the plate holds two columns (settings.css)
+  return `<div class="psec pcols"><div class="pin">${DRAW.section("Projects", top, { cls: "tally" })}`
+    + `<section class="psec pfolders${lit(knobHay(k))}"><div class="sechead"><h3 class="kicker" data-row="${k.key}">${hl(k.label)}</h3>${saidHtml(k.key)}</div>${list}</section></div></div>`;
 }
 
 /** The saved folders with [typed] added, trimmed, with no empty and no repeat. */
@@ -1296,8 +1637,12 @@ async function saveFolders(paths) {
   const r = await KNOBS.patch("projectsFolders", paths.join(FOLDER_SEP));
   if (r.ok) { ui.addPath = null; delete ui.bad.projectsFolders; render(); await refreshProjects(); return; }
   ui.addPath = was;
-  ui.bad.projectsFolders = was === null ? "Not saved" : "Not found";
-  render();
+  // A REFUSAL IS SAID ONCE, WHERE HE ACTED (Oct 26): an added path is refused on its own form, so the kicker keeps no
+  // second word for it, and it reads "Not found" only when the daemon turned the path down; with no answer it was
+  // never weighed, and reads "Not saved". A removal has no form, so its "Not saved" stays on the kicker.
+  if (was === null) ui.bad.projectsFolders = "Not saved";
+  else { ui.bad.projectsFolders = r.reason ? "Not found" : "Not saved"; delete ks.bad.projectsFolders; }
+  shake("projects");
 }
 /** The projects the folders make, re-read after a change so the chips under each path are the daemon's answer. */
 async function refreshProjects() {
@@ -1309,7 +1654,7 @@ async function refreshProjects() {
 const PANES = {
   busy: busyHtml,
   silent: silentHtml,
-  reasoning: () => `<section class="sub">${blocks(keysOf("reasoning", FOLD), [foldCard()])}</section>`,
+  reasoning: reasoningHtml,
   plan: planHtml,
   mcp: mcpHtml,
   projects: projectsHtml,
@@ -1329,7 +1674,7 @@ function summary(id) {
   if (id === "version") return [ui.ver === undefined ? "Reading" : ui.ver ? ui.ver.installed : "Not read"];
   if (id === "reasoning") return [KNOB.showReasoning && !needsRestart("showReasoning") ? `Shows it ${word(KNOB.showReasoning, val("showReasoning")).toLowerCase()}` : `Progress line ${val("progressLine") ? "on" : "off"}`];
   if (id === "plan") return [`Warns at ${word(KNOB.usageWarnPct, val("usageWarnPct"))}`];
-  if (id === "mcp") return [`${word(KNOB.mcpMaxServers, val("mcpMaxServers"))} at most`];
+  if (id === "mcp") return [ui.mcp === undefined ? "Reading" : ui.mcp === false ? "Not hosted" : !ui.mcp ? "Not read" : `${word(KNOB.mcpMaxServers, val("mcpMaxServers"))} at most`];
   // with nothing saved the rail says the rule in force, which is the one a first-time user is already under
   if (id === "projects") { const f = foldersNow(); return f.length ? f : ["One per repo"]; }
   if (id === "busy" && weekTotal("overloaded") !== null && weekTotal("queued") !== null) return [`${fmt(weekTotal("overloaded"))} overloaded today`, `${fmt(weekTotal("queued"))} waited in line`];
@@ -1339,48 +1684,151 @@ function summary(id) {
   const stop = traceStopped();
   return h.some((x) => x === null) ? ["Not read"] : [...(stop ? [`Saving stopped ${stop.when}`] : []), `${mbWord(h.reduce((s, x) => s + x.bytes, 0))} ${tag}`];
 }
-function cardHtml(x) {
-  const f = found(x.id), s = summary(x.id);
-  return `<article class="card job" data-open="${x.id}" aria-current="${ui.open === x.id}">`
-    + `<span class="lamp idle sock" aria-hidden="true">${SV[x.id]}</span>`
-    + `<div class="top"><span class="jname">${hl(x.name)}</span></div>`
-    + `<div class="meta">${s.map((w) => `<span>${esc(w)}</span>`).join("")}</div>`
-    + (f.length ? `<div class="hits">${f.slice(0, 4).map((w) => `<span>${hl(w)}</span>`).join("")}${f.length > 4 ? `<span class="more">${f.length - 4} more</span>` : ""}</div>` : "")
-    + `</article>`;
+// ---------- what a rail card draws ----------
+// A CARD SHOWS THE STATE, NOT THE SETTING (Marcos, Oct 25: "show don't tell"): the rail's job is to say which topic
+// needs him, and a sentence does that only after it is read. Where this page already holds a figure, the card draws
+// it on the scale it belongs to — a share of a limit as a meter, two outcomes on one scale, a failure in the limit
+// red. Where the fact is a choice and not a quantity (how reasoning shows), the choice itself is the state and stays
+// in words. Nothing is invented: a card whose read has not landed draws the ghost of its own shape.
+// A figure that did not come back is a dash beside the limit red's "Not read", as every unread figure on the page is.
+const RAIL_UNREAD = `<p class="rfig"><b>${DRAW.dash}</b><span class="state limit">Not read</span></p>`;
+function railDraw(id) {
+  if (id === "silent") {
+    if (weekReading("restarted", "gaveup", "waited")) return GHOST.row([GHOST.bar(6), GHOST.bar(4)]);
+    const early = ["restarted", "gaveup"].map(weekTotal), waited = weekTotal("waited");
+    if (early.includes(null) || waited === null) return "";
+    const n = early[0] + early[1], top = Math.max(n, waited, 1);
+    return `<div class="rmini">${DRAW.miniPair({ label: "Ended early", figure: DRAW.n(n), w: (n / top) * 100, cls: "row", level: n ? "bad" : "" })}`
+      + `${DRAW.miniPair({ label: "Waited out", figure: DRAW.n(waited), w: (waited / top) * 100, cls: "row" })}</div>`;
+  }
+  if (id === "busy") {
+    if (ui.peaks === undefined) return GHOST.row([GHOST.bar(6), GHOST.track()]);
+    const rows = (ui.peaks || []).filter((p) => !p.err && p.peak > 0);
+    const over = weekTotal("overloaded");
+    const share = (p) => { const lim = limitOf(p.head.key); return lim ? p.peak / lim : 0; };
+    const top = [...rows].sort((a, b) => share(b) - share(a) || b.peak - a.peak)[0];
+    if (!top) return over ? `<div class="rmini">${DRAW.miniPair({ label: "Overloaded today", figure: DRAW.n(over), w: 100, cls: "row", level: "bad" })}</div>` : "";
+    const lim = limitOf(top.head.key), pc = lim ? Math.min(100, (100 * top.peak) / lim) : 100;
+    // the overloaded count is a handful against a day of thousands: a bar of it would draw a hairline and say nothing,
+    // so it stands as the figure itself, in the limit red, beside the share that a bar does say something about
+    return `<div class="rmini">${DRAW.miniPair({ label: "Busiest at once", figure: lim ? `${DRAW.n(top.peak)}/${DRAW.n(lim)}` : DRAW.n(top.peak), w: pc, cls: "row", level: lim && top.peak >= lim ? "bad" : "" })}`
+      + (over ? `<p class="rfig"><b class="lv-bad">${DRAW.n(over)}</b>Overloaded today</p>` : "") + `</div>`;
+  }
+  if (id === "plan") {
+    if (ui.accts === undefined) return GHOST.row([GHOST.bar(5), GHOST.track()]);
+    const top = planTop();
+    if (!top) return "";
+    const warn = Number(val("usageWarnPct")) || 80;
+    // two quantities on one bar: how close the highest plan is, and where the warn line sits (the kit's own tick)
+    return `<div class="rmini">${DRAW.miniPair({ label: "Highest plan", figure: `${top.p}%`, w: Math.min(100, top.p),
+      cls: "row", mark: warn, markTitle: `Warns at ${warn}%`, level: top.p >= 100 ? "bad" : "" })}</div>`;
+  }
+  // MCP servers: the share of his servers that are shared, on its whole, how many run, and a failure in the limit red
+  if (id === "mcp") {
+    if (ui.mcp === undefined) return GHOST.row([GHOST.bar(5), GHOST.track()]);
+    if (ui.mcp === null) return RAIL_UNREAD;
+    if (!ui.mcp) return "";
+    const rows = mcpServerRows(ui.mcp), shared = rows.filter((r) => r.shared);
+    if (!rows.length) return "";
+    const up = shared.filter((r) => r.hosted).length, failed = rows.filter((r) => r.err).length;
+    return `<div class="rmini">${DRAW.miniPair({ label: "Shared", figure: `${DRAW.n(shared.length)}/${DRAW.n(rows.length)}`, w: (shared.length / rows.length) * 100, cls: "row" })}`
+      + `<div class="rfigs">${up ? `<p class="rfig"><b>${DRAW.n(up)}</b>running</p>` : ""}${failed ? `<p class="rfig"><b class="lv-bad">${DRAW.n(failed)}</b>failed</p>` : ""}</div></div>`;
+  }
+  // Projects: how many there are, and the rule that makes them (the saved folders, or one per repo)
+  if (id === "projects") {
+    if (ui.projects === undefined) return GHOST.row([GHOST.bar(6), GHOST.bar(5)]);
+    const n = ui.projects ? (ui.projects.projects || []).length : null, f = foldersNow();
+    // the count and its rule share one line, as Version's two figures do: stacked, the rail ran 14 px under the
+    // composer at 1440 x 900 once every card had read (Oct 26)
+    const rule = `<div class="meta">${(f.length ? f : ["One per repo"]).map((w) => `<span>${esc(w)}</span>`).join("")}</div>`;
+    return `<div class="rfigs">${n === null ? RAIL_UNREAD : n ? `<p class="rfig"><b>${DRAW.n(n)}</b>${n === 1 ? "project" : "projects"}</p>` : ""}${rule}</div>`;
+  }
+  // Your data: everything kept, split by store in the store colours the pane uses, and Saving stopped in the limit red
+  if (id === "data") {
+    if (DATA_ROWS.some(stillReading)) return GHOST.row([GHOST.bar(5), GHOST.track()]);
+    if (DATA_ROWS.some((r) => !(r.noRoute || r.own) && heldOf(r) === null)) return RAIL_UNREAD;
+    const held = bySize(), all = allBytes(), stop = traceStopped();
+    const bar = all ? `<span class="rsplit" aria-hidden="true">${held.map((p, i) => `<i style="${hueAt(i)};width:max(${((p.x.bytes / all) * 100).toFixed(2)}%, .12rem)"></i>`).join("")}</span>` : "";
+    // the total and its split on one line, the bar taking what the figure leaves: the rail fits above the composer
+    return `<div class="rmini"><div class="rkept"><p class="rfig"><b>${esc(mbWord(all))}</b>kept</p>${bar}</div>`
+      + (stop ? `<p class="rfig rstop">${DRAW.lamp("stalled")}<span class="state limit">Saving stopped ${esc(stop.when)}</span></p>` : "") + `</div>`;
+  }
+  // Version: the one it runs, and the newer one a check found, each a figure
+  if (id === "version") {
+    if (ui.ver === undefined) return GHOST.row([GHOST.bar(4), GHOST.bar(5)]);
+    if (!ui.ver) return RAIL_UNREAD;
+    const v = ui.ver, news = v.latest && v.latest !== v.installed;
+    return `<div class="rfigs"><p class="rfig"><b>${esc(v.installed)}</b>running</p>${news ? `<p class="rfig"><b>${esc(v.latest)}</b>newest</p>` : ""}</div>`;
+  }
+  return "";
+}
+// A TOPIC IS A CARD WITH ITS GLYPH AND ITS STATE, AND A SEARCH NEVER RESIZES IT (Oct 27): the glyph names the topic
+// beside its name, as a list card's glyph does, and is not a lamp, since a topic has no live state of its own to
+// light. What the search found in a topic takes the place of the card's state for as long as the search stands, on one
+// line, so the rail keeps its height and every card its place under the pointer.
+function cardHtml(x, dim = false) {
+  const f = found(x.id), drawn = railDraw(x.id), s = drawn ? [] : summary(x.id);
+  // a card still being read draws the line it will hold, striped, instead of saying the word Reading
+  const draw = drawn || (s.length === 1 && s[0] === "Reading" ? GHOST.row([GHOST.bar(7)]) : `<div class="meta">${s.map((w) => `<span>${esc(w)}</span>`).join("")}</div>`);
+  const hit = f.length ? `<div class="hits"><span>${hl(f[0])}</span>${f.length > 1 ? `<span class="more">${fmt(f.length - 1)} more</span>` : ""}</div>` : "";
+  return `<article class="card job${dim ? " dim" : ""}" data-open="${x.id}" aria-current="${ui.open === x.id}"${f.length > 1 ? ` title="${esc(f.join(" · "))}"` : ""}>`
+    + `<div class="top"><span class="jglyph" aria-hidden="true">${SV[x.id]}</span><span class="jname">${hl(x.name)}</span></div>`
+    + `<div class="jstate${hit ? " hit" : ""}"><div class="jdraw">${draw}</div>${hit}</div></article>`;
 }
 
 // ---------- the page ----------
 const root = document.getElementById("st");
 function render() {
   tick(); // times read in the person's present
-  if (ui.err) { root.innerHTML = `<div class="list rail empty"><div class="nomatch"><span class="state limit">${esc(ui.err)}</span><button class="act quiet" data-act="again">Read again</button></div></div>`; return; }
-  const shown = words().length ? jobs().filter((x) => found(x.id).length) : jobs();
+  if (ui.err) { root.innerHTML = `<div class="list rail plain empty"><div class="nomatch"><span class="state limit">${esc(ui.err)}</span><button class="act quiet" data-act="again">Read again</button></div></div>`; return; }
+  ui.legendSaid = new Set();
+  // SEARCH NARROWS, IT NEVER EMPTIES (Marcos, Oct 25): every topic keeps its place on the rail and the ones with no
+  // match go quiet, so the shape of the page does not change under him and a miss is read as a miss. A search that
+  // finds nothing keeps the topic he was on, and says so once, beside the field (searchCount).
+  const all = jobs(), searching = words().length > 0;
+  const shown = searching ? all.filter((x) => found(x.id).length) : all;
   if (shown.length && !shown.some((x) => x.id === ui.open)) ui.open = shown[0].id;
-  // Your data's own first line is the same figure the rail card carries, so the pane header does not say it twice
-  const x = TOPIC[ui.open], s = x.id === "data" ? [] : summary(x.id);
-  const list = shown.length ? `<div class="list rail">${shown.map(cardHtml).join("")}</div>`
-    : `<div class="list rail empty"><div class="nomatch"><span class="state">No match</span><button class="act quiet" data-act="clear">Clear</button></div></div>`;
-  const pane = shown.length ? `<div class="pane"><header><span class="lamp idle sock" aria-hidden="true">${SV[x.id]}</span><div class="who"><div class="top"><span class="name">${esc(x.name)}</span></div>`
-    + `<div class="meta">${s.map((w) => `<span>${esc(w)}</span>`).join("")}</div></div>`
-    + `<div class="acts"><button class="icon close" data-act="close" aria-label="Close">${ICON.close}</button></div></header><div class="body kn">${PANES[x.id]()}${advancedHtml(x.id)}</div></div>` : "";
-  const was = root.querySelector(".pane .body")?.scrollTop ?? 0;
+  if (!all.some((j) => j.id === ui.open) && all.length) ui.open = all[0].id;
+  const x = TOPIC[ui.open];
+  const cards = all.map((j) => cardHtml(j, searching && !found(j.id).length));
+  const list = `<div class="list rail plain">${cards.join("")}</div>`;
+  // the pane's header names the topic and nothing the card beside it already says: its state is drawn inside the pane
+  const pane = `<div class="pane"><header><span class="jglyph" aria-hidden="true">${SV[x.id]}</span><div class="who"><div class="top"><span class="name">${esc(x.name)}</span></div></div>`
+    + `<div class="acts"><button class="icon close" data-act="close" aria-label="Close">${ICON.close}</button></div></header><div class="body kn plate">${PANES[x.id]()}${advancedHtml(x.id)}</div></div>`;
   // a setting's typed field keeps its caret through a redraw (knobs.js keeps the text)
   const f = document.activeElement, fid = f?.id?.startsWith("kf-") ? f.id : null, pos = f?.selectionStart;
   root.innerHTML = `<div class="jobs${ui.shown ? " open" : ""}">${list}${pane}</div>`;
-  if (was) { const b = root.querySelector(".pane .body"); if (b) b.scrollTop = was; }
   if (fid) { const g = document.getElementById(fid); if (g) { g.focus(); if (pos != null) g.setSelectionRange(pos, pos); } }
   KNOBS.focusCustom(root);
+  // the add tile turned into its form: the caret goes to its field, once
+  if (ui.focusPath) { ui.focusPath = false; root.querySelector("[data-pfield]")?.focus(); }
   root.querySelector(".pane .menu")?.scrollIntoView({ block: "nearest" });
+  // every meter and bar takes its width after the markup lands, and grows in from nothing the first time a pane opens
+  DRAW.paint(root, { grow: ui.grew === ui.open ? null : "all" });
+  ui.grew = ui.open;
+  searchCount();
   moreBelow();
 }
-
-// An open card taller than its pane says so on its lower edge: "more" is on the pane while content waits below the fold,
-// and goes when the scroll reaches the end. Every card gets it, none draws it unless it overflows.
-function moreBelow() {
-  const body = root.querySelector(".pane .body");
-  if (body) body.parentElement.classList.toggle("more", body.scrollHeight - body.scrollTop - body.clientHeight > 6);
+/** How many settings the search found, beside the field: a count is the one thing the rail cannot show him. A search
+ *  that finds no setting but names a topic counts the topics; one that finds nothing says so, with the way out. */
+function searchCount() {
+  const box = document.getElementById("qn");
+  if (!box) return;
+  const w = words().length, n = w ? liveKnobs().filter((k) => hits(knobHay(k))).length : 0, t = w ? jobs().filter((x) => found(x.id).length).length : 0;
+  box.classList.toggle("miss", w > 0 && !n && !t);
+  box.innerHTML = !w ? "" : n ? `<b>${fmt(n)}</b> ${n === 1 ? "setting" : "settings"}${t > 1 ? ` in ${fmt(t)} topics` : ""}`
+    : t ? `<b>${fmt(t)}</b> ${t === 1 ? "topic" : "topics"}`
+    : `<span>No setting matches</span><button class="act quiet small" type="button" data-act="clear">Clear</button>`;
 }
-document.addEventListener("scroll", (e) => { if (e.target.classList?.contains("body")) moreBelow(); }, true);
+
+// A pane that runs past the fold says so on its lower edge, and the word goes once the end is on screen. THE PAGE
+// SCROLLS, NOT THE PANE (Marcos, Oct 25: the pane had its own scrollbar inside the page's, so a setting could be
+// hidden twice over), so the cue is measured against the window.
+function moreBelow() {
+  const pane = root.querySelector(".pane");
+  if (pane) pane.classList.toggle("more", pane.getBoundingClientRect().bottom > window.innerHeight + 8);
+}
+addEventListener("scroll", moreBelow, { passive: true });
 window.addEventListener("resize", moreBelow);
 
 // A shorter history window that would delete turns waits for the yes; the daemon says what the cut would take.
@@ -1431,7 +1879,18 @@ async function refresh() {
 
 KNOBS.wire(root, render);
 document.getElementById("q").addEventListener("input", (e) => { ui.q = e.target.value; ks.menu = null; ks.custom = null; render(); });
-document.addEventListener("keydown", (e) => { if (e.key === "Escape" && (ui.armed || ui.ask)) { ui.armed = null; ui.ask = null; render(); } });
+document.addEventListener("keydown", (e) => {
+  // the folder being added answers to the keys a field does: Enter saves it, Escape puts the add tile back
+  if (e.target.matches?.("[data-pfield]")) {
+    if (e.key === "Enter") { e.preventDefault(); saveFolders(withPath(e.target.value)); return; }
+    if (e.key === "Escape") { ui.addPath = null; delete ui.bad.projectsFolders; render(); return; }
+  }
+  // Escape in the search field clears it, as the Clear beside a miss does
+  if (e.key === "Escape" && e.target.id === "q" && ui.q) { ui.q = ""; e.target.value = ""; render(); return; }
+  if (e.key === "Escape" && (ui.armed || ui.ask)) { ui.armed = null; ui.ask = null; render(); }
+});
+// what he types into the folder field is kept, so a drawing while he types (a read landing) does not take it from him
+document.addEventListener("input", (e) => { if (e.target.matches?.("[data-pfield]")) ui.addPath = e.target.value; });
 document.addEventListener("click", (e) => {
   if (KNOBS.click(e, render)) { render(); return; }
   const t = e.target.closest("[data-act], [data-open]");
@@ -1462,21 +1921,63 @@ document.addEventListener("click", (e) => {
     case "delete": ui.armed = null; render(); remove(d.id); return;
     case "shorten": shorten(); return;
     case "unask": ui.ask = null; break;
-    case "addfolder": ui.addPath = ""; delete ui.bad.projectsFolders; break;
+    case "addfolder": ui.addPath = ""; ui.focusPath = true; delete ui.bad.projectsFolders; break;
     case "cancelfolder": ui.addPath = null; delete ui.bad.projectsFolders; break;
     case "savefolder": saveFolders(withPath(root.querySelector("[data-pfield]")?.value ?? "")); return;
     case "dropfolder": saveFolders(foldersNow().filter((p) => p !== d.path)); return;
+    case "armfolder": ui.armed = `folder:${d.path}`; break;
+    case "mmore": ui.mmore[d.id] = !ui.mmore[d.id]; break;
+    case "pmore": ui.pmore[d.id] = !ui.pmore[d.id]; break;
+    // the setting a dimmed row waits on, brought into view and lit once where it stands, its control under the keys
+    case "seerow": {
+      const row = root.querySelector(`.krow[data-key="${CSS.escape(d.key ?? "")}"]`);
+      if (row) {
+        row.scrollIntoView({ behavior: "smooth", block: "center" });
+        row.classList.remove("landed"); void row.offsetWidth; row.classList.add("landed");
+        row.querySelector(".ctl button, .ctl input")?.focus({ preventScroll: true });
+      }
+      return;
+    }
+    // the way back from Saving stopped: the deletes, brought into view and lit once where they stand
+    case "tofree": {
+      const free = root.querySelector(".dfree");
+      if (free) { free.scrollIntoView({ behavior: "smooth", block: "start" }); free.classList.remove("landed"); void free.offsetWidth; free.classList.add("landed"); }
+      return;
+    }
     default: return;
   }
   render();
 });
 if (TOPIC[location.hash.slice(1)]) { ui.open = location.hash.slice(1); ui.shown = true; }
-// before the first read answers, the rail draws its cards: their names and marks are this page's own, and each card's
-// line is a striped bar until its figure lands (Marcos, Oct 12: a blank page under its title read as broken)
-const SKETCH_LINES = [7, 10, 9, 6.5, 9, 6, 8];
-const ghostHtml = () => `<div class="jobs"><div class="list rail" aria-busy="true" aria-label="Reading settings">${TOPICS.map((x, i) => `<article class="card job ghosted" aria-hidden="true">`
-  + `<span class="lamp idle sock">${SV[x.id]}</span><div class="top"><span class="jname">${esc(x.name)}</span></div>`
-  + `${SKETCH_LINES[i] ? `<div class="meta">${GHOST.bar(SKETCH_LINES[i])}</div>` : ""}</article>`).join("")}</div></div>`;
+// before the first read answers, the rail draws its cards: their names and glyphs are this page's own, and each card's
+// state is the ghost of what will land in it (Marcos, Oct 12: a blank page under its title read as broken)
+const RAIL_GHOST = { silent: [6, 4], busy: [6, 0], reasoning: [9], plan: [5, 0], mcp: [5, 0], projects: [6, 5], data: [5, 0], version: [4, 5] };
+const railGhost = (id) => GHOST.row((RAIL_GHOST[id] ?? [7]).map((w) => (w ? GHOST.bar(w) : GHOST.track())));
+// the rail AND the open topic beside it, both as the shapes that will land: a rail alone left two thirds of the page
+// empty for as long as the first read takes, and the pane then arrived into that hole (the slow door, Oct 26)
+const ghostHtml = () => `<div class="jobs${ui.shown ? " open" : ""}"><div class="list rail plain" aria-busy="true" aria-label="Reading settings">${TOPICS.map((x) => `<article class="card job ghosted" aria-hidden="true" aria-current="${ui.open === x.id}">`
+  + `<div class="top"><span class="jglyph">${SV[x.id]}</span><span class="jname">${esc(x.name)}</span></div><div class="jstate"><div class="jdraw">${railGhost(x.id)}</div></div></article>`).join("")}</div>`
+  + `<div class="pane" aria-hidden="true"><header><span class="jglyph">${SV[ui.open] ?? SV.busy}</span><div class="who"><div class="top"><span class="name">${esc(TOPIC[ui.open]?.name ?? "")}</span></div></div></header>`
+  + `<div class="body kn plate">${(PANE_GHOST[ui.open] ?? PANE_GHOST.busy)()}</div></div></div>`;
+// EVERY TOPIC ARRIVES IN ITS OWN SHAPE (Oct 26): opened from a link, a topic draws its sections under their real
+// kickers, its settings under their own names, and the figures, bars, rows and cards they will hold as ghosts, so
+// nothing moves when the reads land.
+const ghostSec = (body, kicker = "") => `<section class="psec"><div class="sechead">${kicker ? `<h3 class="kicker">${esc(kicker)}</h3>` : GHOST.bar(5)}</div>${body}</section>`;
+/** A section's settings before the settings are read: each name, and its control's ghost. */
+const ghostRows = (keys) => `<div class="krows flat">${keys.filter((key) => KNOB[key]).map((key) => `<div class="krow" aria-hidden="true"><div class="lbl">${esc(KNOB[key].label)}</div><div class="ctl">${GHOST.bar(9, "chip")}</div></div>`).join("")}</div>`;
+const PANE_GHOST = {
+  silent: () => pair(ghostSec(heroGhost() + stallGhost(), "This week"), ghostSec(ghostRows(keysOf("silent")), "How long splice waits")),
+  busy: () => pair(ghostSec(heroGhost() + peaksGhost(), "Today"), ghostSec(ghostRows(LIMITS.filter((key) => keysOf("busy").includes(key))), "splice's limits"), "lead")
+    + pair(ghostSec(`${GHOST.focal(16)}${GHOST.row([GHOST.chip(), GHOST.cell()])}`, "Providers today"), ghostSec(ghostRows(keysOf("busy", LIMITS)), "Retries")),
+  reasoning: () => pair(ghostSec(termGhost(), "In your terminal"),
+    ghostSec(ghostRows(SHOWS.filter((key) => keysOf("reasoning").includes(key))), "How reasoning shows") + ghostSec(ghostRows(keysOf("reasoning", SHOWS)), "Keep thinking")),
+  plan: () => pair(ghostSec(heroGhost() + planGhost(), "Right now"), ghostSec(ghostRows(keysOf("plan")), "When splice warns")),
+  mcp: () => ghostSec(heroGhost() + GHOST.stack()) + ghostSec(`<div class="ghost-rows">${[0, 1, 2].map(() => GHOST.row([GHOST.tile(), GHOST.bar(9), GHOST.bar(15), GHOST.bar(5), GHOST.bar(8)])).join("")}</div>`) + ghostSec(mcardsGhost()),
+  projects: () => ghostSec(heroGhost() + GHOST.row([GHOST.bar(7), GHOST.bar(8), GHOST.bar(6), GHOST.bar(7)])) + ghostSec(GHOST.row([GHOST.bar(9), GHOST.tile()])),
+  data: () => ghostSec(heroGhost() + GHOST.stack()) + ghostSec(`<div class="dcards text">${[0, 1, 2].map((i) => GHOST.card([9, 6, 12, 10], i, "dghost")).join("")}</div>`),
+  version: () => ghostSec(`<div class="vline">${[5, 8].map((w) => `<div class="vghost" aria-hidden="true">${GHOST.bar(5)}${GHOST.fig(w)}${GHOST.bar(9)}</div>`).join("")}</div>`)
+    + ghostSec(`<div class="vfiles">${[13, 10, 10].map((w) => `<div class="vfile" aria-hidden="true">${GHOST.bar(5)}${GHOST.bar(w)}</div>`).join("")}</div>`),
+};
 root.innerHTML = ghostHtml();
 refresh();
 

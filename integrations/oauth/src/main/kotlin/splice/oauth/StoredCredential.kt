@@ -19,6 +19,7 @@ package splice.oauth
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.jsonObject
+import splice.core.auth.ApiKeyFile
 import splice.core.config.KeyStore
 import splice.core.config.KeyStorePath
 import splice.core.topology.AuthKind
@@ -47,8 +48,8 @@ public class StoredCredential(
     /** Each key store this reader has read, by path ([keyStore]). */
     private val keyStores = ConcurrentHashMap<Path, KeyStore>()
 
-    /** The credential file this provider's auth kind uses: what the operator named, else the kind's
-     *  own default. Null for a kind that keeps nothing on disk (api-key, client). */
+    /** The credential file this provider's auth kind uses: what the operator named (an api-key head's key file), else
+     *  the kind's own default. Null when nothing is named for a kind with no default (api-key, client). */
     public fun pathFor(provider: ProviderConfig): Path? =
         (provider.auth.file ?: AuthKindRegistry.defaultAuthFileFor(provider.auth.kind))
             ?.let { Paths.get(TopologyLoader.expandHome(it)) }
@@ -97,12 +98,27 @@ public class StoredCredential(
         null
     }
 
-    /** The api-key this provider authenticates with: the environment first, then splice's own key
-     *  store. Null for every other auth kind — an OAuth provider's token is [presentedToken]'s answer. */
+    /** The api-key this provider authenticates with, in the order its head reads it (ApiKeyAuthProvider): the
+     *  environment, then the key file its auth names ([pathFor]), then splice's own key store. Null for every other auth
+     *  kind — an OAuth provider's token is [presentedToken]'s answer. The key file was left out until fix 3's third
+     *  count (Oct 27), so a key kept there never reached the head's model list or `splice models`. */
     public fun apiKey(provider: ProviderConfig, key: String, env: EnvReader): String? {
         if (!provider.auth.isApiKey) return null
         val envVar = provider.auth.effectiveApiKeyEnv(key)
-        return env(envVar)?.takeIf { it.isNotBlank() } ?: keyStore(env).read(envVar)
+        return env(envVar)?.takeIf { it.isNotBlank() }
+            ?: pathFor(provider)?.let(::keyFileKey)
+            ?: keyStore(env).read(envVar)
+    }
+
+    /** The key the file at [path] supplies, read as the head reads its key file ([ApiKeyFile.key]); null when it holds
+     *  none or cannot be read, and the store is read next, as the head reads it next. A failed read is not said here:
+     *  the head's own read says it, and the daemon's model lists reread this file every two seconds. */
+    private fun keyFileKey(path: Path): String? = try {
+        ApiKeyFile.key(Files.readString(path))
+    } catch (_: IOException) {
+        null
+    } catch (_: IllegalArgumentException) {
+        null
     }
 
     /** The key store at [env]'s path, one per path for this reader's life. A store that cannot be read is said once

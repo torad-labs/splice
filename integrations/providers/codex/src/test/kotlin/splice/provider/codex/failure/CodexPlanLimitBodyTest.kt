@@ -1,11 +1,10 @@
-package splice.provider.codex.auth
+package splice.provider.codex.failure
 
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertNull
 import org.junit.jupiter.api.Test
 import splice.core.failure.LoginOwner
 import splice.core.usage.PlanLimit
-import splice.provider.codex.failure.CodexReplies
 import splice.upstream.failure.FailedReply
 import splice.upstream.failure.SentKey
 import java.time.Instant

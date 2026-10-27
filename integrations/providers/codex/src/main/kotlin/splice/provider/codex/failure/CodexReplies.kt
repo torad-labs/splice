@@ -18,7 +18,6 @@ import splice.core.usage.PlanLimit
 import splice.core.usage.SEVEN_DAY_CLAIM
 import splice.core.wire.HttpStatus
 import splice.dialect.responses.failure.ResponsesReplies
-import splice.provider.codex.auth.CodexPlanLimitBody
 import splice.upstream.failure.ErrorMessage
 import splice.upstream.failure.FailedEvent
 import splice.upstream.failure.FailedReply

@@ -1,4 +1,4 @@
-package splice.provider.codex.auth
+package splice.provider.codex.failure
 
 import splice.core.usage.PlanLimit
 import java.util.concurrent.TimeUnit
@@ -18,7 +18,7 @@ private const val FIVE_HOUR_MINUTES = 300L
 // The weekly ChatGPT plan window (7 days), in the same unit.
 private const val SEVEN_DAY_MINUTES = 10_080L
 
-/** What a 429 body says about the plan window it spent, split out of CodexAuthProvider. */
+/** What a 429 body says about the plan window it spent, split out of CodexAuthProvider and read by [CodexReplies]. */
 internal class CodexPlanLimitBody {
     /** V4-377: a 429 `usage_limit_reached` naming a reset in the future is a spent plan window, not a
      *  burst: the reset is bounded by the window it names (a reset further out than one whole window

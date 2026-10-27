@@ -39,7 +39,6 @@ import splice.dialect.responses.ReasoningSettings
 import splice.dialect.responses.websocket.RoundFrame
 import splice.dialect.responses.websocket.TerminalEvent
 import splice.dialect.responses.websocket.WsConnector
-import splice.dialect.responses.websocket.WsHandshake
 import splice.dialect.responses.websocket.WsUpstream
 import splice.head.admission.RequestMaterializationGate
 import splice.upstream.NEVER_PINGED_MS
@@ -108,7 +107,8 @@ private class ClosingRunner(events: List<String>, log: LogSink) : WsRoundRunner 
     ): WsRound? {
         val flow = transport.round(
             key = "round-${attempts.incrementAndGet()}",
-            handshake = WsHandshake("wss://chatgpt.test/backend-api/codex/responses", emptyMap()),
+            headers = emptyMap(),
+            wssUrl = "wss://chatgpt.test/backend-api/codex/responses",
             isTerminal = TerminalEvent { type(it) in ROUND_ENDS },
             frameFor = RoundFrame { bodyJson },
         ) ?: return null

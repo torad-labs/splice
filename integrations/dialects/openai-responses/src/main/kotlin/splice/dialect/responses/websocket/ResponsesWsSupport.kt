@@ -34,10 +34,8 @@ internal class ResponsesWsSupport(
         return ResponsesWsRunner(
             transport = WsUpstream(
                 log = log,
-                lifetime = WsLifetime(
-                    maxAgeMs = ageMs ?: MAX_SOCKET_AGE_MS,
-                    idleCloseMs = idleMs ?: SOCKET_IDLE_CLOSE_MS,
-                ),
+                maxSocketAgeMs = ageMs ?: MAX_SOCKET_AGE_MS,
+                idleCloseMs = idleMs ?: SOCKET_IDLE_CLOSE_MS,
             ),
             session = ResponsesWsSession(policy = policy),
             // Same path as upstreamUrl, on the WebSocket scheme (live spike receipt).

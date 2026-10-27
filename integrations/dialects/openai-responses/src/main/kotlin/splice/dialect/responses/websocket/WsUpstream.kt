@@ -30,7 +30,10 @@ import kotlinx.coroutines.flow.Flow
 import kotlinx.serialization.json.JsonObject
 import splice.core.util.Cancellables
 import splice.core.util.ERR_SNIPPET
+import splice.core.util.ElapsedClock
 import splice.core.util.LogSink
+import splice.core.util.MonoClock
+import java.util.concurrent.atomic.AtomicBoolean
 
 /**
  * The WebSocket upstream: every conversation's sockets, with no cap, plus the one operation the head
@@ -50,28 +53,27 @@ public class WsUpstream(
     /** Injectable socket factory — tests script a fake WebSocket without a live server. Receives
      *  the wss URI, the handshake headers, and the listener the socket must feed. */
     private val connector: WsConnector = JDK_CONNECTOR,
-    /** How long a socket lives: its idle close, its max age, the clock that reads both, and the sweep. */
-    lifetime: WsLifetime = WsLifetime(),
+    /** The age past which an idle pooled connection is retired; see MAX_SOCKET_AGE_MS. The [defaults] knob
+     *  wsMaxAgeMs sets it. */
+    maxSocketAgeMs: Long = MAX_SOCKET_AGE_MS,
+    /** Where socket ages are read; tests pass a clock they move. */
+    clock: ElapsedClock = ElapsedClock(MonoClock::nowMs),
+    /** How long a socket may sit idle before the background sweep closes it; the [defaults] knob wsIdleCloseMs. */
+    idleCloseMs: Long = SOCKET_IDLE_CLOSE_MS,
 ) {
 
     private val logKeys = WsLogKeys()
-    private val pool =
-        WsConnectionPool(log, logKeys, connector, lifetime.maxAgeMs, lifetime.idleCloseMs, lifetime.clock)
+    private val pool = WsConnectionPool(log, logKeys, connector, maxSocketAgeMs, idleCloseMs, clock)
     private val opener = WsRoundOpener(log, firstEventTimeoutMs, pool, sendTimeoutMs)
     private val stream = WsRoundStream(log, pool)
+    private val sweeping = AtomicBoolean(false)
 
-    init {
-        lifetime.sweeps.every(SWEEP_PERIOD_MS) {
-            // A throw out of a scheduled task ends every later run, and nothing else closes an idle socket.
-            Cancellables.runCatchingBestEffort(pool::sweep).onFailure {
-                val why = "${it::class.simpleName}: ${it.message?.take(ERR_SNIPPET)}"
-                log("[ws] warning: the idle sweep failed ($why); it runs again\n")
-            }
-        }
-    }
+    /** Where the background sweep is scheduled. A test in this module sets one that keeps the task, before the first
+     *  round, so it can run the sweep after moving its clock. */
+    internal var sweeps: WsSweeps = WsDaemonSweeps()
 
     /**
-     * Run one request/response round over the key's WebSocket.
+     * Run one request/response round over the key's WebSocket, for a caller that names no session.
      *
      * Returns `null` — meaning "this round rides SSE instead" — when the connection could not be
      * established, the frame could not be sent, or the first event did not
@@ -85,13 +87,22 @@ public class WsUpstream(
      */
     public suspend fun round(
         key: String,
-        /** Where the socket connects and the headers its handshake sends. */
+        headers: Map<String, String>,
+        wssUrl: String,
+        isTerminal: TerminalEvent,
+        frameFor: RoundFrame,
+    ): Flow<JsonObject>? = round(key, WsHandshake(wssUrl, headers), isTerminal, session = null, frameFor)
+
+    /** The same round, with the client [session] it serves named on every socket log line. */
+    internal suspend fun round(
+        key: String,
         handshake: WsHandshake,
         isTerminal: TerminalEvent,
-        /** The client session this round serves, named on every socket log line. */
         session: String? = null,
         frameFor: RoundFrame,
     ): Flow<JsonObject>? {
+        // Started by the first round, the first moment a socket can exist to sweep.
+        if (sweeping.compareAndSet(false, true)) sweeps.every(SWEEP_PERIOD_MS, ::sweepOnce)
         val conn = pool.acquire(key, session, handshake.headers, handshake.wssUrl) ?: return null
         // Between winning the busy flag and handing back a flow there are two suspension points,
         // and a cancellation at either one used to propagate BEFORE any flow existed — so
@@ -104,6 +115,14 @@ public class WsUpstream(
             first?.let { stream.roundFlow(conn, key, it, isTerminal) }?.also { handedOff = true }
         } finally {
             if (!handedOff) pool.failRound(conn, key)
+        }
+    }
+
+    private fun sweepOnce() {
+        // A throw out of a scheduled task ends every later run, and nothing else closes an idle socket.
+        Cancellables.runCatchingBestEffort(pool::sweep).onFailure {
+            val why = "${it::class.simpleName}: ${it.message?.take(ERR_SNIPPET)}"
+            log("[ws] warning: the idle sweep failed ($why); it runs again\n")
         }
     }
 }

@@ -205,16 +205,13 @@ private class Fixture {
                 log += line
             },
             connector = connector,
-            lifetime = WsLifetime(
-                maxAgeMs = AGE_LIMIT,
-                idleCloseMs = IDLE_LIMIT,
-                clock = ElapsedClock {
-                    onClockRead?.invoke()
-                    now
-                },
-                sweeps = WsSweeps { _, task -> sweep = task },
-            ),
-        )
+            maxSocketAgeMs = AGE_LIMIT,
+            clock = ElapsedClock {
+                onClockRead?.invoke()
+                now
+            },
+            idleCloseMs = IDLE_LIMIT,
+        ).also { it.sweeps = WsSweeps { _, task -> sweep = task } }
         return this
     }
 

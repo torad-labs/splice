@@ -9,6 +9,7 @@ import splice.core.topology.AuthKind
 import splice.core.util.HeadScopedLogs
 import splice.core.util.LogSink
 import splice.oauth.OAuthAccountFiles
+import splice.provider.codex.CodexListedLite
 import splice.provider.codex.CodexProvider
 import splice.provider.codex.CodexQuirks
 import splice.provider.codex.auth.CodexAuthProvider
@@ -59,7 +60,9 @@ internal class CodexResponsesArm(
                     loginCommand = ctx.faultPlan.loginCommand,
                 ),
                 reasoning = ReasoningWiring.settingsOf(cfg),
-                quirks = quirksOverlay.responsesQuirks(providerCfg, CodexQuirks().defaultQuirks(), cfg),
+                // the backend's list decides each model's shape; the name pattern only where none is known (fix 5)
+                quirks = quirksOverlay.responsesQuirks(providerCfg, CodexQuirks().defaultQuirks(), cfg)
+                    .withListedLite(CodexListedLite(ctx.roster.discovered, key)),
                 // codex-rs sends it on every request of a ChatGPT sign-in; only a config that turns it off keeps it off.
                 accountIdHeader = providerCfg.quirks.accountIdHeader ?: true,
                 codeMode = codeMode.wiring(ctx),

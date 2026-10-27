@@ -67,6 +67,7 @@ public abstract class ResponsesProvider(
     private val systemPrompt = ResponsesSystemPrompt()
     private val parts = ResponsesParts(tuning, reasoning, quirks, fold, log, toolNames, replies)
     private val locations = tuning.locations
+    private val liteShape = ResponsesLiteShape(quirks)
 
     /** The headers this provider sends with every request before the ones its config names: the shared SSE accept
      *  header by default. A provider with credential-derived headers (codex's ChatGPT-Account-ID) adds them here. */
@@ -95,17 +96,14 @@ public abstract class ResponsesProvider(
         )
     }
 
-    /** The lite header rides only when this provider declared both [ResponsesQuirks.responsesLiteHeader]
-     *  and a matching [ResponsesQuirks.responsesLiteModelRegex]. Compaction included — lite is a
+    /** The lite header rides only when this provider declared [ResponsesLiteQuirks.responsesLiteHeader]
+     *  and the turn's model is lite by the one gate the body's shape follows ([ResponsesLiteShape.isLiteModel]:
+     *  the backend's list where one is known, the name pattern where none is). Compaction included — lite is a
      *  property of the model, so a compaction built without the header would share no prefix with
      *  the session's lite turns. */
     private fun liteHeader(meta: TurnMeta): Map<String, String> {
         val name = quirks.lite.responsesLiteHeader ?: return emptyMap()
-        return if (quirks.lite.responsesLiteModelRegex?.containsMatchIn(meta.route.upstreamModel) == true) {
-            mapOf(name to "true")
-        } else {
-            emptyMap()
-        }
+        return if (liteShape.isLiteModel(meta.route.upstreamModel)) mapOf(name to "true") else emptyMap()
     }
 
     final override fun withCompactionTail(turn: BuiltTurn, instructions: String): BuiltTurn =

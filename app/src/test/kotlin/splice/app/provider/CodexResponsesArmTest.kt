@@ -53,14 +53,7 @@ class CodexResponsesArmTest {
     fun `codex oauth path pins responses url routing quirks accounts and code-mode on`(@TempDir tmp: Path) = runTest {
         val primaryFile = writeAccounts(tmp)
         // V4-441: exec comes from the backend's own mark, which discovery carried from its model list.
-        val ctx =
-            context(
-                tmp,
-                primaryFile,
-                listOf(
-                    DiscoveredModel("gpt-6-astra", runtimeMetadata = ModelRuntimeMetadata(toolMode = "code_mode_only")),
-                ),
-            )
+        val ctx = context(tmp, primaryFile, listOf(ASTRA_LISTED))
         assertTrue(ctx.providerCfg.codeModeEnabled)
         val wired = CodexResponsesArm(
             StatePaths(baseOverride = tmp.resolve("state")).also { Files.createDirectories(it.stateDir) },
@@ -133,9 +126,7 @@ class CodexResponsesArmTest {
         assertEquals(1, logged.count { it.contains("[code-mode] no model is marked code_mode_only") }, "$logged")
         assertTrue(logged.single { it.contains("[code-mode]") }.startsWith("[codex]"), "$logged")
 
-        roster = listOf(
-            DiscoveredModel("gpt-6-astra", runtimeMetadata = ModelRuntimeMetadata(toolMode = "code_mode_only")),
-        )
+        roster = listOf(ASTRA_LISTED)
         val after = wired.provider.buildTurn(body, false, "session-1")
         assertTrue(after.requestBody.toString().contains("\"name\":\"exec\""), "the refreshed roster marks it")
         assertEquals(1, logged.count { it.contains("[code-mode]") }, "said once, at start: $logged")
@@ -233,6 +224,13 @@ class CodexResponsesArmTest {
         )
     }
 }
+
+/** gpt-6-astra as the backend's list carries it: code_mode_only, and use_responses_lite, which decides its shape since
+ *  fix 5 (Oct 27) as it decides Codex's (models.json, re-read 2026-09-04). */
+private val ASTRA_LISTED = DiscoveredModel(
+    "gpt-6-astra",
+    runtimeMetadata = ModelRuntimeMetadata(toolMode = "code_mode_only", useResponsesLite = true),
+)
 
 private const val TOOL_BODY =
     """{"model":"gpt-6-astra","stream":true,"max_tokens":1024,""" +

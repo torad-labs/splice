@@ -54,7 +54,9 @@ class RosterRefreshToolModeTest {
             AuthConfig(AuthKind.ChatgptOAuth.wire, file = authFile.toString()),
             models = listOf(ModelEntry(MODE_MODEL, contextWindow = 128_000)),
         )
-        var listed = listOf(DiscoveredModel(MODE_MODEL))
+        // The backend lists every model it runs on code mode as lite too, and since fix 5 (Oct 27) that flag decides
+        // the shape code mode needs, so each roster below carries it, and only the tool mode moves.
+        var listed = listOf(listedLite(toolMode = null))
         val rosters = ModelRosters(
             paths,
             {},
@@ -73,13 +75,11 @@ class RosterRefreshToolModeTest {
         try {
             val direct = wired.provider.buildTurn(body, false, "synthetic-session")
             assertFalse(direct.requestBody.toString().contains("\"name\":\"exec\""))
-            listed = listOf(
-                DiscoveredModel(MODE_MODEL, runtimeMetadata = ModelRuntimeMetadata(toolMode = "code_mode_only")),
-            )
+            listed = listOf(listedLite(toolMode = "code_mode_only"))
             rosters.resolve(mapOf("synthetic" to provider))
             val marked = wired.provider.buildTurn(body, false, "synthetic-session")
             assertTrue(marked.requestBody.toString().contains("\"name\":\"exec\""), marked.requestBody.toString())
-            listed = listOf(DiscoveredModel(MODE_MODEL, runtimeMetadata = ModelRuntimeMetadata(toolMode = "function")))
+            listed = listOf(listedLite(toolMode = "function"))
             rosters.resolve(mapOf("synthetic" to provider))
             val unmarked = wired.provider.buildTurn(body, false, "synthetic-session")
             assertFalse(unmarked.requestBody.toString().contains("\"name\":\"exec\""))
@@ -87,6 +87,11 @@ class RosterRefreshToolModeTest {
             wired.provider.onHeadStop()
         }
     }
+
+    private fun listedLite(toolMode: String?): DiscoveredModel = DiscoveredModel(
+        MODE_MODEL,
+        runtimeMetadata = ModelRuntimeMetadata(useResponsesLite = true, toolMode = toolMode),
+    )
 
     private fun context(
         paths: StatePaths,

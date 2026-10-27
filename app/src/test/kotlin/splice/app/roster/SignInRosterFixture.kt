@@ -67,12 +67,19 @@ internal class HeldBeat : Ticker {
     }
 }
 
-internal class SignInRosterFixture(tmp: Path, parent: CoroutineScope) {
+/** [overrides] is the head's `[heads.codex.overrides]` table and [rows] the model rows its provider declares, as
+ *  splice.toml would hold them. */
+internal class SignInRosterFixture(
+    tmp: Path,
+    parent: CoroutineScope,
+    overrides: Map<String, String> = emptyMap(),
+    rows: List<String> = listOf(CODE_MODE_MODEL),
+) {
     private val scope = LifecycleScope(parent.coroutineContext)
     private val paths = StatePaths(baseOverride = tmp.resolve("state"))
     val backend = ChatGptListBackend()
     val login = SyntheticChatGptLogin(tmp.resolve("codex-auth.json"))
-    private val config = ConfigService(paths, envReader = { null })
+    private val config = ConfigService(paths, perHeadOverrides = mapOf(CODEX_HEAD to overrides), envReader = { null })
     private val mgmt = MgmtKey(paths)
     private val signIn = SignInPlanner()
 
@@ -86,7 +93,7 @@ internal class SignInRosterFixture(tmp: Path, parent: CoroutineScope) {
         dialect = Dialect.OPENAI_RESPONSES,
         baseUrl = backend.baseUrl,
         auth = AuthConfig(AuthKind.ChatgptOAuth.wire, file = tmp.resolve("codex-auth.json").toString()),
-        models = listOf(ModelEntry(CODE_MODE_MODEL, contextWindow = 272_000)),
+        models = rows.map { ModelEntry(it, contextWindow = 272_000) },
         local = false,
     )
     private val heads = mapOf(CODEX_HEAD to provider)

@@ -30,8 +30,10 @@ internal class ResponsesLiteShape(private val quirks: ResponsesQuirks) {
     fun isLite(opts: BuildOptions): Boolean = isLiteModel(opts.models.upstream)
 
     /** The same gate on a bare model id, for a seam that holds a turn's meta rather than its build
-     *  options (the re-anchor controller, V4-339). */
-    fun isLiteModel(model: String): Boolean = quirks.lite.responsesLiteModelRegex?.containsMatchIn(model) == true
+     *  options (the re-anchor controller, V4-339). The backend's own list decides a model it knows
+     *  ([ResponsesLiteQuirks.listedModels]); the name pattern decides only where no list is known. */
+    fun isLiteModel(model: String): Boolean = quirks.lite.listedModels?.marks(model)
+        ?: (quirks.lite.responsesLiteModelRegex?.containsMatchIn(model) == true)
 
     fun wireShape(lite: Boolean, input: JsonArray, instructions: String, tools: JsonArray?): WireShape =
         if (lite) {

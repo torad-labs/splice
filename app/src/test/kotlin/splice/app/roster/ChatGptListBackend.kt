@@ -46,6 +46,10 @@ internal class ChatGptListBackend : AutoCloseable {
     /** Each turn's body as the head sent it, decoded, in arrival order. */
     val turns = CopyOnWriteArrayList<String>()
 
+    /** Each turn's request headers, names lowercased, in the same order as [turns]. A test reads the one header it
+     *  asks about and prints no other: these carry the sign-in's bearer. */
+    val turnHeaders = CopyOnWriteArrayList<Map<String, String>>()
+
     val baseUrl: String get() = "http://127.0.0.1:${server.address.port}/backend-api/codex"
 
     init {
@@ -72,6 +76,9 @@ internal class ChatGptListBackend : AutoCloseable {
     private fun turn(exchange: HttpExchange) {
         val raw = exchange.requestBody.readBytes()
         val zstd = exchange.requestHeaders.getFirst("Content-Encoding")?.contains("zstd") == true
+        turnHeaders += exchange.requestHeaders.entries.associate { (name, values) ->
+            name.lowercase() to values.joinToString(",")
+        }
         turns += (if (zstd) Zstd.decompress(raw, MAX_TURN_BYTES) else raw).decodeToString()
         exchange.responseHeaders.add("Content-Type", "text/event-stream")
         exchange.sendResponseHeaders(HttpStatus.OK, 0)
@@ -91,10 +98,16 @@ internal class ChatGptListBackend : AutoCloseable {
     }
 }
 
-/** One row of the backend's model list, in the Codex backend's own shape. */
-internal fun listedModel(slug: String, codeModeOnly: Boolean): String {
+/** One row of the backend's model list, in the Codex backend's own shape: [lite] is its `use_responses_lite`, and a
+ *  [visibility] of `hide` keeps the model out of the picker, as the backend lists codex-auto-review. */
+internal fun listedModel(
+    slug: String,
+    codeModeOnly: Boolean,
+    lite: Boolean = true,
+    visibility: String = "list",
+): String {
     val toolMode = if (codeModeOnly) ""","tool_mode":"code_mode_only"""" else ""
-    return """{"slug":"$slug","display_name":"$slug","visibility":"list","use_responses_lite":true,""" +
+    return """{"slug":"$slug","display_name":"$slug","visibility":"$visibility","use_responses_lite":$lite,""" +
         """"context_window":272000$toolMode}"""
 }
 

@@ -102,6 +102,10 @@ const createKnobs = (scope) => {
     K("budgetDefaultAction", "When a budget runs out", { k: "pick", names: { warn: "Warns", block: "Blocks" } }, "warn",
       { home: "plan", also: "spend money new budget spent" }),
     K("effort", "Reasoning effort", { k: "pick", unset: "Model's own", names: { none: "None", minimal: "Minimal", low: "Low", medium: "Medium", high: "High", xhigh: "Extra high", max: "Max" } }, null),
+    // how long a GPT head's answers run: text.verbosity on each of its turns, as Codex's model_verbosity (Knob.kt
+    // VERBOSITY, fix 5 of Oct 27). Read as the head is built, so it takes a restart, and a command can hold its own.
+    K("verbosity", "How long answers run", { k: "pick", unset: "Model's own", names: { low: "Short", medium: "Medium", high: "Long" } }, null,
+      { cmd: true, adv: "reasoning", also: "verbosity answer length text verbosity model_verbosity gpt responses short long" }),
     // A NAME SAYS WHAT THE CONTROL DOES, AND NOTHING UNDER IT EXPLAINS (Marlin, Oct 12, ACCEPTANCE.md): a control he
     // cannot read is renamed first, then shown as an element where the fact exists, and only then given a sentence he
     // approves. The old names stay in `also` so a search for "summaries" still lands on the row that was renamed.
@@ -177,7 +181,7 @@ const createKnobs = (scope) => {
   // `cfg` is null until load() returns: a page draws no value it has not read.
   const st = {
     cfg: null, models: [], providerOf: {}, commandOf: {}, perCommand: true, cmds: [], adding: {}, restart: {}, restarting: false,
-    said: {}, unsaved: {}, undo: {}, typing: {}, bad: {}, slow: {}, shake: {}, menu: null, custom: null, onAsk: () => false,
+    said: {}, unsaved: {}, undo: {}, typing: {}, bad: {}, slow: {}, shake: {}, menu: null, menuAt: -Infinity, custom: null, onAsk: () => false,
   };
 
   /** GET /api/config, and the commands a per-command value can name. Answers the error text, or null when it read. */
@@ -239,8 +243,17 @@ const createKnobs = (scope) => {
   // a chip names the command a person types, claude-openrouter, never the head key splice files it under (`commandOf`,
   // filled from GET /api/heads' label; marlin, Oct 12: Today read openrouter and side-project)
   const cmdChip = (c, hl = esc) => `<span class="chip" style="--c:${colorOf(st.providerOf[c])}">${hl(st.commandOf[c] || c)}</span>`;
+  // A MENU DROPS IN ONCE (Oct 27): it arrives over --t-pop where it was asked for, and a page that draws again while it is
+  // open (a read landing) finds it at the same point of that arrival through --menu-at, a negative delay, so it never
+  // arrives twice and never stands still for a frame before it moves. [cls] is the menu's own class.
+  let popMs = null;
+  function menuTag(cls = "") {
+    popMs ??= parseFloat(getComputedStyle(document.documentElement).getPropertyValue("--t-pop")) || 0;
+    const gone = performance.now() - st.menuAt, arriving = gone < popMs;
+    return `<div class="menu${cls ? ` ${cls}` : ""}${arriving ? " opening" : ""}" role="menu"${arriving ? ` style="--menu-at:${-Math.round(gone)}ms"` : ""}>`;
+  }
   function menuHtml(id, items) { // items: [value, word, meta]; "now" marks the value it holds
-    return `<div class="menu" role="menu">${items.map(([o, w, m]) => `<button role="menuitem" data-kpick="${id}" data-v='${esc(JSON.stringify(o))}' aria-current="${m === "now"}">${esc(w)}${m && m !== "now" ? `<span class="mmeta">${esc(m)}</span>` : ""}</button>`).join("")}</div>`;
+    return `${menuTag()}${items.map(([o, w, m]) => `<button role="menuitem" data-kpick="${id}" data-v='${esc(JSON.stringify(o))}' aria-current="${m === "now"}">${esc(w)}${m && m !== "now" ? `<span class="mmeta">${esc(m)}</span>` : ""}</button>`).join("")}</div>`;
   }
   // [titles]: a switch option's own title, by its value, for what that option costs (Your data's Off buttons)
   function ctlHtml(k, v, cmd = null, { titles = null } = {}) {
@@ -285,7 +298,7 @@ const createKnobs = (scope) => {
       const ids = idsOf(v), left = st.models.filter((m) => !ids.includes(m.id)), mopen = st.menu === `model:${id}`;
       return `<span class="mlist">${ids.map((m) => `<span class="mchip" title="${esc(labelOf(m))}">${esc(m)}<button class="icon" data-kact="unmodel" data-key="${k.key}" data-m="${esc(m)}" aria-label="Remove ${esc(labelOf(m))}">${ICON.close}</button></span>`).join("")}`
         + (left.length ? `<span class="menuwrap"><button class="act quiet small" data-kmenu="model:${id}" aria-expanded="${mopen}">${PLUS}Add model</button>`
-          + (mopen ? `<div class="menu" role="menu">${left.map((m) => `<button role="menuitem" data-kact="model" data-key="${k.key}" data-m="${esc(m.id)}">${esc(m.id)}${m.label && m.label !== m.id ? `<span class="mmeta">${esc(m.label)}</span>` : ""}</button>`).join("")}</div>` : "") + "</span>" : "") + "</span>";
+          + (mopen ? `${menuTag()}${left.map((m) => `<button role="menuitem" data-kact="model" data-key="${k.key}" data-m="${esc(m.id)}">${esc(m.id)}${m.label && m.label !== m.id ? `<span class="mmeta">${esc(m.label)}</span>` : ""}</button>`).join("")}</div>` : "") + "</span>" : "") + "</span>";
     }
     if (c.k === "text") { // a text the daemon reads as it is: a field, applied like a number's
       const text = st.typing[id] ?? (v === null || v === undefined ? "" : String(v));
@@ -378,7 +391,7 @@ const createKnobs = (scope) => {
         + `${ctlHtml(k, own === undefined ? valueOf(k).v : own, cmd)}${saidHtml(`${key}@${cmd}`)}${backHtml(k, cmd)}</div></div>`;
     }).join("");
     const add = left.length ? `<div class="lbl"></div><div class="ctl"><span class="menuwrap"><button class="act quiet small" data-kmenu="own:${cmd}" aria-expanded="${open}">${PLUS}Add setting</button>`
-      + (open ? `<div class="menu" role="menu">${left.map((key) => `<button role="menuitem" data-kact="over" data-key="${key}" data-cmd="${cmd}">${esc(KNOB[key].label)}<span class="mmeta">${esc(word(KNOB[key], valueOf(KNOB[key]).v))}</span></button>`).join("")}</div>` : "") + "</span></div>" : "";
+      + (open ? `${menuTag()}${left.map((key) => `<button role="menuitem" data-kact="over" data-key="${key}" data-cmd="${cmd}">${esc(KNOB[key].label)}<span class="mmeta">${esc(word(KNOB[key], valueOf(KNOB[key]).v))}</span></button>`).join("")}</div>` : "") + "</span></div>" : "";
     return rows + add;
   }
   // a setting's row in a form: its name, its control, what the change did, and the commands that hold their own value
@@ -431,7 +444,7 @@ const createKnobs = (scope) => {
       return `<div class="mgroup" role="group" aria-label="${esc(`${head[0]} ${head[1]}`)}"><span class="mgh" aria-hidden="true">${esc(head[0])}<b>${esc(head[1])}</b></span>${cs.map(item).join("")}</div>`;
     };
     const add = st.perCommand && perCmd && left.length ? `<span class="menuwrap"><button class="chip add one" data-kmenu="over:${k.key}" aria-expanded="${open}" aria-label="Set for one command">${PLUS}One command</button>`
-      + (open ? `<div class="menu cmdmenu" role="menu">${picks.map(pickGroup).join("")}</div>` : "") + "</span>" : "";
+      + (open ? `${menuTag("cmdmenu")}${picks.map(pickGroup).join("")}</div>` : "") + "</span>" : "";
     // the commands a setting acts on at all, which no chip on the row would say. The rows that act on every command say
     // nothing: their section's head says it once (Settings' scope line), so 45 rows no longer repeat it.
     const only = k.only?.length ? `<span class="only"><span class="word">Only</span>${k.only.map((c) => cmdChip(c, hl)).join("")}</span>` : "";
@@ -547,7 +560,7 @@ const createKnobs = (scope) => {
       return false;
     }
     const d = t.dataset;
-    if (d.kmenu) { st.menu = st.menu === d.kmenu ? null : d.kmenu; return true; }
+    if (d.kmenu) { st.menu = st.menu === d.kmenu ? null : d.kmenu; if (st.menu) st.menuAt = performance.now(); return true; }
     st.menu = null;
     if (d.kpick) {
       const v = JSON.parse(d.v);
@@ -563,7 +576,7 @@ const createKnobs = (scope) => {
     // "One command": the command gets its line, with its value's menu open, and nothing is saved until a value is picked
     if (d.kact === "over") {
       st.adding[d.key] = [...(st.adding[d.key] ?? []), d.cmd];
-      if (KNOB[d.key].c.k === "dur" || KNOB[d.key].c.k === "count" || pickOpts(KNOB[d.key]).length > 3) st.menu = `pick:${d.key}@${d.cmd}`;
+      if (KNOB[d.key].c.k === "dur" || KNOB[d.key].c.k === "count" || pickOpts(KNOB[d.key]).length > 3) { st.menu = `pick:${d.key}@${d.cmd}`; st.menuAt = performance.now(); }
       return true;
     }
     if (d.kact === "back") {

@@ -48,8 +48,8 @@ public object LocalRuntimeReplies : ProviderDeviation {
         val message = error?.let(ErrorMessage::inObject)
         val said = ProviderWordsFilter.of(message)
         return when {
-            type == UNAVAILABLE -> FailureCause.Provider.Overloaded(lift, loading = true, said)
-            type == EXCEED_CONTEXT ->
+            type == RUNTIME_LOADING -> FailureCause.Provider.Overloaded(lift, loading = true, said)
+            type == RUNTIME_OVERFLOW ->
                 FailureCause.Provider.TooLong(JsonScalars.long(error, "n_ctx"), whileAnswering = false, said)
             message != null && PULL_FIRST.containsMatchIn(message) ->
                 FailureCause.Provider.ModelMissing(ReplyFacts.modelNamed(message), said)
@@ -62,10 +62,10 @@ public object LocalRuntimeReplies : ProviderDeviation {
 }
 
 /** llama-server's type for the 503 it serves while the model loads. */
-private const val UNAVAILABLE = "unavailable_error"
+private const val RUNTIME_LOADING = "unavailable_error"
 
 /** Its type for a prompt past the context it has. */
-private const val EXCEED_CONTEXT = "exceed_context_size_error"
+private const val RUNTIME_OVERFLOW = "exceed_context_size_error"
 
 /** Ollama's answer for a model it does not hold yet. */
 private val PULL_FIRST = Regex("try pulling it first", RegexOption.IGNORE_CASE)

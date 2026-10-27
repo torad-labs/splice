@@ -18,7 +18,6 @@ import splice.core.failure.LimitWindow
 import splice.core.failure.LoginOwner
 import splice.core.failure.ProviderWords
 import splice.core.failure.ProviderWordsFilter
-import splice.core.failure.RefusedBy
 import splice.core.failure.ServerFault
 import splice.core.usage.FIVE_HOUR_CLAIM
 import splice.core.usage.PlanLimit
@@ -43,10 +42,8 @@ public object AnthropicReplies : ReplyReader {
     /** A message_delta's stop_reason that is no clean end; its payload carries `stop_reason` and `stop_details`. */
     public const val STOP_EVENT: String = "stop_reason"
 
-    /** The stop reasons that end an answer as a failure. Anthropic's other four (end_turn, stop_sequence, tool_use,
-     *  max_tokens) are clean, and an unknown one keeps end_turn's reading, as it always has: an off-spec value on a
-     *  working turn must not fail it. */
-    public val FAILED_STOPS: Set<String> = setOf(REFUSAL, PAUSE_TURN, WINDOW_EXCEEDED)
+    /** The stop reasons that end an answer as a failure, which [AnthropicStopReasons] reads. */
+    public val FAILED_STOPS: Set<String> get() = AnthropicStopReasons.FAILED
 
     override fun http(reply: FailedReply): FailureCause.Provider {
         val body = JsonScalars.objectOrNull(bodies, reply.body)
@@ -57,7 +54,7 @@ public object AnthropicReplies : ReplyReader {
     }
 
     override fun event(event: FailedEvent): FailureCause.Provider = when (event.type) {
-        STOP_EVENT -> stopped(event.payload)
+        STOP_EVENT -> AnthropicStopReasons.read(event.payload)
         else -> {
             val error = event.payload["error"] as? JsonObject
             val type = JsonScalars.str(error, "type").orEmpty()
@@ -145,39 +142,9 @@ public object AnthropicReplies : ReplyReader {
         )
         else -> FailureCause.Provider.Unrecognized(clientError = status in CLIENT_ERRORS, said)
     }
-
-    private fun stopped(payload: JsonObject): FailureCause.Provider =
-        when (JsonScalars.str(payload, "stop_reason")) {
-            REFUSAL -> FailureCause.Provider.Refused(
-                RefusedBy.MODEL,
-                refusalSaid(payload["stop_details"] as? JsonObject),
-            )
-            PAUSE_TURN -> FailureCause.Provider.Overloaded(Lift.Unstated, loading = false)
-            WINDOW_EXCEEDED -> FailureCause.Provider.TooLong(limitTokens = null, whileAnswering = true)
-            else -> FailureCause.Provider.Unrecognized(clientError = false)
-        }
-
-    /** What a line quotes of a refusal: the backend's explanation with the category it named, as the filter cuts them,
-     *  or either one alone where the backend gave only one. */
-    private fun refusalSaid(details: JsonObject?): ProviderWords? {
-        val category = detail(details, "category")
-        val explained = ProviderWordsFilter.of(detail(details, "explanation"))?.text?.removeSuffix(".")
-        val quote = when {
-            explained == null -> category
-            category == null -> explained
-            else -> "$explained ($category)"
-        }
-        return ProviderWordsFilter.of(quote)
-    }
-
-    private fun detail(details: JsonObject?, key: String): String? =
-        JsonScalars.strIfString(details?.get(key)).takeIf { it.isNotBlank() }
 }
 
 private const val BILLING_ERROR = "billing_error"
-private const val REFUSAL = "refusal"
-private const val PAUSE_TURN = "pause_turn"
-private const val WINDOW_EXCEEDED = "model_context_window_exceeded"
 
 private val CLIENT_ERRORS = HttpStatus.BAD_REQUEST until HttpStatus.INTERNAL_SERVER_ERROR
 

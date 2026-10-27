@@ -155,6 +155,8 @@ private class Stated(private val reply: FailedReply?) {
 private const val MODEL_NOT_FOUND = "model_not_found"
 private const val CONTEXT_LENGTH_EXCEEDED = "context_length_exceeded"
 private const val INSUFFICIENT_QUOTA = "insufficient_quota"
+
+// why: the last status in the 5xx class, so the range below covers every failure status an HTTP reply can carry.
 private const val LAST_ERROR_STATUS = 599
 
 private val ERROR_STATUSES = HttpStatus.BAD_REQUEST..LAST_ERROR_STATUS

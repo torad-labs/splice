@@ -22,6 +22,7 @@ import splice.dialect.anthropic.PassthroughQuirks
 import splice.dialect.anthropic.failure.AnthropicReplies
 import splice.dialect.chat.ChatQuirks
 import splice.dialect.chat.failure.ChatReplies
+import splice.dialect.responses.failure.ResponsesReplies
 import splice.head.HeadDeps
 import splice.head.HeadServer
 import splice.head.awaitListening
@@ -275,19 +276,35 @@ public class ScriptedHeads(private val tmp: Path, public val time: VirtualTime) 
             PassthroughProvider(tuning, PassthroughQuirks(tuning.key))
         }
 
-    /** An OpenAI Responses head over HTTP. */
-    public suspend fun responses(shape: HeadShape = HeadShape()): ScriptedHead =
-        head("responses", shape) { tuning, log -> ScriptedResponsesProvider(tuning, webSocket = false, log) }
+    /** An OpenAI Responses head over HTTP. [replies] is how it reads its own failures: a vendor's own reading (Muse's,
+     *  codex's) where a test names one, and the Responses standard otherwise. */
+    public suspend fun responses(
+        shape: HeadShape = HeadShape(),
+        replies: Replies = Replies(ResponsesReplies),
+    ): ScriptedHead =
+        head("responses", shape) { tuning, log ->
+            ScriptedResponsesProvider(tuning, webSocket = false, log, replies)
+        }
 
     /** An OpenAI Responses head whose rounds ride the websocket. */
-    public suspend fun responsesOverWebSocket(shape: HeadShape = HeadShape()): ScriptedHead =
-        head("responses-ws", shape) { tuning, log -> ScriptedResponsesProvider(tuning, webSocket = true, log) }
+    public suspend fun responsesOverWebSocket(
+        shape: HeadShape = HeadShape(),
+        replies: Replies = Replies(ResponsesReplies),
+    ): ScriptedHead =
+        head("responses-ws", shape) { tuning, log ->
+            ScriptedResponsesProvider(tuning, webSocket = true, log, replies)
+        }
 
     /** A Responses head whose login its provider own mint refuses: [subscription] asks for the refusal of an inactive
-     *  subscription, and false for a mint that denied the login outright. */
-    public suspend fun refusedResponses(subscription: Boolean, shape: HeadShape = HeadShape()): ScriptedHead {
+     *  subscription, and false for a mint that denied the login outright. [says] names the command that signs this
+     *  head in, so a test can tell a refusal that names it from one that does not. */
+    public suspend fun refusedResponses(
+        subscription: Boolean,
+        shape: HeadShape = HeadShape(),
+        says: HeadSays = HeadSays(),
+    ): ScriptedHead {
         val login = if (subscription) HeadLogin.REFUSED_SUBSCRIPTION else HeadLogin.REFUSED_LOGIN
-        return head("refused", shape, login) { tuning, log -> ScriptedResponsesProvider(tuning, false, log) }
+        return head("refused", shape, login, says) { tuning, log -> ScriptedResponsesProvider(tuning, false, log) }
     }
 
     /** A head of [kind] whose provider [build] makes, for a provider this file does not build, such as a codex head. */

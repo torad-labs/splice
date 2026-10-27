@@ -14,7 +14,6 @@ import splice.core.turn.ReasoningDisplay
 import splice.core.turn.TurnMeta
 import splice.core.turn.TurnOutcome
 import splice.core.turn.WatchdogBudget
-import splice.upstream.failure.OpenAiReplies
 import splice.upstream.failure.Replies
 import splice.upstream.sse.WireSink
 import splice.upstream.transport.UpstreamResponse
@@ -86,9 +85,9 @@ public interface Provider : ProviderIdentity {
      *  where in the pipeline the failure was noticed.
      *
      *  Each dialect's provider declares its own (AnthropicReplies, ChatReplies, ResponsesReplies, each with the
-     *  vendor deviation its arm named). The default is the OpenAI error object the Chat and Responses standards are
-     *  both built on, so a provider that has not declared one still reads a reply by that shape rather than by none. */
-    public val replies: Replies get() = Replies(OpenAiReplies)
+     *  vendor deviation its arm named). There is no default: a head that reads by a reading nobody chose for it is
+     *  the misreading this port exists to end. */
+    public val replies: Replies
 
     /** The Anthropic-compatible client owns retry and fallback for a native rate-limit response. */
     public val relayRateLimitReplies: Boolean get() = false

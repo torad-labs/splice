@@ -272,9 +272,7 @@ internal class TurnPreparation(
             it.copy(sessionId = it.sessionId ?: sessionId, messagesHash = messagesHash)
         }
         val prepared = fromProvider.copy(meta = fromProvider.meta.copy(scope = scope))
-        // The subagent the request comes from belongs to the turn it joins: two subagents of one session can open
-        // with identical words, which their shared conversation key cannot tell apart (fix 4, Oct 27).
-        toolLoop.join(prepared.meta, parsed, call.request.headers[AGENT_HEADER]?.takeIf(String::isNotBlank))
+        toolLoop.join(prepared.meta, parsed)
         // Per-turn headers already outrank the provider's own in TurnDriver's merge, so a forwarded
         // value REPLACES a configured default (e.g. the caller's anthropic-version wins over the
         // provider's), and UpstreamClient folds the casing.

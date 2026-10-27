@@ -22,8 +22,8 @@ const graph = readModuleGraph(repoRoot);
 const scope = (changed: readonly string[], legs: readonly Leg[] = LEGS) => prePushScope({ legs, modules, moduleOf: moduleFor, changed, graph });
 
 const checks = (gradle: readonly string[]) => gradle.filter((task) => task.endsWith(":check"));
-/** Every push requests the law suites and the jar legs; gradle decides which of them run. lawSuites runs the whole :app:test,
- *  so the public-source test runs on every push inside it. */
+/** Every push requests the law suites and the jar legs; gradle decides which of them run. lawSuites runs each module's lawTest,
+ *  where the public-source test is tagged, so that test runs on every push however the unit suites are narrowed. */
 const EVERY_PUSH = [LAW_SUITES_TASK];
 
 describe("a pushed diff scopes the gate to what it touches", () => {
@@ -69,16 +69,21 @@ describe("a pushed diff scopes the gate to what it touches", () => {
     expect(scope(["docs/PROVENANCE.md"]).gradle).toContain(LAW_SUITES_TASK);
   });
 
-  test("an app change checks :app, and lawSuites still runs the whole :app:test once", () => {
+  test("an app change checks :app, and the scope names the check, never a test task of its own", () => {
     const s = scope(["app/src/main/kotlin/splice/app/Daemon.kt"]);
     expect(s.gradle).toContain(":app:check");
     expect(s.gradle.filter((task) => task === ":app:test" || task.startsWith("--tests"))).toEqual([]);
     expect(s.gradle).toContain(LAW_SUITES_TASK);
   });
 
-  test("no push narrows :app:test with a --tests filter, because lawSuites shares that task instance", () => {
+  // Which test classes a push runs is the selection's call, not the scope's (test-impact.ts, Oct 26 2026): the scope names the
+  // module checks, and the pre-push appends the filters the selection computes for the modules named here.
+  test("the scope names no test filter, whatever the push changed", () => {
     for (const path of ["README.md", "tools/e2e/src/commands/code-mode.ts", "features/turns/src/main/kotlin/splice/head/HeadDeps.kt", "LICENSE"]) {
-      expect(scope([path]).gradle.some((task) => task.startsWith("--tests")), path).toBe(false);
+      expect(
+        scope([path]).gradle.some((task) => task.startsWith("--tests") || task.startsWith("--exclude-task")),
+        path,
+      ).toBe(false);
     }
   });
 

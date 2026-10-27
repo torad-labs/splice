@@ -953,6 +953,158 @@ describe("pre-push runs the packaged code-mode test only when the push can chang
   });
 });
 
+// Simon asked for the diff-aware test run on Oct 26 2026, with Marcos's approval, while a full check cost about 14 minutes a push:
+// the pre-push runs the test classes the pushed diff reaches, falls back to the full suite on a build file or a shared fixture, and
+// prints which mode ran and why. Which classes a diff reaches is test-impact.test.ts's to pin; this pins what the push does with the
+// answer: the gradle tasks it names, the exclusions it carries, and the lines it prints.
+describe("pre-push runs the test classes the pushed diff reaches, and says which mode ran and why", () => {
+  const MODULES = [
+    [":core", "core"],
+    [":app", "app"],
+    [":features-turns", "features/turns"],
+  ] as const;
+  const MONEY = "core/src/main/kotlin/splice/core/Money.kt";
+  const CLOCK = "core/src/main/kotlin/splice/core/Clock.kt";
+  const MONEY_TEST = "core/src/test/kotlin/splice/core/MoneyTest.kt";
+  const CHECKOUT_TEST = "app/src/test/kotlin/splice/app/CheckoutTest.kt";
+
+  const suite = (pkg: string, name: string, body: string): string =>
+    [`package ${pkg}`, "", "import org.junit.jupiter.api.Test", "", `class ${name} {`, "    @Test", "    fun works() {", `        ${body}`, "    }", "}", ""].join("\n");
+
+  /** A scratch repository with three modules, each with a unit suite: :app checks out with :core's money, and :features-turns
+   *  depends on neither. That scaffold is origin/main, so a push is judged by its own commits. */
+  const testsRepo = (): string => {
+    const root = wallsRepo();
+    const settings = MODULES.flatMap(([path, dir]) => [`include("${path}")`, `project("${path}").projectDir = file("${dir}")`]);
+    writeFile(root, "settings.gradle.kts", ['rootProject.name = "scratch"', ...settings, ""].join("\n"));
+    writeFile(root, "gradle/module-law.txt", [":core ->", ":app -> :core", ":features-turns ->", ""].join("\n"));
+    writeFile(root, MONEY, "package splice.core\n\nclass Money(val cents: Long)\n");
+    writeFile(root, CLOCK, "package splice.core\n\nclass Clock\n");
+    writeFile(root, MONEY_TEST, suite("splice.core", "MoneyTest", "Money(1L)"));
+    writeFile(root, "core/src/test/kotlin/splice/core/ClockTest.kt", suite("splice.core", "ClockTest", "Clock()"));
+    writeFile(root, "app/src/main/kotlin/splice/app/Checkout.kt", "package splice.app\n\nimport splice.core.Money\n\nclass Checkout(val paid: Money)\n");
+    writeFile(root, CHECKOUT_TEST, suite("splice.app", "CheckoutTest", "Checkout(splice.core.Money(1L))"));
+    writeFile(root, "features/turns/src/main/kotlin/splice/head/Turn.kt", "package splice.head\n\nclass Turn\n");
+    writeFile(root, "features/turns/src/test/kotlin/splice/head/TurnTest.kt", suite("splice.head", "TurnTest", "Turn()"));
+    git(root, ["add", "--", "settings.gradle.kts", "core", "app", "features"]);
+    git(root, ["add", "-f", "--", "gradle/module-law.txt"]);
+    commit(root, "chore(test): three modules with unit suites");
+    git(root, ["update-ref", "refs/remotes/origin/main", "HEAD"]);
+    return root;
+  };
+
+  const change = (root: string, path: string, text: string): void => {
+    writeFile(root, path, text);
+    git(root, ["add", "--", path]);
+    commit(root, "chore(test): a change");
+  };
+
+  interface Run {
+    readonly tasks: readonly string[];
+    readonly options: readonly string[];
+  }
+  const recording =
+    (runs: Run[], answers: { status: number; output: string }[] = []): GateRunner =>
+    async (tasks, _at, _cancel, options = []) => {
+      runs.push({ tasks: [...tasks], options: [...options] });
+      return answers[runs.length - 1] ?? { status: 0, output: "BUILD SUCCESSFUL\n" };
+    };
+
+  const push = async (root: string, runs: Run[], answers?: { status: number; output: string }[]) =>
+    captured(() => prePush(lay(root), pushOf(root, head(root)), { gate: recording(runs, answers), openRun: () => null, legs: NO_LEGS }));
+
+  test("a changed class filters each checked module's test task to the classes that reach it, and the mode line names them", async () => {
+    const root = testsRepo();
+    change(root, MONEY, "package splice.core\n\nclass Money(val cents: Long, val label: String)\n");
+    const runs: Run[] = [];
+    const { result, text } = await push(root, runs);
+    expect(result).toBe(0);
+    expect(runs[0]?.tasks).toEqual([
+      ":app:check",
+      ":core:check",
+      "lawSuites",
+      ":core:test",
+      "--tests=splice.core.MoneyTest*",
+      ":app:test",
+      "--tests=splice.app.CheckoutTest*",
+    ]);
+    expect(runs[0]?.options).toEqual([]);
+    expect(text).toContain("── tests: narrowed to what the 1 changed file reaches: 2 classes in 2 modules, 0 modules whole, 0 modules with no test to run ──");
+    expect(text).toContain("  :app: CheckoutTest");
+    expect(text).toContain("  :core: MoneyTest");
+    expect(text.split("\n").find((line) => line.startsWith("PRE-PUSH: PASS"))).toContain("; tests: 2 classes in 2 modules, 0 whole, 0 none");
+  });
+
+  test("a checked module no test of which reaches the change drops its unit task and still compiles its tests", async () => {
+    const root = testsRepo();
+    change(root, CLOCK, "package splice.core\n\nclass Clock(val now: Long)\n");
+    const runs: Run[] = [];
+    const { result, text } = await push(root, runs);
+    expect(result).toBe(0);
+    expect(runs[0]?.tasks).toEqual([":app:check", ":core:check", "lawSuites", ":core:test", "--tests=splice.core.ClockTest*", ":app:testClasses"]);
+    expect(runs[0]?.options).toEqual(["--exclude-task=:app:test"]);
+    expect(text).toContain("  no test reaches the change in :app");
+  });
+
+  test("a changed build file runs the full suite, names the reason, and checks the modules the scope left out", async () => {
+    const root = testsRepo();
+    change(root, "core/build.gradle.kts", "// the module's own build\n");
+    const runs: Run[] = [];
+    const { result, text } = await push(root, runs);
+    expect(result).toBe(0);
+    expect(runs[0]?.tasks).toEqual([":app:check", ":core:check", "lawSuites", ":features-turns:check"]);
+    expect(runs[0]?.options).toEqual([]);
+    expect(text).toContain("── tests: the full suite, because core/build.gradle.kts is a build file ──");
+    expect(text.split("\n").find((line) => line.startsWith("PRE-PUSH: PASS"))).toContain("; tests: full suite");
+  });
+
+  test("a shared test fixture runs the full suite", async () => {
+    const root = testsRepo();
+    change(root, "core/src/testFixtures/kotlin/splice/core/Fixtures.kt", "package splice.core\n\nclass Fixtures\n");
+    const runs: Run[] = [];
+    const { text } = await push(root, runs);
+    expect(text).toContain("── tests: the full suite, because core/src/testFixtures/kotlin/splice/core/Fixtures.kt is a shared test fixture ──");
+    expect(runs[0]?.tasks).toContain(":features-turns:check");
+  });
+
+  test("a push that checks no module narrows nothing and names no test task", async () => {
+    const root = testsRepo();
+    change(root, "README.md", "# scratch\n");
+    const runs: Run[] = [];
+    const { result, text } = await push(root, runs);
+    expect(result).toBe(0);
+    expect(runs[0]?.tasks).toEqual(["lawSuites"]);
+    expect(text).toContain("── tests: not narrowed, because no module this push checks has a unit suite of its own ──");
+  });
+
+  test("a docs-only push starts no gradle, so there is no test run to narrow", async () => {
+    const root = testsRepo();
+    change(root, "docs/NOTES.md", "notes\n");
+    const runs: Run[] = [];
+    const { result, text } = await push(root, runs);
+    expect(result).toBe(0);
+    expect(runs).toEqual([]);
+    expect(text).not.toContain("── tests:");
+  });
+
+  test("a collision's rerun carries the same filters and the same exclusion", async () => {
+    const root = testsRepo();
+    change(root, CLOCK, "package splice.core\n\nclass Clock(val now: Long)\n");
+    const runs: Run[] = [];
+    const { result } = await captured(() =>
+      prePush(lay(root), pushOf(root, head(root)), {
+        gate: recording(runs, [{ status: 1, output: EOF_TRACE }]),
+        openRun: () => null,
+        legs: NO_LEGS,
+        rivalLive: () => true,
+      }),
+    );
+    expect(result).toBe(0);
+    expect(runs.map((run) => run.options)).toEqual([["--exclude-task=:app:test"], ["--exclude-task=:app:test"]]);
+    expect(runs[1]?.tasks).toContain("--tests=splice.core.ClockTest*");
+  });
+});
+
 // Load cut 2 of the temple plan of 2026-10-19, approved by Marcos: seats push one shared branch, so pushes queue behind the one
 // being judged, and each holds the commits below it. Only the newest queued push is judged; an older one is told its commit was
 // carried; when the newest fails, the next older one is judged. A push stands for its git process: it is queued while that runs.

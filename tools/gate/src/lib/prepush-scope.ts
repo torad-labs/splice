@@ -7,6 +7,9 @@
 // runs for those modules only, in parallel, each building and testing on its own. A module the diff cannot reach is not
 // built. `lawSuites` is requested on every push that is not docs-only: gradle's up-to-date check skips each suite whose
 // declared inputs did not change, and PublicSourceNamesNoHostToolTest rides in it. A jar leg runs when product code changes or its own inputs do. The whole ladder, the jar proofs and the release rehearsal belong to a push to main.
+//
+// WHICH TEST CLASSES those checks run is test-impact.ts's call, not this file's: it narrows each module named here to the classes
+// the diff reaches, and the pre-push appends the `--tests` filters to the task list this file returns.
 
 import { type ModuleGraph, select } from "./selector.ts";
 
@@ -117,8 +120,8 @@ export function prePushScope(input: ScopeInput): PrePushScope {
   const directLegs = inScope.filter((leg) => !gradleLegs.includes(leg));
   const gradle: string[] = [];
   for (const module of modules) gradle.push(`${module}:check`);
-  // lawSuites runs :app:lawTest, not :app:test. A --tests filter on :app:test would narrow the module's unit run too: gradle
-  // keeps one instance of a task however many tasks depend on it, so the public-source test rides in lawSuites instead.
+  // lawSuites runs :app:lawTest, not :app:test, so the public-source test rides there and runs however the unit suites are
+  // narrowed: a --tests filter on :app:test would narrow every task that depends on it, gradle keeping one instance of a task.
   if (!docsOnly) gradle.push(LAW_SUITES_TASK);
   if (changed.some((path) => path.startsWith("build-logic/"))) gradle.push("build-logic:test", "build-logic:detekt", "build-logic:ktlintCheck");
   for (const leg of gradleLegs) gradle.push(`:${leg.task}`);

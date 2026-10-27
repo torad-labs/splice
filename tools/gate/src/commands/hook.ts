@@ -24,7 +24,9 @@
 // directory (prepush-tree.ts) to the commit, so a half-finished edit in the shared checkout never reddens a push and the
 // build output of the last push is still there. It lints the tip's subject, then scopes the push to its own diff
 // (prepush-scope.ts, selector.ts): the ladder rows whose inputs the diff touches run, and gradle runs the changed modules
-// and their dependents, in parallel, through the slot. The full ladder is a push to main's. :app:codeModePackagedTest, which
+// and their dependents, in parallel, through the slot. The full ladder is a push to main's. Inside those modules, each unit suite
+// is narrowed to the test classes the diff reaches (test-impact.ts), and the log says which mode ran and why; a build file or a
+// shared test fixture falls back to the full suite. :app:codeModePackagedTest, which
 // reruns the code-mode suites against the fat jar, runs only when the push can change what the worker loads (packaged-worker.ts).
 // Pushes of one branch queue in the push lane (push-lane.ts): only the newest queued push is judged, an older one whose commit it
 // carried is told so and sends nothing, and when the newest fails the next older one is judged.
@@ -54,6 +56,7 @@ import { APP_CHECK, PACKAGED_TEST, packagedTestReason } from "../lib/packaged-wo
 import { appendPushTiming, type PushTiming, readProfile } from "../lib/prepush-timing.ts";
 import { isoSeconds } from "../lib/slot.ts";
 import { exitStatusOf } from "../lib/status.ts";
+import { confineTo, type ImpactInput, impactClause, impactLines, testArgs, testImpact, type TestImpact } from "../lib/test-impact.ts";
 import { narrowBunTest } from "../lib/test-select.ts";
 import { commitLegs, type Leg, legsWithoutInputs, prePushScope } from "../lib/prepush-scope.ts";
 import { cancelledBySignal, RUN_ALREADY_OPEN_EXIT } from "./run.ts";
@@ -728,8 +731,19 @@ async function judgeIn(
   // from that jar skips it, and the verdict says so; one that can runs it, and the log names the path that decided.
   const packaged = scope.gradle.includes(APP_CHECK) ? packagedVerdict(lay.repoRoot, root, refs, modules, graph, changed) : undefined;
   const skipPackaged = packaged?.runs === false;
-  const scopeClause = `; scope: ${scope.summary}${skipPackaged ? `; ${PACKAGED_TEST} skipped: ${PACKAGED_SKIPPED}` : ""}`;
+  // The unit suites the push runs: the classes the diff reaches in each module the scope checks, or the full suite when a build file
+  // or a shared fixture changed. A push that starts no gradle has no test run to narrow.
+  const checkedModules = scope.gradle.flatMap((task) => (task.endsWith(":check") ? task.slice(0, -":check".length) : []));
+  const impact = scope.gradle.length === 0 ? undefined : testSelection(root, lay.repoRoot, refs, modules, changed, checkedModules);
+  const tests = impact === undefined ? { tasks: [], options: [] } : testArgs(impact, checkedModules, modules.map((module) => module.path));
+  const summary = `${scope.summary}${impact === undefined ? "" : `; ${impactClause(impact)}`}`;
+  const scopeClause = `; scope: ${summary}${skipPackaged ? `; ${PACKAGED_TEST} skipped: ${PACKAGED_SKIPPED}` : ""}`;
   console.error(`── scope: ${scope.summary} ──`);
+  if (impact !== undefined) {
+    const [mode, ...detail] = impactLines(impact);
+    console.error(`── ${mode} ──`);
+    for (const line of detail) console.error(line);
+  }
   if (packaged !== undefined) console.error(`── ${PACKAGED_TEST} ${packaged.runs ? `runs: ${packaged.why}` : `skipped: ${PACKAGED_SKIPPED}`} ──`);
 
   // ktlint is not run per module on every push (the plugin's lint step is never cached, so each of up to 31 modules in scope re-linted
@@ -809,8 +823,8 @@ async function judgeIn(
     }, deps.movedPollMs ?? MOVED_POLL_MS);
     try {
       const runner = deps.gate ?? slotRunner(judgeLay, "pre-push", true, batchKtlint ? KTLINT_TASKS.map((task) => `--exclude-task=${task}`) : []);
-      const options = skipPackaged ? [`--exclude-task=${PACKAGED_TEST}`] : [];
-      judged = await judgedRun(runner, root, modules, scope.gradle, deps.rivalLive, stopper.signal, options);
+      const options = [...(skipPackaged ? [`--exclude-task=${PACKAGED_TEST}`] : []), ...tests.options];
+      judged = await judgedRun(runner, root, modules, [...scope.gradle, ...tests.tasks], deps.rivalLive, stopper.signal, options);
     } finally {
       clearInterval(watch);
     }
@@ -837,7 +851,7 @@ async function judgeIn(
     deps.timings({
       at: isoSeconds(new Date()),
       sha: head,
-      scope: scope.summary,
+      scope: summary,
       gradleS: gradleSeconds === null ? null : Math.round(gradleSeconds * 10) / 10,
       ...profile,
       cancelled: gradleCancelled ? (stoppedFor ?? null) : null,
@@ -1009,6 +1023,45 @@ export function pushedPaths(root: string, refs: readonly { tip: string; remote: 
  *  when git cannot say. */
 function pushBase(root: string, ref: { readonly tip: string; readonly remote: string }): string {
   return ZERO_SHA.test(ref.remote) ? gitText(root, ["merge-base", "origin/main", ref.tip]) : ref.remote;
+}
+
+/**
+ * The unit test classes this push can affect, read from the build tree: the pushed commit is checked out there, and each changed
+ * path's text before the push comes from the commit the push is judged against. The answer is confined to the modules whose check
+ * the scope requests, so the selection narrows the test run the gate already does and never adds to it (test-impact.ts).
+ *
+ * A tree the selection cannot read falls back to the full suite and says so: a push runs more tests than it needs, never fewer.
+ */
+function testSelection(
+  tree: string,
+  repoRoot: string,
+  refs: readonly PushedRef[],
+  modules: readonly GradleModule[],
+  changed: readonly string[],
+  checked: readonly string[],
+): TestImpact {
+  try {
+    const listed = git(tree, ["ls-files", "-sz"]);
+    if (listed.status !== 0) throw new Error(`git ls-files in the build tree failed: ${listed.stderr.toString().trim()}`);
+    const paths: string[] = [];
+    for (const entry of listed.stdout.toString("utf8").split("\0")) {
+      const at = entry.indexOf("\t");
+      // A gitlink is another repository's commit, not a text: its mode is 160000 and its path is a directory here.
+      if (at > 0 && !entry.startsWith("160000")) paths.push(entry.slice(at + 1));
+    }
+    const input: ImpactInput = {
+      modules,
+      changed,
+      tree: {
+        paths,
+        read: (path) => readFileSync(join(tree, path), "utf8"),
+        before: (path) => textBefore(repoRoot, refs, path),
+      },
+    };
+    return confineTo(testImpact(input), checked);
+  } catch (error) {
+    return { mode: "full", why: `the selection could not read the build tree: ${errorText(error)}` };
+  }
 }
 
 /** A path's text in the commit a pushed ref moves from, for a path the push deleted; undefined when no ref's base holds it. */

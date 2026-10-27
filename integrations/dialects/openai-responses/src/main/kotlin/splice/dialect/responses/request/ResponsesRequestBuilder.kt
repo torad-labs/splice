@@ -68,6 +68,7 @@ internal class ResponsesRequestBuilder(
     private val ids = ResponsesStableIds()
     private val assembler = ResponsesRequestAssembler(quirks, toolNames)
     private val priorReasoning = ResponsesPriorReasoning()
+    private val pairing = ResponsesCallPairing()
     private val messages = ResponsesMessageFragments(quirks, toolNames)
     private val controls = ResponsesRequestControls(quirks)
 
@@ -89,11 +90,14 @@ internal class ResponsesRequestBuilder(
         val walked = messages.walk(body, raw, opts, declareByName, effort)
         // replay_reasoning=false: the gateway cache must not put an earlier turn's reasoning back, and the current
         // turn keeps its own. A compaction is built exactly like a turn, so it follows the same rule.
-        val input = if (opts.handoff.replay.v) {
+        val replayed = if (opts.handoff.replay.v) {
             walked
         } else {
             JsonArray(priorReasoning.withoutPriorTurns(walked))
         }
+        // The backend refuses a call without its result, and the model would read a reasoning item twice: every call
+        // goes out once with one result after it, and each reasoning item once, as Codex sends its history.
+        val input = pairing.pair(replayed)
         val instructions = body.system.orEmpty().ifEmpty { DEFAULT_INSTRUCTIONS }
         val reasoning = knobs.reasoningBlock(effort, summary, raw, opts)
 

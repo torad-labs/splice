@@ -16,6 +16,7 @@ import splice.core.config.Knob
 import splice.dialect.responses.reasoning.ReasoningEnvelopeDecoder
 import splice.dialect.responses.request.AssistantPhase
 import splice.dialect.responses.request.ResponsesAssistantText
+import splice.dialect.responses.request.ResponsesCallPairing
 import splice.dialect.responses.request.ResponsesRequest
 import splice.dialect.responses.request.responsesRequestJson
 import splice.upstream.FoldPolicy
@@ -115,6 +116,7 @@ private const val FINGERPRINT_OFFSET = 2L
  * gained a receiver.
  */
 internal class ResponsesContinuation {
+    private val pairing = ResponsesCallPairing()
 
     /** The summary request RIDES ALONG on continuations by design (operator call 2026-07-26: "I
      *  want to always see the reasoning, detailed"): the duplicated sections that the re-request
@@ -127,7 +129,8 @@ internal class ResponsesContinuation {
             base.input.forEach { add(it) }
             extraItems.forEach { add(it) }
         }
-        val next = base.copy(input = nextInput)
+        // What arrived before the cut may repeat what the request already carries: each call and reasoning item once.
+        val next = base.copy(input = pairing.pair(nextInput))
         return responsesRequestJson.encodeToJsonElement(ResponsesRequest.serializer(), next) as JsonObject
     }
 }

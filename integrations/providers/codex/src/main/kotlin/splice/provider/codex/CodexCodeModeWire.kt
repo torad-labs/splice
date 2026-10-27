@@ -8,6 +8,7 @@ import kotlinx.serialization.json.JsonObject
 import splice.core.turn.TurnOutcome
 import splice.core.util.JsonScalars
 import splice.core.util.LogSink
+import splice.dialect.responses.request.ResponsesCallPairing
 import splice.dialect.responses.request.ResponsesCodeModeProjection
 import splice.dialect.responses.request.ResponsesPriorReasoning
 import splice.provider.codex.history.CodeModeContinuityCapture
@@ -27,6 +28,7 @@ internal class CodexCodeModeWire(
 ) {
     private val history = CodexCodeModeHistory(json)
     private val priorReasoning = ResponsesPriorReasoning()
+    private val pairing = ResponsesCallPairing()
     private val toolSurface = CodeModeToolSurface(log)
 
     private val omissions = CodeModeHistoryOmissions(log, retireNative)
@@ -44,18 +46,20 @@ internal class CodexCodeModeWire(
      *  dialect replays for deferred tools and a record's native searches, since exec declares no
      *  tool_search beside it. Records, digests and baselines keep reading the client's own history;
      *  only the posted bytes change, the same way on every round, so the prompt cache prefix holds.
-     *  A body with none goes out as the body it is; one with some keeps the spelling it always had. */
+     *  A body with none goes out as the body it is; one with some keeps the spelling it always had. However the
+     *  history was rebuilt (an interrupted round, a record the rewrite could not place), each call goes out once and
+     *  answered, and each reasoning item once, as Codex sends its history: the backend refuses a call with no
+     *  result. */
     fun upstream(body: CodeModeBody): RoundBody {
         val (request, input) = body.request ?: return body.round
         val searched = input.filterNot { string(it as? JsonObject, FIELD_TYPE) in TOOL_SEARCH_ITEMS }
         // replay_reasoning=false: the stored continuity of earlier scripts does not ride back; this turn's does.
-        val kept = if (replayReasoning.now()) searched else priorReasoning.withoutPriorTurns(searched)
-        return if (kept.size == input.size) {
+        val kept = JsonArray(if (replayReasoning.now()) searched else priorReasoning.withoutPriorTurns(searched))
+        val paired = pairing.pair(kept)
+        return if (paired === kept && kept.size == input.size) {
             body.round
         } else {
-            RoundBody.Text(
-                json.encodeToString(JsonObject.serializer(), JsonObject(request + (FIELD_INPUT to JsonArray(kept)))),
-            )
+            RoundBody.Text(json.encodeToString(JsonObject.serializer(), JsonObject(request + (FIELD_INPUT to paired))))
         }
     }
 

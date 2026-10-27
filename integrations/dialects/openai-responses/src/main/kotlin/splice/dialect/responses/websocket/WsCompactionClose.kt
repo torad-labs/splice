@@ -22,9 +22,14 @@ internal data class WsChainedSend(val send: List<JsonObject>, val logical: List<
 }
 
 /** Bail-closed like every delta: the input must be [the chain's input][verified echoes of the answer][new client
- *  items], and the answer must leave at least one call open. Anything else returns null and the round full-sends.
- *  The closures are committed as part of the logical input, so a later request that does not carry them (and the
- *  client never sees them) cannot chain onto context its own input does not show. */
+ *  items], and every call the answer left open must end up answered. Anything else returns null and the round
+ *  full-sends. The closures are committed as part of the logical input, so a later request that does not carry them
+ *  (and the client never sees them) cannot chain onto context its own input does not show.
+ *
+ *  Since fix 1 of the Oct 27 Responses fixes the request builder itself answers a call no result answers, the way
+ *  Codex does, so a compaction usually arrives with its open call already closed. That body chains too: the closure
+ *  it carries is the one this would have added, and a full send here would ask the backend to find the whole prompt
+ *  again. */
 internal object WsCompactionClose {
     fun close(
         previous: List<String>,
@@ -41,22 +46,28 @@ internal object WsCompactionClose {
         val clientNew = fresh.isNotEmpty() &&
             fresh.all { WsSuffixDisposition.accept(it, sent) } &&
             sent.size == fresh.size
-        val closures = closures(fresh, pendingCalls, evidence)
-            ?.takeIf { it.isNotEmpty() && clientNew && echoesInOrder(echoed, evidence) }
+        val closures = closures(echoed, fresh, pendingCalls, evidence)
+            ?.takeIf { clientNew && echoesInOrder(echoed, evidence) }
             ?: return null
         return WsChainedSend(send = closures + fresh, logical = current.take(previous.size) + echoed + closures + fresh)
     }
 
-    /** One "aborted" output per call the answer left open, in the order the server emitted them, typed for the
-     *  call's kind. Null when an output answers a call the server does not hold open, or an open call was never
-     *  observed, since then its kind is unknown. */
+    /** One "aborted" output per call the answer left open that this body does not answer, in the order the server
+     *  emitted them, typed for the call's kind. Empty when the body answers them all, which the request builder's own
+     *  pairing does for a call the client echoed without its result. Null when an output answers a call the server
+     *  does not hold open, when it answers one the body does not carry (another branch's result cannot adopt a
+     *  server-held call), or when an open call was never observed, since then its kind is unknown. */
     private fun closures(
+        echoed: List<JsonObject>,
         fresh: List<JsonObject>,
         pendingCalls: Set<String>,
         evidence: WsServerEvidence,
     ): List<JsonObject>? {
         val answered = fresh.filter { kindOf(it) in CALL_OUTPUT_OF.values }
             .map { JsonScalars.strOrEmpty(it[FIELD_CALL_ID]) }
+        val carried = echoed.filter { kindOf(it) in CALL_OUTPUT_OF.keys }
+            .map { JsonScalars.strOrEmpty(it[FIELD_CALL_ID]) }
+        if (!carried.containsAll(answered.filter(pendingCalls::contains))) return null
         val open = pendingCalls.filterNot(answered::contains)
         val closures = evidence.calls.filterKeys(open::contains).mapNotNull { (id, call) ->
             CALL_OUTPUT_OF[kindOf(call)]?.let { kind ->

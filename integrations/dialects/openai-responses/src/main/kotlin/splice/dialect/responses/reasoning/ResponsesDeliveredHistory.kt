@@ -17,6 +17,9 @@ internal class ResponsesDeliveredHistory(private val owner: ResponsesTextOwner) 
     private var prefixEnd: Int? = null
     private var verifiedEnd: Int? = null
     private var proven = true
+
+    /** The calls [call] already placed. The fold reports each finished call item to [item] as well, after [call]. */
+    private val called = hashSetOf<String>()
     var callId: String? = null
         private set
 
@@ -54,11 +57,14 @@ internal class ResponsesDeliveredHistory(private val owner: ResponsesTextOwner) 
         } else {
             open.remove(index)
             announced.remove(index)
+            // A call that sealed the prefix, or that [call] already added after it, was delivered once.
+            if (JsonScalars.str(item, "call_id")?.let(called::contains) == true) return
             entries.add(DeliveredItem(item))
         }
     }
 
     fun call(item: JsonObject) {
+        JsonScalars.str(item, "call_id")?.let(called::add)
         if (prefixEnd == null) {
             callId = JsonScalars.str(item, "call_id")
             prefixEnd = entries.size

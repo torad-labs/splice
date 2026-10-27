@@ -111,4 +111,4 @@ internal sealed class LoopStep<out T> {
 
 /** How the ledger names a login: the identity of its provider, never anything its credential holds. */
 private const val LOGIN_PREFIX = "login-"
-private const val LOGIN_RADIX = 16
+private const val LOGIN_RADIX = 16 // why: hex, the way an identity hash is printed, so the name stays short

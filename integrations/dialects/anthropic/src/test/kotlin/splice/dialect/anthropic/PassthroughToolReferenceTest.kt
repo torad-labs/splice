@@ -2,9 +2,9 @@
 // able to call it (eli-ff, 2026-10-26). Claude Code answers ToolSearch with a tool_result holding one
 // `tool_reference` block per loaded tool. Kimi's endpoint does not take that block, so its allowlist
 // drops it, and the model read "1 content block(s) omitted by claude-kimi proxy" where the client meant
-// "SendMessage is loaded": kimi session ffb9aeb2 searched for SendMessage four times and never called
-// it. Passthrough forwards the client's tools as the model's own, so a head that cannot carry the
-// reference gives the model the sentence the client meant, under the name the model was offered.
+// "SendMessage is loaded": a kimi session searched for SendMessage four times and never called it.
+// A head that cannot carry the reference gives the model the sentence the client meant, under the name
+// the model was offered. PassthroughLoadedToolTest pins that the tool itself then rides callable.
 package splice.dialect.anthropic
 
 import kotlinx.serialization.json.JsonArray

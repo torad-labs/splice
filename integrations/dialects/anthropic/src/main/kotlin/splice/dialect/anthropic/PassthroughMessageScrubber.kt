@@ -190,7 +190,7 @@ internal class PassthroughMessageScrubber(
      *  (2026-10-26): Claude Code answers ToolSearch with one reference per tool whose schema it just
      *  loaded, and passthrough forwards the client's tools as the model's own, so the model is told the
      *  tool is loaded under the name it was offered. Dropped, the reference read "1 content block(s)
-     *  omitted", and kimi session ffb9aeb2 searched for SendMessage four times without calling it.
+     *  omitted", and a kimi session searched for SendMessage four times without calling it.
      *  [PassthroughToolSanitizer] offers that tool without `defer_loading` (2026-10-27), which is what makes the
      *  sentence true on an upstream that keeps a deferred tool hidden until a reference loads it.
      *

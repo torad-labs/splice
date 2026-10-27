@@ -181,8 +181,9 @@ public class ResumeAcrossHeads(
     }
 
     /** The copy, its subdir, the retag and the model move are one act: a copy that fails partway is removed, and the
-     *  original, read only, resumes as it is. A daemon that halts removes nothing, so the rows go to a dotted temp file,
-     *  which no picker lists, and reach the copy's name only whole. */
+     *  original, read only, resumes as it is. A daemon that halts removes nothing, so the subdir is copied and retagged
+     *  first, and the rows go to a dotted temp file, which no picker lists, and reach the copy's name last, once they
+     *  and the subagent files are whole: a halt leaves the picker no copy, only a subdir no transcript names. */
     private fun copyAside(transcript: Path, sessionId: String, roster: CallingRoster, log: LogSink): SessionAdoption {
         val copyId = UUID.randomUUID().toString()
         val target = transcript.resolveSibling(copyId + TRANSCRIPT_SUFFIX)
@@ -190,13 +191,13 @@ public class ResumeAcrossHeads(
         val targetSubdir = transcript.resolveSibling(copyId)
         val retag = SessionIdRetag(sessionId, copyId)
         val made = Cancellables.runCatchingCancellable {
-            retag.copy(transcript, staged)
-            Files.move(staged, target, ATOMIC_MOVE)
             val sourceSubdir = transcript.resolveSibling(sessionId)
             if (Files.isDirectory(sourceSubdir, NOFOLLOW_LINKS)) {
                 copyTree(sourceSubdir, targetSubdir, log)
                 retagUnder(targetSubdir, retag)
             }
+            retag.copy(transcript, staged)
+            Files.move(staged, target, ATOMIC_MOVE)
             rewriter.rewriteCopy(target, roster)
         }
         val rewritten = made.getOrElse { cause ->
@@ -289,7 +290,9 @@ public class ResumeAcrossHeads(
      *  hand Claude Code a transcript that is half another head's. The launch still names the original id, so a copy
      *  that fails partway is removed, as [copyAside]'s is, and Claude Code finds no half-made session to resume. A
      *  subdir this head already held is not this copy's to remove. The source is read only. A daemon that halts removes
-     *  nothing, so the bytes go to a dotted temp file and reach the transcript's name only whole. */
+     *  nothing, so the subdir is copied first, and the bytes go to a dotted temp file and reach the transcript's name
+     *  last, once they and the subagent files are whole: a halt leaves no transcript, so the next -r plans the copy
+     *  again and writes over the cut subdir, where a transcript already in place would be resumed as the head's own. */
     private fun copyIn(
         callingConfigDir: Path,
         plan: ResumePlan.Copy,
@@ -304,12 +307,12 @@ public class ResumeAcrossHeads(
         val subdirHeld = Files.exists(targetSubdir, NOFOLLOW_LINKS)
         val copied = Cancellables.runCatchingCancellable {
             Files.createDirectories(targetDir)
+            val sourceSubdir = plan.from.resolveSibling(sessionId)
+            if (Files.isDirectory(sourceSubdir, NOFOLLOW_LINKS)) copyTree(sourceSubdir, targetSubdir, log)
             // A real byte copy, never a link: a link would put the source head's tree inside the
             // calling head's, which is exactly the leak this row removes.
             Files.copy(plan.from, staged, REPLACE_EXISTING)
             Files.move(staged, target, REPLACE_EXISTING, ATOMIC_MOVE)
-            val sourceSubdir = plan.from.resolveSibling(sessionId)
-            if (Files.isDirectory(sourceSubdir, NOFOLLOW_LINKS)) copyTree(sourceSubdir, targetSubdir, log)
             rewriter.rewriteCopy(target, roster)
         }
         val rewritten = copied.getOrElse { cause ->

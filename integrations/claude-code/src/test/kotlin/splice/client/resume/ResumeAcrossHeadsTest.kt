@@ -48,43 +48,51 @@ import java.nio.file.attribute.UserPrincipalLookupService
 import java.nio.file.spi.FileSystemProvider
 import kotlin.io.path.isSymbolicLink
 
-/** A daemon halt, as the copy it cuts sees it: the source gives no more bytes, and no catch in the code runs, since a
+/** A daemon halt, as the copy it cuts sees it: the session gives no more bytes, and no catch in the code runs, since a
  *  halted process runs none. runCatchingCancellable lets an Error through, so nothing is cleaned up here either. */
 private class Halted : Error("the daemon halted partway through the copy")
 
-/** [real]'s first [kept] bytes, then the halt. */
-private class HaltedRead(private val real: InputStream, private var kept: Int) : InputStream() {
+/** [real]'s bytes while [tree] has any left to give, then the halt. */
+private class HaltedRead(private val real: InputStream, private val tree: HaltingTree) : InputStream() {
     override fun read(): Int {
-        if (kept == 0) throw Halted()
-        kept--
-        return real.read()
+        if (tree.left == 0) throw Halted()
+        val byte = real.read()
+        if (byte >= 0) tree.left--
+        return byte
     }
 
     override fun read(bytes: ByteArray, offset: Int, length: Int): Int {
-        if (kept == 0) throw Halted()
-        val count = real.read(bytes, offset, minOf(length, kept))
-        if (count > 0) kept -= count
+        if (tree.left == 0) throw Halted()
+        val count = real.read(bytes, offset, minOf(length, tree.left))
+        if (count > 0) tree.left -= count
         return count
     }
 
     override fun close() = real.close()
 }
 
-/** A path of [tree]: [real], read through the tree. A name resolved in it stays in the tree, and its sibling is the
- *  real one, so whatever a copy writes beside its source is a real file. */
+/** A path of [tree]: [real], read through the tree. A name resolved in it stays in the tree, and so does the session's
+ *  subdir beside its transcript, whose subagent files the copy reads too. Any other sibling is the real one, so
+ *  whatever a copy writes beside its source is a real file. */
 private class TreePath(val real: Path, private val tree: HaltingTree) : Path by real {
     override fun getFileSystem(): FileSystem = tree.fileSystem
 
     override fun resolve(other: String): Path = TreePath(real.resolve(other), tree)
 
-    override fun resolveSibling(other: String): Path = real.resolveSibling(other)
+    override fun resolveSibling(other: String): Path {
+        val sibling = real.resolveSibling(other)
+        return if (real.fileName.toString() == other + TRANSCRIPT_SUFFIX) TreePath(sibling, tree) else sibling
+    }
+
+    override fun relativize(other: Path): Path = real.relativize((other as? TreePath)?.real ?: other)
 
     override fun toString(): String = real.toString()
 }
 
 /** A session directory as a copy the daemon halts partway through reads it: listed, checked and read like the real one,
- *  except that a read of a file in it stops after [kept] bytes with the halt. */
-private class HaltingTree(private val kept: Int) : FileSystemProvider() {
+ *  except that its files give [left] bytes in all, the subagent files' as well as the transcript's, and the read after
+ *  the last of them halts. */
+private class HaltingTree(var left: Int) : FileSystemProvider() {
     private val disk = FileSystems.getDefault().provider()
     val fileSystem: FileSystem = TreeFileSystem(this)
 
@@ -93,7 +101,18 @@ private class HaltingTree(private val kept: Int) : FileSystemProvider() {
     private fun real(path: Path): Path = (path as? TreePath)?.real ?: path
 
     override fun newInputStream(path: Path, vararg options: OpenOption): InputStream =
-        HaltedRead(disk.newInputStream(real(path), *options), kept)
+        HaltedRead(disk.newInputStream(real(path), *options), this)
+
+    /** Its entries stay in the tree, so a walk of the session's subdir reads each file in it through the halt. */
+    override fun newDirectoryStream(dir: Path, filter: DirectoryStream.Filter<in Path>): DirectoryStream<Path> {
+        val entries = disk.newDirectoryStream(real(dir), filter)
+        return object : DirectoryStream<Path> {
+            override fun iterator(): MutableIterator<Path> =
+                entries.mapTo(mutableListOf<Path>()) { TreePath(it, this@HaltingTree) }.iterator()
+
+            override fun close() = entries.close()
+        }
+    }
 
     override fun getScheme(): String = disk.scheme
     override fun newFileSystem(uri: URI, env: MutableMap<String, *>): FileSystem = disk.newFileSystem(uri, env)
@@ -104,8 +123,6 @@ private class HaltingTree(private val kept: Int) : FileSystemProvider() {
         options: MutableSet<out OpenOption>,
         vararg attrs: FileAttribute<*>,
     ): SeekableByteChannel = disk.newByteChannel(real(path), options, *attrs)
-    override fun newDirectoryStream(dir: Path, filter: DirectoryStream.Filter<in Path>): DirectoryStream<Path> =
-        disk.newDirectoryStream(real(dir), filter)
     override fun createDirectory(dir: Path, vararg attrs: FileAttribute<*>) = disk.createDirectory(real(dir), *attrs)
     override fun delete(path: Path) = disk.delete(real(path))
     override fun copy(source: Path, target: Path, vararg options: CopyOption) =
@@ -263,9 +280,11 @@ class ResumeAcrossHeadsTest {
 
     // Review of PR #247, round 6 (Oct 26 CT): both copies wrote the transcript straight under its final name, and a
     // halted daemon runs no cleanup, so a halt partway left a cut-short transcript there. On a head that isolates its
-    // projects the next -r resumed it as the head's own, and on the shared tree every head's picker listed it. A halt
-    // can land after any byte, so each test reruns the -r with the copy halted after every byte the transcript has,
-    // as a person reruns it after each failed launch, and then once more with nothing halting it.
+    // projects the next -r resumed it as the head's own, and on the shared tree every head's picker listed it. Round 8
+    // found the same for the subagent files: the transcript took its name before they were copied, so a halt among them
+    // left a whole transcript beside a cut subagent file, which that head resumed from then on. A halt can land after
+    // any byte, so each test reruns the -r with the copy halted after every byte the session has, its subagent file's
+    // included, as a person reruns it after each failed launch, and then once more with nothing halting it.
     @Test
     fun `a copy in that the daemon halts partway leaves nothing to resume, and the next -r copies it whole`(
         @TempDir home: Path,
@@ -273,16 +292,17 @@ class ResumeAcrossHeadsTest {
         val calling = headConfig(home, "codex")
         val kimi = headConfig(home, "kimi")
         val source = register(home, "kimi", encodedCwd("repo"), "abc-123", model = "k3-256k")
+        val agent = write(source.resolveSibling("abc-123/subagents/agent-1.jsonl"), transcript("abc-123", "k3-256k"))
         val into = calling.resolve(Keys.PROJECTS).resolve(encodedCwd("repo"))
 
-        for (kept in 0 until Files.size(source).toInt()) {
+        for (kept in 0 until (Files.size(source) + Files.size(agent)).toInt()) {
             halted(source.parent, kept, calling, listOf(kimi))
-            assertEquals(emptyList<String>(), transcripts(into), "halted after $kept bytes: nothing to resume")
+            assertEquals(emptyMap<String, Int>(), sessions(into), "halted after $kept bytes: nothing to resume")
         }
 
         val next = adoption(calling, listOf(kimi), "abc-123") as SessionAdoption.Adopted
         assertEquals(source, next.from, "the next -r copies from the intact source")
-        assertEquals(lines(Files.readString(source)).size, lines(Files.readString(next.into)).size, "all of it")
+        assertEquals(sessions(source.parent), sessions(into), "all of it, its subagent file included")
     }
 
     @Test
@@ -291,19 +311,37 @@ class ResumeAcrossHeadsTest {
     ) {
         val calling = headConfig(home, "codex")
         val original = register(home, "codex", encodedCwd("repo"), "abc-123", model = "k3-256k")
+        val agent = write(original.resolveSibling("abc-123/subagents/agent-1.jsonl"), transcript("abc-123", "k3-256k"))
+        val alone = sessions(original.parent)
 
-        for (kept in 0 until Files.size(original).toInt()) {
+        for (kept in 0 until (Files.size(original) + Files.size(agent)).toInt()) {
             halted(original.parent, kept, calling, emptyList())
-            val listed = transcripts(original.parent)
-            assertEquals(listOf("abc-123.jsonl"), listed, "halted after $kept bytes: the original is the only session")
+            assertEquals(alone, sessions(original.parent), "halted after $kept bytes: the original is the only session")
         }
 
         val next = adoption(calling, emptyList(), "abc-123") as SessionAdoption.Copied
-        assertEquals(lines(Files.readString(original)).size, lines(Files.readString(next.into)).size, "all of it")
+        val copy = alone.mapKeys { (path, _) -> path.replace("abc-123", next.copyId) }
+        assertEquals(alone + copy, sessions(original.parent), "the original and all of its copy, its subagent file too")
     }
 
-    /** A -r launch whose copy the daemon halts after [kept] bytes of a transcript in [sessionDir]: that directory is
-     *  listed as its head lists it, and nothing after the halt runs, so the disk is left as the halt leaves it. */
+    /** The sessions in [dir] as Claude Code's -r picker and resume find them: each transcript and every file in its
+     *  subdir, by path, with the rows it holds whole, so a session listed beside a file cut short shows it. */
+    private fun sessions(dir: Path): Map<String, Int> = transcripts(dir).flatMap { name ->
+        val subdir = dir.resolve(name.removeSuffix(".jsonl"))
+        val under = if (Files.isDirectory(subdir)) {
+            Files.walk(subdir).use { paths -> paths.filter { Files.isRegularFile(it) }.toList() }
+        } else {
+            emptyList()
+        }
+        (listOf(dir.resolve(name)) + under).map { file -> dir.relativize(file).toString() to rows(file) }
+    }.toMap()
+
+    /** The rows [file] holds whole: a copy cut short ends partway through one, or before the first. */
+    private fun rows(file: Path): Int = Files.readAllBytes(file).count { it == '\n'.code.toByte() }
+
+    /** A -r launch whose copy the daemon halts after [kept] bytes of the session in [sessionDir], its transcript's and
+     *  its subagent files' together: that directory is listed as its head lists it, and nothing after the halt runs, so
+     *  the disk is left as the halt leaves it. */
     private fun halted(sessionDir: Path, kept: Int, calling: Path, others: List<Path>) {
         val tree = HaltingTree(kept)
         val listing = DirectoryListing { dir ->

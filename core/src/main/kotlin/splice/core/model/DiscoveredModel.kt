@@ -52,4 +52,10 @@ public fun interface HeadDiscoveredModels {
 
     /** Metadata may also describe hidden models selected explicitly, without adding them to the picker. */
     public fun metadataForHead(key: String): List<DiscoveredModel> = forHead(key)
+
+    /** Returns once [key]'s list is the one its provider gives the credential the head presents now. A head whose
+     *  credential changed since its list was asked is asked again first, and the wait ends with that answer, or with
+     *  the list it keeps when no answer comes. A turn waits on this before it is admitted, so the turn sent the moment
+     *  after a sign-in reads that sign-in's list (fix 3, Oct 27). The default has nothing to wait for. */
+    public suspend fun awaitCurrent(key: String): Unit = Unit
 }

@@ -50,6 +50,30 @@ class SignInCodeModeTest {
             }
         }
 
+    /** A scripted sign-in followed at once by a turn: the turn lands before any recheck beat, and the goal still says
+     *  code mode from the first turn. The credential beat is held and never fires here. */
+    @Test
+    fun `a turn sent the moment a sign-in lands runs code mode, with no recheck beat in between`(@TempDir tmp: Path) =
+        runBlocking {
+            val fixture = SignInRosterFixture(tmp, this)
+            try {
+                withTimeout(60.seconds) {
+                    fixture.start()
+                    val token = fixture.login.accessToken(ACCOUNT_A, "first")
+                    fixture.backend.serve(token, listOf(listedModel(CODE_MODE_MODEL, codeModeOnly = true)))
+                    fixture.login.signIn(ACCOUNT_A, "first")
+
+                    val turn = fixture.turn()
+                    assertEquals(HttpStatus.OK, turn.statusCode(), turn.body())
+                    assertTrue("message_stop" in turn.body(), turn.body())
+                    val offered = offeredTools(fixture.backend.turns.first())
+                    assertTrue(EXEC in offered, "the turn sent at once after sign-in offered $offered, not code mode")
+                }
+            } finally {
+                fixture.close()
+            }
+        }
+
     @Test
     fun `another account's sign-in gets that account's list without waiting for the hourly refresh`(
         @TempDir tmp: Path,

@@ -1,8 +1,9 @@
 // Fix 3's property, over generated histories: a head's model list is the one the backend gave the credential it was
-// last asked with. Its sign-in is read again on every recheck, so a new credential (a sign-in, another account's, a
-// sign-out) is asked at the next recheck, never only at the hourly refresh; an unchanged credential is not asked again;
-// and a list that cannot be fetched leaves the last one standing, as the hourly refresh always has. Concurrent rounds
-// and a sign-in landing between them converge on the new account's list at the next recheck.
+// last asked with. Its sign-in is read again on every recheck and when a turn arrives, so a new credential (a sign-in,
+// another account's, a sign-out) is asked at the next recheck or before the next turn, whichever comes first, never
+// only at the hourly refresh; an unchanged credential is not asked again; and a list that cannot be fetched leaves the
+// last one standing, as the hourly refresh always has. Concurrent rounds and a sign-in landing between them converge
+// on the new account's list at the next recheck or turn.
 package splice.app.roster
 
 import kotlinx.coroutines.coroutineScope
@@ -91,7 +92,8 @@ private class History(dir: Path, private val backend: ChatGptListBackend, privat
             roll < 25 -> signIn(if (random.nextInt(5) == 0) REFUSED else pick(), "$step")
             roll < 35 -> signOut()
             roll < 45 -> toggleOutage()
-            roll < 70 -> recheck()
+            roll < 60 -> recheck()
+            roll < 72 -> turn()
             roll < 85 -> hourly()
             else -> concurrent(step)
         }
@@ -127,14 +129,21 @@ private class History(dir: Path, private val backend: ChatGptListBackend, privat
         if (onDisk != askedWith) asked()
     }
 
+    /** A turn arrives on the head with no recheck beat since the last step: what it waits for before it is admitted. */
+    private suspend fun turn() {
+        steps += "a turn arrives"
+        rosters.awaitCurrent(CODEX_HEAD)
+        if (onDisk != askedWith) asked()
+    }
+
     private suspend fun hourly() {
         steps += "hourly refresh"
         rosters.resolve(heads)
         asked()
     }
 
-    /** An hourly refresh and a recheck racing a sign-in, then one recheck: whatever order they ran in, the list is the
-     *  new account's. */
+    /** An hourly refresh, a recheck and a turn racing a sign-in, then one recheck or one turn: whatever order they ran
+     *  in, the list is the new account's. */
     private suspend fun concurrent(step: Int) {
         outage = false
         backend.listOutage = false
@@ -144,13 +153,15 @@ private class History(dir: Path, private val backend: ChatGptListBackend, privat
         coroutineScope {
             launch { rosters.resolve(heads) }
             launch { rosters.recheck(heads) }
+            launch { rosters.awaitCurrent(CODEX_HEAD) }
             launch {
                 repeat(random.nextInt(3)) { yield() }
                 login.signIn(who, "$run-$step")
             }
         }
-        rosters.recheck(heads)
-        steps += "list outage ends; hourly refresh and recheck race $who's sign-in; recheck"
+        val settle = if (random.nextBoolean()) "recheck" else "turn"
+        if (settle == "turn") rosters.awaitCurrent(CODEX_HEAD) else rosters.recheck(heads)
+        steps += "list outage ends; hourly refresh, recheck and turn race $who's sign-in; $settle"
         onDisk = token
         account = who
         askedWith = token

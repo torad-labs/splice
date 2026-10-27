@@ -5,7 +5,9 @@
 // A NEW SIGN-IN IS ASKED AT ONCE (fix 3, 2026-10-27). Setup restarts the daemon before it signs in, so the list
 // asked at the start had no credential, and code mode, which that list marks, waited up to an hour. Sign-in never
 // calls the daemon (it runs before the daemon is up as often as after), so each head's list records a one-way key
-// of the sign-in it was asked with, the sign-in is reread on a short beat, and a changed one is asked at once.
+// of the credential it was asked with: a sign-in's token, or an api-key head's key. The credential is reread on a
+// short beat and again as each turn arrives, and a changed one is asked at once, so the turn sent the moment after
+// a sign-in, or after a key is set in the console, already runs on that credential's list.
 //
 // NEVER BELOW THE STATUS QUO. Every head is asked at once, each bounded by [DISCOVERY_DEADLINE], and no
 // failure stops a head from starting: an endpoint that does not answer is replaced by the list it
@@ -31,6 +33,7 @@ import splice.core.model.DiscoveredModel
 import splice.core.model.HeadDiscoveredModels
 import splice.core.topology.ProviderConfig
 import splice.core.util.Cancellables
+import splice.core.util.DaemonLog
 import splice.core.util.EnvReader
 import splice.core.util.LogSink
 import splice.core.util.SafeFailureText
@@ -56,39 +59,40 @@ private const val NONE_KEPT = "no list was kept, so the picker is splice.toml's 
 // why: a provider release joins every running head within an hour, without polling its endpoint per turn.
 private const val REFRESH_INTERVAL_MS = 3_600_000L
 
-// why: a sign-in lands as a file the daemon is never told about, so each head's is reread on this beat. A reread is
-// one small file read per head, and two seconds is less than a person takes from a sign-in to a first prompt.
+// why: a sign-in or a key lands as a file the daemon is never told about, so each head's credential is reread on this
+// beat. A reread is one small file read per head, and two seconds is less than a person takes from a sign-in to a
+// first prompt. A turn does not wait for the beat: it rereads its head's credential as it arrives (awaitCurrent).
 private const val CREDENTIAL_RECHECK_MS = 2_000L
 
-/** What a head's list was asked with when it had no sign-in, and when its sign-in could not be read. Neither is a
- *  [CredentialKey], which is hex. */
-private const val NO_SIGN_IN = "none"
-private const val SIGN_IN_UNREADABLE = "unreadable"
+/** What a head's list was asked with when it presented no credential, and when its credential could not be read.
+ *  Neither is a [CredentialKey], which is hex. */
+private const val NO_CREDENTIAL = "none"
+private const val CREDENTIAL_UNREADABLE = "unreadable"
 
-/** One head's provider asked what it serves. [EndpointModels] in production. */
+/** One head's provider asked what it serves, and the credential the ask presents. [EndpointModels] in production. */
 internal fun interface HeadModelsSource {
     fun discover(key: String, provider: ProviderConfig): Discovery
+
+    /** The credential [discover] presents for [key], as a one-way key that is never logged; null when it presents
+     *  none. A source that presents nothing (a test's fake) is never asked again for a changed credential. */
+    fun presenting(key: String, provider: ProviderConfig): String? = null
 }
 
-/** Production [HeadModelsSource]: the models feature's discovery, presenting the credential a head's
- *  turns present (StoredCredential.bearer — the same one `splice models` uses). */
-internal class EndpointModels(private val env: EnvReader = EnvReader(System::getenv)) : HeadModelsSource {
-    private val discovery = ModelDiscovery(StoredModelCredentials())
+/** Production [HeadModelsSource]: the models feature's discovery, presenting the credential a head's turns present
+ *  (StoredCredential.bearer, the same one `splice models` uses): an api-key head's key from the environment or the
+ *  key store, else the token a sign-in left in the head's credential file. Both read through one
+ *  [StoredCredential], so a key store that cannot be read is said once per version however often it is reread. */
+internal class EndpointModels(
+    private val env: EnvReader = EnvReader(System::getenv),
+    log: LogSink = LogSink(DaemonLog::write),
+) : HeadModelsSource {
+    private val stored = StoredCredential(log = log)
+    private val discovery = ModelDiscovery(StoredModelCredentials(stored))
 
     override fun discover(key: String, provider: ProviderConfig): Discovery = discovery.discover(key, provider, env)
-}
 
-/** The sign-in a head's list is asked with, as a one-way key that is never logged; null when there is none. */
-internal fun interface HeadSignIn {
-    fun keyOf(key: String, provider: ProviderConfig): String?
-}
-
-/** Production [HeadSignIn]: the token a sign-in left in the head's credential file, which its list is asked with
- *  (StoredCredential.presentedToken). An api-key head has none here: its key is not a sign-in, and its list keeps
- *  the hourly refresh. */
-internal class StoredSignIn(private val stored: StoredCredential = StoredCredential()) : HeadSignIn {
-    override fun keyOf(key: String, provider: ProviderConfig): String? =
-        stored.presentedToken(provider)?.let { CredentialKey.fromCredentials(Credentials.Bearer(it)) }
+    override fun presenting(key: String, provider: ProviderConfig): String? =
+        stored.bearer(provider, key, env)?.let { CredentialKey.fromCredentials(Credentials.Bearer(it)) }
 }
 
 /** Each head's discovered models, kept under [statePaths] between starts. [source] is each head's own
@@ -96,11 +100,11 @@ internal class StoredSignIn(private val stored: StoredCredential = StoredCredent
 internal class ModelRosters(
     statePaths: StatePaths,
     private val log: LogSink,
-    private val source: HeadModelsSource = EndpointModels(),
+    /** Each head's endpoint, and the credential it presents, reread on [credentialTicker]'s beat and as a turn
+     *  arrives: a changed one is asked for its list at once. */
+    private val source: HeadModelsSource = EndpointModels(log = log),
     private val deadline: Duration = DISCOVERY_DEADLINE,
     private val ticker: Ticker = ProcessTicker(),
-    /** Each head's sign-in, reread on [credentialTicker]'s beat; a changed one is asked for its list at once. */
-    private val signIn: HeadSignIn = StoredSignIn(),
     private val credentialTicker: Ticker = ProcessTicker(),
 ) : HeadDiscoveredModels {
 
@@ -108,8 +112,12 @@ internal class ModelRosters(
 
     private val byHead = ConcurrentHashMap<String, KeptRoster.Kept>()
 
-    /** The one-way key of the sign-in each head's list was last asked with. */
+    /** The one-way key of the credential each head's list was last asked with. Written after the list is published,
+     *  so a turn that finds its head's credential here reads that credential's list without taking the lock. */
     private val askedWith = ConcurrentHashMap<String, String>()
+
+    /** The provider each head's list is asked of, as [resolve] was handed it, so a turn's wait asks the same one. */
+    private val providers = ConcurrentHashMap<String, ProviderConfig>()
 
     /** One ask per head at a time, so an hourly refresh and a recheck never publish out of order. */
     private val asking = ConcurrentHashMap<String, Mutex>()
@@ -132,41 +140,51 @@ internal class ModelRosters(
         coroutineScope { heads.forEach { (key, provider) -> launch { refresh(key, provider, always = true) } } }
     }
 
-    /** Ask again, at once, each head whose sign-in changed since its list was asked: a sign-in, another account's, a
-     *  sign-out. A head whose sign-in is unchanged is not asked, so a list that could not be fetched waits for the
-     *  hourly refresh, as it always has. */
+    /** Ask again, at once, each head whose credential changed since its list was asked: a sign-in, another account's,
+     *  a sign-out, a key set or replaced. A head whose credential is unchanged is not asked, so a list that could not
+     *  be fetched waits for the hourly refresh, as it always has. */
     suspend fun recheck(heads: Map<String, ProviderConfig>) {
         coroutineScope { heads.forEach { (key, provider) -> launch { refresh(key, provider, always = false) } } }
     }
 
-    /** Start after the initial [resolve]: the hourly refresh, and the recheck of every head's sign-in. Cancelling the
-     *  daemon scope stops both. */
+    /** A turn's wait: [key]'s credential is reread as the turn arrives, and a changed one is asked for its list
+     *  before the turn goes on, so no turn runs on the list of a credential the head no longer presents. An unchanged
+     *  credential costs the turn one small file read and never waits on an ask another refresh has in flight. A head
+     *  that was never asked has nothing to wait for. */
+    override suspend fun awaitCurrent(key: String) {
+        val provider = providers[key] ?: return
+        if (askedWith[key] != credentialOf(key, provider)) refresh(key, provider, always = false)
+    }
+
+    /** Start after the initial [resolve]: the hourly refresh, and the recheck of every head's credential. Cancelling
+     *  the daemon scope stops both. */
     fun start(scope: CoroutineScope, heads: Map<String, ProviderConfig>): Job = scope.launch {
         launch { while (isActive && credentialTicker.awaitTick(CREDENTIAL_RECHECK_MS)) recheck(heads) }
         while (isActive && ticker.awaitTick(REFRESH_INTERVAL_MS)) resolve(heads)
     }
 
-    /** The sign-in is read before the ask, which reads it again: one that changes in between is asked twice, never
-     *  missed. */
+    /** The credential is read before the ask, which reads it again: one that changes in between is asked twice, never
+     *  missed. Its key is recorded only once the list it asked for is published (see [askedWith]). */
     private suspend fun refresh(key: String, provider: ProviderConfig, always: Boolean) {
+        providers[key] = provider
         asking.computeIfAbsent(key) { Mutex() }.withLock {
-            val now = signInOf(key, provider)
+            val now = credentialOf(key, provider)
             if (always || askedWith[key] != now) {
-                askedWith[key] = now
                 byHead[key] = modelsFor(key, provider)
+                askedWith[key] = now
             }
         }
     }
 
-    /** [key]'s sign-in now, keyed one way. One that cannot be read is [SIGN_IN_UNREADABLE]: the ask that follows
-     *  reads the same sign-in, and its line says why. */
-    private suspend fun signInOf(key: String, provider: ProviderConfig): String =
+    /** [key]'s credential now, keyed one way. One that cannot be read is [CREDENTIAL_UNREADABLE]: the ask that follows
+     *  reads the same credential, and its line says why. */
+    private suspend fun credentialOf(key: String, provider: ProviderConfig): String =
         withTimeoutOrNull(deadline) {
             runInterruptible(ProcessDispatchers().io()) {
-                boundary.runCatchingDaemonBoundary { signIn.keyOf(key, provider) ?: NO_SIGN_IN }
-                    .getOrElse { SIGN_IN_UNREADABLE }
+                boundary.runCatchingDaemonBoundary { source.presenting(key, provider) ?: NO_CREDENTIAL }
+                    .getOrElse { CREDENTIAL_UNREADABLE }
             }
-        } ?: SIGN_IN_UNREADABLE
+        } ?: CREDENTIAL_UNREADABLE
 
     private suspend fun modelsFor(key: String, provider: ProviderConfig): KeptRoster.Kept {
         val answer = withTimeoutOrNull(deadline) {

@@ -152,6 +152,8 @@ internal class HeadServerFactory(
             maxQueued = { config.getConfig(ctx.key).maxQueued },
         ),
         liveTurns = liveTurnsFor(ctx.key),
+        // Fix 3 (Oct 27): a turn waits for this head's list to follow the credential it is sent with (ModelRosters).
+        models = HeadDeps.CurrentModels { ctx.roster.discovered.awaitCurrent(ctx.key) },
     )
 
     /** The head's stores. Its own function since V4-216 added the compaction recordings, which took

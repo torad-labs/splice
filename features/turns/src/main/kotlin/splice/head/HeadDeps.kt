@@ -137,7 +137,7 @@ public data class HeadDeps(
     }
 
     /** Where a head's turns go and what is in flight: the client that posts them upstream, the gate that admits
-     *  them, and the registry of the live streaming ones. */
+     *  them, the registry of the live streaming ones, and the model list a turn waits on before it is admitted. */
     public data class HeadTraffic(
         val upstream: UpstreamClient,
         val gate: InflightGate,
@@ -149,7 +149,20 @@ public data class HeadDeps(
         /** The watchdog budget as the live knobs (firstByteTimeoutMs, stallReanchorMs) say it is now: a turn asks it
          *  when it starts. Null is no live knob: the budget the provider was built with. */
         val watchdog: LiveWatchdogBudget? = null,
+        /** Fix 3 (Oct 27): what a turn waits on before [gate] admits it. The default waits for nothing, a head with no
+         *  model list (tests, tools); HeadServerFactory gives every production head the daemon's roster. */
+        val models: CurrentModels = CurrentModels {},
     )
+
+    /** A head's model list, as a turn waits on it: the list its provider gives the credential the turn will be sent
+     *  with. A sign-in lands as a file the daemon is never told of, so without the wait a turn sent the moment after
+     *  one would be prepared from the previous credential's list, and code mode, which that list marks, would miss
+     *  the first turn after sign-in (fix 3, Oct 27). */
+    public fun interface CurrentModels {
+        /** Returns at once while the list already follows the head's credential; otherwise once the list was asked
+         *  again, with its answer or, when none comes, the list the head keeps. */
+        public suspend fun await()
+    }
 
     /** Where the head writes what it observes. Grouped by ROLE — a bundle is a boundary, not a bag. */
     public data class HeadStores(

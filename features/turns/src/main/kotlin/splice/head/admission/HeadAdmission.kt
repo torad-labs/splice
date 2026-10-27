@@ -49,6 +49,9 @@ internal class HeadAdmission(
 
     suspend fun handleMessages(call: ApplicationCall, arrivalAt: Long = arrivalTime()) {
         if (!admission.acceptingOrRespond(call)) return
+        // Fix 3 (Oct 27): before the turn takes a slot or is read, the head's model list follows the credential the
+        // turn is sent with, so a turn sent the moment after a sign-in is prepared from that sign-in's list.
+        deps.traffic.models.await()
         val perf = telemetry.begin(arrivalAt)
         val t0 = deps.seams.clock()
         val slot = admission.acquireSlotOrRespond(call) ?: return

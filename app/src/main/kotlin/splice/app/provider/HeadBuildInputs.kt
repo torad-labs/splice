@@ -47,6 +47,8 @@ internal class HeadBuildInputs(
         override fun forHead(key: String): List<DiscoveredModel> = localModels[key] ?: discovered.forHead(key)
         override fun metadataForHead(key: String): List<DiscoveredModel> =
             localModels[key] ?: discovered.metadataForHead(key)
+
+        override suspend fun awaitCurrent(key: String) = discovered.awaitCurrent(key)
     }
 
     internal fun resolveHeadConfig(

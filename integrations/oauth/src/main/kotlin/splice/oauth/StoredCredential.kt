@@ -24,7 +24,9 @@ import splice.core.config.KeyStorePath
 import splice.core.topology.AuthKind
 import splice.core.topology.AuthKindRegistry
 import splice.core.topology.ProviderConfig
+import splice.core.util.DaemonLog
 import splice.core.util.EnvReader
+import splice.core.util.LogSink
 import splice.provider.codex.auth.CodexCredentialShape
 import splice.provider.grok.GrokCredentialShape
 import splice.provider.kimi.KimiCredentialShape
@@ -35,8 +37,15 @@ import java.io.IOException
 import java.nio.file.Files
 import java.nio.file.Path
 import java.nio.file.Paths
+import java.util.concurrent.ConcurrentHashMap
 
-public class StoredCredential(private val json: Json = Json { ignoreUnknownKeys = true }) {
+public class StoredCredential(
+    private val json: Json = Json { ignoreUnknownKeys = true },
+    /** Where splice's key store says it cannot be read: the daemon log, unless a caller names its own. */
+    private val log: LogSink = LogSink(DaemonLog::write),
+) {
+    /** Each key store this reader has read, by path ([keyStore]). */
+    private val keyStores = ConcurrentHashMap<Path, KeyStore>()
 
     /** The credential file this provider's auth kind uses: what the operator named, else the kind's
      *  own default. Null for a kind that keeps nothing on disk (api-key, client). */
@@ -93,8 +102,14 @@ public class StoredCredential(private val json: Json = Json { ignoreUnknownKeys 
     public fun apiKey(provider: ProviderConfig, key: String, env: EnvReader): String? {
         if (!provider.auth.isApiKey) return null
         val envVar = provider.auth.effectiveApiKeyEnv(key)
-        return env(envVar)?.takeIf { it.isNotBlank() } ?: KeyStore(KeyStorePath.defaultPath(env)).read(envVar)
+        return env(envVar)?.takeIf { it.isNotBlank() } ?: keyStore(env).read(envVar)
     }
+
+    /** The key store at [env]'s path, one per path for this reader's life. A store that cannot be read is said once
+     *  per version (KeyStore's latch), and the latch is the store's own, so a store built per read said it at every
+     *  read: the daemon's model lists reread an api-key head's key every two seconds (fix 3, Oct 27). */
+    private fun keyStore(env: EnvReader): KeyStore =
+        keyStores.computeIfAbsent(KeyStorePath.defaultPath(env)) { KeyStore(it, log) }
 
     /** The bearer to present for this provider, whichever way it authenticates. */
     public fun bearer(provider: ProviderConfig, key: String, env: EnvReader): String? =

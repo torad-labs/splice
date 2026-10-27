@@ -22,9 +22,6 @@ import splice.app.provider.EndpointModels
 import splice.app.provider.HeadBuildInputs
 import splice.app.provider.ModelRosters
 import splice.app.provider.ProviderAssembly
-import splice.app.provider.ProviderBuild
-import splice.app.provider.PublishedRoster
-import splice.app.provider.UpstreamFaultPlan
 import splice.core.auth.RefreshAttempt
 import splice.core.config.ConfigService
 import splice.core.config.MgmtKey
@@ -36,7 +33,6 @@ import splice.core.topology.Dialect
 import splice.core.topology.HeadConfig
 import splice.core.topology.ProviderConfig
 import splice.core.topology.Topology
-import splice.core.turn.WatchdogBudget
 import splice.core.util.EnvReader
 import splice.core.util.LogSink
 import splice.upstream.LifecycleScope
@@ -47,7 +43,6 @@ import java.net.http.HttpRequest
 import java.net.http.HttpResponse
 import java.nio.file.Path
 import java.util.concurrent.CopyOnWriteArrayList
-import kotlin.time.Duration.Companion.seconds
 
 internal const val CODEX_HEAD = "codex"
 internal const val CODE_MODE_MODEL = "gpt-6-synthetic"
@@ -115,21 +110,12 @@ internal class SignInRosterFixture(tmp: Path, parent: CoroutineScope) {
     private var managed: ManagedHead? = null
     private val client = HttpClient.newHttpClient()
 
-    /** What the daemon does at its start: ask every head's list, start the heads, then start both roster loops. */
+    /** What the daemon does at its start: ask every head's list, build each head's inputs as Daemon.start builds them
+     *  (HeadBuildInputs.providerContext, so the head reads the roster through the daemon's own wrapper), start the
+     *  heads, then start both roster loops. The legacy knobs are off: they would point the head at the real backend. */
     suspend fun start() {
         rosters.resolve(heads)
-        val ctx = ProviderBuild(
-            key = CODEX_HEAD,
-            head = head,
-            providerCfg = provider,
-            catalog = provider.catalogFor(head, discovered = rosters.forHead(CODEX_HEAD)),
-            faultPlan = UpstreamFaultPlan(
-                watchdog = WatchdogBudget(10.seconds, 10.seconds, 30.seconds),
-                loginCommand = "",
-            ),
-            cfg = config.getConfig(CODEX_HEAD),
-            roster = PublishedRoster(discovered = rosters),
-        )
+        val ctx = inputs.providerContext(CODEX_HEAD, head, provider, legacyKnobsGovern = false)
         val assembled = factory().assembleHead(windows.attach(ctx, false), 0)
         managed = assembled
         assembled.head.start()

@@ -38,7 +38,9 @@
 // answer stops that work (PR #247's fifth review). One holding a feedback draft the person has not sent, before the
 // move or once it stopped the turn: Claude Code 2.1.310 answers `/exit` with "You have 1 unsent feedback draft · Enter
 // to review & send · Esc to discard and exit", and sending or discarding it is the person's call (FeedbackDrafts; Oct
-// 27, 08:30 CT, a relaunch left a session sitting at that question). One already on that command
+// 27, 08:30 CT, a relaunch left a session sitting at that question). The draft is named before anything else that
+// keeps a running session where it is, a turn, a question, background shells or no splice command, since it alone
+// waits on the person whatever else holds the session. One already on that command
 // with no other model picked; another model on the same command is a move like any other (p176: his Opus week is
 // spent and Fable on the same plan has room).
 // One splice cannot reach (the refusals SessionDrive gives). One whose prompt holds words he has not sent: `/exit`
@@ -145,7 +147,8 @@ public class SessionContinue(
      *  turn key a rotation strands, and the launch its own command makes reads the new one through the helper. A
      *  relaunch is splice's, never his, so it stops nothing: a working session is refused until its turn ends, one
      *  running background shells until they end, and one waiting on an answer, holding words he has not sent or
-     *  holding a feedback draft the person has not sent is refused as a move is. */
+     *  holding a feedback draft the person has not sent is refused as a move is. A draft is what the refusal names
+     *  whatever else holds the session. */
     public suspend fun relaunch(session: String): JsonReply = moving(session, clear = false, Wanted.Relaunch)
 
     public suspend fun move(session: String, head: String, model: String?, clear: Boolean = false): JsonReply =
@@ -201,12 +204,13 @@ public class SessionContinue(
             return planOnto(session, record, head, model)
         }
 
-        /** A relaunch: [session]'s running client, started again as it was started, only between its turns. */
+        /** A relaunch: [session]'s running client, started again as it was started, only between its turns. A draft it
+         *  holds is named before anything else that leaves it where it is ([draftHeld]). */
         fun relaunch(session: String): Plan {
             val record = live(session)
-            val head = record?.head
-            return when {
-                record == null -> Plan.Refused(Refusals.reply(HttpStatusCode.NotFound, "no running session: $session"))
+                ?: return Plan.Refused(Refusals.reply(HttpStatusCode.NotFound, "no running session: $session"))
+            val head = record.head
+            return draftHeld(record) ?: when {
                 head == null -> refused(RELAUNCH_NO_HEAD, Refusal.HEAD_UNKNOWN)
                 record.status.state in busy -> refused(RELAUNCH_WORKING, Refusal.WORKING)
                 // its /exit would ask him whether to stop that work, and a relaunch stops nothing of his
@@ -241,10 +245,10 @@ public class SessionContinue(
             }
         }
 
-        /** [record] moved onto [head] and [model], or why not now: its client cannot be ended now ([notNow]), or the
-         *  command cannot start. */
+        /** [record] moved onto [head] and [model], or why not now: it holds a feedback draft ([draftHeld]), its client
+         *  cannot be ended now ([notNow]), or the command cannot start. */
         private fun planOnto(session: String, record: SessionRecord, head: String, model: String?): Plan {
-            notNow(record)?.let { return it }
+            (draftHeld(record) ?: notNow(record))?.let { return it }
             val running = record.availability != SessionAvailability.GONE
             return when (val command = commands.forHead(head)) {
                 is StartCommand.Refused -> refused(command.reason)
@@ -270,14 +274,22 @@ public class SessionContinue(
         private fun folder(record: SessionRecord): String =
             record.process.cwd?.takeIf { Files.isDirectory(Path.of(it)) } ?: home.toString()
 
+        /** Why a running [record] is left where it is before anything else is weighed, or null: it holds a feedback
+         *  draft the person has not sent, which its `/exit` would ask them to send or discard. That is theirs to do
+         *  whatever else holds the session, a turn, a question, background shells or no splice command, so the
+         *  refusal names the draft (Oct 27, 2026). A client that has gone is asked nothing. */
+        private fun draftHeld(record: SessionRecord): Plan? = when {
+            record.availability == SessionAvailability.GONE -> null
+            drive.feedback.unsent(record) -> refused(FEEDBACK_UNSENT, Refusal.FEEDBACK)
+            else -> null
+        }
+
         /** Why a running [record]'s client cannot be ended now, or null: its `/exit` would land in a question, about
-         *  an answer it waits on, about the background shells it runs, whose focused answer stops them, or about a
-         *  feedback draft the person has not sent, whose sending or discarding is theirs. */
+         *  an answer it waits on or about the background shells it runs, whose focused answer stops them. */
         private fun notNow(record: SessionRecord): Plan? = when {
             record.availability == SessionAvailability.GONE -> null
             record.status.waitingFor != null -> refused("it is waiting on an answer; answer it before moving it")
             record.status.state == RUNNING_SHELLS -> refused(MOVE_BACKGROUND, Refusal.WORKING)
-            drive.feedback.unsent(record) -> refused(FEEDBACK_UNSENT, Refusal.FEEDBACK)
             else -> null
         }
 
@@ -320,6 +332,13 @@ public class SessionContinue(
             override fun check(): JsonReply? = changed(move, ask) ?: live(move.session).let { now ->
                 val state = now?.status?.state
                 when {
+                    // a draft written since the plan, such as one the model wrote in the turn the move stopped: the
+                    // person's to send or discard, whatever else holds the session now, so it is named first
+                    now != null && drive.feedback.unsent(now) -> Refusals.reply(
+                        HttpStatusCode.Conflict,
+                        "$FEEDBACK_HELD, so nothing was started on ${move.head}",
+                        Refusal.FEEDBACK,
+                    )
                     // working now, on a turn the move did not stop: one the person started in the terminal itself,
                     // which splice's count does not see. A turn the move stopped already reads stopped here
                     // (RegistryHandover).
@@ -333,12 +352,6 @@ public class SessionContinue(
                         HttpStatusCode.Conflict,
                         "it has background work its /exit would stop, so nothing was started on ${move.head}",
                         Refusal.WORKING,
-                    )
-                    // a draft written since the plan, such as one the model wrote in the turn the move stopped
-                    now != null && drive.feedback.unsent(now) -> Refusals.reply(
-                        HttpStatusCode.Conflict,
-                        "$FEEDBACK_HELD, so nothing was started on ${move.head}",
-                        Refusal.FEEDBACK,
                     )
                     ask.clear -> null
                     else -> drive.drafted(move.session)

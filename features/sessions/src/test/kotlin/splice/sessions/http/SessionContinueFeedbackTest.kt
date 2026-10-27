@@ -12,6 +12,7 @@ import io.ktor.http.HttpStatusCode
 import kotlinx.coroutines.runBlocking
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.jsonPrimitive
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertTrue
@@ -110,6 +111,14 @@ class SessionContinueFeedbackTest {
         Files.writeString(file, Files.readString(file).replace(""""status":"busy",""", ""))
     }
 
+    /** The lead's client rewrites its registration's status, as Claude Code does when its state changes: "busy" in a
+     *  turn, "shell" idle at its prompt with background shells running. */
+    private fun leadIs(status: String) {
+        val file = rig.tmp.resolve("sessions/1.json")
+        val row = rig.json(Files.readString(file)) - "status" + ("status" to JsonPrimitive(status))
+        Files.writeString(file, JsonObject(row).toString())
+    }
+
     /** A feedback draft as Claude Code 2.1.310 writes one: from [session], "queued" in [status] until it is sent. */
     private fun draftText(session: String, status: String): String =
         """{"type":"bug","title":"a tool call failed","details":"the edit did not apply",""" +
@@ -191,6 +200,34 @@ class SessionContinueFeedbackTest {
         assertTrue(terminal.opened.isEmpty() && arrived.isEmpty(), "nothing is started")
     }
 
+    // A turn the move stopped can leave more than a draft: background shells still running, or a turn the person
+    // started in the terminal before the move's turn in the pane came. Whatever else holds the session, the draft is
+    // the person's to send or discard, so the refusal names it, and no /exit is typed.
+    @Test
+    fun `whatever a stopped turn leaves beside a feedback draft, the refusal names the draft and no exit is typed`() {
+        panes.remember(LEAD, leadPane)
+        for (left in listOf("shell", "busy")) {
+            configFolder = Files.createDirectories(tmp.resolve("folders/$left"))
+            leadIs("busy")
+            stoppedTo = {
+                leadIs(left)
+                keepDraft(draftText(LEAD, "queued"))
+            }
+            val pressed = terminal.pressed.size
+
+            val reply = move(LEAD, """{"head":"codex"}""")
+
+            assertEquals(HttpStatusCode.Conflict, reply.status, "left $left: ${reply.body}")
+            val body = rig.json(reply.body)
+            assertEquals("feedback", body.getValue("reason").jsonPrimitive.content, "left $left: $body")
+            assertTrue(HOLDS_FEEDBACK in body.getValue("error").jsonPrimitive.content, "left $left: $body")
+            val stopped = terminal.pressed.drop(pressed).map { it.second }
+            assertEquals(listOf(SessionKey.STOP), stopped, "left $left: only the turn it was pressed on stops")
+        }
+        assertTrue(terminal.sent.isEmpty(), "no /exit lands in the feedback question")
+        assertTrue(terminal.opened.isEmpty() && arrived.isEmpty(), "nothing is started")
+    }
+
     // A head's seats share its config folder, and it holds whatever Claude Code left there: every seat's drafts, drafts
     // already sent or discarded, and on Oct 27 one file cut off mid-way. Only a draft of the session's own that has not
     // been sent holds it: every other file, whatever it holds, leaves its relaunch free to go on.
@@ -220,5 +257,43 @@ class SessionContinueFeedbackTest {
         }
         assertTrue(held in 1 until 200, "the folders drawn hold the lead and leave it alike: $held of 200 held it")
         assertTrue(terminal.sent.isEmpty() && terminal.pressed.isEmpty(), "nothing is typed into its pane")
+    }
+
+    // Continue on reads the same folder, whatever Claude Code left there. Only a draft of the session's own that has
+    // not been sent holds it; past every other file its client is given /exit and it goes on on the command picked.
+    @Test
+    fun `only a draft of its own that has not been sent holds a Continue on, whatever else its folder holds`() {
+        val random = Random(1028)
+        var held = 0
+        repeat(200) { run ->
+            // the lead at rest in the pane it runs in, as each move finds it
+            panes.remember(LEAD, leadPane)
+            terminal.live = true
+            configFolder = Files.createDirectories(tmp.resolve("folders/$run"))
+            val files = List(random.nextInt(0, 6)) { anyDraftFile(random) }
+            files.forEach { (text, _) -> keepDraft(text) }
+            val holds = files.any { (_, own) -> own }
+            val typed = terminal.sent.size
+            val started = terminal.opened.size
+
+            val reply = move(LEAD, """{"head":"codex"}""")
+
+            val shown = "${files.map { it.first }}: ${reply.body}"
+            if (holds) {
+                held++
+                assertEquals(HttpStatusCode.Conflict, reply.status, shown)
+                assertEquals("feedback", rig.json(reply.body).getValue("reason").jsonPrimitive.content, shown)
+                assertTrue(HOLDS_FEEDBACK in rig.json(reply.body).getValue("error").jsonPrimitive.content, shown)
+                assertEquals(typed, terminal.sent.size, "nothing is typed into its pane: $shown")
+                assertEquals(started, terminal.opened.size, "nothing is started: $shown")
+            } else {
+                assertEquals(HttpStatusCode.OK, reply.status, "it went on: $shown")
+                assertEquals(listOf(leadPane to "/exit"), terminal.sent.drop(typed), "its client left on /exit: $shown")
+                val resumed = terminal.opened.drop(started).map { it.command }
+                assertEquals(listOf(listOf("claude-codex", "-r", LEAD)), resumed, "and went on on codex: $shown")
+            }
+        }
+        assertTrue(held in 1 until 200, "the folders drawn hold the lead and leave it alike: $held of 200 held it")
+        assertTrue(terminal.pressed.isEmpty(), "nothing is pressed: a client at rest has no turn to stop")
     }
 }

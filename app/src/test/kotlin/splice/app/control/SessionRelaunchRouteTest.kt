@@ -88,6 +88,16 @@ private const val LEADER = "5e1a0003-0000-4000-8000-000000000003"
 /** A seat beside [SEAT] in one config folder, as the seats of the claudex head share ~/.claude-claudex. */
 private const val NEIGHBOR = "5e1a0004-0000-4000-8000-000000000004"
 
+/** Seats in that folder holding a feedback draft they have not sent, each held otherwise too: in its turn, running
+ *  background shells, waiting on an answer, and on no splice command. */
+private const val IN_TURN = "5e1a0005-0000-4000-8000-000000000005"
+private const val SHELLS = "5e1a0006-0000-4000-8000-000000000006"
+private const val ASKING = "5e1a0007-0000-4000-8000-000000000007"
+private const val OUTSIDE = "5e1a0008-0000-4000-8000-000000000008"
+
+/** A registration's status at rest at its prompt, as Claude Code writes it. */
+private const val AT_REST = """"status":"idle""""
+
 /** What a refusal for a feedback draft that has not been sent says, in the daemon's reply and the CLI's line. */
 private const val HOLDS_FEEDBACK = "holds a feedback draft that has not been sent"
 
@@ -111,6 +121,9 @@ class SessionRelaunchRouteTest {
 
     /** The pids that run, as the registry and the terminal see them. */
     private val alive = ConcurrentHashMap.newKeySet<Long>()
+
+    /** The pids whose sessions talk to their provider directly, on no splice command; every other runs on [HEAD]. */
+    private val direct = ConcurrentHashMap.newKeySet<Long>()
     private var nextPid = FIRST_PID + 1_000
     private val terminal = RecordingTerminal()
     private val panes = KnownPanes()
@@ -335,7 +348,89 @@ class SessionRelaunchRouteTest {
         }
     }
 
+    // A session holding a draft can be held otherwise too: in its turn, running background shells, waiting on an
+    // answer, or on no splice command at all. Whatever else holds it, sending or discarding the draft is the person's,
+    // so a relaunch and a Continue on each refuse it for that draft, and type nothing into it.
+    @Test
+    fun `whatever else holds a session, a relaunch or a move names the feedback draft it has not sent`() {
+        val folder = home.resolve(".claude-claudex")
+        serve { daemon ->
+            val holders = startHeldOtherwise(folder, key = null) + (OUTSIDE to startOutside())
+
+            for (session in holders.keys) {
+                val relaunched = daemon.relaunch(session)
+                val moved = daemon.move(session, """{"head":"$HEAD","model":"claude-opus-5"}""")
+                for ((act, reply) in listOf("relaunch" to relaunched, "move" to moved)) {
+                    val (status, body) = reply
+                    assertEquals(HttpStatusCode.Conflict, status, "$act of $session: $body")
+                    assertEquals("feedback", said(body, "reason"), "$act of $session: $body")
+                    assertTrue(HOLDS_FEEDBACK in said(body, "error").orEmpty(), "$act of $session says why: $body")
+                }
+            }
+            assertTrue(terminal.sent.isEmpty(), "nothing is typed into a holder's pane: ${terminal.sent}")
+            assertTrue(terminal.held.isEmpty(), "no holder's pane is kept for a restart: ${terminal.held}")
+            assertTrue(terminal.opened.isEmpty() && terminal.restarted.isEmpty(), "nothing is started")
+            holders.forEach { (session, pane) -> assertEquals(pane, panes.paneFor(session), "$session stays") }
+        }
+    }
+
+    // On Oct 27 three sessions due for a relaunch held queued drafts, and a session holding one may be in its turn,
+    // running background shells or waiting on an answer too. The run names the draft of each, and still relaunches
+    // every other session.
+    @Test
+    fun `splice sessions relaunch names each holder's draft whatever else holds it, and goes on with the others`() {
+        val folder = home.resolve(".claude-claudex")
+        serve { daemon ->
+            val key = TurnKey(MgmtKey(paths)).get()
+            val neighbor = startSeat(folder, NEIGHBOR, FIRST_PID + 3, key)
+            val holders = startHeldOtherwise(folder, key)
+
+            val (exit, lines) = daemon.relaunchAll()
+
+            val relaunched = lines.indexOfFirst { NEIGHBOR in it && "relaunched" in it }
+            for (session in holders.keys) {
+                val left = lines.indexOfFirst { session in it && "left" in it }
+                assertTrue(left >= 0 && HOLDS_FEEDBACK in lines[left], "$session is named with its draft: $lines")
+                assertTrue(relaunched > left, "and the run goes on to the neighbor, which is relaunched: $lines")
+            }
+            assertEquals(listOf(neighbor to "/exit"), terminal.sent, "nothing is typed into a holder's pane")
+            holders.forEach { (session, pane) -> assertEquals(pane, panes.paneFor(session), "$session stays") }
+            assertEquals(1, exit, "a session left where it is fails the run, so it is run again: $lines")
+        }
+    }
+
     // ── the rig ──────────────────────────────────────────────────────────────────────────────────────────────
+
+    /** Seats in [folder], each holding a feedback draft it has not sent and held otherwise too: [IN_TURN] in its turn,
+     *  [SHELLS] running background shells and [ASKING] waiting on an answer, each holding the turn [key] when one is
+     *  given. They wrote their registrations after every seat started before them, so a run comes to them first. Each
+     *  with the pane it runs in. */
+    private fun startHeldOtherwise(folder: Path, key: String?): Map<String, SessionPane> {
+        val states = listOf(
+            IN_TURN to """"status":"busy"""",
+            SHELLS to """"status":"shell"""",
+            ASKING to """"status":"waiting","waitingFor":"permission prompt"""",
+        )
+        return states.withIndex().associate { (n, held) ->
+            val (session, state) = held
+            val pid = FIRST_PID + 5 + n
+            val pane = startSeat(folder, session, pid, key)
+            register(session, pid, at = System.currentTimeMillis() + 60_000, state = state)
+            feedbackDraft(folder, session, "queued")
+            session to pane
+        }
+    }
+
+    /** [OUTSIDE]: plain `claude` started from his own shell in his own ~/.claude, on no splice command, at rest at its
+     *  prompt and holding a feedback draft it has not sent. */
+    private fun startOutside(): SessionPane {
+        val pid = FIRST_PID + 8
+        direct += pid
+        val own = home.resolve(".claude")
+        val pane = start(OUTSIDE, pid, listOf(realClaude.toString()), environ = listOf("HOME=$home"), transcripts = own)
+        feedbackDraft(own, OUTSIDE, "queued")
+        return pane
+    }
 
     /** The folder [session] runs in. */
     private fun cwd(session: String): Path = Files.createDirectories(home.resolve("work").resolve(session.take(8)))
@@ -367,12 +462,13 @@ class SessionRelaunchRouteTest {
         return pane
     }
 
-    /** Claude Code's registration of [session] as [pid], at rest at its prompt, written [at] that moment. */
-    private fun register(session: String, pid: Long, at: Long = System.currentTimeMillis()) {
+    /** Claude Code's registration of [session] as [pid], written [at] that moment, its status fields reading [state]:
+     *  at rest at its prompt unless another is named. */
+    private fun register(session: String, pid: Long, at: Long = System.currentTimeMillis(), state: String = AT_REST) {
         alive += pid
         Files.writeString(
             sessionsDir.resolve("$pid.json"),
-            """{"pid":$pid,"sessionId":"$session","cwd":"${cwd(session)}","status":"idle","updatedAt":$at}""",
+            """{"pid":$pid,"sessionId":"$session","cwd":"${cwd(session)}",$state,"updatedAt":$at}""",
         )
     }
 
@@ -445,7 +541,7 @@ class SessionRelaunchRouteTest {
 
     private fun registry(): SessionRegistry = SessionRegistry(
         sessionsDir = sessionsDir,
-        routeOf = RouteOfPid { SessionRoute.Head(HEAD) },
+        routeOf = RouteOfPid { pid -> if (pid in direct) SessionRoute.Direct else SessionRoute.Head(HEAD) },
         pidAlive = PidAlive { it in alive },
     )
 

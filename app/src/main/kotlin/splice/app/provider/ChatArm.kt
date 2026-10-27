@@ -9,6 +9,7 @@ package splice.app.provider
 import kotlinx.coroutines.CoroutineScope
 import splice.core.auth.Credentials
 import splice.core.topology.AuthKind
+import splice.core.topology.ProviderConfig
 import splice.core.util.LogSink
 import splice.dialect.chat.SlotAffinity
 import splice.oauth.grok.GrokRefresh
@@ -19,6 +20,7 @@ import splice.upstream.Provider
 import splice.upstream.ProviderLocations
 import splice.upstream.ProviderName
 import splice.upstream.ProviderTuning
+import splice.upstream.failure.Replies
 import java.nio.file.Paths
 
 internal class ChatArm(
@@ -69,11 +71,20 @@ internal class ChatArm(
             quirks = overlay.chatQuirks(providerCfg, key, label),
             display = { ctx.cfg.current().showReasoning },
             affinity = slotAffinity(ctx, (auth as? ApiKeyAuthProvider)?.keyNow()),
+            replies = chatReplies(providerCfg),
         )
         val configured = providerCfg.staticHeaders.takeIf { it.isNotEmpty() }
             ?.let { StaticChatHeaders(provider, it) }
             ?: provider
         return Wired(configured, auth, accounts)
+    }
+
+    /** How this head reads its own failures, one line per head: a local runtime's own shapes, xAI's dead token
+     *  where the head signs in with xAI's own login, and the Chat standard for every other vendor. */
+    private fun chatReplies(providerCfg: ProviderConfig): Replies = when {
+        providerCfg.isLocal -> HeadReplies.localChat
+        providerCfg.auth.kind == GROK_OAUTH -> HeadReplies.grokChat
+        else -> HeadReplies.chat
     }
 
     /** V4-165: opted in by [providers.<key>.quirks] slot_affinity = true. The slot count comes from the

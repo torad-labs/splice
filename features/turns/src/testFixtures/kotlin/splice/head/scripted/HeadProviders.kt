@@ -17,10 +17,12 @@ import splice.dialect.chat.ChatStreamTranslator
 import splice.dialect.chat.ChatSystemPrompt
 import splice.dialect.chat.ChatTurnContext
 import splice.dialect.chat.ID_SLOT_FIELD
+import splice.dialect.chat.failure.ChatReplies
 import splice.dialect.responses.ReasoningSettings
 import splice.dialect.responses.ResponsesLiteQuirks
 import splice.dialect.responses.ResponsesProvider
 import splice.dialect.responses.ResponsesQuirks
+import splice.dialect.responses.failure.ResponsesReplies
 import splice.upstream.BuiltTurn
 import splice.upstream.Provider
 import splice.upstream.ProviderIdentity
@@ -29,6 +31,7 @@ import splice.upstream.ReanchorPolicy
 import splice.upstream.StreamTranslator
 import splice.upstream.TurnEnd
 import splice.upstream.TurnSignals
+import splice.upstream.failure.Replies
 
 /**
  * A Chat Completions head: the assembly OpenAiChatProvider makes from the chat dialect (its request builder,
@@ -38,6 +41,9 @@ import splice.upstream.TurnSignals
 internal class ScriptedChatProvider(
     tuning: ProviderTuning,
     quirks: ChatQuirks,
+    /** How this head reads its own failures, as its arm's head would: the Chat standard unless a test names a
+     *  vendor's deviation (failure-handling slice 3). */
+    override val replies: Replies = Replies(ChatReplies),
 ) : Provider, ProviderIdentity by tuning {
     override val upstreamUrl: String = "${tuning.locations.baseUrl}/chat/completions"
     override val replayReasoning: Boolean = false
@@ -84,11 +90,15 @@ internal class ScriptedResponsesProvider(
     tuning: ProviderTuning,
     private val webSocket: Boolean,
     log: LogSink,
+    /** How this head reads its own failures, as its arm's head would: the Responses standard unless a test names a
+     *  vendor's deviation (failure-handling slice 3). */
+    replies: Replies = Replies(ResponsesReplies),
 ) : ResponsesProvider(
     tuning,
     ReasoningSettings(ReasoningDisplay.TEXT, replay = false, effort = "high", summary = "detailed"),
     ResponsesQuirks(providerTag = tuning.key, lite = ResponsesLiteQuirks()).withWebSocketToml(webSocket),
     log = log,
+    replies = replies,
 ) {
     override val supportsWebSocket: Boolean get() = webSocket
 }

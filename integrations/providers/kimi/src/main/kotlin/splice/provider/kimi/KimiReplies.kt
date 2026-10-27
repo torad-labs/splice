@@ -31,7 +31,7 @@ import splice.upstream.failure.ReplyFacts
  * retried turns recovered (audit-maps.md:1078). It reads as Limited with the FIVE_HOUR window, at the lift the reply
  * states, which is none.
  */
-internal object KimiReplies : ProviderDeviation {
+public object KimiReplies : ProviderDeviation {
     private val oauth = KimiOAuth()
 
     override fun http(reply: FailedReply): FailureCause.Provider? = when {

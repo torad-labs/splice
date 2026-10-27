@@ -36,7 +36,7 @@ import splice.upstream.failure.ReplyFacts
  * A model the runtime does not hold answers "try pulling it first" until the person pulls or loads it, which outlasts
  * any retry curve.
  */
-internal object LocalRuntimeReplies : ProviderDeviation {
+public object LocalRuntimeReplies : ProviderDeviation {
     override fun http(reply: FailedReply): FailureCause.Provider? =
         row(errorObject(reply.body), ReplyFacts.retryAfterLift(reply) ?: Lift.Unstated)
 

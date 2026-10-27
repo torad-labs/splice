@@ -19,6 +19,7 @@ import splice.dialect.chat.ChatSystemPrompt
 import splice.dialect.chat.ChatTurnContext
 import splice.dialect.chat.ID_SLOT_FIELD
 import splice.dialect.chat.SlotAffinity
+import splice.dialect.chat.failure.ChatReplies
 import splice.upstream.BuiltTurn
 import splice.upstream.Provider
 import splice.upstream.ProviderIdentity
@@ -27,6 +28,7 @@ import splice.upstream.ReanchorPolicy
 import splice.upstream.StreamTranslator
 import splice.upstream.TurnEnd
 import splice.upstream.TurnSignals
+import splice.upstream.failure.Replies
 
 public class OpenAiChatProvider(
     private val tuning: ProviderTuning,
@@ -35,6 +37,9 @@ public class OpenAiChatProvider(
     private val display: ReasoningDisplayNow = ReasoningDisplayNow { ReasoningDisplay.TEXT },
     /** V4-165: set only for a provider with slot_affinity (a llama-server runtime). */
     affinity: SlotAffinity? = null,
+    /** This head's reading of its own failures: the Chat standard, and the deviation its arm declared (a local
+     *  runtime's own shapes, xAI's expired token). */
+    override val replies: Replies = Replies(ChatReplies),
 ) : Provider, ProviderIdentity by tuning {
 
     override val upstreamUrl: String = "${tuning.locations.baseUrl}/chat/completions"

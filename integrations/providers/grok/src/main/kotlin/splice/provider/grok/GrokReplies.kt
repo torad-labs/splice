@@ -21,7 +21,7 @@ import splice.upstream.failure.ProviderDeviation
  * the login once, as a 401 does, unless GrokForbidden finds the token demonstrably fresh, and a renewed login xAI still
  * refuses ends as a rejected login in xAI's words. A plan or billing 403 says none of these words and stays Forbidden.
  */
-internal object GrokReplies : ProviderDeviation {
+public object GrokReplies : ProviderDeviation {
     override fun http(reply: FailedReply): FailureCause.Provider? = reply.takeIf(::deadCredential)
         ?.let { FailureCause.Provider.AuthRejected(it.owner, ErrorMessage.said(it.body)) }
 

@@ -22,6 +22,7 @@ import splice.core.turn.TurnReasoning
 import splice.core.turn.TurnRoute
 import splice.core.turn.Usage
 import splice.core.turn.WatchdogBudget
+import splice.dialect.chat.failure.ChatReplies
 import splice.head.HeadHealthCounters
 import splice.head.admission.admittedSlot
 import splice.head.headDeps
@@ -42,6 +43,7 @@ import splice.upstream.RetryBackoff
 import splice.upstream.RoundResult
 import splice.upstream.StreamTranslator
 import splice.upstream.TurnSignals
+import splice.upstream.failure.Replies
 import splice.upstream.retry.InflightGate
 import java.nio.file.Path
 import java.util.concurrent.atomic.AtomicBoolean
@@ -143,6 +145,7 @@ private class SerializationProvider :
     override val upstreamUrl = "http://synthetic.invalid"
     override val showReasoning = ReasoningDisplay.OFF
     override val replayReasoning = false
+    override val replies = Replies(ChatReplies)
 
     override fun buildTurn(body: AnthropicTurnBody, compact: Boolean, sessionId: String?): BuiltTurn =
         error("the fixture starts with an already-built request")

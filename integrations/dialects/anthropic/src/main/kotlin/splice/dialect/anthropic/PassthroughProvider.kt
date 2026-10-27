@@ -18,6 +18,7 @@ import splice.core.parse.AnthropicTurnBody
 import splice.core.prompt.SystemPromptMode
 import splice.core.turn.ReasoningDisplay
 import splice.core.turn.TurnMeta
+import splice.dialect.anthropic.failure.AnthropicReplies
 import splice.upstream.BuiltTurn
 import splice.upstream.Provider
 import splice.upstream.ProviderIdentity
@@ -26,6 +27,7 @@ import splice.upstream.ReanchorPolicy
 import splice.upstream.StreamTranslator
 import splice.upstream.ToolNameShortener
 import splice.upstream.TurnSignals
+import splice.upstream.failure.Replies
 
 public class PassthroughProvider(
     private val tuning: ProviderTuning,
@@ -42,6 +44,9 @@ public class PassthroughProvider(
      *  — a turn that sends `thinking` without a budget keeps the wire-frozen EFFORT_MAX regardless
      *  (KIMI BYTE-IDENTITY). */
     private val configEffort: String? = null,
+    /** This head's reading of its own failures: the Anthropic standard, and a vendor's deviation where its arm
+     *  declared one (Kimi's plan tier and its named 5-hour window). */
+    override val replies: Replies = Replies(AnthropicReplies),
 ) : Provider, ProviderIdentity by tuning {
 
     // baseUrl carries no /v1 (topology supplies the host root); the Messages path is /v1/messages.

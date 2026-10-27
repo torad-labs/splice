@@ -12,6 +12,7 @@ import splice.upstream.Provider
 import splice.upstream.ProviderLocations
 import splice.upstream.ProviderName
 import splice.upstream.ProviderTuning
+import splice.upstream.failure.Replies
 
 /** The headers a passthrough head presents: the provider's defaults [base] (overridden by an operator's TOML) and,
  *  for Kimi only, the runtime device [identity]. */
@@ -29,7 +30,11 @@ internal class PassthroughHeaders(
  * The anthropic-passthrough construction site: the dialect's ONE provider fed effective quirks and
  * headers selected by assembly then overlaid by TOML, plus optional Kimi runtime identity.
  */
-internal class PassthroughAssembly {
+internal class PassthroughAssembly(
+    /** How the heads this assembly builds read their own failures: one arm's reading, declared by that arm
+     *  (Kimi's own, the Anthropic standard for a generic vendor). */
+    private val replies: Replies = HeadReplies.anthropic,
+) {
     private val quirksOverlay = QuirksOverlay()
 
     /** The dialect's ONE provider, fed assembly-selected data: TOML quirks overlaid on the head's
@@ -55,5 +60,6 @@ internal class PassthroughAssembly {
         identityHeaders = headers.identity,
         // PT-002/v27: same session-stable effort proxy ResponsesProvider threads as configEffort.
         configEffort = ctx.cfg.effort,
+        replies = replies,
     )
 }

@@ -43,7 +43,7 @@ import java.time.Instant
  * websocket_connection_limit_reached is the backend's own capacity, so the round waits and comes back, rather than
  * ending as the rate limit its type spells.
  */
-internal object CodexReplies : ProviderDeviation {
+public object CodexReplies : ProviderDeviation {
     private val planLimits = CodexPlanLimitBody()
 
     override fun http(reply: FailedReply): FailureCause.Provider? {

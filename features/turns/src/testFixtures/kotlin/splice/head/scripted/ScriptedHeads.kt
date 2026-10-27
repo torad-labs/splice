@@ -16,7 +16,10 @@ import splice.core.turn.WatchdogBudget
 import splice.core.util.LogSink
 import splice.dialect.anthropic.PassthroughProvider
 import splice.dialect.anthropic.PassthroughQuirks
+import splice.dialect.anthropic.failure.AnthropicReplies
 import splice.dialect.chat.ChatQuirks
+import splice.dialect.chat.failure.ChatReplies
+import splice.dialect.responses.failure.ResponsesReplies
 import splice.head.HeadDeps
 import splice.head.HeadServer
 import splice.head.awaitListening
@@ -28,6 +31,7 @@ import splice.upstream.ProviderLocations
 import splice.upstream.ProviderName
 import splice.upstream.ProviderTuning
 import splice.upstream.Waiter
+import splice.upstream.failure.Replies
 import splice.upstream.retry.InflightGate
 import splice.upstream.transport.RetryPacing
 import splice.upstream.transport.UpstreamClient
@@ -207,18 +211,35 @@ public class ScriptedHeads(private val tmp: Path, public val time: VirtualTime) 
     private val heads = CopyOnWriteArrayList<ScriptedHead>()
     private val built = AtomicInteger()
 
-    /** An Anthropic Messages passthrough head. */
-    public suspend fun anthropic(shape: HeadShape = HeadShape()): ScriptedHead =
-        head("anthropic", shape) { tuning, _ -> PassthroughProvider(tuning, PassthroughQuirks(tuning.key)) }
+    /** An Anthropic Messages passthrough head. [replies] is how it reads its own failures: a vendor's own reading
+     *  (Kimi's) where a test names one, and the Anthropic standard otherwise. */
+    public suspend fun anthropic(
+        shape: HeadShape = HeadShape(),
+        replies: Replies = Replies(AnthropicReplies),
+    ): ScriptedHead =
+        head("anthropic", shape) { tuning, _ ->
+            PassthroughProvider(tuning, PassthroughQuirks(tuning.key), replies = replies)
+        }
 
     /** An OpenAI Chat Completions head on a hosted vendor's profile. */
-    public suspend fun chat(shape: HeadShape = HeadShape(), says: HeadSays = HeadSays()): ScriptedHead =
-        head("chat", shape, says = says) { tuning, _ -> ScriptedChatProvider(tuning, ChatQuirks(tuning.key)) }
+    public suspend fun chat(
+        shape: HeadShape = HeadShape(),
+        says: HeadSays = HeadSays(),
+        replies: Replies = Replies(ChatReplies),
+    ): ScriptedHead =
+        head("chat", shape, says = says) { tuning, _ -> ScriptedChatProvider(tuning, ChatQuirks(tuning.key), replies) }
 
     /** An OpenAI Chat Completions head on a local runtime's profile: usage in the stream, reasoning replayed. */
-    public suspend fun localChat(shape: HeadShape = HeadShape()): ScriptedHead =
+    public suspend fun localChat(
+        shape: HeadShape = HeadShape(),
+        replies: Replies = Replies(ChatReplies),
+    ): ScriptedHead =
         head(LOCAL_KIND, shape) { tuning, _ ->
-            ScriptedChatProvider(tuning, ChatQuirks(tuning.key).withStreamUsageToml(true).withReplayReasoning(true))
+            ScriptedChatProvider(
+                tuning,
+                ChatQuirks(tuning.key).withStreamUsageToml(true).withReplayReasoning(true),
+                replies,
+            )
         }
 
     /** An OpenAI Chat Completions head whose login is gone. */
@@ -235,12 +256,22 @@ public class ScriptedHeads(private val tmp: Path, public val time: VirtualTime) 
         }
 
     /** An OpenAI Responses head over HTTP. */
-    public suspend fun responses(shape: HeadShape = HeadShape()): ScriptedHead =
-        head("responses", shape) { tuning, log -> ScriptedResponsesProvider(tuning, webSocket = false, log) }
+    public suspend fun responses(
+        shape: HeadShape = HeadShape(),
+        replies: Replies = Replies(ResponsesReplies),
+    ): ScriptedHead =
+        head("responses", shape) { tuning, log ->
+            ScriptedResponsesProvider(tuning, webSocket = false, log, replies)
+        }
 
     /** An OpenAI Responses head whose rounds ride the websocket. */
-    public suspend fun responsesOverWebSocket(shape: HeadShape = HeadShape()): ScriptedHead =
-        head("responses-ws", shape) { tuning, log -> ScriptedResponsesProvider(tuning, webSocket = true, log) }
+    public suspend fun responsesOverWebSocket(
+        shape: HeadShape = HeadShape(),
+        replies: Replies = Replies(ResponsesReplies),
+    ): ScriptedHead =
+        head("responses-ws", shape) { tuning, log ->
+            ScriptedResponsesProvider(tuning, webSocket = true, log, replies)
+        }
 
     /** A head of [kind] whose provider [build] makes, for a provider this file does not build, such as a codex head. */
     public suspend fun custom(

@@ -14,6 +14,7 @@ import splice.core.turn.ReasoningDisplay
 import splice.core.turn.TurnMeta
 import splice.core.turn.TurnOutcome
 import splice.core.turn.WatchdogBudget
+import splice.upstream.failure.Replies
 import splice.upstream.sse.WireSink
 import splice.upstream.transport.UpstreamResponse
 import java.nio.file.Path
@@ -77,6 +78,12 @@ public interface Provider : ProviderIdentity {
     public val upstreamUrl: String
     public val showReasoning: ReasoningDisplay
     public val replayReasoning: Boolean
+
+    /** How this head reads a failure of its own: its API type's standard reader, this provider's declared deviation
+     *  before it, and the foreign-key rule every API type shares before both (failure-handling slice 3). Every
+     *  failure a reply, an event or the websocket carries is read once, here, so one head's reading never depends on
+     *  where in the pipeline the failure was noticed. */
+    public val replies: Replies
 
     /** The Anthropic-compatible client owns retry and fallback for a native rate-limit response. */
     public val relayRateLimitReplies: Boolean get() = false

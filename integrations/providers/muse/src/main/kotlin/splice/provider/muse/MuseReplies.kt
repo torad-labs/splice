@@ -34,7 +34,7 @@ import java.time.Instant
  * returned no credentials, so the turn ended as NoLogin and told the person to sign in, even where the account was
  * signed in and its subscription was inactive (MuseMintVerdict.kt:15-37).
  */
-internal object MuseReplies : ProviderDeviation {
+public object MuseReplies : ProviderDeviation {
     private val oauth = MuseOAuth()
 
     override fun http(reply: FailedReply): FailureCause.Provider? = when {
@@ -48,7 +48,7 @@ internal object MuseReplies : ProviderDeviation {
      *  Each verdict's hold is MuseMintHolds', and the cause says the same thing to the person: an inactive
      *  subscription says to renew it, a rate-limited mint is a soft limit until its hold ends, a denied mint is
      *  forbidden, and an account token the mint rejected is the rejected login it is. */
-    fun mintRefusal(attempt: MuseMintAttempt, nowMs: Long): FailureCause.Provider? = when (attempt) {
+    internal fun mintRefusal(attempt: MuseMintAttempt, nowMs: Long): FailureCause.Provider? = when (attempt) {
         is MuseMintAttempt.Granted -> null
         MuseMintAttempt.InvalidAccountToken -> FailureCause.Provider.AuthRejected(LoginOwner.SPLICE)
         is MuseMintAttempt.SubscriptionRequired ->

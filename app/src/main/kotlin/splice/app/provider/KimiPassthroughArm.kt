@@ -26,7 +26,8 @@ internal class KimiPassthroughArm(
     log: LogSink,
     kimiRefresh: KimiRefresh = KimiRefresh(log),
 ) {
-    private val passthroughAssembly = PassthroughAssembly()
+    // Kimi reads two answers of its own (its plan tier, its named 5-hour window) before the Anthropic standard.
+    private val passthroughAssembly = PassthroughAssembly(HeadReplies.kimi)
     private val kimiOAuth = KimiOAuth(probeScope, log, kimiRefresh)
 
     internal fun kimiOauthProvider(ctx: ProviderBuild, label: String): Wired {

@@ -7,26 +7,26 @@ import splice.core.failure.FailureCause
 import java.time.Instant
 
 /** One step of a turn's recovery. */
-public sealed class RetryStep {
+internal sealed class RetryStep {
     /** Send again after [afterMs], in the way [how] names. */
-    public data class Again(val afterMs: Long, val how: How) : RetryStep()
+    data class Again(val afterMs: Long, val how: How) : RetryStep()
 
     /** Move the turn to another of the head's logins, before any content reached the client. */
-    public data object SwitchLogin : RetryStep()
+    data object SwitchLogin : RetryStep()
 
     /** Hold the turn until [until], or until a probe finds the cause lifted where no time was stated. Until slice 5
      *  brings holds, a hold step ends the turn at once with today's R wire and the interim line for its kind. */
-    public data class Hold(val until: Instant?, val probes: Probes) : RetryStep()
+    data class Hold(val until: Instant?, val probes: Probes) : RetryStep()
 
     /** End the turn as [cause]. */
-    public data class End(val cause: FailureCause) : RetryStep()
+    data class End(val cause: FailureCause) : RetryStep()
 
     /** The answer as received stands: only a cut round reaches it, once its continuations are spent. */
-    public data object Keep : RetryStep()
+    data object Keep : RetryStep()
 }
 
 /** How an [RetryStep.Again] sends the request again. */
-public enum class How {
+internal enum class How {
     /** The same request. */
     SAME,
 
@@ -48,4 +48,4 @@ public enum class How {
 
 /** What a hold probes while it waits: a firm reset, a soft one, nothing stated, or credit. NONE only for a hold with
  *  nothing to probe. */
-public enum class Probes { NONE, FIRM, SOFT_LIFT, UNSTATED, CREDIT }
+internal enum class Probes { NONE, FIRM, SOFT_LIFT, UNSTATED, CREDIT }

@@ -6,7 +6,7 @@ package splice.upstream.retry
 import splice.core.failure.FailureCause
 
 /** How a token exchange ended: renewed, refused for good, or failed in a way a later exchange can heal. */
-public enum class Exchange { RENEWED, REFUSED, UNAVAILABLE }
+internal enum class Exchange { RENEWED, REFUSED, UNAVAILABLE }
 
 /** The budgets a turn's steps spend, one count each (RetryBudgets). */
 internal enum class Spend {
@@ -15,7 +15,7 @@ internal enum class Spend {
 }
 
 /** What one turn has spent on its failures. Not thread-safe: a turn's posts and rounds run one at a time. */
-public class RetryLedger {
+internal class RetryLedger {
     private val spent = IntArray(Spend.entries.size)
     private val waitedMs = LongArray(Spend.entries.size)
     private val exchanges = mutableMapOf<String, Int>()

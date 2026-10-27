@@ -14,6 +14,7 @@ import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.io.TempDir
 import splice.app.provider.HeadReplies
+import splice.core.auth.RefreshCall
 import splice.dialect.anthropic.PassthroughProvider
 import splice.dialect.anthropic.PassthroughQuirks
 import splice.head.scripted.ClientAnswer
@@ -23,10 +24,13 @@ import splice.head.scripted.ProviderRequest
 import splice.head.scripted.ScriptedReply
 import splice.head.scripted.reply
 import splice.head.scripted.withScriptedHeads
+import splice.oauth.codex.CodexRefresh
+import splice.provider.codex.auth.CodexAuthProvider
 import java.nio.file.Path
 import java.time.Instant
 import java.time.ZoneOffset
 import java.time.format.DateTimeFormatter
+import kotlin.io.path.writeText
 import kotlin.time.Duration
 import kotlin.time.Duration.Companion.hours
 import kotlin.time.Duration.Companion.milliseconds
@@ -44,6 +48,7 @@ private const val STOPPED = "after Claude Code sent this turn again, so this tur
 /** Where the scripted virtual wall clock starts (VirtualTime's default). */
 private val START: Instant = Instant.parse("2026-10-26T12:00:00Z")
 
+private const val UNAUTHORIZED = 401
 private const val TOO_MANY_REQUESTS = 429
 private const val TEAPOT = 418
 private const val INTERNAL_SERVER_ERROR = 500
@@ -58,6 +63,13 @@ private const val KIMI_FIVE_HOUR =
     "You've reached your 5-hour usage limit. Your quota will reset when the current 5-hour window ends. " +
         "To continue now, purchase extra usage or upgrade your plan: " +
         "https://www.kimi.com/membership/subscription?tab=quota"
+
+/** Where the renewing head's login exchanges its refresh token: the scripted provider answers any path. */
+private const val TOKEN_PATH = "/oauth/token"
+
+/** A signed-in codex login whose opaque access token serves as it is until a refusal asks for a renewal. */
+private const val CODEX_LOGIN =
+    """{"tokens":{"access_token":"scripted-access","refresh_token":"scripted-refresh","account_id":"scripted"}}"""
 
 /** A Responses stream's own failure event for a server error. */
 private const val RESPONSES_SERVER_ERROR =
@@ -325,6 +337,35 @@ class OneEngineThroughHeadsTest {
             assertEquals(2, provider.requests.size, answer.describe())
             assertTrue("partial words" in provider.requests[1].body, "the re-anchor carries what arrived")
             assertEquals("partial words and the rest", answer.text, answer.describe())
+        }
+    }
+
+    @Test
+    fun `a token endpoint answering 503 is asked again after 2 s and 4 s, then the turn ends with the login line`(
+        @TempDir tmp: Path,
+    ) = runTest {
+        withScriptedHeads(tmp) {
+            provider.script(
+                reply { status(UNAUTHORIZED); anthropicErrorBody("authentication_error", "The access token expired.") },
+                reply { status(SERVICE_UNAVAILABLE); body("""{"error":"temporarily_unavailable"}""") },
+            )
+            val login = tmp.resolve("auth.json").also { it.writeText(CODEX_LOGIN) }
+            val head = custom("renewing") { tuning, log ->
+                val tokenUrl = provider.baseUrl + TOKEN_PATH
+                val auth = CodexAuthProvider(
+                    authPath = login,
+                    authCacheMs = 0,
+                    refreshCall = RefreshCall { CodexRefresh(log).refresh(tokenUrl, it) },
+                    log = log,
+                )
+                PassthroughProvider(tuning.copy(auth = auth), PassthroughQuirks(tuning.key))
+            }
+
+            val answer = head.client.send()
+
+            val exchanges = provider.requests.filter { it.path == TOKEN_PATH }
+            assertEquals(listOf(2.seconds, 4.seconds), gaps(exchanges), "three exchanges: ${answer.describe()}")
+            assertLine(answer, "login expired and could not be renewed")
         }
     }
 

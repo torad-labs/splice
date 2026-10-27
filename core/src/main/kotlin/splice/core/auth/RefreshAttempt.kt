@@ -18,9 +18,13 @@ public sealed class RefreshAttempt<out T> {
     /** 401/403, or an explicit `error":"invalid_grant"` body — the refresh token is confirmed dead. */
     public data class InvalidGrant(val detail: String) : RefreshAttempt<Nothing>()
 
-    /** Any other non-retryable rejection: missing access_token, an unrecognized status, or the
-     *  shared retry loop's attempts exhausted. NOT evidence the refresh token itself is dead. */
+    /** Any other non-retryable rejection: missing access_token or an unrecognized status. NOT evidence the refresh
+     *  token itself is dead. */
     public data class Denied(val detail: String) : RefreshAttempt<Nothing>()
+
+    /** The endpoint could not answer this time (429, 500, 502, 503 or 504): no verdict on the login. One POST is one
+     *  exchange, and the turn's retry engine asks again 2 s and then 4 s later (failure-handling slice 4). */
+    public data class Unavailable(val detail: String) : RefreshAttempt<Nothing>()
 }
 
 /**

@@ -27,8 +27,12 @@ public sealed class RefreshOutcome {
     /** Credential file exists but carries no refresh token — re-login is the only path forward. */
     public data object NoRefreshToken : RefreshOutcome()
 
-    /** The token endpoint answered and did not grant (invalid_grant, missing rotation fields, retries exhausted). */
+    /** The token endpoint answered and did not grant (invalid_grant, missing rotation fields, an unknown status). */
     public data class Rejected(val reason: String) : RefreshOutcome()
+
+    /** The token endpoint answered that it cannot exchange now (429 or a 5xx): busy, not a verdict on the login. The
+     *  turn's retry engine asks again 2 s and then 4 s later (failure-handling slice 4). */
+    public data class Unavailable(val reason: String) : RefreshOutcome()
 
     /** Reading/parsing the credential file failed (I/O error or malformed JSON) — NOT "not logged in". */
     public data class ReadFailed(val cause: Throwable) : RefreshOutcome()
@@ -97,6 +101,10 @@ public sealed class RefreshOutcome {
         }
         is Rejected -> {
             log("[$tag] refresh rejected by token endpoint: $reason")
+            null
+        }
+        is Unavailable -> {
+            log("[$tag] token endpoint could not answer ($reason); not a verdict on the login")
             null
         }
         is ReadFailed -> {

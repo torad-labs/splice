@@ -152,6 +152,8 @@ internal class KimiAuthStore(
             is RefreshAttempt.Granted -> persist(attempt.tokens)
             is RefreshAttempt.InvalidGrant -> rejectedOrRetry(refreshToken, allowRereadRetry, INVALID_GRANT_REASON)
             is RefreshAttempt.Denied -> rejectedOrRetry(refreshToken, allowRereadRetry, attempt.detail)
+            // No verdict on the token, so no confirming re-read: the turn's engine asks again later.
+            is RefreshAttempt.Unavailable -> RefreshOutcome.Unavailable(attempt.detail)
         }
     }
 

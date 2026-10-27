@@ -1,12 +1,11 @@
 // NEW: the grok token-refresh HTTP call (POST grant_type=refresh_token to auth.x.ai) that
 // GrokAuthProvider injects. Lives in :app so :providers-grok stays HTTP-client-agnostic and
-// unit-testable with a fake refreshCall (mirrors CodexRefresh). G7: classify/retry now goes
-// through the shared RefreshRetry.kt loop (same shape as kimiRefresh) instead of a single
-// attempt collapsing every non-2xx status AND any thrown exception straight to null.
-// G15: classifyGrok's terminal branches now carry a RefreshAttempt so a confirmed invalid_grant
+// unit-testable with a fake refreshCall (mirrors CodexRefresh).
+// G15: classifyGrok's terminal branches carry a RefreshAttempt so a confirmed invalid_grant
 // (401/403/explicit invalid_grant body) is distinguishable from any other rejection at the
-// GrokAuthProvider boundary — refreshWithRetry itself is untouched (still generic T?); only the T
-// it's instantiated with here changed, from GrokRefreshedTokens to RefreshAttempt<...>.
+// GrokAuthProvider boundary.
+// Failure-handling slice 4: one call is one exchange. The loop of three POSTs it ran through RefreshRetry is the turn's
+// retry engine's now, which asks again 2 s and then 4 s later on an Unavailable answer (TokenEndpointReply).
 package splice.oauth.grok
 
 import io.ktor.client.HttpClient
@@ -23,30 +22,26 @@ import splice.core.util.JsonScalars
 import splice.core.util.LogSink
 import splice.core.util.SafeFailureText
 import splice.oauth.AuthHttpClientFactory
-import splice.oauth.RefreshRetry
-import splice.oauth.RefreshStep
-import splice.oauth.refreshRetryableStatus
+import splice.oauth.TokenEndpointReply
 import splice.provider.grok.GrokOAuthEndpoints
 import splice.provider.grok.GrokRefreshedTokens
 
 // The daemon log (LAYOUT-01): these lines went to bare stderr, which never reaches /mgmt/logs.
 public class GrokRefresh(private val log: LogSink) {
 
-    private val retry = RefreshRetry()
+    private val reply = TokenEndpointReply(grokRefreshJson)
 
     /**
-     * Refresh the grok access token. Returns Granted tokens, InvalidGrant when auth is confirmed
-     * dead (401/403/invalid_grant), or Denied when a missing access_token / exhausted retries make
-     * re-prompt the honest outcome (NOT evidence the refresh token itself is dead).
+     * One exchange of the grok refresh token. Returns Granted tokens, InvalidGrant when auth is confirmed dead
+     * (401/403/invalid_grant), Unavailable when the endpoint could not answer now (429/5xx), or Denied when a missing
+     * access_token or another status makes re-prompt the honest outcome (NOT evidence the refresh token itself is
+     * dead). A send that throws reaches the caller, whose provider reads it as a transport failure.
      */
     public suspend fun refresh(
         tokenUrl: String,
         refreshToken: String,
         client: HttpClient = grokRefreshClient,
-    ): RefreshAttempt<GrokRefreshedTokens> = retry.refreshWithRetry(
-        call = { postGrokRefresh(client, tokenUrl, refreshToken) },
-        classify = ::classifyGrok,
-    ) ?: RefreshAttempt.Denied("refresh retries exhausted")
+    ): RefreshAttempt<GrokRefreshedTokens> = classifyGrok(postGrokRefresh(client, tokenUrl, refreshToken))
 
     private suspend fun postGrokRefresh(client: HttpClient, tokenUrl: String, refreshToken: String): HttpResponse =
         client.submitForm(
@@ -61,26 +56,15 @@ public class GrokRefresh(private val log: LogSink) {
         )
 
     // Keep failed refreshes diagnosable without copying an untrusted vendor response into logs.
-    private suspend fun classifyGrok(resp: HttpResponse): RefreshStep<RefreshAttempt<GrokRefreshedTokens>> {
+    private suspend fun classifyGrok(resp: HttpResponse): RefreshAttempt<GrokRefreshedTokens> {
         if (resp.status.isSuccess()) {
-            val tokens = parseGrokRefresh(resp.bodyAsText())
-            return RefreshStep.Terminal(
-                if (tokens == null) {
-                    RefreshAttempt.Denied("refresh response missing access_token")
-                } else {
-                    RefreshAttempt.Granted(tokens)
-                },
-            )
+            return parseGrokRefresh(resp.bodyAsText())?.let { RefreshAttempt.Granted(it) }
+                ?: RefreshAttempt.Denied("refresh response missing access_token")
         }
         val status = resp.status.value
         val body = resp.bodyAsText()
         log("[grok] token refresh failed: HTTP $status\n")
-        return when {
-            retry.isTerminalRefreshFailure(status, body, grokRefreshJson) ->
-                RefreshStep.Terminal(RefreshAttempt.InvalidGrant("HTTP $status"))
-            status in refreshRetryableStatus -> RefreshStep.Retry
-            else -> RefreshStep.Terminal(RefreshAttempt.Denied("HTTP $status"))
-        }
+        return reply.failed(status, body)
     }
 
     /** Defensive against malformed JSON on a 200 — a bad success body terminates cleanly, not via retry. */

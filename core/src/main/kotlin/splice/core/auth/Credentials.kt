@@ -81,6 +81,14 @@ public interface RefreshableAuthProvider : AuthProvider {
     public suspend fun refresh(): Credentials?
 
     /**
+     * One token exchange, read as the turn's retry engine reads it (failure-handling slice 4): renewed, refused, or
+     * unavailable ([RefreshOutcome.Unavailable] or [RefreshOutcome.TransportFailed]), which the engine asks again 2 s
+     * and then 4 s later. A provider that cannot tell one failure from another answers from [refresh].
+     */
+    public suspend fun exchange(): RefreshOutcome =
+        refresh()?.let(RefreshOutcome::Refreshed) ?: RefreshOutcome.Rejected("not renewed")
+
+    /**
      * Provider-specific veto on spending a refresh: the reply was read as a rejected login, or as one this provider
      * names dead ([deadCredential], a ProviderDeviation's answer), and this provider says whether a refresh can
      * change it. The reading belongs to the provider's reader; this answers only whether to spend a token exchange

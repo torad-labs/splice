@@ -93,7 +93,7 @@ public class GrokAuthProvider(
 ) : RefreshableAuthProvider, AccountCredentialIdentitySource {
 
     private val json = Json { ignoreUnknownKeys = true }
-    private val singleFlight = SingleFlight<Credentials?>()
+    private val singleFlight = SingleFlight<RefreshOutcome>()
     private val backgroundRefresh = BackgroundCredentialRefresh(prefetchScope, LOG_TAG, log)
     private val invalidGrantLatch = InvalidGrantLatch()
 
@@ -148,7 +148,7 @@ public class GrokAuthProvider(
             // prefetch tier (G17): kick a single-flight refresh in the background, serve the CURRENT
             // token now. singleFlight still dedups concurrent entrants to one network call;
             // credentialsOrNull still owns the one logging flatten (discipline L3).
-            backgroundRefresh.launch { singleFlight.run { doRefresh().credentialsOrNull(LOG_TAG, log) } }
+            backgroundRefresh.launch { refresh() }
             current
         } else if (clock() - lastIneffectiveRefreshAtMs < REFRESH_INEFFECTIVE_BACKOFF_MS) {
             // SH-02(b): the last refresh succeeded without advancing past the stale floor — another
@@ -167,13 +167,17 @@ public class GrokAuthProvider(
         } else {
             // stale floor: too close to hard expiry to risk it — block for a confirmed-fresh token,
             // same as pre-G17 behavior.
-            val refreshed = singleFlight.run { doRefresh().credentialsOrNull(LOG_TAG, log) }
+            val refreshed = refresh()
             refreshed ?: current.takeIf { clock() < expiresAt }
         }
     }
 
-    override suspend fun refresh(): Credentials? =
-        singleFlight.run { doRefresh().credentialsOrNull(LOG_TAG, log) }
+    override suspend fun refresh(): Credentials? = (exchange() as? RefreshOutcome.Refreshed)?.credentials
+
+    // One token exchange, single-flight: its outcome is logged once, inside the flight (credentialsOrNull is the one
+    // logging flatten), and the turn's retry engine reads it whole (failure-handling slice 4).
+    override suspend fun exchange(): RefreshOutcome =
+        singleFlight.run { doRefresh().also { it.credentialsOrNull(LOG_TAG, log) } }
 
     override fun observedCredentialKey(): String? = authJson.readSnapshot(0L)?.access?.let {
         CredentialKey.fromCredentials(Credentials.Bearer(it))

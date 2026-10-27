@@ -4,8 +4,6 @@
 // to auth.json.
 package splice.oauth
 
-import io.ktor.client.statement.HttpResponse
-
 /**
  * Builds the x-www-form-urlencoded token-exchange body for a real authorization code.
  *
@@ -30,27 +28,4 @@ public fun interface ExchangeForm {
  */
 public fun interface AuthJsonFromResponse {
     public operator fun invoke(responseBody: String): String
-}
-
-/**
- * The refresh POST itself — one HTTP attempt, no retry policy and no classification.
- *
- * Deliberately the bare hop: `RefreshRetry` owns how many times it runs and how long it waits
- * between runs, and a `call` that retried internally would multiply against that budget invisibly.
- * A throw out of it is treated as a RETRY, not a permanent failure, so a network blip must surface
- * as an exception here rather than as a synthesized failure response.
- */
-internal fun interface RefreshPost {
-    suspend operator fun invoke(): HttpResponse
-}
-
-/**
- * Reads one refresh response and decides whether the loop is DONE or should try again.
- *
- * The decision, not the transport — which is what makes an unrecognized status retryable in one
- * provider and terminal in another without either of them re-implementing the backoff curve. Like
- * [RefreshPost], a throw out of it means retry.
- */
-internal fun interface RefreshClassify<T> {
-    suspend operator fun invoke(response: HttpResponse): RefreshStep<T>
 }

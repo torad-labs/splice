@@ -76,7 +76,7 @@ public class CodexAuthProvider(
     private val log: LogSink = LogSink(DaemonLog::write),
 ) : RefreshableAuthProvider, AccountCredentialIdentitySource {
 
-    private val singleFlight = SingleFlight<Credentials?>()
+    private val singleFlight = SingleFlight<RefreshOutcome>()
     private val backgroundRefresh = BackgroundCredentialRefresh(prefetchScope, LOG_TAG, log)
     private val invalidGrantLatch = InvalidGrantLatch()
 
@@ -122,17 +122,21 @@ public class CodexAuthProvider(
         } else if (expiresAt - clock() >= STALE_FLOOR_MS) {
             // prefetch tier (G17): kick a single-flight refresh in the background, serve the CURRENT
             // token now. singleFlight still dedups concurrent entrants to one network call.
-            backgroundRefresh.launch { singleFlight.run { doRefresh().credentialsOrNull(LOG_TAG, log) } }
+            backgroundRefresh.launch { refresh() }
             current
         } else {
             // stale floor: too close to hard expiry to risk it — block for a confirmed-fresh token.
-            val refreshed = singleFlight.run { doRefresh().credentialsOrNull(LOG_TAG, log) }
+            val refreshed = refresh()
             refreshed ?: (if (clock() < expiresAt) current else null)
         }
     }
 
-    override suspend fun refresh(): Credentials? =
-        singleFlight.run { doRefresh().credentialsOrNull(LOG_TAG, log) }
+    override suspend fun refresh(): Credentials? = (exchange() as? RefreshOutcome.Refreshed)?.credentials
+
+    // One token exchange, single-flight: its outcome is logged once, inside the flight (credentialsOrNull is the one
+    // logging flatten), and the turn's retry engine reads it whole (failure-handling slice 4).
+    override suspend fun exchange(): RefreshOutcome =
+        singleFlight.run { doRefresh().also { it.credentialsOrNull(LOG_TAG, log) } }
 
     // Sealed per-mode outcome (discipline L3): a dead refresh token, a transport blip, and a
     // corrupt file are DIFFERENT stories; credentialsOrNull is the single logging flatten.

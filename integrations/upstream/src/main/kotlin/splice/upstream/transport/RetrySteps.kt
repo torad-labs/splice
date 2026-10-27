@@ -5,6 +5,7 @@
 // counts or plans a retry of its own: what a step spends is recorded in the ledger, which the engine reads.
 package splice.upstream.transport
 
+import splice.core.auth.RefreshOutcome
 import splice.core.failure.FailureCause
 import splice.core.failure.LoginOwner
 import splice.core.failure.Moment
@@ -175,14 +176,20 @@ internal class RetrySteps(
         return take(next(asked.cause, asked.at, ctx, state), asked, ctx, state)
     }
 
-    /** A renewal with no answer behind it names no dead credential: only an answer the reader read can. */
+    /** A renewal with no answer behind it names no dead credential: only an answer the reader read can. One exchange
+     *  per step: a token endpoint that could not answer (a 429, a 5xx or a send that threw) is unavailable, which the
+     *  engine asks again 2 s and then 4 s later; any other failure refused the login. */
     private suspend fun exchange(ctx: PostContext, failed: RetryOutcome.Failed?): Exchange {
         if (!ctx.auth.allowRefreshAfterFailure(failed?.deadCredential == true)) return Exchange.REFUSED
         val perf = ctx.observers.perf
         perf?.add(PerfKeys.REFRESHES, 1)
-        val renewed = TurnPerfTiming.timedOr(perf, PerfKeys.REFRESH_MS) { ctx.auth.refresh() } != null
-        if (renewed) ctx.observers.authRefreshObserver()
-        return if (renewed) Exchange.RENEWED else Exchange.REFUSED
+        return when (TurnPerfTiming.timedOr(perf, PerfKeys.REFRESH_MS) { ctx.auth.exchange() }) {
+            is RefreshOutcome.Refreshed -> Exchange.RENEWED.also { ctx.observers.authRefreshObserver() }
+            is RefreshOutcome.Unavailable, is RefreshOutcome.TransportFailed -> Exchange.UNAVAILABLE
+            RefreshOutcome.NoCredentialsFile, RefreshOutcome.NoRefreshToken, is RefreshOutcome.Rejected,
+            is RefreshOutcome.ReadFailed, is RefreshOutcome.PersistFailed,
+            -> Exchange.REFUSED
+        }
     }
 
     /** The dialect's own repair of the body it built, once per turn: null when it has none for this answer, or the

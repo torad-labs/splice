@@ -64,7 +64,7 @@ public class KimiAuthProvider(
     private val log: LogSink = LogSink(DaemonLog::write),
 ) : RefreshableAuthProvider, AccountCredentialIdentitySource {
 
-    private val singleFlight = SingleFlight<Credentials?>()
+    private val singleFlight = SingleFlight<RefreshOutcome>()
     private val backgroundRefresh = prefetchScope?.let { BackgroundCredentialRefresh(it, LOG_TAG, log) }
     private val invalidGrantLatch = InvalidGrantLatch()
 
@@ -108,15 +108,19 @@ public class KimiAuthProvider(
         remainingS: Long,
     ): Credentials? {
         if (backgroundRefresh != null && remainingS > HARD_FLOOR_S) {
-            backgroundRefresh.launch { singleFlight.run { doRefresh().credentialsOrNull(LOG_TAG, log) } }
+            backgroundRefresh.launch { refresh() }
             return apiKey(snap.access)
         }
-        val refreshed = singleFlight.run { doRefresh().credentialsOrNull(LOG_TAG, log) }
+        val refreshed = refresh()
         return refreshed ?: (if (nowS < snap.expiresAtS) apiKey(snap.access) else null)
     }
 
-    override suspend fun refresh(): Credentials? =
-        singleFlight.run { doRefresh().credentialsOrNull(LOG_TAG, log) }
+    override suspend fun refresh(): Credentials? = (exchange() as? RefreshOutcome.Refreshed)?.credentials
+
+    // One token exchange, single-flight: its outcome is logged once, inside the flight (credentialsOrNull is the one
+    // logging flatten), and the turn's retry engine reads it whole (failure-handling slice 4).
+    override suspend fun exchange(): RefreshOutcome =
+        singleFlight.run { doRefresh().also { it.credentialsOrNull(LOG_TAG, log) } }
 
     // Failure-handling slice 3: Kimi's plan-tier 401 is read as the plan limit it is (KimiReplies), never as a
     // refused login, so no refresh is planned for it and this provider carries no rule about a body.

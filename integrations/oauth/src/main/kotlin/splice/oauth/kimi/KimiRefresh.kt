@@ -3,12 +3,10 @@
 // :providers-kimi stays HTTP-client-agnostic and unit-testable with a fake refreshCall (mirrors
 // GrokRefresh). Invariants: rotation is mandatory (a response missing refresh_token → Denied →
 // re-prompt); 401/403 and error=="invalid_grant" are terminal (auth dead → InvalidGrant);
-// 429/500/502/503/504 are retryable (3 attempts, backoff 2^attempt seconds, ±10% jitter — see
-// RefreshRetry.kt); the X-Msh-* device identity headers ride on the refresh POST too. JsonNull-safe
-// extraction throughout.
-// G15: classify()'s terminal branches now carry a RefreshAttempt so a confirmed invalid_grant is
-// distinguishable from any other rejection at the KimiAuthProvider boundary — refreshWithRetry
-// itself is untouched (still generic T?); only the T it's instantiated with here changed.
+// 429/500/502/503/504 answer Unavailable; the X-Msh-* device identity headers ride on the refresh
+// POST too. JsonNull-safe extraction throughout.
+// Failure-handling slice 4: one call is one exchange. The loop of three POSTs it ran through RefreshRetry is the turn's
+// retry engine's now, which asks again 2 s and then 4 s later on an Unavailable answer (TokenEndpointReply).
 package splice.oauth.kimi
 
 import io.ktor.client.HttpClient
@@ -26,56 +24,39 @@ import splice.core.util.JsonScalars
 import splice.core.util.LogSink
 import splice.core.util.SafeFailureText
 import splice.oauth.AuthHttpClientFactory
-import splice.oauth.RefreshRetry
-import splice.oauth.RefreshStep
-import splice.oauth.refreshRetryableStatus
+import splice.oauth.TokenEndpointReply
 import splice.provider.kimi.KimiOAuth
 import splice.provider.kimi.KimiRefreshedTokens
 
 // The daemon log (LAYOUT-01): these lines went to bare stderr, which never reaches /mgmt/logs.
 public class KimiRefresh(private val log: LogSink) {
 
-    private val retry = RefreshRetry()
+    private val reply = TokenEndpointReply(kimiRefreshJson)
     private val kimiOAuth = KimiOAuth()
 
     /**
-     * Refresh the kimi access token. Returns Granted rotated tokens, InvalidGrant when auth is
-     * confirmed dead (401/403/invalid_grant), or Denied when a missing rotation field / exhausted
-     * retries make re-prompt the honest outcome (NOT evidence the refresh token itself is dead).
+     * One exchange of the kimi refresh token. Returns Granted rotated tokens, InvalidGrant when auth is confirmed dead
+     * (401/403/invalid_grant), Unavailable when the endpoint could not answer now (429/5xx), or Denied when a missing
+     * rotation field or another status makes re-prompt the honest outcome (NOT evidence the refresh token itself is
+     * dead). A send that throws reaches the caller, whose provider reads it as a transport failure.
      */
     public suspend fun refresh(
         tokenUrl: String,
         refreshToken: String,
         identityHeaders: Map<String, String>,
         client: HttpClient = kimiRefreshClient,
-    ): RefreshAttempt<KimiRefreshedTokens> = retry.refreshWithRetry(
-        call = { postRefresh(client, tokenUrl, refreshToken, identityHeaders) },
-        classify = ::classify,
-    ) ?: RefreshAttempt.Denied("refresh retries exhausted")
+    ): RefreshAttempt<KimiRefreshedTokens> = classify(postRefresh(client, tokenUrl, refreshToken, identityHeaders))
 
     // Keep failed refreshes diagnosable without copying an untrusted vendor response into logs.
-    private suspend fun classify(resp: HttpResponse): RefreshStep<RefreshAttempt<KimiRefreshedTokens>> {
+    private suspend fun classify(resp: HttpResponse): RefreshAttempt<KimiRefreshedTokens> {
         val status = resp.status.value
         val body = resp.bodyAsText()
         if (!resp.status.isSuccess()) {
             log("[kimi] token refresh failed: HTTP $status\n")
+            return reply.failed(status, body)
         }
-        return when {
-            resp.status.isSuccess() -> {
-                val tokens = parseKimiRefresh(body)
-                RefreshStep.Terminal(
-                    if (tokens == null) {
-                        RefreshAttempt.Denied("refresh response missing rotation fields")
-                    } else {
-                        RefreshAttempt.Granted(tokens)
-                    },
-                )
-            }
-            retry.isTerminalRefreshFailure(status, body, kimiRefreshJson) ->
-                RefreshStep.Terminal(RefreshAttempt.InvalidGrant("HTTP $status"))
-            status in refreshRetryableStatus -> RefreshStep.Retry
-            else -> RefreshStep.Terminal(RefreshAttempt.Denied("HTTP $status"))
-        }
+        return parseKimiRefresh(body)?.let { RefreshAttempt.Granted(it) }
+            ?: RefreshAttempt.Denied("refresh response missing rotation fields")
     }
 
     private suspend fun postRefresh(

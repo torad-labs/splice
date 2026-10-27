@@ -58,7 +58,8 @@ private const val GOLDEN_KEY = "splice-e0bb99d90f620053052ec6f514467291"
 private const val GOLDEN_REQUEST = """{"model":"gpt-6.1-sol","input":[{"type":"additional_tools","role":""" +
     """"developer","tools":[{"type":"namespace","name":"functions","description":"","tools":[{"type":"function",""" +
     """"name":"Read","description":"","parameters":{"type":"object","properties":{"amount":{"enum":[100.0,1.0,""" +
-    """0]}}}}]}]},{"role":"developer","content":"synthetic harness"},{"role":"assistant","phase":"final_answer",""" +
+    """0]}}},"strict":false}]}]},{"role":"developer","content":"synthetic harness"},""" +
+    """{"role":"assistant","phase":"final_answer",""" +
     """"content":"prior"},{"role":"user","content":"alpha"},{"role":"user","content":""},{"role":"user",""" +
     """"content":"café 🧪\n\"\\slash"},{"role":"user","content":"later"}],"store":false,"stream":true,"include":""" +
     """["reasoning.encrypted_content"],"prompt_cache_key":"splice-e0bb99d90f620053052ec6f514467291","tool_choice":""" +

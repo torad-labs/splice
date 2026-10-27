@@ -4,7 +4,7 @@
 // consumers. Every member kept its identical name and argument list.
 package splice.dialect.responses
 
-import splice.dialect.responses.request.DefaultEffortVocabulary
+import splice.dialect.responses.request.AssistantPhase
 import splice.dialect.responses.tools.ToolDeferralPolicy
 import splice.upstream.EffortVocabulary
 
@@ -145,6 +145,9 @@ public data class ResponsesRoundTripQuirks(
      *  identically: the next request replays the round's encrypted reasoning and asks for the answer. Off keeps the
      *  identical re-send. A vendor that ends rounds after reasoning alone turns it on in its own quirks. */
     val continueReasoningOnly: Boolean = false,
+    /** Public Responses continuation prose is commentary. A provider may explicitly retain its phase-less
+     *  continuation contract with null. */
+    val reanchorProsePhase: AssistantPhase? = AssistantPhase.COMMENTARY,
 )
 
 /** The finite quirk surface separating codex / xai / openai-platform on this dialect. */

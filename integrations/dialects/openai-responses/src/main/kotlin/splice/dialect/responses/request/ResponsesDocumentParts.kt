@@ -68,8 +68,8 @@ internal class ResponsesDocumentParts(private val quirks: ResponsesQuirks) {
 
     private fun contentPart(content: JsonElement, toolUseId: String?): JsonObject {
         val block = content as? JsonObject
-        return when (string(block, FIELD_TYPE)) {
-            TEXT_KIND -> string(block, FIELD_TEXT)?.let(::text)
+        return when (string(block, DOCUMENT_CONTENT_FIELD_TYPE)) {
+            TEXT_KIND -> string(block, DOCUMENT_CONTENT_FIELD_TEXT)?.let(::text)
                 ?: omitted(DOCUMENT_KIND, toolUseId, UNSUPPORTED_SOURCE)
             IMAGE_KIND -> imagePart(block?.get("source") as? JsonObject, toolUseId)
             else -> omitted(DOCUMENT_KIND, toolUseId, UNSUPPORTED_SOURCE)
@@ -79,7 +79,7 @@ internal class ResponsesDocumentParts(private val quirks: ResponsesQuirks) {
     private fun imagePart(raw: JsonObject?, toolUseId: String?): JsonObject {
         val source = raw?.let {
             MediaSource(
-                type = string(it, FIELD_TYPE).orEmpty(),
+                type = string(it, DOCUMENT_CONTENT_FIELD_TYPE).orEmpty(),
                 mediaType = string(it, "media_type"),
                 data = string(it, "data"),
                 url = string(it, "url"),
@@ -105,8 +105,8 @@ internal class ResponsesDocumentParts(private val quirks: ResponsesQuirks) {
     }
 
     private fun text(value: String): JsonObject = buildJsonObject {
-        put(FIELD_TYPE, "input_text")
-        put(FIELD_TEXT, value)
+        put(DOCUMENT_CONTENT_FIELD_TYPE, "input_text")
+        put(DOCUMENT_CONTENT_FIELD_TEXT, value)
     }
 
     private fun string(value: JsonObject?, field: String): String? =
@@ -118,5 +118,5 @@ private const val FILE_UNSUPPORTED = "input_file unsupported by this backend"
 private const val DOCUMENT_KIND = "document"
 private const val IMAGE_KIND = "image"
 private const val TEXT_KIND = "text"
-private const val FIELD_TYPE = "type"
-private const val FIELD_TEXT = "text"
+private const val DOCUMENT_CONTENT_FIELD_TYPE = "type"
+private const val DOCUMENT_CONTENT_FIELD_TEXT = "text"

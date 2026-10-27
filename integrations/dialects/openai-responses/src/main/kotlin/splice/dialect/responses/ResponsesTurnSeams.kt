@@ -22,11 +22,11 @@ import splice.upstream.TurnSignals
 internal class ResponsesTurnSeams(private val deps: ResponsesTurnSeamsDeps) {
     // The controller is stateless — one cached instance serves every turn (a per-call
     // allocation here also ran per ROUND via the collectReasoningEnvelopes null-check).
-    // One per wire shape. Partial prose replays as commentary unless native history supplies a phase.
+    // One per wire shape. Each provider owns the phase carried by its continuation partial prose.
     private val defaultReanchorPolicy: ReanchorPolicy by lazy {
         ResponsesReanchorPolicy(
             decodeReasoningEnvelope = { ReasoningReplay.decodeReasoningEnvelope(it) },
-            prosePhase = AssistantPhase.COMMENTARY,
+            prosePhase = deps.quirks.roundTrip.reanchorProsePhase,
             continueReasoningOnly = deps.quirks.roundTrip.continueReasoningOnly,
         )
     }

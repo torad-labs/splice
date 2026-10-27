@@ -74,7 +74,7 @@ internal class ResponsesToolResultRenderer(
         is TextBlock -> content.text
         is ImageBlock -> imageOmission(result, "structured tool output unsupported")
         is DocumentBlock -> documents.toolResult(content, result.toolUseId)
-            .joinToString("\n") { (it.getValue(FIELD_TEXT) as JsonPrimitive).content }
+            .joinToString("\n") { (it.getValue(TOOL_RESULT_TEXT_FIELD) as JsonPrimitive).content }
         is UnknownBlock -> omission.text(content)
         is ThinkingBlock -> unsupportedText(result, "thinking")
         is RedactedThinkingBlock -> unsupportedText(result, "redacted_thinking")
@@ -104,7 +104,7 @@ internal class ResponsesToolResultRenderer(
 
     private fun text(value: String): JsonObject = buildJsonObject {
         put("type", "input_text")
-        put(FIELD_TEXT, value)
+        put(TOOL_RESULT_TEXT_FIELD, value)
     }
 
     private fun imageOmission(result: ToolResultBlock, reason: String): String =
@@ -115,4 +115,4 @@ internal class ResponsesToolResultRenderer(
             "unsupported in function_call_output]"
 }
 
-private const val FIELD_TEXT = "text"
+private const val TOOL_RESULT_TEXT_FIELD = "text"

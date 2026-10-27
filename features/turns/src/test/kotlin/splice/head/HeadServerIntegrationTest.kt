@@ -231,7 +231,8 @@ class HeadServerIntegrationTest {
             |"prompt_cache_key":"$cacheKey",
             |"instructions":"You are a test. SCENARIO:basic",
             |"reasoning":{"effort":"high","summary":"detailed"},
-            |"stream_options":{"reasoning_summary_delivery":"sequential_cutoff"}}
+            |"stream_options":{"reasoning_summary_delivery":"sequential_cutoff"},
+            |"max_output_tokens":8000}
         """.trimMargin().lines().joinToString("")
         assertEquals(expected, body)
     }

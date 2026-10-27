@@ -8,6 +8,7 @@ import splice.dialect.responses.ResponsesLiteQuirks
 import splice.dialect.responses.ResponsesQuirks
 import splice.dialect.responses.ResponsesReasoningQuirks
 import splice.dialect.responses.ResponsesRequestControlQuirks
+import splice.dialect.responses.ResponsesRoundTripQuirks
 import splice.dialect.responses.ResponsesServiceTierSupport
 import splice.dialect.responses.ResponsesToolQuirks
 
@@ -42,6 +43,10 @@ public class CodexQuirks {
             effortMaxRejectModelRegex = Regex("mini", RegexOption.IGNORE_CASE),
             // richer titled reasoning sections from the ChatGPT backend (probed 2026-07-19)
             summaryDelivery = "sequential_cutoff",
+        ),
+        roundTrip = ResponsesRoundTripQuirks(
+            // The frozen Codex continuation contract keeps replayed partial prose phase-less.
+            reanchorProsePhase = null,
         ),
         tools = ResponsesToolQuirks(
             // codex-rs parity: hard-sets strict:false on every function tool (responses_api.rs:29-32);

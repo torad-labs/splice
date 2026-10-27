@@ -19,6 +19,7 @@ import splice.dialect.responses.CacheKeyStrategy
 import splice.dialect.responses.ResponsesClientHints
 import splice.dialect.responses.ResponsesLiteShape
 import splice.dialect.responses.ResponsesQuirks
+import splice.dialect.responses.admission.ResponsesWireRequestControls
 import splice.dialect.responses.reasoning.ResponsesReasoningKnobs
 import splice.dialect.responses.tools.ResponsesToolPlan
 import splice.dialect.responses.tools.ToolPartition
@@ -89,7 +90,6 @@ internal class ResponsesRequestAssembler(
         val restrictedTools = parts.tools.currentAllowedTools
         val emitToolChoice = restrictedTools != null || body.toolChoice != null ||
             tools != null && (quirks.tools.emitToolChoice || lite)
-        val include = if (opts.handoff.includeEncrypted.v) listOf(ENCRYPTED_CONTENT_INCLUDE) else null
         val shape = liteShape.wireShape(lite, parts.input, parts.instructions, tools)
         val cacheKey = cacheKey(opts, parts.conversationKey)
         val dto = ResponsesRequest(
@@ -97,7 +97,7 @@ internal class ResponsesRequestAssembler(
             input = shape.input,
             store = quirks.backend.store,
             stream = true,
-            include = include,
+            include = if (opts.handoff.includeEncrypted.v) listOf(ENCRYPTED_CONTENT_INCLUDE) else null,
             promptCacheKey = cacheKey,
             promptCacheRetention = quirks.backend.promptCache.retention,
             instructions = shape.instructions,
@@ -105,15 +105,15 @@ internal class ResponsesRequestAssembler(
             toolChoice = toolChoiceFor(emitToolChoice, lite, body, restrictedTools),
             parallelToolCalls = parallelToolCallsFor(emitToolChoice, body, opts),
             reasoning = parts.reasoning,
-            text = parts.outputFormat?.let { format ->
-                JsonObject(hints.liteTextBlock(quirks, lite).orEmpty() + ("format" to format))
-            } ?: hints.liteTextBlock(quirks, lite),
-            clientMetadata = hints.clientMetadataBlock(quirks, lite, opts, cacheKey),
-            streamOptions = knobs.summaryDeliveryOptions(parts.reasoning),
-            maxOutputTokens = body.maxTokens.takeIf { quirks.request.emitMaxOutputTokens },
-            temperature = parts.controls.temperature,
-            topP = parts.controls.topP,
-            serviceTier = parts.controls.serviceTier,
+            text = outputText(parts.outputFormat, lite),
+            serializationControls = ResponsesRequestSerializationControls(
+                clientMetadata = hints.clientMetadataBlock(quirks, lite, opts, cacheKey),
+                streamOptions = knobs.summaryDeliveryOptions(parts.reasoning),
+                maxOutputTokens = body.maxTokens.takeIf { quirks.request.emitMaxOutputTokens },
+                temperature = parts.controls.temperature,
+                topP = parts.controls.topP,
+                serviceTier = parts.controls.serviceTier,
+            ),
         )
         val req = responsesRequestJson.encodeToJsonElement(ResponsesRequest.serializer(), dto) as JsonObject
         // Stamped only when a policy is actually CONFIGURED for this provider (quirks.tools.toolSurface
@@ -128,6 +128,10 @@ internal class ResponsesRequestAssembler(
             toolsDeferred = surfaceInPlay?.deferred?.size,
         )
     }
+
+    private fun outputText(format: JsonObject?, lite: Boolean): JsonObject? = format?.let {
+        JsonObject(hints.liteTextBlock(quirks, lite).orEmpty() + ("format" to it))
+    } ?: hints.liteTextBlock(quirks, lite)
 
     /** Explicit caller choices win on every turn shape. Responses named choices are flat, not Chat's function object. */
     internal fun toolChoiceFor(

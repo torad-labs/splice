@@ -3,6 +3,7 @@ package splice.head.perf
 import kotlinx.serialization.json.JsonObjectBuilder
 import kotlinx.serialization.json.put
 import splice.core.perf.PerfTurnIds
+import splice.upstream.transport.HeaderRedaction
 
 /** The string facts a perf row carries beside the numeric snapshot. */
 public data class PerfRowMeta(
@@ -20,11 +21,13 @@ public data class PerfRowMeta(
     val transcript: PerfTranscriptIds = PerfTranscriptIds(),
 ) {
     /** Why the turn failed, beside its outcome tag: the cause, the retry loop's own attempt count (only when non-zero,
-     *  so a row without retries is unchanged) and, V4-444, the upstream's own words where the upstream is what failed. */
+     *  so a row without retries is unchanged) and, V4-444, the upstream's own words where the upstream is what failed.
+     *  Those words lose the value of any header they quote (fix 4, Oct 27): the console reads this row, and a refusal
+     *  that quotes the request's headers would otherwise show the turn state there. */
     internal fun putFailureFacts(into: JsonObjectBuilder) {
         failure.cause?.let { into.put("cause", it) }
         if (failure.layers > 0) into.put("layers", failure.layers)
-        failure.providerMessage?.let { into.put("provider_message", it) }
+        failure.providerMessage?.let { into.put("provider_message", HeaderRedaction.redactText(it)) }
     }
 
     /** These optional string facts never enter the row's numeric snapshot. */

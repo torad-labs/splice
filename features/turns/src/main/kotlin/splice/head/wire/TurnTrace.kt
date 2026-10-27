@@ -13,6 +13,7 @@
 // Bodies past the store's maxBodyChars are cut and the record says `truncated: true`. A header a body or a stream
 // carries as a JSON member keeps its name and loses a secret value (HeaderRedaction.redactText), as the headers
 // themselves do: the ChatGPT backend's response.metadata event names its turn state, and a websocket frame echoes it.
+// The text that ended an attempt goes the same way, because a provider's refusal quotes the headers it refused.
 package splice.head.wire
 
 import kotlinx.serialization.json.JsonObject
@@ -112,7 +113,7 @@ public class TurnTrace internal constructor(
                     put(RAW_TEXT, HeaderRedaction.redactText(text))
                     put(TRUNCATED, truncated)
                 }
-                failure?.let { put("failure", it) }
+                failure?.let { put("failure", HeaderRedaction.redactText(it)) }
                 put("durationMs", now() - wsStartedAt)
             }
         }
@@ -173,7 +174,7 @@ public class TurnTrace internal constructor(
                     put(TRUNCATED, attempt.response.errorText == null && responseTruncated)
                 }
             }
-            attempt.failure?.let { put("failure", it) }
+            attempt.failure?.let { put("failure", HeaderRedaction.redactText(it)) }
             put("durationMs", attempt.durationMs)
         }
     }

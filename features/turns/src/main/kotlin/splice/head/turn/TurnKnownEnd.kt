@@ -13,6 +13,7 @@ import splice.head.HeadHealthCounters
 import splice.head.admission.TurnQuota
 import splice.head.perf.PerfFailure
 import splice.upstream.Provider
+import splice.upstream.transport.HeaderRedaction
 import splice.upstream.transport.UpstreamFailed
 
 internal class TurnKnownEnd(
@@ -42,7 +43,10 @@ internal class TurnKnownEnd(
         val cause = e.cause
         val type = ClientWire.ownType(cause)
         val status = e.evidence.status
-        val detail = "type=${type.wireName} status=$status msg=${e.evidence.message.take(ERR_SNIPPET)}"
+        // The words the upstream failed in, with a header it quoted of its own losing that value (fix 4, Oct 27: a
+        // refusal that quotes the request's headers would otherwise write the turn state into the daemon log).
+        val said = HeaderRedaction.redactText(e.evidence.message).take(ERR_SNIPPET)
+        val detail = "type=${type.wireName} status=$status msg=$said"
         val outcome = endingTag(drive, e)
         log(telemetry.errTurn(outcome.wire, drive, detail))
         // The provider's words stay in the log above and on the row below; the client reads the line the emitter's

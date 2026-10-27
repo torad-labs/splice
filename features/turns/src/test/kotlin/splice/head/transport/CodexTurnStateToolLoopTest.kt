@@ -24,6 +24,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.runBlocking
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
 import org.junit.jupiter.api.Assertions.assertEquals
@@ -52,6 +53,7 @@ import splice.head.headDeps
 import splice.head.headStores
 import splice.head.scripted.ProviderRequest
 import splice.head.scripted.ScriptedProvider
+import splice.head.scripted.ScriptedReply
 import splice.head.scripted.Transport
 import splice.head.scripted.VirtualTime
 import splice.head.scripted.reply
@@ -121,12 +123,73 @@ private val LOOP = listOf(
  *  nothing on the subagent's own prompt. */
 private val ECHOED = listOf(null, FIRST_STATE, null, FIRST_STATE, null, SECOND_STATE)
 
+/** A token the backend quotes inside an error's message, the way an error quotes the header map it refused: the member
+ *  sits inside the message's escaped JSON string, one level down. */
+private const val QUOTED_STATE = "synthetic-turn-state-quoted-in-an-error"
+
+/** What a failing assertion prints in the token's place, so a leak is named without repeating it. */
+private const val MASKED = "<the turn state>"
+private const val QUOTING_MESSAGE = """the request's headers {"$TURN_STATE":"$QUOTED_STATE"} name no live turn"""
+
 /** The answer a request of [LOOP] gets: [state] as a response header and in a response.metadata event, then text. */
 private fun stateReply(state: String, n: Int) = reply {
     header(TURN_STATE, state)
     event("""{"type":"response.metadata","headers":{"$TURN_STATE":"$state"}}""")
     responsesAnswer("synthetic answer $n")
 }
+
+/** One way a backend refuses the person's prompt in words that quote the request's turn state: [replies] in the order
+ *  the head meets them, on the websocket when [webSocket]. Each reaches the head's lines by its own path. */
+private data class Refusal(val name: String, val webSocket: Boolean, val replies: List<ScriptedReply>)
+
+private val REFUSALS = listOf(
+    // A 400 and OpenAI's error body: the upstream-failure line, the turn's own line and the HTTP attempt record.
+    Refusal(
+        "an HTTP 400",
+        webSocket = false,
+        listOf(
+            reply {
+                status(400)
+                openAiErrorBody("invalid_request_error", QUOTING_MESSAGE, "invalid_value")
+            },
+        ),
+    ),
+    // A 200 whose body is that error and no event, as a dead head answers: the zero-event line.
+    Refusal(
+        "an HTTP 200 with no event",
+        webSocket = false,
+        listOf(reply { openAiErrorBody("invalid_request_error", QUOTING_MESSAGE, "invalid_value") }),
+    ),
+    // The websocket's error event, as codex-rs reads one (codex-api/src/endpoint/responses_websocket.rs:600-617,
+    // WrappedWebsocketErrorEvent): the websocket attempt record and the turn line.
+    Refusal(
+        "a websocket error event",
+        webSocket = true,
+        listOf(
+            reply {
+                event(
+                    """{"type":"error","status":400,"error":{"type":"invalid_request_error","code":"invalid_value",""" +
+                        """"message":${JsonPrimitive(QUOTING_MESSAGE)}}}""",
+                )
+            },
+        ),
+    ),
+    // A websocket round the backend fails before any output, which the head serves again over HTTP: the fallback's
+    // warning names the failure.
+    Refusal(
+        "a websocket round failed before any output",
+        webSocket = true,
+        listOf(
+            reply {
+                event(
+                    """{"type":"response.failed","response":{"id":"resp_refused","status":"failed",""" +
+                        """"error":{"code":"server_error","message":${JsonPrimitive(QUOTING_MESSAGE)}}}}""",
+                )
+            },
+            reply { responsesAnswer("synthetic answer over HTTP") },
+        ),
+    ),
+)
 
 private fun user(content: String) = """{"role":"user","content":$content}"""
 
@@ -202,6 +265,35 @@ class CodexTurnStateToolLoopTest {
             }
         }
 
+    @Test
+    fun `a turn state an error quotes inside its message appears in no trace record, log line or console answer`() =
+        runBlocking {
+            val leaks = REFUSALS.flatMap { refusal ->
+                val run = refusedPrompt(refusal)
+                assertTrue(run.requests.isNotEmpty(), "the backend answered with ${refusal.name}")
+                leaks(run).map { "${refusal.name}: $it" }
+            }
+            // Each place it leaked, named with the token itself masked: a failure that printed it would print it twice.
+            assertEquals(emptyList<String>(), leaks)
+        }
+
+    /** Every place [run] kept [QUOTED_STATE]: a trace record, by its kind; a console answer; a perf row, whose
+     *  provider_message the console's Requests page shows; and a log line. */
+    private suspend fun leaks(run: Run): List<String> {
+        val records = run.records()
+        val turns = records.mapNotNull { it["turn"]?.jsonPrimitive?.content }.distinct()
+        assertTrue(turns.isNotEmpty(), "the refused turn was traced")
+        val console = run.route()
+        val answers = turns.map { turn -> console.read(HEAD, turn).body } +
+            console.search(HEAD, TraceSearchQuery(QUOTED_STATE, null, null)).body
+        val kept = records.filter { QUOTED_STATE in it.toString() }
+            .map { "a ${it["kind"]?.jsonPrimitive?.content} trace record" } +
+            answers.filter { QUOTED_STATE in it }.map { "a console answer" } +
+            run.perfRows().filter { QUOTED_STATE in it }.map { "the perf row $it" } +
+            run.logs.filter { QUOTED_STATE in it }.map { "the log line $it" }
+        return kept.map { it.replace(QUOTED_STATE, MASKED) }
+    }
+
     private fun frameState(request: ProviderRequest): String? =
         (Json.parseToJsonElement(request.body).jsonObject["client_metadata"] as? JsonObject)
             ?.get(TURN_STATE)?.jsonPrimitive?.content
@@ -220,6 +312,14 @@ class CodexTurnStateToolLoopTest {
             return files.flatMap { file ->
                 Files.readAllLines(file).map { bodies.hydrate(json.parseToJsonElement(it).jsonObject, file) }
             }
+        }
+
+        /** Every perf row the head wrote, which the console's Requests page reads: a failed turn's row carries the
+         *  provider's own words. */
+        fun perfRows(): List<String> {
+            assertTrue(AsyncFileIo.drain(), "the perf file lane drained")
+            val file = dir.resolve("perf.jsonl")
+            return if (Files.exists(file)) Files.readAllLines(file).filter { it.isNotBlank() } else emptyList()
         }
 
         /** The console's trace routes over the same directory. */
@@ -241,6 +341,18 @@ class CodexTurnStateToolLoopTest {
                 assertTrue(answer.contains("synthetic answer ${n + 1}"), "request ${n + 1} was answered")
             }
             rig.backend.awaitRequests(LOOP.size)
+            return rig.run()
+        } finally {
+            rig.stop()
+        }
+    }
+
+    /** One prompt the backend meets with [refusal]'s replies, in order. */
+    private suspend fun refusedPrompt(refusal: Refusal): Run {
+        val rig = start("refused-${REFUSALS.indexOf(refusal)}", refusal.webSocket, traced = true)
+        try {
+            rig.backend.script(*refusal.replies.toTypedArray())
+            rig.post(listOf(PROMPT_ONE))
             return rig.run()
         } finally {
             rig.stop()

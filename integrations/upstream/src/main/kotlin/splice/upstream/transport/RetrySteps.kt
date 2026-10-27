@@ -221,9 +221,11 @@ internal class RetrySteps(
     }
 
     /** The log's line for a failed answer, in the words the doctor report masks the provider's body after
-     *  (DoctorLogPayloads): an answer sent again by its attempt, and one that is not by what it was read as. */
+     *  (DoctorLogPayloads): an answer sent again by its attempt, and one that is not by what it was read as. A body
+     *  that quotes a header of its own loses that value here (fix 4, Oct 27: a refusal that quotes the request's
+     *  headers would otherwise write the turn state into the daemon log). */
     private fun noteFailed(ctx: PostContext, failed: RetryOutcome.Failed, step: RetryStep, state: RetryState) {
-        val snippet = failed.evidence.body.orEmpty().take(ERR_SNIPPET)
+        val snippet = HeaderRedaction.redactText(failed.evidence.body.orEmpty()).take(ERR_SNIPPET)
         val stale = (failed.cause as? FailureCause.Provider.Rejected)?.staleReasoning == true
         val status = failed.evidence.status
         val line = when {

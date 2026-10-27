@@ -8,6 +8,7 @@ import splice.core.turn.TurnOutcome
 import splice.core.util.ERR_SNIPPET
 import splice.upstream.WatchdogHeld
 import splice.upstream.retry.WatchdogFired
+import splice.upstream.transport.HeaderRedaction
 
 internal class TurnLine(
     private val headKey: String,
@@ -26,8 +27,10 @@ internal class TurnLine(
             is TurnOutcome.Success ->
                 " ok out=${outcome.usage.outputTokens} tool=${outcome.hasToolUse} incomplete=${outcome.incomplete}\n"
             is TurnOutcome.Failure ->
+                // The words it failed in, with a header the provider quoted of its own losing that value (fix 4,
+                // Oct 27: a refusal quoting the request's headers would write the turn state into the daemon log).
                 " FAILURE type=${ClientWire.ownType(outcome.cause).wireName} " +
-                    "msg=${outcome.evidence.message.take(ERR_SNIPPET)}\n"
+                    "msg=${HeaderRedaction.redactText(outcome.evidence.message).take(ERR_SNIPPET)}\n"
             is TurnOutcome.ClientAbandoned -> " client-abandoned\n"
         }
     }

@@ -243,12 +243,14 @@ internal class WsRoundDriver(
      *  retry/refresh/cooldown entirely — the one way this overlay could land BELOW the status quo.
      *  The line names the server's failure terminal (type, code, message): a chained turn the server
      *  refuses re-reads the whole transcript cold over SSE, and which turns it refuses is the
-     *  finding. Always returns null — the caller's `run` falls through to the SSE path. */
+     *  finding. Always returns null — the caller's `run` falls through to the SSE path. A terminal that quotes a
+     *  header of the request loses that value (fix 4, Oct 27: a refusal naming the turn state would otherwise write
+     *  it into the daemon log). */
     private fun bypassToSse(drive: TurnDrive, result: WsRoundResult.NeedsSse): TurnOutcome? {
         drive.perf.add(PerfKeys.WS_PRE_OUTPUT_FALLBACKS, 1)
         log(
             "[${provider.key}] warning: websocket fallback to HTTP code=${result.reasonCode} ${who(drive)} " +
-                "(${result.detail}); serving over SSE\n",
+                "(${HeaderRedaction.redactText(result.detail)}); serving over SSE\n",
         )
         return null
     }

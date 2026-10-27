@@ -17,6 +17,7 @@ import splice.head.turn.TurnTelemetry
 import splice.upstream.Provider
 import splice.upstream.failure.ERROR_EVENT
 import splice.upstream.failure.FailedEvent
+import splice.upstream.transport.HeaderRedaction
 
 /** Bodies are the provider's, so they are read leniently. */
 private val bodies = Json {
@@ -49,7 +50,9 @@ internal class ZeroEventFailure(
         // read) — either case keeps the translator's original verdict.
         if (eventsIn != 0L || snippet.isBlank()) return outcome
         val cause = read(snippet)
-        val shown = snippet.take(ERR_SNIPPET).replace("\n", "\\n").replace("\r", "")
+        // The body as it came, with a header it quotes losing that value (fix 4, Oct 27: a dead head's body naming
+        // the request's turn state would otherwise write it into the daemon log).
+        val shown = HeaderRedaction.redactText(snippet).take(ERR_SNIPPET).replace("\n", "\\n").replace("\r", "")
         log(
             telemetry.errTurn(
                 "zero-event",

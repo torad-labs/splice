@@ -36,7 +36,7 @@ public data class ResponsesRequestControlQuirks(
     val serviceTier: ResponsesServiceTierSupport = ResponsesServiceTierSupport.OPENAI,
     /** Whether positive source output caps become the public max_output_tokens control. */
     val emitMaxOutputTokens: Boolean = true,
-    /** Carry an explicitly supplied opaque source user id through the public safety_identifier field. */
+    /** Send a SHA-256 digest of an explicit source user id as the public safety_identifier, never the raw id. */
     val emitSafetyIdentifier: Boolean = true,
     /**
      * DR-155: the vendor's minimum image edge in pixels, or null for "this backend has no stated

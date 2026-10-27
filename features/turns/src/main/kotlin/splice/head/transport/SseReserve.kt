@@ -25,6 +25,10 @@ internal class SseReserve(private val replies: Replies, private val owner: Login
     var reasonCode: String? = null
         private set
 
+    /** The failure was the socket's, not the request's: a fresh socket of the same login is tried once before HTTP. */
+    var freshSocket: Boolean = false
+        private set
+
     /** A failure terminal before any client frame sends the round to SSE; true when [evt] did. A policy refusal is
      *  not re-served: over SSE the identical context met the identical refusal, so the round's translator ends the
      *  turn on it instead (WsFailureTerminal). */
@@ -37,7 +41,8 @@ internal class SseReserve(private val replies: Replies, private val owner: Login
                 .filter { it.isNotEmpty() }
                 .joinToString(" "),
         )
-        reasonCode = "upstream_failure_terminal"
+        freshSocket = runner.isSocketFault(evt)
+        reasonCode = if (freshSocket) failure.code else "upstream_failure_terminal"
         return true
     }
 
@@ -47,6 +52,7 @@ internal class SseReserve(private val replies: Replies, private val owner: Login
         val words = PreContentTear.words(torn, inputs) ?: return false
         detail = oneLined(words)
         reasonCode = "pre_output_transport_tear"
+        freshSocket = true
         return true
     }
 

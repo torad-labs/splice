@@ -69,8 +69,7 @@ class WsPeerCloseTest {
     private suspend fun round(ws: WsUpstream) = checkNotNull(
         ws.round(
             key = "conversation",
-            headers = emptyMap(),
-            wssUrl = WSS_URL,
+            handshake = WsHandshake(WSS_URL, emptyMap()),
             isTerminal = TerminalEvent { it["type"].toString().trim('"') == "response.completed" },
             frameFor = RoundFrame { "{}" },
         ),

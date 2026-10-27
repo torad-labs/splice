@@ -34,7 +34,7 @@ internal class TransportSteps(
         val label = if (phase == TransportFailurePhase.POST_SEND) "transport-possible-duplicate" else "transport"
         ctx.onRetry(
             "$label ${e::class.simpleName} attempt ${state.attempt + 1}/${state.maxRetries}: " +
-                TransportFailureReason.of(e, ctx.url).take(ERR_SNIPPET),
+                TransportFaultLine.of(e, ctx.url).take(ERR_SNIPPET),
         )
         if (!backoff(e, ctx, state.attempt, t0)) throw e
         state.pendingRetry = if (phase == TransportFailurePhase.POST_SEND) RetryKind.POST_SEND else RetryKind.ORDINARY
@@ -55,7 +55,7 @@ internal class TransportSteps(
         state.streamReissues += 1
         ctx.onRetry(
             "stream torn before first client frame, reissue ${state.streamReissues}/$MAX_STREAM_REISSUES: " +
-                "${e::class.simpleName} ${TransportFailureReason.of(e, ctx.url).take(ERR_SNIPPET)}",
+                "${e::class.simpleName} ${TransportFaultLine.of(e, ctx.url).take(ERR_SNIPPET)}",
         )
         if (!backoff(e, ctx, state.attempt, t0)) return null
         state.pendingRetry = RetryKind.ORDINARY

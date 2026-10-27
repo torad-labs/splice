@@ -111,9 +111,9 @@ class UpstreamClientThreadRefusalTest {
         val taskRunner = okHttpCanceled(refusedFor("okhttp3.internal.concurrent.TaskRunner\$RealBackend"))
         val okio = okHttpCanceled(RefusedBeforeSend(refusedFor("okio.AsyncTimeout\$Companion")))
 
-        assertEquals(REFUSED_REASON, TransportFailureReason.of(taskRunner, url))
-        assertEquals(OKIO_REFUSED_REASON, TransportFailureReason.of(okio, url))
-        assertEquals(REFUSED, TransportFailureReason.of(refused, url), "a thread neither owns is named alone")
+        assertEquals(REFUSED_REASON, TransportFaultLine.of(taskRunner, url))
+        assertEquals(OKIO_REFUSED_REASON, TransportFaultLine.of(okio, url))
+        assertEquals(REFUSED, TransportFaultLine.of(refused, url), "a thread neither owns is named alone")
     }
 
     @Test
@@ -138,7 +138,7 @@ class UpstreamClientThreadRefusalTest {
         val ending = runCatching { clientOver(engine).posted(ctx(mutableListOf()), "{}") { "ok" } }.exceptionOrNull()
 
         assertTrue(ending is IOException, "the refusal itself ends the post: $ending")
-        assertEquals(REFUSED, TransportFailureReason.of(checkNotNull(ending), url))
+        assertEquals(REFUSED, TransportFaultLine.of(checkNotNull(ending), url))
     }
 
     // The refusal okio's watchdog start makes at a response read, after the upstream took the request whole

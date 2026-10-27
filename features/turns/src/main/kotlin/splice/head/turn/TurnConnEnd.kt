@@ -17,11 +17,10 @@ import splice.head.perf.PerfFailure
 import splice.upstream.Provider
 import splice.upstream.transport.SseFrameTooLarge
 import splice.upstream.transport.StreamTornBeforeClient
+import splice.upstream.transport.TransportFaults
 import java.io.IOException
-import java.net.ConnectException
 import java.net.URI
 import java.net.URISyntaxException
-import java.nio.channels.ClosedChannelException
 
 // why: bound cause traversal even if an external throwable forms a cycle.
 private const val MAX_FAILURE_CAUSE_DEPTH = 8
@@ -60,8 +59,14 @@ internal class TurnConnEnd(
             failure.suppressed.any { it is CodeModeDivergenceMarker }
         }
         if (divergence) drive.perf.setCount(PerfKeys.CODE_MODE_DIVERGENCE, 1)
-        refusedRuntimePort(e)?.let { drive.perf.setCount(PerfKeys.REFUSED_RUNTIME_PORT, it.toLong()) }
-        emitConnReset(drive, failures.connectionResetMessage(e))
+        // Failure-handling slice 3: the socket's failure is READ, once, by the one reader of it
+        // (TransportFaults) — this surface no longer decides a refusal from a perf counter it set itself, which
+        // left every refusal that was not a loopback one reading as a connection closed before answering.
+        val cause = TransportFaults.of(e, local = LoopbackOverride.isLoopback(provider.upstreamUrl))
+        if (cause.why == Unreach.REFUSED) {
+            runtimePort()?.let { drive.perf.setCount(PerfKeys.REFUSED_RUNTIME_PORT, it.toLong()) }
+        }
+        emitConnReset(drive, cause, failures.connectionResetMessage(e))
     }
 
     /** The upstream sent a frame over our own size limit, before or after content reached the client. */
@@ -88,11 +93,9 @@ internal class TurnConnEnd(
         drive.emitter.emitError(cause)
     }
 
-    private fun refusedRuntimePort(error: Throwable): Int? {
-        val chain = generateSequence(error) { it.cause }.take(MAX_FAILURE_CAUSE_DEPTH).toList()
-        val closedConnect = chain.any { it is ConnectException } && chain.any { it is ClosedChannelException }
-        val refused = closedConnect || chain.any(::namedRefusal)
-        if (!refused || chain.any(::otherConnectFailure)) return null
+    /** The runtime port a refusal was against, when the address is this machine's own: the count the perf row
+     *  carries (refused_runtime_port). Null for a provider out on the network, whose port is nobody's to start. */
+    private fun runtimePort(): Int? {
         val endpoint = try {
             URI(provider.upstreamUrl)
         } catch (_: URISyntaxException) {
@@ -101,27 +104,13 @@ internal class TurnConnEnd(
         return endpoint.port.takeIf { it > 0 && endpoint.host in setOf("localhost", "127.0.0.1", "[::1]", "::1") }
     }
 
-    private fun namedRefusal(error: Throwable): Boolean =
-        error is ConnectException && error.message?.contains("Connection refused", ignoreCase = true) == true
-
-    private fun otherConnectFailure(error: Throwable): Boolean = when (error) {
-        is java.nio.channels.UnresolvedAddressException, is java.net.UnknownHostException,
-        is java.net.NoRouteToHostException, is java.net.http.HttpConnectTimeoutException,
-        is io.ktor.client.network.sockets.ConnectTimeoutException,
-        -> true
-        else -> false
-    }
-
-    /** One conn-reset surface for raw tears and reissue-exhausted [StreamTornBeforeClient]. */
-    suspend fun emitConnReset(drive: TurnDrive, detail: String) {
+    /** One conn-reset surface for raw tears and reissue-exhausted [StreamTornBeforeClient]. [cause] is what the
+     *  transport said happened (TransportFaults), and [detail] the same failure in the log's words. */
+    suspend fun emitConnReset(drive: TurnDrive, cause: FailureCause.Path.Unreachable, detail: String) {
         // The transport's own detail stays in the log; the client and the trace read the line for its cause.
         log(telemetry.errTurn(CONN_RESET_KIND, drive, ": $detail"))
         // DR-128: account BEFORE the emit — see the frame-too-large arm above.
         val refused = drive.perfCounter(PerfKeys.REFUSED_RUNTIME_PORT) > 0
-        val cause = FailureCause.Path.Unreachable(
-            if (refused) Unreach.REFUSED else Unreach.RESET_BEFORE_REPLY,
-            local = LoopbackOverride.isLoopback(provider.upstreamUrl),
-        )
         // The row names a cause only for a refused runtime port, as it always has.
         telemetry.recordPerf(
             drive,

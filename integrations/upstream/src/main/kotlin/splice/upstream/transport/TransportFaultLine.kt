@@ -36,7 +36,7 @@ import java.nio.channels.UnresolvedAddressException
 import javax.net.ssl.SSLException
 
 /** Throwable -> one log line naming the failure and the endpoint it happened against. */
-public object TransportFailureReason {
+public object TransportFaultLine {
 
     /** [upstreamUrl] contributes host and port only — never a path or query, which can carry keys. */
     public fun of(e: Throwable, upstreamUrl: String?): String {

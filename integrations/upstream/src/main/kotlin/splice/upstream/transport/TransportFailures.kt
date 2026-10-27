@@ -45,7 +45,7 @@ public fun interface CausePredicate {
  *  retrying that one risks a double token burn, so it needs a distinct log class. */
 internal enum class TransportFailurePhase { CONNECT, POST_SEND }
 
-/** The failure chain both halves read: the verdict below and the name TransportFailureReason gives, so the
+/** The failure chain both halves read: the verdict below and the name TransportFaultLine gives, so the
  *  two cannot read different chains. */
 internal object FailureChain {
     /** [e] and its causes, at most MAX_CAUSE_DEPTH of them. OkHttp hands a Throwable its call thread caught

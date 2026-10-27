@@ -21,11 +21,11 @@ import java.net.http.HttpConnectTimeoutException
 import java.nio.channels.ClosedChannelException
 import java.nio.channels.UnresolvedAddressException
 
-class TransportFailureReasonTest {
+class TransportFaultLineTest {
 
     private val bonsai = "http://127.0.0.1:8099/v1/chat/completions"
 
-    private fun reason(e: Throwable, url: String = bonsai) = TransportFailureReason.of(e, url)
+    private fun reason(e: Throwable, url: String = bonsai) = TransportFaultLine.of(e, url)
 
     /** The JDK client's connect failure: two ConnectExceptions over the link that says what happened. */
     private fun jdk(last: Throwable, message: String? = null): ConnectException =

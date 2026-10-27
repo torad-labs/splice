@@ -5,7 +5,7 @@ package splice.head.turn
 
 import kotlinx.coroutines.CancellationException
 import splice.upstream.Provider
-import splice.upstream.transport.TransportFailureReason
+import splice.upstream.transport.TransportFaultLine
 import java.io.IOException
 
 /** The per-turn error boundary and the failure-message shaping around it. */
@@ -43,5 +43,5 @@ internal class TurnFailures(
     /** V4-164: the socket's own account, never Throwable.message — the JDK client's refused connect
      *  carries a null one. It goes to the log; the client reads the line for the connection's cause. */
     fun connectionResetMessage(error: Throwable): String =
-        TransportFailureReason.of(error, provider.upstreamUrl)
+        TransportFaultLine.of(error, provider.upstreamUrl)
 }

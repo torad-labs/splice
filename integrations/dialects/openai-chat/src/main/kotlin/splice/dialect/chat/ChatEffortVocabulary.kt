@@ -3,17 +3,17 @@ package splice.dialect.chat
 
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
-import splice.core.wire.AnthropicRequest
 
 private const val EFFORT_FIELD = "effort"
 
-/** A provider-opted vocabulary. Explicit client effort wins over the thinking switch and default. */
+/** A provider-opted vocabulary. Explicit client effort wins over the default. Thinking off changes neither
+ *  (Marcos, 2026-10-27): the none level is reached only by a client that asks for none. */
 public class ChatEffortVocabulary(
     private val default: String,
     private val levels: Map<String, String>,
     private val modelPattern: Regex? = null,
 ) {
-    internal fun effort(raw: JsonObject?, body: AnthropicRequest, upstreamModel: String): String? {
+    internal fun effort(raw: JsonObject?, upstreamModel: String): String? {
         if (modelPattern?.containsMatchIn(upstreamModel) == false) return null
         val explicit = sequenceOf(
             (raw?.get("output_config") as? JsonObject)?.get(EFFORT_FIELD),
@@ -22,11 +22,7 @@ public class ChatEffortVocabulary(
             (raw?.get("metadata") as? JsonObject)?.get(EFFORT_FIELD),
             (raw?.get("reasoning") as? JsonObject)?.get(EFFORT_FIELD),
         ).filterIsInstance<JsonPrimitive>().firstOrNull { it.isString }?.content
-        return when {
-            explicit != null -> mapped(explicit)
-            body.thinking?.disabled == true -> levels["none"]
-            else -> default
-        }
+        return explicit?.let(::mapped) ?: default
     }
 
     private fun mapped(effort: String): String = levels[effort.trim().lowercase()] ?: default

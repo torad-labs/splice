@@ -21,8 +21,6 @@ internal class GrokEffortVocabulary : EffortVocabulary {
     }
 
     override fun floor(effort: String?): String = effort?.takeIf { it in RUNGS } ?: "low"
-
-    override fun omitWhenDisabled(): Boolean = false
 }
 
 private const val MEDIUM = "medium"

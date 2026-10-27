@@ -30,7 +30,8 @@ internal class ResponsesReasoningKnobs(private val quirks: ResponsesQuirks) {
         val requested = looseFields.looseEffort(raw)
         // An explicit none is a reasoning choice, not a display setting or a turn-type default.
         if (requested == "none") return requested
-        if (body.thinking?.disabled == true && quirks.reasoning.effortVocabulary.omitWhenDisabled()) return null
+        // Thinking off is never a reasoning choice (Marcos, 2026-10-27): the turn keeps the effort it
+        // asked for, else the configured one, else high. A disabled thinking config's budget picks nothing.
         var effort = requested
         if (effort == null) {
             // v27: the /effort picker (budget) WINS over the config/env fallback

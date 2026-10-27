@@ -304,9 +304,9 @@ context_window = 256000
 # Inline shorthand: chat_effort_vocabulary = { default = "max", levels = { none = "low", low = "low", high = "high", max = "max" } }
 # With no vocabulary, request bytes and model-gated xhigh behavior are unchanged.
 # levels maps trimmed, case-insensitive client names to upstream values; duplicate normalized
-# names are rejected. Missing or unknown effort uses default. Explicit effort wins over thinking.
-# Disabled thinking uses the none level if declared; without none it falls back to legacy tiers,
-# which omit effort. reasoning_effort = false still suppresses both upstream effort wire fields.
+# names are rejected. Missing or unknown effort uses default. Disabled thinking changes nothing:
+# it never drops effort, and the none level applies only when the client asks for none.
+# reasoning_effort = false still suppresses both upstream effort wire fields.
 # Optional model_pattern is an upstream-model regex; a miss preserves legacy budget tiers.
 # Complete optional GLM-5.3-Flash runtime example; keep your existing provider URL and auth:
 # [providers.glml53]

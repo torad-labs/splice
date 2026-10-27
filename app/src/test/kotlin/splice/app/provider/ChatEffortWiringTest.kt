@@ -38,7 +38,7 @@ class ChatEffortWiringTest {
     }
 
     @Test
-    fun `the vocabulary maps every requested level and thinking off`() {
+    fun `the vocabulary maps every requested level and thinking off keeps the default, never the none level`() {
         val provider = provider(configured = true)
         val levels = mapOf(
             "none" to "low", "minimal" to "low", "light" to "low", "low" to "low",
@@ -47,7 +47,7 @@ class ChatEffortWiringTest {
         for ((effort, expected) in levels) {
             assertEffort(provider, "\"output_config\":{\"effort\":\"$effort\"}", expected)
         }
-        assertEffort(provider, "", "low", thinking = """{"type":"disabled"}""")
+        assertEffort(provider, "", "max", thinking = """{"type":"disabled"}""")
         assertEffort(
             provider,
             "\"output_config\":{\"effort\":\"max\"}",
@@ -117,17 +117,6 @@ class ChatEffortWiringTest {
     }
 
     @Test
-    fun `thinking disabled omits effort when the vocabulary has no none level`() {
-        val vocabulary = vocabularyToml.replace("none = \"low\"\n", "")
-        val provider = providerFromToml(baseToml + vocabulary)
-        val built = provider.buildTurn(body("", """{"type":"disabled"}"""), false, null)
-        assertFalse(built.requestBody.containsKey("reasoning_effort"), built.requestBody.toString())
-        assertFalse(built.requestBody.containsKey("reasoning"), built.requestBody.toString())
-        assertEquals("n/a", built.meta.reasoning.effort)
-        assertEffort(provider, "\"effort\":\"low\"", "low", thinking = """{"type":"disabled"}""")
-    }
-
-    @Test
     fun `mixed case configured levels and client levels resolve to the configured value not default`() {
         val vocabulary = vocabularyToml.replace("xhigh = \"max\"", "XHigh = \"high\"")
             .replace("max = \"max\"", "MAX = \"low\"")
@@ -137,13 +126,13 @@ class ChatEffortWiringTest {
     }
 
     @Test
-    fun `quoted TOML effort names resolve thinking off and nondefault explicit levels`() {
+    fun `quoted TOML effort names resolve none and nondefault explicit levels`() {
         for (quote in listOf("\"", "'")) {
             val vocabulary = vocabularyToml.replace("none = \"low\"", "${quote}none$quote =\"low\"")
                 .replace("xhigh = \"max\"", "${quote}XHigh$quote =\"high\"")
                 .replace("low = \"low\"", "${quote}low$quote =\"low\"")
             val provider = providerFromToml(baseToml + vocabulary)
-            assertEffort(provider, "", "low", thinking = """{"type":"disabled"}""")
+            assertEffort(provider, "\"effort\":\"none\"", "low")
             assertEffort(provider, "\"effort\":\"xHIGH\"", "high")
             assertEffort(provider, "\"output_config\":{\"effort\":\"low\"}", "low")
         }

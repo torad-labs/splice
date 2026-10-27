@@ -199,10 +199,8 @@ class ResponsesRequestBuilderTest {
         // no quirk -> omitted (grok/openai-platform)
         req = build(body, quirks = GROK)
         assertNull(req["stream_options"])
-        // quirk set but no summary requested (disabled thinking) -> omitted, codex-rs parity
-        val disabled = """{"model":"m","thinking":{"type":"disabled"},
-            "messages":[{"role":"user","content":"x"}]}"""
-        req = build(disabled, quirks = withDelivery)
+        // quirk set but no summary requested (reasoning display off) -> omitted, codex-rs parity
+        req = build(body, quirks = withDelivery, options = opts(show = "off"))
         assertNull(req["stream_options"])
     }
 
@@ -218,14 +216,6 @@ class ResponsesRequestBuilderTest {
         assertNull(build(body, quirks = cutoff.withSummaryDelivery(null))["stream_options"])
         val options = build(body, quirks = CODEX.withSummaryDelivery("sequential_cutoff"))["stream_options"]?.jsonObject
         assertEquals("sequential_cutoff", options?.get("reasoning_summary_delivery")?.jsonPrimitive?.content)
-    }
-
-    @Test
-    fun `disabled thinking emits no reasoning block on codex`() {
-        val req = build(
-            """{"model":"m","thinking":{"type":"disabled"},"messages":[{"role":"user","content":"x"}]}""",
-        )
-        assertNull(req["reasoning"])
     }
 
     // codex-rs responses-lite parity for the gpt-5.6 family (shape read from codex-rs source and

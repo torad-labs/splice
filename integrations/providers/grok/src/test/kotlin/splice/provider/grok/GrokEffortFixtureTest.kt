@@ -22,7 +22,6 @@ class GrokEffortFixtureTest {
             assertEquals(fixture.fromBudget(budget), grok.fromBudget(budget), budget.toString())
         }
         assertEquals(fixture.floor(null), grok.floor(null))
-        assertEquals(false, grok.omitWhenDisabled())
         assertEquals("low", grok.floor("max"), "max is not a grok rung — floor to low")
         assertEquals("xhigh", grok.floor("xhigh"), "xhigh stays xhigh")
     }

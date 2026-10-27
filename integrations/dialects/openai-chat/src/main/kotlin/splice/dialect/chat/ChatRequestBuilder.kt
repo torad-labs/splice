@@ -40,13 +40,13 @@ public class ChatRequestBuilder(
         // backend's prompt-cache prefix from token zero, so every compaction read the whole
         // transcript cold. `compact` reaches TurnMeta for the response side only.
         val emitTools = quirks.capabilities.supportsTools && body.tools.isNotEmpty()
-        val effort = quirks.reasoning.effortVocabulary?.effort(raw, body, upstreamModel)
+        val effort = quirks.reasoning.effortVocabulary?.effort(raw, upstreamModel)
             ?: effortTiers.chatReasoningEffort(body, upstreamModel)
         val context = JsonWire.string(
             buildJsonObject {
                 put("request", MessageFragmentContext.of(body, raw))
                 put("upstream_model", upstreamModel)
-                effort?.let { put("effort", it) }
+                put("effort", effort)
             },
         )
         val messages = wire.messagesArray(body.system, body, context)
@@ -60,8 +60,8 @@ public class ChatRequestBuilder(
             compact = compact,
             reasoning = TurnReasoning(
                 showReasoning = showReasoning(),
-                effort = effort ?: "n/a",
-                summary = if (effort != null) "detailed" else null,
+                effort = effort,
+                summary = "detailed",
                 budgetTokens = body.thinking?.budgetTokens,
             ),
             route = TurnRoute(

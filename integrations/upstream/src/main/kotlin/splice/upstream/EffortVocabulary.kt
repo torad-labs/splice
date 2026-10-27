@@ -9,6 +9,4 @@ public interface EffortVocabulary {
     public fun fromBudget(budget: Long): String?
 
     public fun floor(effort: String?): String? = effort
-
-    public fun omitWhenDisabled(): Boolean = true
 }

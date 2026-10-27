@@ -10,10 +10,10 @@ internal class ChatEffortTiers(private val xhighModels: Regex? = null) {
      * Map Anthropic thinking budget → chat `reasoning_effort`. Default high so backends that
      * support cleartext CoT actually emit `reasoning_content`. Compact turns INHERIT the session
      * effort (AGENTS cache law — a mismatched effort cold-starts the prompt cache); tools are
-     * stripped separately, effort is deliberately not compact-aware.
+     * stripped separately, effort is deliberately not compact-aware. Thinking off is not a tier: a turn with no
+     * budget gets high, so thinking off never drops the effort (Marcos, 2026-10-27).
      */
-    fun chatReasoningEffort(body: AnthropicRequest, upstreamModel: String): String? {
-        if (body.thinking?.disabled == true) return null
+    fun chatReasoningEffort(body: AnthropicRequest, upstreamModel: String): String {
         val budget = body.thinking?.budgetTokens
         return when {
             budget == null -> "high"

@@ -1,9 +1,8 @@
 // PORT-OF: server/src/config.mjs getConfig's returned view @ pre-public-port-baseline — the TYPED
 // ACCESSOR surface over the merged+normalized knob map. Almost all of it is one repetition: read a
-// Knob key, widen to the declared type. Two members are NOT accessors and carry real policy, so
-// they must travel with the table rather than being "simplified" into it:
-//   · [foldReasoningModels] — the comma-split model set; EMPTY MEANS THE FEATURE IS OFF, so a
-//     blank/absent knob must yield an empty set and never a set containing "".
+// Knob key, widen to the declared type. One member is NOT an accessor and carries real policy, so
+// it must travel with the table rather than being "simplified" into it (the fold's comma-split model
+// set was the other, until its knobs retired in 0.4.0 and the list became codex's own, CodexReplies):
 //   · [statuslineGitRoots] — the colon-split TRUST BOUNDARY: relative segments are DROPPED, so a
 //     roots list can never walk out of an absolute path.
 // The constructor stays `internal`: ConfigService is the only thing allowed to mint one, because
@@ -74,13 +73,6 @@ public class SpliceConfig internal constructor(
     public val mirrorReasoning: Boolean get() = bool(Knob.MIRROR_REASONING)
     public val progressLine: Boolean get() = bool(Knob.PROGRESS_LINE)
 
-    // Reasoning-continuation folding (codex 518n-2). Models is a comma list → set; empty = feature off.
-    public val foldReasoningModels: Set<String>
-        get() = string(Knob.FOLD_REASONING_MODELS).orEmpty()
-            .split(',').map { it.trim() }.filter { it.isNotEmpty() }.toSet()
-    public val foldMaxContinue: Int get() = long(Knob.FOLD_MAX_CONTINUE).toInt()
-    public val foldMarkerText: String get() = string(Knob.FOLD_MARKER_TEXT).orEmpty()
-    public val foldMaxTier: Int get() = long(Knob.FOLD_MAX_TIER).toInt()
     public val maxInflight: Int get() = long(Knob.MAX_INFLIGHT).toInt()
     public val maxQueued: Int get() = long(Knob.MAX_QUEUED).toInt()
 
@@ -137,7 +129,6 @@ public class SpliceConfig internal constructor(
     /** Whether the selected model's unified image budget replaces legacy detail guidance. */
     public val codeModeUnifiedImageBudget: Boolean get() = bool(Knob.CODE_MODE_UNIFIED_IMAGE_BUDGET)
 
-    public val upstreamRetries: Int get() = long(Knob.UPSTREAM_RETRIES).toInt()
     public val upstreamTimeoutMs: Long get() = long(Knob.UPSTREAM_TIMEOUT_MS)
     public val firstByteTimeoutMs: Long get() = long(Knob.FIRST_BYTE_TIMEOUT_MS)
 

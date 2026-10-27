@@ -734,7 +734,6 @@ command = "claudex"
     SPLICE_CONFIG: join(tmp, "splice.toml"),
     CLAUDEX_STATE_DIR: join(tmp, "state"),
     CLAUDEX_STREAM_IDLE_MS: "700",
-    CLAUDEX_UPSTREAM_RETRIES: "2",
     CLAUDEX_SHOW_REASONING: "text",
     CLAUDEX_REASONING_EFFORT: "high",
     CLAUDEX_REASONING_SUMMARY: "detailed",

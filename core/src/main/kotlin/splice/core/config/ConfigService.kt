@@ -242,7 +242,8 @@ public class ConfigService(
         for ((key, value) in raw) {
             val knob = knobsByKey[key]
             if (knob == null) {
-                rejected[key] = UNKNOWN_KEY
+                // a retired knob is named as retired, so splice.toml's line and a PATCH both say why it does nothing
+                rejected[key] = retiredKnobsByKey[key]?.retired ?: UNKNOWN_KEY
                 continue
             }
             val coerced = coercion.coerce(knob, value)

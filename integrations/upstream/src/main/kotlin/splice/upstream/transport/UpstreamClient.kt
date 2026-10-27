@@ -63,9 +63,6 @@ public class UpstreamClient(
     /** V4-412: where this head's provider hold (its reset, the plan window it named spent) survives a
      *  restart; null keeps it in memory only. Pool accounts each carry their own. */
     holdStore: ProviderHoldStore? = null,
-    /** Ignored since failure-handling slice 4: RetryEngine plans every retry from the cause and the position.
-     *  Kept so the round-driver tests that still name a retry count compile; it goes with their last use. */
-    public val maxRetries: Int = 0,
 ) {
     // The stateless collaborators the loop delegates to. Constructed once per client (not per call)
     // so the transport/request/failure/retry rules cost nothing per attempt. [cooldown] is the one

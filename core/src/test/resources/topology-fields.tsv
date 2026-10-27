@@ -23,10 +23,6 @@ daemon
 daemon.auto_update	
 daemon.control_port	
 daemon.effort	
-daemon.fold_marker_text	
-daemon.fold_max_continue	
-daemon.fold_max_tier	
-daemon.fold_reasoning_models	
 daemon.mcp_hosting	
 daemon.mcp_hosting_exclude	
 daemon.mcp_share	

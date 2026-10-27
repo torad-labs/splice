@@ -11,6 +11,7 @@ import splice.core.util.SafeFailureText
 import splice.core.util.TopologyRefusal
 import splice.topology.ConfigFindings
 import splice.topology.ConfigRead
+import splice.topology.RetiredSettings
 import splice.topology.TopologyLoader
 import java.io.IOException
 import java.nio.file.Files
@@ -40,7 +41,7 @@ internal class ConfigPreflight(
             return unreadable(failure)
         }
         val dir = path.toAbsolutePath().parent ?: path
-        val read = ConfigFindings.read(text, dir, configDir = dir, runtimes = LocalRowBootFindings(env))
+        val read = ConfigFindings.read(text, dir, dir, LocalRowBootFindings(env), RetiredSettings(env))
         return if (read is ConfigRead.Refused) refused(read) else 0
     }
 

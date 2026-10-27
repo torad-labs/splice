@@ -2,14 +2,22 @@
 // session; never boot on a finding or fix silently"). splice.toml is copied to splice's backup directory once,
 // before the first change; the file is checked again after every fix; the session succeeds only when no finding is
 // left. Every change is announced before it is made, and a removed or replaced value is never printed.
+// Failure-handling slice 4: a retired knob can also be set outside splice.toml. One saved in splice's state folder is
+// cleared there, after the same one backup; a variable in the environment is named to unset where it is set, which
+// no session can do for the shell or the service it runs under.
 package splice.app.cli
 
+import splice.core.config.RetiredKnob
+import splice.core.config.SavedSettings
 import splice.core.terminal.TerminalOutput
 import splice.core.topology.TopologyFileLock
 import splice.core.topology.TopologyFinding
 import splice.core.util.SecureFile
 import java.nio.file.Files
 import java.nio.file.Path
+
+/** What the session says of a saved-settings file a running daemon wrote to between its read and the clear. */
+private const val NOT_CLEARED = "changed meanwhile; nothing was cleared, and its findings are read again"
 
 /** What a person at a terminal is asked, and the editor they can be handed the file in. */
 internal interface FixPrompter {
@@ -52,6 +60,9 @@ internal class ConfigFixSession(
     private var backedUp = false
     private val skipped = mutableSetOf<String>()
 
+    /** The saved-settings files already copied to the backups, once each before their first clear. */
+    private val savedBackedUp = mutableSetOf<Path>()
+
     /** The bytes the findings on offer were read from: an edit lands only on these, since its line and key were
      *  found in them (PR #247's sixth review). */
     private var checked = ""
@@ -78,8 +89,41 @@ internal class ConfigFixSession(
         return true
     }
 
-    /** null = the person quit; true = the file changed; false = nothing changed (the same finding is offered again). */
-    private fun fix(finding: TopologyFinding): Boolean? {
+    /** null = the person quit; true = a file changed; false = nothing changed (the same finding is offered again). A
+     *  variable set in the environment this session runs in can be unset only by the shell profile or service that
+     *  sets it, so the session names it and where it was read, and moves on to the next finding. */
+    private fun fix(finding: TopologyFinding): Boolean? = when (val origin = finding.origin) {
+        is TopologyFinding.Origin.Environment -> {
+            output.line("  ${origin.name} is set in the environment this command runs in. Run `unset ${origin.name}`,")
+            output.line("  and remove it from the shell profile or service that sets it, then start splice again.")
+            skip(finding)
+        }
+        is TopologyFinding.Origin.Saved -> clearOffered(finding, origin)
+        TopologyFinding.Origin.File -> fixInFile(finding)
+    }
+
+    /** A setting splice saved in its state folder: cleared there on [c], the rest of the saved settings kept. The saved
+     *  file is copied to the backups once, before its first clear. A file a running daemon saved to meanwhile is left
+     *  as it is, and its findings are read again. */
+    private fun clearOffered(finding: TopologyFinding, origin: TopologyFinding.Origin.Saved): Boolean? {
+        output.line("  [c] clear the saved setting from ${origin.file}")
+        output.line("  [s] skip this one for now")
+        output.line("  [q] quit; splice does not start")
+        return when (prompter.ask("> ")?.trim()?.lowercase()) {
+            "c" -> {
+                val saved = origin.file
+                if (savedBackedUp.add(saved)) output.line("backed up ${saved.fileName} to ${backup(saved)}")
+                val cleared = SavedSettings(saved).clear(origin.key)
+                output.line(if (cleared) "cleared ${origin.key} from $saved" else "${saved.fileName} $NOT_CLEARED")
+                true
+            }
+            "s" -> skip(finding)
+            "q", null -> null
+            else -> false
+        }
+    }
+
+    private fun fixInFile(finding: TopologyFinding): Boolean? {
         val line = finding.line
         val editable = line?.takeIf { assignmentAt(it) != null }
         showMenu(line, editable?.takeIf { removable(finding) } != null, editable != null, settable(finding))
@@ -93,8 +137,10 @@ internal class ConfigFixSession(
         }
     }
 
-    /** A value can be set on any finding but an unknown key, which has no value to set. */
-    private fun settable(finding: TopologyFinding): Boolean = !finding.message.contains("is not a splice.toml setting")
+    /** A value can be set on any finding but an unknown key or a retired knob, which have no value to set. */
+    private fun settable(finding: TopologyFinding): Boolean =
+        !finding.message.contains("is not a splice.toml setting") &&
+            RetiredKnob.entries.none { finding.message.startsWith(it.retired) }
 
     /** A model row's setting cannot be removed: the row's id and context_window are required, so removing either would
      *  only trade this finding for a decode one (a runtime finding names a row as `providers.<p>.models[<id>]`). */

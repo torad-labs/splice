@@ -111,9 +111,9 @@ internal const val MAX_CAUSE_DEPTH = 8
  *  UpstreamTransport's public curve constants, so the curve a runner pauses on and
  *  [UpstreamTransport.defaultBackoff]'s cannot drift. */
 public data class BackoffCurve(
-    val baseMs: Long = defaultBackoffBaseMs,
-    val capMs: Long = defaultBackoffCapMs,
-    val jitterPct: Int = defaultJitterPct,
+    val baseMs: Long = DEFAULT_BACKOFF_BASE_MS,
+    val capMs: Long = DEFAULT_BACKOFF_CAP_MS,
+    val jitterPct: Int = DEFAULT_JITTER_PCT,
 )
 
 /** The retry curve as the operator's knobs (retryBackoffBaseMs, retryBackoffCapMs, retryBackoffJitterPct) say it is now,

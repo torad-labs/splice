@@ -33,21 +33,8 @@ public class TopologyKnobLayer(private val topology: Topology) {
         daemon.effort?.let { out["effort"] = it }
         daemon.replayReasoning?.let { out["replayReasoning"] = it.toString() }
         daemon.mirrorReasoning?.let { out["mirrorReasoning"] = it.toString() }
-        putFoldOverrides(daemon, out)
         putLegacyProviderOverrides(out)
         return out
-    }
-
-    /** Reasoning-continuation fold knobs, split out so [configOverrides] stays under the complexity
-     *  cap. The comma-joined model list is what the STRING knob coerces (SpliceConfig splits it
-     *  back). Was a member of [DaemonConfig] until HD-25 moved the whole projection here; the
-     *  receiver became the first parameter, which is the same shape the no-extension-declarations
-     *  law prescribes for a receiver a function no longer sits on. */
-    private fun putFoldOverrides(daemon: DaemonConfig, out: MutableMap<String, String>) {
-        daemon.foldReasoningModels?.let { out["foldReasoningModels"] = it.joinToString(",") }
-        daemon.foldMaxContinue?.let { out["foldMaxContinue"] = it.toString() }
-        daemon.foldMarkerText?.let { out["foldMarkerText"] = it }
-        daemon.foldMaxTier?.let { out["foldMaxTier"] = it.toString() }
     }
 
     /** DR-80: the heads the LEGACY single-head knobs may govern — for each legacy kind, the head

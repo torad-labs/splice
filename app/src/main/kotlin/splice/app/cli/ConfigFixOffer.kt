@@ -11,6 +11,7 @@ import splice.core.util.SecureFile
 import splice.core.util.TopologyRefusal
 import splice.topology.ConfigFindings
 import splice.topology.ConfigRead
+import splice.topology.RetiredSettings
 import splice.topology.TopologyLoader
 import java.nio.file.Files
 import java.nio.file.Path
@@ -24,8 +25,11 @@ internal class ConfigFixOffer(
     private val interactive: Boolean = System.console() != null,
     private val prompter: FixPrompter = TerminalFixPrompter(env),
     private val backups: Path = StatePaths().configBackupsDir,
+    /** Where the offer and its session speak: the terminal's error stream, where every refusal line goes. */
+    private val output: TerminalOutput = TerminalOutput(System.err::println),
 ) {
     private val runtimes = LocalRowBootFindings(env)
+    private val retired = RetiredSettings(env)
 
     /** [broken] as the refusal listing every finding of splice.toml, when the file has findings; null otherwise. */
     fun refusalOf(broken: Throwable): TopologyRefusal? {
@@ -35,7 +39,7 @@ internal class ConfigFixOffer(
         } catch (_: java.io.IOException) {
             return null
         }
-        val read = ConfigFindings.read(text, backups, configDir(), runtimes) as? ConfigRead.Refused
+        val read = ConfigFindings.read(text, backups, configDir(), runtimes, retired) as? ConfigRead.Refused
         return read?.let { TopologyRefusal(it.findings) }
     }
 
@@ -43,13 +47,14 @@ internal class ConfigFixOffer(
     fun offer(): Boolean {
         if (!interactive) return false
         val file = TopologyLoader.configPath(env)
-        System.err.println("splice: a fix session can repair this now; your file is backed up before its first change.")
+        output.line("splice: a fix session can repair this now; your file is backed up before its first change.")
         val session = ConfigFixSession(
             file,
-            TerminalOutput(System.err::println),
+            output,
             prompter,
             { text ->
-                (ConfigFindings.read(text, backups, configDir(), runtimes) as? ConfigRead.Refused)?.findings.orEmpty()
+                val read = ConfigFindings.read(text, backups, configDir(), runtimes, retired)
+                (read as? ConfigRead.Refused)?.findings.orEmpty()
             },
             { source -> backup(source) },
         )

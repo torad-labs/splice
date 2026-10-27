@@ -10,6 +10,7 @@ import kotlinx.serialization.json.jsonPrimitive
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertFalse
 import org.junit.jupiter.api.Assertions.assertNotNull
+import org.junit.jupiter.api.Assertions.assertNull
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.io.TempDir
@@ -70,7 +71,9 @@ class CodexResponsesArmTest {
         pinAccounts(wired)
         val built = wired.provider.buildTurn(AnthropicParse.parseAnthropicBody(TOOL_BODY), false, "session-1")
         pinTurn(built)
-        assertNotNull(wired.provider.foldPolicy(built.meta))
+        // Failure-handling slice 4: the models a fold continues are the ones codex's backend cuts (CodexReplies), and the
+        // fold knobs that once added gpt-6-astra here retired in 0.4.0, so a turn on it is never folded.
+        assertNull(wired.provider.foldPolicy(built.meta))
         wired.provider.onHeadStop()
     }
 
@@ -201,11 +204,7 @@ class CodexResponsesArmTest {
     ): ProviderBuild {
         val key = "codex"
         val state = StatePaths(baseOverride = tmp.resolve("state"))
-        val config = ConfigService(
-            state,
-            envReader = { null },
-            headOverrides = mapOf("foldReasoningModels" to "gpt-6-astra"),
-        )
+        val config = ConfigService(state, envReader = { null })
         return ProviderBuild(
             key = key,
             head = HeadConfig(

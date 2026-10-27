@@ -14,7 +14,9 @@ import kotlinx.serialization.descriptors.SerialKind
 import kotlinx.serialization.descriptors.StructureKind
 import splice.core.GATEWAY_VERSION
 import splice.core.SHIM_VERSION
+import splice.core.config.RetiredKnob
 import splice.core.config.UserHome
+import splice.core.config.retiredKnobsByKey
 import splice.core.perf.HISTORY_DEFAULT_DAYS
 import splice.core.topology.Topology
 import splice.core.topology.TopologyFinding
@@ -55,6 +57,7 @@ internal object TopologyTypeMismatch {
     private val segments = Regex("\\\"[^\\\"]+\\\"|'[^']+'|[A-Za-z0-9_-]+")
     private val assignment = Regex("^[ \\t]*([A-Za-z0-9_.-]+|\\?[ \\t]*)[ \\t]*=[ \\t]*(\\S)")
     private const val BROKEN_SECTION = "?"
+    private val overrides = Regex("heads\\.[^.]+\\.overrides")
     private val inlineEntry = Regex("[{},][ \\t]*([A-Za-z0-9_-]+)[ \\t]*=[ \\t]*(\\S)")
 
     fun first(text: String): WrongTopologyType? {
@@ -83,14 +86,31 @@ internal object TopologyTypeMismatch {
     }
 
     /** EVERY finding the schema and the masked source prove: each wrong type and each key the schema does not
-     *  declare, with its line. The decode stops at its first failure; a person fixing a file needs the rest. */
+     *  declare, with its line. The decode stops at its first failure; a person fixing a file needs the rest. A retired
+     *  knob is named as retired wherever it sits, its knob tables included, which take any key: once a fold field
+     *  makes `[daemon]` undecodable, the knob check that would name the rest never runs. */
     fun all(text: String): List<TopologyFinding> {
         val found = mutableListOf<TopologyFinding>()
         scan(text) { section, line, source, at ->
             val wrong = diagnoseLine(section, line, source, at)?.let { typeFinding(it) }
-            (unknownKey(section, line, source, at) ?: wrong)?.let { found += it }
+            val unknown = retiredKey(section, line, source, at) ?: unknownKey(section, line, source, at)
+            (unknown ?: wrong)?.let { found += it }
         }
         return found
+    }
+
+    /** A retired knob's line: in `[daemon]` by the field it had there, in `[defaults]` or a head's overrides by its knob
+     *  key. The words are the knob check's, so a file reads the same whether or not it decodes. */
+    private fun retiredKey(section: String, line: String, source: String, lineNumber: Int): TopologyFinding? {
+        val found = assignment.find(line) ?: return null
+        val table = section.replace("\"", "").replace("'", "").replace(" ", "")
+        val member = source.substring(checkNotNull(found.groups[1]).range).trim().replace("\"", "").replace("'", "")
+        val knob = when {
+            table == "daemon" -> RetiredKnob.entries.firstOrNull { it.daemonField == member }
+            table == "defaults" || overrides.matches(table) -> retiredKnobsByKey[member]
+            else -> null
+        }
+        return knob?.let { TopologyFinding("$table.$member", "${it.retired}; remove the line", lineNumber) }
     }
 
     private fun typeFinding(wrong: WrongTopologyType): TopologyFinding {
@@ -249,15 +269,17 @@ historyRetentionDays = "$HISTORY_DEFAULT_DAYS"
     }
 
     /** Boot and restart: the topology, or a [TopologyRefusal] listing EVERY problem in the file at once, with what each
-     *  local runtime that is up refuses ([runtimes]) among them. */
+     *  local runtime that is up refuses ([runtimes]) among them, and each retired knob splice's environment or saved
+     *  settings still set ([retired]). */
     public fun loadForBoot(
         path: Path,
         runtimes: LocalRowFindings = LocalRowFindings { emptyList() },
+        retired: RetiredSettings? = null,
     ): LoadedTopology {
         val bytes = readOrMaterialize(path, ExclusiveStarterWrite)
         val stateBase = path.toAbsolutePath().parent ?: path
         val text = bytes.toString(Charsets.UTF_8)
-        return when (val read = ConfigFindings.read(text, stateBase, configDir = stateBase, runtimes = runtimes)) {
+        return when (val read = ConfigFindings.read(text, stateBase, stateBase, runtimes, retired)) {
             is ConfigRead.Ready -> LoadedTopology(read.topology, sha256Hex(bytes))
             is ConfigRead.Refused -> throw TopologyRefusal(read.findings)
         }

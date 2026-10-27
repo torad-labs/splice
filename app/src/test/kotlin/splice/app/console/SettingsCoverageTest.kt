@@ -41,8 +41,6 @@ class SettingsCoverageTest {
             "statuslineGitRoots" to NO_JOB,
             "replayReasoning" to ENV_OPT_IN,
             "ingressReadIdleMs" to NOT_DRAWN,
-            "foldMarkerText" to NOT_DRAWN,
-            "foldMaxTier" to NOT_DRAWN,
         )
 
         val undrawn = Knob.entries.filter { !it.restartRequired && it.key !in offPage }

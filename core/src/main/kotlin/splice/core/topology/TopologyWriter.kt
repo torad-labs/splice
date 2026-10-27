@@ -179,8 +179,31 @@ public object TopologyBackupName {
             .matches(file.fileName.toString())
 }
 
-/** One reason a write was refused: the dotted path of the key it concerns and what is wrong. */
-public data class TopologyFinding(val path: String, val message: String, val line: Int? = null) {
+/** One reason a write was refused: the dotted path of the key it concerns and what is wrong. A boot finding can also
+ *  come from splice's environment or its saved settings ([origin]), where [path] is the variable or the saved key. */
+public data class TopologyFinding(
+    val path: String,
+    val message: String,
+    val line: Int? = null,
+    val origin: Origin = Origin.File,
+) {
+    /** Where a finding was read, which says where it is fixed. Until the retry and fold knobs retired in 0.4.0, every
+     *  finding was splice.toml's; a retired knob can also be set in splice's environment or in the settings splice
+     *  saved in its state folder, and the fix session reads the origin to offer its move. */
+    public sealed class Origin {
+        /** splice.toml, at the finding's key path and line. */
+        public data object File : Origin()
+
+        /** The environment variable [name], which only the shell profile or service that sets it can unset. */
+        public data class Environment(val name: String) : Origin()
+
+        /** The setting [key] saved in [file], the state folder's config.json, which the fix session can clear. */
+        public data class Saved(val file: Path, val key: String) : Origin()
+    }
+
+    /** True when the finding is splice.toml's own, which the fix session can change in the file. */
+    public val inFile: Boolean get() = origin == Origin.File
+
     /** The finding as one line for a person: the key path, the line it sits on when known, and the reason. */
     public fun text(): String = "$path${line?.let { " (line $it)" }.orEmpty()}: $message"
 }

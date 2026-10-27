@@ -31,7 +31,7 @@ Source: `RetryPolicy.kt` lines 118-123, 148-182.
 
 | layer | trigger | bound |
 |---|---|---|
-| Attempt backoff | any failed attempt (connection failure, any HTTP status) | `upstreamRetries` = 4 attempts per round, the first send included. Wait starts at 200 ms, doubles, caps at 10 s, +/-10% jitter (about 1.5 s in all) |
+| Attempt backoff | any failed attempt (connection failure, any HTTP status) | RetryEngine decides from what failed and where: a server error before the provider's stream began is re-sent after 200, 400 and 800 ms. No knob sets it: `upstreamRetries` and `retryBackoff*` were retired in 0.4.0 |
 | Credential refresh | a vendor auth failure | one refresh and one free re-send per turn. Rejected again: give up. A pooled head moves the turn to another login |
 | Stream re-issue | stream torn after a 2xx, before the client saw a byte | 2 re-issues per turn |
 | Body amendment | a 400 that a dialect knows how to repair | one amended re-send per turn |
@@ -109,19 +109,23 @@ Source: `core/.../turn/WireType.kt` 31-90; `core/.../turn/TurnOutcome.kt` 14-22;
 ### 1.6 The knobs, and where they live in splice.toml
 
 A knob sits in `[defaults]` (every head), in `[heads.<key>.overrides]` (one head), or in a `[daemon]` key spelled
-with underscores. Values are quoted strings, for example `upstreamRetries = "4"`. One daemon serves every head and
+with underscores. Values are quoted strings, for example `maxInflight = "4"`. One daemon serves every head and
 shares one config service, so a limit that belongs to one upstream account (`maxInflight`, `maxQueued`, the timers)
 belongs under that head's `[heads.<key>.overrides]`. The field syntax is in `toml-reference.md`.
 
 | key | default | change takes effect |
 |---|---|---|
-| `upstreamRetries` | 4 | next request (hot) |
-| `retryBackoffBaseMs`, `retryBackoffCapMs`, `retryBackoffJitterPct` | 200, 10000, 10 | next retry (hot) |
 | `firstByteTimeoutMs`, `streamIdleMs`, `stallReanchorMs` | 90000, 90000, 20000 | next turn (hot) |
 | `upstreamTimeoutMs` | 900000 | restart |
 | `maxInflight`, `maxQueued` | 12, 512 (0 = unlimited) | next admission (hot) |
 | `progressLine` | true | next heartbeat (hot) |
 | `maxRequestBytes`, `requestReadTimeoutMs`, `ingressReadIdleMs` | 33554432, 30000, 30000 | hot |
+
+`upstreamRetries`, `retryBackoffBaseMs`, `retryBackoffCapMs`, `retryBackoffJitterPct` and the four `fold*` knobs
+were retired in 0.4.0. splice refuses to start while splice.toml, an environment variable (`CLAUDEX_UPSTREAM_RETRIES`,
+`SPLICE_RETRY_BACKOFF_*`, `CLAUDEX_FOLD_*`) or a saved setting still sets one, lists every place at once, and
+`splice restart` on a terminal offers to remove the lines and clear the saved settings; a variable is unset where it is
+set.
 
 "Hot" means a `PATCH /api/config` (the console's Settings page) or the state `config.json` reaches the running
 daemon. An edit of `splice.toml` is read only at boot, so any key changed there needs `splice restart`, whatever

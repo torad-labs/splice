@@ -159,7 +159,7 @@ class WsPeerCloseFallbackTest(@param:TempDir private val tmp: Path) {
             listenPort = 0,
             deps = headDeps(
                 tmp = tmp,
-                upstream = UpstreamClient(totalTimeoutMs = 30_000, maxRetries = 2),
+                upstream = UpstreamClient(totalTimeoutMs = 30_000),
                 log = { logs += it },
                 seams = HeadDeps.HeadSeams(requestMaterializationGate = RequestMaterializationGate()),
             ).copy(stores = headStores(tmp, suffix = "-${++built}")),

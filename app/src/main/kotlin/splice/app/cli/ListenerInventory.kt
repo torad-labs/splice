@@ -18,6 +18,7 @@ import splice.daemonclient.DaemonSettings
 import splice.http.listen.DescriptorAdoption
 import splice.topology.ConfigFindings
 import splice.topology.ConfigRead
+import splice.topology.RetiredSettings
 import splice.topology.TopologyLoader
 import java.nio.file.Files
 import java.nio.file.NoSuchFileException
@@ -50,7 +51,7 @@ internal class ListenerInventory(
             null
         } else {
             val dir = path.toAbsolutePath().parent ?: path
-            when (val read = ConfigFindings.read(text, dir, configDir = dir)) {
+            when (val read = ConfigFindings.read(text, dir, configDir = dir, retired = RetiredSettings(env))) {
                 is ConfigRead.Ready -> read.topology
                 is ConfigRead.Refused -> {
                     errors.line("splice: ${SafeFailureText.render(TopologyRefusal(read.findings))}")

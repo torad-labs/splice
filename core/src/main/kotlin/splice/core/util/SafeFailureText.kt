@@ -64,10 +64,12 @@ public class TopologySlotsFailure(public val problem: Problem) : IllegalArgument
 public class TopologyStructureFailure(detail: String) : IllegalArgumentException(detail)
 
 /** Every reason splice.toml cannot serve, listed at once: boot refuses on the whole list, not on the first of it. Each
- *  finding names a key path and a line and never a value, so the message is safe to print and to log whole. */
+ *  finding names a key path and a line and never a value, so the message is safe to print and to log whole. A list
+ *  with a finding from splice's environment or its saved settings is named as splice's settings, not as the file. */
 public class TopologyRefusal(public val findings: List<splice.core.topology.TopologyFinding>) :
     IllegalArgumentException(
-        "splice.toml has ${findings.size} problem(s); splice will not start until all are fixed:" +
+        (if (findings.all { it.inFile }) "splice.toml has" else "splice's settings have") +
+            " ${findings.size} problem(s); splice will not start until all are fixed:" +
             findings.joinToString("") { "\n  - ${it.text()}" },
     ) {
     init {

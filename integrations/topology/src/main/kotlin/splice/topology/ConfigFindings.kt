@@ -8,6 +8,7 @@
 package splice.topology
 
 import kotlinx.serialization.SerializationException
+import splice.core.config.retiredKnobsByKey
 import splice.core.model.HeadDiscoveredModels
 import splice.core.topology.Topology
 import splice.core.topology.TopologyFinding
@@ -41,7 +42,9 @@ public fun interface LocalRowFindings {
  *  check is left out: it needs the models a runtime discovers, which boot does not have yet, so it stays a per-head
  *  DEGRADED, never a refusal.
  *
- *  [stateBase] only satisfies the knob check's constructor; nothing here reads state. */
+ *  [stateBase] only satisfies the knob check's constructor; nothing here reads state but [retired], which adds a
+ *  retired knob still set in splice's environment or saved in its state folder, in every layer, since a file the
+ *  decode refuses would otherwise hide them until a second boot. */
 public object ConfigFindings {
     /** [configDir] is the topology's directory, so a head's relative `system_prompt_file` is read where the daemon
      *  reads it; null leaves the prompt check out. [runtimes] adds what each local runtime that is up refuses. */
@@ -50,14 +53,16 @@ public object ConfigFindings {
         stateBase: Path,
         configDir: Path? = null,
         runtimes: LocalRowFindings = LocalRowFindings { emptyList() },
+        retired: RetiredSettings? = null,
     ): ConfigRead {
         // A structural finding is answered BEFORE any decode: a head roster written as an array of strings sends the
         // decoder into the loop the preflight exists to prevent, so the decoder never sees such a file.
         val structural = TomlStructurePreflight.failures(text).map { finding(it) }
-        if (structural.isNotEmpty()) return refused(structural + TopologyTypeMismatch.all(text))
+        val elsewhere = { topology: Topology? -> retired?.findings(topology).orEmpty() }
+        if (structural.isNotEmpty()) return refused(structural + TopologyTypeMismatch.all(text) + elsewhere(null))
         val decoded = decode(text)
         val topology = decoded.getOrNull()
-            ?: return refused(undecodable(text, requireNotNull(decoded.exceptionOrNull())))
+            ?: return refused(undecodable(text, requireNotNull(decoded.exceptionOrNull())) + elsewhere(null))
         val checks = TopologyFindings.of(
             topology,
             HeadDiscoveredModels { emptyList() },
@@ -68,17 +73,16 @@ public object ConfigFindings {
             .map { it.copy(message = withFix(it), line = lineOf(text, it.path)) }
         val local = runtimes.of(topology).distinct()
             .map { it.copy(line = rows.of(text, it.path) ?: lineOf(text, it.path)) }
-        return refused(checks + local, topology)
+        return refused(checks + local + elsewhere(topology), topology)
     }
 
     /** A knob finding keeps boot's own reason as written (the console writer pins it word for word); the boot
-     *  refusal adds what to do about it. */
-    private fun withFix(finding: TopologyFinding): String =
-        if (finding.path.startsWith("defaults.") || finding.path.contains(".overrides.")) {
-            "${finding.message}; fix the value or remove the line"
-        } else {
-            finding.message
-        }
+     *  refusal adds what to do about it. A retired knob has no value left to fix, only its line to remove. */
+    private fun withFix(finding: TopologyFinding): String = when {
+        !finding.path.startsWith("defaults.") && !finding.path.contains(".overrides.") -> finding.message
+        finding.path.substringAfterLast('.') in retiredKnobsByKey -> "${finding.message}; remove the line"
+        else -> "${finding.message}; fix the value or remove the line"
+    }
 
     /** The decode as a value: its failure is a finding, never a throw out of a read. */
     private fun decode(text: String): Result<Topology> = try {

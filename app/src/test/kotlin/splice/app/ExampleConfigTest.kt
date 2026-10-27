@@ -10,6 +10,7 @@ import org.junit.jupiter.api.Assertions.assertTimeoutPreemptively
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 import splice.core.config.knobsByKey
+import splice.core.config.retiredKnobsByKey
 import splice.core.topology.AuthKind
 import splice.core.topology.AuthKindRegistry
 import splice.core.topology.HeadModel
@@ -256,9 +257,11 @@ class ExampleConfigTest {
             )
         }
 
+        // 2026-10-27, failure-handling slice 4: the example names the knobs 0.4.0 retired on its "retired:" lines, so a
+        // person who still sets one reads there why boot refuses it. Those names answer to the retired table instead.
         (docNames - prose).forEach {
             assertTrue(
-                knobsByKey.containsKey(it),
+                knobsByKey.containsKey(it) || retiredKnobsByKey.containsKey(it),
                 "example comment names unknown knob '$it' " +
                     "(add it to the prose allowlist only if it is not a knob)",
             )

@@ -102,15 +102,14 @@ core/src/main/kotlin/splice/core/config/ConfigService.kt (coerceRejects, lines 2
 | `effort` | string | absent (reads as high) | default reasoning effort | restart |
 | `replay_reasoning` | bool | true | send earlier turns' reasoning back to the model, as Codex does | restart; HOT by PATCH |
 | `mirror_reasoning` | bool | false | locked off; nothing can enable it | n/a |
-| `fold_reasoning_models` | array of strings | `gpt-5.6-luna`, `gpt-5.6-terra`, `gpt-5.5` | models whose cut reasoning is continued | restart; HOT by PATCH |
-| `fold_max_continue` | int | 3 | hidden continuation rounds per fold | restart; HOT by PATCH |
-| `fold_marker_text` | string | `"Continue thinking..."` | the continuation instruction | restart; HOT by PATCH |
-| `fold_max_tier` | int | 6 | deepest truncation tier that still folds | restart; HOT by PATCH |
 | `mcp_hosting` | bool | absent reads as true | host eligible stdio MCP servers once in the daemon | restart |
 | `mcp_hosting_exclude` | array of strings | empty | servers kept per session | restart |
 | `mcp_share` | bool | absent reads as true | one shared copy of each server, or one per session | live |
 | `update_channel` | string | absent reads as `"stable"` | `"stable"` or `"beta"` (prereleases too) | live |
 | `auto_update` | bool | absent reads as false | install newer releases on the channel by itself | live |
+
+`fold_reasoning_models`, `fold_max_continue`, `fold_marker_text` and `fold_max_tier` were retired in 0.4.0: splice
+continues a codex answer its backend cut short on its own, on the models that cut it. Boot refuses them while set.
 
 The `[daemon]` fields are snake_case. The same knobs elsewhere (`[defaults]`, overrides) use the camelCase
 knob name: `show_reasoning` here is `showReasoning` there.
@@ -137,8 +136,6 @@ PATCH reaches the running daemon at its next use. Env aliases: the example file,
 | `firstByteTimeoutMs` | `90000` | yes | silence before the first frame before the watchdog probes |
 | `streamIdleMs` | `90000` | yes | mid-stream silence before the watchdog probes; a live path is held |
 | `stallReanchorMs` | `20000` | yes | mid-output silence before a re-anchor; only for a `reanchor_prefill` head; 0 off |
-| `upstreamRetries` | `4` | yes | re-POSTs per round before failing |
-| `retryBackoffBaseMs` / `retryBackoffCapMs` / `retryBackoffJitterPct` | `200` / `10000` / `10` | yes | the generic retry curve |
 | `progressLine` | `true` | yes | splice's status line on a quiet wire |
 | `showReasoning` / `summary` / `replayReasoning` | as `[daemon]` | yes | reasoning display |
 | `effort` | none | no | default effort |
@@ -171,6 +168,10 @@ PATCH reaches the running daemon at its next use. Env aliases: the example file,
 | `supervisorUnit` / `mcpSlice` | `splice.service` / `app-mcp.slice` | no | optional systemd names |
 | `controlPort` | `3096` | no | same as `[daemon] control_port` |
 | `contextWindowOverride` | none | no | pins one client window |
+
+`upstreamRetries` and `retryBackoffBaseMs` / `retryBackoffCapMs` / `retryBackoffJitterPct` were retired in 0.4.0: splice
+decides how often and how soon a failed request is sent again from what failed. Boot refuses them while splice.toml,
+an environment variable or a saved setting still sets one.
 
 Legacy single-head knobs (`port`, `pinnedModel`, `chatgptApiBase`, `codexAuthPath`, `grokPort`, `grokModel`,
 `xaiApiBase`, `grokAuthPath`) are seeded from the TOML only when exactly one ChatGPT or Grok head exists. Set

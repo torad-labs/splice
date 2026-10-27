@@ -10,8 +10,6 @@ import splice.core.topology.HeadConfig
 import splice.core.topology.ProviderConfig
 import splice.core.turn.LiveWatchdogBudget
 import splice.core.turn.WatchdogBudget
-import splice.upstream.transport.BackoffCurve
-import splice.upstream.transport.LiveRetryCurve
 
 /** The per-head inputs every provider builder threads through — a parameter object. */
 internal data class ProviderBuild(
@@ -31,8 +29,6 @@ internal data class UpstreamFaultPlan(
     /** [watchdog] with the live knobs (firstByteTimeoutMs, stallReanchorMs) read as they stand when a turn asks;
      *  the budget as built where nothing is live. */
     val liveWatchdog: LiveWatchdogBudget = LiveWatchdogBudget { watchdog },
-    /** The generic retry curve as the live knobs say it is when a retry asks; the shipped curve otherwise. */
-    val liveRetryCurve: LiveRetryCurve = LiveRetryCurve { BackoffCurve() },
 )
 
 /** What the head's endpoint published, as the provider builders read it. */

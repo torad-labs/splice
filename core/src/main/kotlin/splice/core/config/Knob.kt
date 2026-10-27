@@ -19,12 +19,9 @@ package splice.core.config
 // materializationHeapBytes (MaterializationBudgetBytes, per admission, which the gate caps into the
 // MaterializedByteCap that same guard asks), historyRetentionDays (KeptHistory, per read; RetentionDays is the trace days),
 // firstByteTimeoutMs, streamIdleMs and stallReanchorMs (LiveWatchdogBudget, per turn; the first also bounds each
-// request write through WriteBoundMs), retryBackoffBaseMs, retryBackoffCapMs and retryBackoffJitterPct (LiveRetryCurve, per retry
-// sleep and deadline check), upstreamRetries (LiveRetries, once as each request begins, so a request in flight keeps
-// its bound), progressLine (ProgressLineOn, per heartbeat of a quiet turn),
+// request write through WriteBoundMs), progressLine (ProgressLineOn, per heartbeat of a quiet turn),
 // summary, showReasoning and replayReasoning (LiveReasoning, and ReasoningDisplayNow on a chat head, once as each turn
-// is built; effort is not among them, being part of the prompt-cache key),
-// foldReasoningModels, foldMaxContinue, foldMarkerText and foldMaxTier (LiveFoldConfig, once per turn).
+// is built; effort is not among them, being part of the prompt-cache key).
 // activityRetentionDays and messageEdges (ActivityStores via LiveEdges, per sweep and per write),
 // Away from the turn: quotaPollIntervalMs (QuotaIntervalMs, per wait between two looks at
 // an account's usage endpoint), all four MCP host knobs — mcpRequestTimeoutMs (McpRequestBudget, per forwarded
@@ -39,10 +36,10 @@ package splice.core.config
 // per-head overridable), projectsFolders (per sessions settings ask, keyed the same way) and
 // budgetDefaultAction (per budget ask, unkeyed). The three keep switches do have readers: keepTranscriptCopies
 // (CopyingOriginals, per move, with transcriptCopyDays read by that same copy), keepCompactionSummaries
-// (KeepingRecordings, per save) and keepCodeModeWork (CodeModeJournaling, per save). That is thirty-nine, which is
-// every knob here without a restartRequired flag — counted off the entries below on 2026-10-10, so the flags and this
-// line agree. Recount the same way, entry by entry, and find each one's reader in the module that ENFORCES it rather
-// than in :app, which wires most of them but not these last two. Make a knob live-read and it joins this
+// (KeepingRecordings, per save) and keepCodeModeWork (CodeModeJournaling, per save). That is thirty-one, which is
+// every knob here without a restartRequired flag — counted off the entries below on 2026-10-10, and again on
+// 2026-10-27 once the eight retry and fold knobs retired, so the flags and this line agree. Recount the same
+// way, entry by entry, and find each one's reader in the module that ENFORCES it rather than in :app, which wires most of them but not these last two. Make a knob live-read and it joins this
 // line and loses its restartRequired flag, in that same commit. A [headOnly] knob can never join it: its one
 // layer is [heads.KEY.overrides], which ConfigService holds from boot, where the state config.json and env are
 // re-read at every getConfig(). Which is also why a live knob reaches a running daemon through a PATCH or that
@@ -172,32 +169,6 @@ public enum class Knob(
         KnobDefault.Flag(true),
     ),
 
-    // Reasoning-continuation folding (codex 518n-2 "dumbing down" fix). The fold set is the codex
-    // models that TRUNCATE their own chain-of-thought at reasoning_tokens == 518n-2 (luna/terra/5.5,
-    // NOT sol); a comma list so the operator can edit it. Detection replays the round's encrypted
-    // reasoning with a "Continue thinking..." marker until the model finishes cleanly, capped by
-    // fold_max_continue rounds and fold_max_tier (n). OFF for any model not in the set.
-    FOLD_REASONING_MODELS(
-        "foldReasoningModels",
-        listOf("CLAUDEX_FOLD_REASONING_MODELS"),
-        KnobDefault.Text("gpt-5.6-luna,gpt-5.6-terra,gpt-5.5"),
-    ),
-    FOLD_MAX_CONTINUE(
-        "foldMaxContinue",
-        listOf("CLAUDEX_FOLD_MAX_CONTINUE"),
-        KnobDefault.Count(3L),
-    ),
-    FOLD_MARKER_TEXT(
-        "foldMarkerText",
-        listOf("CLAUDEX_FOLD_MARKER_TEXT"),
-        KnobDefault.Text("Continue thinking..."),
-    ),
-    FOLD_MAX_TIER(
-        "foldMaxTier",
-        listOf("CLAUDEX_FOLD_MAX_TIER"),
-        KnobDefault.Count(6L),
-    ),
-
     // Daemon-wide tool-surface kill switch. ONE-WAY OFF ONLY: "off" forces every head back to the
     // full eager tool array without editing TOML; any other value honours each provider's own
     // [providers.*.quirks.tool_surface] table. It can never turn the feature ON — forcing it on
@@ -257,33 +228,11 @@ public enum class Knob(
     TRANSCRIPT_COPY_DAYS("transcriptCopyDays", listOf(), KnobDefault.Count(30L)),
     KEEP_COMPACTION_SUMMARIES("keepCompactionSummaries", listOf(), KnobDefault.Flag(true)),
     KEEP_CODE_MODE_WORK("keepCodeModeWork", listOf(), KnobDefault.Flag(true)),
-    UPSTREAM_RETRIES(
-        "upstreamRetries",
-        listOf("CLAUDEX_UPSTREAM_RETRIES"),
-        // 4 attempts matches the surveyed harness floor (codex 4, gemini/Claude Code higher);
-        // the old default of 2 with ~200ms total backoff still failed turns on 2-3s blips (G4b).
-        KnobDefault.Count(4L),
-    ),
 
-    // V4-110 retry curve, promoted beside upstreamRetries. The DEFAULT IS THE GENERIC BOUNDED
-    // CURVE: every UNPREDICTED failure backs off on 200ms-base / 10s-cap / ±10%-jitter — never a
-    // bare failure and never a made-up cause. Known errors keep their SPECIFIC plans (DNS 1s/2s/4s,
-    // 429 Retry-After); this is the bounded floor everything else falls onto.
-    RETRY_BACKOFF_BASE_MS(
-        "retryBackoffBaseMs",
-        listOf("SPLICE_RETRY_BACKOFF_BASE_MS"),
-        typedDefault = KnobDefault.Count(200L),
-    ),
-    RETRY_BACKOFF_CAP_MS(
-        "retryBackoffCapMs",
-        listOf("SPLICE_RETRY_BACKOFF_CAP_MS"),
-        typedDefault = KnobDefault.Count(10_000L),
-    ),
-    RETRY_BACKOFF_JITTER_PCT(
-        "retryBackoffJitterPct",
-        listOf("SPLICE_RETRY_BACKOFF_JITTER_PCT"),
-        typedDefault = KnobDefault.Count(10L),
-    ),
+    // upstreamRetries, retryBackoffBaseMs, retryBackoffCapMs and retryBackoffJitterPct, and the four fold knobs, were
+    // retired in 0.4.0 (failure-handling slice 4): RetryEngine decides every retry from what failed, and codex reads a
+    // round its backend cut on its own. RetiredKnob keeps their names, so a setting that still uses one refuses boot.
+
     UPSTREAM_TIMEOUT_MS(
         "upstreamTimeoutMs",
         listOf("CLAUDEX_UPSTREAM_TIMEOUT_MS"),

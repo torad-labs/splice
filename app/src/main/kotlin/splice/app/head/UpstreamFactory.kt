@@ -35,10 +35,8 @@ internal class UpstreamFactory {
             requestWriteTimeoutMs = cfg.firstByteTimeoutMs,
             requestWriteBound = WriteBoundMs { ctx.faultPlan.liveWatchdog().firstByteTimeout.inWholeMilliseconds },
         ),
-        // V4-110 retry curve: read per head, at every pause of a round runner, from the merged+normalized map (seeded
-        // with the Knob defaults, so absent config keeps the generic 200ms/10s/±10% curve). The attempt loop's waits
-        // are RetryEngine's own (failure-handling slice 4).
-        pacing = RetryPacing(live = ctx.faultPlan.liveRetryCurve),
+        // Every wait is RetryEngine's (failure-handling slice 4): the retry curve and its knobs retired in 0.4.0.
+        pacing = RetryPacing(),
         holdStore = providerHold,
     )
 }

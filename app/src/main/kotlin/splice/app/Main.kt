@@ -25,6 +25,7 @@ import splice.core.util.EnvReader
 import splice.core.util.LogSink
 import splice.launch.install.InstallShim
 import splice.lifecycle.start.BOOT_LOG_FLAG
+import splice.topology.RetiredSettings
 import splice.topology.TopologyLoader
 import splice.topology.TopologyStatePaths
 import java.nio.file.Path
@@ -243,7 +244,8 @@ internal class DaemonProcess(
         // example is idempotent between the two.
         val topologyPath = TopologyLoader.configPath(env)
         // v0.4.0 section 10: what a local runtime that is up refuses is a finding beside the file's own.
-        val loaded = TopologyLoader.loadForBoot(topologyPath, LocalRowBootFindings(env))
+        // Failure-handling slice 4: so is a retired knob splice's environment or its saved settings still set.
+        val loaded = TopologyLoader.loadForBoot(topologyPath, LocalRowBootFindings(env), RetiredSettings(env))
         // V4-109: [daemon].state_dir is HONOURED from here on. It could not be applied before this
         // point: the boot-failure net is armed at the top with a StatePaths because it must exist
         // before anything that can throw (JW-01), and the state dir is what the lock, config.json

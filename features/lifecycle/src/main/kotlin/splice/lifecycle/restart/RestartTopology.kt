@@ -9,6 +9,7 @@ import splice.core.util.EnvReader
 import splice.core.util.SafeFailureText
 import splice.core.util.TopologyRefusal
 import splice.topology.LocalRowFindings
+import splice.topology.RetiredSettings
 import splice.topology.TopologyLoader
 import java.nio.file.Path
 
@@ -25,6 +26,10 @@ internal class RestartTopology(
     private val repair: ConfigRepair,
     private val runtimes: LocalRowFindings,
 ) {
+    /** A retired knob this command's environment or splice's saved settings still set: the daemon this restart
+     *  starts would refuse it as boot does. */
+    private val retired = RetiredSettings(env)
+
     /** The topology, or null when the restart must not proceed. The daemon that comes back reads this same file
      *  before it boots, so a file this CLI cannot read is one no successor can boot on: nothing is stopped. A
      *  splice.toml this build refuses prints every finding and, on a terminal, offers the fix session and reads the
@@ -32,7 +37,8 @@ internal class RestartTopology(
      *  the starter, as boot does. */
     fun read(): Topology? {
         val path = TopologyLoader.configPath(env)
-        return Cancellables.runCatchingCancellable { TopologyLoader.loadForBoot(path, runtimes).topology }.fold(
+        val loaded = Cancellables.runCatchingCancellable { TopologyLoader.loadForBoot(path, runtimes, retired) }
+        return loaded.map { it.topology }.fold(
             onSuccess = { it },
             onFailure = { failure ->
                 output.line("splice: ${SafeFailureText.render(failure)}")
@@ -46,7 +52,7 @@ internal class RestartTopology(
     private fun repaired(path: Path): Topology? {
         output.line("splice: nothing was stopped and $path is unchanged")
         if (!repair.offer()) return null
-        return Cancellables.runCatchingCancellable { TopologyLoader.loadForBoot(path, runtimes).topology }
+        return Cancellables.runCatchingCancellable { TopologyLoader.loadForBoot(path, runtimes, retired).topology }
             .onFailure { output.line("splice: ${SafeFailureText.render(it)}") }
             .getOrNull()
     }

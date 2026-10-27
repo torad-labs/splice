@@ -133,12 +133,6 @@ public data class DaemonConfig(
     val effort: String? = null,
     @SerialName("replay_reasoning") val replayReasoning: Boolean? = null,
     @SerialName("mirror_reasoning") val mirrorReasoning: Boolean? = null,
-    // Reasoning-continuation folding (codex 518n-2). A TOML array of upstream model ids that truncate
-    // their chain-of-thought (default luna/terra/5.5); the caps + marker text tune the loop.
-    @SerialName("fold_reasoning_models") val foldReasoningModels: List<String>? = null,
-    @SerialName("fold_max_continue") val foldMaxContinue: Int? = null,
-    @SerialName("fold_marker_text") val foldMarkerText: String? = null,
-    @SerialName("fold_max_tier") val foldMaxTier: Int? = null,
     // Shared MCP hosting (v0.4.0, FEATURES.md §8). Nullable so an ABSENT key means "on" at the
     // wiring site without a literal default here that the knob layer would then have to know.
     @SerialName("mcp_hosting") val mcpHosting: Boolean? = null,

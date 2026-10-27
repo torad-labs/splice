@@ -159,7 +159,7 @@ class TopologyWriterRoundTripTest {
     fun `brackets inside strings and comments do not end an array early`() {
         val tricky = BASE.replace(
             "summary = \"auto\"\n",
-            "summary = \"auto\"\nfold_reasoning_models = [\n  \"a]b\", # ] not the end\n  \"c\",\n] # after\n",
+            "summary = \"auto\"\nmcp_hosting_exclude = [\n  \"a]b\", # ] not the end\n  \"c\",\n] # after\n",
         )
         Files.writeString(file, tricky)
         val expected = tricky.replace("[\n  \"a]b\", # ] not the end\n  \"c\",\n]", "[\"z\"]")

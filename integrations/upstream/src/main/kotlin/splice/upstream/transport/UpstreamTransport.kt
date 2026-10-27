@@ -35,7 +35,6 @@ import kotlinx.coroutines.asCoroutineDispatcher
 import okhttp3.ConnectionPool
 import okhttp3.Dispatcher
 import okhttp3.Protocol
-import splice.core.config.Knob
 import splice.core.util.LogSink
 import splice.upstream.ProviderProbe
 import splice.upstream.RetryBackoff
@@ -195,9 +194,9 @@ public class UpstreamTransport {
      *  base/cap/jitter are the generic bounded curve an unpredicted failure falls onto (V4-110). */
     public fun defaultBackoff(
         waiter: Waiter,
-        baseMs: Long = defaultBackoffBaseMs,
-        capMs: Long = defaultBackoffCapMs,
-        jitterPct: Int = defaultJitterPct,
+        baseMs: Long = DEFAULT_BACKOFF_BASE_MS,
+        capMs: Long = DEFAULT_BACKOFF_CAP_MS,
+        jitterPct: Int = DEFAULT_JITTER_PCT,
     ): RetryBackoff = RetryBackoff { attempt, minDelayMs ->
         val base = cappedExponentialBase(baseMs, capMs, attempt)
         val jittered = (base * jitterMultiplier(jitterPct)).toLong()
@@ -320,13 +319,17 @@ private const val DEFAULT_HTTP_PORT = 80
 // :upstream is HostedServer.kt's own private BACKOFF_BASE_MS = 5_000L, a different declaration
 // with a different value, so no consumer is cut off. Single-sourcing is untouched either way.
 //
-// V4-210: the generic curve's three READ the Knob. Knob.RETRY_BACKOFF_* is what an operator sets and
-// what UpstreamFactory hands every production head, so a const re-typing its default was a second
-// source for the same 200ms / 10s / ±10% — const-single-source's KNOB-SHADOW names the base once it
-// reads a default written by name.
-internal val defaultBackoffBaseMs: Long = Knob.RETRY_BACKOFF_BASE_MS.count()
-internal val defaultBackoffCapMs: Long = Knob.RETRY_BACKOFF_CAP_MS.count()
-internal val defaultJitterPct: Int = Knob.RETRY_BACKOFF_JITTER_PCT.count().toInt()
+// V4-210 read the generic curve's three from the retryBackoff* knobs' defaults; those knobs retired in 0.4.0
+// (failure-handling slice 4), so the numbers are consts here again: 200 ms, doubling to a 10 s cap, ±10% jitter, the
+// curve an unpredicted failure fell onto. RetryEngine now names every wait from what failed (RetryBudgets).
+// why: the generic curve's first wait, which each later attempt doubles.
+internal const val DEFAULT_BACKOFF_BASE_MS: Long = 200L
+
+// why: the generic curve's ceiling, so a long run of failures never waits past 10 s between two of them.
+internal const val DEFAULT_BACKOFF_CAP_MS: Long = 10_000L
+
+// why: ±10% around each wait, so many clients that failed together do not all retry in the same instant.
+internal const val DEFAULT_JITTER_PCT: Int = 10
 
 // V4-141: the in-flight ceiling for OkHttp's Dispatcher, total and per host — the same number the
 // load test drives (1000 streams against one mock host), with headroom. It replaces a default of 5

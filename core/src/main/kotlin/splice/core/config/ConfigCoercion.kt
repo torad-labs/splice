@@ -41,9 +41,6 @@ private const val MAX_WS_MAX_AGE_MS = 3_540_000L
 private const val MIN_QUOTA_POLL_INTERVAL_MS = 30_000L
 private const val MAX_PORT = 65_535L
 private const val MAX_INT = Int.MAX_VALUE.toLong()
-private const val MAX_RETRIES = 100L
-private const val MAX_FOLD_ROUNDS = 100L
-private const val MAX_FOLD_TIER = 100L
 
 /** The words a BOOL knob reads, any case, around whitespace. Anything else is no value: every layer
  *  refuses it by name (ConfigService.coerceRejects, the env log line, PATCH's rejected map) and the knob
@@ -109,24 +106,6 @@ internal class ConfigCoercion(private val envReader: EnvReader) {
             (positiveLong(out, Knob.CONTROL_PORT) ?: Knob.CONTROL_PORT.count()).coerceAtMost(MAX_PORT)
         out[Knob.MAX_INFLIGHT.key] = clampLong(out, Knob.MAX_INFLIGHT, floor = 0L, ceiling = MAX_INT)
         out[Knob.MAX_QUEUED.key] = clampLong(out, Knob.MAX_QUEUED, floor = 0L, ceiling = MAX_INT)
-        // DR-150: this said `default = 2L` — the PRE-G4b number, left behind when Knob's default
-        // moved to 4. It is unreachable in production (getConfig seeds every knob with its
-        // Knob.default before normalize runs, so the key is never absent here), which is exactly
-        // why it rotted unnoticed: a reader comparing the two sites learns the wrong number, and
-        // any future caller that normalizes an unseeded map silently gets half the retries the
-        // knob declares. Read the declared default rather than restating it, so the two cannot
-        // diverge again. Dropping the argument is NOT equivalent — it defaults to 0, which the
-        // floor of 1 then turns into a single attempt.
-        out[Knob.UPSTREAM_RETRIES.key] = clampLong(
-            out,
-            Knob.UPSTREAM_RETRIES,
-            floor = 1L,
-            default = Knob.UPSTREAM_RETRIES.count(),
-            ceiling = MAX_RETRIES,
-        )
-        out[Knob.FOLD_MAX_CONTINUE.key] =
-            clampLong(out, Knob.FOLD_MAX_CONTINUE, floor = 0L, ceiling = MAX_FOLD_ROUNDS)
-        out[Knob.FOLD_MAX_TIER.key] = clampLong(out, Knob.FOLD_MAX_TIER, floor = 0L, ceiling = MAX_FOLD_TIER)
         out[Knob.UPSTREAM_TIMEOUT_MS.key] = clampLong(out, Knob.UPSTREAM_TIMEOUT_MS, floor = MIN_UPSTREAM_TIMEOUT_MS)
         out[Knob.FIRST_BYTE_TIMEOUT_MS.key] = clampLong(out, Knob.FIRST_BYTE_TIMEOUT_MS, floor = MIN_FIRST_BYTE_MS)
         val idleFloor = if (testIdleFloor) TEST_IDLE_FLOOR_MS else MIN_STREAM_IDLE_MS
@@ -152,7 +131,6 @@ internal class ConfigCoercion(private val envReader: EnvReader) {
         // a feature (the r3 invalid-env-value lesson).
         out[Knob.TOOL_SURFACE.key] = offOrAuto(str(out, Knob.TOOL_SURFACE))
         clampPromoted(out)
-        clampRetryCurve(out)
         return Collections.unmodifiableMap(out)
     }
 
@@ -177,21 +155,6 @@ internal class ConfigCoercion(private val envReader: EnvReader) {
             out,
             Knob.QUOTA_POLL_INTERVAL_MS,
             floor = MIN_QUOTA_POLL_INTERVAL_MS,
-        )
-    }
-
-    // V4-110: the retry-curve knobs. base is at least 1ms, cap is floored to base (a cap below the
-    // base would collapse the curve to zero), and jitter is a percentage clamped 0..100 so the
-    // multiplier range can never go negative. THE DEFAULT stays the generic bounded curve.
-    private fun clampRetryCurve(out: MutableMap<String, Any?>) {
-        val base = clampLong(out, Knob.RETRY_BACKOFF_BASE_MS, floor = 1L)
-        out[Knob.RETRY_BACKOFF_BASE_MS.key] = base
-        out[Knob.RETRY_BACKOFF_CAP_MS.key] = clampLong(out, Knob.RETRY_BACKOFF_CAP_MS, floor = base)
-        out[Knob.RETRY_BACKOFF_JITTER_PCT.key] = clampLong(
-            out,
-            Knob.RETRY_BACKOFF_JITTER_PCT,
-            floor = 0L,
-            ceiling = 100L,
         )
     }
 

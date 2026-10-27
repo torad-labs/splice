@@ -74,9 +74,8 @@ then a runtime PATCH. Three hot-apply without a restart: `maxInflight`, `maxQueu
 each knob's entry in `/api/config`'s knobs block, never from a hand list.
 
 Keys: `port`, `chatgptApiBase`, `codexAuthPath`, `pinnedModel`, `effort`, `summary`,
-`showReasoning`, `replayReasoning`, `mirrorReasoning`, `progressLine`, `foldReasoningModels`,
-`foldMaxContinue`, `foldMarkerText`, `foldMaxTier`, `toolSurface`, `quotaPoll`, `maxInflight`,
-`maxQueued`, `upstreamRetries`, `upstreamTimeoutMs`, `firstByteTimeoutMs`, `streamIdleMs`,
+`showReasoning`, `replayReasoning`, `mirrorReasoning`, `progressLine`, `toolSurface`, `quotaPoll`,
+`maxInflight`, `maxQueued`, `upstreamTimeoutMs`, `firstByteTimeoutMs`, `streamIdleMs`,
 `authCacheMs`, `debug`, `contextWindowOverride`, `grokPort`, `grokModel`, `xaiApiBase`,
 `grokAuthPath`, `controlPort`, `usageWarnPct`, `usageWarnTokens5h`, `statuslineGitRoots`.
 
@@ -96,8 +95,8 @@ in-flight turns before restarting (V4-74). One exception is live already: a mode
 `context_window` reaches running sessions (0.3.1).
 
 - `[daemon]`: `control_port`, `state_dir`, `show_reasoning`, `summary`, `effort`,
-  `replay_reasoning`, `mirror_reasoning`, `fold_reasoning_models`, `fold_max_continue`,
-  `fold_marker_text`, `fold_max_tier`, `mcp_hosting`, `mcp_hosting_exclude`.
+  `replay_reasoning`, `mirror_reasoning`, `mcp_hosting`, `mcp_hosting_exclude`. The `fold_*` fields
+  were retired in 0.4.0, and boot refuses them.
 - `[claude]`: `share`, the list of config items every head shares with the operator's own
   `~/.claude`: `settings`, `mcps`, `skills`, `hooks`, `agents`, `commands`, `plugins`, `claude_md`,
   `sessions`, `projects` (on-disk names such as `CLAUDE.md` match too). A head's own `isolate` and

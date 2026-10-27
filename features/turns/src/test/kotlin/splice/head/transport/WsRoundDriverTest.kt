@@ -682,7 +682,7 @@ class WsCompletionTest(@param:TempDir private val tmp: Path) {
         listenPort = 0,
         deps = headDeps(
             tmp = tmp,
-            upstream = UpstreamClient(totalTimeoutMs = 30_000, maxRetries = 2),
+            upstream = UpstreamClient(totalTimeoutMs = 30_000),
             log = {},
             seams = HeadDeps.HeadSeams(requestMaterializationGate = RequestMaterializationGate()),
         ).copy(stores = headStores(tmp, suffix = "-completion-${++built}")),
@@ -957,7 +957,7 @@ class WsRoundReserveTest {
         listenPort = 0,
         deps = headDeps(
             tmp = tmp,
-            upstream = UpstreamClient(totalTimeoutMs = 30_000, maxRetries = 2),
+            upstream = UpstreamClient(totalTimeoutMs = 30_000),
             log = log,
             seams = HeadDeps.HeadSeams(requestMaterializationGate = RequestMaterializationGate()),
         ).copy(stores = headStores(tmp, suffix = "-${++built}")),
@@ -1382,7 +1382,7 @@ class WsRoundDriverTest {
         listenPort = 0,
         deps = headDeps(
             tmp = tmp,
-            upstream = UpstreamClient(totalTimeoutMs = 30_000, maxRetries = 2),
+            upstream = UpstreamClient(totalTimeoutMs = 30_000),
             log = log,
             seams = HeadDeps.HeadSeams(requestMaterializationGate = RequestMaterializationGate()),
         ).copy(stores = headStores(tmp, suffix = "-${++built}")),
@@ -1870,7 +1870,7 @@ class TransportAttemptStartsTest(@param:TempDir private val tmp: Path) {
         listenPort = 0,
         deps = headDeps(
             tmp = tmp,
-            upstream = UpstreamClient(totalTimeoutMs = 30_000, maxRetries = 2),
+            upstream = UpstreamClient(totalTimeoutMs = 30_000),
             seams = HeadDeps.HeadSeams(requestMaterializationGate = RequestMaterializationGate()),
         ).copy(stores = headStores(tmp, suffix = "-${++built}")),
     )
@@ -1967,7 +1967,7 @@ class WsRoundFailureTest(@param:TempDir private val tmp: Path) {
         listenPort = 0,
         deps = headDeps(
             tmp = tmp,
-            upstream = UpstreamClient(totalTimeoutMs = 30_000, maxRetries = 2),
+            upstream = UpstreamClient(totalTimeoutMs = 30_000),
             log = {},
             seams = HeadDeps.HeadSeams(requestMaterializationGate = RequestMaterializationGate()),
         ).copy(stores = headStores(tmp, suffix = "-refusal")),
@@ -2068,7 +2068,7 @@ class WsPlanHoldTest(@param:TempDir private val tmp: Path) {
 
     @Test
     fun `a turn the upstream answers over the websocket ends its login's plan hold`() {
-        val upstream = UpstreamClient(totalTimeoutMs = 30_000, maxRetries = 2)
+        val upstream = UpstreamClient(totalTimeoutMs = 30_000)
         val login = requireNotNull(upstream.credentialCooldown(mapOf("Authorization" to "Bearer tok-ws")))
         login.planHold.hold(spentWeek(), RetryNotice { })
         assertNotNull(upstream.planHold, "the premise: the head holds the login's spent week")

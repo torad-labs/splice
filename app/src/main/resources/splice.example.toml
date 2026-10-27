@@ -847,10 +847,9 @@ command = "claude-splice"
 # chatgptApiBase = "https://chatgpt.com/backend-api/codex"  # base URL of the ChatGPT/Codex backend
 # codexAuthPath = "~/.codex/auth.json"                      # where the Codex OAuth credential file lives
 # progressLine = "true"                                     # bool; splice's own status line on a quiet wire (HOT, per heartbeat)
-# foldReasoningModels = "gpt-5.6-luna,gpt-5.6-terra,gpt-5.5" # comma-separated upstream ids eligible to fold (HOT, per turn)
-# foldMaxContinue = "3"                                     # rounds; max hidden continuation rounds per fold (HOT, per turn)
-# foldMarkerText = "Continue thinking..."                   # the marker instruction that continues a cut turn (HOT, per turn)
-# foldMaxTier = "6"                                         # n; the deepest truncation tier that still folds (HOT, per turn)
+# retired: foldReasoningModels, foldMaxContinue, foldMarkerText and foldMaxTier — since 0.4.0 splice continues on its
+#     own a codex answer whose reasoning the backend cut short, on the models that cut it; boot refuses these keys,
+#     their [daemon] fold_* spellings, their CLAUDEX_FOLD_* variables and a saved value of any of them
 # toolSurface = "auto"                                      # "auto" lets splice arm tool_search per backend
 # quotaPoll = "auto"                                        # "off" stops every plan-usage poller
 # quotaPollIntervalMs = "300000"                            # ms; how often a subscription head re-polls usage (HOT, per wait)
@@ -870,7 +869,8 @@ command = "claude-splice"
 # keepCodeModeWork = "true"                                 # HOT, global: write code mode's journal to disk; false keeps it in
 #                                                           #     memory only, so a restart ends running scripts.
 #                                                           #     No env alias can override the console's off switch.
-# upstreamRetries = "4"                                     # attempts; upstream re-POSTs per round before failing (HOT, per request)
+# retired: upstreamRetries — since 0.4.0 splice decides how often a failed request is sent again from what failed;
+#     boot refuses the key, CLAUDEX_UPSTREAM_RETRIES and a saved value
 # wireTap = "0"                                             # bodies; how many of this head's most recent upstream
 #                                                           #     REQUEST BODIES to keep, in memory only, for
 #                                                           #     `splice wire <head>`. 0 (the default) keeps none.
@@ -893,9 +893,8 @@ command = "claude-splice"
 #                                                           #     PER HEAD ONLY, like wireTap.
 # traceRetentionDays = "7"                                  # days; whole day files older than this are deleted
 # traceMaxBodyChars = "16777216"                            # chars; a longer body is cut and the record says so
-# retryBackoffBaseMs = "200"                                # ms; the generic retry curve's base, doubled each attempt (HOT, per retry)
-# retryBackoffCapMs = "10000"                               # ms; the generic retry curve's ceiling (HOT, per retry)
-# retryBackoffJitterPct = "10"                              # percent; the generic retry curve's plus-or-minus jitter (HOT, per retry)
+# retired: retryBackoffBaseMs, retryBackoffCapMs and retryBackoffJitterPct — since 0.4.0 splice decides how soon a
+#     failed request is sent again from what failed; boot refuses the keys, SPLICE_RETRY_BACKOFF_* and a saved value
 # firstByteTimeoutMs = "90000"                              # ms; (HOT, per turn; through WatchdogBudget) the watchdog's
 #                                                           #     FIRST-OUTPUT tier: silence before the first frame
 #                                                           #     past this is a PROBE, like streamIdleMs below.
@@ -978,15 +977,16 @@ command = "claude-splice"
 # Knob aliases, with the key each one sets in the trailing column:
 #   CHATGPT_API_BASE chatgptApiBase          CODEX_AUTH_PATH codexAuthPath
 #   CLAUDEX_PROGRESS_LINE / SPLICE_PROGRESS_LINE progressLine
-#   CLAUDEX_FOLD_REASONING_MODELS foldReasoningModels    CLAUDEX_FOLD_MAX_CONTINUE foldMaxContinue
-#   CLAUDEX_FOLD_MARKER_TEXT foldMarkerText             CLAUDEX_FOLD_MAX_TIER foldMaxTier
 #   CLAUDEX_TOOL_SURFACE toolSurface         CLAUDEX_QUOTA_POLL quotaPoll
 #   CLAUDEX_MAX_INFLIGHT maxInflight         CLAUDEX_MAX_QUEUED maxQueued
-#   CLAUDEX_UPSTREAM_RETRIES upstreamRetries CLAUDEX_UPSTREAM_TIMEOUT_MS upstreamTimeoutMs
+#   CLAUDEX_UPSTREAM_TIMEOUT_MS upstreamTimeoutMs
 #   SPLICE_TRACE_RETENTION_DAYS traceRetentionDays
 #   SPLICE_TRACE_MAX_BODY_CHARS traceMaxBodyChars
 # retired: SPLICE_WIRE_TAP — wireTap keeps conversations, so it is set per head in [heads.KEY.overrides] only
 # retired: SPLICE_TRACE — trace writes whole conversations to disk, so it is set per head in [heads.KEY.overrides] only
+# retired: CLAUDEX_UPSTREAM_RETRIES, SPLICE_RETRY_BACKOFF_BASE_MS, SPLICE_RETRY_BACKOFF_CAP_MS,
+#     SPLICE_RETRY_BACKOFF_JITTER_PCT and the four CLAUDEX_FOLD_* variables — their knobs retired in 0.4.0, and
+#     splice refuses to start while any of them is set
 #   CLAUDEX_FIRST_BYTE_TIMEOUT_MS firstByteTimeoutMs    CLAUDEX_STREAM_IDLE_MS streamIdleMs
 #   CLAUDEX_STALL_REANCHOR_MS stallReanchorMs
 #   SPLICE_WS_IDLE_CLOSE_MS wsIdleCloseMs    SPLICE_WS_MAX_AGE_MS wsMaxAgeMs
@@ -1002,8 +1002,6 @@ command = "claude-splice"
 #   CLAUDEX_REASONING_SUMMARY / CODEX_REASONING_SUMMARY summary
 #   CLAUDEX_REPLAY_REASONING / CODEX_REPLAY_REASONING replayReasoning
 #   SPLICE_QUOTA_POLL_INTERVAL_MS quotaPollIntervalMs
-#   SPLICE_RETRY_BACKOFF_BASE_MS retryBackoffBaseMs   SPLICE_RETRY_BACKOFF_CAP_MS retryBackoffCapMs
-#   SPLICE_RETRY_BACKOFF_JITTER_PCT retryBackoffJitterPct
 #   SPLICE_MCP_IDLE_TIMEOUT_MS mcpIdleTimeoutMs       SPLICE_MCP_MAX_SERVERS mcpMaxServers
 #   SPLICE_MCP_REQUEST_TIMEOUT_MS mcpRequestTimeoutMs SPLICE_MCP_INITIALIZE_TIMEOUT_MS mcpInitializeTimeoutMs
 #   SPLICE_MAX_REQUEST_BYTES maxRequestBytes          SPLICE_REQUEST_READ_TIMEOUT_MS requestReadTimeoutMs

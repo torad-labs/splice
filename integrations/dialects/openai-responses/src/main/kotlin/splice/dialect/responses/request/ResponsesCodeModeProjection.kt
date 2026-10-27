@@ -166,12 +166,12 @@ private data class SearchPair(
 private const val NATIVE_ORDER = 0
 private const val ALIAS_ORDER = 1
 private const val SEARCH_PAIR_SIZE = 2
-private const val FIELD_CALL_ID = "call_id"
+internal const val FIELD_CALL_ID = "call_id"
 private const val FIELD_NAME = "name"
 private const val FIELD_TOOLS = "tools"
-private const val FIELD_TYPE = "type"
+internal const val FIELD_TYPE = "type"
 private const val TOOL_DECLARATION_ID_PREFIX = "ts_decl_"
 private const val TYPE_FUNCTION_CALL = "function_call"
-private const val TYPE_REASONING = "reasoning"
+internal const val TYPE_REASONING = "reasoning"
 private const val TYPE_TOOL_SEARCH_CALL = "tool_search_call"
 private const val TYPE_TOOL_SEARCH_OUTPUT = "tool_search_output"

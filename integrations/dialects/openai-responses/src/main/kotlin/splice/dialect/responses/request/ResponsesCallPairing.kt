@@ -14,12 +14,7 @@ import java.nio.ByteBuffer
 import java.security.MessageDigest
 import java.util.UUID
 
-private const val FIELD_TYPE = "type"
-private const val FIELD_ID = "id"
-private const val FIELD_CALL_ID = "call_id"
-private const val TYPE_REASONING = "reasoning"
-private const val TYPE_FUNCTION_OUTPUT = "function_call_output"
-private const val TYPE_CUSTOM_OUTPUT = "custom_tool_call_output"
+// FIELD_TYPE, FIELD_CALL_ID and TYPE_REASONING are this package's, declared once in ResponsesCodeModeProjection.
 private const val TYPE_SEARCH_OUTPUT = "tool_search_output"
 private const val SERVER_EXECUTION = "server"
 private const val ABORTED = "aborted"
@@ -27,13 +22,13 @@ private const val ABORTED = "aborted"
 /** Codex's namespace for the ids of prompt-only outputs (normalize.rs SYNTHETIC_OUTPUT_ID_NAMESPACE). Changing it
  *  changes the ids the model reads, and with them the prompt cache. */
 private const val SYNTHETIC_OUTPUT_NAMESPACE = "90d38d3e-6a5b-4d52-bfe2-2f1e634bfac4"
-private const val UUID_BYTES = 16
-private const val VERSION_BYTE = 6
-private const val VARIANT_BYTE = 8
-private const val VERSION_CLEAR = 0x0f
-private const val VERSION_FIVE = 0x50
-private const val VARIANT_CLEAR = 0x3f
-private const val VARIANT_RFC = 0x80
+private const val UUID_BYTES = 16 // why: a UUID is 128 bits, the first 16 bytes of the SHA-1 (RFC 9562 section 5.5)
+private const val VERSION_BYTE = 6 // why: RFC 9562 keeps the version in the high nibble of octet 6
+private const val VARIANT_BYTE = 8 // why: RFC 9562 keeps the variant in the high bits of octet 8
+private const val VERSION_CLEAR = 0x0f // why: keeps octet 6's low nibble and clears the version nibble
+private const val VERSION_FIVE = 0x50 // why: version 5, the name-based SHA-1 UUID Codex's uuid::new_v5 makes
+private const val VARIANT_CLEAR = 0x3f // why: keeps octet 8's low six bits and clears the variant bits
+private const val VARIANT_RFC = 0x80 // why: the RFC 9562 variant, binary 10 in octet 8's top two bits
 
 /** The result kind that answers a call kind, and the prefix Codex gives the id of its stand-in. */
 private data class Answer(val output: String, val prefix: String)
@@ -56,12 +51,12 @@ private data class CallKey(val output: String, val callId: String)
  */
 public class ResponsesCallPairing {
     private val answers = mapOf(
-        "function_call" to Answer(TYPE_FUNCTION_OUTPUT, "fco"),
-        "local_shell_call" to Answer(TYPE_FUNCTION_OUTPUT, "fco"),
-        "custom_tool_call" to Answer(TYPE_CUSTOM_OUTPUT, "ctco"),
+        "function_call" to Answer("function_call_output", "fco"),
+        "local_shell_call" to Answer("function_call_output", "fco"),
+        "custom_tool_call" to Answer("custom_tool_call_output", "ctco"),
         "tool_search_call" to Answer(TYPE_SEARCH_OUTPUT, "tso"),
     )
-    private val outputs = setOf(TYPE_FUNCTION_OUTPUT, TYPE_CUSTOM_OUTPUT, TYPE_SEARCH_OUTPUT)
+    private val outputs = answers.values.mapTo(HashSet(), Answer::output)
     private val namespace: ByteArray = UUID.fromString(SYNTHETIC_OUTPUT_NAMESPACE).let {
         ByteBuffer.allocate(UUID_BYTES).putLong(it.mostSignificantBits).putLong(it.leastSignificantBits).array()
     }
@@ -94,7 +89,7 @@ public class ResponsesCallPairing {
 
     /** A reasoning item goes out where its id first appears; one without an id goes out as it came. */
     private fun firstReasoning(plan: Plan, item: JsonObject, at: Int): Boolean {
-        val id = JsonScalars.str(item, FIELD_ID) ?: return true
+        val id = JsonScalars.str(item, "id") ?: return true
         return plan.firstReasoning[id] == at
     }
 
@@ -114,7 +109,7 @@ public class ResponsesCallPairing {
     private fun standIn(call: JsonObject, answer: Answer, callId: String): JsonObject = JsonObject(
         buildMap<String, JsonElement> {
             put(FIELD_TYPE, JsonPrimitive(answer.output))
-            syntheticId(answer.prefix, JsonScalars.str(call, FIELD_ID))?.let { put(FIELD_ID, JsonPrimitive(it)) }
+            syntheticId(answer.prefix, JsonScalars.str(call, "id"))?.let { put("id", JsonPrimitive(it)) }
             put(FIELD_CALL_ID, JsonPrimitive(callId))
             if (answer.output == TYPE_SEARCH_OUTPUT) {
                 put("status", JsonPrimitive("completed"))
@@ -160,7 +155,7 @@ public class ResponsesCallPairing {
 
         private fun place(item: JsonObject, type: String?, at: Int) {
             if (type == TYPE_REASONING) {
-                JsonScalars.str(item, FIELD_ID)?.let { firstReasoning.putIfAbsent(it, at) }
+                JsonScalars.str(item, "id")?.let { firstReasoning.putIfAbsent(it, at) }
                 return
             }
             callKey(item, type)?.let {

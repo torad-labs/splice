@@ -191,6 +191,8 @@ internal class PassthroughMessageScrubber(
      *  loaded, and passthrough forwards the client's tools as the model's own, so the model is told the
      *  tool is loaded under the name it was offered. Dropped, the reference read "1 content block(s)
      *  omitted", and kimi session ffb9aeb2 searched for SendMessage four times without calling it.
+     *  [PassthroughToolSanitizer] offers that tool without `defer_loading` (2026-10-27), which is what makes the
+     *  sentence true on an upstream that keeps a deferred tool hidden until a reference loads it.
      *
      *  Every other block, and a reference whose name is not a plain tool name, is dropped and its type
      *  reported once. An allowlist is only ever as good as the evidence it was derived from, and the

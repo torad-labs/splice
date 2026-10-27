@@ -97,6 +97,16 @@
 .dayrun .tick::before { content: ""; position: absolute; left: -.04rem; top: .12rem; width: .08rem; height: .3rem; background: var(--track-line); }
 .dayrun .tick > b { position: absolute; top: .5rem; left: 0; font: 500 .74rem/1 var(--font-data); color: var(--text-mute); white-space: nowrap;
   translate: clamp(calc(var(--i) / var(--n) * -100cqw), -50%, calc((var(--n) - var(--i)) / var(--n) * 100cqw - 100%)); }
+/* the hour under the pointer or the arrow keys: what it holds over its column, where the busiest hour's count stood, and
+   the column outlined as a hovered one is */
+.dayrun > .hourat { position: absolute; left: calc((var(--i) + .5) / var(--n) * 100%); bottom: calc(var(--below) + var(--track-h) + .2rem);
+  translate: clamp(calc((var(--i) + .5) / var(--n) * -100cqw), -50%, calc((var(--n) - var(--i) - .5) / var(--n) * 100cqw - 100%));
+  font: 600 .76rem/1 var(--font-data); color: var(--text); white-space: nowrap; pointer-events: none; }
+.dayrun > .hourat:empty { display: none; }
+.dayrun.at .peak { visibility: hidden; }
+.dayrun > .hours > .cur { background-color: var(--track); box-shadow: inset 0 0 0 .08rem var(--text-mute); border-radius: .12rem; }
+.dayrun[role=group]:focus { outline: none; }
+.dayrun[role=group]:focus-visible > .hours { outline: .14rem solid var(--text); outline-offset: .2rem; }
 /* the day draws itself from its start to now, and each hour rises from its foot */
 .dayrun.grow > .hours { animation: acc-sweep var(--t-move) var(--e-out) both; }
 .dayrun.grow > .hours > * > b { transform-origin: 50% 100%; animation: acc-hour var(--t-move) var(--e-out) both; }
@@ -121,10 +131,21 @@
 .card > .rename-err { flex-wrap: wrap; align-items: baseline; }
 .card > .rename-err > .result { flex: none; white-space: nowrap; }
 .card > .rename-err > .reason { flex: 1 0 100%; }
+/* a sign-in refused on its card or in its add tile: the word whole beside its acts, the reason on its own line under it */
+.board :is(.outbox, .add.signing):has(> .reason) { flex-wrap: wrap; row-gap: .45rem; }
+.board :is(.outbox, .add.signing) > .result { flex: none; white-space: nowrap; }
+.board :is(.outbox, .add.signing) > .reason { flex: 1 0 100%; max-width: none; margin-top: 0; }
 .menu .menu-state > .reason { max-width: 19rem; }
 .board .provider > .reason.onhead { margin: -.45rem 0 1rem auto; text-align: right; }
 
 /* ---------- an account ---------- */
+/* a window's label is the door to what used that login over that window, on Usage; its arrow comes up under the pointer
+   or the keys, as the Day's door draws its own */
+.windows > a.wdoor { justify-self: start; display: inline-flex; align-items: baseline; gap: .3rem; color: inherit; text-decoration: none; }
+.windows > a.wdoor .go { flex: none; align-self: center; width: .8rem; height: .8rem; color: var(--text-mute); opacity: 0;
+  transition: opacity var(--t-hover) var(--e-out), transform var(--t-snap) var(--e-out); }
+.windows > a.wdoor:hover { color: var(--text); text-decoration: underline; }
+.windows > a.wdoor:is(:hover, :focus-visible) .go { opacity: 1; transform: translate(.1rem, -.1rem); }
 /* where the command goes next when no other login has room: an empty socket where a name would be, and the lock */
 .windows .next .who .nosock { display: inline-block; vertical-align: middle; width: 1.35rem; height: 1.35rem; border-radius: 50%; border: .12rem dashed var(--track-line); }
 .windows .next .nextlock { display: flex; justify-content: flex-end; }
@@ -142,11 +163,19 @@
 .card > .moveline { display: flex; flex-wrap: wrap; align-items: center; gap: .3rem .5rem; margin: .7rem 0 0; font: 500 .9rem/1.35 var(--font-name); color: var(--text-mute); }
 .card > .moveline > svg { flex: none; width: .95rem; height: .95rem; }
 .card > .moveline b { font-weight: 600; color: var(--text-body); }
-.card > .moveline .mlogin { display: inline-flex; align-items: center; gap: .35rem; padding: .1rem .2rem; margin: -.1rem -.2rem; border: 0; border-radius: .3rem;
+.card .mlogin { display: inline-flex; align-items: center; gap: .35rem; padding: .1rem .2rem; margin: -.1rem -.2rem; border: 0; border-radius: .3rem;
   background: none; font: inherit; color: inherit; cursor: pointer; vertical-align: middle; }
-.card > .moveline .mlogin:hover b { color: var(--text); text-decoration: underline; }
-.card > .moveline .mlogin:focus-visible { outline: .14rem solid var(--text); outline-offset: .1rem; }
-.card > .moveline .msock { display: inline-grid; place-items: center; width: 1.35rem; height: 1.35rem; border-radius: 50%; font: 600 .72rem/1 var(--font-data);
+.card .mlogin:hover b { color: var(--text); text-decoration: underline; }
+/* the Next row's login: the same door, its name cut short before it crowds the lock and the reset */
+.windows .next .who:has(.mlogin) { display: flex; align-items: center; overflow: visible; }
+.windows .next .who .mlogin { max-width: 100%; min-width: 0; }
+.windows .next .who .mlogin b { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: 500; }
+/* the sessions the move carried, each a door to its pane on Sessions */
+.card > .moveline .mdoor { font-weight: 600; color: var(--text-body); text-decoration: none; }
+.card > .moveline .mdoor:hover { color: var(--text); text-decoration: underline; }
+.card > .moveline .mdoor:focus-visible { outline: .14rem solid var(--text); outline-offset: .1rem; border-radius: .2rem; }
+.card .mlogin:focus-visible { outline: .14rem solid var(--text); outline-offset: .1rem; }
+.card .msock { display: inline-grid; place-items: center; width: 1.35rem; height: 1.35rem; border-radius: 50%; font: 600 .72rem/1 var(--font-data);
   color: var(--socket-ink); background: var(--socket); box-shadow: 0 0 0 .12rem var(--ink), inset 0 0 0 .1rem var(--rail); }
 /* the doors on a login and the pill that opens the rest stand at one height */
 .card .onlogin .sdoor { min-height: 1.75rem; }

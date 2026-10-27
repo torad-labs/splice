@@ -262,11 +262,14 @@ async function readAll({ asks = true } = {}) {
     if (p.kind === "plan") {
       for (const row of ac.body.accounts || []) {
         if (!(row.heads || []).some((x) => heads.has(x))) continue;
-        // Claude Code's own login place that never held a sign-in is no account (Marlin, Oct 10): no credential, no
-        // account, no reading. One that was signed in and expired keeps all three, and shows.
-        if (row.login_place && !row.credential_present && !row.identity_verified && !row.observed_at_epoch_seconds) continue;
         const windows = [windowOf(row.five_hour_used_percent, row.five_hour_reset_epoch_seconds, row.five_hour_window_seconds, "short", row.five_hour_current),
           windowOf(row.seven_day_used_percent, row.seven_day_reset_epoch_seconds, row.seven_day_window_seconds, "long", row.seven_day_current)].filter(Boolean);
+        // a login held at its limit carries the limit's own sentence as its refusal, and it is held, not signed out
+        const out = !row.token_renews && (!row.credential_present || row.auth_exclusion_reason === "credential_missing" || (!!row.refusal && !windows.some(atLimit)));
+        // Claude Code's own login place that holds no account is no account (Marlin, Oct 10): signed out, no proved
+        // account, no reading. Its Sign in only adds an account, as Add account does, and the place still read Signed out
+        // after it (claude-splice's "Account", Oct 27). One that was signed in and expired keeps its account, and shows.
+        if (row.login_place && out && !row.identity_verified && !row.observed_at_epoch_seconds) continue;
         const models = (row.seven_day_models || []).map((m) => ({ name: m.model,
           ...windowOf(m.used_percent, m.resets_at, LEN.Week * 60, "long", modelCurrent(row.seven_day_current, m)) }));
         // a session names its login by the label the pool gave it on its head; a login answers to that, its selector or its
@@ -278,8 +281,7 @@ async function readAll({ asks = true } = {}) {
           staleAt: [...windows, ...models].some((w) => w.stale) && row.observed_at_epoch_seconds ? row.observed_at_epoch_seconds * 1000 : null,
           // an expired token its own command renews on its next run is not a sign-out: the card keeps its readings
           renews: !!row.token_renews,
-          // a login held at its limit carries the limit's own sentence as its refusal, and it is held, not signed out
-          out: !row.token_renews && (!row.credential_present || row.auth_exclusion_reason === "credential_missing" || (!!row.refusal && !windows.some(atLimit))),
+          out,
           canRename: !!row.can_rename, canRemove: !!row.can_remove, native: !!row.carrying_request,
           // the provider answered with no usage for this account: no bars, never an older reading drawn as today's
           noUsage: !windows.length && !!row.no_usage_at_epoch_seconds,
@@ -407,9 +409,10 @@ function nextOf(p, c) {
   return p.accounts.find((a) => a.id === c.following) || null;
 }
 
-// A failed sign-in shows a state, never splice's sentence: the raw text belongs in the command's log on Models.
-// splice names each failure's kind (failure_kind, ConsoleAccounts.kt LoginFailure); a kind it doesn't name reads Not
-// completed. A file or config failure fails again until it's fixed, so it has no Try again.
+// A failed sign-in says its kind in a word or two where it was pressed, and splice's own sentence opens under the word,
+// never on the card (refusalHtml): a bare red "In use" on a Sign in left him nothing to act on (Oct 27). splice names
+// each failure's kind (failure_kind, ConsoleAccounts.kt LoginFailure); a kind it doesn't name reads Not completed. A
+// file or config failure fails again until it's fixed, so it has no Try again.
 const FAILS = {
   not_completed: { word: "Not completed", retry: true }, network: { word: "Network error", retry: true },
   file: { word: "File error" }, config: { word: "Config error" }, expired: { word: "Expired", retry: true },
@@ -495,14 +498,22 @@ function refills(day) {
   return `<span class="when">${ring(day)}Resets ${midnightHere ? "midnight" : at(day.resetMs)}</span>`;
 }
 
-function windowsHtml(a, next = null, left = null) {
+// A WINDOW'S LABEL IS THE DOOR TO WHAT USED IT (Oct 27): the 5 hours and the Week open Usage on that window, filtered to
+// this login on the command the rail shows (usage.html?win=&account=head|label, the address Usage reads), so a week at
+// 92% leads to the projects and agents that spent it. A window Usage does not draw, such as a Month, stays a label.
+const USAGE_WIN = { "5 hours": "5h", Week: "7d" };
+const usageDoor = (a, c) => (c ? (label) => (USAGE_WIN[label] ? `usage.html?win=${USAGE_WIN[label]}&account=${encodeURIComponent(`${c.head}|${labelOn(a, c.head)}`)}` : null) : null);
+// the login a line names, as a door to its card on this board with the socket it has on the rail (a move, the Next row)
+const loginDoor = (name, id, sock) => (id ? `<button class="mlogin" type="button" data-act="goto" data-a="${esc(id)}" title="Show ${esc(name)}'s card">`
+  + `${sock ? `<span class="msock" aria-hidden="true">${sock}</span>` : ""}<b>${esc(name)}</b></button>` : `<b>${esc(name)}</b>`);
+function windowsHtml(a, next = null, left = null, door = null, nextSock = 0) {
   // a held login says so on its own line under the header, where a narrow card wraps it instead of cutting its name
   let rows = held(a) ? `<span class="heldline">${heldUntil(a)}</span>` : "";
   for (const w of a.windows) {
-    const full = atLimit(w);
+    const full = atLimit(w), to = door?.(w.label);
     // each bar is marked from ITS OWN reading, never the account's: a current 5-hour window beside a week
     // whose own reset has passed drew that week's spent figure as today's
-    rows += `<span class="label">${w.label}</span>`
+    rows += (to ? `<a class="label wdoor" href="${to}" aria-label="${w.label}: what used it, on Usage">${w.label}${DRAW.go}</a>` : `<span class="label">${w.label}</span>`)
       + (ended(w) ? closed(w)
         : `${bar(Math.min(w.used, 100), `${full ? "full" : ""} ${w.stale ? "stale" : ""}`)}`
           + `<span class="pct ${full ? "limit" : ""}">${w.used}%<span class="used">used</span></span>` + resets(w));
@@ -519,7 +530,8 @@ function windowsHtml(a, next = null, left = null) {
   if (next) { // a held next is the one serving at its reset: its lock and that reset, on the windows' own columns, drawn
     // and not said again in a sentence under them (the lock says held, the ring and the time say until when)
     const w = held(next) && next.windows.filter(atLimit).sort((x, y) => y.left - x.left)[0];
-    rows += `<span class="next"><span class="label">Next</span><span class="who">${esc(next.name)}</span>${w ? `<span class="nextlock" title="Limit reached until ${at(w.resetMs)}">${locked(false, "")}</span>${resets(w)}` : ""}</span>`;
+    // its name is the door to its card, with the socket it stands at on the rail
+    rows += `<span class="next"><span class="label">Next</span><span class="who">${loginDoor(next.name, next.id, nextSock)}</span>${w ? `<span class="nextlock" title="Limit reached until ${at(w.resetMs)}">${locked(false, "")}</span>${resets(w)}` : ""}</span>`;
   } else if (left) {
     // the last login with room in a pool of several: no other takes over at the next plan limit, until the first held one
     // comes back (lastLeftOf), drawn on the Next row where a next would stand (splice-lead, Oct 13): an empty socket where
@@ -690,7 +702,7 @@ function budgetAct(c, split, reading) {
 const HOUR_MS = 3600000;
 const hourWord = (ms) => new Date(ms).toLocaleTimeString("en-US", { hour: "numeric" });
 const TICKS = new Set([0, 6, 12, 18]);
-const openingWord = (o) => `${o.usd ? money(o.usd) : `${n0(o.unpriced)} ${o.unpriced === 1 ? "request" : "requests"}`} in the hour that includes midnight, not counted`;
+const openingWord = (o, at) => `${hourWord(at)} · ${o.usd ? money(o.usd) : `${n0(o.unpriced)} ${o.unpriced === 1 ? "request" : "requests"}`} across midnight, not counted`;
 function hoursHtml(c) {
   if (c.local) return "";
   if (!c.hours) return `<div class="dayrun">${GHOST.track()}</div>`;
@@ -698,16 +710,17 @@ function hoursHtml(c) {
   const t0 = c.hours[0].at - first * HOUR_MS, n = c.hours.length + first;
   const tall = (k) => `height:max(.14rem, ${((k / HOUR_MAX) * 100).toFixed(2)}%)`;
   const peak = c.allUnread ? null : c.hours.reduce((m, h) => (!h.unread && h.at <= now && h.all > (m?.all ?? 0) ? h : m), null);
+  // each hour gone by carries what it says when the pointer or the arrow keys reach it (sayHour)
   const cols = c.hours.map((h) => {
     if (h.at > now) return "<i></i>";
-    if (h.unread || c.allUnread) return `<i class="unread" title="${hourWord(h.at)} · ${DAY_NOT_READ}"></i>`;
-    if (!h.all) return `<i title="${hourWord(h.at)} · No requests"></i>`;
-    const said = [reqs(h.all), h.none ? `${n0(h.none)} with no price` : "", h.fail ? `${n0(h.fail)} failed` : ""].filter(Boolean).join(", ");
-    return `<a class="hr" href="${requestsAt(c, { from: h.at, to: h.at + HOUR_MS })}" tabindex="-1" title="${hourWord(h.at)} · ${said}">`
+    if (h.unread || c.allUnread) return `<i class="unread" data-said="${hourWord(h.at)} · ${DAY_NOT_READ}"></i>`;
+    if (!h.all) return `<i data-said="${hourWord(h.at)} · No requests"></i>`;
+    const said = `${hourWord(h.at)} · ${[reqs(h.all), h.none ? `${n0(h.none)} with no price` : "", h.fail ? `${n0(h.fail)} failed` : ""].filter(Boolean).join(", ")}`;
+    return `<a class="hr" href="${requestsAt(c, { from: h.at, to: h.at + HOUR_MS })}" tabindex="-1" aria-label="${said}" data-said="${said}">`
       + `${h.ok ? `<b class="ok" style="${tall(h.ok)}"></b>` : ""}${h.none ? `<b class="np" style="${tall(h.none)}"></b>` : ""}`
       + `${h.fail ? `<b class="fl" style="${tall(h.fail)}"></b>` : ""}</a>`;
   });
-  if (open) cols.unshift(`<i class="opening" title="${openingWord(open)}"><b style="${tall(open.turns)}"></b></i>`);
+  if (open) cols.unshift(`<i class="opening" data-said="${openingWord(open, t0)}"><b style="${tall(open.turns)}"></b></i>`);
   const ticks = [];
   for (let i = 0; i < n; i++) {
     const at = t0 + i * HOUR_MS, hour = new Date(at).getHours();
@@ -715,8 +728,10 @@ function hoursHtml(c) {
   }
   const top = peak ? `<span class="peak" style="--i:${c.hours.indexOf(peak) + first}">${n0(peak.all)}</span>` : "";
   const f = Math.min(1, Math.max(0, (now - t0) / (n * HOUR_MS)));
-  return `<div class="dayrun" role="group" aria-label="Requests by hour since ${hourWord(t0)}" style="--n:${n};--at:${f.toFixed(4)}">`
-    + `<span class="hours">${cols.join("")}</span><i class="now" aria-hidden="true"></i><span class="marks" aria-hidden="true">${top}${ticks.join("")}</span></div>`;
+  // the arrow keys walk the hours from the track itself, one stop in the tab order however many hours it holds
+  return `<div class="dayrun" role="group" tabindex="0" aria-label="Requests by hour since ${hourWord(t0)}" style="--n:${n};--at:${f.toFixed(4)}">`
+    + `<span class="hours">${cols.join("")}</span><i class="now" aria-hidden="true"></i><span class="marks" aria-hidden="true">${top}${ticks.join("")}</span>`
+    + `<span class="hourat" role="status"></span></div>`;
 }
 // The budget editor, between today's figure and its hours: the amount, five presets, Warn or Block, the cap drawn against
 // today's spend as he types it, and the acts. A save splice refused says so beside the acts with its reason one press
@@ -749,8 +764,9 @@ function signingHtml(target) {
   const s = ui.signin[target];
   const cancel = `<button class="act quiet" data-act="cancel-signin" data-t="${target}">Cancel</button>`;
   if (s.state === "fail") {
-    const f = s.fail, retry = f.retry ? `<button class="act primary" data-act="retry-signin" data-t="${target}">Try again</button>` : "";
-    return `<span class="state limit">${esc(f.word)}</span>${retry}${cancel}`;
+    const f = s.fail, err = { word: f.word, why: s.why }, key = `signin:${target}`;
+    const retry = f.retry ? `<button class="act primary" data-act="retry-signin" data-t="${target}">Try again</button>` : "";
+    return `${refusalHtml(err, key)}${retry}${cancel}${reasonHtml(err, key)}`;
   }
   const open = s.url ? `<button class="act" data-act="open-signin" data-t="${target}">Open sign-in</button>` : "";
   if (s.by === "code") return `${waiting()}${s.code ? `<button class="usercode${s.swapped ? " swap" : ""}" data-act="copy-code" data-t="${target}">${esc(s.code)}</button>${CODE_HINT}` : ""}${open}${cancel}`;
@@ -797,6 +813,10 @@ function failSignin(target, st = null) {
   const s = ui.signin[target];
   stopTimers(s);
   s.state = "fail"; s.fail = FAILS[st?.failure_kind] || FAILS.not_completed;
+  // why, in splice's words: the sign-in's own failure_reason, or the error a start splice refused answered with
+  const why = st?.failure_reason ?? st?.error;
+  s.why = typeof why === "string" ? why.trim() : "";
+  refused(`signin:${target}`);
   if (s.fail.pulse && st?.label) { // Already added: the card already there for that account pulses once
     const there = data.flatMap((p) => p.accounts).find((a) => a.row?.label === st.label && a.row.heads.includes(s.how.poll));
     if (there) ui.pulse = there.id;
@@ -946,7 +966,7 @@ function sessionsHtml(p, a) {
   const lamp = (x) => (/^(working|busy)$/.test(x.status) ? `<span class="lamp working" aria-hidden="true">${ICON.trace}</span>` : `<span class="lamp idle" aria-hidden="true"><i></i></span>`);
   // two sessions of one name on a login are told apart by their folder, as Sessions names a repo, and by when each
   // started where the folder is the same too
-  const nameOf = (x) => x.name || x.title || String(x.session_id).slice(0, 8);
+  const nameOf = sessNameOf;
   const count = (f) => on.reduce((m, x) => m.set(f(x), (m.get(f(x)) || 0) + 1), new Map());
   const names = count(nameOf), places = count((x) => `${nameOf(x)}|${folderOf(x)}`);
   const apart = (x) => (names.get(nameOf(x)) < 2 ? "" : places.get(`${nameOf(x)}|${folderOf(x)}`) < 2 && folderOf(x) ? folderOf(x) : startedAt(x));
@@ -958,6 +978,7 @@ function sessionsHtml(p, a) {
   return `<div class="onlogin">${shown.map(door).join("")}${more}</div>${marks}`;
 }
 const folderOf = (x) => String(x.repo?.root || x.cwd || "").split("/").filter(Boolean).pop() || "";
+const sessNameOf = (x) => x.name || x.title || String(x.session_id).slice(0, 8); // a session by the name Sessions gives it
 function startedAt(x) {
   const t = typeof x.started_at === "number" ? (x.started_at < 1e12 ? x.started_at * 1000 : x.started_at) : Date.parse(x.started_at ?? "");
   return Number.isFinite(t) ? `since ${clock(new Date(t))}` : "";
@@ -979,30 +1000,35 @@ function movesHtml(p, a) {
     return { name: loginOf(head, label), id: x?.id ?? null, sock: x ? rail.indexOf(x) + 1 : 0 };
   };
   const into = new Map(), away = new Map();
-  const add = (map, key, g, n, ms) => { const m = map.get(key) || { ...g, n: 0, at: 0 }; m.n += n; m.at = Math.max(m.at, ms || 0); map.set(key, m); };
+  // each move keeps the sessions it carried, so its line names them as doors to their panes on Sessions
+  const add = (map, key, g, x, ms) => { const m = map.get(key) || { ...g, who: [], at: 0 }; if (x) m.who.push(x); m.at = Math.max(m.at, ms || 0); map.set(key, m); };
   for (const c of p.cmds) {
     const m = c.moved;
     if (!m) continue;
     const cmd = cmdOf(c.head);
-    if (mine(c.head, m.to)) add(into, `${cmd}|${loginOf(c.head, m.from)}|${m.reason}`, { cmd, other: login(c.head, m.from), why: movedWhy(m.reason) }, 0, m.at_epoch_millis);
-    else if (mine(c.head, m.from)) add(away, `${cmd}|${loginOf(c.head, m.to)}`, { cmd, other: login(c.head, m.to) }, 0, m.at_epoch_millis);
+    if (mine(c.head, m.to)) add(into, `${cmd}|${loginOf(c.head, m.from)}|${m.reason}`, { cmd, other: login(c.head, m.from), why: movedWhy(m.reason) }, null, m.at_epoch_millis);
+    else if (mine(c.head, m.from)) add(away, `${cmd}|${loginOf(c.head, m.to)}`, { cmd, other: login(c.head, m.to) }, null, m.at_epoch_millis);
   }
   for (const x of a.sessions || []) {
     const sw = x.account_switch, cmd = cmdOf(x.head);
-    if (sw?.from && !mine(x.head, sw.from)) add(into, `${cmd}|${loginOf(x.head, sw.from)}|${sw.reason}`, { cmd, other: login(x.head, sw.from), why: movedWhy(sw.reason) }, 1, sw.at_epoch_millis);
+    if (sw?.from && !mine(x.head, sw.from)) add(into, `${cmd}|${loginOf(x.head, sw.from)}|${sw.reason}`, { cmd, other: login(x.head, sw.from), why: movedWhy(sw.reason) }, x, sw.at_epoch_millis);
   }
   for (const x of liveSessions || []) {
     const sw = x.account_switch, cmd = cmdOf(x.head);
-    if (sw?.from && mine(x.head, sw.from) && !mine(x.head, x.account)) add(away, `${cmd}|${loginOf(x.head, x.account)}`, { cmd, other: login(x.head, x.account) }, 1, sw.at_epoch_millis);
+    if (sw?.from && mine(x.head, sw.from) && !mine(x.head, x.account)) add(away, `${cmd}|${loginOf(x.head, x.account)}`, { cmd, other: login(x.head, x.account) }, x, sw.at_epoch_millis);
   }
-  const all = a.sessions?.length || 0;
   const tail = (g) => `${g.why ? ` · ${esc(g.why)}` : ""}${g.at ? ` · ${at24(g.at)}` : ""}`;
   const chip = (g) => (g.cmd ? `<span class="chip" data-key="move:${esc(g.cmd)}">${esc(g.cmd)}</span>` : "");
-  const other = ({ name, id, sock }) => (id ? `<button class="mlogin" type="button" data-act="goto" data-a="${esc(id)}" title="Show ${esc(name)}'s card">`
-    + `${sock ? `<span class="msock" aria-hidden="true">${sock}</span>` : ""}<b>${esc(name)}</b></button>` : `<b>${esc(name)}</b>`);
-  const sessions = (n) => `${n0(n)} ${n === 1 ? "session" : "sessions"}`;
-  const ins = [...into.values()].map((g) => `<p class="moveline">${GLYPH.into}${chip(g)}<span>${g.n && g.n < all ? `${sessions(g.n)} from` : "From"} ${other(g.other)}${tail(g)}</span></p>`);
-  const outs = [...away.values()].map((g) => `<p class="moveline">${GLYPH.away}${chip(g)}<span>${g.n ? `${sessions(g.n)} to` : "To"} ${other(g.other)}${tail(g)}</span></p>`);
+  const other = ({ name, id, sock }) => loginDoor(name, id, sock);
+  // the sessions a move carried, the first two by name as doors to them on Sessions and the rest counted; the command's
+  // own move, which carried no one session, reads from or to the login alone
+  const who = (g, word) => {
+    if (!g.who.length) return word[0].toUpperCase() + word.slice(1);
+    const named = g.who.slice(0, 2).map((x) => `<a class="mdoor" href="sessions.html#${encodeURIComponent(x.session_id)}">${esc(sessNameOf(x))}</a>`).join(", ");
+    return `${named}${g.who.length > 2 ? ` +${n0(g.who.length - 2)}` : ""} ${word}`;
+  };
+  const ins = [...into.values()].map((g) => `<p class="moveline">${GLYPH.into}${chip(g)}<span>${who(g, "from")} ${other(g.other)}${tail(g)}</span></p>`);
+  const outs = [...away.values()].map((g) => `<p class="moveline">${GLYPH.away}${chip(g)}<span>${who(g, "to")} ${other(g.other)}${tail(g)}</span></p>`);
   return [...ins, ...outs].join("");
 }
 // how many rows a card's windows draw, so a login being read for the first time stands at the height it will land at
@@ -1059,7 +1085,8 @@ function cardHtml(p, c, a, i, serves) {
       : `<div class="windows"><span class="unproved">${DAY_NOT_READ}${why ? `<span class="why"> · ${esc(why)}</span>` : ""}</span>${rows}</div>${signRow}`;
   } else if (p.kind === "plan") {
     const first = c && serving(p, c) === a;
-    body = windowsHtml(a, first ? nextOf(p, c) : null, first ? c.lastLeft : null) + signRow;
+    const next = first ? nextOf(p, c) : null;
+    body = windowsHtml(a, next, first ? c.lastLeft : null, usageDoor(a, c), next ? ordered(p, c).indexOf(next) + 1 : 0) + signRow;
   } else {
     // the model it serves, and the door to its command on Models, where its log and its model are
     body = `<div class="local-model"><span class="mname">${esc(a.model)}</span><a class="door" href="models.html?cmd=${encodeURIComponent(a.id)}">Models${DRAW.go}</a></div>`;
@@ -1106,15 +1133,24 @@ function switchHtml(p, c) {
   return DRAW.switcher([["soonest", "Soonest reset"], ["mine", "My order"]], c.mode, "mode", `Account order${p.cmds.length > 1 ? `, ${c.cmd}` : ""}`,
     { data: ` data-p="${p.id}" data-c="${c.cmd}"`, disabled });
 }
-function railHtml(p, c, span = 1) {
+const railCards = (p, c) => {
   const srv = new Map(p.cmds.map((x) => [x, serving(p, x)]));
-  const cards = ordered(p, c).map((a, i) => cardHtml(p, c, a, i, p.cmds.filter((x) => srv.get(x) === a))).concat(addTileHtml(p, c));
+  return ordered(p, c).map((a, i) => cardHtml(p, c, a, i, p.cmds.filter((x) => srv.get(x) === a))).concat(addTileHtml(p, c));
+};
+function railHtml(p, c, span = 1, cuts = null) {
+  const cards = railCards(p, c);
   if (span < 2) return `<div class="rail" data-rail="${p.id}">${cards.join("")}</div>`;
   // a provider wider than one column reads its order down each column and on at the top of the next, each column on its
-  // own length of rail, the numbers carrying on (1-3, 4-6, 7 and Add account): still read top to bottom (hitstop 0360fc4)
-  const per = Math.ceil(cards.length / span), cols = [];
-  for (let i = 0; i < cards.length; i += per) cols.push(cards.slice(i, i + per));
-  return `<div class="rails" data-rail="${p.id}" style="--span:${span}">${cols.map((x) => `<div class="rail">${x.join("")}</div>`).join("")}</div>`;
+  // own length of rail, the numbers carrying on (1-5, 6-8 and Add account): still read top to bottom (hitstop 0360fc4).
+  // Each column takes the run of cards that leaves the tallest column as short as it can be (cutRail), cut where the
+  // board was packed, so a card whose rows grow later never hops to the next column
+  return `<div class="rails" data-rail="${p.id}" style="--span:${span}">${runs(cards, cuts, span).map((x) => `<div class="rail">${x.join("")}</div>`).join("")}</div>`;
+}
+// cards cut into runs at [cuts]; cuts that do not fit them (a card added since) cut them into even runs
+function runs(cards, cuts, span) {
+  const at = Array.isArray(cuts) && cuts.length === span - 1 && cuts.every((x, i) => x > (cuts[i - 1] ?? 0) && x < cards.length) ? cuts
+    : Array.from({ length: span - 1 }, (_, i) => Math.ceil((cards.length * (i + 1)) / span));
+  return [0, ...at].map((x, i) => cards.slice(x, at[i] ?? cards.length));
 }
 // Every provider reads the same: its name with the order switch, a day per command with the command as its tab, then
 // each account once on one rail, carrying the chip of every command it serves. Each command keeps its own order
@@ -1127,8 +1163,14 @@ const MOVED_WHY = { "operator pinned this account": "You pinned it", "operator a
   "primary account reset": "Main account reset", "quota resets sooner": "Resets sooner", "provider rate limit reached": "Rate limited",
   "rate limit exceeds turn wait budget": "Rate limited too long to wait", "5-hour quota exhausted": "5-hour limit used up",
   "7-day quota exhausted": "Weekly limit used up", "quota usage reading full": "Usage at its limit", "account unavailable": "Account unavailable",
-  "previous login needs sign-in": "Needs sign-in" };
-const movedWhy = (r) => MOVED_WHY[r] ?? (r ? r[0].toUpperCase() + r.slice(1) : "");
+  "previous login needs sign-in": "Needs sign-in", "previous login's token expired": "Token expired", "session signed in to this account": "Signed in here",
+  "5-hour plan limit reached": "5-hour limit used up", "7-day plan limit reached": "Weekly limit used up", "7d window exhausted": "Weekly limit used up" };
+// a plan's own weekly window by name, "7-day Fable plan limit reached" (AccountSwitchReason.kt planWindow), reads as the
+// window his card draws: "Weekly Fable limit used up"
+const movedWhy = (r) => {
+  const named = /^7-day (.+) plan limit reached$/.exec(r ?? "");
+  return MOVED_WHY[r] ?? (named ? `Weekly ${named[1]} limit used up` : r ? r[0].toUpperCase() + r.slice(1) : "");
+};
 // A command whose pool is down to one usable login says the next plan limit has nothing to move to, and until when: the
 // earliest time a held login comes back, from /api/accounts' head_pools, the reading status and doctor use (splice-lead,
 // Oct 13: claude-splice ran on one live login most of the day). Null for a pool of one, which never had a fallback.
@@ -1163,7 +1205,7 @@ function providerHtml(p, span = 1) {
   // whole width instead of leaving the columns beside them empty: its day's words then stand on one line and its hours
   // are drawn at the width the cards under them have
   const strips = span > 1 ? `<div class="meters" style="--span:${Math.min(span, p.cmds.length)}">${meters}</div>` : meters;
-  return group(said(c) + switchHtml(p, c), `${why(c)}${strips}${railHtml(p, c, span)}`);
+  return group(said(c) + switchHtml(p, c), `${why(c)}${strips}${railHtml(p, c, span, layout?.wide?.id === p.id ? layout.wide.cuts : null)}`);
 }
 function addProviderHtml() {
   const have = new Set(data.map((p) => p.id));
@@ -1186,22 +1228,56 @@ function addProviderHtml() {
 // The placement holds until the width or the set of providers changes, so opening an editor never throws a provider
 // into the next column.
 let layout = null;
-const acctWeight = (a) => (a.out ? 3 : 2 + (a.windows || []).length + 0.6 * (a.models?.length || 0));
-const weight = (p) => 4 + (p.kind === "local" ? 0 : p.cmds.length) + (p.kind !== "plan" ? 3
-  : 2 * p.cmds.length + 1 + laneAccts(p, laneOf(p)).reduce((t, a) => t + acctWeight(a), 0)); // a day per command, one rail
+// HOW TALL EACH PART STANDS, in rem, from the rules that draw it (console.css .card, .windows, .onlogin, .rail, .provider,
+// .meter; accounts.css .moveline): a card from the rows, doors and lines its own drawing carries, so the board packs on
+// what it will show (a serving login with its Next row, doors and moves stands twice as tall as a signed-out one); a
+// provider from its head, its days and its rail. Doors wrap at the width a card has in a column of the board.
+const REM = { card: 4.65, email: 1.4, row: 2.05, doors: 2.55, doorLine: 2.2, move: 2.05, outbox: 3.3, line: 1.9, gap: 1, add: 3.35,
+  head: 3.8, strip: 11.15, prov: 2.4, addProv: 4.6 };
+function cardRem(html, inner) {
+  const n = (re) => (html.match(re) || []).length;
+  // a row per window, model and Next row, and one for a held line, a not-read line or a read-at line
+  const rows = n(/class="pct[" ]/g) + n(/class="next[" ]/g) + n(/class="(?:heldline|unproved|stale-at)"/g);
+  const doors = [...html.matchAll(/<a class="sdoor"[^>]*>([\s\S]*?)<\/a>/g)].reduce((w, m) => w + 3.2 + .5 * m[1].replace(/<[^>]+>/g, "").length, n(/class="morepill/g) * 3);
+  return REM.card + n(/class="email"/g) * REM.email + rows * REM.row + (doors ? REM.doors + (Math.ceil(doors / inner) - 1) * REM.doorLine : 0)
+    + n(/class="moveline"/g) * REM.move + n(/class="outbox/g) * REM.outbox + n(/class="(?:keysrc|local-model)"/g) * REM.line;
+}
+// the width a card has inside a column of n, in rem: the column, less the rail's inset and the card's own padding
+const innerRem = (n) => Math.max(16, (board.clientWidth / parseFloat(getComputedStyle(document.documentElement).fontSize) - (n - 1) * 2) / n - 5.25);
+const runRem = (hs) => hs.reduce((t, h) => t + h, 0) + Math.max(0, hs.length - 1) * REM.gap;
+// a provider's cards as heights, Add account last on a plan's rail
+const railRems = (p, inner) => (p.kind === "plan" ? railCards(p, laneOf(p)).map((h, i, all) => (i === all.length - 1 ? REM.add : cardRem(h, inner)))
+  : p.accounts.map((a) => cardRem(cardHtml(p, null, a, 0, []), inner)));
+const stripsOf = (p) => (p.kind === "local" ? p.cmds.filter((c) => c.budget).length : p.cmds.length);
+// THE CUTS THAT SPLIT A WIDE RAIL into k runs in its order, each two cards or more, the tallest run as short as it can be.
+// Split by count, a rail of cards of different heights stood one column 600 px longer than the next at 3822 (Oct 27): the
+// serving login with its doors and moves at the top of the first, a signed-out one at the foot of the second.
+function cutRail(hs, k, min = 2) {
+  const n = hs.length, run = (i, j) => runRem(hs.slice(i, j)), from = [];
+  let best = Array.from({ length: n + 1 }, (_, j) => (j >= min ? run(0, j) : Infinity)); // best[j]: the tallest run, first j cards
+  for (let m = 2; m <= k; m++) {
+    const next = Array(n + 1).fill(Infinity), at = Array(n + 1).fill(-1);
+    for (let j = m * min; j <= n; j++) for (let i = (m - 1) * min; i <= j - min; i++) {
+      const t = Math.max(best[i], run(i, j));
+      if (t < next[j]) { next[j] = t; at[j] = i; }
+    }
+    from.push(at); best = next;
+  }
+  const cuts = [];
+  for (let m = k, j = n; m >= 2; m--) { j = from[m - 2][j]; cuts.unshift(j); }
+  return { cuts, tall: best[n] };
+}
 // The board's tallest column is as short as it can be (Marlin's walk item 8, Oct 12: on desk c Claude's seven cards ran one
-// column 2,459 px long at 3828 with most of the page empty; hitstop's rule by width, 0360fc4). The heaviest plan provider
-// may take k columns, its cards split down them, when that makes the tallest column shorter; the rest pack into the other
-// columns, each into the shortest so far. Its columns keep two cards or more, one column is always left for the others and
-// Add provider, and a split that saves under 15% of the height isn't made, so a full board keeps one column each and 1440
-// (two columns) never splits. Split or not, that provider opens the board at the top of the first column, so the one with
-// the most logins stands in one place at every width (at 1440 it fell to the foot of the second column, under the fold);
-// the rest keep the order splice lists them in.
-const fixedW = (p) => 4 + p.cmds.length + 2 * p.cmds.length + 1; // the heading and a day per command
-const railW = (p) => laneAccts(p, laneOf(p)).reduce((t, a) => t + acctWeight(a), 0) + 1.5; // its cards and Add account
-function pack(ps, n) {
-  const cols = DRAW.packCols(ps, n, weight);
-  const add = cols.reduce((m, c) => (c.w < m.w ? c : m)); add.w += 3; // Add provider ends the shortest column
+// column 2,459 px long at 3828 with most of the page empty; hitstop's rule by width, 0360fc4). The plan provider with the
+// tallest rail may take k columns, its cards cut down them (cutRail), when that makes the tallest column shorter; the rest
+// pack into the other columns, each into the shortest so far. Its columns keep two cards or more, one column is always left
+// for the others and Add provider, and a split that saves under 15% of the height isn't made, so a full board keeps one
+// column each and 1440 (two columns) never splits. Split or not, that provider opens the board at the top of the first
+// column, so the one with the most logins stands in one place at every width (at 1440 it fell to the foot of the second
+// column, under the fold); the rest keep the order splice lists them in.
+function pack(ps, n, w) {
+  const cols = DRAW.packCols(ps, n, w);
+  const add = cols.reduce((m, c) => (c.w < m.w ? c : m)); add.w += REM.addProv; // Add provider ends the shortest column
   return { cols: cols.map((c) => c.items.map((p) => p.id)), add: cols.indexOf(add), tall: Math.max(...cols.map((c) => c.w)) };
 }
 // how many columns the board's width holds: one per 40rem with the gap between, the board's own rule at every width
@@ -1211,7 +1287,7 @@ function colCount() { return DRAW.colsFit(board, 40); }
 // cards' rows have grown or shrunk since; a provider or a card added or gone packs the board again, and the providers
 // slide to their new columns (render).
 const PACK_KEY = "splice-accounts-packing";
-const PACK_RULE = 2; // a packing kept from an older rule packs again
+const PACK_RULE = 3; // a packing kept from an older rule packs again
 function keptPacking(n, ids) {
   let kept = null;
   try { kept = JSON.parse(localStorage.getItem(PACK_KEY) || "null"); } catch { kept = null; }
@@ -1228,17 +1304,21 @@ function columns() {
   return layout;
 }
 function packed(n, ids) {
-  const plans = data.filter((p) => p.kind === "plan"), big = plans.reduce((m, p) => (!m || railW(p) > railW(m) ? p : m), null);
+  const inner = innerRem(n), rails = new Map(data.map((p) => [p, railRems(p, inner)]));
+  const w = (p) => REM.head + stripsOf(p) * REM.strip + runRem(rails.get(p)) + REM.prov;
+  const big = data.filter((p) => p.kind === "plan").reduce((m, p) => (!m || runRem(rails.get(p)) > runRem(rails.get(m)) ? p : m), null);
   // a split is weighed against the board packed in splice's own order, as it always was; unsplit, the big one leads
-  let best = { k: 1, ...pack(big ? [big, ...data.filter((p) => p !== big)] : data, n) }, under = 0.85 * pack(data, n).tall;
+  let best = { k: 1, cuts: null, ...pack(big ? [big, ...data.filter((p) => p !== big)] : data, n, w) }, under = 0.85 * pack(data, n, w).tall;
   if (big && n > 1) {
-    const rest = data.filter((p) => p !== big), cards = laneAccts(big, laneOf(big)).length + 1;
-    for (let k = 2; k <= Math.min(n - 1, Math.floor(cards / 2)); k++) {
-      const r = pack(rest, n - k), tall = Math.max(fixedW(big) + railW(big) / k, r.tall);
-      if (tall < under) { best = { k, ...r, tall }; under = tall; } // 15% shorter or no split
+    const rest = data.filter((p) => p !== big), hs = rails.get(big);
+    for (let k = 2; k <= Math.min(n - 1, Math.floor(hs.length / 2)); k++) {
+      // over k columns its days stand side by side, a row of them per k commands
+      const r = pack(rest, n - k, w), cut = cutRail(hs, k);
+      const tall = Math.max(REM.head + Math.ceil(stripsOf(big) / k) * REM.strip + cut.tall + REM.prov, r.tall);
+      if (tall < under) { best = { k, cuts: cut.cuts, ...r, tall }; under = tall; } // 15% shorter or no split
     }
   }
-  return { rule: PACK_RULE, n, ids, wide: best.k > 1 ? { id: big.id, k: best.k } : null, cols: best.cols, addAt: best.add };
+  return { rule: PACK_RULE, n, ids, wide: best.k > 1 ? { id: big.id, k: best.k, cuts: best.cuts } : null, cols: best.cols, addAt: best.add };
 }
 addEventListener("resize", () => {
   if (!readOnce) { ghostBoard(); return; }
@@ -1268,7 +1348,7 @@ function shapeOf(L) {
     };
     return { k: p.kind, d: [...(sec?.querySelectorAll(".meter.day") || [])].map(remOf), a: (p.kind === "plan" ? ordered(p, laneOf(p)) : p.accounts).map(card) };
   };
-  return { n: L.n, wide: L.wide ? { k: L.wide.k, p: prov(findProv(L.wide.id)) } : null, cols: L.cols.map((ids) => ids.map((id) => prov(findProv(id)))),
+  return { n: L.n, wide: L.wide ? { k: L.wide.k, cuts: L.wide.cuts, p: prov(findProv(L.wide.id)) } : null, cols: L.cols.map((ids) => ids.map((id) => prov(findProv(id)))),
     doors: Object.fromEntries(data.flatMap((p) => p.accounts).map((a) => [a.id, doors(a)]).filter(([, k]) => k > 0)) };
 }
 // the board at rest: an open form, menu, reason or list of doors is not the shape the next visit lands on
@@ -1285,19 +1365,18 @@ function ghostCard(kind, [rows, doors, h, over = 0, moves = 0], k) {
 }
 const ghostStrip = (h) => `<div class="meter day ghosted" style="${tall(h).slice(1)}"><span class="label">Day</span><span class="money">${GHOST.fig(4.6)} ${GHOST.bar(9.5)}</span>`
   + `<span class="dayrun">${GHOST.track()}</span><span class="when">${GHOST.ring()}${GHOST.bar(6.2)}</span></div>`;
-function ghostProvider(g, span = 1) {
+function ghostProvider(g, span = 1, cuts = null) {
   // a shape kept before the heights were (a count of strips) still draws, at the plain height
   const strips = (Array.isArray(g.d) ? g.d : Array.from({ length: g.d || 0 }, () => 0)).map((h) => ghostStrip(h)).join(""), cards = (g.a || []).map((x, k) => ghostCard(g.k, x, k));
   const head = `<header><h2><span class="blot"></span>${GHOST.bar(6.4, "big")}</h2></header>`;
   if (g.k !== "plan") return `<section class="provider ghostp">${head}${strips}<div class="rail plain">${cards.join("")}</div></section>`;
   cards.push(`<div class="add ghosted" style="--i:3"><span class="socket"></span>${GHOST.bar(7)}</div>`); // Add account
-  let rail = `<div class="rail">${cards.join("")}</div>`;
-  if (span > 1) {
-    const per = Math.ceil(cards.length / span), cols = [];
-    for (let i = 0; i < cards.length; i += per) cols.push(cards.slice(i, i + per));
-    rail = `<div class="rails" style="--span:${span}">${cols.map((x) => `<div class="rail">${x.join("")}</div>`).join("")}</div>`;
-  }
-  return `<section class="provider ghostp${span > 1 ? ` wide" style="--span:${span}` : ""}">${head}${span > 1 ? `<div class="meters">${strips}</div>` : strips}${rail}</section>`;
+  // a wide rail's ghosts are cut where its cards were
+  const rail = span > 1 ? `<div class="rails" style="--span:${span}">${runs(cards, cuts, span).map((x) => `<div class="rail">${x.join("")}</div>`).join("")}</div>`
+    : `<div class="rail">${cards.join("")}</div>`;
+  // its days spread over the width as the board's do (providerHtml), so each ghost strip stands as wide as its day
+  const across = Math.max(1, Math.min(span, Array.isArray(g.d) ? g.d.length : g.d || 0));
+  return `<section class="provider ghostp${span > 1 ? ` wide" style="--span:${span}` : ""}">${head}${span > 1 ? `<div class="meters" style="--span:${across}">${strips}</div>` : strips}${rail}</section>`;
 }
 // A FIRST VISIT, or a width the last one never drew, has no kept shape: its ghosts come from splice's own list of commands
 // as soon as that answers (it answers well before the rest), one provider per family with a strip and a card per command
@@ -1341,7 +1420,7 @@ function ghostBoard() {
     shape = { n, wide: null, cols: Array.from({ length: n }, (_, i) => [i % 2 ? { k: "key", d: [0], a: [[0, 0]] } : { k: "plan", d: [0], a: [[2, 0], [2, 0]] }]) };
   }
   for (const [id, k] of Object.entries(shape.doors || {})) if (!DOORS_SEEN.has(id)) DOORS_SEEN.set(id, k);
-  board.innerHTML = DRAW.boardCols([...(shape.wide ? [{ span: shape.wide.k, body: ghostProvider(shape.wide.p, shape.wide.k) }] : []),
+  board.innerHTML = DRAW.boardCols([...(shape.wide ? [{ span: shape.wide.k, body: ghostProvider(shape.wide.p, shape.wide.k, shape.wide.cuts) }] : []),
     ...shape.cols.map((ps) => ({ body: ps.map((g) => ghostProvider(g)).join("") }))]);
   board.setAttribute("aria-busy", "true");
 }
@@ -1645,6 +1724,7 @@ addEventListener("blur", () => finishDrag(true));
 // ---------- keys: arrows on a grip, Enter and Escape in the fields ----------
 board.addEventListener("keydown", (e) => {
   if (e.key === "Escape" && drag) { e.preventDefault(); finishDrag(true); return; }
+  if (e.target.matches?.(".dayrun[role=group]") && ["ArrowLeft", "ArrowRight", "Home", "End", "Enter"].includes(e.key)) { walkHours(e); return; }
   const g = e.target.closest("[data-grip]");
   if (g && !g.disabled && (e.key === "ArrowUp" || e.key === "ArrowDown")) {
     e.preventDefault();
@@ -1658,6 +1738,45 @@ board.addEventListener("keydown", (e) => {
   else if (e.target.matches(".add-name")) e.target.parentElement.querySelector('[data-act="add-go"]')?.click();
   else if (e.target.matches("#key-in")) e.target.parentElement.querySelector('[data-act="save-replace"], [data-act="save-key"]')?.click();
 });
+// ---------- the hour under the pointer, or under the arrow keys on a focused day ----------
+// What an hour holds stands over its column, where the strip's busiest hour says its count, while the pointer is on it or
+// the arrow keys have walked to it, the column outlined; Enter on the track opens that hour's requests, as a press on
+// its column does. Leaving the track takes it away, and the busiest hour's count stands again.
+function sayHour(run, cell = null) {
+  for (const r of board.querySelectorAll(".dayrun.at")) if (r !== run || !cell) {
+    r.classList.remove("at"); r.querySelector(".hours > .cur")?.classList.remove("cur");
+    const tag = r.querySelector(".hourat"); if (tag) tag.textContent = "";
+  }
+  const tag = run?.querySelector(".hourat");
+  if (!cell || !tag) return;
+  run.querySelector(".hours > .cur")?.classList.remove("cur");
+  cell.classList.add("cur"); run.classList.add("at");
+  tag.style.setProperty("--i", String([...cell.parentElement.children].indexOf(cell)));
+  tag.textContent = cell.dataset.said;
+}
+function walkHours(e) {
+  const run = e.target, cells = [...run.querySelectorAll(".hours > [data-said]")];
+  if (!cells.length) return;
+  e.preventDefault();
+  const i = cells.findIndex((x) => x.classList.contains("cur"));
+  if (e.key === "Enter") { if (cells[i]?.href) cells[i].click(); return; }
+  const j = e.key === "Home" ? 0 : e.key === "End" || i < 0 ? cells.length - 1 : Math.max(0, Math.min(cells.length - 1, i + (e.key === "ArrowLeft" ? -1 : 1)));
+  sayHour(run, cells[j]);
+}
+board.addEventListener("pointerover", (e) => {
+  const run = e.target.closest?.(".dayrun[role=group]");
+  if (!run) { if (board.querySelector(".dayrun.at")) sayHour(null); return; }
+  const cell = e.target.closest(".hours > [data-said]");
+  if (cell) sayHour(run, cell);
+});
+board.addEventListener("pointerleave", () => sayHour(null));
+// a track the keys reach says its latest hour at once, so the first arrow press is never spent finding where it stands
+board.addEventListener("focusin", (e) => {
+  if (!e.target.matches?.(".dayrun[role=group]")) return;
+  const cells = e.target.querySelectorAll(".hours > [data-said]");
+  if (cells.length && !e.target.querySelector(".hours > .cur")) sayHour(e.target, cells[cells.length - 1]);
+});
+board.addEventListener("focusout", (e) => { if (e.target.matches?.(".dayrun[role=group]")) sayHour(null); });
 board.addEventListener("paste", (e) => {
   if (e.target.matches(".code-in")) setTimeout(() => submitCode(e.target), 0);
   if (!e.target.matches("#key-in")) return;

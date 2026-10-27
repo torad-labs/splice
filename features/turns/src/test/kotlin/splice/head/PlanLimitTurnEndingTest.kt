@@ -34,6 +34,10 @@ import org.junit.jupiter.api.io.TempDir
 import splice.core.auth.AuthDescription
 import splice.core.auth.Credentials
 import splice.core.auth.RefreshableAuthProvider
+import splice.core.failure.FailureCause
+import splice.core.failure.Lift
+import splice.core.failure.LiftSource
+import splice.core.failure.LimitWindow
 import splice.core.failure.VoiceFacts
 import splice.core.model.ModelCatalog
 import splice.core.model.ModelEntry
@@ -45,14 +49,19 @@ import splice.core.util.AsyncFileIo
 import splice.core.util.LocalTimeText
 import splice.core.util.WallClock
 import splice.dialect.responses.ReasoningSettings
+import splice.dialect.responses.failure.ResponsesReplies
 import splice.upstream.ProviderLocations
 import splice.upstream.ProviderName
 import splice.upstream.ProviderTuning
+import splice.upstream.failure.FailedReply
+import splice.upstream.failure.ProviderDeviation
+import splice.upstream.failure.Replies
 import splice.upstream.retry.InflightGate
 import splice.upstream.transport.UpstreamClient
 import java.net.InetSocketAddress
 import java.nio.file.Files
 import java.nio.file.Path
+import java.time.Instant
 import java.time.ZoneId
 import kotlin.time.Duration.Companion.seconds
 
@@ -72,14 +81,23 @@ private fun usageLimitBody(reset: Long) =
 
 private const val BURST_BODY = """{"error":{"type":"rate_limit_exceeded","message":"slow down"}}"""
 
-/** A body-reading provider auth, as codex is: a usage_limit_reached body with a reset ahead names a 7-day window. */
 private class SpentPlanAuth : RefreshableAuthProvider {
     override suspend fun credentials(): Credentials = Credentials.Bearer("tok", "acct")
     override suspend fun refresh(): Credentials = credentials()
     override suspend fun describe(): AuthDescription = AuthDescription(true, "fake")
-    override fun planLimitFromBody(body: String, nowEpochSeconds: Long): PlanLimit? =
-        Regex(""""resets_at":(\d+)""").find(body)?.groupValues?.get(1)?.toLong()
-            ?.takeIf { body.contains("usage_limit_reached") && it > nowEpochSeconds }
+}
+
+/** A body-reading provider's reader, as codex's is (CodexReplies, pinned in provider-codex): a usage_limit_reached body
+ *  with a reset ahead names a 7-day window, spent until that reset. */
+private object SpentPlanBody : ProviderDeviation {
+    override fun http(reply: FailedReply): FailureCause.Provider? = planLimit(reply)?.let {
+        val lift = Lift.At(Instant.ofEpochSecond(it.resetEpochSeconds), firm = true, LiftSource.BODY)
+        FailureCause.Provider.Limited(lift, LimitWindow.WEEKLY)
+    }
+
+    override fun planLimit(reply: FailedReply): PlanLimit? =
+        Regex(""""resets_at":(\d+)""").find(reply.body)?.groupValues?.get(1)?.toLong()
+            ?.takeIf { reply.body.contains("usage_limit_reached") && it > reply.answeredAt.epochSecond }
             // V4-444: a provider that read the window's LENGTH passes it in seconds, as codex does.
             ?.let { PlanLimit("seven_day", it, windowSeconds = SEVEN_DAYS_S) }
 }
@@ -123,6 +141,7 @@ private class LimitedHead(tmp: Path, upstreamBody: String, retryAfterSeconds: In
                 loginCommand = "claudex login",
             ),
             reasoning = ReasoningSettings(ReasoningDisplay.TEXT, false, "high", "detailed"),
+            replies = Replies(ResponsesReplies, SpentPlanBody),
         ),
         listenPort = 0,
         deps = headDeps(

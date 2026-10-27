@@ -23,6 +23,8 @@ import splice.core.util.ElapsedClock
 import splice.upstream.RoundBody
 import splice.upstream.StreamRead
 import splice.upstream.Waiter
+import splice.upstream.failure.OpenAiReplies
+import splice.upstream.failure.Replies
 import splice.upstream.retry.RateLimitCooldown
 import java.io.IOException
 import java.net.ConnectException
@@ -355,8 +357,8 @@ class UpstreamClientBackoffTest {
             url = "https://api.example.test/v1",
             auth = auth,
             extraHeaders = { emptyMap() },
-            onRetry = { notices.add(it) },
-            observers = PostObservers(perf = perf),
+            replies = Replies(OpenAiReplies),
+            observers = PostObservers(perf = perf, onRetry = { notices.add(it) }),
             limits = PostLimits(
                 remainingTurnWait = if (withTurnBudget) RemainingTurnWait { 5_000L - elapsed } else null,
             ),

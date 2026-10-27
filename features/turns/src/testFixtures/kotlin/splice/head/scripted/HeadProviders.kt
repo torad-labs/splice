@@ -78,6 +78,8 @@ internal class ScriptedChatProvider(
                 watchdogFired = signals.watchdogFired,
                 idleCapMs = watchdog.streamIdle.inWholeMilliseconds,
                 totalCapMs = watchdog.totalCap.inWholeMilliseconds,
+                replies = replies,
+                owner = auth.owner,
             ),
         )
 }

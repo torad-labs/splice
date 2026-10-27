@@ -14,8 +14,7 @@
 // their dependency, rather than borrowing the driver to reach it.
 package splice.head.turn
 
-import io.ktor.http.HttpStatusCode
-import splice.upstream.failure.ForeignCredential
+import splice.core.failure.FailureCause
 import splice.upstream.transport.UpstreamAuthMissing
 import splice.upstream.transport.UpstreamEnding
 import splice.upstream.transport.UpstreamFailed
@@ -56,14 +55,14 @@ internal class SealedDrive(
         }
     }
 
-    private suspend fun recordCredentialFailure(drive: TurnDrive, failure: UpstreamEnding) {
+    private fun recordCredentialFailure(drive: TurnDrive, failure: UpstreamEnding) {
         val account = drive.account ?: return
         when {
             failure is UpstreamAuthMissing -> account.markCredentialMissing()
-            // V4-242: a 401 naming a credential the account did not send refused someone else's, so the
-            // account's own stays usable (ForeignCredential; the upstream's 2026-09-25 outage shape).
-            failure is UpstreamFailed && failure.evidence.status == HttpStatusCode.Unauthorized.value &&
-                !ForeignCredential.named(failure.evidence.body, account.account.auth.credentials()) ->
+            // The provider refused this account's own login. A 401 naming a credential the account did not send was
+            // read as the provider's own fault where it arrived (Replies' foreign-key rule, V4-242: the upstream's
+            // 2026-09-25 outage shape), so the account's own stays usable and this reads only the cause.
+            failure is UpstreamFailed && failure.cause is FailureCause.Provider.AuthRejected ->
                 account.markCredentialUnavailable()
         }
     }

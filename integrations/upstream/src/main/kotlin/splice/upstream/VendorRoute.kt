@@ -8,6 +8,7 @@
 package splice.upstream
 
 import splice.core.turn.Usage
+import splice.upstream.failure.FailedReply
 
 /** One turn's route upstream, from [Provider.route]. The transport and the head say what happened to each request it
  *  routed; which of those means the conversation must leave its route is the vendor's to know. */
@@ -30,9 +31,10 @@ public interface VendorRoute {
      *  transport's thread, again for each later response to the same request, such as a redirect's. */
     public fun headersArrived()
 
-    /** The upstream answered the request with [status] and [body] instead of a stream. Whether that answer ended what
-     *  the request started upstream is the vendor's to know. */
-    public fun answered(status: Int, body: String)
+    /** The upstream answered the request with [reply] instead of a stream, as its reader was handed it: the same
+     *  reply, read once (failure-handling slice 3). Whether that answer ended what the request started upstream is
+     *  the vendor's to know. */
+    public fun answered(reply: FailedReply)
 
     /** The upstream ended the stream with its own last word: the response completed, with [usage] the bill it reported
      *  for the request, or it reported its failure, with [usage] null. */

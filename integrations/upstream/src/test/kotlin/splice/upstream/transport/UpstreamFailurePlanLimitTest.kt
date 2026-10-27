@@ -16,11 +16,15 @@ import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertNull
 import org.junit.jupiter.api.Test
 import splice.core.auth.AuthDescription
-import splice.core.auth.ClientAuthProvider
 import splice.core.auth.Credentials
 import splice.core.auth.RefreshableAuthProvider
 import splice.core.usage.PlanLimit
+import splice.core.usage.PlanLimits
 import splice.core.util.ElapsedClock
+import splice.upstream.failure.FailedReply
+import splice.upstream.failure.OpenAiReplies
+import splice.upstream.failure.ProviderDeviation
+import splice.upstream.failure.Replies
 import java.util.concurrent.atomic.AtomicInteger
 
 private const val MS = 1_000L
@@ -36,22 +40,39 @@ private const val BURST_BODY = """{"error":{"type":"rate_limit_exceeded","messag
 
 class UpstreamFailurePlanLimitTest {
 
-    /** A body-reading provider, as codex is: a usage_limit_reached body with a reset ahead names a 7-day window. */
-    private val bodyReader = object : RefreshableAuthProvider {
+    private val auth = object : RefreshableAuthProvider {
         override suspend fun credentials(): Credentials? = Credentials.ApiKey("k", "x-api-key", "")
         override suspend fun refresh(): Credentials? = null
         override suspend fun describe(): AuthDescription = AuthDescription(true, "body-reader", emptyMap())
-        override fun planLimitFromBody(body: String, nowEpochSeconds: Long): PlanLimit? =
-            Regex(""""resets_at":(\d+)""").find(body)?.groupValues?.get(1)?.toLong()
-                ?.takeIf { body.contains("usage_limit_reached") && it > nowEpochSeconds }
-                ?.let { PlanLimit("seven_day", it) }
     }
 
-    private fun ctx(auth: RefreshableAuthProvider) = PostContext(
+    /** A body-reading provider's reader, as codex's is (CodexReplies): a usage_limit_reached body with a reset ahead
+     *  names a 7-day window. */
+    private val bodyReader = Replies(
+        OpenAiReplies,
+        object : ProviderDeviation {
+            override fun planLimit(reply: FailedReply): PlanLimit? =
+                Regex(""""resets_at":(\d+)""").find(reply.body)?.groupValues?.get(1)?.toLong()
+                    ?.takeIf { reply.body.contains("usage_limit_reached") && it > reply.answeredAt.epochSecond }
+                    ?.let { PlanLimit("seven_day", it) }
+        },
+    )
+
+    /** A reader of Anthropic's unified plan headers, as AnthropicReplies reads them (pinned in its own test). */
+    private val unifiedHeaders = Replies(
+        OpenAiReplies,
+        object : ProviderDeviation {
+            override fun planLimit(reply: FailedReply): PlanLimit? =
+                PlanLimits.of({ name -> reply.header(name) }, reply.answeredAt.epochSecond)
+        },
+    )
+
+    private fun ctx(replies: Replies) = PostContext(
         url = "https://api.example.test/v1/responses",
         auth = auth,
         extraHeaders = { emptyMap() },
-        onRetry = { },
+        replies = replies,
+        observers = PostObservers(onRetry = { }),
     )
 
     private fun client(engine: MockEngine) = UpstreamClient(
@@ -91,7 +112,7 @@ class UpstreamFailurePlanLimitTest {
         }
 
         val failure = assertEnds<UpstreamFailed> {
-            client(engine).posted(ctx(ClientAuthProvider("claude-splice")), "{}") { "unreachable" }
+            client(engine).posted(ctx(unifiedHeaders), "{}") { "unreachable" }
         }
 
         assertEquals(PlanLimit("five_hour", reset), failure.planLimit)

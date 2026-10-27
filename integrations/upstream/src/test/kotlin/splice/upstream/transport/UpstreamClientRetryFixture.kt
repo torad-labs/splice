@@ -9,6 +9,8 @@ import splice.core.auth.AuthDescription
 import splice.core.auth.Credentials
 import splice.core.auth.RefreshableAuthProvider
 import splice.upstream.Waiter
+import splice.upstream.failure.OpenAiReplies
+import splice.upstream.failure.Replies
 
 internal val fakeAuth = object : RefreshableAuthProvider {
     override suspend fun credentials(): Credentials? = Credentials.ApiKey("k", "x-api-key", "")
@@ -47,6 +49,11 @@ internal fun clientOver(
 )
 
 internal suspend fun postOnce(client: UpstreamClient): String = client.posted(
-    PostContext(url = "https://api.example.test/v1", auth = fakeAuth, extraHeaders = { emptyMap() }),
+    PostContext(
+        url = "https://api.example.test/v1",
+        auth = fakeAuth,
+        extraHeaders = { emptyMap() },
+        replies = Replies(OpenAiReplies),
+    ),
     "{}",
 ) { "ok" }

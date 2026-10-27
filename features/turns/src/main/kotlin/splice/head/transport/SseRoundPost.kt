@@ -96,12 +96,13 @@ internal class SseRoundPost(
                 url = provider.upstreamUrl,
                 auth = sender,
                 extraHeaders = { creds -> sendHeaders(inputs, answers, creds) },
-                onRetry = onRetry,
+                replies = provider.replies,
                 observers = PostObservers(
                     perf = drive.perf,
                     // V4-174: the trace hears every send of this round from inside the retry loop.
                     wire = drive.trace,
                     authRefreshObserver = AuthRefreshObserver { selection?.markCredentialRefreshSucceeded() },
+                    onRetry = onRetry,
                 ),
                 recovery = PostRecovery(
                     clientFrameEmitted = inputs.frameEmittedThisRound,

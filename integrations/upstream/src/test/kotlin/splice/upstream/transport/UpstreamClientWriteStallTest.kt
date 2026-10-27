@@ -28,6 +28,8 @@ import org.junit.jupiter.api.condition.OS
 import org.junit.jupiter.api.io.TempDir
 import splice.core.util.LogSink
 import splice.upstream.RetryNotice
+import splice.upstream.failure.OpenAiReplies
+import splice.upstream.failure.Replies
 import java.io.BufferedInputStream
 import java.io.InputStream
 import java.net.InetAddress
@@ -302,7 +304,8 @@ class UpstreamClientWriteStallTest(@TempDir tmp: Path) {
             url = "${if (tls) "https" else "http"}://127.0.0.1:${upstream.port}/v1/messages",
             auth = fakeAuth,
             extraHeaders = { emptyMap() },
-            onRetry = RetryNotice { retries += it },
+            replies = Replies(OpenAiReplies),
+            observers = PostObservers(onRetry = RetryNotice { retries += it }),
         )
 }
 

@@ -7,7 +7,6 @@ package splice.dialect.chat
 import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonObject
 import splice.core.util.JsonScalars
-import splice.core.wire.HttpStatus
 import splice.upstream.sse.WireSink
 
 /** Dispatches one OpenAI chat SSE frame to its owning collaborators. [applyDelta] and
@@ -24,20 +23,10 @@ internal class ChatEventRouter(
     private val refusal = ChatProseFold()
 
     internal suspend fun onEvent(evt: JsonObject, sink: WireSink) {
-        (evt["error"] as? JsonObject)?.let {
-            // V4-164: all three fields, not just the text. llama-server puts its HTTP-equivalent
-            // status in a NUMERIC `code` and its error kind in `type`; OpenAI puts a kind in `type`
-            // and a STRING code beside it — so a numeric code is the status, never the kind.
-            // V4-167: an error status only — a vendor's own numeric code ("1301") is a kind, and
-            // read as a status it would be a 5xx, retried whatever it meant.
-            val status = JsonScalars.int(it, "code")?.takeIf { code -> code in HttpStatus.BAD_REQUEST..LAST_STATUS }
-            // A STRING code is the vendor's specific verdict (context_length_exceeded, server_is_overloaded) and
-            // outranks the category in `type`, as the Responses reducer reads it; dropping it sent a known code
-            // under an unknown type to the one generic re-send instead of the plan its code names.
-            val stringCode = JsonScalars.strIfString(it["code"]).ifBlank { null }
-            val kind = stringCode ?: JsonScalars.str(it, "type")
-                ?: JsonScalars.str(it, "code").takeIf { status == null }
-            terminal.onError(JsonScalars.strOrEmpty(it["message"]).ifEmpty { "error" }, kind.orEmpty(), status)
+        // V4-164: a chunk carrying an error object is the backend's failure, read whole by the head's reader, which
+        // reads its code, its type and llama-server's numeric status the way it reads the same error over HTTP.
+        if (evt["error"] is JsonObject) {
+            terminal.onError(evt)
             return
         }
         usage.usage(evt)
@@ -72,7 +61,3 @@ internal class ChatEventRouter(
         refusal.appendRefusal(terminal.refusalBuf, delta, isDelta = true) // CX-08: the incremental streamed carrier
     }
 }
-
-// why: status codes are three digits (RFC 9110 §15) and 5xx is the last class, so 599 is the highest
-// code an in-band error can mean as a status.
-private const val LAST_STATUS = 599

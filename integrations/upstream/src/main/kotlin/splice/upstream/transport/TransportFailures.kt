@@ -21,6 +21,7 @@
 package splice.upstream.transport
 
 import splice.core.util.Cancellables
+import splice.core.util.WallClock
 import splice.upstream.DnsBackoff
 import splice.upstream.RetryBackoff
 import splice.upstream.Waiter
@@ -211,6 +212,10 @@ public class RetryPacing(
     private val dnsBackoff: DnsBackoff = UpstreamTransport().liveDnsBackoff(waiter, live),
     /** The tries a request gets, read once as it begins; null keeps the client's own fixed bound. */
     private val liveRetries: LiveRetries? = null,
+    /** The wall clock this client dates a failed answer by (failure-handling slice 3): a Retry-After date or a reset a
+     *  provider names is read against the instant the answer came, and so is the hold it arms. One clock, so a head
+     *  on a test's virtual time reads a recorded reset as the provider meant it. */
+    internal val wall: WallClock = WallClock(System::currentTimeMillis),
 ) {
     /** The bound a request that begins now runs under: the live knob, else the client's [fixed] one. */
     internal fun triesFor(fixed: Int): Int = liveRetries?.invoke() ?: fixed

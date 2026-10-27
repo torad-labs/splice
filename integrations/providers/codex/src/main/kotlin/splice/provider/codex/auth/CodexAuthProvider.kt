@@ -25,7 +25,6 @@ import splice.core.auth.InvalidGrantLatch
 import splice.core.auth.RefreshCall
 import splice.core.auth.RefreshOutcome
 import splice.core.auth.RefreshableAuthProvider
-import splice.core.usage.PlanLimit
 import splice.core.util.Cancellables
 import splice.core.util.DaemonLog
 import splice.core.util.LogSink
@@ -77,7 +76,6 @@ public class CodexAuthProvider(
     private val log: LogSink = LogSink(DaemonLog::write),
 ) : RefreshableAuthProvider, AccountCredentialIdentitySource {
 
-    private val planLimits = CodexPlanLimitBody()
     private val singleFlight = SingleFlight<Credentials?>()
     private val backgroundRefresh = BackgroundCredentialRefresh(prefetchScope, LOG_TAG, log)
     private val invalidGrantLatch = InvalidGrantLatch()
@@ -208,9 +206,6 @@ public class CodexAuthProvider(
     /** The ref of `tokens.account_id`, the same one [describe] gives the Accounts page. */
     override fun observedAccountRef(): String? =
         authJson.readSnapshot(authCacheMs)?.accountId?.takeIf(String::isNotBlank)?.let(AccountRef::of)
-
-    override fun planLimitFromBody(body: String, nowEpochSeconds: Long): PlanLimit? =
-        planLimits.read(body, nowEpochSeconds)
 
     override fun credentialIdentity(): CredentialFileIdentity? = credentialEvidence().identity
 

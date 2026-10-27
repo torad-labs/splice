@@ -80,7 +80,12 @@ internal class MockFailureScenarios(private val wire: MockSseWire) {
                 wire.write(
                     "<html><body>401 Unauthorized: your session token has expired, please sign in again.</body></html>",
                 )
-            "zero_event_overflow" -> wire.write("context window exceeded")
+            // The provider's own JSON error in place of the stream, which the head's reader reads (failure-handling
+            // slice 3): only such a body names a cause, and any other is a broken path.
+            "zero_event_overflow" -> wire.write(
+                """{"error":{"type":"invalid_request_error","code":"context_length_exceeded",""" +
+                    """"message":"Your input exceeds the context window of this model."}}""",
+            )
             // deliberately nothing written — a true stall, not a diagnosable auth-shaped body
             else -> Unit
         }

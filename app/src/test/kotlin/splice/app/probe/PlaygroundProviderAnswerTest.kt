@@ -183,7 +183,7 @@ class PlaygroundProviderAnswerTest {
             MockEngine {
                 if (refused) {
                     respond(
-                        """{"error":{"message":"Subscription quota exhausted","resets_in_seconds":3600}}""",
+                        USAGE_LIMIT_BODY,
                         HttpStatusCode.TooManyRequests,
                     )
                 } else {
@@ -221,7 +221,7 @@ class PlaygroundProviderAnswerTest {
                     respond("{}", HttpStatusCode.OK)
                 } else {
                     respond(
-                        """{"error":{"message":"Subscription quota exhausted","resets_in_seconds":3600}}""",
+                        USAGE_LIMIT_BODY,
                         HttpStatusCode.TooManyRequests,
                     )
                 }
@@ -298,7 +298,7 @@ class PlaygroundProviderAnswerTest {
         val fixture = fixture(backgroundScope)
         val engine = MockEngine {
             respond(
-                """{"error":{"message":"Subscription quota exhausted","resets_in_seconds":3600}}""",
+                USAGE_LIMIT_BODY,
                 HttpStatusCode.TooManyRequests,
             )
         }
@@ -380,3 +380,7 @@ class PlaygroundProviderAnswerTest {
         authKind: String = "chatgpt-oauth",
     ) = heads.build(scope, keyName, authKind)
 }
+
+/** codex's spent-subscription answer, as its reader reads it (CodexReplies). */
+private const val USAGE_LIMIT_BODY =
+    """{"error":{"type":"usage_limit_reached","message":"Subscription quota exhausted","resets_in_seconds":3600}}"""

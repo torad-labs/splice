@@ -6,8 +6,10 @@
 package splice.head.transport
 
 import kotlinx.serialization.json.JsonObject
+import splice.core.failure.LoginOwner
 import splice.core.util.JsonScalars
 import splice.upstream.WsRoundRunner
+import splice.upstream.failure.Replies
 import splice.upstream.sse.WireSink
 
 /** Long enough for a code and a sentence, short enough that one server message stays one line. */
@@ -15,8 +17,9 @@ private const val FAILURE_DETAIL_MAX_CHARS = 240
 
 private val oneLine = Regex("\\s+")
 
-/** Whether one round is sent to SSE, and why. Taken once, inside the round's collection, and read after it ends. */
-internal class SseReserve {
+/** Whether one round is sent to SSE, and why. Taken once, inside the round's collection, and read after it ends.
+ *  [replies] is the head's reader, which says whether a failure terminal is a policy refusal, read as [owner]'s. */
+internal class SseReserve(private val replies: Replies, private val owner: LoginOwner) {
     var detail: String? = null
         private set
     var reasonCode: String? = null
@@ -28,7 +31,7 @@ internal class SseReserve {
     fun event(evt: JsonObject, runner: WsRoundRunner, inputs: WsRoundInputs): Boolean {
         if (!runner.isFailureTerminal(evt) || inputs.frameEmittedThisRound()) return false
         val failure = WsFailureTerminal(evt)
-        if (failure.policyRefusal()) return false
+        if (failure.policyRefusal(replies, owner)) return false
         detail = oneLined(
             listOf(JsonScalars.strOrEmpty(evt["type"]), failure.code, failure.message)
                 .filter { it.isNotEmpty() }

@@ -4,25 +4,28 @@ package splice.upstream.retry
 import splice.core.auth.CredentialKey
 import splice.core.usage.PlanLimit
 import splice.core.util.ElapsedClock
+import splice.core.util.WallClock
 import java.util.concurrent.ConcurrentHashMap
 
 /** The effective forwarded credential is the only principal this head can prove. Keys are never logged. */
 internal class CredentialCooldowns(
     private val clock: ElapsedClock,
     private val store: ProviderHoldStore?,
+    /** The wall clock a provider's reset is read against: the client's own (RetryPacing.wall). */
+    private val wall: WallClock = WallClock(System::currentTimeMillis),
 ) {
     private val cooldowns = ConcurrentHashMap<String, RateLimitCooldown>()
 
     init {
         store?.credentialKeys()?.forEach { key ->
-            cooldowns[key] = RateLimitCooldown(clock, store = store.forCredential(key))
+            cooldowns[key] = RateLimitCooldown(clock, wall, store.forCredential(key))
         }
     }
 
     /** No carriers means no known principal; never manufacture a login from the head or session. */
     public fun forHeaders(headers: Map<String, String>, declaredCarrier: String? = null): RateLimitCooldown? {
         val key = CredentialKey.fromHeaders(headers, declaredCarrier) ?: return null
-        return cooldowns.computeIfAbsent(key) { RateLimitCooldown(clock, store = store?.forCredential(key)) }
+        return cooldowns.computeIfAbsent(key) { RateLimitCooldown(clock, wall, store?.forCredential(key)) }
     }
 
     public fun clear() {

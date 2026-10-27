@@ -272,9 +272,12 @@ private val CASES: List<Case> = CAUSES.flatMap { cause -> POSITIONS.map { Case(c
 
 private fun cases(moment: Moment): List<Case> = CASES.filter { it.at.moment == moment }
 
-/** Before content: the stream is open, or its status is still ours and the failure is no overflow. */
-private fun beforeContent(): List<Case> =
-    cases(Moment.COMMITTED) + cases(Moment.BEFORE_COMMIT).filter { it.cause !is FailureCause.Provider.TooLong }
+/** Before content: the stream is open, or its status is still ours and the failure is neither an overflow nor a
+ *  forwarded client login the provider refused, which each answer with a status of their own. */
+private fun beforeContent(): List<Case> = cases(Moment.COMMITTED) + cases(Moment.BEFORE_COMMIT).filter {
+    it.cause !is FailureCause.Provider.TooLong &&
+        (it.cause as? FailureCause.Provider.AuthRejected)?.owner != LoginOwner.CLIENT
+}
 
 class ClientWireTodayPropertyTest {
     @Test
@@ -331,5 +334,19 @@ class ClientWireTodayPropertyTest {
             assertEquals(WireAnswer(HttpStatus.BAD_REQUEST, ErrorType.INVALID_REQUEST, false), case.answer, "$case")
         }
         assertNull(todayAdmission(FailureCause.Path.Stalled(Stall.IDLE)), "a stall is never an admission refusal")
+    }
+
+    // Failure-handling slice 3 (final-design.md section 11): the client's own login, which splice forwards and never
+    // renews, refused by the provider while the status is still splice's to choose, answers the provider's own 401
+    // authentication_error, sent once. It replaced today's in-band authentication_error on a committed 200.
+    @Test
+    fun `a forwarded login the provider refused answers 401 authentication_error before the stream opens`() {
+        val refused = cases(Moment.BEFORE_COMMIT).filter {
+            (it.cause as? FailureCause.Provider.AuthRejected)?.owner == LoginOwner.CLIENT
+        }
+        assertTrue(refused.isNotEmpty(), "the generator reached a refused client login")
+        refused.forEach { case ->
+            assertEquals(WireAnswer(HttpStatus.UNAUTHORIZED, ErrorType.AUTHENTICATION, false), case.answer, "$case")
+        }
     }
 }

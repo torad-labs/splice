@@ -38,14 +38,13 @@ import org.junit.jupiter.api.io.TempDir
 import splice.core.auth.AuthDescription
 import splice.core.auth.Credentials
 import splice.core.auth.RefreshableAuthProvider
-import splice.core.failure.ClientWire
 import splice.core.failure.FailureCause
+import splice.core.failure.Tear
 import splice.core.model.ModelCatalog
 import splice.core.model.ModelEntry
 import splice.core.perf.PerfKeys
 import splice.core.perf.TurnPerf
 import splice.core.perf.UpstreamGapEnd
-import splice.core.turn.ErrorType
 import splice.core.turn.ReasoningDisplay
 import splice.core.turn.TurnMeta
 import splice.core.turn.TurnOutcome
@@ -432,20 +431,18 @@ class SseRoundConsumeTest {
             assertTrue(drive.perfCounter(PerfKeys.EVENTS_IN) > 0, "attempt 1 must have parsed events")
             // Attempt 2 (the reissue, same inputs per the UpstreamClient contract): an HTML login
             // page with ZERO events. Pre-fix the round-scoped baseline counted attempt 1's events
-            // and the G2 auth diagnosis was skipped — an undiagnosable generic error instead.
+            // and the zero-event diagnosis was skipped — an undiagnosable generic error instead.
+            // Failure-handling slice 3: that diagnosis is Torn(NO_EVENTS) for a body that is no JSON error
+            // (final-design.md section 7), where G2 read a login cause from the page's words.
             val second = consume.read(inputs, fetch("zero_event_auth"))
             val failure = second as TurnOutcome.Failure
             assertEquals(
-                ErrorType.AUTHENTICATION,
-                ClientWire.ownType(failure.cause),
-                "zero-event auth body must classify: $failure",
-            )
-            assertTrue(
-                failure.evidence.message.contains("claudex login"),
-                "login hint expected: ${failure.evidence.message}",
+                Tear.NO_EVENTS,
+                (failure.cause as? FailureCause.Path.Torn)?.why,
+                "zero-event body must be diagnosed: $failure",
             )
             // Control: attempt 1's verdict must stay untouched — its round had real events.
-            assertFalse(first is TurnOutcome.Failure && ClientWire.ownType(first.cause) == ErrorType.AUTHENTICATION)
+            assertFalse(first is TurnOutcome.Failure && (first.cause as? FailureCause.Path.Torn)?.why == Tear.NO_EVENTS)
         } finally {
             inputs.turnJob.cancel()
             drive.slot.release()

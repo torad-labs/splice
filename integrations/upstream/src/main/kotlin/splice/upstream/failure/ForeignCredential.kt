@@ -8,40 +8,26 @@
 // the upstream refused. The comparison runs here, in-process, and the credential goes nowhere else.
 package splice.upstream.failure
 
-import kotlinx.serialization.json.JsonPrimitive
 import splice.core.auth.Credentials
-import splice.core.failure.FailureCause
-import splice.core.failure.ServerFault
 import splice.core.util.ERR_SNIPPET
-import splice.core.util.JsonWire
 
 /** Whether an upstream's authentication failure names a credential other than the one sent. */
 public object ForeignCredential {
-    /** True when [body] names at least one masked credential and [sent] can be none of them. A body
-     *  that names none, and a credential splice does not hold ([Credentials.ClientForwarded]), say
-     *  nothing either way: false, so the failure is read as it always was. */
-    public fun named(body: String?, sent: Credentials?): Boolean {
-        val secret = secretOf(sent) ?: return false
-        val masked = MASKED.findAll(body.orEmpty()).map { it.groupValues[1] to it.groupValues[2] }.toList()
-        return masked.isNotEmpty() && masked.none { (head, tail) -> secret.startsWith(head) && secret.endsWith(tail) }
+    /** Whether a masked key a reply names could be the credential [sent], for the foreign-key rule every API type
+     *  shares (Replies). The comparison runs in this process and the secret goes nowhere else: a credential splice
+     *  does not hold ([Credentials.ClientForwarded], or none) could be any key, so it answers true to every mask, which
+     *  says nothing either way and leaves the reply read as its status. */
+    public fun sentKey(sent: Credentials?): SentKey {
+        val secret = secretOf(sent)
+        return SentKey { head, tail -> secret == null || (secret.startsWith(head) && secret.endsWith(tail)) }
     }
 
-    /** V4-444: the words the UPSTREAM itself said in [body], for a surface that labels them as its own (the console's
-     *  Requests list), or null when the sentence in [read] is not the upstream's. [read] is the classifier's reading:
-     *  its own sentences (a gateway page, an overflow restatement) are splice speaking, told apart by the body NOT
-     *  containing them, a test no later classifier arm can slip past and that needs no list of the arms. Bounded,
-     *  with the credential [sent] masked. */
-    public fun upstreamsWords(body: String, read: ClassifiedFailure, sent: Credentials?): String? {
-        val said = read.message.trim()
-        return said.takeIf { it.isNotBlank() && spoke(body, it) }
-            ?.let { withoutSentSecret(it, sent).take(ERR_SNIPPET) }
-    }
-
-    /** Whether [body] SAID [words]: as they read, or as a JSON string's own escaped spelling of them, which is how a
-     *  message lifted out of `error.message` appears in the bytes that arrived. Without the second reading the test
-     *  would drop exactly the messages that quote the request back. */
-    private fun spoke(body: String, words: String): Boolean =
-        body.contains(words) || body.contains(JsonWire.string(JsonPrimitive(words)).removeSurrounding("\""))
+    /** V4-444: the words the UPSTREAM itself said, for a surface that labels them as its own (the console's Requests
+     *  list), bounded and with the credential [sent] masked out. [said] is what the provider said as its reader kept
+     *  it (ProviderWordsFilter, which reads the provider's own message field), so nothing splice wrote reaches this
+     *  surface and no reading of the body happens twice (failure-handling slice 3). */
+    public fun upstreamsWords(said: String?, sent: Credentials?): String? =
+        said?.trim()?.takeIf { it.isNotBlank() }?.let { withoutSentSecret(it, sent).take(ERR_SNIPPET) }
 
     /** V4-444: [text] with the credential that was SENT replaced by a mask, for a surface that shows the
      *  upstream's own words (the console's Requests list). A provider that echoes a request header back into its
@@ -60,17 +46,5 @@ public object ForeignCredential {
         Credentials.ClientForwarded, null -> null
     }
 
-    /** [read] as the upstream's own when it is an authentication failure whose [body] names a
-     *  credential [sent] cannot be: the provider failing its own check (ServerError FOREIGN_KEY), which a
-     *  re-send may clear because the upstream refused itself. Anything else is [read] unchanged.
-     *
-     *  Slice 2 of the failure-handling redesign: a person reads the line SpliceLines writes from the cause, which
-     *  names no key, so no sentence is written here. The message stays the provider's own, for the log. */
-    public fun upstreamsOwn(read: ClassifiedFailure, body: String?, sent: Credentials?): ClassifiedFailure {
-        if (read.cause !is FailureCause.Provider.AuthRejected || !named(body, sent)) return read
-        return read.copy(cause = FailureCause.Provider.ServerError(ServerFault.FOREIGN_KEY, read.cause.said))
-    }
-
-    private val MASKED = Regex("""([A-Za-z0-9_-]+)\*{4,}([A-Za-z0-9_-]+)""")
     private const val SHORT_STARS = "****"
 }

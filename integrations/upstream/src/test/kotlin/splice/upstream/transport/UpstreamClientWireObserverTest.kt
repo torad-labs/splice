@@ -18,6 +18,8 @@ import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.assertThrows
 import splice.upstream.BodyAmendment
+import splice.upstream.failure.OpenAiReplies
+import splice.upstream.failure.Replies
 import splice.upstream.sse.WireAttempt
 import splice.upstream.sse.WireObserver
 import java.io.IOException
@@ -42,6 +44,7 @@ class UpstreamClientWireObserverTest {
         url = "https://api.example.test/v1/messages",
         auth = fakeAuth,
         extraHeaders = { mapOf("anthropic-version" to "2023-06-01", "X-Session-Token" to "sess-secret") },
+        replies = Replies(OpenAiReplies),
         recovery = PostRecovery(amendBodyOnFailure = amend),
         observers = PostObservers(wire = wire),
     )

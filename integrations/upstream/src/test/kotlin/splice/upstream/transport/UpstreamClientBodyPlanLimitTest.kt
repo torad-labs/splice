@@ -24,6 +24,10 @@ import splice.core.failure.Position
 import splice.core.usage.PlanLimit
 import splice.core.util.ElapsedClock
 import splice.core.util.LocalTimeText
+import splice.upstream.failure.FailedReply
+import splice.upstream.failure.OpenAiReplies
+import splice.upstream.failure.ProviderDeviation
+import splice.upstream.failure.Replies
 import splice.upstream.retry.MAX_RATE_LIMIT_COOLDOWN_MS
 import java.time.Instant
 import java.util.concurrent.atomic.AtomicInteger
@@ -37,30 +41,42 @@ private fun liveBody(reset: Long) =
     """{"error":{"type":"usage_limit_reached","plan_type":"pro","resets_at":$reset,""" +
         """"resets_in_seconds":$SIX_DAYS_S,"limit_window_minutes":10080}}"""
 
-/** V4-377 at the transport: a provider that names its spent window in the 429 BODY (the port's
- *  planLimitFromBody, which the codex provider implements) gets V4-233's plan hold: one attempt, a cause
- *  naming the reset its body stated and the window, whose line says that reset, and a plan-hold notice.
- *  The next turn asks the provider itself (Marcos, Oct 26), as UpstreamClientPlanLimitTest shows for the
- *  header-named window. The double reads the body the way codex does, so the vendor parse itself is
- *  pinned in provider-codex. */
+/** V4-377 at the transport: a provider whose reader names its spent window in the 429 BODY (its Replies'
+ *  deviation since failure-handling slice 3, which CodexReplies implements; the login provider's
+ *  planLimitFromBody until then) gets V4-233's plan hold: one attempt, a cause naming the reset its body
+ *  stated and the window, whose line says that reset, and a plan-hold notice. The next turn asks the
+ *  provider itself (Marcos, Oct 26), as UpstreamClientPlanLimitTest shows for the header-named window. The
+ *  double reads the body the way codex does, so the vendor parse itself is pinned in provider-codex. */
 class UpstreamClientBodyPlanLimitTest {
 
-    /** A body-reading provider: the live body names a 7-day window; anything else names none. */
-    private val bodyReader = object : RefreshableAuthProvider {
+    private val auth = object : RefreshableAuthProvider {
         override suspend fun credentials(): Credentials? = Credentials.ApiKey("k", "x-api-key", "")
         override suspend fun refresh(): Credentials? = null
         override suspend fun describe(): AuthDescription = AuthDescription(true, "body-reader", emptyMap())
-        override fun planLimitFromBody(body: String, nowEpochSeconds: Long): PlanLimit? =
-            Regex(""""resets_at":(\d+)""").find(body)?.groupValues?.get(1)?.toLong()
-                ?.takeIf { body.contains("usage_limit_reached") && it > nowEpochSeconds }
-                ?.let { PlanLimit("seven_day", it) }
     }
 
-    private fun ctx(auth: RefreshableAuthProvider, notices: MutableList<String>) = PostContext(
+    /** A body-reading provider's reader: the live body names a 7-day window; anything else names none. */
+    private val bodyReader = Replies(
+        OpenAiReplies,
+        object : ProviderDeviation {
+            override fun http(reply: FailedReply): FailureCause.Provider? = planLimit(reply)?.let {
+                val lift = Lift.At(Instant.ofEpochSecond(it.resetEpochSeconds), firm = true, LiftSource.BODY)
+                FailureCause.Provider.Limited(lift, LimitWindow.WEEKLY)
+            }
+
+            override fun planLimit(reply: FailedReply): PlanLimit? =
+                Regex(""""resets_at":(\d+)""").find(reply.body)?.groupValues?.get(1)?.toLong()
+                    ?.takeIf { reply.body.contains("usage_limit_reached") && it > reply.answeredAt.epochSecond }
+                    ?.let { PlanLimit("seven_day", it) }
+        },
+    )
+
+    private fun ctx(replies: Replies, notices: MutableList<String>) = PostContext(
         url = "https://api.example.test/v1/responses",
         auth = auth,
         extraHeaders = { emptyMap() },
-        onRetry = { notices.add(it) },
+        replies = replies,
+        observers = PostObservers(onRetry = { notices.add(it) }),
     )
 
     private fun client(engine: MockEngine, clock: ElapsedClock = ElapsedClock { 0L }) = UpstreamClient(

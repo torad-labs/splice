@@ -31,6 +31,8 @@ import splice.head.scripted.reply
 import splice.head.scripted.withScriptedHeads
 import java.nio.file.Path
 import java.time.Instant
+import java.time.ZoneOffset
+import java.time.format.DateTimeFormatter
 
 /** The prefix every line a person reads opens with. */
 private const val PREFIX = "[splice] "
@@ -374,10 +376,16 @@ class LinesThroughHeadsTest {
         assertTrue(fragment in line, "says \"$fragment\": $line")
     }
 
-    /** A 429 in Muse's words, which state the reset in the body (trace 0768bed1a506), or a limit that states none. It
-     *  goes to a translated head: a passthrough head still relays a provider's 429 whole until slice 5. */
+    /** A 429 that states its reset in Retry-After's date form (RFC 7231), which every API type's reader reads, or a
+     *  limit that states none. Muse's words name the same reset in the body (trace 0768bed1a506), and since
+     *  failure-handling slice 3 only the providers that write a reset that way read it there (MuseReplies), so on this
+     *  head the header states it. It goes to a translated head: a passthrough head still relays a provider's 429 whole
+     *  until slice 5. */
     private fun limited(resetsAt: Instant?): ScriptedReply = reply {
         status(TOO_MANY_REQUESTS)
+        resetsAt?.let {
+            header("Retry-After", DateTimeFormatter.RFC_1123_DATE_TIME.format(it.atOffset(ZoneOffset.UTC)))
+        }
         openAiErrorBody(
             "rate_limit_error",
             resetsAt?.let { "Subscription quota exhausted. Your usage window resets at $it." }

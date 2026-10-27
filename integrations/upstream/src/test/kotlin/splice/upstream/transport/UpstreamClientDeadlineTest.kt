@@ -25,6 +25,8 @@ import splice.core.perf.TurnPerf
 import splice.core.util.ElapsedClock
 import splice.upstream.StreamRead
 import splice.upstream.Waiter
+import splice.upstream.failure.OpenAiReplies
+import splice.upstream.failure.Replies
 import java.net.ConnectException
 import java.util.concurrent.atomic.AtomicInteger
 
@@ -50,7 +52,12 @@ class UpstreamClientDeadlineTest {
     )
 
     private suspend fun postOnce(client: UpstreamClient): String = client.posted(
-        PostContext(url = "https://api.example.test/v1", auth = fakeAuth, extraHeaders = { emptyMap() }),
+        PostContext(
+            url = "https://api.example.test/v1",
+            auth = fakeAuth,
+            extraHeaders = { emptyMap() },
+            replies = Replies(OpenAiReplies),
+        ),
         "{}",
     ) { "ok" }
 
@@ -73,6 +80,7 @@ class UpstreamClientDeadlineTest {
                     "https://api.example.test/v1",
                     fakeAuth,
                     { emptyMap() },
+                    replies = Replies(OpenAiReplies),
                     observers = PostObservers(perf = perf),
                 ),
                 "{}",
@@ -112,6 +120,7 @@ class UpstreamClientDeadlineTest {
                     "https://api.example.test/v1",
                     fakeAuth,
                     { emptyMap() },
+                    replies = Replies(OpenAiReplies),
                     observers = PostObservers(perf = perf),
                 ),
                 "{}",
@@ -174,6 +183,7 @@ class UpstreamClientDeadlineTest {
             url = "https://api.example.test/v1",
             auth = fakeAuth,
             extraHeaders = { emptyMap() },
+            replies = Replies(OpenAiReplies),
             limits = PostLimits(remainingTurnWait = RemainingTurnWait { 5_000 }),
             recovery = PostRecovery(clientFrameEmitted = { false }),
         )

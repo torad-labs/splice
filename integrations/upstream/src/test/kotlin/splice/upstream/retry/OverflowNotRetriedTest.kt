@@ -15,7 +15,10 @@ import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.assertThrows
 import splice.upstream.RetryNotice
+import splice.upstream.failure.OpenAiReplies
+import splice.upstream.failure.Replies
 import splice.upstream.transport.PostContext
+import splice.upstream.transport.PostObservers
 import splice.upstream.transport.UpstreamFailed
 import splice.upstream.transport.assertEnds
 import splice.upstream.transport.clientOver
@@ -72,7 +75,8 @@ class OverflowNotRetriedTest {
             url = "https://api.example.test/v1",
             auth = fakeAuth,
             extraHeaders = { emptyMap() },
-            onRetry = RetryNotice { notices += it },
+            replies = Replies(OpenAiReplies),
+            observers = PostObservers(onRetry = RetryNotice { notices += it }),
         )
         assertThrows<Exception> { clientOver(engine).posted(ctx, "{}") { "ok" } }
 
@@ -80,11 +84,8 @@ class OverflowNotRetriedTest {
         assertTrue(notices.none { "context overflow" in it }, "$notices")
     }
 
-    // V4-62 is untouched for everything else: a 400 the classifier cannot name still takes the curve.
-    @Test
-    fun `any other 400 is still retried`() = runTest {
-        assertTrue(sendsFor("nope") > 1)
-    }
+    // Failure-handling slice 3: any other 400 is the request rejected as sent (final-design.md section 7), so the
+    // test that pinned V4-62's retry of a 400 the classifier could not name went with the classifier.
 }
 
 // The vendor validated the bytes and named the field: the same bytes fail the same way, so one attempt.
@@ -109,10 +110,7 @@ class BodyRejectionNotRetriedTest {
         assertEquals(1, sendsFor(vendor))
     }
 
-    @Test
-    fun `a 400 invalid_request_error that names no body field is still retried`() = runTest {
-        val vendor = """{"type":"error","error":{"type":"invalid_request_error","message":"Error"}}"""
-
-        assertTrue(sendsFor(vendor) > 1)
-    }
+    // Failure-handling slice 3: the reader reads every other 400 as the request rejected as sent, whether or not it
+    // names a field, so the test that pinned V4-62's retry of a 400 naming none went with the classifier that told
+    // the two apart.
 }

@@ -19,6 +19,8 @@ import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 import splice.core.auth.ClientAuthProvider
 import splice.core.auth.RefreshableAuthProvider
+import splice.upstream.failure.OpenAiReplies
+import splice.upstream.failure.Replies
 
 class ClientAuthVerdictTest {
 
@@ -40,7 +42,12 @@ class ClientAuthVerdictTest {
 
     private suspend fun forward(client: UpstreamClient, auth: RefreshableAuthProvider): String =
         client.posted(
-            PostContext(url = "https://api.example.test/v1/messages", auth = auth, extraHeaders = { emptyMap() }),
+            PostContext(
+                url = "https://api.example.test/v1/messages",
+                auth = auth,
+                extraHeaders = { emptyMap() },
+                replies = Replies(OpenAiReplies),
+            ),
             "{}",
         ) { "ok" }
 

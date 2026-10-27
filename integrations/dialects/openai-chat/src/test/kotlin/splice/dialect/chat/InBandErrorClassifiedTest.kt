@@ -1,8 +1,9 @@
-// NEW: V4-164 — the chat dialect's in-band error event goes through the classifier every other
+// NEW: V4-164 — the chat dialect's in-band error event goes through the reading every other
 // path uses. It was the one dialect of three that kept only error.message and called every in-band
 // error UPSTREAM_REPORTED, so the wire type the client keys its retry on was api_error whatever the
-// vendor had said: an overflow was retried identically instead of compacted, a rate limit looked
-// like a server fault, and llama-server's full KV pool reached the banner as bare text.
+// vendor had said: an overflow was retried identically instead of compacted, and a rate limit looked
+// like a server fault. Since failure-handling slice 3 that reading is the head's own (ChatReplies), the
+// one its HTTP replies get, where the shared classifier read it until then.
 package splice.dialect.chat
 
 import kotlinx.coroutines.test.runTest
@@ -20,17 +21,19 @@ class InBandErrorClassifiedTest {
 
     private suspend fun failureOf(json: String): TurnOutcome.Failure = driveEvents(ev(json)) as TurnOutcome.Failure
 
-    // Mutant (for all three below): the pre-V4-164 router — keep error.message, hard-code
-    // UPSTREAM_REPORTED. Every cause assertion goes red; the unrecognised case below stays green.
+    // Failure-handling slice 3: a status written in-band reads as its HTTP twin does, a 500 as a server error that
+    // heals. The shared classifier's rewrite of llama-server's words ("KV cache is full", LlamaCppErrors) and its
+    // relabel to an overload are gone: after content a cause keeps its own type (final-design.md section 11), and
+    // the evidence keeps the server's own words.
     @Test
-    fun `llama-server's full KV pool is named and wired as the class the client retries`() = runTest {
+    fun `an in-band 500 is a server error that heals`() = runTest {
         val f = failureOf(
             """{"error":{"code":500,"message":"Context size has been exceeded.","type":"server_error"}}""",
         )
 
         assertEquals(PersistedCause.UPSTREAM_STATUS_5XX, f.cause.persisted)
-        assertEquals(ErrorType.OVERLOADED, ClientWire.ownType(f.cause))
-        assertTrue(f.evidence.message.contains("KV cache is full"), f.evidence.message)
+        assertEquals(ErrorType.API_ERROR, ClientWire.ownType(f.cause))
+        assertTrue(f.evidence.message.contains("Context size has been exceeded."), f.evidence.message)
         assertFalse(f.cause.permanent, "a 5xx heals: advertised as retryable")
     }
 
@@ -62,7 +65,9 @@ class InBandErrorClassifiedTest {
 
         assertEquals(PersistedCause.REQUEST_TOO_LARGE, f.cause.persisted)
         assertEquals(ErrorType.INVALID_REQUEST, ClientWire.ownType(f.cause))
-        assertTrue(f.evidence.message.contains("prompt is too long"), f.evidence.message)
+        // The line the client reads says the prompt is too long, composed from the cause (ProviderSentences); the
+        // evidence keeps the provider's own words, where the shared classifier rewrote them until slice 3.
+        assertTrue(f.evidence.message.contains("maximum context length is 128000 tokens"), f.evidence.message)
     }
 
     @Test
@@ -76,8 +81,8 @@ class InBandErrorClassifiedTest {
         assertEquals(ErrorType.RATE_LIMIT, ClientWire.ownType(f.cause))
     }
 
-    // The byte-identity half: a shape the classifier has no rule for keeps the cause, and so the
-    // wire, it had before this row — the classifier's own floor is UPSTREAM_REPORTED.
+    // The byte-identity half: a shape no row names keeps the cause, and so the wire, it had before
+    // this row — the reading's own floor is Unrecognized, persisted as UPSTREAM_REPORTED.
     @Test
     fun `an unrecognised in-band error keeps the cause and wire it had`() = runTest {
         val f = failureOf("""{"error":{"message":"something the classifier has no rule for"}}""")

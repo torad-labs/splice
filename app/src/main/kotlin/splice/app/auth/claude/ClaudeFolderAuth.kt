@@ -22,12 +22,9 @@ import kotlinx.serialization.json.put
 import splice.core.auth.ACCOUNT_REF_FIELD
 import splice.core.auth.AccountRef
 import splice.core.auth.AuthDescription
-import splice.core.auth.ClientAuthProvider
 import splice.core.auth.CredentialKey
 import splice.core.auth.Credentials
 import splice.core.auth.RefreshableAuthProvider
-import splice.core.usage.PlanLimit
-import splice.core.usage.QuotaHeaderRead
 import splice.core.util.Cancellables
 import splice.core.util.JsonScalars
 import splice.core.util.LogSink
@@ -73,11 +70,6 @@ internal class ClaudeFolderAuth(
     private val json = Json { ignoreUnknownKeys = true }
     private val single = SingleFlight<Credentials?>()
 
-    // The unified plan family lives in :core as an internal object, and the one public reader of it is the provider
-    // that forwards the caller's Claude login. An added account's 429 carries the same headers, so this delegates to
-    // that reader rather than copying the parse. Nothing else of it is used: this instance serves no turn.
-    private val planFamily = ClientAuthProvider(folder.fileName.toString())
-
     /** The folder's access token, rotated first when it is at or inside its proactive window. */
     override suspend fun credentials(): Credentials? {
         val held = read() ?: return null
@@ -105,11 +97,6 @@ internal class ClaudeFolderAuth(
         }
         return AuthDescription(present = held != null, kind = CLAUDE_ACCOUNT_AUTH_KIND, fields = fields)
     }
-
-    /** This account is a Claude subscription, answered in Anthropic's unified plan family, so its 429 names the plan
-     *  window it spent and the reset it comes back at — the same read ClientAuthProvider makes for the caller's own. */
-    override fun planLimit(header: QuotaHeaderRead, nowEpochSeconds: Long): PlanLimit? =
-        planFamily.planLimit(header, nowEpochSeconds)
 
     /** Reads the folder again inside the single flight, so a turn that waited on another turn's rotation sends the
      *  token that rotation saved instead of starting a second one. */

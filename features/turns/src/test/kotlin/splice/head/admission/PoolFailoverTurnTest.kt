@@ -36,8 +36,6 @@ import splice.core.model.ModelCatalog
 import splice.core.model.ModelEntry
 import splice.core.topology.SHARE_NODE_TOKEN
 import splice.core.turn.WatchdogBudget
-import splice.core.usage.PlanLimit
-import splice.core.usage.QuotaHeaderRead
 import splice.core.util.AsyncFileIo
 import splice.core.util.ElapsedClock
 import splice.core.util.LocalTimeText
@@ -259,15 +257,12 @@ class PoolFailoverTurnTest {
 private fun refusal(login: String): String =
     """{"type":"error","error":{"type":"rate_limit_error","message":"five_hour window rejected for $login"}}"""
 
-/** A synthetic subscription login: its own bearer, answered in Anthropic's unified plan family, which it reads the way
- *  the forwarded login does. */
+/** A synthetic subscription login: its own bearer, answered in Anthropic's unified plan family, which the head's own
+ *  reader reads (AnthropicReplies, since failure-handling slice 3). */
 private class SyntheticLogin(private val token: String) : RefreshableAuthProvider {
-    private val family = ClientAuthProvider(token)
     override suspend fun credentials(): Credentials = Credentials.Bearer(token)
     override suspend fun refresh(): Credentials = credentials()
     override suspend fun describe(): AuthDescription = AuthDescription(true, "synthetic")
-    override fun planLimit(header: QuotaHeaderRead, nowEpochSeconds: Long): PlanLimit? =
-        family.planLimit(header, nowEpochSeconds)
 }
 
 /** [limited] names each login the upstream refuses and how far out its five-hour reset is. */

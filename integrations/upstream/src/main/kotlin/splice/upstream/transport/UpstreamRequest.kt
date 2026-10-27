@@ -25,8 +25,7 @@ import io.ktor.client.statement.HttpStatement
 import io.ktor.http.ContentType
 import io.ktor.http.contentType
 import io.ktor.http.isSuccess
-import splice.core.auth.Credentials
-import splice.core.failure.Lift
+import splice.core.failure.FailureEvidence
 import splice.core.perf.UpstreamAttemptTiming
 import splice.core.util.WallClock
 import splice.core.wire.HttpStatus
@@ -34,15 +33,11 @@ import splice.core.wire.NativeReply
 import splice.upstream.RoundBody
 import splice.upstream.StreamStart
 import splice.upstream.UpstreamHandler
-import splice.upstream.failure.FailureRules
-import splice.upstream.failure.FailureSource
-import splice.upstream.failure.UpstreamFailureClassifier
-import splice.upstream.failure.VendorRefusals
-import splice.upstream.failure.WsSizeRefusal
-import splice.upstream.retry.MS_PER_S
-import splice.upstream.retry.ProviderReset
-import splice.upstream.retry.RetryAfter
-import splice.upstream.sse.AttemptRecorder
+import splice.upstream.failure.ErrorMessage
+import splice.upstream.failure.FailedReply
+import splice.upstream.failure.ForeignCredential
+import splice.upstream.failure.ReplyFacts
+import java.time.Instant
 
 internal class UpstreamRequest(
     private val client: HttpClient,
@@ -50,9 +45,6 @@ internal class UpstreamRequest(
     /** V4-233: judges whether a plan-limit reset is still ahead; injectable so a test can pin it. */
     private val wallClock: WallClock = WallClock(System::currentTimeMillis),
 ) {
-    private val retryAfter = RetryAfter()
-    private val failureRules = FailureRules()
-
     /** Encode ONCE; retries resend the same bytes (no per-attempt string re-encode). Never gzip. */
     fun body(body: RoundBody): RequestBody = RequestBody(body, zstdRequestBody)
 
@@ -113,7 +105,7 @@ internal class UpstreamRequest(
             }
             return statement.execute { response ->
                 timing?.headersDelivered()
-                sentWith(executeResponse(response, ctx, accepted, handler, wire.recorder), auth.credentials)
+                executeResponse(response, ctx, accepted, handler, wire)
             }
         } finally {
             token?.let { bridge?.release(it) }
@@ -121,18 +113,14 @@ internal class UpstreamRequest(
         }
     }
 
-    /** [outcome], remembering on a failure the credential the attempt sent (ForeignCredential reads it at the
-     *  loop's exit). */
-    private fun <T> sentWith(outcome: RetryOutcome<T>, sent: Credentials): RetryOutcome<T> =
-        if (outcome is RetryOutcome.Failed) outcome.copy(sent = sent) else outcome
-
     private suspend fun <T> executeResponse(
         resp: HttpResponse,
         ctx: PostContext,
         onStreamStart: StreamStart,
         block: UpstreamHandler<T>,
-        recorder: AttemptRecorder?,
+        wire: AttemptWire,
     ): RetryOutcome<T> {
+        val recorder = wire.recorder
         ctx.markHeaders()
         val answeredAt = wallClock()
         ctx.providerAnswerObserver.observed(resp.status.value, answeredAt)
@@ -144,45 +132,58 @@ internal class UpstreamRequest(
             ctx.upstreamAccepted()
             RetryOutcome.Done(block(UpstreamResponse(resp)))
         } else {
-            val realStatus = resp.status.value
             val text = UpstreamResponse(resp).bodyTextLimited(MAX_ERROR_BODY_BYTES)
             recorder?.errorText(text)
+            // Failure-handling slice 3: ONE reply, read ONCE, where its status, headers and body are all in hand.
+            val reply = FailedReply(
+                status = resp.status.value,
+                headers = resp.headers.entries().associate { (name, values) -> name to values.joinToString() },
+                body = text,
+                owner = ctx.auth.owner,
+                sent = ForeignCredential.sentKey(wire.creds),
+                answeredAt = Instant.ofEpochMilli(answeredAt),
+                // The Responses WebSocket peer already refused these exact bytes as too big (RFC 6455 1009), so a
+                // 4xx for them is the second refusal of the same body and its reader reads an overflow.
+                bodyRefusedAsTooLarge = ctx.bodyRefusedAsTooLarge,
+            )
             // The vendor hears every answer that is not a stream; whether its route survives the answer is its call.
-            ctx.recovery.route?.answered(realStatus, text)
-            val failed = failure(resp, ctx, text, answeredAt)
-            ctx.observeQuotaRefusal(realStatus, answeredAt, failed.planLimit)
-            WsSizeRefusal.read(ctx, failed)
+            ctx.recovery.route?.answered(reply)
+
+            val failed = failure(reply, resp, ctx, wire)
+            ctx.observeQuotaRefusal(failed, answeredAt)
+            failed
         }
     }
 
-    /** One failed answer, read while its response still lives: its status as every retry layer sees it, its [text],
-     *  its pushback, the plan window a 429 names, the provider's own 429 for a client that reads it natively, and what
-     *  the answer says beyond its status ([VendorReading]). */
-    private fun failure(resp: HttpResponse, ctx: PostContext, text: String, answeredAt: Long): RetryOutcome.Failed {
-        val realStatus = resp.status.value
-        // A refusal the vendor knows keeps its own plan; any other status keeps V4-73's quota reading.
-        val vendor = ctx.auth as? VendorRefusals
-        val refusal = vendor?.refusal(realStatus, text)
-        val payment = refusal == null && quotaExhausted(realStatus, text, ctx)
-        val status = refusal?.status ?: if (payment) HttpStatus.TOO_MANY_REQUESTS else realStatus
-        // V4-233: the plan window a 429 names, read here because the headers die with the response like the body does.
-        val nowSeconds = wallClock() / MS_PER_S
-        val limited = status == HttpStatus.TOO_MANY_REQUESTS
-        val headerPlan = if (limited) ctx.auth.planLimit({ name -> resp.headers[name] }, nowSeconds) else null
-        val plan = headerPlan ?: if (limited) ctx.auth.planLimitFromBody(text, nowSeconds) else null
+    /** One failed answer, read ONCE by the head's own reader while its response still lives: the cause it is, and
+     *  the evidence it leaves (its status, its body as it came, the pushback its Retry-After asked for, and the
+     *  provider's own words as V4-444 judges them for the console's Requests list, with the sent key masked).
+     *
+     *  The plan window and the dead-credential answer come from the same reader and the same reply, so no layer
+     *  above reads a status or a body again (failure-handling slice 3, final-design.md section 7). */
+    private fun failure(
+        reply: FailedReply,
+        resp: HttpResponse,
+        ctx: PostContext,
+        wire: AttemptWire,
+    ): RetryOutcome.Failed {
+        val cause = ctx.replies.http(reply)
         return RetryOutcome.Failed(
-            status,
-            text,
-            retryAfter.retryAfterMs(resp.headers["Retry-After"]),
-            planLimit = plan,
-            native = nativeReply(resp, ctx, text),
-            vendor = VendorReading(
-                refusal,
-                deadCredential = vendor?.isAuthFailure(status, text) == true,
-                said = UpstreamFailureClassifier.saidIn(FailureSource.HTTP, text),
-                payment = payment,
-                lift = if (limited) ProviderReset.lift(plan, headerPlan != null, text, answeredAt) else Lift.Unstated,
+            cause = cause,
+            evidence = FailureEvidence(
+                // The provider's own message for the journal, as today's evidence kept it; its body rides whole below.
+                message = ErrorMessage.of(reply.body) ?: reply.body,
+                status = reply.status,
+                // The perf row's provider_message (V4-444): the provider's own sentence whole, with the credential this
+                // attempt sent masked out. A line a person reads quotes the cause's filtered words instead.
+                said = ForeignCredential.upstreamsWords(ErrorMessage.of(reply.body), wire.creds),
+                body = reply.body,
+                // Read against the instant the answer came, as the reply's reader reads it.
+                retryAfterMs = ReplyFacts.retryAfterMs(reply),
             ),
+            planLimit = ctx.replies.planLimit(reply),
+            native = nativeReply(resp, ctx, reply.body),
+            deadCredential = ctx.replies.deadCredential(reply),
         )
     }
 
@@ -197,37 +198,6 @@ internal class UpstreamRequest(
                     name.startsWith("anthropic-ratelimit-", ignoreCase = true)
             }.associate { (name, values) -> name to values.toList() },
         )
-    }
-
-    /**
-     * V4-73: A QUOTA EXHAUSTION IS A RATE LIMIT, whatever status the vendor dressed it in.
-     *
-     *  One rewrite, at the single site that builds [RetryOutcome.Failed], is what makes every layer
-     *  above agree without any of them learning a vendor's spelling: rateLimitedPlan arms the shared
-     *  cooldown, the account pool marks the account unavailable and moves on, the thrown
-     *  UpstreamFailed carries 429, the classifier's RATE_LIMIT-by-status fires, and the admission
-     *  refusal answers with the headers the client's persistent retry reads.
-     *
-     *  AUTH REFRESH IS NEVER SPENT ON A REWRITTEN FAILURE, structurally rather than by a second
-     *  guard: the refresh decision asks isAuthRefreshableFailure, which is true only for 401 and for a
-     *  status the vendor named a dead credential, asked of the status after this rewrite: 429. An
-     *  UNRECOGNISED 403 keeps its status and therefore keeps V4-38's freshness rule exactly.
-     *
-     *  The body rides through UNCHANGED, and the answer is read for what it is besides: a payment the
-     *  provider asks for (VendorReading.payment), which the turn's ending names as NeedsPayment, so a
-     *  person reads the credit line rather than a rate limit (failure-handling slice 2).
-     */
-    private fun quotaExhausted(realStatus: Int, body: String, ctx: PostContext): Boolean {
-        val exhausted = failureRules.isQuotaExhaustionStatus(realStatus) ||
-            ctx.auth.isQuotaExhausted(realStatus, body)
-        if (exhausted) {
-            ctx.onRetry(
-                "upstream $realStatus is a quota exhaustion; treating it as " +
-                    "${HttpStatus.TOO_MANY_REQUESTS} so the retry, cooldown and pool layers see the " +
-                    "rate limit it is",
-            )
-        }
-        return exhausted
     }
 }
 

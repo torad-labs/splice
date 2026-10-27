@@ -39,6 +39,8 @@ import splice.core.perf.TurnPerf
 import splice.upstream.ClientFrameEmitted
 import splice.upstream.RetryNotice
 import splice.upstream.StreamRead
+import splice.upstream.failure.OpenAiReplies
+import splice.upstream.failure.Replies
 import java.io.IOException
 import java.net.ConnectException
 import java.net.SocketException
@@ -63,7 +65,8 @@ class UpstreamClientTransportTest {
         url = "https://api.example.test/v1",
         auth = fakeAuth,
         extraHeaders = { emptyMap() },
-        onRetry = onRetry,
+        replies = Replies(OpenAiReplies),
+        observers = PostObservers(onRetry = onRetry),
         recovery = PostRecovery(clientFrameEmitted = clientFrameEmitted),
     )
 
@@ -547,6 +550,7 @@ class UpstreamRequestBytesStampTest {
             url = "https://api.example.test/v1",
             auth = fakeAuth,
             extraHeaders = { emptyMap() },
+            replies = Replies(OpenAiReplies),
             observers = PostObservers(perf = perf),
         )
         client.posted(context, bodyJson) { "done" }

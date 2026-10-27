@@ -53,7 +53,7 @@ public data class FailedReply(
 public data class FailedEvent(val type: String, val payload: JsonObject, val owner: LoginOwner)
 
 /** Whether a masked key a reply names could be the credential this attempt sent (head and tail of the mask).
- *  In process only: never stored, logged or carried past the reader. A forwarded client login answers false. */
+ *  In process only: never stored, logged or carried past the reader. A login splice does not hold could be any key. */
 public fun interface SentKey {
     public fun couldBe(head: String, tail: String): Boolean
 }

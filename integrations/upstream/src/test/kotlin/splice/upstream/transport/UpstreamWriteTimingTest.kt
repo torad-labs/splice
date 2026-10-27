@@ -27,6 +27,8 @@ import splice.core.perf.PerfKeys
 import splice.core.perf.TurnPerf
 import splice.core.util.ElapsedClock
 import splice.core.util.WallClock
+import splice.upstream.failure.OpenAiReplies
+import splice.upstream.failure.Replies
 import java.net.InetSocketAddress
 import java.util.concurrent.CopyOnWriteArrayList
 import java.util.concurrent.CountDownLatch
@@ -67,6 +69,7 @@ class UpstreamWriteTimingTest {
                 "http://127.0.0.1:${server.address.port}/",
                 TimingAuth(),
                 { emptyMap() },
+                replies = Replies(OpenAiReplies),
                 observers = PostObservers(perf = perf),
             )
             val answer = runBlocking { upstream.posted(context, "{}") { it.bodyTextLimited(100) } }
@@ -96,6 +99,7 @@ class UpstreamWriteTimingTest {
                 "http://127.0.0.1:${server.address.port}/",
                 TimingAuth(),
                 { emptyMap() },
+                replies = Replies(OpenAiReplies),
                 observers = PostObservers(perf = perf),
             )
             val answer = runBlocking {
@@ -135,6 +139,7 @@ class UpstreamWriteTimingTest {
                 "http://127.0.0.1:${server.address.port}/",
                 TimingAuth(),
                 { emptyMap() },
+                replies = Replies(OpenAiReplies),
                 observers = PostObservers(perf = perf),
             )
             val answer = runBlocking {

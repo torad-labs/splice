@@ -34,14 +34,26 @@ public object ClientWire {
      *  says the prompt is too long, and x-should-retry false keeps it from re-sending the same bytes first. */
     private val OVERFLOW_BEFORE_COMMIT = WireAnswer(HttpStatus.BAD_REQUEST, ErrorType.INVALID_REQUEST, false)
 
+    /** The provider refused the person's own forwarded login (failure-handling slice 3, final-design.md section 11):
+     *  the turn ends at once with a 401 authentication_error, which the client reads as its login failing, and
+     *  x-should-retry false keeps it from sending the same login again first. splice never refreshes that login. */
+    private val CLIENT_LOGIN_REFUSED = WireAnswer(HttpStatus.UNAUTHORIZED, ErrorType.AUTHENTICATION, false)
+
     /** What the client is told about [cause] at [at]. */
     public fun answer(cause: FailureCause, at: Position): WireAnswer = when (at.moment) {
         Moment.ADMISSION -> refusal(cause)
-        Moment.BEFORE_COMMIT ->
-            if (cause is FailureCause.Provider.TooLong) OVERFLOW_BEFORE_COMMIT else inBand(beforeContent(cause))
+        Moment.BEFORE_COMMIT -> beforeCommit(cause)
         Moment.COMMITTED -> inBand(beforeContent(cause))
         Moment.MID_CONTENT -> inBand(ownType(cause))
         Moment.NON_STREAM -> ownType(cause).let { WireAnswer(statusOf(it), it, null) }
+    }
+
+    /** While the turn's status is still splice's to choose: an overflow and a refused forwarded login keep a status of
+     *  their own, and every other cause is told in band, as it is once the status is committed. */
+    private fun beforeCommit(cause: FailureCause): WireAnswer = when {
+        cause is FailureCause.Provider.TooLong -> OVERFLOW_BEFORE_COMMIT
+        cause is FailureCause.Provider.AuthRejected && cause.owner == LoginOwner.CLIENT -> CLIENT_LOGIN_REFUSED
+        else -> inBand(beforeContent(cause))
     }
 
     /** The type [cause] reads as once content reached the client, and in a stream=false body. */

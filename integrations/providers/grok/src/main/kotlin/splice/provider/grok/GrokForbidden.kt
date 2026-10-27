@@ -6,21 +6,16 @@ import splice.core.util.Cancellables
 import splice.core.util.LogSink
 import splice.core.util.SafeFailureText
 import splice.core.util.WallClock
-import splice.core.wire.HttpStatus
 import splice.upstream.retry.MS_PER_S
 
-// The one status whose auth meaning xAI overloads (expiry AND billing), so the one status a
-// freshness judgement can arbitrate, is HttpStatus.FORBIDDEN — V4-135 reads it from the single
-// declaration site instead of a local copy. See allowRefreshAfterFailure.
+// xAI overloads one status's auth meaning (403: an expiry AND a billing wall). Since failure-handling slice 3 its own
+// reader (GrokReplies) tells the two apart and names the expiry a dead credential, so the freshness judgement below
+// arbitrates only that reading. See allowRefreshAfterFailure.
 internal class GrokForbidden(
     private val authJson: GrokAuthJson,
     private val clock: WallClock,
     private val log: LogSink,
 ) {
-    /** RULE 3's sentence builder. Stateless, so one instance is enough (see GrokOAuth's file-scope
-     *  Json comment for why the parser it shares is file scope rather than per-instance). */
-    private val oauth = GrokOAuth()
-
     /**
      * RULE 1, the structural half (2026-09-16 operator report: the grok login page kept reopening).
      *
@@ -46,23 +41,22 @@ internal class GrokForbidden(
      * demonstrably fine; a file with no declared `expires` is NOT demonstrably fine; and an unreadable
      * file proves nothing. All three fall through to the pre-V4-38 behaviour — the refresh runs.
      *
-     * RULE 3 appears here only as a SENTENCE: a recognised entitlement body is logged with its cause
-     * and the vendor's own top-up link. Those strings never reach the decision below.
+     * RULE 3 no longer appears here: an entitlement body is xAI's reader's to name (GrokReplies), and the person
+     * reads the provider's own words in the turn's line. No body reaches the decision below.
      */
-    fun allowRefreshAfterFailure(status: Int, body: String): Boolean {
-        // 403 ONLY. xAI reports an expired token as 403, which is what makes a freshness judgement
-        // meaningful here; a 401 is the server contradicting the file, and a revoked token can 401
-        // while the file still reads hours out — vetoing that refresh would serve a dead token and
-        // REGRESS, not protect. The only statuses reaching this call are 401 and 403 (the transport
-        // consults the veto solely for `isAuthRefreshableFailure`), so this is the whole surface.
-        if (status != HttpStatus.FORBIDDEN) return true
+    fun allowRefreshAfterFailure(deadCredential: Boolean): Boolean {
+        // THE READING xAI'S OWN READER MADE, and only that one (failure-handling slice 3): its expiry 403, which
+        // GrokReplies names a dead credential behind another status, is what makes a freshness judgement meaningful
+        // here. A refused login (401) is the server contradicting the file, and a revoked token can be refused while
+        // the file still reads hours out — vetoing that refresh would serve a dead token and REGRESS, not protect.
+        if (!deadCredential) return true
         // The DECLARED expiry — the file's own `expires` — never a synthesized ceiling. parseSnapshot
         // rethrows anything that is not proven absence, so the guard is the caller's here just as it
         // is inside readSnapshot; an unreadable file yields null and vetoes nothing.
         val declaredExpiryMs = Cancellables.runCatchingCancellable { authJson.parseSnapshot() }
             .onFailure {
                 log(
-                    "[$LOG_TAG] auth.json unreadable while judging a $status; no veto, refresh runs: " +
+                    "[$LOG_TAG] auth.json unreadable while judging a dead credential; no veto, refresh runs: " +
                         SafeFailureText.render(it),
                 )
             }
@@ -70,29 +64,12 @@ internal class GrokForbidden(
         val demonstrablyFresh =
             declaredExpiryMs != null && declaredExpiryMs - clock() >= PROACTIVE_WINDOW_MS
         if (demonstrablyFresh) {
-            val sentence = oauth.entitlementSentence(body)
-                ?: "body not recognised as an entitlement rejection"
             log(
-                "[$LOG_TAG] upstream $status on a credential valid for another " +
+                "[$LOG_TAG] upstream named this credential dead while it is valid for another " +
                     "${(declaredExpiryMs - clock()) / MS_PER_S}s. That is not an expiry, so NO refresh and " +
-                    "no sign-in. $sentence",
+                    "no sign-in. The answer's own words are in this turn's failure.",
             )
         }
         return !demonstrablyFresh
     }
-
-    /**
-     * V4-73: grok's spent account is a 403 whose body names the billing wall
-     * (`personal-team-blocked:spending-limit`), and until this override existed the transport
-     * classified it as a terminal invalid_request — bypassing the cooldown, the account pool and
-     * every client retry, when the operator's law is that credits exhaustion is retried until the
-     * credits are back. The phrase list stays HERE, in the vendor module (SEPARATION); the port is
-     * the neutral question and this is the only place that answers it with vendor spelling.
-     *
-     *  403 ONLY, and only when [GrokOAuth.isEntitlementRejection] recognises the body — the same
-     *  list V4-38 uses for the refresh veto. An UNRECOGNISED 403 keeps today's behaviour exactly,
-     *  including the freshness rule above: this rewrite never widens what counts as a quota wall.
-     */
-    fun isQuotaExhausted(status: Int, body: String): Boolean =
-        status == HttpStatus.FORBIDDEN && oauth.isEntitlementRejection(body)
 }

@@ -88,6 +88,8 @@ public class PassthroughProvider(
                 watchdogFired = signals.watchdogFired,
                 idleCapMs = watchdog.streamIdle.inWholeMilliseconds,
                 totalCapMs = watchdog.totalCap.inWholeMilliseconds,
+                replies = replies,
+                owner = auth.owner,
             ),
             quirks,
             names = toolNames,

@@ -119,8 +119,8 @@ public class KimiAuthProvider(
     override suspend fun refresh(): Credentials? =
         singleFlight.run { doRefresh().credentialsOrNull(LOG_TAG, log) }
 
-    override fun allowRefreshAfterFailure(status: Int, body: String): Boolean =
-        !oauth.isPlanTierRejection(body)
+    // Failure-handling slice 3: Kimi's plan-tier 401 is read as the plan limit it is (KimiReplies), never as a
+    // refused login, so no refresh is planned for it and this provider carries no rule about a body.
 
     // Sealed per-mode outcome (discipline L3): a dead refresh token, a transport blip, and a
     // corrupt file are DIFFERENT stories; credentialsOrNull is the single logging flatten.

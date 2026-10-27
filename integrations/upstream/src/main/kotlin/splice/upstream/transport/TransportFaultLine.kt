@@ -57,6 +57,17 @@ public object TransportFaultLine {
         }
     }
 
+    /** V4-242: a torn stream named in the words of what tore it. A transport tears a stream with its own sentence
+     *  ("websocket stream ended mid-round") and hangs the cause beneath it; after a websocket peer's close, that cause is
+     *  the close itself. So the words are the deepest non-blank message in [tear]'s cause chain (the chain's own bound,
+     *  FailureChain), or null when no link says anything. A URL in it keeps its scheme and host only: an HTTP client's
+     *  timeout text carries the whole request URL, and a path or query can carry a key. */
+    public fun tear(tear: Throwable): String? =
+        FailureChain.links(tear)
+            .mapNotNull { link -> link.message?.trim()?.takeIf { it.isNotEmpty() } }
+            .lastOrNull()
+            ?.replace(URL_PAST_HOST, "$1")
+
     private fun unnamed(where: String, root: Throwable): String =
         "the connection to $where failed, and it gave no reason (${root::class.simpleName})"
 
@@ -156,6 +167,7 @@ public object TransportFaultLine {
 
     // Ktor's HttpTimeout messages: "Connect timeout has expired [url=<request url>, connect_timeout=…]".
     private val KTOR_URL = Regex("""url=[^,\]]*""")
+    private val URL_PAST_HOST = Regex("""([a-zA-Z][a-zA-Z0-9+.-]*://[^/?#\s,\]]+)[^\s,\]]*""")
 
     // why: a URL with no explicit port means the scheme's registered default (RFC 9110 §4.2.1/4.2.2),
     // and the message names the port the client actually dialled.

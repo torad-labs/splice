@@ -83,6 +83,7 @@ import splice.core.util.WallClock
 import splice.core.wire.TextBlock
 import splice.core.wire.ToolResultBlock
 import splice.dialect.responses.ReasoningSettings
+import splice.dialect.responses.failure.ResponsesReplies
 import splice.head.HeadDeps
 import splice.head.HeadServer
 import splice.head.MockChatGptUpstream
@@ -108,6 +109,7 @@ import splice.head.wire.TurnTerminal
 import splice.provider.codex.CodeModeBridgeConfig
 import splice.provider.codex.CodeModeStateLocation
 import splice.provider.codex.CodexCodeModeBridge
+import splice.provider.codex.failure.CodexReplies
 import splice.upstream.BuiltTurn
 import splice.upstream.ClientFrameEmitted
 import splice.upstream.NEVER_PINGED_MS
@@ -132,6 +134,7 @@ import splice.upstream.credentials.AccountPool
 import splice.upstream.credentials.AccountQuotaSource
 import splice.upstream.credentials.PoolAccount
 import splice.upstream.credentials.Selection
+import splice.upstream.failure.Replies
 import splice.upstream.retry.InflightGate
 import splice.upstream.retry.LiveLimit
 import splice.upstream.retry.RateLimitCooldown
@@ -438,6 +441,9 @@ private class WsDriverFixture(private val tmp: Path, private val baseUrl: String
                 loginCommand = "claudex login",
             ),
             reasoning = ReasoningSettings(ReasoningDisplay.TEXT, false, "high", "detailed"),
+            // The claudex head reads its failures as codex's own head does (failure-handling slice 3): the
+            // Responses standard and codex's deviation, which names cyber_policy a policy refusal.
+            replies = Replies(ResponsesReplies, CodexReplies),
         ),
         runner,
         bridge,

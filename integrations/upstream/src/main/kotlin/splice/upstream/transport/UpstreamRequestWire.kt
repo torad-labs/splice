@@ -120,7 +120,10 @@ public object UpstreamHeaders {
 /** What one attempt puts on the wire: the credential, the headers it adds, the body bytes, and the recorder that
  *  sees the same map the wire gets. Owns composing them, so a sender names what it sends and not how it is merged. */
 internal class AttemptWire(
-    private val creds: Credentials,
+    /** What this attempt writes as its login. Read back by the reply's reader, which asks whether a masked key the
+     *  failure names could be it and masks it out of the provider's words (failure-handling slice 3). The secret
+     *  never leaves this process: nothing here logs, stores or forwards it. */
+    internal val creds: Credentials,
     private val extra: Map<String, String>,
     internal val bodyBytes: ByteArray,
     val recorder: AttemptRecorder? = null,

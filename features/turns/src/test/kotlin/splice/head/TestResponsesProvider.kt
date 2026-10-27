@@ -14,8 +14,10 @@ import splice.dialect.responses.ResponsesLiteQuirks
 import splice.dialect.responses.ResponsesProvider
 import splice.dialect.responses.ResponsesQuirks
 import splice.dialect.responses.ResponsesReasoningQuirks
+import splice.dialect.responses.failure.ResponsesReplies
 import splice.dialect.responses.stream.LiveFoldConfig
 import splice.upstream.ProviderTuning
+import splice.upstream.failure.Replies
 
 internal class TestResponsesQuirks {
     fun profile(): ResponsesQuirks = ResponsesQuirks(
@@ -39,6 +41,8 @@ internal class TestResponsesProvider(
     quirks: ResponsesQuirks = TestResponsesQuirks().profile(),
     foldConfig: LiveFoldConfig? = null,
     log: LogSink = LogSink(DaemonLog::write),
+    // The head's own failure reader: the Responses standard, unless a test reads a provider's deviation.
+    override val replies: Replies = Replies(ResponsesReplies),
 ) : ResponsesProvider(
     tuning,
     reasoning,

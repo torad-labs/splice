@@ -15,9 +15,12 @@ import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 import splice.core.auth.Credentials
+import splice.core.auth.LoginAnswer
 import splice.core.auth.RefreshableAuthProvider
 import splice.core.util.ElapsedClock
 import splice.upstream.StreamStart
+import splice.upstream.failure.OpenAiReplies
+import splice.upstream.failure.Replies
 import splice.upstream.retry.RateLimitCooldown
 import java.util.concurrent.atomic.AtomicInteger
 
@@ -51,6 +54,7 @@ class NativeRateLimitHeadersTest {
                 url = "https://api.example.test/v1",
                 auth = fakeAuth,
                 extraHeaders = { emptyMap() },
+                replies = Replies(OpenAiReplies),
                 limits = PostLimits(rateLimitCooldown = cooldown),
             )
             try {
@@ -113,6 +117,7 @@ class NativeRateLimitHeadersTest {
             url = "https://api.example.test/v1",
             auth = fakeAuth,
             extraHeaders = { emptyMap() },
+            replies = Replies(OpenAiReplies),
         ).also { it.relayRateLimitReplies = true }
         val failure = assertEnds<UpstreamFailed> { client.posted(context(), "{}") { "unreachable" } }
         assertEquals(429, failure.evidence.status)
@@ -138,7 +143,12 @@ class UpstreamClientRateLimitTest {
             )
         }
         val client = UpstreamClient(totalTimeoutMs = 30_000L, maxRetries = 1, client = HttpClient(engine))
-        val context = PostContext("https://api.example.test/v1", fakeAuth, { emptyMap() }).also {
+        val context = PostContext(
+            "https://api.example.test/v1",
+            fakeAuth,
+            { emptyMap() },
+            replies = Replies(OpenAiReplies),
+        ).also {
             it.providerAnswerObserver = ProviderAnswerObserver { status, at -> answers += status to at }
         }
         val failure = assertEnds<UpstreamFailed> { client.posted(context, "{}") { "unreachable" } }
@@ -170,6 +180,7 @@ class UpstreamClientRateLimitTest {
             url = "https://api.example.test/v1",
             auth = fakeAuth,
             extraHeaders = { emptyMap() },
+            replies = Replies(OpenAiReplies),
         ).also { it.relayRateLimitReplies = true }
         val answers = mutableListOf<Pair<Int, Long>>()
         fun observedContext() = context().also {
@@ -220,11 +231,15 @@ class UpstreamClientRateLimitTest {
             url = "https://api.example.test/v1",
             auth = object : RefreshableAuthProvider by fakeAuth {
                 override suspend fun credentials(): Credentials = Credentials.ApiKey(key, "X-Synthetic-Key", "")
+
+                // Delegation would forward the login lookup to fakeAuth, which answers with its own key.
+                override suspend fun answer(): LoginAnswer = LoginAnswer.Granted(credentials())
             },
             extraHeaders = {
                 snapshots++
                 emptyMap()
             },
+            replies = Replies(OpenAiReplies),
         ).also { context -> context.upstreamAccepted = StreamStart { accepted += key } }
         assertEnds<UpstreamFailed> { client.posted(context("synthetic-refused"), "{}") { "unreachable" } }
         assertEquals("ok", client.posted(context("synthetic-healthy"), "{}") { "ok" })
@@ -335,7 +350,8 @@ class UpstreamClientRateLimitTest {
             url = "https://api.example.test/v1",
             auth = fakeAuth,
             extraHeaders = { emptyMap() },
-            onRetry = { notices.add(it) },
+            replies = Replies(OpenAiReplies),
+            observers = PostObservers(onRetry = { notices.add(it) }),
             limits = PostLimits(
                 rateLimitCooldown = cooldown,
                 remainingTurnWait = RemainingTurnWait { 5_000L },

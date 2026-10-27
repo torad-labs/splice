@@ -5,7 +5,6 @@ package splice.upstream.transport
 import splice.core.auth.CredentialKey
 import splice.core.auth.Credentials
 import splice.core.util.ElapsedClock
-import splice.core.wire.HttpStatus
 import splice.upstream.RoundBody
 import splice.upstream.retry.CredentialCooldowns
 import splice.upstream.retry.RETRY_AFTER_GIVE_UP_MS
@@ -48,7 +47,7 @@ internal class RetryState(var cooldown: RateLimitCooldown, val t0: Long, val max
 
     /** A 429 backoff spends the warm session's wait on its login. */
     fun countWait(ctx: PostContext, failed: RetryOutcome.Failed, plan: RetryPlan) {
-        if (failed.status == HttpStatus.TOO_MANY_REQUESTS && plan.decision == RetryDecision.BACKOFF) {
+        if (failed.limited && plan.decision == RetryDecision.BACKOFF) {
             ctx.limits.warmWait?.spend(plan.minDelayMs)
         }
     }
@@ -103,10 +102,10 @@ internal class RetryState(var cooldown: RateLimitCooldown, val t0: Long, val max
     /** Captures one attempt's auth once, so its hold identity and wire headers cannot diverge. */
     suspend fun credentials(
         ctx: PostContext,
+        credentials: Credentials,
         cooldowns: CredentialCooldowns,
         fallback: RateLimitCooldown,
-    ): AttemptCredentials? {
-        val credentials = ctx.requireAuth() ?: return null
+    ): AttemptCredentials {
         // Preserve the request-preparation origin: header resolution belongs to POST wait, not prior round work.
         val postedAtMs = ctx.observers.perf?.elapsedMs()
         // The vendor routes each attempt, so a retry sent after its route was left rides the new one (VendorRoute).
@@ -126,10 +125,10 @@ internal class RetryState(var cooldown: RateLimitCooldown, val t0: Long, val max
         ctx.recovery.route?.body(body.body)?.let(encode::invoke) ?: body
 
     fun amendStep(ctx: PostContext, outcome: RetryOutcome.Failed, bodyJson: String): LoopStep.Amend? {
-        if (amendedOnce) return null
-        val amended = ctx.recovery.amendBodyOnFailure(outcome.status, outcome.text, bodyJson) ?: return null
+        val status = outcome.evidence.status.takeUnless { amendedOnce } ?: return null
+        val amended = ctx.recovery.amendBodyOnFailure(status, outcome.evidence.body.orEmpty(), bodyJson) ?: return null
         amendedOnce = true
-        ctx.onRetry("amending request body after ${outcome.status} and retrying once")
+        ctx.onRetry("amending request body after $status and retrying once")
         return LoopStep.Amend(amended)
     }
 }

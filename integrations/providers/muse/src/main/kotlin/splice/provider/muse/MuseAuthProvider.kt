@@ -139,8 +139,9 @@ public class MuseAuthProvider(
         }
     }
 
-    override fun allowRefreshAfterFailure(status: Int, body: String): Boolean =
-        !oauth.isPlanTierRejection(body)
+    // Failure-handling slice 3: the plan-tier rejection this used to veto on is read as what it is by MuseReplies
+    // (a plan limit, never a refused login), so no refresh is planned for it and this provider carries no rule
+    // about a body. The default answer — refresh a refused login — is this provider's answer.
 
     override suspend fun describe(): AuthDescription = store.describe(holds, invalidAccountLatch)
 

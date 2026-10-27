@@ -35,6 +35,8 @@
 package splice.upstream.transport
 
 import io.ktor.client.HttpClient
+import splice.core.auth.LoginAnswer
+import splice.core.failure.FailureEvidence
 import splice.core.usage.PlanLimit
 import splice.core.util.ElapsedClock
 import splice.upstream.RetryBackoff
@@ -75,15 +77,15 @@ public class UpstreamClient(
     // that is NOT stateless — it holds the shared 429 horizon — and it takes THIS client's [clock],
     // never a second one.
     private val transportFailures = TransportFailures()
-    private val request = UpstreamRequest(client, zstdRequestBody)
+    private val request = UpstreamRequest(client, zstdRequestBody, pacing.wall)
 
     /** The head's configured retry curve as a sleep, for the runners that restart a round (fold continuation,
      *  mid-stream re-anchor): one curve per head, the one an ordinary retry here already follows. */
     public val retryBackoff: RetryBackoff = RetryBackoff { attempt, minDelayMs -> pacing.pause(attempt, minDelayMs) }
 
     // Legacy files have no proved credential owner. Keep them untouched, never attribute their hold to a caller.
-    private val cooldown = RateLimitCooldown(clock)
-    private val credentialCooldowns = CredentialCooldowns(clock, holdStore)
+    private val cooldown = RateLimitCooldown(clock, pacing.wall)
+    private val credentialCooldowns = CredentialCooldowns(clock, holdStore, pacing.wall)
 
     /** Resolves the actual credential's hold, never the aggregate head pressure reported by status. */
     public fun credentialCooldown(headers: Map<String, String>, declaredCarrier: String? = null): RateLimitCooldown? =
@@ -188,13 +190,20 @@ public class UpstreamClient(
             ctx.onRetry("upstream turn wait budget exhausted before attempt ${state.attempt + 1}/${state.maxRetries}")
             return if (state.lastErr != null) state.gaveUp(ctx, state.rules) else LoopStep.TurnWaitExhausted
         }
-        // No hold another turn armed stops this attempt: each turn asks the provider itself (Marcos, Oct 26).
-        val auth = state.credentials(ctx, credentialCooldowns, cooldown)
-        return if (auth == null) {
-            LoopStep.Done(UpstreamPost.Ended(UpstreamAuthMissing()))
-        } else {
-            // What the vendor routes by in the body moves with the place credentials just chose (VendorRoute.body).
-            attempt(ctx, state.routedBody(ctx, body, request::body), state, block, auth)
+        // No hold another turn armed stops this attempt: each turn asks the provider itself (Marcos, Oct 26). The login
+        // lookup answers once per attempt: none is the head's NoLogin, and a provider's refusal to grant one ends the
+        // call with the refusal's own cause, as its reply would have (LoginAnswer, failure-handling slice 3).
+        return when (val answer = ctx.requireAuth()) {
+            is LoginAnswer.Granted -> {
+                val auth = state.credentials(ctx, answer.credentials, credentialCooldowns, cooldown)
+                // What the vendor routes by in the body moves with the place credentials just chose (VendorRoute.body).
+                attempt(ctx, state.routedBody(ctx, body, request::body), state, block, auth)
+            }
+            LoginAnswer.Missing -> LoopStep.Done(UpstreamPost.Ended(UpstreamAuthMissing()))
+            is LoginAnswer.Refused -> {
+                val evidence = FailureEvidence(LOGIN_REFUSED, said = answer.cause.said?.text)
+                LoopStep.Done(UpstreamPost.Ended(UpstreamFailed(answer.cause, evidence, state.attempt)))
+            }
         }
     }
 
@@ -322,3 +331,6 @@ public class UpstreamClient(
         }
     }
 }
+
+/** The journal's words for a login the provider refused to grant; the line a person reads is the cause's. */
+private const val LOGIN_REFUSED = "upstream refused to grant a login"

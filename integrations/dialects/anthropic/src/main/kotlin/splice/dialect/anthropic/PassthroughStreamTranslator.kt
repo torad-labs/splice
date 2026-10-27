@@ -59,7 +59,7 @@ public class PassthroughStreamTranslator(
 
     private val channels = PassthroughProseChannels()
     private val blocks = PassthroughBlockRegistry(ctx, quirks, channels, names)
-    private val terminal = PassthroughTerminalState(quirks, blocks)
+    private val terminal = PassthroughTerminalState(quirks, blocks, ctx)
     private val usage = PassthroughUsage()
     private val router = PassthroughEventRouter(blocks, terminal, usage)
 

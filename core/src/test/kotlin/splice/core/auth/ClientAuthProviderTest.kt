@@ -82,11 +82,12 @@ class ClientAuthProviderTest {
         assertEquals(Credentials.ClientForwarded, provider.refresh())
     }
 
-    // A 401 on this head is the CALLER's credential being rejected upstream, never a stale splice
-    // token — refreshing and retrying can only spend a second upstream call to fail identically.
+    // A refused login on this head is the CALLER's credential being rejected upstream, never a stale splice
+    // token — refreshing and retrying can only spend a second upstream call to fail identically, whether the reply was
+    // read as a refused login or as one its provider names dead.
     @Test
     fun `an auth failure never triggers the refresh-and-retry dance`() {
-        assertFalse(provider.allowRefreshAfterFailure(401, ""))
-        assertFalse(provider.allowRefreshAfterFailure(403, """{"error":"token expired"}"""))
+        assertFalse(provider.allowRefreshAfterFailure(deadCredential = false))
+        assertFalse(provider.allowRefreshAfterFailure(deadCredential = true))
     }
 }

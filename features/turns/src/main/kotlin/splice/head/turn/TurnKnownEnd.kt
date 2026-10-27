@@ -9,7 +9,6 @@ import splice.core.perf.PerfKeys
 import splice.core.turn.ErrorType
 import splice.core.util.ERR_SNIPPET
 import splice.core.util.LogSink
-import splice.core.wire.HttpStatus
 import splice.head.HeadHealthCounters
 import splice.head.admission.TurnQuota
 import splice.head.perf.PerfFailure
@@ -94,7 +93,10 @@ internal class TurnKnownEnd(
     private fun endingTag(drive: TurnDrive, failed: UpstreamFailed): OutcomeTag {
         val plan = failed.planLimit ?: return when {
             failed.native != null -> OutcomeTag.RATE_LIMIT_RELAYED
-            failed.evidence.status == HttpStatus.TOO_MANY_REQUESTS -> OutcomeTag.RATE_LIMITED
+            // Failure-handling slice 3: by what the provider's reader read, not the status it came under. A payment
+            // the provider wants is held as a limit is (V4-73), and it keeps the status it was sent with.
+            failed.cause is FailureCause.Provider.Limited || failed.cause is FailureCause.Provider.NeedsPayment ->
+                OutcomeTag.RATE_LIMITED
             else -> OutcomeTag.UPSTREAM_FAILED
         }
         drive.perf.setCount(PerfKeys.EARLIEST_RESET_EPOCH_SECONDS, plan.resetEpochSeconds)

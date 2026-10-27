@@ -34,6 +34,8 @@
 // is in :features-turns, and :upstream depends only on :core — that edge would invert.
 package splice.upstream.retry
 
+import splice.core.failure.Lift
+import splice.core.failure.LiftSource
 import splice.core.util.ElapsedClock
 import splice.core.util.WallClock
 import splice.core.wire.NativeReply
@@ -159,12 +161,15 @@ public class RateLimitCooldown public constructor(
      *  it is the fact the operator needs to read — the live muse body says "resets at 20:02:52Z"
      *  where the Retry-After header says only 5301000ms. The body is upstream-controlled text, so
      *  the result is bounded by MAX_PROVIDER_RESET_MS and the caller may always clear() it. */
-    public fun captureProviderReset(body: String?) {
+    public fun captureProviderReset(lift: Lift) {
         // An ABSOLUTE instant arrives on the WALL base and becomes a DELAY here; a duration is already a delay.
         // Mixing the bases is the bug this shape prevents: an epoch millisecond compared against this class's
-        // elapsed clock reads as a reset decades out. The spellings, and which wins, are ProviderReset's.
+        // elapsed clock reads as a reset decades out. Since slice 3 the instant arrives READ, by the reply's own
+        // reader, which took it from the reset header or the body's own spellings (ProviderReset); a pushback the
+        // Retry-After header asked for is not the provider naming a reset, and arm() already holds that one.
+        val at = (lift as? Lift.At)?.takeIf { it.source != LiftSource.RETRY_AFTER } ?: return
         val wallNow = wallClock()
-        val delayMs = (ProviderReset.wallMs(body, wallNow) ?: return) - wallNow
+        val delayMs = at.at.toEpochMilli() - wallNow
         if (delayMs <= 0) return
         holds.refusing {
             providerUnavailableUntilMs.accumulateAndGet(clock() + minOf(delayMs, MAX_PROVIDER_RESET_MS)) { c, n ->
@@ -208,7 +213,7 @@ public class RateLimitCooldown public constructor(
         // Kept as ONE call rather than inlined: rateLimitedPlan is at detekt's complexity ceiling, and
         // this class is near its function budget, so the capture shares the parser rather than
         // adding a second member.
-        captureProviderReset(turn.body)
+        captureProviderReset(turn.lift)
 
         // V4-61: a pooled account facing a wait past the interactive ceiling is EVICTED rather than
         // retried — a healthy backup beats three more attempts on a spent account, and the client's

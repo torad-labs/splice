@@ -47,7 +47,7 @@ public class ChatStreamTranslator(private val ctx: ChatTurnContext) : StreamTran
 
     private val channels = ChatProseChannels()
     private val toolCalls = ChatToolCalls(ChatToolFrame(), channels)
-    private val terminal = ChatTerminalState(toolCalls)
+    private val terminal = ChatTerminalState(toolCalls, ctx)
     private val usage = ChatUsage()
     private val router = ChatEventRouter(channels, toolCalls, ChatFinalToolFold(toolCalls), terminal, usage)
 

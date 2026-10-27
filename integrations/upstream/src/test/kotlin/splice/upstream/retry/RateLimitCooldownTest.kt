@@ -12,6 +12,9 @@ import org.junit.jupiter.api.Test
 import splice.core.auth.AuthDescription
 import splice.core.auth.Credentials
 import splice.core.auth.RefreshableAuthProvider
+import splice.core.failure.Lift
+import splice.core.failure.LiftSource
+import splice.core.failure.LoginOwner
 import splice.core.perf.PerfKeys
 import splice.core.perf.TurnPerf
 import splice.core.usage.PlanLimit
@@ -22,6 +25,11 @@ import splice.upstream.RetryNotice
 import splice.upstream.RoundBody
 import splice.upstream.StreamRead
 import splice.upstream.Waiter
+import splice.upstream.failure.FailedReply
+import splice.upstream.failure.OpenAiReplies
+import splice.upstream.failure.Replies
+import splice.upstream.failure.ReplyFacts
+import splice.upstream.failure.SentKey
 import splice.upstream.transport.PostContext
 import splice.upstream.transport.PostLimits
 import splice.upstream.transport.PostObservers
@@ -281,7 +289,8 @@ class RateLimitCooldownTest {
             turn = RateLimitTurn(
                 cooldown,
                 pooledAccount = false,
-                body = """{"error":{"message":"resets at 2026-09-16T20:02:52Z"}}""",
+                // "resets at 2026-09-16T20:02:52Z", as the reply's reader read it from the body.
+                lift = Lift.At(Instant.parse("2026-09-16T20:02:52Z"), firm = true, LiftSource.BODY),
             ),
             canRetry = false,
             onRetry = RetryNotice {},
@@ -292,15 +301,26 @@ class RateLimitCooldownTest {
         assertEquals(23_300_000L, cooldown.providerUnavailableForMs(), "but its reset IS recorded")
     }
 
+    // Since failure-handling slice 3 the body's spellings are read once, by the reply's reader (ReplyFacts.statedReset,
+    // which the vendors whose bodies state a reset read their 429s with), and the cooldown holds the instant it read.
     @Test
     fun `the reset is read from every spelling the vendors use`() {
         val wall = Instant.parse("2026-09-16T13:34:32Z").toEpochMilli()
 
         fun captured(body: String): Long {
             val cooldown = RateLimitCooldown(ElapsedClock { 0L }, WallClock { wall })
+            val reply = FailedReply(
+                429,
+                emptyMap(),
+                body,
+                LoginOwner.SPLICE,
+                SentKey { _, _ -> false },
+                Instant.ofEpochMilli(wall),
+            )
+            val lift = ReplyFacts.statedReset(reply)?.let { Lift.At(it, firm = true, LiftSource.BODY) } ?: Lift.Unstated
             cooldown.rateLimitedPlan(
                 pushbackMs = 5_301_000L,
-                turn = RateLimitTurn(cooldown, pooledAccount = false, body = body),
+                turn = RateLimitTurn(cooldown, pooledAccount = false, lift = lift),
                 canRetry = false,
                 onRetry = RetryNotice {},
                 nextRefreshed = false,
@@ -348,8 +368,9 @@ class RateLimitCooldownBudgetTest {
             url = "https://api.example.test/v1",
             auth = fakeAuth,
             extraHeaders = { emptyMap() },
+            replies = Replies(OpenAiReplies),
             limits = PostLimits(remainingTurnWait = RemainingTurnWait { 0L }),
-            onRetry = RetryNotice(notices::add),
+            observers = PostObservers(onRetry = RetryNotice(notices::add)),
         )
 
         // V4-114 PIN: the exhausted turn-wait budget is a VALUE on post()'s return type. This line
@@ -385,8 +406,8 @@ class RateLimitCooldownBudgetTest {
             url = "https://api.example.test/v1",
             auth = fakeAuth,
             extraHeaders = { emptyMap() },
-            observers = PostObservers(perf = perf),
-            onRetry = RetryNotice(notices::add),
+            replies = Replies(OpenAiReplies),
+            observers = PostObservers(perf = perf, onRetry = RetryNotice(notices::add)),
             limits = PostLimits(remainingTurnWait = RemainingTurnWait { 100L }),
         )
 
@@ -421,6 +442,7 @@ class RateLimitCooldownBudgetTest {
                 url = "https://api.example.test/v1",
                 auth = fakeAuth,
                 extraHeaders = { emptyMap() },
+                replies = Replies(OpenAiReplies),
                 limits = PostLimits(remainingTurnWait = RemainingTurnWait { 60_000L }),
             )
 
@@ -460,6 +482,7 @@ class RateLimitCooldownBudgetTest {
             url = "https://api.example.test/v1",
             auth = fakeAuth,
             extraHeaders = { emptyMap() },
+            replies = Replies(OpenAiReplies),
             limits = PostLimits(
                 rateLimitCooldown = cooldown,
                 remainingTurnWait = RemainingTurnWait { 20_000L },
@@ -494,6 +517,7 @@ class RateLimitCooldownBudgetTest {
                 url = "https://api.example.test/v1",
                 auth = fakeAuth,
                 extraHeaders = { emptyMap() },
+                replies = Replies(OpenAiReplies),
                 limits = PostLimits(
                     rateLimitCooldown = cooldown,
                     remainingTurnWait = RemainingTurnWait { 5_000L },
@@ -528,6 +552,7 @@ class RateLimitCooldownBudgetTest {
                 url = "https://api.example.test/v1",
                 auth = fakeAuth,
                 extraHeaders = { emptyMap() },
+                replies = Replies(OpenAiReplies),
                 limits = PostLimits(
                     rateLimitCooldown = cooldown,
                     remainingTurnWait = RemainingTurnWait { 100L },
@@ -551,7 +576,7 @@ class RateLimitCooldownOuterTurnTest {
             when (writer) {
                 0 -> cooldown.arm(60_000L)
                 1 -> cooldown.markUnavailable(60_000L)
-                2 -> cooldown.captureProviderReset("""{"resets_in_seconds":60}""")
+                2 -> cooldown.captureProviderReset(Lift.At(Instant.ofEpochMilli(61_000L), true, LiftSource.BODY))
                 3 -> cooldown.planHold.hold(PlanLimit("seven_day", 61L), RetryNotice { })
                 4 -> cooldown.rateLimitReply = NativeReply("synthetic refusal", emptyMap())
             }
@@ -576,7 +601,7 @@ class RateLimitCooldownOuterTurnTest {
         val cooldown = RateLimitCooldown(ElapsedClock { 0L }, WallClock { 1_000L })
         cooldown.arm(60_000L)
         cooldown.markUnavailable(60_000L)
-        cooldown.captureProviderReset("""{"resets_in_seconds":60}""")
+        cooldown.captureProviderReset(Lift.At(Instant.ofEpochMilli(61_000L), true, LiftSource.BODY))
         cooldown.planHold.hold(PlanLimit("seven_day", 61L), RetryNotice { })
         cooldown.rateLimitReply = NativeReply("synthetic refusal", emptyMap())
         val accepted = cooldown.acceptance()
@@ -629,8 +654,9 @@ class RateLimitCooldownOuterTurnTest {
             url = "https://api.example.test/v1",
             auth = auth,
             extraHeaders = { emptyMap() },
+            replies = Replies(OpenAiReplies),
             limits = PostLimits(remainingTurnWait = RemainingTurnWait { remaining }),
-            onRetry = RetryNotice(notices::add),
+            observers = PostObservers(onRetry = RetryNotice(notices::add)),
         )
 
         val failure = assertEnds<UpstreamFailed> { client.posted(context, "{}") { "unreachable" } }
@@ -664,6 +690,7 @@ class RateLimitCooldownOuterTurnTest {
                 url = "https://api.example.test/v1",
                 auth = auth,
                 extraHeaders = { emptyMap() },
+                replies = Replies(OpenAiReplies),
                 limits = PostLimits(remainingTurnWait = RemainingTurnWait { 5_000L - elapsed }),
             )
 

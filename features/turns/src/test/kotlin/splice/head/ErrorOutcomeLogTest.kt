@@ -27,9 +27,13 @@ import splice.core.turn.WatchdogBudget
 import splice.core.usage.PlanLimit
 import splice.core.util.AsyncFileIo
 import splice.dialect.responses.ReasoningSettings
+import splice.dialect.responses.failure.ResponsesReplies
 import splice.upstream.ProviderLocations
 import splice.upstream.ProviderName
 import splice.upstream.ProviderTuning
+import splice.upstream.failure.FailedReply
+import splice.upstream.failure.ProviderDeviation
+import splice.upstream.failure.Replies
 import splice.upstream.transport.UpstreamClient
 import java.net.InetSocketAddress
 import java.nio.file.Files
@@ -45,8 +49,12 @@ private class SyntheticAuth : RefreshableAuthProvider {
     override suspend fun credentials(): Credentials = Credentials.Bearer("synthetic-token")
     override suspend fun refresh(): Credentials = credentials()
     override suspend fun describe(): AuthDescription = AuthDescription(true, "synthetic")
-    override fun planLimitFromBody(body: String, nowEpochSeconds: Long): PlanLimit? =
-        if (body == PLAN_BODY) PlanLimit("seven_day", nowEpochSeconds + 86_400) else null
+}
+
+/** The head's reader names the plan body's spent window, as a body-reading provider's does (CodexReplies). */
+private object PlanBodyReader : ProviderDeviation {
+    override fun planLimit(reply: FailedReply): PlanLimit? =
+        if (reply.body == PLAN_BODY) PlanLimit("seven_day", reply.answeredAt.epochSecond + 86_400) else null
 }
 
 private class FailedHead(tmp: Path, status: Int, body: String) {
@@ -78,6 +86,7 @@ private class FailedHead(tmp: Path, status: Int, body: String) {
                 watchdog = WatchdogBudget(10.seconds, 10.seconds, 30.seconds),
             ),
             reasoning = ReasoningSettings(ReasoningDisplay.TEXT, false, "high", "detailed"),
+            replies = Replies(ResponsesReplies, PlanBodyReader),
         ),
         listenPort = 0,
         deps = headDeps(

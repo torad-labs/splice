@@ -16,9 +16,6 @@ package splice.core.auth
 
 import splice.core.failure.LoginOwner
 import splice.core.topology.AuthKind
-import splice.core.usage.PlanLimit
-import splice.core.usage.PlanLimits
-import splice.core.usage.QuotaHeaderRead
 import splice.core.util.WallClock
 import splice.core.wire.HttpStatus
 import java.util.concurrent.atomic.AtomicReference
@@ -66,16 +63,11 @@ public class ClientAuthProvider(
         }
     }
 
-    /** V4-233: the forwarded login is a Claude subscription, answered in Anthropic's unified plan
-     *  family, so its 429 can name a spent plan window and the reset it comes back at. */
-    override fun planLimit(header: QuotaHeaderRead, nowEpochSeconds: Long): PlanLimit? =
-        PlanLimits.of(header, nowEpochSeconds)
-
     /** Nothing to refresh. Returning the same forward-mode marker keeps the transport's retry path
      *  intact (it re-reads credentials and tries once more) without pretending a rotation happened. */
     override suspend fun refresh(): Credentials = Credentials.ClientForwarded
 
-    /** A 401 here is the CALLER's credential being rejected upstream, never a stale splice token,
+    /** A refused login here is the CALLER's credential being rejected upstream, never a stale splice token,
      *  so the refresh-and-retry dance can only burn a second upstream call. Let it surface. */
-    override fun allowRefreshAfterFailure(status: Int, body: String): Boolean = false
+    override fun allowRefreshAfterFailure(deadCredential: Boolean): Boolean = false
 }

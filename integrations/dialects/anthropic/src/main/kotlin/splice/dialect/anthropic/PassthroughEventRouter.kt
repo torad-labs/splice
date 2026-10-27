@@ -45,7 +45,7 @@ internal class PassthroughEventRouter(
             }
             UpstreamFrame.MESSAGE_DELTA -> onMessageDelta(evt)
             UpstreamFrame.MESSAGE_STOP -> terminal.finished = true
-            UpstreamFrame.ERROR -> onError(evt)
+            UpstreamFrame.ERROR -> terminal.onError(evt)
             null -> blocks.relayEvent(evt, sink)
         }
     }
@@ -55,13 +55,8 @@ internal class PassthroughEventRouter(
     private fun onMessageDelta(evt: JsonObject) {
         val delta = evt["delta"] as? JsonObject
         val reason = JsonScalars.strOrEmpty(delta?.get("stop_reason"))
-        terminal.onStopReason(reason, delta?.get("stop_details") as? JsonObject)
+        terminal.onStopReason(reason, delta)
         shape.onStopReason(reason)
         usage.harvestUsage(evt["usage"] as? JsonObject)
-    }
-
-    private fun onError(evt: JsonObject) {
-        val err = evt["error"] as? JsonObject
-        terminal.onError(JsonScalars.strOrEmpty(err?.get("type")), JsonScalars.strOrEmpty(err?.get("message")))
     }
 }

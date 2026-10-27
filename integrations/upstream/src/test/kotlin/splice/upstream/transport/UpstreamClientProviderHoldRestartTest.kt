@@ -14,12 +14,17 @@ import org.junit.jupiter.api.io.TempDir
 import splice.core.auth.AuthDescription
 import splice.core.auth.CredentialKey
 import splice.core.auth.Credentials
+import splice.core.auth.LoginAnswer
 import splice.core.auth.RefreshableAuthProvider
 import splice.core.usage.PlanLimit
 import splice.core.util.ElapsedClock
 import splice.core.util.LogSink
 import splice.core.util.WallClock
 import splice.core.wire.NativeReply
+import splice.upstream.failure.FailedReply
+import splice.upstream.failure.OpenAiReplies
+import splice.upstream.failure.ProviderDeviation
+import splice.upstream.failure.Replies
 import splice.upstream.retry.FileProviderHoldStore
 import splice.upstream.retry.ProviderHold
 import splice.upstream.retry.RateLimitCooldown
@@ -36,10 +41,18 @@ class UpstreamClientProviderHoldRestartTest {
         override suspend fun credentials(): Credentials? = Credentials.ApiKey("k", "x-api-key", "")
         override suspend fun refresh(): Credentials? = null
         override suspend fun describe(): AuthDescription = AuthDescription(true, "body-reader", emptyMap())
-        override fun planLimitFromBody(body: String, nowEpochSeconds: Long): PlanLimit? =
-            Regex(""""resets_at":(\d+)""").find(body)?.groupValues?.get(1)?.toLong()
-                ?.let { PlanLimit("seven_day", it) }
     }
+
+    /** A provider whose 429 body names its spent plan window, as the ChatGPT backend's does (CodexReplies); its reader
+     *  reads it where the reply arrives, since failure-handling slice 3 (the login provider did until then). */
+    private val bodyPlan = Replies(
+        OpenAiReplies,
+        object : ProviderDeviation {
+            override fun planLimit(reply: FailedReply): PlanLimit? =
+                Regex(""""resets_at":(\d+)""").find(reply.body)?.groupValues?.get(1)?.toLong()
+                    ?.let { PlanLimit("seven_day", it) }
+        },
+    )
 
     private fun client(dir: Path, engine: MockEngine, clock: ElapsedClock = ElapsedClock { 0L }) = UpstreamClient(
         totalTimeoutMs = 900_000L,
@@ -54,7 +67,8 @@ class UpstreamClientProviderHoldRestartTest {
         url = "https://api.example.test/v1/responses",
         auth = bodyReader,
         extraHeaders = { emptyMap() },
-        onRetry = { notices.add(it) },
+        replies = bodyPlan,
+        observers = PostObservers(onRetry = { notices.add(it) }),
     )
 
     // Each turn asks the provider itself and waits only on its own failure (Marcos, Oct 26): the restored native
@@ -69,8 +83,12 @@ class UpstreamClientProviderHoldRestartTest {
             url = "https://api.example.test/v1/messages",
             auth = object : RefreshableAuthProvider by bodyReader {
                 override suspend fun credentials(): Credentials = Credentials.ApiKey(key, "x-api-key", "")
+
+                // Delegation would forward the login lookup to bodyReader, which answers with its own key.
+                override suspend fun answer(): LoginAnswer = LoginAnswer.Granted(credentials())
             },
             extraHeaders = { emptyMap() },
+            replies = bodyPlan,
         ).also { it.relayRateLimitReplies = true }
         val refusing = MockEngine {
             respond(native, HttpStatusCode.TooManyRequests, headersOf("x-should-retry", listOf("true", "false")))

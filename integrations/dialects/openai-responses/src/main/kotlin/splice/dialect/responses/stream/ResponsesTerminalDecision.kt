@@ -15,9 +15,9 @@ import splice.core.turn.TurnOutcome
 import splice.core.util.ERR_SNIPPET
 import splice.dialect.responses.ResponsesTurnState
 import splice.dialect.responses.StreamTurnContext
-import splice.upstream.failure.TearWords
 import splice.upstream.failure.TerminalStates
 import splice.upstream.retry.WatchdogFired
+import splice.upstream.transport.TransportFaultLine
 import java.io.IOException
 
 private const val MS_PER_S = 1000L
@@ -106,12 +106,12 @@ internal class ResponsesTerminalDecision(
 
     // V4-242: a stream that tore says how, in the words of the error that tore it: the deepest cause,
     // which is the upstream's own close ("socket closed by the peer (status=1011, …) after …") when a
-    // websocket peer ended it (TearWords). A stream that simply stopped has nothing to add and reads as it did.
+    // websocket peer ended it (TransportFaultLine.tear). A stream that simply stopped has nothing to add and reads as it did.
     private fun noCompletionOutcome(state: ResponsesTurnState, tear: IOException?): TurnOutcome =
         if (ctx.signals.clientGone()) {
             TurnOutcome.ClientAbandoned()
         } else {
-            val how = tear?.let(TearWords::of)?.let { "truncated: ${it.take(ERR_SNIPPET)}" } ?: "truncated"
+            val how = tear?.let(TransportFaultLine::tear)?.let { "truncated: ${it.take(ERR_SNIPPET)}" } ?: "truncated"
             val partial = payload.partialOrNull(state)
             val torn = FailureCause.Path.Torn(
                 if (tear != null) Tear.SOCKET_CLOSED else Tear.NO_TERMINAL,

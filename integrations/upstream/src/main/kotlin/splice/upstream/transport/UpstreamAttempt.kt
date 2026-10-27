@@ -14,9 +14,10 @@
 package splice.upstream.transport
 
 import splice.core.auth.Credentials
+import splice.core.auth.LoginAnswer
 import splice.core.auth.RefreshableAuthProvider
-import splice.core.failure.Lift
-import splice.core.failure.ProviderWords
+import splice.core.failure.FailureCause
+import splice.core.failure.FailureEvidence
 import splice.core.perf.PerfKeys
 import splice.core.perf.TimedWork
 import splice.core.perf.TurnPerfTiming
@@ -26,7 +27,7 @@ import splice.core.wire.NativeReply
 import splice.upstream.CredentialHeaders
 import splice.upstream.RetryNotice
 import splice.upstream.StreamRead
-import splice.upstream.failure.VendorRefusal
+import splice.upstream.failure.Replies
 import splice.upstream.retry.RETRY_AFTER_GIVE_UP_MS
 import splice.upstream.retry.RateLimitCooldown
 
@@ -36,11 +37,17 @@ public data class PostContext(
     val url: String,
     val auth: RefreshableAuthProvider,
     val extraHeaders: CredentialHeaders,
-    val onRetry: RetryNotice = RetryNotice {},
+    /** How this head reads its own failures (Provider.replies): the one reading of every reply this post gets, with
+     *  no default, so a head whose reading never reached the transport cannot be read by another head's
+     *  (failure-handling slice 3, final-design.md section 7). */
+    val replies: Replies,
     val recovery: PostRecovery = PostRecovery(),
     val limits: PostLimits = PostLimits(),
     val observers: PostObservers = PostObservers(),
 ) {
+    /** Why each attempt is retried or given up, as the post's observers hear it. */
+    public val onRetry: RetryNotice get() = observers.onRetry
+
     /** True only for the passthrough dialect, whose client understands the provider's native 429. */
     public var relayRateLimitReplies: Boolean = false
 
@@ -62,8 +69,12 @@ public data class PostContext(
     /** Passive metadata only; a caller without an observer retains the existing transport behavior. */
     public var providerAnswerObserver: ProviderAnswerObserver = ProviderAnswerObserver { _, _ -> }
 
-    internal fun observeQuotaRefusal(status: Int, at: Long, plan: PlanLimit?) {
-        if (status == HttpStatus.TOO_MANY_REQUESTS && plan != null) providerAnswerObserver.quotaRefused(status, at)
+    /** Failure-handling slice 3: the cause says a limit, where the status used to (the 429 V4-73 rewrote a quota
+     *  exhaustion into). The observer still hears the 429 it records, which is the answer's own wire shape. */
+    internal fun observeQuotaRefusal(failed: RetryOutcome.Failed, at: Long) {
+        if (failed.planLimit != null && failed.limited) {
+            providerAnswerObserver.quotaRefused(HttpStatus.TOO_MANY_REQUESTS, at)
+        }
     }
 
     internal fun markRetry() {
@@ -88,8 +99,10 @@ public data class PostContext(
     internal suspend fun <T> timedBackoff(block: TimedWork<T>): T =
         TurnPerfTiming.timedOr(observers.perf, PerfKeys.BACKOFF_MS, block)
 
-    /** The credentials to send, or null when there are none locally: the call ends with [UpstreamAuthMissing]. */
-    internal suspend fun requireAuth(): Credentials? = timedAuth { auth.credentials() }
+    /** What this attempt's login lookup answers: the credentials to send; none, which ends the call with
+     *  [UpstreamAuthMissing] for the head's NoLogin; or the provider's refusal to grant one, which ends it with the
+     *  refusal's own cause (failure-handling slice 3). */
+    internal suspend fun requireAuth(): LoginAnswer = timedAuth { auth.answer() }
 }
 
 /** Credentials and their resolved headers are captured together once, before selecting their hold. */
@@ -105,37 +118,31 @@ internal data class AttemptCredentials(
  *  read there — and then lives on in the loop's `lastErr` as the failure the turn gives up with. */
 internal sealed class RetryOutcome<out T> {
     data class Done<T>(val read: StreamRead<T>) : RetryOutcome<T>()
+
+    /** Failure-handling slice 3: ONE reading, done at the boundary by the head's own reader, and carried from here
+     *  on. [cause] is what the reply was; [evidence] what it left for the journal, the trace and the perf row (its
+     *  status, its body as it came, the pushback its Retry-After asked for, which today's budgets still read).
+     *  Nothing past this point reads a status or a body to decide anything. */
     data class Failed(
-        val status: Int,
-        val text: String,
-        val retryAfterMs: Long? = null,
-        /** V4-233: a 429 whose unified headers name a spent plan window, read here because the
-         *  headers die with the response like the body does. Null for every other failure. */
+        val cause: FailureCause.Provider,
+        val evidence: FailureEvidence,
+        /** V4-233: the plan window this reply named spent, read where its headers were still in hand. Null for every
+         *  reply that names none. */
         val planLimit: PlanLimit? = null,
         /** The provider's own 429, kept for a client that reads it natively. */
         val native: NativeReply? = null,
-        val vendor: VendorReading = VendorReading(),
-        /** The credential this attempt sent, so the loop's exit can tell a 401 naming another key (ForeignCredential)
-         *  without the secret leaving the attempt's own process. */
-        val sent: Credentials? = null,
+        /** This provider names the reply a dead credential though its status is not 401 (ProviderDeviation): xAI's
+         *  expiry 403. One refresh is spent on it, as on a 401. */
+        val deadCredential: Boolean = false,
     ) : RetryOutcome<Nothing>() {
-        /** A 429 the same login cannot outwait: a named plan window, or a pushback past [ceilingMs], the 15s ceiling
-         *  unless a warm session has more of its wait left (V4-61). */
+        /** The two readings today's 429 budgets are about: a rate limit, and the payment a provider asks for, which
+         *  V4-73 made every layer see as the 429 it dressed its quota exhaustion in. */
+        val limited: Boolean
+            get() = cause is FailureCause.Provider.Limited || cause is FailureCause.Provider.NeedsPayment
+
+        /** A limit the same login cannot outwait: a named plan window, or a pushback past [ceilingMs], the 15s
+         *  ceiling unless a warm session has more of its wait left (V4-61). */
         fun waitCannotHelp(ceilingMs: Long = RETRY_AFTER_GIVE_UP_MS): Boolean =
-            status == HttpStatus.TOO_MANY_REQUESTS && (planLimit != null || (retryAfterMs ?: 0L) > ceilingMs)
+            limited && (planLimit != null || (evidence.retryAfterMs ?: 0L) > ceilingMs)
     }
 }
-
-/** What one failed answer says beyond its status. The vendor module (VendorRefusals) reads a [refusal] it knows, which
- *  the retry loop gives up on at once, and whether it named the status a dead credential ([deadCredential]); a 401
- *  needs no name. The answer itself says what a person may read of the provider's words ([said], through
- *  ProviderWordsFilter and from the body as it came, before any rewrite of splice's), whether the provider asks for
- *  [payment] (a 402, or a status its vendor names a quota exhaustion, which every retry layer still sees as the 429
- *  V4-73 made it), and when the limit a 429 names lifts ([lift]). */
-internal data class VendorReading(
-    val refusal: VendorRefusal? = null,
-    val deadCredential: Boolean = false,
-    val said: ProviderWords? = null,
-    val payment: Boolean = false,
-    val lift: Lift = Lift.Unstated,
-)

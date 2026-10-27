@@ -13,6 +13,8 @@ import splice.core.auth.AuthDescription
 import splice.core.auth.CredentialKey
 import splice.core.auth.Credentials
 import splice.core.auth.RefreshableAuthProvider
+import splice.upstream.failure.OpenAiReplies
+import splice.upstream.failure.Replies
 import java.util.concurrent.atomic.AtomicInteger
 
 class CredentialQuotaCaptureTest {
@@ -33,7 +35,8 @@ class CredentialQuotaCaptureTest {
             url = "https://api.example.test/v1",
             auth = auth,
             extraHeaders = { forwarded },
-            onRetry = {},
+            replies = Replies(OpenAiReplies),
+            observers = PostObservers(onRetry = {}),
             recovery = PostRecovery(clientFrameEmitted = { false }),
         )
         var observed: String? = null

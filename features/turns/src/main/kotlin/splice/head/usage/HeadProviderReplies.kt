@@ -4,8 +4,9 @@ package splice.head.usage
 import splice.core.auth.AuthProvider
 import splice.core.auth.ClientAuthProvider
 import splice.core.auth.RefreshableAuthProvider
+import splice.core.failure.FailureCause
+import splice.core.failure.Lift
 import splice.core.usage.PlanLimit
-import splice.core.usage.QuotaHeaderRead
 import splice.core.wire.HttpStatus
 import splice.head.HeadDeps
 import splice.head.transport.StreamAnswerObserver
@@ -14,9 +15,6 @@ import splice.upstream.StreamStart
 import splice.upstream.credentials.PoolAccount
 import splice.upstream.retry.RateLimitCooldown
 import splice.upstream.transport.ProviderAnswerObserver
-
-// why: response observation is milliseconds while a declared plan reset uses epoch seconds.
-private const val REPLY_SECOND_MS = 1_000L
 
 /** Borrows one assembled head's existing lifetime and stores; no second tracker or cooldown exists. */
 internal class HeadProviderReplies(
@@ -28,13 +26,12 @@ internal class HeadProviderReplies(
     }
 
     override fun observed(reply: ProviderReply, sender: ProviderReplySender) {
-        val auth = sender.auth as? RefreshableAuthProvider
-        val plan = plan(reply, auth)
+        val plan = reply.planLimit
         deps.stores.usageStore.observeProviderAnswer(
             sender.auth,
             reply.status,
             reply.observedAtEpochMs,
-            quotaRefused = reply.status == HttpStatus.TOO_MANY_REQUESTS && plan != null,
+            quotaRefused = reply.limited && plan != null,
             credentialKey = sender.credentialKey,
         )
         if (reply.status in HttpStatus.OK..HttpStatus.MAX_SUCCESS && sender.auth !== head) {
@@ -43,10 +40,7 @@ internal class HeadProviderReplies(
         val cooldown = cooldown(sender) ?: return
         when {
             reply.status in HttpStatus.OK..HttpStatus.MAX_SUCCESS -> sender.acceptance?.invoke()
-            reply.status == HttpStatus.TOO_MANY_REQUESTS ||
-                auth?.isQuotaExhausted(reply.status, reply.body.orEmpty()) == true -> {
-                refused(reply, sender, cooldown, plan)
-            }
+            reply.limited -> refused(reply, sender, cooldown, plan)
         }
     }
 
@@ -61,19 +55,13 @@ internal class HeadProviderReplies(
             ?: deps.traffic.upstream.credentialCooldown(sender.requestHeaders, sender.declaredCarrier)
     }
 
-    private fun plan(reply: ProviderReply, auth: RefreshableAuthProvider?): PlanLimit? {
-        val nowSeconds = reply.observedAtEpochMs / REPLY_SECOND_MS
-        return auth?.planLimit(reply.headers, nowSeconds)
-            ?: reply.body?.let { auth?.planLimitFromBody(it, nowSeconds) }
-    }
-
     private fun refused(
         reply: ProviderReply,
         sender: ProviderReplySender,
         cooldown: RateLimitCooldown,
         plan: PlanLimit?,
     ) {
-        cooldown.captureProviderReset(reply.body)
+        cooldown.captureProviderReset(reply.lift)
         val planWait = plan?.let { cooldown.planHold.hold(it, RetryNotice { }) } ?: 0L
         val namedWait = maxOf(planWait, cooldown.providerUnavailableForMs())
         if (namedWait > 0L) {
@@ -120,13 +108,26 @@ internal class TurnStreamAnswers(private val store: UsageStore) : StreamAnswerOb
     }
 }
 
-/** A real provider answer. Body is absent at headers and supplied only for a refusal's reset facts. */
+/** A real provider answer: its status, and for a refusal the one reading its head's own reader made of it where the
+ *  reply arrived (Provider.replies, failure-handling slice 3), so this plane reads no status or body to decide a limit.
+ *  [cause] and [planLimit] are absent at headers, before the body is read, and for a success. */
 public data class ProviderReply(
     public val status: Int,
     public val observedAtEpochMs: Long,
-    public val headers: QuotaHeaderRead,
-    public val body: String? = null,
+    public val cause: FailureCause.Provider? = null,
+    /** The plan window the refusal named spent (V4-233), from the same reading. */
+    public val planLimit: PlanLimit? = null,
 ) {
+    /** A limit, or the payment V4-73 retries until the credits are back: the two readings a login is held for. */
+    internal val limited: Boolean
+        get() = cause is FailureCause.Provider.Limited || cause is FailureCause.Provider.NeedsPayment
+
+    /** When the provider said its limit lifts, as its reader read it from the reply's headers and body. */
+    internal val lift: Lift
+        get() = (cause as? FailureCause.Provider.Limited)?.lift
+            ?: (cause as? FailureCause.Provider.NeedsPayment)?.lift
+            ?: Lift.Unstated
+
     override fun toString(): String = "ProviderReply(status=$status, observedAtEpochMs=$observedAtEpochMs)"
 }
 

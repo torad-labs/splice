@@ -29,6 +29,8 @@ import splice.core.auth.Credentials
 import splice.core.auth.RefreshableAuthProvider
 import splice.core.perf.PerfKeys
 import splice.core.perf.TurnPerf
+import splice.upstream.failure.OpenAiReplies
+import splice.upstream.failure.Replies
 import java.util.concurrent.CopyOnWriteArrayList
 import java.util.concurrent.atomic.AtomicInteger
 
@@ -86,6 +88,7 @@ class UpstreamClientRefreshChainTest {
                 url = "https://api.example.test/v1",
                 auth = auth,
                 extraHeaders = { emptyMap() },
+                replies = Replies(OpenAiReplies),
                 observers = PostObservers(perf = perf),
             ),
             "{}",

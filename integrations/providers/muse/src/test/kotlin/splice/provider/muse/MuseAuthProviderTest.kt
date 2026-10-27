@@ -76,10 +76,6 @@ class MuseAuthProviderTest {
         }
         assertEquals(0, calls.get())
         assertEquals(file.toString(), auth.describe().fields["auth_path"])
-        assertTrue(auth.allowRefreshAfterFailure(401, ""))
-        assertTrue(auth.allowRefreshAfterFailure(403, "unauthenticated:bad-credentials"))
-        assertFalse(auth.allowRefreshAfterFailure(403, "plan limit exceeded"))
-        assertTrue(auth.allowRefreshAfterFailure(429, ""))
     }
 
     @Test

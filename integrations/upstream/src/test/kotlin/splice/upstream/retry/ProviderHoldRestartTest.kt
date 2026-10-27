@@ -6,6 +6,8 @@ import org.junit.jupiter.api.Assertions.assertNull
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.io.TempDir
+import splice.core.failure.Lift
+import splice.core.failure.LiftSource
 import splice.core.usage.PlanLimit
 import splice.core.util.ElapsedClock
 import splice.core.util.LogSink
@@ -34,12 +36,12 @@ class ProviderHoldRestartTest {
         store = FileProviderHoldStore(dir.resolve("hold.json"), LogSink { logs += it }),
     )
 
-    private fun weeklyBody(resetAt: Long) =
-        """{"error":{"type":"usage_limit_reached","plan_type":"pro","resets_at":$resetAt}}"""
+    /** A weekly limit whose reset the reply's reader read from its body ("resets_at", the ChatGPT backend). */
+    private fun weeklyLift(resetAt: Long): Lift = Lift.At(Instant.ofEpochSecond(resetAt), firm = true, LiftSource.BODY)
 
-    private fun RateLimitCooldown.refused(body: String) = rateLimitedPlan(
+    private fun RateLimitCooldown.refused(lift: Lift) = rateLimitedPlan(
         pushbackMs = null,
-        turn = RateLimitTurn(this, pooledAccount = false, body = body),
+        turn = RateLimitTurn(this, pooledAccount = false, lift = lift),
         canRetry = false,
         onRetry = RetryNotice {},
         nextRefreshed = false,
@@ -48,7 +50,7 @@ class ProviderHoldRestartTest {
     @Test
     fun `the provider reset survives a restart and reads out of quota with no turn`(@TempDir dir: Path) {
         val resetAt = wall / MS + SIX_DAYS_S
-        boot(dir).refused(weeklyBody(resetAt))
+        boot(dir).refused(weeklyLift(resetAt))
 
         val restarted = boot(dir)
 
@@ -84,7 +86,7 @@ class ProviderHoldRestartTest {
     fun `holds whose instant has passed load as none and leave no file`(@TempDir dir: Path) {
         val resetAt = wall / MS + 600
         val first = boot(dir)
-        first.refused(weeklyBody(resetAt))
+        first.refused(weeklyLift(resetAt))
         first.planHold.hold(PlanLimit("seven_day", resetAt), RetryNotice {})
 
         val later = boot(dir, wallMs = (resetAt + 1) * MS)
@@ -117,7 +119,7 @@ class ProviderHoldRestartTest {
         val resetAt = wall / MS + SIX_DAYS_S
         val plan = PlanLimit("seven_day", resetAt)
         val reply = NativeReply("synthetic refusal", emptyMap())
-        first.refused(weeklyBody(resetAt))
+        first.refused(weeklyLift(resetAt))
         first.planHold.hold(plan, RetryNotice { })
         first.rateLimitReply = reply
 
@@ -135,7 +137,7 @@ class ProviderHoldRestartTest {
     fun `an answered turn ends both statements on disk as well as in memory`(@TempDir dir: Path) {
         val resetAt = wall / MS + SIX_DAYS_S
         val first = boot(dir)
-        first.refused(weeklyBody(resetAt))
+        first.refused(weeklyLift(resetAt))
         first.planHold.hold(PlanLimit("seven_day", resetAt), RetryNotice {})
         assertTrue(Files.exists(dir.resolve("hold.json")))
 

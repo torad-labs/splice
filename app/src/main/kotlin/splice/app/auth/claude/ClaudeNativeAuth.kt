@@ -12,14 +12,11 @@ import splice.accounts.claude.TOKEN_RENEWS_FIELD
 import splice.core.auth.ACCOUNT_REF_FIELD
 import splice.core.auth.AccountRef
 import splice.core.auth.AuthDescription
-import splice.core.auth.ClientAuthProvider
 import splice.core.auth.CredentialFileIdentity
 import splice.core.auth.CredentialKey
 import splice.core.auth.Credentials
 import splice.core.auth.REFUSAL_FIELD
 import splice.core.auth.RefreshableAuthProvider
-import splice.core.usage.PlanLimit
-import splice.core.usage.QuotaHeaderRead
 import splice.core.util.Cancellables
 import splice.core.util.LogSink
 import splice.core.util.WallClock
@@ -54,8 +51,6 @@ internal class ClaudeNativeAuth(
     private val log: LogSink,
     private val clock: WallClock = WallClock(System::currentTimeMillis),
 ) : RefreshableAuthProvider, AccountCredentialIdentitySource {
-    private val family = ClientAuthProvider(place.command)
-
     val credentialKey: String?
         get() = observe()?.accessToken?.let {
             CredentialKey.fromHeaders(mapOf("Authorization" to "Bearer $it"))
@@ -74,7 +69,7 @@ internal class ClaudeNativeAuth(
     /** The native Claude Code command is the only refresher and credential writer. */
     override suspend fun refresh(): Credentials? = null
 
-    override fun allowRefreshAfterFailure(status: Int, body: String): Boolean = false
+    override fun allowRefreshAfterFailure(deadCredential: Boolean): Boolean = false
 
     override fun credentialIdentity(): CredentialFileIdentity? = credentialEvidence().identity
 
@@ -101,9 +96,6 @@ internal class ClaudeNativeAuth(
         if (!present && renews(observed)) fields[TOKEN_RENEWS_FIELD] = "true"
         return AuthDescription(present, CLAUDE_ACCOUNT_AUTH_KIND, fields)
     }
-
-    override fun planLimit(header: QuotaHeaderRead, nowEpochSeconds: Long): PlanLimit? =
-        family.planLimit(header, nowEpochSeconds)
 
     /** Why the place cannot send. An expired token beside its refresh token needs only its command run: Claude Code
      *  renews it there, and splice never does (it owns no rotating refresh token). Only a place with nothing to renew

@@ -36,6 +36,7 @@ import splice.core.util.SecureFile
 import splice.core.wire.HttpStatus
 import splice.upstream.RoundBody
 import splice.upstream.VendorRoute
+import splice.upstream.failure.FailedReply
 import java.nio.ByteBuffer
 import java.nio.file.Files
 import java.nio.file.Path
@@ -245,8 +246,8 @@ public class MuseGatewayRoutes(
         }
 
         /** An answer finishes its request, except the gateway giving up, which leaves the generation behind it. */
-        override fun answered(status: Int, body: String) {
-            if (!gaveUp(status, body)) unfinished.set(null)
+        override fun answered(reply: FailedReply) {
+            if (!gaveUp(reply.status, reply.body)) unfinished.set(null)
         }
 
         override fun finished(usage: Usage?) {

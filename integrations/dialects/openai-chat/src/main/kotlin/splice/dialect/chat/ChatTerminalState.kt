@@ -1,34 +1,39 @@
 // PORT-OF: ChatStreamTranslator.kt @ e2e0d0f — invariants unchanged: the L3 verdict owner — six
 // producers and one consumer (the ranked provider-failure `when`) in one file, strictly better
-// co-location than sharing a file with tool-index synthesis and token accounting. Mirrors the
-// passthrough dialect's PassthroughFailureRules idiom (commit 6868086).
+// co-location than sharing a file with tool-index synthesis and token accounting.
+// Failure-handling slice 3: an error chunk is read once, by the head's own reader (ChatReplies with the head's
+// deviation), where the shared classifier read it until then.
 package splice.dialect.chat
 
+import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.JsonPrimitive
 import splice.core.failure.FailureCause
 import splice.core.failure.FailureEvidence
 import splice.core.failure.Moment
 import splice.core.failure.Position
-import splice.core.failure.ProviderWordsFilter
-import splice.core.failure.RefusedBy
 import splice.core.turn.TurnOutcome
-import splice.upstream.failure.ClassifiedFailure
-import splice.upstream.failure.FailureSource
-import splice.upstream.failure.UpstreamFailureClassifier
+import splice.dialect.chat.failure.ChatReplies
+import splice.upstream.failure.FailedEvent
+import splice.upstream.failure.OpenAiErrorEnvelope
 
 /** The chat dialect's honesty state machine: the flags that decide whether a turn's terminal is an
  *  honest Failure instead of a clean Success, and the finish_reason classification that feeds them.
  *  [toolCalls] is read through for CX-01's latch and written through for the `tool_calls`
- *  finish_reason, since [ChatToolCalls] owns the buffers those two facts are derived from. */
-internal class ChatTerminalState(private val toolCalls: ChatToolCalls) {
+ *  finish_reason, since [ChatToolCalls] owns the buffers those two facts are derived from. [ctx] carries the head's
+ *  reader, which reads an error chunk. */
+internal class ChatTerminalState(private val toolCalls: ChatToolCalls, private val ctx: ChatTurnContext) {
 
     internal var finished = false
     internal var incomplete = false
     internal var contentFiltered = false
-    internal var failure: ClassifiedFailure? = null
 
-    // V4-167: whether the error event carried a status or a vendor kind, so its verdict stands as the
-    // classifier scored it — see onError.
-    private var failureTyped = false
+    /** The backend's error chunk as the head's reader read it, and the provider's own words for the log. */
+    private var failure: FailureCause.Provider? = null
+    private var failureMessage: String = ""
+
+    // Whether the error chunk named a vendor code or kind and no status: such a code no table names is the unknown
+    // splice re-sends once (resendsOnce).
+    private var failureCoded = false
 
     // CX-08 (L3): OpenAI carries a model refusal in a DEDICATED `refusal` field on the streamed
     // delta and on the final message — never in `content`. Unread, the one text that explains the
@@ -45,24 +50,23 @@ internal class ChatTerminalState(private val toolCalls: ChatToolCalls) {
     // growing them without limit.
     internal var runawayGuard: String? = null
 
-    /** The upstream SSE error event, already pulled apart by [ChatEventRouter] (which owns the
-     *  frame-shape knowledge). V4-164: classified by the SAME classifier every other path uses —
-     *  this dialect was the one of three that kept only the text and called every in-band error
-     *  UPSTREAM_REPORTED, so an overflow reached Claude Code as a retried api_error instead of the
-     *  "prompt is too long" it compacts on, and a local runtime's KV-pool failure as bare text. */
-    internal fun onError(message: String, kind: String, status: Int?) {
-        val classified = UpstreamFailureClassifier.classify(FailureSource.SSE, message, status, kind)
-        failure = classified
-        // V4-167: a verdict the vendor TYPED or gave a status is carried as the classifier scored it,
-        // as ResponsesTerminalDecision has since V4-81, so a deterministic error is not advertised as
-        // retryable. An event with neither keeps the wire V4-164 promised it: retryable, as before.
-        failureTyped = status != null || kind.isNotBlank()
+    /** The upstream SSE chunk carrying an `error` object, as sent. V4-164: read by the same reader that reads the
+     *  head's failed replies, so an overflow reaches Claude Code as the "prompt is too long" it compacts on and a rate
+     *  limit as a rate limit, and an in-band error reads as the same kind its HTTP twin does. */
+    internal fun onError(chunk: JsonObject) {
+        val error = OpenAiErrorEnvelope.of(chunk)
+        failure = ctx.replies.event(FailedEvent(ChatReplies.ERROR_CHUNK, chunk, ctx.owner))
+        failureMessage = error.message.orEmpty().ifEmpty { "error" }
+        // V4-167: llama-server writes its status as a numeric code; a vendor's string code or kind is its own.
+        failureCoded = error.code.toIntOrNull() == null && (error.code.isNotBlank() || error.type.isNotBlank())
     }
 
-    /** Whether the failure this state reports is the backend's own error with a vendor code on no list, the one
-     *  splice re-sends once (ChatResendOnce); a local guard outranks it in [providerFailure], so it never does. */
+    /** Whether the failure this state reports is the backend's own error with a vendor code no table names, the one
+     *  splice re-sends once (ChatResendOnce, final-design.md section 8); a local guard outranks it in
+     *  [providerFailure], so it never does. */
     internal fun resendsOnce(): Boolean =
-        runawayGuard == null && toolCalls.toolArgsInvalid == null && failure?.retryOnce == true
+        runawayGuard == null && toolCalls.toolArgsInvalid == null &&
+            failure is FailureCause.Provider.Unrecognized && failureCoded
 
     internal fun onFinish(reason: String) {
         finished = true
@@ -88,11 +92,10 @@ internal class ChatTerminalState(private val toolCalls: ChatToolCalls) {
                 FailureCause.Provider.ToolTear(runaway = false),
                 "chat backend: ${toolCalls.toolArgsInvalid} in tool call; retry",
             )
-            // V4-164: the classifier's verdict, carried through — the passthrough dialect's rule
+            // V4-164: the reader's verdict, carried through — the passthrough dialect's rule
             // (PassthroughTerminalState: "an earlier draft hard-coded UPSTREAM_REPORTED here and threw
-            // both verdicts away"). An event with no recognisable shape still lands on the classifier's
-            // own floor, so an unknown in-band error keeps exactly the wire it had.
-            reported != null -> failed(reportedCause(reported), "chat backend: ${reported.message}")
+            // both verdicts away"). An error no table names is Unrecognized, the backend's own report.
+            reported != null -> failed(reported, "chat backend: $failureMessage")
             // CX-08: the backend populated `refusal` — a censored generation whose STATED REASON is
             // the only honest verdict available. Ranked above the content_filter branch below
             // because it carries the model's own words instead of a generic phrase; it outranks
@@ -102,26 +105,26 @@ internal class ChatTerminalState(private val toolCalls: ChatToolCalls) {
             // responses dialect's sibling: a refusal reproduces exactly, so the leaf is permanent and
             // the two dialects answer the same question the same way.
             refusalBuf.isNotBlank() -> failed(
-                FailureCause.Provider.Refused(RefusedBy.MODEL, ProviderWordsFilter.of(refusalBuf.toString())),
+                read(
+                    ChatReplies.REFUSAL_EVENT,
+                    JsonObject(mapOf(ChatReplies.REFUSAL_EVENT to JsonPrimitive(refusalBuf.toString()))),
+                ),
                 "chat backend: model refused. $refusalBuf",
             )
             // finish_reason=content_filter is a CENSORED turn — a clean end_turn would let a
             // blocked generation masquerade as complete (honesty invariant); it outranks
             // `finished` (the same frame sets both). V4-81: the identical prompt is filtered identically.
             contentFiltered -> failed(
-                FailureCause.Provider.Refused(RefusedBy.FILTER),
+                read(ChatReplies.FILTER_EVENT, JsonObject(emptyMap())),
                 "chat backend: generation stopped by content filter",
             )
             else -> null
         }
     }
 
-    /** The classifier's verdict as this event carries it: an event with neither status nor kind keeps V4-164's
-     *  retryable wire, so a failure no table names stays one a re-send can change (see onError). The backend's words
-     *  ride either way. */
-    private fun reportedCause(reported: ClassifiedFailure): FailureCause.Provider = reported.inBand.let {
-        if (it is FailureCause.Provider.Unrecognized && !failureTyped) it.copy(clientError = false) else it
-    }
+    /** A refusal or a content filter, read by the head's reader as an error chunk is. */
+    private fun read(type: String, payload: JsonObject): FailureCause.Provider =
+        ctx.replies.event(FailedEvent(type, payload, ctx.owner))
 
     private fun failed(cause: FailureCause, message: String): TurnOutcome.Failure = TurnOutcome.Failure(
         cause = cause,

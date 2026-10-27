@@ -66,7 +66,7 @@ internal class WsRoundDrive(
         // V4-242: a round the upstream TORE before any client frame is re-served over SSE too
         // (PreContentTear). Caught here, upstream of the translator, because the translator folds an
         // I/O failure into its honest terminal.
-        val reserve = SseReserve()
+        val reserve = SseReserve(provider.replies, provider.auth.owner)
         val instrumented = events
             .catch { torn -> if (!reserve.tear(torn, inputs)) throw torn }
             .transformWhile { evt ->

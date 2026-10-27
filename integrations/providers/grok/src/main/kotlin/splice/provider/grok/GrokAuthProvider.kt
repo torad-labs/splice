@@ -180,10 +180,8 @@ public class GrokAuthProvider(
         CredentialKey.fromCredentials(Credentials.Bearer(it))
     }
 
-    override fun allowRefreshAfterFailure(status: Int, body: String): Boolean =
-        forbidden.allowRefreshAfterFailure(status, body)
-
-    override fun isQuotaExhausted(status: Int, body: String): Boolean = forbidden.isQuotaExhausted(status, body)
+    override fun allowRefreshAfterFailure(deadCredential: Boolean): Boolean =
+        forbidden.allowRefreshAfterFailure(deadCredential)
 
     // Sealed per-mode outcome (discipline L3): a dead refresh token, a transport blip, and a
     // corrupt file are DIFFERENT stories; credentialsOrNull is the single logging flatten.

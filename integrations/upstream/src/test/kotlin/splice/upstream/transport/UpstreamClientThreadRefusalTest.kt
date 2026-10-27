@@ -36,6 +36,8 @@ import splice.core.util.ElapsedClock
 import splice.core.util.LogSink
 import splice.upstream.RetryNotice
 import splice.upstream.codemode.ProcessElapsedNow
+import splice.upstream.failure.OpenAiReplies
+import splice.upstream.failure.Replies
 import java.io.FilterInputStream
 import java.io.IOException
 import java.io.InputStream
@@ -89,7 +91,13 @@ class UpstreamClientThreadRefusalTest {
     )
 
     private fun ctx(retries: MutableList<String>) =
-        PostContext(url = url, auth = fakeAuth, extraHeaders = { emptyMap() }, onRetry = RetryNotice { retries += it })
+        PostContext(
+            url = url,
+            auth = fakeAuth,
+            extraHeaders = { emptyMap() },
+            replies = Replies(OpenAiReplies),
+            observers = PostObservers(onRetry = RetryNotice { retries += it }),
+        )
 
     @Test
     fun `a thread refused before the request was written whole is a connect-phase failure`() {
@@ -218,11 +226,13 @@ class RefusedConnectionReuseMutationTest {
             )
             val retries = CopyOnWriteArrayList<String>()
             val context = upstream.context().copy(
-                onRetry = RetryNotice { reason ->
-                    retries += reason
-                    check(reason == "transport IOException attempt 1/2: $REFUSED_REASON")
-                    sockets.closeRefusedConnection()
-                },
+                observers = PostObservers(
+                    onRetry = RetryNotice { reason ->
+                        retries += reason
+                        check(reason == "transport IOException attempt 1/2: $REFUSED_REASON")
+                        sockets.closeRefusedConnection()
+                    },
+                ),
             )
             val restore = refuseTaskRunnerThreads()
             val answer = try {
@@ -349,7 +359,8 @@ private class LoopbackUpstream : AutoCloseable {
         url = "http://127.0.0.1:${server.localPort}/v1/messages",
         auth = fakeAuth,
         extraHeaders = { emptyMap() },
-        onRetry = RetryNotice { retries += it },
+        replies = Replies(OpenAiReplies),
+        observers = PostObservers(onRetry = RetryNotice { retries += it }),
     )
 
     private fun serveEach(socket: Socket) {

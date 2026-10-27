@@ -43,22 +43,6 @@ private const val HANG_BACKSTOP_S = 60L
 
 class KimiAuthProviderTest {
 
-    @Test
-    fun `plan-tier 401 vetoes credential refresh`(@TempDir tempDir: Path) {
-        val auth = KimiAuthProvider(
-            authPath = tempDir.resolve("auth.json"),
-            authCacheMs = 30_000L,
-            refreshCall = { RefreshAttempt.InvalidGrant("unused") },
-        )
-        assertTrue(
-            !auth.allowRefreshAfterFailure(
-                401,
-                "Current subscription does not have access; supports only Kimi-K3 up to 256K",
-            ),
-        )
-        assertTrue(auth.allowRefreshAfterFailure(401, "token expired"))
-    }
-
     private fun authFile(
         dir: Path,
         access: String = "kimi-access",

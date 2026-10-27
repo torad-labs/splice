@@ -1,34 +1,33 @@
 // PORT-OF: PassthroughStreamTranslator.kt @ 71a203c — invariants unchanged: the L3 verdict owner.
 // Every producer of the ranked provider-failure expression lives here WITH the ranking that reads
 // it — extracting one producer on its own creates a window where a field is set and never read.
-// The two verdict-message rules keep riding PassthroughFailureRules (commit 6868086's idiom), so
-// the `else ->` remainder is still handed to stopReasonFailure at the same call site.
+// Failure-handling slice 3: an error event and a stop reason that is no clean end are read once, by the head's own
+// reader (AnthropicReplies with the head's deviation), so the type and stop-reason tables this file kept are gone.
 package splice.dialect.anthropic
 
 import kotlinx.serialization.json.JsonObject
 import splice.core.failure.FailureCause
 import splice.core.failure.FailureEvidence
-import splice.core.failure.Lift
-import splice.core.failure.LoginOwner
 import splice.core.failure.Moment
 import splice.core.failure.Position
-import splice.core.failure.ProviderWords
-import splice.core.failure.ProviderWordsFilter
-import splice.core.failure.RefusedBy
 import splice.core.turn.TurnOutcome
 import splice.core.util.JsonScalars
-import splice.upstream.failure.UpstreamFailureClassifier
+import splice.dialect.anthropic.failure.AnthropicReplies
+import splice.upstream.failure.FailedEvent
 
+/** The log's words for an answer that outgrew the window, as the classifier wrote them before slice 3. */
 private const val CONTEXT_EXCEEDED_MESSAGE =
-    "generation stopped: the model context window was exceeded (stop_reason=model_context_window_exceeded)"
+    "prompt is too long: generation stopped: the model context window was exceeded " +
+        "(stop_reason=model_context_window_exceeded)"
 
 /** The passthrough dialect's honesty state machine: the flags and latches that decide whether a
- *  turn's terminal is an honest Failure instead of a clean Success, plus the stop_reason
- *  classification that feeds them. [blocks] is written through for the `tool_use` stop_reason,
- *  since [PassthroughBlockRegistry] owns the tool-use fact the outcome is derived from. */
+ *  turn's terminal is an honest Failure instead of a clean Success. [blocks] is written through for the `tool_use`
+ *  stop_reason, since [PassthroughBlockRegistry] owns the tool-use fact the outcome is derived from, and [ctx] carries
+ *  the head's reader, which reads an error event and a stop reason that is no clean end. */
 internal class PassthroughTerminalState(
     private val quirks: PassthroughQuirks,
     private val blocks: PassthroughBlockRegistry,
+    private val ctx: PassthroughTurnContext,
 ) {
 
     internal var incomplete = false
@@ -39,7 +38,7 @@ internal class PassthroughTerminalState(
     // NF-06: latched when BufferCapacity trips; never provider-reported (the verdict is local).
     private var runawayGuard: String? = null
 
-    // The two verdict-message rules ride a collaborator rather than this class: they read only
+    // The two log-message rules ride a collaborator rather than this class: they read only
     // their arguments — no state, no wire access — so they are a rule table, not turn state.
     private val failureRules = PassthroughFailureRules()
 
@@ -49,43 +48,30 @@ internal class PassthroughTerminalState(
         runawayGuard = failureRules.runawayGuardMessage(quirks.providerTag)
     }
 
-    internal fun onStopReason(reason: String, details: JsonObject?) {
+    /** [delta] is the message_delta's own delta object, which carries [reason] and the stop_details beside it. */
+    internal fun onStopReason(reason: String, delta: JsonObject?) {
         when (reason) {
             "tool_use" -> blocks.hasToolUse = true
             "max_tokens" -> incomplete = true
-            // CX-07 (L3): every OTHER value used to land in a bare `else -> Unit` with end_turn
-            // semantics, so a generation the BACKEND refused, paused or hard-truncated reached the
-            // client as a clean, complete Success. The three non-clean Anthropic terminals now latch
-            // the provider slot; end_turn / stop_sequence / an absent stop_reason / an unrecognized
-            // vendor value keep end_turn semantics (see [PassthroughFailureRules.stopReasonFailure]).
-            // First latch wins so a later genuine `error` event can never be overwritten by a
-            // trailing message_delta.
-            else -> failureRules.stopReasonFailure(reason, details)?.let { (cause, why) ->
-                if (failureCause == null) {
-                    failureCause = cause
-                    failureMessage = why
-                }
+            // CX-07 (L3): a generation the backend refused, paused or hard-truncated is no clean, complete
+            // Success, and the head's reader says what it is. end_turn / stop_sequence / an absent stop_reason / an
+            // unrecognized vendor value keep end_turn semantics (AnthropicReplies.FAILED_STOPS). First latch wins
+            // so a later genuine `error` event can never be overwritten by a trailing message_delta.
+            in AnthropicReplies.FAILED_STOPS -> if (failureCause == null) {
+                val stop = delta ?: JsonObject(emptyMap())
+                failureCause = ctx.replies.event(FailedEvent(AnthropicReplies.STOP_EVENT, stop, ctx.owner))
+                failureMessage = failureRules.stopMessage(reason, stop["stop_details"] as? JsonObject)
             }
+            else -> Unit
         }
     }
 
-    /** The upstream SSE error event, already pulled apart by [PassthroughEventRouter] (which owns
-     *  the frame-shape knowledge) — same classification, same order, receiver became argument. */
-    internal fun onError(type: String, message: String) {
-        // V4-117: the verdict is a CAUSE now. Each arm names the condition the vendor's own error
-        // type describes, and ClientWire derives the wire type from it — exactly the ErrorType this
-        // table used to name by hand (overloaded → OVERLOADED, rate_limit → RATE_LIMIT, authentication →
-        // AUTHENTICATION, invalid_request → INVALID_REQUEST, and an unrecognised type → API_ERROR).
-        // Failure-handling slice 2: every arm carries the vendor's message field as a line may quote it.
-        val said = ProviderWordsFilter.of(message)
-        failureCause = when (type) {
-            "overloaded_error" -> FailureCause.Provider.Overloaded(Lift.Unstated, loading = false, said)
-            "rate_limit_error" -> FailureCause.Provider.Limited(Lift.Unstated, window = null, said)
-            "authentication_error" -> FailureCause.Provider.AuthRejected(LoginOwner.SPLICE, said)
-            "invalid_request_error" -> FailureCause.Provider.Rejected(staleReasoning = false, said)
-            else -> FailureCause.Provider.Unrecognized(clientError = false, said)
-        }
-        failureMessage = message.ifEmpty { "error" }
+    /** The upstream SSE error event as sent, read once by the head's reader. */
+    internal fun onError(event: JsonObject) {
+        // Each error type the vendor sends names its condition, and the reader turns it into the cause ClientWire
+        // derives the wire type from; the vendor's message rides in the log beside it.
+        failureCause = ctx.replies.event(FailedEvent(AnthropicReplies.ERROR_EVENT, event, ctx.owner))
+        failureMessage = JsonScalars.strOrEmpty((event["error"] as? JsonObject)?.get("message")).ifEmpty { "error" }
     }
 
     /** The ranked provider-failure verdict, or null when the turn has none. */
@@ -104,14 +90,12 @@ internal class PassthroughTerminalState(
             )
         } ?: failureCause?.let {
             // a signal the BACKEND sent — an upstream SSE error event (e.g. overloaded_error) or
-            // a non-clean stop_reason (CX-07, see [PassthroughFailureRules.stopReasonFailure]) —
-            // provider-reported (G20)
+            // a non-clean stop_reason (CX-07) — provider-reported (G20)
             TurnOutcome.Failure(
-                // V4-117: the CAUSE the two producers above latched (onError's vendor type, or
-                // stopReasonFailure's stop_reason verdict), carried through untouched. An earlier
-                // draft hard-coded UPSTREAM_REPORTED here and threw both verdicts away, which seven
-                // tests caught: every SSE error arrived as API_ERROR regardless of what the vendor
-                // had called it.
+                // V4-117: the CAUSE the two producers above latched (the reader's reading of the error event or of
+                // the stop reason), carried through untouched. An earlier draft hard-coded UPSTREAM_REPORTED here
+                // and threw both verdicts away, which seven tests caught: every SSE error arrived as API_ERROR
+                // regardless of what the vendor had called it.
                 cause = it,
                 at = Position(Moment.MID_CONTENT, streamBegan = true),
                 evidence = FailureEvidence("${quirks.providerTag}: $failureMessage"),
@@ -120,7 +104,7 @@ internal class PassthroughTerminalState(
 }
 
 /**
- * The translator's two verdict-message rules, on their own type: both read only their arguments —
+ * The translator's two log-message rules, on their own type: both read only their arguments —
  * no state, no wire access.
  */
 private class PassthroughFailureRules {
@@ -130,59 +114,16 @@ private class PassthroughFailureRules {
     fun runawayGuardMessage(providerTag: String): String =
         "$providerTag: response exceeded max buffered size; aborting"
 
-    /**
-     * CX-07 (L3): the Anthropic `stop_reason` values that are NOT a clean completion, mapped to the
-     * honest failure each one is. The protocol ships SEVEN stop reasons; four are clean — `end_turn`,
-     * `stop_sequence`, `tool_use`, `max_tokens` — and these three are not:
-     *   · `refusal` — the model refused to generate; a censored turn, same class as Chat's content_filter;
-     *   · `pause_turn` — the backend paused a long-running turn; retryable, not a finished answer;
-     *   · `model_context_window_exceeded` — a HARD truncation distinct from `max_tokens`, so it must not
-     *     fold into `incomplete` (that would report the ordinary "ran out of room" stop for a turn the
-     *     backend could not run at all).
-     * Returns null for a clean value, for an absent stop_reason (`""`), and for an unrecognized one.
-     *
-     * WHY THE REMAINDER STAYS OPEN-SAFE instead of failing everything outside the clean four (decision
-     * 2026-08-09; the open-remainder alternative was considered and rejected): this dialect serves
-     * exactly one backend, Kimi's `/coding` surface, and OpenAI-compatible vendors demonstrably invent
-     * enumeration values — `ChatTerminalState.onFinish` already carries a `max_tokens` arm for
-     * vendors that ignore the spec's `length`. An open remainder would turn one off-spec value on a
-     * WORKING turn into a failed turn, and a false Failure on working traffic is worse than the silent
-     * success it replaces. The cost is that stop_reason #8 arrives invisible; making unknown
-     * discriminator values COUNTED needs a per-turn telemetry channel the dialects do not have (see the
-     * ledger note on W4-A) and is proposed as its own item rather than smuggled in here.
-     */
-    // V4-117: a CAUSE per arm, not a type. ClientWire derives the wire types from the cause (refusal →
-    // INVALID_REQUEST since b21329586, pause_turn → OVERLOADED, context-exceeded → INVALID_REQUEST), and the
-    // overflow arm keeps the classifier's own words for an overflow. Failure-handling slice 2: the words beside each
-    // cause are the log's, naming what the backend sent and advising nothing; a person reads the line written from
-    // the cause, which quotes a refusal's category and explanation.
-    fun stopReasonFailure(reason: String, details: JsonObject?): Pair<FailureCause.Provider, String>? = when (reason) {
-        "refusal" -> FailureCause.Provider.Refused(RefusedBy.MODEL, refusalSaid(details)) to refusalMessage(details)
-        "pause_turn" -> FailureCause.Provider.Overloaded(Lift.Unstated, loading = false) to "stop_reason=pause_turn"
-        "model_context_window_exceeded" ->
-            FailureCause.Provider.TooLong(limitTokens = null, whileAnswering = true) to
-                UpstreamFailureClassifier.overflowFailure(CONTEXT_EXCEEDED_MESSAGE).message
-        else -> null
-    }
-
-    /** The log's account of a refusal: its stop reason, and the category and explanation the backend gave, whole. */
-    private fun refusalMessage(details: JsonObject?): String {
-        val category = detail(details, "category")?.let { " category=$it" }.orEmpty()
-        val explanation = detail(details, "explanation")?.let { ": $it" }.orEmpty()
-        return "stop_reason=refusal$category$explanation"
-    }
-
-    /** What a line quotes of a refusal: the backend's explanation with the category it named, as the filter cuts
-     *  them, or either one alone where the backend gave only one. */
-    private fun refusalSaid(details: JsonObject?): ProviderWords? {
-        val category = detail(details, "category")
-        val explained = ProviderWordsFilter.of(detail(details, "explanation"))?.text?.removeSuffix(".")
-        val quote = when {
-            explained == null -> category
-            category == null -> explained
-            else -> "$explained ($category)"
+    /** The log's account of a stop reason that is no clean end, naming what the backend sent and advising nothing:
+     *  a refusal's category and explanation whole, as failure-handling slice 2 wrote them. */
+    fun stopMessage(reason: String, details: JsonObject?): String = when (reason) {
+        "model_context_window_exceeded" -> CONTEXT_EXCEEDED_MESSAGE
+        "refusal" -> {
+            val category = detail(details, "category")?.let { " category=$it" }.orEmpty()
+            val explanation = detail(details, "explanation")?.let { ": $it" }.orEmpty()
+            "stop_reason=refusal$category$explanation"
         }
-        return ProviderWordsFilter.of(quote)
+        else -> "stop_reason=$reason"
     }
 
     private fun detail(details: JsonObject?, key: String): String? =

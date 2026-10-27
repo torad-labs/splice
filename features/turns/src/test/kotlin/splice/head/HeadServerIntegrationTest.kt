@@ -317,13 +317,15 @@ class HeadServerIntegrationTest {
         assertEquals(before.localOriginErrors, after.localOriginErrors)
     }
 
+    // Failure-handling slice 3: a body with no events is read by the head's own reader only when it is the provider's
+    // JSON error. Any other body, this HTML page included, is the path breaking before anything came,
+    // Torn(NO_EVENTS) (final-design.md section 7, item 4), so its words no longer pick a login cause as G2's did.
     @Test
-    fun `zero-event auth-shaped body classifies as authentication with a login hint`() = runTest {
+    fun `a zero-event page that is no JSON error is a broken path the client sends again`() = runTest {
         val sse = messages("zero_event_auth")
         assertTrue(sse.contains("event: error"))
-        assertTrue(sse.contains("authentication_error"))
-        assertTrue(sse.contains(LOGIN_HINT), sse)
-        assertFalse(sse.contains("overloaded_error"))
+        assertTrue(sse.contains("overloaded_error"), sse)
+        assertFalse(sse.contains("authentication_error"), sse)
     }
 
     @Test
@@ -379,22 +381,20 @@ class HeadServerIntegrationTest {
     }
 
     @Test
-    fun `a 4xx wearing the overload code keeps its invalid_request verdict through every retry`() = runTest {
-        // V4-62 REVERSED THE COUNT THIS TEST USED TO PIN, and that is a policy change rather than
-        // assertion-editing: "a 4xx must not be retried" WAS the old law, and this scenario —
-        // overload_403, a 403 that really was an overload — is the evidence the new law rests on.
-        //
-        // THE VERDICT IS THE HALF THAT SURVIVES, and it is the more useful invariant. A retried 403
-        // that came back reclassified as overloaded_error on the second pass would be exactly the
-        // drift nobody would notice; retrying makes that harder, not easier, because the same body
-        // now passes through the classifier more than once.
+    fun `a 4xx wearing the overload code keeps its invalid_request verdict and is sent once`() = runTest {
+        // THE VERDICT IS THE HALF THAT SURVIVES: a 403 whose words spell an overload is still no
+        // overloaded_error. Failure-handling slice 3 changed the count. V4-62 re-sent every status because the
+        // shared classifier was not reliable enough to refuse one; each API type's reader now reads a 403 as
+        // Forbidden, which the provider answers the same way for the same request, so it is sent once
+        // (final-design.md section 8).
         val sse = messages("overload_403")
         assertTrue(sse.contains("event: error"), sse)
         assertTrue(sse.contains("invalid_request_error"), sse)
         assertFalse(sse.contains("overloaded_error"), sse)
-        assertTrue(
-            mock.upstreamBodies.count { it.first == "overload_403" } > 1,
-            "V4-62 retries every upstream failure status, so a 4xx is no longer terminal",
+        assertEquals(
+            1,
+            mock.upstreamBodies.count { it.first == "overload_403" },
+            "a 403 is forbidden as sent, so the same request is not sent again",
         )
     }
 

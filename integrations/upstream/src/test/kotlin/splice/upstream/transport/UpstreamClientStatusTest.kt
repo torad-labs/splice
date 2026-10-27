@@ -14,6 +14,8 @@ import org.junit.jupiter.api.Test
 import splice.core.auth.AuthDescription
 import splice.core.auth.Credentials
 import splice.core.auth.RefreshableAuthProvider
+import splice.upstream.failure.OpenAiReplies
+import splice.upstream.failure.Replies
 import java.util.concurrent.atomic.AtomicInteger
 
 class UpstreamClientStatusTest {
@@ -40,7 +42,7 @@ class UpstreamClientStatusTest {
     }
 
     @Test
-    fun `every failure status retries, so 501 and plain 400 are not terminal on the first try`() = runTest {
+    fun `every failure status no table names retries, so 501 and 409 are not terminal on the first try`() = runTest {
         // V4-62, operator law: "we would retry on any error, no matter what, with different levels of
         // retry and escalation + backoff." These two statuses were exactly what the previous version
         // of this test pinned as terminal. They now take the same 200ms curve as a 503, and the
@@ -49,7 +51,11 @@ class UpstreamClientStatusTest {
         // The cost argument is in RetryPolicy: the whole default budget on that curve is about 1.5s,
         // so a genuinely permanent 4xx is cheap to discover and a misclassified transient — a 403
         // observed as overload, the muse 400 that was OUR bug — is expensive to miss.
-        for (status in listOf(HttpStatusCode.NotImplemented, HttpStatusCode.BadRequest)) {
+        //
+        // Failure-handling slice 3: a status the head's reader has no row for keeps that budget until slice 4's engine
+        // decides it. A plain 400 has a row: the request rejected as sent, which no re-send can change, so it left
+        // this loop with the classifier that could not name it.
+        for (status in listOf(HttpStatusCode.NotImplemented, HttpStatusCode.Conflict)) {
             val calls = AtomicInteger()
             val engine = MockEngine {
                 calls.incrementAndGet()
@@ -85,6 +91,7 @@ class UpstreamClientStatusTest {
             url = "https://api.example.test/v1",
             auth = auth,
             extraHeaders = { emptyMap() },
+            replies = Replies(OpenAiReplies),
             observers = PostObservers(authRefreshObserver = AuthRefreshObserver { observed.incrementAndGet() }),
         )
 

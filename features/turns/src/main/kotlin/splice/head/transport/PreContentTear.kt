@@ -9,15 +9,15 @@
 // one import stay out of WsRoundDrive's bill (ConcentrationLawTest, 2026-09-26).
 package splice.head.transport
 
-import splice.upstream.failure.TearWords
+import splice.upstream.transport.TransportFaultLine
 import java.io.IOException
 
 internal object PreContentTear {
 
-    /** [torn]'s words (TearWords) when the round it tore is re-served over SSE; null when the tear stays
+    /** [torn]'s words (TransportFaultLine.tear) when the round it tore is re-served over SSE; null when the tear stays
      *  with the translator, which folds it into its honest terminal as before. */
     fun words(torn: Throwable, inputs: WsRoundInputs): String? =
-        if (tornBeforeContent(torn, inputs)) TearWords.of(torn) ?: torn::class.simpleName.orEmpty() else null
+        if (tornBeforeContent(torn, inputs)) TransportFaultLine.tear(torn) ?: torn::class.simpleName.orEmpty() else null
 
     /** A tear of a round the client has seen nothing of, which neither the watchdog, a departed client
      *  nor the turn's own cancellation caused. The last two are this path's own: the client's

@@ -1,6 +1,7 @@
 // NEW: V4-242 (2026-09-26) — a tear's words: the deepest link of its cause chain that says anything,
-// within the chain's own bound, with any URL cut to its scheme and host.
-package splice.upstream.failure
+// within the chain's own bound, with any URL cut to its scheme and host. Failure-handling slice 3 moved the reading
+// from TearWords into TransportFaultLine, the log's one reader of a transport failure's words; the tests moved with it.
+package splice.upstream.transport
 
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertNull
@@ -8,22 +9,22 @@ import org.junit.jupiter.api.Test
 import java.io.IOException
 import java.net.ConnectException
 
-class TearWordsTest {
+class TearLineTest {
     @Test
     fun `a tear over a peer's close reads as the close`() {
         val tear = IOException("websocket stream ended mid-round", IOException(CLOSE))
-        assertEquals(CLOSE, TearWords.of(tear))
+        assertEquals(CLOSE, TransportFaultLine.tear(tear))
     }
 
     @Test
     fun `a link with blank or no words is passed over`() {
         val tear = IOException("websocket stream ended mid-round", IOException("  ", ConnectException()))
-        assertEquals("websocket stream ended mid-round", TearWords.of(tear))
+        assertEquals("websocket stream ended mid-round", TransportFaultLine.tear(tear))
     }
 
     @Test
     fun `a tear no link of which says anything has no words`() {
-        assertNull(TearWords.of(IOException(null as String?, ConnectException())))
+        assertNull(TransportFaultLine.tear(IOException(null as String?, ConnectException())))
     }
 
     @Test
@@ -31,13 +32,13 @@ class TearWordsTest {
         val deep = (1..DEEPER_THAN_THE_BOUND).fold<Int, Throwable>(IOException("the deepest")) { cause, _ ->
             IOException(null as String?, cause)
         }
-        assertEquals("the top", TearWords.of(IOException("the top", deep)))
+        assertEquals("the top", TransportFaultLine.tear(IOException("the top", deep)))
 
         val a = IOException("a")
         val b = IOException("b")
         a.initCause(b)
         b.initCause(a)
-        assertEquals("b", TearWords.of(a), "eight links of a, b, a, b: the last that spoke is b")
+        assertEquals("b", TransportFaultLine.tear(a), "eight links of a, b, a, b: the last that spoke is b")
     }
 
     @Test
@@ -48,11 +49,11 @@ class TearWordsTest {
         )
         assertEquals(
             "Request timeout has expired [url=https://api.example.test, request_timeout=900000 ms]",
-            TearWords.of(timeout),
+            TransportFaultLine.tear(timeout),
         )
         assertEquals(
             "failed to reach wss://chatgpt.test",
-            TearWords.of(IOException("failed to reach wss://chatgpt.test/backend-api/codex/responses")),
+            TransportFaultLine.tear(IOException("failed to reach wss://chatgpt.test/backend-api/codex/responses")),
         )
     }
 }

@@ -44,7 +44,6 @@ import splice.core.auth.CredentialKey
 import splice.core.auth.Credentials
 import splice.core.auth.RefreshableAuthProvider
 import splice.core.parse.AnthropicParse
-import splice.core.usage.QuotaHeaderRead
 import splice.core.util.Cancellables
 import splice.core.util.SafeFailureText
 import splice.core.util.WallClock
@@ -61,8 +60,11 @@ import splice.head.usage.ProviderReplyObserver
 import splice.head.usage.ProviderReplySender
 import splice.upstream.BuiltTurn
 import splice.upstream.Provider
+import splice.upstream.failure.FailedReply
+import splice.upstream.failure.ForeignCredential
 import splice.upstream.transport.HeaderRedaction
 import splice.upstream.transport.UpstreamHeaders
+import java.time.Instant
 
 // why: matches UpstreamTransport's own connect budget — a playground probe is not a special client.
 private const val CONNECT_TIMEOUT_MS = 10_000L
@@ -184,13 +186,12 @@ internal class UpstreamPlaygroundProbe(
         val (url, sent) = posted
         val creds = sender.creds
         val at = clock()
-        val responseHeaders = QuotaHeaderRead { sent.headers[it] }
-        sender.observer?.observed(ProviderReply(sent.status.value, at, responseHeaders), replySender)
+        sender.observer?.observed(ProviderReply(sent.status.value, at), replySender)
         (sender.auth as? RefreshableAuthProvider)?.upstreamAnswered(sent.status.value, sent.status.isSuccess())
         val whole = sent.bodyAsText()
         val bodyText = whole.take(MAX_RESPONSE_CHARS)
         if (!sent.status.isSuccess()) {
-            sender.observer?.observed(ProviderReply(sent.status.value, at, responseHeaders, bodyText), replySender)
+            sender.observer?.observed(refusal(provider, sender, sent, bodyText, at), replySender)
         }
         val read = usage.of(provider, turn, sent.status.value, sent.status.isSuccess(), whole)
         posted.row.write(read.outcome, read.usage)
@@ -205,6 +206,21 @@ internal class UpstreamPlaygroundProbe(
             put("body", parseOrRaw(bodyText))
         }
         return PlaygroundResult(requestJson, responseJson)
+    }
+
+    /** A refusal read once, by the head's own reader, where its status, headers and body are all in hand: the reading
+     *  a turn's attempt makes of the same reply (failure-handling slice 3), so the usage plane holds the login for
+     *  what the reply was and reads no body of its own. */
+    private fun refusal(provider: Provider, sender: Sender, sent: HttpResponse, body: String, at: Long): ProviderReply {
+        val reply = FailedReply(
+            status = sent.status.value,
+            headers = sent.headers.entries().associate { (name, values) -> name to values.joinToString() },
+            body = body,
+            owner = sender.auth.owner,
+            sent = ForeignCredential.sentKey(sender.creds),
+            answeredAt = Instant.ofEpochMilli(at),
+        )
+        return ProviderReply(reply.status, at, provider.replies.http(reply), provider.replies.planLimit(reply))
     }
 
     /** The request as it went out and the answer's headers, kept with the send's record. */

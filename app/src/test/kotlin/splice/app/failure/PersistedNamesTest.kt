@@ -213,9 +213,9 @@ class PersistedNamesTest {
 
     @Test
     fun `a payment the provider wants writes VENDOR_QUOTA_EXHAUSTED`(@TempDir tmp: Path) = runTest {
-        // UpstreamRequest still answers a 402 as a 429 to every retry layer (V4-73), so the row keeps the rate-limit
-        // tag endingTag gives that status, and the turn ends on the payment the provider asked for (HttpEnding's
-        // NeedsPayment), whose persisted name is VENDOR_QUOTA_EXHAUSTED (final-design.md section 6).
+        // A payment the provider wants is held as a limit is (V4-73), so the row keeps the rate-limit tag endingTag
+        // gives it by cause since failure-handling slice 3, and the turn ends on the payment the provider asked for,
+        // whose persisted name is VENDOR_QUOTA_EXHAUSTED (final-design.md section 6).
         val ended = statusEnding(tmp, PAYMENT_REQUIRED, "billing_error", "Add credit to continue.", "payment_required")
         assertEquals(OutcomeTag.RATE_LIMITED.wire, ended.outcome)
         assertEquals("VENDOR_QUOTA_EXHAUSTED", ended.cause)
@@ -257,8 +257,14 @@ class PersistedNamesTest {
     fun `an error event after content writes UPSTREAM_REPORTED`(@TempDir tmp: Path) = runTest {
         withScriptedHeads(tmp) {
             // PassthroughTerminalState.onError: a type Anthropic's table does not name is the upstream's own report.
+            // Since failure-handling slice 3 api_error is named, the 500 it stands for (AnthropicReplies), so the
+            // event here carries a type no row names.
             provider.script(
-                reply { anthropicStart(); anthropicText("partial words"); anthropicError("api_error", "Internal") },
+                reply {
+                    anthropicStart()
+                    anthropicText("partial words")
+                    anthropicError("upstream_hiccup", "Internal")
+                },
             )
             val head = anthropic()
             head.client.send()
@@ -285,9 +291,10 @@ class PersistedNamesTest {
 
     @Test
     fun `a content-policy refusal writes CONTENT_FILTERED`(@TempDir tmp: Path) = runTest {
-        // UpstreamFailureClassifier.classifyContent: a policy code (FailureCodes.POLICY_REFUSAL_CODES) outranks the
-        // status.
-        val ended = statusEnding(tmp, BAD_REQUEST, "invalid_request_error", "Request rejected.", "cyber_policy")
+        // OpenAiReplies: OpenAI's own content-policy code outranks the status. Codex's cyber_policy is the ChatGPT
+        // backend's (CodexReplies) and reads as a refusal on claudex alone since failure-handling slice 3.
+        val ended =
+            statusEnding(tmp, BAD_REQUEST, "invalid_request_error", "Request rejected.", "content_policy_violation")
         assertEquals(OutcomeTag.UPSTREAM_FAILED.wire, ended.outcome)
         assertEquals("CONTENT_FILTERED", ended.cause)
     }
@@ -372,8 +379,9 @@ class PersistedNamesTest {
 
     @Test
     fun `an error the provider reported inside a chat stream writes UPSTREAM_REPORTED`(@TempDir tmp: Path) = runTest {
-        // ChatEventRouter.onEvent hands the error to the classifier with no status, whose floor is the upstream's
-        // own report.
+        // ChatTerminalState.onError hands the error to the head's reader, whose floor for an error no row names is the
+        // upstream's own report (Unrecognized). Since failure-handling slice 3 a server_error type is the 500 it
+        // stands for (OpenAiReplies), so the error here names no type.
         val ended = chatEnding(tmp) { chatText("partial words"); event(IN_BAND_ERROR) }
         assertEquals(OutcomeTags.failure(ErrorType.API_ERROR), ended.outcome)
         assertEquals("UPSTREAM_REPORTED", ended.cause)
@@ -477,7 +485,7 @@ private const val TOOL_ARGS_CHUNK =
         """"delta":{"tool_calls":[{"index":0,"function":{"arguments":"\"src"}}]},"finish_reason":null}]}"""
 
 /** An error object in a chat stream, with a kind and no status. */
-private const val IN_BAND_ERROR = """{"error":{"message":"upstream exploded","type":"server_error"}}"""
+private const val IN_BAND_ERROR = """{"error":{"message":"upstream exploded"}}"""
 
 /** A Responses output item no Anthropic block can carry. */
 private const val CUSTOM_CALL_DONE =

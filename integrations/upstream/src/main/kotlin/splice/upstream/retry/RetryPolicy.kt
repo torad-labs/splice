@@ -16,14 +16,16 @@
 // and TurnWatchdog/InflightGate must not split-brain).
 package splice.upstream.retry
 
+import splice.core.failure.FailureCause
+import splice.core.failure.FailureEvidence
+import splice.core.failure.Lift
+import splice.core.failure.LoginOwner
 import splice.core.perf.PerfKeys
 import splice.core.perf.TurnPerfTiming
 import splice.core.util.ERR_SNIPPET
 import splice.core.wire.HttpStatus
 import splice.upstream.ClientFrameEmitted
 import splice.upstream.RetryNotice
-import splice.upstream.failure.FailureRules
-import splice.upstream.failure.HttpEnding
 import splice.upstream.transport.PostContext
 import splice.upstream.transport.RetryOutcome
 import splice.upstream.transport.TransportFailures
@@ -40,16 +42,28 @@ internal enum class RetryDecision { RETRY, BACKOFF, GIVE_UP }
 internal data class RateLimitTurn(
     val cooldown: RateLimitCooldown,
     val pooledAccount: Boolean,
-    /** V4-47: the 429 body. The provider's own reset lives here ("resets at <ISO8601>", resets_at,
-     *  resets_in_seconds) and a fail-fast turn never reaches upstream, so arm time is the only point
-     *  where that fact and the cooldown are both in scope. */
-    val body: String? = null,
+    /** V4-47: when the provider said its limit lifts, as its reader read it from the reply ("resets at <ISO8601>",
+     *  resets_at, resets_in_seconds, a reset header). Arm time is the only point where that fact and the cooldown
+     *  are both in scope, and since slice 3 the fact arrives read rather than as a body to parse again. */
+    val lift: Lift = Lift.Unstated,
     /** The longest pushback this turn waits out on its login: the 15s ceiling, or a warm session's wait left. */
     val sameLoginWaitMs: Long = RETRY_AFTER_GIVE_UP_MS,
 )
 
 internal class RetryRules(private val maxRetries: Int) {
-    private val failureRules = FailureRules()
+    /** When the limit the loop is planning for lifts, for the cooldown's report of the provider's own reset. Asked
+     *  only of the two causes that reach that plan; every other leaf states no reset, and says so here. */
+    private fun liftOf(cause: FailureCause.Provider): Lift = when (cause) {
+        is FailureCause.Provider.Limited -> cause.lift
+        is FailureCause.Provider.NeedsPayment -> cause.lift
+        is FailureCause.Provider.Overloaded, is FailureCause.Provider.ServerError,
+        is FailureCause.Provider.Forbidden, is FailureCause.Provider.AuthRejected,
+        is FailureCause.Provider.TooLong, is FailureCause.Provider.Rejected,
+        is FailureCause.Provider.ModelMissing, is FailureCause.Provider.Refused,
+        is FailureCause.Provider.Empty, is FailureCause.Provider.ToolTear,
+        is FailureCause.Provider.Unrecognized,
+        -> Lift.Unstated
+    }
 
     /** The sole failure exit of the retry loop — carries the HTTP status so the classifier's
      *  429/401/5xx floors actually fire (body-text-only classification left them dead code).
@@ -74,17 +88,34 @@ internal class RetryRules(private val maxRetries: Int) {
         onRetry: RetryNotice,
         refreshed: Boolean = false,
     ): UpstreamFailed {
-        if (last?.status == HttpStatus.TOO_MANY_REQUESTS) return rateLimitFailure(last, cooldown, layers, onRetry)
+        if (last == null) return UpstreamFailed(NO_ANSWER, FailureEvidence(NO_ANSWER_MESSAGE), layers)
+        if (last.limited) return rateLimitFailure(last, cooldown, layers, onRetry)
         protectFollowers(last, cooldown)
-        // A credential the vendor named dead (VendorRefusals.isAuthFailure) and still refused once a refresh ran is
-        // the client's authentication failure, in the vendor's own words: xAI's expiry 403 read as an invalid
-        // request. One the freshness rule kept from a refresh keeps its status, since that 403 is no expiry (V4-38).
-        val status = if (refreshed && last?.vendor?.deadCredential == true) HttpStatus.UNAUTHORIZED else last?.status
+        // A credential this provider named dead (ProviderDeviation.deadCredential) and still refused once a refresh
+        // ran is an authentication failure, whatever status it wore: xAI's expiry 403, which its reader reads as a
+        // rejected request until the refresh proves the login is the thing refused (V4-38 keeps the unrefreshed one
+        // as its reader read it).
+        val cause = if (refreshed && last.deadCredential) asRefusedLogin(last) else last.cause
         // V4-117: [layers] is the loop's own attempt count at the moment it gave up — passed IN
         // rather than counted here, because this file decides and never counts (see the header).
-        val ending = HttpEnding(last, status)
-        return UpstreamFailed(ending.cause, ending.evidence, layers)
+        return UpstreamFailed(cause, last.evidence, layers)
     }
+
+    /** The login itself, refused again after its refresh: read as the provider rejecting whose login it is, keeping
+     *  the words the provider said. */
+    private fun asRefusedLogin(last: RetryOutcome.Failed): FailureCause.Provider =
+        FailureCause.Provider.AuthRejected(LoginOwner.SPLICE, last.cause.said)
+
+    /** Whether a refresh could change this answer: splice's own login was refused, or this provider named the
+     *  credential dead behind another status. A CLIENT's forwarded login is never refreshed by splice — splice does
+     *  not hold it — and its 401 goes back as the client's to fix. */
+    private fun loginRefused(failed: RetryOutcome.Failed): Boolean {
+        val rejected = failed.cause as? FailureCause.Provider.AuthRejected
+        return failed.deadCredential || rejected?.owner == LoginOwner.SPLICE
+    }
+
+    /** What the provider's answer left for a log line: its body as it came, bounded. */
+    private fun snippet(failed: RetryOutcome.Failed): String = failed.evidence.body.orEmpty().take(ERR_SNIPPET)
 
     /** Native passthrough replies retain their wire; translated providers retain the plan presentation. */
     internal fun rateLimitFailure(
@@ -96,19 +127,21 @@ internal class RetryRules(private val maxRetries: Int) {
         val reply = last.native
         cooldown.rateLimitReply = reply
         val planned = last.planLimit?.let { cooldown.planHold.hold(it, onRetry) }
-        cooldown.arm(planned ?: last.retryAfterMs ?: DEFAULT_RATE_LIMIT_COOLDOWN_MS)
+        cooldown.arm(planned ?: last.evidence.retryAfterMs ?: DEFAULT_RATE_LIMIT_COOLDOWN_MS)
         val limit = last.planLimit.takeIf { reply != null || planned != null }
-        val ending = HttpEnding(last)
-        return UpstreamFailed(ending.cause, ending.evidence, layers, planLimit = limit, native = reply)
+        return UpstreamFailed(last.cause, last.evidence, layers, planLimit = limit, native = reply)
     }
 
-    /** A long non-429 pushback protects followers only after this observer finishes its retry budget.
-     *  Arming before its backoff made the observer's next attempt fail locally with a synthetic 429. */
+    /** A long pushback on a failure that is not a limit protects followers only after this observer finishes its
+     *  retry budget. Arming before its backoff made the observer's next attempt fail locally with a synthetic 429. */
     private fun protectFollowers(last: RetryOutcome.Failed?, cooldown: RateLimitCooldown) {
         val failed = last ?: return
-        val pushback = failed.retryAfterMs ?: return
-        if (pushback > RETRY_AFTER_GIVE_UP_MS && isRetryableStatus(failed.status)) cooldown.arm(pushback)
+        val pushback = failed.evidence.retryAfterMs ?: return
+        if (pushback > RETRY_AFTER_GIVE_UP_MS && waitingCanHelp(failed.cause)) cooldown.arm(pushback)
     }
+
+    /** Whether waiting can change this answer: the one table below says it, and nothing here asks a second time. */
+    private fun waitingCanHelp(cause: FailureCause.Provider): Boolean = refusedAsSent(cause) == null
 
     suspend fun planRetry(
         ctx: PostContext,
@@ -117,18 +150,20 @@ internal class RetryRules(private val maxRetries: Int) {
         refreshedOnce: Boolean,
         rateLimit: RateLimitTurn,
     ): RetryPlan {
-        // Grok Build: encrypted_content decrypt failures must not spin retries.
-        if (failureRules.isEncryptedContentError(failed.status, failed.text)) {
+        // Grok Build: a reasoning item the provider would not decrypt is refused the same way again, so the retries
+        // it used to spin bought nothing (its reader reads it as a rejected request with stale reasoning). The line
+        // keeps the words the doctor report's log tail masks the body after (DoctorLogPayloads).
+        val stale = (failed.cause as? FailureCause.Provider.Rejected)?.staleReasoning == true
+        if (stale) {
             ctx.onRetry(
-                "upstream ${failed.status} encrypted_content error (no retry): " +
-                    failed.text.take(ERR_SNIPPET),
+                "upstream rejected this turn's stale reasoning, an encrypted_content error (no retry): " +
+                    snippet(failed),
             )
             return RetryPlan(RetryDecision.GIVE_UP, refreshedOnce)
         }
-        val refreshable =
-            failureRules.isAuthRefreshableFailure(failed.status, failed.vendor.deadCredential) &&
-                ctx.auth.allowRefreshAfterFailure(failed.status, failed.text) &&
-                !refreshedOnce
+        val refreshable = loginRefused(failed) &&
+            ctx.auth.allowRefreshAfterFailure(failed.deadCredential) &&
+            !refreshedOnce
         val perf = ctx.observers.perf
         if (refreshable) perf?.add(PerfKeys.REFRESHES, 1)
         if (refreshable && TurnPerfTiming.timedOr(perf, PerfKeys.REFRESH_MS) { ctx.auth.refresh() } != null) {
@@ -136,8 +171,7 @@ internal class RetryRules(private val maxRetries: Int) {
             return RetryPlan(RetryDecision.RETRY, refreshedOnce = true)
         }
         ctx.onRetry(
-            "upstream ${failed.status} attempt ${attempt + 1}/$maxRetries: " +
-                failed.text.take(ERR_SNIPPET),
+            "upstream ${failed.evidence.status} attempt ${attempt + 1}/$maxRetries: ${snippet(failed)}",
         )
         return statusPlan(
             ctx,
@@ -173,15 +207,40 @@ internal class RetryRules(private val maxRetries: Int) {
      * what a retry IS, never holes in V4-62.
      */
     private fun fixedVerdict(failed: RetryOutcome.Failed, nextRefreshed: Boolean): String? = when {
-        // The vendor module named this refusal (VendorRefusals): its own plan, never the generic curve.
-        failed.vendor.refusal != null -> "is a known refusal (no retry: ${failed.vendor.refusal.why})"
-        nextRefreshed && failureRules.isAuthRefreshableFailure(failed.status, failed.vendor.deadCredential) ->
-            "rejected the credential again after a refresh (no retry: the bytes would be identical)"
+        nextRefreshed && loginRefused(failed) ->
+            "refused the login again after a refresh (no retry: the bytes would be identical)"
         // V4-233: the upstream named a PLAN window spent until an instant; a re-send before it meets
         // the same answer. A burst 429 carries no such statement and keeps V4-61's 15s schedule.
         failed.planLimit != null ->
             "names its ${failed.planLimit.claim} plan window spent (no retry before the reset it named)"
-        else -> failureRules.refusedAsSent(failed.status, failed.text)
+        else -> refusedAsSent(failed.cause)
+    }
+
+    /**
+     * Why the same bytes earn the same answer, per leaf (final-design.md section 8), with no `else`: a verdict about
+     * the REQUEST is fixed before a re-send leaves, and everything else is waited out. Null means waiting can help.
+     * Read once by its reader, decided once here, and the words are the log's.
+     *
+     * Waited out: a limit (its own plan), the payment V4-73 has always retried until the credits are back, an
+     * overload, a server error, an answer that arrived empty, a tool call torn mid-flight that can come back whole,
+     * and a failure no reader's table names, which keeps V4-62's budget until slice 4's engine sends it once more
+     * (final-design.md section 8: Unrecognized is tried again once, then ends by whose error it is).
+     */
+    private fun refusedAsSent(cause: FailureCause.Provider): String? = when (cause) {
+        is FailureCause.Provider.Limited, is FailureCause.Provider.NeedsPayment, is FailureCause.Provider.Overloaded,
+        is FailureCause.Provider.ServerError, is FailureCause.Provider.Empty, is FailureCause.Provider.Unrecognized,
+        -> null
+        is FailureCause.Provider.TooLong -> "says the request is too long (no retry: the same bytes, the same window)"
+        is FailureCause.Provider.ModelMissing -> "does not have the model ${cause.model} (no retry)"
+        is FailureCause.Provider.Refused -> "refused this request's content (no retry: the same bytes)"
+        is FailureCause.Provider.Rejected -> "rejected this request as sent (no retry: the same bytes)"
+        is FailureCause.Provider.Forbidden -> "will not let this login use this model (no retry)"
+        // A login splice holds is refreshed first (the gate above); one it does not hold is the client's to renew.
+        is FailureCause.Provider.AuthRejected ->
+            "refused the login this request sent (no retry: the same login, the same answer)"
+                .takeIf { cause.owner == LoginOwner.CLIENT }
+        is FailureCause.Provider.ToolTear ->
+            "tore this turn's tool call for good (no retry)".takeIf { cause.permanent }
     }
 
     /** Status/pushback half of the retry decision (split from planRetry: complexity wall). */
@@ -193,15 +252,16 @@ internal class RetryRules(private val maxRetries: Int) {
         rateLimit: RateLimitTurn,
     ): RetryPlan {
         fixedVerdict(failed, nextRefreshed)?.let { why ->
-            ctx.onRetry("upstream ${failed.status} $why")
+            ctx.onRetry("upstream ${failed.evidence.status} $why")
             return RetryPlan(RetryDecision.GIVE_UP, nextRefreshed)
         }
-        if (failed.status == HttpStatus.TOO_MANY_REQUESTS) {
+        if (failed.limited) {
             val canRetry = attempt < maxRetries - 1
-            // V4-47: the failure TEXT rides the turn, because the provider's own reset lives in the 429 body.
+            // V4-47: the reset the provider itself named rides the turn, as its reader read it from the reply's
+            // headers and body (Lift), so the cooldown reports it without reading a body of its own.
             return rateLimit.cooldown.rateLimitedPlan(
-                failed.retryAfterMs,
-                rateLimit.copy(body = failed.text),
+                failed.evidence.retryAfterMs,
+                rateLimit.copy(lift = liftOf(failed.cause)),
                 canRetry,
                 ctx.onRetry,
                 nextRefreshed,
@@ -225,10 +285,10 @@ internal class RetryRules(private val maxRetries: Int) {
         // ceiling, so the wait is bounded the way the client's patience is. Handing the raw value
         // to the curve would hold a gate slot for the 88 minutes that stacked the 2026-07-19
         // zombie herd; discarding it entirely is what V4-61 fixed for 429 and this generalizes.
-        val pushback = failed.retryAfterMs
+        val pushback = failed.evidence.retryAfterMs
         if (pushback != null && pushback > RETRY_AFTER_GIVE_UP_MS) {
             ctx.onRetry(
-                "upstream ${failed.status} Retry-After ${pushback}ms exceeds the interactive budget; " +
+                "upstream ${failed.evidence.status} Retry-After ${pushback}ms exceeds the interactive budget; " +
                     "waiting ${RETRY_AFTER_GIVE_UP_MS}ms instead",
             )
             // giveUp protects followers if this request cannot recover; its own retry stays eligible.
@@ -275,6 +335,12 @@ internal class ReissueRules {
 // The G5 budget. Internal because UpstreamClient's two re-issue notices quote it — one number, one
 // definition, so a log line can never claim a budget the interlock is not enforcing.
 internal const val MAX_STREAM_REISSUES = 2
+
+// The loop gave up with nothing to read: its whole-turn wait was already spent before any attempt went out, so no
+// provider answered and no leaf says what it answered. Slice 4's engine ends that turn as splice's own; until then
+// the exit keeps today's shape, which is a failure splice cannot name and that is not the request's fault.
+private val NO_ANSWER = FailureCause.Provider.Unrecognized(clientError = false, said = null)
+private const val NO_ANSWER_MESSAGE = "upstream was never asked: the turn's wait was spent before any attempt"
 
 private const val NOT_IMPLEMENTED = 501
 

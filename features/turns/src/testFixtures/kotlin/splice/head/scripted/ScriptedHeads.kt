@@ -343,7 +343,8 @@ public class ScriptedHeads(private val tmp: Path, public val time: VirtualTime) 
         val upstream = UpstreamClient(
             totalTimeoutMs = shape.budget.inWholeMilliseconds,
             maxRetries = shape.retries,
-            pacing = RetryPacing(waiter = time.waiter),
+            // The virtual wall clock dates each failed answer, so a recorded reset reads as its provider meant it.
+            pacing = RetryPacing(waiter = time.waiter, wall = time.wall),
             clock = time.elapsed,
         )
         val base = headDeps(tmp, upstream, log, gate, HeadDeps.HeadSeams(time.elapsed, waiter, time.ticker))

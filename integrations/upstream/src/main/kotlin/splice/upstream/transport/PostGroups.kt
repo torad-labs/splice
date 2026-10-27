@@ -5,6 +5,7 @@ package splice.upstream.transport
 import splice.core.perf.TurnPerf
 import splice.upstream.BodyAmendment
 import splice.upstream.ClientFrameEmitted
+import splice.upstream.RetryNotice
 import splice.upstream.VendorRoute
 import splice.upstream.retry.RETRY_AFTER_GIVE_UP_MS
 import splice.upstream.retry.RateLimitCooldown
@@ -52,11 +53,15 @@ public data class PostLimits(
     val warmWait: WarmLoginWait? = null,
 )
 
-/** What listens to a post without changing it: the turn's timing row, the wire recorder and the refresh observer. */
+/** What listens to a post without changing it: the turn's timing row, the wire recorder, the refresh observer and
+ *  the retry notice. */
 public data class PostObservers(
     val perf: TurnPerf? = null,
     /** V4-174: hears every send of this post after it ends (headers redacted, body exact). Null —
      *  the default and every head that did not opt in — records nothing and allocates nothing. */
     val wire: WireObserver? = null,
     val authRefreshObserver: AuthRefreshObserver = AuthRefreshObserver {},
+    /** Hears why each attempt is retried or given up, in the log's words. It moved here from the context itself when
+     *  the head's reading joined it (failure-handling slice 3), keeping the context at the constructor-arity wall. */
+    val onRetry: RetryNotice = RetryNotice {},
 )

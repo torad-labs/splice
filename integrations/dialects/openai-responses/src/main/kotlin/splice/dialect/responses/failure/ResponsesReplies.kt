@@ -47,11 +47,18 @@ public object ResponsesReplies : ReplyReader {
         return when {
             sizeRefusal && standard !is FailureCause.Provider.TooLong ->
                 FailureCause.Provider.TooLong(limitTokens = null, whileAnswering = false)
-            clientError && reply.body.contains(ENCRYPTED_CONTENT, ignoreCase = true) ->
+            refusesStaleReasoning(reply.status, reply.body) ->
                 FailureCause.Provider.Rejected(staleReasoning = true, standard.said)
             else -> standard
         }
     }
+
+    /** Whether a reply refuses reasoning this conversation can no longer send: a 4xx naming encrypted_content. The one
+     *  predicate this reading and the stale-reasoning amend both key off (ResponsesFailureAmend), so the amend can
+     *  never miss a reply this reader names, which a narrower match on the amend side once did (review 2026-07-24). */
+    public fun refusesStaleReasoning(status: Int, body: String): Boolean =
+        status in HttpStatus.BAD_REQUEST until HttpStatus.INTERNAL_SERVER_ERROR &&
+            body.contains(ENCRYPTED_CONTENT, ignoreCase = true)
 
     override fun event(event: FailedEvent): FailureCause.Provider = when (event.type) {
         INCOMPLETE_EVENT ->

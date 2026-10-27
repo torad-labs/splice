@@ -3,8 +3,6 @@
 package splice.core.auth
 
 import splice.core.failure.LoginOwner
-import splice.core.usage.PlanLimit
-import splice.core.usage.QuotaHeaderRead
 
 public sealed class Credentials {
     public data class Bearer(
@@ -83,11 +81,12 @@ public interface RefreshableAuthProvider : AuthProvider {
     public suspend fun refresh(): Credentials?
 
     /**
-     * Provider-specific veto for failures that resemble expired credentials at the HTTP layer
-     * but are actually permanent entitlement errors. The transport owns the common predicate;
-     * providers only narrow it.
+     * Provider-specific veto on spending a refresh: the reply was read as a rejected login, or as one this provider
+     * names dead ([deadCredential], a ProviderDeviation's answer), and this provider says whether a refresh can
+     * change it. The reading belongs to the provider's reader; this answers only whether to spend a token exchange
+     * on it (failure-handling slice 3: no provider reads a status or a body here).
      */
-    public fun allowRefreshAfterFailure(status: Int, body: String): Boolean = true
+    public fun allowRefreshAfterFailure(deadCredential: Boolean): Boolean = true
 
     /**
      * V4-220 item 6b: upstream answered one attempt with [status], [success] by the transport's own
@@ -95,39 +94,4 @@ public interface RefreshableAuthProvider : AuthProvider {
      * learns nothing from it; one that forwards the caller's (ClientAuthProvider) learns the verdict.
      */
     public fun upstreamAnswered(status: Int, success: Boolean): Unit = Unit
-
-    /**
-     * V4-73: does this vendor report a QUOTA EXHAUSTION behind a status the HTTP layer does not
-     * name as one? xAI answers a spent account with 403 `personal-team-blocked:spending-limit`, and
-     * the operator's law is that credits exhaustion is RETRIED until the credits are back — not
-     * surfaced as a terminal invalid_request that bypasses the cooldown, the pool and every client
-     * retry. One vendor-neutral question, asked at the transport's single failure site; the phrases
-     * that answer it live in the vendor module (grok's entitlement list), never here.
-     *
-     *  Default false: a provider that has not declared the shape keeps today's behaviour exactly,
-     *  which is what makes this safe to add to a port every provider implements.
-     */
-    public fun isQuotaExhausted(status: Int, body: String): Boolean = false
-
-    /**
-     * V4-233: does a 429's headers say this account's PLAN window is spent until a named instant?
-     * Asked once per 429, at the same failure site as [isQuotaExhausted], with the response's
-     * headers and the wall time in epoch seconds. Only a provider that forwards a Claude
-     * subscription login is answered in Anthropic's unified plan family, so only that one reads it.
-     *
-     *  Default null: every other provider keeps V4-61's handling of a 429 exactly. muse stamps its
-     *  window's reset on burst 429s that clear in seconds, and a plan hold there would sleep a client
-     *  through a limit a re-send clears.
-     */
-    public fun planLimit(header: QuotaHeaderRead, nowEpochSeconds: Long): PlanLimit? = null
-
-    /**
-     * V4-377: the same question as [planLimit] for a provider that names its spent window in the
-     * 429 BODY rather than in headers (ChatGPT's `usage_limit_reached`). Asked only when the
-     * headers named none, with the error text and the wall time in epoch seconds.
-     *
-     *  Default null, for the reason [planLimit] gives: a provider that has not declared the shape
-     *  keeps V4-61's handling of a 429 exactly.
-     */
-    public fun planLimitFromBody(body: String, nowEpochSeconds: Long): PlanLimit? = null
 }

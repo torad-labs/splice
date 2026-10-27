@@ -4,12 +4,12 @@ package splice.dialect.responses.stream
 
 import splice.core.util.LogSink
 import splice.dialect.responses.ResponsesQuirks
+import splice.dialect.responses.failure.ResponsesReplies
 import splice.dialect.responses.reasoning.ReasoningCache
 import splice.dialect.responses.reasoning.ReasoningCachePolicy
 import splice.dialect.responses.tools.ToolSearchMode
 import splice.dialect.responses.tools.ToolSurfaceLatch
 import splice.dialect.responses.tools.ToolSurfaceRecovery
-import splice.upstream.failure.FailureRules
 
 internal class ResponsesFailureAmend(
     private val quirks: ResponsesQuirks,
@@ -23,13 +23,14 @@ internal class ResponsesFailureAmend(
      *  once (NEVER-BELOW-STATUS-QUO law); every other failure keeps the plain retry plan. A 400
      *  rejecting the tool-surface shape strips the tool_search entry, retries once, and closes the
      *  latch so every LATER turn on this provider instance builds the full status-quo request.
-     *  Keyed off the SAME classifier as the retry plan's GIVE_UP (review 2026-07-24: a narrower
-     *  literal match here let any upstream wording drift skip the recovery entirely).
+     *  Keyed off the SAME predicate as the head's reading of that reply, Rejected(staleReasoning)
+     *  (ResponsesReplies, failure-handling slice 3; review 2026-07-24: a narrower literal match here
+     *  let any upstream wording drift skip the recovery entirely).
      *  Hosted definitions ride top-level tools, so its amend can retry all-eager immediately.
      *  Client mode omits deferred schemas from the request and recovers eager-only for this turn;
      *  the latch restores the full set on later turns. Both transitions are logged. */
     fun amendBodyOnFailure(status: Int, responseText: String, bodyJson: String): String? = when {
-        FailureRules().isEncryptedContentError(status, responseText) ->
+        ResponsesReplies.refusesStaleReasoning(status, responseText) ->
             cachePolicy.stripStaleReasoning(bodyJson, reasoningCache)
         surfaceRecovery.isToolSurfaceRejection(
             status,

@@ -4,6 +4,10 @@
 // upstream's words, which the evidence and the log keep whole (failure-handling slice 2). The next turn
 // still asks the provider itself (Marcos, Oct 26). The same bytes from a provider that reads no plan
 // family, or with no reset named, keep V4-61's schedule and the upstream's own words exactly.
+//
+// Failure-handling slice 3: the head's reader reads the unified headers where the reply arrives (AnthropicReplies,
+// whose own test pins the reading; this module cannot depend on the dialect), so a reader that reads them as it does
+// stands in for it here, and the login provider reads no plan family any more.
 package splice.upstream.transport
 
 import io.ktor.client.HttpClient
@@ -27,8 +31,13 @@ import splice.core.failure.LimitWindow
 import splice.core.failure.Moment
 import splice.core.failure.Position
 import splice.core.usage.PlanLimit
+import splice.core.usage.PlanLimits
 import splice.core.util.ElapsedClock
 import splice.core.util.LocalTimeText
+import splice.upstream.failure.FailedReply
+import splice.upstream.failure.OpenAiReplies
+import splice.upstream.failure.ProviderDeviation
+import splice.upstream.failure.Replies
 import splice.upstream.retry.MAX_RATE_LIMIT_COOLDOWN_MS
 import java.time.Instant
 import java.util.concurrent.atomic.AtomicBoolean
@@ -38,11 +47,31 @@ class UpstreamClientPlanLimitTest {
 
     private val forwarded = ClientAuthProvider("claude-splice")
 
-    private fun ctx(auth: RefreshableAuthProvider, notices: MutableList<String>) = PostContext(
+    /** A 429's unified plan headers read as AnthropicReplies reads them: the window they name, lifting firmly at the
+     *  reset they state, and none of the upstream's words, which are a stop phrase. */
+    private val unified = Replies(
+        OpenAiReplies,
+        object : ProviderDeviation {
+            override fun http(reply: FailedReply): FailureCause.Provider? = planLimit(reply)?.let {
+                val lift = Lift.At(Instant.ofEpochSecond(it.resetEpochSeconds), firm = true, LiftSource.RESET_HEADER)
+                FailureCause.Provider.Limited(lift, LimitWindow.FIVE_HOUR.takeIf { _ -> it.claim == "five_hour" })
+            }
+
+            override fun planLimit(reply: FailedReply): PlanLimit? = reply.takeIf { it.status == TOO_MANY_REQUESTS }
+                ?.let { PlanLimits.of({ name -> it.header(name) }, it.answeredAt.epochSecond) }
+        },
+    )
+
+    private fun ctx(
+        auth: RefreshableAuthProvider,
+        notices: MutableList<String>,
+        replies: Replies = unified,
+    ) = PostContext(
         url = "https://api.example.test/v1/messages",
         auth = auth,
         extraHeaders = { emptyMap() },
-        onRetry = { notices.add(it) },
+        replies = replies,
+        observers = PostObservers(onRetry = { notices.add(it) }),
     )
 
     private fun client(engine: MockEngine, clock: ElapsedClock = ElapsedClock { 0L }) = UpstreamClient(
@@ -116,7 +145,7 @@ class UpstreamClientPlanLimitTest {
             val client = client(engine)
 
             val failure = assertEnds<UpstreamFailed> {
-                client.posted(ctx(fakeAuth, mutableListOf()), "{}") { "unreachable" }
+                client.posted(ctx(fakeAuth, mutableListOf(), Replies(OpenAiReplies)), "{}") { "unreachable" }
             }
 
             assertEquals(3, calls.get(), "V4-61: every attempt in the budget is spent")
@@ -218,5 +247,6 @@ private val CLIENT_STOP_PHRASES = listOf(
 )
 
 private const val HOUR_S = 3_600L
+private const val TOO_MANY_REQUESTS = 429
 private const val MS = 1_000L
 private val ISO_INSTANT = Regex("""\d{4}-\d{2}-\d{2}T\d{2}:\d{2}""")

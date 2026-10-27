@@ -176,11 +176,13 @@ class WsSizeRefusalHeadTest(@param:TempDir private val tmp: Path) {
         assertFalse("overloaded" in run.body, run.body)
     }
 
+    // Failure-handling slice 3: a 400 no row names reads as Rejected, a request the provider refuses as sent, so it is
+    // sent once (final-design.md section 8), where V4-62 re-sent it to the budget. It is still no overflow.
     @Test
-    fun `the same 400 with no WebSocket refusal before it keeps its retries and no compaction line`() {
+    fun `the same 400 with no WebSocket refusal before it is sent once with no compaction line`() {
         val run = turn(refuses = false)
 
-        assertEquals(RETRIES, run.posts, "V4-62 retries a 400 nothing named")
+        assertEquals(1, run.posts, "the provider refused these bytes as sent, so they are not sent again")
         assertFalse("prompt is too long" in run.body.lowercase(), run.body)
     }
 }

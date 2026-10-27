@@ -21,6 +21,8 @@ import splice.core.auth.AuthDescription
 import splice.core.auth.Credentials
 import splice.core.auth.RefreshableAuthProvider
 import splice.upstream.failure.FailureRules
+import splice.upstream.failure.OpenAiReplies
+import splice.upstream.failure.Replies
 
 class UpstreamClientAmendTest {
 
@@ -48,6 +50,7 @@ class UpstreamClientAmendTest {
             url = "https://api.example.test/v1",
             auth = fakeAuth,
             extraHeaders = { emptyMap() },
+            replies = Replies(OpenAiReplies),
             recovery = PostRecovery(amendBodyOnFailure = amend),
         ),
         """{"input":"original"}""",

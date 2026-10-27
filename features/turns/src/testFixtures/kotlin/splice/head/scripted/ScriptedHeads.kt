@@ -10,6 +10,8 @@ import splice.core.auth.ClientAuthProvider
 import splice.core.auth.Credentials
 import splice.core.auth.LoginAnswer
 import splice.core.auth.RefreshableAuthProvider
+import splice.core.budget.HeadBudget
+import splice.core.budget.NoHeadBudget
 import splice.core.failure.FailureCause
 import splice.core.failure.Lift
 import splice.core.failure.VoiceFacts
@@ -28,14 +30,19 @@ import splice.head.HeadServer
 import splice.head.awaitListening
 import splice.head.headDeps
 import splice.head.headStores
+import splice.head.quotaFor
 import splice.head.turn.LiveTurns
 import splice.upstream.Provider
 import splice.upstream.ProviderLocations
 import splice.upstream.ProviderName
 import splice.upstream.ProviderTuning
 import splice.upstream.Waiter
+import splice.upstream.credentials.AccountPool
+import splice.upstream.credentials.AccountQuotaSource
+import splice.upstream.credentials.PoolAccount
 import splice.upstream.failure.Replies
 import splice.upstream.retry.InflightGate
+import splice.upstream.retry.RateLimitCooldown
 import splice.upstream.transport.RetryPacing
 import splice.upstream.transport.UpstreamClient
 import java.net.URI
@@ -71,6 +78,9 @@ public object ScriptedLogin {
 
     /** The token the [exchange]th renewal of a head's login mints, counting from 1. */
     public fun renewed(exchange: Int): String = "$FIRST-renewed-$exchange"
+
+    /** The token the pooled login named [login] signs with, so a test reads on the wire which login a request rode. */
+    public fun of(login: String): String = "$FIRST-$login"
 }
 
 /**
@@ -213,6 +223,15 @@ private class RefusingAuth(private val cause: FailureCause.Provider) : Refreshab
     override suspend fun describe(): AuthDescription = AuthDescription(present = true, kind = "scripted-refused")
 }
 
+/** One login of a head's pool: it signs with its own token, [ScriptedLogin.of] its [name], and is never refused. */
+private class PooledLogin(private val name: String) : RefreshableAuthProvider {
+    override suspend fun credentials(): Credentials = Credentials.Bearer(ScriptedLogin.of(name), PROVIDER_ACCOUNT)
+
+    override suspend fun refresh(): Credentials = credentials()
+
+    override suspend fun describe(): AuthDescription = AuthDescription(present = true, kind = "scripted")
+}
+
 /** A login that is gone: no credential to send and none to refresh, so a turn ends before any provider request. */
 private class SignedOutAuth : RefreshableAuthProvider {
     override suspend fun credentials(): Credentials? = null
@@ -247,6 +266,31 @@ internal enum class HeadLogin {
     }
 }
 
+/** What a head serves on: its one [login], or the named logins of a [pool] (none when empty), and the spending
+ *  [budget] that admits each of its turns, none when null. */
+internal data class HeadAccounts(
+    val login: HeadLogin = HeadLogin.SCRIPTED,
+    val pool: List<String> = emptyList(),
+    val budget: HeadBudget? = null,
+) {
+    /** The pool the head holds its named logins in, on [time]'s clocks, or null for a head with one login: the first is
+     *  the primary, and a turn takes the first free one in this order (AccountPool.order). */
+    fun loginPool(time: VirtualTime): AccountPool? = pool.takeIf { it.isNotEmpty() }?.let { logins ->
+        AccountPool(
+            logins.mapIndexed { index, name ->
+                PoolAccount(
+                    label = name,
+                    primary = index == 0,
+                    auth = PooledLogin(name),
+                    quota = AccountQuotaSource { null },
+                    cooldown = RateLimitCooldown(time.elapsed, time.wall),
+                )
+            },
+            time.wall,
+        ).also { it.order = logins }
+    }
+}
+
 /** Builds heads of each API type in front of one [provider], on [time], storing what they keep under [tmp]. */
 public class ScriptedHeads(private val tmp: Path, public val time: VirtualTime) {
     /** The provider every head built here talks to. */
@@ -256,12 +300,13 @@ public class ScriptedHeads(private val tmp: Path, public val time: VirtualTime) 
     private val built = AtomicInteger()
 
     /** An Anthropic Messages passthrough head. [replies] is how it reads its own failures: a vendor's own reading
-     *  (Kimi's) where a test names one, and the Anthropic standard otherwise. */
+     *  (Kimi's, Claude's) where a test names one, and the Anthropic standard otherwise. */
     public suspend fun anthropic(
         shape: HeadShape = HeadShape(),
         replies: Replies = Replies(AnthropicReplies),
+        says: HeadSays = HeadSays(),
     ): ScriptedHead =
-        head("anthropic", shape) { tuning, _ ->
+        head("anthropic", shape, says = says) { tuning, _ ->
             PassthroughProvider(tuning, PassthroughQuirks(tuning.key), replies = replies)
         }
 
@@ -288,15 +333,33 @@ public class ScriptedHeads(private val tmp: Path, public val time: VirtualTime) 
 
     /** An OpenAI Chat Completions head whose login is gone. */
     public suspend fun signedOutChat(shape: HeadShape = HeadShape(), says: HeadSays = HeadSays()): ScriptedHead =
-        head("signed-out", shape, HeadLogin.SIGNED_OUT, says) { tuning, _ ->
+        head("signed-out", shape, HeadAccounts(HeadLogin.SIGNED_OUT), says) { tuning, _ ->
+            ScriptedChatProvider(tuning, ChatQuirks(tuning.key))
+        }
+
+    /** An OpenAI Chat Completions head whose spending [budget] admits each of its turns first. */
+    public suspend fun budgetedChat(budget: HeadBudget): ScriptedHead =
+        head("budgeted", HeadShape(), HeadAccounts(budget = budget)) { tuning, _ ->
             ScriptedChatProvider(tuning, ChatQuirks(tuning.key))
         }
 
     /** An Anthropic Messages passthrough head with no login of its own: each turn runs on the caller's
      *  (HeadPolicy.forwardClientAuth), as on a head a LAN share's nodes reach. */
     public suspend fun forwardingAnthropic(shape: HeadShape = HeadShape()): ScriptedHead =
-        head("forwarding", shape, HeadLogin.FORWARDED) { tuning, _ ->
+        head("forwarding", shape, HeadAccounts(HeadLogin.FORWARDED)) { tuning, _ ->
             PassthroughProvider(tuning, PassthroughQuirks(tuning.key))
+        }
+
+    /** An Anthropic Messages passthrough head that holds one login per name in [logins], as a command with added
+     *  accounts holds them (AccountPool): each signs with [ScriptedLogin.of] its name, the first is the primary, and a
+     *  turn takes the first free one in this order. [replies] and [says] as [anthropic] and [chat] take them. */
+    public suspend fun pooledAnthropic(
+        logins: List<String>,
+        replies: Replies = Replies(AnthropicReplies),
+        says: HeadSays = HeadSays(),
+    ): ScriptedHead =
+        head("pooled", HeadShape(), HeadAccounts(pool = logins), says) { tuning, _ ->
+            PassthroughProvider(tuning, PassthroughQuirks(tuning.key), replies = replies)
         }
 
     /** An OpenAI Responses head over HTTP. [replies] is how it reads its own failures: a vendor's own reading (Muse's,
@@ -327,7 +390,9 @@ public class ScriptedHeads(private val tmp: Path, public val time: VirtualTime) 
         says: HeadSays = HeadSays(),
     ): ScriptedHead {
         val login = if (subscription) HeadLogin.REFUSED_SUBSCRIPTION else HeadLogin.REFUSED_LOGIN
-        return head("refused", shape, login, says) { tuning, log -> ScriptedResponsesProvider(tuning, false, log) }
+        return head("refused", shape, HeadAccounts(login), says) { tuning, log ->
+            ScriptedResponsesProvider(tuning, false, log)
+        }
     }
 
     /** A head of [kind] whose provider [build] makes, for a provider this file does not build, such as a codex head. */
@@ -335,7 +400,7 @@ public class ScriptedHeads(private val tmp: Path, public val time: VirtualTime) 
         kind: String,
         shape: HeadShape = HeadShape(),
         build: (ProviderTuning, LogSink) -> Provider,
-    ): ScriptedHead = head(kind, shape, HeadLogin.SCRIPTED, build = build)
+    ): ScriptedHead = head(kind, shape, HeadAccounts(), build = build)
 
     /** Releases the provider's holds, stops every head, closes the clock and stops the provider. */
     public suspend fun stop() {
@@ -352,7 +417,7 @@ public class ScriptedHeads(private val tmp: Path, public val time: VirtualTime) 
     private suspend fun head(
         kind: String,
         shape: HeadShape,
-        login: HeadLogin = HeadLogin.SCRIPTED,
+        accounts: HeadAccounts = HeadAccounts(),
         says: HeadSays = HeadSays(),
         build: (ProviderTuning, LogSink) -> Provider,
     ): ScriptedHead {
@@ -371,15 +436,18 @@ public class ScriptedHeads(private val tmp: Path, public val time: VirtualTime) 
         )
         val base = headDeps(tmp, upstream, log, gate, HeadDeps.HeadSeams(time.elapsed, waiter, time.ticker))
         val suffix = "-$key-${built.incrementAndGet()}"
+        val pool = accounts.loginPool(time)
         val deps = base.copy(
             traffic = base.traffic.copy(liveTurns = liveTurns),
             stores = headStores(tmp, suffix = suffix),
-            policy = base.policy.copy(stopDrainMs = 0, forwardClientAuth = login == HeadLogin.FORWARDED),
+            policy = base.policy.copy(stopDrainMs = 0, forwardClientAuth = accounts.login == HeadLogin.FORWARDED),
+            quotaBundle = quotaFor(null, pool, budget = accounts.budget ?: NoHeadBudget),
         )
         val relay = if (shape.relayed) PathRelay(URI(provider.baseUrl).port) else null
         val baseUrl = relay?.let { "http://127.0.0.1:${it.port}" } ?: provider.baseUrl
+        val auth = pool?.members?.single(PoolAccount::primary)?.auth ?: accounts.login.auth(key)
         val server = HeadServer(
-            build(tuning(key, shape, baseUrl, login, says.loginCommand), log),
+            build(tuning(key, shape, baseUrl, auth, says.loginCommand), log),
             listenPort = 0,
             deps = deps,
             voiceFacts = VoiceFacts(says.providerName, local = kind == LOCAL_KIND, zone = LINE_ZONE),
@@ -395,7 +463,7 @@ public class ScriptedHeads(private val tmp: Path, public val time: VirtualTime) 
         key: String,
         shape: HeadShape,
         baseUrl: String,
-        login: HeadLogin,
+        auth: RefreshableAuthProvider,
         loginCommand: String,
     ): ProviderTuning =
         ProviderTuning(
@@ -406,7 +474,7 @@ public class ScriptedHeads(private val tmp: Path, public val time: VirtualTime) 
                 defaultContextWindow = CONTEXT_WINDOW,
             ),
             pinnedModel = shape.model,
-            auth = login.auth(key),
+            auth = auth,
             locations = ProviderLocations(baseUrl = baseUrl),
             watchdog = WatchdogBudget(shape.firstOutput, shape.budget, shape.progressCap),
             loginCommand = loginCommand,

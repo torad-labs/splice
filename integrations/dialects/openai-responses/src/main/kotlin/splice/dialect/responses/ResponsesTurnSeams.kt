@@ -156,8 +156,9 @@ internal class ResponsesTurnSeams(private val deps: ResponsesTurnSeamsDeps) {
     // same event for its RemoteCompactionV2 (responses_retry.rs) and the user never sees it. A
     // compaction's partial is usage-only (ResponsesOutcomePayload), so the controller can only ever
     // answer with the verbatim whole-request restart — the shape a buffered turn needs — and the
-    // deterministic verdicts (cyber_policy, refusals, content filter) carry no partial and are never
-    // re-POSTed. NB: fold-eligible turns get re-anchor via FoldRunner's trigger-B, not
+    // deterministic verdicts (cyber_policy, refusals, content filter) are never re-POSTed: RetryEngine
+    // ends each at once, whatever salvage its round carries (failure-handling slice 4). NB: fold-eligible
+    // turns get re-anchor via FoldRunner's trigger-B, not
     // ReanchorRunner (driveOneTurn routes fold first).
     fun reanchorPolicy(meta: TurnMeta): ReanchorPolicy =
         if (liteShape.isLiteModel(meta.route.upstreamModel)) liteReanchorPolicy else defaultReanchorPolicy

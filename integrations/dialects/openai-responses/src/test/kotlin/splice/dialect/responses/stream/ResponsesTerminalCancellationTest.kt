@@ -20,8 +20,13 @@ import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 import splice.core.failure.PersistedCause
 import splice.core.turn.TurnOutcome
+import splice.upstream.retry.RetryEngine
+import splice.upstream.retry.RetryLedger
+import splice.upstream.retry.RetryStep
+import splice.upstream.retry.TurnFacts
 import splice.upstream.sse.WireSink
 import java.io.IOException
+import java.time.Instant
 
 private val CONTENT_START = Json.parseToJsonElement(
     """{"type":"response.output_item.added","output_index":0,"item":{"type":"message","role":"assistant"}}""",
@@ -113,10 +118,16 @@ class ResponsesTerminalCancellationTest {
                 throw CancellationException("synthetic failed-terminal cancellation")
             }
             val outcome = ResponsesStreamTranslator(ctx()).driveTurn(events, RecordingSink()) as TurnOutcome.Failure
-            assertEquals(100L, outcome.salvagedUsage.inputTokens)
-            assertEquals(7L, outcome.salvagedUsage.outputTokens)
-            assertNull(outcome.partial, "billing must not turn a permanent ending into a re-anchor")
+            // The bill the turn reads (RoundSplice.withFailureSalvage): the round's salvage, else what was salvaged.
+            val billed = outcome.partial?.usage ?: outcome.salvagedUsage
+            assertEquals(100L, billed.inputTokens)
+            assertEquals(7L, billed.outputTokens)
             assertTrue(outcome.cause.permanent)
+            // Failure-handling slice 4: the salvage rides every in-band failure, and the engine ends a permanent one
+            // even where the head could continue from it, so billing never turns it into a re-anchor.
+            val facts = TurnFacts(false, false, 0L, false, true, Long.MAX_VALUE, null)
+            val step = RetryEngine.next(outcome.cause, outcome.at, RetryLedger(), facts, Instant.EPOCH)
+            assertTrue(step is RetryStep.End, "billing must not turn a permanent ending into a re-anchor: $step")
         }
     }
 

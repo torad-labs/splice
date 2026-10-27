@@ -66,15 +66,16 @@ internal class ResponsesTerminalDecision(
 
     /**
      * A response.failed or error event the backend actually sent (G20 provenance), read once by the head's own reader
-     * (failure-handling slice 3), which reads it as the same kind its HTTP twin is. Only a failure that is not
-     * permanent carries the round's salvage, so a refusal, an overflow or a request the provider rejected never
-     * re-POSTs the identical full context (V4-117, V4-81). An error no table names is not permanent
-     * (OpenAiReplies): it carries its round too, code-less or not, and ResponsesReanchorPolicy sends it once more,
-     * no more, as final-design.md section 8 plans for Unrecognized.
+     * (failure-handling slice 3), which reads it as the same kind its HTTP twin is. Every one carries the round's
+     * salvage: whether the turn goes on from it is RetryEngine's answer (failure-handling slice 4), which ends a
+     * refusal, an overflow and a request the provider rejected at once, so none re-POSTs the identical full context
+     * (V4-117, V4-81), and waits a limit met after the answer began out before it continues from what arrived, as
+     * section 8's rows say. Withholding the salvage from every permanent kind here ended that limit at once. An error
+     * no table names carries its round too, code-less or not, and the engine sends it once more, no more.
      */
     private fun failedEvent(event: JsonObject, state: ResponsesTurnState): TurnOutcome.Failure {
         val cause = read(ResponsesReplies.FAILED_EVENT, event)
-        val partial = if (cause.permanent) null else payload.partialOrNull(state)
+        val partial = payload.partialOrNull(state)
         val error = ResponsesReplies.error(event)
         // The journal keeps the event's own vocabulary: its code, else the event it came in, then the vendor's words.
         val code = error.code.ifEmpty { error.type }.ifEmpty { JsonScalars.strOrEmpty(event["type"]) }

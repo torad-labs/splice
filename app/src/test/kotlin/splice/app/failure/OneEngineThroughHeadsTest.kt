@@ -78,6 +78,10 @@ private const val CODEX_LOGIN =
 private const val RESPONSES_OVERLOADED =
     """{"type":"response.failed","response":{"error":{"code":"server_is_overloaded","message":"Try again."}}}"""
 
+/** A Responses stream's own failure event for a rate limit, with no time stated. */
+private const val RESPONSES_RATE_LIMITED =
+    """{"type":"response.failed","response":{"error":{"code":"rate_limit_exceeded","message":"Rate limit reached."}}}"""
+
 /** A proxy's login page sent as a 200, a body with no event in it that no reader names. */
 private const val PROXY_LOGIN_PAGE = "<html><body>Sign in to continue.</body></html>"
 
@@ -389,6 +393,26 @@ class OneEngineThroughHeadsTest {
 
             // The overload's waits, each through the turn's waits, and every continuation carries what arrived.
             assertEquals(listOf(2, 4, 8, 15, 30).map { it.seconds }, gaps(provider.requests), answer.describe())
+            assertTrue(provider.requests.drop(1).all { "partial words" in it.body }, answer.describe())
+            assertTrue(answer.contentBeforeError, answer.describe())
+        }
+    }
+
+    @Test
+    fun `a limit met after the answer began is continued from what arrived after 2, 4, 8 and 15 s`(
+        @TempDir tmp: Path,
+    ) = runTest {
+        withScriptedHeads(tmp) {
+            val limited = reply { responsesStart(); responsesText("partial words"); event(RESPONSES_RATE_LIMITED) }
+            provider.script(*Array(1 + 4 + 1) { limited })
+            val head = responses()
+
+            val answer = head.client.send()
+
+            // Section 8's Limited row with no time stated: four burst waits wherever the limit is met, and after the
+            // answer began each continuation carries what arrived. The fifth limit would hold the turn, which ends it
+            // until slice 5 holds one.
+            assertEquals(listOf(2, 4, 8, 15).map { it.seconds }, gaps(provider.requests), answer.describe())
             assertTrue(provider.requests.drop(1).all { "partial words" in it.body }, answer.describe())
             assertTrue(answer.contentBeforeError, answer.describe())
         }

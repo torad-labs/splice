@@ -53,8 +53,13 @@ import splice.upstream.ProviderName
 import splice.upstream.ProviderTuning
 import splice.upstream.ReanchorRound
 import splice.upstream.TurnSignals
+import splice.upstream.retry.RetryEngine
+import splice.upstream.retry.RetryLedger
+import splice.upstream.retry.RetryStep
+import splice.upstream.retry.TurnFacts
 import splice.upstream.retry.WatchdogFired
 import splice.upstream.sse.WireSink
+import java.time.Instant
 import kotlin.time.Duration.Companion.seconds
 
 private fun previousBody(): JsonObject = Json.parseToJsonElement(
@@ -666,8 +671,7 @@ class ResponsesReanchorPartialTest {
         // the provider rejected (OpenAiReplies), where the shared classifier called it an api_error.
         assertEquals(ErrorType.INVALID_REQUEST, ClientWire.ownType(failure.cause))
         assertTrue(failure.cause.providerReported)
-        assertNull(failure.partial)
-        assertNull(controller.continuationForFailure(ReanchorRound(previousBody(), failure, attempt = 0)))
+        assertNeverSentAgain(failure)
     }
 
     // DR-10 redo (codex end-to-end counterexample): the arm above passed even pre-fix because its
@@ -687,8 +691,17 @@ class ResponsesReanchorPartialTest {
         )
         val failure = outcome as TurnOutcome.Failure
         assertTrue(failure.cause.providerReported)
-        assertNull(failure.partial, "a deterministic failure must not carry a re-POSTable partial")
-        assertNull(controller.continuationForFailure(ReanchorRound(previousBody(), failure, attempt = 0)))
+        assertNeverSentAgain(failure)
+    }
+
+    /** Failure-handling slice 4: the round's salvage rides every in-band failure, and whether the turn goes on from it
+     *  is RetryEngine's answer on the turn's ledger. For a request the provider rejected it is the end, whether or not
+     *  the head's rule could continue from what arrived. */
+    private fun assertNeverSentAgain(failure: TurnOutcome.Failure) {
+        val canContinue = controller.continuationForFailure(ReanchorRound(previousBody(), failure, attempt = 0)) != null
+        val facts = TurnFacts(false, false, 0L, false, canContinue, Long.MAX_VALUE, null)
+        val step = RetryEngine.next(failure.cause, failure.at, RetryLedger(), facts, Instant.EPOCH)
+        assertTrue(step is RetryStep.End, "a deterministic failure is never re-POSTed: $step")
     }
 
     // DR-10 sweep follow-up: the FLAT error event has no error envelope — the reducer's payload

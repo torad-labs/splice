@@ -10,12 +10,12 @@ import org.junit.jupiter.api.Assertions.assertFalse
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.io.TempDir
+import splice.app.auth.HeadModelsSource
 import splice.app.auth.SignInPlanner
 import splice.app.daemon.HeadCatalogs
 import splice.app.daemon.TopologyWindows
 import splice.app.head.LaunchSpecFactory
 import splice.app.provider.HeadBuildInputs
-import splice.app.provider.HeadModelsSource
 import splice.app.provider.ModelRosters
 import splice.app.provider.ProviderBuild
 import splice.app.provider.PublishedRoster

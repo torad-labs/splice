@@ -6,6 +6,7 @@ import kotlinx.coroutines.cancelAndJoin
 import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.job
 import splice.app.TokenUrlRefreshCall
+import splice.app.auth.HeadModelsSource
 import splice.app.auth.SignInPlanner
 import splice.app.control.ControlAuth
 import splice.app.control.ControlRuntime
@@ -21,7 +22,6 @@ import splice.app.head.ManagedHeadFactory
 import splice.app.head.QuotaPollSeams
 import splice.app.head.StartQuotaPoller
 import splice.app.provider.HeadBuildInputs
-import splice.app.provider.HeadModelsSource
 import splice.app.provider.ModelRosters
 import splice.app.provider.ProviderAssembly
 import splice.app.provider.ProviderBuild

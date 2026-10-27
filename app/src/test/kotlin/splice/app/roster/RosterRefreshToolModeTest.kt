@@ -8,9 +8,9 @@ import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.Timeout
 import org.junit.jupiter.api.io.TempDir
 import splice.app.TokenUrlRefreshCall
+import splice.app.auth.HeadModelsSource
 import splice.app.provider.CodexCodeModeAssembly
 import splice.app.provider.CodexResponsesArm
-import splice.app.provider.HeadModelsSource
 import splice.app.provider.ModelRosters
 import splice.app.provider.ProviderBuild
 import splice.app.provider.PublishedRoster

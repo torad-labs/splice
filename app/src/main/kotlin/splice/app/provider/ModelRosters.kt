@@ -25,23 +25,18 @@ import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withTimeoutOrNull
 import splice.app.DaemonBoundary
-import splice.app.auth.StoredModelCredentials
-import splice.core.auth.CredentialKey
-import splice.core.auth.Credentials
+import splice.app.auth.EndpointModels
+import splice.app.auth.HeadModelsSource
 import splice.core.config.StatePaths
 import splice.core.model.DiscoveredModel
 import splice.core.model.HeadDiscoveredModels
 import splice.core.topology.ProviderConfig
 import splice.core.util.Cancellables
-import splice.core.util.DaemonLog
-import splice.core.util.EnvReader
 import splice.core.util.LogSink
 import splice.core.util.SafeFailureText
 import splice.models.discovery.Discovery
 import splice.models.discovery.KeptRoster
-import splice.models.discovery.ModelDiscovery
 import splice.models.discovery.RosterCache
-import splice.oauth.StoredCredential
 import splice.upstream.Ticker
 import splice.upstream.codemode.ProcessDispatchers
 import splice.upstream.codemode.ProcessTicker
@@ -65,35 +60,9 @@ private const val REFRESH_INTERVAL_MS = 3_600_000L
 private const val CREDENTIAL_RECHECK_MS = 2_000L
 
 /** What a head's list was asked with when it presented no credential, and when its credential could not be read.
- *  Neither is a [CredentialKey], which is hex. */
+ *  Neither is a credential key, which is hex. */
 private const val NO_CREDENTIAL = "none"
 private const val CREDENTIAL_UNREADABLE = "unreadable"
-
-/** One head's provider asked what it serves, and the credential the ask presents. [EndpointModels] in production. */
-internal fun interface HeadModelsSource {
-    fun discover(key: String, provider: ProviderConfig): Discovery
-
-    /** The credential [discover] presents for [key], as a one-way key that is never logged; null when it presents
-     *  none. A source that presents nothing (a test's fake) is never asked again for a changed credential. */
-    fun presenting(key: String, provider: ProviderConfig): String? = null
-}
-
-/** Production [HeadModelsSource]: the models feature's discovery, presenting the credential a head's turns present
- *  (StoredCredential.bearer, the same one `splice models` uses): an api-key head's key from the environment or the
- *  key store, else the token a sign-in left in the head's credential file. Both read through one
- *  [StoredCredential], so a key store that cannot be read is said once per version however often it is reread. */
-internal class EndpointModels(
-    private val env: EnvReader = EnvReader(System::getenv),
-    log: LogSink = LogSink(DaemonLog::write),
-) : HeadModelsSource {
-    private val stored = StoredCredential(log = log)
-    private val discovery = ModelDiscovery(StoredModelCredentials(stored))
-
-    override fun discover(key: String, provider: ProviderConfig): Discovery = discovery.discover(key, provider, env)
-
-    override fun presenting(key: String, provider: ProviderConfig): String? =
-        stored.bearer(provider, key, env)?.let { CredentialKey.fromCredentials(Credentials.Bearer(it)) }
-}
 
 /** Each head's discovered models, kept under [statePaths] between starts. [source] is each head's own
  *  endpoint in the daemon; a test hands a fake. */

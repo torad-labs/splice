@@ -8,6 +8,7 @@ import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.io.TempDir
+import splice.app.auth.HeadModelsSource
 import splice.core.config.StatePaths
 import splice.core.model.DiscoveredModel
 import splice.core.model.ModelEntry

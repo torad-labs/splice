@@ -14,7 +14,7 @@ import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.Timeout
 import org.junit.jupiter.api.io.TempDir
-import splice.app.provider.EndpointModels
+import splice.app.auth.EndpointModels
 import splice.app.provider.ModelRosters
 import splice.core.config.StatePaths
 import splice.core.topology.AuthConfig

@@ -156,6 +156,10 @@ public data class ResponsesToolQuirks(
      *  know the item refuses the whole request (Muse, 2026-10-27: 400 "`input[8]` did not match any supported type").
      *  The provider that knows its backend takes the item sets it. */
     val acceptsInlineToolChanges: Boolean = false,
+    /** The backend holds every answer to a caller's json_schema text format whether or not strict asks it to check
+     *  the schema first, so the format is sent with strict false and a schema outside the strict subset is answered
+     *  instead of refused. False sends strict true, the OpenAI contract, where only strict guarantees the schema. */
+    val constrainsOutputWithoutStrict: Boolean = false,
 )
 
 /** The gateway's own help across tool round-trips: held reasoning and the loop breaker. */

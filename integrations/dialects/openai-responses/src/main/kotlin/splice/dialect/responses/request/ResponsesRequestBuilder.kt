@@ -77,7 +77,8 @@ internal class ResponsesRequestBuilder(
         // A head that takes tool changes inline holds its initial direct-function surface in tools and appends later
         // declarations at their source boundaries; any other head lists the tools the conversation holds now. A
         // source-deferred definition stays in the catalog for a future tool_reference but is not offered before it.
-        val outputFormat = ResponsesOutputSchema.format(body, raw)
+        val outputFormat =
+            ResponsesOutputSchema.format(body, raw, strict = !quirks.tools.constrainsOutputWithoutStrict)
         val rawControls = controls.wire(raw)
         val wireBody = ResponsesOutputSchema.wireBody(body, outputFormat)
         val dynamicTools = ResponsesDynamicToolChanges.availability(wireBody)

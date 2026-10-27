@@ -18,6 +18,7 @@ import splice.dialect.responses.ResponsesToolQuirks
 import splice.dialect.responses.tools.ToolDeferralPolicy
 import splice.dialect.responses.tools.ToolSearchMode
 import splice.oauth.muse.MuseRefresh
+import splice.provider.muse.MUSE_CONSTRAINS_OUTPUT_WITHOUT_STRICT
 import splice.provider.muse.MUSE_CONTINUES_REASONING_ONLY
 import splice.provider.muse.MUSE_TAKES_INLINE_TOOL_CHANGES
 import splice.provider.muse.MuseGatewayRoutes
@@ -92,6 +93,7 @@ internal class MuseResponsesArm(
                 emitToolChoice = true,
                 toolSurface = ToolDeferralPolicy(mode = ToolSearchMode.HOSTED),
                 acceptsInlineToolChanges = MUSE_TAKES_INLINE_TOOL_CHANGES,
+                constrainsOutputWithoutStrict = MUSE_CONSTRAINS_OUTPUT_WITHOUT_STRICT,
             ),
             request = ResponsesRequestControlQuirks(
                 serviceTier = ResponsesServiceTierSupport.UNSUPPORTED,

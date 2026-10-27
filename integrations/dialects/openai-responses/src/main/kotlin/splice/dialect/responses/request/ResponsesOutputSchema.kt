@@ -108,7 +108,10 @@ internal object ResponsesOutputSchema {
         }
     }
 
-    fun format(body: AnthropicRequest, raw: JsonObject): JsonObject? {
+    /** The caller's schema as a json_schema text format. [strict] asks the backend to check the schema against its
+     *  strict subset; a backend that holds every answer to the schema without that check is sent false, so a schema
+     *  outside the subset is answered instead of refused. */
+    fun format(body: AnthropicRequest, raw: JsonObject, strict: Boolean = true): JsonObject? {
         val native = nativeFormat(raw) as? JsonObject
         val tool = body.tools.firstOrNull { it.name == STRUCTURED_OUTPUT_TOOL }
         val schema = (native?.get(SCHEMA_KEY) as? JsonObject) ?: tool?.inputSchema ?: return null
@@ -116,7 +119,7 @@ internal object ResponsesOutputSchema {
             put("type", "json_schema")
             put("name", JsonScalars.str(native, "name") ?: "structured_output")
             put(SCHEMA_KEY, schema)
-            put("strict", true)
+            put("strict", strict)
         }
     }
 }

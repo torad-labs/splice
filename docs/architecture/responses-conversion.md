@@ -34,6 +34,7 @@ The synthetic code-mode execution and waiting functions are not ordinary nested 
 | --- | --- | --- |
 | Supported sampling and output controls | Carry public equivalents through shared conversion. Keep provider-specific service-tier policies. Unsupported source requirements receive explicit admission refusals. | `ResponsesRawRequestControlsTest` |
 | Positive source output caps | Use public max_output_tokens where the endpoint profile enables it. Codex retains its non-enforcement policy, including compaction. | `CodexProviderTest`, `ResponsesRequestBuilderTest` |
+| Caller output schemas | Send the caller's schema unchanged as a json_schema text format. Strict is true unless the profile's backend holds every answer to the schema without it (Muse), where strict is false so a schema outside the strict subset is answered rather than refused. | `MuseStructuredOutputTest`, `ResponsesOutputSchemaRefusalTest` |
 | Source cache-only warmup | Refuse max_tokens:0 rather than silently generating an answer. | `ResponsesRawRequestControlsTest` |
 | Explicit effort directives | Preserve caller/head precedence and apply the effective public reasoning setting. Do not vary effort automatically by turn type. | `ResponsesRawRequestControlsTest` |
 | Public reasoning context | Support auto, current_turn and all_turns independently of Lite. Effort, summary and context remain separate controls. | `ResponsesReasoningContextTest` |

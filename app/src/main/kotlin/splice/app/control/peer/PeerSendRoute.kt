@@ -6,6 +6,8 @@ package splice.app.control.peer
 
 import io.ktor.http.HttpStatusCode
 import io.ktor.server.application.ApplicationCall
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
@@ -24,6 +26,10 @@ import splice.sessions.registry.SessionRecord
 // why: spec 1.1 and 3.4, the text cap after defusing; the route refuses a longer raw text with 413 before it is built.
 private const val SEND_TEXT_MAX_BYTES = 32_768
 
+// why: a send under a caller's id holds one of this many locks, picked by its peer and id, so the locks take the
+// same memory however many ids pass; two ids that pick the same lock only wait out each other's send.
+private const val ID_LOCKS = 256
+
 /** One send's text and its optional parts, and how its id met this peer's earlier sends. */
 private data class Sending(val text: String, val request: PeerSendRequest, val turn: IdTurn)
 
@@ -35,6 +41,7 @@ internal class PeerSendRoute(
     private val store = parts.store
     private val targets = PeerTargets(parts.registry)
     private val jsonBody = JsonBody()
+    private val idLocks = Array(ID_LOCKS) { Mutex() }
 
     suspend fun send(call: ApplicationCall, principal: PeerPrincipal) {
         sendAnswer(principal, jsonBody.parse(call)).send(call)
@@ -50,19 +57,28 @@ internal class PeerSendRoute(
         return textRefusal(text) ?: requested(config, to, text, body)
     }
 
-    /** The id and pin read, then the id's earlier sends met: a repeat answers the first send again. */
+    /** The id and pin read, then the id's earlier sends met: a repeat answers the first send again. A send under an
+     *  id holds that id's lock from this read to the record of its own send (PR #247's review), so of the sends under
+     *  one id that arrive together only the first goes, and each of the others finds it and answers it again. */
     private suspend fun requested(config: PeerConfig, to: String, text: String, body: JsonObject?): PeerAnswer {
         val request = PeerSendRequests.of(body, text)
         val malformed = request.refusal(body)
-        val prior = request.id?.takeIf { malformed == null }?.let { id -> parts.mail?.prior(config.name, id) }
-        val turn = PeerSendRequests.turn(prior, request, to)
-        return when {
-            malformed != null -> PeerReplies.refuse(HttpStatusCode.BadRequest, malformed)
-            turn is IdTurn.Taken -> PeerReplies.refuse(HttpStatusCode.Conflict, turn.reason)
-            turn == IdTurn.Repeat && prior != null -> repeated(request.id.orEmpty(), prior)
-            else -> resolved(config, targets.resolve(to), Sending(text, request, turn))
+        val id = request.id?.takeIf { malformed == null }
+        return oneAtATime(config.name, id) {
+            val prior = id?.let { parts.mail?.prior(config.name, it) }
+            val turn = PeerSendRequests.turn(prior, request, to)
+            when {
+                malformed != null -> PeerReplies.refuse(HttpStatusCode.BadRequest, malformed)
+                turn is IdTurn.Taken -> PeerReplies.refuse(HttpStatusCode.Conflict, turn.reason)
+                turn == IdTurn.Repeat && prior != null -> repeated(request.id.orEmpty(), prior)
+                else -> resolved(config, targets.resolve(to), Sending(text, request, turn))
+            }
         }
     }
+
+    /** [block] under the lock [peer] and [id] pick, or at once for a send with no id, which waits on no other send. */
+    private suspend inline fun <T> oneAtATime(peer: String, id: String?, block: () -> T): T =
+        if (id == null) block() else idLocks[(peer to id).hashCode().mod(ID_LOCKS)].withLock(action = block)
 
     /** A target that is not one running session alone on its socket is refused with the resolver's reason. */
     private suspend fun resolved(config: PeerConfig, target: PeerTarget, sending: Sending): PeerAnswer =

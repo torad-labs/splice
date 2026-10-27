@@ -26,6 +26,7 @@ public class ChatRequestBuilder(
     private val wire = ChatWireMapper(quirks)
     private val assembler = ChatRequestAssembler(quirks, wire)
     private val effortTiers = ChatEffortTiers(quirks.reasoning.xhighModels)
+    private val toolChanges = ChatToolChanges()
 
     public fun build(
         body: AnthropicRequest,
@@ -39,7 +40,9 @@ public class ChatRequestBuilder(
         // builder used to do (directive appended to the system message, tools stripped) moved the
         // backend's prompt-cache prefix from token zero, so every compaction read the whole
         // transcript cold. `compact` reaches TurnMeta for the response side only.
-        val emitTools = quirks.capabilities.supportsTools && body.tools.isNotEmpty()
+        // The tools the conversation holds now: no Chat message carries Claude Code's tool changes, so the list does.
+        val listed = body.copy(tools = toolChanges.current(body))
+        val emitTools = quirks.capabilities.supportsTools && listed.tools.isNotEmpty()
         val effort = quirks.reasoning.effortVocabulary?.effort(raw, upstreamModel)
             ?: effortTiers.chatReasoningEffort(body, upstreamModel)
         val context = JsonWire.string(
@@ -55,7 +58,7 @@ public class ChatRequestBuilder(
         val cacheKey = quirks.sessionCacheKeyPrefix?.let { prefix -> sessionId?.let { "$prefix:$it" } }
         val lease = affinity?.let { it.lease(it.conversationOf(sessionId, messages)) }
         val knobs = ChatKnobs(effort, cacheKey, lease?.slot)
-        val req = assembler.chatRequestObject(upstreamModel, messages, emitTools, body, knobs)
+        val req = assembler.chatRequestObject(upstreamModel, messages, emitTools, listed, knobs)
         val meta = TurnMeta(
             compact = compact,
             reasoning = TurnReasoning(

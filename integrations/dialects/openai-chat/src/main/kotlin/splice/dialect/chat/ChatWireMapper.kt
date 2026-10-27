@@ -32,6 +32,7 @@ internal class ChatWireMapper(private val quirks: ChatQuirks) {
 
     private val floor = ImageFloor(quirks.capabilities.minImageEdgePx)
     private val toolInput = ChatToolInput()
+    private val toolChanges = ChatToolChanges()
     private val fragments = MessageFragments()
 
     fun messagesArray(system: String?, body: AnthropicRequest, context: String? = null): JsonArray = buildJsonArray {
@@ -57,9 +58,11 @@ internal class ChatWireMapper(private val quirks: ChatQuirks) {
 
     /** A block kind splice does not enumerate cannot ride this wire; it leaves a marker, never a silent drop.
      *  A tool_reference says its tool is loaded: this wire sends the client's whole tool list whenever the head
-     *  takes tools at all, so there the sentence is true. */
-    private fun unknownBlockMarkers(content: List<splice.core.wire.ContentBlock>): List<String> =
+     *  takes tools at all, so there the sentence is true. A tool change in a system message leaves no marker where
+     *  the head takes tools, since the tool list carries it ([ChatToolChanges]). */
+    private fun unknownBlockMarkers(role: String, content: List<splice.core.wire.ContentBlock>): List<String> =
         content.filterIsInstance<UnknownBlock>()
+            .filterNot { quirks.capabilities.supportsTools && toolChanges.carried(role, it) }
             .map { it.omissionMarker(quirks.providerTag, toolsCallable = quirks.capabilities.supportsTools) }
 
     // the content-block split is the mapping contract
@@ -73,7 +76,7 @@ internal class ChatWireMapper(private val quirks: ChatQuirks) {
         val toolUses = content.filterIsInstance<ToolUseBlock>()
         // Dropped media leaves an HONEST MARKER (the v25 doctrine: screenshots silently
         // vanishing is the regression class; the model must know something was omitted).
-        val markers = quirks.omissionMarkers(content) + unknownBlockMarkers(content)
+        val markers = quirks.omissionMarkers(content) + unknownBlockMarkers(role, content)
         val imageBlocks = content.filterIsInstance<ImageBlock>()
         // DR-155: split off the images a vendor floor PROVES are undersized before anything maps
         // them, so the two drop reasons stay two reasons. `mappable` is what the old code saw.
@@ -150,8 +153,8 @@ internal class ChatWireMapper(private val quirks: ChatQuirks) {
         val trailingImages = mutableListOf<Pair<String, List<JsonObject>>>()
         toolResults.forEach { tr ->
             // A nested block kind splice does not enumerate leaves its marker in the output, never an empty result.
-            val out = (tr.content.filterIsInstance<TextBlock>().map { it.text } + unknownBlockMarkers(tr.content))
-                .joinToString("\n")
+            val texts = tr.content.filterIsInstance<TextBlock>().map { it.text }
+            val out = (texts + unknownBlockMarkers("tool", tr.content)).joinToString("\n")
             // DR-155: the same pre-split as the message path. A tool_result carrying a screenshot
             // AND a favicon-sized image is the realistic case, and it must say both things.
             val (undersized, mappable) = tr.content.filterIsInstance<ImageBlock>()

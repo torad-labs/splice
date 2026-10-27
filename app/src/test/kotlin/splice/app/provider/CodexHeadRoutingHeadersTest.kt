@@ -38,11 +38,22 @@ import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.io.TempDir
 import splice.app.TokenUrlRefreshCall
+import splice.configuration.add.AddLinked
+import splice.configuration.add.AddLogin
+import splice.configuration.add.AddPorts
+import splice.configuration.add.AddPrompter
+import splice.configuration.add.AddVerb
+import splice.configuration.add.DaemonRestart
+import splice.configuration.add.DaemonUpProbe
+import splice.configuration.add.WrapperInstall
 import splice.core.auth.RefreshAttempt
 import splice.core.config.ConfigService
 import splice.core.config.StatePaths
+import splice.core.config.UserHome
+import splice.core.terminal.TerminalOutput
 import splice.core.topology.Topology
 import splice.core.turn.WatchdogBudget
+import splice.core.util.EnvReader
 import splice.head.HeadDeps
 import splice.head.HeadServer
 import splice.head.awaitListening
@@ -207,7 +218,7 @@ private class CodexRig(
                 authFile,
                 """{"tokens":{"access_token":"synthetic-access","account_id":"$ACCOUNT_ID"}}""",
             )
-            val topology = TopologyLoader.parse(toml(backend, authFile, quirks, extraHeaders))
+            val topology = TopologyLoader.parse(setupTables(root, backend, authFile, quirks, extraHeaders))
             val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
             val head = HeadServer(
                 provider = provider(root, topology, scope),
@@ -220,35 +231,62 @@ private class CodexRig(
             return CodexRig(backend, head, scope)
         }
 
-        /** The codex profile's tables as setup writes them ([quirks] and [extraHeaders] empty), with the base URL on
-         *  the scripted backend. */
-        private fun toml(backend: ScriptedProvider, authFile: Path, quirks: String, extraHeaders: String): String {
-            val quirksTable = if (quirks.isEmpty()) "" else "[providers.codex.quirks]\n$quirks\n"
-            return """
-                |[providers.codex]
-                |dialect = "openai-responses"
-                |base_url = "${backend.baseUrl}"
-                |auth = { kind = "chatgpt-oauth", file = "${authFile.toString().replace("\\", "/")}" }
-                |$extraHeaders
-                |$quirksTable
-                |[[providers.codex.models]]
-                |id = "gpt-6-sol"
-                |label = "GPT-6 Sol"
-                |context_window = 272000
-                |[[providers.codex.models]]
-                |id = "gpt-6-luna"
-                |label = "GPT-6 Luna"
-                |context_window = 272000
-                |[heads.codex]
-                |provider = "codex"
-                |port = 31390
-                |discovery_prefix = "claude-codex--"
-                |pinned_model = "gpt-6-sol"
-                |context_window = 272000
-                |[heads.codex.claude]
-                |command = "claudex"
-            """.trimMargin()
+        /** The codex tables setup itself writes: `splice add codex --yes`, the call SetupEffects makes for a ticked
+         *  head, run under a hermetic home against the scripted backend. Only what a test box cannot take as written
+         *  is changed afterwards: the sign-in file, so no run reads the person's own. [quirks] and [extraHeaders] are
+         *  the lines a head's config adds on top of that render, empty for setup's own head. */
+        private suspend fun setupTables(
+            root: Path,
+            backend: ScriptedProvider,
+            authFile: Path,
+            quirks: String,
+            extraHeaders: String,
+        ): String {
+            val written = addCodex(root, backend)
+            val kind = """auth = { kind = "chatgpt-oauth" }"""
+            require(kind in written) { "the codex profile's sign-in line moved:\n$written" }
+            val signedIn = written.replace(
+                kind,
+                """auth = { kind = "chatgpt-oauth", file = "${slashes(authFile)}" }""",
+            )
+            val models = "[[providers.codex.models]]"
+            require(models in signedIn) { "the codex profile's model rows moved:\n$signedIn" }
+            val configured = if (extraHeaders.isEmpty()) {
+                signedIn
+            } else {
+                signedIn.replaceFirst(models, "$extraHeaders\n$models")
+            }
+            return if (quirks.isEmpty()) configured else "$configured\n[providers.codex.quirks]\n$quirks\n"
         }
+
+        /** What `splice add codex --base-url <backend> --yes` writes, with its sign-in already on disk where the
+         *  profile keeps it, its wrapper link and its restart answered, and no daemon running. */
+        private suspend fun addCodex(root: Path, backend: ScriptedProvider): String {
+            val home = Files.createDirectories(root.resolve("home"))
+            val config = root.resolve("splice.toml")
+            val env = EnvReader { name -> if (name == "SPLICE_CONFIG") config.toString() else null }
+            val lines = mutableListOf<String>()
+            val sink = TerminalOutput { lines += it }
+            val ports = AddPorts(
+                login = AddLogin { _, _, _ -> error("the sign-in is already on disk, so no login runs") },
+                install = WrapperInstall { _, _ -> AddLinked.Linked },
+                restart = DaemonRestart { true },
+                daemonUp = DaemonUpProbe { false },
+                prompt = AddPrompter { _, default -> default },
+            )
+            return UserHome.within(home) {
+                val signIn = home.resolve(".config/splice/auth/codex.json")
+                Files.createDirectories(signIn.parent)
+                Files.writeString(signIn, """{"tokens":{"access_token":"synthetic-access","refresh_token":"r"}}""")
+                TopologyLoader.loadOrMaterialize(TopologyLoader.configPath(env))
+                val args = listOf("codex", "--base-url", backend.baseUrl, "--yes")
+                val saved = runBlocking { AddVerb(sink, sink, ports).add(args, env) }
+                assertTrue(saved, lines.joinToString("\n"))
+                Files.readString(config)
+            }
+        }
+
+        private fun slashes(path: Path): String = path.toString().replace("\\", "/")
 
         /** The codex head's provider, built by the daemon's own assembly. */
         private fun provider(root: Path, topology: Topology, scope: CoroutineScope): Provider {

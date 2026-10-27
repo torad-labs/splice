@@ -572,21 +572,6 @@ class ResponsesWsRunnerTest {
         assertEquals("\"response-terminal\"", frame["previous_response_id"].toString())
     }
 
-    /** codex-rs names its thread a second time on the WS handshake, as the client request id —
-     *  derived from the provider's per-turn `thread-id` at the handshake, so an SSE POST never
-     *  carries it and a turn without a thread id sends none (2026-09-05). */
-    @Test
-    fun `the handshake carries the thread id as x-client-request-id and nothing without one`() = runTest {
-        val rig = Rig { listOf("""{"type":"response.created"}""", completed("r1")) }
-        checkNotNull(rig.round(headers = mapOf("thread-id" to "t-1"))) { "round one" }
-        assertEquals("t-1", rig.handshakes.last()["x-client-request-id"])
-        assertEquals("t-1", rig.handshakes.last()["thread-id"])
-        // A different header set is a different connection: the second handshake carries none.
-        checkNotNull(rig.round(headers = mapOf("x-splice-probe" to "two"))) { "round two" }
-        assertEquals(2, rig.handshakes.size, "a changed per-turn header set opens a new connection")
-        assertFalse(rig.handshakes.last().containsKey("x-client-request-id"), rig.handshakes.last().toString())
-    }
-
     // Goal 8 (Marcos, 2026-10-27): socket log lines carry the session id. These lines say why a chain held or broke,
     // so they are the ones read when a turn is slow.
     @Test

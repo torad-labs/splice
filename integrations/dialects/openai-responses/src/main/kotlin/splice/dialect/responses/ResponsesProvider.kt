@@ -7,6 +7,7 @@
 // on the stream — lives here ONCE.
 package splice.dialect.responses
 
+import splice.core.auth.Credentials
 import splice.core.parse.AnthropicTurnBody
 import splice.core.prompt.SystemPromptMode
 import splice.core.turn.ReasoningDisplay
@@ -65,6 +66,16 @@ public abstract class ResponsesProvider(
     private val compactionTail = ResponsesCompactionTail()
     private val systemPrompt = ResponsesSystemPrompt()
     private val parts = ResponsesParts(tuning, reasoning, quirks, foldConfig, log, toolNames, replies)
+    private val locations = tuning.locations
+
+    /** The headers this provider sends with every request before the ones its config names: the shared SSE accept
+     *  header by default. A provider with credential-derived headers (codex's ChatGPT-Account-ID) adds them here. */
+    protected open fun providerHeaders(creds: Credentials): Map<String, String> = super.extraHeaders(creds)
+
+    /** Every request's headers, on the HTTP post and the websocket handshake alike: the provider's own, then the
+     *  extra headers its config names, laid the way the chat heads lay them (fix 4 of the Oct 27 Responses fixes). */
+    override fun extraHeaders(creds: Credentials): Map<String, String> =
+        locations.headersOver(providerHeaders(creds), creds)
 
     /** Per-turn upstream headers beyond the shared Accept set (grok's x-grok-conv-id, codex's
      *  session/thread routing). Empty by default — a header that depends on the turn/session rides

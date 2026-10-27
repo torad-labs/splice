@@ -201,12 +201,13 @@ The example's line 825 says `maxInflight` defaults to `"0"` (unlimited). The cod
 Everything here applies at restart, except the window fields, which are live.
 
 `extra_headers` by dialect: on `anthropic-passthrough` they apply last and replace any header of the same
-name, `Authorization` included. On `openai-chat` they ride but cannot replace the auth header. On a generic
-`openai-responses` provider no reader was found outside the Muse arm (unverified). A quoted header name
-(`"anthropic-version" = ...`) and a bare one behave the same.
+name, `Authorization` included. On `openai-chat` and on every `openai-responses` head (ChatGPT, an API key,
+Grok, Muse) they ride on every request, the Responses websocket handshake included, but cannot replace the
+credential's auth header. A quoted header name (`"anthropic-version" = ...`) and a bare one behave the same.
 
 Source: Topology.kt (ProviderConfig, lines 144-244); LocalProviderRule.kt; PassthroughProvider.kt (lines 99-103);
-app/src/main/kotlin/splice/app/provider/ChatArm.kt (lines 120-138); app/src/main/kotlin/splice/app/provider/MuseResponsesArm.kt (line 46).
+app/src/main/kotlin/splice/app/provider/ChatArm.kt (lines 120-138); app/src/main/kotlin/splice/app/provider/MuseResponsesArm.kt (line 46);
+integrations/upstream/src/main/kotlin/splice/upstream/Provider.kt (ProviderLocations.headersOver) and ResponsesProvider.extraHeaders.
 
 ### 5.1 auth
 
@@ -288,7 +289,7 @@ Absent means the provider's base profile. Only the listed dialect reads a quirk.
 | `parallel_tool_calls` | bool | false | responses | the value sent; ChatGPT lite 400s on true |
 | `websocket` / `websocket_prefill` | bool | off | responses | Responses WebSocket overlay; ships off |
 | `summary_delivery` | string | codex `"sequential_cutoff"` | responses | `"off"` omits the field |
-| `account_id_header` | bool | false | responses, ChatGPT | send the account id header |
+| `account_id_header` | bool | true on `chatgpt-oauth` | responses, ChatGPT | send the account id header, as Codex does; `false` keeps it off |
 | `effort_ceiling` | string | `"max"` | none | parsed, but no arm reads it today |
 | `zstd_request_body` | bool | false | any | compress request bodies; proven for ChatGPT only, xAI 400s |
 | `tool_surface` | table | absent: off | responses | deferred tools: `enabled` (true), `defer_prefixes` (`["mcp__"]`), `defer`, `eager`, `min_deferred` (8), `search_limit` (8, 1-50), `search_rounds` (3, 1-5) |

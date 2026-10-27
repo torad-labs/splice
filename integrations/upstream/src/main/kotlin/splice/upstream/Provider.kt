@@ -70,8 +70,28 @@ public data class ProviderName(val key: String, val label: String)
 /** Where a provider reaches and where it keeps state: the [baseUrl] each provider turns into its own
  *  [Provider.upstreamUrl], and V4-334's [stateDir], this head's own directory for what must outlive the daemon
  *  process (`heads/<key>/` under StatePaths.headsDir), named by the provider inside it. A null [stateDir] keeps
- *  nothing on disk: every unwired build and test. */
-public data class ProviderLocations(val baseUrl: String, val stateDir: Path? = null)
+ *  nothing on disk: every unwired build and test. [headers] are the extra headers the head's config names for every
+ *  request it sends there (extra_headers), which the Responses providers lay over their own ([headersOver]); the
+ *  chat and Anthropic arms lay theirs where they build their providers. */
+public data class ProviderLocations(
+    val baseUrl: String,
+    val stateDir: Path? = null,
+    val headers: Map<String, String> = emptyMap(),
+) {
+    /** [own] with each of [headers] laid over it, the way the chat heads lay them (ChatArm's StaticChatHeaders): a
+     *  configured header rides and replaces a provider default of the same name, and the credential's own auth header
+     *  wins over a configured one, so a config never sends a request under a credential the head did not sign in
+     *  with (fix 4 of the Oct 27 Responses fixes). */
+    public fun headersOver(own: Map<String, String>, creds: Credentials): Map<String, String> {
+        if (headers.isEmpty()) return own
+        val authHeader = when (creds) {
+            is Credentials.Bearer -> "Authorization"
+            is Credentials.ApiKey -> creds.header
+            Credentials.ClientForwarded -> null
+        }
+        return own + headers.filterKeys { name -> authHeader == null || !name.equals(authHeader, ignoreCase = true) }
+    }
+}
 
 /** Everything the generic head needs to serve one provider. */
 public interface Provider : ProviderIdentity {

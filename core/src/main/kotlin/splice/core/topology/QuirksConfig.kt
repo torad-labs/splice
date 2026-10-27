@@ -23,7 +23,9 @@ import kotlinx.serialization.Serializable
 @Serializable
 public data class QuirksConfig(
     val store: Boolean = false,
-    @SerialName("account_id_header") val accountIdHeader: Boolean = false,
+    /** ChatGPT-Account-ID on a ChatGPT sign-in head. Absent sends it, as codex-rs always does (fix 4 of the Oct 27
+     *  Responses fixes: setup writes no quirks, so its heads went without it); `false` keeps it off. */
+    @SerialName("account_id_header") val accountIdHeader: Boolean? = null,
     @SerialName("cache_key") val cacheKey: String = "first-message-hash",
     /** RETIRED 2026-10-21: each Responses provider applies its verified model ceiling. This generic
      *  setting never reached that policy, in 0.3.2 or since, so no value of it changes a turn. It is

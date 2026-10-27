@@ -320,10 +320,6 @@
       "features/usage/src/main/kotlin/splice/usage/statusline/StatuslineBars.kt",
       "features/usage/src/main/kotlin/splice/usage/statusline/StatuslineRenderer.kt"
     ],
-    "COPY HEADER_THREAD_ID": [
-      "integrations/dialects/openai-responses/src/main/kotlin/splice/dialect/responses/websocket/ResponsesWsRunner.kt",
-      "integrations/providers/codex/src/main/kotlin/splice/provider/codex/CodexRoutingHeaders.kt"
-    ],
     "COPY HEX_DIGITS": [
       "features/turns/src/main/kotlin/splice/head/trace/JsonTokens.kt",
       "integrations/upstream/src/main/kotlin/splice/upstream/codemode/json/CodeModeJsonString.kt"

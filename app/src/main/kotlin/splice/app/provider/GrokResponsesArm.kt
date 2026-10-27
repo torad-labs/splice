@@ -49,6 +49,7 @@ internal class GrokResponsesArm(
                     locations = ProviderLocations(
                         baseUrl = providerCfg.baseUrl,
                         stateDir = statePaths.headsDir.resolve(key),
+                        headers = providerCfg.staticHeaders,
                     ),
                     watchdog = watchdog,
                     loginCommand = ctx.faultPlan.loginCommand,

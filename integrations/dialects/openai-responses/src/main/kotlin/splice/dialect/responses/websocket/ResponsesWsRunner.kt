@@ -85,7 +85,9 @@ internal class ResponsesWsRunner(
         val request = identity.parseRequest(bodyJson)
         val chain = identity.chainKey(meta)
         if (request == null || chain == null) return null
-        val headers = handshakeHeaders(creds) + turnHeaders + handshakeOnlyHeaders(turnHeaders)
+        // Codex's x-client-request-id rides the per-turn set, as on its HTTP POST (CodexRoutingHeaders, fix 4 of the
+        // Oct 27 Responses fixes): codex-rs names its thread with it on both transports.
+        val headers = handshakeHeaders(creds) + turnHeaders
         val key = identity.connectionKey(chain, meta, headers)
         val seed = ResponsesWsPrefiller.PrefillSeed(request, chain, key, headers, meta, perf)
         val prefillContext = if (webSocketPolicy.acceptsPrefill(request)) prefiller.context(seed) else null
@@ -167,13 +169,6 @@ internal class ResponsesWsRunner(
         built.frame.fullSendReason?.let { log("[ws] $label full send: $it\n") }
     }
 
-    /** codex-rs names its thread a second time on the WS handshake, as `x-client-request-id` — on
-     *  the handshake only, never on an SSE POST, so it is derived here from the provider's per-turn
-     *  `thread-id` (which rides both) rather than emitted beside it. Part of the connection key like
-     *  every other handshake header, and constant for the session like its source. */
-    private fun handshakeOnlyHeaders(turnHeaders: Map<String, String>): Map<String, String> =
-        turnHeaders[HEADER_THREAD_ID]?.let { mapOf(HEADER_CLIENT_REQUEST_ID to it) } ?: emptyMap()
-
     override fun isFailureTerminal(event: JsonObject): Boolean =
         JsonScalars.str(event[FIELD_TYPE]) in ResponsesRoundEnd.FAILED
 
@@ -203,5 +198,3 @@ internal class ResponsesWsRunner(
 
 private const val FIELD_TYPE = "type"
 private val SOCKET_FAULT_CODES = setOf("websocket_connection_limit_reached", "previous_response_not_found")
-private const val HEADER_THREAD_ID = "thread-id"
-private const val HEADER_CLIENT_REQUEST_ID = "x-client-request-id"

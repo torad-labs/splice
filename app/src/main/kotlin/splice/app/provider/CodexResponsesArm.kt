@@ -54,6 +54,7 @@ internal class CodexResponsesArm(
                     locations = ProviderLocations(
                         baseUrl = providerCfg.baseUrl,
                         stateDir = statePaths.headsDir.resolve(key),
+                        headers = providerCfg.staticHeaders,
                     ),
                     watchdog = watchdog,
                     loginCommand = ctx.faultPlan.loginCommand,
@@ -64,7 +65,8 @@ internal class CodexResponsesArm(
                 // never receive a fold config, so they stay pure passthrough. Asked per turn, off this head's
                 // config as it stands then, so all four fold knobs are live.
                 foldConfig = LiveFoldConfig { quirksOverlay.foldConfigFrom(cfg.current()) },
-                accountIdHeader = providerCfg.quirks.accountIdHeader,
+                // codex-rs sends it on every request of a ChatGPT sign-in; only a config that turns it off keeps it off.
+                accountIdHeader = providerCfg.quirks.accountIdHeader ?: true,
                 codeMode = codeMode.wiring(ctx),
             ),
             auth,

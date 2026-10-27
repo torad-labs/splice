@@ -65,7 +65,7 @@ public class CodexProvider(
     /** This path sees numeric max_tokens, not whether the caller chose it or Claude CLI supplied its default.
      *  It does not enforce a generation ceiling. Reported usage and deadlines are not token-cap enforcement. */
     override fun buildTurn(body: AnthropicTurnBody, compact: Boolean, sessionId: String?): BuiltTurn =
-        codeModeTurns.prepare(body, sessionId, super.buildTurn(body, compact, sessionId))
+        routing.oneThread(codeModeTurns.prepare(body, sessionId, super.buildTurn(body, compact, sessionId)))
 
     override fun cancelTurnResources() {
         codeMode.onHeadStop()
@@ -83,7 +83,8 @@ public class CodexProvider(
         runtimeCalls = setOf(CODE_MODE_TOOL_NAME, CODE_MODE_WAIT_TOOL_NAME),
     )
 
-    override fun extraHeaders(creds: Credentials): Map<String, String> = buildMap {
+    /** The extra headers the head's config names are laid over these by the base (ResponsesProvider.extraHeaders). */
+    override fun providerHeaders(creds: Credentials): Map<String, String> = buildMap {
         put("Accept", "text/event-stream")
         val accountId = (creds as? Credentials.Bearer)?.accountId
         if (accountIdHeader && accountId != null) {

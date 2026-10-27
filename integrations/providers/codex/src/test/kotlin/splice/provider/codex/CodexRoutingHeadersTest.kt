@@ -34,13 +34,16 @@ class CodexRoutingHeadersTest {
     )
 
     @Test
-    fun `a session's turns carry the session id, a uuid thread id and the model routing hint`() {
+    fun `a session's turns carry the session id, a uuid thread id named twice and the model routing hint`() {
         val headers = routing.forTurn(meta("sess-a"))
         assertEquals("sess-a", headers["session-id"])
         assertEquals("model=gpt-5.6", headers["x-codex-routing-hint"])
         val uuid = Regex("[0-9a-f]{8}(-[0-9a-f]{4}){3}-[0-9a-f]{12}")
         assertTrue(headers.getValue("thread-id").matches(uuid), headers.toString())
-        assertEquals(3, headers.size, headers.toString())
+        // Fix 4 of the Oct 27 Responses fixes: codex-rs names the thread a second time as x-client-request-id, on the
+        // HTTP POST as on the websocket handshake (codex-api/src/endpoint/responses.rs:86-89).
+        assertEquals(headers["thread-id"], headers["x-client-request-id"])
+        assertEquals(4, headers.size, headers.toString())
     }
 
     @Test

@@ -28,7 +28,6 @@ import splice.core.turn.ReasoningDisplay
 import splice.core.turn.TurnMeta
 import splice.core.turn.WatchdogBudget
 import splice.dialect.responses.ReasoningSettings
-import splice.dialect.responses.stream.FoldConfig
 import splice.head.HeadServer
 import splice.head.headDeps
 import splice.provider.codex.CodexProvider
@@ -219,7 +218,6 @@ class CodexTurnStateSseTest {
             ),
             reasoning = ReasoningSettings(ReasoningDisplay.TEXT, false, "high", "detailed"),
             quirks = CodexQuirks().defaultQuirks().withSummaryDelivery(null),
-            foldConfig = FoldConfig(models = setOf("gpt-5.6-luna")),
         )
     }
 

@@ -498,13 +498,9 @@ class FoldRunnerReanchorTest {
     fun `a gone client buys no fold continuation`() = runTest {
         val h = Harness()
         var asked = 0
-        val fold = FoldPolicy { round ->
-            if (round.roundIndex == 0) {
-                asked++
-                continuationBody()
-            } else {
-                null
-            }
+        val fold = FoldPolicy {
+            asked++
+            continuationBody()
         }
         val rounds = ArrayDeque<suspend (WireSink) -> TurnOutcome>()
         rounds.add { _ ->
@@ -515,7 +511,7 @@ class FoldRunnerReanchorTest {
             emitter = h.emitter,
             postRound = { _, sink -> RoundResult.Outcome(rounds.removeFirst().invoke(sink)) },
             foldRounds = FoldRounds(
-                steps = testRoundSteps(),
+                steps = testRoundSteps(completed = cutAtItsBound()),
                 key = "t",
                 log = { },
                 signals = h.signals(gone = true),
@@ -815,7 +811,7 @@ class FoldRunnerSearchTest {
             if (round.outcome.handoffs.toolSearches.isNotEmpty()) consultedForSearchingRound = true
             null
         }
-        val fold = FoldPolicy { round -> if (round.roundIndex == 0) continuationBody() else null }
+        val fold = FoldPolicy { continuationBody() }
         val rounds = ArrayDeque<suspend (WireSink) -> TurnOutcome>()
         rounds.add { _ ->
             TurnOutcome.Success(
@@ -832,7 +828,7 @@ class FoldRunnerSearchTest {
             emitter = h.emitter,
             postRound = { _, sink -> RoundResult.Outcome(rounds.removeFirst().invoke(sink)) },
             foldRounds = FoldRounds(
-                steps = testRoundSteps(),
+                steps = testRoundSteps(completed = cutAtItsBound()),
                 key = "t",
                 log = { },
                 signals = h.signals(),
@@ -1053,4 +1049,10 @@ class RoundRoutingEquivalenceTest {
         assertEquals(plain.finished, wired.finished, "finishTurn must be handed the same outcome")
         assertEquals(0, consulted, "a first-round Success must never consult the controller at all")
     }
+}
+
+/** The provider's reading these fold walls stand in for: a round whose reasoning stopped at 516 tokens is cut short
+ *  (codex's first 518n-2 tier), and every other round finished whole. */
+private fun cutAtItsBound(): CompletedRounds = CompletedRounds { round ->
+    FailureCause.Provider.ReasoningCut(round.usage.reasoningTokens).takeIf { round.usage.reasoningTokens == 516L }
 }

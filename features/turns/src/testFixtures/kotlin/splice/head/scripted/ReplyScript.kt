@@ -219,7 +219,38 @@ public interface ResponsesFrames : ReplyFrames {
         responsesText(text)
         responsesEnd()
     }
+
+    /** response.created, then reasoning item [id] at output 0 closed with [encrypted]: the backend's own encrypted
+     *  reasoning, which a later request carries back and splice never reads. It streams no summary, so none of it
+     *  reaches the client's screen. Each round's item has an id of its own, as the backend gives it. */
+    public fun responsesReasoning(encrypted: String, id: String = "rs_scripted") {
+        event("""{"type":"response.created","response":{"id":"resp_scripted","status":"in_progress","output":[]}}""")
+        event("""{"type":"response.output_item.added","output_index":0,"item":{"type":"reasoning","id":"$id"}}""")
+        event(
+            """{"type":"response.output_item.done","output_index":0,""" +
+                """"item":{"type":"reasoning","id":"$id","encrypted_content":${JsonText.quoted(encrypted)}}}""",
+        )
+    }
+
+    /** [text] as a whole message at output 1, after a reasoning item. */
+    public fun responsesMessageAfterReasoning(text: String) {
+        event("""{"type":"response.output_item.added","output_index":1,"item":{"type":"message"}}""")
+        event("""{"type":"response.output_text.delta","output_index":1,"delta":${JsonText.quoted(text)}}""")
+        event("""{"type":"response.output_item.done","output_index":1}""")
+    }
+
+    /** The response completed, billing [reasoningTokens] of reasoning in its usage. */
+    public fun responsesCompleted(reasoningTokens: Long) {
+        event(
+            """{"type":"response.completed","response":{"id":"resp_scripted","status":"completed","output":[],""" +
+                """"usage":{"input_tokens":12,"output_tokens":${reasoningTokens + ANSWER_TOKENS},""" +
+                """"output_tokens_details":{"reasoning_tokens":$reasoningTokens}}}}""",
+        )
+    }
 }
+
+/** The tokens a scripted answer bills beside its reasoning. */
+private const val ANSWER_TOKENS = 5L
 
 /** The vocabulary a reply is written in: the raw steps, and the frames of each API type's answer. */
 public class ReplyScript : AnthropicFrames, ChatFrames, ResponsesFrames {

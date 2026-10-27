@@ -1,4 +1,4 @@
-// PORT-OF: splice/app/Daemon.kt (HeadBuildInputs.chatQuirks/toolDeferralPolicy/foldConfigFrom,
+// PORT-OF: splice/app/Daemon.kt (HeadBuildInputs.chatQuirks/toolDeferralPolicy,
 // ProviderAssembly.responsesQuirks, PassthroughAssembly.passthroughQuirks) @ ed5c868 — invariants
 // unchanged: these five are one job under three spellings — each maps a head's TOML
 // [providers.*.quirks] onto its dialect's base quirk profile — and collecting them here is what
@@ -16,8 +16,6 @@ import splice.dialect.chat.ChatEffortVocabulary
 import splice.dialect.chat.ChatQuirks
 import splice.dialect.chat.ChatReasoningQuirks
 import splice.dialect.responses.ResponsesQuirks
-import splice.dialect.responses.stream.DEFAULT_MARKER_TEXT
-import splice.dialect.responses.stream.FoldConfig
 import splice.dialect.responses.tools.ToolDeferralPolicy
 import splice.dialect.responses.tools.ToolSearchMode
 import splice.provider.grok.GrokQuirks
@@ -181,13 +179,4 @@ internal class QuirksOverlay {
             searchRounds = t.searchRounds.coerceIn(MIN_TOOL_SURFACE_FLOOR, MAX_TOOL_SEARCH_ROUNDS),
         )
     }
-
-    // Reasoning-continuation folding config (codex 518n-2), threaded from ConfigService like the other
-    // reasoning knobs. An empty model set = feature off.
-    internal fun foldConfigFrom(cfg: SpliceConfig): FoldConfig = FoldConfig(
-        models = cfg.foldReasoningModels,
-        maxContinue = cfg.foldMaxContinue,
-        markerText = cfg.foldMarkerText.ifEmpty { DEFAULT_MARKER_TEXT },
-        maxTierN = cfg.foldMaxTier,
-    )
 }

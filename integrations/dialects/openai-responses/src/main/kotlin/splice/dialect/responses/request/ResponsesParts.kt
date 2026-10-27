@@ -19,7 +19,7 @@ import splice.dialect.responses.reasoning.ReasoningCacheFiles
 import splice.dialect.responses.reasoning.ReasoningCachePolicy
 import splice.dialect.responses.reasoning.ReasoningCacheWrites
 import splice.dialect.responses.stream.ConversationSummaryParts
-import splice.dialect.responses.stream.LiveFoldConfig
+import splice.dialect.responses.stream.FoldConfig
 import splice.dialect.responses.stream.ResponsesFailureAmend
 import splice.dialect.responses.tools.ToolSurfaceLatch
 import splice.dialect.responses.tools.ToolSurfaceRecovery
@@ -31,7 +31,7 @@ internal class ResponsesParts(
     tuning: ProviderTuning,
     reasoning: ReasoningSettings,
     quirks: ResponsesQuirks,
-    foldConfig: LiveFoldConfig?,
+    fold: FoldConfig?,
     private val log: LogSink,
     toolNames: ToolNameShortener,
     /** The head's own reading of its failures, which reads a failure event its backend sends in band. */
@@ -79,7 +79,7 @@ internal class ResponsesParts(
             continuity = continuity,
             summaryParts = summaryParts,
             turnOptions = turnOptions,
-            carry = RoundCarry(foldConfig = foldConfig),
+            carry = RoundCarry(fold = fold),
             caps = WatchdogCaps(
                 streamIdleMs = tuning.watchdog.streamIdle.inWholeMilliseconds,
                 upstreamTimeoutMs = tuning.watchdog.totalCap.inWholeMilliseconds,

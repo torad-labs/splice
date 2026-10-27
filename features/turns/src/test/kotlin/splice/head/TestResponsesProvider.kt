@@ -15,7 +15,7 @@ import splice.dialect.responses.ResponsesProvider
 import splice.dialect.responses.ResponsesQuirks
 import splice.dialect.responses.ResponsesReasoningQuirks
 import splice.dialect.responses.failure.ResponsesReplies
-import splice.dialect.responses.stream.LiveFoldConfig
+import splice.dialect.responses.stream.FoldConfig
 import splice.upstream.ProviderTuning
 import splice.upstream.failure.Replies
 
@@ -39,7 +39,7 @@ internal class TestResponsesProvider(
     tuning: ProviderTuning,
     reasoning: ReasoningSettings,
     quirks: ResponsesQuirks = TestResponsesQuirks().profile(),
-    foldConfig: LiveFoldConfig? = null,
+    fold: FoldConfig? = null,
     log: LogSink = LogSink(DaemonLog::write),
     // The head's own failure reader: the Responses standard, unless a test reads a provider's deviation.
     replies: Replies = Replies(ResponsesReplies),
@@ -47,7 +47,7 @@ internal class TestResponsesProvider(
     tuning,
     reasoning,
     quirks,
-    foldConfig,
+    fold,
     log,
     replies = replies,
 )

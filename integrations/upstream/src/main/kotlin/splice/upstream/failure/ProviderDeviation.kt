@@ -3,6 +3,7 @@
 package splice.upstream.failure
 
 import splice.core.failure.FailureCause
+import splice.core.turn.Usage
 import splice.core.usage.PlanLimit
 
 /** A provider's documented deviation from its API type's standard reading. Each method returns null, or false, for
@@ -19,4 +20,9 @@ public interface ProviderDeviation {
     /** The plan window [reply] names in the provider's own body (codex's usage_limit_reached), as
      *  [ReplyReader.planLimit] keeps it until slice 5. */
     public fun planLimit(reply: FailedReply): PlanLimit? = null
+
+    /** What a round [model] completed, billed as [usage], says that its standard reads as a finished round: a reasoning
+     *  the provider cut short at a bound it is documented to cut at (failure-handling slice 4, codex's 518n-2). Null
+     *  for every round the provider finished whole. */
+    public fun completed(model: String, usage: Usage): FailureCause.Provider? = null
 }

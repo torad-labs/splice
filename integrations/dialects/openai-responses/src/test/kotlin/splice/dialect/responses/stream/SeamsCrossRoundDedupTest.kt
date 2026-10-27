@@ -131,7 +131,7 @@ private fun codexSeams(
                 continuity,
                 ToolSurfaceLatch(),
             ),
-            carry = RoundCarry(foldConfig = null),
+            carry = RoundCarry(fold = null),
             caps = WatchdogCaps(streamIdleMs = 180_000, upstreamTimeoutMs = 900_000),
             services = TranslatorServices(log = log),
         ),

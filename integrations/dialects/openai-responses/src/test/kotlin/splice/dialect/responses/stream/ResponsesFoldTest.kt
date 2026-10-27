@@ -1,7 +1,8 @@
-// Reasoning-continuation folding (codex 518n-2): the truncation-fingerprint detector and the
-// continuation-request builder. Pins the boundary math (516/1034/1552 truncate; 515/517/800/0 do
-// not), the caps (tier window + continuation count + no-envelope), and the built continuation
-// (prior input preserved + reasoning replayed via Replay.kt + the phase:commentary marker).
+// Reasoning-continuation folding (codex 518n-2): the continuation-request builder. Pins the built
+// continuation (prior input preserved + reasoning replayed via Replay.kt + the phase:commentary
+// marker) and the round it cannot continue (no encrypted reasoning to replay). Failure-handling
+// slice 4 moved the detector out: the 518n-2 fingerprint and its tier bound are CodexReplies'
+// reading (CodexReasoningCutPropertyTest), and the continuation count is RetryEngine's budget.
 package splice.dialect.responses.stream
 
 import kotlinx.serialization.json.Json
@@ -13,10 +14,8 @@ import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
 import kotlinx.serialization.json.put
 import org.junit.jupiter.api.Assertions.assertEquals
-import org.junit.jupiter.api.Assertions.assertFalse
 import org.junit.jupiter.api.Assertions.assertNotNull
 import org.junit.jupiter.api.Assertions.assertNull
-import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 import splice.core.reasoning.ReasoningReplay
 import splice.core.turn.RoundHandoffs
@@ -25,7 +24,7 @@ import splice.core.turn.Usage
 import splice.upstream.FoldRound
 import splice.core.reasoning.ReasoningReplay.decodeReasoningEnvelope as coreDecode
 
-private val CONFIG = FoldConfig(models = setOf("gpt-5.6-luna"))
+private val CONFIG = FoldConfig(models = setOf("gpt-5.6-luna"), markerText = "Continue thinking...")
 private val controller = ResponsesFoldPolicy(CONFIG) { coreDecode(it) }
 
 // A minimal but DTO-valid prior request (model/input/store/stream/instructions) — the continuation
@@ -44,7 +43,7 @@ private fun envelopeFor(id: String): String = ReasoningReplay.encodeReasoningEnv
     },
 )!!
 
-private fun round(reasoningTokens: Long, envelopes: List<String>, roundIndex: Int = 0): FoldRound =
+private fun round(reasoningTokens: Long, envelopes: List<String>): FoldRound =
     FoldRound(
         requestBody = priorRequest,
         outcome = TurnOutcome.Success(
@@ -53,30 +52,12 @@ private fun round(reasoningTokens: Long, envelopes: List<String>, roundIndex: In
             usage = Usage(inputTokens = 100, outputTokens = 600, cachedTokens = 0, reasoningTokens = reasoningTokens),
             handoffs = RoundHandoffs(reasoningEnvelopes = envelopes),
         ),
-        roundIndex = roundIndex,
     )
 
 class ResponsesFoldTest {
 
     @Test
-    fun `518n-2 fingerprint - 516 1034 1552 truncate, off-by-one and others do not`() {
-        for (truncated in listOf(516L, 1034L, 1552L, 2070L)) {
-            assertTrue(controller.isTruncationFingerprint(truncated), "$truncated should be truncation")
-        }
-        for (clean in listOf(515L, 517L, 1035L, 2858L, 800L, 0L)) {
-            assertFalse(controller.isTruncationFingerprint(clean), "$clean should NOT be truncation")
-        }
-    }
-
-    @Test
-    fun `tier n derives from the fingerprint`() {
-        assertEquals(1L, controller.tierOf(516))
-        assertEquals(2L, controller.tierOf(1034))
-        assertEquals(3L, controller.tierOf(1552))
-    }
-
-    @Test
-    fun `truncated round with an envelope yields a continuation - prior input, reasoning replay, marker`() {
+    fun `a cut round with an envelope yields a continuation - prior input, reasoning replay, marker`() {
         val next = controller.continuation(round(516, listOf(envelopeFor("rs_1"))))
         assertNotNull(next)
         val input = next!!["input"]!!.jsonArray.map { it.jsonObject }
@@ -96,27 +77,8 @@ class ResponsesFoldTest {
     }
 
     @Test
-    fun `not truncated - no continuation`() {
-        assertNull(controller.continuation(round(800, listOf(envelopeFor("rs_1")))))
-        assertNull(controller.continuation(round(0, listOf(envelopeFor("rs_1")))))
-    }
-
-    @Test
-    fun `truncated but no encrypted reasoning to replay - no continuation`() {
+    fun `a cut round with no encrypted reasoning to replay - no continuation`() {
         assertNull(controller.continuation(round(516, emptyList())))
-    }
-
-    @Test
-    fun `continuation cap - stops once maxContinue rounds have folded`() {
-        // roundIndex 0,1,2 continue (3 continuations), roundIndex 3 stops (== maxContinue default 3).
-        assertNotNull(controller.continuation(round(516, listOf(envelopeFor("rs")), roundIndex = 2)))
-        assertNull(controller.continuation(round(516, listOf(envelopeFor("rs")), roundIndex = 3)))
-    }
-
-    @Test
-    fun `tier window - a tier above maxTier is released as-is`() {
-        // tier 7 fingerprint = 518*7 - 2 = 3624, above the default maxTierN 6.
-        assertNull(controller.continuation(round(3624, listOf(envelopeFor("rs")))))
     }
 
     @Test

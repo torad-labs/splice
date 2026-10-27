@@ -7,6 +7,7 @@ package splice.upstream.failure
 import splice.core.failure.FailureCause
 import splice.core.failure.LoginOwner
 import splice.core.failure.ServerFault
+import splice.core.turn.Usage
 import splice.core.usage.PlanLimit
 import splice.core.wire.HttpStatus
 
@@ -22,6 +23,10 @@ public class Replies(private val standard: ReplyReader, private val deviation: P
     public fun deadCredential(reply: FailedReply): Boolean = deviation?.deadCredential(reply) == true
 
     override fun planLimit(reply: FailedReply): PlanLimit? = deviation?.planLimit(reply) ?: standard.planLimit(reply)
+
+    /** A round [model] completed, read for a cut its standard reads as a finished round: the provider's declared
+     *  deviation alone names one (ProviderDeviation.completed), and null is a round finished whole. */
+    public fun completed(model: String, usage: Usage): FailureCause.Provider? = deviation?.completed(model, usage)
 
     /**
      * V4-242: during the Codex outage of 2026-09-25 the provider answered 401 invalid_api_key naming a masked service

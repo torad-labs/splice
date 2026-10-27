@@ -6,6 +6,7 @@ package splice.head.turn
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Job
 import splice.core.util.LogSink
+import splice.head.round.CompletedRounds
 import splice.head.round.Recovering
 import splice.head.round.RoundInterception
 import splice.head.round.RoundRunners
@@ -59,7 +60,12 @@ internal class TurnRoundRun(
                 // shows once per recovery episode, said by the turn's voice from the cause.
                 signals = drive.signals.copy(recovering = Recovering { drive.emitter.recovering(it) }),
                 finish = { outcome -> turnFinish.finishTurn(drive, outcome) },
-                steps = RoundSteps(turnRetry(drive), upstream.retryWall),
+                steps = RoundSteps(
+                    turnRetry(drive),
+                    upstream.retryWall,
+                    // A round is cut short only where its provider's replies say so (codex's 518n-2, CodexReplies).
+                    CompletedRounds { provider.replies.completed(drive.meta.route.upstreamModel, it.usage) },
+                ),
                 toolSearch = drive.toolSearch,
             ),
             // V4-173: THE choke point. Every upstream request of every runner — the single round,

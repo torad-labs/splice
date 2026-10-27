@@ -183,7 +183,7 @@ private class CacheHead(cache: ReasoningCache) {
             continuity = continuity,
             summaryParts = ConversationSummaryParts(),
             turnOptions = options,
-            carry = RoundCarry(foldConfig = null),
+            carry = RoundCarry(fold = null),
             caps = WatchdogCaps(streamIdleMs = 180_000, upstreamTimeoutMs = 900_000),
         ),
     )

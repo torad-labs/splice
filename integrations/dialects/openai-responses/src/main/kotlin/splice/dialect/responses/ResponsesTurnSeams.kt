@@ -135,12 +135,11 @@ internal class ResponsesTurnSeams(private val deps: ResponsesTurnSeamsDeps) {
         deps.summaryParts.ownerForConversation(meta.scope.sessionId, meta.scope.conversationKey)
             ?: SummaryRoundScope(meta.scope.summaryParts)
 
-    // Non-null ONLY when folding is configured AND the turn's model is fold-eligible AND it is not a
+    // Non-null ONLY when the provider declared a fold AND the turn's model is one it cuts AND it is not a
     // compaction (a text summarizer requests no encrypted_content). Sol and every non-codex head get
     // null here → the gateway never buffers or loops → pure passthrough.
     fun foldPolicy(meta: TurnMeta): FoldPolicy? {
-        // ONE reading for this turn: the policy it folds under is the policy it was admitted under.
-        val cfg = deps.carry.foldConfig?.invoke() ?: return null
+        val cfg = deps.carry.fold ?: return null
         if (meta.compact || meta.route.upstreamModel !in cfg.models) return null
         return ResponsesFoldPolicy(
             cfg,

@@ -45,7 +45,6 @@ import splice.core.turn.TurnMeta
 import splice.core.turn.WatchdogBudget
 import splice.core.util.LogSink
 import splice.dialect.responses.ReasoningSettings
-import splice.dialect.responses.stream.FoldConfig
 import splice.head.HeadServer
 import splice.head.headDeps
 import splice.provider.codex.CodeModeBridgeConfig
@@ -153,7 +152,8 @@ class CodeModeLiveScriptTest {
                 log = {},
             ),
         )
-        val codex = provider(upstream.url, bridge, FoldConfig(models = setOf("gpt-5.6-sol"))) {}
+        // A model codex cuts, so its turns run round by round (CodexReplies); the fold's knobs are gone.
+        val codex = provider(upstream.url, bridge, FOLDING_MODEL) {}
         val folding = object : Provider by codex {
             override val wsRunner: WsRoundRunner = DraftThenFailure()
         }
@@ -164,7 +164,7 @@ class CodeModeLiveScriptTest {
             val answer = client.post("http://127.0.0.1:${head.port}/v1/messages") {
                 bearerAuth("test-inference-token")
                 headers.append("x-claude-code-session-id", "fold-draft-session")
-                setBody(REQUEST)
+                setBody(REQUEST.replace("gpt-5.6-sol", FOLDING_MODEL))
             }.bodyAsText()
             assertTrue(answer.contains("SSE ANSWER"), answer)
             assertFalse(answer.contains("WS DRAFT"), answer)
@@ -238,17 +238,17 @@ class CodeModeLiveScriptTest {
     private fun provider(
         url: String,
         bridge: CodexCodeModeBridge,
-        fold: FoldConfig? = null,
+        model: String = "gpt-5.6-sol",
         log: LogSink,
     ): CodexProvider = CodexProvider(
         tuning = ProviderTuning(
             name = ProviderName(key = "codex", label = "live-script-test"),
             catalog = ModelCatalog(
                 discoveryPrefix = "claude-codex--",
-                models = listOf(ModelEntry("gpt-5.6-sol", "Stream", contextWindow = 272_000)),
+                models = listOf(ModelEntry(model, "Stream", contextWindow = 272_000)),
                 defaultContextWindow = 272_000,
             ),
-            pinnedModel = "gpt-5.6-sol",
+            pinnedModel = model,
             auth = object : RefreshableAuthProvider {
                 override suspend fun credentials(): Credentials = Credentials.Bearer("test-token")
                 override suspend fun refresh(): Credentials = credentials()
@@ -258,8 +258,7 @@ class CodeModeLiveScriptTest {
             watchdog = WatchdogBudget(10.seconds, 10.seconds, 30.seconds),
         ),
         reasoning = ReasoningSettings(ReasoningDisplay.TEXT, false, null, null),
-        foldConfig = fold,
-        codeMode = CodexCodeModeWiring(bridge = bridge, models = listOf("gpt-5.6-sol")),
+        codeMode = CodexCodeModeWiring(bridge = bridge, models = listOf(model)),
         log = log,
     )
 }
@@ -297,6 +296,9 @@ private class ReplayedBlocks {
         },
     )
 }
+
+/** A model whose reasoning codex's backend cuts, so a turn on it is a folding one. */
+private const val FOLDING_MODEL = "gpt-5.6-luna"
 
 private const val REQUEST =
     """{"model":"claude-codex--gpt-5.6-sol","stream":true,"max_tokens":64,

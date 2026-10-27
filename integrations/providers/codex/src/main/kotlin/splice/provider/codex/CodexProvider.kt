@@ -15,7 +15,7 @@ import splice.dialect.responses.ResponsesProvider
 import splice.dialect.responses.ResponsesQuirks
 import splice.dialect.responses.failure.ResponsesReplies
 import splice.dialect.responses.request.ResponsesToolResultMedia
-import splice.dialect.responses.stream.LiveFoldConfig
+import splice.dialect.responses.stream.FoldConfig
 import splice.dialect.responses.websocket.CODEX_TURN_STATE_HEADER
 import splice.dialect.responses.websocket.ResponsesWebSocketPolicy
 import splice.provider.codex.failure.CodexReplies
@@ -30,8 +30,6 @@ public class CodexProvider(
     tuning: ProviderTuning,
     reasoning: ReasoningSettings,
     quirks: ResponsesQuirks = CodexQuirks().defaultQuirks(),
-    // Reasoning-continuation folding (codex 518n-2). null = off; the daemon wires it from config.
-    foldConfig: LiveFoldConfig? = null,
     private val accountIdHeader: Boolean = true,
     /** Daemon log sink — forwarded to ResponsesProvider so its diagnostics reach
      *  /mgmt/logs and not stderr alone (wall kt-no-println, 2026-07-27). */
@@ -41,7 +39,9 @@ public class CodexProvider(
     tuning,
     reasoning,
     quirks,
-    foldConfig,
+    // The backend cuts these models' reasoning at 518n-2 tokens: their turns run round by round, so a round CodexReplies
+    // reads as cut is continued with this marker (failure-handling slice 4; changing either takes a build).
+    FoldConfig(CodexReplies.cutModels, CodexReplies.CONTINUE_THINKING),
     log,
     // Install this head's reading before the base initializes its Responses terminal handling.
     replies = Replies(ResponsesReplies, CodexReplies),

@@ -3,8 +3,12 @@
 // the login provider (CodexPlanLimitBody, read through planLimitFromBody until slice 3), and its two code readings
 // move in from the shared classifier.
 //
+// Slice 4 (2026-10-27) moves in the 518n-2 reading: a completed round of a model the backend cuts is a ReasoningCut,
+// read here with the model list, the tier bound and the words of the continuation, where they were four knobs and a
+// policy in the Responses dialect. The continuation's builder stays in the dialect, which only replays.
+//
 // Not here: the code-mode runtime faults, which already build FailureCause.Splice.Protocol where they happen
-// (CodeModeRuntimeFailures), and the fold continuation, which slice 4 moves with the fold step.
+// (CodeModeRuntimeFailures).
 package splice.provider.codex.failure
 
 import splice.core.failure.FailureCause
@@ -13,6 +17,7 @@ import splice.core.failure.LiftSource
 import splice.core.failure.LimitWindow
 import splice.core.failure.ProviderWords
 import splice.core.failure.RefusedBy
+import splice.core.turn.Usage
 import splice.core.usage.FIVE_HOUR_CLAIM
 import splice.core.usage.PlanLimit
 import splice.core.usage.SEVEN_DAY_CLAIM
@@ -41,9 +46,31 @@ import java.time.Instant
  *
  * websocket_connection_limit_reached is the backend's own capacity, so the round waits and comes back, rather than
  * ending as the rate limit its type spells.
+ *
+ * And one answer the standard reads as a finished round: gpt-5.5, gpt-5.6-luna and gpt-5.6-terra intermittently stop
+ * their own reasoning at exactly 518n-2 tokens (516, 1034, 1552, ...) and finalize a shallower answer; gpt-5.6-sol does
+ * not (probed 2026-07-19). Such a round is a ReasoningCut, which the engine continues up to its budget by replaying the
+ * round's encrypted reasoning with a hidden commentary item asking the model to go on, as codex-rs, CodexCont and
+ * codexcomp do. Past the sixth multiple a count on the fingerprint is a long reasoning that landed there, not a cut.
+ * Changing the list takes a build, as the bound does (final-design.md section 8).
  */
 public object CodexReplies : ProviderDeviation {
     private val planLimits = CodexPlanLimitBody()
+
+    /** The models whose reasoning the backend cuts at 518n-2 tokens. */
+    public val cutModels: Set<String> = setOf("gpt-5.6-luna", "gpt-5.6-terra", "gpt-5.5")
+
+    /** The words of the hidden commentary item that asks a cut model to go on reasoning (codex-rs's own nudge). */
+    public const val CONTINUE_THINKING: String = "Continue thinking..."
+
+    /** A round [model] completed whose reasoning stopped at 518n-2 tokens, n at most [MAX_CUT_TIER], on a model the
+     *  backend cuts; null for every other round, which the backend finished whole. */
+    override fun completed(model: String, usage: Usage): FailureCause.Provider? {
+        val reasoning = usage.reasoningTokens
+        val onFingerprint = reasoning > 0 && (reasoning + CUT_BELOW) % CUT_PERIOD == 0L
+        val cut = model in cutModels && onFingerprint && (reasoning + CUT_BELOW) / CUT_PERIOD <= MAX_CUT_TIER
+        return if (cut) FailureCause.Provider.ReasoningCut(reasoning) else null
+    }
 
     override fun http(reply: FailedReply): FailureCause.Provider? {
         val error = OpenAiErrorEnvelope.of(reply.body) ?: OpenAiError("", "", reply.body)
@@ -94,3 +121,12 @@ private val POLICY_CODES = listOf("cyber_policy", "bio_policy")
 
 /** The backend's own websocket capacity. */
 private const val WEBSOCKET_LIMIT = "websocket_connection_limit_reached"
+
+/** The period of the cut: the backend stops a cut model's reasoning just below a multiple of 518 tokens. */
+private const val CUT_PERIOD = 518L
+
+/** How far below each multiple of [CUT_PERIOD] it stops: reasoning_tokens == 518n - 2, observed 516, 1034, 1552. */
+private const val CUT_BELOW = 2L
+
+/** The highest n a count on the fingerprint is read as a cut at. */
+private const val MAX_CUT_TIER = 6L

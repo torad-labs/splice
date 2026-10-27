@@ -8,7 +8,6 @@ import splice.core.config.StatePaths
 import splice.core.topology.AuthKind
 import splice.core.util.HeadScopedLogs
 import splice.core.util.LogSink
-import splice.dialect.responses.stream.LiveFoldConfig
 import splice.oauth.OAuthAccountFiles
 import splice.provider.codex.CodexProvider
 import splice.provider.codex.CodexQuirks
@@ -61,10 +60,6 @@ internal class CodexResponsesArm(
                 ),
                 reasoning = ReasoningWiring.settingsOf(cfg),
                 quirks = quirksOverlay.responsesQuirks(providerCfg, CodexQuirks().defaultQuirks(), cfg),
-                // Reasoning-continuation folding (codex 518n-2) — codex head ONLY; grok/openai
-                // never receive a fold config, so they stay pure passthrough. Asked per turn, off this head's
-                // config as it stands then, so all four fold knobs are live.
-                foldConfig = LiveFoldConfig { quirksOverlay.foldConfigFrom(cfg.current()) },
                 // codex-rs sends it on every request of a ChatGPT sign-in; only a config that turns it off keeps it off.
                 accountIdHeader = providerCfg.quirks.accountIdHeader ?: true,
                 codeMode = codeMode.wiring(ctx),

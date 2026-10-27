@@ -79,7 +79,8 @@ public object ScriptedLogin {
  * is RetryEngine's alone. [budget] is every watchdog tier and the upstream deadline: far longer than any test's
  * virtual wait, so no watchdog fires unless a test shortens it. [firstOutput] shortens only the tier a round is held
  * to before the client saw content, and [progressCap] only the whole turn's no-progress limit, so a test can make
- * one of them fire and not the other. [relayed] puts a [PathRelay] between the head and the provider.
+ * one of them fire and not the other. [relayed] puts a [PathRelay] between the head and the provider. [model] is the
+ * one model the head serves, for a provider that reads which model answered (codex's reasoning cut).
  */
 public data class HeadShape(
     val maxInflight: Int = 0,
@@ -88,6 +89,7 @@ public data class HeadShape(
     val firstOutput: Duration = budget,
     val progressCap: Duration = budget,
     val relayed: Boolean = false,
+    val model: String = MODEL,
 )
 
 /** What a scripted head's lines name besides the failure (failure-handling slice 2): the command that signs it in and
@@ -383,7 +385,7 @@ public class ScriptedHeads(private val tmp: Path, public val time: VirtualTime) 
             voiceFacts = VoiceFacts(says.providerName, local = kind == LOCAL_KIND, zone = LINE_ZONE),
         )
         val wiring = HeadWiring(tmp.resolve("perf$suffix.jsonl"), relay)
-        val head = ScriptedHead(server, waiter, "claude-$key--$MODEL", liveTurns, gate, lines, wiring)
+        val head = ScriptedHead(server, waiter, "claude-$key--${shape.model}", liveTurns, gate, lines, wiring)
         heads += head
         head.start()
         return head
@@ -400,10 +402,10 @@ public class ScriptedHeads(private val tmp: Path, public val time: VirtualTime) 
             name = ProviderName(key = key, label = key),
             catalog = ModelCatalog(
                 discoveryPrefix = "claude-$key--",
-                models = listOf(ModelEntry(MODEL, label = "Scripted", contextWindow = CONTEXT_WINDOW)),
+                models = listOf(ModelEntry(shape.model, label = "Scripted", contextWindow = CONTEXT_WINDOW)),
                 defaultContextWindow = CONTEXT_WINDOW,
             ),
-            pinnedModel = MODEL,
+            pinnedModel = shape.model,
             auth = login.auth(key),
             locations = ProviderLocations(baseUrl = baseUrl),
             watchdog = WatchdogBudget(shape.firstOutput, shape.budget, shape.progressCap),

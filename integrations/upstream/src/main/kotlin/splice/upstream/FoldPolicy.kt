@@ -1,31 +1,31 @@
 // NEW: reasoning-continuation folding SPI (the codex 518n-2 "dumbing down" fix). The generic head
-// (:daemon-head) drives THIS; the codex-specific detection + continuation-request construction live in
-// the openai-responses dialect. Keeping the contract here (not in the dialect) is why :daemon-head can
-// fold a truncated round without ever importing a concrete dialect — the module law again.
+// (:daemon-head) drives THIS; the continuation-request construction lives in the openai-responses
+// dialect. Keeping the contract here (not in the dialect) is why :daemon-head can fold a truncated
+// round without ever importing a concrete dialect — the module law again. Failure-handling slice 4:
+// only the builder is here. Whether a round was cut is its provider's reading (Replies.completed,
+// codex's in CodexReplies), and whether it is continued is RetryEngine's, on the turn's one ledger.
 package splice.upstream
 
 import kotlinx.serialization.json.JsonObject
 import splice.core.turn.TurnOutcome
 
-/** Per-turn continuation policy. A provider returns one from [Provider.foldPolicy] when the
- *  turn's model is fold-eligible; null means pure passthrough (no buffering, no loop — byte-for-byte
- *  the pre-fold behaviour). Called by the gateway after each completed upstream round. */
+/** Per-turn continuation builder. A provider returns one from [Provider.foldPolicy] when the
+ *  turn's model is one whose rounds it may cut; null means pure passthrough (no buffering, no loop —
+ *  byte-for-byte the pre-fold behaviour). Asked by the gateway for a completed round its provider
+ *  read as cut, once the engine continues it. */
 public fun interface FoldPolicy {
     /**
-     * Decide whether this round's reasoning was truncated and, if so, return the NEXT upstream
-     * request body (this round's input + replayed reasoning + a continuation marker) to re-POST.
-     * Returns null to STOP folding (a clean finish, a cap hit, or no encrypted reasoning to replay)
-     * — the gateway then flushes the buffered output and emits the single honest terminal.
+     * The NEXT upstream request body for a cut round (this round's input + replayed reasoning + a
+     * continuation marker). Null when the round left no encrypted reasoning to replay: the gateway
+     * then flushes the buffered output and emits the single honest terminal.
      */
     public fun continuation(round: FoldRound): JsonObject?
 }
 
-/** One completed fold round: the request that produced it, its outcome (usage + reasoning
- *  envelopes), and how many rounds already folded before it (0-based). */
+/** One completed fold round: the request that produced it and its outcome (usage + reasoning envelopes). */
 public data class FoldRound(
     val requestBody: JsonObject,
     val outcome: TurnOutcome.Success,
-    val roundIndex: Int,
 )
 
 /** Mid-stream re-anchoring policy (eli design 2026-07-24): when a round FAILS after frames were

@@ -3,9 +3,7 @@
 // Same-package.
 package splice.head.round
 
-import splice.core.failure.FailureCause
-import splice.core.failure.Moment
-import splice.core.failure.Position
+import kotlinx.serialization.json.JsonObject
 import splice.core.turn.RoundText
 import splice.core.turn.TurnOutcome
 import splice.head.wire.BufferingWireSink
@@ -13,8 +11,6 @@ import splice.upstream.FoldPolicy
 import splice.upstream.FoldRound
 import splice.upstream.RetryNotice
 import splice.upstream.ToolSearchPolicy
-import splice.upstream.retry.How
-import splice.upstream.retry.RetryStep
 
 internal class FoldContinuations(
     private val key: String,
@@ -22,8 +18,9 @@ internal class FoldContinuations(
     private val signals: RunnerSignals,
     private val toolSearch: ToolSearchPolicy?,
     private val rounds: RoundSplice,
-    /** The turn's steps: how many times a round cut short at its reasoning bound is continued is the engine's answer
-     *  on the turn's one ledger, and at its budget the round's answer stands (final-design.md section 8, Keep). */
+    /** The turn's steps: whether a round was cut short is its provider's reading (codex's CodexReplies), never the
+     *  fold's, and how many times it is continued is the engine's answer on the turn's one ledger; at its budget the
+     *  round's answer stands (final-design.md section 8, Keep). */
     private val steps: RoundSteps,
 ) {
     /** The fold-continuation and search-continuation checks, extracted out of FoldRunner.run
@@ -44,7 +41,7 @@ internal class FoldContinuations(
         // not buy more upstream fold rounds (quota burn + a pinned slot for a reader that left).
         val signalsClear = !signals.watchdogFired() && !signals.clientGone()
         val cut = if (signalsClear) success else null
-        val foldNext = cut?.let { fold.continuation(FoldRound(body, it, roundIndex)) }?.takeIf { continues(cut) }
+        val foldNext = cut?.let { continuation(fold, body, it) }
         if (foldNext != null && success != null) {
             buffer.discard()
             // CX-09: a fold round whose reasoning reached the client must say so, or a turn whose
@@ -85,19 +82,14 @@ internal class FoldContinuations(
         return null
     }
 
-    /** Whether the engine continues this round, which it answers from the turn's one ledger: a round the provider
-     *  finished with its reasoning cut short is continued silently, and once the fold's budget is spent the round's
-     *  answer stands (RetryStep.Keep). The step is recorded there, so the fold's continuations count among the turn's
-     *  attempts instead of running on a count of their own. A fold round carries nothing waiting. */
-    private suspend fun continues(round: TurnOutcome.Success): Boolean {
-        val cause = FailureCause.Provider.ReasoningCut(round.usage.reasoningTokens)
-        val step = steps.next(cause, AT_ITS_REASONING_BOUND, canContinue = true) as? RetryStep.Again ?: return false
-        if (step.how != How.FOLD_CONTINUE) return false
-        steps.take(step, cause, AT_ITS_REASONING_BOUND)
-        return true
+    /** The request that continues [round], which [body] produced: only a round its provider read as cut short, and
+     *  only while the engine continues it from the turn's one ledger. Once the fold's budget is spent the round's
+     *  answer stands (RetryStep.Keep). The step is recorded there for a continuation actually built, so the fold's
+     *  continuations count among the turn's attempts instead of running on a count of their own. */
+    private suspend fun continuation(fold: FoldPolicy, body: JsonObject, round: TurnOutcome.Success): JsonObject? {
+        val cut = steps.cutShort(round) ?: return null
+        val next = fold.continuation(FoldRound(body, round)) ?: return null
+        steps.take(cut)
+        return next
     }
 }
-
-/** Where a round cut short at its reasoning bound leaves the turn: the provider's stream ran to its end, and the
- *  client holds only the reasoning it streamed live. */
-private val AT_ITS_REASONING_BOUND = Position(Moment.COMMITTED, streamBegan = true)

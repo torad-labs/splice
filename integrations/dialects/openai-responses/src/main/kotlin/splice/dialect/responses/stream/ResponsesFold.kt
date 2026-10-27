@@ -1,18 +1,15 @@
-// NEW: reasoning-continuation folding for the codex Responses path. gpt-5.5 / gpt-5.6-luna /
-// gpt-5.6-terra intermittently TRUNCATE their own chain-of-thought at exactly
-// reasoning_tokens == 518*n - 2 (516, 1034, 1552, ...) — the model stops reasoning early and
-// finalizes a shallower answer. gpt-5.6-sol does NOT (probed 2026-07-19). The fix (the mechanism
-// CodexCont / codexcomp use): detect the fingerprint, REPLAY the round's reasoning.encrypted_content
-// back to the server with a phase:commentary "Continue thinking..." marker so the model resumes from
-// the cutoff instead of finalizing. encrypted_content is opaque — replayed, never read (the server
-// holds the keys). The envelope round-trip reuses core/reasoning/Replay.kt (encode on the stream
-// side into TurnOutcome.Success.reasoningEnvelopes, decode HERE back to Responses reasoning input
-// items) — the codec is never re-authored.
+// NEW: reasoning-continuation folding for the codex Responses path. A round whose reasoning its provider cut short
+// (codex's 518n-2, which CodexReplies reads as a ReasoningCut) is continued by REPLAYING the round's
+// reasoning.encrypted_content back to the server with a phase:commentary marker, so the model resumes from the cutoff
+// instead of finalizing (the mechanism CodexCont / codexcomp use). encrypted_content is opaque — replayed, never read
+// (the server holds the keys). The envelope round-trip reuses core/reasoning/Replay.kt (encode on the stream side into
+// TurnOutcome.Success.reasoningEnvelopes, decode HERE back to Responses reasoning input items) — the codex-rs codec is
+// never re-authored. Failure-handling slice 4: this file only builds. Whether a round was cut is its provider's reading
+// and whether it is continued is RetryEngine's, on the turn's one ledger, so the four fold knobs are gone.
 package splice.dialect.responses.stream
 
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.buildJsonArray
-import splice.core.config.Knob
 import splice.dialect.responses.reasoning.ReasoningEnvelopeDecoder
 import splice.dialect.responses.request.AssistantPhase
 import splice.dialect.responses.request.ResponsesAssistantText
@@ -22,44 +19,18 @@ import splice.dialect.responses.request.responsesRequestJson
 import splice.upstream.FoldPolicy
 import splice.upstream.FoldRound
 
-/** The fold policy as it stands NOW, asked once per turn (knobs foldReasoningModels, foldMaxContinue,
- *  foldMarkerText and foldMaxTier) so an operator who edits any of them is obeyed by the next turn rather than the next restart. A turn
- *  already folding keeps the [FoldConfig] it began with. null = the feature is off for this provider. A [FoldConfig]
- *  is itself the reader that always answers the same value, which is what a test or a provider with no knobs passes. */
-public fun interface LiveFoldConfig {
-    public operator fun invoke(): FoldConfig?
-}
-
-/** Operator-tunable reasoning-continuation policy (threaded from config like mirror_reasoning). */
+/** What a provider whose rounds are cut declares for the Responses builder: the upstream [models] whose turns run
+ *  round by round so a cut round can be continued, and the [markerText] of the hidden item that asks the model to go
+ *  on. Codex declares both from CodexReplies; a provider that declares none passes every turn straight through. */
 public data class FoldConfig(
-    /** Upstream models that exhibit the 518n-2 truncation — luna/terra/5.5, NOT sol. The
-     *  operator-tunable default lives in Knob.FOLD_REASONING_MODELS. */
     val models: Set<String>,
-    /** V4-100: READS Knob.FOLD_MAX_CONTINUE instead of restating its default. The knob is the
-     *  operator-facing source of this number (foldMaxContinue, CLAUDEX_FOLD_MAX_CONTINUE), so a
-     *  file-local `3` was a second declaration of it — the KNOB-SHADOW const-single-source exists to
-     *  catch, and the one that goes wrong silently: the operator sets 5, the config layer carries 5,
-     *  and this default keeps answering 3 for every direct construction. */
-    val maxContinue: Int = Knob.FOLD_MAX_CONTINUE.count().toInt(),
-    val markerText: String = DEFAULT_MARKER_TEXT,
-    /** V4-100: READS Knob.FOLD_MAX_TIER, same reason as [maxContinue]. */
-    val maxTierN: Int = Knob.FOLD_MAX_TIER.count().toInt(),
-) : LiveFoldConfig {
-    override fun invoke(): FoldConfig = this
-}
-
-// The one FoldConfig default still at file scope, because Kotlin main sources carry no `companion`
-// blocks and a consumer only drops the `FoldConfig.` prefix. The two NUMERIC defaults that used to
-// sit here are GONE (V4-100): each restated a Knob default, so FoldConfig reads the knobs instead
-// and there is no second number left to drift from the operator-facing one.
-public const val DEFAULT_MARKER_TEXT: String = "Continue thinking..."
+    val markerText: String,
+)
 
 /**
- * The codex 518n-2 detector + continuation-request builder. One per fold-eligible turn; the gateway
- * drives it after each completed round. Detection is the shipped fingerprint (516/1034/1552/...);
- * a truncated round with replayable encrypted reasoning, within the tier window and continuation
- * cap, yields the NEXT request body (this round's input + replayed reasoning + the marker). Anything
- * else returns null → the gateway flushes the buffered output and emits the single honest terminal.
+ * The continuation-request builder for a round its provider cut short: this round's request, its encrypted reasoning
+ * replayed, and the marker. A round with no encrypted reasoning to replay cannot be continued, so it answers null and
+ * the head emits the round's own answer.
  */
 internal class ResponsesFoldPolicy(
     private val config: FoldConfig,
@@ -69,27 +40,9 @@ internal class ResponsesFoldPolicy(
     private val continuation = ResponsesContinuation()
 
     override fun continuation(round: FoldRound): JsonObject? {
-        if (!shouldContinue(round)) return null
         val replay = round.outcome.handoffs.reasoningEnvelopes.mapNotNull { decodeReasoningEnvelope(it) }
         return if (replay.isEmpty()) null else continuationBody(round.requestBody, replay)
     }
-
-    /** Truncated on the 518n-2 fingerprint, within the tier window, and under the continuation cap. */
-    private fun shouldContinue(round: FoldRound): Boolean {
-        val reasoningTokens = round.outcome.usage.reasoningTokens
-        return isTruncationFingerprint(reasoningTokens) &&
-            tierOf(reasoningTokens) <= config.maxTierN &&
-            round.roundIndex < config.maxContinue
-    }
-
-    /** The exact 518n-2 truncation fingerprint (516/1034/1552/...). An instance member rather than
-     *  the companion function it used to be (Kotlin main sources carry no `companion` blocks);
-     *  reads only its argument. */
-    public fun isTruncationFingerprint(reasoningTokens: Long): Boolean =
-        reasoningTokens > 0 && (reasoningTokens + FINGERPRINT_OFFSET) % FOLD_PERIOD == 0L
-
-    /** Tier n for a fingerprint-matching count (516→1, 1034→2, ...). */
-    public fun tierOf(reasoningTokens: Long): Long = (reasoningTokens + FINGERPRINT_OFFSET) / FOLD_PERIOD
 
     private fun continuationBody(previous: JsonObject, replayItems: List<JsonObject>): JsonObject =
         continuation.continuationRequest(previous, replayItems + listOf(continuationMarker()))
@@ -100,10 +53,6 @@ internal class ResponsesFoldPolicy(
     private fun continuationMarker(): JsonObject =
         ResponsesAssistantText.item(config.markerText, AssistantPhase.COMMENTARY)
 }
-
-// reasoning_tokens == 518*n - 2  ⇔  (reasoning_tokens + 2) % 518 == 0, reasoning_tokens > 0.
-private const val FOLD_PERIOD = 518L
-private const val FINGERPRINT_OFFSET = 2L
 
 /**
  * DTO-faithful continuation shared by fold, re-anchor and tool-search: decode the prior request,

@@ -15,8 +15,10 @@ import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.io.TempDir
 import splice.app.provider.HeadReplies
 import splice.core.auth.RefreshCall
+import splice.core.turn.ReasoningDisplay
 import splice.dialect.anthropic.PassthroughProvider
 import splice.dialect.anthropic.PassthroughQuirks
+import splice.dialect.responses.ReasoningSettings
 import splice.head.scripted.ClientAnswer
 import splice.head.scripted.ClientRequest
 import splice.head.scripted.HeadShape
@@ -25,6 +27,7 @@ import splice.head.scripted.ScriptedReply
 import splice.head.scripted.reply
 import splice.head.scripted.withScriptedHeads
 import splice.oauth.codex.CodexRefresh
+import splice.provider.codex.CodexProvider
 import splice.provider.codex.auth.CodexAuthProvider
 import java.nio.file.Path
 import java.time.Instant
@@ -84,6 +87,17 @@ private const val WAITS_15_S = "This turn tries again in 15 seconds."
 /** A Responses stream's own failure event for a server error. */
 private const val RESPONSES_SERVER_ERROR =
     """{"type":"response.failed","response":{"error":{"code":"server_error","message":"upstream exploded"}}}"""
+
+/** A model whose reasoning the ChatGPT backend cuts at 518n-2 tokens, and the period of that cut. */
+private const val CUT_MODEL = "gpt-5.5"
+private const val CUT_PERIOD = 518L
+
+/** The words of the hidden item that asks a cut model to go on reasoning (codex-rs's own). */
+private const val CONTINUE_THINKING = "Continue thinking..."
+
+/** How a codex head reasons in these routes. */
+private val CODEX_REASONING =
+    ReasoningSettings(ReasoningDisplay.TEXT, replay = false, effort = "high", summary = "detailed")
 
 class OneEngineThroughHeadsTest {
     @Test
@@ -441,6 +455,37 @@ class OneEngineThroughHeadsTest {
             assertEquals(listOf(2.seconds, 4.seconds), gaps(exchanges), "three exchanges: ${answer.describe()}")
             assertLine(answer, "login expired and could not be renewed")
         }
+    }
+
+    @Test
+    fun `a codex round cut at its reasoning bound is continued silently up to 3 times, and the client sees one answer`(
+        @TempDir tmp: Path,
+    ) = runTest {
+        withScriptedHeads(tmp) {
+            // Every round is cut, so only the engine's budget of three continuations ends the folding.
+            provider.script(*Array(1 + 3 + 1) { cutRound(it + 1) })
+            val head = custom("codex", HeadShape(model = CUT_MODEL)) { tuning, log ->
+                CodexProvider(tuning, CODEX_REASONING, log = log)
+            }
+
+            val answer = head.client.send()
+
+            assertEquals(1 + 3, provider.requests.size, "the round and three continuations: ${answer.describe()}")
+            provider.requests.drop(1).forEachIndexed { i, request ->
+                assertTrue("ENC-${i + 1}" in request.body, "continuation ${i + 1} replays the reasoning it continues")
+                assertTrue(CONTINUE_THINKING in request.body, "and asks the model to go on: ${request.body}")
+            }
+            assertEquals("the answer of round 4", answer.text, "one answer, the last round's: ${answer.describe()}")
+            assertNull(answer.error, answer.describe())
+            assertEquals(emptyList<String>(), lines(answer), "a continuation is silent")
+        }
+    }
+
+    /** A codex round on a model the backend cuts, cut at 518n-2 reasoning tokens with n = [round], within the bound. */
+    private fun cutRound(round: Int): ScriptedReply = reply {
+        responsesReasoning("ENC-$round", id = "rs_round_$round")
+        responsesMessageAfterReasoning("the answer of round $round")
+        responsesCompleted(reasoningTokens = CUT_PERIOD * round - 2)
     }
 
     /** The time between each request the provider received and the one before it. */

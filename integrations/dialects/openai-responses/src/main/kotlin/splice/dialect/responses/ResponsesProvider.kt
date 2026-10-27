@@ -18,7 +18,7 @@ import splice.dialect.responses.failure.ResponsesReplies
 import splice.dialect.responses.request.ResponsesCompactionTail
 import splice.dialect.responses.request.ResponsesParts
 import splice.dialect.responses.request.ResponsesSystemPrompt
-import splice.dialect.responses.stream.LiveFoldConfig
+import splice.dialect.responses.stream.FoldConfig
 import splice.dialect.responses.websocket.ResponsesWebSocketPolicy
 import splice.dialect.responses.websocket.ResponsesWsSupport
 import splice.dialect.responses.websocket.WsExtraHeaders
@@ -40,8 +40,8 @@ public abstract class ResponsesProvider(
     private val reasoning: ReasoningSettings,
     protected val quirks: ResponsesQuirks,
     // Reasoning-continuation folding (codex 518n-2). null = the feature is off for this provider —
-    // grok/openai-platform pass nothing → pure passthrough. Only CodexProvider wires a real config.
-    private val foldConfig: LiveFoldConfig? = null,
+    // grok/openai-platform pass nothing → pure passthrough. Only CodexProvider declares one, from CodexReplies.
+    private val fold: FoldConfig? = null,
     /** Daemon log sink (Main.persistentLogger): writes BOTH stderr and daemon.log, which is what
      *  /mgmt/logs tails. A bare System.err.println reaches stderr ONLY, so its line never appears in
      *  the log endpoint — the failure you most want to read is the one you cannot (wall
@@ -65,7 +65,7 @@ public abstract class ResponsesProvider(
     // Collaborator wiring lives in ResponsesParts.kt (concentration, 2026-08-19).
     private val compactionTail = ResponsesCompactionTail()
     private val systemPrompt = ResponsesSystemPrompt()
-    private val parts = ResponsesParts(tuning, reasoning, quirks, foldConfig, log, toolNames, replies)
+    private val parts = ResponsesParts(tuning, reasoning, quirks, fold, log, toolNames, replies)
     private val locations = tuning.locations
 
     /** The headers this provider sends with every request before the ones its config names: the shared SSE accept

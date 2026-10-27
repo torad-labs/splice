@@ -1,5 +1,7 @@
 // PORT-analog of HeadServerIntegrationTest for reasoning-continuation folding (codex 518n-2): a real
-// HeadServer (TestResponsesProvider with a fold config + mock ChatGPT upstream) driven over HTTP. Pins:
+// HeadServer (TestResponsesProvider with codex's fold and codex's reading of a cut round + mock ChatGPT
+// upstream) driven over HTTP. Failure-handling slice 4: the round is read as cut by CodexReplies and
+// continued by RetryEngine on the turn's ledger, and the fold's knobs are gone. Pins:
 // fold-and-continue (a truncated round + a clean round fold into ONE downstream response, the
 // truncated output discarded, usage summed, the continuation marker in the round-2 upstream body);
 // the continuation cap (the head stops and emits the last round honestly); and passthrough parity
@@ -36,11 +38,13 @@ import splice.core.model.ModelEntry
 import splice.core.turn.ReasoningDisplay
 import splice.core.turn.WatchdogBudget
 import splice.dialect.responses.ReasoningSettings
+import splice.dialect.responses.failure.ResponsesReplies
 import splice.dialect.responses.stream.FoldConfig
-import splice.dialect.responses.stream.LiveFoldConfig
+import splice.provider.codex.failure.CodexReplies
 import splice.upstream.ProviderLocations
 import splice.upstream.ProviderName
 import splice.upstream.ProviderTuning
+import splice.upstream.failure.Replies
 import splice.upstream.retry.InflightGate
 import splice.upstream.transport.UpstreamClient
 import java.nio.file.Path
@@ -72,8 +76,11 @@ class HeadServerFoldTest {
     private lateinit var head: HeadServer
     private lateinit var tmp: java.nio.file.Path
 
-    /** The fold policy the head asks at every turn, which a test MOVES the way an operator's PATCH does. */
-    @Volatile private var fold = FoldConfig(models = setOf("gpt-5.6-luna"))
+    /** Codex's fold for luna: sol is deliberately NOT in the set (passthrough parity). */
+    private val fold = FoldConfig(models = setOf("gpt-5.6-luna"), markerText = CodexReplies.CONTINUE_THINKING)
+
+    /** Codex's own reading of a completed round, which is what names a round cut. */
+    private val codexReplies = Replies(ResponsesReplies, CodexReplies)
 
     private val catalog = ModelCatalog(
         discoveryPrefix = "claude-codex--",
@@ -98,8 +105,8 @@ class HeadServerFoldTest {
                 loginCommand = "claudex login",
             ),
             reasoning = ReasoningSettings(ReasoningDisplay.TEXT, false, "high", "detailed"),
-            // luna folds; sol is deliberately NOT in the set (passthrough parity).
-            foldConfig = LiveFoldConfig { fold },
+            fold = fold,
+            replies = codexReplies,
         )
         head = HeadServer(
             provider = provider,
@@ -130,30 +137,6 @@ class HeadServerFoldTest {
                     "messages":[{"role":"user","content":"go"}]}""",
             )
         }.bodyAsText()
-
-    @Test
-    fun `a fold policy changed while the head runs governs the next turn, not the next restart`() = runTest {
-        val original = fold
-        try {
-            fold = FoldConfig(models = emptySet())
-            val before = mock.upstreamBodies.size
-            messages("fold", "claude-codex--gpt-5.6-luna")
-            assertEquals(1, mock.upstreamBodies.size - before, "luna left the fold set, so no continuation POST")
-
-            fold = FoldConfig(models = setOf("gpt-5.6-luna"))
-            val after = mock.upstreamBodies.size
-            messages("fold", "claude-codex--gpt-5.6-luna")
-            assertEquals(2, mock.upstreamBodies.size - after, "luna rejoined the set, so the truncated round continues")
-
-            fold = FoldConfig(models = setOf("gpt-5.6-luna"), markerText = "Keep going, please.")
-            val last = mock.upstreamBodies.size
-            messages("fold", "claude-codex--gpt-5.6-luna")
-            val roundTwo = mock.upstreamBodies.drop(last)[1].second
-            assertTrue(roundTwo.contains("Keep going, please."), "the edited marker reaches the next turn: $roundTwo")
-        } finally {
-            fold = original
-        }
-    }
 
     @Test
     fun `fold-and-continue - a truncated round then a clean round fold into ONE response`() = runTest {
@@ -210,7 +193,7 @@ class HeadServerFoldTest {
         val sse = messages("foldcap", "claude-codex--gpt-5.6-luna")
         val rounds = mock.upstreamBodies.drop(before)
 
-        // initial round + fold_max_continue (default 3) continuations = 4 POSTs, then stop
+        // initial round + the engine's MAX_FOLD_CONTINUES (3) continuations = 4 POSTs, then the answer stands
         assertEquals(4, rounds.size, "expected 1 initial + 3 continuation POSTs")
         // the last (still-truncated) round is emitted honestly rather than looped forever
         assertTrue(sse.contains("TENTATIVE ANSWER"), sse)
@@ -276,7 +259,8 @@ class HeadServerFoldTest {
                 loginCommand = "claudex login",
             ),
             reasoning = ReasoningSettings(ReasoningDisplay.TEXT, false, "high", "detailed"),
-            foldConfig = FoldConfig(models = setOf("gpt-5.6-luna")),
+            fold = fold,
+            replies = codexReplies,
         ),
         listenPort = 0,
         deps = headDeps(

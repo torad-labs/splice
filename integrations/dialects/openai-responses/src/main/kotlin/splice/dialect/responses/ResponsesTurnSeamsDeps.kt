@@ -6,13 +6,13 @@ import splice.core.failure.LoginOwner
 import splice.core.util.LogSink
 import splice.dialect.responses.failure.ResponsesReplies
 import splice.dialect.responses.stream.ConversationSummaryParts
-import splice.dialect.responses.stream.LiveFoldConfig
+import splice.dialect.responses.stream.FoldConfig
 import splice.upstream.ToolNameShortener
 import splice.upstream.failure.Replies
 
-/** What the seams carry from one round to the next: the intra-turn fold. */
+/** What the seams carry from one round to the next: the intra-turn fold, as its provider declared it. */
 internal data class RoundCarry(
-    val foldConfig: LiveFoldConfig?,
+    val fold: FoldConfig?,
 )
 
 /** The collaborators the seams hand the stream translator beside its turn context: the tool aliases, the log, and

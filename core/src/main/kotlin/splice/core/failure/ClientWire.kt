@@ -37,10 +37,11 @@ public data class WireAnswer(
         }
 }
 
-/** How Claude Code acts on an ending (final-design.md section 11). [KEPT] answers as before slice 4: a held turn's
- *  ending, whose family is slice 5's; a request too slow to reach splice, which keeps its own 408; and the refusal of
- *  a session's own splice key at the door, which keeps its 401 with no x-should-retry, since 2.1.310 answers a 401 by
- *  re-reading its key helper and sending what it returns (http-401) — the recovery a rotated key needs. */
+/** How Claude Code acts on an ending (final-design.md section 11). [KEPT] answers as before slice 4, through [Kept]:
+ *  a held turn's ending, whose family is slice 5's; a request too slow to reach splice, which keeps its own 408; and
+ *  the refusal of a session's own splice key at the door, which keeps its 401 with no x-should-retry, since 2.1.310
+ *  answers a 401 by re-reading its key helper and sending what it returns (http-401) — the recovery a rotated key
+ *  needs. */
 private enum class WireFamily { R, P, CLIENT_LOGIN, HELD_LOGIN, T, KEPT }
 
 public object ClientWire {
@@ -85,7 +86,8 @@ public object ClientWire {
     /** While the status is splice's to choose. */
     private fun status(cause: FailureCause, family: WireFamily, at: Position): WireAnswer = when (family) {
         WireFamily.R -> resend(cause, at)
-        WireFamily.P -> if (tooLarge(cause)) Kept.answer(cause, at) else STOPPED
+        // A request too large keeps its 413 wherever it is found, which 2.1.310 does not send again (http-413).
+        WireFamily.P -> if (tooLarge(cause)) Kept.refusal(cause) else STOPPED
         WireFamily.T -> STOPPED
         WireFamily.CLIENT_LOGIN -> CLIENT_LOGIN_REFUSED
         WireFamily.HELD_LOGIN -> HELD_LOGIN_REFUSED
@@ -147,7 +149,7 @@ private object Kept {
     }
 
     /** A refusal before any turn exists keeps its real type: the status owns the client's retry, not the SSE rule. */
-    private fun refusal(cause: FailureCause): WireAnswer {
+    fun refusal(cause: FailureCause): WireAnswer {
         val own = ClientWire.ownType(cause)
         val why = (cause as? FailureCause.Splice.Declined)?.why
         return WireAnswer(why?.let(::refusalStatus) ?: statusOf(own), own, why?.let(::refusalRetry))

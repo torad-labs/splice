@@ -8,7 +8,10 @@ import kotlinx.coroutines.yield
 import splice.core.auth.AuthDescription
 import splice.core.auth.ClientAuthProvider
 import splice.core.auth.Credentials
+import splice.core.auth.LoginAnswer
 import splice.core.auth.RefreshableAuthProvider
+import splice.core.failure.FailureCause
+import splice.core.failure.Lift
 import splice.core.failure.VoiceFacts
 import splice.core.model.ModelCatalog
 import splice.core.model.ModelEntry
@@ -19,7 +22,6 @@ import splice.dialect.anthropic.PassthroughQuirks
 import splice.dialect.anthropic.failure.AnthropicReplies
 import splice.dialect.chat.ChatQuirks
 import splice.dialect.chat.failure.ChatReplies
-import splice.dialect.responses.failure.ResponsesReplies
 import splice.head.HeadDeps
 import splice.head.HeadServer
 import splice.head.awaitListening
@@ -175,6 +177,18 @@ private class ScriptedAuth : RefreshableAuthProvider {
     override suspend fun describe(): AuthDescription = AuthDescription(present = true, kind = "scripted")
 }
 
+/** A login its provider own mint refuses, with the reason it gave: Muse answer a key mint that granted nothing this
+ *  way (LoginAnswer.Refused), so the turn ends with that reason instead of telling a signed-in person to sign in. */
+private class RefusingAuth(private val cause: FailureCause.Provider) : RefreshableAuthProvider {
+    override suspend fun credentials(): Credentials? = null
+
+    override suspend fun refresh(): Credentials? = null
+
+    override suspend fun answer(): LoginAnswer = LoginAnswer.Refused(cause)
+
+    override suspend fun describe(): AuthDescription = AuthDescription(present = true, kind = "scripted-refused")
+}
+
 /** A login that is gone: no credential to send and none to refresh, so a turn ends before any provider request. */
 private class SignedOutAuth : RefreshableAuthProvider {
     override suspend fun credentials(): Credentials? = null
@@ -194,12 +208,18 @@ internal enum class HeadLogin {
 
     /** The caller's own, forwarded on each turn, as a head that serves a LAN share's nodes takes it. */
     FORWARDED,
+
+    /** A login whose own mint refuses it: an inactive subscription, and a mint that denied it outright. */
+    REFUSED_SUBSCRIPTION,
+    REFUSED_LOGIN,
     ;
 
     fun auth(key: String): RefreshableAuthProvider = when (this) {
         SCRIPTED -> ScriptedAuth()
         SIGNED_OUT -> SignedOutAuth()
         FORWARDED -> ClientAuthProvider(key)
+        REFUSED_SUBSCRIPTION -> RefusingAuth(FailureCause.Provider.NeedsPayment(Lift.Unstated, subscription = true))
+        REFUSED_LOGIN -> RefusingAuth(FailureCause.Provider.Forbidden())
     }
 }
 
@@ -256,22 +276,19 @@ public class ScriptedHeads(private val tmp: Path, public val time: VirtualTime) 
         }
 
     /** An OpenAI Responses head over HTTP. */
-    public suspend fun responses(
-        shape: HeadShape = HeadShape(),
-        replies: Replies = Replies(ResponsesReplies),
-    ): ScriptedHead =
-        head("responses", shape) { tuning, log ->
-            ScriptedResponsesProvider(tuning, webSocket = false, log, replies)
-        }
+    public suspend fun responses(shape: HeadShape = HeadShape()): ScriptedHead =
+        head("responses", shape) { tuning, log -> ScriptedResponsesProvider(tuning, webSocket = false, log) }
 
     /** An OpenAI Responses head whose rounds ride the websocket. */
-    public suspend fun responsesOverWebSocket(
-        shape: HeadShape = HeadShape(),
-        replies: Replies = Replies(ResponsesReplies),
-    ): ScriptedHead =
-        head("responses-ws", shape) { tuning, log ->
-            ScriptedResponsesProvider(tuning, webSocket = true, log, replies)
-        }
+    public suspend fun responsesOverWebSocket(shape: HeadShape = HeadShape()): ScriptedHead =
+        head("responses-ws", shape) { tuning, log -> ScriptedResponsesProvider(tuning, webSocket = true, log) }
+
+    /** A Responses head whose login its provider own mint refuses: [subscription] asks for the refusal of an inactive
+     *  subscription, and false for a mint that denied the login outright. */
+    public suspend fun refusedResponses(subscription: Boolean, shape: HeadShape = HeadShape()): ScriptedHead {
+        val login = if (subscription) HeadLogin.REFUSED_SUBSCRIPTION else HeadLogin.REFUSED_LOGIN
+        return head("refused", shape, login) { tuning, log -> ScriptedResponsesProvider(tuning, false, log) }
+    }
 
     /** A head of [kind] whose provider [build] makes, for a provider this file does not build, such as a codex head. */
     public suspend fun custom(

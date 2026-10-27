@@ -22,7 +22,6 @@ import splice.dialect.responses.ReasoningSettings
 import splice.dialect.responses.ResponsesLiteQuirks
 import splice.dialect.responses.ResponsesProvider
 import splice.dialect.responses.ResponsesQuirks
-import splice.dialect.responses.failure.ResponsesReplies
 import splice.upstream.BuiltTurn
 import splice.upstream.Provider
 import splice.upstream.ProviderIdentity
@@ -90,15 +89,11 @@ internal class ScriptedResponsesProvider(
     tuning: ProviderTuning,
     private val webSocket: Boolean,
     log: LogSink,
-    /** How this head reads its own failures, as its arm's head would: the Responses standard unless a test names a
-     *  vendor's deviation (failure-handling slice 3). */
-    replies: Replies = Replies(ResponsesReplies),
 ) : ResponsesProvider(
     tuning,
     ReasoningSettings(ReasoningDisplay.TEXT, replay = false, effort = "high", summary = "detailed"),
     ResponsesQuirks(providerTag = tuning.key, lite = ResponsesLiteQuirks()).withWebSocketToml(webSocket),
     log = log,
-    replies = replies,
 ) {
     override val supportsWebSocket: Boolean get() = webSocket
 }

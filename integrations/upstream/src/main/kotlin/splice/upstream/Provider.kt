@@ -14,6 +14,7 @@ import splice.core.turn.ReasoningDisplay
 import splice.core.turn.TurnMeta
 import splice.core.turn.TurnOutcome
 import splice.core.turn.WatchdogBudget
+import splice.upstream.failure.OpenAiReplies
 import splice.upstream.failure.Replies
 import splice.upstream.sse.WireSink
 import splice.upstream.transport.UpstreamResponse
@@ -82,8 +83,12 @@ public interface Provider : ProviderIdentity {
     /** How this head reads a failure of its own: its API type's standard reader, this provider's declared deviation
      *  before it, and the foreign-key rule every API type shares before both (failure-handling slice 3). Every
      *  failure a reply, an event or the websocket carries is read once, here, so one head's reading never depends on
-     *  where in the pipeline the failure was noticed. */
-    public val replies: Replies
+     *  where in the pipeline the failure was noticed.
+     *
+     *  Each dialect's provider declares its own (AnthropicReplies, ChatReplies, ResponsesReplies, each with the
+     *  vendor deviation its arm named). The default is the OpenAI error object the Chat and Responses standards are
+     *  both built on, so a provider that has not declared one still reads a reply by that shape rather than by none. */
+    public val replies: Replies get() = Replies(OpenAiReplies)
 
     /** The Anthropic-compatible client owns retry and fallback for a native rate-limit response. */
     public val relayRateLimitReplies: Boolean get() = false

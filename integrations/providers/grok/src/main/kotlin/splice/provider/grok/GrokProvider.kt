@@ -11,9 +11,7 @@ import splice.core.util.LogSink
 import splice.dialect.responses.ReasoningSettings
 import splice.dialect.responses.ResponsesProvider
 import splice.dialect.responses.ResponsesQuirks
-import splice.dialect.responses.failure.ResponsesReplies
 import splice.upstream.ProviderTuning
-import splice.upstream.failure.Replies
 
 public class GrokProvider(
     tuning: ProviderTuning,
@@ -22,10 +20,7 @@ public class GrokProvider(
     /** Daemon log sink — forwarded to ResponsesProvider so its diagnostics reach
      *  /mgmt/logs and not stderr alone (wall kt-no-println, 2026-07-27). */
     log: LogSink = LogSink(DaemonLog::write),
-    /** How this head reads its own failures: xAI's own answer about a dead token before the Responses standard,
-     *  which reads its spending limit and its refused images (failure-handling slice 3). */
-    replies: Replies = Replies(ResponsesReplies, GrokReplies),
-) : ResponsesProvider(tuning, reasoning, quirks, log = log, replies = replies) {
+) : ResponsesProvider(tuning, reasoning, quirks, log = log) {
 
     // Grok Build sets both the body prompt_cache_key AND x-grok-conv-id for sticky routing. The
     // header rides the PER-TURN BuiltTurn (via the base's perTurnHeaders hook) — a shared provider

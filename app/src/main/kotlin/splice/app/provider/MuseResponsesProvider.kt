@@ -29,8 +29,6 @@ internal class MuseResponsesProvider(
     options.reasoning,
     options.quirks,
     toolNames = options.toolNames,
-    // Muse's own answers (a soft reset on a 429, a plan limit in Muse's words) before the Responses standard.
-    replies = HeadReplies.muse,
 ) {
     override fun extraHeaders(creds: Credentials): Map<String, String> = options.headers
 

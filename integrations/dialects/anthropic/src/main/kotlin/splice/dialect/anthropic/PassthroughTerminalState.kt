@@ -13,6 +13,7 @@ import splice.core.failure.Position
 import splice.core.turn.TurnOutcome
 import splice.core.util.JsonScalars
 import splice.dialect.anthropic.failure.AnthropicReplies
+import splice.upstream.failure.ERROR_EVENT
 import splice.upstream.failure.FailedEvent
 
 /** The log's words for an answer that outgrew the window, as the classifier wrote them before slice 3. */
@@ -70,7 +71,7 @@ internal class PassthroughTerminalState(
     internal fun onError(event: JsonObject) {
         // Each error type the vendor sends names its condition, and the reader turns it into the cause ClientWire
         // derives the wire type from; the vendor's message rides in the log beside it.
-        failureCause = ctx.replies.event(FailedEvent(AnthropicReplies.ERROR_EVENT, event, ctx.owner))
+        failureCause = ctx.replies.event(FailedEvent(ERROR_EVENT, event, ctx.owner))
         failureMessage = JsonScalars.strOrEmpty((event["error"] as? JsonObject)?.get("message")).ifEmpty { "error" }
     }
 

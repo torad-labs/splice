@@ -42,11 +42,12 @@ internal class TestResponsesProvider(
     foldConfig: LiveFoldConfig? = null,
     log: LogSink = LogSink(DaemonLog::write),
     // The head's own failure reader: the Responses standard, unless a test reads a provider's deviation.
-    override val replies: Replies = Replies(ResponsesReplies),
+    replies: Replies = Replies(ResponsesReplies),
 ) : ResponsesProvider(
     tuning,
     reasoning,
     quirks,
     foldConfig,
     log,
+    replies = replies,
 )

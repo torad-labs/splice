@@ -49,8 +49,14 @@ public data class FailedReply(
 }
 
 /** One failure that arrived in band: the [type] its reader names it by and the event's own [payload]. The vocabulary of
- *  [type] is each API type's reader's own, written in its KDoc. [owner] is whose login the turn sends. */
+ *  [type] is each API type's reader's own, written in its KDoc, beside [ERROR_EVENT], which every reader shares.
+ *  [owner] is whose login the turn sends. */
 public data class FailedEvent(val type: String, val payload: JsonObject, val owner: LoginOwner)
+
+/** The [FailedEvent.type] of a payload carrying an error object, which every API type's reader reads: Anthropic's error
+ *  event, Chat's error chunk and a Responses error event all come by it, so a body that reached no stream (the
+ *  zero-event page) is read under it by whichever reader its head declares. */
+public const val ERROR_EVENT: String = "error"
 
 /** Whether a masked key a reply names could be the credential this attempt sent (head and tail of the mask).
  *  In process only: never stored, logged or carried past the reader. A login splice does not hold could be any key. */

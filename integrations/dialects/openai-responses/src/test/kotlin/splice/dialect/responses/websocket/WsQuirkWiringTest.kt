@@ -40,7 +40,6 @@ private class ProbeProvider(quirks: ResponsesQuirks, private val supports: Boole
     /** Stands in for a provider that has PROVEN the protocol against its own upstream (codex). */
     override val supportsWebSocket: Boolean get() = supports
 
-    override val replies = splice.upstream.failure.Replies(splice.dialect.responses.failure.ResponsesReplies)
     override fun extraHeaders(creds: Credentials): Map<String, String> = emptyMap()
 }
 

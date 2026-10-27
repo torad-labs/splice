@@ -83,7 +83,8 @@ class TurnKnownEndTest {
 
     @Test
     fun `a rate limit is retryable in band even when the classifier called it non-transient`() {
-        // THE MEASURED TRAP, and the reason this cell exists at all: ClassifiedFailure marks a 429
+        // THE MEASURED TRAP, and the reason this cell exists at all: the shared classifier, until
+        // failure-handling slice 3 read each head's replies with its own reader, marked a 429
         // (and V4-73's 403 spend-limit) transient = FALSE, because `transient` gates RE-ANCHORING —
         // whether re-POSTing the identical full context is worth it — which is a different question
         // from whether the client should re-send. A quota window is a condition that CHANGES WITH

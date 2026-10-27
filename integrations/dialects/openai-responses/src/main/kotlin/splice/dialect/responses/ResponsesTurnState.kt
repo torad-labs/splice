@@ -12,7 +12,6 @@ import splice.dialect.responses.reasoning.ResponsesNativePrefix
 import splice.dialect.responses.request.BlockState
 import splice.dialect.responses.request.ToolSalvage
 import splice.dialect.responses.stream.ResponsesCompletedOutput
-import splice.upstream.failure.ClassifiedFailure
 import splice.upstream.transport.BufferCapacity
 
 /**
@@ -90,7 +89,10 @@ internal class ResponsesTurnState {
     var thinkingBuf = StringBuilder()
     var textBuf = StringBuilder()
     var finalResponse: JsonObject? = null
-    var upstreamFailure: ClassifiedFailure? = null
+
+    /** The response.failed or error event the backend sent, as it sent it: the head's own reader reads it once, at
+     *  the terminal (ResponsesTerminalDecision). */
+    var upstreamFailure: JsonObject? = null
 
     /** The failure or incomplete terminal this round ended on, as protocol vocabulary only: the event type, the
      *  status, the vendor code and error type, or the incomplete reason. Never message text, never an id. */

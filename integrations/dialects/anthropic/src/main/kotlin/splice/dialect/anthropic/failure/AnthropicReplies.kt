@@ -25,6 +25,7 @@ import splice.core.usage.PlanLimits
 import splice.core.usage.SEVEN_DAY_CLAIM
 import splice.core.util.JsonScalars
 import splice.core.wire.HttpStatus
+import splice.upstream.failure.ERROR_EVENT
 import splice.upstream.failure.ErrorMessage
 import splice.upstream.failure.FailedEvent
 import splice.upstream.failure.FailedReply
@@ -33,12 +34,9 @@ import splice.upstream.failure.ReplyReader
 import java.time.Instant
 
 /** Reads Anthropic's failures: an HTTP status with its `{"type":"error","error":{"type","message"}}` body, an `error`
- *  event of the same shape ([ERROR_EVENT]), and a message_delta's stop_reason that ends the answer as a failure
- *  ([STOP_EVENT], one of [FAILED_STOPS]). */
+ *  event of the same shape ([ERROR_EVENT], its payload the event as sent), and a message_delta's stop_reason that ends
+ *  the answer as a failure ([STOP_EVENT], one of [FAILED_STOPS]). */
 public object AnthropicReplies : ReplyReader {
-    /** An `error` event; its payload is the event as sent. */
-    public const val ERROR_EVENT: String = "error"
-
     /** A message_delta's stop_reason that is no clean end; its payload carries `stop_reason` and `stop_details`. */
     public const val STOP_EVENT: String = "stop_reason"
 

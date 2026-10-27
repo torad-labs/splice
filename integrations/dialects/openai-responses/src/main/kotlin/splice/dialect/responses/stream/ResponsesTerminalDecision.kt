@@ -4,17 +4,22 @@
 // landing has nowhere to accrete except here.
 package splice.dialect.responses.stream
 
+import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.buildJsonObject
+import kotlinx.serialization.json.put
 import splice.core.failure.FailureCause
 import splice.core.failure.FailureEvidence
 import splice.core.failure.Moment
 import splice.core.failure.Position
-import splice.core.failure.ProviderWordsFilter
-import splice.core.failure.RefusedBy
 import splice.core.failure.Tear
 import splice.core.turn.TurnOutcome
 import splice.core.util.ERR_SNIPPET
+import splice.core.util.JsonScalars
+import splice.dialect.responses.FailureReading
 import splice.dialect.responses.ResponsesTurnState
 import splice.dialect.responses.StreamTurnContext
+import splice.dialect.responses.failure.ResponsesReplies
+import splice.upstream.failure.FailedEvent
 import splice.upstream.failure.TerminalStates
 import splice.upstream.retry.WatchdogFired
 import splice.upstream.transport.TransportFaultLine
@@ -22,9 +27,13 @@ import java.io.IOException
 
 private const val MS_PER_S = 1000L
 
+// why: the vendor's text a failure event's evidence keeps for the journal, as the shared classifier capped it.
+private const val FAILED_EVENT_MESSAGE_CHARS = 2000
+
 internal class ResponsesTerminalDecision(
     private val ctx: StreamTurnContext,
     private val payload: ResponsesOutcomePayload,
+    private val reading: FailureReading = FailureReading(),
 ) {
 
     // Ordering enforced by the shared spi.terminalPrecedence: a COMPLETED response wins over a
@@ -46,19 +55,7 @@ internal class ResponsesTerminalDecision(
             // provider-reported (the backend produced the bytes) so it retries, never a clean
             // Success that dispatches garbage.
             failed(FailureCause.Provider.ToolTear(runaway = false), "upstream: $it in tool call; retry")
-        } ?: state.upstreamFailure?.let {
-            // Parsed from a response.failed/error event the backend actually sent (G20 provenance).
-            // Only an explicitly transient verdict carries re-anchor state: an unknown/policy error
-            // must not re-POST the identical full context merely because API_ERROR is a wide bucket.
-            // V4-117 and V4-81: the classifier's OWN verdict, since it is the one holding the status,
-            // the vendor code and the body text, and with it whether a re-send can change the
-            // failure. On the streaming path there is usually no status at all, so a rate limit or
-            // an overflow is detected from the TEXT; the status is one input, not a substitute.
-            // A vendor code on no list (retryOnce) carries the partial too, so splice re-sends it once; it
-            // stays permanent on the wire, so the client is told honestly instead of re-sending it in a loop.
-            val partial = if (it.resends) payload.partialOrNull(state) else null
-            failed(it.inBand, "upstream: ${it.message}", partial)
-        } ?: censored(state),
+        } ?: state.upstreamFailure?.let { failedEvent(it, state) } ?: censored(state),
         finished = state.finalResponse != null,
         watchdogFired = ctx.signals.watchdogFired(),
     ).terminalPrecedence(
@@ -66,6 +63,25 @@ internal class ResponsesTerminalDecision(
         onWatchdog = { watchdogOutcome(it, state) },
         onUnfinished = { noCompletionOutcome(state, tear) },
     )
+
+    /**
+     * A response.failed or error event the backend actually sent (G20 provenance), read once by the head's own reader
+     * (failure-handling slice 3), which reads it as the same kind its HTTP twin is. Only a failure that is not
+     * permanent carries the round's salvage, so a refusal, an overflow or a request the provider rejected never
+     * re-POSTs the identical full context (V4-117, V4-81). An error no table names is not permanent
+     * (OpenAiReplies): it carries its round too, code-less or not, and ResponsesReanchorPolicy sends it once more,
+     * no more, as final-design.md section 8 plans for Unrecognized.
+     */
+    private fun failedEvent(event: JsonObject, state: ResponsesTurnState): TurnOutcome.Failure {
+        val cause = read(ResponsesReplies.FAILED_EVENT, event)
+        val partial = if (cause.permanent) null else payload.partialOrNull(state)
+        val error = ResponsesReplies.error(event)
+        // The journal keeps the event's own vocabulary: its code, else the event it came in, then the vendor's words.
+        val code = error.code.ifEmpty { error.type }.ifEmpty { JsonScalars.strOrEmpty(event["type"]) }
+            .ifEmpty { "upstream_failed" }
+        val words = error.message.orEmpty().ifEmpty { "upstream reported failure" }
+        return failed(cause, "upstream: ${"$code $words".take(FAILED_EVENT_MESSAGE_CHARS)}", partial)
+    }
 
     /** The model's refusal, else the content filter. */
     private fun censored(state: ResponsesTurnState): TurnOutcome.Failure? =
@@ -82,10 +98,11 @@ internal class ResponsesTerminalDecision(
     // leaf. A permanent flag passed by hand was once LOST here while its comment survived, so the
     // pre-content rule relabelled the refusal overloaded_error and the client re-sent the identical
     // bytes up to 300 times for the same refusal. The leaf carries it now, so no site can drop it.
+    // Failure-handling slice 3: the refusal part is read by the head's own reader, as the failure event is.
     private fun refusalFailure(state: ResponsesTurnState): TurnOutcome.Failure? =
         state.refusalBuf.toString().takeIf { it.isNotBlank() }?.let {
             failed(
-                FailureCause.Provider.Refused(RefusedBy.MODEL, ProviderWordsFilter.of(it)),
+                read(ResponsesReplies.REFUSAL_PART, buildJsonObject { put(ResponsesReplies.REFUSAL_PART, it) }),
                 "upstream: model refused. $it",
             )
         }
@@ -96,17 +113,29 @@ internal class ResponsesTerminalDecision(
     // partial for the same reason as a refusal above: this terminal is deterministic, so handing
     // it to ResponsesReanchorPolicy would re-POST the full context for the identical verdict.
     // V4-81: the leaf is permanent for the same reason — the identical prompt is filtered
-    // identically, so a retry buys the same censored turn at full price.
-    private fun contentFilterFailure(state: ResponsesTurnState): TurnOutcome.Failure? =
-        if (state.contentFiltered) {
-            failed(FailureCause.Provider.Refused(RefusedBy.FILTER), "upstream: generation stopped by content filter")
+    // identically, so a retry buys the same censored turn at full price. Failure-handling slice 3: the head's own
+    // reader reads the reason, and only content_filter is the filter; any other reason is a stop no table names.
+    private fun contentFilterFailure(state: ResponsesTurnState): TurnOutcome.Failure? {
+        if (!state.contentFiltered) return null
+        val details = state.finalResponse?.get("incomplete_details") as? JsonObject
+        val reason = JsonScalars.str(details, "reason").orEmpty()
+        val cause = read(ResponsesReplies.INCOMPLETE_EVENT, buildJsonObject { put("reason", reason) })
+        val why = if (cause is FailureCause.Provider.Refused) {
+            "generation stopped by content filter"
         } else {
-            null
+            "ended $reason"
         }
+        return failed(cause, "upstream: $why")
+    }
+
+    /** A refusal part or an incomplete answer, read by the head's own reader as a failure event is. */
+    private fun read(type: String, payload: JsonObject): FailureCause.Provider =
+        reading.replies.event(FailedEvent(type, payload, reading.owner))
 
     // V4-242: a stream that tore says how, in the words of the error that tore it: the deepest cause,
     // which is the upstream's own close ("socket closed by the peer (status=1011, …) after …") when a
-    // websocket peer ended it (TransportFaultLine.tear). A stream that simply stopped has nothing to add and reads as it did.
+    // websocket peer ended it (TransportFaultLine.tear). A stream that simply stopped has nothing to add and reads as
+    // it did.
     private fun noCompletionOutcome(state: ResponsesTurnState, tear: IOException?): TurnOutcome =
         if (ctx.signals.clientGone()) {
             TurnOutcome.ClientAbandoned()

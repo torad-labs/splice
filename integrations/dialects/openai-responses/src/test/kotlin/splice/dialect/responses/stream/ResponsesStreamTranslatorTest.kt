@@ -18,6 +18,7 @@ import org.junit.jupiter.api.Assertions.assertInstanceOf
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 import splice.core.failure.ClientWire
+import splice.core.failure.FailureCause
 import splice.core.index.WireBlockIndex
 import splice.core.turn.ErrorType
 import splice.core.turn.SharedSummaryParts
@@ -295,13 +296,13 @@ class ResponsesStreamTranslatorTest {
     }
 
     @Test
-    fun `failure event is captured, reading continues, outcome is classified`() = runTest {
+    fun `failure event is captured, reading continues, and an overflow reads as the overflow it is`() = runTest {
         val sink = RecordingSink()
         val outcome = ResponsesStreamTranslator(ctx()).driveTurn(
             listOf(
                 ev(
                     """{"type":"response.failed",
-                       "response":{"error":{"code":"overloaded","message":"too many tokens"}}}""",
+                       "response":{"error":{"code":"context_length_exceeded","message":"too many tokens"}}}""",
                 ),
                 ev("""{"type":"response.output_text.delta","output_index":0,"delta":"still read"}"""),
                 completed,
@@ -309,9 +310,10 @@ class ResponsesStreamTranslatorTest {
             sink,
         )
         val failure = outcome as TurnOutcome.Failure
-        // overflow classification survives via the SAME classifier (v29 P0 fix)
+        // v29 P0: an in-band overflow is the overflow its HTTP twin is, which the client compacts on. Failure-handling
+        // slice 3 reads it by the head's own reader, by its code; a code that names an overload is read as one.
+        assertInstanceOf(FailureCause.Provider.TooLong::class.java, failure.cause)
         assertEquals(ErrorType.INVALID_REQUEST, ClientWire.ownType(failure.cause))
-        assertTrue(failure.evidence.message.contains("prompt is too long"))
         assertTrue(sink.calls.contains("text#0:still read"))
     }
 
@@ -1619,13 +1621,12 @@ class ResponsesStringErrorTest {
         val failure = assertInstanceOf(TurnOutcome.Failure::class.java, outcome)
         assertTrue(
             failure.evidence.message.contains("rate limit exceeded, slow down"),
-            "the vendor's text must survive to the classifier and the surfaced line: ${failure.evidence.message}",
+            "the vendor's text must survive to the journal: ${failure.evidence.message}",
         )
-        assertEquals(
-            ErrorType.RATE_LIMIT,
-            ClientWire.ownType(failure.cause),
-            "the classifier must see the vendor signal",
-        )
+        // Failure-handling slice 3: the head's reader reads a kind from a code or a status, and words alone name
+        // neither, so this is an error no table names, which slice 4's engine sends once more.
+        val unrecognized = assertInstanceOf(FailureCause.Provider.Unrecognized::class.java, failure.cause)
+        assertEquals("rate limit exceeded, slow down.", unrecognized.said?.text, "and to the line a person reads")
     }
 
     @Test

@@ -101,7 +101,8 @@ private val CAUSES: List<FailureCause> = (providerCauses() + pathCauses() + spli
 private val POSITIONS: List<Position> = Moment.entries.flatMap { moment -> BOOLS.map { Position(moment, it) } }
 
 /** The type today's site wrote for each leaf: the classifier's type for a provider's HTTP answer
- *  (UpstreamFailureClassifier), WireType's table for an in-band one, and each splice ending's own emitError. */
+ *  (UpstreamFailureClassifier, deleted in failure-handling slice 3), WireType's table for an in-band one, and each
+ *  splice ending's own emitError. */
 private fun todayType(cause: FailureCause): ErrorType = when (cause) {
     is FailureCause.Provider -> todayProviderType(cause)
     is FailureCause.Path -> todayPathType(cause)

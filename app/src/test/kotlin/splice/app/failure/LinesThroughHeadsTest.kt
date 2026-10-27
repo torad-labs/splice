@@ -99,8 +99,8 @@ class LinesThroughHeadsTest {
             // the client. A word that did reach it would end the episode, and the next failure would rightly say so.
             // A Responses head carries an answer on from where it stopped; a Chat head re-sends only an unknown code,
             // and only before content, so it would end at the first failure with no recovery to tell. The stream's
-            // own server_error reads as a failure splice does not recognize until slice 3 reads in-band codes
-            // (UpstreamFailureClassifier.statusFallback), so this asserts the episode, not the cause's name.
+            // own server_error is read by the head's reader, which has named it differently across the slices,
+            // so this asserts the episode, not the cause's name.
             provider.script(
                 reply {
                     responsesStart()

@@ -11,7 +11,7 @@ import splice.core.failure.ProviderWords
 import splice.core.failure.ProviderWordsFilter
 import splice.core.util.JsonScalars
 import splice.core.wire.HttpStatus
-import splice.dialect.anthropic.failure.AnthropicReplies
+import splice.upstream.failure.ERROR_EVENT
 import splice.upstream.failure.ErrorMessage
 import splice.upstream.failure.FailedEvent
 import splice.upstream.failure.FailedReply
@@ -42,7 +42,7 @@ public object KimiReplies : ProviderDeviation {
     }
 
     override fun event(event: FailedEvent): FailureCause.Provider? {
-        if (event.type != AnthropicReplies.ERROR_EVENT) return null
+        if (event.type != ERROR_EVENT) return null
         val said = ProviderWordsFilter.of(ErrorMessage.inObject(event.payload))
         val sent = event.payload.toString()
         return when {

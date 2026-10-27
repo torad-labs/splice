@@ -13,10 +13,12 @@ import kotlinx.coroutines.test.runTest
 import kotlinx.serialization.json.jsonPrimitive
 import org.junit.jupiter.api.AfterAll
 import org.junit.jupiter.api.Assertions.assertEquals
+import org.junit.jupiter.api.Assertions.assertInstanceOf
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.TestInstance
 import splice.core.failure.ClientWire
+import splice.core.failure.FailureCause
 import splice.core.turn.ErrorType
 import splice.core.turn.TurnOutcome
 import splice.dialect.responses.responsesTestTranslator
@@ -79,12 +81,16 @@ class ScenarioIntegrationTest {
         assertTrue(f.evidence.message.contains("boom upstream"))
     }
 
+    // Failure-handling slice 3: the head's reader reads the overflow as the kind it is, and the line Claude Code
+    // compacts on is written from that kind (ProviderSentences), where the shared classifier rewrote the evidence's
+    // words to "prompt is too long". The evidence keeps the provider's own words, for the journal.
     @Test
-    fun `overflow_sse - rewrites to prompt is too long via the shared classifier`() {
+    fun `overflow_sse - an in-stream overflow is a prompt that is too long`() {
         val (outcome, _) = drive("overflow_sse")
         val f = outcome as TurnOutcome.Failure
+        assertInstanceOf(FailureCause.Provider.TooLong::class.java, f.cause, "${f.cause}")
         assertEquals(ErrorType.INVALID_REQUEST, ClientWire.ownType(f.cause))
-        assertTrue(f.evidence.message.contains("prompt is too long"))
+        assertTrue(f.evidence.message.contains("exceeds the context window"), f.evidence.message)
     }
 
     @Test

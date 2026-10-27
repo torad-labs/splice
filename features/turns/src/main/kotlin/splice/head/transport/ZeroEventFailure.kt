@@ -15,11 +15,8 @@ import splice.core.util.LogSink
 import splice.head.turn.TurnDrive
 import splice.head.turn.TurnTelemetry
 import splice.upstream.Provider
+import splice.upstream.failure.ERROR_EVENT
 import splice.upstream.failure.FailedEvent
-
-/** The type every API type's reader reads a body carrying an error object under: Anthropic's error event, Chat's error
- *  chunk, and a Responses error event. */
-private const val ERROR_EVENT = "error"
 
 /** Bodies are the provider's, so they are read leniently. */
 private val bodies = Json {

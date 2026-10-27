@@ -58,9 +58,7 @@ private class DynamicToolTestProvider(
         providerTag = "test",
         lite = ResponsesLiteQuirks(responsesLiteModelRegex = if (lite) Regex("test-model") else null),
     ),
-) {
-    override val replies = splice.upstream.failure.Replies(splice.dialect.responses.failure.ResponsesReplies)
-}
+)
 
 /**
  * Goal: a standard Responses head sees the same tool timeline the Anthropic request declares.

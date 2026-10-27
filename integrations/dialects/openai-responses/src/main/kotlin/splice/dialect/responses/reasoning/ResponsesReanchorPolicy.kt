@@ -17,6 +17,7 @@ package splice.dialect.responses.reasoning
 
 import kotlinx.serialization.json.JsonObject
 import splice.core.failure.ClientWire
+import splice.core.failure.FailureCause
 import splice.core.turn.DEFAULT_MAX_CONTINUATIONS
 import splice.core.turn.ErrorType
 import splice.core.turn.TurnOutcome
@@ -75,8 +76,9 @@ internal class ResponsesReanchorPolicy(
     // dispatched call. Tool rounds fall back to the honest error either way.
     private fun eligible(round: ReanchorRound, partial: TurnOutcome.PartialRound): Boolean = when {
         round.attempt >= maxContinuations -> false
-        // A permanent failure that still carried a partial is an unknown vendor code: one re-send, no more.
-        round.failure.cause.permanent && round.attempt >= 1 -> false
+        // An error no table names is sent once more, no more (final-design.md section 8). Since failure-handling
+        // slice 3 the head's reader reads it as not permanent, so the leaf is read rather than its permanence.
+        round.failure.cause is FailureCause.Provider.Unrecognized && round.attempt >= 1 -> false
         ClientWire.ownType(round.failure.cause) !in RETRYABLE -> false
         partial.toolTearOpen || partial.hasToolUse -> false
         else -> true

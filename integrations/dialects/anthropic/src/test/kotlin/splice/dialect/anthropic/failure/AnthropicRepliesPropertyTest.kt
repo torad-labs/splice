@@ -19,6 +19,7 @@ import splice.core.failure.ProviderWords
 import splice.core.failure.ProviderWordsFilter
 import splice.core.failure.RefusedBy
 import splice.core.failure.ServerFault
+import splice.upstream.failure.ERROR_EVENT
 import splice.upstream.failure.FailedEvent
 import splice.upstream.failure.FailedReply
 import splice.upstream.failure.SentKey
@@ -300,7 +301,7 @@ class AnthropicRepliesPropertyTest {
             val inBand = envelope(unknownTypes.random(random), c.said.text)
             assertEquals(
                 FailureCause.Provider.Unrecognized(false, ProviderWordsFilter.of(c.said.text)),
-                AnthropicReplies.event(FailedEvent(AnthropicReplies.ERROR_EVENT, inBand, c.owner)),
+                AnthropicReplies.event(FailedEvent(ERROR_EVENT, inBand, c.owner)),
             )
         }
     }
@@ -317,7 +318,7 @@ class AnthropicRepliesPropertyTest {
             assertEquals(expected(c), AnthropicReplies.http(c.reply()), c.toString())
             assertEquals(
                 expected(c),
-                AnthropicReplies.event(FailedEvent(AnthropicReplies.ERROR_EVENT, event, c.owner)),
+                AnthropicReplies.event(FailedEvent(ERROR_EVENT, event, c.owner)),
                 c.toString(),
             )
         }

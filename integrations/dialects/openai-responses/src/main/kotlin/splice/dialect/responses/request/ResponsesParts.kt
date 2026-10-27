@@ -4,6 +4,7 @@ package splice.dialect.responses.request
 
 import splice.core.config.REASONING_DIR
 import splice.core.util.LogSink
+import splice.dialect.responses.FailureReading
 import splice.dialect.responses.ReasoningContinuity
 import splice.dialect.responses.ReasoningSettings
 import splice.dialect.responses.ResponsesQuirks
@@ -24,6 +25,7 @@ import splice.dialect.responses.tools.ToolSurfaceLatch
 import splice.dialect.responses.tools.ToolSurfaceRecovery
 import splice.upstream.ProviderTuning
 import splice.upstream.ToolNameShortener
+import splice.upstream.failure.Replies
 
 internal class ResponsesParts(
     tuning: ProviderTuning,
@@ -32,6 +34,8 @@ internal class ResponsesParts(
     foldConfig: LiveFoldConfig?,
     private val log: LogSink,
     toolNames: ToolNameShortener,
+    /** The head's own reading of its failures, which reads a failure event its backend sends in band. */
+    replies: Replies,
 ) {
     val builder = ResponsesRequestBuilder(quirks, toolNames)
     private val cachePolicy = ReasoningCachePolicy()
@@ -80,7 +84,11 @@ internal class ResponsesParts(
                 streamIdleMs = tuning.watchdog.streamIdle.inWholeMilliseconds,
                 upstreamTimeoutMs = tuning.watchdog.totalCap.inWholeMilliseconds,
             ),
-            services = TranslatorServices(toolNames = toolNames, log = log),
+            services = TranslatorServices(
+                toolNames = toolNames,
+                log = log,
+                reading = FailureReading(replies, tuning.auth.owner),
+            ),
         ),
     )
     val failureAmend = ResponsesFailureAmend(

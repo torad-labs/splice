@@ -10,8 +10,8 @@
 // test that renders with the code under test and compares against the same code agrees with itself.
 //
 // WHY IT MATTERS BEYOND THIS ROW: this envelope is what our own fail-fast body claims to be, and
-// `UpstreamFailureClassifier` reads `error.message` out of it. A shape drift would not fail loudly —
-// it would make our own synthesized failure unreadable to the classifier that classifies it, which
+// every head's reader lifts `error.message` out of it (`ErrorMessage`). A shape drift would not fail
+// loudly — it would make our own synthesized failure unreadable to the reader that reads it, which
 // is the exact defect V4-59 was written to catch.
 package splice.core.wire
 
@@ -56,9 +56,9 @@ class ErrorEnvelopeBytesTest {
     @Test
     fun `the classifier can still read our own synthesized body`() {
         // Why the shape matters beyond formatting: splice's own fail-fast body is THIS envelope, and
-        // UpstreamFailureClassifier reads `error.message` out of whatever it is handed. Asserted at
-        // the byte level here so a drift cannot make our synthesized failure unreadable to the
-        // classifier that classifies it. The classifier's own suite covers the read itself.
+        // every head's reader lifts `error.message` out of whatever it is handed (ErrorMessage). Asserted
+        // at the byte level here so a drift cannot make our synthesized failure unreadable to the reader
+        // that reads it. The readers' own suites cover the read itself.
         val rendered = ErrorEnvelope.of("rate_limit_error", "balance exhausted").toString()
         assertEquals(true, rendered.contains(""""message":"balance exhausted""""))
         assertEquals(true, rendered.contains(""""type":"rate_limit_error""""))

@@ -89,7 +89,6 @@ private class RestartProbe(
     ),
     log = { logs.add(it) },
 ) {
-    override val replies = splice.upstream.failure.Replies(splice.dialect.responses.failure.ResponsesReplies)
     override fun extraHeaders(creds: Credentials): Map<String, String> = emptyMap()
 }
 

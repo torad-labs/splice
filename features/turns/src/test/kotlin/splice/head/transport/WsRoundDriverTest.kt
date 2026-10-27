@@ -196,7 +196,7 @@ private val TEXT_ROUND = listOf(
 private const val LATE_ERROR_SENTENCE = "Synthetic access check failed. Please try again."
 
 private const val LATE_ERROR_LINE =
-    "[splice] claudex refused this turn in a way splice does not recognize: Synthetic access check failed."
+    "[splice] claudex rejected the request as sent: Synthetic access check failed."
 
 /** A synthetic in-band error event of the shape the backend sends mid-round, with a request-class vendor code. */
 private const val LATE_ERROR =
@@ -1799,8 +1799,10 @@ class WsRoundFailureTest(@param:TempDir private val tmp: Path) {
         }
     }
 
-    /** The upstream's in-band error event after this round's text reached the client. Its code names the request
-     *  class but no refusal, so the refusal arm does not end it; the turn's ordinary failure ending does. */
+    /** The upstream's in-band error event after this round's text reached the client. Its type names the request
+     *  class but no refusal, so the refusal arm does not end it; the turn's ordinary failure ending does. The head's
+     *  reader reads it as its HTTP twin, a request the provider rejected (failure-handling slice 3), where the shared
+     *  classifier read a refusal no table names. */
     @Test
     fun `an upstream error after this round's content ends the turn as an error the client reads`() {
         val runner = ScriptedRunner(TEXT_ROUND + LATE_ERROR)
@@ -1813,8 +1815,8 @@ class WsRoundFailureTest(@param:TempDir private val tmp: Path) {
             assertEquals(before, mock.upstreamBodies.size, "an SSE request re-sent the context")
             assertTrue(sse.contains("late text"), "the text the client already read: $sse")
             assertTrue(sse.contains("event: error"), "the failed turn ended without an error frame: $sse")
-            // The head's line for a refusal no table names quotes the vendor's sentence, and never its advice to
-            // try again: what the client does next is splice's to say (failure-handling slice 2).
+            // The head's line for a rejected request quotes the vendor's sentence, and never its advice to try
+            // again: what the client does next is splice's to say (failure-handling slice 2).
             assertTrue(sse.contains(LATE_ERROR_LINE), "the vendor's sentence: $sse")
             assertFalse(sse.contains("Please try again"), "the vendor's advice: $sse")
             assertFalse(sse.contains("\"stop_reason\":\"end_turn\""), "the failed turn ended as a clean end: $sse")

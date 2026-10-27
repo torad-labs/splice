@@ -109,7 +109,6 @@ private class ReanchorProbe(lite: Boolean, state: java.nio.file.Path? = null) : 
         ),
     ),
 ) {
-    override val replies = splice.upstream.failure.Replies(splice.dialect.responses.failure.ResponsesReplies)
     override fun extraHeaders(creds: Credentials): Map<String, String> = emptyMap()
 }
 
@@ -697,7 +696,9 @@ class ResponsesReanchorPartialTest {
             NullSink(),
         )
         val failure = outcome as TurnOutcome.Failure
-        assertEquals(ErrorType.API_ERROR, ClientWire.ownType(failure.cause))
+        // Failure-handling slice 3: the head's reader reads an in-band invalid_parameter as its HTTP twin, a request
+        // the provider rejected (OpenAiReplies), where the shared classifier called it an api_error.
+        assertEquals(ErrorType.INVALID_REQUEST, ClientWire.ownType(failure.cause))
         assertTrue(failure.cause.providerReported)
         assertNull(failure.partial)
         assertNull(controller.continuationForFailure(ReanchorRound(previousBody(), failure, attempt = 0)))

@@ -4,8 +4,8 @@
 // site that writes it today (core/turn/FailureCause.kt:42-109 and the sites below), never copied from a run.
 //
 // One case for each ending in final-design.md section 6's persisted-name table that a scripted provider can reach:
-//  - a status the upstream client gives up on is written by TurnKnownEnd.emitFailed with the classifier's cause
-//    (UpstreamFailureClassifier), after ForeignCredential's rewrite;
+//  - a status the upstream client gives up on is written by TurnKnownEnd.emitFailed with the cause the head's
+//    reader read (UpstreamFailureClassifier until failure-handling slice 3);
 //  - an in-band ending is written by TurnFinish with the translator's cause (ChatTerminalState, ChatStreamTranslator,
 //    PassthroughTerminalState);
 //  - a cancellation the head seals (stop, restart, the no-progress limit) and a local refusal write no cause.
@@ -166,9 +166,8 @@ class PersistedNamesTest {
         }
     }
 
-    // A status the upstream client gave up on: TurnKnownEnd.emitFailed writes the classifier's cause
-    // (UpstreamFailureClassifier.classifyContent and statusFallback) under the tag endingTag picks: a 429 with no
-    // reply to relay is RATE_LIMITED, any other status UPSTREAM_FAILED.
+    // A status the upstream client gave up on: TurnKnownEnd.emitFailed writes the cause the head's reader read
+    // under the tag endingTag picks: a 429 with no reply to relay is RATE_LIMITED, any other status UPSTREAM_FAILED.
 
     @Test
     fun `a rate limit writes VENDOR_RATE_LIMITED`(@TempDir tmp: Path) = runTest {
@@ -459,14 +458,14 @@ private const val TOO_MANY_REQUESTS = 429
 private const val INTERNAL_SERVER_ERROR = 500
 private const val SERVICE_UNAVAILABLE = 503
 
-/** A code the classifier reads as an overload by its shape (UpstreamFailureClassifier, FailureCodes). */
+/** A code a head's reader reads as an overload by its shape (OpenAiReplies). */
 private const val OVERLOAD_CODE = "server_is_overloaded"
 
 /** A rejection naming a masked key in the shape the Codex backend masks one: a visible head, a run of stars, a visible
  *  tail. It is no token a scripted head sends. */
 private val FOREIGN_KEY_WORDS = "Incorrect API key provided: sk-test0" + "*".repeat(40) + "Zq9x."
 
-/** A context overflow in the words and code OpenAI's APIs use (UpstreamFailureClassifier's overflow arm). */
+/** A context overflow in the words and code OpenAI's APIs use (OpenAiReplies). */
 private const val OVERFLOW_WORDS = "This model's maximum context length is 131072 tokens."
 private const val OVERFLOW_CODE = "context_length_exceeded"
 

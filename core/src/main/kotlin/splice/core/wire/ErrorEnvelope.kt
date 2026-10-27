@@ -17,8 +17,8 @@
 // without tripping it. Renaming it to errorEnvelope would look tidier and break the build.
 //
 // THE BYTES ARE A CONTRACT. This shape is what upstream hands back and what our own fail-fast body
-// claims to be, so the classifier can read either identically — see UpstreamFailureClassifier, which
-// lifts error.message. Changing the rendering here changes a wire contract, not a formatting choice.
+// claims to be, so a head's reader reads either identically — see ErrorMessage, which lifts error.message for
+// every API type's reader. Changing the rendering here changes a wire contract, not a formatting choice.
 package splice.core.wire
 
 import kotlinx.serialization.json.JsonObject

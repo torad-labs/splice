@@ -50,8 +50,10 @@ public abstract class ResponsesProvider(
     /** One head's reversible tool aliases, shared between requests and every stream round. */
     private val toolNames: ToolNameShortener = ToolNameShortener(),
     /** This head's reading of its own failures: the Responses standard, and the deviation its own vendor declared
-     *  (codex's spent plan window and its policy refusals, xAI's expired token, Muse's soft reset). */
-    override val replies: Replies = Replies(ResponsesReplies),
+     *  (codex's spent plan window and its policy refusals, xAI's expired token, Muse's soft reset). FINAL, and passed
+     *  here by every head: the base hands it to its parts while it is constructed, before a subclass's own property
+     *  would be assigned, so an override read here was null and every such head failed to start. */
+    final override val replies: Replies = Replies(ResponsesReplies),
 ) : Provider, ProviderIdentity by tuning {
 
     final override val showReasoning: ReasoningDisplay get() = reasoning.now().display
@@ -62,7 +64,7 @@ public abstract class ResponsesProvider(
     // Collaborator wiring lives in ResponsesParts.kt (concentration, 2026-08-19).
     private val compactionTail = ResponsesCompactionTail()
     private val systemPrompt = ResponsesSystemPrompt()
-    private val parts = ResponsesParts(tuning, reasoning, quirks, foldConfig, log, toolNames)
+    private val parts = ResponsesParts(tuning, reasoning, quirks, foldConfig, log, toolNames, replies)
 
     /** Per-turn upstream headers beyond the shared Accept set (grok's x-grok-conv-id, codex's
      *  session/thread routing). Empty by default — a header that depends on the turn/session rides

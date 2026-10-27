@@ -11,7 +11,7 @@
 //   - replay (gated) emits redacted_thinking IN POSITION right after its item closes;
 //   - harvest fallback merges the terminal object's text/thinking when deltas were sparse
 //     (weak-text preference rules);
-//   - honest failures: upstreamFailure -> classified; watchdog-fired -> overloaded; stream end
+//   - honest failures: upstreamFailure -> read by the head's reader; watchdog-fired -> overloaded; stream end
 //     without response.completed -> ClientAbandoned if the client is gone, else truncated.
 // RESPONSIBILITY SPLIT (pinned P2-MACH slot note): promote-to-text, empty-compact/empty-model
 // honesty, mirror, and terminal emission live in the GATEWAY pipeline; buffers ride
@@ -41,6 +41,7 @@ import splice.core.turn.TurnOutcome
 import splice.core.util.Cancellables
 import splice.core.util.LogSink
 import splice.core.util.SafeFailureText
+import splice.dialect.responses.FailureReading
 import splice.dialect.responses.ResponsesTurnState
 import splice.dialect.responses.StreamTurnContext
 import splice.dialect.responses.reasoning.ResponsesReasoningFold
@@ -58,6 +59,8 @@ internal class ResponsesStreamTranslator(
      *  default drops it for tests that do not read it. */
     private val log: LogSink = LogSink { },
     private val outputToolName: String? = null,
+    /** The head's own reading of a failure event its backend sends (ResponsesTerminalDecision). */
+    private val reading: FailureReading = FailureReading(),
 ) : StreamTranslator {
 
     private val bufferBudget = ResponsesBufferBudget()
@@ -199,7 +202,8 @@ internal class ResponsesStreamTranslator(
         bufferBudget.within(state, heldChars = 0)
         ResponsesSchemaOutput(outputToolName).latchUndelivered(state)
         val payload = ResponsesOutcomePayload(ctx)
-        val outcome = ResponsesTerminalDecision(ctx, payload).terminalOutcome(state, bufferBudget.failure, tear)
+        val outcome = ResponsesTerminalDecision(ctx, payload, reading)
+            .terminalOutcome(state, bufferBudget.failure, tear)
         return if (outcome is TurnOutcome.Failure && outcome.partial == null) {
             outcome.copy(salvagedUsage = payload.usageOf(state))
         } else {

@@ -85,10 +85,14 @@ private const val RELEASE_POLL_MS = 10L
 // why 600: a burst this size is paced over the head's whole one-second window, not written in one go.
 private const val BURST_DELTAS = 600
 
-// Failure-handling slice 2: the head's line for a restart (final-design.md section 10), which says Claude Code sends
-// the turn again since both answers below, an in-band overloaded_error and a 529, are ones it re-sends.
-private const val EXPECTED_RESTART_SENTENCE =
-    "[splice] splice restarted during this turn. Claude Code sends this turn again."
+// Failure-handling slice 2: the head's line for a restart (final-design.md section 10).
+//
+// Slice 4 reads the client reaction record for what follows it: this rig's streamed turn is cut after its deltas
+// reached the client, where 2.1.310 keeps what it holds and sends nothing again (inband-overloaded-after-content),
+// so the line asks the person; the buffered answer's 529 is one the client re-sends itself (http-529-non-stream).
+private const val RESTART_SAID = "[splice] splice restarted during this turn."
+private const val CLIENT_RESENDS = "Claude Code sends this turn again."
+private const val PERSON_RESENDS = "Send the message again."
 
 /** The words of the operator's stop, which a restart never says. */
 private const val CONSOLE_STOP = "stopped from the splice console"
@@ -257,7 +261,8 @@ class HeadServerStopDrainTest {
             )
             assertEquals(if (stream) 200 else 529, status)
             assertTrue(body.contains("overloaded_error"), "a connected client must receive an automatic-retry error")
-            assertTrue(body.contains(EXPECTED_RESTART_SENTENCE), "the terminal must name the owner of the cut")
+            val next = if (stream) PERSON_RESENDS else CLIENT_RESENDS
+            assertTrue(body.contains("$RESTART_SAID $next"), "the terminal must name the owner of the cut: $body")
             assertTrue(!body.contains(CONSOLE_STOP), "a restart never impersonates a user stop")
             assertTrue(AsyncFileIo.drain())
             val outcome = Files.readAllLines(tmp.resolve("perf.jsonl"))

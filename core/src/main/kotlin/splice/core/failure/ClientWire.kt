@@ -3,9 +3,11 @@
 // Three tables used to choose it between them. WireType gave a failure its type from the old cause enum,
 // SseEmitter's PreContentWireType relabelled that type before content, and CollectingTerminal.statusFor gave a
 // stream=false answer its status; AdmissionResponses spelled each refusal's status by hand. This object answers all of
-// it from the leaf and where the turn stood. Slice 1 encodes today's answers exactly, which
-// ClientWireTodayPropertyTest pins over every leaf and position; a later slice that changes what the client is told
-// changes it here and nowhere else.
+// it from the leaf and where the turn stood.
+//
+// Failure-handling slice 4: the R, P and T families answer with what the client reaction record shows Claude Code
+// 2.1.310 does (tools/e2e/fixtures/client-reactions/2.1.310.toml, read by ClientWireRecordTest), and only the login
+// causes take a login status (final-design.md section 11).
 package splice.core.failure
 
 import splice.core.turn.ErrorType
@@ -13,105 +15,161 @@ import splice.core.wire.HttpStatus
 
 /** The client's answer to a failure: the HTTP [status] while the answer is still a status (null once the stream is
  *  open, where the failure is an in-band error event), the error [type] the client reads, and the x-should-retry
- *  header, null when it is not sent. */
-public data class WireAnswer(val status: Int?, val type: ErrorType, val shouldRetry: Boolean?) {
-    /** Whether Claude Code sends the request again on this answer, which is when a line may say so (SpliceLines).
-     *  Until slice 4 reads it from the client reaction record (tools/e2e/fixtures/client-reactions/2.1.310.toml), it
-     *  follows the re-send rates measured on 2026-10-04 and quoted on [ClientWire]'s rule before content: in band,
-     *  the client re-sent after 86 of 171 overloaded_error turns and 7 of 12 api_error turns, and after 3 of 50
-     *  invalid_request_error turns; a real 429 or 529 is retried by status. Every other answer counts as not re-sent,
-     *  an in-band rate_limit_error included, since those rows hold none. */
+ *  header, null when it is not sent. [afterContent]: the error follows model content the client already shows. */
+public data class WireAnswer(
+    val status: Int?,
+    val type: ErrorType,
+    val shouldRetry: Boolean?,
+    val afterContent: Boolean = false,
+) {
+    /** Whether Claude Code sends the request again on this answer, which is when a line may say so (SpliceLines). It
+     *  reads the client reaction record (tools/e2e/fixtures/client-reactions/2.1.310.toml):
+     *  - in band, only overloaded_error is sent again, before content and after splice's notice alone
+     *    (inband-overloaded-before-content, inband-signed-notice); after text nothing is (inband-*-after-content),
+     *    and an invalid_request_error after a notice is printed and not sent again;
+     *  - a status with x-should-retry false is sent again only when it is a 429 (http-429-should-retry-false);
+     *  - otherwise every status is sent again but a 403 and a 413 (http-403, http-413). */
     public val clientResends: Boolean
-        get() = if (status == null) {
-            type == ErrorType.OVERLOADED || type == ErrorType.API_ERROR
-        } else {
-            status == HttpStatus.TOO_MANY_REQUESTS || status == HttpStatus.OVERLOADED
+        get() = when {
+            status == null -> type == ErrorType.OVERLOADED && !afterContent
+            shouldRetry == false -> status == HttpStatus.TOO_MANY_REQUESTS
+            else -> status != HttpStatus.FORBIDDEN && status != HttpStatus.CONTENT_TOO_LARGE
         }
 }
 
-public object ClientWire {
-    /** An overflow found while the turn's status was still splice's to choose: Claude Code compacts on a 400 that
-     *  says the prompt is too long, and x-should-retry false keeps it from re-sending the same bytes first. */
-    private val OVERFLOW_BEFORE_COMMIT = WireAnswer(HttpStatus.BAD_REQUEST, ErrorType.INVALID_REQUEST, false)
+/** How Claude Code acts on an ending (final-design.md section 11). [KEPT] answers as before slice 4: a held turn's
+ *  ending, whose family is slice 5's; a request too slow to reach splice, which keeps its own 408; and the refusal of
+ *  a session's own splice key at the door, which keeps its 401 with no x-should-retry, since 2.1.310 answers a 401 by
+ *  re-reading its key helper and sending what it returns (http-401) — the recovery a rotated key needs. */
+private enum class WireFamily { R, P, CLIENT_LOGIN, HELD_LOGIN, T, KEPT }
 
-    /** The provider refused the person's own forwarded login (failure-handling slice 3, final-design.md section 11):
-     *  the turn ends at once with a 401 authentication_error, which the client reads as its login failing, and
-     *  x-should-retry false keeps it from sending the same login again first. splice never refreshes that login. */
+public object ClientWire {
+    /** P's status, where a re-send of the same bytes meets the same verdict: x-should-retry false stops the client
+     *  (http-400-should-retry-false), and the line prints with no login label in front. T takes it too, and its line
+     *  says the words Claude Code compacts on. */
+    private val STOPPED = WireAnswer(HttpStatus.BAD_REQUEST, ErrorType.INVALID_REQUEST, false)
+
+    /** The provider refused the person's own forwarded login: a 401 authentication_error, which the client reads as
+     *  its own login failing, and x-should-retry false keeps it from sending the same login again first. */
     private val CLIENT_LOGIN_REFUSED = WireAnswer(HttpStatus.UNAUTHORIZED, ErrorType.AUTHENTICATION, false)
 
-    /** What the client is told about [cause] at [at]. */
-    public fun answer(cause: FailureCause, at: Position): WireAnswer = when (at.moment) {
-        Moment.ADMISSION -> refusal(cause)
-        Moment.BEFORE_COMMIT -> beforeCommit(cause)
-        Moment.COMMITTED -> inBand(beforeContent(cause))
-        Moment.MID_CONTENT -> inBand(ownType(cause))
-        Moment.NON_STREAM -> ownType(cause).let { WireAnswer(statusOf(it), it, null) }
-    }
+    /** A login splice holds is refused or missing: a 403 permission_error, which 2.1.310 does not re-send and on which
+     *  the record found no login flow of the client's own (http-403). */
+    private val HELD_LOGIN_REFUSED = WireAnswer(HttpStatus.FORBIDDEN, ErrorType.PERMISSION, false)
 
-    /** While the turn's status is still splice's to choose: an overflow and a refused forwarded login keep a status of
-     *  their own, and every other cause is told in band, as it is once the status is committed. */
-    private fun beforeCommit(cause: FailureCause): WireAnswer = when {
-        cause is FailureCause.Provider.TooLong -> OVERFLOW_BEFORE_COMMIT
-        cause is FailureCause.Provider.AuthRejected && cause.owner == LoginOwner.CLIENT -> CLIENT_LOGIN_REFUSED
-        else -> inBand(beforeContent(cause))
+    /** R's status: Claude Code sends a 529 again, streamed or not, without end (http-529-stream,
+     *  http-529-non-stream). A limit and a spent account keep today's 429, which it sends again too. */
+    private val RESEND = WireAnswer(HttpStatus.OVERLOADED, ErrorType.OVERLOADED, null)
+    private val RESEND_LIMITED = WireAnswer(HttpStatus.TOO_MANY_REQUESTS, ErrorType.RATE_LIMIT, null)
+
+    /** What the client is told about [cause] at [at]. [repeated]: the request's identical predecessor already ended R
+     *  (RequestFacts.repeated, the ResendLedger), so an R ending is told as P. */
+    public fun answer(cause: FailureCause, at: Position, repeated: Boolean = false): WireAnswer {
+        val family = family(cause, repeated)
+        if (family == WireFamily.KEPT) return Kept.answer(cause, at)
+        return when (at.moment) {
+            Moment.ADMISSION, Moment.BEFORE_COMMIT, Moment.NON_STREAM -> status(cause, family, at)
+            Moment.COMMITTED -> inBand(committedType(cause, family))
+            Moment.MID_CONTENT -> afterContent(cause, repeated)
+        }
     }
 
     /** The type [cause] reads as once content reached the client, and in a stream=false body. */
     public fun ownType(cause: FailureCause): ErrorType = OwnTypes.of(cause)
 
-    /** Before content (V4-81): a rate limit always reads as an overload, which the client re-sends, and so does an
-     *  api_error unless a re-send reproduces it. Every other type is already the one the client should read.
-     *
-     *  The rule was written on the premise that Claude Code 2.1.257 retries an in-band error event only when its body
-     *  carries overloaded_error (a real 429/529 is retried by status, and neither is splice's to send once the 200 is
-     *  committed). Measured 2026-10-04, that premise is false for api_error: in the perf rows of the claudex,
-     *  claude-splice and claude-muse heads, Sep 15 to Oct 4, the same session sent a request of identical size within
-     *  2 s of the turn's end after 7 of 12 api_error turns, 86 of 171 overloaded_error turns, 3 of 50
-     *  invalid_request_error turns and 5 of 232,628 ok turns, before content and after it. invalid_request_error is
-     *  the in-band class the client rarely re-sends. Those rows hold no in-band rate_limit_error, so for a rate limit
-     *  the premise is unmeasured, not disproved.
-     *
-     *  A rate limit stays retryable however the classifier scored it, because a quota window changes with time:
-     *  V4-71's fix is that the first persistent 429 reaches the client as something it re-sends, into the cooldown
-     *  RetryPolicy arms. "Always a retry armed" is about failures a retry can heal, and a permanent or deterministic
-     *  failure is not one: identical bytes earn the identical verdict, and with CLAUDE_CODE_RETRY_WATCHDOG=1 a
-     *  relabelled one costs up to 300 client re-sends at four upstream attempts each, so it keeps its real type.
-     *  After content the type is left alone, since the client finalizes what it holds; INVALID_REQUEST and
-     *  AUTHENTICATION are never remapped; and only the wire type moves, never the message or the recorded type. */
-    private fun beforeContent(cause: FailureCause): ErrorType {
+    private fun family(cause: FailureCause, repeated: Boolean): WireFamily {
+        val family = Families.of(cause)
+        return if (repeated && family == WireFamily.R) WireFamily.P else family
+    }
+
+    /** While the status is splice's to choose. */
+    private fun status(cause: FailureCause, family: WireFamily, at: Position): WireAnswer = when (family) {
+        WireFamily.R -> resend(cause, at)
+        WireFamily.P -> if (tooLarge(cause)) Kept.answer(cause, at) else STOPPED
+        WireFamily.T -> STOPPED
+        WireFamily.CLIENT_LOGIN -> CLIENT_LOGIN_REFUSED
+        WireFamily.HELD_LOGIN -> HELD_LOGIN_REFUSED
+        WireFamily.KEPT -> Kept.answer(cause, at)
+    }
+
+    /** R before commit is today's eager preamble: the stream opens and an overloaded_error follows, which the client
+     *  sends again (inband-overloaded-before-content). At admission and without streaming it is a status. */
+    private fun resend(cause: FailureCause, at: Position): WireAnswer = when {
+        at.moment == Moment.BEFORE_COMMIT -> inBand(ErrorType.OVERLOADED)
+        ownType(cause) == ErrorType.RATE_LIMIT -> RESEND_LIMITED
+        else -> RESEND
+    }
+
+    /** Committed with only splice's notice shown: overloaded_error is sent again after a notice, and
+     *  invalid_request_error is printed and not (inband-signed-notice). The client's own refused login keeps
+     *  authentication_error, which is never remapped. */
+    private fun committedType(cause: FailureCause, family: WireFamily): ErrorType = when (family) {
+        WireFamily.R -> ErrorType.OVERLOADED
+        WireFamily.CLIENT_LOGIN -> ErrorType.AUTHENTICATION
+        WireFamily.P, WireFamily.T, WireFamily.HELD_LOGIN -> ErrorType.INVALID_REQUEST
+        WireFamily.KEPT -> Kept.answer(cause, Position(Moment.COMMITTED, streamBegan = true)).type
+    }
+
+    /** After content the type is the cause's own: the client keeps what it holds and sends nothing again
+     *  (inband-*-after-content). The one exception is a [repeated] request whose own type is overloaded_error, which
+     *  the client sends once more after thinking alone: it reads invalid_request_error, so the re-send loop stops. */
+    private fun afterContent(cause: FailureCause, repeated: Boolean): WireAnswer {
         val own = ownType(cause)
+        val type = if (repeated && own == ErrorType.OVERLOADED) ErrorType.INVALID_REQUEST else own
+        return WireAnswer(null, type, null, afterContent = true)
+    }
+
+    private fun tooLarge(cause: FailureCause): Boolean =
+        (cause as? FailureCause.Splice.Declined)?.why.let { it is Decline.TooLarge || it is Decline.Unfit }
+
+    private fun inBand(type: ErrorType): WireAnswer = WireAnswer(null, type, null)
+}
+
+/** The answers slice 4 keeps as they were: a refusal at admission by its own status, in band before content with a
+ *  retryable type relabelled as an overload, the cause's own type after content, and its type's status without
+ *  streaming. A held turn's ending (slice 5), a request too slow to arrive, the caller's own credential at splice's
+ *  door, and a request too large, whose 413 the record shows is not re-sent, are answered here. */
+private object Kept {
+    fun answer(cause: FailureCause, at: Position): WireAnswer = when (at.moment) {
+        Moment.ADMISSION -> refusal(cause)
+        Moment.BEFORE_COMMIT, Moment.COMMITTED -> WireAnswer(null, beforeContent(cause), null)
+        Moment.MID_CONTENT -> WireAnswer(null, ClientWire.ownType(cause), null, afterContent = true)
+        Moment.NON_STREAM -> ClientWire.ownType(cause).let { WireAnswer(statusOf(it), it, null) }
+    }
+
+    /** Before content (V4-81), for a held turn's ending: a rate limit reads as an overload, which the client
+     *  re-sends, and so does an api_error unless a re-send reproduces it. */
+    private fun beforeContent(cause: FailureCause): ErrorType {
+        val own = ClientWire.ownType(cause)
         val repeats = cause.permanent || cause.deterministic
         val retryable = own == ErrorType.RATE_LIMIT || (own == ErrorType.API_ERROR && !repeats)
         return if (retryable) ErrorType.OVERLOADED else own
     }
 
-    private fun inBand(type: ErrorType): WireAnswer = WireAnswer(null, type, null)
-
     /** A refusal before any turn exists keeps its real type: the status owns the client's retry, not the SSE rule. */
     private fun refusal(cause: FailureCause): WireAnswer {
-        val own = ownType(cause)
+        val own = ClientWire.ownType(cause)
         val why = (cause as? FailureCause.Splice.Declined)?.why
         return WireAnswer(why?.let(::refusalStatus) ?: statusOf(own), own, why?.let(::refusalRetry))
     }
 
-    /** The refusals whose status is not their type's own. */
+    /** The refusals whose status is not their type's own: a request too large is a 413, which 2.1.310 does not send
+     *  again (http-413), and one too slow to arrive a 408, which it does (http-408). */
     private fun refusalStatus(why: Decline): Int? = when (why) {
         is Decline.TooLarge, is Decline.Unfit -> HttpStatus.CONTENT_TOO_LARGE
         Decline.ReadTimeout -> HttpStatus.REQUEST_TIMEOUT
-        // A login coming back to this head is this machine's to do, so the node shows the sentence at once.
-        Decline.NoSharedLogin -> HttpStatus.SERVICE_UNAVAILABLE
-        Decline.HeapBusy, is Decline.Budget, is Decline.Preflight, is Decline.BadBody, is Decline.UnknownModel,
-        Decline.ForeignHost, Decline.BadLocalKey, is Decline.SpliceKeyAsLogin, Decline.LivenessProbe,
-        is Decline.Untranslatable,
+        Decline.NoSharedLogin, Decline.HeapBusy, is Decline.Budget, is Decline.Preflight, is Decline.BadBody,
+        is Decline.UnknownModel, Decline.ForeignHost, Decline.BadLocalKey, is Decline.SpliceKeyAsLogin,
+        Decline.LivenessProbe, is Decline.Untranslatable,
         -> null
     }
 
     /** x-should-retry false where a re-send of the same bytes meets the same refusal: the compaction preflight's size
-     *  bound, which the client answers by compacting, and a shared turn with no login here. */
+     *  bound, which the client answers by compacting. */
     private fun refusalRetry(why: Decline): Boolean? = when (why) {
-        is Decline.Preflight, Decline.NoSharedLogin -> false
-        is Decline.TooLarge, is Decline.Unfit, Decline.HeapBusy, is Decline.Budget, is Decline.BadBody,
-        Decline.ReadTimeout, is Decline.UnknownModel, Decline.ForeignHost, Decline.BadLocalKey,
+        is Decline.Preflight -> false
+        Decline.NoSharedLogin, is Decline.TooLarge, is Decline.Unfit, Decline.HeapBusy, is Decline.Budget,
+        is Decline.BadBody, Decline.ReadTimeout, is Decline.UnknownModel, Decline.ForeignHost, Decline.BadLocalKey,
         is Decline.SpliceKeyAsLogin, Decline.LivenessProbe, is Decline.Untranslatable,
         -> null
     }
@@ -129,6 +187,59 @@ public object ClientWire {
     }
 }
 
+/** Each leaf's family (final-design.md section 11). A limit and a spent account end through a hold step, which keeps
+ *  today's R wire until slice 5 brings holds; a cut round never ends a turn, and reads as R were it asked. */
+private object Families {
+    fun of(cause: FailureCause): WireFamily = when (cause) {
+        is FailureCause.Provider -> provider(cause)
+        is FailureCause.Path -> WireFamily.R
+        is FailureCause.Splice -> splice(cause)
+    }
+
+    private fun provider(cause: FailureCause.Provider): WireFamily = when (cause) {
+        is FailureCause.Provider.TooLong -> WireFamily.T
+        is FailureCause.Provider.AuthRejected ->
+            if (cause.owner == LoginOwner.CLIENT) WireFamily.CLIENT_LOGIN else WireFamily.HELD_LOGIN
+        is FailureCause.Provider.Forbidden, is FailureCause.Provider.Rejected, is FailureCause.Provider.ModelMissing,
+        is FailureCause.Provider.Refused,
+        -> WireFamily.P
+        is FailureCause.Provider.Unrecognized -> if (cause.clientError) WireFamily.P else WireFamily.R
+        is FailureCause.Provider.Limited, is FailureCause.Provider.Overloaded, is FailureCause.Provider.ServerError,
+        is FailureCause.Provider.NeedsPayment, is FailureCause.Provider.Empty, is FailureCause.Provider.ToolTear,
+        is FailureCause.Provider.ReasoningCut,
+        -> WireFamily.R
+    }
+
+    private fun splice(cause: FailureCause.Splice): WireFamily = when (cause) {
+        is FailureCause.Splice.NoLogin -> WireFamily.HELD_LOGIN
+        is FailureCause.Splice.Declined -> declined(cause.why)
+        is FailureCause.Splice.HoldOutlasted -> WireFamily.KEPT
+        is FailureCause.Splice.Stopped -> again(cause.by != StoppedBy.CONSOLE)
+        is FailureCause.Splice.Protocol -> again(cause.fault == ProtocolFault.CODE_MODE_START)
+        // A failure inside splice that the same request earns again is P, not R: an unparseable base_url throws
+        // identically on every send (V4-81), and R's promise is that a re-send can heal it. Section 11 lists
+        // Internal in R alone; the goal's "permanent kinds are never re-sent" decides the permanent one.
+        is FailureCause.Splice.Internal -> again(!cause.permanent)
+        is FailureCause.Splice.AtCapacity, is FailureCause.Splice.TurnBudgetSpent,
+        FailureCause.Splice.CompactionUnfinished,
+        -> WireFamily.R
+    }
+
+    /** R where a re-send can heal this ending ([heals]), P where the same request earns it again. */
+    private fun again(heals: Boolean): WireFamily = if (heals) WireFamily.R else WireFamily.P
+
+    private fun declined(why: Decline): WireFamily = when (why) {
+        Decline.HeapBusy -> WireFamily.R
+        // The caller's own credential at splice's door is a login cause: its 401 is what makes the session read its
+        // key helper again, so a rotated key strands nobody (ClientWire.KEPT, record http-401).
+        Decline.ReadTimeout, Decline.BadLocalKey, is Decline.SpliceKeyAsLogin -> WireFamily.KEPT
+        is Decline.Preflight -> WireFamily.T
+        is Decline.TooLarge, is Decline.Unfit, is Decline.Budget, is Decline.BadBody, is Decline.UnknownModel,
+        Decline.ForeignHost, Decline.LivenessProbe, Decline.NoSharedLogin, is Decline.Untranslatable,
+        -> WireFamily.P
+    }
+}
+
 /** Each leaf's own type: what the site that decides it wrote before slice 1. */
 private object OwnTypes {
     fun of(cause: FailureCause): ErrorType = when (cause) {
@@ -140,7 +251,8 @@ private object OwnTypes {
     private fun provider(cause: FailureCause.Provider): ErrorType = when (cause) {
         is FailureCause.Provider.Limited, is FailureCause.Provider.NeedsPayment -> ErrorType.RATE_LIMIT
         // An empty answer is indistinguishable from a transient overload, and nothing reached the client (V4-42).
-        is FailureCause.Provider.Overloaded, is FailureCause.Provider.Empty -> ErrorType.OVERLOADED
+        is FailureCause.Provider.Overloaded, is FailureCause.Provider.Empty, is FailureCause.Provider.ReasoningCut,
+        -> ErrorType.OVERLOADED
         is FailureCause.Provider.ServerError, is FailureCause.Provider.ToolTear, is FailureCause.Provider.Unrecognized,
         -> ErrorType.API_ERROR
         // The provider's verdict on the request: identical bytes earn it again.
@@ -180,13 +292,15 @@ private object OwnTypes {
      *  offered back to the client as an overload, since retry default is total. */
     private fun internal(escaped: Boolean): ErrorType = if (escaped) ErrorType.API_ERROR else ErrorType.OVERLOADED
 
+    /** Slice 4: no refusal but a login cause reads as a login, so a budget, a foreign host and a shared turn with no
+     *  login here print with no login label (final-design.md section 11, ruling 4). The splice key a session sent
+     *  where its provider login belongs stays authentication_error: that credential is the one being refused. */
     private fun declined(why: Decline): ErrorType = when (why) {
         Decline.HeapBusy -> ErrorType.OVERLOADED
-        is Decline.Budget, Decline.ForeignHost -> ErrorType.PERMISSION
         Decline.BadLocalKey, is Decline.SpliceKeyAsLogin -> ErrorType.AUTHENTICATION
-        Decline.NoSharedLogin -> ErrorType.API_ERROR
         is Decline.TooLarge, is Decline.Unfit, is Decline.Preflight, is Decline.BadBody, Decline.ReadTimeout,
-        is Decline.UnknownModel, Decline.LivenessProbe, is Decline.Untranslatable,
+        is Decline.UnknownModel, Decline.LivenessProbe, is Decline.Untranslatable, is Decline.Budget,
+        Decline.ForeignHost, Decline.NoSharedLogin,
         -> ErrorType.INVALID_REQUEST
     }
 }

@@ -1,13 +1,13 @@
-// NEW: failure-handling slice 2 (2026-10-26). The sentences for the thirteen leaves a provider reports
+// NEW: failure-handling slice 2 (2026-10-26). The sentences for the leaves a provider reports
 // (final-design.md section 10, one example line per kind).
 //
-// detekt holds a function under ten branches and the Provider leaves number thirteen, so the leaves are worded by two
+// detekt holds a function under ten branches and the Provider leaves number fourteen, so the leaves are worded by two
 // whens that each name every leaf with no else: the first words its own and hands the rest to the second, whose last
 // entry hands the first one's leaves back to it. Either is right for any leaf, and a new leaf compiles in neither
 // until it has a sentence.
 package splice.core.failure
 
-/** The thirteen leaves a provider reports. [ongoing]: the line opens a recovery, said as it happens. */
+/** The fourteen leaves a provider reports. [ongoing]: the line opens a recovery, said as it happens. */
 internal class ProviderSentences(private val spoken: Spoken) {
     fun said(cause: FailureCause.Provider, at: Position, facts: LineFacts, ongoing: Boolean): Said = when (cause) {
         is FailureCause.Provider.Limited -> limited(cause, facts.head, ongoing)
@@ -17,7 +17,8 @@ internal class ProviderSentences(private val spoken: Spoken) {
         is FailureCause.Provider.TooLong -> tooLong(cause, facts)
         is FailureCause.Provider.AuthRejected -> login(cause.owner, facts, ongoing)
         is FailureCause.Provider.ToolTear -> tear(cause.runaway, facts.head)
-        is FailureCause.Provider.Forbidden, is FailureCause.Provider.Rejected, is FailureCause.Provider.Refused,
+        is FailureCause.Provider.ReasoningCut, is FailureCause.Provider.Forbidden, is FailureCause.Provider.Rejected,
+        is FailureCause.Provider.Refused,
         is FailureCause.Provider.Unrecognized, is FailureCause.Provider.ModelMissing, is FailureCause.Provider.Empty,
         -> verdict(cause, at, facts, ongoing)
     }
@@ -27,23 +28,26 @@ internal class ProviderSentences(private val spoken: Spoken) {
         val head = facts.head
         return when (cause) {
             is FailureCause.Provider.Forbidden -> Said("$head's account may not use this model", cause.said)
-            is FailureCause.Provider.Rejected -> Said(
-                if (cause.staleReasoning) {
-                    "$head could not use the earlier reasoning in this conversation"
-                } else {
-                    "$head rejected the request as sent"
-                },
-                cause.said,
-            )
+            is FailureCause.Provider.Rejected -> Said(rejected(cause.staleReasoning, head), cause.said)
             is FailureCause.Provider.Refused -> Said(refused(cause.by, head), cause.said)
             is FailureCause.Provider.Unrecognized -> unrecognized(cause, head)
             is FailureCause.Provider.ModelMissing -> missing(cause.model, facts)
             is FailureCause.Provider.Empty -> empty(cause.reasoningOnly, head)
+            // A cut round is continued without a line (section 8); were one ever said, it reads as a cut answer.
+            is FailureCause.Provider.ReasoningCut ->
+                Said("$head's reasoning was cut short", next = Next.Resend(SEND_AGAIN))
             is FailureCause.Provider.Limited, is FailureCause.Provider.NeedsPayment,
             is FailureCause.Provider.Overloaded, is FailureCause.Provider.ServerError, is FailureCause.Provider.TooLong,
             is FailureCause.Provider.AuthRejected, is FailureCause.Provider.ToolTear,
             -> said(cause, at, facts, ongoing)
         }
+    }
+
+    /** What the provider rejected: the reasoning this conversation carried, or the request as it was sent. */
+    private fun rejected(staleReasoning: Boolean, head: String): String = if (staleReasoning) {
+        "$head could not use the earlier reasoning in this conversation"
+    } else {
+        "$head rejected the request as sent"
     }
 
     /** A limit names its window where the provider named one, and its reset where it stated one. */

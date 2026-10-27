@@ -206,7 +206,10 @@ class ForeignCredentialRejectionTest(@param:TempDir private val root: Path) {
         val rig = PoolRig(root, RejectingUpstream(rejection(OWN_MASKED_KEY)))
         try {
             val first = rig.turn()
-            assertTrue("authentication_error" in first, "the credential this account sent was refused: $first")
+            // Failure-handling slice 4: a login splice holds takes the held-login status, 403 permission_error,
+            // which 2.1.310 does not send again; 401 authentication_error is kept for the login the client itself
+            // forwarded, the one its own sign-in can renew (final-design.md section 11, record http-401/http-403).
+            assertTrue("permission_error" in first, "the credential this account sent was refused: $first")
             assertTrue("claudex login" in first, "and the remedy is to sign in again: $first")
 
             rig.turn()

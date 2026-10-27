@@ -8,8 +8,10 @@ import splice.core.util.LocalTimeText
 import java.time.Instant
 
 /** What a line knows of the request it answers. A compaction and a first exchange that are too long say so in their
- *  own words, never with the phrase that makes Claude Code compact (final-design.md section 11). */
-public data class RequestFacts(val compaction: Boolean, val firstExchange: Boolean)
+ *  own words, never with the phrase that makes Claude Code compact (final-design.md section 11). [repeated]: the
+ *  request's identical predecessor already ended in a failure Claude Code re-sends (the ResendLedger), so this one
+ *  ends for good. */
+public data class RequestFacts(val compaction: Boolean, val firstExchange: Boolean, val repeated: Boolean = false)
 
 /** What a line names besides its failure: [head], the head's launch command and the subject of most lines;
  *  [loginCommand], the command that signs the head in, null where the client signs itself in; [providerName], the
@@ -61,6 +63,11 @@ internal class SpliceLines(time: LocalTimeText = LocalTimeText()) {
      *  Code sends the turn again only when [WireAnswer.clientResends] says it does, and otherwise says what to do. */
     fun ending(cause: FailureCause, at: Position, answer: WireAnswer, facts: LineFacts): SpliceLine {
         val said = said(cause, at, facts, ongoing = false)
+        val resend = said.next as? Next.Resend
+        // A request whose identical predecessor already ended this way stops here, and says why (section 10).
+        if (resend != null && stopsForGood(facts, answer)) {
+            return fit("${said.what} $AFTER_RESEND", null, resend.otherwise)
+        }
         val next = when (val then = said.next) {
             is Next.Resend -> if (answer.clientResends) RESENDS else then.otherwise
             is Next.Then -> then.text
@@ -68,6 +75,11 @@ internal class SpliceLines(time: LocalTimeText = LocalTimeText()) {
         }
         return fit(said.what, said.quote, next)
     }
+
+    /** Whether this ending is the end of the road: the identical request before it already ended the same way, and
+     *  the answer is not one Claude Code sends again, so nothing more will happen on its own. */
+    private fun stopsForGood(facts: LineFacts, answer: WireAnswer): Boolean =
+        facts.request.repeated && !answer.clientResends
 
     /** The line that opens a recovery episode: what the turn met, and what it does about it. It quotes no provider. */
     fun waiting(wait: WaitLine, facts: LineFacts): SpliceLine {
@@ -123,6 +135,9 @@ internal const val MAX_LINE = 240
 
 /** What a line says when the client sends the turn again by itself. */
 internal const val RESENDS = "Claude Code sends this turn again."
+
+/** What a repeated ending adds to what happened: Claude Code already sent the turn again once. */
+internal const val AFTER_RESEND = "after Claude Code sent this turn again, so this turn stopped"
 
 /** What a line tells the person to do when the turn is theirs to send again: now, later, or after a time it names. */
 internal const val SEND_AGAIN = "Send the message again."

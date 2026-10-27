@@ -57,9 +57,12 @@ public class TurnVoice internal constructor(
     public fun ending(cause: FailureCause, at: Position, answer: WireAnswer): SpliceLine =
         lines.ending(cause, at, answer, voice.lineFacts(request))
 
+    /** What the client is told about [cause] at [at] on this turn's request: a request whose identical predecessor
+     *  already ended R is told as P (ClientWire). */
+    public fun answer(cause: FailureCause, at: Position): WireAnswer = ClientWire.answer(cause, at, request.repeated)
+
     /** The line this turn ends with, told as ClientWire answers [cause] at [at]. */
-    public fun ending(cause: FailureCause, at: Position): SpliceLine =
-        ending(cause, at, ClientWire.answer(cause, at))
+    public fun ending(cause: FailureCause, at: Position): SpliceLine = ending(cause, at, answer(cause, at))
 
     /** The line that opens a recovery episode: what the turn met, and what it does next. */
     public fun waiting(cause: FailureCause, next: Recovery): SpliceLine =

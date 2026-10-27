@@ -21,7 +21,7 @@ class SseEmitterPreContentRuleTest {
     // on every turn just to feed it. It lives here now, at the one place an error frame can be
     // written, so these cells are the seam's own proof rather than a policy mirrored from it. The
     // rule's TABLE (which types remap, which are exempt) is ClientWire's, pinned over every leaf by
-    // ClientWireTodayPropertyTest; what these cells add is that the emitter actually CONSULTS it, on
+    // ClientWireRecordTest; what these cells add is that the emitter actually CONSULTS it, on
     // the frame it writes, with where the stream stood.
     //
     // MUTATION PROOF (recorded in the ledger): replace `ClientWire.answer(cause, at).type` at
@@ -75,8 +75,11 @@ class SseEmitterPreContentRuleTest {
         )
     }
 
+    /** Failure-handling slice 4, replacing `a permanent failure keeps its real type and is never advertised as
+     *  transient`: the verdict a re-send earns again reads the in-band class 2.1.310 prints and does not send again
+     *  (inband-signed-notice), never the overload it would grind on. */
     @Test
-    fun `a permanent failure keeps its real type and is never advertised as transient`() = runTest {
+    fun `a permanent failure is never advertised as transient`() = runTest {
         val frames = mutableListOf<String>()
         val e = emitters.create(
             write = { frames.add(it) },
@@ -88,7 +91,7 @@ class SseEmitterPreContentRuleTest {
         e.emitError(FailureCause.Provider.Unrecognized(clientError = true))
 
         assertTrue(
-            errorTypeIn(frames).contains("\"type\":\"${ErrorType.API_ERROR.wireName}\""),
+            errorTypeIn(frames).contains("\"type\":\"${ErrorType.INVALID_REQUEST.wireName}\""),
             "a retry reproduces this verdict exactly, so it is not sold as retryable: $frames",
         )
     }

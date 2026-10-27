@@ -441,7 +441,10 @@ class HeadServerClientAuthTest {
         val before = upstream.requests.size
         val credential = listOf("Authorization" to "Bearer caller-own-token")
         val refused = rawTurn(port, credential, host = "attacker.example:$port")
-        assertTrue(refused.startsWith("HTTP/1.1 403"), refused.lineSequence().first())
+        // Failure-handling slice 4: a refusal that is not about a login takes the permanent non-login status, a
+        // 400, so no answer but a login's reads as one (final-design.md section 11). The turn is still refused
+        // before any route runs, which is what this case is about.
+        assertTrue(refused.startsWith("HTTP/1.1 400"), refused.lineSequence().first())
         assertEquals(before, upstream.requests.size, "a rebinding page's turn never reaches the vendor")
         val served = rawTurn(port, credential, host = "localhost:$port")
         assertTrue(served.startsWith("HTTP/1.1 200"), served.lineSequence().first())

@@ -18,6 +18,7 @@ import io.ktor.client.request.bearerAuth
 import io.ktor.client.request.header
 import io.ktor.client.request.post
 import io.ktor.client.request.setBody
+import io.ktor.client.statement.HttpResponse
 import io.ktor.client.statement.bodyAsText
 import io.ktor.http.URLParserException
 import io.ktor.http.content.OutgoingContent
@@ -181,6 +182,18 @@ class HeadServerFailureBranchTest {
         )
     }
 
+    /** The whole answer to this rig's one-message turn: a failure the client is told by status (failure-handling
+     *  slice 4's P family) carries it, where an in-band ending answers 200 and says it in a frame. */
+    private suspend fun answered(headPort: Int, scenario: String): HttpResponse =
+        client.post("http://127.0.0.1:$headPort/v1/messages") {
+            header("Content-Type", "application/json")
+            setBody(
+                """{"model":"claude-codex--gpt-5.6-sol","stream":true,"max_tokens":8000,
+                    "system":"You are a test. SCENARIO:$scenario",
+                    "messages":[{"role":"user","content":"go"}]}""",
+            )
+        }
+
     private suspend fun turn(headPort: Int, scenario: String): String =
         client.post("http://127.0.0.1:$headPort/v1/messages") {
             header("Content-Type", "application/json")
@@ -205,19 +218,25 @@ class HeadServerFailureBranchTest {
         ?.removePrefix("data: ")
         ?.let { Json.parseToJsonElement(it).jsonObject["error"]?.jsonObject?.get("message")?.jsonPrimitive?.content }
 
+    /** Failure-handling slice 4, replacing `a head with no credential emits an authentication error carrying the
+     *  login hint`: a login splice holds and does not have is a permanent ending, so the turn is refused by status
+     *  before any 200 is committed — 403 permission_error, which 2.1.310 does not send again (record http-403) —
+     *  and the line still names the command that signs the head in. */
     @Test
-    fun `a head with no credential emits an authentication error carrying the login hint`() = runBlocking {
+    fun `a head with no credential refuses the turn with its login hint`() = runBlocking {
         val head = buildHead(CredentiallessAuth())
         head.start()
         val headPort = head.port
         awaitListening(headPort)
         try {
             val upstreamBefore = mock.upstreamBodies.size
-            val sse = turn(headPort, "basic")
-            assertTrue(sse.contains("event: error"), "expected an error event in: $sse")
-            assertTrue(sse.contains("authentication_error"), sse)
+            val response = answered(headPort, "basic")
+            val sse = response.bodyAsText()
+            assertEquals(403, response.status.value, sse)
+            assertEquals("false", response.headers["x-should-retry"], sse)
+            assertTrue(sse.contains("permission_error"), sse)
             val line = lineBeforeContent(head, FailureCause.Splice.NoLogin("claudex login"))
-            assertEquals(line, errorWords(sse), sse)
+            assertTrue(sse.contains(line), sse)
             assertTrue("Run claudex login" in line, "the line names the command that signs the head in: $line")
             assertFalse(sse.contains("event: message_stop"), "never a clean stop after failure: $sse")
             // The credential is resolved BEFORE the request is built, so nothing reached upstream.
@@ -274,26 +293,31 @@ class HeadServerFailureBranchTest {
     // TurnEnding.kt and THIS cell goes red BY NAME while the generic-arm cell above stays green —
     // so the two cells pin the two halves of the narrowing, not one shared behaviour.
     //
-    // The words are the head's line for the cause, written from the answer (failure-handling slice 2). Claude Code
-    // re-sends an in-band api_error often enough for the line to say so (WireAnswer.clientResends), so this line
-    // reads like the arm above, and only the type differs.
+    // The words are the head's line for the cause, written from the answer (failure-handling slice 2).
+    //
+    // Failure-handling slice 4, replacing `an unparseable base_url is permanent and keeps its api_error`: the
+    // narrowing above now decides the FAMILY, so the turn is refused by status before any 200 is committed — a 400
+    // invalid_request_error with x-should-retry false, which the record shows 2.1.310 does not send again — instead
+    // of an in-band api_error it re-sent 7 times in 12 (http-400-should-retry-false, V4-81's measurement).
     @Test
-    fun `an unparseable base_url is permanent and keeps its api_error`() = runBlocking {
+    fun `an unparseable base_url is permanent and stops the turn`() = runBlocking {
         val head = buildHead(BranchFakeAuth(), wrap = { ConfigParseThrowingProvider(it) })
         head.start()
         val headPort = head.port
         awaitListening(headPort)
         val before = logs.size
         try {
-            val sse = turn(headPort, "basic")
-            assertTrue(sse.contains("event: error"), "expected an error event in: $sse")
-            assertTrue(sse.contains("\"type\":\"api_error\""), sse)
+            val response = answered(headPort, "basic")
+            val sse = response.bodyAsText()
+            assertEquals(400, response.status.value, sse)
+            assertEquals("false", response.headers["x-should-retry"], sse)
+            assertTrue(sse.contains("\"type\":\"invalid_request_error\""), sse)
             assertFalse(
                 sse.contains("\"type\":\"overloaded_error\""),
                 "a config failure a retry cannot change must not be sold as transient: $sse",
             )
             val permanent = FailureCause.Splice.Internal(escaped = true, permanent = true)
-            assertEquals(lineBeforeContent(head, permanent), errorWords(sse), sse)
+            assertTrue(sse.contains(lineBeforeContent(head, permanent)), sse)
             assertFalse(sse.contains("event: message_stop"), "never a clean stop after failure: $sse")
             // Same accounting as every other surface: the real class is still what the journal
             // names, and the perf row still lands — permanence changed the WIRE TYPE only.
@@ -378,7 +402,9 @@ class HeadServerFailureBranchTest {
             }
             assertEquals(408, response.status.value)
             val body = response.bodyAsText()
-            val said = "[splice] This request took too long to reach splice. Send the message again."
+            // Failure-handling slice 4: the record shows 2.1.310 sends a 408 again by itself (http-408), so the
+            // line says so instead of asking the person to.
+            val said = "[splice] This request took too long to reach splice. Claude Code sends this turn again."
             assertTrue(body.contains(said), body)
             assertTrue(body.contains("invalid_request_error"), body)
         } finally {

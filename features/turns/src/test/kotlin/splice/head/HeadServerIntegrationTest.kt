@@ -13,6 +13,7 @@ import io.ktor.client.request.get
 import io.ktor.client.request.header
 import io.ktor.client.request.post
 import io.ktor.client.request.setBody
+import io.ktor.client.statement.HttpResponse
 import io.ktor.client.statement.bodyAsText
 import io.ktor.http.HttpStatusCode
 import kotlinx.coroutines.test.runTest
@@ -120,6 +121,11 @@ class HeadServerIntegrationTest {
     }
 
     private suspend fun messages(scenario: String, model: String = "claude-codex--gpt-5.6-sol"): String =
+        answered(scenario, model).bodyAsText()
+
+    /** The whole answer to a turn: a permanent ending is told by status before any 200 is committed
+     *  (failure-handling slice 4's P family), so its status and headers are the client's information. */
+    private suspend fun answered(scenario: String, model: String = "claude-codex--gpt-5.6-sol"): HttpResponse =
         client.post("http://127.0.0.1:$port/v1/messages") {
             header("Content-Type", "application/json")
             setBody(
@@ -127,7 +133,7 @@ class HeadServerIntegrationTest {
                     "system":"You are a test. SCENARIO:$scenario",
                     "messages":[{"role":"user","content":"go"}]}""",
             )
-        }.bodyAsText()
+        }
 
     @Test
     fun `health carries version and port`() = runTest {
@@ -329,12 +335,15 @@ class HeadServerIntegrationTest {
         assertFalse(sse.contains("authentication_error"), sse)
     }
 
+    /** Failure-handling slice 4: a login splice holds, refused upstream, takes the held-login status, a 403
+     *  permission_error the client does not send again, and the line still carries the head's login hint. */
     @Test
-    fun `AUTHENTICATION via UpstreamFailed appends the per-head login hint`() = runTest {
+    fun `a login refused via UpstreamFailed appends the per-head login hint`() = runTest {
         val before = head.healthSnapshot()
-        val sse = messages("authfail")
-        assertTrue(sse.contains("event: error"))
-        assertTrue(sse.contains("authentication_error"))
+        val response = answered("authfail")
+        val sse = response.bodyAsText()
+        assertEquals(HttpStatusCode.Forbidden, response.status, sse)
+        assertTrue(sse.contains("permission_error"), sse)
         assertTrue(sse.contains(LOGIN_HINT), sse)
         // UpstreamFailed's status/body are the literal HTTP response the retry loop gave up on
         // after exhausting retries -- the upstream host responded, so this is PROVIDER, not LOCAL.
@@ -387,9 +396,13 @@ class HeadServerIntegrationTest {
         // overloaded_error. Failure-handling slice 3 changed the count. V4-62 re-sent every status because the
         // shared classifier was not reliable enough to refuse one; each API type's reader now reads a 403 as
         // Forbidden, which the provider answers the same way for the same request, so it is sent once
-        // (final-design.md section 8).
-        val sse = messages("overload_403")
-        assertTrue(sse.contains("event: error"), sse)
+        // (final-design.md section 8). Slice 4 moved where it is said: a permanent ending answers by status while
+        // the status is still splice's to choose, so the client reads a 400 invalid_request_error with
+        // x-should-retry false instead of a committed 200 carrying an error frame (section 11).
+        val response = answered("overload_403")
+        val sse = response.bodyAsText()
+        assertEquals(HttpStatusCode.BadRequest, response.status, sse)
+        assertEquals("false", response.headers["x-should-retry"], sse)
         assertTrue(sse.contains("invalid_request_error"), sse)
         assertFalse(sse.contains("overloaded_error"), sse)
         assertEquals(

@@ -3,8 +3,9 @@
 // FailureTraits that rode beside them: a leaf now says what kind of failure it is, so whether it was the provider's
 // own report, whether a re-send can change it and the name the perf row stores all follow from the leaf.
 //
-// ClientWire reads the leaf for the status, the error type and x-should-retry. Slice 1 keeps today's wire and
-// words: each leaf answers what the site that builds it answered before, which ClientWireTodayPropertyTest pins, and
+// ClientWire reads the leaf for the status, the error type and x-should-retry. Slice 1 kept today's wire and
+// words: each leaf answered what the site that builds it answered before; slice 4 answers by family from the client
+// reaction record instead, which ClientWireRecordTest pins, and
 // [FailureCause.persisted] is the name that site wrote, which PersistedNamesTest pins. Provider words reach a leaf in
 // slice 2, with their filter, so every [FailureCause.Provider.said] is null until then.
 package splice.core.failure
@@ -127,6 +128,17 @@ public sealed class FailureCause {
         ) : Provider() {
             override val persisted: PersistedCause get() = PersistedCause.TOOL_TEAR
             override val providerReported: Boolean get() = !runaway
+        }
+
+        /** A round that finished with its reasoning cut short at [reasoningTokens] (codex's 518n-2 truncation,
+         *  CodexReplies). It never ends a turn: the engine continues the round, and at its budget the round's answer
+         *  stands (final-design.md section 8). Its persisted name is the provider-reported one, since perf rows store
+         *  a name for every leaf; no ending ever carries it. */
+        public data class ReasoningCut(
+            val reasoningTokens: Long,
+            override val said: ProviderWords? = null,
+        ) : Provider() {
+            override val persisted: PersistedCause get() = PersistedCause.UPSTREAM_REPORTED
         }
 
         /** A failure no table names. [clientError]: the provider's verdict on the request, which a re-send repeats. */

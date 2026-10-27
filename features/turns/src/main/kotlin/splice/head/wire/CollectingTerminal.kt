@@ -8,12 +8,12 @@
 package splice.head.wire
 
 import kotlinx.serialization.json.JsonObject
-import splice.core.failure.ClientWire
 import splice.core.failure.FailureCause
 import splice.core.failure.Moment
 import splice.core.failure.Position
 import splice.core.failure.SpliceLine
 import splice.core.failure.TurnVoice
+import splice.core.failure.WireAnswer
 import splice.core.index.WireBlockIndex
 import splice.core.turn.Usage
 import splice.core.util.JsonScalars
@@ -26,6 +26,10 @@ import java.util.concurrent.atomic.AtomicBoolean
 /** The status a stream turn commits before its first frame, and a clean collect answers with;
  *  shared with TurnTrace's turn record so 200 is spelled once in this package (V4-174). */
 internal const val OK_STATUS = 200
+
+/** A drive that ended in neither verb: no ending named a cause, so this is the one splice cannot attribute
+ *  (failure-handling slice 4, which answers it through ClientWire like every other ending). */
+private val ESCAPED_CAUSE = FailureCause.Splice.Internal(escaped = true)
 
 internal class CollectingTerminal(
     private val model: String,
@@ -49,7 +53,11 @@ internal class CollectingTerminal(
     override val responseMessageId: String get() = messageId
 
     private var body: JsonObject? = null
-    private var status = HttpStatus.BAD_GATEWAY
+
+    /** Failure-handling slice 4: a drive that ended in neither verb is answered by the one table too, so this sink
+     *  holds no status of its own. Its cause is a failure splice cannot attribute, which the client may send again. */
+    private val escapedAnswer: WireAnswer = voice.answer(ESCAPED_CAUSE, Position(Moment.NON_STREAM, false))
+    private var status = escapedAnswer.status ?: HttpStatus.BAD_GATEWAY
     private var degraded: String? = null
     private var written: SpliceLine? = null
 
@@ -65,10 +73,8 @@ internal class CollectingTerminal(
 
     /** The body of a drive that ended in neither verb: a failure splice cannot attribute, said in its own line. It
      *  is not this terminal's written line, because no ending wrote it. */
-    private fun escaped(): JsonObject {
-        val cause = FailureCause.Splice.Internal(escaped = true)
-        return errorEnvelope(ClientWire.ownType(cause).wireName, lineFor(cause).text)
-    }
+    private fun escaped(): JsonObject =
+        errorEnvelope(escapedAnswer.type.wireName, lineFor(ESCAPED_CAUSE).text)
 
     public fun httpStatus(): Int = status
 
@@ -164,7 +170,7 @@ internal class CollectingTerminal(
      *  where it cannot tell. */
     private fun fail(cause: FailureCause, usage: JsonObject?, streamBegan: Boolean = true) {
         val at = Position(Moment.NON_STREAM, streamBegan)
-        val answer = ClientWire.answer(cause, at)
+        val answer = voice.answer(cause, at)
         val line = voice.ending(cause, at, answer)
         written = line
         body = errorEnvelope(answer.type.wireName, line.text, usage)

@@ -295,7 +295,9 @@ class AdmissionGateTest {
         assertEquals(HttpStatusCode.RequestTimeout, response.status)
         val body = response.bodyAsText()
         assertTrue(body.contains("invalid_request_error"), body)
-        assertTrue(body.contains("[splice] This request took too long to reach splice. Send the message again."), body)
+        // Slice 4: the record shows 2.1.310 sends a 408 again by itself (http-408), so the line says so.
+        val said = "[splice] This request took too long to reach splice. Claude Code sends this turn again."
+        assertTrue(body.contains(said), body)
     }
 
     @Test
@@ -572,7 +574,9 @@ class AdmissionGateTest {
                 header(SESSION_HEADER, "synthetic-session")
                 setBody(body)
             }
-            assertEquals(HttpStatusCode.Forbidden, response.status, response.bodyAsText())
+            // Slice 4, ruling 4: splice's own budget refuses with the permanent ending's non-login status, so it
+            // is a 400 and no longer wears the 403 that reads as a login's.
+            assertEquals(HttpStatusCode.BadRequest, response.status, response.bodyAsText())
             assertEquals(listOf(true to true), releasedAtReply, "a local quota refusal must not retain a source loan")
             assertEquals(1, deps.traffic.gate.snapshot().inflight, "quota refusal must not end the independent source")
         } finally {

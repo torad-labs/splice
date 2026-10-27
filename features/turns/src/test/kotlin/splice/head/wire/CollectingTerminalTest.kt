@@ -26,7 +26,10 @@ import splice.core.turn.Usage
 import splice.head.testVoice
 import splice.upstream.transport.BufferCapacity
 
-private const val ERROR_STATUS = 502
+/** Failure-handling slice 4: a buffered answer that ended in the R family answers 529 overloaded_error, the one
+ *  status the client reaction record shows 2.1.310 sends a non-stream request again on (http-529-non-stream,
+ *  final-design.md section 11). Before it, an api_error read 502, which no row of the record covers. */
+private const val RESENT_STATUS = 529
 
 class CollectingTerminalTest {
 
@@ -66,11 +69,11 @@ class CollectingTerminalTest {
         val t = terminal()
         t.openTool(id = "toolu_1", name = "")
         t.emitTerminal(hasToolUse = true, incomplete = false, usage = Usage())
-        assertEquals(ERROR_STATUS, t.httpStatus())
+        assertEquals(RESENT_STATUS, t.httpStatus())
         val body = t.responseBody()
         assertEquals("error", body["type"]?.jsonPrimitive?.content)
         assertEquals(
-            ErrorType.API_ERROR.wireName,
+            ErrorType.OVERLOADED.wireName,
             body["error"]!!.jsonObject["type"]?.jsonPrimitive?.content,
         )
         // The provider's tool call tore: the body says the torn-tool line, as the trace does.
@@ -96,7 +99,7 @@ class CollectingTerminalTest {
         val t = terminal()
         t.openTool(id = "toolu_1", name = "   ")
         t.emitTerminal(hasToolUse = true, incomplete = false, usage = Usage())
-        assertEquals(ERROR_STATUS, t.httpStatus())
+        assertEquals(RESENT_STATUS, t.httpStatus())
         assertEquals("error", t.responseBody()["type"]?.jsonPrimitive?.content)
     }
 
@@ -126,7 +129,7 @@ class CollectingTerminalTest {
 
         t.emitTerminal(hasToolUse = true, incomplete = false, usage = Usage())
 
-        assertEquals(ERROR_STATUS, t.httpStatus())
+        assertEquals(RESENT_STATUS, t.httpStatus())
         assertEquals(line(FailureCause.Provider.ToolTear(runaway = true), collected = true).text, wordsOf(t))
     }
 
@@ -136,7 +139,7 @@ class CollectingTerminalTest {
     fun `a drive that ended in neither verb answers with the line for an escaped failure`() = runTest {
         val t = terminal()
         t.abandon()
-        assertEquals(ERROR_STATUS, t.httpStatus())
+        assertEquals(RESENT_STATUS, t.httpStatus())
         assertEquals(line(FailureCause.Splice.Internal(escaped = true)).text, wordsOf(t))
         assertEquals(null, t.lineWritten, "no ending wrote this line")
     }
@@ -152,16 +155,13 @@ class CollectingTerminalTest {
         assertEquals(line(FailureCause.Splice.Internal()), t.lineFor(FailureCause.Splice.Internal()))
     }
 
-    // THE COLLECT PATH IS OUT OF THE PRE-CONTENT WIRE-TYPE RULE BY CONSTRUCTION, and these
-    // two pins are what say so out loud. The rule exists for the committed-200 STREAMING path, where
-    // the only lever left after the status is committed is the event type inside the body. On
-    // `stream:false` there is no committed 200 and no in-band event: the HTTP status IS the
-    // information, and relabelling it would be a lie about a condition that did not happen — a
-    // genuine 429 shipped as a 529 with rate-limit headers attached, or a buffered api_error
-    // claiming an overload. ClientWire keeps the rule to the positions of a streamed answer, and
-    // this terminal asks it at Moment.NON_STREAM, where every cause answers with its own type.
+    // A buffered answer has no committed 200 and no in-band event: the HTTP status IS the information. Slice 4
+    // chooses it by family rather than by the cause's own type, from what the client reaction record shows 2.1.310
+    // does with each status (final-design.md section 11): a limit reaching the client keeps the 429 it sends again,
+    // and a failure whose own type was api_error now answers 529 if the provider's and 400 if the request's. 502,
+    // which the record does not cover, is gone.
     @Test
-    fun `a buffered rate limit keeps its real 429 instead of the streaming relabel`() = runTest {
+    fun `a buffered rate limit keeps its real 429`() = runTest {
         val t = terminal()
         val cause = FailureCause.Provider.Limited(Lift.Unstated, window = null)
         t.emitError(cause)
@@ -173,20 +173,26 @@ class CollectingTerminalTest {
         )
     }
 
+    /** Failure-handling slice 4, replacing `a buffered api error keeps its real 502, permanent or not`: whose error
+     *  it is decides the answer, since the request's own verdict earns itself again however many times it is sent. */
     @Test
-    fun `a buffered api error keeps its real 502, permanent or not`() = runTest {
-        val remappable = terminal()
-        remappable.emitError(FailureCause.Provider.Unrecognized(clientError = false))
-        assertEquals(ERROR_STATUS, remappable.httpStatus())
-
-        // The permanence the streaming terminal reads is DELIBERATELY INERT here: the collect path
-        // has no retryable event to relabel, so permanence changes nothing about its status.
-        val permanent = terminal()
-        permanent.emitError(FailureCause.Provider.Unrecognized(clientError = true))
-        assertEquals(ERROR_STATUS, permanent.httpStatus())
+    fun `a buffered failure answers by whose error it is`() = runTest {
+        val provider = terminal()
+        val transient = FailureCause.Provider.Unrecognized(clientError = false)
+        provider.emitError(transient)
+        assertEquals(RESENT_STATUS, provider.httpStatus())
         assertEquals(
-            ErrorType.API_ERROR.wireName,
-            permanent.responseBody()["error"]!!.jsonObject["type"]?.jsonPrimitive?.content,
+            ErrorType.OVERLOADED.wireName,
+            provider.responseBody()["error"]!!.jsonObject["type"]?.jsonPrimitive?.content,
+        )
+        assertEquals(line(transient).text, wordsOf(provider))
+
+        val request = terminal()
+        request.emitError(FailureCause.Provider.Unrecognized(clientError = true))
+        assertEquals(400, request.httpStatus())
+        assertEquals(
+            ErrorType.INVALID_REQUEST.wireName,
+            request.responseBody()["error"]!!.jsonObject["type"]?.jsonPrimitive?.content,
         )
     }
 }

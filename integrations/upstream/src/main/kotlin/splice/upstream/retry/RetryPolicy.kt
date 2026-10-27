@@ -61,7 +61,7 @@ internal class RetryRules(private val maxRetries: Int) {
         is FailureCause.Provider.TooLong, is FailureCause.Provider.Rejected,
         is FailureCause.Provider.ModelMissing, is FailureCause.Provider.Refused,
         is FailureCause.Provider.Empty, is FailureCause.Provider.ToolTear,
-        is FailureCause.Provider.Unrecognized,
+        is FailureCause.Provider.Unrecognized, is FailureCause.Provider.ReasoningCut,
         -> Lift.Unstated
     }
 
@@ -229,6 +229,7 @@ internal class RetryRules(private val maxRetries: Int) {
     private fun refusedAsSent(cause: FailureCause.Provider): String? = when (cause) {
         is FailureCause.Provider.Limited, is FailureCause.Provider.NeedsPayment, is FailureCause.Provider.Overloaded,
         is FailureCause.Provider.ServerError, is FailureCause.Provider.Empty, is FailureCause.Provider.Unrecognized,
+        is FailureCause.Provider.ReasoningCut,
         -> null
         is FailureCause.Provider.TooLong -> "says the request is too long (no retry: the same bytes, the same window)"
         is FailureCause.Provider.ModelMissing -> "does not have the model ${cause.model} (no retry)"

@@ -213,19 +213,23 @@ class DaemonTest {
 
     private fun JsonObject.text(field: String) = this[field]?.jsonPrimitive?.content
 
+    /** Failure-handling slice 4: a login splice holds, refused upstream, is a permanent ending, so the head answers
+     *  by status before committing a 200 — 403 permission_error, which 2.1.310 does not send again — and the line
+     *  still names the command that signs this head in. */
     @Test
-    fun `AUTHENTICATION failure surfaces the per-head login hint`() = runBlocking {
-        val sse = client.post("http://127.0.0.1:$headPort/v1/messages") {
+    fun `a refused login surfaces the per-head login hint`() = runBlocking {
+        val response = client.post("http://127.0.0.1:$headPort/v1/messages") {
             header("Content-Type", "application/json")
             header("Authorization", "Bearer $key")
             setBody(
                 """{"model":"claude-codex--gpt-5.6-sol","stream":true,"max_tokens":8000,
                     "system":"You are a test. SCENARIO:authfail","messages":[{"role":"user","content":"go"}]}""",
             )
-        }.bodyAsText()
-        assertTrue(sse.contains("event: error"))
-        assertTrue(sse.contains("authentication_error"))
-        assertTrue(sse.contains("Run claudex login, then send the message again."), sse)
+        }
+        val body = response.bodyAsText()
+        assertEquals(403, response.status.value, body)
+        assertTrue(body.contains("permission_error"), body)
+        assertTrue(body.contains("Run claudex login, then send the message again."), body)
     }
 
     // A 2-head topology: one valid (codex → mock) plus a `ghost` head whose provider does not exist.

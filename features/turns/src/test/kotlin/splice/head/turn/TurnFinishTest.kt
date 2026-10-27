@@ -684,8 +684,10 @@ class TurnFinishTest {
         } finally {
             drive.slot.release()
         }
-        // Control first: the client-facing rewrite really happened (HEAD-003's honest failure).
-        assertEquals(502, emitter.httpStatus(), "the terminal must have rewritten to the error envelope")
+        // Control first: the client-facing rewrite really happened (HEAD-003's honest failure). Failure-handling
+        // slice 4: a torn tool call is the provider's, so the buffered answer is the 529 the client sends again,
+        // not the api_error 502 it carried when this pin was written (final-design.md section 11).
+        assertEquals(529, emitter.httpStatus(), "the terminal must have rewritten to the error envelope")
         assertEquals(1L, rig.health.snapshot().localOrigin, "the downgrade must reach head health")
         assertTrue(rig.logs.any { it.contains("finish-degraded") }, "the downgrade must reach the log")
         AsyncFileIo.drain() // perf rows are appended asynchronously

@@ -11,6 +11,10 @@
 //    PendingSse's Overflow decision);
 //  - the operator's stop seals as INVALID_REQUEST and a restart as OVERLOADED (CancellationSeal.kt:127-146);
 //  - a passthrough head reads Anthropic's api_error event as API_ERROR (PassthroughTerminalState.kt:68-82).
+//
+// Failure-handling slice 4 read every row here against the record-backed table and changed none: the P and T rows it
+// was told to rewrite (the overflow before content and the console stop mid-answer) already answer what section 11
+// chose — 400 invalid_request_error with x-should-retry false, and the cause's own type after content.
 package splice.head.scripted
 
 import kotlinx.coroutines.test.runTest

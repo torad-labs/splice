@@ -130,7 +130,9 @@ class PoolFailoverTurnTest {
         val rig = FailoverRig(directory, limited = emptyMap(), headAuth = auth, refusedStatus = 401)
         rig.start()
         try {
-            assertEquals(HttpStatusCode.Unauthorized, rig.turn(stream = false).first)
+            // Slice 4: a login splice holds takes the held-login status, 403 permission_error. 401 stays the
+            // client's own forwarded login, so the status itself no longer says the caller's sign-in failed.
+            assertEquals(HttpStatusCode.Forbidden, rig.turn(stream = false).first)
             assertInstanceOf(CredentialVerdict.Unverified::class.java, auth.describe().verdict)
         } finally {
             rig.close()
@@ -164,9 +166,12 @@ class PoolFailoverTurnTest {
         try {
             val response = rig.response()
             val body = response.bodyAsText()
-            assertEquals(HttpStatusCode.ServiceUnavailable, response.status, body)
+            // Slice 4: the P family's one non-login status, from the record's rows (final-design.md section 11).
+            // The 503 this carried is a row 2.1.310 also does not re-send, but splice answers permanent endings
+            // with one status, and a 503 reads as the machine being down rather than this turn being refused.
+            assertEquals(HttpStatusCode.BadRequest, response.status, body)
             assertTrue("another machine" in body, "the answer says why the turn did not run: $body")
-            // PR 423 review round 2: a launch plants CLAUDE_CODE_RETRY_WATCHDOG, which gives a 503 300 retries; only the
+            // PR 423 review round 2: a launch plants CLAUDE_CODE_RETRY_WATCHDOG, which retries on its own; only the
             // server can bring a login back, so the node is told not to retry and shows the sentence at once.
             assertEquals("false", response.headers["x-should-retry"], "the node does not retry into it")
             assertTrue(rig.requests.isEmpty(), "the node's word must never reach the vendor: ${rig.requests}")

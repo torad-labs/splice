@@ -1,11 +1,16 @@
-// The PRE-CONTENT WIRE-TYPE RULE, pinned as a table.
+// The IN-BAND TYPE RULE, pinned as a table.
 //
 // The rule lives in ClientWire (core/failure) since failure-handling slice 1, which folded SseEmitter's
 // PreContentWireType into the one place the client's answer is chosen, and this pins every row of it, because the
-// interesting content of the rule is not what it remaps but what it REFUSES to: the two types the client would treat
-// as terminal in band become the one it retries, everything already-retryable rides through, a PERMANENT failure
-// keeps its real type, and the two types that mean "only the operator can fix this" are never touched. Each cell asks
-// with a leaf whose own type is the one the cell names; ClientWireTodayPropertyTest walks every leaf and position.
+// interesting content of the rule is not what it remaps but what it REFUSES to: before any content the failures a
+// re-send can heal read as the one type the client re-sends, everything a re-send cannot heal reads as the in-band
+// class it stops on, and after content every type is left alone.
+//
+// Failure-handling slice 4 chose those types by family instead of by permanence (final-design.md section 11): on a
+// committed 200 with nothing shown, R reads overloaded_error and every permanent ending reads invalid_request_error,
+// which the record shows 2.1.310 prints and does not re-send (inband-signed-notice). Only the client's own forwarded
+// login keeps authentication_error. Each cell asks with a leaf of that family; ClientWireRecordTest walks every leaf
+// and position against the record.
 //
 // The E2E half of this row lives next door: RetryAlwaysArmedTest's sweep drives a live
 // api_error-in-200 path and asserts the body the CLIENT receives, and HeadServerFailureBranchTest
@@ -54,22 +59,27 @@ class TurnKnownEndTest {
     }
 
     @Test
-    fun `the types only the operator can fix are never remapped`() {
-        // A retry of identical bytes cannot change either of these, so relabelling would be a lie
-        // that spends the client's retry budget on a wall.
+    fun `the endings only a person can act on stop the turn in band`() {
+        // A retry of identical bytes cannot change any of these, so relabelling would be a lie that spends the
+        // client's retry budget on a wall. Slice 4: they read the in-band class the client stops on, and the person
+        // reads splice's line, which says what to do. The client's own login keeps authentication_error, the one
+        // type that reaches its sign-in.
         assertEquals(ErrorType.INVALID_REQUEST, beforeContent(FailureCause.Provider.Rejected(staleReasoning = false)))
-        assertEquals(ErrorType.AUTHENTICATION, beforeContent(FailureCause.Provider.AuthRejected(LoginOwner.SPLICE)))
+        assertEquals(ErrorType.INVALID_REQUEST, beforeContent(FailureCause.Provider.AuthRejected(LoginOwner.SPLICE)))
+        assertEquals(ErrorType.AUTHENTICATION, beforeContent(FailureCause.Provider.AuthRejected(LoginOwner.CLIENT)))
     }
 
     @Test
     fun `a type the client already retries rides through untouched`() {
         assertEquals(ErrorType.OVERLOADED, beforeContent(FailureCause.Provider.Overloaded(Lift.Unstated, false)))
+        // Slice 4, ruling 4: splice's own budget is a permanent ending with no login status, so it reads the in-band
+        // class the client stops on rather than the permission_error it wore before.
         val budget = Decline.Budget(limit = "\$20.00", resetsAt = Instant.parse("2026-10-27T05:00:00Z"))
-        assertEquals(ErrorType.PERMISSION, beforeContent(FailureCause.Splice.Declined(budget)))
+        assertEquals(ErrorType.INVALID_REQUEST, beforeContent(FailureCause.Splice.Declined(budget)))
     }
 
     @Test
-    fun `a PERMANENT pre-content failure keeps its real type`() {
+    fun `a PERMANENT pre-content failure stops the turn in band`() {
         // The operator law "always a retry armed" is about failures a retry can HEAL. A permanent
         // failure is not one of those: the identical bytes produce the identical verdict, and
         // RetryPolicy arms a cooldown only for RATE_LIMITED, so with CLAUDE_CODE_RETRY_WATCHDOG=1
@@ -77,8 +87,9 @@ class TurnKnownEndTest {
         // that cannot move. It keeps its type, and the client ends the session on the honest
         // verdict instead of grinding. This is the row's finding 1: before it, permanence reached
         // nothing but the `partial` field, so a deterministic refusal or an invalid_parameter was
-        // advertised as transient like any other API_ERROR.
-        assertEquals(ErrorType.API_ERROR, beforeContent(FailureCause.Provider.Unrecognized(clientError = true)))
+        // advertised as transient like any other API_ERROR. Slice 4: the type it keeps is invalid_request_error,
+        // the in-band class the record shows the client prints and does not send again.
+        assertEquals(ErrorType.INVALID_REQUEST, beforeContent(FailureCause.Provider.Unrecognized(clientError = true)))
     }
 
     @Test

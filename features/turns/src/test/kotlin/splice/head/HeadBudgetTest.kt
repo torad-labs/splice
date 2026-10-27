@@ -3,7 +3,7 @@
 //
 // The failing state the review named: `PUT /api/budgets {"budgets":[{"head":"h","daily_usd":0.01,
 // "action":"block"}]}` answered 200 and turns on `h` kept being served, because nothing on the turn
-// path read a budget. The block arm here is what the client sees — a 403 permission_error carrying
+// path read a budget. The block arm here is what the client sees — a 400 invalid_request_error carrying
 // the budget's [splice] line, before any upstream call — and the spend arm compares what the budget
 // was told against the perf row the head actually wrote for that turn.
 package splice.head
@@ -81,7 +81,7 @@ private class RecordingBudget(private val answer: BudgetBlock?) : HeadBudget {
 class HeadBudgetTest(@param:TempDir private val root: Path) {
 
     @Test
-    fun `a reached block budget refuses the turn with its line as a 403, before any upstream call`() =
+    fun `a reached block budget refuses the turn with its line as a 400, before any upstream call`() =
         runBlocking {
             val block = BudgetBlock(
                 message = "head 'codex' has spent \$2.00 today (UTC) against its \$2.00 daily budget",
@@ -94,9 +94,14 @@ class HeadBudgetTest(@param:TempDir private val root: Path) {
                 rig.start()
                 val response = rig.turn()
                 val body = response.bodyAsText()
-                assertEquals(HttpStatusCode.Forbidden, response.status, body)
+                // Failure-handling slice 4, ruling 4: splice's own budget is a permanent ending with no login in it,
+                // so it takes the non-login permanent status — 400 invalid_request_error with x-should-retry false,
+                // which 2.1.310 does not send again — rather than the 403 permission_error it wore before, which
+                // reads as a login's (final-design.md section 11).
+                assertEquals(HttpStatusCode.BadRequest, response.status, body)
+                assertEquals("false", response.headers["x-should-retry"], body)
                 val error = Json.parseToJsonElement(body).jsonObject.getValue("error").jsonObject
-                assertEquals("permission_error", error.getValue("type").jsonPrimitive.content)
+                assertEquals("invalid_request_error", error.getValue("type").jsonPrimitive.content)
                 // The line names the head, the operator's limit and when the budget's day ends, in the head's zone
                 // (failure-handling slice 2); the spend and the remedies stay in the console and the log.
                 assertEquals(

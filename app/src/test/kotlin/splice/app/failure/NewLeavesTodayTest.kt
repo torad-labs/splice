@@ -35,8 +35,7 @@ import java.nio.file.Path
 private const val OK = 200
 private const val BAD_REQUEST = 400
 private const val UNAUTHORIZED = 401
-private const val BAD_GATEWAY = 502
-private const val SERVICE_UNAVAILABLE = 503
+private const val OVERLOADED = 529
 
 /** How often a test looks again at a head's log, in real time, and how many looks make twenty seconds. */
 private const val LOOK_AGAIN_MS = 10L
@@ -49,27 +48,32 @@ private const val COMPACTION_SYSTEM = "You are tasked with summarizing conversat
 private val FOREIGN_KEY_WORDS = "Incorrect API key provided: sk-test0" + "*".repeat(40) + "Zq9x."
 
 class NewLeavesTodayTest {
+    /** Failure-handling slice 4, replacing `the LAN share's node-word refusal answers 503 with x-should-retry
+     *  false`: the refusal is permanent for this request and names no login, so it takes the one non-login
+     *  permanent answer, 400 invalid_request_error with x-should-retry false (final-design.md section 11). */
     @Test
-    fun `the LAN share's node-word refusal answers 503 with x-should-retry false`(@TempDir tmp: Path) = runTest {
+    fun `the LAN share's node-word refusal stops the turn with no login status`(@TempDir tmp: Path) = runTest {
         withScriptedHeads(tmp) {
             // PreDriveRefusals.refuseIfNodeWordUnheld: the word would go upstream as the caller's own login, so the
-            // head answers it, 503 and never retried, since only this machine can bring a login back.
+            // head answers it, never retried, since only this machine can bring a login back.
             val head = forwardingAnthropic()
 
             val answer = head.client.send(ClientRequest(bearer = SHARE_NODE_TOKEN))
 
-            assertEquals(SERVICE_UNAVAILABLE, answer.status, answer.describe())
-            assertEquals("api_error", answer.error?.type, answer.describe())
+            assertEquals(BAD_REQUEST, answer.status, answer.describe())
+            assertEquals("invalid_request_error", answer.error?.type, answer.describe())
             assertEquals("false", answer.shouldRetry, answer.describe())
             assertTrue(provider.requests.isEmpty(), "the word never reached the provider: ${provider.requests}")
         }
     }
 
+    /** Slice 4: the console's stop is the operator's verdict on this request, so its re-send is refused with the
+     *  permanent answer, now carrying x-should-retry false, which stops the client where no header let it grind. */
     @Test
-    fun `a stopped turn's re-send is refused as today`(@TempDir tmp: Path) = runTest {
+    fun `a stopped turn's re-send is refused for good`(@TempDir tmp: Path) = runTest {
         withScriptedHeads(tmp) {
             // TurnPreparation refuses the stopped request's re-send inside LiveTurns' window, and HeadAdmission answers
-            // the refusal as a 400 invalid_request_error with no retry header. Claude Code re-sends with stream=false.
+            // the refusal as a 400 invalid_request_error. Claude Code re-sends with stream=false.
             provider.script(reply { responsesStart(); responsesText("running"); hold(); responsesEnd() })
             val head = responses()
             val request = ClientRequest(session = "stopped-session")
@@ -82,7 +86,7 @@ class NewLeavesTodayTest {
 
             assertEquals(BAD_REQUEST, resend.status, resend.describe())
             assertEquals("invalid_request_error", resend.error?.type, resend.describe())
-            assertNull(resend.shouldRetry, resend.describe())
+            assertEquals("false", resend.shouldRetry, resend.describe())
             assertEquals(1, provider.requests.size, "the re-send never reached the provider: ${provider.requests}")
         }
     }
@@ -176,14 +180,16 @@ class NewLeavesTodayTest {
         }
     }
 
+    /** Slice 4, replacing `a 401 naming a masked key the login did not send is answered as today's transient API
+     *  error`: the provider's own failure is in the R family, so the buffered answer is the 529 2.1.310 sends again
+     *  (http-529-non-stream) rather than the 502 it carried, which no row of the record covers. */
     @Test
-    fun `a 401 naming a masked key the login did not send is answered as today's transient API error`(
+    fun `a 401 naming a masked key the login did not send is the provider's own failure`(
         @TempDir tmp: Path,
     ) = runTest {
         withScriptedHeads(tmp) {
-            // ForeignCredential.upstreamsOwn reads the 401 as the upstream's own transient api_error. In a stream, the
-            // pre-content rule wires it as overloaded_error (SseEmitter, PreContentWireType); a request that does not
-            // stream keeps the api_error and its 502 (CollectingTerminal.statusFor).
+            // ForeignCredential.upstreamsOwn reads the 401 as the upstream's own failure, which a re-send can heal:
+            // in a stream it is an overloaded_error event, and a request that does not stream answers 529.
             provider.script(
                 reply {
                     status(UNAUTHORIZED)
@@ -198,8 +204,8 @@ class NewLeavesTodayTest {
             assertEquals(OK, streamed.status, streamed.describe())
             assertEquals("overloaded_error", streamed.error?.type, streamed.describe())
             assertNull(streamed.shouldRetry, streamed.describe())
-            assertEquals(BAD_GATEWAY, collected.status, collected.describe())
-            assertEquals("api_error", collected.error?.type, collected.describe())
+            assertEquals(OVERLOADED, collected.status, collected.describe())
+            assertEquals("overloaded_error", collected.error?.type, collected.describe())
             assertNull(collected.shouldRetry, collected.describe())
         }
     }
@@ -227,11 +233,12 @@ class NewLeavesTodayTest {
         )
     }
 
-    /** A refusal the head made as it prepared the request: 400 invalid_request_error, with no retry header. */
+    /** A refusal the head made as it prepared the request: 400 invalid_request_error. Slice 4 adds x-should-retry
+     *  false, since the same request earns the same refusal (final-design.md section 11). */
     private fun assertRefusedHere(answer: ClientAnswer) {
         assertEquals(BAD_REQUEST, answer.status, answer.describe())
         assertEquals("invalid_request_error", answer.error?.type, answer.describe())
-        assertNull(answer.shouldRetry, answer.describe())
+        assertEquals("false", answer.shouldRetry, answer.describe())
     }
 
     /** Returns once [fragment] is in [head]'s log: a detached drive and a follower signal nothing else. */

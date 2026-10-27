@@ -215,7 +215,8 @@ class PerfRowTraceTurnTest {
     fun `a turn refused before it was served names its trace turn too`() {
         val head = start(traced = true, budget = Refusing)
 
-        assertEquals(HttpStatusCode.Forbidden, turn(head))
+        // Slice 4, ruling 4: a budget refusal takes the non-login permanent status, a 400.
+        assertEquals(HttpStatusCode.BadRequest, turn(head))
 
         val (row, traced) = written(head)
         assertEquals("error:budget-blocked", row.text("outcome"))

@@ -21,7 +21,6 @@ import kotlinx.serialization.json.buildJsonArray
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
 import kotlinx.serialization.json.putJsonObject
-import splice.core.failure.ClientWire
 import splice.core.failure.FailureCause
 import splice.core.failure.Moment
 import splice.core.failure.Position
@@ -228,7 +227,7 @@ internal class SseEmitter(
      *  the channel drops any later error frame (PendingSse), so the first is the one the client read. */
     override suspend fun emitError(cause: FailureCause) {
         val at = position()
-        val answer = ClientWire.answer(cause, at)
+        val answer = voice.answer(cause, at)
         val line = voice.ending(cause, at, answer)
         if (!seal.compareAndSet(SealState.OPEN, SealState.ENDING)) return
         var cancelled = false
@@ -240,7 +239,7 @@ internal class SseEmitter(
             // the admission 4xx/5xx bodies and :upstream's own fail-fast body cannot drift apart.
             // Failure-handling slice 2: the frame carries what the failure is while the status is still splice's to
             // choose, which only the channel knows, so an overflow answers with its own status whatever its line says.
-            val unsent = ClientWire.answer(cause, Position(Moment.BEFORE_COMMIT, streamBegan = true))
+            val unsent = voice.answer(cause, Position(Moment.BEFORE_COMMIT, streamBegan = true))
             frames.ending(
                 ErrorEnvelope.of(answer.type.wireName, line.text),
                 unsent,

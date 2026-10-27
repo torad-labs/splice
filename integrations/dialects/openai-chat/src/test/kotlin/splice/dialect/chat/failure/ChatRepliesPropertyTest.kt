@@ -302,8 +302,8 @@ class ChatRepliesPropertyTest {
         repeat(RUNS) {
             val (code, status) = CODE_STATUS.entries.random(random).toPair()
             // An event carries no headers, so its twin reply carries none either.
-            val c = case(random, listOf(status), listOf(code))
-                .copy(json = true, pushback = Pushback(null, null, emptyMap()))
+            val base = case(random, listOf(status), listOf(code))
+            val c = base.copy(shape = base.shape.copy(json = true), pushback = Pushback(null, null, emptyMap()))
             assertEquals(expected(c), ChatReplies.http(c.reply()), c.toString())
             assertEquals(
                 expected(c),

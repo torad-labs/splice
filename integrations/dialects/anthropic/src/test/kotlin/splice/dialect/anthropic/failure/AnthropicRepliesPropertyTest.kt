@@ -311,7 +311,8 @@ class AnthropicRepliesPropertyTest {
         repeat(RUNS) {
             val (type, status) = TYPE_STATUS.entries.random(random).toPair()
             // An event carries no headers, so its twin reply carries none either.
-            val c = case(random, listOf(status), listOf(type)).copy(retryAfterS = null, plan = null, json = true)
+            val base = case(random, listOf(status), listOf(type))
+            val c = base.copy(retryAfterS = null, plan = null, shape = base.shape.copy(json = true))
             val event = envelope(type, c.said.text)
             assertEquals(expected(c), AnthropicReplies.http(c.reply()), c.toString())
             assertEquals(

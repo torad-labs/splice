@@ -16,6 +16,7 @@ import splice.upstream.failure.FailedReply
 import splice.upstream.failure.ProviderDeviation
 import splice.upstream.failure.ReplyFacts
 import java.time.Instant
+import java.time.format.DateTimeParseException
 
 /**
  * Muse's two answers of its own, and its key mint's verdicts.
@@ -62,9 +63,31 @@ public object MuseReplies : ProviderDeviation {
 
     /** The reset the answer states, held softly: the body's own first, then its Retry-After, then none. */
     private fun softLift(reply: FailedReply): Lift =
-        ReplyFacts.statedReset(reply)?.let { Lift.At(it, firm = false, LiftSource.BODY) }
+        statedReset(reply)?.let { Lift.At(it, firm = false, LiftSource.BODY) }
             ?: ReplyFacts.retryAfterMs(reply)?.let { ReplyFacts.liftAfter(reply, it, LiftSource.RETRY_AFTER, false) }
             ?: Lift.Unstated
+
+    /** The reset a 429's body states in Muse's two spellings, which the 429 of Oct 25 carried both of: `resets_at` in
+     *  epoch seconds, else the instant its message names ("Your usage window resets at 2026-10-26T05:25:35Z.").
+     *  Null where it states neither, or names one already past when the answer came. */
+    private fun statedReset(reply: FailedReply): Instant? {
+        val epoch = RESETS_AT.find(reply.body)?.groupValues?.get(1)?.toLong()?.let(Instant::ofEpochSecond)
+        val stated = epoch ?: RESETS_AT_IN_WORDS.find(reply.body)?.groupValues?.get(1)?.let(::instantOrNull)
+        return stated?.takeIf { it > reply.answeredAt }
+    }
+
+    /** [text] as an instant. A malformed one is Muse's slip, not splice's failure: it reads as no reset stated. */
+    private fun instantOrNull(text: String): Instant? = try {
+        Instant.parse(text)
+    } catch (_: DateTimeParseException) {
+        null
+    }
+
+    /** `resets_at` in epoch seconds: ten digits until 2286, twelve at most, so the instant is always one Java holds. */
+    private val RESETS_AT = Regex(""""resets_at"\s*:\s*(\d{9,12})(?!\d)""")
+
+    /** The instant a message names after "resets at". */
+    private val RESETS_AT_IN_WORDS = Regex("""resets?\s+at\s+(\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?Z?)""")
 
     /** How long a rate-limited mint holds, exactly as [MuseMintVerdict] records it. */
     private fun heldMs(retryAfterMs: Long?): Long =

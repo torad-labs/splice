@@ -14,7 +14,6 @@ import splice.core.auth.Credentials
 import splice.core.auth.RefreshableAuthProvider
 import splice.core.failure.Lift
 import splice.core.failure.LiftSource
-import splice.core.failure.LoginOwner
 import splice.core.perf.PerfKeys
 import splice.core.perf.TurnPerf
 import splice.core.usage.PlanLimit
@@ -25,11 +24,8 @@ import splice.upstream.RetryNotice
 import splice.upstream.RoundBody
 import splice.upstream.StreamRead
 import splice.upstream.Waiter
-import splice.upstream.failure.FailedReply
 import splice.upstream.failure.OpenAiReplies
 import splice.upstream.failure.Replies
-import splice.upstream.failure.ReplyFacts
-import splice.upstream.failure.SentKey
 import splice.upstream.transport.PostContext
 import splice.upstream.transport.PostLimits
 import splice.upstream.transport.PostObservers
@@ -299,39 +295,6 @@ class RateLimitCooldownTest {
 
         assertEquals(0L, cooldown.unavailableForMs(), "a single-account head is never evicted")
         assertEquals(23_300_000L, cooldown.providerUnavailableForMs(), "but its reset IS recorded")
-    }
-
-    // Since failure-handling slice 3 the body's spellings are read once, by the reply's reader (ReplyFacts.statedReset,
-    // which the vendors whose bodies state a reset read their 429s with), and the cooldown holds the instant it read.
-    @Test
-    fun `the reset is read from every spelling the vendors use`() {
-        val wall = Instant.parse("2026-09-16T13:34:32Z").toEpochMilli()
-
-        fun captured(body: String): Long {
-            val cooldown = RateLimitCooldown(ElapsedClock { 0L }, WallClock { wall })
-            val reply = FailedReply(
-                429,
-                emptyMap(),
-                body,
-                LoginOwner.SPLICE,
-                SentKey { _, _ -> false },
-                Instant.ofEpochMilli(wall),
-            )
-            val lift = ReplyFacts.statedReset(reply)?.let { Lift.At(it, firm = true, LiftSource.BODY) } ?: Lift.Unstated
-            cooldown.rateLimitedPlan(
-                pushbackMs = 5_301_000L,
-                turn = RateLimitTurn(cooldown, pooledAccount = false, lift = lift),
-                canRetry = false,
-                onRetry = RetryNotice {},
-                nextRefreshed = false,
-            )
-            return cooldown.providerUnavailableForMs()
-        }
-
-        assertEquals(23_300_000L, captured("""{"message":"usage window resets at 2026-09-16T20:02:52Z"}"""))
-        assertEquals(3_600_000L, captured("""{"resets_at":${wall / 1_000 + 3_600}}"""), "epoch seconds")
-        assertEquals(3_600_000L, captured("""{"resets_in_seconds":3600}"""), "a duration is already a delay")
-        assertEquals(0L, captured("""{"detail":"Rate limit exceeded"}"""), "a bare body names nothing")
     }
 }
 

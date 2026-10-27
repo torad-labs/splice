@@ -165,8 +165,9 @@ public class RateLimitCooldown public constructor(
         // An ABSOLUTE instant arrives on the WALL base and becomes a DELAY here; a duration is already a delay.
         // Mixing the bases is the bug this shape prevents: an epoch millisecond compared against this class's
         // elapsed clock reads as a reset decades out. Since slice 3 the instant arrives READ, by the reply's own
-        // reader, which took it from the reset header or the body's own spellings (ProviderReset); a pushback the
-        // Retry-After header asked for is not the provider naming a reset, and arm() already holds that one.
+        // reader, which took it from the reset header or the body's own spelling (each vendor's, in its own reader:
+        // MuseReplies for Muse); a pushback the Retry-After header asked for is not the provider naming a reset, and
+        // arm() already holds that one.
         val at = (lift as? Lift.At)?.takeIf { it.source != LiftSource.RETRY_AFTER } ?: return
         val wallNow = wallClock()
         val delayMs = at.at.toEpochMilli() - wallNow

@@ -7,9 +7,7 @@ package splice.upstream.failure
 import splice.core.failure.Lift
 import splice.core.failure.LiftSource
 import splice.core.util.WallClock
-import splice.upstream.retry.ProviderReset
 import splice.upstream.retry.RetryAfter
-import java.time.Instant
 
 /** Facts a failed reply states in HTTP's own terms or in plain words, whatever its API type. */
 public object ReplyFacts {
@@ -28,16 +26,6 @@ public object ReplyFacts {
      *  requests served before the instant it named, so the limit holds with probes (MuseReplies). */
     public fun liftAfter(reply: FailedReply, ms: Long, source: LiftSource, firm: Boolean = true): Lift.At =
         Lift.At(reply.answeredAt.plusMillis(ms.coerceIn(0L, LONGEST_LIFT_MS)), firm, source)
-
-    /** The reset [reply]'s own body states, as the instant it names: `resets_at`, "resets at <instant>",
-     *  `resets_in_seconds`, or an echoed X-RateLimit-Reset (ProviderReset, V4-47). Null where the body states none,
-     *  or names one already past when the reply came. */
-    public fun statedReset(reply: FailedReply): Instant? {
-        val answeredAt = reply.answeredAt.toEpochMilli()
-        return ProviderReset.wallMs(reply.body, answeredAt)
-            ?.takeIf { it > answeredAt }
-            ?.let(Instant::ofEpochMilli)
-    }
 
     /** Whether [text] says the request outgrew the model's context, in any of the ways providers write it
      *  ("prompt is too long", "maximum context length", "context_length_exceeded", "too many tokens" and the rest,

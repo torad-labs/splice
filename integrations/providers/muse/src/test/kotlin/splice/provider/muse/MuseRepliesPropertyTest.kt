@@ -99,6 +99,34 @@ class MuseRepliesPropertyTest {
         }
     }
 
+    // Muse states its reset two ways: `resets_at` in epoch seconds, and the instant its message names (both are in
+    // the 429 of Oct 25). Either alone is the reset. One already past when the answer came states none, so the
+    // Retry-After stands in its place.
+    @Test
+    fun `either of Muse's two spellings alone states the reset, and a reset already past states none`() {
+        val random = Random(366)
+        repeat(RUNS) {
+            val at = answeredAt(random)
+            val resetAt = at.plusSeconds(random.nextLong(-30_000, 30_000))
+            val inMessage = random.nextBoolean()
+            val said = if (inMessage) "Your usage window resets at $resetAt." else "Subscription quota exhausted."
+            val epoch = if (inMessage) "" else ""","resets_at":${resetAt.epochSecond}"""
+            val body = """{"error":{"code":"rate_limit_exceeded","message":"$said"$epoch}}"""
+            val pushbackS = random.nextLong(1, 8_000)
+            val lift = if (resetAt > at) {
+                Lift.At(resetAt, firm = false, LiftSource.BODY)
+            } else {
+                Lift.At(at.plusSeconds(pushbackS), firm = false, LiftSource.RETRY_AFTER)
+            }
+
+            assertEquals(
+                FailureCause.Provider.Limited(lift, null, ProviderWordsFilter.of(said)),
+                MuseReplies.http(reply(429, body, at, mapOf("retry-after" to pushbackS.toString()))),
+                body,
+            )
+        }
+    }
+
     @Test
     fun `a body naming the account's plan limit is Muse's verdict on the plan, in Muse's words`() {
         val random = Random(363)

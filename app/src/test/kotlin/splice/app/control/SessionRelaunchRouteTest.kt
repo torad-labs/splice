@@ -8,6 +8,11 @@
 // What a relaunch must give back: the session started again on the command it was started with, in its own config
 // folder (so signed in as it was), with its agent and every other option it was given and never its first prompt, on
 // the model its row reports, in the same pane, and only between its turns.
+//
+// What it must never do: type /exit into a session holding a feedback draft that has not been sent. Claude Code
+// 2.1.310 answers that /exit with "You have 1 unsent feedback draft · Enter to review & send · Esc to discard and
+// exit", and sending or discarding the draft is the person's call. On Oct 27 at 08:30 CT a relaunch did, and left a
+// session in ~/.claude-claudex sitting at that question.
 package splice.app.control
 
 import io.ktor.client.HttpClient
@@ -15,15 +20,20 @@ import io.ktor.client.engine.cio.CIO
 import io.ktor.client.plugins.expectSuccess
 import io.ktor.client.request.header
 import io.ktor.client.request.post
+import io.ktor.client.request.setBody
 import io.ktor.client.statement.bodyAsText
 import io.ktor.http.HttpStatusCode
 import kotlinx.coroutines.runBlocking
+import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.buildJsonObject
+import kotlinx.serialization.json.jsonObject
+import kotlinx.serialization.json.jsonPrimitive
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertNotNull
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.io.TempDir
+import splice.app.cli.sessions.SessionsRelaunchCommand
 import splice.client.ClaudeConfigMaterializer
 import splice.client.ClaudePolicy
 import splice.client.wrap.WrapStateStore
@@ -34,6 +44,7 @@ import splice.core.config.ConfigService
 import splice.core.config.InstallPaths
 import splice.core.config.MgmtKey
 import splice.core.config.StatePaths
+import splice.core.config.TurnKey
 import splice.core.config.UserHome
 import splice.core.head.Head
 import splice.core.head.HeadHealth
@@ -42,6 +53,7 @@ import splice.core.session.SessionKey
 import splice.core.session.SessionPane
 import splice.core.session.SessionPanes
 import splice.core.session.SessionTerminal
+import splice.core.terminal.TerminalOutput
 import splice.diagnostics.logs.HeadLogSource
 import splice.head.compact.CompactView
 import splice.head.compact.HeadCompactSource
@@ -65,12 +77,19 @@ import splice.usage.quota.RateLimitView
 import splice.usage.quota.UsageView
 import java.nio.file.Files
 import java.nio.file.Path
+import java.util.UUID
 import java.util.concurrent.ConcurrentHashMap
 
 private const val HEAD = "claude-splice"
 private const val REVIEW = "5e1a0001-0000-4000-8000-000000000001"
 private const val SEAT = "5e1a0002-0000-4000-8000-000000000002"
 private const val LEADER = "5e1a0003-0000-4000-8000-000000000003"
+
+/** A seat beside [SEAT] in one config folder, as the seats of the claudex head share ~/.claude-claudex. */
+private const val NEIGHBOR = "5e1a0004-0000-4000-8000-000000000004"
+
+/** What a refusal for a feedback draft that has not been sent says, in the daemon's reply and the CLI's line. */
+private const val HOLDS_FEEDBACK = "holds a feedback draft that has not been sent"
 
 /** The model each session's transcript last ran, which its row reports. */
 private const val ROW_MODEL = "claude-opus-5-5"
@@ -96,6 +115,11 @@ class SessionRelaunchRouteTest {
     private val terminal = RecordingTerminal()
     private val panes = KnownPanes()
 
+    /** The processes as /proc shows them, read by the daemon and by `splice sessions relaunch` alike. */
+    private val processes by lazy {
+        ProcessEnvironment(home.resolve("proc"), LaunchOwners(home.resolve("owners")), DarwinPs(here = false))
+    }
+
     // ── the sessions, as they were started ─────────────────────────────────────────────────────────────────
 
     /** A review started through his wrapped `claude` in his own ~/.claude: its agent and its name, and the prompt it
@@ -113,16 +137,39 @@ class SessionRelaunchRouteTest {
         transcripts = home.resolve(".claude"),
     )
 
-    /** A seat started through his wrapped `claude` in a config folder of its own, with its own model named. */
-    private fun startSeat(folder: Path): SessionPane = start(
-        SEAT,
-        FIRST_PID + 1,
+    /** A seat started through his wrapped `claude` in a config folder of its own, with its own model named: [SEAT] as
+     *  [FIRST_PID] + 1 unless another [session] and [pid] are named, holding the turn [key] its launch planted when one
+     *  is given. */
+    private fun startSeat(
+        folder: Path,
+        session: String = SEAT,
+        pid: Long = FIRST_PID + 1,
+        key: String? = null,
+    ): SessionPane = start(
+        session,
+        pid,
         listOf(realClaude.toString(), "--settings", """{"env":{"SPLICE":"1"}}""") +
             listOf("--mcp-config", paths.stateDir.resolve("wrapped-mcp-claude-splice.json").toString()) +
             listOf("--allow-dangerously-skip-permissions", "--model", "claude-fable-5-1"),
-        environ = listOf("SPLICE=1", "CLAUDE_CONFIG_DIR=$folder"),
+        environ = listOf("SPLICE=1", "CLAUDE_CONFIG_DIR=$folder") +
+            listOfNotNull(key?.let { "ANTHROPIC_AUTH_TOKEN=$it" }),
         transcripts = folder,
     )
+
+    /** A feedback draft as Claude Code 2.1.310 writes one, <[folder]>/feedback/drafts/<draft_id>.json: from [session],
+     *  and "queued" in [status] until it is sent. A [cut] one stops after its status, as a file left unfinished. */
+    private fun feedbackDraft(folder: Path, session: String, status: String, cut: Boolean = false) {
+        val id = UUID.randomUUID().toString()
+        val text = """{"type":"bug","title":"a tool call failed","details":"the edit did not apply",""" +
+            """"source_session_id":"$session","status":"$status","created_at":"2026-10-27T13:30:00.000Z",""" +
+            """"draft_id":"$id","trigger":"model_judgment","cli_version":"2.1.310"}"""
+        val written = if (cut) text.substringBefore(",\"draft_id\"") else text
+        Files.writeString(Files.createDirectories(folder.resolve("feedback/drafts")).resolve("$id.json"), written)
+    }
+
+    /** What [body], a refusal the daemon answered, says in [field]. */
+    private fun said(body: String, field: String): String? =
+        Json.parseToJsonElement(body).jsonObject[field]?.jsonPrimitive?.content
 
     /** The lead, started by the head's own command in the head's own folder, resumed by its name. */
     private fun startLead(): SessionPane = start(
@@ -141,13 +188,13 @@ class SessionRelaunchRouteTest {
     @Test
     fun `a session started through his claude comes back in its pane, in its own config folder, as it was started`() {
         val seatFolder = home.resolve(".claude-work")
-        serve { relaunch ->
+        serve { daemon ->
             val review = startReview()
             val seat = startSeat(seatFolder)
 
-            val reviewed = relaunch(REVIEW)
+            val reviewed = daemon.relaunch(REVIEW)
             assertEquals(HttpStatusCode.OK, reviewed.first, reviewed.second)
-            val seated = relaunch(SEAT)
+            val seated = daemon.relaunch(SEAT)
             assertEquals(HttpStatusCode.OK, seated.first, seated.second)
 
             val claude = bin.resolve("claude").toString()
@@ -178,10 +225,10 @@ class SessionRelaunchRouteTest {
 
     @Test
     fun `a session started by its head's command comes back on that command, in the head's folder`() {
-        serve { relaunch ->
+        serve { daemon ->
             val lead = startLead()
 
-            val reply = relaunch(LEADER)
+            val reply = daemon.relaunch(LEADER)
 
             assertEquals(HttpStatusCode.OK, reply.first, reply.second)
             assertEquals(
@@ -202,17 +249,89 @@ class SessionRelaunchRouteTest {
 
     @Test
     fun `a session in its turn is left where it is, and nothing is typed into it`() {
-        serve { relaunch ->
+        serve { daemon ->
             val review = startReview()
             val file = sessionsDir.resolve("$FIRST_PID.json")
             Files.writeString(file, Files.readString(file).replace("\"idle\"", "\"busy\""))
 
-            val reply = relaunch(REVIEW)
+            val reply = daemon.relaunch(REVIEW)
 
             assertEquals(HttpStatusCode.Conflict, reply.first, reply.second)
             assertTrue(terminal.sent.isEmpty() && terminal.held.isEmpty(), "nothing typed, no pane kept")
             assertTrue(terminal.restarted.isEmpty() && terminal.opened.isEmpty(), "nothing started")
             assertEquals(review, panes.paneFor(REVIEW), "it stays where it runs")
+        }
+    }
+
+    // The seats of one head share its config folder, and Claude Code keeps every seat's feedback drafts in it: a draft
+    // names the session it came from, and its status reads "queued" until it is sent. On Oct 27 ~/.claude-claudex held
+    // ten queued drafts of several seats, and one file Claude Code had left cut off mid-way.
+    @Test
+    fun `a session holding a feedback draft that has not been sent is left where it is, and its neighbor relaunches`() {
+        val folder = home.resolve(".claude-claudex")
+        serve { daemon ->
+            val holder = startSeat(folder)
+            val neighbor = startSeat(folder, NEIGHBOR, FIRST_PID + 3)
+            feedbackDraft(folder, SEAT, "queued")
+            // what the neighbor's folder holds besides the holder's draft: its own, already sent, and one cut off
+            feedbackDraft(folder, NEIGHBOR, "sent")
+            feedbackDraft(folder, NEIGHBOR, "queued", cut = true)
+
+            val held = daemon.relaunch(SEAT)
+            val relaunched = daemon.relaunch(NEIGHBOR)
+
+            assertEquals(HttpStatusCode.Conflict, held.first, held.second)
+            assertTrue(HOLDS_FEEDBACK in said(held.second, "error").orEmpty(), "it says why: ${held.second}")
+            assertEquals("feedback", said(held.second, "reason"), held.second)
+            assertEquals(HttpStatusCode.OK, relaunched.first, relaunched.second)
+            assertEquals(listOf(neighbor to "/exit"), terminal.sent, "nothing is typed into the holder's pane")
+            assertEquals(listOf(neighbor), terminal.held, "and its pane is not kept for a restart")
+            assertEquals(listOf(neighbor), terminal.restarted.map { it.pane }, "only the neighbor starts again")
+            assertEquals(holder, panes.paneFor(SEAT), "the holder stays where it runs")
+        }
+    }
+
+    // Continue on ends the client with the same /exit, so it leaves such a session where it is too.
+    @Test
+    fun `Continue on leaves a session holding a feedback draft that has not been sent where it is`() {
+        val folder = home.resolve(".claude-claudex")
+        serve { daemon ->
+            val holder = startSeat(folder)
+            feedbackDraft(folder, SEAT, "queued")
+
+            val reply = daemon.move(SEAT, """{"head":"$HEAD","model":"claude-opus-5"}""")
+
+            assertEquals(HttpStatusCode.Conflict, reply.first, reply.second)
+            assertTrue(HOLDS_FEEDBACK in said(reply.second, "error").orEmpty(), "it says why: ${reply.second}")
+            assertEquals("feedback", said(reply.second, "reason"), reply.second)
+            assertTrue(terminal.sent.isEmpty(), "nothing is typed into its pane: ${terminal.sent}")
+            assertTrue(terminal.opened.isEmpty() && terminal.restarted.isEmpty(), "nothing is started")
+            assertEquals(holder, panes.paneFor(SEAT), "it stays where it runs")
+        }
+    }
+
+    // `splice sessions relaunch` runs after a rotation until it passes. On Oct 27 three sessions due for a relaunch
+    // held queued drafts: each is named with why it was left, and every other session is still relaunched.
+    @Test
+    fun `splice sessions relaunch names a session holding a feedback draft and goes on with the others`() {
+        val folder = home.resolve(".claude-claudex")
+        serve { daemon ->
+            val key = TurnKey(MgmtKey(paths)).get()
+            val neighbor = startSeat(folder, NEIGHBOR, FIRST_PID + 3, key)
+            val holder = startSeat(folder, SEAT, FIRST_PID + 1, key)
+            // the holder's client wrote its registration last, so the run comes to it first
+            register(SEAT, FIRST_PID + 1, at = System.currentTimeMillis() + 60_000)
+            feedbackDraft(folder, SEAT, "queued")
+
+            val (exit, said) = daemon.relaunchAll()
+
+            val left = said.indexOfFirst { SEAT in it && "left" in it }
+            val relaunched = said.indexOfFirst { NEIGHBOR in it && "relaunched" in it }
+            assertTrue(left >= 0 && HOLDS_FEEDBACK in said[left], "the holder is named with why: $said")
+            assertTrue(relaunched > left, "and the run goes on to the neighbor, which is relaunched: $said")
+            assertEquals(listOf(neighbor to "/exit"), terminal.sent, "nothing is typed into the holder's pane")
+            assertEquals(holder, panes.paneFor(SEAT), "the holder stays where it runs")
+            assertEquals(1, exit, "a session left where it is fails the run, so it is run again: $said")
         }
     }
 
@@ -248,18 +367,17 @@ class SessionRelaunchRouteTest {
         return pane
     }
 
-    /** Claude Code's registration of [session] as [pid], at rest at its prompt. */
-    private fun register(session: String, pid: Long) {
+    /** Claude Code's registration of [session] as [pid], at rest at its prompt, written [at] that moment. */
+    private fun register(session: String, pid: Long, at: Long = System.currentTimeMillis()) {
         alive += pid
         Files.writeString(
             sessionsDir.resolve("$pid.json"),
-            """{"pid":$pid,"sessionId":"$session","cwd":"${cwd(session)}","status":"idle",""" +
-                """"updatedAt":${System.currentTimeMillis()}}""",
+            """{"pid":$pid,"sessionId":"$session","cwd":"${cwd(session)}","status":"idle","updatedAt":$at}""",
         )
     }
 
     /** A daemon serving [HEAD], whose `claude` is wrapped, with this rig's registry, processes and terminal. */
-    private fun serve(test: suspend (relaunch: suspend (String) -> Pair<HttpStatusCode, String>) -> Unit) =
+    private fun serve(test: suspend (Daemon) -> Unit) =
         UserHome.within(home) {
             val launch = launchService()
             assertNotNull(
@@ -277,27 +395,53 @@ class SessionRelaunchRouteTest {
                 runtime = ControlRuntime(launchService = launch, sessions = registry()),
             )
             control.ports.sessionDriver = SessionDriver(terminal, panes)
-            val reads = ProcessEnvironment(
-                home.resolve("proc"),
-                LaunchOwners(home.resolve("owners")),
-                DarwinPs(here = false),
-            )
-            control.ports.processes = ProcessReads { reads }
+            control.ports.processes = ProcessReads { processes }
             runBlocking { control.start() }
             val client = HttpClient(CIO) { expectSuccess = false }
             try {
-                runBlocking {
-                    test { session ->
-                        val at = "http://127.0.0.1:${control.listeningPort}/api/sessions/$session/relaunch"
-                        val reply = client.post(at) { header("Authorization", "Bearer $key") }
-                        reply.status to reply.bodyAsText()
-                    }
-                }
+                runBlocking { test(Daemon(client, control.listeningPort, key)) }
             } finally {
                 client.close()
                 control.stop()
             }
         }
+
+    /** The daemon as its callers reach it: its relaunch and Continue on routes, opened with its management [key], and
+     *  `splice sessions relaunch` run against it as the person runs it after a rotation. */
+    private inner class Daemon(private val client: HttpClient, private val port: Int, private val key: String) {
+        suspend fun relaunch(session: String): Pair<HttpStatusCode, String> = post("$session/relaunch", "")
+
+        /** Continue on, with [body] as the page sends it: the command and the model to go on under. */
+        suspend fun move(session: String, body: String): Pair<HttpStatusCode, String> = post("$session/continue", body)
+
+        private suspend fun post(path: String, body: String): Pair<HttpStatusCode, String> {
+            val reply = client.post("http://127.0.0.1:$port/api/sessions/$path") {
+                header("Authorization", "Bearer $key")
+                setBody(body)
+            }
+            return reply.status to reply.bodyAsText()
+        }
+
+        /** `splice sessions relaunch` over this rig's registry and processes, run from no session of its own: its exit
+         *  code, and each line it printed. */
+        fun relaunchAll(): Pair<Int, List<String>> {
+            val said = mutableListOf<String>()
+            val env = mapOf(
+                "SPLICE_STATE_DIR" to home.resolve("state").toString(),
+                "SPLICE_CONTROL_PORT" to port.toString(),
+                "SPLICE_CONFIG" to home.resolve("splice.toml").toString(),
+                "HOME" to home.toString(),
+            )
+            val exit = SessionsRelaunchCommand(
+                env = { name -> env[name] },
+                out = TerminalOutput { said += it },
+                sessions = registry(),
+                environment = processes,
+                ancestors = SessionsRelaunchCommand.Ancestors { emptySet() },
+            ).run()
+            return exit to said
+        }
+    }
 
     private fun registry(): SessionRegistry = SessionRegistry(
         sessionsDir = sessionsDir,

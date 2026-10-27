@@ -56,6 +56,10 @@ internal enum class Refusal(val key: String) {
 
     /** The manager waits on an answer, which a move would type `/exit` into. */
     WAITING("waiting"),
+
+    /** It holds a feedback draft the person has not sent, which its `/exit` would ask them to send or discard: theirs
+     *  to do, so nothing is typed into it (Oct 27, 2026). */
+    FEEDBACK("feedback"),
 }
 
 /** A refusal's reply: its sentence, for the log, and its [Refusal] key when it has one, which is what a page names

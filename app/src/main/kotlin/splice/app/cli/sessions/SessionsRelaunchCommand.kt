@@ -4,12 +4,12 @@
 // #247's fifth review). Each such session still running on a splice head is relaunched there by the daemon, one at a
 // time: ended in its terminal and resumed by its own id on the command and the model it runs on, whose launch hands it
 // the helper and the MCP key in force (SessionContinue.relaunch). The daemon leaves a working session, one waiting on
-// an answer and one holding words he has not sent where they are, and this command does not relaunch the session it
-// runs in. Each session left is named with why, and the run fails while any is left, so it is run again until it
-// passes. Which sessions hold such a key is SessionKeys': a planted token counts only when it is one of splice's keys,
-// so a head that forwards the person's own login and a LAN node's planted word are neither relaunched nor left (PR
-// #247 review round 4). No key is printed: the management key goes only into the request's Authorization header, and
-// a session's token is only compared.
+// an answer, one holding words the person has not sent and one holding a feedback draft not yet sent where they are,
+// and this command does not relaunch the session it runs in. Each session left is named with why, and the run fails
+// while any is left, so it is run again until it passes. Which sessions hold such a key is SessionKeys': a planted
+// token counts only when it is one of splice's keys, so a head that forwards the person's own login and a LAN node's
+// planted word are neither relaunched nor left (PR #247 review round 4). No key is printed: the management key goes
+// only into the request's Authorization header, and a session's token is only compared.
 package splice.app.cli.sessions
 
 import kotlinx.serialization.json.Json

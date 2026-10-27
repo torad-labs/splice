@@ -35,7 +35,10 @@
 //
 // WHAT IS REFUSED. A session waiting on an answer: `/exit` would land in the question. One running background shells,
 // at its prompt or once the move stopped its turn: `/exit` would land in "Background work is running", whose focused
-// answer stops that work (PR #247's fifth review). One already on that command
+// answer stops that work (PR #247's fifth review). One holding a feedback draft the person has not sent, before the
+// move or once it stopped the turn: Claude Code 2.1.310 answers `/exit` with "You have 1 unsent feedback draft · Enter
+// to review & send · Esc to discard and exit", and sending or discarding it is the person's call (FeedbackDrafts; Oct
+// 27, 08:30 CT, a relaunch left a session sitting at that question). One already on that command
 // with no other model picked; another model on the same command is a move like any other (p176: his Opus week is
 // spent and Fable on the same plan has room).
 // One splice cannot reach (the refusals SessionDrive gives). One whose prompt holds words he has not sent: `/exit`
@@ -86,6 +89,9 @@ private const val MOVE_BACKGROUND =
 // why: Claude Code 2.1.310's word for a client idle at its prompt with background shells running, which its own session
 // list counts as working. Its /exit answers "Background work is running" with "Exit and stop tasks" focused.
 private const val RUNNING_SHELLS = "shell"
+private const val FEEDBACK_HELD = "it holds a feedback draft that has not been sent"
+private const val FEEDBACK_UNSENT =
+    "$FEEDBACK_HELD, and its /exit would ask whether to send or discard it; do that in its terminal first"
 private const val RELAUNCH_NO_HEAD = "it runs on no splice command, so there is none to relaunch it on"
 private const val RELAUNCH_NONE = "this Continue on relaunches nothing; relaunch it from Sessions"
 
@@ -138,8 +144,8 @@ public class SessionContinue(
      *  on the model its row reports. Key rotation (Oct 26, 2026): a session launched before the key helper holds a
      *  turn key a rotation strands, and the launch its own command makes reads the new one through the helper. A
      *  relaunch is splice's, never his, so it stops nothing: a working session is refused until its turn ends, one
-     *  running background shells until they end, and one waiting on an answer or holding words he has not sent is
-     *  refused as a move is. */
+     *  running background shells until they end, and one waiting on an answer, holding words he has not sent or
+     *  holding a feedback draft the person has not sent is refused as a move is. */
     public suspend fun relaunch(session: String): JsonReply = moving(session, clear = false, Wanted.Relaunch)
 
     public suspend fun move(session: String, head: String, model: String?, clear: Boolean = false): JsonReply =
@@ -265,11 +271,13 @@ public class SessionContinue(
             record.process.cwd?.takeIf { Files.isDirectory(Path.of(it)) } ?: home.toString()
 
         /** Why a running [record]'s client cannot be ended now, or null: its `/exit` would land in a question, about
-         *  an answer it waits on or about the background shells it runs, whose focused answer stops them. */
+         *  an answer it waits on, about the background shells it runs, whose focused answer stops them, or about a
+         *  feedback draft the person has not sent, whose sending or discarding is theirs. */
         private fun notNow(record: SessionRecord): Plan? = when {
             record.availability == SessionAvailability.GONE -> null
             record.status.waitingFor != null -> refused("it is waiting on an answer; answer it before moving it")
             record.status.state == RUNNING_SHELLS -> refused(MOVE_BACKGROUND, Refusal.WORKING)
+            drive.feedback.unsent(record) -> refused(FEEDBACK_UNSENT, Refusal.FEEDBACK)
             else -> null
         }
 
@@ -309,21 +317,32 @@ public class SessionContinue(
         val exit = object : PaneTurns.Exit {
             override val process = move.process
 
-            override fun check(): JsonReply? = changed(move, ask) ?: when (live(move.session)?.status?.state) {
-                // working now, on a turn the move did not stop: one the person started in the terminal itself, which
-                // splice's count does not see. A turn the move stopped already reads stopped here (RegistryHandover).
-                in busy -> Refusals.reply(
-                    HttpStatusCode.Conflict,
-                    "it started working while the move waited its turn, so nothing was started on ${move.head}",
-                    Refusal.WORKING,
-                )
-                // background shells a stopped turn left running, or ones started since: /exit would stop them
-                RUNNING_SHELLS -> Refusals.reply(
-                    HttpStatusCode.Conflict,
-                    "it has background work its /exit would stop, so nothing was started on ${move.head}",
-                    Refusal.WORKING,
-                )
-                else -> if (ask.clear) null else drive.drafted(move.session)
+            override fun check(): JsonReply? = changed(move, ask) ?: live(move.session).let { now ->
+                val state = now?.status?.state
+                when {
+                    // working now, on a turn the move did not stop: one the person started in the terminal itself,
+                    // which splice's count does not see. A turn the move stopped already reads stopped here
+                    // (RegistryHandover).
+                    state in busy -> Refusals.reply(
+                        HttpStatusCode.Conflict,
+                        "it started working while the move waited its turn, so nothing was started on ${move.head}",
+                        Refusal.WORKING,
+                    )
+                    // background shells a stopped turn left running, or ones started since: /exit would stop them
+                    state == RUNNING_SHELLS -> Refusals.reply(
+                        HttpStatusCode.Conflict,
+                        "it has background work its /exit would stop, so nothing was started on ${move.head}",
+                        Refusal.WORKING,
+                    )
+                    // a draft written since the plan, such as one the model wrote in the turn the move stopped
+                    now != null && drive.feedback.unsent(now) -> Refusals.reply(
+                        HttpStatusCode.Conflict,
+                        "$FEEDBACK_HELD, so nothing was started on ${move.head}",
+                        Refusal.FEEDBACK,
+                    )
+                    ask.clear -> null
+                    else -> drive.drafted(move.session)
+                }
             }
 
             override fun keys(): JsonReply? = Cancellables.runCatchingCleanup {

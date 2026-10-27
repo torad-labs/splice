@@ -34,6 +34,7 @@ import splice.sessions.http.Refusal.CLOSED
 import splice.sessions.http.Refusal.REFUSED
 import splice.sessions.prompt.ScreenChoices
 import splice.sessions.prompt.ScreenOffer
+import splice.sessions.registry.FeedbackDrafts
 import splice.sessions.registry.PidAlive
 import splice.sessions.registry.PidIdentity
 import splice.sessions.registry.ProcPidIdentity
@@ -83,6 +84,9 @@ public class SessionDrive(
     private val launched: LaunchedTerminals = LaunchedTerminals { null },
     /** Told of each act a person makes on a session, so what waits on that session knows it was handled. */
     private val acted: SessionActed = SessionActed {},
+    /** The feedback drafts each session holds, which its `/exit` would ask the person to send or discard: what
+     *  ends a session reads them before it types anything (SessionContinue). */
+    internal val feedback: FeedbackDrafts = FeedbackDrafts { null },
 ) {
     /** The numbered choices a screen lists, in the order a person reads them. */
     private val choiceKeys = listOf(

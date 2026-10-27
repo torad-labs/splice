@@ -18,6 +18,7 @@ import splice.client.transcript.TranscriptReader
 import splice.client.transcript.capture.CapturedTranscripts
 import splice.core.config.ConfigService
 import splice.core.config.StatePaths
+import splice.core.config.UserHome
 import splice.core.perf.KeptHistory
 import splice.core.process.LaunchOwners
 import splice.core.util.LogSink
@@ -36,6 +37,7 @@ import splice.sessions.http.TeamSource
 import splice.sessions.http.TerminalSource
 import splice.sessions.http.TranscriptRoots
 import splice.sessions.note.PeerNoteSocket
+import splice.sessions.registry.FeedbackDrafts
 import splice.sessions.registry.RecordedSessions
 import splice.sessions.registry.SEEN_SESSIONS_DIR
 import splice.sessions.registry.SeenSessions
@@ -82,6 +84,10 @@ internal class SessionsWiring(
                     launchOwners.read(pid)?.takeIf { it.kind == "session" }?.terminal
                         ?.let { LaunchedTerminal(pid, it.pane, it.socket) }
                 }
+        },
+        // the config folder its client runs in, read from its process as a relaunch reads the command it was started on
+        feedback = FeedbackDrafts { record ->
+            record.process.pid?.let { pid -> ports.processes?.current()?.configHome(pid, UserHome.claudeDir()) }
         },
     )
 

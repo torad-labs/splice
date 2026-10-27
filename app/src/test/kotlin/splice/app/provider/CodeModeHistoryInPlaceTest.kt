@@ -29,6 +29,9 @@ import kotlin.random.Random
 
 private const val FILE_TEXT = "synthetic file contents"
 private const val CHANGED_TEXT = "synthetic file contents as the client now sends them"
+
+/** What Claude Code's context management leaves in place of an old tool result it clears. */
+private const val CLEARED = "[Old tool result content cleared]"
 private const val GOING_ON = "synthetic words after the interruption"
 private const val CUT_WORDS = "partial words"
 private const val SUMMARY_TEXT = "synthetic summary of the conversation"
@@ -55,7 +58,7 @@ private const val CUT_MODEL = "gpt-5.6-luna"
 
 /** What GPT reads as a script's result when the head stopped the script instead of letting it finish. */
 private const val STOPPED = "Script terminated"
-private const val GENERATED_RUNS = 24
+private const val GENERATED_RUNS = 200
 private const val MOST_SCRIPTS = 3
 
 /** The result kind that answers each call kind GPT writes in code mode. */
@@ -466,7 +469,8 @@ private class InPlaceSession(
  *  it asks the client to Read, and then by GPT's words. One round may be interrupted (an overload before any output,
  *  after reasoning or once the answer began, a websocket close before output, or a compaction between a call and its
  *  run, which drops the call in flight), and before one request Claude Code may change the result of a script it ran
- *  earlier. Every request carries each earlier script as GPT wrote it, and the changed one as Claude Code sent it. */
+ *  earlier: clear it, as its context management clears old tool results, or send other text. Every request carries
+ *  each earlier script as GPT wrote it, and the changed one as Claude Code sent it. */
 private class GeneratedHistory(private val session: InPlaceSession, private val random: Random, private val run: Int) {
     val problems = mutableListOf<String>()
     private val scripts = mutableListOf<GptScript>()
@@ -533,15 +537,15 @@ private class GeneratedHistory(private val session: InPlaceSession, private val 
     private fun prompt(prompt: Int): String =
         if (prompt == 0) "$OPENING $run" else "Go on with synthetic step $run-$prompt."
 
-    /** Claude Code changes the result of a script whose result it already sent. */
+    /** Claude Code changes the result of a script whose result it already sent: it clears it, or sends other text. */
     private fun change(story: MutableList<String>) {
         val sent = scripts.dropLast(1).filter { it !in changed }
         if (sent.isEmpty()) return
         val script = sent[random.nextInt(sent.size)]
-        val text = "$CHANGED_TEXT ${script.cell}"
+        val text = if (random.nextBoolean()) CLEARED else "$CHANGED_TEXT ${script.cell}"
         session.talk.changeResult(script.toolUse, text)
         changed[script] = text
-        story += "changed ${script.cell}"
+        story += if (text == CLEARED) "cleared ${script.cell}" else "changed ${script.cell}"
     }
 
     /** Claude Code compacts between a call and its run: the answer with the call in flight and its result are dropped,

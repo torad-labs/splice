@@ -2,18 +2,20 @@
 // the turn's one ledger (final-design.md section 8). These are its routes: a real head of each API type in front of
 // the scripted provider, on virtual time, driven through the failures section 8's table names, asserting what the
 // provider sees (how many requests, and when) and what the person reads. Every expected number is the table's own:
-// the waits are RetryBudgets' schedules, never a run's. The two routes of a cut mid-answer are not here: a cut
-// after content still restarts the round from scratch, because the head's re-anchor runner decides its own rounds
-// until it takes the engine's steps too (slice-4-report.md, open).
+// the waits are RetryBudgets' schedules, never a run's. A cut mid-answer continues from what arrived, and only where
+// the head's re-anchor rule can: an answer the client already reads is never restarted from scratch.
 package splice.app.failure
 
 import kotlinx.coroutines.test.runTest
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertFalse
+import org.junit.jupiter.api.Assertions.assertNull
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.io.TempDir
 import splice.app.provider.HeadReplies
+import splice.dialect.anthropic.PassthroughProvider
+import splice.dialect.anthropic.PassthroughQuirks
 import splice.head.scripted.ClientAnswer
 import splice.head.scripted.ClientRequest
 import splice.head.scripted.HeadShape
@@ -275,8 +277,54 @@ class OneEngineThroughHeadsTest {
             val answer = head.client.send()
 
             assertEquals(1 + 5, provider.requests.size, "the first send and five recoveries: ${answer.describe()}")
+            provider.requests.drop(1).forEachIndexed { i, request ->
+                assertTrue("partial words" in request.body, "recovery ${i + 1} carries what arrived: ${request.body}")
+            }
             assertTrue(answer.contentBeforeError, answer.describe())
             assertTrue(lineOf(answer).startsWith(PREFIX), answer.describe())
+        }
+    }
+
+    @Test
+    fun `a mid-answer cut on an Anthropic head with prefill off ends at once with the cut-off line, no re-anchor sent`(
+        @TempDir tmp: Path,
+    ) = runTest {
+        withScriptedHeads(tmp) {
+            // Held before the cut, so the text is on the client's wire when the connection drops.
+            provider.script(reply { anthropicStart(); anthropicText("partial words"); hold(); cut() })
+            val head = anthropic()
+
+            val stream = head.client.open()
+            stream.awaitText("partial words")
+            provider.release()
+            val answer = stream.finish()
+
+            assertEquals(1, provider.requests.size, "no re-anchor reached the provider: ${answer.describe()}")
+            assertEquals("partial words", answer.text, answer.describe())
+            assertLine(answer, "cut off")
+        }
+    }
+
+    @Test
+    fun `the same cut on a head with prefill on is re-anchored from what arrived`(@TempDir tmp: Path) = runTest {
+        withScriptedHeads(tmp) {
+            provider.script(
+                reply { anthropicStart(); anthropicText("partial words"); hold(); cut() },
+                reply { anthropicStart(); anthropicText(" and the rest"); anthropicEnd() },
+            )
+            val head = custom("prefill") { tuning, _ ->
+                PassthroughProvider(tuning, PassthroughQuirks(tuning.key, reanchorPrefill = true))
+            }
+
+            val stream = head.client.open()
+            stream.awaitText("partial words")
+            provider.release()
+            val answer = stream.finish()
+
+            assertNull(answer.error, answer.describe())
+            assertEquals(2, provider.requests.size, answer.describe())
+            assertTrue("partial words" in provider.requests[1].body, "the re-anchor carries what arrived")
+            assertEquals("partial words and the rest", answer.text, answer.describe())
         }
     }
 
